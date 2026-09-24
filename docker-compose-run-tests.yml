@@ -827,6 +827,12 @@ services:
     image: ${STS_IMAGE:-rcbj/sts}
     profiles: ["conformance"]
     restart: "no"
+    # Pinned with the suite's three (.40 to .42), for their reason: a
+    # dynamically addressed container could land on an address the sts
+    # service adds to its own interface.
+    networks:
+      default:
+        ipv4_address: ${CONFORMANCE_TLS_ADDRESS:-172.30.0.43}
     environment:
       - STS_BAO_TLS_DIR=/run/sts-test/conformance
       - STS_BAO_RAFT_DIR=/tmp/conformance-unused

@@ -1603,7 +1603,8 @@ profile, pinned by tag (`CONFORMANCE_SUITE_TAG`, `release-v5.3.1`).
 * **Which modes.** `STS_TEST_CONFORMANCE_MODES` (default `memory`) names the
   modes whose runner `up` activates the profile and hands the job
   `CONFORMANCE_SUITE_URL`; such a mode's bound grows by
-  `STS_CONFORMANCE_TIMEOUT` (1800 s). Everywhere else the runner reports the
+  `STS_CONFORMANCE_TIMEOUT` (10800 s since #187: the six jobs take about
+  two hours and a quarter). Everywhere else the runner reports the
   job SKIPPED with the reason (`run-report.js`, the `conformance` flag — a
   deliberate exclusion, as `docker: true` is). `memory` because FAPI-CIBA
   approves through a development-mode test control, and each plan runs in a
@@ -1612,7 +1613,8 @@ profile, pinned by tag (`CONFORMANCE_SUITE_TAG`, `release-v5.3.1`).
 * **The names are the suite's.** Its nginx proxies to `server:8080` and answers
   as `localhost.emobix.co.uk`, the name its server builds every URL on and its
   scripted browser follows back — network aliases on this network, nothing
-  published. The three are PINNED at `.40`–`.42`: the service adds `.11`–`.13`
+  published. The three are PINNED at `.40`–`.42` (and #187's `conformance-tls`
+  at `.43`): the service adds `.11`–`.13`
   to its own interface, which docker's allocator cannot see.
 * **What the job does per plan**: a throwaway realm with `oauth2.fapi` set, a
   person with a password, two clients registered with EC keys made at run time

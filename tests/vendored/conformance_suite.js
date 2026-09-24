@@ -66,8 +66,20 @@ function waitMs(ms) {
 // trust as in every other job.
 async function send(url, options) {
   log.debug("Entering send(). " + url);
-  const r = await fetch(url, Object.assign({ redirect: "manual" },
-                                           options || {}));
+  let r = await fetch(url, Object.assign({ redirect: "manual" },
+                                         options || {}));
+  // A PLAN RUN OUTLIVES ITS /admin-api TOKEN. The runner hands each job a
+  // token good for an hour, and the OpenID Connect plans take longer: a
+  // management call that is refused 401 mints a fresh one through the
+  // preload's refresh() and is made again, once.
+  if (r.status === 401 && /\/admin-api(\/|$)/.test(String(url)) &&
+      globalThis.stsAdminApiToken &&
+      typeof globalThis.stsAdminApiToken.refresh === "function") {
+    log.info("The /admin-api token was refused; minting a fresh one.");
+    await globalThis.stsAdminApiToken.refresh();
+    r = await fetch(url, Object.assign({ redirect: "manual" },
+                                       options || {}));
+  }
   const raw = await r.text();
   let body = null;
   try {
@@ -211,9 +223,9 @@ async function waitForSuite() {
 // module left WAITING past MODULE_SECONDS is stopped and counted as the
 // failure it is. Answers its FAILURE and WARNING log entries as well.
 // `onWaiting(id, info)`, when given, is awaited on each poll that finds the
-// module WAITING — for a module that waits on this service's OPERATOR (a credential
-// offer to be sent, a transaction code to be typed), which the driver then
-// plays.
+// module WAITING (or CONFIGURED and not started) — for a module that waits
+// on this service's OPERATOR (a credential offer to be sent, a transaction
+// code to be typed, the OP's keys to be rotated), which the driver plays.
 async function runModule(planId, module, onWaiting) {
   log.debug("Entering runModule(). " + module.testModule);
   const q = "test=" + encodeURIComponent(module.testModule) + "&plan=" +
@@ -235,7 +247,11 @@ async function runModule(planId, module, onWaiting) {
     // go from waiting on one thing (an offer) to waiting on the next (its
     // transaction code) between two polls. The operator knows what it has
     // already done.
-    if (onWaiting && info.status === "WAITING") {
+    // And while it is CONFIGURED and not started: a module that waits for
+    // the operator to do something BEFORE it is started (the OP key
+    // rotation module) is started by that operator.
+    if (onWaiting && (info.status === "WAITING" ||
+                      info.status === "CONFIGURED")) {
       try {
         await onWaiting(id, info);
       } catch (e) {

@@ -139,9 +139,9 @@ function userFor(plan, prepared) {
   log.debug("Entering userFor(). " + plan.key);
   const started = {};
   log.debug("Leaving userFor().");
-  return async function (id) {
+  return async function (id, info) {
     log.debug("Entering the End-User. " + id);
-    if (started[id]) {
+    if (started[id] || (info && info.status !== "WAITING")) {
       log.debug("Leaving the End-User. Already started.");
       return;
     }

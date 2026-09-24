@@ -33,6 +33,12 @@
 //      control development mode opens and product closes — so the CIBA plan
 //      runs in development only.
 //
+// #187 (2026-09-24) added the VARIANT MATRIX to PLANS — mutual TLS as client
+// authentication and as the sender constraint, Message Signing with Grant
+// Management, PAR with JARM under 1.0 Advanced, CIBA ping — and nothing
+// about how the first four run. The other families' plans are their own
+// jobs, sharing `conformance_suite.js` (tests/CLAUDE.md, *The other plans*).
+//
 // OWNED HERE (local: true): this repository's authorization server.
 // ---------------------------------------------------------------------------
 
@@ -81,8 +87,8 @@ const PASSWORD = "Conf-Passw0rd!-" + String(Date.now()).slice(-6);
 const MODULE_SECONDS = Number(process.env.CONFORMANCE_MODULE_SECONDS) || 300;
 
 // ---------------------------------------------------------------------------
-// THE PLANS, one representative variant each: a whole plan is 67 to 90
-// modules, and every variant is another run of them.
+// THE PLANS, one representative variant each, then #187's matrix: a whole
+// plan is 67 to 90 modules, and every variant is another run of them.
 // ---------------------------------------------------------------------------
 const PLANS = [
   { key: "fapi2sp", name: "fapi2-security-profile-final-test-plan",

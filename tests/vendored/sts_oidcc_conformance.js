@@ -174,7 +174,11 @@ const KNOWN_WARNINGS = {
   // UserInfo, which Core 5.4 allows ("claims ... when available"). 3bg's
   // open item: map them or stop listing them in claims_supported.
   VerifyScopesReturnedInUserInfoClaims: "five profile-scope claims have " +
-    "no directory attribute; rcbj's call (3bg) whether to map them"
+    "no directory attribute; rcbj's call (3bg) whether to map them",
+  // The same five, in an ID Token the implicit flow returns without an
+  // access token (Core 5.4 puts the scope claims there then).
+  VerifyScopesReturnedInAuthorizationEndpointIdToken: "the same five " +
+    "profile-scope claims, absent from an implicit-flow ID Token"
 };
 
 let checks = 0;
@@ -369,6 +373,9 @@ async function prepare(plan) {
   const configuration = {
     alias: alias,
     description: "iya-sts " + plan.name + " " + STAMP,
+    // Not the suite's: taken off again before the plan is created, for the
+    // operator above.
+    realmApi: api,
     server: { discoveryUrl: base + "/.well-known/openid-configuration",
               allow_unexpected_metadata_fields: oidf.EXTENSION_METADATA },
     browser: browserFor(base, person),
@@ -404,6 +411,46 @@ async function prepare(plan) {
   return configuration;
 }
 
+// ---------------------------------------------------------------------------
+// THE OP'S OPERATOR. oidcc-server-rotate-keys is not started by the suite: it
+// reads the JWKS, asks the operator to rotate the OP's signing keys, and
+// compares once it is started. So this job rotates the realm's keys
+// (`/admin-api/keys/rotate`, the console's Rotate), waits for the scheduler
+// run it queues, and starts the module.
+// ---------------------------------------------------------------------------
+function operatorFor(api) {
+  log.debug("Entering operatorFor().");
+  const started = {};
+  log.debug("Leaving operatorFor().");
+  return async function (id, info) {
+    log.debug("Entering the OP operator. " + id);
+    if (started[id] || !info || info.status !== "CONFIGURED" ||
+        info.testName !== "oidcc-server-rotate-keys") {
+      log.debug("Leaving the OP operator. Nothing to do.");
+      return;
+    }
+    started[id] = true;
+    const rotated = await oidf.send(api + "/keys/rotate", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: "{}" });
+    assert.strictEqual(rotated.status, 202, "the key rotation: " +
+                       rotated.raw.slice(0, 300));
+    for (let i = 0; i < 30; i++) {
+      const run = await oidf.send(api + "/scheduler?run=" +
+                                  encodeURIComponent(rotated.body.runId));
+      const state = JSON.stringify(run.body || {});
+      if (/"(succeeded|done|finished|completed|failed)"/i.test(state)) {
+        break;
+      }
+      await oidf.waitMs(1000);
+    }
+    const r = await oidf.suite("POST", "api/runner/" + id);
+    log.info("  rotated the realm's signing keys and started the module: " +
+             r.status);
+    log.debug("Leaving the OP operator.");
+  };
+}
+
 async function test() {
   log.debug("Entering test().");
   await registry.isProduct(root);
@@ -418,8 +465,10 @@ async function test() {
     let ran = null;
     try {
       const configuration = await prepare(plan);
+      const realmApi = configuration.realmApi;
+      delete configuration.realmApi;
       ran = await oidf.runPlan(plan.name, plan.variant, configuration,
-                               plan.key);
+                               plan.key, operatorFor(realmApi));
     } catch (e) {
       // One plan that cannot be set up or created is reported with the rest
       // rather than ending the run.

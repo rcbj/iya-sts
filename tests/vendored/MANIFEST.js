@@ -760,7 +760,7 @@ const JOBS = [
   // WARNING as well as a FAILED module. `local: true`: this repository's
   // OpenID Provider.
   { file: 'sts_oidcc_conformance.js',    browser: false, local: true,
-    conformance: true, timeoutMs: 7200000 },
+    conformance: true, timeoutMs: 10800000 },
   // Shared Signals (#187): the transmitter and CAEP interop plans, push and
   // poll, the CAEP events emitted by the job as the module asks for them.
   { file: 'sts_ssf_oidf_conformance.js', browser: false, local: true,
