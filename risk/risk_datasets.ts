@@ -51,6 +51,9 @@ import cacheRegistry = require('../common/cache_registry');
 import InstanceSlot = require('../common/instance_slot');
 import riskStore = require('./risk_store');
 import riskTerms = require('./risk_terms');
+// The one expansion path (#215): a gzip or zip file, whichever door it came
+// through, is expanded by `risk_expand.ts` as its lines are read.
+import RiskExpand = require('./risk_expand');
 
 const log = bunyan.createLogger({ name: 'sts-risk-datasets' });
 config.registerLogger(log);
@@ -158,6 +161,10 @@ const RETENTION_JOB = 'risk.retention';
 const MDS_JOB = 'risk.mds-refresh';
 const MDS_OVERDUE_EVERY_MS = 60 * 60 * 1000;
 const RETENTION_EVERY_MS = 60 * 60 * 1000;
+// A VERSION LEFT `loading` BY A PROCESS THAT STOPPED (#215): marked refused
+// by this cluster job once it has made no progress for
+// `risk.importStallMinutes`. See `abandonStalled()`.
+const STALLED_JOB = 'risk.stalled-imports';
 
 interface RiskDatasetsDeps {
   log: { debug(m: string): void; info(m: string): void; warn(m: string): void;
@@ -182,6 +189,7 @@ class RiskDatasets {
   static readonly DIRECTORY_JOB = DIRECTORY_JOB;
   static readonly RETENTION_JOB = RETENTION_JOB;
   static readonly MDS_JOB = MDS_JOB;
+  static readonly STALLED_JOB = STALLED_JOB;
   // When the active BLOB says the next one is due, as the last run of the
   // download job saw it; 0 before one has run. What `everyMs()` reads, since
   // the scheduler asks it synchronously.
@@ -390,14 +398,24 @@ class RiskDatasets {
   }
 
   // The lines of the file or the text, one at a time, without holding a
-  // file of millions of lines in memory.
+  // file of millions of lines in memory. A file is EXPANDED on the way
+  // (#215): gzip and zip by their content, through `risk_expand.ts`, whose
+  // stream fails with a coded error on a decompression bomb, an ambiguous
+  // archive or a corrupt one — and that error is what the import loop
+  // below records on the refused version. The file is released however
+  // the loop ends.
   private static async *linesOf(source: Json): AsyncGenerator<string> {
     if (source.path) {
-      const reader = readline.createInterface({
-        input: fs.createReadStream(source.path, { encoding: 'utf8' }),
-        crlfDelay: Infinity });
-      for await (const line of reader) {
-        yield line;
+      const opened = await RiskExpand.open(source.path, source.limits);
+      try {
+        opened.stream.setEncoding('utf8');
+        const reader = readline.createInterface({ input: opened.stream,
+                                                  crlfDelay: Infinity });
+        for await (const line of reader) {
+          yield line;
+        }
+      } finally {
+        opened.close();
       }
       return;
     }
@@ -436,6 +454,87 @@ class RiskDatasets {
     return why;
   }
 
+  // -------------------------------------------------------------------------
+  // WHETHER AN IMPORT MAY BEGIN AT ALL: the dataset, format and realm (rule
+  // of `refusalOf()`), a provider this service supports, and its current
+  // terms accepted. `{ refusal }` — audited and coded — or `{ providerId,
+  // provider, acceptance }`. With `record` false nothing is written: an
+  // upload asks this BEFORE it reads a byte of the file (#215), and an
+  // acceptance the upload carries is recorded when the import runs.
+  // -------------------------------------------------------------------------
+  private async admission(o: Json, realm: string,
+                          record: boolean): Promise<Json> {
+    const { log } = this.deps;
+    log.debug("Entering RiskDatasets.admission(). " + o.dataset);
+    const refusal = this.refusalOf(Object.assign({}, o, { realm: realm }));
+    if (refusal) {
+      log.debug("Leaving RiskDatasets.admission(). Refused.");
+      return { refusal: this.refused('STS-RISK-0001', refusal, o) };
+    }
+    const entry = CATALOGUE[o.dataset];
+    const format = FORMATS[o.format];
+    // Whose data this is: what the caller named, the dataset's own, or the
+    // format's. It must be a provider this service knows and supports, so
+    // that its terms and its attribution are the ones recorded and drawn.
+    const providerId = String(o.provider || entry.provider || format.provider);
+    const provider = PROVIDERS[providerId];
+    if (!provider || !provider.supported) {
+      log.debug("Leaving RiskDatasets.admission(). Provider.");
+      return { refusal: this.refused('STS-RISK-0001', provider
+        ? provider.title + ' is not supported yet: ' + provider.terms
+        : 'There is no provider "' + providerId + '". The supported ones ' +
+          'are: ' + Object.keys(PROVIDERS).filter(function (id) {
+            return PROVIDERS[id].supported;
+          }).join(', ') + '.', o) };
+    }
+    // THE PROVIDER'S TERMS MUST BE ACCEPTED (the second licence review on
+    // #62). An import may carry the acceptance itself (`acceptTerms`, the
+    // console's checkbox and the API's field), recorded for its actor; a
+    // directory import may not, and needs one recorded already.
+    let acceptance = null;
+    if (riskTerms.needsAcceptance(providerId)) {
+      acceptance = await riskTerms.currentFor(providerId);
+      if (!acceptance && o.acceptTerms === true && !record) {
+        // Asked ahead of an upload's bytes: the acceptance it carries is
+        // recorded when the import itself runs, not by the question.
+        log.debug("Leaving RiskDatasets.admission(). Would accept.");
+        return { providerId: providerId, provider: provider,
+                 acceptance: null };
+      }
+      if (!acceptance && o.acceptTerms === true) {
+        const accepted = await riskTerms.accept({
+          provider: providerId, acceptedBy: String(o.actor || 'unnamed'),
+          via: String(o.source || 'upload') });
+        acceptance = accepted.ok ? accepted.acceptance : null;
+      }
+      if (!acceptance) {
+        log.debug("Leaving RiskDatasets.admission(). Terms.");
+        return { refusal: this.refused('STS-RISK-0014', 'The terms of ' +
+          provider.title + ' have not been accepted' +
+          ((await riskTerms.status()).providers.some(function (p: Json) {
+            return p.provider === providerId && p.changed;
+          }) ? ' since they changed' : '') + '. ' + provider.terms +
+          ' Accept them on Monitoring → Risk, through POST ' +
+          '/admin-api/risk/accept-terms, or with the install-time ' +
+          'loader\'s --accept-terms ' + providerId + '.', o) };
+      }
+    }
+    log.debug("Leaving RiskDatasets.admission().");
+    return { providerId: providerId, provider: provider,
+             acceptance: acceptance };
+  }
+
+  // The question above, asked ahead of an upload (#215): null when the
+  // import may begin, the refusal otherwise. Records nothing but the
+  // refusal's audit row.
+  async precheck(o: Json): Promise<Json | null> {
+    const { log } = this.deps;
+    log.debug("Entering RiskDatasets.precheck().");
+    const admitted = await this.admission(o, String(o.realm || ''), false);
+    log.debug("Leaving RiskDatasets.precheck().");
+    return admitted.refusal || null;
+  }
+
   // ---------------------------------------------------------------------------
   // IMPORT ONE VERSION OF ONE DATASET.
   //
@@ -453,54 +552,22 @@ class RiskDatasets {
     log.debug("Entering RiskDatasets.importVersion(). dataset=" + o.dataset +
               " format=" + o.format);
     const realm = String(o.realm || '');
-    const refusal = this.refusalOf(Object.assign({}, o, { realm: realm }));
-    if (refusal) {
-      log.debug("Leaving RiskDatasets.importVersion(). Refused.");
-      return this.refused('STS-RISK-0001', refusal, o);
+    const admitted = await this.admission(o, realm, true);
+    if (admitted.refusal) {
+      log.debug("Leaving RiskDatasets.importVersion(). Not admitted.");
+      return admitted.refusal;
     }
     const entry = CATALOGUE[o.dataset];
-    const format = FORMATS[o.format];
-    // Whose data this is: what the caller named, the dataset's own, or the
-    // format's. It must be a provider this service knows and supports, so
-    // that its terms and its attribution are the ones recorded and drawn.
-    const providerId = String(o.provider || entry.provider || format.provider);
-    const provider = PROVIDERS[providerId];
-    if (!provider || !provider.supported) {
-      log.debug("Leaving RiskDatasets.importVersion(). Provider.");
-      return this.refused('STS-RISK-0001', provider
-        ? provider.title + ' is not supported yet: ' + provider.terms
-        : 'There is no provider "' + providerId + '". The supported ones ' +
-          'are: ' + Object.keys(PROVIDERS).filter(function (id) {
-            return PROVIDERS[id].supported;
-          }).join(', ') + '.', o);
-    }
-    // THE PROVIDER'S TERMS MUST BE ACCEPTED (the second licence review on
-    // #62). An import may carry the acceptance itself (`acceptTerms`, the
-    // console's checkbox and the API's field), recorded for its actor; a
-    // directory import may not, and needs one recorded already.
-    let acceptance = null;
-    if (riskTerms.needsAcceptance(providerId)) {
-      acceptance = await riskTerms.currentFor(providerId);
-      if (!acceptance && o.acceptTerms === true) {
-        const accepted = await riskTerms.accept({
-          provider: providerId, acceptedBy: String(o.actor || 'unnamed'),
-          via: String(o.source || 'upload') });
-        acceptance = accepted.ok ? accepted.acceptance : null;
-      }
-      if (!acceptance) {
-        log.debug("Leaving RiskDatasets.importVersion(). Terms.");
-        return this.refused('STS-RISK-0014', 'The terms of ' +
-          provider.title + ' have not been accepted' +
-          ((await riskTerms.status()).providers.some(function (p: Json) {
-            return p.provider === providerId && p.changed;
-          }) ? ' since they changed' : '') + '. ' + provider.terms +
-          ' Accept them on Monitoring → Risk, through POST ' +
-          '/admin-api/risk/accept-terms, or with the install-time ' +
-          'loader\'s --accept-terms ' + providerId + '.', o);
-      }
-    }
+    const providerId = admitted.providerId;
+    const provider = admitted.provider;
+    const acceptance = admitted.acceptance;
+    // An upload was hashed on its way to disk (#215) and hands the digest in
+    // rather than have a file of hundreds of megabytes read twice. It is the
+    // digest of the FILE AS DELIVERED — compressed, if it was — which is
+    // what a provider publishes a checksum of, and what `sha256` is held to.
     const sha256 = o.path
-      ? await stsCrypto.sha256OfFile(o.path, 0)
+      ? (/^[0-9a-f]{64}$/.test(String(o.fileSha256 || ''))
+        ? String(o.fileSha256) : await stsCrypto.sha256OfFile(o.path, 0))
       : stsCrypto.truncatedSha256Hex(o.content, 64);
     const byteCount = o.path ? fs.statSync(o.path).size
                              : Buffer.byteLength(o.content, 'utf8');
@@ -536,6 +603,10 @@ class RiskDatasets {
                message: 'Version ' + version + ' of ' + o.dataset + ' is ' +
                         'already recorded; nothing was loaded again.' };
     }
+    // THE VERSION IS RECORDED, `loading` (#215): an upload answers its caller
+    // now and the rest of this runs after the answer has gone.
+    this.begun(o, { dataset: o.dataset, realm: realm, version: version,
+                    sha256: sha256 });
     if (o.sha256 && String(o.sha256).toLowerCase() !== sha256) {
       await store.finishVersion(realm, o.dataset, version, {
         state: 'refused', rowCount: 0, loadedAt: now(),
@@ -567,25 +638,35 @@ class RiskDatasets {
           rows += await store.insertRows(entry.kind, realm, o.dataset,
                                          version, batch);
           batch = [];
+          await this.progress(o, realm, version, rows);
         }
       }
       if (batch.length) {
         rows += await store.insertRows(entry.kind, realm, o.dataset, version,
                                        batch);
       }
+      // Once more before the outcome is written: a version the stalled-
+      // import job has already refused must not be written `ready` over.
+      await this.progress(o, realm, version, rows);
     } catch (e) {
-      log.error(errorCodes.tag('STS-RISK-0005') + 'risk: importing ' +
-                o.dataset + ' ' + version + ' failed in the store: ' +
-                ((e && e.message) || e));
+      // The file's own refusals carry their code (#215: a decompression
+      // bomb, an ambiguous or corrupt archive, a version marked stalled);
+      // anything else failed in the store.
+      const code = errorCodes.codeOf(e) || 'STS-RISK-0005';
+      const why = (e && e.message) || String(e);
+      log.error(errorCodes.tag(code) + 'risk: importing ' + o.dataset + ' ' +
+                version + ' failed: ' + why);
       await this.dropRows(entry.kind, realm, o.dataset, version);
       await store.finishVersion(realm, o.dataset, version, {
         state: 'refused', rowCount: 0, loadedAt: now(),
-        refusal: 'the store failed: ' + ((e && e.message) || e),
-        errorCode: 'STS-RISK-0005' });
-      log.debug("Leaving RiskDatasets.importVersion(). Store failure.");
-      return this.refused('STS-RISK-0005', 'The store failed part-way ' +
-                          'through; nothing of this version is kept. ' +
-                          ((e && e.message) || e), o, version);
+        refusal: code === 'STS-RISK-0005' ? 'the store failed: ' + why : why,
+        errorCode: code });
+      log.debug("Leaving RiskDatasets.importVersion(). Failed: " + code);
+      return this.refused(code, code === 'STS-RISK-0005'
+        ? 'The store failed part-way through; nothing of this version is ' +
+          'kept. ' + why
+        : 'The file was refused part-way through; nothing of this version ' +
+          'is kept: ' + why, o, version);
     }
     const counted = { skippedLines: skipped };
     if (!rows) {
@@ -633,6 +714,100 @@ class RiskDatasets {
                                  'and were skipped.' : '') };
   }
 
+  // The caller's `onBegun`, told the version is recorded (#215). What it does
+  // with that is its own business, and cannot stop the import.
+  private begun(o: Json, what: Json): void {
+    const { log } = this.deps;
+    log.debug("Entering RiskDatasets.begun().");
+    if (typeof o.onBegun === 'function') {
+      try {
+        o.onBegun(what);
+      } catch (e) {
+        log.debug("Caught in RiskDatasets.begun(): " +
+                  ((e && e.message) || e));
+        // The caller's answer failed, not the import: it goes on, and its
+        // outcome is on the version row whatever the caller managed to say.
+      }
+    }
+    log.debug("Leaving RiskDatasets.begun().");
+  }
+
+  // -------------------------------------------------------------------------
+  // PROGRESS, AND THE FENCE (#215). Every batch stamps the version's
+  // `progressAt` — what `abandonStalled()` reads to tell a slow import from
+  // one whose process stopped — and the stamp is conditional on the row
+  // still being `loading`: if the stalled-import job has already refused it,
+  // this throws (STS-RISK-0035) and the import stops rather than write
+  // `ready` over a refusal. `onProgress` is the caller's (an upload keeps its
+  // file's modification time fresh with it).
+  // -------------------------------------------------------------------------
+  private async progress(o: Json, realm: string, version: string,
+                         rows: number): Promise<void> {
+    const { log, store, now } = this.deps;
+    log.debug("Entering RiskDatasets.progress(). " + rows);
+    const still = await store.touchVersion(realm, o.dataset, version, now(),
+                                           rows);
+    if (!still) {
+      log.debug("Leaving RiskDatasets.progress(). No longer loading.");
+      throw errorCodes.mark(new Error('the version stopped being `loading` ' +
+        'while it was being loaded — the ' + STALLED_JOB + ' job took it ' +
+        'for one whose process had stopped (no progress for ' +
+        'risk.importStallMinutes) and refused it'), 'STS-RISK-0035');
+    }
+    if (typeof o.onProgress === 'function') {
+      try {
+        o.onProgress(rows);
+      } catch (e) {
+        log.debug("Caught in RiskDatasets.progress(): " +
+                  ((e && e.message) || e));
+        // The caller's bookkeeping, not the import's; the load goes on.
+      }
+    }
+    log.debug("Leaving RiskDatasets.progress().");
+  }
+
+  // -------------------------------------------------------------------------
+  // THE VERSIONS A STOPPED PROCESS LEFT `loading` (#215), marked refused
+  // (STS-RISK-0035) with whatever rows they had written dropped. A version
+  // is taken to be abandoned when neither its start nor its last progress
+  // stamp is newer than `risk.importStallMinutes`: an import that is alive
+  // stamps every batch (`progress()`), so only a process that stopped — a
+  // crash, a restart, a request worker recycled mid-load — leaves one that
+  // old. The store's update is conditional on the state, so two nodes
+  // asking at once refuse each version once.
+  // -------------------------------------------------------------------------
+  async abandonStalled(): Promise<Json> {
+    const { log, config, store, now } = this.deps;
+    log.debug("Entering RiskDatasets.abandonStalled().");
+    const at = now();
+    const before = at -
+      Number(config.value('risk.importStallMinutes')) * 60000;
+    const why = 'no progress since ' + new Date(before).toISOString() +
+      ' (risk.importStallMinutes): the process loading it stopped';
+    const gone = await store.abandonStalled(before, at, why,
+                                            'STS-RISK-0035');
+    let rows = 0;
+    for (const v of gone) {
+      const entry = CATALOGUE[v.dataset];
+      if (entry) {
+        rows += await this.dropRows(entry.kind, String(v.realm || ''),
+                                    v.dataset, v.version);
+      }
+      log.warn(errorCodes.tag('STS-RISK-0035') + 'risk: ' + v.dataset +
+               (v.realm ? ' (realm ' + v.realm + ')' : '') + ' version ' +
+               v.version + ' was left loading and is refused: ' + why + '.');
+      this.auditRow('risk.dataset.import', { dataset: v.dataset,
+                                             realm: v.realm,
+                                             actor: 'the ' + STALLED_JOB +
+                                                    ' job',
+                                             source: 'scheduler' },
+                    v.version, 'failure', 'STS-RISK-0035',
+                    v.dataset + ' version ' + v.version + ' refused: ' + why);
+    }
+    log.debug("Leaving RiskDatasets.abandonStalled(). " + gone.length + ".");
+    return { refused: gone.length, rows: rows };
+  }
+
   // A refusal, audited and coded.
   // -------------------------------------------------------------------------
   // THE FIDO MDS3 BLOB (#62 P5), MDS3 section 3.1.8's steps in order:
@@ -655,7 +830,13 @@ class RiskDatasets {
   private async importMds(o: Json, meta: Json): Promise<Json> {
     const { log, store, now, config } = this.deps;
     log.debug("Entering RiskDatasets.importMds().");
-    const text = o.path ? fs.readFileSync(o.path, 'utf8') : String(o.content);
+    // A BLOB uploaded compressed is expanded through the same path as every
+    // dataset file (#215), bounded by the BLOB's own cap.
+    const text = o.path
+      ? await RiskExpand.readText(o.path,
+                                  Number(config.value('risk.mdsMaxBytes')),
+                                  o.limits)
+      : String(o.content);
     const refuse = async (code: string, why: string,
                           params?: Json): Promise<Json> => {
       log.debug("Entering refuse(). " + code);
@@ -724,6 +905,8 @@ class RiskDatasets {
                version: staged.version,
                message: 'BLOB ' + serial + ' is already recorded.' };
     }
+    this.begun(o, { dataset: staged.dataset, realm: '',
+                    version: staged.version, sha256: meta.sha256 });
     const rows: Json[] = [];
     payload.entries.forEach(function (entry: Json): void {
       RiskDatasets.mdsRowsOf(entry).forEach(function (row: Json): void {
@@ -1590,6 +1773,21 @@ class RiskDatasets {
       }
     });
     s.register({
+      id: STALLED_JOB,
+      title: 'Stalled risk imports',
+      describe: 'Marks refused (STS-RISK-0035) every dataset version left ' +
+                'loading with no progress for risk.importStallMinutes — ' +
+                'an import whose process stopped part-way — and drops ' +
+                'whatever rows it had written.',
+      owner: 'risk/risk_datasets.ts',
+      kind: 'cluster',
+      everySetting: 'risk.uploadSweepS', everySettingUnit: 's',
+      manual: true,
+      run: function (): Promise<Json> {
+        return self.abandonStalled();
+      }
+    });
+    s.register({
       id: RETENTION_JOB,
       title: 'Risk retention',
       describe: 'Deletes the rows of dataset versions superseded more than ' +
@@ -1664,6 +1862,9 @@ export = {
   mdsSnapshot: slot.forward('mdsSnapshot'),
   refreshMds: slot.forward('refreshMds'),
   MDS_JOB: RiskDatasets.MDS_JOB,
+  STALLED_JOB: RiskDatasets.STALLED_JOB,
+  abandonStalled: slot.forward('abandonStalled'),
+  precheck: slot.forward('precheck'),
   mdsRowsOf: RiskDatasets.mdsRowsOf,
   registry: slot.forward('registry'),
   importDirectory: slot.forward('importDirectory'),

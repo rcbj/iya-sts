@@ -691,6 +691,11 @@ function xmlSignatureKeyProblem(certificate) {
     return found.problem;
   }
   const type = String(found.key.asymmetricKeyType || '');
+  const weakCurve = type === 'ec' ? xmlEcdsaCurveProblem(found.key) : '';
+  if (weakCurve) {
+    log.debug("Leaving xmlSignatureKeyProblem(). " + weakCurve);
+    return 'its public key is ' + weakCurve;
+  }
   const usable = xmlSignatureKeyTypeUsable(type);
   log.debug("Leaving xmlSignatureKeyProblem(). " + type + " usable=" + usable);
   return usable ? '' : 'its public key is ' + (type || 'of an unknown type') +
@@ -759,6 +764,34 @@ function pssParameters(methodElement) {
   return out;
 }
 
+// ---------------------------------------------------------------------------
+// AN XML ECDSA KEY ON A CURVE WEAKER THAN P-256 (#202, 2026-09-24).
+// Wycheproof's secp160/secp192/secp224 vectors verified through
+// verifyXmlSignatureValue() because nothing asked which curve a
+// certificate's key was on — XMLDSig names no curve, so any curve node's
+// OpenSSL loads was accepted. Under 128 bits of security is refused in
+// PRODUCT (NIST SP 800-57 part 1, table 2; `mode.usesBrokenAlgorithms()`,
+// REQUIREMENTS `xml-ecdsa-curves`) by an ALLOW-list of the curves of at
+// least 256 bits, so a curve nobody listed is refused rather than guessed
+// at. Development keeps every curve, so a partner on one can be exercised.
+// ---------------------------------------------------------------------------
+const XML_ECDSA_CURVES = ['prime256v1', 'secp384r1', 'secp521r1',
+                          'secp256k1', 'brainpoolP256r1', 'brainpoolP320r1',
+                          'brainpoolP384r1', 'brainpoolP512r1'];
+
+function xmlEcdsaCurveProblem(key) {
+  log.debug("Entering xmlEcdsaCurveProblem().");
+  const curve = String(((key && key.asymmetricKeyDetails) || {})
+    .namedCurve || '');
+  if (XML_ECDSA_CURVES.indexOf(curve) >= 0 || mode.usesBrokenAlgorithms()) {
+    log.debug("Leaving xmlEcdsaCurveProblem(). " + curve + " allowed.");
+    return '';
+  }
+  log.debug("Leaving xmlEcdsaCurveProblem(). " + curve + " refused.");
+  return 'an ECDSA key on ' + (curve || 'an unnamed curve') + ', weaker ' +
+    'than P-256, which verifies no XML signature in product mode';
+}
+
 // THE ONE PRIMITIVE: does `signature` verify over `octets` under
 // `signatureMethod` with `key`? A key of the wrong type for the method is
 // `false` — another registered certificate may be the right one — and never a
@@ -773,6 +806,20 @@ function verifyXmlSignatureValue(signatureMethod, key, octets, signature, pss) {
   const type = String((key && key.asymmetricKeyType) || '');
   if (row.keyTypes.indexOf(type) < 0) {
     log.debug("Leaving verifyXmlSignatureValue(). A " + type + " key.");
+    return false;
+  }
+  if ((row.family === 'rsa' || row.family === 'rsa-pss') &&
+      rsaKeyProblem(key, 0)) {
+    // An exponent or a modulus that makes a forgery (#202, rsaKeyProblem());
+    // no size floor, XMLDSig has none and SAML partners still sign with
+    // 1024-bit keys.
+    log.debug("Leaving verifyXmlSignatureValue(). A forgeable RSA key.");
+    return false;
+  }
+  if (row.family === 'ecdsa' && xmlEcdsaCurveProblem(key)) {
+    log.info(errorCodes.tag('STS-KEYS-0077') + 'an XML signature was ' +
+             'refused: ' + xmlEcdsaCurveProblem(key));
+    log.debug("Leaving verifyXmlSignatureValue(). A weak curve.");
     return false;
   }
   let ok = false;
@@ -1956,6 +2003,124 @@ function agreementRefusal(agreement) {
   return '';
 }
 
+// ---------------------------------------------------------------------------
+// THE AES-CBC PADDING ORACLE, CLOSED (#202, 2026-09-24).
+//
+// Jager and Somorovsky, "How To Break XML Encryption" (CCS 2011), and XML
+// Encryption 1.1 section 6.1.3: an UNAUTHENTICATED CBC decryption that
+// answers "bad padding" differently from "decrypted, but not XML" lets an
+// attacker who can submit ciphertexts recover the plaintext a byte at a time
+// — no key needed, just the difference between two answers. This function
+// answered with three: STS-KEYS-0022 (padding), STS-KEYS-0025 (not UTF-8,
+// from the catch) and STS-KEYS-0023 (not XML), each with its own sentence,
+// and returned early on the padding, so even the TIME differed.
+//
+// Now every CBC failure after the key is unwrapped is ONE refusal —
+// STS-KEYS-0078, one sentence (CBC_REFUSAL) — and the three checks all RUN
+// whatever the padding said: a bad count strips nothing and is carried as a
+// flag, the result is decoded and parsed anyway, and the flags are combined
+// only at the end. What still varies with the plaintext is the XML parser's
+// own time, which no refusal can hide; the branch that could be avoided is
+// gone. The real answer is AES-GCM, which this service writes by default
+// and product can be held to per relationship (`allowedCiphers`); CBC stays
+// because service providers that require it exist.
+//
+// A GCM failure keeps its own code and sentence: it is authenticated, and a
+// tag that does not verify reveals nothing about the plaintext.
+// ---------------------------------------------------------------------------
+const CBC_REFUSAL = 'the AES-CBC ciphertext did not decrypt to a ' +
+  'well-formed XML element — the key, the ciphertext or its padding is ' +
+  'wrong, and which of those it was is deliberately not said (XML ' +
+  'Encryption 1.1 section 6.1.3). AES-CBC is unauthenticated; AES-GCM ' +
+  'would have detected an altered ciphertext';
+
+function cbcPlaintextUsable(opened) {
+  log.debug("Entering cbcPlaintextUsable().");
+  const padOk = !!(opened && opened.padOk);
+  const bytes = opened ? opened.plain : Buffer.alloc(0);
+  let text = '';
+  let utf8Ok = true;
+  try {
+    text = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+  } catch (e) {
+    log.debug("Caught in cbcPlaintextUsable(): " + ((e && e.message) || e));
+    utf8Ok = false;
+    text = bytes.toString('utf8');
+  }
+  // Parsed whether or not the two checks above held, so the three failures
+  // cost the same work up to the parser's own.
+  const xmlOk = parsesAsFragment(text);
+  const ok = padOk && utf8Ok && xmlOk && !!opened;
+  log.debug("Leaving cbcPlaintextUsable(). " + ok);
+  return { ok: ok, text: text };
+}
+
+// ---------------------------------------------------------------------------
+// THE CONTENT OF AN EncryptedData, OPENED ON NODE'S OpenSSL (#202,
+// 2026-09-24). `raw` is the CipherValue: IV || ciphertext [|| tag]. Returns
+// `{ plain, padOk }`, or null when the cipher refuses it outright (a GCM
+// tag, a CBC length that is not whole blocks).
+//
+// **IT WAS forge UNTIL WYCHEPROOF'S AES-CBC VECTORS**, and forge's unpadding
+// checks only that the LAST octet is at most a block: a final octet of ZERO
+// (zero padding, "no padding") and an EMPTY ciphertext both "finished", and
+// the rubbish that came out reached the XML parser (STS-KEYS-0023) instead of
+// being refused as padding. XML Encryption 1.1 section 5.2's padding is
+// NOT PKCS#7 — the last octet counts the padding, 1 to the block size, and
+// the others are arbitrary (Apache Santuario writes ISO 10126 random bytes) —
+// so this checks exactly that and no more: a whole number of blocks, at
+// least one, and a final octet between 1 and 16. Node with automatic padding
+// would refuse every random-padded document real service providers send.
+// GCM's IV and tag are the fixed 12 and 16 octets the layout defines, and
+// node refuses a tag that does not verify.
+// ---------------------------------------------------------------------------
+function openXmlContent(cipher, key, raw) {
+  log.debug("Entering openXmlContent(). " + cipher.name);
+  const bits = key.length * 8;
+  try {
+    if (raw.length < cipher.ivBytes + cipher.tagBytes) {
+      log.debug("Leaving openXmlContent(). Too short.");
+      return null;
+    }
+    const iv = raw.subarray(0, cipher.ivBytes);
+    if (cipher.tagBytes) {
+      const tag = raw.subarray(raw.length - cipher.tagBytes);
+      const gcm = /** @type {import('crypto').DecipherGCM} */ (
+        nodeCrypto.createDecipheriv(
+          /** @type {import('crypto').CipherGCMTypes} */
+          ('aes-' + bits + '-gcm'), key, iv,
+          { authTagLength: cipher.tagBytes }));
+      gcm.setAuthTag(tag);
+      const out = Buffer.concat([gcm.update(raw.subarray(cipher.ivBytes,
+        raw.length - cipher.tagBytes)), gcm.final()]);
+      log.debug("Leaving openXmlContent(). GCM.");
+      return { plain: out, padOk: true };
+    }
+    const body = raw.subarray(cipher.ivBytes);
+    if (!body.length || body.length % 16) {
+      // The LENGTH is public — it is on the wire — so refusing it early
+      // tells an attacker nothing the ciphertext did not.
+      log.debug("Leaving openXmlContent(). Not whole blocks.");
+      return null;
+    }
+    const cbc = nodeCrypto.createDecipheriv('aes-' + bits + '-cbc', key, iv);
+    cbc.setAutoPadding(false);
+    const padded = Buffer.concat([cbc.update(body), cbc.final()]);
+    // NO EARLY RETURN ON THE PADDING — see cbcPlaintextUsable(). A bad count
+    // strips nothing and is carried as a flag; the caller decodes and parses
+    // the result either way and refuses all three failures as ONE.
+    const count = padded[padded.length - 1];
+    const padOk = count >= 1 && count <= 16;
+    const plain = padded.subarray(0, padded.length - (padOk ? count : 0));
+    log.debug("Leaving openXmlContent(). CBC.");
+    return { plain: plain, padOk: padOk };
+  } catch (e) {
+    log.debug("Caught in openXmlContent(): " + ((e && e.message) || e));
+    log.debug("Leaving openXmlContent(). Refused.");
+    return null;
+  }
+}
+
 function decryptElement(xml, privateKeyPem, opts) {
   log.debug("Entering decryptElement().");
   const options = opts || {};
@@ -2084,12 +2249,9 @@ function decryptElement(xml, privateKeyPem, opts) {
   // unwrapped under the wrong digest and reported as a key encrypted to a
   // different certificate. Node derives MGF1 from the OAEP digest, so that
   // pair is refused BY NAME here, exactly as rsa-oaep's differing pair is.
-  //
-  // **AND THE PSource LABEL IS READ (#193).** `<xenc:OAEPparams>` is the
-  // OAEP encoding parameter (section 5.5.1/5.5.2), base64; it was ignored,
-  // so a key transported with one could only ever fail — as a wrong key.
+  // (The PSource label, `<xenc:OAEPparams>`, is read once, below — #202's,
+  // which #193 had found the same day.)
   let oaepHash = '';
-  let oaepLabel;
   if (transport && (transport.name === 'rsa-oaep' ||
                     transport.name === 'rsa-oaep-mgf1p')) {
     const mgf1p = transport.name === 'rsa-oaep-mgf1p';
@@ -2123,11 +2285,6 @@ function decryptElement(xml, privateKeyPem, opts) {
       }
     }
     oaepHash = digest;
-    const paramsEl = childByLocal(keyMethod, 'OAEPparams');
-    if (paramsEl) {
-      oaepLabel = Buffer.from(String(paramsEl.textContent || '')
-        .replace(/\s+/g, ''), 'base64');
-    }
   }
   // The data's CipherValue: the EncryptedData's own CipherData, never one
   // inside a key.
@@ -2144,6 +2301,15 @@ function decryptElement(xml, privateKeyPem, opts) {
              'data' }, 'STS-KEYS-0020');
   }
 
+  // THE OAEP LABEL (#202, 2026-09-24). XML Encryption 1.1 section 5.5.2:
+  // `<xenc:OAEPparams>`, when present, is the base64 of the label P, for
+  // rsa-oaep-mgf1p and rsa-oaep alike. It was ignored until Wycheproof's
+  // EncryptionWithLabel vectors: a key a sender wrapped under a label then
+  // failed to unwrap and was reported as a key for another certificate.
+  const paramsEl = keyMethod ? childByLocal(keyMethod, 'OAEPparams') : null;
+  const oaepLabel = paramsEl
+    ? Buffer.from(String(paramsEl.textContent || '').trim(), 'base64')
+    : undefined;
   try {
     let key;
     const wrappedBytes = keyCipher
@@ -2203,76 +2369,52 @@ function decryptElement(xml, privateKeyPem, opts) {
                'copy of its metadata is the usual cause — fetch ' +
                '/saml2/metadata again' }, 'STS-KEYS-0021');
     }
-    const raw = forge.util.decode64((dataCipher.textContent || '').trim());
-    const iv = raw.slice(0, cipher.ivBytes);
-    const decipher = forge.cipher.createDecipher(cipher.mode, key);
-    if (cipher.tagBytes) {
-      const tag = raw.slice(raw.length - cipher.tagBytes);
-      decipher.start({ iv: iv, tag: forge.util.createBuffer(tag),
-                       tagLength: cipher.tagBytes * 8 });
-      decipher.update(forge.util.createBuffer(
-        raw.slice(cipher.ivBytes, raw.length - cipher.tagBytes)));
-    } else {
-      decipher.start({ iv: iv });
-      decipher.update(forge.util.createBuffer(raw.slice(cipher.ivBytes)));
+    const opened = openXmlContent(cipher, Buffer.from(key, 'binary'),
+      Buffer.from(String(dataCipher.textContent || '').trim(), 'base64'));
+    if (!cipher.tagBytes) {
+      // AES-CBC: ONE REFUSAL FOR THE PADDING, THE ENCODING AND THE PARSE.
+      // See cbcPlaintextUsable() for why.
+      const usable = cbcPlaintextUsable(opened);
+      if (!usable.ok) {
+        log.debug("Leaving decryptElement(). CBC did not yield a document.");
+        return errorCodes.mark({ ok: false, why: CBC_REFUSAL },
+                               'STS-KEYS-0078');
+      }
+      opened.plain = Buffer.from(usable.text, 'utf8');
+    } else if (!opened) {
+      // AES-GCM's tag: the ciphertext was altered. Authenticated, so saying
+      // so is no oracle — nothing about the plaintext is learned from it.
+      log.debug("Leaving decryptElement(). The GCM tag did not verify.");
+      return errorCodes.mark({ ok: false, why: 'the AES-GCM authentication ' +
+        'tag did not verify, so the ciphertext was altered after it was ' +
+        'encrypted' }, 'STS-KEYS-0022');
     }
-    if (!decipher.finish()) {
-      // For GCM this is the authentication tag failing, which means the
-      // ciphertext was altered; for CBC it is the padding. They are different
-      // facts and the message says which, because "decryption failed" sends
-      // somebody looking at their key when the document was edited in transit.
-      log.debug("Leaving decryptElement(). The cipher refused.");
-      return errorCodes.mark({ ok: false, why: cipher.tagBytes
-        ? 'the AES-GCM authentication tag did not verify, so the ciphertext ' +
-          'was altered after it was encrypted'
-        : 'the AES-CBC padding is not valid, so the key or the ciphertext is ' +
-          'wrong' },
-                             'STS-KEYS-0022');
-    }
-    // The plaintext as UTF-8, STRICTLY (#193). forge's decodeUtf8() throws
-    // "URI malformed" on octets that are not UTF-8, which the catch below
-    // reported as an element that "could not be read" (STS-KEYS-0025).
-    // Binary plaintext is a document that is not XML, and is refused as
-    // one — the W3C interop set's binary ECDH-ES cases are what showed it.
+    // The plaintext as UTF-8, STRICTLY. For CBC it was decoded and checked
+    // inside cbcPlaintextUsable() above, and any failure there is the ONE
+    // refusal (STS-KEYS-0078, #202) — so what can fail here is GCM, which is
+    // authenticated: binary plaintext is a document that is not XML and is
+    // refused as one (STS-KEYS-0023, #193 — the W3C interop set's binary
+    // ECDH-ES cases showed it; it was "could not be read", STS-KEYS-0025).
     let plain;
     try {
-      plain = new TextDecoder('utf-8', { fatal: true }).decode(
-        Buffer.from(decipher.output.getBytes(), 'binary'));
+      plain = new TextDecoder('utf-8', { fatal: true }).decode(opened.plain);
     } catch (e) {
       log.debug("Caught in decryptElement(): " + ((e && e.message) || e));
       log.debug("Leaving decryptElement(). The plaintext is not UTF-8.");
       return errorCodes.mark({ ok: false, why: 'the decryption produced ' +
                'octets that are not UTF-8 text, so not an XML element — ' +
-               'binary data, which this service does not decrypt' +
-               (cipher.tagBytes ? '' : ', or an altered ' + cipher.name +
-                ' ciphertext') }, 'STS-KEYS-0023');
+               'binary data, which this service does not decrypt' },
+                             'STS-KEYS-0023');
     }
     // ---------------------------------------------------------------------
-    // DOES IT PARSE? A cipher that finished is not a document that survived,
-    // and the gap between those two is CBC's whole problem.
-    //
-    // AES-GCM is authenticated: an altered ciphertext fails the tag above and
-    // never reaches here. AES-CBC IS NOT. Altering a byte of CBC ciphertext
-    // corrupts one block, flips bits in the next, and quite often still leaves
-    // valid PKCS#7 padding — so `finish()` returns true and hands back
-    // plausible-looking rubbish. Measured, not assumed: flipping one character
-    // of a CBC cipher value here returns the element TRUNCATED mid-tag, with no
-    // error anywhere.
-    //
-    // So the plaintext is parsed before it is called a success. That is not
-    // integrity — nothing can retrofit integrity onto unauthenticated CBC, and
-    // this service offers CBC precisely because real service providers require
-    // it — but it turns "here is your NameID" plus a crash two frames later
-    // into one refusal that says what happened. A caller that wanted the bytes
-    // whatever they are is not a caller this function has.
+    // DOES IT PARSE? A cipher that finished is not a document that survived.
+    // For GCM (authenticated) a plaintext that is not XML is the sender's
+    // bug and is named as such. For CBC the same question is asked inside
+    // cbcPlaintextUsable(), above, and answered as one refusal.
     if (!parsesAsFragment(plain)) {
       log.debug("Leaving decryptElement(). The plaintext is not XML.");
       return errorCodes.mark({ ok: false, why: 'the decryption produced ' +
-               'something that is not well-formed ' +
-               'XML' + (cipher.tagBytes ? '' : ', and ' + cipher.name + ' is ' +
-               'UNAUTHENTICATED — an altered ciphertext can decrypt to ' +
-               'rubbish with valid padding and no error, which is what a GCM ' +
-               'algorithm would have caught') }, 'STS-KEYS-0023');
+               'something that is not well-formed XML' }, 'STS-KEYS-0023');
     }
     artifact(options, 'SAML 2.0 encrypted element',
              'after decryption (' + cipher.name + ', key ' +
@@ -2583,7 +2725,8 @@ function signJws(payload, key, opts) {
   const spec = jwsSpec(algorithm);
   if (spec.family === 'pq') {
     const pqInput = pqSigningInput(payload, algorithm, options);
-    const pqSig = pqJose.sign(algorithm, key, Buffer.from(pqInput, 'ascii'));
+    const pqSig = jwsSignatureOver(algorithm, key,
+                                   Buffer.from(pqInput, 'ascii'));
     const pqOut = pqInput + '.' + b64u(pqSig);
     log.debug('Leaving signJws(). ' + algorithm + ', ' + pqOut.length +
               ' characters.');
@@ -2601,8 +2744,8 @@ function signJws(payload, key, opts) {
     }
     const input = b64u(Buffer.from(JSON.stringify(header), 'utf8')) + '.' +
                   b64u(Buffer.from(JSON.stringify(body), 'utf8'));
-    const signature = nodeCrypto.sign(spec.hash, Buffer.from(input, 'ascii'),
-        nodeParamsFor(spec, key));
+    const signature = jwsSignatureOver(algorithm, key,
+                                       Buffer.from(input, 'ascii'));
     const out = input + '.' + b64u(signature);
     log.debug('Leaving signJws(). ' + algorithm + ', ' + out.length +
               ' characters.');
@@ -2757,6 +2900,158 @@ function tokenClockSkew() {
 // token whose `alg` is not in the caller's list is refused for that and never
 // for its signature, whichever entry point was used.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// STRICT BASE64URL (#202, 2026-09-24). RFC 7515 section 2 and RFC 7516
+// section 2: every segment of a compact serialization is base64url with no
+// padding and nothing else. Node's decoder SKIPS characters it does not know
+// and ignores the unused low bits of the last character, so until
+// Wycheproof's `base64` vectors a JWS whose MAC had a space, a `?` or a `#`
+// inserted — or whose payload's last character had its unused bits set —
+// verified: the signed text and the decoded bytes were two different things,
+// and one token had many spellings. A segment is now the ONE canonical
+// encoding of its bytes, or it is refused.
+// ---------------------------------------------------------------------------
+// strictBase64url() is a hot path: every segment of every compact JWS and JWE;
+// no Entering/Leaving pair, which would drown the log.
+function strictBase64url(segment, what) {
+  const text = String(segment);
+  const bytes = Buffer.from(text, 'base64url');
+  if (!/^[A-Za-z0-9_-]*$/.test(text) || bytes.toString('base64url') !== text) {
+    throw new Error('the ' + what + ' is not canonical base64url (RFC 7515 ' +
+      'section 2): it carries a character outside the alphabet, padding, or ' +
+      'unused bits that are not zero.');
+  }
+  return bytes;
+}
+
+// ---------------------------------------------------------------------------
+// A KEY A JWS MAY NOT BE VERIFIED WITH (#202, 2026-09-24). Wycheproof's
+// json_web_key vectors found that any key node would load was used:
+//
+//   * an RSA public exponent below 3, or even — RFC 8017 section 3.1 requires
+//     3 <= e, odd. With e = 1 a "signature" is the padded digest itself and
+//     anybody can make one. Refused in EVERY mode: it is not a weak key but a
+//     forgery.
+//   * an RSA modulus with the ROCA fingerprint (CVE-2017-15361, Infineon's
+//     RSALib): such a key is factorable. Refused in every mode, by the
+//     published test — the modulus's residue modulo each of 38 small primes
+//     lies in the subgroup 65537 generates, which a random modulus does with
+//     negligible probability.
+//   * an RSA modulus under 2048 bits — RFC 7518 section 3.3 (and RFC 8230
+//     section 5 for COSE) says a key of 2048 bits or larger MUST be used.
+//   * an HMAC key shorter than the hash output — RFC 7518 section 3.2 says a
+//     key of the same size as the hash output or larger MUST be used. An
+//     EMPTY key is refused in every mode.
+//
+// The two size floors are refused in PRODUCT (`mode.usesBrokenAlgorithms()`):
+// development keeps accepting them so that a client whose key or
+// client_secret is too short can be exercised, which is the same bargain
+// that predicate makes for SHA-1 and rsa-1_5. Answers '' or the sentence.
+// ---------------------------------------------------------------------------
+const ROCA_PRIMES = [3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53,
+                     59, 61, 67, 71, 73, 79, 83, 89, 97, 101, 103, 107, 109,
+                     113, 127, 131, 137, 139, 149, 151, 157, 163, 167];
+const ROCA_SUBGROUPS = ROCA_PRIMES.map(function (p) {
+  const members = {};
+  const g = 65537 % p;
+  let x = 1;
+  do {
+    members[x] = true;
+    x = (x * g) % p;
+  } while (x !== 1);
+  return { p: BigInt(p), members: members };
+});
+
+// rsaKeyProblem() is a hot path: every RSA verification; no Entering/Leaving
+// pair.
+function rsaKeyProblem(publicKey, minimumBits) {
+  if (!publicKey || (publicKey.asymmetricKeyType !== 'rsa' &&
+                     publicKey.asymmetricKeyType !== 'rsa-pss')) {
+    return '';
+  }
+  const details = publicKey.asymmetricKeyDetails || {};
+  const e = BigInt(details.publicExponent || 0);
+  if (e < 3n || e % 2n === 0n) {
+    return 'an RSA public exponent of ' + e + ' (RFC 8017 section 3.1 ' +
+      'requires an odd e of at least 3)';
+  }
+  const n = rsaModulus(publicKey);
+  const roca = ROCA_SUBGROUPS.every(function (row) {
+    return row.members[Number(n % row.p)] === true;
+  });
+  if (roca) {
+    return 'an RSA modulus with the ROCA fingerprint (CVE-2017-15361), ' +
+      'which is factorable';
+  }
+  const bits = Number(details.modulusLength || 0);
+  if (minimumBits && bits < minimumBits && !mode.usesBrokenAlgorithms()) {
+    return 'a ' + bits + '-bit RSA key, where ' + minimumBits + ' bits or ' +
+      'more MUST be used (RFC 7518 section 3.3, RFC 8230 section 5)';
+  }
+  return '';
+}
+
+// The modulus of an RSA public key as a BigInt. Node exports an `rsa` key
+// as a JWK but not an `rsa-pss` one, so the SubjectPublicKeyInfo's
+// RSAPublicKey is read for that.
+// rsaModulus() is a hot path: every RSA verification.
+function rsaModulus(publicKey) {
+  if (publicKey.asymmetricKeyType === 'rsa') {
+    const jwk = publicKey.export({ format: 'jwk' });
+    return BigInt('0x' + Buffer.from(String(jwk.n), 'base64url')
+      .toString('hex'));
+  }
+  const der = publicKey.export({ type: 'spki', format: 'der' });
+  const spki = asn1js.fromBER(new Uint8Array(der).buffer);
+  const bits = /** @type {any} */ (spki.result).valueBlock.value[1];
+  const inner = asn1js.fromBER(bits.valueBlock.valueHexView.slice().buffer);
+  const n = /** @type {any} */ (inner.result).valueBlock.value[0];
+  return BigInt('0x' + Buffer.from(n.valueBlock.valueHexView).toString('hex'));
+}
+
+// A JWK that says it is not for verifying signatures (RFC 7517 sections
+// 4.2 and 4.3): `use` other than `sig`, or `key_ops` without `verify`.
+// jwkUseProblem() is a hot path: every verification with a JWK.
+function jwkUseProblem(key) {
+  if (!key || typeof key !== 'object' || !key.kty) {
+    return '';
+  }
+  if (key.use !== undefined && key.use !== 'sig') {
+    return 'a JWK whose "use" is "' + key.use + '" (RFC 7517 section 4.2)';
+  }
+  if (Array.isArray(key.key_ops) && key.key_ops.indexOf('verify') < 0) {
+    return 'a JWK whose "key_ops" do not include "verify" (RFC 7517 ' +
+      'section 4.3)';
+  }
+  return '';
+}
+
+// hmacKeyProblem() is a hot path: every HMAC verification; no Entering/Leaving
+// pair.
+function hmacKeyProblem(spec, key) {
+  const bytes = Buffer.isBuffer(key) ? key.length
+    : (key && typeof key === 'object' && key.type === 'secret')
+      ? Number(key.symmetricKeySize || 0)
+      : Buffer.byteLength(String(key == null ? '' : key), 'utf8');
+  if (!bytes) {
+    return 'an empty HMAC key';
+  }
+  // RFC 7518 section 3.2: "A key of the same size as the hash output ...
+  // or larger MUST be used". Refused in PRODUCT (#202); development accepts
+  // a shorter one so a client holding one can be exercised
+  // (`mode.usesBrokenAlgorithms()`, REQUIREMENTS `jose-key-sizes`). The key
+  // is what `client_secret_jwt` signs with — the UTF-8 octets of the
+  // client_secret — which is why `oauth2.registeredSecretBytes` mints one
+  // long enough for HS512 by default.
+  const need = nodeCrypto.createHash(spec.hash).digest().length;
+  if (bytes < need && !mode.usesBrokenAlgorithms()) {
+    return 'a ' + (bytes * 8) + '-bit HMAC key for ' + spec.hash + ', where ' +
+      'a key of the hash output\'s size (' + (need * 8) + ' bits) or larger ' +
+      'MUST be used (RFC 7518 section 3.2)';
+  }
+  return '';
+}
+
 function prepareVerification(token, key, options) {
   log.debug('Entering prepareVerification().');
   const parts = String(token || '').split('.');
@@ -2766,8 +3061,12 @@ function prepareVerification(token, key, options) {
       parts.length + '.');
   }
   let header;
+  let signatureBytes;
   try {
-    header = JSON.parse(Buffer.from(parts[0], 'base64url').toString('utf8'));
+    strictBase64url(parts[1], 'JWS payload');
+    signatureBytes = strictBase64url(parts[2], 'JWS signature');
+    header = JSON.parse(strictBase64url(parts[0], 'JWS protected header')
+      .toString('utf8'));
   } catch (e) {
     log.debug('Leaving prepareVerification(). The header is not JSON.');
     throw new Error('the JWS protected header is not readable base64url ' +
@@ -2792,7 +3091,7 @@ function prepareVerification(token, key, options) {
     spec: spec,
     payload: parts[1],
     signingInput: Buffer.from(parts[0] + '.' + parts[1], 'ascii'),
-    signature: Buffer.from(parts[2], 'base64url'),
+    signature: signatureBytes,
     // AN EMPTY PAYLOAD IS A MESSAGE, FOR ONE CALLER (2026-09-13). RFC 8555
     // section 6.3's POST-as-GET is a JWS whose payload is the empty string,
     // and it is signed exactly like any other. Only a caller that says so gets
@@ -2805,12 +3104,97 @@ function prepareVerification(token, key, options) {
     // JWK, which is what a verifier is handed in practice. Read HERE rather
     // than at the check, so that a key that cannot be read is refused in the
     // same place whichever entry point was used.
-    prepared.pub = (key && key.pub) ? Buffer.from(key.pub, 'base64url')
-      : (typeof key === 'string' ? Buffer.from(key, 'base64url')
-                                 : Buffer.from(key));
+    prepared.pub = pqPublicBytes(key);
   }
   log.debug('Leaving prepareVerification(). alg=' + header.alg);
   return prepared;
+}
+
+// An AKP public key as bytes: a JWK's `pub`, its base64url text, or bytes.
+function pqPublicBytes(key) {
+  log.debug('Entering pqPublicBytes().');
+  log.debug('Leaving pqPublicBytes().');
+  return (key && key.pub) ? Buffer.from(key.pub, 'base64url')
+    : (typeof key === 'string' ? Buffer.from(key, 'base64url')
+                               : Buffer.from(key));
+}
+
+// ---------------------------------------------------------------------------
+// THE SIGNATURE CHECK OF A JWS, OVER OCTETS A CALLER NAMES (#202, 2026-09-24).
+//
+// `verifyCompactJws()` is this and nothing more once it has read the token
+// and refused an algorithm the caller did not name: the same `verifyBytes()`
+// for every classical algorithm and the same `pqJose.verify()` for the
+// post-quantum ones. It is a function of its own so that an EXTERNAL answer
+// can be held to exactly the check a JWS gets — C2SP Wycheproof's vectors
+// (`tests/wycheproof.js`) and NIST's ACVP ones (`tests/acvp_pqc.js`) are
+// signatures over arbitrary octets, which no compact serialization can carry,
+// since what a JWS signs is always `BASE64URL(header) '.' BASE64URL(payload)`.
+// Refactored rather than copied, so a vector that passes here passes for the
+// same reason a token does. Returns true or false, and THROWS where the token
+// path throws (an ECDSA signature of the wrong length, a key that will not
+// load, an algorithm this service does not implement).
+// ---------------------------------------------------------------------------
+function checkPreparedSignature(prepared, key) {
+  log.debug('Entering checkPreparedSignature(). alg=' + prepared.header.alg);
+  const ok = prepared.spec.family === 'pq'
+    ? pqJose.verify(prepared.header.alg, prepared.pub, prepared.signingInput,
+                    prepared.signature)
+    : verifyBytes(prepared, key);
+  log.debug('Leaving checkPreparedSignature(). ' + !!ok);
+  return !!ok;
+}
+
+function jwsSignatureValid(alg, key, signingInput, signature) {
+  log.debug('Entering jwsSignatureValid(). alg=' + alg);
+  const spec = jwsSpec(alg);
+  const prepared = {
+    header: { alg: alg },
+    spec: spec,
+    signingInput: Buffer.from(signingInput),
+    signature: Buffer.from(signature)
+  };
+  if (spec.family === 'pq') {
+    prepared.pub = pqPublicBytes(key);
+  }
+  const ok = checkPreparedSignature(prepared, key);
+  log.debug('Leaving jwsSignatureValid(). ' + ok);
+  return ok;
+}
+
+// ---------------------------------------------------------------------------
+// THE SIGNATURE A JWS CARRIES, OVER OCTETS A CALLER NAMES — for the
+// algorithms this file signs ITSELF: EdDSA and ES256K (the `ownSigner` rows)
+// and every post-quantum one. `signJws()` signs through this, so the
+// deterministic ML-DSA and SLH-DSA signatures NIST and Wycheproof publish
+// can be compared with what this service actually produces. The rows
+// `jsonwebtoken` signs are refused by name: this function would otherwise
+// be a second signer for them that nothing in the service uses.
+// ---------------------------------------------------------------------------
+//
+// `internal.deterministic` (#203) asks pq_jose for FIPS 204/205's
+// DETERMINISTIC variant instead of the hedged one every other caller gets.
+// It exists for `tests/acvp_pqc.js`, which compares with NIST's
+// deterministic vectors, and is not a setting: signJws() never passes it.
+function jwsSignatureOver(alg, key, signingInput, internal) {
+  log.debug('Entering jwsSignatureOver(). alg=' + alg);
+  const spec = jwsSpec(alg);
+  const input = Buffer.from(signingInput);
+  if (spec.family === 'pq') {
+    const pqSig = Buffer.from(pqJose.sign(alg, key, input,
+      { deterministic: !!(internal && internal.deterministic === true) }));
+    log.debug('Leaving jwsSignatureOver(). Post-quantum.');
+    return pqSig;
+  }
+  if (!spec.ownSigner) {
+    log.debug('Leaving jwsSignatureOver(). jsonwebtoken signs this one.');
+    throw new Error('jwsSignatureOver: ' + alg + ' is signed by ' +
+      'jsonwebtoken inside signJws(), not by this file.');
+  }
+  const signature = nodeCrypto.sign(spec.hash, input,
+                                    nodeParamsFor(spec, key));
+  log.debug('Leaving jwsSignatureOver(). ' + alg + '.');
+  return signature;
 }
 
 // Everything but post-quantum, which is every algorithm whose check is
@@ -2820,7 +3204,17 @@ function verifyBytes(prepared, key) {
   const spec = prepared.spec;
   const signingInput = prepared.signingInput;
   const signature = prepared.signature;
+  const misuse = jwkUseProblem(key);
+  if (misuse) {
+    log.debug('Leaving verifyBytes(). ' + misuse);
+    throw new Error('this JWS cannot be verified with ' + misuse + '.');
+  }
   if (spec.family === 'hmac') {
+    const weak = hmacKeyProblem(spec, key);
+    if (weak) {
+      log.debug('Leaving verifyBytes(). ' + weak);
+      throw new Error('this JWS cannot be verified with ' + weak + '.');
+    }
     const expected = nodeCrypto.createHmac(spec.hash, key)
       .update(signingInput).digest();
     log.debug('Leaving verifyBytes(). HMAC.');
@@ -2847,6 +3241,12 @@ function verifyBytes(prepared, key) {
   } catch (e) {
     log.debug('Leaving verifyBytes(). The key would not load.');
     throw new Error('the verification key could not be read: ' + e.message);
+  }
+  const weakRsa = spec.family === 'rsa' ? rsaKeyProblem(publicKey, 2048)
+                                        : '';
+  if (weakRsa) {
+    log.debug('Leaving verifyBytes(). ' + weakRsa);
+    throw new Error('this JWS cannot be verified with ' + weakRsa + '.');
   }
   log.debug('Leaving verifyBytes(). ' + spec.family + '.');
   return nodeCrypto.verify(spec.hash, signingInput,
@@ -2883,10 +3283,7 @@ function verifyCompactJws(token, key, opts) {
   const options = opts || {};
   log.debug('Entering verifyCompactJws().');
   const prepared = prepareVerification(token, key, options);
-  const ok = prepared.spec.family === 'pq'
-    ? pqJose.verify(prepared.header.alg, prepared.pub, prepared.signingInput,
-                    prepared.signature)
-    : verifyBytes(prepared, key);
+  const ok = checkPreparedSignature(prepared, key);
   const out = finishVerification(prepared, ok);
   log.debug('Leaving verifyCompactJws(). ' + prepared.header.alg +
             ' verified.');
@@ -2997,6 +3394,24 @@ function verifyJws(token, key, opts) {
     log.debug('Leaving verifyJws(). ' + peeked.alg + ' via the shared ' +
               'verifier.');
     return checkJwtClaims(verified.claims, options);
+  }
+  // The library path is held to the same two rules as the shared verifier
+  // (#202): one canonical spelling of each segment, and — for an HMAC — a
+  // key RFC 7518 section 3.2 allows. jsonwebtoken already refuses an RSA
+  // key under 2048 bits by default (its allowInsecureKeySizes).
+  const segments = String(token || '').split('.');
+  if (segments.length === 3) {
+    strictBase64url(segments[0], 'JWS protected header');
+    strictBase64url(segments[1], 'JWS payload');
+    strictBase64url(segments[2], 'JWS signature');
+  }
+  if (peeked && JWS_ALGS[peeked.alg] &&
+      JWS_ALGS[peeked.alg].family === 'hmac') {
+    const weak = hmacKeyProblem(JWS_ALGS[peeked.alg], key);
+    if (weak) {
+      log.debug('Leaving verifyJws(). ' + weak);
+      throw new Error('this JWS cannot be verified with ' + weak + '.');
+    }
   }
   const verifyOptions = Object.assign({}, options);
   if (verifyOptions.algorithms === undefined) {
@@ -3277,11 +3692,64 @@ function openContent(spec, cek, iv, aad, ciphertext, tag) {
     log.debug('Leaving openContent(). CBC-HMAC.');
     return out;
   }
-  const decipher = nodeCrypto.createDecipheriv(spec.cipher, cek, iv);
+  // THE IV IS 96 BITS AND THE TAG 128, AND NOTHING ELSE IS OPENED (#202,
+  // 2026-09-24). RFC 7518 section 5.3 fixes both. Node's GCM takes any IV
+  // length and — without `authTagLength` — any tag from 4 octets up, so
+  // until Wycheproof's truncated-tag vectors a JWE whose tag had been cut to
+  // four octets was OPENED: an attacker forging content needed to guess 32
+  // bits of tag, not 128. Both are checked here, before the cipher, and the
+  // tag length is also pinned in the decipher itself.
+  if (iv.length !== 12 || tag.length !== 16) {
+    log.debug('Leaving openContent(). A ' + iv.length + '-octet IV or a ' +
+              tag.length + '-octet tag.');
+    throw new Error('an AES-GCM JWE carries a 96-bit IV and a 128-bit ' +
+      'authentication tag (RFC 7518 section 5.3); this one has ' +
+      (iv.length * 8) + ' and ' + (tag.length * 8) + ' bits');
+  }
+  const decipher = /** @type {import('crypto').DecipherGCM} */ (
+    nodeCrypto.createDecipheriv(spec.cipher, cek, iv,
+                                { authTagLength: 16 }));
   decipher.setAAD(aad);
   decipher.setAuthTag(tag);
   const out = Buffer.concat([decipher.update(ciphertext), decipher.final()]);
   log.debug('Leaving openContent(). GCM.');
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// THE CONTENT HALF OF A JWE, BY `enc` NAME (#202, 2026-09-24). What
+// `encryptJweCompact()` and `decryptJweCompact()` call, exported so that an
+// external answer — Wycheproof's AES-GCM and A*CBC-HS* vectors — reaches the
+// same two functions rather than node's cipher directly. A compact JWE
+// cannot carry those vectors itself: its AAD is always the protected header.
+// ---------------------------------------------------------------------------
+function jweContentSpec(enc) {
+  log.debug('Entering jweContentSpec(). enc=' + enc);
+  const spec = JWE_ENCS[String(enc)];
+  if (!spec) {
+    log.debug('Leaving jweContentSpec(). Unknown.');
+    throw new Error('no JWE content encryption "' + enc + '"; this service ' +
+      'speaks ' + Object.keys(JWE_ENCS).join(', ') + '.');
+  }
+  log.debug('Leaving jweContentSpec().');
+  return spec;
+}
+
+function sealJweContent(enc, cek, iv, aad, plaintext) {
+  log.debug('Entering sealJweContent(). enc=' + enc);
+  const out = sealContent(jweContentSpec(enc), Buffer.from(cek),
+                          Buffer.from(iv), Buffer.from(aad),
+                          Buffer.from(plaintext));
+  log.debug('Leaving sealJweContent().');
+  return out;
+}
+
+function openJweContent(enc, cek, iv, aad, ciphertext, tag) {
+  log.debug('Entering openJweContent(). enc=' + enc);
+  const out = openContent(jweContentSpec(enc), Buffer.from(cek),
+                          Buffer.from(iv), Buffer.from(aad),
+                          Buffer.from(ciphertext), Buffer.from(tag));
+  log.debug('Leaving openJweContent().');
   return out;
 }
 
@@ -3319,8 +3787,19 @@ function concatKdf(z, keyBytes, algId) {
 
 const AES_KW_IV = Buffer.from('A6A6A6A6A6A6A6A6', 'hex');
 
+// RFC 3394 section 2.2: the key data is n >= 2 64-bit semiblocks, so the
+// wrapped value is (n + 1) of them — at least 24 octets. Node's
+// `id-aes*-wrap` unwrapped an EMPTY value to an empty key until Wycheproof's
+// InvalidWrappingSize vectors (#202, 2026-09-24); both directions refuse a
+// size the RFC does not define before the cipher is asked.
 function aesKeyWrap(kek, plaintextKey) {
   log.debug('Entering aesKeyWrap().');
+  if (plaintextKey.length < 16 || plaintextKey.length % 8) {
+    log.debug('Leaving aesKeyWrap(). ' + plaintextKey.length + ' octets.');
+    throw new Error('AES Key Wrap wraps a whole number of 64-bit ' +
+      'semiblocks, at least two (RFC 3394 section 2.2); this key is ' +
+      plaintextKey.length + ' octets.');
+  }
   const cipher = nodeCrypto.createCipheriv('id-aes' + (kek.length * 8) +
       '-wrap', kek, AES_KW_IV);
   const out = Buffer.concat([cipher.update(plaintextKey), cipher.final()]);
@@ -3330,6 +3809,12 @@ function aesKeyWrap(kek, plaintextKey) {
 
 function aesKeyUnwrap(kek, wrapped) {
   log.debug('Entering aesKeyUnwrap().');
+  if (wrapped.length < 24 || wrapped.length % 8) {
+    log.debug('Leaving aesKeyUnwrap(). ' + wrapped.length + ' octets.');
+    throw new Error('an AES-wrapped key is a whole number of 64-bit ' +
+      'semiblocks, at least three (RFC 3394 section 2.2); this one is ' +
+      wrapped.length + ' octets.');
+  }
   const decipher = nodeCrypto.createDecipheriv('id-aes' + (kek.length * 8) +
       '-wrap', kek, AES_KW_IV);
   const out = Buffer.concat([decipher.update(wrapped), decipher.final()]);
@@ -3606,12 +4091,22 @@ function unwrapCek(header, encryptedKey, options, spec) {
           'section 4.7.1); this one has ' +
           (header.iv ? 'no tag' : (header.tag ? 'no iv' : 'neither')) + '.');
       }
+      // RFC 7518 section 4.7.1: a 96-bit `iv` and a 128-bit `tag`, and a
+      // shorter tag is refused rather than checked — see openContent().
+      const wrapIv = Buffer.from(String(header.iv), 'base64url');
+      const wrapTag = Buffer.from(String(header.tag), 'base64url');
+      if (wrapIv.length !== 12 || wrapTag.length !== 16) {
+        throw new Error('a ' + alg + ' JWE carries a 96-bit `iv` and a ' +
+          '128-bit `tag` (RFC 7518 section 4.7.1); this one has ' +
+          (wrapIv.length * 8) + ' and ' + (wrapTag.length * 8) + ' bits.');
+      }
       // A GCM decipher; the name is built, so the checker cannot see the mode.
       const decipher = /** @type {import('crypto').DecipherGCM} */ (
-        nodeCrypto.createDecipheriv('aes-' + (kek.length * 8) + '-gcm', kek,
-                                    Buffer.from(String(header.iv),
-                                                'base64url')));
-      decipher.setAuthTag(Buffer.from(String(header.tag), 'base64url'));
+        nodeCrypto.createDecipheriv(
+          /** @type {import('crypto').CipherGCMTypes} */
+          ('aes-' + (kek.length * 8) + '-gcm'), kek, wrapIv,
+          { authTagLength: 16 }));
+      decipher.setAuthTag(wrapTag);
       const out = Buffer.concat([decipher.update(encryptedKey),
                                  decipher.final()]);
       log.debug('Leaving unwrapCek(). AES-GCM key wrap.');
@@ -3714,7 +4209,8 @@ function decryptJweCompact(compact, opts) {
   }
   let header;
   try {
-    header = JSON.parse(Buffer.from(parts[0], 'base64url').toString('utf8'));
+    header = JSON.parse(strictBase64url(parts[0], 'JWE protected header')
+      .toString('utf8'));
   } catch (e) {
     log.debug('Leaving decryptJweCompact(). The header is not JSON.');
     throw new Error('the JWE protected header is not valid base64url JSON: ' +
@@ -3770,6 +4266,18 @@ function decryptJweCompact(compact, opts) {
       'development mode and when it is rotated.');
   }
 
+  // Every other segment strictly (see strictBase64url()), once the header
+  // has been read and its refusals by NAME given — a JWE whose tag or IV has
+  // a stray character must not open as though it had none.
+  for (let i = 1; i < 5; i++) {
+    try {
+      strictBase64url(parts[i], ['', 'JWE encrypted key', 'JWE IV',
+                                 'JWE ciphertext', 'JWE tag'][i]);
+    } catch (e) {
+      log.debug('Leaving decryptJweCompact(). A segment is not base64url.');
+      throw e;
+    }
+  }
   const spec = JWE_ENCS[header.enc];
   let cek;
   try {
@@ -5486,6 +5994,13 @@ async function verifyRawSignature(scheme, key, data, signature) {
       return false;
     }
     const type = String(publicKey.asymmetricKeyType || '');
+    // An exponent or a modulus that makes a forgery (#202,
+    // rsaKeyProblem()); no size floor here — a TPM or an attestor's key is
+    // what its protocol made it.
+    if (rsaKeyProblem(publicKey, 0)) {
+      log.debug("Leaving verifyRawSignature(). A forgeable RSA key.");
+      return false;
+    }
     let ok = false;
     if (s.family === 'rsa-pkcs1' && (type === 'rsa' || type === 'rsa-pss')) {
       ok = nodeCrypto.verify(s.hash, message, { key: publicKey,
@@ -5673,6 +6188,31 @@ async function verifyPkcs7SignedData(der, options) {
     embeddedDers: embedded.map(function (one) {
       return Buffer.from(one.toSchema().toBER(false));
     })
+  };
+}
+
+// A SHA-256 FED AS BYTES ARRIVE (#215): `update(chunk)` for each chunk, then
+// `hex()` once, lowercase. A dataset upload (`risk/risk_upload.ts`) is hashed
+// on its way to disk rather than read a second time afterwards — a file of
+// several hundred megabytes read twice is the cost this saves. `update()` is
+// a hot path (one call per chunk of the upload), so it logs nothing.
+function sha256Digester() {
+  log.debug("Entering sha256Digester().");
+  const hash = nodeCrypto.createHash('sha256');
+  let digest = '';
+  log.debug("Leaving sha256Digester().");
+  return {
+    update: function (chunk) {
+      hash.update(chunk);
+    },
+    hex: function () {
+      log.debug("Entering sha256Digester().hex().");
+      if (!digest) {
+        digest = hash.digest('hex');
+      }
+      log.debug("Leaving sha256Digester().hex().");
+      return digest;
+    }
   };
 }
 
@@ -6065,6 +6605,13 @@ function verifyCoseSignature(coseAlg, key, data, signature) {
       return false;
     }
     const type = String(publicKey.asymmetricKeyType || '');
+    // RFC 8230 section 5: 2048 bits or more, and never an exponent or a
+    // modulus that makes a forgery (#202, see rsaKeyProblem()).
+    const weak = rsaKeyProblem(publicKey, 2048);
+    if (weak) {
+      log.debug("Leaving verifyCoseSignature(). " + weak);
+      return false;
+    }
     let ok = false;
     if (spec.family === 'ecdsa' && type === 'ec') {
       ok = nodeCrypto.verify(spec.hash, message,
@@ -7162,6 +7709,18 @@ module.exports = {
   jwsSpec: jwsSpec,
   protectedHeaderFor: protectedHeaderFor,
   verifyCompactJws: verifyCompactJws,
+  // The byte-level halves of the JOSE doors (#202): what external test
+  // vectors are held to. See each function's head.
+  jwsSignatureValid: jwsSignatureValid,
+  jwsSignatureOver: jwsSignatureOver,
+  sealJweContent: sealJweContent,
+  openJweContent: openJweContent,
+  aesKeyWrap: aesKeyWrap,
+  aesKeyUnwrap: aesKeyUnwrap,
+  // The CipherValue opener decryptElement() uses, exported so Wycheproof
+  // can hold its PADDING verdict to vectors — decryptElement() itself
+  // answers every CBC failure identically, on purpose (STS-KEYS-0078).
+  openXmlContent: openXmlContent,
   checkJwtClaims: checkJwtClaims,
   JWE_ALG: JWE_ALG,
   JWE_ALGS: JWE_ALGS,
@@ -7242,6 +7801,7 @@ module.exports = {
   tpmMakeCredential: tpmMakeCredential,
   verifyPkcs7SignedData: verifyPkcs7SignedData,
   sha256OfFile: sha256OfFile,
+  sha256Digester: sha256Digester,
   // --- section 9: the Kerberos PRF and KRB-FX-CF2 (#173) ---
   KRB5_PRF_ETYPES: KRB5_PRF_ETYPES,
   krb5Nfold: krb5Nfold,

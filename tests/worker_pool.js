@@ -68,12 +68,10 @@ const log = require('bunyan').createLogger({ name: 'worker_pool',
 const MESSAGE = Buffer.from('the worker pool signs exactly what this ' +
                             'process would have signed', 'utf8');
 
-// The three composites whose traditional half is ECDSA. Node's ECDSA is
-// randomized (RFC 6979's deterministic variant is not what OpenSSL does), so
-// two signatures over one message differ and MUST — a deterministic ECDSA
-// nonce leaking would be a private key leaking. They are held to
-// cross-verification instead, which is the strongest thing that is true.
-const RANDOMIZED = ['ML-DSA-44-ES256', 'ML-DSA-65-ES256', 'ML-DSA-87-ES384'];
+// Every algorithm here signs RANDOMIZED since #203: ML-DSA and SLH-DSA are
+// hedged (FIPS 204 3.4, FIPS 205 9.2), and the ECDSA composites' traditional
+// half always was. So two signatures over one message differ, and each side
+// is held to cross-verification, the strongest thing that is true.
 
 // Section B's algorithm. SLH-DSA-SHA2-128s takes about two seconds to sign —
 // slow enough that a blocked event loop is unmistakable, and six times faster
@@ -132,7 +130,7 @@ function withWorkers(count, run) {
 
 module.exports = {
   name: 'worker_pool',
-  describe: 'the same bytes, off this thread, on the right worker, nothing ' +
+  describe: 'the same signature, off this thread, on the right worker, nothing ' +
             'lost when one dies, and nothing left hanging when one simply ' +
             'never answers',
 
@@ -147,19 +145,17 @@ module.exports = {
         const pair = pqJose.generate(alg);
         const here = pqJose.sign(alg, pair.priv, MESSAGE);
         const there = await pqJose.signAsync(alg, pair.priv, MESSAGE);
-        if (RANDOMIZED.indexOf(alg) === -1) {
-          t.check(Buffer.compare(Buffer.from(here), Buffer.from(there)) === 0,
-                  alg + ': a pooled signature is byte-identical',
-                  here.length + ' bytes');
-        } else {
-          t.check(here.length === there.length,
-                  alg + ': a pooled signature is the same length — its ECDSA ' +
-                  'half is randomized, so it cannot be the same bytes',
-                  here.length + ' bytes');
-        }
-        // Each side verifies what the other made. For the randomized three
-        // this is the whole assertion; for the other seven it is the check
-        // that byte equality was not two identical wrong answers.
+        // HEDGED SINCE #203: every ML-DSA and SLH-DSA signature (and every
+        // composite's ML-DSA half) draws fresh randomness, so two signatures
+        // of one message are never the same bytes — the pool's and this
+        // process's are asserted to DIFFER, which is the hedging itself seen
+        // from here, and to be the same length.
+        t.check(here.length === there.length &&
+                Buffer.compare(Buffer.from(here), Buffer.from(there)) !== 0,
+                alg + ': a pooled signature is the same length and, being ' +
+                'hedged, not the same bytes', here.length + ' bytes');
+        // Each side verifies what the other made — the whole assertion that
+        // the worker computes what this process would have.
         t.check(await pqJose.verifyAsync(alg, pair.pub, MESSAGE, here),
                 alg + ': a worker verifies what this process signed');
         t.check(pqJose.verify(alg, pair.pub, MESSAGE, there),
@@ -175,8 +171,14 @@ module.exports = {
       const opts = { algorithm: 'ML-DSA-44', keyid: 'k1' };
       const here = crypto.signJws(payload, pair.priv, opts);
       const there = await crypto.signJwsAsync(payload, pair.priv, opts);
-      t.equal(there, here,
-              'signJwsAsync() produces the same compact JWS as signJws()');
+      // The same header and payload; the signature is hedged (#203), so it
+      // is compared by verifying, below and here.
+      t.equal(there.split('.').slice(0, 2).join('.'),
+              here.split('.').slice(0, 2).join('.'),
+              'signJwsAsync() produces the same signing input as signJws()');
+      t.check(!!(await crypto.verifyCompactJwsAsync(there, pair.pub,
+        { algorithms: ['ML-DSA-44'] })).claims,
+        'and its signature verifies');
       const read = await crypto.verifyCompactJwsAsync(here, pair.pub,
         { algorithms: ['ML-DSA-44'] });
       t.equal(read.claims.sub, 'alice',
@@ -339,9 +341,10 @@ module.exports = {
               'and the next signature drains it rather than waiting for a ' +
               'restart');
       t.check(pool.stats().inProcess, 'the pool says it is computing here');
-      t.check(Buffer.compare(Buffer.from(here), Buffer.from(there)) === 0,
-              'and signAsync() still answers, with the same bytes, in this ' +
-              'process');
+      t.check(pqJose.verify('ML-DSA-44', pair.pub, MESSAGE, there) &&
+              here.length === there.length,
+              'and signAsync() still answers, with a signature that ' +
+              'verifies, in this process');
     });
 
     // An unknown job kind is refused by the pool rather than forked out to a

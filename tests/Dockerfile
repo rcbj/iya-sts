@@ -251,6 +251,18 @@ RUN /usr/src/corpora/fetch-w3c-xmlsec.sh /usr/src/corpora/w3c-xmlsec.sha256 \
       /usr/src/corpora/w3c-xmlsec
 ENV STS_W3C_XMLSEC_DIR=/usr/src/corpora/w3c-xmlsec
 
+# THE EXTERNAL TEST VECTORS (#202, #203): C2SP Wycheproof (Apache-2.0) and
+# NIST ACVP (public domain), for tests/wycheproof.js and tests/acvp_pqc.js.
+# Fetched HERE, at a pinned commit, each checked against
+# tests/tools/vectors.sha256 — a mismatch fails the build — because both
+# carry test keys and this repository commits no key material. Above the
+# source copy so the ~130 MB is fetched once and cached until the script or
+# the checksums change; tests/vectors is in .dockerignore, so `COPY . ./`
+# below cannot replace it with a host copy. tests/CLAUDE.md, *The external
+# test vectors*, is the provenance.
+COPY tests/tools/fetch-vectors.sh tests/tools/vectors.sha256 /usr/src/vector-fetch/
+RUN /usr/src/vector-fetch/fetch-vectors.sh /usr/src/sts/tests/vectors
+
 # The repository. The root .dockerignore decides what is in it — see the header
 # — and the guard is what a context missing the suite says instead of failing
 # eighty lines later inside node with a message about a module.

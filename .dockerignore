@@ -162,3 +162,7 @@ debugger/embedded/
 # The one native module (#40): compiled inside an image build only, by
 # build-native.sh, and never committed or sent from a host.
 spiffe/native/*.node
+
+# Fetched at image build by tests/tools/fetch-vectors.sh, never sent
+# from a host (a local copy would otherwise overwrite the checked one).
+tests/vectors

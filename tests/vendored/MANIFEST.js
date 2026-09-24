@@ -370,6 +370,13 @@ const JOBS = [
   // refused SCIM Basic password recorded under a digest, never the name.
   // `local: true`: this repository's own /admin and /admin-api.
   { file: 'sts_admin_risk.js',           browser: false, local: true },
+  // A RISK DATASET UPLOADED AS A FILE (#215): a synthetic .gz and .zip
+  // through the console's multipart form (a real session and CSRF token)
+  // and through POST /admin-api/risk/upload, each watched from loading to
+  // active, and the refusals — over the cap, a zip of two files, a bomb, a
+  // missing token, the wrong body type. `local: true`: this repository's own
+  // /admin and /admin-api.
+  { file: 'sts_admin_risk_upload.js',    browser: false, local: true },
   // SIGNING KEY ROTATION OVER HTTP (#42/#48, 2026-09-22): the refusals, a
   // rotation keeping the retired key verifying, the /admin/keys Rotate form,
   // and an emergency after which an earlier token is refused — in a
@@ -987,7 +994,13 @@ const LOCAL_HELPERS = [
   // service dials a job's listeners at. A product-mode service refuses a
   // foreign certificate that names no list, so every chain this suite mints
   // names one — `tests/tools/pep-credential.js` included.
-  'test_crl_host.js'
+  'test_crl_host.js',
+  // A ZIP ARCHIVE BUILT FROM THE FORMAT (#215), for the dataset upload's
+  // tests — `sts_admin_risk_upload.js` and the in-process
+  // `tests/risk_upload.js`: one entry, several, a directory and __MACOSX/
+  // beside the data, a declared size that lies. Node's zlib; nothing from
+  // yauzl, which is the reader under test.
+  'zip_writer.js'
 ];
 
 // ---------------------------------------------------------------------------
