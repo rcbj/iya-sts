@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3430** of them, in **38** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3431** of them, in **38** subsystems.
 
 ## Where a code appears
 
@@ -63,7 +63,7 @@ is an ordinary outcome.
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 25
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 47
 * [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 248
-* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 554
+* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 555
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 84
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 20
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 16
@@ -1707,6 +1707,7 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0672` | The grant management API was called without the grant_management_query or grant_management_revoke scope a declaring client holds, or for another client's grant (#142). | insufficient_scope (HTTP 403) |
 | `STS-OAUTH-0673` | The grant management API was asked about a grant_id nobody holds (#142). | HTTP 404 |
 | `STS-OAUTH-0674` | The grant management endpoint failed unexpectedly (#142). | server_error (HTTP 500) |
+| `STS-OAUTH-0675` | A token request carried a client_assertion that names no client: no client_id in the body and no sub in the assertion, so there is no registered client to verify it against (RFC 7523 section 3 item B, #176). | invalid_client (HTTP 401), RFC 6749 section 5.2 |
 
 ## STS-SAML
 

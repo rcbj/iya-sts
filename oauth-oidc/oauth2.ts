@@ -10422,6 +10422,25 @@ class OAuth2Server {
     const client = self.clientFrom(req, body);
     const grant = String(body.grant_type || '');
     res.set('Cache-Control', 'no-store');
+    // AN ASSERTION THAT NAMES NO CLIENT IS A FAILED CLIENT AUTHENTICATION
+    // (#176, every mode). RFC 7523 section 3 item B: the `sub` MUST be the
+    // client_id — and with no client_id in the body either there is nothing
+    // to verify the assertion against. Until 2026-09-24 the request went on
+    // as a client-less one and was refused later by whatever the grant
+    // checked first (`invalid_grant` at a code redemption), which named the
+    // wrong thing; RFC 6749 section 5.2 says a client authentication that
+    // failed is `invalid_client`. The OpenID conformance suite's FAPI plans
+    // send exactly this assertion and accept invalid_client or
+    // invalid_request.
+    if (body.client_assertion && !client.client_id) {
+      log.debug("Leaving the token endpoint. The client_assertion names no " +
+                "client.");
+      errorCodes.mark(res, 'STS-OAUTH-0675');
+      log.debug("Leaving OAuth2Server.tokenGrant().");
+      return self.oauthError(res, 401, 'invalid_client', 'The ' +
+        'client_assertion names no client: it carries no sub, and the ' +
+        'request no client_id (RFC 7523 section 3).');
+    }
     const presented = self.presentedClientAuthentication(req, body);
     let registeredClient = applications.clientConfigOf(client.client_id);
     // A KEY WRITTEN BY ANOTHER PROCESS A MOMENT AGO (2026-09-23). The console

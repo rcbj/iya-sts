@@ -6884,6 +6884,12 @@ const CODES = [
   { code: 'STS-OAUTH-0674',
     summary: 'The grant management endpoint failed unexpectedly (#142).',
     spec: 'server_error (HTTP 500)' },
+  { code: 'STS-OAUTH-0675',
+    summary: 'A token request carried a client_assertion that names no ' +
+      'client: no client_id in the body and no sub in the assertion, so ' +
+      'there is no registered client to verify it against (RFC 7523 ' +
+      'section 3 item B, #176).',
+    spec: 'invalid_client (HTTP 401), RFC 6749 section 5.2' },
   { code: 'STS-SAML-0001',
     summary: 'A SAML 2.0 sign-in resumed with a held-request id that is ' +
       'unknown or has expired (saml2.requestTtlMin), so there is no ' +

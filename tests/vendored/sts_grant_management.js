@@ -26,6 +26,9 @@
 //      its access token inactive at introspection.
 //   8. THE CONSOLE'S TWIN: /admin-api/grants lists a grant, revoke-grant
 //      revokes it, and a second time is refused.
+//   9. (#176) A client revoking with a token minted under the grant, then
+//      asking again with it: 404 for that grant, 401 for any other; and a
+//      client_assertion naming no client is invalid_client.
 //
 // OWNED HERE (local: true): this repository's authorization server and its
 // management API.
@@ -387,7 +390,43 @@ async function test() {
     assert.strictEqual(again.status, 400);
   });
 
-  assert.ok(checks >= 8, "only " + checks + " checks ran");
+  log.info("=== 9. a token revoked with its grant, and a nameless assertion " +
+           "(#176) ===");
+  // The OpenID conformance suite's query-and-revoke: the client revokes with
+  // a token minted UNDER the grant, then asks about it with the same token.
+  const own = await tokens(A, "openid grant_management_query " +
+    "grant_management_revoke", { grant_management_action: "create" });
+  const ownDeleted = await grantCall("DELETE", own.grant_id,
+                                     own.access_token);
+  const ownGone = await grantCall("GET", own.grant_id, own.access_token);
+  const ownElsewhere = await grantCall("GET", grantId, own.access_token);
+  // RFC 7523 section 3 item B: an assertion with no sub, and no client_id
+  // beside it, names no client to authenticate.
+  const nameless = [{ alg: "ES256", typ: "JWT" },
+    { iss: "nobody", aud: realmBase, exp: Math.floor(Date.now() / 1000) + 60,
+      jti: "nameless-" + STAMP }].map(function (part) {
+    return Buffer.from(JSON.stringify(part)).toString("base64url");
+  }).join(".") + ".c2ln";
+  const namelessAnswer = await send(realmBase + "/oauth2/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ grant_type: "client_credentials",
+      client_assertion_type:
+        "urn:ietf:params:oauth:client-assertion-type:jwt-bearer",
+      client_assertion: nameless }).toString() });
+  check("a token revoked with its grant is told that grant is gone (404) " +
+        "and refused elsewhere (401); a nameless assertion is " +
+        "invalid_client", function () {
+    assert.strictEqual(ownDeleted.status, 204, ownDeleted.raw.slice(0, 300));
+    assert.strictEqual(ownGone.status, 404, ownGone.raw.slice(0, 300));
+    assert.strictEqual(ownElsewhere.status, 401,
+                       ownElsewhere.raw.slice(0, 300));
+    assert.strictEqual(namelessAnswer.status, 401,
+                       namelessAnswer.raw.slice(0, 300));
+    assert.strictEqual(namelessAnswer.body.error, "invalid_client");
+  });
+
+  assert.ok(checks >= 9, "only " + checks + " checks ran");
   log.info(checks + " check(s) passed.");
   log.info("Test completed successfully.");
   log.debug("Leaving test().");
