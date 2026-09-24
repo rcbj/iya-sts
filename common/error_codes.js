@@ -1764,6 +1764,13 @@ const CODES = [
     summary: 'An XML element encrypted by ECDH-ES key agreement was handed ' +
       'to a recipient whose private key is not an EC key.',
     spec: 'the caller\'s refusal' },
+  { code: 'STS-KEYS-0075',
+    summary: 'A certificate authority another process in this service sent ' +
+      'publishes a tier this process holds as superseded — a copy from ' +
+      'before a rebuild — so it was refused, and the hierarchy held here ' +
+      'was asserted again where it is itself consistent.',
+    spec: 'none — logged. A supersession is permanent; adopting the copy ' +
+      'put a replaced Intermediate back in every process' },
   { code: 'STS-PKI-0001',
     summary: 'A certificate-authority use case prefers a key algorithm this ' +
       'service cannot use, so its Issuing CA was built with the ' +

@@ -682,6 +682,95 @@ async function run(t) {
 
     keystore.reset();
   }());
+
+  // ---------------------------------------------------------------------------
+  // A CERTIFICATE AUTHORITY FROM BEFORE A REBUILD IS REFUSED ON THE POOL'S
+  // CHANNEL (2026-09-24). The front process saved a new realm's branch from
+  // its copy while a worker rebuilt that branch; the save arrived after the
+  // rebuild, every process adopted it, and the realm published the
+  // Intermediate the Root's CRL had just superseded (single-node,
+  // sts_gnap_mtls). A chain publishing a tier the held rows call superseded
+  // is that old copy.
+  // ---------------------------------------------------------------------------
+  (function () {
+    const keystore = require('../common/keystore');
+    keystore.reset();
+    const published = [];
+    keystore.setPkiPublisher(function (id, chain) {
+      published.push({ id: id, chain: chain });
+    });
+    const rebuilt = {
+      intermediate: { serialHex: 'b1' },
+      issuing: { jose: { serialHex: 'b2' } },
+      revoked: { intermediate: [{ serialHex: 'a2', reason: 'superseded' }] }
+    };
+    keystore.attachPki('r1', rebuilt);
+    keystore.attachPki('*service', {
+      root: { serialHex: 'c1' },
+      revoked: { root: [{ serialHex: '0a1', reason: 'superseded' }] }
+    });
+    published.length = 0;
+    const before = {
+      intermediate: { serialHex: 'a1' },
+      issuing: { jose: { serialHex: 'a2' } },
+      certs: { 'jose:RS256': { serialHex: 'a3' } }
+    };
+    t.check(keystore.adoptPki('r1', before) === false,
+            'a chain publishing tiers the held rows call SUPERSEDED — a copy ' +
+            'from before a rebuild — is refused');
+    t.check(keystore.pkiFor('r1') === rebuilt,
+            'and the rebuilt branch is still the one held');
+    t.check(published.length === 1 && published[0].id === 'r1' &&
+            published[0].chain === rebuilt,
+            'and it is published again, so the process that sent the old ' +
+            'copy adopts the rebuild (' + published.length + ' publish(es))');
+
+    // The Intermediate alone superseded, on the Root's list.
+    published.length = 0;
+    t.check(keystore.adoptPki('r1', {
+      intermediate: { serialHex: 'A1' }, issuing: { jose: { serialHex: 'e2' } }
+    }) === false, 'an Intermediate the Root\'s list supersedes is refused ' +
+                  'too, serials compared normalised');
+
+    // A NEWER branch is adopted as it always was.
+    const newer = {
+      intermediate: { serialHex: 'd1' },
+      issuing: { jose: { serialHex: 'd2' } },
+      revoked: { intermediate: [{ serialHex: 'a2', reason: 'superseded' },
+                                { serialHex: 'b2', reason: 'superseded' }] }
+    };
+    t.check(keystore.adoptPki('r1', newer) === true &&
+            keystore.pkiFor('r1') === newer,
+            'a newer branch, which supersedes nothing it publishes, is ' +
+            'adopted');
+
+    // A HOLD IS NOT A SUPERSESSION: it can be lifted, and a row without it
+    // is newer, not stale.
+    keystore.attachPki('r2', {
+      intermediate: { serialHex: 'f1' }, issuing: { jose: { serialHex: 'f2' } },
+      revoked: { intermediate: [{ serialHex: 'f2',
+                                  reason: 'certificateHold' }] }
+    });
+    const lifted = { intermediate: { serialHex: 'f1' },
+                     issuing: { jose: { serialHex: 'f2' } } };
+    t.check(keystore.adoptPki('r2', lifted) === true,
+            'a tier held here only on HOLD does not make a chain stale');
+
+    // HELD MID-REBUILD — tiers the held row itself supersedes — refuses the
+    // old copy but asserts nothing: the rebuild's last row settles it.
+    keystore.attachPki('r3', {
+      intermediate: { serialHex: '11' }, issuing: { jose: { serialHex: '12' } },
+      revoked: { intermediate: [{ serialHex: '12', reason: 'superseded' }] }
+    });
+    published.length = 0;
+    t.check(keystore.adoptPki('r3', {
+      intermediate: { serialHex: '11' }, issuing: { jose: { serialHex: '12' } }
+    }) === false && published.length === 0,
+            'a process holding a rebuild caught halfway refuses the old copy ' +
+            'and publishes nothing of its own');
+    keystore.setPkiPublisher(null);
+    keystore.reset();
+  }());
   log.debug("Leaving run().");
 }
 

@@ -2123,6 +2123,9 @@ function open(ciphertext, label) {
 // `mode.js`'s `NOT_YET` rather than left to be discovered.
 // ---------------------------------------------------------------------------
 const PKI_ROW_PREFIX = 'pki:';
+// The scope `pki.js` keeps the service Root in (its SERVICE_SCOPE), whose
+// `revoked.root` list is where a replaced Intermediate is superseded.
+const PKI_SERVICE_SCOPE = '*service';
 const pkiHeld = new Map();       // realm id -> the hierarchy, in the clear
 
 // Described to `/admin/caches` (#74, rule 3ap): a row is a scope and
@@ -2176,11 +2179,68 @@ function setPkiPublisher(fn) {
 }
 
 // What another process built, adopted whole. The sender is the authority: see
-// the paragraph above on why there is no arbitration here.
+// the paragraph above on why there is no arbitration here — WITH ONE
+// EXCEPTION, a copy from before a rebuild (2026-09-24).
+//
+// "Nothing races here" was not true. A rebuild on one worker and a save on
+// another process that started before it — the front process certifying a
+// new realm's generation-1 keys while the job's `POST …/pki/build` rebuilt
+// the branch — cross on this channel: the late save, made from the old
+// branch, arrived after the rebuild and was adopted over it by every process,
+// the rebuilding worker included. The realm went on publishing the
+// Intermediate the Root's CRL had just superseded (`sts_gnap_mtls`,
+// `sts_pki_distribution_points`, single-node, where `cluster.mode` is off and
+// the store keeps the last upsert). A supersession is permanent, so a chain
+// that PUBLISHES a tier which what this process holds — the scope's own row,
+// or the Root's for a branch — lists as superseded is that old copy, and it
+// is refused. Only superseded: a `certificateHold` can be lifted, and a
+// newer row without it is not a stale one.
+//
+// The refusing process then asserts what it holds (a store write and a
+// publish), because the sender has already written its old copy to the store
+// and told everyone else — unless what it holds publishes a superseded tier
+// too, which is a rebuild caught halfway, whose last row is still to come.
+// Answers whether the chain was adopted.
+function staleChainTiers(id, chain) {
+  log.debug("Entering staleChainTiers().");
+  const held = pkiHeld.get(id) || null;
+  const service = id === PKI_SERVICE_SCOPE ? null
+    : (pkiHeld.get(PKI_SERVICE_SCOPE) || null);
+  const lists = [];
+  if (held && held.revoked) {
+    lists.push(held.revoked);
+  }
+  if (service && service.revoked) {
+    lists.push(service.revoked);
+  }
+  const stale = lists.length ? pkiMerge.supersededLiveTiers(chain, lists) : [];
+  log.debug("Leaving staleChainTiers(). " + stale.length + " stale.");
+  return stale;
+}
+
 function adoptPki(realmId, chain) {
   log.debug("Entering adoptPki().");
   const id = String(realmId || '');
   if (chain) {
+    const stale = staleChainTiers(id, chain);
+    if (stale.length) {
+      const held = pkiHeld.get(id) || null;
+      const reassert = !!held && !staleChainTiers(id, held).length;
+      log.warn(errorCodes.tag('STS-KEYS-0075') + 'keystore: the "' +
+               (id || 'default') + '" certificate authority another ' +
+               'process sent publishes ' + stale.length + ' certificate(s) ' +
+               'this one holds as SUPERSEDED (' + stale.join(', ') + ') — ' +
+               'a copy made before a rebuild — so it was refused' +
+               (reassert ? ', and the hierarchy held here was written and ' +
+                           'published again over it.'
+                         : '; what is held here is a rebuild still being ' +
+                           'saved, whose last row settles it.'));
+      if (reassert) {
+        holdAndWritePki(id, held);
+      }
+      log.debug("Leaving adoptPki(). Refused a stale copy.");
+      return false;
+    }
     pkiHeld.set(id, chain);
   } else {
     pkiHeld.delete(id);
@@ -2222,8 +2282,19 @@ function pkiFor(realmId) {
 // places or a worker goes on issuing from a CA the operator threw away.
 function attachPki(realmId, chain) {
   log.debug('Entering attachPki(). realm=' + realmId);
-  const id = String(realmId || '');
-  adoptPki(id, chain);
+  holdAndWritePki(String(realmId || ''), chain);
+  log.debug('Leaving attachPki().');
+}
+
+// A LOCAL save is never refused as stale: it was made from what this process
+// holds, which is what adoptPki() compares against.
+function holdAndWritePki(id, chain) {
+  log.debug('Entering holdAndWritePki(). realm=' + id);
+  if (chain) {
+    pkiHeld.set(id, chain);
+  } else {
+    pkiHeld.delete(id);
+  }
   if (pkiPublisher) {
     pkiPublisher(id, chain || null);
   }
@@ -2232,7 +2303,8 @@ function attachPki(realmId, chain) {
     // with the process. A hierarchy behaves the same way, which is the honest
     // answer rather than a gap — `pki.js`'s header and `/admin/pki` both say
     // so, and `report()` below reports it.
-    log.debug('Leaving attachPki(). Held in memory; nothing persists here.');
+    log.debug('Leaving holdAndWritePki(). Held in memory; nothing ' +
+              'persists here.');
     return;
   }
   if (!store || !kek) {
@@ -2243,7 +2315,7 @@ function attachPki(realmId, chain) {
                       : 'no key-encryption key was read') + '. It will be ' +
               'gone after the next restart, and every certificate issued ' +
               'from it will chain to nothing.');
-    log.debug('Leaving attachPki(). Nowhere to write.');
+    log.debug('Leaving holdAndWritePki(). Nowhere to write.');
     return;
   }
   // QUEUED PER ROW, COALESCED, AND MERGED UNDER THE ROW'S LOCK (2026-09-14,
@@ -2253,7 +2325,7 @@ function attachPki(realmId, chain) {
   pkiLocalGen.set(id, gen);
   queueWrite(PKI_ROW_PREFIX + id, { chain: chain || null, gen: gen },
              writePki);
-  log.debug('Leaving attachPki(). Queued a write.');
+  log.debug('Leaving holdAndWritePki(). Queued a write.');
 }
 
 // ===========================================================================
