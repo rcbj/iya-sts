@@ -184,7 +184,21 @@ async function authorizeError(clientId, params) {
                     code_challenge_method: pair.method }, params))
     .toString();
   const r = await fetch(url, { redirect: "manual" });
-  const location = r.headers.get("location") || "";
+  let location = r.headers.get("location") || "";
+  // RFC 9700 MODE (and so product mode) SHOWS THE ERROR RATHER THAN
+  // REDIRECTING IT while nobody is signed in (section 4.11.2): a page whose
+  // link carries the same error to the client's redirect URI. That link is
+  // what the client would be sent to, so it is read as the Location.
+  if (!location) {
+    const page = await r.text();
+    const links = page.match(/href="([^"]+)"/g) || [];
+    for (let i = 0; i < links.length && !location; i++) {
+      const href = links[i].slice(6, -1).replace(/&amp;/g, "&");
+      if (href.indexOf(REDIRECT) === 0) {
+        location = href;
+      }
+    }
+  }
   const error = new URL(location || "https://none.invalid/")
     .searchParams.get("error") || "";
   log.debug("Leaving authorizeError(). " + error);
