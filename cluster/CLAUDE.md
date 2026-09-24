@@ -558,6 +558,8 @@ next beat. It is the one addition this feature made to `cluster.js`.
 | `risk.mds-refresh` | cluster, service; `risk.mdsRefreshS` (hourly once the active BLOB is past its nextUpdate), off while `risk.mdsUrl` is empty — downloads the FIDO MDS3 BLOB and imports it when its serial is newer (#105) | `risk/risk_datasets.ts` |
 | `risk.rescore` | cluster, service; `risk.rescoreEveryS`, off while `risk.assessSignIns` is — re-checks every live session against the datasets and the failure history and raises one that became riskier (#62 P4) | `risk/risk_engine.ts` |
 | `risk.retention` | cluster, service; hourly — deletes the rows of superseded and refused dataset versions and the failures past their retention (#62) | `risk/risk_datasets.ts` |
+| `risk.stalled-imports` | cluster, service; `risk.uploadSweepS` — refuses a dataset version left `loading` with no progress for `risk.importStallMinutes`, the import whose process stopped (#215) | `risk/risk_datasets.ts` |
+| `risk.upload-cleanup` | per-process, quiet; `risk.uploadSweepS` — touches the upload files this process is importing and deletes the leftovers of one that stopped from `risk.uploadDirectory` (#215) | `risk/risk_upload.ts` |
 | `saml2.sp-metadata-refresh` | cluster, service; `saml2.spMetadataRefreshIntervalS` | `saml/sp_metadata.ts` (P5) |
 | `persistence.change-log-pull` | per-process, **quiet**; `persistence.pollInterval` | `persistence/persistence_replication.js` (P5) |
 | `persistence.change-log-purge` | cluster, service; five minutes — replaced the `ops.change-log-purge` lease | `persistence/persistence_replication.js` (P5) |

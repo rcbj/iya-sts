@@ -6289,3 +6289,31 @@ beside the activation choice on `/admin/users/new` (`mailLinkBox()`,
 administrator who never sees a person's reset link cannot be the one who used
 it. It is replaced by a sentence when there is no transport. A link that could
 not be mailed is shown as before, with the reason.
+
+## MONITORING → RISK TAKES A FILE: `POST /admin/risk/upload` (2026-09-24, #215)
+
+The page's first import form is *Upload a file*: `enctype="multipart/form-data"`,
+a `<input type="file">` and a real submit button, and **no script** — the
+page stays under `script-src 'none'`; there is no progress bar, because the
+answer comes when the file is stored and the version then shows `loading`
+until a reload shows it `active` or `refused`. The paste form stays below it,
+renamed *Paste a list*. A realm administrator's copy pins the realm and drops
+the terms checkbox, as the paste form's does. `risk/CLAUDE.md` argues the
+upload; three things are this file's:
+
+* **THE GATE LEAVES ONE POST'S CSRF TOKEN TO THE ROUTE.** The body of
+  `/admin/risk/upload` is a file `common/app.js` leaves unread, so the token
+  is not in `parseBody(req)`; the gate skips its CSRF check exactly where
+  `app.isStreamedUpload(req)` says so, and `risk/risk_upload.ts` checks this
+  session's token against the form's fields before it writes the file. The
+  role and the policy are still decided by the gate, on the headers. A CSRF
+  refusal from the route is a 403 in the gate's words, not a redirect into
+  the console.
+* **THE FORM'S FIELD ORDER IS LOAD-BEARING.** Every field before the file,
+  the file last: a browser sends parts in document order, `withCsrf()` puts
+  the token straight after `<form …>`, and the route refuses a field after
+  the file. A future edit that moves the file input up breaks every upload.
+* **`admin_scope.ts` IS ASKED BY THE ROUTE, not the gate**, for the reason
+  the token is: the dataset and realm are fields. `RiskAdmin.uploadDoor()`
+  asks the `/admin/risk` rule with them, so a realm administrator can upload
+  their own realm's lists and nothing else, as they can paste them.

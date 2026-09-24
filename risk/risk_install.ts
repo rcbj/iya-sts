@@ -39,13 +39,22 @@
 //     service dials is therefore unchanged.
 //
 // The manifest is JSON: `{ "datasets": [ { "dataset", "format", and either
-// "url" (https only; `.gz` is gunzipped) or "file", with optional "version",
+// "url" (https only) or "file", with optional "version",
 // "publishedAt", "sha256", "provider", "realm" } ] }`. Each is imported
 // exactly as the console and the dataset directory import one —
 // `risk_datasets.ts`'s `importVersion()`: verified against its SHA-256 where
 // one is named, refused if it shrank past the limit, recorded whatever
 // happens, and activated when it loaded. A version already recorded is not
 // loaded again, so running this twice is safe.
+//
+// **A COMPRESSED FILE IS EXPANDED BY THE IMPORTER, NOT HERE (#215).** This
+// loader gunzipped a `.gz` address itself, by its NAME, on the way to disk.
+// It now keeps the download exactly as it arrived, and `importVersion()`
+// reads it through `risk_expand.ts` — the one expansion path an upload and
+// the dataset directory share: gzip and zip by their content, never an
+// expanded copy on disk, and a decompression bomb refused. So a manifest's
+// `sha256` is of the file AS DOWNLOADED, which is what a provider publishes
+// a checksum of.
 //
 // **THE FIDO METADATA (#62 P5)** is one more entry: `{ "dataset":
 // "fido.mds3", "format": "fido-mds3-jwt", "url":
@@ -64,7 +73,6 @@ import fs = require('fs');
 import os = require('os');
 import path = require('path');
 import https = require('https');
-import zlib = require('zlib');
 import errorCodes = require('../common/error_codes');
 import riskStore = require('./risk_store');
 import riskDatasets = require('./risk_datasets');
@@ -149,9 +157,10 @@ class RiskInstall {
   }
 
   // -------------------------------------------------------------------------
-  // ONE DOWNLOAD, over HTTPS only, to a file of its own. A redirect is
-  // followed only to another https address, at most MAX_REDIRECTS times; a
-  // `.gz` address is gunzipped as it arrives. Rejects with the reason.
+  // ONE DOWNLOAD, over HTTPS only, to a file of its own, byte for byte (the
+  // importer expands it — see the header). A redirect is followed only to
+  // another https address, at most MAX_REDIRECTS times. Rejects with the
+  // reason.
   // -------------------------------------------------------------------------
   static download(url: string, target: string, hops?: number): Promise<void> {
     log.debug("Entering RiskInstall.download(). " + url);
@@ -187,17 +196,13 @@ class RiskInstall {
                                   MAX_DOWNLOAD_BYTES + ' bytes'));
           }
         });
-        const gz = /\.gz(\?|$)/i.test(url) ||
-          /gzip/i.test(String(res.headers['content-type'] || ''));
         const out = fs.createWriteStream(target);
-        const source = gz ? res.pipe(zlib.createGunzip()) : res;
-        source.on('error', reject);
         res.on('error', reject);
         out.on('error', reject);
         out.on('finish', function () {
           resolve();
         });
-        source.pipe(out);
+        res.pipe(out);
       }).on('error', reject);
     });
   }

@@ -6278,6 +6278,19 @@ const ENDPOINTS: EndpointEntry[] = [
           'every version loaded or refused; a lookup of one address; and the ' +
           'realm\'s refused passwords, attributed to a person or a name\'s ' +
           'digest and a network, never an address. Add ?format=json.' },
+  { path: '/admin/risk/upload', group: 'Admin',
+    name: 'Risk dataset upload',
+    specs: [],
+    effect: 'stores an uploaded dataset file and begins importing it',
+    what: 'NON-SPEC (#215). POST only: Monitoring → Risk\'s file upload, a ' +
+          'multipart/form-data form whose fields (the CSRF token first) ' +
+          'come before its one file. The file is streamed to ' +
+          'risk.uploadDirectory — this path is exempt from the body ' +
+          'parsers — hashed on the way, and imported as it is read: gzip ' +
+          'and zip expanded by their content, a decompression bomb and a ' +
+          'zip of more than one file refused. The answer comes once the ' +
+          'file is stored; the version shows loading, then active or ' +
+          'refused. Mirrored by POST /admin-api/risk/upload.' },
   { path: '/admin/risk-scoring', group: 'Admin',
     name: 'Risk scoring',
     specs: [],
@@ -7160,6 +7173,12 @@ const ENDPOINTS: EndpointEntry[] = [
   { path: '/admin-api/risk/metrics', group: 'Management API',
     name: 'Risk scoring metrics', specs: ['openapi'],
     what: 'NON-SPEC (#62). GET /admin/risk-scoring over JSON.' },
+  { path: '/admin-api/risk/upload', group: 'Management API',
+    name: 'Risk dataset upload', specs: ['openapi'],
+    what: 'NON-SPEC (#215). POST /admin/risk/upload for a machine: the body ' +
+          'is the file (application/octet-stream, application/gzip or ' +
+          'application/zip), the fields are query parameters; 202 once ' +
+          'the file is stored and the version is loading.' },
   { path: '/admin-api/risk/:action', group: 'Management API',
     name: 'Risk actions', specs: ['openapi'],
     what: 'NON-SPEC (#62). import, activate, rollback, delete and ' +

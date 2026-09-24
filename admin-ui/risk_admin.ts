@@ -23,11 +23,15 @@
 //     from which network, at which door, with which code. Never an address
 //     and never a typed name.
 //
-// Admin Write may import a version by pasting it (an IP list; a file of
-// millions of rows goes through `risk.datasetsDirectory`), activate one, roll
-// back to the previous, or delete a version that is not active. Rule 7:
-// every one of those is `/admin-api/risk/:action`, which calls `riskAction()`
-// below, and `GET /admin-api/risk` answers `riskView()`.
+// Admin Write may import a version by pasting it (an IP list) or by
+// UPLOADING THE FILE (#215: `POST /admin/risk/upload`, a plain
+// multipart/form-data form with no script, streamed to disk and expanded as
+// it is read by `risk/risk_upload.ts` — a DB-IP city file of hundreds of
+// megabytes arrives this way), activate one, roll back to the previous, or
+// delete a version that is not active. Rule 7: every one of those is
+// `/admin-api/risk/:action` or `POST /admin-api/risk/upload`, which call
+// `riskAction()` and `uploadDoor()` below, and `GET /admin-api/risk` answers
+// `riskView()`.
 //
 // A REALM ADMINISTRATOR SEES IT TOO (2026-09-22; it was a service page
 // until then): under `/realm/<id>/admin/risk` the page is their realm's —
@@ -51,12 +55,19 @@ import riskDatasets = require('../risk/risk_datasets');
 import riskFailures = require('../risk/risk_failures');
 import riskEngine = require('../risk/risk_engine');
 import riskStore = require('../risk/risk_store');
+import riskUpload = require('../risk/risk_upload');
+import websecurity = require('../common/websecurity');
+import adminScope = require('./admin_scope');
 
 type Req = any;
 type Res = any;
 type Json = any;
 
 const PAGE = '/admin/risk';
+
+// THE UPLOAD (#215): its own path, because its body is a file the body
+// parsers leave unread (`common/app.js`), which is decided by path.
+const UPLOAD = '/admin/risk/upload';
 
 // MONITORING → RISK SCORING (#62): the scoring system measured — what it
 // assessed over a window, how the levels and signals fell, how long it took
@@ -92,12 +103,16 @@ interface RiskAdminDeps {
   datasets: typeof riskDatasets;
   failures: typeof riskFailures;
   engine: typeof riskEngine;
+  upload: typeof riskUpload;
+  websecurity: typeof websecurity;
+  adminScope: typeof adminScope;
   parseBody: typeof helpers.parseBody;
   now(): number;
 }
 
 class RiskAdmin {
   static readonly PAGE = PAGE;
+  static readonly UPLOAD = UPLOAD;
   static readonly ACTIONS = ACTIONS;
 
   constructor(private readonly deps: RiskAdminDeps) {
@@ -117,6 +132,9 @@ class RiskAdmin {
       datasets: riskDatasets,
       failures: riskFailures,
       engine: riskEngine,
+      upload: riskUpload,
+      websecurity: websecurity,
+      adminScope: adminScope,
       parseBody: helpers.parseBody,
       now: function (): number {
         return Date.now();
@@ -608,11 +626,17 @@ class RiskAdmin {
       'active one is refused as a likely truncated download), and only then ' +
       'becomes active. A dataset older than its staleness limit counts for ' +
       'nothing and never refuses anybody.</p><p>' + esc(view.store.why) +
-      '</p><p>A file of millions of rows goes in <code>' +
-      'risk.datasetsDirectory</code> with a manifest' +
+      '</p><p>A file of millions of rows is <strong>uploaded</strong> ' +
+      'with the first form below — as the provider publishes it, ' +
+      '<code>.gz</code>, <code>.zip</code> or plain; it is expanded as it ' +
+      'is read and nothing expanded is written to disk — or dropped in ' +
+      '<code>risk.datasetsDirectory</code> with a manifest' +
       (view.directory ? ' (now <code>' + esc(view.directory) + '</code>)'
                       : ' (not set)') +
-      '; the form below is for a list you can paste.</p>',
+      '. An upload answers as soon as the file is stored: the version ' +
+      'shows as <em>loading</em>, then <em>active</em> or <em>refused</em> ' +
+      'with its reason — reload this page to follow it. The second form is ' +
+      'for a list you can paste.</p>',
       'What this page is');
     const rows = view.datasets.map(function (d: Json): string {
       const versions = d.versions.slice(0, 6).map(function (v: Json): string {
@@ -664,8 +688,41 @@ class RiskAdmin {
                          return '<p class="attribution"><small>' +
                            self.credit(a) + '</small></p>';
                        }).join('') : '');
+    // THE UPLOAD (#215): a real form with a real submit button and no
+    // script. Its FIELDS COME BEFORE ITS FILE, and that order is load-bearing:
+    // a browser sends the parts in document order, the CSRF token this
+    // shell adds is the first of them, and `risk_upload.ts` checks the token
+    // and the fields before it writes a byte of the file.
+    const uploadForm = !canWrite ? '' :
+      '<h3>Upload a file</h3><form method="post" action="' + UPLOAD +
+      '" enctype="multipart/form-data" id="risk-upload-form">' +
+      '<label>Dataset <select name="dataset" id="risk-upload-dataset">' +
+      view.datasets.map(function (d: Json): string {
+        return '<option value="' + esc(d.dataset) + '">' + esc(d.dataset) +
+          '</option>';
+      }).join('') + '</select></label> <label>Format <select name="format" ' +
+      'id="risk-upload-format">' +
+      view.formats.map(function (f: Json): string {
+        return '<option value="' + esc(f.format) + '">' + esc(f.format) +
+          '</option>';
+      }).join('') + '</select></label> ' + (view.realmOnly
+        ? '<input type="hidden" name="realm" value="' + esc(view.realm) +
+          '">'
+        : '<label>Realm (an operator list only) <input type="text" ' +
+          'name="realm" value=""></label>') + '<br>' +
+      '<label>Version <input type="text" name="version" ' +
+      'placeholder="default: its SHA-256"></label> <label>SHA-256 of the ' +
+      'file as sent <input type="text" name="sha256"></label><br>' +
+      (view.realmOnly ? '' :
+        '<label><input type="checkbox" name="acceptTerms" ' +
+        'id="risk-upload-accept"> I have read and accept the provider\'s ' +
+        'terms (below), recorded in my name</label><br>') +
+      '<label>File (<code>.gz</code>, <code>.zip</code> holding one file, ' +
+      'or plain text) <input type="file" name="file" id="risk-upload-file" ' +
+      'required></label><br><button type="submit" id="risk-upload">' +
+      'Upload and import</button></form>';
     const importForm = !canWrite ? '' :
-      '<h3>Import a version</h3><form method="post" action="' + PAGE + '">' +
+      '<h3>Paste a list</h3><form method="post" action="' + PAGE + '">' +
       '<input type="hidden" name="action" value="import">' +
       '<label>Dataset <select name="dataset" id="risk-import-dataset">' +
       view.datasets.map(function (d: Json): string {
@@ -754,10 +811,11 @@ class RiskAdmin {
         'the <code>risk.</code> settings are the whole service\'s, and a ' +
         'service administrator manages them.', 'What this page is') +
         assessments + '<h3>Look up an address</h3>' + lookupForm + rows +
-        importForm + failures + credits;
+        uploadForm + importForm + failures + credits;
     }
     return tiles + about + assessments + '<h3>Look up an address</h3>' +
-      lookupForm + rows + importForm + providers + failures + credits +
+      lookupForm + rows + uploadForm + importForm + providers + failures +
+      credits +
       '<h2>Settings</h2>' + admin.configFormsFor(PAGE);
   }
 
@@ -894,6 +952,60 @@ class RiskAdmin {
     return !!(state && state.authority === 'realm');
   }
 
+  // -------------------------------------------------------------------------
+  // WHO IS UPLOADING, AND THE TWO CHECKS THE GATE LEFT TO THE UPLOAD (#215):
+  // the door `risk/risk_upload.ts` is handed. `csrf` is the console's — the
+  // token is a field of the form, read before the file (the management API
+  // has none: its caller sends a bearer token, which no other site can make
+  // a browser attach). `scope` is a realm administrator's reach, the same
+  // rule `/admin/risk`'s own actions meet at the gate (`admin_scope.ts`),
+  // asked of the upload's fields because the gate could not read them.
+  // -------------------------------------------------------------------------
+  uploadDoor(req: Req, via: string, withCsrf: boolean): Json {
+    const { log, adminViews, websecurity, adminScope } = this.deps;
+    log.debug("Entering RiskAdmin.uploadDoor().");
+    let state: Json = null;
+    try {
+      state = adminViews.gateStateFor(req);
+    } catch (e) {
+      log.debug("Caught in RiskAdmin.uploadDoor(): " +
+                ((e && e.message) || e));
+      // No gate state (the management API with its gate off): no realm
+      // authority to confine, and no session to hold a token for.
+      state = null;
+    }
+    const sessionId = state && state.session ? String(state.session.id) : '';
+    log.debug("Leaving RiskAdmin.uploadDoor().");
+    return {
+      via: via,
+      source: 'upload',
+      actor: (state && state.username) ||
+             (/api/i.test(via) ? 'a management API client' : via),
+      csrf: withCsrf ? function (fields: Json): Json {
+        log.debug("Entering the upload's CSRF check.");
+        log.debug("Leaving the upload's CSRF check.");
+        return websecurity.checkCsrf(sessionId, fields);
+      } : null,
+      scope: function (fields: Json): Json {
+        log.debug("Entering the upload's scope check.");
+        const refused = adminScope.refusalFor(state, PAGE, fields, {});
+        log.debug("Leaving the upload's scope check.");
+        return refused ? { code: refused.code,
+                           why: String(refused.detail || refused.reason) }
+                       : null;
+      }
+    };
+  }
+
+  // The management API's upload (#215): the same door, no CSRF (see
+  // `uploadDoor()`), the file as the body and the fields in the query.
+  receiveUpload(req: Req, via: string): Promise<Json> {
+    const { log, upload } = this.deps;
+    log.debug("Entering RiskAdmin.receiveUpload().");
+    log.debug("Leaving RiskAdmin.receiveUpload().");
+    return upload.receiveRaw(req, this.uploadDoor(req, via, false));
+  }
+
   registerRoutes(app: { get: Function; post: Function }): void {
     const { log, admin, errorCodes, parseBody } = this.deps;
     const self = this;
@@ -959,6 +1071,50 @@ class RiskAdmin {
           log.debug('Leaving POST ' + PAGE + '. Threw.');
         });
     });
+    // THE UPLOAD (#215). The gate has already asked for Admin Write and the
+    // policy on the headers; `risk_upload.ts` checks the token and the realm
+    // from the fields before it writes the file.
+    app.post(UPLOAD, function (req: Req, res: Res): void {
+      log.debug('Entering POST ' + UPLOAD + '.');
+      if (!admin.mayWrite(req)) {
+        errorCodes.mark(res, 'STS-RISK-0011');
+        res.set('Connection', 'close');
+        admin.respondToAction(req, res, PAGE, { ok: false, errors: [
+          'This console session may read but not write.'] });
+        log.debug('Leaving POST ' + UPLOAD + '. Read-only.');
+        return;
+      }
+      self.deps.upload.receiveForm(req, self.uploadDoor(req,
+                                                        'the admin console',
+                                                        true))
+        .then(function (answer: Json): void {
+          if (answer.close) {
+            res.set('Connection', 'close');
+          }
+          if (answer.code) {
+            errorCodes.mark(res, answer.code);
+          }
+          if (answer.code === 'STS-ADMIN-0005') {
+            // The gate's own CSRF refusal, in the gate's words: a form that
+            // did not come from this console is not redirected into it.
+            res.status(403).type('text/plain')
+               .send('That form did not come from this console. ' +
+                     (answer.body.errors || []).join(' ') + '\n');
+            log.debug('Leaving POST ' + UPLOAD + '. CSRF.');
+            return;
+          }
+          admin.respondToAction(req, res, PAGE, answer.body);
+          log.debug('Leaving POST ' + UPLOAD + '. ' + answer.status);
+        }).catch(function (e: Json): void {
+          log.warn(errorCodes.tag('STS-RISK-0037') + 'risk: an upload ' +
+                   'failed: ' + ((e && e.stack) || e));
+          res.set('Connection', 'close');
+          admin.respondToAction(req, res, PAGE, errorCodes.mark({
+            ok: false, errors: [String((e && e.message) || e)] },
+            'STS-RISK-0037'));
+          log.debug('Leaving POST ' + UPLOAD + '. Threw.');
+        });
+    });
     log.debug("Leaving RiskAdmin.registerRoutes().");
   }
 }
@@ -977,11 +1133,14 @@ export = {
   installInstance: (instance: RiskAdmin): void => slot.install(instance),
   instanceOrigin: (): string => slot.origin(),
   PAGE: PAGE,
+  UPLOAD: UPLOAD,
   METRICS_PAGE: METRICS_PAGE,
   WINDOWS: WINDOWS,
   ACTIONS: RiskAdmin.ACTIONS,
   metricsView: slot.forward('metricsView'),
   realmOnly: slot.forward('realmOnly'),
   riskView: slot.forward('riskView'),
-  riskAction: slot.forward('riskAction')
+  riskAction: slot.forward('riskAction'),
+  uploadDoor: slot.forward('uploadDoor'),
+  receiveUpload: slot.forward('receiveUpload')
 };

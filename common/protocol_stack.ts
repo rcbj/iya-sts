@@ -976,6 +976,12 @@ class ProtocolStack {
                'RiskDatasets');
     this.build('risk/risk_failures', require('../risk/risk_failures'),
                'RiskFailures');
+    // The dataset upload (#215): a library that streams an uploaded file to
+    // disk and hands it to the datasets above; its per-process clean-up job
+    // is registered when it is wired. Before the page, whose upload route
+    // and `mgmt-api/admin_api`'s both call it.
+    this.build('risk/risk_upload', require('../risk/risk_upload'),
+               'RiskUpload');
     // The Pwned Passwords screen (#62 P6): a library every password door
     // reaches lazily. Built here, with the risk modules it belongs beside.
     this.build('common/breached_passwords',
