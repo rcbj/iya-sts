@@ -29,6 +29,13 @@ through the [OAuth2/OIDC Debugger](https://idptools.com), where it is itself a
 submodule: a plain `--init` there stops one level short of this one.
 
 ## Run it
+```docker-compose up```
+
+or  
+
+```docker compose up```
+
+or
 
 ```bash
 docker build -t iya-sts .
