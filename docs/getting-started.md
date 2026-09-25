@@ -233,3 +233,20 @@ BUILD_NUMBER=1234 GIT_COMMIT=$(git rev-parse HEAD) docker compose build sts
 
 The commit is a build argument rather than something the image works out,
 because the build context deliberately carries no `.git`.
+
+
+## First-Time Admin Login
+Go to: ```https://localhost:8081```
+
+Enter ```admin``` as the username.
+
+Search the through startup logs for the following line:
+```sts               | {"name":"sts","hostname":"sts","pid":1,"level":40,"msg":"=======================================================\nPRODUCT MODE BOOTSTRAP — THIS IS SHOWN ONCE AND NEVER AGAIN.\n\n  username: admin\n  password: *****************\n\nNobody in this realm's directory held a credential, so this one was generated so that the service is reachable. It is stored as a scrypt hash and CANNOT be recovered — only reset.\n\nCHANGE IT. Sign in at /admin, or POST /admin-api/users/set-password.\n=======================================================","time":"2026-09-25T21:39:17.999Z","v":0}```
+
+Take note of the temporary password. 
+
+Enter the temporary password into the password field.
+
+Click the Login button.
+
+You will be prompted to change the password. The password must comply with the default password policy, which can be changed later.
