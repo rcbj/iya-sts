@@ -245,6 +245,8 @@ Search the through startup logs for the following line:
 
 Take note of the temporary password. 
 
+Remember the admin password. 
+
 Enter the temporary password into the password field.
 
 Click the Login button.
