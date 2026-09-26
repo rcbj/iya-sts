@@ -657,8 +657,15 @@ async function issueReferral(ctx) {
   return msgs.encKdcRep({
     msgType: msgs.MSG_TYPE.TGS_REP,
     padata: replyPadata,
-    crealm: ctx.ticketPart.crealm,
-    cname: ctx.ticketPart.cname,
+    // hide-client-names (answerAsReq()).
+    crealm: ctx.fast && provider
+      ? provider.outerClient(ctx.fast, ctx.ticketPart.crealm,
+                             ctx.ticketPart.cname).crealm
+      : ctx.ticketPart.crealm,
+    cname: ctx.fast && provider
+      ? provider.outerClient(ctx.fast, ctx.ticketPart.crealm,
+                             ctx.ticketPart.cname).cname
+      : ctx.ticketPart.cname,
     ticket: ticket,
     encPart: {
       etype: replyEtype,
@@ -2310,12 +2317,17 @@ async function answerAsReq(request, fast) {
   }, msgs.APPLICATION.ENC_AS_REP_PART);
 
 
+  // hide-client-names (RFC 6113 section 5.4.2): the anonymous principal in
+  // the outer reply, the real one in the KrbFastFinished above.
+  const outer = fast && provider
+    ? provider.outerClient(fast, asRealm, body.cname)
+    : { crealm: asRealm, cname: body.cname };
   log.debug("Leaving answerAsReq().");
   return msgs.encKdcRep({
     msgType: msgs.MSG_TYPE.AS_REP,
     padata: replyPadata,
-    crealm: asRealm,
-    cname: body.cname,
+    crealm: outer.crealm,
+    cname: outer.cname,
     ticket: ticket,
     encPart: {
       etype: replyKey.etype,
@@ -2347,6 +2359,113 @@ async function answerAsReq(request, fast) {
 // the ticket's (otherwise one client's TGT authenticates another), and that the
 // ticket is inside its validity window.
 // ---------------------------------------------------------------------------
+// User-to-user (answerTgsReq() argues it): null without ENC-TKT-IN-SKEY,
+// `{ key: { etype, key } }` — the additional TGT's session key — or
+// `{ refusal }`. The additional ticket must be a TGT for this realm's own TGS,
+// unexpired, and issued to the server the request names.
+async function userToUserKey(body, answeringRealm) {
+  log.debug('Entering userToUserKey().');
+  if ((body.kdcOptions || []).indexOf(msgs.KDC_OPTION.ENC_TKT_IN_SKEY) === -1) {
+    log.debug('Leaving userToUserKey(). Not asked for.');
+    return null;
+  }
+  const refuse = function (code, eText) {
+    log.debug('Entering refuse().');
+    log.info('krb5: user-to-user refused: ' + eText);
+    log.debug('Leaving refuse().');
+    return { refusal: { code: code, errorCode: 'STS-KRB-0169',
+                        eText: eText } };
+  };
+  const additional = (body.additionalTickets || [])[0];
+  if (!additional) {
+    log.debug('Leaving userToUserKey(). No additional ticket.');
+    return refuse(13, 'ENC-TKT-IN-SKEY needs the server\'s TGT in ' +
+                      'additional-tickets');
+  }
+  const sname = additional.sname.name || [];
+  if (sname.length !== 2 || sname[0] !== 'krbtgt' ||
+      sname[1] !== answeringRealm || additional.realm !== answeringRealm) {
+    log.debug('Leaving userToUserKey(). Not our TGT.');
+    return refuse(13, 'the additional ticket is for ' + sname.join('/') +
+                      '@' + additional.realm + ', not krbtgt/' +
+                      answeringRealm);
+  }
+  const krbtgt = principals.find(['krbtgt', answeringRealm], answeringRealm);
+  let part = null;
+  try {
+    const opened = krbtgt ? await ticketKeyFor(krbtgt, additional.encPart)
+                          : { key: null };
+    if (opened.key) {
+      part = msgs.readEncTicketPart(
+        await kcrypto.etypeById(additional.encPart.etype).decrypt(
+          opened.key, kcrypto.KEY_USAGE.KDC_REP_TICKET,
+          additional.encPart.cipher));
+    }
+  } catch (e) {
+    log.debug('Caught in userToUserKey(): ' + ((e && e.message) || e));
+    part = null;
+  }
+  if (!part) {
+    log.debug('Leaving userToUserKey(). Does not open.');
+    return refuse(31, 'the additional ticket does not open under this ' +
+                      'realm\'s krbtgt key');
+  }
+  if (part.endtime.getTime() + clockSkewSeconds() * 1000 <=
+      now().getTime()) {
+    log.debug('Leaving userToUserKey(). Expired.');
+    return refuse(32, 'the additional ticket expired at ' +
+                      part.endtime.toISOString());
+  }
+  const asked = ((body.sname || {}).name || []).join('/');
+  if (asked !== part.cname.name.join('/') || part.crealm !== answeringRealm) {
+    log.debug('Leaving userToUserKey(). Another server.');
+    return refuse(26, 'the request names ' + asked + ' and the additional ' +
+                      'ticket was issued to ' + part.cname.name.join('/') +
+                      '@' + part.crealm);
+  }
+  if (!principals.etypePermitted(part.key.etype)) {
+    log.debug('Leaving userToUserKey(). Withheld enctype.');
+    return refuse(14, 'the additional ticket\'s session key is ' +
+                      kcrypto.etypeName(part.key.etype) + ', which this KDC ' +
+                      'does not use in product mode (RFC 8429)');
+  }
+  log.info('krb5: user-to-user: the ticket for ' + asked + ' is sealed with ' +
+           'the session key of its TGT (' +
+           kcrypto.etypeName(part.key.etype) + ')');
+  log.debug('Leaving userToUserKey().');
+  return { key: { etype: part.key.etype, key: part.key.key } };
+}
+
+// RFC 6113's two authorization-data types a TGS-REQ is checked for
+// (answerTgsReq()).
+const AD_FX_FAST_ARMOR = 71;
+const AD_FX_FAST_USED = 72;
+
+// Every ad-type in an AuthorizationData, looking inside AD-IF-RELEVANT (1),
+// the container RFC 4120 section 5.2.6.1 has elements a KDC may not
+// understand travel in. An element that does not decode contributes its own
+// type only.
+function authorizationTypes(entries) {
+  log.debug('Entering authorizationTypes().');
+  const out = [];
+  (entries || []).forEach(function (entry) {
+    out.push(entry.type);
+    if (entry.type === 1) {
+      try {
+        msgs.readAuthorizationData(asn1.readTlv(entry.data, 0))
+            .forEach(function (inner) {
+              out.push(inner.type);
+            });
+      } catch (e) {
+        log.debug('Caught in authorizationTypes(): ' +
+                  ((e && e.message) || e));
+      }
+    }
+  });
+  log.debug('Leaving authorizationTypes().');
+  return out;
+}
+
 // A TGS-REQ, and — when it was armored with FAST — every error after the
 // armor opened, armored in turn (RFC 6113 section 5.4.4), as handleAsReq()
 // does for the AS exchange. answerTgsReq() records in `state.fast` the moment
@@ -2728,6 +2847,65 @@ async function answerTgsReq(request, state) {
     }
   }
 
+  // THE PRESENTED TICKET MUST BE A TICKET-GRANTING TICKET (#204,
+  // 2026-09-26) — unless the request RENEWs or VALIDATEs that very ticket,
+  // the two options RFC 4120 section 3.3.3 defines on a ticket that is not
+  // one. This KDC opened whatever ticket the PA-TGS-REQ carried with the key
+  // of the service it named and issued from it, so a service that had ever
+  // received somebody's ticket — and so held its session key — could buy
+  // tickets to ANY other service as that person: unconstrained delegation for
+  // every service, unasked. KRB_AP_ERR_NOT_US, as MIT's KDC answers; Samba's
+  // fast_tests found it.
+  const ticketIsTgt = apReq.ticket.sname.name.length === 2 &&
+                      apReq.ticket.sname.name[0] === 'krbtgt';
+  const renewsOrValidates = (body.kdcOptions || []).some(function (bit) {
+    return bit === msgs.KDC_OPTION.RENEW || bit === msgs.KDC_OPTION.VALIDATE;
+  });
+  if (!ticketIsTgt && !renewsOrValidates) {
+    log.info('krb5: a TGS-REQ presented a ticket for ' +
+             apReq.ticket.sname.name.join('/') + ', which is not a ' +
+             'ticket-granting ticket, and asked for neither RENEW nor ' +
+             'VALIDATE. KRB_AP_ERR_NOT_US.');
+    log.debug("Leaving answerTgsReq(). Not a TGT.");
+    return errorReply(35, {
+      errorCode: 'STS-KRB-0166',
+      crealm: ticketPart.crealm, cname: ticketPart.cname,
+      realm: ourRealm(), sname: body.sname,
+      eText: 'the ticket in the PA-TGS-REQ is for ' +
+             apReq.ticket.sname.name.join('/') + ', not a ticket-granting ' +
+             'service; only a TGT buys other tickets (a service ticket may ' +
+             'only be renewed or validated)'
+    });
+  }
+  // RFC 6113 section 5.4.1.1 and 5.4.2 on two authorization-data elements a
+  // TGS-REQ may carry, in its Authenticator or in its ticket (#204):
+  // AD-fx-fast-armor (71) marks a ticket or Authenticator made to be FAST
+  // armor and nothing else — "the TGS MUST reject" it — and AD-fx-fast-used
+  // (72) says the request must have come through FAST, so without FAST "it
+  // MUST return KRB_APP_ERR_MODIFIED".
+  const carried = authorizationTypes(authenticator.authorizationData)
+    .concat(authorizationTypes(ticketPart.authorizationData));
+  if (carried.indexOf(AD_FX_FAST_ARMOR) !== -1) {
+    log.debug("Leaving answerTgsReq(). AD-fx-fast-armor.");
+    return errorReply(60, {
+      errorCode: 'STS-KRB-0167',
+      crealm: ticketPart.crealm, cname: ticketPart.cname,
+      realm: ourRealm(), sname: body.sname,
+      eText: 'the ticket or Authenticator carries AD-fx-fast-armor (71): ' +
+             'it was made to be FAST armor and cannot buy a ticket'
+    });
+  }
+  if (!state.fast && carried.indexOf(AD_FX_FAST_USED) !== -1) {
+    log.debug("Leaving answerTgsReq(). AD-fx-fast-used without FAST.");
+    return errorReply(41, {
+      errorCode: 'STS-KRB-0168',
+      crealm: ticketPart.crealm, cname: ticketPart.cname,
+      realm: ourRealm(), sname: body.sname,
+      eText: 'the ticket or Authenticator carries AD-fx-fast-used (72) and ' +
+             'this request is not armored with FAST'
+    });
+  }
+
   // Which realm this request is being answered AS. It comes from the request
   // body, not from a constant, because this trust realm may serve two Kerberos
   // realms: a TGS-REQ whose realm is PARTNER.COM is one the trusted realm's KDC
@@ -2886,9 +3064,31 @@ async function answerTgsReq(request, state) {
   // The SESSION key is `etype`, the first the request listed that the service
   // supports; the TICKET is sealed with the service's strongest key and the
   // PAC's KDC signature made with the krbtgt's (answerAsReq() argues it).
-  const ticketEtype = principals.supportedEtypes(service)[0] || etype;
-  const issuedProfile = kcrypto.etypeById(ticketEtype);
   const krbtgtEtype = principals.supportedEtypes(krbtgt)[0] || etype;
+
+  // ---------------------------------------------------------------------------
+  // USER-TO-USER (RFC 4120 section 3.3.3, #204 — 2026-09-26). With
+  // ENC-TKT-IN-SKEY the new ticket is sealed with the SESSION KEY of the TGT
+  // in additional-tickets rather than a long-term key, for a service that
+  // holds only a TGT; the requested server must be that TGT's client, and the
+  // ticket carries no kvno, being under no long-lasting key. This KDC ignored
+  // the option and sealed the ticket with the named principal's long-term key
+  // — an answer to a question nobody asked, which a user-to-user server could
+  // not open. Samba's kdc_tgs_tests found it.
+  // ---------------------------------------------------------------------------
+  const u2u = await userToUserKey(body, answeringRealm);
+  if (u2u && u2u.refusal) {
+    log.debug("Leaving answerTgsReq(). User-to-user refused.");
+    return errorReply(u2u.refusal.code, {
+      // error-code: none — the code is the refusal's own, STS-KRB-0169, chosen in userToUserKey()
+      errorCode: u2u.refusal.errorCode,
+      crealm: ticketPart.crealm, cname: ticketPart.cname,
+      realm: answeringRealm, sname: body.sname, eText: u2u.refusal.eText
+    });
+  }
+  const ticketEtype = u2u ? u2u.key.etype
+                          : (principals.supportedEtypes(service)[0] || etype);
+  const issuedProfile = kcrypto.etypeById(ticketEtype);
 
   // ---------------------------------------------------------------------------
   // FORWARDED — UNCONSTRAINED delegation, and the one the KDC cannot police
@@ -3147,7 +3347,8 @@ async function answerTgsReq(request, state) {
                         ticketPart.renewTill.getTime()))
     : new Date(Math.min(requestedTill.getTime(), ticketPart.endtime.getTime()));
 
-  const serviceKey = await principals.longTermKey(service, ticketEtype);
+  const serviceKey = u2u ? u2u.key.key
+                         : await principals.longTermKey(service, ticketEtype);
 
   // The PAC again, and here the two keys are genuinely DIFFERENT: the server
   // signature is made with this service's key so the service can check it
@@ -3361,7 +3562,7 @@ async function answerTgsReq(request, state) {
     sname: body.sname,
     encPart: {
       etype: ticketEtype,
-      kvno: service.kvno,
+      kvno: u2u ? null : service.kvno,
       cipher: await issuedProfile.encrypt(serviceKey,
                                           kcrypto.KEY_USAGE.KDC_REP_TICKET,
                                           encTicketPart)
@@ -3496,8 +3697,13 @@ async function answerTgsReq(request, state) {
     // and a client reads its own identity off the reply, so it would believe it
     // had a ticket for itself.
     padata: replyPadata,
-    crealm: clientRealm,
-    cname: clientName,
+    // hide-client-names (answerAsReq()).
+    crealm: state.fast && provider
+      ? provider.outerClient(state.fast, clientRealm, clientName).crealm
+      : clientRealm,
+    cname: state.fast && provider
+      ? provider.outerClient(state.fast, clientRealm, clientName).cname
+      : clientName,
     ticket: ticket,
     encPart: {
       etype: replyEtype,

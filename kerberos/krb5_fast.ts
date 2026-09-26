@@ -164,6 +164,12 @@ const COOKIE_LIFETIME_MS = 10 * 60 * 1000;
 // uses for the same thing.
 const OTP_INDICATOR = 'otp';
 
+// RFC 6113 section 5.4.2's one defined critical FAST option, and the name it
+// puts in its place: RFC 6112's anonymous principal.
+const HIDE_CLIENT_NAMES = 1;
+const ANONYMOUS_REALM = 'WELLKNOWN:ANONYMOUS';
+const ANONYMOUS_NAME = { type: 11, name: ['WELLKNOWN', 'ANONYMOUS'] };
+
 // The claim scope an encrypted challenge is spent under (RFC 6113 section
 // 5.4.6's replay check: the same CIPHERTEXT twice).
 const CHALLENGE_SCOPE = 'krb5.encrypted-challenge';
@@ -278,6 +284,33 @@ class Krb5Fast {
     log.debug('Entering Krb5Fast.outerAdvertisement().');
     log.debug('Leaving Krb5Fast.outerAdvertisement().');
     return { type: codec.PA.FX_FAST, value: new Uint8Array(0) };
+  }
+
+  // -------------------------------------------------------------------------
+  // HIDE-CLIENT-NAMES (RFC 6113 section 5.4.2): when the armored request set
+  // it, "the KDC implementing PA-FX-FAST MUST identify the client as the
+  // anonymous principal [RFC6112] in the KDC reply and the error response" —
+  // the OUTER crealm and cname, which travel in the clear. The real ones stay
+  // where only the client reads them: the KrbFastFinished (finishAsReply()),
+  // the ticket's own encrypted part, and the inner KRB-ERROR (wrapError()).
+  // `outerClient()` answers `{ crealm, cname }` for the outer message.
+  // -------------------------------------------------------------------------
+  hidesClientNames(fast: FastState | null): boolean {
+    const { log } = this.deps;
+    log.debug('Entering Krb5Fast.hidesClientNames().');
+    const hides = !!fast &&
+      (fast.fastOptions || []).indexOf(HIDE_CLIENT_NAMES) !== -1;
+    log.debug('Leaving Krb5Fast.hidesClientNames(). ' + hides);
+    return hides;
+  }
+
+  outerClient(fast: FastState | null, crealm: string, cname: Json): Json {
+    const { log } = this.deps;
+    log.debug('Entering Krb5Fast.outerClient().');
+    const hide = this.hidesClientNames(fast);
+    log.debug('Leaving Krb5Fast.outerClient().');
+    return hide ? { crealm: ANONYMOUS_REALM, cname: ANONYMOUS_NAME }
+                : { crealm: crealm, cname: cname };
   }
 
   // -------------------------------------------------------------------------
@@ -548,8 +581,13 @@ class Krb5Fast {
                          'not open under the armor key: ' +
                          ((e && e.message) || e));
     }
+    // HIDE-CLIENT-NAMES (bit 1) IS IMPLEMENTED SINCE #205 (2026-09-26):
+    // Heimdal's client sets it on every FAST TGS-REQ, so refusing it — as
+    // section 5.4.2 lets a KDC do with a critical option it lacks — left a
+    // Heimdal client unable to get a service ticket from this KDC at all the
+    // moment the TGS exchange gained FAST. See hidesClientNames().
     const critical = (inner.fastOptions || []).filter(function (bit) {
-      return bit >= 0 && bit <= 15;
+      return bit >= 0 && bit <= 15 && bit !== HIDE_CLIENT_NAMES;
     });
     if (critical.length) {
       log.debug('Leaving Krb5Fast.openFastReq(). Critical options.');
@@ -557,7 +595,8 @@ class Krb5Fast {
       // MUST fail the request" — and no e-data is defined for the error.
       return this.refuse(93, 'STS-KRB-0141', 'FAST option bit(s) ' +
                          critical.join(', ') + ' are critical and not ' +
-                         'implemented here (hide-client-names is bit 1)');
+                         'implemented here (only hide-client-names, bit 1, ' +
+                         'is)');
     }
     if (inner.reqBody.realm !== armorRealm) {
       log.debug('Leaving Krb5Fast.openFastReq(). Another realm.');
@@ -700,7 +739,12 @@ class Krb5Fast {
     });
     const cipher = await kcrypto.etypeById(fast.armorKey.etype).encrypt(
       fast.armorKey.key, codec.KEY_USAGE.FAST_REP, response);
-    const outer = msgs.encKrbError(Object.assign({}, fields, {
+    // The outer error names the anonymous principal under hide-client-names
+    // (hidesClientNames()); a KRB-ERROR's cname and crealm are OPTIONAL, so
+    // one that carried none stays without.
+    const hidden = this.hidesClientNames(fast) && (e.cname || e.crealm)
+      ? this.outerClient(fast, e.crealm, e.cname) : {};
+    const outer = msgs.encKrbError(Object.assign({}, fields, hidden, {
       eData: asn1.encSequenceOf([msgs.encPaData({
         type: codec.PA.FX_FAST,
         value: codec.encFastReply({ etype: fast.armorKey.etype,

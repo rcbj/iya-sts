@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3541** of them, in **38** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3545** of them, in **38** subsystems.
 
 ## Where a code appears
 
@@ -69,7 +69,7 @@ is an ordinary outcome.
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 16
 * [Federation (`STS-FED`)](#sts-fed) — 133
 * [OpenID Federation (`STS-OIDFED`)](#sts-oidfed) — 66
-* [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 165
+* [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 169
 * [LDAP directory (`STS-LDAP`)](#sts-ldap) — 84
 * [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 77
 * [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 144
@@ -2309,6 +2309,10 @@ Raised from: kerberos/.
 | `STS-KRB-0163` | A trust realm's first random krbtgt key was not made: this node could not ask the shared store whether another node was making it. | — |
 | `STS-KRB-0164` | A FAST armor ticket was sealed under a krbtgt key version the KDC no longer holds (a rotation retired it and its window ended, or "rotate and invalidate" dropped it). | RFC 6113 section 5.4.1.1; KRB_AP_ERR_BADKEYVER (44) |
 | `STS-KRB-0165` | A FAST-armored TGS-REQ (PA-FX-FAST) did not decode, named an armor type other than FX_FAST_ARMOR_AP_REQUEST, or was armored implicitly without a subkey in its PA-TGS-REQ Authenticator. | RFC 6113 sections 5.4.1.1 and 5.4.2: KDC_ERR_PREAUTH_FAILED (24) |
+| `STS-KRB-0166` | A TGS-REQ presented a ticket that is not a ticket-granting ticket and asked for neither RENEW nor VALIDATE: a service ticket cannot buy other tickets. | RFC 4120 section 3.3.3: KRB_AP_ERR_NOT_US (35) |
+| `STS-KRB-0167` | A TGS-REQ's ticket or Authenticator carried AD-fx-fast-armor (71), which marks FAST armor that may not be used to obtain a ticket. | RFC 6113 section 5.4.1.1: KRB_ERR_GENERIC (60) |
+| `STS-KRB-0168` | A TGS-REQ's ticket or Authenticator carried AD-fx-fast-used (72) and the request was not armored with FAST. | RFC 6113 section 5.4.2: KRB_AP_ERR_MODIFIED (41) |
+| `STS-KRB-0169` | A user-to-user TGS-REQ (ENC-TKT-IN-SKEY) was refused: no additional ticket, not a TGT of this realm, it did not open or had expired, it was issued to another server than the one named, or its session key is an enctype the mode withholds. | RFC 4120 section 3.3.3: KDC_ERR_BADOPTION (13), KRB_AP_ERR_BAD_INTEGRITY (31), KRB_AP_ERR_TKT_EXPIRED (32), KDC_ERR_SERVER_NOMATCH (26), KDC_ERR_ETYPE_NOSUPP (14) |
 
 ## STS-LDAP
 
