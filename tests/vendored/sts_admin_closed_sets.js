@@ -466,17 +466,31 @@ async function theConsole(doc, cookie) {
   log.debug("Leaving theConsole().");
 }
 
+// Every setting row in a `GET /admin-api/config` reply, which groups them:
+// `{ groups: [{ group, settings: [...] }] }` (config.js's snapshot()).
+function settingsOf(body) {
+  log.debug("Entering settingsOf().");
+  const out = [];
+  ((body && body.groups) || []).forEach(function (g) {
+    (g.settings || []).forEach(function (row) {
+      out.push(row);
+    });
+  });
+  log.debug("Leaving settingsOf(). " + out.length + " row(s).");
+  return out;
+}
+
 // 4. The settings.
 async function theSettings(cookie) {
   log.debug("Entering theSettings().");
   log.info("=== 4. every runtime setting of type enum ===");
   const listed = await call("GET", API + "/config");
   assert.strictEqual(listed.status, 200, listed.text.slice(0, 300));
-  const all = (listed.body && (listed.body.settings || listed.body)) || [];
+  const all = settingsOf(listed.body);
   // An `enum` row, and a `csv` row whose entries are held to `csvValues`;
   // for the second the probe is a list with one entry outside the set,
   // beside one from it, so the refusal is about the entry and not the list.
-  const rows = (Array.isArray(all) ? all : []).filter(function (s) {
+  const rows = all.filter(function (s) {
     return s && s.runtime &&
            ((s.type === "enum" && Array.isArray(s.enumValues)) ||
             (s.type === "csv" && Array.isArray(s.csvValues) &&
@@ -500,10 +514,10 @@ async function theSettings(cookie) {
     }
   }
   const after = await call("GET", API + "/config");
-  const again = (after.body && (after.body.settings || after.body)) || [];
+  const again = settingsOf(after.body);
   check("no setting holds a value outside its set after both doors were " +
         "tried", function () {
-          const held = (Array.isArray(again) ? again : []).filter(function (s) {
+          const held = again.filter(function (s) {
             return s && String(s.value).indexOf(OUTSIDE) >= 0;
           }).map(function (s) {
             return s.key;
