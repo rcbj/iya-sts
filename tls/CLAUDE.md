@@ -956,10 +956,69 @@ a reissued TLS Issuing CA). It goes to EVERY realm's streams, because one port
 serves them all. The library is required lazily inside
 `announceCertificateChange()`: this module loads at 20 and Shared Signals at
 23b. The first certificate a process takes over its self-signed bootstrap is
-NOT announced, because nobody could have pinned it. So a restart that
-re-issues is not announced either. A worker never announces, because it
-adopts and never certifies. In a cluster each node re-issues its own
-listener, so each announces its own fingerprints.
+NOT announced at that moment, because nobody could have pinned the bootstrap.
+It is compared with what the SERVICE last announced once the port is bound
+(#264, next section). A worker never announces, because it adopts and never
+certifies. In a cluster each node re-issues its own listener, so each
+announces its own fingerprints.
+
+## A RESTART IS ANNOUNCED TOO: WHAT THE SERVICE LAST ANNOUNCED IS KEPT (2026-09-26, #264)
+
+Until #264, a restart was never announced. The listener KEY is made at every
+start (`makeServerCertificate()`), so even a product restart with the Root
+kept presents a new leaf. A receiver that pinned the old one learned nothing.
+
+**The record.** `tls.listenerAnnounced` is a `realms.sharedMap()`
+(`scope: 'shared'`, `retain: 'keep'`). It is keyed by algorithm unit (`rsa`,
+`ml-dsa-65`, …), the `unit` the event names, and holds
+`{ fingerprint256, at }`. `takeIssuedCertificate()` writes it on every
+re-issue. `listen()` writes it at start. `server.js` calls `listen()` from
+the main port's listening callback, so the socket is bound by then.
+
+**At start.** `listen()` compares every owned, ISSUED certificate
+(`listenerCertificatesOwned()`, `selfSigned === false`) with the record, and
+sends ONE `tls-certificate-changed` for the units that differ, with the new
+reason `restarted`. That reason is for this type only (`ssf_events.js`'s
+`spec.reasons`). `from` is the recorded fingerprint.
+- A unit with no record is recorded and not announced: nothing was announced
+  for it to differ from.
+- A first issued certificate taken AFTER `listen()` (a hierarchy that
+  arrived late) is compared at once, in `takeIssuedCertificate()`.
+- Neither path throws into a start.
+
+**FOR THE SERVICE, NOT PER NODE (rcbj's rule that no node is ever exposed).**
+- A receiver reaches the service's address, whichever node answers there.
+- A node cannot remember itself. Its membership id is a fresh UUID at every
+  start (`cluster/CLAUDE.md`), and `cluster.nodeName` is stable only where
+  the platform keeps host names.
+- So the record is shared through the store and any node compares against
+  it, which is #162's arrangement for the process CA.
+- It also catches a node that JOINS with a leaf nobody was told of.
+- **The cost, stated in `docs/`**: every node's start is announced, because
+  each node has a listener key of its own. `from` is the certificate the
+  SERVICE last announced, which another live node may still present.
+  Receivers behind a balancer should pin the Root.
+
+**It persists only where minted state does**: product mode on postgres, a
+cluster, or a dispatched pool with a real KEK (`persistence_minted.js`'s
+`enabled()`).
+- In `memory` mode, on an `ldif` store and in a single-process development
+  service, the record dies with the process, so a restart is not announced.
+- Development builds a new Root at every start, so nothing could have been
+  pinned across a restart there anyway.
+- An EPHEMERAL KEK run (a development pool) clears every row it finds, so a
+  restart is not announced there either.
+
+**Never recorded, never announced**: a self-signed bootstrap, a supplied
+certificate (`tls.certificateFile`) and a request worker's handed-in copy.
+
+**Tests:**
+- `tests/listener_certificate_restart.js` runs three starts over one stub
+  store, in product mode with a file KEK and persisted keys. The same Root
+  and a new leaf are announced once, from `listen()`. With no store, nothing
+  is announced. A mutant that drops `persist` fails three assertions.
+- `tests/service_key_signals.js` E2–E7 covers the rest in one process.
+- No HTTP job can restart the service it talks to, so none covers this.
 
 **THE EVENT FIRES BEFORE THE REALM BRANCHES ARE REBUILT, AND ITS FIRST RUN
 FOUND TWO OLDER DEFECTS THAT ORDER EXPOSED.** `build-root`'s

@@ -1277,8 +1277,13 @@ send inside the key's realm (in every realm for the listener, `*`), and never
 throws into the rotation. `oidfed/federation_keys.ts` announces `rotate()` and
 `revoke()`, but not a next key merely published. `spiffe/spiffe_ca.ts`
 announces both rotations, `scheduled` from its job and `requested` otherwise.
-`tls/tls_server.js` announces a listener certificate it REPLACES; the first
-certificate a process takes over its self-signed bootstrap is not announced.
+`tls/tls_server.js` announces a listener certificate it REPLACES. The first
+certificate a process takes over its self-signed bootstrap is compared, once
+the port is bound, with the fingerprint the SERVICE last announced, kept in
+`tls.listenerAnnounced`. It is announced with the reason `restarted` when they
+differ (#264, `tls/CLAUDE.md`). That reason belongs to
+`tls-certificate-changed` alone: `keyEventRow()` takes a row's own extra
+reasons as `spec.reasons`.
 `admin-ui/pki_admin.ts` announces a realm whose SPIFFE Issuing CA an act on the
 hierarchy moved. **Not in any setting**: the `sts` family is always offered
 (`supportedEventUris()`), so #86's closed sets needed no new value.
