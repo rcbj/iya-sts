@@ -653,6 +653,7 @@ class OutboundDelivery {
       }).catch(function (e) {
         log.debug("Caught in OutboundDelivery.sweep(): " +
                   ((e && e.message) || e));
+        // error-code: none — the kind's own sweep code, tagged here.
         log.error(errorCodes.tag(self.kind.codes.sweepFailed) +
                   self.kind.label + ': the delivery sweep failed in the "' +
                   realm.id + '" realm: ' + ((e && e.message) || e));

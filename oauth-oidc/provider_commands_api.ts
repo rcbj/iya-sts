@@ -78,6 +78,7 @@ class ProviderCommandsApi {
         // error-code: none — the act's own code, read off the result
         errorCodes.mark(res, errorCodes.codeOf(result) || code);
       }
+      // error-code: none — marked above: the act's own code, or `code`.
       self.sendJson(res, result.ok ? 200 : 400, result);
     };
     const ROUTES = [

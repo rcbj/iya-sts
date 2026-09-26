@@ -195,6 +195,7 @@ class CommandMockRp {
       this.spendKnob(req, 'fail');
       log.debug("Leaving CommandMockRp.handle(). A 503, as asked.");
       res.set('Cache-Control', 'no-store');
+      this.deps.errorCodes.mark(res, 'STS-OAUTH-0750');
       res.status(503).json({ error: 'temporarily_unavailable' });
       return undefined;
     }
