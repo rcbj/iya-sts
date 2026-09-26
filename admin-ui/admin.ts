@@ -40521,8 +40521,11 @@ const CONSOLE_QUERY = vz.looseObject((function () {
     per: bounded(16),
 
     // Which rendering is being asked for; compared against 'json' and 'svg' at
-    // the call sites, so anything else already falls through to HTML.
-    format: bounded(16),
+    // the call sites, so anything else already falls through to HTML. It is
+    // ALSO a filter: /admin/used-assertions filters by the history's formats,
+    // and `attestation-challenge` (#229) is 21 characters, so a bound of 16
+    // made that page's own filter answer 400 (sts_admin_console, 2026-09-26).
+    format: bounded(32),
 
     // The identifiers a drill-down page is reached by: a name in the directory,
     // a realm id, a credential handle. None of them is free text.
