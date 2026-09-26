@@ -479,10 +479,16 @@ async function rc4() {
     const r = await kinitPassword(USER + "@" + K.realm, K.password,
       ["-e", "arcfour-hmac-md5"], cacheIn("rc4"));
     if (K.product) {
+      // The KDC answers KDC_ERR_ETYPE_NOSUPP naming product mode
+      // (STS-KRB-0156; sts_kerberos_rc4.js reads the e-text). Heimdal's
+      // client reports an ETYPE_NOSUPP that carries no padata with the
+      // sentence it uses for a PREAUTH_REQUIRED without any
+      // (lib/krb5/init_creds_pw.c), so that sentence is accepted by name.
       check("PRODUCT: kinit restricted to rc4-hmac is refused — the KDC " +
             "has no support for that encryption type", function () {
         assert.notStrictEqual(r.status, 0, r.out);
-        assert.ok(/encryption type|enctype|etype/i.test(r.out), r.out);
+        assert.ok(/encryption type|enctype|etype|Preauth required but no preauth options sent by KDC/i
+          .test(r.out), r.out);
       });
     } else {
       check("DEVELOPMENT: kinit restricted to rc4-hmac gets a TGT",
