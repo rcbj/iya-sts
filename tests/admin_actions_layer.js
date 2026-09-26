@@ -474,6 +474,10 @@ function checkNothingRequiresItEarly(t) {
                    // acted — required LAZILY in the request; the page is
                    // 18o, after the console.
                    'oauth-oidc/provider_commands_admin.ts',
+                   // The foreign SSF transmitters page (#153, 2026-09-26),
+                   // for the gate state only — who acted — required LAZILY
+                   // in the request; the page is 18p, after the console.
+                   'ssf/ssf_transmitters_admin.ts',
                    // The composition root (#50, R2), which builds every
                    // converted module's instance — these two layers
                    // included — after the require step that loaded them,
