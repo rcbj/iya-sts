@@ -12933,9 +12933,9 @@ class AdminConsole {
       'covers a value only while the entry still holds it, so changing a ' +
       'verified value lets that verification lapse for it.') +
       this.note('<strong>What these will not change.</strong> The password ' +
-      'and every other credential (the controls below), the address (<a ' +
-      'href="#credential-controls">its own control</a>, because a write of ' +
-      'it is verified), the username and the attribute the entry is named ' +
+      'and every other credential (the controls below), the address (its ' +
+      'own form, below, because a write of it is verified), the username ' +
+      'and the attribute the entry is named ' +
       'by, binary values such as certificates and photographs, group ' +
       'memberships (<a href="/admin/groups">Groups</a>), and what this ' +
       'service records about their sign-ins. <code>ldapmodify</code> still ' +
@@ -12954,13 +12954,29 @@ class AdminConsole {
     });
     log.debug("Leaving AdminConsole.userAttributesSection(). " +
               usable.length + " editable.");
+    // THE ADDRESS, which the editor withholds: `set-mail` (#64) marks what it
+    // writes VERIFIED and tells the former address, which a generic Set
+    // would not. The action was the management API's alone until #228; a
+    // form here is its console half (rule 7).
+    const current = String(editor.mail || '');
+    const mailForm = '<form method="post" action="/admin/users">' +
+      '<input type="hidden" name="action" value="set-mail">' +
+      '<input type="hidden" name="user" value="' + this.esc(key) + '">' +
+      '<input type="hidden" name="from" value="user">' +
+      '<input type="hidden" name="back" value="' + this.esc(back) + '">' +
+      '<div class="formrow"><label for="personmail">Set the address to' +
+      '</label><input type="email" id="personmail" name="mail" size="34" ' +
+      'required value="' + this.esc(current) + '"><button ' +
+      'type="submit">Set the address</button><span class="sub">Verified, ' +
+      'because an administrator set it; the former address is told.' +
+      '</span></div></form>';
     return heading + explain +
       form('set-attribute', 'Set', usable, false, 'empty clears it') +
       (multi.length
         ? form('add-attribute', 'Add to', multi, true, '') : '') +
       (held.length
         ? form('remove-attribute', 'Remove from', held, true, '') : '') +
-      listing;
+      mailForm + listing;
   }
 
   userCredentialControlsSection(key, factors, gate, back) {
@@ -14031,7 +14047,7 @@ class AdminConsole {
       ? this.userReturnTo(body, who,
           /^federation-/.test(String(body.action || ''))
             ? '#federation-links'
-            : (/-attribute$/.test(String(body.action || ''))
+            : (/-attribute$|^set-mail$/.test(String(body.action || ''))
                 ? '#attributes' : '#credential-controls'))
       : '/admin/users' +
         queryWith(this.listViewFromBack('/admin/users', body.back), {});

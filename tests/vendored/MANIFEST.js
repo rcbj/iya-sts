@@ -832,6 +832,9 @@ const JOBS = [
   // #64's addresses: an administrator's verified, a person's own change
   // pending until its link is followed, and the recovery-code reset.
   { file: 'sts_email_verification.js',   browser: false, local: true },
+  // A person's attributes set, added to and removed from through
+  // /admin-api (#228), in a realm of its own.
+  { file: 'sts_person_attributes.js',    browser: false, local: true },
   { file: 'vc_did.js',                   browser: false },
   // ---------------------------------------------------------------------
   // LAST, ALL THREE OF THEM, AND THE ORDER IS THE WHOLE OF WHY IT IS SAFE

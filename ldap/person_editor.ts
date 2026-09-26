@@ -48,8 +48,9 @@
 //     box cannot hold one honestly.
 //   * **MANAGED** — `uid`, the username, which names the entry and is what
 //     every username lookup reads (a rename is not an attribute edit); and
-//     `mail`, which has its own control because a write of it is VERIFIED
-//     and the former address is told (#63, #64).
+//     `mail`, which has its own action (`set-mail`, drawn beside this
+//     editor on the person's page) because a write of it is VERIFIED and the
+//     former address is told (#63, #64).
 //   * **THE ENTRY'S OWN NAME** — whichever attribute the entry's RDN is
 //     built from. `uid` for everybody this service creates, so that is
 //     already covered; but an entry a client certificate created is
@@ -227,9 +228,9 @@ const FORMAT_HINTS: Record<string, string> = {
 const MANAGED: Record<string, string> = {
   uid: 'It is the username: it names the entry and every sign-in finds the ' +
        'person by it. A rename is not an attribute edit.',
-  mail: 'It has a control of its own (Set the address, or POST ' +
-        '/admin-api/users/set-mail), because a write of it is VERIFIED and ' +
-        'the former address is told it changed.'
+  mail: 'It has a control of its own (Set the address on the person\'s ' +
+        'page, or POST /admin-api/users/set-mail), because a write of it is ' +
+        'VERIFIED and the former address is told it changed.'
 };
 
 const MODES = ['set', 'add', 'remove'];
@@ -314,9 +315,10 @@ class PersonEditor {
       seen.add(key);
       if (flags.secret) {
         withheld.push({ name: name, label: label, kind: 'secret',
-          why: 'It is a credential. A password is set with Set a password ' +
-               '(POST /admin-api/users/set-password), which hashes it and ' +
-               'asks the password policy.' });
+          why: 'It is a credential. The password controls on the ' +
+               'person\'s page reset it, and POST ' +
+               '/admin-api/users/set-password sets one, hashing it under ' +
+               'the password policy.' });
         log.debug("Leaving consider(). Secret.");
         return;
       }
@@ -406,8 +408,11 @@ class PersonEditor {
       });
     });
     log.debug("Leaving PersonEditor.editorFor(). " + person.dn);
+    // The address as well, withheld from the editor but drawn beside it by
+    // the page, whose `set-mail` form starts from it.
     return { dn: person.dn, attributes: attributes,
-             withheld: universe.withheld };
+             withheld: universe.withheld,
+             mail: String((person.attributes.mail || [])[0] || '') };
   }
 
   // -------------------------------------------------------------------------

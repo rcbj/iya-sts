@@ -337,6 +337,19 @@ function childMain() {
                !/<option value="mail">/.test(inner)
              : true,
            '6. and its selects offer title and never userPassword or mail');
+      note(/value="set-attribute"/.test(inner)
+             ? /value="set-mail"/.test(inner) &&
+               /name="mail"[^>]*value="[^"]*@/.test(inner)
+             : true,
+           '6. and the address is set through set-mail, from the one held');
+      const mailed = act('set-mail', 'pae-alice', undefined, undefined);
+      note(mailed.ok === false, '6. set-mail with no address is refused');
+      const setMail = actions.usersAction({ action: 'set-mail',
+        user: 'pae-alice', mail: 'pae.alice@example.org' }, ctx);
+      note(setMail.ok && setMail.verified === true &&
+             editor.editorFor('pae-alice').mail === 'pae.alice@example.org',
+           '6. and set-mail writes it, verified, where the editor reads it',
+           JSON.stringify(setMail));
     });
 
     require('fs').writeFileSync(OUT, JSON.stringify(findings));
