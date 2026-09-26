@@ -9507,6 +9507,52 @@ const CODES = [
       'an application, a federation, a container — and was refused before ' +
       'its password was read; only people bind to the directory.',
     spec: 'LDAP result code 49, invalidCredentials (RFC 4513 section 5.1.3)' },
+  { code: 'STS-LDAP-0101',
+    summary: 'A person\'s attribute edit (#228) found no directory installed ' +
+      'in this process, so there is no entry to change.',
+    spec: 'HTTP 400 (API) or a 303 with error=' },
+  { code: 'STS-LDAP-0102',
+    summary: 'A person\'s attribute edit (#228) named nobody in this ' +
+      'realm\'s directory.',
+    spec: 'HTTP 400 (API) or a 303 with error=' },
+  { code: 'STS-LDAP-0103',
+    summary: 'A person\'s attribute edit (#228) named an attribute the ' +
+      'editor does not change: a credential, a binary value, the ' +
+      'username or the address (which have doors of their own), or ' +
+      'one outside the person schema.',
+    spec: 'HTTP 400 (API) or a 303 with error=' },
+  { code: 'STS-LDAP-0104',
+    summary: 'A person\'s attribute edit (#228) named the attribute the ' +
+      'entry\'s own DN is built from, which would leave the DN and ' +
+      'the entry disagreeing.',
+    spec: 'HTTP 400 (API) or a 303 with error=' },
+  { code: 'STS-LDAP-0105',
+    summary: 'A person\'s attribute edit (#228) was not set, add or remove, ' +
+      'or was an add to an attribute that holds one value.',
+    spec: 'HTTP 400 (API) or a 303 with error=' },
+  { code: 'STS-LDAP-0106',
+    summary: 'A person\'s attribute edit (#228) carried a value that is too ' +
+      'long, holds a control character, does not have its ' +
+      'attribute\'s shape (a country code, a date, a language range, ' +
+      'an http(s) URL, a DN), or was empty for an add or a remove.',
+    spec: 'HTTP 400 (API) or a 303 with error=' },
+  { code: 'STS-LDAP-0107',
+    summary: 'A person\'s attribute edit (#228) added a value the attribute ' +
+      'already holds.',
+    spec: 'HTTP 400 (API) or a 303 with error=' },
+  { code: 'STS-LDAP-0108',
+    summary: 'A person\'s attribute edit (#228) removed a value the ' +
+      'attribute does not hold.',
+    spec: 'HTTP 400 (API) or a 303 with error=' },
+  { code: 'STS-LDAP-0109',
+    summary: 'A person\'s attribute edit (#228) would have left cn or sn, ' +
+      'which RFC 4519 3.12 requires of every person, with no value.',
+    spec: 'HTTP 400 (API) or a 303 with error=' },
+  { code: 'STS-LDAP-0110',
+    summary: 'A person\'s attribute edit (#228) was refused by the ' +
+      'directory: the entry was gone or not a person\'s when the ' +
+      'write reached it.',
+    spec: 'HTTP 400 (API) or a 303 with error=' },
   // ===== SCIM ==============================================================
   { code: 'STS-SCIM-0001',
     summary: 'A SCIM endpoint (or HOBA key registration) was called while ' +
@@ -13806,7 +13852,7 @@ const CODES = [
     spec: 'HTTP 400 (API)' },
   { code: 'STS-ADMIN-0518',
     summary: 'A users action that acts on one person (activation link, ' +
-      'password, second-factor clear) named nobody.',
+      'password, second-factor clear, attribute edit) named nobody.',
     spec: 'HTTP 400 (API) or a 303 with error=' },
   { code: 'STS-ADMIN-0519',
     summary: 'An activation link could not be issued for the named person.',
@@ -14452,6 +14498,10 @@ const CODES = [
     summary: 'A set-aud-sub act named a person with no entry in this ' +
       'realm, or the directory would not write it (#148).',
     spec: 'none (a console or management API refusal, HTTP 400)' },
+  { code: 'STS-ADMIN-0819',
+    summary: 'set-attribute, add-attribute or remove-attribute was refused ' +
+      'and ldap/person_editor.ts named no more specific reason (#228).',
+    spec: 'HTTP 400 (API) or a 303 with error=' },
   { code: 'STS-API-0001',
     summary: 'A management API request carried no Bearer access token while ' +
       'adminApi.authRequired is on.',
