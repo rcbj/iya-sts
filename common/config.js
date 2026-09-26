@@ -4977,8 +4977,11 @@ const SETTINGS = [
                  'digital-signature', 'key-encipherment', 'code-signing',
                  'email', 'timestamping', 'smartcard-logon'],
     dflt: 'tls-client', runtime: true,
-    description: 'Most ACME clients never name a profile. It must also be in ' +
-                 'acme.allowedProfiles, or an order naming none is refused.' },
+    description: 'Most ACME clients never name a profile. An order naming ' +
+                 'none whose identifiers are all dns or ip is issued ' +
+                 'tls-server when acme.allowedProfiles holds it (#252); ' +
+                 'every other such order is issued this. It must also be in ' +
+                 'acme.allowedProfiles, or such an order is refused.' },
   { key: 'acme.certificateLifetimeDays', group: 'ACME',
     label: 'Certificate lifetime (days)',
     env: 'STS_ACME_CERTIFICATE_LIFETIME_DAYS', type: 'int', dflt: 90,

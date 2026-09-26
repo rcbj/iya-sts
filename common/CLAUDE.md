@@ -8174,6 +8174,19 @@ entry, since a host may be registered on two and `ldap_server.js`'s
 `locateEntry()` turns a person's subject DN back into an entry.
 `tests/vendored/sts_acme_certbot.js` and `sts_acme_lego.js` renew through it.
 
+**A REQUEST THAT NAMES NO PROFILE AND ONLY HOSTS IS A `tls-server` REQUEST
+(2026-09-26, #252, rcbj's decision on #207).** `profileForIdentifiers(family,
+types)`: every identifier `dns` or `ip` → `tls-server` when the family's
+`allowedProfiles` holds it; anything else — an `email`, a
+`permanent-identifier`, or a MIX of those with host names — → the family's
+`defaultProfile`. A mixed request names an entry as well as a host and did not
+say which the certificate is for, so it is not guessed; a realm that disallows
+`tls-server` keeps its default, so the choice never reaches past the allowed
+list; a NAMED profile is never passed through this. Only ACME knows its
+identifiers before choosing (EST's label and SCEP's realm choose before a CSR
+is read), so ACME is the one caller — but the rule is the profiles', so it is
+here. `acme/CLAUDE.md` has how the new-order reads it.
+
 **CERTIFICATE AUTHENTICATION CHECKS THREE THINGS AND THE THIRD IS THE
 MAPPING**: `pki.verifyLeaf()` in this realm (another realm's certificate does not
 pass through this Intermediate), `clientAuth`, and a urn:sts: SAN naming an entry

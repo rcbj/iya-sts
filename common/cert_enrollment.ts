@@ -931,6 +931,50 @@ class CertEnrollment {
   }
 
   // ---------------------------------------------------------------------------
+  // THE PROFILE OF A REQUEST THAT NAMES NONE, FROM WHAT IT ASKS FOR (#252,
+  // rcbj's decision on #207, 2026-09-26).
+  //
+  // `family.defaultProfile` is `tls-client`, and until this was written a bare
+  // `certbot certonly -d www.example.test` was issued a clientAuth-only
+  // certificate — a certificate for a web server that no TLS client will accept
+  // from one. A request whose identifiers are ALL host names (`dns`, and `ip`,
+  // which RFC 8738 makes the same kind of name) is asking for a server
+  // certificate whatever it forgot to say, so it gets `tls-server`.
+  //
+  // THE RULE, WRITTEN DOWN:
+  //   * every identifier `dns` or `ip` (and at least one) → `tls-server`, when
+  //     `family.allowedProfiles` holds it;
+  //   * anything else — a person or application by `permanent-identifier`, an
+  //     `email`, or a MIX of host names and those — → `family.defaultProfile`,
+  //     as before: a mixed order names an entry as well as a host, and which of
+  //     the two it is for is exactly what it did not say;
+  //   * a realm whose `allowedProfiles` leaves `tls-server` out has decided it
+  //     issues no server certificate, so a host-only order there keeps the
+  //     realm default too — the default does not reach past the allowed list;
+  //   * a NAMED profile is never replaced: the caller checks it with
+  //     `checkProfile()` and uses it, and this is not asked.
+  //
+  // Only ACME knows the identifiers before it chooses (an EST or SCEP profile
+  // is chosen by the path or the realm before a CSR is read), so ACME is the
+  // one caller; the rule is here because the profiles are.
+  // ---------------------------------------------------------------------------
+  profileForIdentifiers(family, types) {
+    const { log } = this.deps;
+    log.debug("Entering CertEnrollment.profileForIdentifiers().");
+    const list = Array.isArray(types) ? types.map(String) : [];
+    const hostsOnly = list.length > 0 && list.every(function (one) {
+      return one === 'dns' || one === 'ip';
+    });
+    if (hostsOnly && this.allowedProfiles(family).indexOf('tls-server') >= 0) {
+      log.debug("Leaving CertEnrollment.profileForIdentifiers(). tls-server.");
+      return 'tls-server';
+    }
+    log.debug("Leaving CertEnrollment.profileForIdentifiers(). The realm " +
+              "default.");
+    return this.defaultProfile(family);
+  }
+
+  // ---------------------------------------------------------------------------
   // PKCS#10.
   //
   // **THE PROOF OF POSSESSION IS VERIFIED, WHICH IS MORE THAN THIS SERVICE HAS
@@ -3176,6 +3220,7 @@ export = {
   allowedProfiles: slot.forward('allowedProfiles'),
   checkProfile: slot.forward('checkProfile'),
   defaultProfile: slot.forward('defaultProfile'),
+  profileForIdentifiers: slot.forward('profileForIdentifiers'),
   parseCsr: slot.forward('parseCsr'),
   targetFromRequest: slot.forward('targetFromRequest'),
   namesFor: slot.forward('namesFor'),

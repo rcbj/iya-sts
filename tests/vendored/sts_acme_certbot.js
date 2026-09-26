@@ -17,7 +17,9 @@
 //     binding MACed by the wrong key; accepted with the key an administrator
 //     made, and the account listed on /admin-api/acme bound to the entry.
 //   * ISSUANCE: `certonly` for two registered host names with no profile
-//     (the realm's `acme.defaultProfile`), then `--required-profile
+//     (`tls-server`, serverAuth: an order of host names only is a server
+//     certificate request, #252 — it was the realm's `tls-client` default
+//     until 2026-09-26), then `--required-profile
 //     tls-server` and `--preferred-profile tls-server-client` — the
 //     authorizations are valid at newOrder (`sts-entry-binding-01`), so
 //     certbot performs no challenge. Each certificate chains to the realm's
@@ -245,11 +247,11 @@ async function test() {
   const auth = ["--standalone", "--http-01-port", "18888"];
   const plain = await certbot(["certonly", "--cert-name", "plain"].concat(auth,
                         ["-d", WWW, "-d", APIHOST]));
-  C.check("certonly with no profile is issued acme.defaultProfile " +
-          "(tls-client) for both hosts, with no challenge performed",
-          function () {
+  C.check("certonly with no profile, for host names only, is issued " +
+          "tls-server (serverAuth, #252) for both hosts, with no " +
+          "challenge performed", function () {
     succeeded(plain, "certbot certonly");
-    assertIssued(lineage("plain"), [WWW, APIHOST], [EKU.clientAuth],
+    assertIssued(lineage("plain"), [WWW, APIHOST], [EKU.serverAuth],
                  "no profile");
   });
   const server = await certbot(["certonly", "--cert-name", "server",
