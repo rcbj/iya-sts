@@ -401,6 +401,67 @@ async function selfSignedKey(label) {
   return { jwk: jwk, pem: issued.pem };
 }
 
+// A certificate authority and a leaf it issued, both made here at run time
+// (no key material in git) — for a key the suite presents with an x5c chain
+// that must NOT be self-signed: HAIP 1.0 section 4.4.1's client attester
+// (#229). The leaf's private JWK carries `x5c: [leaf]` alone, the CA being
+// the trust anchor the realm is configured with (`caPem`), never in x5c.
+async function caAndLeaf(label) {
+  log.debug("Entering caAndLeaf(). " + label);
+  const repo = require("path").join(__dirname, "..", "..");
+  const x509 = require(require("path").join(repo, "common", "vendored",
+                                            "x509"));
+  const keyMaterial = require(require("path").join(repo, "common",
+                                                   "vendored",
+                                                   "key_material"));
+  const now = Date.now();
+  const caPair = await keyMaterial.generateKeyPair("ec-p256");
+  const ca = await x509.issueCertificate({
+    subject: [{ name: "CN", value: label + " CA" },
+              { name: "O", value: "iya-sts conformance" }],
+    subjectPublicKey: caPair.publicPem,
+    issuerPrivateKey: caPair.privatePem,
+    signatureAlg: "sha256-ecdsa",
+    serial: nodeCrypto.randomBytes(8).toString("hex"),
+    notBefore: new Date(now - 60000).toISOString(),
+    notAfter: new Date(now + 7 * 24 * 3600 * 1000).toISOString(),
+    extensions: {
+      basicConstraints: { present: true, critical: true, ca: true,
+                          pathLen: 0 },
+      keyUsage: { present: true, critical: true,
+                  usages: ["keyCertSign", "cRLSign"] },
+      subjectKeyIdentifier: { present: true }
+    }
+  });
+  const leafPair = await keyMaterial.generateKeyPair("ec-p256");
+  const leaf = await x509.issueCertificate({
+    subject: [{ name: "CN", value: label },
+              { name: "O", value: "iya-sts conformance" }],
+    subjectPublicKey: leafPair.publicPem,
+    issuer: { certificatePem: ca.pem, privateKeyPem: caPair.privatePem,
+              keyAlg: "ec-p256" },
+    signatureAlg: "sha256-ecdsa",
+    serial: nodeCrypto.randomBytes(8).toString("hex"),
+    notBefore: new Date(now - 60000).toISOString(),
+    notAfter: new Date(now + 7 * 24 * 3600 * 1000).toISOString(),
+    extensions: {
+      basicConstraints: { present: true, critical: true, ca: false },
+      keyUsage: { present: true, critical: true,
+                  usages: ["digitalSignature"] },
+      subjectKeyIdentifier: { present: true },
+      authorityKeyIdentifier: { present: true }
+    }
+  });
+  const jwk = nodeCrypto.createPrivateKey(leafPair.privatePem)
+    .export({ format: "jwk" });
+  jwk.kid = label.replace(/[^A-Za-z0-9_-]/g, "-");
+  jwk.alg = "ES256";
+  jwk.use = "sig";
+  jwk.x5c = [leaf.pem.replace(/-----[^-]+-----|\s+/g, "")];
+  log.debug("Leaving caAndLeaf().");
+  return { jwk: jwk, leafPem: leaf.pem, caPem: ca.pem };
+}
+
 // ---------------------------------------------------------------------------
 // THE LEDGER. `expected` is `<label>/<module>` -> reason (a FAILED module
 // that is argued), `knownWarnings` is `<condition>` -> reason (a WARNING the
@@ -491,6 +552,7 @@ module.exports = {
   runPlan: runPlan,
   judge: judge,
   selected: selected,
+  caAndLeaf: caAndLeaf,
   makeRealm: makeRealm,
   makePerson: makePerson,
   suiteCaFile: suiteCaFile,

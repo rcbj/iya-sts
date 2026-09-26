@@ -88,7 +88,7 @@ const PLANS = [
   // authorization server does not implement: every module stops at its
   // first token request. It is listed NOT RUN so the gap is in the run's
   // own output, and runs once the method exists (rcbj/iya-sts#229).
-  { key: "haip", name: "oid4vci-1_0-issuer-haip-test-plan",
+  { key: "haip", name: "oid4vci-1_0-issuer-haip-test-plan", haip: true,
     pending: "this authorization server does not implement " +
              "attest_jwt_client_auth, which HAIP requires of every " +
              "wallet (#229)",
@@ -149,39 +149,65 @@ async function prepare(plan) {
   // (`oid4vci.keyAttestationTrustedCertificates`).
   const attester = await oidf.selfSignedKey("conformance key attester " +
                                             TAG);
-  const realm = await oidf.makeRealm(root, id, "Conformance " + plan.name, [
+  const settings = [
     ["oid4vci.keyAttestationTrustedCertificates", attester.pem],
     ["oauth2.fapi", "2-security"], ["oauth2.openRegistration", true],
     ["oid4vci.walletUrl", offerEndpoint],
     ["oid4vci.walletIssuancePath", ""],
-    ["federation.outboundCaFile", oidf.suiteCaFile()]]);
+    ["federation.outboundCaFile", oidf.suiteCaFile()]];
+  // HAIP: every wallet authenticates with OAuth 2.0 Attestation-Based
+  // Client Authentication (#229). The CLIENT attester is a leaf a CA made
+  // here issued — HAIP 4.4.1 refuses a self-signed one — and the realm
+  // trusts the CA, which is never in the x5c the suite sends; FAPI 2.0
+  // accepts the method only with oauth2.fapiAllowClientAttestation.
+  let clientAttester = null;
+  if (plan.haip) {
+    clientAttester = await oidf.caAndLeaf("conformance client attester " +
+                                          TAG);
+    settings.push(["oauth2.clientAttestationTrustAnchors",
+                   clientAttester.caPem],
+                  ["oauth2.fapiAllowClientAttestation", true]);
+  }
+  const realm = await oidf.makeRealm(root, id, "Conformance " + plan.name,
+                                     settings);
   const person = names.usernameFor("conf-" + plan.key);
   await oidf.makePerson(realm.api, person, PASSWORD);
   const redirect = oidf.SUITE + "test/a/" + alias + "/callback";
   const clients = [];
   for (let n = 1; n <= 2; n++) {
     const keys = oidf.keyPair("conf-" + plan.key + "-" + n);
+    const metadata = {
+      // The suite sends the second client's requests to its callback with
+      // a query of its own (RFC 6749 section 3.1.2), and exact matching
+      // means it is registered that way — the FAPI job's arrangement.
+      redirect_uris: [n === 1 ? redirect
+                              : redirect + "?dummy1=lorem&dummy2=ipsum"],
+      token_endpoint_auth_method: "private_key_jwt",
+      token_endpoint_auth_signing_alg: "ES256",
+      jwks: keys.publicJwks,
+      grant_types: ["authorization_code", "refresh_token",
+                    "urn:ietf:params:oauth:grant-type:pre-authorized_code"],
+      response_types: ["code"],
+      scope: CONFIGURATION_SCOPE,
+      client_name: "conformance wallet " + plan.key + " " + n };
+    if (plan.haip) {
+      // No key of its own: the attestation names the client instance key,
+      // and the suite sends the PoP and DPoP beside it (normal mode).
+      metadata.token_endpoint_auth_method = "attest_jwt_client_auth";
+      delete metadata.token_endpoint_auth_signing_alg;
+      delete metadata.jwks;
+    }
     const registered = await oidf.send(realm.base + "/oauth2/register", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        // The suite sends the second client's requests to its callback with
-        // a query of its own (RFC 6749 section 3.1.2), and exact matching
-        // means it is registered that way — the FAPI job's arrangement.
-        redirect_uris: [n === 1 ? redirect
-                                : redirect + "?dummy1=lorem&dummy2=ipsum"],
-        token_endpoint_auth_method: "private_key_jwt",
-        token_endpoint_auth_signing_alg: "ES256",
-        jwks: keys.publicJwks,
-        grant_types: ["authorization_code", "refresh_token",
-                      "urn:ietf:params:oauth:grant-type:pre-authorized_code"],
-        response_types: ["code"],
-        scope: CONFIGURATION_SCOPE,
-        client_name: "conformance wallet " + plan.key + " " + n }) });
+      body: JSON.stringify(metadata) });
     assert.strictEqual(registered.status, 201, plan.key + " client " + n +
                        ": " + registered.raw.slice(0, 400));
-    clients.push({ client_id: registered.body.client_id,
-                   jwks: keys.privateJwks, scope: CONFIGURATION_SCOPE,
-                   dpop_signing_alg: "ES256" });
+    const client = { client_id: registered.body.client_id,
+                     scope: CONFIGURATION_SCOPE, dpop_signing_alg: "ES256" };
+    if (!plan.haip) {
+      client.jwks = keys.privateJwks;
+    }
+    clients.push(client);
   }
   const configuration = {
     alias: alias,
@@ -197,7 +223,11 @@ async function prepare(plan) {
            allow_unexpected_credential_issuer_metadata_fields: [
              "issuer_did", "issuer_identifier", "credential_definition",
              "credential_signing_alg_values_supported"] },
-    client_attestation: { key_attestation_jwks: { keys: [attester.jwk] } },
+    client_attestation: Object.assign(
+      { key_attestation_jwks: { keys: [attester.jwk] } },
+      clientAttester ? {
+        attester_jwks: { keys: [clientAttester.jwk] },
+        issuer: "https://attester.conformance.test/" + TAG } : {}),
     client: clients[0],
     client2: clients[1],
     browser: [{
