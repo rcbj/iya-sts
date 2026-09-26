@@ -1096,6 +1096,44 @@ class SharedSignals {
   }
 
   // -------------------------------------------------------------------------
+  // A STREAM THIS TRANSMITTER DELETES, TOLD FIRST (#245). SSF 1.0 has no
+  // event for a deleted stream, and the receiver did not ask for it — the
+  // console, `/admin-api` and `ssf.inactivityAction: delete` are the
+  // transmitter's own doors — so the one notice available is sent first:
+  // `stream-updated` with status `disabled` and the reason, through
+  // `changeStatus()`, which transmits BEFORE it stops the stream (section
+  // 8.1.5). Only then is the stream removed. What that notice can reach is
+  // the delivery's to decide: a push is attempted and settled before the
+  // removal; on a poll stream the SET is queued and leaves with the stream,
+  // as it does for every disable, unless the receiver polls in between. A
+  // stream already disabled was told when it was disabled, and is removed.
+  // The receiver's own `DELETE /ssf/stream` sends nothing: it asked.
+  // Resolves when the stream is gone; never rejects.
+  // -------------------------------------------------------------------------
+  retireStream(record: Json, reason: string): Promise<void> {
+    const { log, streams } = this.deps;
+    log.debug('Entering SharedSignals.retireStream(). ' +
+              (record && record.stream_id));
+    if (!record || !record.stream_id) {
+      log.debug('Leaving SharedSignals.retireStream(). No stream.');
+      return Promise.resolve();
+    }
+    const id = String(record.stream_id);
+    const told = record.status === 'disabled' || streams.isInternal(record)
+      ? Promise.resolve(null)
+      : this.changeStatus(record, 'disabled', reason);
+    log.debug('Leaving SharedSignals.retireStream().');
+    return told.then(function (): void {
+      streams.removeStream(id);
+    }, function (e: Json): void {
+      log.debug('Caught in SharedSignals.retireStream(): ' +
+                ((e && e.message) || e));
+      // The notice failed; the stream goes anyway, which is what was asked.
+      streams.removeStream(id);
+    });
+  }
+
+  // -------------------------------------------------------------------------
   // A STREAM DECLARED DEAD, AND ONE REVIVED (2026-09-14). One audit row and
   // one log line for each — the only per-stream lines this machinery writes.
   // -------------------------------------------------------------------------
@@ -1408,13 +1446,17 @@ class SharedSignals {
       if (timeout && idle >= timeout) {
         if (action === 'delete') {
           summary.inactive += 1;
-          streams.removeStream(record.stream_id);
-          this.deps.audit.audit({ action: 'ssf.stream.delete',
-            category: 'signals', protocol: 'SSF', channel: 'internal',
-            target: record.stream_id,
-            summary: 'A Shared Signals stream was deleted after ' + idle +
-              's with no activity from its receiver ' +
-              '(ssf.inactivityTimeoutS)' });
+          work.push(this.retireStream(record, 'No activity from the ' +
+            'receiver for ' + idle + 's; the stream\'s inactivity_timeout ' +
+            'is ' + timeout + 's, and this transmitter deletes such a ' +
+            'stream (ssf.inactivityAction)').then(() => {
+            this.deps.audit.audit({ action: 'ssf.stream.delete',
+              category: 'signals', protocol: 'SSF', channel: 'internal',
+              target: record.stream_id,
+              summary: 'A Shared Signals stream was deleted after ' + idle +
+                's with no activity from its receiver ' +
+                '(ssf.inactivityTimeoutS)' });
+          }));
           return;
         }
         const target = action === 'disable' ? 'disabled' : 'paused';
@@ -2978,13 +3020,15 @@ class SharedSignals {
         return this.actionRefused('STS-SSF-0045', 'SSF', name, { ok: false,
           errors: ['No stream with stream_id "' + id + '".'] });
       }
-      streams.removeStream(id);
-      audit.audit({ action: 'ssf.stream.delete', category: 'signals',
-        protocol: 'SSF', channel: 'http', target: id,
-        summary: 'A Shared Signals stream was deleted from the console' });
-      log.debug('Leaving SharedSignals.consoleAction(). Deleted.');
-      return Promise.resolve({ ok: true, message: 'Stream ' + id + ' deleted.',
-        errors: [] });
+      log.debug('Leaving SharedSignals.consoleAction(). Deleting.');
+      return this.retireStream(streams.getStream(id), 'The transmitter\'s ' +
+        'administrator deleted this stream').then(function () {
+        audit.audit({ action: 'ssf.stream.delete', category: 'signals',
+          protocol: 'SSF', channel: 'http', target: id,
+          summary: 'A Shared Signals stream was deleted from the console' });
+        return { ok: true, message: 'Stream ' + id + ' deleted; its ' +
+          'receiver was sent stream-updated (disabled) first.', errors: [] };
+      });
     }
     if (name === 'status') {
       const record: Json = streams.getStream(id);

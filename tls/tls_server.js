@@ -1054,6 +1054,9 @@ function serverCertificateExtensions() {
 // what adopting a certificate involves.
 function takeIssuedCertificate(record, certPem, chainPem) {
   log.debug("Entering takeIssuedCertificate(). " + record.algorithm);
+  // What the socket presented until now, for the notice below (#245).
+  const wasFingerprint = record.fingerprint256 || '';
+  const wasIssued = !!record.certPem && record.selfSigned === false;
   record.certPem = certPem;
   // The chain travels with it: without the Issuing CA and the
   // Intermediate a client holding only the Root cannot build a path, and
@@ -1095,12 +1098,44 @@ function takeIssuedCertificate(record, certPem, chainPem) {
   // red in every mode). The log line below said "one anchor covers LDAPS 636"
   // the whole time. The owners of those sockets re-key on this.
   notifyCertificateObservers(record.algorithm);
+  // **AND A RELYING PARTY THAT PINS IT IS TOLD (#245)**: a certificate this
+  // service had ALREADY issued to the listener was replaced — a rebuilt
+  // hierarchy, a reissued TLS Issuing CA — so `tls-certificate-changed` goes
+  // to every realm's streams, the one port serving them all. The first
+  // certificate a process takes over its self-signed bootstrap is not a
+  // change anybody could have pinned, and is not announced.
+  if (wasIssued && wasFingerprint && wasFingerprint !== record.fingerprint256) {
+    announceCertificateChange(record.algorithm, wasFingerprint,
+                              record.fingerprint256);
+  }
   log.info('tls: the ' + record.algorithm + ' listener certificate is ' +
            'issued by this service\'s ' +
            'own TLS Issuing CA and chains to its Root — so one anchor ' +
            'covers LDAPS 636, the main port and every token ' +
            'this service signs.');
   log.debug("Leaving takeIssuedCertificate().");
+}
+
+// The Shared Signals notice of a replaced listener certificate (#245).
+// `ssf/service_signals.ts` is required HERE, lazily, and not at the top: this
+// module loads at 20 and Shared Signals at 23b, and the library reads
+// `ssf.ts` from the cache anyway. Never throws into the certificate change,
+// which has happened.
+function announceCertificateChange(algorithm, from, to) {
+  log.debug("Entering announceCertificateChange(). " + algorithm);
+  try {
+    Promise.resolve(require('../ssf/service_signals').keyChanged('tls', '*',
+      { rotated: [{ unit: String(algorithm), from: from, to: to }],
+        reason: 'requested' }))
+      .catch(function (e) {
+        log.debug("Caught in a callback in announceCertificateChange(): " +
+                  ((e && e.message) || e));
+      });
+  } catch (e) {
+    log.debug("Caught in announceCertificateChange(): " +
+              ((e && e.message) || e));
+  }
+  log.debug("Leaving announceCertificateChange().");
 }
 
 // ---------------------------------------------------------------------------

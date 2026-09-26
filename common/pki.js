@@ -8441,6 +8441,26 @@ async function pinKeyPair(scopeId, useCaseId, slot, material) {
                       'as it appears in the certified list (RS256, ' +
                       'ES256:P-256 and so on).'] }, 'STS-PKI-0042');
   }
+  // **A SLOT THAT CERTIFIES A KEY THIS REALM SIGNS WITH IS REFUSED (#245).**
+  // Nothing here signs with a pinned key — `pinnedKeyFor()` has no reader in
+  // the service — so a pin in such a slot changed no signature. What it DID
+  // change was the published set: the plain slot holds the CURRENT key's
+  // certificate (`certify()`'s `kid`), a pin replaced it with a record over
+  // another key and no kid, and the JWKS `x5c` and the SAML metadata of that
+  // key lost their certificate until the next re-certification put it back
+  // — a change to what relying parties pin, made silently and announced by
+  // no signing-key-rotated. A slot nothing signs from is still pinnable.
+  const occupied = certificateFor(scopeId, uc.id, slot);
+  if (occupied && occupied.kid && !occupied.pinned) {
+    log.debug("Leaving pinKeyPair(). The slot certifies a live key.");
+    return errorCodes.mark({ ok: false,
+             errors: ['The ' + uc.label + ' slot "' + slot + '" certifies ' +
+                      'the key this realm signs with (kid ' + occupied.kid +
+                      '). A pinned key pair is not used to sign, so pinning ' +
+                      'it here would only take that key\'s certificate out ' +
+                      'of the published keys. Rotate the key on /admin/keys ' +
+                      'instead.'] }, 'STS-PKI-0206');
+  }
   const privateKeyPem = tidyPem((material || {}).privateKeyPem);
   if (!privateKeyPem) {
     log.debug("Leaving pinKeyPair().");

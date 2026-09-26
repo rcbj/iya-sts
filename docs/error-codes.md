@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3692** of them, in **39** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3694** of them, in **39** subsystems.
 
 ## Where a code appears
 
@@ -57,7 +57,7 @@ is an ordinary outcome.
 * [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 28
 * [Scheduler (`STS-SCHED`)](#sts-sched) — 16
 * [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 79
-* [Certificate authority (`STS-PKI`)](#sts-pki) — 192
+* [Certificate authority (`STS-PKI`)](#sts-pki) — 193
 * [Certificate enrollment core (`STS-ENROLL`)](#sts-enroll) — 51
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 72
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 26
@@ -75,7 +75,7 @@ is an ordinary outcome.
 * [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 144
 * [TLS and client certificates (`STS-TLS`)](#sts-tls) — 35
 * [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 110
-* [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 114
+* [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 115
 * [Risk scoring (`STS-RISK`)](#sts-risk) — 43
 * [Mail (`STS-MAIL`)](#sts-mail) — 39
 * [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 282
@@ -678,6 +678,7 @@ Raised from: common/pki.js, common/pki_authoring.ts, common/pki_revocation.js, c
 | `STS-PKI-0203` | A Certificate & Key Configuration pane field that takes a closed set (pki_profile, pki_pq_mode, pki_key_alg, pki_alt_key_alg, pki_ks_format) held a value outside it (#86). | HTTP 400 page or { ok: false, errors } |
 | `STS-PKI-0204` | The OpenID4VP Verifier's certificate was refused its name or its key: a DNS name a certificate cannot carry, a wildcard (the certificate names one host), or no signing key (#230). | the Verifier's refusal: STS-VC-0112, HTTP 500 at /oid4vp/start |
 | `STS-PKI-0205` | A realm already holds the most OpenID4VP Verifier certificates it keeps (one per DNS name, sixteen), so none was issued for another name — set oid4vp.x509DnsName or pin global.publicBaseUrl (#230). | the Verifier's refusal: STS-VC-0112, HTTP 500 at /oid4vp/start |
+| `STS-PKI-0206` | A key pair was not pinned in a slot that certifies a key the realm signs with: a pinned key does not sign, and the pin would have replaced that key's published certificate (#245). | console / /admin-api refusal (HTTP 400) |
 
 ## STS-ENROLL
 
@@ -3018,6 +3019,7 @@ Raised from: ssf/.
 | `STS-SSF-0120` | A foreign SET's aud does not name this realm's stream audience (#153). | HTTP 400 {err: invalid_audience}, or a poll setErrs entry |
 | `STS-SSF-0121` | A foreign SET's signature does not verify against the transmitter's keys, and it was refused (product mode, or ssf.receiveRequireSignature) (#153). | HTTP 400 {err: invalid_key}, or a poll setErrs entry |
 | `STS-SSF-0122` | Acting on a verified event from a foreign transmitter — ending a person's sessions, disabling or enabling their account — failed; the SET is recorded (#153). | none (logged) |
+| `STS-SSF-0123` | A key event of this service's own (federation-key-rotated, spiffe-authority-rotated or tls-certificate-changed, #245) could not be transmitted after the key moved; the change itself stands. | none — logged; nothing is sent to a receiver |
 
 ## STS-RISK
 
