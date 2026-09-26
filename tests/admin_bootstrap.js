@@ -411,6 +411,15 @@ function childMain() {
     r = await request(port, 'POST', '/authn/password-change',
       { change_id: changeId, new_password: 'Chosen-Pass-42!',
         confirm_password: 'Chosen-Pass-42!' });
+    // The resumed sign-in OFFERS the administrator a second factor (#246,
+    // the authentication policy's `offer`); ignored, as rcbj asked of the
+    // tests for the time being.
+    const offered = r.status === 200 && /id="mfa-setup-ignore"/.test(r.text)
+      ? (r.text.match(/name="mfa_id" value="([^"]+)"/) || [])[1] || '' : '';
+    if (offered) {
+      r = await request(port, 'POST', '/authn/mfa-setup',
+        { mfa_id: offered, action: 'ignore' });
+    }
     note((r.status === 302 || r.status === 303) && !!cookieOf(r) &&
          /\/oauth2\/authorize/.test(String(r.headers.location || '')) &&
          !inDefault(function () {

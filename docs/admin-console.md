@@ -505,7 +505,13 @@ on the way in. Development mode applies no rule and records the history anyway.
   security key, an authenticator app, a recovery code, a wallet, an emailed
   code or link;
 * whether a second factor is required of everybody
-  (`requireSecondFactor: always`) or of those who hold one (`if-held`).
+  (`requireSecondFactor: always`) or of those who hold one (`if-held`);
+* what an administrator (Admin Read or Admin Write) who holds none meets at
+  sign-in (`requireSecondFactorForAdministrators`): an offer they can
+  **Ignore** (`offer`, the default for now), a requirement (`always`, which
+  the built-in administrator is only ever offered), or nothing more than
+  anybody else (`if-held`). See
+  [Authentication](authentication.md#a-second-factor-for-administrators).
 
 It is `cn=default,ou=authnPolicies`. **A realm with none of its own follows the
 default realm's**, and the built-in defaults apply where neither exists.

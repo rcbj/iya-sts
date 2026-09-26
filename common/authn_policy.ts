@@ -256,7 +256,26 @@ const FIELDS: PolicyField[] = ([
           'one (or their entry says stsMfaRequired). `always`: everybody in ' +
           'this realm is, and somebody who holds none is sent to enrol one ' +
           'at their next sign-in. This replaced authn.mfaRequired. There is ' +
-          'no "never": a held factor is always asked for.' }
+          'no "never": a held factor is always asked for.' },
+  // #246 (rcbj, 2026-09-26): whether the people who can change everything
+  // must use a second factor "will vary by organization", so it is this
+  // policy's to say, in the default realm and inherited. `offer` is the
+  // default FOR NOW, at rcbj's word: an administrator with no second factor
+  // is shown the set-up step with an Ignore button, every sign-in.
+  { key: 'requireSecondFactorForAdministrators',
+    attribute: 'stsAuthnRequireSecondFactorForAdministrators',
+    type: 'enum', values: ['if-held', 'offer', 'always'], dflt: 'offer',
+    label: 'Second factor for administrators',
+    what: 'For anybody holding a console role (Admin Read or Admin Write) ' +
+          'who holds no second factor. `offer`: they are shown the step ' +
+          'that sets one up, with an Ignore button, at every sign-in. ' +
+          '`always`: they must set one up before they are signed in — ' +
+          'except the default realm\'s built-in administrator ' +
+          '(admin.bootstrapUsername), who is only ever offered one, so a ' +
+          'service is never left with nobody who can sign in. `if-held`: ' +
+          'as everybody else, by the field above. WEAKER THAN `always`: ' +
+          'an administrator on a password alone is an administrator anyone ' +
+          'with the password is.' }
 ] as PolicyField[]).concat(MECHANISMS.reduce(function (out: PolicyField[], m) {
   (['primary', 'second-factor'] as Role[]).forEach(function (role) {
     const dflt = role === 'primary' ? m.primary : m.secondFactor;
@@ -490,13 +509,16 @@ class AuthnPolicy {
                'sign in to this realm — its administrators included. Leave ' +
                'at least one on.');
     }
-    if (values.requireSecondFactor === 'always') {
+    if (values.requireSecondFactor === 'always' ||
+        values.requireSecondFactorForAdministrators === 'always') {
       const anySecond = MECHANISMS.some(function (m) {
         return m.secondFactor !== null &&
                values[fieldKeyOf(m.id, 'second-factor')];
       });
       if (!anySecond) {
-        out.push('A second factor is required of everybody, but no ' +
+        out.push('A second factor is required of ' +
+                 (values.requireSecondFactor === 'always'
+                   ? 'everybody' : 'administrators') + ', but no ' +
                  'mechanism is accepted as one, so nobody could finish ' +
                  'signing in. Turn one on, or require a second factor only ' +
                  'of those who hold one.');
@@ -675,6 +697,17 @@ class AuthnPolicy {
     return String(rules.requireSecondFactor);
   }
 
+  // `if-held`, `offer` or `always` (#246): what an administrator who holds
+  // no second factor meets at sign-in. `credentials.mfaRequirementFor()`
+  // is the one reader that decides with it.
+  requireSecondFactorForAdministrators(profile?: AuthnProfile | null): string {
+    const { log } = this.deps;
+    log.debug("Entering AuthnPolicy.requireSecondFactorForAdministrators().");
+    const rules = profile || this.read(DEFAULT_PROFILE);
+    log.debug("Leaving AuthnPolicy.requireSecondFactorForAdministrators().");
+    return String(rules.requireSecondFactorForAdministrators);
+  }
+
   // The email mechanisms' numbers, with the ten-minute bound applied again
   // here — a hand-edited entry is range-checked by `read()`, and this is the
   // line every emailed secret's lifetime is computed from.
@@ -714,7 +747,13 @@ class AuthnPolicy {
       'second factors: ' + names('second-factor'),
       rules.requireSecondFactor === 'always'
         ? 'a second factor is required of everybody'
-        : 'a second factor is required of those who hold one'
+        : 'a second factor is required of those who hold one',
+      rules.requireSecondFactorForAdministrators === 'always'
+        ? 'administrators must set one up (the built-in administrator is ' +
+          'offered one)'
+        : (rules.requireSecondFactorForAdministrators === 'offer'
+          ? 'administrators who hold none are offered one at each sign-in'
+          : 'administrators are asked as everybody else is')
     ];
     const email = MECHANISMS.some((m) => {
       return m.email && (this.allows(m.id, 'primary', rules) ||
@@ -922,6 +961,8 @@ export = {
   active: slot.forward('active'),
   mailUsable: slot.forward('mailUsable'),
   requireSecondFactor: slot.forward('requireSecondFactor'),
+  requireSecondFactorForAdministrators:
+    slot.forward('requireSecondFactorForAdministrators'),
   emailSettings: slot.forward('emailSettings'),
   describe: slot.forward('describe'),
   enforced: slot.forward('enforced')

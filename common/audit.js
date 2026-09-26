@@ -318,6 +318,14 @@ const ACTIONS = [
     label: 'A sign-in was asked to set up a required second factor' },
   { action: 'authn.mfa.enrolment.started', category: 'authentication',
     label: 'An authenticator app secret was shown at sign-in' },
+  // #246: an administrator OFFERED a second factor, and whether they
+  // declined it; and either kind of set-up step at an elevated risk.
+  { action: 'authn.mfa.enrolment.offered', category: 'authentication',
+    label: 'An administrator with no second factor was offered one' },
+  { action: 'authn.mfa.enrolment.declined', category: 'authentication',
+    label: 'An administrator ignored the offer and signed in with a password' },
+  { action: 'authn.mfa.enrolment.at-risk', category: 'authentication',
+    label: 'A second factor was set up at a sign-in of elevated risk' },
   { action: 'authn.mfa.enrolled', category: 'authentication',
     label: 'Somebody set up a required second factor at sign-in' },
 

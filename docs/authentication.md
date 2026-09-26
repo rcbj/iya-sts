@@ -408,6 +408,36 @@ a security key, and no session is started until they do. A passwordless sign-in
 is refused (`STS-AUTHN-0171`). If both mechanisms are switched off, the sign-in
 is refused and the settings are named (`STS-AUTHN-0172`).
 
+### A second factor for administrators
+
+Whether the people who can change everything must use a second factor depends
+on the organization, so the authentication policy decides it (#246). Its
+`requireSecondFactorForAdministrators` field applies to anyone who holds a
+console role, **Admin Read or Admin Write**, through the roster groups. Set it
+in the default realm's policy; every realm inherits it unless the realm saves
+its own.
+
+| Value | An administrator who holds no second factor |
+|---|---|
+| `offer` (the default for now) | is shown `/authn/mfa-setup` after the password, with an **Ignore** button. Ignore signs them in with the password alone, and they are offered again at the next sign-in. |
+| `always` | must set one up before any session starts, as under `requireSecondFactor: always`. |
+| `if-held` | is treated like everybody else. |
+
+> **Warning.** `offer` and `if-held` are weaker than `always`: an administrator
+> who signs in with a password alone can be impersonated by anyone who has the
+> password.
+
+**The default realm's built-in administrator (`admin.bootstrapUsername`, `admin`
+by default) is only ever offered a second factor, even under `always`.** It is
+the account you recover a service through when it has no other administrator.
+
+An administrator who holds a factor is always asked for it, whatever this field
+says. The offer is made at a sign-in of elevated risk too, because the console
+is never locked out on risk (#226), and that offer is recorded under
+`STS-RISK-0039`. Posting Ignore on a required step is refused
+(`STS-AUTHN-0270`). The audit log records `authn.mfa.enrolment.offered`,
+`authn.mfa.enrolment.declined` and `authn.mfa.enrolment.at-risk`.
+
 **This screen is the only door that can ask for the second factor.** A
 federated assertion, a SPNEGO ticket or a Kerberos AS-REQ, and a TLS client
 certificate do not reach it, and an existing session is not ended.
