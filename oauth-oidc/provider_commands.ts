@@ -1218,8 +1218,14 @@ class ProviderCommands {
       return;
     }
     const kind = String(change.kind || '');
+    // The directory's snapshots key attributes in lower case; any case is
+    // read, the way LDAP compares attribute names.
     const lock = function (attrs: Json): string {
-      const v = (attrs || {}).pwdAccountLockedTime;
+      const a = attrs || {};
+      const key = Object.keys(a).filter(function (k) {
+        return k.toLowerCase() === 'pwdaccountlockedtime';
+      })[0];
+      const v = key ? a[key] : undefined;
       return String((Array.isArray(v) ? v[0] : v) || '');
     };
     let command = '';
