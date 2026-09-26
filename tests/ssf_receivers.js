@@ -612,6 +612,18 @@ function run(t) {
   // -----------------------------------------------------------------------
   t.log.info('I. status(), which is what an empty page has to say');
   // -----------------------------------------------------------------------
+  // THE STREAM'S DELIVERY RECORD IS SHARED WITH EVERY OTHER FILE in the
+  // in-process pool, and since #69's children (2026-09-26) many of them make
+  // default-realm events whose pushes to 127.0.0.1:8081 fail here (nothing
+  // listens in-process). Enough of them for 300 s pause the stream, so this
+  // section starts from a stream with no delivery history rather than asking
+  // what the rest of the run happened to do.
+  const fresh = receivers.streamFor(receivers.ADMIN);
+  if (fresh) {
+    streams.setStatus(fresh.stream_id, 'enabled', '');
+    fresh.counters.failed = 0;
+    fresh.lastPushError = '';
+  }
   const healthy = receivers.status(receivers.ADMIN);
   t.check(healthy.why.length === 0,
           'with everything on and a stream in place there is nothing to ' +
