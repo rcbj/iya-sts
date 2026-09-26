@@ -5786,8 +5786,17 @@ excluded from every JOSE list. The JWKS appends the JOSE groups last
 its hybrid certificate in `x5c`, and a partnered ML-DSA key BARE (D5, RFC 7517
 section 4.7). A token signed with that ML-DSA key gets no `x5c` header either,
 because `headerFor()`'s key check finds that the partner's certificate holds
-another key. Still to come: XML signing with the `xml` group, and rotation
-units for the groups.
+another key. **Phase 4a, XML:** in a hybrid-groups realm the `STS.xml` proxy answers
+`groupXmlKeyView()`, which is the XML group's RSA-3072 key with its hybrid
+certificate. It does so only once that key is certified, because an XML
+signature travels with its certificate. So all ten XML signers move without
+an edit. The key is ALSO an encryption key, because the SAML metadata
+publishes `STS.xml.certB64` for encryption. That is why
+`ownRsaDecryptionKeys()` and `ownRsaCertificates('xml')` hold it whenever it
+exists, first while the realm signs with it and after the per-algorithm key
+otherwise. Still to come: ECDSA and ML-DSA XML signatures (4b, which needs an
+injected signer in `crypto.signXml()`), and rotation units for the groups
+(2b).
 
 ### A LEAF IS ISSUED FOR A PROFILE, AND THE TWO PROFILES' KEY PAIRS ARE TWO (2026-09-11)
 

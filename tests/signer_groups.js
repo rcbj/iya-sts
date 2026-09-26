@@ -402,6 +402,35 @@ async function whichKeySigns(t, m) {
           'partner\'s, whose first key is not the signing key (RFC 7515 ' +
           'section 4.1.6)');
   m.realms.clearOverride(REALM, 'oauth2.accessTokenCertificateHeader');
+
+  t.log.info('=== I. XML signs with the XML group\'s key (phase 4a) ===');
+  const xmlView = inRealm(function () {
+    return m.helpers.STS.xml;
+  });
+  const xmlCert = m.pki.certificateFor(REALM, 'xml', 'xml/RS256');
+  t.check(!!xmlCert && xmlView.certPem === xmlCert.certificatePem,
+          'STS.xml in a hybrid-groups realm IS the XML group\'s RSA-3072 ' +
+          'key, with its hybrid certificate');
+  const document = '<Assertion xmlns="urn:oasis:names:tc:SAML:2.0:assertion" ' +
+                   'ID="_probe" Version="2.0" IssueInstant="2026-09-26T00:00:00Z">' +
+                   '<Issuer>probe</Issuer></Assertion>';
+  const signedXml = inRealm(function () {
+    return stsCrypto.signXml(document, {
+      privateKeyPem: m.helpers.STS.xml.privateKeyPem,
+      certPem: m.helpers.STS.xml.certPem, what: 'a probe assertion' });
+  });
+  t.check(signedXml.indexOf(stsCrypto.stripPem(xmlCert.certificatePem)) > 0,
+          'a signed document carries the hybrid certificate in KeyInfo');
+  const xmlVerdict = inRealm(function () {
+    return m.helpers.verifyOwnXml(signedXml, { element: 'Assertion' });
+  });
+  t.check(xmlVerdict && xmlVerdict.ok,
+          'and this service verifies it as its own',
+          JSON.stringify(xmlVerdict));
+  const defaultXml = m.helpers.STS.xml;
+  t.check(defaultXml.kid && !/^sts-g-/.test(defaultXml.kid) &&
+          defaultXml.certPem !== xmlCert.certificatePem,
+          'while the default realm\'s STS.xml is still its per-algorithm key');
   log.debug("Leaving whichKeySigns().");
 }
 

@@ -2386,6 +2386,92 @@ function xmlKeyFor(keySet) {
   return keys.xmlKey;
 }
 
+// ---------------------------------------------------------------------------
+// THE XML GROUP'S RSA KEY, SHAPED LIKE `xmlKeyFor()`'s VIEW (2026-09-26, #68
+// phase 4a). In a `hybrid-groups` realm `STS.xml` answers this instead of the
+// per-algorithm XML key, so every XML signer here — SAML 2.0 and 1.1,
+// WS-Federation, WS-Trust, federation, the signed metadata — signs with the
+// XML group's RSA-3072 key and carries its HYBRID certificate in KeyInfo,
+// without one of them being edited. Null until the key exists AND is
+// certified: an XML signature travels with its certificate, and a
+// self-signed one would be a key no relying party was ever given.
+//
+// It is a SIGNING view. The same key also DECRYPTS what a partner encrypted
+// to the certificate the SAML metadata publishes, which is why
+// `ownRsaDecryptionKeys()` and `ownRsaCertificates('xml')` hold it too —
+// whatever the model is now, so switching back strands nothing.
+// ---------------------------------------------------------------------------
+function groupXmlMember(keys) {
+  log.debug("Entering groupXmlMember().");
+  const found = groupMembersOf(keys).filter(function (one) {
+    return one.slot === signerGroups.slotOf('xml', 'RS256');
+  })[0] || null;
+  log.debug("Leaving groupXmlMember(). " + (found ? 'Held.' : 'None.'));
+  return found;
+}
+
+function groupXmlCertificate(keys, member) {
+  log.debug("Entering groupXmlCertificate().");
+  let held = null;
+  try {
+    held = require('./pki').publishedCertificateFor(keys.realm, 'xml',
+                                                    member.slot,
+                                                    member.publicJwk.kid);
+  } catch (e) {
+    log.debug("Caught in groupXmlCertificate(): " + ((e && e.message) || e));
+    held = null;
+  }
+  log.debug("Leaving groupXmlCertificate().");
+  return held;
+}
+
+function groupXmlKeyView(keys) {
+  log.debug("Entering groupXmlKeyView().");
+  if (!signerGroups.hybridGroupsOn()) {
+    log.debug("Leaving groupXmlKeyView(). Per-algorithm realm.");
+    return null;
+  }
+  const member = groupXmlMember(keys);
+  if (!member) {
+    // Made in the background like the JOSE groups; until then the
+    // per-algorithm XML key signs (groupSignerFor() says so once).
+    groupSignerFor('access-token', 'RS256', false);
+    log.debug("Leaving groupXmlKeyView(). Not made yet.");
+    return null;
+  }
+  const held = groupXmlCertificate(keys, member);
+  if (!held) {
+    log.debug("Leaving groupXmlKeyView(). Not certified yet.");
+    return null;
+  }
+  const view = {
+    kid: member.publicJwk.kid, group: 'xml',
+    certPem: held.certificatePem,
+    certB64: stsCrypto.stripPem(held.certificatePem),
+    certChainPem: held.chainPem.slice(),
+    selfSignedCertPem: held.certificatePem,
+    selfSignedCertB64: stsCrypto.stripPem(held.certificatePem)
+  };
+  Object.defineProperty(view, 'privateKey', {
+    enumerable: true, configurable: true,
+    get: function () {
+      log.debug("Entering get().");
+      log.debug("Leaving get().");
+      return member.privateKey;
+    }
+  });
+  Object.defineProperty(view, 'privateKeyPem', {
+    enumerable: true, configurable: true,
+    get: function () {
+      log.debug("Entering get().");
+      log.debug("Leaving get().");
+      return member.privateKey.export({ type: 'pkcs8', format: 'pem' });
+    }
+  });
+  log.debug("Leaving groupXmlKeyView(). kid=" + view.kid);
+  return view;
+}
+
 // FORGET THE BUILT KEY SETS so the factory runs again, which is as close to a
 // restart as one process can get. `realms.keyed()` exposes its map as
 // `existing()`, which is the seam that makes this a clear rather than a
@@ -2413,7 +2499,10 @@ const STS = /** @type {any} */ (new Proxy({}, {
     // on a set written before it existed. Every XML signer and verifier here
     // reads it; everything else on `STS` is the JOSE key, as it always was.
     if (prop === 'xml') {
-      return xmlKeyFor(stsKeysFor());
+      // The XML group's key in a hybrid-groups realm (#68), else the
+      // per-algorithm XML key.
+      const current = stsKeysFor();
+      return groupXmlKeyView(current) || xmlKeyFor(current);
     }
     return stsKeysFor()[prop];
   },
@@ -2550,8 +2639,23 @@ function ownRsaCertificates(useCaseId, keySet) {
   const keys = keySet || stsKeysFor();
   const out = [];
   if (useCaseId === 'xml') {
+    // The XML group's key FIRST where the realm signs with it (#68), and in
+    // the list whenever it exists, so the SAML metadata publishes both and a
+    // realm switched back still verifies what it signed.
+    const member = groupXmlMember(keys);
+    const groupCert = member ? groupXmlCertificate(keys, member) : null;
+    const groupRow = groupCert
+      ? { kid: member.publicJwk.kid, certPem: groupCert.certificatePem,
+          role: 'current', chainPem: groupCert.chainPem.slice() }
+      : null;
+    if (groupRow && signerGroups.hybridGroupsOn()) {
+      out.push(groupRow);
+    }
     const xml = xmlKeyFor(keys);
     out.push({ kid: xml.kid, certPem: xml.certPem, role: 'current' });
+    if (groupRow && !signerGroups.hybridGroupsOn()) {
+      out.push(groupRow);
+    }
   } else {
     out.push({ kid: keys.kid, certPem: keys.certPem, role: 'current' });
   }
@@ -2917,6 +3021,24 @@ function ownRsaDecryptionKeys(firstUseCase, keySet) {
   ];
   if (firstUseCase === 'jose') {
     currents.reverse();
+  }
+  // THE XML GROUP'S RSA KEY (#68): the SAML metadata of a hybrid-groups realm
+  // publishes its certificate for encryption, so it opens what a partner
+  // encrypted to it — first where the realm signs with it.
+  const groupMember = groupXmlMember(keys);
+  if (groupMember) {
+    const groupRow = { useCase: 'xml', kid: groupMember.publicJwk.kid,
+                       get: function () {
+                         return { privateKey: groupMember.privateKey,
+                                  privateKeyPem: groupMember.privateKey
+                                    .export({ type: 'pkcs8',
+                                              format: 'pem' }) };
+                       } };
+    if (signerGroups.hybridGroupsOn() && firstUseCase !== 'jose') {
+      currents.unshift(groupRow);
+    } else {
+      currents.push(groupRow);
+    }
   }
   const now = Date.now();
   const standby = standbyOf(keys).filter(function (one) {
