@@ -371,7 +371,8 @@ async function test() {
                                   value: true },
            "turned refresh-token rotation on in the realm");
   await ok(api + "/applications/create", { identifier: CLIENT,
-    kind: "oauth2-client", name: CLIENT, protocols: ["oauth2", "ssf"],
+    kind: "oauth2-client", name: CLIENT,
+    protocols: ["oauth2", "oidc", "ssf"],
     fields: { oauthClientId: [CLIENT], oauthClientSecret: SECRET,
               oauthTokenEndpointAuthMethod: "client_secret_post",
               oauthAllowedScope: ["openid", "profile", "ssf:read",
