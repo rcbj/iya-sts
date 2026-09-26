@@ -9839,6 +9839,34 @@ const CODES = [
       'KDC no longer holds (a rotation retired it and its window ended, or ' +
       '"rotate and invalidate" dropped it).',
     spec: 'RFC 6113 section 5.4.1.1; KRB_AP_ERR_BADKEYVER (44)' },
+  { code: 'STS-KRB-0165',
+    summary: 'A FAST-armored TGS-REQ (PA-FX-FAST) did not decode, named ' +
+      'an armor type other than FX_FAST_ARMOR_AP_REQUEST, or was armored ' +
+      'implicitly without a subkey in its PA-TGS-REQ Authenticator.',
+    spec: 'RFC 6113 sections 5.4.1.1 and 5.4.2: KDC_ERR_PREAUTH_FAILED ' +
+      '(24)' },
+  { code: 'STS-KRB-0166',
+    summary: 'A TGS-REQ presented a ticket that is not a ticket-granting ' +
+      'ticket and did not RENEW that ticket for its own server: a service ' +
+      'ticket cannot buy other tickets.',
+    spec: 'RFC 4120 section 3.3.3: KRB_AP_ERR_NOT_US (35)' },
+  { code: 'STS-KRB-0167',
+    summary: 'A TGS-REQ\'s ticket or Authenticator carried ' +
+      'AD-fx-fast-armor (71), which marks FAST armor that may not be used ' +
+      'to obtain a ticket.',
+    spec: 'RFC 6113 section 5.4.1.1: KRB_ERR_GENERIC (60)' },
+  { code: 'STS-KRB-0168',
+    summary: 'A TGS-REQ\'s ticket or Authenticator carried AD-fx-fast-used ' +
+      '(72) and the request was not armored with FAST.',
+    spec: 'RFC 6113 section 5.4.2: KRB_AP_ERR_MODIFIED (41)' },
+  { code: 'STS-KRB-0169',
+    summary: 'A user-to-user TGS-REQ (ENC-TKT-IN-SKEY) was refused: no ' +
+      'additional ticket, not a TGT of this realm, it did not open or had ' +
+      'expired, it was issued to another server than the one named, or ' +
+      'its session key is an enctype the mode withholds.',
+    spec: 'RFC 4120 section 3.3.3: KDC_ERR_BADOPTION (13), ' +
+      'KRB_AP_ERR_BAD_INTEGRITY (31), KRB_AP_ERR_TKT_EXPIRED (32), ' +
+      'KDC_ERR_SERVER_NOMATCH (26), KDC_ERR_ETYPE_NOSUPP (14)' },
   // ===== LDAP ==============================================================
   { code: 'STS-LDAP-0001',
     summary: 'An LDAP simple bind presented the reserved password this ' +

@@ -1312,6 +1312,8 @@ and carrying them twice is what made this table's own arithmetic wrong.
 | `tests/vendored/sts_fapi2_message_signing.js` **(ours)** | **FAPI 2.0 MESSAGE SIGNING OVER THE WIRE** (#141, 2026-09-22), in a throwaway realm on `2-message-signing`: the report's rows; discovery with JARM's modes only and a signed request object and PAR required; a plain push, a signed push asking for no JARM mode, and one with no nbf refused; a signed push answered with a PS256 JARM response verified here and redeemed for a DPoP-bound token; an RFC 9701 introspection response signed PS256 and verified; the portal signing in under the profile. 10 checks |
 | `tests/vendored/sts_fapi_conformance.js` **(ours)** | **THE OPENID FOUNDATION'S CONFORMANCE SUITE** (#176, 2026-09-24) — the independent check the four rows above are not. FAPI 2.0 Security Profile, FAPI 2.0 Message Signing, FAPI 1.0 Advanced and FAPI-CIBA, one plan each in a throwaway realm under the profile it tests, every module run through the suite's API; a FAILED or timed-out module fails the job unless `EXPECTED` names it with its reason (empty). `conformance: true`: SKIPPED with the reason where the launcher brought no suite up. See *The OpenID conformance suite*, below |
 | `tests/vendored/sts_scim_conformance.js` **(ours)**, with `tests/scim_conformance_fixes.js` in process | **TWO SCIM 2.0 CONFORMANCE HARNESSES AGAINST `/scim/v2`** (#206, 2026-09-26) — python-scim's **scim2-tester** (discovery, then create / read / list / `.search` / `attributes` / replace / PATCH add-remove-replace of every published attribute / delete per resource type, and a random URL) and **scim2/test-suite** (one result per RFC 7643 / 7644 requirement: filters, sort, pagination, Bulk, If-Match and the rest scim2-tester has no check for), both in a throwaway realm with a `scim:read scim:write` client_credentials token and `scim.inventOnCreate` off. Any scim2-tester ERROR, CRITICAL or DEVIATION and any test-suite FAIL or WARN fails the job unless `EXCEPTIONS` names it with its reason (each also on #206); an exception that did not occur is reported. See *The SCIM conformance harnesses*, below |
+| `tests/vendored/sts_kerberos_samba.js` **(ours)**, with `tests/kerberos_samba_findings.js` in process | **SAMBA'S RAW KERBEROS KDC TESTS** (#204, 2026-09-26) — every module of Samba 4.25.0's `python/samba/tests/krb5` (GPL-3.0, built into the tests image, never vendored), run unchanged by `tests/kerberos-interop/samba_krb5_driver.py` against a throwaway development realm's KDC on TCP 88 in three service profiles (and `xrealm_tests` against the default realm's development trust). The AD-only tests are skipped by the driver naming what each needed and counted per reason; any failure or error not in `EXCEPTIONS` (each also on #204) fails the job, and so do fewer than `FLOOR` passes. The in-process file holds the cheapest-to-break fixes. See *The Kerberos interoperability harnesses*, below |
+| `tests/vendored/sts_kerberos_heimdal.js` **(ours)** | **HEIMDAL'S CLIENT TOOLS BESIDE MIT'S** (#205, 2026-09-26) — `kinit`, `klist`, `kgetcred`, `heimtools kvno`, `ktutil`, `gss-token` and a curl built against Heimdal's GSSAPI, from a pinned Heimdal commit in the tests image: AS and TGS per realm (Heimdal armors every TGS-REQ with FAST and hide-client-names), a service's and a person's keytab, FAST with a host's armor TGT and the password alone refused for a second-factor account in product, RC4 by mode, and SPNEGO at `/authn/spnego` by `curl --negotiate` and by a `gss-token` token — both modes. OTP and MS-KKDCP are recorded exceptions: Heimdal's client has neither. See *The Kerberos interoperability harnesses*, below |
 | `tests/vendored/sts_vc_data_model_suite.js` **(ours)** | **THE W3C VC DATA MODEL 2.0 TEST SUITE** (#194, 2026-09-26) against the VC-API adapter (`oid4vc/vc_api.ts`) of a throwaway development realm: the eddsa-rdfc-2022 issuer (`vc2.0`) and the jose-p256 one (`EnvelopingProof`), the credential and presentation verifiers, interop on. Every failure fixed or in `EXCEPTIONS` (three: the suite's enveloped presentation carries a `vp` claim VC-JOSE-COSE forbids). See *The W3C VC and DID suites*, below |
 | `tests/vendored/sts_vc_di_eddsa_suite.js` **(ours)** | **THE W3C DATA INTEGRITY EDDSA SUITE** (#195): eddsa-rdfc-2022 and eddsa-jcs-2022, issuers and verifier, VC 1.1 and 2.0, interop on. No exceptions |
 | `tests/vendored/sts_vc_di_ecdsa_suite.js` **(ours)** | **THE W3C DATA INTEGRITY ECDSA SUITE** (#196): ecdsa-rdfc-2019 and ecdsa-jcs-2019 over P-256 and P-384 and ecdsa-sd-2023, issuers and verifier, interop on — every file but `60-sd-interop.js`, which needs a holder by the name "Digital Bazaar"; section 2 is that test with the holder named: this issuer's base proof derived by Digital Bazaar's library and by `/vc-api/credentials/derive`, each derivation verified by this verifier and by Digital Bazaar's, and a base proof refused. No exceptions |
@@ -1929,6 +1931,62 @@ the service, and the exceptions, are in `acme/CLAUDE.md`, `est/CLAUDE.md` and
 **By hand**, inside the tests image on the stack's network: the job with the
 usual `WSTRUST_STS_URL`, `OID4VCI_ISSUER_URL`, `NODE_EXTRA_CA_CERTS`, the
 admin token and the preload — the clients themselves are on the PATH.
+
+## THE KERBEROS INTEROPERABILITY HARNESSES (#204, #205, 2026-09-26)
+
+Every Kerberos interoperability check here was MIT's client until these two;
+both are built from pinned upstream sources in stages of `tests/Dockerfile`
+(`tests/kerberos-interop/build-*.sh`, each checking a sha256 and writing the
+runtime packages it linked into its prefix for the runner to install), and
+neither is vendored:
+
+| Harness | Licence | Pin | Where |
+|---|---|---|---|
+| **Samba**'s `python/samba/tests/krb5` and the bindings it imports | GPL-3.0 (`/opt/samba/licenses`) | release 4.25.0, tarball sha256 in `build-samba.sh`; built with the AD DC so `kdc_base_test.py` can be imported, never run as one | `/opt/samba` (`STS_SAMBA_DIR`) |
+| **Heimdal**'s client tools (`kinit`, `klist`, `kgetcred`, `heimtools kvno`, `ktutil`, `gss-token`) | BSD-3-Clause | master `c4971f73` (2026-09-18) — 7.8.0, the last release, has no `gss-token` | `/opt/heimdal` (`STS_HEIMDAL_DIR`), not on the PATH |
+| **curl** against Heimdal's GSSAPI | curl (MIT-style) | 8.16.0 — 8.17.0 dropped Heimdal from its configure | `/opt/heimdal/bin/curl` |
+
+**IN THE TESTS IMAGE, NOT A COMPOSE PROFILE**, for the enrollment clients'
+reason: each is a command line (or a Python run) a job starts and reads.
+The cost is about twenty-five minutes on a cold tests-image build, cached
+after that.
+
+**SAMBA'S TESTS ARE WRITTEN FOR AN AD DC.** `RawKerberosTest` builds every
+message by hand and checks every field, and the protocol-generic tests read
+their credentials from Samba's own environment contract; most of
+`KDCBaseTest`'s create their accounts in Active Directory. The driver
+(`samba_krb5_driver.py`, whose header argues it) runs every class unchanged
+and adapts only what the environment is: every door to a DC raises SkipTest
+naming it, a plain user account is a development realm's create-on-first-sight
+principal, and a computer, server or managed-service account — one key for a
+sAMAccountName and its SPNs — or a user with any AD attribute is skipped
+naming what it needed. So a newly applicable test in a later pin runs without
+an edit, and the job's log counts the not-applicable ones by reason. The first
+complete runs (2026-09-26): 268 passing in `memory` (267 in `single-node`,
+whose default realm has no development trust for `xrealm_tests`), 31 failing
+or erroring, every one a documented exception, and 4,398 not applicable.
+
+**Three service profiles** (the job's header): FAST and `kdc_base` name
+`host/<name>`, `kdc_tgs_tests` and `s4u_tests` name the account itself, and
+`simple_tests` names `host/<SERVICE_USERNAME>` — one computer account in AD,
+three principals here. Every key the job hands Samba is derived from the
+development realm's published salts and passwords; nothing leaves the store.
+
+**Heimdal is driven as MIT is in the `sts_kerberos_*` jobs** — its own
+`krb5.conf` and credential caches in a temporary directory, every command's
+output held to what it prints on success plus lines accepted by name. Heimdal
+found the two things MIT could not: it sets FAST's `hide-client-names` on
+every TGS-REQ, and it reads RFC 6806's `enc-pa-rep`.
+
+**What they found** is in `kerberos/CLAUDE.md` (*What Samba's raw Kerberos
+tests and Heimdal's client found*); the exceptions are the jobs' `EXCEPTIONS`
+and comments on #204 and #205.
+
+**By hand**, inside the tests image on the stack's network: the jobs with the
+usual `WSTRUST_STS_URL`, `OID4VCI_ISSUER_URL`, `NODE_EXTRA_CA_CERTS`, the
+admin token and the preload. On a host, run the driver in any image with
+`/opt/samba` (the `samba-krb5` stage) with Samba's variables — the job's
+`envFor()` lists them.
 
 ## THE SAML PEERS (#189–#192, 2026-09-24)
 

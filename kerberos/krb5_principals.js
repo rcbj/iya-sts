@@ -3303,13 +3303,36 @@ function s2kparamsMode() {
     ? 'send' : 'omit';
 }
 
-// The ETYPE-INFO2 entries for a principal: one per supported etype, each with
-// the salt the client must use. arcfour carries NO salt, and that absence is
-// meaningful — its string-to-key ignores the salt entirely.
-function etypeInfo2For(principal) {
+// The ETYPE-INFO2 entries for a principal, each with the salt the client must
+// use. arcfour carries NO salt, and that absence is meaningful — its
+// string-to-key ignores the salt entirely.
+//
+// WITH `requested` — the etype list of the AS-REQ being answered — ONLY THE
+// ENCTYPES THAT REQUEST ASKED FOR, IN ITS ORDER (#204, 2026-09-26). A client
+// reads ETYPE-INFO2 to choose the key it pre-authenticates with, and every
+// client there is takes the FIRST entry (Samba's raw tests, MIT, Heimdal);
+// RFC 4120 section 3.1.3 has the KDC answer with the first etype of the
+// client's list it holds a key for. This used to list every enctype the
+// principal holds in the KDC's order, so a client that asked for rc4-hmac
+// alone, or aes128 first, was told to use aes256 — derived a key the KDC then
+// refused against the enctype it had negotiated, KDC_ERR_PREAUTH_FAILED for a
+// right password. Samba's kdc_tests.test_arc4_hmac_md5 found it. So the first
+// entry here is always what chooseEtype() picked. Without `requested` (a
+// caller with no request in hand) it is every supported etype, as before.
+function etypeInfo2For(principal, requested) {
   log.debug("Entering etypeInfo2For().");
+  const supported = supportedEtypes(principal);
+  let ids = supported;
+  if (Array.isArray(requested)) {
+    ids = [];
+    requested.forEach(function (id) {
+      if (supported.indexOf(id) !== -1 && ids.indexOf(id) === -1) {
+        ids.push(id);
+      }
+    });
+  }
   log.debug("Leaving etypeInfo2For().");
-  return supportedEtypes(principal).map(function (id) {
+  return ids.map(function (id) {
     // arcfour ignores the salt entirely, so its entry carries neither a salt
     // nor s2kparams whatever the mode.
     if (id === 23) return { etype: id, salt: null, s2kparams: null };
