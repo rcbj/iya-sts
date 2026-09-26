@@ -25,6 +25,9 @@
 //   U. an unknown path under /scim/v2 is a SCIM 404 (STS-SCIM-0080);
 //   X. a PATCH on a whole extension: a value naming its own schema, and a
 //      remove of every attribute;
+//   L. an add of a value the resource already holds changes nothing, so
+//      meta.lastModified does not move (RFC 7644 section 3.5.2.1) — asked
+//      across a second boundary, where the write used to show;
 //   I. scim.inventOnCreate: on, a development-mode create is filled in;
 //      off, it holds only what was sent.
 //
@@ -267,6 +270,27 @@ function childMain() {
       note(r.status === 200 && r.json[ENT] === undefined,
            'X2. removing a whole extension removes every attribute of it',
            r.status + ' ' + r.text.slice(0, 200));
+
+      // L. AN ADD OF AN EXISTING VALUE CHANGES NOTHING (2026-09-26): the
+      // PATCH rewrote the entry and moved modifyTimestamp whenever the
+      // rewrite crossed a second, which scim2/test-suite caught once in a
+      // full run. The wait makes this check cross one every time.
+      r = await scim('POST', '/Users', { schemas: [USER],
+        userName: 'sc-addexist', displayName: 'Existing Value' });
+      const addId = r.json && r.json.id;
+      const lastBefore = r.json && r.json.meta && r.json.meta.lastModified;
+      await new Promise(function (done) { setTimeout(done, 1200); });
+      r = await scim('PATCH', '/Users/' + addId, { schemas: [PATCH],
+        Operations: [{ op: 'add', path: 'displayName',
+                       value: 'Existing Value' }] });
+      const patchStatus = r.status;
+      r = await scim('GET', '/Users/' + addId);
+      note((patchStatus === 200 || patchStatus === 204) && lastBefore &&
+           r.json && r.json.meta && r.json.meta.lastModified === lastBefore,
+           'L1. adding a value the user already holds leaves lastModified ' +
+           'where it was',
+           patchStatus + ' ' + lastBefore + ' -> ' +
+           (r.json && r.json.meta && r.json.meta.lastModified));
 
       // I. scim.inventOnCreate
       r = await scim('POST', '/Users', { schemas: [USER],
