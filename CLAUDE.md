@@ -275,7 +275,7 @@ holds is the table above; what each module is for is that directory's
    | `admin-ui/crypto_metadata.ts` | `setProtocolFamilies`, filled by `sts_metadata.ts` | `admin-ui/CLAUDE.md` |
    | `portal/portal.ts` | `setDirectory`, filled by `ldap/ldap_server.js` | `portal/CLAUDE.md` |
    | `authn/authn.ts` | `setSessionObserver`, filled by `ssf/ssf.ts` | `authn/CLAUDE.md`, `ssf/CLAUDE.md` |
-   | `common/admin_stats.js` | `setUserObserver` (three kinds of event, still one slot), `setAttributeResolver`, `setGroupResolver` | `common/CLAUDE.md` |
+   | `common/admin_stats.js` | `setUserObserver` (three kinds of event, still one slot), `setAttributeResolver`, `setGroupResolver`, `setRevocationObserver` (#239, filled by `oauth-oidc/oauth_grant_signals.ts`) | `common/CLAUDE.md` |
    | `common/helpers.js` | `setSubjectResolver` (a person's `sub` from their entry's `entryUUID`, and back), filled by `ldap/ldap_server.js` (2026-09-14) | `ldap/CLAUDE.md` |
 
    **`setTruststore()` is the one slot not filled by the module that owns what
@@ -489,6 +489,7 @@ is and the named file says why.
 | 23 | `spiffe/spiffe_server` | After `ldap/ldap_server` and `tls/tls_server`; its registry's store is the directory. | `spiffe/CLAUDE.md` |
 | 23b | `ssf/ssf` | After `admin-ui/admin`, whose slots it fills; also fills `authn.setSessionObserver()`. Starts nothing. | `ssf/CLAUDE.md`, `authn/CLAUDE.md` |
 | 23b-ii | `common/signing_rotation` | After `ssf/ssf`, whose `signingKeyRotated()` it calls (lazily, so the order is for a reader). A library: registers the `signing.rotate` and `signing.retire` scheduler jobs when built and no route. | `common/signing_rotation.ts` (#42) |
+| 23b-vi | `oauth-oidc/oauth_grant_signals` | After `ssf/ssf` (23b), which it delivers through lazily, so the order is for a reader. A library: filling `admin_stats.setRevocationObserver()` when built is its whole installation, and it registers no route (#239). | `oauth-oidc/CLAUDE.md` |
 | 23b-iii | `kerberos/krb5_krbtgt_rotation` | After `ldap/ldap_server` (21), whose directory slot the krbtgt key is written through (#169). A library: registers the `krb5.krbtgt-rotate` and `krb5.krbtgt-rotate-now` scheduler jobs when built and no route; reaches everything lazily. | `kerberos/CLAUDE.md` |
 | 23c | `xacml/xacml` | After `admin-ui/admin`, whose slots this family fills; one require for the family, and two `register()` calls — `xacml_admin`, then `xacml`. **Requiring `xacml_role_pep.ts` here is what arms every issuance site** — before this REQUIRE (a load-time effect, not a route) `issuance_gate.js` answers "allowed". | `xacml/CLAUDE.md` |
 | 23d | `gnap/gnap` | After `admin-ui/admin` and `ssf/ssf`; one require for the family, and three `register()` calls — `gnap`, `gnap_interact`, `gnap_admin`. | `gnap/CLAUDE.md` |

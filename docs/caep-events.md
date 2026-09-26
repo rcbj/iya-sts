@@ -26,8 +26,8 @@ The short version:
 | Event | Emitted by this service on its own? |
 |---|---|
 | `session-established` | **yes** — every sign-in, through every protocol that starts a session |
-| `session-presented` | **yes** — single sign-on, in four browser SSO profiles |
-| `session-revoked` | **yes** — every sign-out, and every expiry |
+| `session-presented` | **yes** — single sign-on: four browser SSO profiles, a GNAP interaction, a CIBA approval, the Native SSO exchange and a pre-authorized OpenID4VCI offer |
+| `session-revoked` | **yes** — every sign-out, every expiry, and every OAuth 2.0 or GNAP grant revoked |
 | `token-claims-change` | **yes** — a directory change that moves a claim of somebody holding live tokens or assertions, and a modified [GNAP](gnap.md) grant |
 | `credential-change` | **yes** — any credential of a person created, changed, revoked or deleted, at every door that changes one |
 | `assurance-level-change` | **yes** — a re-authentication on a held session that moves its `acr` |
@@ -183,7 +183,8 @@ honoured without a new authentication — which is single sign-on.**
 
 Unlike the other two automatic events, this one has **no funnel**. A
 presentation is something each endpoint decides it is doing, so it fires from
-exactly four call sites, one per browser SSO profile:
+one call site per door — the four browser SSO profiles, and four doors that
+honour a session for a client it was not made for:
 
 | Protocol | Activity | `via` |
 |---|---|---|
@@ -191,8 +192,12 @@ exactly four call sites, one per browser SSO profile:
 | SAML 2.0 | an `AuthnRequest` at `/saml2/sso`, over any of the three bindings, that reaches the answer step on an existing session | `SAML 2.0` |
 | SAML 1.1 | an arrival at the inter-site transfer service carrying a `TARGET`, answered on an existing session | `SAML 1.1` |
 | WS-Federation | a `wsignin1.0` at the passive requestor endpoint answered on an existing session | `WS-Federation` |
+| GNAP | an interaction that meets a live sign-on session and approves without a new authentication | `GNAP` |
+| OpenID Connect CIBA | a person **approving** a backchannel request on `/portal/ciba`: the client is issued tokens on the strength of the session's `acr`, `amr` and `auth_time`, and the tokens are issued ON that session. A denial honours nothing and sends nothing | `OpenID Connect CIBA` |
+| OpenID Connect Native SSO | a second app's token exchange at `/oauth2/token`: it is issued tokens on the sign-on session the first app's ID Token names, with no new authentication. Sent after the tokens are issued, so a refused exchange sends nothing | `OpenID Connect Native SSO` |
+| OpenID4VCI | a **pre-authorized** (cross-device or deferred) Credential Offer made for the signed-in person, where the test controls are closed: the pre-authorized code is the authorization for a credential about them, made on the session's authority. A same-device offer carries no authorization, and development mints the pre-authorized offer for a fixed test person without reading any session, so neither sends it | `OpenID4VCI` |
 
-All four go through `authn.notePresented()`, which is protocol-independent: the
+All of them go through `authn.notePresented()`, which is protocol-independent: the
 event names the **session**, and `via` records which door it came back through.
 
 **The first presentation of a brand-new session is swallowed.** Every sign-in
@@ -286,16 +291,69 @@ one, the revocation applies to any session matching **every** part of it at once
 **warning** rather than an error: it is harmless, a receiver should be
 idempotent about it, and that is exactly the thing worth testing.
 
-**One thing it deliberately does not do:** revoking tokens does not end a
-session here, so `POST /admin-api/tokens/revoke-user` and the bulk buttons on
-`/admin/tokens` emit nothing. A session outlives its tokens; ending it is the
-act this event reports.
+**Revoking tokens does not end a SIGN-ON session**, and nothing above
+changes when one is revoked. A grant is a different session, though, and its
+end is reported as one.
 
-**GNAP is the exception, and it is not a contradiction.** A GNAP
-grant is itself a DELEGATED SESSION between a client instance and a resource
-owner — it has a lifetime, a continuation and a revocation of its own — so
-revoking one IS ending a session, and this event says so. Three acts send it,
-each with a complex subject whose `user` is the resource owner and whose
+### A revoked OAuth 2.0 grant (#239)
+
+An OAuth 2.0 grant is a DELEGATED SESSION between a client and the person who
+granted it. It has a lifetime, a renewal (its refresh token) and a revocation
+of its own, so revoking one ends a session, and this event says so. GNAP's
+grants below have always been reported this way. The subject is complex: `user`
+names the person, and `session` is `{"format": "opaque", "id":
+"oauth-grant:<id>"}`. The `<id>` is one of these, in order:
+
+1. the Grant Management `grant_id` the client was handed, if there is one;
+2. otherwise the refresh-token family (its first refresh token's `jti`);
+3. otherwise the token response the grant's tokens came back in.
+
+**One event per grant, not one per token.** A door revokes a grant as a
+refresh token, its family and the access tokens minted beside them, and the
+receiver is told once. Every door goes through the one revocation set, so a
+door added later cannot forget to report.
+
+| Act | `initiating_entity` |
+|---|---|
+| `POST /oauth2/revoke` of a refresh token (the whole grant), or of the access token of a grant that has no refresh token | `user` |
+| Grant Management `DELETE /oauth2/grants/{id}` by the client | `user` |
+| Grant Management *Revoke* on the console or `/admin-api` | `admin` |
+| A consent withdrawn by the person on `/portal/consents` | `user` |
+| A consent withdrawn by an administrator, or a global consent override removed | `admin` |
+| `/admin/tokens` and `/admin-api/tokens` (one token, a set, a kind, a subject, a user, everything) | `admin` |
+| `/logout` ending the person's tokens | `user` |
+| A global logout from the console or `/admin-api` | `admin` |
+| A refresh refused because the consent it stood on is gone | `policy` |
+| **A rotated refresh token replayed** (RFC 9700 section 2.2.2), or **an authorization code redeemed twice** (section 4.5) | `policy`, and a risk signal first (below) |
+| A sign-out revoking the online refresh tokens issued on its session | `system` |
+
+**A replay is also a risk signal.** A refresh token presented after it was
+rotated, or a code redeemed twice, means a copy of the grant's credential is in
+two hands. So the `session-revoked` is preceded by a `risk-level-change` about
+the same grant: `principal: SESSION`, `current_level: HIGH`, and `risk_reason`
+set to `refresh-token-replay` or `authorization-code-replay`. It is sent only
+while `caep.autoEmitTypes` names `risk-level-change`. The person's own risk
+standing still belongs to [risk scoring](risk-scoring.md).
+
+**What is not a grant ending, and sends nothing:**
+- an access token revoked while its grant's refresh token lives (RFC 7009
+  leaves the refresh token alone);
+- a refresh token retired by rotation, since its successor carries the grant
+  on;
+- a refresh refused because its Grant Management grant was merged or replaced;
+- an ID Token;
+- a grant with no person behind it (client credentials).
+
+CIBA's tokens are issued on the sign-on session the person approved on, so
+signing out of that session revokes their refresh token as it does every
+other grant's.
+
+### A revoked GNAP grant
+
+A GNAP grant is itself a DELEGATED SESSION between a client instance and a
+resource owner — it has a lifetime, a continuation and a revocation of its own
+— so revoking one IS ending a session, and this event says so. Three acts send
+it, each with a complex subject whose `user` is the resource owner and whose
 `session.id` names what ended:
 
 | Act | `session.id` |
@@ -538,11 +596,14 @@ None of these is the subject of a session event:
 - an **LDAP** bind or unbind, though the connection *is* a session in RFC 4511's
   sense (`/admin/sessions` lists it as one);
 - **WS-Trust**, **SCIM**, **SPIFFE**, **OpenID4VCI** and **OpenID4VP** requests
-  — a presentation at the Verifier's own pages included. A wallet sign-in at
-  `/authn/wallet` is the exception, because it ends in a browser sign-on
-  session like any other door;
-- the **token, refresh, introspection, revocation and UserInfo** endpoints —
-  including revoking every token a person holds;
+  — a presentation at the Verifier's own pages included. There are two
+  exceptions. A wallet sign-in at `/authn/wallet` ends in a browser sign-on
+  session like any other door. A pre-authorized OpenID4VCI offer made for the
+  signed-in person is `session-presented` (above), because it is made on that
+  session's authority;
+- the **token, refresh, introspection and UserInfo** endpoints. A revoked
+  grant is the exception: it is `session-revoked` about the GRANT (above),
+  never about a sign-on session;
 - reading the **admin console**, which presents the same session on every page
   and reports nothing, because it is not a protocol SSO.
 

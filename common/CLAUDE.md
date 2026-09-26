@@ -2553,6 +2553,28 @@ with `Cannot find module` naming a file the operator never mentioned.
    instead — `signJwt()` is the single funnel, and five counted call sites means a
    sixth that is not.
 
+   **`setRevocationObserver()` (#239, 2026-09-26) IS A SECOND SLOT, AND IT
+   PASSED RULE 3e's TEST BOTH WAYS ROUND.** `revoke()` tells it of every jti
+   NEWLY revoked, with the token's record and the door's own `how` (`{
+   initiatingEntity, superseded, replay }`, the third argument of `revoke()`
+   and `revokeWhere()`). `oauth-oidc/oauth_grant_signals.ts` fills it and turns
+   an OAuth grant's end into CAEP's `session-revoked` about the grant. The
+   argument for a slot has two halves:
+   - that module delivers through `ssf/ssf.ts`, which requires this file at
+     load, so a load-time require from here closes the cycle;
+   - a lazy require would put `oauth-oidc/` and `ssf/` into the parent
+     project's Kerberos COPY closure, which reaches this file
+     (`kerberos/CLAUDE.md`).
+
+   It is here, and not at the doors, because every door that revokes an OAuth
+   token (`/oauth2/revoke`, Grant Management, a replay, a consent withdrawn,
+   `/admin/tokens`, `/logout`, a sign-out) already comes through this one set.
+   An observer at each door would be seven that remember and an eighth that
+   does not. What the observer throws is logged and dropped, because the
+   revocation is what is authoritative. The record carries `grantId` and
+   `grantRefresh`, which the issuer states in `signJwt()`'s context as it
+   states `setId` (`oauth2.ts`'s `issuanceContext()`).
+
    **ITS ONE OBSERVER SLOT NOW CARRIES THREE KINDS OF EVENT, AND THAT IS NOT A
    SIXTH HOOK.** `setUserObserver()` is still one slot filled by one module at
    its require time; what changed is that `ldap_server.js` is offered an `event`

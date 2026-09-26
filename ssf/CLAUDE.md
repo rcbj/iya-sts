@@ -1460,7 +1460,7 @@ administrator credential acts below) and `assurance-level-change` on
 | Act | Event | Where it is noticed |
 |---|---|---|
 | a session is created | `session-established` | `authn.startSession()` |
-| a session is presented and honoured | `session-presented` | `authn.notePresented()`, from `oauth-oidc/oauth2.ts`'s authorization endpoint, `saml2_sso.ts`, `saml11_sso.ts`, `wsfed.ts` and `gnap/gnap_interact.ts` |
+| a session is presented and honoured | `session-presented` | `authn.notePresented()`, from `oauth-oidc/oauth2.ts`'s authorization endpoint and Native SSO exchange, `saml2_sso.ts`, `saml11_sso.ts`, `wsfed.ts`, `gnap/gnap_interact.ts`, `portal/portal_ciba.ts`'s approval and `oid4vc/vc_offers.ts`'s pre-authorized offer (the last three #240) |
 | a session ends | `session-revoked` | `authn.dropSession()`, which every sign-out door reaches |
 | the same person re-authenticates on a session they hold, and `acr` moves | `assurance-level-change` | `authn.reauthenticateSession()`'s `reauthenticated` notice |
 

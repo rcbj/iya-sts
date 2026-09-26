@@ -713,7 +713,14 @@ second catalogue. What is more than a number, and what
   unsigned-in browser through the sign-in screen and refuses a "continue without
   signing in" session. `authn.js` is required inside the handler, because this
   file is a store module `oauth2.js` requires. A same-device offer grants
-  nothing and is not gated.
+  nothing and is not gated. **An offer minted this way is CAEP's
+  `session-presented`** (#240, 2026-09-26): it is made on the session's
+  authority, since the pre-authorized code authorizes a credential about the
+  person and nobody authenticated for it. The page calls
+  `authn.notePresented(session, 'OpenID4VCI', req)`. Development's offer for
+  the fixed test person reads no session and sends nothing, and neither does a
+  same-device offer. `docs/caep-events.md` no longer says that OpenID4VCI is
+  never a session event.
 * **THE `wallet` PARAMETER IS AN OPEN REDIRECT IN PRODUCT** and is refused unless
   it is the configured wallet or listed in `oid4vci.allowedWalletUrls` /
   `oid4vp.allowedWalletUrls` (`mode.acceptsUnregisteredAddresses()`).

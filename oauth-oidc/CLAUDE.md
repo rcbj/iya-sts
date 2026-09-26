@@ -32,6 +32,7 @@ libraries that decide things on its behalf.
 | `client_jwks.js` | **A client's registered `jwks_uri`, fetched and cached (#120, 2026-09-22).** Under `federation_http.ts`'s outbound policy; per realm; refetched for an unknown `kid`. A leaf. See *OpenID Connect Registration*. |
 | `session_management.js` | **OpenID Connect Session Management 1.0 (#121, 2026-09-23), off by default.** The OP browser state, `session_state`, the OP iframe's page, script and framing origins. A leaf. See 3ax. |
 | `jarm.ts` | **JARM, the JWT-secured authorization response (#143, built in #139).** The four response modes, the signed (and optionally encrypted) response JWT, the section 2.3.1 refusal, and the registration key check. `redirectBack()` in `oauth2.ts` is the one place that sends one. See 3aw. |
+| `oauth_grant_signals.ts` | **An OAuth grant revoked is CAEP's `session-revoked` about the grant (#239, 2026-09-26).** Fills `common/admin_stats.js`'s `setRevocationObserver()` slot: one event per grant, subject `oauth-grant:<id>` beside the person, the door's own `initiating_entity`, and a replay also a `risk-level-change`. Built at 23b-vi; registers nothing. See *OAuth grants on CAEP*, below. |
 
 **Everything but `oauth2.ts` — and, since 2026-09-13, the console page
 `oauth2_monitor_admin.ts`, required at 18f rather than from here — registers
@@ -4641,3 +4642,53 @@ Left for their own tickets:
 * ~~Aggregated and distributed claims: #147.~~ Built (3bh).
 * Self-Issued OP: #129.
 * `value`/`values` enforcement for claims other than `acr`.
+
+## OAUTH GRANTS ON CAEP (#239, #240, 2026-09-26)
+
+**A REVOKED GRANT IS A `session-revoked` ABOUT THE GRANT.** The design is in
+`oauth_grant_signals.ts`'s header and the receiver's view is in
+`docs/caep-events.md`. What reaches outside that file:
+
+* **The grant is named when a token is issued, not when it is revoked.**
+  `issuanceContext()` states `grantId` and `grantRefresh` into `signJwt()`'s
+  context, the way it states `setId`. `grantId` is the Grant Management
+  `grant_id`, else the refresh-token family, else the token response.
+  - The family has to be known before the ACCESS token is signed, so
+    `tokenSet()` now picks the refresh token's `jti` and its family
+    (`bcp.familyForIssuance()`) first. It hands both to `refreshToken()` as
+    `refresh_jti` and `grant_family`.
+  - The family a refresh token carries in its `refresh_family` claim is
+    unchanged.
+* **Every `stats.revoke()` / `stats.revokeWhere()` at an OAuth door states its
+  act as a third argument.** The argument is `{ initiatingEntity }` (and
+  `replay` for the code and refresh replays), or `{ superseded: true }` for
+  rotation and a refused refresh whose Grant Management generation moved on.
+  - `consent.revokeIssuedUnder()`, `GrantManagement.revokeIssued()` and
+    `logout.terminate()`'s `initiatingEntity` option carry it through.
+  - `tests/oauth_grant_signals.js` section C fails any door written without
+    one. An unstated one is reported as `system`, which none of them is.
+  - **The one door that states nothing on purpose is `authn.dropSession()`'s
+    revocation of a session's online refresh tokens.** The sign-out's own
+    initiating entity is decided in `authn/`, and until it is explicit there
+    (#242) the grants it ends say `system`.
+* **CIBA's tokens are issued ON the approving sign-on session** (#239's
+  related defect). The portal records the session on the approval
+  (`ciba.answer()`'s `facts.sessionId`), and both the poll's issue and the
+  push's `cibaPushTokens()` pass it as `session_id`. That was already the RFC
+  8628 device flow's arrangement. So `dropSession()`'s revocation of a
+  session's online refresh tokens now reaches them, and the ID Token carries
+  `sid` where front- or back-channel logout is on.
+* **Three doors call `authn.notePresented()`** (#240):
+  - the CIBA approval (`portal/portal_ciba.ts`, on approve only);
+  - the Native SSO exchange (`nativeSsoExchange()`, after the issue);
+  - the pre-authorized OpenID4VCI offer made for the signed-in person
+    (`oid4vc/vc_offers.ts`).
+
+  Each honours an existing sign-on session for a client it was not made for,
+  with no new authentication, which is what the event means.
+  `tests/caep_presented_every_protocol.js` holds all three.
+* **The Native SSO `device_secret` is not a token in the revocation set.** Its
+  revocation and a device's removal send `credential-change` through the
+  device register (#164 phase 4) and are not a grant's end here.
+
+`tests/vendored/sts_caep_oauth_grants.js` drives the whole of it over HTTP.

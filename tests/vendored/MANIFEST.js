@@ -389,6 +389,13 @@ const JOBS = [
   // SCIM change and a group joined — only for a person holding live tokens.
   // `local: true`: this repository's own transmitter, in a throwaway realm.
   { file: 'sts_caep_credential_changes.js', browser: false, local: true },
+  // AN OAUTH GRANT REVOKED IS CAEP's session-revoked, AND CIBA AND THE
+  // PRE-AUTHORIZED OFFER ARE SESSION-PRESENTED (#239, #240, 2026-09-26):
+  // /oauth2/revoke (user), a refresh replay (risk-level-change and policy),
+  // /admin-api/tokens (admin), a CIBA approval and its tokens on the
+  // approving session, and in product the OpenID4VCI offer. `local: true`:
+  // this repository's own transmitter.
+  { file: 'sts_caep_oauth_grants.js',    browser: false, local: true },
   // RISC ON ITS OWN (#146, 2026-09-22): a reset link marked compromised
   // (account-credential-change-required, recovery-activated,
   // credential-compromise), a disable's reason, an address recycled, and the
