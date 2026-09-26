@@ -484,6 +484,85 @@ const DEFAULT_SIG_ALG = 'sha256-rsa';
 const DEFAULT_ORGANISATION = 'sts';
 
 // ---------------------------------------------------------------------------
+// THE ALTERNATIVE KEY EVERY AUTHORITY HOLDS (2026-09-26, #68 — rcbj's D4,
+// "whole chain hybrid").
+//
+// ITU-T X.509 (2019) clause 9.8: an authority's certificate carries a SECOND
+// public key in `subjectAltPublicKeyInfo`, and every certificate it issues
+// carries a SECOND signature — `altSignatureAlgorithm` and `altSignatureValue`
+// over the preTBSCertificate — made with that key's private half. The
+// extensions are non-critical, so a validator that has never heard of them
+// sees an ordinary classical chain; one that has, checks both. The encoder
+// and the verifier are the vendored `x509.js`'s (`issueCertificate()`'s
+// `subjectAltPublicKey` and `altSignature`, `verifyChain()`'s
+// `link.alternative`); what is HERE is which key, where it is held, and the
+// policy `alternativeProblem()` enforces.
+//
+// **A PURE post-quantum SIGNATURE key and nothing else.** A composite is
+// already two algorithms and would make the certificate carry three; a KEM
+// cannot sign; a classical alternative is "a certificate signed twice by the
+// same century", as `pki_authoring.ts` puts it for the same menu.
+//
+// **`none` MEANS A CLASSICAL AUTHORITY**, and is the weaker option rcbj's rule
+// allows only behind a setting with a warning on it (`config.js`'s row).
+// ---------------------------------------------------------------------------
+const ALTERNATIVE_NONE = 'none';
+const DEFAULT_ALTERNATIVE_KEY_ALG = 'ml-dsa-87';
+
+function alternativeKeyAlgs() {
+  log.debug("Entering alternativeKeyAlgs().");
+  const out = keyMaterial.keyAlgIds().filter(function (id) {
+    const desc = keyMaterial.keyAlg(id);
+    return !!desc && desc.kind === 'pqc' && desc.use === 'sig' &&
+           (desc.family === 'ML-DSA' || desc.family === 'SLH-DSA');
+  });
+  log.debug("Leaving alternativeKeyAlgs(). " + out.length + " of them.");
+  return out;
+}
+
+// The alternative key algorithm a build asked for — the caller's, else the
+// setting, else ML-DSA-87 — as `{ ok, altKeyAlg }` with `altKeyAlg` null for
+// `none`, or a refusal naming what it knows.
+function alternativeKeyAlgFrom(asked) {
+  log.debug("Entering alternativeKeyAlgFrom().");
+  const id = String(asked || config.value('pki.alternativeKeyAlgorithm') ||
+                    DEFAULT_ALTERNATIVE_KEY_ALG).trim().toLowerCase();
+  if (id === ALTERNATIVE_NONE) {
+    log.debug("Leaving alternativeKeyAlgFrom(). None: classical only.");
+    return { ok: true, altKeyAlg: null };
+  }
+  const known = alternativeKeyAlgs();
+  if (known.indexOf(id) < 0) {
+    log.debug("Leaving alternativeKeyAlgFrom(). Unknown.");
+    return errorCodes.mark({ ok: false,
+             errors: ['"' + id + '" is not an alternative key algorithm an ' +
+                      'authority here can hold. It must be a post-quantum ' +
+                      'signature algorithm — ' + known.join(', ') + ' — or ' +
+                      '"none" for a classical-only authority.'] },
+                           'STS-PKI-0194');
+  }
+  log.debug("Leaving alternativeKeyAlgFrom(). " + id);
+  return { ok: true, altKeyAlg: id };
+}
+
+// What an issuing authority adds to an `x509.issueCertificate()` spec: its
+// alternative signature, when it holds an alternative key, and nothing when it
+// does not (a classical or imported authority). ONE place, so that every door
+// that issues — a tier, a signing key's certificate, an application's key
+// pair, a TLS server, an enrollment — signs twice or not by the same rule.
+function alternativeSignatureBy(ca) {
+  log.debug("Entering alternativeSignatureBy().");
+  if (!ca || !ca.altPrivateKeyPem || !ca.altKeyAlg) {
+    log.debug("Leaving alternativeSignatureBy(). The issuer is classical.");
+    return {};
+  }
+  log.debug("Leaving alternativeSignatureBy(). " + ca.altKeyAlg);
+  return { altSignature: { signatureAlg: ca.altKeyAlg,
+                           privateKeyPem: ca.altPrivateKeyPem,
+                           keyAlg: ca.altKeyAlg } };
+}
+
+// ---------------------------------------------------------------------------
 // LIFETIMES NOBODY TYPED (2026-09-12).
 //
 // `leafLifetimeDays()` is `pki.leafLifetimeDays`, read in ONE place for both
@@ -721,6 +800,26 @@ async function issueCaTier(spec) {
   const years = Number(spec.years) > 0 ? Math.floor(Number(spec.years))
                                        : profile.years;
   const pair = await keyMaterial.generateKeyPair(keyAlgId);
+  // THE ALTERNATIVE KEY (#68). `spec.altKeyAlg` is null for a classical tier;
+  // absent, it is the setting — so a caller that predates the field (a reissue
+  // of a tier built before it) still gets the service's choice.
+  let altKeyAlg = spec.altKeyAlg;
+  if (altKeyAlg === undefined) {
+    const chosenAlt = alternativeKeyAlgFrom('');
+    altKeyAlg = chosenAlt.ok ? chosenAlt.altKeyAlg : null;
+  }
+  const altPair = altKeyAlg
+    ? await keyMaterial.generateKeyPair(altKeyAlg) : null;
+  // The alternative SIGNATURE is the issuer's to make, as the classical one
+  // is: the parent's alternative key, or this tier's own for a self-signed
+  // Root. A parent with none (classical, or imported) leaves this tier
+  // carrying its alternative key and no alternative signature — a state
+  // clause 9.8 allows, and one `alternativeProblem()` does not refuse,
+  // because there is no key above it that could have made one.
+  const altSigner = spec.parent
+    ? spec.parent
+    : (altPair ? { altKeyAlg: altKeyAlg,
+                   altPrivateKeyPem: altPair.privatePem } : null);
   // SECONDS AND NO FINER — see certificateInstant(). The Root's thirty years
   // cross 2050, which makes it the one validity in this hierarchy encoded as a
   // GeneralizedTime and therefore the one a fractional second invalidates.
@@ -743,9 +842,10 @@ async function issueCaTier(spec) {
   const subject = [{ name: 'CN', value: spec.cn },
                    { name: 'O', value: spec.organisation }]
     .concat(spec.country ? [{ name: 'C', value: spec.country }] : []);
-  const issued = await x509.issueCertificate({
+  const issued = await x509.issueCertificate(Object.assign({
     subject: subject,
     subjectPublicKey: pair.publicPem,
+    subjectAltPublicKey: altPair ? altPair.publicPem : undefined,
     signatureAlg: sigAlgId,
     profile: spec.profile,
     notBefore: notBefore.toISOString(),
@@ -781,8 +881,9 @@ async function issueCaTier(spec) {
       ? revocationExtensionsFor(spec.parent.scope || spec.scope,
                                 spec.parent.useCase || spec.parent.tier)
       : {})
-  });
-  log.debug('Leaving issueCaTier(). ' + issued.subject);
+  }, alternativeSignatureBy(altSigner)));
+  log.debug('Leaving issueCaTier(). ' + issued.subject +
+            (altPair ? ' (hybrid, ' + altKeyAlg + ')' : ''));
   return {
     tier: spec.tier,
     label: spec.label,
@@ -797,6 +898,14 @@ async function issueCaTier(spec) {
     certificatePem: issued.pem,
     privateKeyPem: pair.privatePem,
     publicKeyPem: pair.publicPem,
+    // THE ALTERNATIVE HALF (#68): the key this tier signs its children's
+    // alternative signatures with, sealed with the rest of the row, and the
+    // algorithm its OWN alternative signature was made with (its issuer's).
+    altKeyAlg: altPair ? altKeyAlg : null,
+    altPrivateKeyPem: altPair ? altPair.privatePem : null,
+    altPublicKeyPem: altPair ? altPair.publicPem : null,
+    altSignatureAlg: (altSigner && altSigner.altPrivateKeyPem &&
+                      altSigner.altKeyAlg) || null,
     thumbprint: thumbprintOf(issued.pem),
     imported: false,
     createdAt: Date.now()
@@ -890,6 +999,7 @@ async function buildRootNow(opts) {
       cn: String(options.commonName || (organisation + ' Root CA')),
       organisation: organisation, country: country,
       keyAlg: chosen.keyAlg, signatureAlg: chosen.signatureAlg,
+      altKeyAlg: chosen.altKeyAlg,
       years: tierYearsFrom(options.years, 'root'), parent: null
     });
   } catch (e) {
@@ -912,10 +1022,14 @@ async function buildRootNow(opts) {
     version: 2, scope: SERVICE_SCOPE, root: root,
     organisation: organisation, country: country,
     keyAlg: chosen.keyAlg, signatureAlg: chosen.signatureAlg,
+    altKeyAlg: chosen.altKeyAlg,
     createdAt: Date.now()
   }));
   log.info('pki: THE SERVICE HAS A ROOT CA — ' + root.subject + ', ' +
-           chosen.keyAlg + ' signed ' + chosen.signatureAlg + '. Every ' +
+           chosen.keyAlg + ' signed ' + chosen.signatureAlg +
+           (chosen.altKeyAlg ? ', with an alternative ' + chosen.altKeyAlg +
+                               ' key and signature (hybrid)'
+                             : ', classical only') + '. Every ' +
            'realm\'s Intermediate is signed by it, so it is the one anchor ' +
            'an operator installs. ' +
            (keystore.persists()
@@ -1260,9 +1374,14 @@ function algorithmsFrom(options) {
                         return one.id;
                       }).join(', ') + '.'] }, 'STS-PKI-0004');
   }
+  const alternative = alternativeKeyAlgFrom(options.altKeyAlg);
+  if (!alternative.ok) {
+    log.debug("Leaving algorithmsFrom(). The alternative key algorithm.");
+    return alternative;
+  }
   log.debug("Leaving algorithmsFrom().");
   return { ok: true, keyAlg: keyAlgId, signatureAlg: sigAlgId,
-           keyDesc: keyDesc, sig: sig };
+           keyDesc: keyDesc, sig: sig, altKeyAlg: alternative.altKeyAlg };
 }
 
 // ---------------------------------------------------------------------------
@@ -1393,6 +1512,7 @@ async function buildScopeNow(scopeId, opts) {
             (organisation + ' Intermediate CA (' + named + ')'),
         organisation: organisation, country: country,
         keyAlg: chosen.keyAlg, signatureAlg: chosen.signatureAlg,
+        altKeyAlg: chosen.altKeyAlg,
         // One deeper than the deepest Issuing CA this scope carries — see
         // `intermediatePathLen()`. A realm's is 2 because it carries `spiffe`;
         // the process branch's is 1, exactly as the profile says.
@@ -1428,6 +1548,7 @@ async function buildScopeNow(scopeId, opts) {
         cn: organisation + ' ' + uc.cn + ' (' + named + ')',
         organisation: organisation, country: country,
         keyAlg: forThis.keyAlg, signatureAlg: forThis.signatureAlg,
+        altKeyAlg: chosen.altKeyAlg,
         pathLen: issuingPathLen(uc.id),
         years: tierYearsFrom(options.years, 'issuing'),
         parent: intermediate
@@ -1470,6 +1591,7 @@ async function buildScopeNow(scopeId, opts) {
     createdAt: existing.createdAt || Date.now(),
     keyAlg: chosen.keyAlg,
     signatureAlg: chosen.signatureAlg,
+    altKeyAlg: chosen.altKeyAlg,
     organisation: organisation,
     country: country,
     intermediate: intermediate,
@@ -1494,7 +1616,10 @@ async function buildScopeNow(scopeId, opts) {
            'Intermediate CA signed by the service Root, and ' + wanted.length +
            ' Issuing CA(s) — ' +
            wanted.map(function (one) { return one.label; }).join(', ') + '. ' +
-           chosen.keyAlg + ' keys signed ' + chosen.signatureAlg + '.');
+           chosen.keyAlg + ' keys signed ' + chosen.signatureAlg +
+           (chosen.altKeyAlg ? ', each with an alternative ' +
+                               chosen.altKeyAlg + ' key (hybrid).'
+                             : ', classical only.'));
   log.debug('Leaving buildScope(). ' + wanted.length + ' Issuing CA(s).');
   return { ok: true, chain: describeChain(rawChainFor(id)),
            scope: describeScope(id) };
@@ -1721,6 +1846,11 @@ function describeTier(one) {
     notAfter: one.notAfter,
     keyAlg: one.keyAlg,
     signatureAlg: one.signatureAlg,
+    // The hybrid half (#68): the alternative key this tier holds and the
+    // algorithm its own alternative signature was made with — null for a
+    // classical tier. Never the private half.
+    altKeyAlg: one.altKeyAlg || null,
+    altSignatureAlg: one.altSignatureAlg || null,
     thumbprint: one.thumbprint,
     imported: !!one.imported,
     certificatePem: one.certificatePem,
@@ -1746,6 +1876,10 @@ function describeScope(scopeId) {
     built: !!(row && row.intermediate),
     keyAlg: (row && row.keyAlg) || '',
     signatureAlg: (row && row.signatureAlg) || '',
+    // The branch's alternative key algorithm (#68): an id, `none` for a
+    // branch built classical on purpose, '' for one built before the field.
+    altKeyAlg: (row && row.altKeyAlg) ||
+               (row && row.altKeyAlg === null ? ALTERNATIVE_NONE : ''),
     organisation: (row && row.organisation) || '',
     country: (row && row.country) || '',
     intermediate: describeTier(row && row.intermediate),
@@ -2111,7 +2245,9 @@ async function issueSigningKeyPair(realmId, opts) {
     .concat(chain.country ? [{ name: 'C', value: chain.country }] : []);
   let issued;
   try {
-    issued = await x509.issueCertificate({
+    // Signed twice where the Issuing CA is hybrid (#68) — see
+    // alternativeSignatureBy().
+    issued = await x509.issueCertificate(Object.assign({
       subject: subject,
       subjectPublicKey: pair.publicPem,
       signatureAlg: sigAlgId,
@@ -2159,7 +2295,7 @@ async function issueSigningKeyPair(realmId, opts) {
       // — was the one certificate that could not say where to look. The
       // issuer is the use case the chain's Issuing tier belongs to.
       revocationExtensionsFor(id, issuing.useCase || primaryUseCaseFor(id)))
-    });
+    }, alternativeSignatureBy(issuing)));
   } catch (e) {
     log.error(errorCodes.tag('STS-PKI-0013') + 'pki: a signing certificate ' +
                                                'for ' +
@@ -2407,6 +2543,120 @@ function signerSentence(problem, subject) {
       'with a LEAF\'s key; a CA\'s key signs certificates.'
     : 'The certificate "' + subject + '" carries a KeyUsage that does not ' +
       'permit digitalSignature, so its key may not sign an assertion.';
+}
+
+// ===========================================================================
+// THE ALTERNATIVE SIGNATURES ON A PATH (2026-09-26, #68).
+//
+// `x509.verifyChain()` reports each link's alternative signature BESIDE the
+// classical one and never folds the two together, because no published
+// profile says what a PKIX validator should do when they disagree
+// (draft-truskovsky-lamps-pq-hybrid-x509 expired). The verdict is therefore
+// this module's, and it is one sentence: **a hybrid certificate is verified
+// as hybrid or not at all.**
+//
+//   * PRESENT AND WRONG is refused everywhere (`alt-invalid`). A certificate
+//     whose second signature fails is a forged or corrupted certificate
+//     whatever its first one says.
+//   * PRESENT AND UNCHECKABLE — no alternative key on the issuer, or an
+//     algorithm the encoder does not know — is refused where `required` is
+//     set (`alt-unverifiable`) and let through otherwise.
+//   * ABSENT UNDER AN ISSUER THAT HOLDS AN ALTERNATIVE KEY is refused where
+//     `required` is set (`alt-missing`). This is the DOWNGRADE the article
+//     behind #68 warns about: "ECDSA + ML-DSA" that a relying party accepts
+//     as "ECDSA OR ML-DSA" is post-quantum cryptography nobody is required
+//     to use. A certificate stripped of its extensions keeps a classical
+//     signature that verifies — over a different TBSCertificate, so it
+//     cannot be stripped from THIS certificate, but an authority whose
+//     classical key alone were compromised could mint one without them.
+//
+// `required` is for this service's OWN hierarchy (`verifyLeaf()`), where
+// every authority holding an alternative key signs everything it issues with
+// it, so an absent or uncheckable alternative signature cannot be legitimate.
+// A FOREIGN hierarchy (`verifyPathToAnchors()`) may issue classical leaves
+// under a hybrid CA — clause 9.8 allows it — so only a wrong signature is
+// refused there.
+//
+// `pems` is the path, leaf first; `links` is `x509.verifyChain()` over it,
+// whose last link is the top certificate checked against itself. Resolves
+// null, or `{ index, check, algorithm, reason }`.
+// ===========================================================================
+async function holdsAlternativeKey(pem) {
+  log.debug("Entering holdsAlternativeKey().");
+  let described;
+  try {
+    described = await x509.describeCertificate(pem);
+  } catch (e) {
+    log.debug("Caught in holdsAlternativeKey(): " + ((e && e.message) || e));
+    // Unreadable: the classical link walk has already refused anything that
+    // does not parse, so this answers for a certificate it could read.
+    log.debug("Leaving holdsAlternativeKey(). Unreadable.");
+    return false;
+  }
+  const held = (described.extensions || []).some(function (ext) {
+    return ext.name === 'subjectAltPublicKeyInfo' ||
+           ext.oid === x509.EXT_OIDS.subjectAltPublicKeyInfo;
+  });
+  log.debug("Leaving holdsAlternativeKey(). " + held);
+  return held;
+}
+
+async function alternativeProblem(pems, links, opts) {
+  log.debug("Entering alternativeProblem(). " + pems.length +
+            " certificate(s).");
+  const required = !!(opts && opts.required);
+  for (let i = 0; i < links.length; i++) {
+    const alt = (links[i] && links[i].alternative) || { present: false };
+    if (alt.present && alt.valid === false) {
+      log.debug("Leaving alternativeProblem(). Link " + i + " is wrong.");
+      return { index: i, check: 'alt-invalid', algorithm: alt.algorithm };
+    }
+    if (alt.present && alt.valid !== true) {
+      if (required) {
+        log.debug("Leaving alternativeProblem(). Link " + i +
+                  " cannot be checked.");
+        return { index: i, check: 'alt-unverifiable',
+                 reason: alt.reason || '' };
+      }
+      continue;
+    }
+    if (!alt.present && required &&
+        await holdsAlternativeKey(pems[i + 1] || pems[i])) {
+      log.debug("Leaving alternativeProblem(). Link " + i + " is missing " +
+                "the alternative signature its issuer makes.");
+      return { index: i, check: 'alt-missing' };
+    }
+  }
+  log.debug("Leaving alternativeProblem(). Every alternative signature " +
+            "holds.");
+  return null;
+}
+
+function alternativeSentence(problem, subject) {
+  log.debug("Entering alternativeSentence(). check=" + problem.check);
+  let out;
+  if (problem.check === 'alt-invalid') {
+    out = 'The certificate "' + subject + '" carries an alternative (' +
+          (problem.algorithm || 'post-quantum') + ') signature, ITU-T X.509 ' +
+          'clause 9.8, that does NOT verify under its issuer\'s alternative ' +
+          'key. A hybrid certificate whose second signature fails is not a ' +
+          'certificate its issuer signed, whatever the first one says.';
+  } else if (problem.check === 'alt-unverifiable') {
+    out = 'The certificate "' + subject + '" carries an alternative ' +
+          'signature that cannot be checked' +
+          (problem.reason ? ' (' + problem.reason + ')' : '') + '. In this ' +
+          'service\'s own hierarchy every alternative signature is checked, ' +
+          'so one that cannot be is refused rather than ignored.';
+  } else {
+    out = 'The certificate "' + subject + '" was issued by an authority ' +
+          'that holds an alternative (post-quantum) key and carries NO ' +
+          'alternative signature. Every authority here signs everything it ' +
+          'issues with both keys, so a certificate with only the classical ' +
+          'signature is refused: accepting it would make the post-quantum ' +
+          'half optional, which is no protection at all.';
+  }
+  log.debug("Leaving alternativeSentence().");
+  return out;
 }
 
 // ---------------------------------------------------------------------------
@@ -2677,6 +2927,23 @@ async function verifyLeaf(realmId, leafPem, presentedChainPems, opts) {
     log.debug('Leaving verifyLeaf(). The leaf may not sign.');
     return errorCodes.mark({ ok: false, links: links,
              why: signerSentence(leafProblem, nameAt(0)) }, 'STS-PKI-0159');
+  }
+  // =======================================================================
+  // **AND A HYBRID PATH IS VERIFIED AS HYBRID (2026-09-26, #68).** Every
+  // authority of this service holding an alternative key signs everything it
+  // issues with it, so on this path an alternative signature that is wrong,
+  // uncheckable or MISSING is refused — see `alternativeProblem()`. After the
+  // classical checks, so a path that is not ours or not well formed is
+  // refused for that; before revocation, for `authorityProblem()`'s reason.
+  // =======================================================================
+  const altProblem = await alternativeProblem(path, links, { required: true });
+  if (altProblem) {
+    log.debug('Leaving verifyLeaf(). An alternative signature: ' +
+              altProblem.check + '.');
+    return errorCodes.mark({ ok: false, links: links,
+             why: alternativeSentence(altProblem, nameAt(altProblem.index)) },
+             altProblem.check === 'alt-missing' ? 'STS-PKI-0196'
+                                                : 'STS-PKI-0195');
   }
   // =======================================================================
   // **AND NOTHING ON IT MAY BE REVOKED (2026-09-12).** The header above said
@@ -3231,6 +3498,18 @@ async function registerCertificate(realmId, opts) {
       return uploadRefusal('STS-PKI-0151', authoritySentence(issuerProblem,
         oneLineName(path[issuerProblem.index].cert.subject)));
     }
+    // A WRONG ALTERNATIVE SIGNATURE IS REFUSED HERE TOO (#68) — the foreign
+    // rule of `alternativeProblem()`: somebody else's hybrid CA may issue a
+    // classical leaf, and may not issue a leaf whose second signature fails.
+    const altProblem = await alternativeProblem(path.map(function (one) {
+      return one.pem;
+    }), links, { required: false });
+    if (altProblem) {
+      log.debug('Leaving registerCertificate(). A wrong alternative ' +
+                'signature.');
+      return uploadRefusal('STS-PKI-0195', alternativeSentence(altProblem,
+        oneLineName(path[altProblem.index].cert.subject)));
+    }
     if (!x509.keyUsagePermits(links[0].keyUsage, 'digitalSignature')) {
       log.debug('Leaving registerCertificate(). No digitalSignature.');
       return uploadRefusal('STS-PKI-0146', 'The certificate "' +
@@ -3707,6 +3986,16 @@ async function verifySignerChain(realmId, material) {
                     subjects[issuerProblem.index]),
                   { links: links, path: subjects });
   }
+  // The foreign rule of `alternativeProblem()` (#68): wrong is refused.
+  const altProblem = await alternativeProblem(path.map(function (one) {
+    return one.pem;
+  }), links, { required: false });
+  if (altProblem) {
+    log.debug('Leaving verifySignerChain(). A wrong alternative signature.');
+    return refuse('STS-PKI-0195', alternativeSentence(altProblem,
+                    subjects[altProblem.index]),
+                  { links: links, path: subjects });
+  }
   const signs = await signerProblem(leaf.pem, links);
   if (signs) {
     log.debug('Leaving verifySignerChain(). The leaf may not sign.');
@@ -4100,7 +4389,7 @@ async function certify(scopeId, useCaseId, spec) {
     .concat(row && row.country ? [{ name: 'C', value: row.country }] : []);
   let issued;
   try {
-    issued = await x509.issueCertificate({
+    issued = await x509.issueCertificate(Object.assign({
       subject: subject,
       subjectPublicKey: spec.publicKeyPem,
       signatureAlg: sigAlgId,
@@ -4117,7 +4406,7 @@ async function certify(scopeId, useCaseId, spec) {
         subjectKeyIdentifier: { present: true },
         authorityKeyIdentifier: { present: true }
       }, revocationExtensionsFor(id, uc.id), spec.extensions || {})
-    });
+    }, alternativeSignatureBy(ca)));
   } catch (e) {
     log.error(errorCodes.tag('STS-PKI-0024') + 'pki: the ' + uc.label + ' ' +
         'certificate for "' + spec.slot +
@@ -4594,7 +4883,7 @@ async function issueUnder(scopeId, useCaseId, spec) {
   }
   let issued;
   try {
-    issued = await x509.issueCertificate({
+    issued = await x509.issueCertificate(Object.assign({
       // A STRING OR A LIST, both passed straight through. `spiffe.svidSubject`
       // is the string `C=US,O=SPIRE` and the vendored encoder parses one; the
       // realm's own tiers build a list. One parameter rather than two shapes
@@ -4610,7 +4899,7 @@ async function issueUnder(scopeId, useCaseId, spec) {
       issuer: { certificatePem: ca.certificatePem,
                 privateKeyPem: ca.privateKeyPem, keyAlg: ca.keyAlg },
       extensions: spec.extensions || {}
-    });
+    }, alternativeSignatureBy(ca)));
   } catch (e) {
     log.error(errorCodes.tag('STS-PKI-0024') + 'pki: a ' + uc.label + ' ' +
         'certificate could not be issued: ' +
@@ -6015,6 +6304,11 @@ async function reissueUseCase(scopeId, useCaseId) {
       keyAlg: (row.issuing[uc.id] || {}).keyAlg || row.keyAlg,
       signatureAlg: (row.issuing[uc.id] || {}).signatureAlg ||
                     row.signatureAlg,
+      // And the ALTERNATIVE algorithm it already had (#68), for the same
+      // reason: null stays classical, a key stays the same family. A tier
+      // built before the field existed takes the branch's, then the setting.
+      altKeyAlg: ((row.issuing[uc.id] || {}).altKeyAlg !== undefined)
+        ? row.issuing[uc.id].altKeyAlg : row.altKeyAlg,
       // The same `pathLen` the branch build gives it. Left off here for a day
       // and it is the kind of omission nothing reports: the reissued SPIFFE
       // authority came back at `pathLen: 0`, every SVID went on verifying, and
@@ -6851,6 +7145,9 @@ async function topUpScopeNow(scopeId, missing) {
         cn: organisation + ' ' + uc.cn + ' (' + named + ')',
         organisation: organisation, country: row.country || '',
         keyAlg: forThis.keyAlg, signatureAlg: forThis.signatureAlg,
+        // The branch's own choice; a row built before #68 has none, and
+        // undefined is the setting (issueCaTier()).
+        altKeyAlg: row.altKeyAlg,
         pathLen: issuingPathLen(uc.id),
         years: tierYearsFrom(undefined, 'issuing'),
         parent: row.intermediate
@@ -6900,6 +7197,8 @@ function report(realmId) {
                years: (x509.profile(one.profile) || {}).years };
     }),
     keyAlgorithms: keyAlgorithms(),
+    // The choices for a tier's alternative key (#68), and `none`.
+    alternativeKeyAlgorithms: alternativeKeyAlgs().concat([ALTERNATIVE_NONE]),
     signatureAlgorithms: ['rsa', 'ec', 'okp'].reduce(function (all, kind) {
       return all.concat(x509.signatureAlgorithmsFor({ kind: kind })
         .map(function (id) {
@@ -7262,6 +7561,19 @@ async function verifyPathToAnchors(leafDer, intermediateDers, anchors, opts) {
         return { ok: false, reason: problem };
       }
     }
+  }
+  // A FOREIGN hybrid path (#68): a wrong alternative signature is refused; an
+  // absent or uncheckable one is the issuer's business — see
+  // `alternativeProblem()`.
+  const altProblem = await alternativeProblem(path.map(function (one) {
+    return one.pem;
+  }), links, { required: false });
+  if (altProblem) {
+    log.debug("Leaving verifyPathToAnchors(). A wrong alternative " +
+              "signature.");
+    return { ok: false,
+             reason: alternativeSentence(altProblem,
+                                         subjectText(path[altProblem.index])) };
   }
   log.debug("Leaving verifyPathToAnchors(). " + path.length +
             " certificate(s).");
@@ -8224,6 +8536,8 @@ module.exports = {
   DEFAULT_SIG_ALG: DEFAULT_SIG_ALG,
   keyAlgorithms: keyAlgorithms,
   signatureAlgorithms: signatureAlgorithms,
+  alternativeKeyAlgs: alternativeKeyAlgs,
+  alternativeProblem: alternativeProblem,
   defaultSignatureAlgorithmFor: defaultSignatureAlgorithmFor,
   // What a build would sign with, decided before any key is made — exported
   // for `tests/mode_weak_settings.js` (#181), which asks it about SHA-1 in

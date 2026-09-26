@@ -150,6 +150,57 @@ has no certificate to issue, and the OpenID4VCI request-encryption key, which
 only decrypts and is trusted because a wallet read it from the issuer's own
 metadata.
 
+### Every authority is hybrid: a second, post-quantum key and signature
+
+Every certificate authority here holds an **alternative key** beside its
+classical one: an ML-DSA-87 key by default (`pki.alternativeKeyAlgorithm`).
+That covers the Root, every Intermediate and every Issuing CA. It is carried in
+the three non-critical extensions of ITU-T X.509 (2019) clause 9.8:
+`subjectAltPublicKeyInfo`, `altSignatureAlgorithm` and `altSignatureValue`.
+Every certificate an authority issues is then **signed twice**. The classical
+signature goes in the ordinary fields. The alternative signature is made with
+the authority's ML-DSA key over the certificate *minus* its classical signature
+algorithm and the alternative signature itself, a structure clause 9.8 calls
+the preTBSCertificate.
+
+The two signatures serve two kinds of validator:
+
+* **A validator that has never heard of the extensions** (OpenSSL, a browser,
+  every OAuth library) sees an ordinary RSA or EC chain and accepts it. The
+  extensions are non-critical, so nothing breaks.
+* **A hybrid-aware validator** checks both signatures. This service is one.
+  On a path in its own hierarchy, a certificate issued by an authority that
+  holds an alternative key **must** carry an alternative signature that
+  verifies. A missing one is refused as `STS-PKI-0196`, and a wrong or
+  uncheckable one as `STS-PKI-0195`. The rule exists to stop a downgrade:
+  "RSA + ML-DSA" that a relying party accepts as "RSA **or** ML-DSA" is
+  post-quantum protection nobody is required to use.
+* **A foreign chain** (a trust anchor you configured) may legitimately issue a
+  classical leaf under a hybrid CA, so there only a *wrong* alternative
+  signature is refused.
+
+The choice is made per build. The three build forms on this page, and
+`altKeyAlg` on `POST /admin-api/pki/build`, `build-root` and `build-scope`,
+take an alternative key algorithm. It can be any pure ML-DSA or SLH-DSA
+signature algorithm, or `none`. A hierarchy keeps what it was built with. The
+page shows each tier's alternative key under its classical algorithm, with the
+algorithm its own alternative signature was made with.
+
+> **Warning.** `none` builds a **classical-only** authority. A quantum-capable
+> attacker who recovers its RSA or EC key can mint certificates this service
+> accepts. It exists for a client that cannot take a larger certificate, and
+> for nothing else.
+
+**What it costs is size.** An ML-DSA-87 public key is 2,592 bytes and a
+signature 4,627, so each CA certificate grows by about 7 KB and each leaf by
+about 4.6 KB. A TLS handshake on the main port carries the leaf, the Issuing
+CA and the Intermediate, about 19 KB more than before. A JWS whose header
+carries the whole chain in `x5c` grows by the same amount, base64-encoded,
+which can exceed an HTTP server's header limit when the token is sent as a
+bearer. `x5u`, the default, does not carry the chain.
+
+CRLs and OCSP responses are still signed classically only.
+
 ### SPIFFE takes its authority from here now
 
 Two objections to a SPIFFE authority under this service's Root — that a trust
@@ -1164,7 +1215,7 @@ touch the store**, which is the same rule the two buttons follow.
 
 ## Configuration
 
-Thirty-seven `pki.*` settings, in four groups. Two are restart-only
+Thirty-eight `pki.*` settings, in four groups. Two are restart-only
 (`pki.autoBuild` and `pki.httpPort`); the rest take effect at runtime.
 
 ### The hierarchy
@@ -1178,6 +1229,7 @@ never a certificate that exists.
 | `pki.autoBuild` | `PKI_AUTO_BUILD` | `true` | no (restart) | Build the hierarchy at startup and certify every key this service generates under it. **Restart-only**: a key can only be issued by an authority that exists when the key is made, and the keys are made at startup. Off leaves every generated key uncertified. |
 | `pki.keyAlgorithm` | `STS_PKI_KEY_ALGORITHM` | `rsa-2048` | yes | The key algorithm a build uses when the form names none. RSA 2048 because the leaf signs a client assertion somebody else's OAuth library has to verify. |
 | `pki.signatureAlgorithm` | `STS_PKI_SIGNATURE_ALGORITHM` | *(empty)* | yes | Empty means "the right one for the key algorithm" — see [above](#the-encoder-is-the-debuggers-own-vendored-byte-identical). `sha1-rsa` and `sha1-ecdsa` are development mode only: product uses the key's default instead and refuses setting either, or a build naming one (#181). |
+| `pki.alternativeKeyAlgorithm` | `STS_PKI_ALTERNATIVE_KEY_ALGORITHM` | `ml-dsa-87` | yes | The post-quantum key every authority built holds beside its classical one, and signs everything it issues with a second time (ITU-T X.509 clause 9.8) — see [Every authority is hybrid](#every-authority-is-hybrid-a-second-post-quantum-key-and-signature). One of `ml-dsa-87`, `ml-dsa-65`, `ml-dsa-44`, `slh-dsa-sha2-256s`, `slh-dsa-sha2-192s`, `slh-dsa-sha2-128s` or `none`. **Warning:** `none` builds classical-only authorities; SLH-DSA costs seconds per certificate issued. |
 | `pki.organisation` | `STS_PKI_ORGANISATION` | `sts` | yes | The `O=` every tier and leaf carries, and what the tiers are named after when no common name is given. |
 | `pki.leafLifetimeDays` | `STS_PKI_LEAF_LIFETIME_DAYS` | `365` | yes | How long an issued signing certificate is good for, clamped to the Issuing CA's expiry. |
 | `pki.rootLifetimeYears` | `STS_PKI_ROOT_LIFETIME_YEARS` | `0` | yes | A new Root CA's lifetime when the build names none; `0` is the profile's twenty years. |

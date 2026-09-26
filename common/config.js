@@ -4551,6 +4551,41 @@ const SETTINGS = [
                  'key\'s own default is used, logged once, STS-CORE-0106), ' +
                  'setting either is refused (STS-CORE-0103), and a build or ' +
                  'a key pair that names one is refused (STS-PKI-0191).' },
+  // THE SECOND KEY EVERY AUTHORITY HOLDS (2026-09-26, #68, rcbj's D4: "whole
+  // chain hybrid"). ITU-T X.509 (2019) clause 9.8's alternative public key
+  // and alternative signature, on the Root, every Intermediate and every
+  // Issuing CA, and an alternative signature on every certificate they issue.
+  // A DEFAULT for the next build like the rows above: a hierarchy keeps the
+  // algorithm it was built with.
+  { key: 'pki.alternativeKeyAlgorithm', group: 'PKI',
+    label: 'CA alternative (post-quantum) key algorithm',
+    env: 'STS_PKI_ALTERNATIVE_KEY_ALGORITHM', type: 'enum',
+    enumValues: ['ml-dsa-87', 'ml-dsa-65', 'ml-dsa-44',
+                 'slh-dsa-sha2-256s', 'slh-dsa-sha2-192s',
+                 'slh-dsa-sha2-128s', 'none'],
+    dflt: 'ml-dsa-87', runtime: true,
+    description: 'The post-quantum key every certificate authority this ' +
+                 'service builds carries BESIDE its classical one, in the ' +
+                 'non-critical subjectAltPublicKeyInfo, altSignatureAlgorithm ' +
+                 'and altSignatureValue extensions of ITU-T X.509 (2019) ' +
+                 'clause 9.8 — a hybrid certificate. Each authority signs ' +
+                 'every certificate it issues twice: classically in the ' +
+                 'ordinary fields, which every validator reads, and with this ' +
+                 'key over the preTBSCertificate, which a hybrid-aware ' +
+                 'validator reads. This service is one: a certificate issued ' +
+                 'by an authority holding an alternative key MUST carry a ' +
+                 'valid alternative signature to verify here (STS-PKI-0195, ' +
+                 'STS-PKI-0196), so the classical signature alone is never a ' +
+                 'way past it. ML-DSA-87 (FIPS 204, category 5) is the ' +
+                 'default because an authority outlives the keys it ' +
+                 'certifies. The value is read at the NEXT build of a tier; ' +
+                 'a hierarchy keeps what it was built with. SLH-DSA (FIPS ' +
+                 '205) is offered for a hash-based anchor and costs SECONDS ' +
+                 'per signature, i.e. per certificate issued. WARNING: ' +
+                 '`none` builds classical-only authorities, whose ' +
+                 'certificates a quantum-capable attacker can forge; it ' +
+                 'exists for a client that cannot parse a large certificate, ' +
+                 'and nothing else.' },
   { key: 'pki.organisation', group: 'PKI',
     label: 'Default organisation name (O=)',
     env: 'STS_PKI_ORGANISATION', type: 'string', dflt: 'sts',

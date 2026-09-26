@@ -5679,6 +5679,55 @@ NOT: RFC 7518 pins ES256 to P-256, ES384 to P-384 and ES512 to P-521, so a P-256
 key under a SHA-512 chain is still ES256, and naming it ES512 would produce
 assertions nothing can verify. `tests/pki.js` asserts both readings.
 
+### 3w, CONTINUED: EVERY AUTHORITY IS HYBRID (2026-09-26, #68 phase 1)
+
+**rcbj's D4 on #68 was "whole chain hybrid"**: the approach is #1 of his
+article *X.509 Certificates With More Than One Signature*, ITU-T X.509 (2019)
+clause 9.8's alternative public key and alternative signature. So every tier
+`issueCaTier()` builds holds a SECOND key pair: `pki.alternativeKeyAlgorithm`,
+ML-DSA-87 by default. Its public half goes in `subjectAltPublicKeyInfo`, and
+it is kept on the tier as `altKeyAlg` / `altPrivateKeyPem` / `altPublicKeyPem`,
+sealed with the rest of the row, since `keystore.js` seals the chain as one
+blob. **Every certificate a tier issues carries an alternative signature**,
+made with the tier's alternative key through `alternativeSignatureBy(ca)`.
+That is ONE helper spread into every `x509.issueCertificate()` call here: the
+tier, the application or person key pair, `certify()` and `issueUnder()`. A new
+issuing door that skips it produces a certificate `verifyLeaf()` refuses, so
+it is found at once.
+
+Five decisions are in the code and worth knowing before changing it:
+
+* **The alternative signature is the ISSUER's**, as the classical one is. A
+  tier under a classical or imported parent carries its alternative key and
+  NO alternative signature, which clause 9.8 allows. `altSignatureAlg` on the
+  record says which it got.
+* **`verifyLeaf()` requires it; `verifyPathToAnchors()` does not.** This is
+  `alternativeProblem()`'s `required` flag. In this service's own hierarchy
+  every authority holding an alternative key signs everything with it, so a
+  missing (`STS-PKI-0196`) or uncheckable (`STS-PKI-0195`) alternative
+  signature cannot be legitimate. Accepting it would turn "RSA + ML-DSA" into
+  "RSA OR ML-DSA", the downgrade the article warns about. A FOREIGN hybrid CA
+  may issue classical leaves, so there only a wrong signature is refused.
+* **`x509.verifyChain()` never folds the two verdicts together**, and that is
+  deliberate in the vendored file: no published profile says what a PKIX
+  validator does when they disagree
+  (draft-truskovsky-lamps-pq-hybrid-x509 expired). The verdict is
+  `alternativeProblem()`'s, one place, beside `authorityProblem()` and
+  `signerProblem()`.
+* **Only a pure ML-DSA or SLH-DSA key is offered** (`alternativeKeyAlgs()`).
+  A composite would put three algorithms in one certificate, a KEM cannot
+  sign, and a classical alternative adds nothing. A bad value is refused at
+  the build (`STS-PKI-0194`) before anything is made.
+* **A hierarchy keeps what it was built with.** A reissue keeps the tier's own
+  `altKeyAlg`, null included; a top-up takes the row's. `undefined`, meaning
+  a tier or row from before the field existed, reads the setting.
+
+The size is the cost: about 7 KB per CA certificate and 4.6 KB per leaf with
+ML-DSA-87. `docs/pki.md` says what that does to a TLS handshake and to an
+`x5c` header. CRLs and OCSP responses are still classical, an open question on
+#68. `tests/pki_hybrid.js` holds all of it, including OpenSSL verifying the
+classical chain untouched.
+
 ### A LEAF IS ISSUED FOR A PROFILE, AND THE TWO PROFILES' KEY PAIRS ARE TWO (2026-09-11)
 
 `issueSigningKeyPair()` takes a `purpose`: `jwt` for RFC 7523 and `saml` for RFC

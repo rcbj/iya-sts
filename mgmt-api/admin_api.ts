@@ -13560,6 +13560,17 @@ class AdminApi {
                                        'and that is what a client library ' +
                                        'has to be able to verify. Defaults ' +
                                        'to `pki.keyAlgorithm`.' },
+                altKeyAlg: { type: 'string',
+                             description: 'The post-quantum key every ' +
+                                          'authority built here holds ' +
+                                          'beside its classical one ' +
+                                          '(ITU-T X.509 clause 9.8, #68): ' +
+                                          'one of ' +
+                                          '`alternativeKeyAlgorithms` on ' +
+                                          'GET /admin-api/pki, or `none` ' +
+                                          'for a classical-only authority. ' +
+                                          'Defaults to ' +
+                                          '`pki.alternativeKeyAlgorithm`.' },
                 signatureAlg: { type: 'string',
                                 description: 'One of the ids in ' +
                                              '`signatureAlgorithms`. OMIT IT ' +
@@ -14240,6 +14251,17 @@ class AdminApi {
                 keyAlg: { type: 'string',
                           description: 'One of the ids in `keyAlgorithms`. ' +
                                        'Defaults to `pki.keyAlgorithm`.' },
+                altKeyAlg: { type: 'string',
+                             description: 'The post-quantum key every ' +
+                                          'authority built here holds ' +
+                                          'beside its classical one ' +
+                                          '(ITU-T X.509 clause 9.8, #68): ' +
+                                          'one of ' +
+                                          '`alternativeKeyAlgorithms` on ' +
+                                          'GET /admin-api/pki, or `none` ' +
+                                          'for a classical-only authority. ' +
+                                          'Defaults to ' +
+                                          '`pki.alternativeKeyAlgorithm`.' },
                 commonName: { type: 'string',
                               description: 'The Root’s CN. Defaults to the ' +
                                            'organisation followed by "Root ' +
@@ -14281,6 +14303,17 @@ class AdminApi {
                 keyAlg: { type: 'string',
                           description: 'The key algorithm every CA in this ' +
                                        'branch is generated with.' },
+                altKeyAlg: { type: 'string',
+                             description: 'The post-quantum key every ' +
+                                          'authority built here holds ' +
+                                          'beside its classical one ' +
+                                          '(ITU-T X.509 clause 9.8, #68): ' +
+                                          'one of ' +
+                                          '`alternativeKeyAlgorithms` on ' +
+                                          'GET /admin-api/pki, or `none` ' +
+                                          'for a classical-only authority. ' +
+                                          'Defaults to ' +
+                                          '`pki.alternativeKeyAlgorithm`.' },
                 replaceImported: { type: 'boolean',
                                    description:
                                      'Replace an imported authority ' +

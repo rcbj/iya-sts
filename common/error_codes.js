@@ -2684,6 +2684,28 @@ const CODES = [
       'the live one.',
     spec: 'none — logged. The key still signs; its certificate chains to ' +
       'an authority nothing publishes until the slot is certified again' },
+  { code: 'STS-PKI-0194',
+    summary: 'A certificate authority build named an alternative key ' +
+      'algorithm (pki.alternativeKeyAlgorithm, or altKeyAlg on the form) ' +
+      'that is not a pure post-quantum signature algorithm this service ' +
+      'generates, nor "none" (#68).',
+    spec: 'console: the page\'s error list; /admin-api: HTTP 400 ' +
+      '{ ok: false, errors }' },
+  { code: 'STS-PKI-0195',
+    summary: 'A certificate carries an ITU-T X.509 clause 9.8 alternative ' +
+      'signature that does not verify under its issuer\'s alternative key ' +
+      '(any path: this realm\'s own, an uploaded chain, a registered root), ' +
+      'or — on a path to this realm\'s own hierarchy — cannot be checked ' +
+      '(#68).',
+    spec: 'the verifier\'s refusal: whatever the certificate was presented ' +
+      'for is refused as an untrusted certificate' },
+  { code: 'STS-PKI-0196',
+    summary: 'A certificate on a path to this realm\'s own hierarchy carries ' +
+      'no alternative signature although its issuer holds an alternative ' +
+      '(post-quantum) key — a hybrid path presented as classical, the ' +
+      'downgrade #68 refuses.',
+    spec: 'the verifier\'s refusal: whatever the certificate was presented ' +
+      'for is refused as an untrusted certificate' },
   // ===== ENROLL ============================================================
   { code: 'STS-ENROLL-0001',
     summary: 'A certificate request named a profile that is not one of the nine issued over an enrollment protocol.',
