@@ -34,7 +34,8 @@
 //      a ticket with an RC4 session key in development.
 //   6. SPNEGO at /authn/spnego: `curl --negotiate` through Heimdal's GSSAPI,
 //      and a `gss-token` token sent by this job — each a 200 naming the
-//      person, and a session.
+//      person, and a session — in a realm of the stack's own mode whose
+//      acceptor is HTTP/<the URL's host> (spnego() says why).
 //   7. MS-KKDCP: not driven; Heimdal's client has no MS-KKDCP transport
 //      (EXCEPTIONS).
 //
@@ -42,8 +43,8 @@
 // output that is not what it prints on success or a message this job
 // accepts by name (ACCEPTED_LINES).
 //
-// WHAT IT CHANGES ON THE SERVICE: three people, a service principal in the
-// default realm, and one realm it leaves standing
+// WHAT IT CHANGES ON THE SERVICE: three people and a service principal in the
+// default realm, and two realms it leaves standing, one with a person
 // (`leave-test-created-realms`).
 //
 // OWNED HERE (local: true). tests/CLAUDE.md, *The Kerberos interoperability
@@ -98,6 +99,9 @@ const TAG = names.runStamp().toLowerCase().replace(/[^a-z0-9]/g, "")
 const RID = "heimdal-" + TAG;
 const RDOMAIN = RID + ".example.net";
 const RREALM = RDOMAIN.toUpperCase();
+const SRID = "heimspn-" + TAG;
+const SDOMAIN = SRID + ".example.net";
+const SREALM = SDOMAIN.toUpperCase();
 
 // How long a product person's keys may take to reach the node that answers
 // (sts_kerberos_spnego.js's KEYS_WAIT_MS, for its reason).
@@ -186,7 +190,9 @@ function writeConf(extra) {
     "\n dns_lookup_kdc = false\n dns_lookup_realm = false\n rdns = false\n" +
     (extra || "") + "\n[realms]\n " + K.realm + " = {\n  kdc = " + kdc +
     "\n }\n " + RREALM + " = {\n  kdc = " + kdc + "\n }\n" +
-    "[domain_realm]\n " + K.host + " = " + K.realm + "\n");
+    " " + SREALM + " = {\n  kdc = " + kdc + "\n }\n" +
+    // The URL's host is the SPNEGO realm's acceptor (spnego()).
+    "[domain_realm]\n " + K.host + " = " + SREALM + "\n");
   log.debug("Leaving writeConf().");
 }
 
@@ -251,7 +257,7 @@ async function kinitPassword(who, password, extra, cache) {
                         .concat(extra || []).concat([who]),
                         { input: password + "\n", cache: cache });
     if (r.status === 0 || !K.product ||
-        !/not found in Kerberos database|keys yet|sign in once/i
+        !/not found in Kerberos database|keys yet|sign in once|krbtgt/i
           .test(r.out) || Date.now() - started > KEYS_WAIT_MS) {
       log.debug("Leaving kinitPassword(). exit " + r.status);
       return r;
@@ -514,42 +520,73 @@ async function rc4() {
 // ---------------------------------------------------------------------------
 // 6. SPNEGO AT /authn/spnego.
 // ---------------------------------------------------------------------------
-function signedIn(status, body, what) {
+function signedIn(status, body, who, what) {
   log.debug("Entering signedIn().");
   assert.strictEqual(status, 200, what + " answered " + status + ": " +
                      String(body).replace(/<[^>]+>/g, " ")
                        .replace(/\s+/g, " ").slice(0, 400));
-  assert.ok(String(body).indexOf("<strong>" + USER + "</strong>") !== -1,
-            what + ": the page does not name " + USER);
+  assert.ok(String(body).indexOf("<strong>" + who + "</strong>") !== -1,
+            what + ": the page does not name " + who);
   log.debug("Leaving signedIn().");
 }
 
+// THE ACCEPTOR'S NAME IS HTTP/<host>, IN A REALM OF ITS OWN. Heimdal's GSSAPI
+// derives the service name from the URL — HTTP@<host> — and the acceptor
+// answers for ONE service principal, `krb5.servicePrincipal` (a ticket for
+// any other SPN is KRB_AP_ERR_NOT_US, STS-KRB-0067, as it should be). The
+// default realm's is HTTP/web.example.com, a name the TLS certificate does
+// not carry. So SPNEGO runs in a throwaway realm IN THE STACK'S OWN MODE whose
+// acceptor is HTTP/<host>, keyed as an administrator keys it
+// (create-service) where the mode makes nothing on demand, with a person of
+// its own — and the realm prefix is the address it is reached at.
 async function spnego() {
   log.debug("Entering spnego().");
   log.info("=== 6. SPNEGO with Heimdal's GSSAPI ===");
-  // The name Heimdal's GSSAPI derives from the URL, HTTP/<host>. A
-  // development KDC makes it on first sight for a host it is willing to be;
-  // a product one makes nothing on demand, so it is keyed here as an
-  // administrator would, and the acceptor opens it with the stored key.
   const spn = "HTTP/" + K.host;
+  const who = names.usernameFor("krb5-heimdal-spnego");
+  await ok(api + "/realms/create",
+           { id: SRID, domain: SDOMAIN, name: "#205 Heimdal SPNEGO",
+             overrides: { "krb5.enabled": true, "krb5.realm": SREALM,
+                          "krb5.servicePrincipal": spn,
+                          "global.mode": K.product ? "product"
+                                                   : "development" } },
+           "created the realm " + SRID + " whose acceptor is " + spn);
+  const sapi = base + "/realm/" + SRID + "/admin-api";
+  await ok(sapi + "/users/create",
+           { username: who, invent: false, credential: "password",
+             password: PASSWORD,
+             attributes: { cn: "Heimdal " + who, givenName: "Heimdal",
+                           sn: who, displayName: "Heimdal " + who,
+                           mail: who + "@" + SDOMAIN } },
+           "created " + who + " in " + SRID);
   if (K.product) {
-    await ok(api + "/kerberos/principals/create-service", { spn: spn },
-             "keyed " + spn + " for the acceptor");
+    await ok(sapi + "/kerberos/principals/create-service", { spn: spn },
+             "keyed " + spn + " in " + SRID + " for its acceptor");
   }
-  const url = base + "/authn/spnego";
+  const password = K.product ? PASSWORD
+    : String(await facts.setting(sapi, "krb5.userPassword") || "password!");
+  const cache = cacheIn("spnego");
+  const tgt = await kinitPassword(who + "@" + SREALM, password, [], cache);
+  check("kinit " + who + "@" + SREALM, function () {
+    assert.strictEqual(tgt.status, 0, tgt.out);
+    quiet(tgt, "kinit (" + SREALM + ")");
+  });
+  const url = base + "/realm/" + SRID + "/authn/spnego";
   const cafile = process.env.NODE_EXTRA_CA_CERTS || "";
   const bodyFile = path.join(H.dir, "spnego.html");
   const curl = await run("curl", ["-sS", "--negotiate", "-u", ":"]
     .concat(cafile ? ["--cacert", cafile] : [])
-    .concat(["-o", bodyFile, "-w", "%{http_code}", url]));
+    .concat(["-o", bodyFile, "-w", "%{http_code}", url]), { cache: cache });
   const body = fs.existsSync(bodyFile) ? fs.readFileSync(bodyFile, "utf8")
                                        : "";
-  check("curl --negotiate (Heimdal GSSAPI) signs " + USER + " in at " +
-        "/authn/spnego", function () {
+  check("curl --negotiate (Heimdal GSSAPI) signs " + who + " in at " +
+        "/realm/" + SRID + "/authn/spnego", function () {
     assert.strictEqual(curl.status, 0, curl.out);
-    signedIn(Number(curl.out.trim().slice(-3)), body, "curl --negotiate");
+    signedIn(Number(curl.out.trim().slice(-3)), body, who,
+             "curl --negotiate");
   });
-  const token = await run("gss-token", ["-N", "HTTP@" + K.host]);
+  const token = await run("gss-token", ["-N", "HTTP@" + K.host],
+                          { cache: cache });
   check("gss-token -N HTTP@" + K.host + " makes an initial context token",
         function () {
     assert.strictEqual(token.status, 0, token.out);
@@ -559,9 +596,9 @@ async function spnego() {
   const sent = await fetch(url, { headers: {
     Authorization: token.out.trim() }, redirect: "manual" });
   const sentBody = await sent.text();
-  check("that token at /authn/spnego is a 200 naming " + USER + " and a " +
+  check("that token at /authn/spnego is a 200 naming " + who + " and a " +
         "session cookie", function () {
-    signedIn(sent.status, sentBody, "the gss-token token");
+    signedIn(sent.status, sentBody, who, "the gss-token token");
     assert.ok(/sts_session=/.test(String(sent.headers.get("set-cookie"))),
               "no session cookie");
   });
