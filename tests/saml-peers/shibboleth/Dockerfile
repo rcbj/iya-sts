@@ -4,7 +4,8 @@
 # shibd and Apache httpd with mod_shib, from the Shibboleth Consortium's OWN
 # package repository for Rocky Linux 9 — the packages the project publishes,
 # at a pinned release — with a small control server beside them that the job
-# hands the identity provider's metadata and the service's TLS anchor to.
+# hands the identity provider's metadata to (and, since #248, nothing else:
+# the metadata carries the back channel's TLS certificate).
 # Nothing in this image is a key: the SP's signing and encryption pairs are
 # made by keygen.sh when the container STARTS (entrypoint.sh), so every run
 # has its own and none is ever in git.

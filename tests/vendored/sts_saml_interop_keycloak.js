@@ -119,7 +119,10 @@ async function kc(method, p, payload, raw) {
 async function waitForKeycloak() {
   log.debug("Entering waitForKeycloak().");
   // HAND OVER THE ANCHOR, which is what the peer waits for before it starts
-  // (tests/saml-peers/keycloak/entrypoint.sh).
+  // (tests/saml-peers/keycloak/entrypoint.sh). It stays after #248, which
+  // put the back channel's TLS certificate in the metadata: Keycloak
+  // verifies a server with its Java truststore and reads a metadata key for
+  // signatures only, so for Keycloak metadata cannot suffice.
   const anchorFile = path.join(kit.logDir("keycloak"), "sts-ca.pem");
   if (!fs.existsSync(anchorFile)) {
     fs.writeFileSync(anchorFile, await kit.stsAnchor());

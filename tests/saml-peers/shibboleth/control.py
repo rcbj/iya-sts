@@ -4,18 +4,20 @@
 #
 # The job creates a throwaway realm, so the identity provider this SP has to
 # trust does not exist when the container starts: its metadata (one document
-# per profile, published for THIS service provider) and the service's TLS
-# anchor arrive here, from the job, and shibd is restarted to read them.
+# per profile, published for THIS service provider) arrives here, from the
+# job, and shibd is restarted to read it. Nothing else does since #248 — the
+# metadata carries the certificate the back channel presents, so no TLS
+# anchor is handed over.
 #
 #   GET  /health       200 once shibd answers its Status handler
-#   POST /configure    {"files": {"idp-saml2.xml": ..., "idp-saml11.xml": ...,
-#                      "sts-ca.pem": ...}} — written under
+#   POST /configure    {"files": {"idp-saml2.xml": ...,
+#                      "idp-saml11.xml": ...}} — written under
 #                      /etc/shibboleth/peer, shibd restarted, and the answer
 #                      given once it is up again (or why it is not)
 #
 # Listening on 9090 on the suite's private bridge only. It is a test
 # instrument in a test container, and nothing in it is a secret: the files it
-# takes are public metadata and a public certificate.
+# takes are public metadata.
 # ===========================================================================
 import json
 import os
@@ -26,7 +28,7 @@ import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 PEER_DIR = "/etc/shibboleth/peer"
-ALLOWED = ("idp-saml2.xml", "idp-saml11.xml", "sts-ca.pem")
+ALLOWED = ("idp-saml2.xml", "idp-saml11.xml")
 LOG_DIR = "/run/saml-peer-log"
 
 

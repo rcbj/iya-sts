@@ -151,6 +151,20 @@ report that cannot be taken costs the other nodes this node's figures and
 never a heartbeat. `cache_registry.js` requires only `config` and
 `error_codes`, so it is a plain require at the top of this file.
 
+**AND THE LEAVES ITS MAIN PORT PRESENTS (2026-09-26, #248)**, as
+`info.listenerCertificates` (base64 DER, no key): the SAML identity
+provider's metadata publishes the back channel's TLS certificate, each node
+presents a leaf of its own, and a service provider behind the balancer
+resolves an artifact at whichever node it reaches — so a document has to
+name EVERY live node's. `server.js` hands them over with
+`setListenerCertificates()` when the port binds as HTTPS and again from
+`tls_server.onServerCertificateChange()` after a re-issue;
+`listenerCertificatesOfLiveNodes()` reads them back out of `snapshot()`,
+skipping a node that left or whose row lapsed. It is a stored value, not a
+computation, so the beat stays a lookup; the cost is a few kilobytes on each
+row (an ML-DSA leaf is about seven), and a new node's key reaches the other
+nodes' documents at most a heartbeat late.
+
 Three things the page decides rather than reads:
 
 * **Live and gone are separated**, and the gone fold under a `<details>`. A row
