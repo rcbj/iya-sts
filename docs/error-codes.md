@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3509** of them, in **38** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3531** of them, in **38** subsystems.
 
 ## Where a code appears
 
@@ -63,7 +63,7 @@ is an ordinary outcome.
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 25
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 47
 * [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 249
-* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 568
+* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 587
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 97
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 21
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 16
@@ -83,7 +83,7 @@ is an ordinary outcome.
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 32
 * [Admin console (`STS-ADMIN`)](#sts-admin) — 199
 * [Management API (`STS-API`)](#sts-api) — 74
-* [User portal (`STS-PORTAL`)](#sts-portal) — 72
+* [User portal (`STS-PORTAL`)](#sts-portal) — 75
 * [Sign-out (`STS-LOGOUT`)](#sts-logout) — 7
 * [Registries (`STS-REG`)](#sts-reg) — 131
 * [Protocol debugger (`STS-DBG`)](#sts-dbg) — 28
@@ -1737,6 +1737,25 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0686` | An administrator's Claims Provider act was refused: an invalid or duplicate provider, an unknown action, or a link that does not exist (#147). | console / /admin-api refusal (HTTP 400) |
 | `STS-OAUTH-0687` | Registering a Claims Provider by discovery failed: its discovery document could not be fetched or does not name its issuer (#147). | console / /admin-api refusal (HTTP 400) |
 | `STS-OAUTH-0688` | An authorization request named a `tenant` other than the trust realm it was sent to (OpenID Connect Enterprise Extensions section 3.2, #148); a realm is chosen by the path, never by a parameter. | redirect {error: invalid_request} |
+| `STS-OAUTH-0689` | The device authorization grant or endpoint was used in a realm where oauth2.deviceAuthorization is off (RFC 8628, #150). | HTTP 404 {error: invalid_request} at the endpoint; {error: unsupported_grant_type} at the token endpoint |
+| `STS-OAUTH-0690` | A device authorization request was malformed (RFC 8628 section 3.1, #150). | HTTP 400 {error: invalid_request} |
+| `STS-OAUTH-0691` | A device authorization request's client did not authenticate as it registered to (RFC 8628 section 3.1, #150). | HTTP 401 {error: invalid_client} |
+| `STS-OAUTH-0692` | A client that did not register the device_code grant asked the device authorization endpoint for codes (#150). | HTTP 400 {error: unauthorized_client} |
+| `STS-OAUTH-0693` | The DPoP proof on a device authorization request did not verify (RFC 9449, OpenID Connect Key Binding, #150). | HTTP 400 {error: invalid_dpop_proof} |
+| `STS-OAUTH-0694` | The device authorization endpoint failed unexpectedly (#150). | HTTP 500 {error: server_error} |
+| `STS-OAUTH-0695` | A device_code grant named no device authorization of this client (RFC 8628 section 3.5, #150). | HTTP 400 {error: invalid_grant} |
+| `STS-OAUTH-0696` | A device polled before the person answered (RFC 8628 section 3.5, #150). Expected, not a fault. | HTTP 400 {error: authorization_pending} |
+| `STS-OAUTH-0697` | A device polled sooner than its interval, which grows by five seconds (RFC 8628 section 3.5, #150). | HTTP 400 {error: slow_down} |
+| `STS-OAUTH-0698` | A device code expired before the person answered (RFC 8628 section 3.5, #150). | HTTP 400 {error: expired_token} |
+| `STS-OAUTH-0699` | The person denied a device's sign-in on /portal/device (RFC 8628 section 3.5, #150). | HTTP 400 {error: access_denied} |
+| `STS-OAUTH-0700` | A device code whose tokens were already issued was presented again (#150). | HTTP 400 {error: invalid_grant} |
+| `STS-OAUTH-0701` | A device code bound to a DPoP key was redeemed without a proof from that key (#150). | HTTP 400 {error: invalid_dpop_proof} |
+| `STS-OAUTH-0702` | A grant holding bound_key was redeemed without a DPoP proof (OpenID Connect Key Binding, #150). | HTTP 400 {error: invalid_dpop_proof} |
+| `STS-OAUTH-0703` | A grant holding bound_key was redeemed with a DPoP proof whose c_s256 is not the hash of the code (OpenID Connect Key Binding, #150). | HTTP 400 {error: invalid_dpop_proof} |
+| `STS-OAUTH-0704` | An authorization request asked for bound_key without dpop_jkt (OpenID Connect Key Binding, #150). | redirect {error: invalid_request} |
+| `STS-OAUTH-0705` | An authorization request asked for bound_key outside response_type=code (OpenID Connect Key Binding, #150). | redirect {error: invalid_request} |
+| `STS-OAUTH-0706` | A refresh of a grant whose ID Token is key-bound carried no proof from that key (OpenID Connect Key Binding, #150). | HTTP 400 {error: invalid_dpop_proof} |
+| `STS-OAUTH-0707` | A key-bound ID Token was presented at token exchange without a DPoP proof from the key its cnf names (OpenID Connect Key Binding section 7, #150). | HTTP 400 {error: invalid_dpop_proof} |
 
 ## STS-SAML
 
@@ -3762,6 +3781,9 @@ Raised from: portal/.
 | `STS-PORTAL-0092` | Turning an emailed second factor on or off on /portal/mfa was refused; the page names why (#64). | HTTP 400 page |
 | `STS-PORTAL-0093` | Linking a Claims Provider on /portal/claim-sources failed at its callback in a way no STS-OAUTH-0678 to 0685 code names (#147). | none (a portal page, HTTP 500) |
 | `STS-PORTAL-0094` | An unlink on /portal/claim-sources named a Claims Provider the person has no link to (#147). | none (a portal page, HTTP 400) |
+| `STS-PORTAL-0095` | A user code typed or approved on /portal/device matched no waiting device (#150). | none (a portal page, HTTP 404 or 400) |
+| `STS-PORTAL-0096` | A sign-on session typed too many user codes that matched nothing on /portal/device and is refused for ten minutes (RFC 8628 section 5.1, #150). | none (a portal page, HTTP 429) |
+| `STS-PORTAL-0097` | Answering a device sign-in on /portal/device failed unexpectedly (#150). | none (a portal page, HTTP 500) |
 
 ## STS-LOGOUT
 

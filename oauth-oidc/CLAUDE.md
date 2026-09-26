@@ -4077,6 +4077,54 @@ SSF events naming it for that client, nothing relaxed in development.
 
 Tests: `tests/vendored/sts_ephemeral_subjects.js`.
 
+## 3bk. RFC 8628 DEVICE AUTHORIZATION AND OPENID CONNECT KEY BINDING (2026-09-26, #150)
+
+rcbj's answers were every recommendation: build RFC 8628 here, since Key
+Binding names the device flow; ML-DSA DPoP keys where the JOSE registry
+allows; and section 7's proof of possession wherever a bound ID Token is
+presented.
+
+* **`device_authorization.ts` owns the device codes**, off by default
+  (`oauth2.deviceAuthorization`, per realm) for CIBA's reason. A persisted
+  per-realm map, `oauth2.deviceCodes`: `d|<device_code>` to the record and
+  `u|<USER-CODE>` to the device code. An approval is recorded on
+  `/portal/device` (`portal/portal_device.ts`) with the approving session's
+  id, acr, amr and auth_time, so the device's tokens end with that session.
+  A redemption is a cluster claim, so one approval is one token response on
+  any node. The `oauth2.device-code-sweep` job removes what has expired.
+* **The endpoint** (`deviceAuthorizationRequest()`) authenticates the client
+  through `authenticateEndpointCaller()`, as PAR and CIBA do, requires the
+  grant to be registered and asks the scope policy. An optional DPoP proof
+  binds the device code to its key.
+* **The portal page's two protections are RFC 8628 section 5's.** A code
+  only ever brings the request up — the client, the scopes and a sentence
+  about phishing — and approving is a second POST (section 5.4). A session
+  that types five codes that match nothing is refused for ten minutes
+  (section 5.1). The count is per process and capped at the insert.
+* **Key Binding** is in `oauth2.ts`, in every mode:
+  * `vetAuthorizationRequest()` refuses `bound_key` without `dpop_jkt` or
+    outside `response_type=code` (0704, 0705).
+  * `boundKeyProofRefusal()` holds the redeeming proof's `c_s256` to the code
+    (0702, 0703), at the authorization_code and device_code grants.
+  * The `issue()` closure passes `dpopJwk` through. `idToken()` then adds
+    `cnf.jwk` and the header `typ: dpop+id_token`.
+  * The refresh token carries `kb_jkt` inside its JWE. It is separate from
+    `cnf`, because RFC 9449 section 5 leaves a confidential client's refresh
+    token unbound (#176), and a bound ID Token must stay with one key (0706).
+* **Section 7 is `boundIdTokenRefusal()`**, asked where an ID Token is a
+  CREDENTIAL: the token exchange grant, Native SSO's included (0707).
+  `id_token_hint` is a HINT, naming a person who is then asked, and it cannot
+  carry a DPoP proof from a browser, so it is not held to the key.
+* **ML-DSA in DPoP**: `dpop.ts`'s `SIGNING_ALGS` takes ML-DSA-44, -65 and -87.
+  RFC 9964 defines the AKP thumbprint members and the JOSE registry names
+  those three. SLH-DSA and the composites stay out: they are signed here
+  under draft names, and a binding to a name no client shares is none. An
+  AKP key's `priv` is refused like `d`, and its `alg` must match the proof's.
+* **`bound_key` is a reserved OpenID scope**, beside the six, in
+  `scope_policy.ts`, `jwt_access_token.ts` and `protocolScopes()`.
+
+Tests: `tests/vendored/sts_device_key_binding.js`.
+
 ## OPENID CONNECT CORE, READ AGAINST THE CODE (2026-09-22, #118)
 
 The review on #45 found Core bugs that no test had asked about. What changed, and

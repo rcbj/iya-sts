@@ -23,6 +23,15 @@
 # retried with a long back-off rather than the usual few seconds. Slow is the
 # cost of a layer that is built once and then cached.
 #
+# **AND WHEN W3C STILL REFUSES, THE SAME BYTES COME FROM ELSEWHERE**
+# (2026-09-26, after a tests-image build failed on a 429 despite the pacing).
+# Each file is tried at its published https URL, then over plain http (the
+# edge rate-limits the two separately, which is how fetch-xml-schemas.sh
+# gets W3C's schemas), then from the Internet Archive's raw capture of the
+# same URL (`id_`: the bytes as published). A copy from anywhere is accepted
+# ONLY at the pinned digest, so where it came from cannot change what the
+# harness runs; an Archive body still gzip-encoded is decoded first.
+#
 # Archives (.tar.gz, .tgz, .zip) are checked FIRST and then unpacked beside
 # themselves, into the directory their own paths name.
 #
@@ -43,10 +52,26 @@ while read -r sum rel url; do
   esac
   target="$DEST/$rel"
   mkdir -p "$(dirname "$target")"
-  curl -fsSL --retry 8 --retry-all-errors --retry-delay 45 \
-       -o "$target" "$url"
+  got=""
+  for candidate in "$url" "$(printf '%s' "$url" | sed 's#^https://www\.w3\.org/#http://www.w3.org/#')" \
+                   "https://web.archive.org/web/2024id_/$url"; do
+    if curl -fsSL --retry 4 --retry-all-errors --retry-delay 30 \
+         -o "$target" "$candidate"; then
+      if [ "$(head -c2 "$target" | od -An -tx1 | tr -d ' ')" = "1f8b" ] &&
+         ! printf '%s' "$rel" | grep -q -E '\.(tar\.gz|tgz|gz)$'; then
+        mv "$target" "$target.gz" && gunzip -f "$target.gz"
+      fi
+      got="$(sha256sum "$target" | cut -d' ' -f1)"
+      if [ "$got" = "$sum" ]; then
+        break
+      fi
+      echo "fetch-w3c-xmlsec: $candidate answered a different file" >&2
+    else
+      echo "fetch-w3c-xmlsec: $candidate did not answer" >&2
+    fi
+    sleep "$PAUSE"
+  done
   sleep "$PAUSE"
-  got="$(sha256sum "$target" | cut -d' ' -f1)"
   if [ "$got" != "$sum" ]; then
     echo "fetch-w3c-xmlsec: $url" >&2
     echo "  expected sha256 $sum" >&2

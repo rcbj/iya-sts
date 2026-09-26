@@ -1147,6 +1147,13 @@ done
 if [ "${BUILD}" = "1" ];
 then
   echo "Building the service and test images from this working tree..."
+  # The test corpora are a PRIVATE image on ghcr.io (#253); without a login
+  # the build fails on a pull error naming neither. Asked first.
+  if ! tests/tools/corpora-preflight.sh;
+  then
+    echo "Nothing was run." >&2
+    exit 1
+  fi
   if ! docker_compose "${COMPOSE_FILE_ARGS[@]}" build;
   then
     echo "" >&2
