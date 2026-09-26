@@ -2846,7 +2846,8 @@ class CertEnrollment {
   // here: each is followed by the certificate it produced, which `issue()`
   // already sends as `x509`. Only a PERSON's credential is sent; an
   // application's has no CAEP subject here. `by` is the actor: the person
-  // themselves is `user`, anybody else `admin`, nobody `system`.
+  // themselves is `user`, and anybody else — an unnamed caller of the API
+  // included — `admin`: nothing automatic makes or deletes either.
   // -------------------------------------------------------------------------
   private signalEnrolmentCredential(entry, which: 'eab' | 'scep',
                                     change: string, by, id: string): void {
@@ -2859,8 +2860,7 @@ class CertEnrollment {
       return;
     }
     const actor = String(by || '');
-    const initiating = !actor ? 'system'
-      : (actor === String(entry.id) ? 'user' : 'admin');
+    const initiating = actor && actor === String(entry.id) ? 'user' : 'admin';
     const what = which === 'eab' ? 'ACME External Account Binding key'
                                  : 'SCEP challenge password';
     accountSignals.credentialChanged({ username: String(entry.id),

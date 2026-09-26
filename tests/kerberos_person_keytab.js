@@ -129,6 +129,23 @@ async function keytabChild() {
     deleteKeys: function () { return Promise.resolve(); }
   });
   await keystore.start();
+  // A STAND-IN FOR `ssf/ssf.ts` in `require.cache` (#236): what
+  // `ssf/account_signals.ts` finds there when a person's Kerberos keys change
+  // is recorded, so the credential-change each act sends can be read back.
+  const recorded = [];
+  const ssfPath = require.resolve(R + '/ssf/ssf');
+  require.cache[ssfPath] = { id: ssfPath, filename: ssfPath, loaded: true,
+    exports: { emitCredentialChange: function (n) {
+      recorded.push(n || {});
+      return { sent: 0, streams: 0 };
+    } } };
+  out.kerberosSignals = function () {
+    return recorded.filter(function (n) {
+      return n.credentialType === 'urn:iya:sts:credential-type:kerberos-key';
+    }).map(function (n) {
+      return n.username + ':' + n.changeType + ':' + n.initiatingEntity;
+    });
+  };
   const principals = require(R + '/kerberos/krb5_principals.js');
   const kdc = require(R + '/kerberos/krb5_kdc.js');
   const msgs = require(R + '/kerberos/krb5_messages.js');
@@ -363,6 +380,15 @@ async function keytabChild() {
   out.state = personKeys.personKerberosState('ktowner');
   out.viewKerberos = (views.userDetailJson({ query: {} }, 'ktowner') ||
                       { json: {} }).json.kerberos || null;
+  // --- G2. a person's Kerberos keys over CAEP (#236) ---
+  if (product) {
+    out.dropped = brief(personKeys.dropPreviousPersonKeys('ktowner',
+      { actor: 'kt-admin', via: 'api' }));
+    out.cleared = brief(personKeys.clearPersonKeys('ktowner',
+      { actor: 'kt-admin', via: 'api' }));
+    out.kerberosSignalsSeen = out.kerberosSignals();
+  }
+  delete out.kerberosSignals;
   out.actions = actions.KERBEROS_PRINCIPAL_ACTIONS;
   out.unknownAction = actions.kerberosPrincipalsAction({ action: 'nope' },
                                                        {}).errors;
@@ -579,6 +605,19 @@ function productAssertions(t, r) {
           /reset-person-keytab/.test(JSON.stringify(r.unknownAction)),
           'the action is listed, and named in the unknown-action sentence ' +
           'the parity jobs read');
+  t.log.info('=== product: a person\'s Kerberos keys over CAEP (#236) ===');
+  const seen = r.kerberosSignalsSeen || [];
+  t.check(seen[0] === 'ktowner:create:system' &&
+          seen.indexOf('ktowner:update:system') > 0 &&
+          seen.indexOf('ktowner:revoke:admin') > 0 &&
+          seen[seen.length - 1] === 'ktowner:delete:admin' &&
+          seen.filter(function (one) {
+            return one === 'ktowner:create:system';
+          }).length === 1,
+          'credential-change urn:iya:sts:credential-type:kerberos-key: ' +
+          'create for the first key, update for a new password\'s kvno, ' +
+          'revoke when the previous versions are dropped and delete when ' +
+          'they are cleared', JSON.stringify(seen));
   log.debug("Leaving productAssertions().");
 }
 
