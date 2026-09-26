@@ -2848,24 +2848,27 @@ async function answerTgsReq(request, state) {
   }
 
   // THE PRESENTED TICKET MUST BE A TICKET-GRANTING TICKET (#204,
-  // 2026-09-26) — unless the request RENEWs or VALIDATEs that very ticket,
-  // the two options RFC 4120 section 3.3.3 defines on a ticket that is not
-  // one. This KDC opened whatever ticket the PA-TGS-REQ carried with the key
-  // of the service it named and issued from it, so a service that had ever
-  // received somebody's ticket — and so held its session key — could buy
-  // tickets to ANY other service as that person: unconstrained delegation for
-  // every service, unasked. KRB_AP_ERR_NOT_US, as MIT's KDC answers; Samba's
+  // 2026-09-26) — unless the request RENEWs that very ticket: a renewal is
+  // the one thing RFC 4120 section 3.3.3 has the TGS do with a ticket that is
+  // not one, and it names the ticket's own server. (VALIDATE is the other,
+  // and applies to a postdated ticket, which this KDC never issues.) This KDC
+  // opened whatever ticket the PA-TGS-REQ carried with the key of the service
+  // it named and issued from it, so a service that had ever received
+  // somebody's ticket — and so held its session key — could buy tickets to
+  // ANY other service as that person: unconstrained delegation for every
+  // service, unasked. KRB_AP_ERR_NOT_US, as MIT's KDC answers; Samba's
   // fast_tests found it.
   const ticketIsTgt = apReq.ticket.sname.name.length === 2 &&
                       apReq.ticket.sname.name[0] === 'krbtgt';
-  const renewsOrValidates = (body.kdcOptions || []).some(function (bit) {
-    return bit === msgs.KDC_OPTION.RENEW || bit === msgs.KDC_OPTION.VALIDATE;
-  });
-  if (!ticketIsTgt && !renewsOrValidates) {
+  const renewsItself = (body.kdcOptions || [])
+    .indexOf(msgs.KDC_OPTION.RENEW) !== -1 && !!body.sname &&
+    body.sname.name.join('/') === apReq.ticket.sname.name.join('/') &&
+    body.realm === apReq.ticket.realm;
+  if (!ticketIsTgt && !renewsItself) {
     log.info('krb5: a TGS-REQ presented a ticket for ' +
              apReq.ticket.sname.name.join('/') + ', which is not a ' +
-             'ticket-granting ticket, and asked for neither RENEW nor ' +
-             'VALIDATE. KRB_AP_ERR_NOT_US.');
+             'ticket-granting ticket, and does not renew it. ' +
+             'KRB_AP_ERR_NOT_US.');
     log.debug("Leaving answerTgsReq(). Not a TGT.");
     return errorReply(35, {
       errorCode: 'STS-KRB-0166',
@@ -2874,7 +2877,7 @@ async function answerTgsReq(request, state) {
       eText: 'the ticket in the PA-TGS-REQ is for ' +
              apReq.ticket.sname.name.join('/') + ', not a ticket-granting ' +
              'service; only a TGT buys other tickets (a service ticket may ' +
-             'only be renewed or validated)'
+             'only be renewed, naming its own server)'
     });
   }
   // RFC 6113 section 5.4.1.1 and 5.4.2 on two authorization-data elements a

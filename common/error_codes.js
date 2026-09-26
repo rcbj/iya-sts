@@ -9444,8 +9444,8 @@ const CODES = [
       '(24)' },
   { code: 'STS-KRB-0166',
     summary: 'A TGS-REQ presented a ticket that is not a ticket-granting ' +
-      'ticket and asked for neither RENEW nor VALIDATE: a service ticket ' +
-      'cannot buy other tickets.',
+      'ticket and did not RENEW that ticket for its own server: a service ' +
+      'ticket cannot buy other tickets.',
     spec: 'RFC 4120 section 3.3.3: KRB_AP_ERR_NOT_US (35)' },
   { code: 'STS-KRB-0167',
     summary: 'A TGS-REQ\'s ticket or Authenticator carried ' +
