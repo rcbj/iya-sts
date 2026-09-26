@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3462** of them, in **38** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3464** of them, in **38** subsystems.
 
 ## Where a code appears
 
@@ -81,7 +81,7 @@ is an ordinary outcome.
 * [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 282
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 74
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 32
-* [Admin console (`STS-ADMIN`)](#sts-admin) — 195
+* [Admin console (`STS-ADMIN`)](#sts-admin) — 197
 * [Management API (`STS-API`)](#sts-api) — 73
 * [User portal (`STS-PORTAL`)](#sts-portal) — 72
 * [Sign-out (`STS-LOGOUT`)](#sts-logout) — 7
@@ -3552,6 +3552,8 @@ Raised from: admin-ui/ (except pki_admin.js), admin-core/.
 | `STS-ADMIN-0814` | clear-email-factor could not write the person's entry (#64). | HTTP 400 (API) |
 | `STS-ADMIN-0815` | set-mail was given something that is not an address this service can send to (#64). | HTTP 400 (API) |
 | `STS-ADMIN-0816` | set-mail named nobody in this realm, or the directory would not write the address (#64). | HTTP 400 (API) |
+| `STS-ADMIN-0817` | A set-aud-sub act named no person or no client, a client_id with spaces, or an aud_sub over 255 characters or with control characters (#148). | none (a console or management API refusal, HTTP 400) |
+| `STS-ADMIN-0818` | A set-aud-sub act named a person with no entry in this realm, or the directory would not write it (#148). | none (a console or management API refusal, HTTP 400) |
 
 ## STS-API
 

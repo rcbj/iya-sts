@@ -11734,6 +11734,21 @@ class AdminConsole {
           carryBack + '<div class="formrow"><button class="danger">Turn off ' +
           'their emailed second factor</button></div></form>'
         : '') +
+      // THE ACCOUNT IDS CLIENTS KNOW THIS PERSON BY (#148): each sent as the
+      // ID Token's `aud_sub` to that client (Enterprise Extensions 2.3).
+      (state.write
+        ? '<div id="aud-sub"><p class="sub">Account ids at clients ' +
+          '(<code>aud_sub</code>): ' + (credentials.audSubsOf(key).map(
+            (v: string) => '<code>' + this.esc(v) + '</code>').join(', ') ||
+            'none') + '</p><form method="post" action="/admin/users">' +
+          '<input type="hidden" name="action" value="set-aud-sub">' +
+          '<input type="hidden" name="user" value="' + this.esc(key) + '">' +
+          carryBack + '<div class="formrow"><label>client_id <input ' +
+          'type="text" name="client" size="24" maxlength="256" required>' +
+          '</label> <label>aud_sub <input type="text" name="value" ' +
+          'size="24" maxlength="255"></label> <button type="submit">Set ' +
+          '(empty removes)</button></div></form></div>'
+        : '') +
       (state.write
         ? '<form method="post" action="/admin/users">' +
           '<input type="hidden" name="action" value="set-mail">' +

@@ -326,6 +326,9 @@ const USERS_ACTIONS = ['create', 'set-password', 'issue-activation',
                        // The emailed second factor, and the address
                        // (#64, 2026-09-23).
                        'clear-email-factor', 'set-mail',
+                       // The account id a client knows the person by
+                       // (#148, Enterprise Extensions `aud_sub`).
+                       'set-aud-sub',
                        // What an administrator does to somebody's
                        // credentials from their page (2026-09-13).
                        'reset-password', 'issue-password-reset',
@@ -2879,6 +2882,47 @@ class AdminActions {
         : this.refused('STS-ADMIN-0816', { ok: false, errors: ['There is ' +
             'no person called "' + who + '" in this realm, or the directory ' +
             'would not write the address.'] });
+    }
+
+    // ENTERPRISE EXTENSIONS SECTION 2.3 (#148): the account id a client
+    // knows this person by, sent to that client as the ID Token's `aud_sub`.
+    // An empty value removes it. Learned values arrive with Provider
+    // Commands (#151); this is the administrator's door.
+    if (action === 'set-aud-sub') {
+      const who = String(body.user || body.username || '').trim();
+      const client = String(body.client || body.client_id || '').trim();
+      const value = String(body.value || body.aud_sub || '').trim();
+      if (!who || !client || /\s/.test(client) || value.length > 255 ||
+          /[\u0000-\u001f]/.test(value)) {
+        log.debug("Leaving AdminActions.usersAction(). A malformed aud_sub.");
+        return this.refused('STS-ADMIN-0817', { ok: false, errors: ['Name ' +
+          'the person and the client (a client_id, no spaces), and give an ' +
+          'aud_sub of at most 255 characters with no control characters — ' +
+          'or none, to remove it.'] });
+      }
+      const prefix = client + ' ';
+      const kept = credentials.audSubsOf(who).filter(function (v) {
+        return String(v).indexOf(prefix) !== 0;
+      });
+      const written = credentials.writeAudSubs(who, value
+        ? kept.concat([prefix + value]) : kept);
+      auditLog.record({
+        category: 'admin', action: 'admin.aud-sub.set',
+        actor: ctx.actor, target: who, outcome: written ? 'success'
+                                                        : 'failure',
+        summary: (written ? (value ? 'set' : 'removed') : 'could not set') +
+                 ' the aud_sub of ' + who + ' at ' + client,
+        detail: { username: who, client: client, via: ctx.via } });
+      log.debug("Leaving AdminActions.usersAction(). set-aud-sub " +
+                (written ? "ok." : "refused."));
+      return written
+        ? { ok: true, message: value ? 'The ID Tokens ' + client +
+            ' is issued for ' + who + ' carry aud_sub "' + value + '".'
+                                     : 'The aud_sub of ' + who + ' at ' +
+            client + ' was removed.' }
+        : this.refused('STS-ADMIN-0818', { ok: false, errors: ['There is ' +
+            'no person called "' + who + '" in this realm, or the directory ' +
+            'would not write the aud_sub.'] });
     }
 
     if (action === 'clear-key') {
