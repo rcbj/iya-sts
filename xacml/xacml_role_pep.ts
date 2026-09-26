@@ -198,6 +198,10 @@ interface XacmlRolePepDeps {
   monitor: { record(asker: string, what: object): unknown };
   pdp: { evaluate(policy: any, request: any, options: object): any };
   pip: { resolverFor(request: any): (designator: any) => any[] };
+  // THE STEP-UPS A PERSON COULD ANSWER (#226), for `RISK.HELD`: what they
+  // hold, not what this authentication carried. Optional, so a test's PEP
+  // built without it sends none — and a policy then reads "holds nothing".
+  heldFactors?: (username: string) => string[];
   templates: { build(id: string, answers: any, options: any): any;
                ISSUANCE_ATTRIBUTE: Record<string, string> };
 }
@@ -282,7 +286,29 @@ class XacmlRolePep {
       monitor: monitor,
       pdp: pdp,
       pip: pip,
-      templates: templates
+      templates: templates,
+      // `common/credentials.ts` reaches the directory, which is built long
+      // after this module (23c against 21); asked when a decision is made.
+      heldFactors: function heldFactors(username: string): string[] {
+        helpers.log.debug("Entering heldFactors().");
+        const held: string[] = [];
+        try {
+          const m = require('../common/credentials').mechanismsFor(username);
+          if (m.mfaKeys + m.primaryKeys > 0) {
+            held.push('security-key', 'second-factor');
+          } else if (m.totp) {
+            held.push('second-factor');
+          }
+        } catch (e) {
+          // A person whose credentials cannot be read holds nothing this
+          // decision can count on; the policy then treats them as holding
+          // no factor, which for a protected application is the alarm.
+          helpers.log.debug("Caught in heldFactors(): " +
+                            ((e && e.message) || e));
+        }
+        helpers.log.debug("Leaving heldFactors(). " + held.join(', '));
+        return held;
+      }
     };
   }
 
@@ -453,7 +479,8 @@ class XacmlRolePep {
           attributes: [this.attribute(model.ATTRIBUTE.ACTION_ID,
                                       [asked.kind])] },
         { category: model.CATEGORY.ENVIRONMENT, id: null, content: null,
-          attributes: this.riskAttributes(asked.risk)
+          attributes: this.riskAttributes(asked.risk,
+                                          String(asked.subject.name || ''))
             .concat(this.authenticationAttributes(asked.authentication)) }
       ]
     };
@@ -467,8 +494,9 @@ class XacmlRolePep {
   // an empty string would be a level nobody wrote a rule for. The score goes
   // only when there is one — a first sign-in is UNSCORED and has none.
   // -------------------------------------------------------------------------
-  private riskAttributes(risk: RiskFacts | null | undefined): any[] {
-    const { log, model } = this.deps;
+  private riskAttributes(risk: RiskFacts | null | undefined,
+                         username: string): any[] {
+    const { log, model, heldFactors } = this.deps;
     log.debug("Entering XacmlRolePep.riskAttributes().");
     if (!risk || !risk.level) {
       log.debug("Leaving XacmlRolePep.riskAttributes(). No facts.");
@@ -477,7 +505,11 @@ class XacmlRolePep {
     const out = [
       this.attribute(RISK.LEVEL, [risk.level]),
       this.attribute(RISK.SIGNAL, risk.signals || []),
-      this.attribute(RISK.SATISFIED, risk.satisfied || [])
+      this.attribute(RISK.SATISFIED, risk.satisfied || []),
+      // What the person holds (#226) — asked only when there are risk
+      // facts, since no risk rule reads it otherwise.
+      this.attribute(RISK.HELD, heldFactors && username
+        ? heldFactors(username) : [])
     ];
     if (typeof risk.score === 'number' && isFinite(risk.score)) {
       out.push(this.attribute(RISK.SCORE, [risk.score], model.TYPE.DOUBLE));
@@ -540,6 +572,41 @@ class XacmlRolePep {
     return { action: action,
              factor: action === 'step-up'
                ? (valueOf(RISK.FACTOR) || 'second-factor') : '' };
+  }
+
+  // -------------------------------------------------------------------------
+  // THE ALARM ON A PERMIT (#226): the policy let an elevated authentication
+  // through for an application risk may never lock out, because the person
+  // holds no factor to step up with. Permitted, as the policy said — and
+  // said loudly, since it is exactly what an attacker holding an
+  // administrator's password would also be let through by. Not on a dry
+  // run, and only where risk is enforced: development observes anyway.
+  // -------------------------------------------------------------------------
+  private raiseAlarm(asked: IssuanceQuestion, answer: any): void {
+    const { log, audit, errorCodes } = this.deps;
+    log.debug("Entering XacmlRolePep.raiseAlarm().");
+    const alarmed = (answer && answer.obligations || []).some(function (o) {
+      return o && o.id === RISK.ALARM_OBLIGATION;
+    });
+    const facts = asked.risk as RiskFacts;
+    if (!alarmed || dryRun || !facts || !facts.enforced) {
+      log.debug("Leaving XacmlRolePep.raiseAlarm(). No alarm.");
+      return;
+    }
+    const who = String(asked.subject && asked.subject.name || '');
+    const what = 'The risk of this authentication is ' + facts.level + ' (' +
+      (facts.signals.join(', ') || 'the model') + '), "' +
+      String(asked.application || '') + '" may never be locked out on ' +
+      'risk, and "' + who + '" holds no second factor to step up with: ' +
+      'PERMITTED. Enrol a second factor for them.';
+    audit.audit({
+      action: 'xacml.issuance.alarm', errorCode: 'STS-RISK-0038',
+      actor: who, protocol: 'XACML', outcome: 'success',
+      detail: what + (facts.assessmentId
+        ? ' Assessment ' + facts.assessmentId + '.' : '')
+    });
+    log.warn(errorCodes.tag('STS-RISK-0038') + 'xacml: ' + what);
+    log.debug("Leaving XacmlRolePep.raiseAlarm().");
   }
 
   // -------------------------------------------------------------------------
@@ -725,6 +792,7 @@ class XacmlRolePep {
     }
 
     if (answer.decision === model.DECISION.PERMIT) {
+      this.raiseAlarm(asked, answer);
       log.debug('Leaving XacmlRolePep.decideNow(). Permit.');
       return this.allowed('The issuance policy permitted it.', held, required,
                           answer);
