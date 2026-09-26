@@ -783,6 +783,12 @@ const JOBS = [
   // portal, aggregated and distributed claims, revocation. `local: true`:
   // this repository's authorization server, portal and API.
   { file: 'sts_claims_aggregation.js',   browser: false, local: true },
+  // SCIM 2.0 CONFORMANCE (#206, 2026-09-26): python-scim's scim2-tester and
+  // scim2/test-suite, both installed in the tests image, against /scim/v2 of
+  // a throwaway realm; every error and warning fixed or a documented
+  // exception. `local: true`: this repository's SCIM surface.
+  { file: 'sts_scim_conformance.js',     browser: false, local: true,
+    timeoutMs: 900000 },
   // OPENID CONNECT ENTERPRISE EXTENSIONS (#148, 2026-09-26): session_expiry,
   // tenant and aud_sub in the ID Token, tenant refused for another realm,
   // domain_hint's home-realm discovery. `local: true`: this repository's

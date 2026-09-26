@@ -9219,6 +9219,21 @@ const SETTINGS = [
                  'either way, so both are conforming and both are worth ' +
                  'being able to try.' },
 
+  { key: 'scim.inventOnCreate', group: 'SCIM',
+    label: 'Fill a provisioned person in (development mode)',
+    env: 'SCIM_INVENT_ON_CREATE', type: 'bool', dflt: true, runtime: true,
+    description: 'DEVELOPMENT MODE ONLY, and ON there by default: a person a ' +
+                 'SCIM client creates is given the invented persona values ' +
+                 '(a cn, sn, givenName, displayName and mail) and the ' +
+                 'credential-claim attributes /admin/vc selects, wherever ' +
+                 'the client sent none — so the provisioned person can be ' +
+                 'issued a credential like one who signed in. OFF, a SCIM ' +
+                 'create writes exactly what the client sent, and reading ' +
+                 'the resource back returns only that, which is what a ' +
+                 'provisioning client checking its own round trip — and ' +
+                 'the SCIM conformance harnesses (#206) — expects. Product ' +
+                 'mode invents nothing whatever this says.' },
+
   { key: 'scim.authRealm', group: 'SCIM', label: 'Authentication realm',
     env: 'SCIM_AUTH_REALM', type: 'string', dflt: 'SCIM', runtime: true,
     description: 'The protection space named in every WWW-Authenticate ' +

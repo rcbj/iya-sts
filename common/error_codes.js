@@ -9985,6 +9985,20 @@ const CODES = [
       'the client it was issued to no longer declares that scope in its ' +
       'oauthAllowedScope.',
     spec: 'HTTP 403 insufficient_scope (SCIM Error)' },
+  { code: 'STS-SCIM-0080',
+    summary: 'A request named a path under /scim/v2 that is no SCIM ' +
+      'endpoint; it is answered in the SCIM Error schema rather than by ' +
+      'express as an HTML page (#206).',
+    spec: 'HTTP 404 (SCIM Error, RFC 7644 section 3.12)' },
+  { code: 'STS-SCIM-0081',
+    summary: 'A PUT, PATCH or DELETE carried an If-Match other than *, and ' +
+      'this service keeps no entity-tags, so no version can match it ' +
+      '(RFC 9110 section 13.1.1); nothing was changed (#206).',
+    spec: 'HTTP 412 (SCIM Error, RFC 7644 sections 3.12 and 3.14)' },
+  { code: 'STS-SCIM-0082',
+    summary: 'A filter ordered (gt, ge, lt, le) a boolean or binary ' +
+      'attribute, which RFC 7644 section 3.4.2.2 refuses (#206).',
+    spec: 'HTTP 400 invalidFilter (SCIM Error)' },
   // ===== SPIFFE ============================================================
   { code: 'STS-SPIFFE-0001',
     summary: 'A SPIFFE gRPC handler failed with something that was not a ' +
