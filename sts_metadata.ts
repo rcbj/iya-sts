@@ -3080,6 +3080,15 @@ const ENDPOINTS: EndpointEntry[] = [
           'attribute names are this service\'s own inventions: no registered ' +
           'LDAP schema has a SPIFFE ID or a selector on it. Add ' +
           '?format=json.' },
+  { path: '/admin/ldap/devices', group: 'LDAP',
+    name: 'The device register, and its schema',
+    specs: ['rfc4511', 'rfc4512', 'rfc4519'],
+    what: 'ou=devices entry by entry (#164, #218): every attribute of every ' +
+          'device, and the SCHEMA common/devices.ts publishes — a key, the ' +
+          'last compliance and status change and the enrolment are one JSON ' +
+          'value each, and a client reading an entry over 389 has nowhere ' +
+          'else to learn what they mean. stsDeviceSecretHash is withheld, ' +
+          'as from every LDAP read. Add ?format=json.' },
   { path: '/admin/ldap/federations', group: 'LDAP',
     name: 'The federation register, and its schema',
     specs: ['rfc4511', 'rfc4512', 'rfc4519'],
@@ -6364,6 +6373,34 @@ const ENDPOINTS: EndpointEntry[] = [
           'image or a script is refused), and the Mail settings. POST: ' +
           'test, save-template, reset-template, Admin Write. Add ' +
           '?format=json.' },
+  { path: '/admin/devices', group: 'Admin',
+    name: 'The device register',
+    specs: ['rfc4519', 'oidc-native-sso'],
+    effect: 'registers, edits or removes a device, or adds or removes a key',
+    what: 'NON-SPEC (#164, #218). Filed under Directory. Every device in ' +
+          'the realm (ou=devices), each owned by one person or one ' +
+          'application: its keys (a certificate, a JWK, a linked WebAuthn ' +
+          'credential) and their thumbprints, attested or self-asserted, ' +
+          'compliance, Native SSO state and last use — paged, and filtered ' +
+          'by owner kind, compliance, attestation, key kind and a search. ' +
+          '?device= is one device with every edit. POST: create, update, ' +
+          'remove, add-key, remove-key, Admin Write. Add ?format=json.' },
+  { path: '/admin/device-registration', group: 'Admin',
+    name: 'How a device is registered and recognised',
+    specs: ['oidc-native-sso'],
+    what: 'NON-SPEC (#164, #218). Filed under Protocols. Each enrolment ' +
+          'method (Native SSO, an administrator, the portal, EST, SCEP) and ' +
+          'whether it is built, each kind of key a device is recognised by, ' +
+          'what attestation and compliance mean here, and the Devices ' +
+          'settings. Add ?format=json.' },
+  { path: '/admin/devices/monitor', group: 'Admin',
+    name: 'The device register, counted',
+    specs: [],
+    what: 'NON-SPEC (#164, #218). Filed under Monitoring. Devices by owner ' +
+          'kind, compliance, attestation, key kind and enrolment; Native ' +
+          'SSO devices bound to a live session against ended ones; and ' +
+          'registrations, removals and evictions at a person\'s bound, day ' +
+          'by day (?days=). Add ?format=json.' },
   { path: '/admin/mail/outbox', group: 'Admin',
     name: 'What this service sent, and the dead letters',
     specs: [],
@@ -7631,6 +7668,28 @@ const ENDPOINTS: EndpointEntry[] = [
           'Native SSO secret and whether that secret\'s session is live. ' +
           'POST /admin-api/users/remove-device removes one. Mirrors the ' +
           'Devices block on the person\'s /admin/users page.' },
+  { path: '/admin-api/devices', group: 'Management API',
+    name: 'The device register', specs: ['oidc-native-sso', 'openapi'],
+    what: 'NON-SPEC (#164, #218). GET /admin/devices over JSON: every ' +
+          'device in the realm, paged (devicesPaging) and filtered by q, ' +
+          'ownerKind, owner, application, compliance, attestation, keyKind ' +
+          'and status; ?device= is one device, found or not.' },
+  { path: '/admin-api/devices/:action', group: 'Management API',
+    name: 'Device register actions', specs: ['openapi'],
+    effect: 'registers, edits or removes a device, or adds or removes a key',
+    what: 'NON-SPEC (#164, #218). create, update, remove, add-key and ' +
+          'remove-key: the console\'s five forms. A key is recorded as ' +
+          'proven by nobody and self-asserted.' },
+  { path: '/admin-api/device-registration', group: 'Management API',
+    name: 'Device registration', specs: ['openapi'],
+    what: 'NON-SPEC (#218). GET /admin/device-registration over JSON: the ' +
+          'enrolment methods and which are built, the recognition kinds, ' +
+          'the vocabularies and the Devices settings.' },
+  { path: '/admin-api/devices/monitor', group: 'Management API',
+    name: 'The device register, counted', specs: ['openapi'],
+    what: 'NON-SPEC (#218). GET /admin/devices/monitor over JSON: the ' +
+          'counts and the day-by-day timeline of registrations, removals ' +
+          'and evictions (?days=).' },
   { path: '/admin-api/users/self-issued-subjects', group: 'Management API',
     name: 'One person\'s self-issued (SIOPv2) subjects', specs: ['siopv2'],
     what: 'NON-SPEC (#129). The DIDs and JWK thumbprints enrolled for a ' +
@@ -8379,6 +8438,13 @@ const ENDPOINTS: EndpointEntry[] = [
           'xacmlPolicyDocument reaches the entry directly, and nothing ' +
           'caches these entries. Read-only; the repository is edited through ' +
           '/admin-api/xacml.' },
+  { path: '/admin-api/ldap/devices', group: 'Management API',
+    name: 'The device register as the directory holds it',
+    specs: ['rfc4511', 'rfc4512', 'rfc4519', 'openapi'],
+    what: 'GET /admin/ldap/devices over JSON (#218): every ou=devices entry ' +
+          'with every attribute but the withheld Native SSO hash, paged and ' +
+          'searched, and the schema. Read-only; the register is edited ' +
+          'through /admin-api/devices.' },
   { path: '/admin-api/ldap/peps', group: 'Management API',
     name: 'The registered remote PEPs as the directory holds them',
     specs: ['rfc4511', 'rfc4512', 'xacml30', 'openapi'],

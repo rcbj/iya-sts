@@ -576,7 +576,8 @@ never rotated: a later sign-in whose code grant sends it back as
 person and linked to every application that used it. People see theirs on
 `/portal/devices`; administrators on the person's page and at
 `GET /admin-api/users/devices`, and either can remove one. A person holds at
-most `oauth2.maxDevicesPerPerson` (20).
+most `devices.maxPerPerson` (20); the whole register is
+[Devices](devices.md).
 
 **Token exchange reads its token types.** Every RFC 8693 exchange must send
 `subject_token_type` (and `actor_token_type` with an `actor_token`); each

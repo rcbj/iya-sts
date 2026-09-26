@@ -118,7 +118,8 @@ class PortalDevicesPage {
           return String(dn).split(',')[0].replace(/^cn=/i, '');
         }).join(', ') || '—') + '</td><td>' +
         (one.nativeSso ? (one.sessionLive ? 'signed in' : 'signed out')
-                       : '—') + '</td><td>' + esc(one.lastUsed || '') +
+                       : '—') + '</td><td>' + esc(String(one.keys.length)) +
+        '</td><td>' + esc(one.lastUsed || '') +
         '</td><td><form method="post" action="' + esc(PATH) + '">' + csrf +
         '<input type="hidden" name="action" value="remove">' +
         '<input type="hidden" name="id" value="' + esc(one.id) + '">' +
@@ -126,13 +127,16 @@ class PortalDevicesPage {
         '</td></tr>';
     });
     const body = '<div class="card"><h2>Your devices</h2>' +
-      '<p class="sub">The phones and computers you have signed in on with ' +
-      'an app that shares its sign-in with the other apps on the device ' +
-      '(OpenID Connect Native SSO). Remove one you no longer have: its apps ' +
-      'can no longer share a sign-in, and ask you to sign in again.</p>' +
+      '<p class="sub">The phones and computers that are yours: the ones ' +
+      'you have signed in on with an app that shares its sign-in with the ' +
+      'other apps on the device (OpenID Connect Native SSO), and any an ' +
+      'administrator registered for you. Remove one you no longer have: ' +
+      'its apps can no longer share a sign-in, and ask you to sign in ' +
+      'again.</p>' +
       (held.length
         ? '<table><tr><th>Device</th><th>Applications</th><th>Shared ' +
-          'sign-in</th><th>Last used</th><th></th></tr>' + rows.join('') +
+          'sign-in</th><th>Keys</th><th>Last used</th><th></th></tr>' +
+          rows.join('') +
           '</table>'
         : '<p id="devices-none">None.</p>') + '</div>';
     log.debug("Leaving PortalDevicesPage.page().");
@@ -188,7 +192,7 @@ class PortalDevicesPage {
       log.debug('Leaving POST ' + PATH + '. CSRF.');
       return ctx.send(res, 403, this.page(session, null, csrf.detail));
     }
-    const result = devices.remove(body.id, who);
+    const result = devices.remove(body.id, who, who);
     ctx.audit.record({
       category: 'authentication', action: 'portal.device.remove',
       errorCode: result.ok ? undefined : 'STS-PORTAL-0088',
@@ -204,8 +208,13 @@ class PortalDevicesPage {
       return ctx.send(res, 400, this.page(session, null, result.error));
     }
     log.debug('Leaving POST ' + PATH + '. Removed.');
-    res.status(303).set('Location', PATH + '?done=' + encodeURIComponent(
-      'That device is removed.')).end();
+    // ABSOLUTE, ON `baseUrlOf(req)` (#164): a bare `/portal/devices`
+    // Location is answered by the DEFAULT realm, because nothing adds the
+    // realm prefix to a Location on the way out — so a person in another
+    // realm was sent to a portal they are not signed in to
+    // (`portal_claim_sources.ts` found it first; portal/CLAUDE.md).
+    res.status(303).set('Location', ctx.baseUrlOf(req) + PATH + '?done=' +
+      encodeURIComponent('That device is removed.')).end();
     return undefined;
   }
 

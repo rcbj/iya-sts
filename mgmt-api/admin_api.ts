@@ -214,6 +214,9 @@ import modeAdmin = require('../admin-ui/mode_admin');
 import schedulerAdmin = require('../admin-ui/scheduler_admin');
 // The mail channel's two pages (#63), mirrored below (rule 7).
 import mailAdmin = require('../admin-ui/mail_admin');
+// The device register's three pages (#164, #218), required in the ordinary
+// direction for the reason `mailAdmin` is: built at 18o, before this file.
+import devicesAdmin = require('../admin-ui/devices_admin');
 // Monitoring → Risk (#62): its view and its four actions, rule 7.
 import riskAdmin = require('../admin-ui/risk_admin');
 // The embedded protocol debugger's report (2026-09-13). A page module required
@@ -2622,6 +2625,304 @@ class AdminApi {
             responseDescription: 'The message, queued again.' }
         ]
       },
+
+      // ---------------------------------------------------------------------
+      // THE DEVICE REGISTER (#164, #218, 2026-09-26). `devicesAdmin`'s
+      // `listView()`, `registrationView()` and `monitorView()` — what the
+      // three pages' `?format=json` answer — and `action()`, the function
+      // the list page's five forms post to. A key is recorded as proven by
+      // nobody and self-asserted whichever door it came through; neither
+      // surface forwards a proof or an attestation from a body.
+      // ---------------------------------------------------------------------
+      { method: 'GET', path: BASE + '/devices', tag: 'Devices',
+        operationId: 'getDevices',
+        summary: 'Every device in this realm, paged and filtered, or one',
+        description: 'Without `device`: `total`, `matched`, the `filter` ' +
+                     'applied, and `devices` — each `id`, `dn`, `owner` ' +
+                     '(a DN), `ownerKind` (`person` or `application`), ' +
+                     '`ownerName`, `label`, `applications` and ' +
+                     '`applicationNames`, `keys` (each `id`, `kind`, ' +
+                     '`thumbprint`, `label`, `added`, `addedBy`, `proof`, ' +
+                     '`attestation`, `material`), `keyKinds`, ' +
+                     '`attestation` (`level`, `format`, `summary`), ' +
+                     '`compliance` and `complianceChange`, `status` and ' +
+                     '`statusChange`, `platform`, `model`, `os`, ' +
+                     '`enrolment`, `nativeSso`, `sessionLive`, `lastUsed`, ' +
+                     '`created` — in `devicesPaging`. **Never a Native SSO ' +
+                     'secret or its hash.** With `device`, that one device ' +
+                     'as `device`, and `found: false` for an id the realm ' +
+                     'does not hold.',
+        mirrors: 'GET /admin/devices',
+        parameters: [
+          { name: 'device', in: 'query', required: false,
+            schema: { type: 'string' }, description: 'One device\'s id.' },
+          { name: 'q', in: 'query', required: false,
+            schema: { type: 'string' },
+            description: 'A substring of the id, the label, the owner\'s ' +
+                         'DN, a key\'s thumbprint or label, the platform, ' +
+                         'model or OS.' },
+          { name: 'ownerKind', in: 'query', required: false,
+            schema: { type: 'string', enum: ['person', 'application'] },
+            description: 'Only devices a person, or an application, owns.' },
+          { name: 'owner', in: 'query', required: false,
+            schema: { type: 'string' },
+            description: 'Only this owner\'s: a username, an application ' +
+                         'identifier (with `ownerKind=application`) or a ' +
+                         'DN.' },
+          { name: 'application', in: 'query', required: false,
+            schema: { type: 'string' },
+            description: 'Only devices this application used.' },
+          { name: 'compliance', in: 'query', required: false,
+            schema: { type: 'string',
+                      enum: ['compliant', 'not-compliant', 'unknown'] },
+            description: 'Only devices in this compliance state.' },
+          { name: 'attestation', in: 'query', required: false,
+            schema: { type: 'string',
+                      enum: ['attested', 'self-asserted'] },
+            description: 'Only attested, or self-asserted, devices.' },
+          { name: 'keyKind', in: 'query', required: false,
+            schema: { type: 'string',
+                      enum: ['x509', 'jwk', 'webauthn', 'native-sso'] },
+            description: 'Only devices recognised by this kind of key.' },
+          { name: 'status', in: 'query', required: false,
+            schema: { type: 'string', enum: ['active', 'compromised'] },
+            description: 'Only active, or compromised, devices.' }
+        ].concat(self.pagingParameters()),
+        responseDescription: 'The page of devices, or one device.',
+        responseSchema: { type: 'object',
+          description: '`total`, `matched`, `filter`, `devices`, `page`, ' +
+                       '`pages`, `perPage`, `devicesPaging` and ' +
+                       '`vocabulary`; or `found`, `id`, `device` and ' +
+                       '`vocabulary` with `device`.' },
+        handler: function (req, res) {
+          log.debug("Entering the management API devices list endpoint.");
+          const json = devicesAdmin.listView(req, req.query);
+          if (req.query && req.query.device !== undefined && !json.found) {
+            errorCodes.mark(res, 'STS-DEVICE-0007');
+          }
+          self.sendJson(res, 200, json);
+          log.debug("Leaving the management API devices list endpoint.");
+        } },
+
+      { method: 'POST', route: BASE + '/devices/:action', tag: 'Devices',
+        mirrors: 'POST /admin/devices',
+        handler: function (req, res) {
+          log.debug("Entering the management API devices action.");
+          const result = devicesAdmin.action(
+            self.withAction(req, parseBody(req)), '',
+            'the management API at /admin-api/devices');
+          if (!result.ok) {
+            errorCodes.mark(res, errorCodes.codeOf(result) ||
+                                 'STS-DEVICE-0013');
+          }
+          self.sendJson(res, result.ok ? 200 : 400, result);
+          log.debug("Leaving the management API devices action.");
+        },
+        actions: [
+          { action: 'create', operationId: 'createDevice',
+            summary: 'Register a device, owned by a person or an application',
+            description: 'A device entry under `ou=devices` owned by ' +
+                         '`owner` — a username, or with `ownerKind` ' +
+                         '`application` an application\'s identifier — ' +
+                         'with an optional `label`, `platform`, `model`, ' +
+                         '`os`, the `applications` that use it, and its ' +
+                         'first keys, either `keys` (each `kind` and ' +
+                         '`value`: a PEM certificate, a public JWK or a ' +
+                         'security key\'s credential id the owner enrolled) ' +
+                         'or one as `keyKind` and `key`. Every key is ' +
+                         'recorded as proven by nobody and self-asserted. ' +
+                         'Refused for an owner the directory does not hold ' +
+                         '(STS-DEVICE-0001), an owner at its bound ' +
+                         '(STS-DEVICE-0002, STS-DEVICE-0003 — nothing is ' +
+                         'removed to make room), a key that is private, ' +
+                         'unreadable (STS-DEVICE-0004) or another ' +
+                         'device\'s (STS-DEVICE-0005).',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                owner: { type: 'string',
+                         description: 'A username, an application ' +
+                                      'identifier or a DN.' },
+                ownerKind: { type: 'string',
+                             enum: ['person', 'application'] },
+                label: { type: 'string', maxLength: 128 },
+                platform: { type: 'string',
+                            description: 'ios, ipados, android, macos, ' +
+                                         'windows, linux, chromeos, other ' +
+                                         'or empty.' },
+                model: { type: 'string', maxLength: 128 },
+                os: { type: 'string', maxLength: 128 },
+                applications: { description: 'Client ids or application ' +
+                                             'identifiers: an array, or ' +
+                                             'one string, comma separated.' },
+                keys: { type: 'array', items: { type: 'object',
+                  properties: {
+                    kind: { type: 'string',
+                            enum: ['x509', 'jwk', 'webauthn'] },
+                    value: { description: 'PEM, JWK (object or JSON) or ' +
+                                          'credential id.' },
+                    label: { type: 'string' } },
+                  additionalProperties: false } },
+                keyKind: { type: 'string',
+                           enum: ['x509', 'jwk', 'webauthn'] },
+                key: { description: 'One key, with keyKind.' },
+                keyLabel: { type: 'string' }
+              },
+              required: ['owner'],
+              examples: [{ owner: 'build-host', ownerKind: 'application',
+                           label: 'Build host 7', platform: 'linux' }],
+              additionalProperties: false
+            },
+            responseDescription: 'The device registered, as `device`.' },
+          { action: 'update', operationId: 'updateDevice',
+            summary: 'Change a device\'s label, owner or description',
+            description: 'Any of `label`, `platform`, `model`, `os`, ' +
+                         '`applications` (the whole list) and a new ' +
+                         '`owner` (with `ownerKind`). A new owner is held ' +
+                         'to its own bound and takes the device WITHOUT its ' +
+                         'Native SSO secret, which was bound to the old ' +
+                         'owner\'s session; its keys go with it. Refused ' +
+                         'for an unknown device (STS-DEVICE-0007).',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                id: { type: 'string', description: 'The device id.' },
+                owner: { type: 'string' },
+                ownerKind: { type: 'string',
+                             enum: ['person', 'application'] },
+                label: { type: 'string', maxLength: 128 },
+                platform: { type: 'string' },
+                model: { type: 'string', maxLength: 128 },
+                os: { type: 'string', maxLength: 128 },
+                applications: { description: 'The whole list, as on ' +
+                                             'create.' }
+              },
+              required: ['id'],
+              examples: [{ id: 'no-such-device', label: 'Kitchen tablet' }],
+              additionalProperties: false
+            },
+            responseDescription: 'The device as saved, and what `changed`.' },
+          { action: 'remove', operationId: 'removeDevice',
+            summary: 'Remove a device',
+            description: 'Deletes the device entry, its keys and any Native ' +
+                         'SSO secret with it. Refused for an unknown device ' +
+                         '(STS-DEVICE-0007).',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                id: { type: 'string', description: 'The device id.' }
+              },
+              required: ['id'],
+              examples: [{ id: 'no-such-device' }],
+              additionalProperties: false
+            },
+            responseDescription: 'Whether it was removed.' },
+          { action: 'add-key', operationId: 'addDeviceKey',
+            summary: 'Add a key a device is recognised by',
+            description: '`kind` `x509` (a PEM certificate; its ' +
+                         'thumbprint is SHA-256 over the ' +
+                         'SubjectPublicKeyInfo), `jwk` (a PUBLIC JWK; RFC ' +
+                         '7638, which is DPoP\'s jkt) or `webauthn` (the ' +
+                         'credential id of a security key the device\'s ' +
+                         'owner enrolled), in `value`. Recorded as proven ' +
+                         'by nobody and self-asserted. Refused for private ' +
+                         'material or an unreadable key (STS-DEVICE-0004), ' +
+                         'a key another device holds (STS-DEVICE-0005), or ' +
+                         'a device at devices.maxKeysPerDevice ' +
+                         '(STS-DEVICE-0006).',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                id: { type: 'string', description: 'The device id.' },
+                kind: { type: 'string', enum: ['x509', 'jwk', 'webauthn'] },
+                value: { description: 'PEM, JWK (object or JSON) or ' +
+                                      'credential id.' },
+                label: { type: 'string', maxLength: 128 }
+              },
+              required: ['id', 'kind', 'value'],
+              examples: [{ id: 'no-such-device', kind: 'jwk',
+                           value: { kty: 'OKP', crv: 'Ed25519',
+                             x: '11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo' },
+                           label: 'app key' }],
+              additionalProperties: false
+            },
+            responseDescription: 'The key added, by its id.' },
+          { action: 'remove-key', operationId: 'removeDeviceKey',
+            summary: 'Remove one of a device\'s keys',
+            description: '`key` is the key\'s id or its thumbprint. Refused ' +
+                         'for an unknown device (STS-DEVICE-0007) or a key ' +
+                         'it does not hold (STS-DEVICE-0008).',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                id: { type: 'string', description: 'The device id.' },
+                key: { type: 'string',
+                       description: 'The key id or thumbprint.' }
+              },
+              required: ['id', 'key'],
+              examples: [{ id: 'no-such-device', key: 'k-none' }],
+              additionalProperties: false
+            },
+            responseDescription: 'Whether the key was removed.' }
+        ]
+      },
+
+      { method: 'GET', path: BASE + '/devices/monitor', tag: 'Devices',
+        operationId: 'getDevicesMonitor',
+        summary: 'The device register counted, and its events day by day',
+        description: '`counts` — `total`, `keys`, and `byOwnerKind`, ' +
+                     '`byCompliance`, `byAttestation`, `byKeyKind`, ' +
+                     '`byEnrolment`, `byStatus`, and `nativeSso` (`live`, ' +
+                     '`ended`, `none`) — and `timeline`: `days`, one row ' +
+                     'per UTC day (`day`, `created`, `removed`, ' +
+                     '`evicted`), the `totals` over every event kept and ' +
+                     '`since`, the oldest. A removal by an `ldapdelete` on ' +
+                     'the socket is not an event.',
+        mirrors: 'GET /admin/devices/monitor',
+        parameters: [
+          { name: 'days', in: 'query', required: false,
+            schema: { type: 'integer', minimum: 1, maximum: 366 },
+            description: 'How many days the timeline covers; 30 by ' +
+                         'default.' }
+        ],
+        responseDescription: 'The counts and the timeline.',
+        responseSchema: { type: 'object',
+          description: '`counts` and `timeline`.' },
+        handler: function (req, res) {
+          log.debug("Entering the management API devices monitor endpoint.");
+          self.sendJson(res, 200, devicesAdmin.monitorView(req, req.query));
+          log.debug("Leaving the management API devices monitor endpoint.");
+        } },
+
+      { method: 'GET', path: BASE + '/device-registration', tag: 'Devices',
+        operationId: 'getDeviceRegistration',
+        summary: 'How a device is registered and recognised here',
+        description: '`enrolment` — each method (`native-sso`, `admin`, ' +
+                     '`portal`, `est`, `scep`) with `built` and `what` — ' +
+                     'and `recognition`, the same for each kind of key; ' +
+                     'the vocabularies (`ownerKinds`, `keyKinds`, ' +
+                     '`keyProofs`, `attestationLevels`, ' +
+                     '`attestationFormats`, `complianceStates`, ' +
+                     '`complianceSources`), `mdmFeed`, and the Devices ' +
+                     '`settings`.',
+        mirrors: 'GET /admin/device-registration',
+        parameters: [],
+        responseDescription: 'The enrolment methods and the settings.',
+        responseSchema: { type: 'object',
+          description: '`enrolment`, `recognition`, the vocabularies, ' +
+                       '`mdmFeed` and `settings`.' },
+        handler: function (req, res) {
+          log.debug("Entering the management API device registration " +
+                    "endpoint.");
+          self.sendJson(res, 200, devicesAdmin.registrationView(req));
+          log.debug("Leaving the management API device registration " +
+                    "endpoint.");
+        } },
 
       // ---------------------------------------------------------------------
       // THE SCHEDULER (#49, 2026-09-22). `schedulerAdmin.schedulerView()` —
@@ -6096,6 +6397,40 @@ class AdminApi {
           log.debug("Entering the management API directory PEPs endpoint.");
           self.sendJson(res, 200, adminViews.directoryPageJson('peps', req));
           log.debug("Leaving the management API directory PEPs endpoint.");
+        } },
+
+      // THE DEVICE REGISTER AS THE DIRECTORY HOLDS IT (#164, #218): the
+      // ninth, drawn by `ldap/ldap_server.js` like the other eight.
+      { method: 'GET', path: BASE + '/ldap/devices', tag: 'LDAP',
+        operationId: 'getDirectoryDevices',
+        summary: 'The device register as the directory holds it, and its ' +
+                 'schema',
+        description: 'One entry per device under `ou=devices`, every ' +
+                     'attribute on it, and the SCHEMA `common/devices.ts` ' +
+                     'publishes. A key, the last compliance and status ' +
+                     'change and the enrolment are ONE JSON VALUE each. ' +
+                     '`stsDeviceSecretHash` is withheld, as from every ' +
+                     'LDAP read; every other value is shown as the ' +
+                     'directory holds it. Read-only: the register is ' +
+                     'edited through `/admin-api/devices`.',
+        mirrors: 'GET /admin/ldap/devices',
+        parameters: [
+          { name: 'q', in: 'query', required: false, schema: { type: 'string' },
+            description: 'Substring of the DN or of any value but the ' +
+                         'withheld one.' }
+        ].concat(this.pagingParameters()),
+        responseDescription: 'The page of device entries and the schema.',
+        responseSchema: { type: 'object',
+          description: '`baseDn`, `container`, `count`, `matched`, `shown`, ' +
+                       '`filter`, the paging, `sourceOfTruth`, `schema` and ' +
+                       '`entries`.' },
+        handler: function (req, res) {
+          log.debug("Entering the management API directory devices " +
+                    "endpoint.");
+          self.sendJson(res, 200, adminViews.directoryPageJson('devices',
+                                                               req));
+          log.debug("Leaving the management API directory devices " +
+                    "endpoint.");
         } },
 
       // LAST OF THE EIGHT, and it is the one that answers about the SOCKETS

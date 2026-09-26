@@ -334,7 +334,6 @@ var config = {
     maxSignedMetadataEntries: 64,                // signed_metadata cache entries
     basicAuthRealm: "sts",                       // Token endpoint Basic realm
     maxAuthorizationServerProfiles: 200,         // Named authorization servers (per realm)
-    maxDevicesPerPerson: 20,                     // Devices one person may hold
     ciba: false,                                 // CIBA (backchannel authentication)
     cibaDefaultExpiryS: 120,                     // CIBA request lifetime (s)
     cibaMaxExpiryS: 600,                         // CIBA request longest lifetime (s)
@@ -395,6 +394,14 @@ var config = {
     backchannelLogoutMaxRows: 2000,              // Back-channel logout deliveries kept per realm
     backchannelLogoutConcurrency: 8,             // Back-channel logout sweep concurrency
     backchannelLogoutSummaryS: 60                // Back-channel logout summary interval (seconds)
+  },
+
+  // --- Devices ---------------------------------------------------------
+  devices: {
+    maxPerPerson: 20,        // Devices one person may hold
+    maxPerApplication: 1000, // Devices one application may own
+    maxKeysPerDevice: 10,    // Keys one device may hold
+    eventsKept: 5000         // Device events kept for monitoring
   },
 
   // --- PKI -------------------------------------------------------------

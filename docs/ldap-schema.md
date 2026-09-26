@@ -47,7 +47,7 @@ dc=example,dc=com                       domain, dcObject
 ├── ou=spiffe
 │   ├── ou=entries                      applicationProcess + spiffeRegistrationEntry
 │   └── ou=agents                       applicationProcess + spiffeAgent
-├── ou=devices                          device + stsDevice          (#130)
+├── ou=devices                          device + stsDevice          (#130, #164)
 ├── ou=oidfed                           stsOidfedEntry              (#132)
 ├── ou=claimproviders                   stsClaimProvider            (#147)
 ├── ou=trustAnchors                     stsTrustAnchor              (default realm only)
@@ -291,34 +291,47 @@ The registry is kept in the directory (`spiffe/spiffe_registry.ts`).
 Deleting an entry, or banning or deleting an agent, sets
 `spiffeCredentialStatus` on the affected people in `ou=users`.
 
-## Devices: `ou=devices` (#130)
+## Devices: `ou=devices` (#130, #164)
 
-Made by OpenID Connect Native SSO for Mobile Apps 1.0
-([OAuth 2.0 and OpenID Connect](oauth-oidc.md)). It is the foundation of #164, which will add a
-device's keys and compliance state to the same entries. People see theirs on
-`/portal/devices`; administrators on the person's page and at
-`GET /admin-api/users/devices`.
+Every phone, computer and host the realm knows, each owned by ONE person or
+ONE application. Made by OpenID Connect Native SSO for Mobile Apps 1.0
+([OAuth 2.0 and OpenID Connect](oauth-oidc.md)) and by an administrator on
+**Directory → Devices** or `POST /admin-api/devices/create`; see
+[Devices](devices.md). People see theirs on `/portal/devices`;
+`/admin/ldap/devices` shows the entries as the directory holds them, with this
+schema.
 
-A device (the phone or laptop a person's apps run on) is an entry of its own
-rather than a field on the person. The DN is `cn=<uuid>,ou=devices,<base>`, and
-`common/devices.ts` owns what an entry means.
+The DN is `cn=<uuid>,ou=devices,<base>`, and `common/devices.ts` owns what an
+entry means.
 
 | Attribute | Meaning |
 |---|---|
 | `objectClass` | `top, device` (RFC 4519 §3.4), `stsDevice` |
 | `cn` | the device id, a UUID this service assigned |
-| `owner` | the DN of the person whose device it is (RFC 4519) |
+| `owner` | the DN of its one owner: a person or an application (RFC 4519) |
+| `stsDeviceOwnerKind` | `person` or `application` |
 | `description` | what to call it on a page |
 | `stsDeviceApplication` | the DN of every application that has used it |
+| `stsDeviceKey` | one JSON value per key it is recognised by: `id`, `kind` (`x509`, `jwk`, `webauthn`), `thumbprint`, `label`, `added`, `addedBy`, `proof`, `attestation` (`level`, `format`, `summary`, `verifiedAt`) and the public `material`. Never a secret |
+| `stsDeviceKeyThumbprint` | `<kind>:<thumbprint>` per key, derived from `stsDeviceKey` so a filter can find a device by its key. A thumbprint is base64url SHA-256: RFC 7638 for a JWK (DPoP's `jkt`) and a WebAuthn credential's key, the SubjectPublicKeyInfo for a certificate |
+| `stsDeviceAttestation` | `attested` when any key's attestation was verified, otherwise `self-asserted`. Derived |
+| `stsDeviceCompliance` | `compliant` or `not-compliant`; absent is `unknown` |
+| `stsDeviceComplianceChange` | JSON: the last change — `status`, `previous`, `at`, `source` (`admin`, `mdm`, `test-control`, `caep`), `actor`, `reason` |
+| `stsDeviceStatus` | `compromised`; absent is `active` |
+| `stsDeviceStatusChange` | JSON: the last status change |
+| `stsDevicePlatform` | `ios`, `ipados`, `android`, `macos`, `windows`, `linux`, `chromeos` or `other` |
+| `stsDeviceModel`, `stsDeviceOs` | descriptive text |
+| `stsDeviceEnrolment` | JSON: `method` (`native-sso`, `admin`, `portal`, `est`, `scep`), `at`, `actor` |
 | `stsDeviceSecretHash` | SHA-256 of its Native SSO `device_secret`. **Withheld from every read** |
 | `stsDeviceSession` | the sign-on session the secret is good for. The secret is accepted only while that session is live |
 | `stsDeviceLastUsed` | ISO 8601 |
 
 The secret is never rotated, because every app on the device shares it. A new
-sign-in that presents the secret re-binds the same device to the new session.
-One person holds at most `oauth2.maxDevicesPerPerson` devices; at that limit
-the least recently used device whose session has ended is replaced (or, if
-none has ended, the least recently used one).
+sign-in that presents the secret re-binds the same device to the new session;
+a device given to another owner loses it. One person holds at most
+`devices.maxPerPerson` devices: at that limit a Native SSO sign-in replaces the
+least recently used device whose session has ended (or, if none has ended, the
+least recently used one), and an administrator's registration is refused.
 
 ## OpenID Federation: `ou=oidfed` (#132, #136, #137)
 

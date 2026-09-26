@@ -300,6 +300,12 @@ const SUBSYSTEMS = [
           'resource registration and token derivation of RFC 9767; the ' +
           'push finish outbound request; the console pages; and CAEP ' +
           'emission for grants.' },
+  { id: 'DEVICE', label: 'Device register',
+    where: 'common/devices.ts, admin-ui/devices_admin.ts',
+    what: 'The device register (#164, #218): a device\'s owner, its keys, ' +
+          'its attestation, compliance and status, the bounds on how many ' +
+          'a person or an application holds, and the console\'s and the ' +
+          'management API\'s doors to it.' },
   { id: 'XACML', label: 'XACML and access policy',
     where: 'xacml/, common/access_gate.ts, common/issuance_gate.js, ' +
            'common/roles.js',
@@ -13245,6 +13251,74 @@ const CODES = [
       'finish verifies the client\'s certificate whatever it says. Logged ' +
       'once per process (#171).',
     spec: 'none — a warning in the log' },
+  // ===== DEVICE ============================================================
+  { code: 'STS-DEVICE-0001',
+    summary: 'A device named an owner that is not a person or an application' +
+      ' in the realm\'s directory, named no owner, or an owner kind ' +
+      'outside person and application (#164).',
+    spec: 'HTTP 400 (API) or a 303 with error=' },
+  { code: 'STS-DEVICE-0002',
+    summary: 'A person already owns devices.maxPerPerson devices, so an ' +
+      'administrator\'s registration, or a move of a device to them, ' +
+      'was refused (#164). A Native SSO sign-in replaces one instead.',
+    spec: 'HTTP 400 (API) or a 303 with error=' },
+  { code: 'STS-DEVICE-0003',
+    summary: 'An application already owns devices.maxPerApplication devices,' +
+      ' so a registration or a move to it was refused (#164).',
+    spec: 'HTTP 400 (API) or a 303 with error=' },
+  { code: 'STS-DEVICE-0004',
+    summary: 'A device key could not be accepted: an unknown kind, proof or ' +
+      'attestation format, a certificate or JWK that could not be ' +
+      'read, or a JWK carrying private material or a symmetric key ' +
+      '(#164).',
+    spec: 'HTTP 400 (API) or a 303 with error=' },
+  { code: 'STS-DEVICE-0005',
+    summary: 'A device key is already registered to another device in the ' +
+      'realm, or one registration named the same key twice: a key ' +
+      'identifies one device (#164).',
+    spec: 'HTTP 400 (API) or a 303 with error=' },
+  { code: 'STS-DEVICE-0006',
+    summary: 'A device already holds devices.maxKeysPerDevice keys, or a ' +
+      'registration named more (#164).',
+    spec: 'HTTP 400 (API) or a 303 with error=' },
+  { code: 'STS-DEVICE-0007',
+    summary: 'A request named a device the realm does not hold, or — on ' +
+      '/portal/devices and a person\'s Remove — one that is not ' +
+      'theirs (#164).',
+    spec: 'HTTP 400 (API) or a 303 with error=' },
+  { code: 'STS-DEVICE-0008',
+    summary: 'A request named a key the device does not hold (#164).',
+    spec: 'HTTP 400 (API) or a 303 with error=' },
+  { code: 'STS-DEVICE-0009',
+    summary: 'The directory did not store or remove a device entry — ' +
+      'typically because it holds its maximum of entries (#164).',
+    spec: 'HTTP 400 (API) or a 303 with error=' },
+  { code: 'STS-DEVICE-0010',
+    summary: 'A device\'s label, model or operating system was too long or ' +
+      'not one line, its platform was not one of the closed list, or ' +
+      'an enrolment method was unknown (#164).',
+    spec: 'HTTP 400 (API) or a 303 with error=' },
+  { code: 'STS-DEVICE-0011',
+    summary: 'A compliance status, its source or a device status was outside' +
+      ' its closed list (#164).',
+    spec: 'HTTP 400 (API) or a 303 with error=' },
+  { code: 'STS-DEVICE-0012',
+    summary: 'A device named an application that is not in the realm\'s ' +
+      'directory (#164).',
+    spec: 'HTTP 400 (API) or a 303 with error=' },
+  { code: 'STS-DEVICE-0013',
+    summary: 'A POST to /admin/devices or /admin-api/devices named an action' +
+      ' that does not exist (#218).',
+    spec: 'HTTP 400 (API) or a 303 with error=' },
+  { code: 'STS-DEVICE-0014',
+    summary: 'A console session with Admin Read only posted to ' +
+      '/admin/devices (#218).',
+    spec: 'HTTP 303 with error=' },
+  { code: 'STS-DEVICE-0015',
+    summary: 'A WebAuthn key named for a device is not a security key its ' +
+      'owner enrolled, or the device\'s owner is an application ' +
+      '(#164).',
+    spec: 'HTTP 400 (API) or a 303 with error=' },
   // ===== XACML =============================================================
   { code: 'STS-XACML-0001',
     summary: 'A request reached an XACML endpoint while the family is ' +

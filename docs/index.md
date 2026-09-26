@@ -52,6 +52,7 @@ reachable by a machine with an OAuth 2.0 access token.
 [Sessions](sessions.md) ·
 [Signing out](signing-out.md) ·
 [Risk scoring](risk-scoring.md) ·
+[Devices](devices.md) ·
 [Mail](mail.md) ·
 [CAEP events](caep-events.md) ·
 [Signals received](signals-received.md)
@@ -85,6 +86,7 @@ documents it.
 | OpenID Federation | `/admin/oidfed` | [OpenID Federation](oidfed.md) |
 | GNAP | `/admin/gnap` | [GNAP](gnap.md) |
 | TOTP MFA, Recovery codes, WebAuthn | `/admin/totp`, `/admin/backup-codes`, `/admin/webauthn` | [Authentication](authentication.md) |
+| Device registration | `/admin/device-registration` | [Devices](devices.md) |
 | Kerberos | `/admin/kerberos`, `/admin/kerberos/principals` | [Kerberos and SPNEGO](kerberos.md) |
 | LDAP / LDAPS | `/admin/ldap` | [LDAP](ldap.md) |
 | WS-Trust | `/admin/wstrust` | [WS-Trust](ws-trust.md) |

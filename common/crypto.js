@@ -4969,6 +4969,58 @@ function certificateThumbprint(certificate, opts) {
 }
 
 // ---------------------------------------------------------------------------
+// A CERTIFICATE'S KEY, NOT THE CERTIFICATE: SHA-256 over the DER of its
+// SubjectPublicKeyInfo, base64url (#164, 2026-09-26).
+//
+// `certificateThumbprint()` above hashes the WHOLE certificate, which is what
+// RFC 8705's `x5t#S256` binds to — and it changes every time the same key is
+// re-certified. A device holds a KEY across renewals (EST's /simplereenroll
+// keeps it), and the device register recognises the device by the key, so its
+// thumbprint must survive a new certificate over the same key. This is the
+// digest RFC 7469 pins and SPIFFE bundles call a key's identity.
+//
+// READ WITH asn1js RATHER THAN node's `X509Certificate#publicKey`, because
+// node cannot load an ML-DSA or SLH-DSA key out of a certificate today, and a
+// device certificate this service's own post-quantum Issuing CA signed would
+// then have no thumbprint at all. The SPKI is the seventh field of the
+// TBSCertificate (the sixth when the optional `[0] version` is absent, a v1
+// certificate), and its bytes are taken as they were decoded rather than
+// re-encoded, so the digest is over what the issuer signed.
+//
+// Throws for anything that is not a certificate; the one caller refuses the
+// key with its own code and sentence.
+// ---------------------------------------------------------------------------
+function certificateSpkiThumbprint(certificate) {
+  log.debug("Entering certificateSpkiThumbprint().");
+  const text = String(certificate == null ? '' : certificate);
+  const first = text.match(
+    /-----BEGIN CERTIFICATE-----[\s\S]*?-----END CERTIFICATE-----/);
+  const der = new Uint8Array(Buffer.from(stripPem(first ? first[0] : text),
+                                         'base64'));
+  const parsed = asn1js.fromBER(der.buffer);
+  const top = /** @type {any} */ (parsed.result);
+  const outer = parsed.offset === -1 || !top || !top.valueBlock
+    ? [] : (top.valueBlock.value || []);
+  const tbs = outer.length === 3 ? outer[0] : null;
+  const fields = tbs && tbs.valueBlock ? (tbs.valueBlock.value || []) : [];
+  const versioned = fields.length > 0 && fields[0].idBlock.tagClass === 3 &&
+                    fields[0].idBlock.tagNumber === 0;
+  const spki = fields[versioned ? 6 : 5];
+  if (!spki || !spki.idBlock || spki.idBlock.tagNumber !== 16 ||
+      !spki.valueBlock || (spki.valueBlock.value || []).length !== 2) {
+    log.debug("Leaving certificateSpkiThumbprint(). Not a certificate.");
+    throw new Error('this is not a DER X.509 certificate with a ' +
+                    'SubjectPublicKeyInfo where RFC 5280 puts it.');
+  }
+  const view = spki.valueBeforeDecodeView;
+  const spkiDer = view && view.byteLength
+    ? Buffer.from(view.buffer, view.byteOffset, view.byteLength)
+    : Buffer.from(spki.toBER(false));
+  log.debug("Leaving certificateSpkiThumbprint().");
+  return nodeCrypto.createHash('sha256').update(spkiDer).digest('base64url');
+}
+
+// ---------------------------------------------------------------------------
 // COMPARE TWO SECRETS WITHOUT LEAKING THEIR LENGTH OR THEIR PREFIX.
 //
 // `crypto.timingSafeEqual()` THROWS when the two buffers differ in length,
@@ -7674,6 +7726,7 @@ module.exports = {
   JWK_THUMBPRINT_URI_PREFIX: JWK_THUMBPRINT_URI_PREFIX,
   jwkThumbprintUri: jwkThumbprintUri,
   certificateThumbprint: certificateThumbprint,
+  certificateSpkiThumbprint: certificateSpkiThumbprint,
   constantTimeEquals: constantTimeEquals,
   // --- one-time passwords (RFC 4226 section 5.3) ---
   // The primitive only. The time step, the skew window, the replay guard and

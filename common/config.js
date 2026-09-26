@@ -4258,18 +4258,44 @@ const SETTINGS = [
                  'path and a load generator must not take the feature away ' +
                  'from the names that matter.' },
 
-  // THE DEVICE REGISTER (#130): how many devices one person holds.
-  // `common/devices.ts` argues it.
-  { key: 'oauth2.maxDevicesPerPerson', group: 'OAuth 2.0 / OIDC',
+  // THE DEVICE REGISTER (#130, #164, #218): its bounds, and how many events
+  // Monitoring → Devices keeps. A group of its own since #218, drawn on
+  // Protocols → Device registration (`SETTING_HOMES`); the person bound was
+  // `oauth2.maxDevicesPerPerson` until then. `common/devices.ts` argues them.
+  { key: 'devices.maxPerPerson', group: 'Devices',
     label: 'Devices one person may hold',
-    env: 'STS_OAUTH2_MAX_DEVICES_PER_PERSON', type: 'int', dflt: 20,
+    env: 'STS_DEVICES_MAX_PER_PERSON', type: 'int', dflt: 20,
     min: 1, max: 1000, runtime: true,
-    description: 'How many device entries (ou=devices) one person holds. A ' +
+    description: 'How many device entries (ou=devices) one person owns. A ' +
                  'Native SSO sign-in from a device not seen before makes ' +
-                 'one; ' +
-                 'at the bound it replaces the person\'s least recently used ' +
-                 'device whose sign-on session has ended — or, failing that, ' +
-                 'their least recently used one.' },
+                 'one; at the bound it replaces the person\'s least ' +
+                 'recently used device whose sign-on session has ended — ' +
+                 'or, failing that, their least recently used one. An ' +
+                 'administrator\'s registration at the bound is refused ' +
+                 'instead (STS-DEVICE-0002).' },
+  { key: 'devices.maxPerApplication', group: 'Devices',
+    label: 'Devices one application may own',
+    env: 'STS_DEVICES_MAX_PER_APPLICATION', type: 'int', dflt: 1000,
+    min: 1, max: 100000, runtime: true,
+    description: 'How many device entries one application entry owns — a ' +
+                 'workload or server host registering the machines it runs ' +
+                 'on. A registration at the bound is refused ' +
+                 '(STS-DEVICE-0003); nothing is replaced to make room.' },
+  { key: 'devices.maxKeysPerDevice', group: 'Devices',
+    label: 'Keys one device may hold',
+    env: 'STS_DEVICES_MAX_KEYS_PER_DEVICE', type: 'int', dflt: 10,
+    min: 1, max: 100, runtime: true,
+    description: 'How many keys (a certificate, a JWK or DPoP key, a ' +
+                 'linked WebAuthn credential) one device holds. Each is a ' +
+                 'way the device is recognised; the Native SSO secret is ' +
+                 'not counted. A key past it is refused (STS-DEVICE-0006).' },
+  { key: 'devices.eventsKept', group: 'Devices',
+    label: 'Device events kept for monitoring',
+    env: 'STS_DEVICES_EVENTS_KEPT', type: 'int', dflt: 5000,
+    min: 100, max: 100000, runtime: true,
+    description: 'How many device creations, removals and evictions this ' +
+                 'realm keeps for Monitoring → Devices. The oldest is ' +
+                 'dropped when a new one is recorded past it.' },
 
   // OPENID CONNECT CIBA (#131). `oauth-oidc/ciba.ts` argues them.
   { key: 'oauth2.ciba', group: 'OAuth 2.0 / OIDC',

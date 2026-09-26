@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3490** of them, in **38** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3505** of them, in **39** subsystems.
 
 ## Where a code appears
 
@@ -79,6 +79,7 @@ is an ordinary outcome.
 * [Risk scoring (`STS-RISK`)](#sts-risk) — 38
 * [Mail (`STS-MAIL`)](#sts-mail) — 39
 * [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 282
+* [Device register (`STS-DEVICE`)](#sts-device) — 15
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 74
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 32
 * [Admin console (`STS-ADMIN`)](#sts-admin) — 198
@@ -3249,6 +3250,30 @@ Raised from: gnap/.
 | `STS-GNAP-0718` | A signed GNAP request was refused because the realm's signature replay history held gnap.replayCacheSize LIVE entries: forgetting one would let that signature be replayed, so the request is refused instead until entries age out. | RFC 9635 section 7.3 (invalid_request) |
 | `STS-GNAP-0719` | A GNAP client asked for an access right naming one of this service's own protected scopes (ssf:read, ssf:write, as a reference string or an object of type ssf) that its application's oauthAllowedScope does not list. | RFC 9635 section 3.6 (request_denied) |
 | `STS-GNAP-0720` | Product mode ignored gnap.pushSkipTlsVerification: a push finish verifies the client's certificate whatever it says. Logged once per process (#171). | none — a warning in the log |
+
+## STS-DEVICE
+
+**Device register.** The device register (#164, #218): a device's owner, its keys, its attestation, compliance and status, the bounds on how many a person or an application holds, and the console's and the management API's doors to it.
+
+Raised from: common/devices.ts, admin-ui/devices_admin.ts.
+
+| Code | What failed | Client sees |
+|---|---|---|
+| `STS-DEVICE-0001` | A device named an owner that is not a person or an application in the realm's directory, named no owner, or an owner kind outside person and application (#164). | HTTP 400 (API) or a 303 with error= |
+| `STS-DEVICE-0002` | A person already owns devices.maxPerPerson devices, so an administrator's registration, or a move of a device to them, was refused (#164). A Native SSO sign-in replaces one instead. | HTTP 400 (API) or a 303 with error= |
+| `STS-DEVICE-0003` | An application already owns devices.maxPerApplication devices, so a registration or a move to it was refused (#164). | HTTP 400 (API) or a 303 with error= |
+| `STS-DEVICE-0004` | A device key could not be accepted: an unknown kind, proof or attestation format, a certificate or JWK that could not be read, or a JWK carrying private material or a symmetric key (#164). | HTTP 400 (API) or a 303 with error= |
+| `STS-DEVICE-0005` | A device key is already registered to another device in the realm, or one registration named the same key twice: a key identifies one device (#164). | HTTP 400 (API) or a 303 with error= |
+| `STS-DEVICE-0006` | A device already holds devices.maxKeysPerDevice keys, or a registration named more (#164). | HTTP 400 (API) or a 303 with error= |
+| `STS-DEVICE-0007` | A request named a device the realm does not hold, or — on /portal/devices and a person's Remove — one that is not theirs (#164). | HTTP 400 (API) or a 303 with error= |
+| `STS-DEVICE-0008` | A request named a key the device does not hold (#164). | HTTP 400 (API) or a 303 with error= |
+| `STS-DEVICE-0009` | The directory did not store or remove a device entry — typically because it holds its maximum of entries (#164). | HTTP 400 (API) or a 303 with error= |
+| `STS-DEVICE-0010` | A device's label, model or operating system was too long or not one line, its platform was not one of the closed list, or an enrolment method was unknown (#164). | HTTP 400 (API) or a 303 with error= |
+| `STS-DEVICE-0011` | A compliance status, its source or a device status was outside its closed list (#164). | HTTP 400 (API) or a 303 with error= |
+| `STS-DEVICE-0012` | A device named an application that is not in the realm's directory (#164). | HTTP 400 (API) or a 303 with error= |
+| `STS-DEVICE-0013` | A POST to /admin/devices or /admin-api/devices named an action that does not exist (#218). | HTTP 400 (API) or a 303 with error= |
+| `STS-DEVICE-0014` | A console session with Admin Read only posted to /admin/devices (#218). | HTTP 303 with error= |
+| `STS-DEVICE-0015` | A WebAuthn key named for a device is not a security key its owner enrolled, or the device's owner is an application (#164). | HTTP 400 (API) or a 303 with error= |
 
 ## STS-XACML
 

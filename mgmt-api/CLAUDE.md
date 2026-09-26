@@ -1775,3 +1775,18 @@ body into an answered request.
 **Two members the spec builder learned for it** (`admin_api_spec.ts`):
 `requestBodyTypes` publishes the body as `type: string, format: binary`
 under each type, and `extraResponses` adds statuses beyond 200 and 400.
+
+## `/admin-api/devices` (#164, #218, 2026-09-26)
+
+Four GETs and one action resource, all `admin-ui/devices_admin.ts`'s own
+functions (rule 7): `GET /admin-api/devices` is `/admin/devices?format=json`
+(paged in `devicesPaging`, filtered by `q`, `ownerKind`, `owner`,
+`application`, `compliance`, `attestation`, `keyKind`, `status`; `?device=`
+one device, `found: false` for an unknown id);
+`POST /admin-api/devices/{create|update|remove|add-key|remove-key}` is the
+list page's five forms through `action()`; `GET /admin-api/devices/monitor`
+and `GET /admin-api/device-registration` mirror the Monitoring and Protocols
+pages; and `GET /admin-api/ldap/devices` is the ninth directory page, through
+`directoryPageJson('devices')`. A body's `proof` or `attestation` is never
+read: a key added through the API is `admin`-proven and `self-asserted`, as
+it is on the console.

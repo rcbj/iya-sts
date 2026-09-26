@@ -1274,9 +1274,10 @@ administrator enrols by value from `/admin/users` and `/admin-api`
 ## `/portal/devices`: A PERSON'S OWN DEVICES (2026-09-23, #130)
 
 The entries in `ou=devices` the person owns, the applications that used
-each, and whether its Native SSO secret is live; a Remove each
-(`STS-PORTAL-0088` when the device is not theirs). Nothing is added here — a
-device is made by signing in on it. It asks `authn` about sessions directly,
+each, whether its Native SSO secret is live and how many keys it holds; a
+Remove each (`STS-PORTAL-0088` when the device is not theirs). Nothing is
+added here yet — a device is made by signing in on it or by an
+administrator; registering one by proving a key here is #164's phase 2. It asks `authn` about sessions directly,
 because the portal is loaded before the authorization server whose
 `sessionIsLive()` says the same. `portal_devices.ts`, drawn the way
 `portal_self_issued.ts` is.
@@ -1310,10 +1311,11 @@ through `register(context)` as `portal_ciba.ts` is; `oauth-oidc/CLAUDE.md`
 **ITS REDIRECTS ARE ABSOLUTE, ON `baseUrlOf(req)`**, because a bare
 `/portal/...` Location is answered by the DEFAULT realm: nothing adds the
 realm prefix to a Location on the way out. The job found it — the callback
-sent a person linked in one realm to the default realm's portal. Every other
-portal page's 303 is still a bare path (`portal_devices.ts`, `portal_ciba.ts`,
-the MFA pages), which is the same defect in a non-default realm and is left
-for its own change.
+sent a person linked in one realm to the default realm's portal.
+`portal_devices.ts`'s Remove is absolute too since #164 (2026-09-26). Every
+other portal page's 303 is still a bare path (`portal_ciba.ts`, the MFA
+pages), which is the same defect in a non-default realm and is left for its
+own change.
 
 ## `/portal/reset-password`: THE SECOND UNAUTHENTICATED PAGE (2026-09-13)
 

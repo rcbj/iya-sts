@@ -8125,21 +8125,43 @@ answered in `requestedClaimsOf()` beside the ordinary claims — so the
 federation release policy applies to it as to any requested claim.
 `tests/identity_assurance.js` holds it.
 
-## `devices.ts`: THE DEVICE REGISTER (#130, 2026-09-23 — the foundation of #164)
+## `devices.ts`: THE DEVICE REGISTER (#130, 2026-09-23; #164 and #218, 2026-09-26)
 
-A device is an entry under `ou=devices` (`ldap/CLAUDE.md`), owned by a person
-and linked to the applications that used it. Today OpenID Connect Native SSO
-makes them (`oauth-oidc/CLAUDE.md`, 3bb). Four rules, each argued in the
-file's header:
+A device is an entry under `ou=devices` (`ldap/CLAUDE.md`) with ONE owner —
+a person or an application entry (#164 decision 5) — linked to the
+applications that used it. OpenID Connect Native SSO makes them
+(`oauth-oidc/CLAUDE.md`, 3bb), and since #164's phase 1 an administrator does
+(`admin-ui/devices_admin.ts`, `/admin-api/devices`). **#164 is built in six
+phases and the MODEL was built whole in the first**, so a later phase fills
+fields rather than reshaping entries already in somebody's directory; the
+file's header lists every attribute and which phase fills it. The rules,
+each argued there:
 
-* **The device outlives its secret.** The secret is accepted only while its
-  session lives; a later sign-in presenting it re-binds the SAME device, and
-  the secret is never rotated.
-* **A secret presented for somebody else is ignored** — a new device is made.
-* **A person holds at most `oauth2.maxDevicesPerPerson`**; at the bound the
-  least recently used device whose session has ended makes room.
-* **The view never carries the hash**, on the console, the API or the
-  portal.
+* **A key is ONE JSON value** of `stsDeviceKey` — kind (`x509`, `jwk`,
+  `webauthn`), thumbprint, public material, who added it, how it was PROVEN
+  and what its attestation showed — never parallel attributes, and never
+  changed once written (a merge by value would keep both versions). No
+  secret is ever in one; a private or symmetric JWK is refused.
+* **One digest per key**: RFC 7638 for a JWK (DPoP's `jkt`) and for a
+  WebAuthn credential's public key, SHA-256 over the SubjectPublicKeyInfo
+  for a certificate (`crypto.certificateSpkiThumbprint()`, so renewal over
+  the same key is the same key). **A thumbprint belongs to one device.**
+* **The console and the API never forward a proof or an attestation**: a key
+  typed by an administrator is `admin`-proven and `self-asserted`. The
+  device's `stsDeviceAttestation` is DERIVED from its keys on every write.
+* **Compliance and status keep their previous value and who set it**
+  (`setCompliance()`, `setStatus()`) — CAEP's device-compliance-change needs
+  both (phase 4). Built and tested now; the doors are phase 3.
+* **The device outlives its secret**; a new owner takes the device WITHOUT
+  its Native SSO secret and WITH its keys.
+* **Bounds**: `devices.maxPerPerson` (it was `oauth2.maxDevicesPerPerson`) —
+  a Native SSO sign-in evicts at it, an administrator is refused;
+  `devices.maxPerApplication`; `devices.maxKeysPerDevice`.
+* **The events** Monitoring → Devices draws are a per-realm, persisted
+  `realms.map` keyed by a random id — never a per-day counter two nodes
+  would overwrite — bounded at the insert by `devices.eventsKept`.
+* **The view never carries the hash or the session id**, on the console,
+  the API or the portal.
 
 ## Several nodes: second factors, links, enrollment credentials and the bootstrap (2026-09-14, #46)
 

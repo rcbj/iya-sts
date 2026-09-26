@@ -1558,7 +1558,6 @@ passwords.
 | `oauth2.basicAuthRealm` | `STS_OAUTH2_BASIC_AUTH_REALM` | `sts` | yes | The `realm` in the `WWW-Authenticate: Basic` challenge the token endpoint answers a failed client_secret_basic with (RFC 7617 section 2). A browser shows it in its credential prompt, which is why a deployment names itself here. |
 | `oauth2.maxAuthorizationServerProfiles` | `STS_OAUTH2_MAX_AUTHORIZATION_SERVER_PROFILES` | `200` | yes | How many path-selected authorization server profiles are RECORDED. A name past it is still served with the defaults and simply not recorded, because the name comes off a URL path and a load generator must not take the feature away from the names that matter. |
 | `oauth2.maxRequestedClaims` | `STS_OAUTH2_MAX_REQUESTED_CLAIMS` | `64` | yes | The most claims one OpenID Connect Core section 5.5 claims request may name, across its members. The request rides inside the access token, so this also bounds the token. |
-| `oauth2.maxDevicesPerPerson` | `STS_OAUTH2_MAX_DEVICES_PER_PERSON` | `20` | yes | How many device entries (ou=devices) one person holds. A Native SSO sign-in from a device not seen before makes one; at the bound it replaces the person's least recently used device whose sign-on session has ended. |
 | `oauth2.ciba` | `STS_OAUTH2_CIBA` | `false` | yes | Answer OpenID Connect Client-Initiated Backchannel Authentication (CIBA Core 1.0) at /oauth2/bc-authorize: a client names a person by a hint, the person approves on /portal/ciba, and the client polls, is pinged or is pushed its tokens. OFF by default: a new way in is something a realm turns on. |
 | `oauth2.cibaDefaultExpiryS` | `STS_OAUTH2_CIBA_DEFAULT_EXPIRY_S` | `120` | yes | How long a backchannel authentication request waits for the person when the client sends no requested_expiry. |
 | `oauth2.cibaMaxExpiryS` | `STS_OAUTH2_CIBA_MAX_EXPIRY_S` | `600` | yes | The longest a client's requested_expiry may make a request wait; a longer one is cut to this. |
@@ -2313,6 +2312,21 @@ What it lacks there is ATTESTATION, not authentication, and no mode changes it.
 | `persistence.changeLogRetentionS` | `STS_PERSISTENCE_CHANGE_LOG_RETENTION_S` | `3600` | yes | How long a row of `sts_changes` is kept at least. A row is removed only when older than this AND below the lowest position every process still reading the change log has reported; a reader silent this long, or whose cluster node is gone, is taken to be gone. `0` never trims. |
 | `persistence.realms` | `STS_PERSISTENCE_REALMS` | `true` | **restart** — the realm rows are restored before the listener binds | Whether trust realm definitions — names, descriptions and per-realm settings — are written down beside the directory. Turning it off is a half-persisted service rather than a smaller one: a realm holds its own directory, so its entries would be stored with no realm to restore them into, and the next run's first write would remove them. |
 | `persistence.appconfig` | `STS_PERSISTENCE_APPCONFIG` | `true` | **restart** — the saved overrides are applied before the listener binds | Whether a setting changed through the console or the management API survives a restart. It adds NO LAYER: the saved values are re-applied at startup through the same `setOverride()` a caller uses, so the five layers above are unchanged and a runtime override is simply durable. Only a runtime-changeable setting can be saved, because only one can be set — which is what makes applying them after every module has loaded safe. |
+
+### Devices
+
+The device register (#164): every phone, computer and host this realm knows,
+owned by a person or by an application, and the keys each is recognised by.
+[Devices](devices.md) is the guide; Protocols → **Device registration**
+(`/admin/device-registration`) draws these rows. `devices.maxPerPerson` was
+`oauth2.maxDevicesPerPerson` until 2026-09-26.
+
+| Setting | Environment | Default | Change while running | What it does |
+|---|---|---|---|---|
+| `devices.maxPerPerson` | `STS_DEVICES_MAX_PER_PERSON` | `20` | yes | How many device entries (ou=devices) one person owns. A Native SSO sign-in from a device not seen before makes one; at the bound it replaces the person's least recently used device whose sign-on session has ended — or, failing that, their least recently used one. An administrator's registration at the bound is refused instead (STS-DEVICE-0002). |
+| `devices.maxPerApplication` | `STS_DEVICES_MAX_PER_APPLICATION` | `1000` | yes | How many device entries one application entry owns — a workload or server host registering the machines it runs on. A registration at the bound is refused (STS-DEVICE-0003); nothing is replaced to make room. |
+| `devices.maxKeysPerDevice` | `STS_DEVICES_MAX_KEYS_PER_DEVICE` | `10` | yes | How many keys (a certificate, a JWK or DPoP key, a linked WebAuthn credential) one device holds. The Native SSO secret is not counted. A key past it is refused (STS-DEVICE-0006). |
+| `devices.eventsKept` | `STS_DEVICES_EVENTS_KEPT` | `5000` | yes | How many device creations, removals and evictions this realm keeps for Monitoring → Devices. The oldest is dropped when a new one is recorded past it. |
 
 ### Mail
 

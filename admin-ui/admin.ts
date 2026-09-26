@@ -1465,6 +1465,22 @@ const SECTIONS = [
                'browser was asked about attestation, the resident key or the ' +
                'attachment. Who holds a key is on that person\'s row under ' +
                '<a href="/admin/users">Users</a>.' },
+      // DEVICE REGISTRATION (#164, #218, 2026-09-26): HOW a device comes to
+      // be in the register and how it is recognised — the enrolment
+      // methods, attestation, the MDM feed — and every `devices.*` setting.
+      // Under Protocols because those are the protocol doors a device
+      // arrives through (Native SSO today; EST, SCEP, WebAuthn and JWK
+      // proofs as #164's phase 2 builds them); the register itself is
+      // Directory → Devices, and what it did is Monitoring → Devices.
+      // Drawn by `admin-ui/devices_admin.ts`.
+      { path: '/admin/device-registration', label: 'Device registration',
+        blurb: 'How a phone, a computer or a host comes to be in this ' +
+               'realm\'s device register and how it is recognised again: ' +
+               'each enrolment method and whether it is built, the kinds of ' +
+               'key a device is known by, what attestation means here, and ' +
+               'every <code>devices.*</code> setting &mdash; how many ' +
+               'devices a person or an application may own and how many ' +
+               'keys one device may hold.' },
       // A GROUP OF TWO SINCE 2026-09-13, asked for by rcbj. The two pages were
       // flat siblings — `Kerberos` and `Kerberos principals` — on the argument
       // that a `Kerberos` heading over a `Kerberos` page would say the label
@@ -1769,6 +1785,22 @@ const SECTIONS = [
                'refusing would remove a test case rather than add one — but ' +
                'the redirect URIs and the secret beside it are what RFC 9700 ' +
                'mode judges the next request against.' },
+      // DEVICES (#164, #218, 2026-09-26): the register itself, in Directory
+      // because its store is — every device is an entry under `ou=devices`,
+      // owned by a person or an application entry. A destination, with a
+      // drill-down per device (`?device=`) and a create form on the list,
+      // the way Groups creates from its own list. Drawn by
+      // `admin-ui/devices_admin.ts`; the entries as the directory holds them
+      // are `/admin/ldap/devices` below.
+      { path: '/admin/devices', label: 'Devices',
+        blurb: 'Every phone, computer and host this realm knows, each owned ' +
+               'by ONE person or ONE application: the applications that ' +
+               'used it, the keys it is recognised by (a certificate, a JWK ' +
+               'or DPoP key, a linked WebAuthn credential, and the Native ' +
+               'SSO secret), whether it is attested or self-asserted, its ' +
+               'compliance, and when it was last used. Click one to edit ' +
+               'it, add or remove a key, give it to another owner or remove ' +
+               'it; register one by hand at the foot of the list.' },
       // -------------------------------------------------------------------
       // POLICIES (2026-09-12), asked for by rcbj as *Directory → Policies*,
       // with the password policy as the first kind of policy it configures.
@@ -1950,6 +1982,14 @@ const SECTIONS = [
                    'nothing caches them, so an <code>ldapmodify</code> of ' +
                    '<code>spiffeX509SvidTtl</code> changes the lifetime of ' +
                    'the next SVID the Workload API hands out.' },
+          { path: '/admin/ldap/devices', label: 'Device entries',
+            blurb: 'The device register as the directory holds it: one ' +
+                   'entry per device under <code>ou=devices</code>, every ' +
+                   'attribute on it, and the SCHEMA &mdash; a key, the last ' +
+                   'compliance change and the enrolment are one JSON value ' +
+                   'each, and a client reading an entry over 389 has ' +
+                   'nowhere else to learn what they mean. The Native SSO ' +
+                   'secret\'s hash is withheld here as from every LDAP read.' },
           { path: '/admin/ldap/service', label: 'The directory service',
             blurb: 'The two raw sockets and the store behind them, as they ' +
                    'actually are right now rather than as they are ' +
@@ -2463,6 +2503,18 @@ const SECTIONS = [
                'page names; a per-process job has a row per process. ' +
                'Admin Write may run a job now, and on a cluster may ask ' +
                'the leader to hand the scheduler to another node.' },
+      // DEVICES (#164, #218, 2026-09-26): what the register holds, counted
+      // — by owner kind, compliance, attestation and key kind, and the
+      // Native SSO devices bound to a live session against ended ones — and
+      // what happened to it over time: creations, removals and evictions at
+      // a person's bound. Drawn by `admin-ui/devices_admin.ts`.
+      { path: '/admin/devices/monitor', label: 'Devices',
+        blurb: 'The device register counted: how many devices persons and ' +
+               'applications own, how many are compliant, attested, known ' +
+               'by each kind of key, and bound to a live Native SSO sign-in ' +
+               'against ended ones &mdash; and, day by day, how many were ' +
+               'registered, removed, or evicted to make room at a ' +
+               'person\'s bound.' },
       // MAIL (#63, 2026-09-22), after the scheduler: what this service SENT
       // — the outbox, its dead letters, and in development the captured
       // messages. Drawn by `admin-ui/mail_admin.ts` out of `common/mail.ts`;
@@ -11258,7 +11310,7 @@ class AdminConsole {
       // A warning and not a throw, for the reason every other install here
       // gives.
       log.warn(errorCodes.tag('STS-ADMIN-0014') + 'admin: a set of directory ' +
-               'page views was offered that does not carry all eight ' +
+               'page views was offered that does not carry all nine ' +
                'of ' + DIRECTORY_PAGE_NAMES.join(', ') + '. It ' +
                'is refused whole — a partial set would leave some of ' +
                '/admin-api\'s directory operations answering as though no ' +
@@ -11270,7 +11322,7 @@ class AdminConsole {
     // AND THE READ LAYER, which needs the same thing — see the header of
     // admin-core/admin_views.ts. Still one statement and one writer.
     adminViews.setDirectoryPages(views);
-    log.debug('The eight directory page views were installed; /admin-api ' +
+    log.debug('The nine directory page views were installed; /admin-api ' +
               'mirrors them.');
     log.debug("Leaving AdminConsole.setDirectoryPages().");
   }
@@ -12332,8 +12384,9 @@ class AdminConsole {
     const deviceRow = function (one) {
       log.debug("Entering deviceRow().");
       log.debug("Leaving deviceRow().");
-      return '<tr><td>' + self.esc(one.label) + '<br><code>' +
-        self.esc(one.id) + '</code></td><td>' +
+      return '<tr><td><a href="/admin/devices?device=' +
+        encodeURIComponent(one.id) + '">' + self.esc(one.label) +
+        '</a><br><code>' + self.esc(one.id) + '</code></td><td>' +
         (one.applications.length
           ? one.applications.map(function (dn) {
               return '<code>' + self.esc(dn) + '</code>';
@@ -12353,11 +12406,13 @@ class AdminConsole {
           : '') + '</td></tr>';
     };
     const devicesBlock = '<h3>Devices</h3>' +
-      this.note('The phones and computers this person\'s applications run ' +
-                'on, each an entry in <code>ou=devices</code> — made by an ' +
-                'OpenID Connect Native SSO sign-in — linked to the ' +
-                'applications that used it. A live Native SSO secret lets ' +
-                'those apps share one sign-in.') +
+      this.note('The phones and computers this person owns, each an entry ' +
+                'in <code>ou=devices</code> — made by an OpenID Connect ' +
+                'Native SSO sign-in or registered by an administrator — ' +
+                'linked to the applications that used it. A live Native SSO ' +
+                'secret lets those apps share one sign-in. Each device\'s ' +
+                'keys, attestation and compliance are on its own page under ' +
+                '<a href="/admin/devices">Devices</a>.') +
       (deviceView.devices.length
         ? '<table><tr><th>Device</th><th>Applications</th>' +
           '<th>Native SSO</th><th>Last used</th><th></th></tr>' +
@@ -39835,6 +39890,9 @@ const SETTING_HOMES = [
   // jobs they switch and the ticks they time.
   { group: 'Scheduler', pages: ['/admin/scheduler'] },
   { group: 'Mail', pages: ['/admin/mail'] },
+  // THE DEVICE REGISTER'S BOUNDS (#218): on the page that says how a device
+  // arrives, beside the enrolment methods those bounds limit.
+  { group: 'Devices', pages: ['/admin/device-registration'] },
   { group: 'SCIM', pages: ['/admin/scim'] },
   // Shared Signals. A page of its own rather than a section of anything, for
   // the reason /admin/federation is ungrouped: SSF is not a variant of another
@@ -40728,7 +40786,7 @@ let xacmlPages = null;
 // loaded.
 const DIRECTORY_PAGE_NAMES = ['service', 'directory', 'applications',
                               'federations', 'spiffe', 'roles', 'policies',
-                              'peps'];
+                              'peps', 'devices'];
 
 let directoryPages = null;
 

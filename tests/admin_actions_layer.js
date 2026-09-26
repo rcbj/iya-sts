@@ -452,6 +452,12 @@ function checkNothingRequiresItEarly(t) {
                    // console, so the require is a cache hit and moves no
                    // route.
                    'admin-ui/mail_admin.ts',
+                   // The device register's three pages (#164, #218), for
+                   // `adminViews`' paging and the gate state only — the
+                   // list's pages, and who registered a device. Required at
+                   // 18o, after the console, so the require is a cache hit
+                   // and moves no route.
+                   'admin-ui/devices_admin.ts',
                    // The key pairs page (#48, 2026-09-22), for the gate
                    // state only — who asked for a rotation. Required LAZILY,
                    // in the request, and the page is 20a, after the console,

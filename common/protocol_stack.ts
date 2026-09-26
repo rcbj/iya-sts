@@ -1036,6 +1036,18 @@ class ProtocolStack {
                'ClaimsProvidersAdmin');
     this.register(app, require('../oauth-oidc/claims_providers_admin'),
                   'oauth-oidc/claims_providers_admin');
+    // 18o. DEVICES (#164, #218): Directory → Devices, Protocols → Device
+    // registration and Monitoring → Devices, one module for the three. 18a's
+    // placement and 18a's reason: the console's shell, the device register
+    // (built with `credentials` above) and the authorization server (9),
+    // whose `sessionIsLive()` it asks, already loaded, and
+    // `mgmt-api/admin_api` requires it. `/admin/ldap/devices` is
+    // `ldap/ldap_server.js`'s, at 21.
+    require('../admin-ui/devices_admin');
+    this.build('admin-ui/devices_admin', require('../admin-ui/devices_admin'),
+               'DevicesAdmin');
+    this.register(app, require('../admin-ui/devices_admin'),
+                  'admin-ui/devices_admin');
     // The management API: everything that console shows and everything it can
     // change, at /admin-api, over JSON. It must come AFTER admin.js and the
     // order is a dependency rather than a preference — it requires that module

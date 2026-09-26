@@ -753,6 +753,12 @@ const JOBS = [
   // its refusals, RFC 8693's token types, a session ending, revocation.
   // `local: true`: this repository's authorization server and API.
   { file: 'sts_native_sso.js',           browser: false, local: true },
+  // THE DEVICE REGISTER (#164 phase 1, #218, 2026-09-26): a person's and an
+  // application's device registered through /admin-api, the lists and their
+  // filters and paging, keys added and refused, the bound, Monitoring →
+  // Devices, Device registration and /admin/ldap/devices. `local: true`:
+  // this repository's register and API.
+  { file: 'sts_devices.js',              browser: false, local: true },
   // OPENID CONNECT CIBA (#131, 2026-09-23): the endpoint's refusals, poll
   // with an approval on /portal/ciba, deny, the user code, and ping and
   // push in development. `local: true`: this repository's own endpoint.

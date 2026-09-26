@@ -725,7 +725,28 @@ Connect Native SSO secret and the sign-on session it is good for. The
 container is seeded like the others; `listDeviceEntries()`,
 `writeDeviceEntry()` and `deleteDeviceEntry()` are the store, reached through
 `credentials.deviceStore()`, and `common/devices.ts` decides what an entry
-means. #164 adds the rest of what a device is to these same entries.
+means.
+
+**#164 ADDED THE REST OF WHAT A DEVICE IS TO THESE SAME ENTRIES
+(2026-09-26)**: `owner` may name an APPLICATION entry as well as a person
+(`stsDeviceOwnerKind` says which), and twelve more `stsDevice*` names carry
+the keys (`stsDeviceKey`, one JSON value each, and the derived
+`stsDeviceKeyThumbprint` index), attestation, compliance and status with the
+last change of each, three descriptive labels and the enrolment.
+`common/devices.ts`'s header argues the layout. **None of them is a secret**
+— a key's value is public material — so SECRET_ATTRIBUTES is unchanged and
+still holds only `stsDeviceSecretHash`; `directory_merge.js` merges the keys
+and the index by value (MULTI) and the three JSON records whole (SINGLE). A
+sixth hook, `ownerOf(dn)`, answers who a DN is — `{ kind, name, dn }` for a
+person or an application, null for anything else — so a device's owner is
+named on a page rather than printed as a DN.
+
+**`GET /admin/ldap/devices` is the NINTH container page** (#218), drawn here
+beside the other eight and handed to `admin.setDirectoryPages()` with them
+(`DIRECTORY_PAGE_NAMES` has nine): the entries attribute by attribute, and
+the schema `devices.SCHEMA` publishes. It withholds `stsDeviceSecretHash`
+from the table and the JSON, as every LDAP read does. The register as the
+console works with it is Directory → Devices (`admin-ui/devices_admin.ts`).
 
 ## `ou=oidfed`: THE OPENID FEDERATION REGISTER (2026-09-23, #132)
 

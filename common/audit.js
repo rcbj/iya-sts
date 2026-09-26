@@ -485,6 +485,23 @@ const ACTIONS = [
   // objectClass — it is decided by placement, which is the same rule
   // /admin/groups uses and is why an add under ou=users is a user.create and
   // the identical add one level over is a group.create.
+  // THE DEVICE REGISTER (#164, #218): one row per act on a device entry,
+  // whichever door — the console, the API, Native SSO's eviction at a
+  // person's bound, the person's own portal. `common/devices.ts`.
+  { action: 'device.create', category: 'directory',
+    label: 'A device was registered' },
+  { action: 'device.update', category: 'directory',
+    label: 'A device was changed: its label, owner, applications or status' },
+  { action: 'device.delete', category: 'directory',
+    label: 'A device was removed' },
+  { action: 'device.evict', category: 'directory',
+    label: 'A device was removed to make room at its person\'s bound' },
+  { action: 'device.key-add', category: 'directory',
+    label: 'A key was added to a device' },
+  { action: 'device.key-remove', category: 'directory',
+    label: 'A key was removed from a device' },
+  { action: 'device.compliance', category: 'directory',
+    label: 'A device\'s compliance was set' },
   { action: 'user.create', category: 'directory', label: 'A user was created' },
   { action: 'user.delete', category: 'directory', label: 'A user was deleted' },
   { action: 'user.update', category: 'directory', label: 'A user was updated' },

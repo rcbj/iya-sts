@@ -338,6 +338,12 @@ const consent = require('../common/consent');
 // and requires nothing here, so this require can neither move a route nor close
 // a cycle; what crosses is the two functions the slot below installs.
 const credentials = require('../common/credentials');
+// The device register (#164), for `/admin/ldap/devices`: its schema and what
+// its entries mean. A library built before this module and loaded by it
+// already through `credentials`' neighbours — a cache hit, which moves no
+// route and closes no cycle (it reaches the directory only through the
+// `credentials.deviceStore()` hooks this file installs).
+const devices = require('../common/devices');
 // THE PASSWORD POLICY REGISTER (2026-09-12). `ou=passwordPolicies` is its
 // store the way `ou=roles` is the role register's, and for `roles.js`'s reason
 // it is a LEAF — requiring `helpers.js`, `mode.js` and an npm package — so this
@@ -2111,6 +2117,15 @@ const OWN_NAMES = [
   // `common/devices.ts` keeps them.
   'stsDevice', 'stsDeviceApplication', 'stsDeviceSecretHash',
   'stsDeviceSession', 'stsDeviceLastUsed',
+  // AND THE REST OF WHAT A DEVICE IS (#164, 2026-09-26): its owner's kind (a
+  // person or an application), its keys (one JSON value each, public
+  // material only) and their thumbprint index, its attestation level,
+  // compliance and status with the last change of each, three descriptive
+  // labels and how it was enrolled. `common/devices.ts` argues the layout.
+  'stsDeviceOwnerKind', 'stsDeviceKey', 'stsDeviceKeyThumbprint',
+  'stsDeviceAttestation', 'stsDeviceCompliance', 'stsDeviceComplianceChange',
+  'stsDeviceStatus', 'stsDeviceStatusChange', 'stsDevicePlatform',
+  'stsDeviceModel', 'stsDeviceOs', 'stsDeviceEnrolment',
 
   // AND A PERSON'S CIBA USER CODE (#131, 2026-09-23): a secret they set on
   // /portal/ciba that a backchannel authentication request must carry when
@@ -3034,11 +3049,12 @@ function seed() {
   putEntry(devicesDn(), {
     objectClass: ['top', 'organizationalUnit'],
     ou: 'devices',
-    description: 'Devices: the phones and computers a person\'s applications ' +
-      'run on, each an RFC 4519 device whose owner is the person and whose ' +
-      'stsDeviceApplication values are the applications that have used it. ' +
-      'OpenID Connect Native SSO keeps its device_secret here, hashed ' +
-      '(common/devices.ts).'
+    description: 'Devices: the phones, computers and hosts this realm ' +
+      'knows, each an RFC 4519 device whose one owner is a person or an ' +
+      'application, whose stsDeviceApplication values are the applications ' +
+      'that have used it and whose stsDeviceKey values are the keys it is ' +
+      'recognised by. OpenID Connect Native SSO keeps its device_secret ' +
+      'here, hashed (common/devices.ts).'
   }, { origin: 'seed' });
   putEntry(oidfedDn(), {
     objectClass: ['top', 'organizationalUnit'],
@@ -9110,6 +9126,33 @@ function personDnOf(username) {
   return stored ? stored.dn : '';
 }
 
+// WHO OWNS A DN (#164): { kind: 'person' | 'application', name, dn } for a
+// person (its uid) or an application entry (its appIdentifier), and null for
+// anything else — a device's `owner` must name one of the two, and a page
+// names the owner rather than printing a DN.
+function ownerOf(dn) {
+  log.debug('Entering ownerOf().');
+  const stored = getEntry(String(dn || ''));
+  if (!stored) {
+    log.debug('Leaving ownerOf(). No entry.');
+    return null;
+  }
+  if (isPersonEntry(stored)) {
+    log.debug('Leaving ownerOf(). A person.');
+    return { kind: 'person', dn: stored.dn,
+             name: String((stored.attributes.uid || [])[0] || '') };
+  }
+  if (isUnder(stored.dn, applicationsDn()) &&
+      normalizeDn(stored.dn) !== normalizeDn(applicationsDn())) {
+    log.debug('Leaving ownerOf(). An application.');
+    return { kind: 'application', dn: stored.dn,
+             name: String((stored.attributes.appidentifier || [])[0] ||
+                          (stored.attributes.cn || [])[0] || '') };
+  }
+  log.debug('Leaving ownerOf(). Neither.');
+  return null;
+}
+
 function applicationDnOf(clientId) {
   log.debug('Entering applicationDnOf().');
   const wanted = String(clientId || '');
@@ -9262,6 +9305,7 @@ if (typeof credentials.setDirectory === 'function') {
     claimSourceTokenHolders: claimSourceTokenHolders,
     personDnOf: personDnOf,
     applicationDnOf: applicationDnOf,
+    ownerOf: ownerOf,
     writeSelfIssuedSubjects: writeSelfIssuedSubjects,
     selfIssuedSubjectOwner: selfIssuedSubjectOwner,
     writeIdaVerifications: writeIdaVerifications,
@@ -17208,6 +17252,154 @@ app.get('/admin/ldap/federations', function (req, res) {
 });
 
 // ---------------------------------------------------------------------------
+// GET /admin/ldap/devices — THE DEVICE REGISTER AS THE DIRECTORY HOLDS IT
+// (#164, #218, 2026-09-26).
+//
+// The ninth container page, and the twin of Directory → Devices
+// (`admin-ui/devices_admin.ts`) the way `/admin/ldap/applications` is the
+// twin of Applications: that page is the register as the console works with
+// it — the filters, the detail, the edits — and this one is `ou=devices`
+// entry by entry, every attribute, and the SCHEMA `common/devices.ts`
+// publishes. The schema is why the page exists: every `stsDevice*` name is
+// this service's invention, several hold one JSON value each, and a client
+// reading an entry over 389 has nowhere else to learn what they mean.
+//
+// ONE VALUE IS WITHHELD: `stsDeviceSecretHash`, which is in
+// SECRET_ATTRIBUTES and withheld from every LDAP read. Every other value is
+// shown as the directory holds it — a key's JSON is public material.
+// ---------------------------------------------------------------------------
+function ldapDevicesView(req) {
+  log.debug('Entering ldapDevicesView().');
+  const all = listDeviceEntries();
+  const wantedText = String(req.query.q || '').trim();
+  const needle = wantedText.toLowerCase();
+  const filtered = all.filter(function (entry) {
+    if (!needle) {
+      return true;
+    }
+    if (String(entry.dn).toLowerCase().indexOf(needle) >= 0) {
+      return true;
+    }
+    return Object.keys(entry.attributes).some(function (name) {
+      return !isSecretAttribute(name) &&
+        entry.attributes[name].some(function (value) {
+          return String(value).toLowerCase().indexOf(needle) >= 0;
+        });
+    });
+  }).sort(function (a, b) {
+    return String(a.dn).localeCompare(String(b.dn));
+  });
+  const paged = directoryPaging(req, filtered, 'devices');
+  const paging = paged.paging;
+  const filterParams = { q: wantedText || '', per: perOf(req, paging) };
+  const nav = admin.pageNavPair('/admin/ldap/devices', filterParams, paging);
+  const shownAttributes = function (entry) {
+    const out = {};
+    Object.keys(entry.attributes).sort().forEach(function (name) {
+      out[canonicalName(name)] = isSecretAttribute(name)
+        ? ['(withheld: a verifier, as from every LDAP read)']
+        : entry.attributes[name].slice(0);
+    });
+    return out;
+  };
+  const shown = paged.shown.map(function (entry) {
+    return { dn: entry.dn, attributes: shownAttributes(entry) };
+  });
+  const payload = {
+    baseDn: baseDn(),
+    container: devicesDn(),
+    count: all.length,
+    matched: filtered.length,
+    shown: shown.length,
+    filter: { q: wantedText || null },
+    page: paging.page, pages: paging.pages, perPage: paging.perPage,
+    firstRow: paging.firstRow, lastRow: paging.lastRow,
+    sourceOfTruth: 'These entries ARE the device register: nothing caches ' +
+      'them, so an ldapmodify of stsDeviceCompliance is the device\'s ' +
+      'compliance on the next read. stsDeviceSecretHash is withheld.',
+    schema: devices.SCHEMA,
+    entries: shown
+  };
+  const rows = shown.map(function (entry) {
+    const a = entry.attributes;
+    const attrs = Object.keys(a).map(function (name) {
+      return '<div><code>' + xmlEscape(name) + '</code>: ' +
+        admin.clippedValues(a[name]) + '</div>';
+    }).join('');
+    const id = String((a.cn || [])[0] || '');
+    return '<tr><td><a href="/admin/devices?device=' +
+      encodeURIComponent(id) + '">' + admin.clipped(id, 40) + '</a>' +
+      '<div class="sub">' + admin.clipped(entry.dn, 40) + '</div></td>' +
+      '<td>' + xmlEscape(String((a.stsDeviceOwnerKind || ['person'])[0])) +
+      '<div class="sub">' + admin.clipped(String((a.owner || [''])[0]), 40) +
+      '</div></td><td class="attrs">' + attrs + '</td></tr>';
+  }).join('');
+  const classRows = devices.SCHEMA.objectClasses.map(function (one) {
+    return '<tr><td><code>' + xmlEscape(one.name) + '</code></td><td>' +
+      xmlEscape(one.where) + (one.standard ? '' : ' <strong>(invented ' +
+                                                  'here)</strong>') +
+      '</td><td>' + xmlEscape(one.what) + '</td></tr>';
+  }).join('');
+  const attrRows = devices.SCHEMA.attributes.map(function (row) {
+    return '<tr><td><code>' + xmlEscape(row.name) + '</code>' +
+      (row.sensitive ? ' <strong>(withheld)</strong>' : '') + '</td><td>' +
+      xmlEscape(row.kind) + '</td><td>' + xmlEscape(row.what) + '</td></tr>';
+  }).join('');
+  const inner = '<p class="sub">' + all.length + ' under <code>' +
+    xmlEscape(devicesDn()) + '</code>: every device this realm knows, each ' +
+    'owned by one person or one application. The same register ' +
+    '<a href="/admin/devices">Devices</a> lists and edits.</p>' +
+    '<div class="tiles">' + admin.tile(all.length, 'Device entries') +
+    '</div>' +
+    admin.note('These entries ARE the register: nothing caches them, so an ' +
+    '<code>ldapmodify</code> here is what the next read sees. One value is ' +
+    'withheld on this page as from every LDAP read: ' +
+    '<code>stsDeviceSecretHash</code>, the verifier of a Native SSO ' +
+    'device_secret. A key\'s JSON is public material and is shown whole.') +
+    '<form method="get" action="/admin/ldap/devices"><div class="formrow">' +
+    '<label for="q">Device</label><input type="text" id="q" name="q" ' +
+    'value="' + xmlEscape(wantedText) + '" size="30" placeholder="an id, a ' +
+    'DN, an owner or any value">' +
+    '<label for="per">Show</label><select id="per" name="per">' +
+    admin.perPageOptions(paging.perPage) + '</select>' +
+    '<button type="submit">Filter</button>' +
+    (wantedText ? ' <a href="/admin/ldap/devices">clear</a>' : '') +
+    '</div></form>' + nav.head +
+    '<table><tr><th>Device</th><th>Owner</th><th>Every attribute</th></tr>' +
+    (rows || '<tr><td colspan="3">' + (wantedText
+      ? 'No device matches. The filter above may be hiding some.'
+      : 'None yet. A Native SSO sign-in makes one, and an administrator ' +
+        'can register one on <a href="/admin/devices">Devices</a>.') +
+      '</td></tr>') + '</table>' + nav.foot +
+    '<h2>The object classes</h2>' +
+    '<table><tr><th>Class</th><th>Where from</th><th>What it brings</th></tr>' +
+    classRows + '</table>' +
+    '<h2>The attributes</h2>' +
+    admin.note('<code>multi</code> holds several values; <code>single</code> ' +
+    'one. Several hold ONE JSON VALUE each: a key, the last compliance and ' +
+    'status change, and the enrolment. <code>common/devices.ts</code> ' +
+    'argues the layout.') +
+    '<table><tr><th>Attribute</th><th>Values</th><th>What it is</th></tr>' +
+    attrRows + '</table>' +
+    '<p class="sub"><a href="/admin/ldap/devices?format=json">This page as ' +
+    'JSON</a> &middot; <a href="/admin/devices">the register in the ' +
+    'console</a> &middot; <a href="/admin/ldap/directory">every entry in ' +
+    'the directory</a> &middot; <a href="/admin/ldap/service">what this ' +
+    'directory is</a></p>';
+  log.debug('Leaving ldapDevicesView(). ' + shown.length + ' row(s) of ' +
+            filtered.length + ' matched.');
+  return { title: 'Device entries', inner: inner, json: payload };
+}
+
+app.get('/admin/ldap/devices', function (req, res) {
+  log.debug('Entering GET /admin/ldap/devices.');
+  const view = ldapDevicesView(req);
+  admin.respond(req, res, view.json, view.title, '/admin/ldap/devices',
+                view.inner);
+  log.debug('Leaving GET /admin/ldap/devices.');
+});
+
+// ---------------------------------------------------------------------------
 // GET /admin/ldap/roles — the role register as the directory sees it.
 //
 // The fourth container page, and the three above it establish the shape: a
@@ -17799,12 +17991,13 @@ if (typeof admin.setDirectoryPages === 'function') {
     spiffe: ldapSpiffeView,
     roles: ldapRolesView,
     policies: ldapPoliciesView,
-    peps: ldapPepsView
+    peps: ldapPepsView,
+    devices: ldapDevicesView
   });
 } else {
   log.warn('ldap: this copy of admin-ui/admin.ts offers no ' +
            'setDirectoryPages() slot, so /admin-api will not mirror the ' +
-           'eight directory pages. The pages themselves are unaffected.');
+           'nine directory pages. The pages themselves are unaffected.');
 }
 
 function listen() {
