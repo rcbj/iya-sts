@@ -250,6 +250,7 @@ async function test() {
   await ok(base + "/admin-api/realms/create", { id: REALM,
     domain: REALM + ".example.net", name: "CA 244 " + STAMP },
     "created the realm");
+  await ok(realmApi + "/pki/build", {}, "built the realm's authority");
   await ok(realmApi + "/applications/create", { identifier: RECEIVER,
     kind: "oauth2-client", name: RECEIVER, protocols: ["oauth2", "ssf"],
     fields: { oauthClientId: [RECEIVER], oauthClientSecret: SECRET,
