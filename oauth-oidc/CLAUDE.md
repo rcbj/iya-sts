@@ -4012,6 +4012,119 @@ dial itself over TLS, so that job publishes the service's own Root in the
 directory shared with the service and names it as the OP realm's
 `federation.outboundCaFile`.
 
+## 3bi. OPENID CONNECT ENTERPRISE EXTENSIONS 1.0 (2026-09-26, #148)
+
+rcbj's answers were every recommendation: a tenant is the trust realm's id
+(#151 shares it); a `tenant` naming another realm is refused; sessions stay
+absolute; `aud_sub` is recorded per person per client; `domain_hint` is
+home-realm discovery. All in every mode.
+
+* **`session_expiry`** is set in `idToken()` from `authn.sessionById()`'s
+  `expires` whenever the token is issued on a session — keyed on
+  `opts.session_id` ALONE, unlike `sid`, which only the logout features and
+  Native SSO switch on.
+* **`tenant`** is `realms.current().id` in every ID Token. On the request it
+  is declared in `AUTHORIZE_QUERY` and refused in
+  `vetAuthorizationRequest()` when it names another realm
+  (`STS-OAUTH-0688`, redirected `invalid_request`), before the response type
+  is read. PAR runs the same vetting.
+* **`aud_sub`** is `stsAudSub` on the person's entry, one `<client_id>
+  <aud_sub>` per value (`credentials.audSubsOf()` / `writeAudSubs()`),
+  written by `usersAction`'s `set-aud-sub` (console form on the person's
+  page, `POST /admin-api/users/set-aud-sub`). The learned half — a value a
+  client reports — is #151's.
+* **`domain_hint`** goes to `authn.beginAuthentication()` as `domainHint`;
+  `homeRealmFor()` takes the usable service-provider relationship whose
+  `fedHomeRealmDomain` (a new multi-valued federation attribute, lower-cased
+  as `fedSubjectDomain` is) lists it — exactly one, or none. An
+  application's own auto-redirect partner wins, being the more specific
+  configuration. `fedSubjectDomain` stays an ADMISSION rule; this is a
+  routing hint.
+* **The portal launch** (`Portal.initiateLoginLink()`) adds `tenant`,
+  `domain_hint` (the realm's DNS domain) and `target_link_uri` (the
+  application's registered https home page).
+
+Tests: `tests/vendored/sts_enterprise_extensions.js`.
+
+## 3bj. THE EPHEMERAL SUBJECT IDENTIFIER (2026-09-26, #149)
+
+rcbj's answers were every recommendation: a persisted per-realm mapping
+purged by a job, the same `sub` within one authentication, Logout Tokens and
+SSF events naming it for that client, nothing relaxed in development.
+
+* **`pairwise_subjects.ts` owns it**, beside pairwise (#118), because both are
+  the same indirection: `subjectFor(clientId, localSub, sessionId)`. For a
+  client whose `subject_type` is `ephemeral` it returns the `sub` minted for
+  that (session, client), minting 160 random bits the first time. The map is
+  `oauth2.ephemeralSubjects`: `s|<session>|<client>` to the `sub`, and
+  `e|<sub>` to `{ local, client, session, until }`. Every use extends `until`
+  by the larger of `authn.sessionLifetimeS` and `oauth2.refreshTokenTtlS`;
+  the `oauth2.ephemeral-subjects-purge` job removes what has passed it. A
+  grant with no session (no browser) mints afresh on every call.
+* **Every client-facing `sub` passes the session**: `idToken()`
+  (`opts.session_id`), the implicit response and `noteClient()` (so the
+  Logout Token agrees), the `id_token_hint` comparison, and UserInfo (the
+  access token's `sid`, or `stats.sessionIdOfJti()`). Access and refresh
+  tokens keep the PUBLIC `sub`, which is what this service looks a person up
+  by, so a refresh re-derives the same ephemeral one from the same session.
+* **Mapping back**: `localFor(sub)` turns an ephemeral `id_token_hint` into
+  the person at the authorization and CIBA endpoints. Pairwise has no reverse
+  map and still has none: a pairwise hint names nobody here.
+* **SSF**: `ssf.ts`'s `subjectForReceiver()` rewrites an `iss_sub` user to
+  the `sub` the stream's owning client knows (pairwise or ephemeral), using
+  the event's own `session` member; before this a pairwise client's stream
+  was told the public `sub`.
+
+Tests: `tests/vendored/sts_ephemeral_subjects.js`.
+
+## 3bk. RFC 8628 DEVICE AUTHORIZATION AND OPENID CONNECT KEY BINDING (2026-09-26, #150)
+
+rcbj's answers were every recommendation: build RFC 8628 here, since Key
+Binding names the device flow; ML-DSA DPoP keys where the JOSE registry
+allows; and section 7's proof of possession wherever a bound ID Token is
+presented.
+
+* **`device_authorization.ts` owns the device codes**, off by default
+  (`oauth2.deviceAuthorization`, per realm) for CIBA's reason. A persisted
+  per-realm map, `oauth2.deviceCodes`: `d|<device_code>` to the record and
+  `u|<USER-CODE>` to the device code. An approval is recorded on
+  `/portal/device` (`portal/portal_device.ts`) with the approving session's
+  id, acr, amr and auth_time, so the device's tokens end with that session.
+  A redemption is a cluster claim, so one approval is one token response on
+  any node. The `oauth2.device-code-sweep` job removes what has expired.
+* **The endpoint** (`deviceAuthorizationRequest()`) authenticates the client
+  through `authenticateEndpointCaller()`, as PAR and CIBA do, requires the
+  grant to be registered and asks the scope policy. An optional DPoP proof
+  binds the device code to its key.
+* **The portal page's two protections are RFC 8628 section 5's.** A code
+  only ever brings the request up — the client, the scopes and a sentence
+  about phishing — and approving is a second POST (section 5.4). A session
+  that types five codes that match nothing is refused for ten minutes
+  (section 5.1). The count is per process and capped at the insert.
+* **Key Binding** is in `oauth2.ts`, in every mode:
+  * `vetAuthorizationRequest()` refuses `bound_key` without `dpop_jkt` or
+    outside `response_type=code` (0704, 0705).
+  * `boundKeyProofRefusal()` holds the redeeming proof's `c_s256` to the code
+    (0702, 0703), at the authorization_code and device_code grants.
+  * The `issue()` closure passes `dpopJwk` through. `idToken()` then adds
+    `cnf.jwk` and the header `typ: dpop+id_token`.
+  * The refresh token carries `kb_jkt` inside its JWE. It is separate from
+    `cnf`, because RFC 9449 section 5 leaves a confidential client's refresh
+    token unbound (#176), and a bound ID Token must stay with one key (0706).
+* **Section 7 is `boundIdTokenRefusal()`**, asked where an ID Token is a
+  CREDENTIAL: the token exchange grant, Native SSO's included (0707).
+  `id_token_hint` is a HINT, naming a person who is then asked, and it cannot
+  carry a DPoP proof from a browser, so it is not held to the key.
+* **ML-DSA in DPoP**: `dpop.ts`'s `SIGNING_ALGS` takes ML-DSA-44, -65 and -87.
+  RFC 9964 defines the AKP thumbprint members and the JOSE registry names
+  those three. SLH-DSA and the composites stay out: they are signed here
+  under draft names, and a binding to a name no client shares is none. An
+  AKP key's `priv` is refused like `d`, and its `alg` must match the proof's.
+* **`bound_key` is a reserved OpenID scope**, beside the six, in
+  `scope_policy.ts`, `jwt_access_token.ts` and `protocolScopes()`.
+
+Tests: `tests/vendored/sts_device_key_binding.js`.
+
 ## OPENID CONNECT CORE, READ AGAINST THE CODE (2026-09-22, #118)
 
 The review on #45 found Core bugs that no test had asked about. What changed, and

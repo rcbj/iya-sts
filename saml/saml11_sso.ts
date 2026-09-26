@@ -248,6 +248,8 @@ import applications = require('../common/applications');
 import mode = require('../common/mode');
 import authnContext = require('./authn_context');
 import documentSettings = require('./document_settings');
+// The certificate the back channel presents, as a metadata key (#248).
+import listenerKeys = require('./listener_keys');
 import returnAddress = require('./return_address');
 import personAttributes = require('./person_attributes');
 // THE CLUSTER CLAIM (2026-09-14, #46), which an artifact is spent through so
@@ -297,6 +299,16 @@ const PROFILE_SHIB_AUTHN_REQUEST =
 // this file where the digit changes, and the reason the constant exists rather
 // than the literal being written inline next to the others.
 const PROTOCOL_SAML11 = 'urn:oasis:names:tc:SAML:1.1:protocol';
+
+// AND SHIBBOLETH'S, for the request profile above (#189). A relying party
+// looks for an identity provider's Shib1 AuthnRequest endpoint only in an
+// IDPSSODescriptor whose protocolSupportEnumeration names
+// `urn:mace:shibboleth:1.0` — the Shibboleth SP's Shib1SessionInitiator asks
+// its metadata for exactly that role — so a document advertising the profile's
+// SingleSignOnService without the protocol offered an endpoint no Shibboleth
+// SP would ever use: every SAML 1.1 sign-in it started failed with "None of
+// the configured SessionInitiators handled the request" until #189.
+const PROTOCOL_SHIB1 = 'urn:mace:shibboleth:1.0';
 
 // **SAML 1.1 STATUS CODES ARE QNames, NOT URIs**, and this is the single
 // easiest thing in the file to get wrong by writing 2.0 out of habit. The value
@@ -459,14 +471,22 @@ const CLAIM_NS = 'http://schemas.xmlsoap.org/ws/2005/05/identity/claims';
 
 const MS_CLAIM_NS = 'http://schemas.microsoft.com/ws/2008/06/identity/claims';
 
-// Shibboleth's OID-style names, which are the other half of the SAML 1.1
-// ecosystem: a service provider configured against a Shibboleth identity
-// provider keys off `urn:mace:dir:attribute-def:*` (and later off the OID
-// URNs), and one configured against AD FS keys off the claim URIs above.
-// Sending both is what makes this mock usable against either without a mapper
-// being written first — the same argument `saml2_sso.ts` makes for sending the
-// unqualified `uid`/`mail` spellings beside the URIs.
-const MACE_NS = 'urn:mace:dir:attribute-def';
+// Shibboleth's names, which are the other half of the SAML 1.1 ecosystem: a
+// service provider configured against a Shibboleth identity provider keys off
+// `urn:mace:dir:attribute-def:*`, and one configured against AD FS keys off
+// the claim URIs above. Sending both is what makes this service usable
+// against either without a mapper being written first — the same argument
+// `saml2_sso.ts` makes for sending the unqualified `uid`/`mail` spellings
+// beside the URIs.
+//
+// **THE WHOLE URN IS THE AttributeName, IN SHIBBOLETH'S URI NAMESPACE**
+// (#189). Until then this sent AttributeNamespace="urn:mace:dir:attribute-def"
+// AttributeName="uid" — the URN split in two — and the Shibboleth SP 3, whose
+// stock attribute map names `urn:mace:dir:attribute-def:uid` under the
+// namespace `urn:mace:shibboleth:1.0:attributeNamespace:uri`, skipped every
+// one of them.
+const MACE_NS = 'urn:mace:shibboleth:1.0:attributeNamespace:uri';
+const MACE_PREFIX = 'urn:mace:dir:attribute-def:';
 
 // --- delivering it ----------------------------------------------------------
 // Written with no regular expressions and nothing to escape, for the reason
@@ -508,6 +528,8 @@ interface Saml11SsoDeps {
   slugOf: typeof saml2Sso.slugOf;
   sessionOf: typeof authn.sessionOf;
   sessionsOf: typeof authn.sessionsOf;
+  sessionsMatching: typeof authn.sessionsMatching;
+  sessionEnded: typeof authn.sessionEnded;
   beginAuthentication: typeof authn.beginAuthentication;
   notePresented: typeof authn.notePresented;
   noteSessionChanged: typeof authn.noteSessionChanged;
@@ -515,6 +537,7 @@ interface Saml11SsoDeps {
   mode: typeof mode;
   authnContext: typeof authnContext;
   documentSettings: typeof documentSettings;
+  listenerKeys: typeof listenerKeys;
   returnAddress: typeof returnAddress;
   personAttributes: typeof personAttributes;
   clusterClaims: typeof clusterClaims;
@@ -558,6 +581,8 @@ class Saml11Sso {
       slugOf: saml2Sso.slugOf,
       sessionOf: authn.sessionOf,
       sessionsOf: authn.sessionsOf,
+      sessionsMatching: authn.sessionsMatching,
+      sessionEnded: authn.sessionEnded,
       beginAuthentication: authn.beginAuthentication,
       notePresented: authn.notePresented,
       noteSessionChanged: authn.noteSessionChanged,
@@ -565,6 +590,7 @@ class Saml11Sso {
       mode: mode,
       authnContext: authnContext,
       documentSettings: documentSettings,
+      listenerKeys: listenerKeys,
       returnAddress: returnAddress,
       personAttributes: personAttributes,
       clusterClaims: clusterClaims,
@@ -1038,11 +1064,14 @@ class Saml11Sso {
         value: authnMethod },
       { namespace: MS_CLAIM_NS, name: 'authenticationinstant',
         value: authnInstant },
-      { namespace: MACE_NS, name: 'uid', value: user.username },
-      { namespace: MACE_NS, name: 'mail', value: user.email },
-      { namespace: MACE_NS, name: 'givenName', value: user.given_name },
-      { namespace: MACE_NS, name: 'sn', value: user.family_name },
-      { namespace: MACE_NS, name: 'displayName', value: user.name }
+      { namespace: MACE_NS, name: MACE_PREFIX + 'uid', value: user.username },
+      { namespace: MACE_NS, name: MACE_PREFIX + 'mail', value: user.email },
+      { namespace: MACE_NS, name: MACE_PREFIX + 'givenName',
+        value: user.given_name },
+      { namespace: MACE_NS, name: MACE_PREFIX + 'sn',
+        value: user.family_name },
+      { namespace: MACE_NS, name: MACE_PREFIX + 'displayName',
+        value: user.name }
     ]);
     log.debug("Leaving Saml11Sso.attributesFor(). " + attributes.length +
               " attribute(s).");
@@ -1178,7 +1207,8 @@ class Saml11Sso {
   // require of it and nothing this file decided for itself — see decision 7.
   private buildAssertionFor(ctx) {
     const { CONFIRMATION_ARTIFACT, CONFIRMATION_BEARER,
-            NAMEID_FORMAT_UNSPECIFIED, buildSaml11Assertion, log } = this.deps;
+            NAMEID_FORMAT_UNSPECIFIED, buildSaml11Assertion, config,
+            log } = this.deps;
     log.debug("Entering Saml11Sso.buildAssertionFor(). rp=" + ctx.rpId +
               ", profile=" +
               ctx.profile);
@@ -1215,8 +1245,11 @@ class Saml11Sso {
       // The Browser/POST single-use policy: the assertion travels through the
       // browser, so the relying party is told not to keep it. Not set for the
       // artifact profile, where the assertion never passes through the browser
-      // and caching it is the relying party's business.
-      doNotCache: ctx.profile === 'post',
+      // and caching it is the relying party's business. A realm turns it off
+      // with `saml11.doNotCacheCondition` (#189): the profile does not ask for
+      // it, and the Shibboleth SP's stock policy refuses it.
+      doNotCache: ctx.profile === 'post' &&
+                  !!config.value('saml11.doNotCacheCondition'),
       attributes: this.attributesFor(user, how.method, authnInstant),
       sign: this.settingFor(ctx.rpId, 'saml11.signAssertion')
     });
@@ -1472,7 +1505,7 @@ class Saml11Sso {
   // answers. There is no way for a SAML 1.1 relying party to ask in the
   // protocol itself, which is decision 1 again: in 2.0 this comes off the
   // AuthnRequest's ProtocolBinding.
-  private profileFor(params) {
+  private profileFor(params, rpId?) {
     const { config, log } = this.deps;
     log.debug("Entering Saml11Sso.profileFor(). asked=" +
               (params.profile || '(none)'));
@@ -1487,6 +1520,35 @@ class Saml11Sso {
       log.debug("Leaving Saml11Sso.profileFor(). An unknown profile was " +
                 "named.");
       return { error: asked };
+    }
+    // THE SHIRE'S REGISTERED BINDING (#189). A relying party whose metadata
+    // was consumed publishes each assertion consumer service WITH its
+    // profile — Shibboleth's /SAML/POST as browser-post and /SAML/Artifact
+    // as artifact-01 — so the `shire` it sends says which profile it wants
+    // as surely as a SAML 2.0 ProtocolBinding does. That is how a Shibboleth
+    // identity provider answers it, and the setting's default below sent a
+    // POST form to an artifact consumer until #189.
+    const shire = String(params.shire || '');
+    if (shire && rpId) {
+      const fields = this.fieldsOf(rpId);
+      const listed = Array.isArray(fields.samlAcsEndpoint)
+        ? fields.samlAcsEndpoint
+        : (fields.samlAcsEndpoint ? [fields.samlAcsEndpoint] : []);
+      const match = listed.map(function (value) {
+        const parts = String(value).trim().split(/\s+/);
+        return { binding: parts[2] || '', location: parts.slice(3).join(' ') };
+      }).find(function (one) {
+        return one.location === shire &&
+               (one.binding === PROFILE_POST ||
+                one.binding === PROFILE_ARTIFACT);
+      });
+      if (match) {
+        const profile = match.binding === PROFILE_ARTIFACT ? 'artifact'
+                                                           : 'post';
+        log.debug("Leaving Saml11Sso.profileFor(). " + profile + ", the " +
+                  "shire's registered binding.");
+        return { profile: profile, stated: true };
+      }
     }
     const dflt = String(config.value('saml11.defaultProfile') || 'post');
     log.debug("Leaving Saml11Sso.profileFor(). " + dflt + ", the configured " +
@@ -1521,7 +1583,19 @@ class Saml11Sso {
         'minute(s) (saml11.requestTtlMin) while the browser is at the ' +
         'sign-in screen. Start again from the relying party.');
     }
-    const carried = held ? held.params : params;
+    // SHIBBOLETH'S REQUEST PROFILE SPELLS IT `target` (#189). The
+    // inter-site transfer service's own parameter is `TARGET`, and the
+    // urn:mace:shibboleth:1.0:profiles:AuthnRequest profile — `providerId`,
+    // `shire`, `target`, `time`, the request every real SAML 1.1 service
+    // provider sends — spells it in lower case. Reading only `TARGET` sent
+    // the Shibboleth SP 3 a Browser/POST form with no TARGET, which it
+    // refuses ("Request missing SAMLResponse or TARGET form parameters"),
+    // and an artifact redirect without one. The value is still echoed byte
+    // for byte, under the response's own name.
+    const arrived = held ? held.params : params;
+    const carried = (!arrived.TARGET && arrived.target)
+      ? Object.assign({}, arrived, { TARGET: arrived.target })
+      : arrived;
 
     // --- step 1: is there a flow here at all ---------------------------------
     // TARGET is what makes this a browser profile request. `shire` alone counts
@@ -1535,7 +1609,8 @@ class Saml11Sso {
                            this.describeSsoPage(base, scoped));
     }
 
-    const wanted = this.profileFor(carried);
+    const wanted = this.profileFor(carried, String(carried.providerId || '') ||
+                                              scoped.id || '');
     if (wanted.error) {
       log.debug("Leaving Saml11Sso.interSiteTransfer(). An unknown profile " +
                 "was named.");
@@ -1886,7 +1961,12 @@ class Saml11Sso {
     session.saml11RelyingParties = session.saml11RelyingParties || {};
     session.saml11RelyingParties[ctx.rpId] = {
       acs: ctx.acsUrl, providerId: ctx.providerId, profile: ctx.profile,
-      at: Date.now()
+      at: Date.now(),
+      // The NameIdentifier it was GIVEN (#189): what the responder's release
+      // policy matches an attribute query against in product.
+      nameId: this.nameIdValueFor(ctx.nameIdFormat ||
+        String(this.settingFor(ctx.rpId, 'saml11.nameIdFormat') ||
+               this.deps.NAMEID_FORMAT_UNSPECIFIED), session)
     };
     // AND THE STORE IS TOLD (2026-09-14, #46), so /admin/saml11 on another node
     // lists it too: `authn.noteSessionChanged()` carries the argument.
@@ -2034,6 +2114,61 @@ class Saml11Sso {
     log.debug("Leaving Saml11Sso.authenticateArtifactCaller(). via=" +
               caller.via + (caller.refuse ? ', refused' : ''));
     return caller;
+  }
+
+  // THE PRODUCT RELEASE POLICY FOR A SAML 1.1 QUERY (#189): see respond().
+  // `{ refuse: false, session }` — the live session the answer is about — or
+  // `{ refuse: true, errorCode, why }`.
+  private queryReleasePolicy(req, request, query, attributeQuery,
+                             scoped): any {
+    const { applications, log, mtls, requestSignature, sessionEnded,
+            sessionsMatching } = this.deps;
+    log.debug("Entering Saml11Sso.queryReleasePolicy().");
+    const rpId = String((attributeQuery &&
+                         attributeQuery.getAttribute('Resource')) ||
+                        scoped.id || '');
+    if (!rpId || !this.isRegisteredRelyingParty(rpId)) {
+      log.debug("Leaving Saml11Sso.queryReleasePolicy(). No relying party.");
+      return { refuse: true, errorCode: 'STS-SAML-0039',
+               why: 'the query names no registered relying party (its ' +
+                    'Resource, or the responder\'s path segment), and a ' +
+                    'query is answered only for one' };
+    }
+    const row = applications.get(rpId);
+    const peer = mtls.peerCertificate(req);
+    const revoked = req.certificateRevocation &&
+                    req.certificateRevocation.refused;
+    const caller = requestSignature.authenticateSoapCaller({
+      xml: new xmldom.XMLSerializer().serializeToString(request),
+      rootLocalName: 'Request', fields: (row && row.fields) || {},
+      tlsCertificate: peer && !revoked
+        ? Buffer.from(peer.raw).toString('base64') : ''
+    });
+    if (caller.refuse || caller.via === 'none') {
+      log.debug("Leaving Saml11Sso.queryReleasePolicy(). The caller.");
+      return { refuse: true,
+               errorCode: caller.refuse ? caller.errorCode : 'STS-SAML-0039',
+               why: caller.refuse ? caller.why
+                 : 'the caller did not authenticate as "' + rpId + '" — ' +
+                   'neither a signed Request nor its registered ' +
+                   'certificate at the TLS handshake' };
+    }
+    const nameId = this.subjectOf(query);
+    const live = nameId ? sessionsMatching(function (session) {
+      const there = (session.saml11RelyingParties || {})[rpId];
+      return !!there && there.nameId === nameId && !sessionEnded(session);
+    }) : [];
+    if (!live.length) {
+      log.debug("Leaving Saml11Sso.queryReleasePolicy(). Unknown subject.");
+      return { refuse: true, errorCode: 'STS-SAML-0096',
+               why: 'no live session here gave "' + rpId + '" the ' +
+                    'NameIdentifier "' + nameId + '", and a query is ' +
+                    'answered only about a subject the asking relying party ' +
+                    'was signed in for by this identity provider' };
+    }
+    log.debug("Leaving Saml11Sso.queryReleasePolicy(). Released, via " +
+              caller.via + ".");
+    return { refuse: false, session: live[0] };
   }
 
   private respond(req, res) {
@@ -2264,26 +2399,42 @@ class Saml11Sso {
       // AssertionIDReference are protected by twenty random bytes nobody can
       // name without having been handed them.
       // -----------------------------------------------------------------------
+      //
+      // **AND SINCE #189 IT IS GATED, BECAUSE THE RELEASE POLICY NOW EXISTS**
+      // — the one the paragraph above said was missing, and the SAML 2.0
+      // attribute authority's (`saml2_sso.ts`, attributeQuery()): the query
+      // names a REGISTERED relying party (`Resource`, or the path segment);
+      // the caller AUTHENTICATES as it (a signed Request, or its registered
+      // certificate at the TLS handshake — mutual TLS being the SOAP
+      // binding's own answer); and the subject is somebody that relying party
+      // holds a live session for FROM THIS SERVICE, under the NameIdentifier
+      // it was given. Anything else is refused as before (STS-SAML-0039, and
+      // STS-SAML-0096 for a subject no live session gave it). The Shibboleth
+      // SP's Query resolver asks exactly this after a SAML 1.1 sign-in.
+      let released = null;
       if (!mode.opensTestControls()) {
-        log.info('saml11: refused an ' +
-                 (attributeQuery ? 'AttributeQuery' : 'AuthenticationQuery') +
-                 ' — this realm is in product mode and the responder answers ' +
-                 'no unauthenticated query.');
-        log.debug("Leaving Saml11Sso.respond(). A query was refused in " +
-                  "product mode.");
-        errorCodes.mark(res, 'STS-SAML-0039');
-        log.debug("Leaving Saml11Sso.respond().");
-        return answer(STATUS_REQUESTER,
-                      'this realm is in PRODUCT mode, and the SAML 1.1 ' +
-                      'responder does not answer an AttributeQuery or an ' +
-                      'AuthenticationQuery: nothing authenticates the ' +
-                      'caller, and answering would disclose a named ' +
-                      'person\'s attributes or sign-in history to anybody ' +
-                      'who can reach this port. Use the Browser/POST or ' +
-                      'Browser/Artifact profile, whose assertions go only to ' +
-                      'a registered assertion consumer.', '', requestId, '');
+        const policy = this.queryReleasePolicy(req, request, query,
+                                               attributeQuery, scoped);
+        if (policy.refuse) {
+          log.info('saml11: refused an ' +
+                   (attributeQuery ? 'AttributeQuery'
+                                   : 'AuthenticationQuery') +
+                   ' in product mode — ' + policy.why);
+          errorCodes.mark(res, policy.errorCode);
+          log.debug("Leaving Saml11Sso.respond(). A query was refused in " +
+                    "product mode.");
+          // error-code: none — marked above: STS-SAML-0039, 0096 or 0077.
+          return answer(STATUS_REQUESTER, 'this realm is in PRODUCT mode, ' +
+                        'which answers a query only for a registered, ' +
+                        'authenticated relying party about a subject it ' +
+                        'holds a live session for: ' + policy.why, '',
+                        requestId, '');
+        }
+        released = policy.session;
       }
-      const username = this.subjectOf(query);
+      const username = released
+        ? String((released.user && released.user.username) || '')
+        : this.subjectOf(query);
       if (!username) {
         log.debug("Leaving Saml11Sso.respond(). The query names no subject.");
         errorCodes.mark(res, 'STS-SAML-0040');
@@ -2463,12 +2614,17 @@ class Saml11Sso {
   // rule, and the rule is in each schema separately.
   // ---------------------------------------------------------------------------
   metadataFor(base, rpId) {
-    const { STS, documentSettings, errorCodes, genId, log, logArtifact,
-            xmlEscape } = this.deps;
+    const { STS, documentSettings, errorCodes, genId, listenerKeys, log,
+            logArtifact, xmlEscape } = this.deps;
     log.debug("Entering Saml11Sso.metadataFor(). rp=" + (rpId || '(unscoped)'));
     const id = genId();
     const providerId = this.providerIdFor(rpId);
     const where = this.endpointsFor(base, rpId);
+    // THE BACK CHANNEL'S TLS CERTIFICATE (#248), in both roles, because the
+    // responder is both: the IdP role's ArtifactResolutionService and the
+    // attribute authority's AttributeService. saml/listener_keys.ts argues
+    // `use="signing"` and why it goes last.
+    const backChannelKeys = listenerKeys.keyDescriptors();
     const keyDescriptor = (use) => {
       log.debug("Entering keyDescriptor().");
       log.debug("Leaving keyDescriptor().");
@@ -2506,8 +2662,10 @@ class Saml11Sso {
         // an ArtifactResolutionService and once as an AttributeService.
         '<md:IDPSSODescriptor' +
           ' WantAuthnRequestsSigned="false"' +
-          ' protocolSupportEnumeration="' + PROTOCOL_SAML11 + '">' +
+          ' protocolSupportEnumeration="' + PROTOCOL_SAML11 + ' ' +
+            PROTOCOL_SHIB1 + '">' +
           keyDescriptor('signing') +
+          backChannelKeys +
           // The metadata schema's sequence: ArtifactResolutionService, then
           // SingleLogoutService, then NameIDFormat, then SingleSignOnService.
           // There is no SingleLogoutService here at all — SAML 1.1 has no
@@ -2534,6 +2692,7 @@ class Saml11Sso {
         '<md:AttributeAuthorityDescriptor' +
           ' protocolSupportEnumeration="' + PROTOCOL_SAML11 + '">' +
           keyDescriptor('signing') +
+          backChannelKeys +
           service('AttributeService', BINDING_SOAP, where.responder) +
           NAMEID_FORMATS.map((format) => {
             return '<md:NameIDFormat>' + format + '</md:NameIDFormat>';
@@ -2950,7 +3109,9 @@ class Saml11Sso {
     // relying party is told not to keep it.
     const doNotCache = !!firstByLocal(assertion, 'DoNotCacheCondition');
     add('the single-use policy matches the profile',
-        doNotCache === (profile === 'post'),
+        doNotCache === (profile === 'post' &&
+                        !!this.deps.config.value(
+                          'saml11.doNotCacheCondition')),
         doNotCache
           ? 'a <DoNotCacheCondition> is present'
           : 'no <DoNotCacheCondition> — correct for the artifact profile, ' +

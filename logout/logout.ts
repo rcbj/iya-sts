@@ -2057,6 +2057,24 @@ class Logout {
     return result;
   }
 
+  // ---------------------------------------------------------------------------
+  // THE IDS OF EVERYTHING A PERSON HOLDS NOW (#226, 2026-09-26): what a
+  // later `terminate(key, ids)` ends and nothing issued after. Risk scoring
+  // takes it at the moment a sign-in is assessed, before that sign-in's own
+  // session exists, so ending everything on a crossing into HIGH does not
+  // end the session the issuance policy has just decided on the same risk.
+  // Ids only — never the rows, whose `secret` stays in this module.
+  // ---------------------------------------------------------------------------
+  heldIds(key?) {
+    const { log } = this.deps;
+    log.debug("Entering Logout.heldIds(). key=" + key);
+    const ids = this.allRows(this.contextFor(key)).map((r) => {
+      return String(r.id);
+    });
+    log.debug("Leaving Logout.heldIds(). " + ids.length + ".");
+    return ids;
+  }
+
   // Every row, flattened, WITH its secret — the internal form, for terminate().
   // Not exported: `inventoryFor()` is what anything outside this module reads.
   private allRows(ctx?) {
@@ -3104,6 +3122,7 @@ export = {
   // than three — rule 7.
   inventoryFor: slot.forward('inventoryFor'),
   terminate: slot.forward('terminate'),
+  heldIds: slot.forward('heldIds'),
   // A federation partner's sign-out (#167): the one session it named, ended
   // through terminate(), and what a browser then has to draw.
   endPartnerSession: slot.forward('endPartnerSession'),

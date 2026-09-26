@@ -4293,6 +4293,31 @@ const SETTINGS = [
                  'their least recently used one.' },
 
   // OPENID CONNECT CIBA (#131). `oauth-oidc/ciba.ts` argues them.
+  { key: 'oauth2.deviceAuthorization', group: 'OAuth 2.0 / OIDC',
+    label: 'Device authorization grant (RFC 8628)',
+    env: 'STS_OAUTH2_DEVICE_AUTHORIZATION', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'Answer RFC 8628 at /oauth2/device_authorization: a device ' +
+                 'with no browser is given a device code and a user code, ' +
+                 'the person approves on /portal/device, and the device ' +
+                 'polls the token endpoint with the device_code grant ' +
+                 '(#150). OFF by default: a new way in is something a realm ' +
+                 'turns on, and section 5.4 describes the phishing a device ' +
+                 'flow invites.' },
+  { key: 'oauth2.deviceCodeLifetimeS', group: 'OAuth 2.0 / OIDC',
+    label: 'Device code lifetime (seconds)',
+    env: 'STS_OAUTH2_DEVICE_CODE_LIFETIME_S', type: 'int', dflt: 600,
+    min: 60, max: 1800, runtime: true,
+    description: 'How long a device code and its user code stay valid ' +
+                 '(RFC 8628 expires_in). Short, because the user code is ' +
+                 'short.' },
+  { key: 'oauth2.deviceCodeIntervalS', group: 'OAuth 2.0 / OIDC',
+    label: 'Device code polling interval (seconds)',
+    env: 'STS_OAUTH2_DEVICE_CODE_INTERVAL_S', type: 'int', dflt: 5,
+    min: 1, max: 60, runtime: true,
+    description: 'The minimum wait between a device\'s polls (RFC 8628 ' +
+                 'interval); a poll sooner is answered slow_down and the ' +
+                 'interval grows by five seconds.' },
   { key: 'oauth2.ciba', group: 'OAuth 2.0 / OIDC',
     label: 'CIBA (backchannel authentication)',
     env: 'STS_OAUTH2_CIBA', type: 'bool', dflt: false, runtime: true,
@@ -4420,8 +4445,11 @@ const SETTINGS = [
     env: 'PKI_HTTP_PORT', type: 'port', dflt: 8082, runtime: false,
     restartReason: 'the listener is bound when the process starts',
     description: 'A second HTTP listener, PLAIN rather than TLS, that ' +
-                 'answers the revocation endpoints under `/pki/` and refuses ' +
-                 'every other path. Every certificate this service issues ' +
+                 'answers the revocation endpoints under `/pki/` and SCEP ' +
+                 'under `/enroll/scep` (RFC 8894 is HTTP and secures its ' +
+                 'own messages; sscep and most device firmware speak no ' +
+                 'TLS), and refuses every other path. Every certificate ' +
+                 'this service issues ' +
                  'names it for its CRL, its OCSP responder and its issuer\'s ' +
                  'certificate.\n\n**WHY PLAIN.** RFC 5280 section 8 says a ' +
                  'CA SHOULD NOT put an https URI in an extension — a client ' +
@@ -4595,8 +4623,8 @@ const SETTINGS = [
                  'key over the preTBSCertificate, which a hybrid-aware ' +
                  'validator reads. This service is one: a certificate issued ' +
                  'by an authority holding an alternative key MUST carry a ' +
-                 'valid alternative signature to verify here (STS-PKI-0195, ' +
-                 'STS-PKI-0196), so the classical signature alone is never a ' +
+                 'valid alternative signature to verify here (STS-PKI-0201, ' +
+                 'STS-PKI-0202), so the classical signature alone is never a ' +
                  'way past it. ML-DSA-87 (FIPS 204, category 5) is the ' +
                  'default because an authority outlives the keys it ' +
                  'certifies. The value is read at the NEXT build of a tier; ' +
@@ -4963,6 +4991,16 @@ const SETTINGS = [
                  'certificate may chain to, BESIDE node\'s own CA store. A ' +
                  'directory certified by a private CA is refused until its ' +
                  'CA is here.' },
+  { key: 'pki.revocationHttpsCaFile', group: 'PKI',
+    label: 'CA certificates for https CRL and OCSP servers',
+    env: 'STS_PKI_REVOCATION_HTTPS_CA_FILE', type: 'string', dflt: '',
+    runtime: true,
+    description: 'A PEM file of CA certificates the certificate of a CRL ' +
+                 'distribution point or OCSP responder reached over https ' +
+                 'may chain to, BESIDE node\'s own CA store (#201). Such a ' +
+                 'server\'s certificate is verified, its host checked as ' +
+                 'RFC 9525 does and its chain held to the path rules; plain ' +
+                 'http, which RFC 5280 and RFC 6960 expect, is unaffected.' },
   { key: 'pki.revocationLdapDirectory', group: 'PKI',
     label: 'Directory for CRL names relative to their issuer',
     env: 'STS_PKI_REVOCATION_LDAP_DIRECTORY', type: 'string', dflt: '',
@@ -6955,6 +6993,23 @@ const SETTINGS = [
                  'recorded as not verified, which counts as UNSIGNED when ' +
                  'this is on.' },
 
+  { key: 'saml2.unsolicitedSso', group: 'SAML 2.0',
+    label: 'Identity-provider-initiated sign-in',
+    env: 'STS_SAML2_UNSOLICITED_SSO', type: 'bool', dflt: true,
+    runtime: true,
+    description: 'Whether /saml2/unsolicited[/{sp}] sends an UNSOLICITED ' +
+                 'Response (saml-profiles-2.0-os section 4.1.5) — a sign-in ' +
+                 'started at this identity provider, for a service provider ' +
+                 'that did not ask: `providerId` (or the path segment) ' +
+                 'names it, `shire` one of its registered assertion ' +
+                 'consumer services, `target` the RelayState. The service ' +
+                 'provider must be registered in product, the address must ' +
+                 'be one its metadata or its entry registered, and the ' +
+                 'issuance policy is asked as for any sign-in. The ' +
+                 'assertion carries no InResponseTo, so a service provider ' +
+                 'decides for itself whether it accepts one; turn this off ' +
+                 'for a realm whose providers should only ever be answered.' },
+
   { key: 'saml2.defaultSingleLogoutService', group: 'SAML 2.0',
     label: 'Fallback logout return address',
     env: 'STS_SAML2_DEFAULT_SLO_SERVICE', type: 'string', dflt: '',
@@ -7242,6 +7297,23 @@ const SETTINGS = [
                  'consumer, so it is the one that works when somebody points ' +
                  'this at a URL and watches. A request naming `profile` or ' +
                  'carrying `SAMLart` overrides it.' },
+
+  { key: 'saml11.doNotCacheCondition', group: 'SAML 1.1 assertions',
+    label: 'Mark a Browser/POST assertion DoNotCache',
+    env: 'STS_SAML11_DO_NOT_CACHE_CONDITION', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'Put a <saml:DoNotCacheCondition/> in the Conditions of ' +
+                 'an assertion sent on the Browser/POST profile. OFF by ' +
+                 'default (#189): the profile does not ask for one — its ' +
+                 'single-use policy (oasis-sstc-saml-bindings-1.1 section ' +
+                 '4.1.2) is the RELYING PARTY\'s to keep — and saml-core ' +
+                 '1.1 section 2.3.2.1 makes an assertion whose condition ' +
+                 'a relying party does not understand Indeterminate. ' +
+                 'WARNING: turning it on makes the Shibboleth SP refuse ' +
+                 'every such assertion with its stock security-policy.xml ' +
+                 '("DoNotCacheCondition not successfully validated by ' +
+                 'policy"); turn it on only for relying parties known to ' +
+                 'honour the condition.' },
 
   { key: 'saml11.artifactTtlS', group: 'SAML 1.1 assertions',
     label: 'Artifact ' +
@@ -9238,6 +9310,21 @@ const SETTINGS = [
                  'the question it is asking. RFC 7644 section 4 says nothing ' +
                  'either way, so both are conforming and both are worth ' +
                  'being able to try.' },
+
+  { key: 'scim.inventOnCreate', group: 'SCIM',
+    label: 'Fill a provisioned person in (development mode)',
+    env: 'SCIM_INVENT_ON_CREATE', type: 'bool', dflt: true, runtime: true,
+    description: 'DEVELOPMENT MODE ONLY, and ON there by default: a person a ' +
+                 'SCIM client creates is given the invented persona values ' +
+                 '(a cn, sn, givenName, displayName and mail) and the ' +
+                 'credential-claim attributes /admin/vc selects, wherever ' +
+                 'the client sent none — so the provisioned person can be ' +
+                 'issued a credential like one who signed in. OFF, a SCIM ' +
+                 'create writes exactly what the client sent, and reading ' +
+                 'the resource back returns only that, which is what a ' +
+                 'provisioning client checking its own round trip — and ' +
+                 'the SCIM conformance harnesses (#206) — expects. Product ' +
+                 'mode invents nothing whatever this says.' },
 
   { key: 'scim.authRealm', group: 'SCIM', label: 'Authentication realm',
     env: 'SCIM_AUTH_REALM', type: 'string', dflt: 'SCIM', runtime: true,

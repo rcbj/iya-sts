@@ -177,6 +177,11 @@ class ProtocolStack {
     // Every module loaded from here on waits for `installInstance()` instead of
     // building its own instance at the end of its load (#50, R2).
     InstanceSlot.deferToRoot();
+    // EVERY TLS CLIENT IN THE PROCESS (#201): RFC 9525's host check and the
+    // path rules under every connection that takes node's default check —
+    // `common/outbound_tls.ts` argues it. First, so nothing below dials out
+    // before it. A library; it registers nothing.
+    require('./outbound_tls').installProcessWide();
     // Which LDAP attributes the four claim sets carry. A LIBRARY — it registers
     // no route, so this line adds nothing to /admin/sts-metadata and its
     // position in the route order is not a position at all. It is required
@@ -290,6 +295,10 @@ class ProtocolStack {
     require('../ws-trust/wstrust');
     this.build('saml/document_settings', require('../saml/document_settings'),
                'DocumentSettings');
+    // #248: the back channel's TLS certificate as a metadata key. A library;
+    // it reaches `tls/tls_server` lazily, when a document is built.
+    this.build('saml/listener_keys', require('../saml/listener_keys'),
+               'ListenerKeys');
     this.build('saml/saml2', require('../saml/saml2'), 'Saml2Assertions');
     this.build('ws-trust/wstrust', require('../ws-trust/wstrust'), 'WsTrust');
     this.register(app, require('../ws-trust/wstrust'), 'ws-trust/wstrust');
@@ -359,6 +368,9 @@ class ProtocolStack {
     // #131: /portal/ciba, where a person answers a backchannel sign-in.
     this.build('portal/portal_ciba', require('../portal/portal_ciba'),
                'PortalCiba');
+    // #150: /portal/device, where a person enters a device's user code.
+    this.build('portal/portal_device', require('../portal/portal_device'),
+               'PortalDevice');
     // #147: /portal/claim-sources, where a person links a Claims Provider.
     // Its require loads `oauth-oidc/claims_providers` early, which declares a
     // map and nothing else at load; the library is BUILT below with `oauth2`'s
@@ -427,6 +439,12 @@ class ProtocolStack {
     // #131: OpenID Connect CIBA's requests, approvals and notifications — a
     // library whose wire step registers the `oauth2.ciba-sweep` job.
     this.build('oauth-oidc/ciba', require('../oauth-oidc/ciba'), 'Ciba');
+    // #150: RFC 8628's device codes — a library whose wire step registers
+    // the `oauth2.device-code-sweep` job; `oauth2` answers the endpoint and
+    // the grant, and `/portal/device` the person.
+    this.build('oauth-oidc/device_authorization',
+               require('../oauth-oidc/device_authorization'),
+               'DeviceAuthorization');
     // Grant Management (#142): a library `oauth2` reads at every issuance,
     // whose wire step registers the `oauth2.grant-management-purge` job; its
     // routes (/oauth2/grants/{id}) are registered just after `oauth2`'s.
@@ -750,6 +768,9 @@ class ProtocolStack {
     this.build('kerberos/krb5_person_keys',
                require('../kerberos/krb5_person_keys'),
                'Krb5PersonKeys');
+    // #228: loaded by the two admin-core layers below, which ask it.
+    this.build('ldap/person_editor', require('../ldap/person_editor'),
+               'PersonEditor');
     this.build('admin-core/admin_actions',
                require('../admin-core/admin_actions'),
                'AdminActions');

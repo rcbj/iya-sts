@@ -352,6 +352,53 @@ let listenError = null;
 // `serverCertificateExtensions()`.
 // ---------------------------------------------------------------------------
 // ---------------------------------------------------------------------------
+// EVERY LEAF THE MAIN PORT PRESENTS, AS THIS PROCESS KNOWS THEM (#248).
+//
+// The SAML identity provider's metadata publishes the certificate its back
+// channel presents (`saml/listener_keys.ts`), so a service provider can
+// authenticate artifact resolution and the attribute query from metadata
+// alone. That needs the LEAVES, every one — with `tls.certificateAlgorithms`
+// naming two, OpenSSL presents whichever matches what the client offered —
+// and it needs them to be the SOCKET's, which is a different answer in a
+// request worker: a worker was handed the front process's first leaf, and
+// every other entry of SERVER_CERTIFICATES there is a certificate that
+// worker made for itself and nothing presents. So a handed-in process
+// answers the first leaf and the others the front process handed with it
+// (the fork's environment, then every re-issue's bundle), and a process that
+// owns the socket answers what it built. Public material only: no key.
+// ---------------------------------------------------------------------------
+let adoptedExtraCertPems = null;
+
+function handedExtraCertPems() {
+  log.debug("Entering handedExtraCertPems().");
+  if (adoptedExtraCertPems) {
+    log.debug("Leaving handedExtraCertPems(). Adopted.");
+    return adoptedExtraCertPems.slice(0);
+  }
+  const text = process.env.STS_TLS_SERVER_EXTRA_CERTS_PEM || '';
+  const found = String(text).match(
+      /-----BEGIN CERTIFICATE-----[\s\S]*?-----END CERTIFICATE-----/g) || [];
+  log.debug("Leaving handedExtraCertPems(). " + found.length + ".");
+  return found.map(function (one) {
+    return one + '\n';
+  });
+}
+
+function presentedCertificatePems() {
+  log.debug("Entering presentedCertificatePems().");
+  if (SERVER_CERTIFICATE.handedIn) {
+    log.debug("Leaving presentedCertificatePems(). Handed in.");
+    return [SERVER_CERTIFICATE.certPem].concat(handedExtraCertPems());
+  }
+  log.debug("Leaving presentedCertificatePems().");
+  return SERVER_CERTIFICATES.map(function (one) {
+    return one.certPem;
+  }).filter(function (pem) {
+    return !!pem;
+  });
+}
+
+// ---------------------------------------------------------------------------
 // A CERTIFICATE HANDED IN, RATHER THAN ONE MADE HERE (2026-09-07).
 //
 // This certificate is self-signed and generated PER START, which is right for a
@@ -1919,7 +1966,11 @@ function serverCertificateBundle() {
   return {
     certPem: SERVER_CERTIFICATE.certPem,
     chainPem: (SERVER_CERTIFICATE.chainPem || []).slice(0),
-    anchorPem: trustAnchorPems()[0] || ''
+    anchorPem: trustAnchorPems()[0] || '',
+    // THE OTHER LEAVES THE SOCKET PRESENTS (#248): an ML-DSA certificate
+    // beside the RSA one. Public, like the rest of this bundle; see
+    // presentedCertificatePems().
+    extraCertPems: presentedCertificatePems().slice(1)
   };
 }
 
@@ -1933,6 +1984,9 @@ function adoptServerCertificate(bundle) {
   SERVER_CERTIFICATE.chainPem = (bundle.chainPem || []).slice(0);
   SERVER_CERTIFICATE.handedAnchorPem = bundle.anchorPem || '';
   SERVER_CERTIFICATE.handedIn = true;
+  if (Array.isArray(bundle.extraCertPems)) {
+    adoptedExtraCertPems = bundle.extraCertPems.slice(0);
+  }
   SERVER_CERTIFICATE.selfSigned = !(bundle.chainPem || []).length;
   SERVER_CERTIFICATE.fingerprint256 = fingerprintOf(bundle.certPem);
   try {
@@ -3127,6 +3181,55 @@ let anchorsFileReport = { file: '', loaded: 0 };
 // AFTER THE REVOCATION CHECK (2026-09-12), which is why it waits on a promise:
 // a certificate the policy refuses is recorded as a refusal rather than as an
 // authentication. `checkedSocket()` never rejects.
+// ---------------------------------------------------------------------------
+// WHAT OPENSSL VERIFIED, HELD TO THE PATH RULES EVERY OTHER PATH HERE IS
+// (#201).
+//
+// `socket.authorized` is OpenSSL's answer, and every reader of a client
+// certificate on this port reads it — certificate sign-in, RFC 8705, the
+// XACML gate, SCIM, the portal, and the flag the request pool forwards to a
+// worker. x509-limbo found OpenSSL accepting paths `pki.pathRuleProblem()`
+// refuses (a malformed name under a name constraint, a nameConstraints on an
+// end entity, an empty constraint, a root without basicConstraints). So a
+// chain OpenSSL verified is asked those rules here, once per connection,
+// BEFORE any request on it is read — node's HTTP server parses the first
+// request on a later turn than this event — and one that breaks them is
+// reported as unverified: `authorized` false, `authorizationError` naming
+// the rule. It is still thumbprinted and may still bind a token (RFC 8705
+// section 3 binds to the certificate, not to a CA), exactly as a chain
+// OpenSSL refused is. Required lazily: `pki` is loaded after this module.
+// ---------------------------------------------------------------------------
+function holdToPathRules(socket, label) {
+  log.debug('Entering holdToPathRules().');
+  if (!socket || socket.authorized !== true ||
+      typeof socket.getPeerCertificate !== 'function') {
+    log.debug('Leaving holdToPathRules(). Nothing verified.');
+    return null;
+  }
+  let problem = null;
+  try {
+    problem = require('../common/pki')
+      .peerChainProblem(socket.getPeerCertificate(true));
+  } catch (e) {
+    // A defect here must not make an unverified chain look verified, nor a
+    // verified one unverified for a reason nobody can read. OpenSSL's answer
+    // stands and the failure is logged.
+    log.error(errorCodes.tag('STS-PKI-0198') + 'tls: the path rules could ' +
+              'not be asked of a client chain on ' + label + ': ' +
+              ((e && e.message) || e));
+    problem = null;
+  }
+  if (problem) {
+    socket.authorized = false;
+    socket.authorizationError = 'ERR_STS_PATH_RULES: ' + problem.why;
+    log.warn(errorCodes.tag('STS-PKI-0198') + 'tls: a client certificate ' +
+             'chain on ' + label + ' verified with OpenSSL and breaks RFC ' +
+             '5280, so it is treated as unverified: ' + problem.why + '.');
+  }
+  log.debug('Leaving holdToPathRules().' + (problem ? ' Demoted.' : ''));
+  return problem;
+}
+
 function observeConnectionsOn(server, label) {
   log.debug('Entering observeConnectionsOn(). label=' + label);
   if (!server || typeof server.on !== 'function') {
@@ -3139,6 +3242,7 @@ function observeConnectionsOn(server, label) {
     return false;
   }
   server.on('secureConnection', function (socket) {
+    holdToPathRules(socket, label);
     checkedSocket(socket).then(function (revocation) {
       recordClientCertificate(socket, 'optional', revocation);
     });
@@ -4076,6 +4180,8 @@ module.exports = {
   // private (2026-09-13). `serverCertificate()` above answers the FIRST, which
   // is what every existing caller means; an ML-DSA certificate beside it is a
   // leaf of the same TLS Issuing CA now, and this is where that is visible.
+  // Every leaf the main port presents, as the socket presents it (#248).
+  presentedCertificatePems: presentedCertificatePems,
   serverCertificateChains: function () {
     log.debug("Entering serverCertificateChains().");
     log.debug("Leaving serverCertificateChains().");
@@ -4115,5 +4221,8 @@ module.exports = {
   },
   // Installed by `server.js` on the main HTTPS listener: the sighting, and the
   // failed-handshake log that is otherwise invisible.
-  observeConnectionsOn: observeConnectionsOn
+  observeConnectionsOn: observeConnectionsOn,
+  // #201: the path rules asked of a chain OpenSSL verified; exported for
+  // tests/x509_limbo.js, which holds the main port's posture to x509-limbo.
+  holdToPathRules: holdToPathRules
 };

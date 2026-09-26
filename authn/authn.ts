@@ -854,7 +854,7 @@ const MFA_SETUP_STYLE = '<style>body{font-family:system-ui,-apple-system,' +
 
 const MFA_SETUP_FORM = vz.object({
   mfa_id: vt.opt(vt.base64url),
-  action: vt.opt(vt.oneOf(['totp', 'webauthn', 'confirm-totp'])),
+  action: vt.opt(vt.oneOf(['totp', 'webauthn', 'confirm-totp', 'ignore'])),
   code: vz.string().max(32).optional(),
   csrf_token: vt.opt(vt.token)
 });
@@ -3784,6 +3784,12 @@ class Authn {
                                           : null;
     let riskDecision = String(extra.riskDecision || 'permit');
     if (extra.gated !== true) {
+      // THE APPLICATION IS THE CALLER'S TO NAME, and every screen's finisher
+      // names `step.authn.application`. Until #226 (2026-09-26) the six
+      // second-factor finishers named none, so after a step-up the policy was
+      // asked about "": the console's `neverLockOut` rules never matched,
+      // and a HIGH console sign-in that had just answered its step-up with a
+      // security key was refused by the ordinary HIGH rule.
       const sessionAnswer = gate.check(Object.assign({
         application: String(extra.application || ''),
         kind: gate.ISSUANCE.SESSION,
@@ -4520,6 +4526,26 @@ class Authn {
     return out;
   }
 
+  // THE SESSIONS OF THIS REALM THAT `test` ACCEPTS (#189), without the cookie
+  // and without expiring them. For a SAML attribute authority, which is asked
+  // about a subject by the NameID a service provider was GIVEN — a transient
+  // or an emailAddress NameID is not the username, so the question is which
+  // live session gave that service provider that NameID, and nothing but the
+  // session holds the answer.
+  sessionsMatching(test) {
+    const { log } = this.deps;
+    log.debug("Entering Authn.sessionsMatching().");
+    const out = [];
+    sessions.forEach(function (session) {
+      if (test(session)) {
+        out.push(session);
+      }
+    });
+    log.debug("Leaving Authn.sessionsMatching(). " + out.length +
+              " session(s).");
+    return out;
+  }
+
   // One session by its id, without the cookie and without expiring it. Used by
   // /logout to draw a row for a session that is not the caller's; `sessionOf()`
   // stays the function that reads the cookie and sweeps what it finds expired.
@@ -4716,6 +4742,33 @@ class Authn {
   // first thing checked, because every sign-in in this service passes through
   // here.
   // ---------------------------------------------------------------------------
+  // The one usable service-provider relationship whose fedHomeRealmDomain
+  // holds `domainHint` (#148), or null — none, or more than one, which is
+  // not a choice this service makes for the person.
+  private homeRealmFor(domainHint) {
+    const { log, federation } = this.deps;
+    log.debug("Entering Authn.homeRealmFor().");
+    const wanted = String(domainHint || '').trim().toLowerCase();
+    if (!wanted) {
+      log.debug("Leaving Authn.homeRealmFor(). No hint.");
+      return null;
+    }
+    const ids = federation.list().filter(function (r) {
+      return [].concat(r.fedHomeRealmDomain || []).map(function (d) {
+        return String(d).toLowerCase();
+      }).indexOf(wanted) >= 0;
+    }).map(function (r) {
+      return r.fedId;
+    });
+    const resolved = ids.length
+      ? federation.usableServiceProviders(ids, 'A domain_hint')
+      : { usable: [] };
+    log.debug("Leaving Authn.homeRealmFor(). " + resolved.usable.length +
+              " usable.");
+    return resolved.usable.length === 1 ?
+      resolved.usable[0].relationship : null;
+  }
+
   private federationFor(applicationId) {
     const { log, federation, applications, errorCodes } = this.deps;
     log.debug("Entering Authn.federationFor(). application=" +
@@ -5135,6 +5188,22 @@ class Authn {
     // ---------------------------------------------------------------------
     const chosen = this.mechanismFor(opts.application);
     const home = chosen.federation;
+    // ENTERPRISE EXTENSIONS SECTION 3.1 (#148): a `domain_hint` names the
+    // person's home realm, and a relationship whose fedHomeRealmDomain holds
+    // it is where their sign-in happens — asked only when the application
+    // names no partner of its own to go to, which is the more specific
+    // configuration.
+    const hinted = (home && home.relationship && home.auto) ? null :
+      this.homeRealmFor(opts.domainHint);
+    if (hinted) {
+      log.info('authn: domain_hint "' + String(opts.domainHint) + '" names ' +
+               'the home realm of the federation relationship "' +
+               hinted.fedId + '", so this sign-in goes straight there.');
+      log.debug("Leaving Authn.beginAuthentication(). Home realm.");
+      return federation.PATHS.login + '/' + encodeURIComponent(hinted.fedId) +
+        '?returnTo=' + encodeURIComponent(returnTo) +
+        '&application=' + encodeURIComponent(String(opts.application || ''));
+    }
     if (home && home.relationship && home.auto) {
       const target = federation.PATHS.login + '/' +
         encodeURIComponent(home.relationship.fedId) +
@@ -6013,6 +6082,7 @@ class Authn {
     const amr = this.firstAmrOf(step).concat(
       this.firstAmrOf(step).indexOf('otp') >= 0 ? [] : ['otp']);
     const said = { request: req, risk: step.risk,
+                   application: String(step.authn.application || ''),
                    credential: { kind: 'email-' + kind } };
     const started = this.startSession(res, step.username, amr, 'mfa',
                                       step.authn.protocol, said);
@@ -7050,22 +7120,69 @@ class Authn {
         // key is chosen, which is then the ordinary ceremony — it registers a
         // key in the `mfa` role for somebody who holds none.
         factor: 'enrol', alternate: '', backup: false, passwordless: false,
-        requiredBy: requirement.byUser ? 'account' : 'realm',
+        requiredBy: requirement.byUser ? 'account'
+          : (requirement.byRealm ? 'realm' : 'administrator'),
+        // The sign-in's assessment (#246): the finisher decides the session
+        // on it, as every other step's does. Until #246 this step carried
+        // none, and an enrolment's session was decided with no risk at all.
+        risk: assessment || undefined,
         expires: Date.now() + this.mfaStepTtlMs()
       });
+      this.noteEnrolmentAtRisk(username, assessment, 'required');
       audit.audit({
         action: 'authn.mfa.enrolment.required', outcome: 'success',
         actor: username, target: username, channel: 'http',
         protocol: record.protocol,
         summary: username + ' holds no second factor and one is required; ' +
                  'asked to set one up before signing in',
-        detail: { requiredBy: requirement.byUser ? 'account' : 'realm' }
+        detail: { requiredBy: requirement.byUser ? 'account'
+          : (requirement.byRealm ? 'realm' : 'administrator') }
       });
       log.info('authn: "' + username + '" holds no second factor and one is ' +
                'required; asking them to set one up.');
       log.debug("Leaving Authn.finishPasswordSignIn(). Enrolment step.");
       return this.sendMfaSetupPage(res, this.mfaSetupPage(setupId, username,
                                                           offered, ''));
+    }
+
+    // ---------------------------------------------------------------------
+    // A SECOND FACTOR OFFERED TO AN ADMINISTRATOR (#246): the authentication
+    // policy's `requireSecondFactorForAdministrators` is `offer` (the default
+    // for now), or `always` for the default realm's built-in administrator.
+    // The same set-up step, minted `optional`, with an Ignore button that
+    // finishes this sign-in on the password — rcbj's "we can offer it, but
+    // they can decline". Offered at every sign-in until one is set up.
+    // Nothing is offered where nothing can be enrolled, and never to a
+    // passwordless sign-in, which is not asked for a second factor.
+    // ---------------------------------------------------------------------
+    const enrolable = requirement.offered && !factor && !passwordless
+      ? this.enrolmentOffered() : null;
+    if (enrolable && (enrolable.totp || enrolable.webauthn)) {
+      pending.delete(record.id);
+      const offerId = randomId(24);
+      pendingMfa.set(offerId, {
+        authn: record, username: username,
+        challenge: crypto.randomBytes(32).toString('base64url'),
+        factor: 'enrol', alternate: '', backup: false, passwordless: false,
+        requiredBy: 'administrator', optional: true,
+        risk: assessment || undefined, riskDecision: riskDecision,
+        expires: Date.now() + this.mfaStepTtlMs()
+      });
+      this.noteEnrolmentAtRisk(username, assessment, 'offered');
+      audit.audit({
+        action: 'authn.mfa.enrolment.offered', outcome: 'success',
+        actor: username, target: username, channel: 'http',
+        protocol: record.protocol,
+        summary: username + ' holds an administrator role and no second ' +
+                 'factor; offered one before signing in',
+        detail: { requiredBy: 'administrator' }
+      });
+      log.info('authn: "' + username + '" is an administrator with no ' +
+               'second factor; offering to set one up.');
+      log.debug("Leaving Authn.finishPasswordSignIn(). Offered a factor.");
+      return this.sendMfaSetupPage(res, this.mfaSetupPage(offerId, username,
+                                                          enrolable, '',
+                                                          true));
     }
 
     if (factor) {
@@ -7329,9 +7446,39 @@ class Authn {
       '</div></body></html>\n';
   }
 
+  // ENROLMENT AT ELEVATED RISK (#246, rcbj's decision 3): an administrator
+  // with no second factor, signing in at HIGH or MEDIUM, is still sent to the
+  // set-up step — the console is never locked out (#226) — and this is the
+  // alarm that says a factor may be enrolled by whoever holds the password.
+  private noteEnrolmentAtRisk(username, assessment, how) {
+    const { log, audit, errorCodes } = this.deps;
+    log.debug("Entering Authn.noteEnrolmentAtRisk().");
+    const level = assessment ? String(assessment.level || '') : '';
+    if (level !== 'HIGH' && level !== 'MEDIUM') {
+      log.debug("Leaving Authn.noteEnrolmentAtRisk(). Not elevated.");
+      return;
+    }
+    audit.audit({
+      action: 'authn.mfa.enrolment.at-risk', outcome: 'success',
+      errorCode: 'STS-RISK-0039', actor: username, target: username,
+      channel: 'http',
+      summary: username + ' was ' + how + ' a second factor to set up at a ' +
+               'sign-in whose risk is ' + level,
+      detail: { level: level, assessment: String(assessment.id || '') }
+    });
+    log.warn(errorCodes.tag('STS-RISK-0039') + 'authn: "' + username + '" ' +
+             'was ' + how + ' a second factor to set up at a sign-in whose ' +
+             'risk is ' + level + '. Whoever holds the password could enrol ' +
+             'it; confirm with them.');
+    log.debug("Leaving Authn.noteEnrolmentAtRisk().");
+  }
+
   // The choice: an authenticator app or a security key, whichever this realm
   // offers.
-  private mfaSetupPage(setupId, username, offered, error) {
+  // `optional` (#246): the step was OFFERED rather than required — an
+  // administrator under the authentication policy's `offer` — and the page
+  // draws an Ignore button that signs them in on their password alone.
+  private mfaSetupPage(setupId, username, offered, error, optional?) {
     const { log, xmlEscape } = this.deps;
     log.debug('Entering Authn.mfaSetupPage(). username=' + username);
     const button = function (action, label) {
@@ -7344,9 +7491,15 @@ class Authn {
         '</button></form>';
     };
     const html = this.mfaSetupShell('Set up a second factor',
-      '<h1>Set up a second factor</h1><p class="sub">A second factor is ' +
-      'required for <code>' + xmlEscape(username) + '</code>, and you do not ' +
-      'have one yet. Nothing is signed in until one is set up.</p>' +
+      '<h1>Set up a second factor</h1><p class="sub">' + (optional
+        ? 'You hold an administrator role, and <code>' +
+          xmlEscape(username) + '</code> has no second factor yet. ' +
+          'Setting one up now is recommended; you can ignore this and ' +
+          'sign in with your password, and you will be asked again next ' +
+          'time.'
+        : 'A second factor is required for <code>' + xmlEscape(username) +
+          '</code>, and you do not have one yet. Nothing is signed in until ' +
+          'one is set up.') + '</p>' +
       (error ? '<div class="err">' + xmlEscape(error) + '</div>' : '') +
       (offered.totp
         ? '<h2>An authenticator app</h2><p>A six-digit code from an app ' +
@@ -7358,6 +7511,10 @@ class Authn {
         ? '<h2>A security key</h2><p>A hardware key or a passkey on this ' +
           'device, used after your password.</p>' +
           button('webauthn', 'Set up a security key')
+        : '') +
+      (optional
+        ? '<h2>Not now</h2><p>Sign in with your password alone.</p>' +
+          button('ignore', 'Ignore')
         : '') +
       '<div class="meta">This step expires in a few minutes; if it does, ' +
       'sign in again from the application that sent you here.</div>');
@@ -8031,12 +8188,13 @@ class Authn {
     const answered = verdict.answeredBy ||
       { id: verdict.credentialId, aaguid: verdict.aaguid };
     const flags = verdict.flags || {};
-    const said = { request: req, risk: step.risk, credential: {
-      kind: 'webauthn', id: answered.id || '',
-      aaguid: answered.aaguid
-        ? credentials.Credentials.aaguidString(answered.aaguid) : '',
-      backupEligible: typeof flags.be === 'boolean' ? flags.be : undefined,
-      backupState: typeof flags.bs === 'boolean' ? flags.bs : undefined } };
+    const said = { request: req, risk: step.risk,
+      application: String(step.authn.application || ''), credential: {
+        kind: 'webauthn', id: answered.id || '',
+        aaguid: answered.aaguid
+          ? credentials.Credentials.aaguidString(answered.aaguid) : '',
+        backupEligible: typeof flags.be === 'boolean' ? flags.be : undefined,
+        backupState: typeof flags.bs === 'boolean' ? flags.bs : undefined } };
     const started = this.startSession(res, step.username, amr, acr,
                                       step.authn.protocol, said);
     if (this.refusedSession(res, base, step.authn, step.username, started,
@@ -8228,6 +8386,7 @@ class Authn {
     // list.
     const amr = this.firstAmrOf(step).concat(['otp']);
     const said = { request: req, risk: step.risk,
+                   application: String(step.authn.application || ''),
                    credential: { kind: 'totp' } };
     const started = this.startSession(res, step.username, amr, 'mfa',
                                       step.authn.protocol, said);
@@ -8447,6 +8606,7 @@ class Authn {
     // never a first factor, so `pwd` is always in the list.
     const amr = this.firstAmrOf(step).concat(['otp']);
     const said = { request: req, risk: step.risk,
+                   application: String(step.authn.application || ''),
                    credential: { kind: 'backup-code' } };
     const started = this.startSession(res, step.username, amr, 'mfa',
                                       step.authn.protocol, said);
@@ -9226,7 +9386,7 @@ class Authn {
       }
       log.debug('Leaving the second-factor set-up screen. The choice.');
       return this.sendMfaSetupPage(res, this.mfaSetupPage(
-        setupId, step.username, this.enrolmentOffered(), ''));
+        setupId, step.username, this.enrolmentOffered(), '', !!step.optional));
     });
 
     app.post(MFA_SETUP_PATH, async (req, res) => {
@@ -9262,13 +9422,53 @@ class Authn {
           'with it.');
       }
 
+      // IGNORE (#246): only on a step that was OFFERED. On a required one it
+      // is refused, since skipping would be the requirement not asked.
+      if (action === 'ignore') {
+        if (!step.optional) {
+          errorCodes.mark(res, 'STS-AUTHN-0270');
+          log.debug('Leaving the second-factor set-up endpoint. Ignore on a ' +
+                    'required step.');
+          return this.sendMfaSetupPage(res, this.mfaSetupPage(setupId,
+              step.username, offered,
+            'A second factor is required for this account; it cannot be ' +
+            'ignored.', !!step.optional), 400);
+        }
+        pendingMfa.delete(setupId);
+        audit.audit({
+          action: 'authn.mfa.enrolment.declined', outcome: 'success',
+          actor: step.username, target: step.username, channel: 'http',
+          protocol: step.authn && step.authn.protocol,
+          summary: step.username + ' ignored the offer of a second factor ' +
+                   'and signed in with a password',
+          detail: { requiredBy: step.requiredBy || '' }
+        });
+        // THE PASSWORD SIGN-IN, FINISHED AS `finishPasswordSignIn()` WOULD
+        // HAVE: the issuance policy was asked there, with this assessment,
+        // before the offer was drawn.
+        const said = { request: req, gated: true,
+                       credential: { kind: 'password' },
+                       risk: step.risk,
+                       riskDecision: step.riskDecision };
+        const started = this.startSession(res, step.username, ['pwd'], '1',
+                                          step.authn.protocol, said);
+        if (this.refusedSession(res, base, step.authn, step.username, started,
+                                said)) {
+          log.debug('Leaving the second-factor set-up endpoint. Refused.');
+          return undefined;
+        }
+        this.returnToCaller(res, step.authn, null, null);
+        log.debug('Leaving the second-factor set-up endpoint. Ignored.');
+        return undefined;
+      }
+
       if (action === 'webauthn') {
         if (!offered.webauthn) {
           errorCodes.mark(res, 'STS-AUTHN-0175');
           log.debug('Leaving the second-factor set-up endpoint. Keys are off.');
           return this.sendMfaSetupPage(res, this.mfaSetupPage(setupId,
                                                               step.username,
-            offered, 'Security keys cannot be set up in this realm.'), 400);
+            offered, 'Security keys cannot be set up in this realm.', !!step.optional), 400);
         }
         // THE ORDINARY CEREMONY FROM HERE: a step asking for `webauthn` for a
         // person who holds no `mfa` key draws the registration, and a verified
@@ -9290,7 +9490,7 @@ class Authn {
           log.debug('Leaving the second-factor set-up endpoint. TOTP is off.');
           return this.sendMfaSetupPage(res, this.mfaSetupPage(setupId,
                                                               step.username,
-            offered, 'Authenticator apps cannot be set up in this realm.'),
+            offered, 'Authenticator apps cannot be set up in this realm.', !!step.optional),
             400);
         }
         const begun = credentials.beginTotpEnrolment(step.username,
@@ -9304,7 +9504,7 @@ class Authn {
           return this.sendMfaSetupPage(res, this.mfaSetupPage(setupId,
                                                               step.username,
             offered, ((begun.errors || [])[0]) ||
-            'The authenticator app could not be set up.'), 400);
+            'The authenticator app could not be set up.', !!step.optional), 400);
         }
         step.factor = 'enrol-totp';
         pendingMfa.set(setupId, step);
@@ -9327,7 +9527,7 @@ class Authn {
                   'confirm.');
         return this.sendMfaSetupPage(res, this.mfaSetupPage(setupId,
             step.username, offered,
-          'Choose a second factor to set up first.'), 400);
+          'Choose a second factor to set up first.', !!step.optional), 400);
       }
       const allowed = await websecurity.attemptShared('mfa-code', req,
                                                       step.username);
@@ -9338,7 +9538,7 @@ class Authn {
                                                   allowed.detail);
         return this.sendMfaSetupPage(res, again || this.mfaSetupPage(setupId,
             step.username,
-          offered, allowed.detail), 429);
+          offered, allowed.detail, !!step.optional), 429);
       }
       const confirmed = credentials.confirmTotpEnrolment(step.username,
                                                          String(body.code ||
@@ -9359,7 +9559,7 @@ class Authn {
         return this.sendMfaSetupPage(res, again || this.mfaSetupPage(setupId,
             step.username,
           offered,
-          'That set-up expired before it was confirmed. Start it again.'),
+          'That set-up expired before it was confirmed. Start it again.', !!step.optional),
           400);
       }
       await websecurity.succeededShared('mfa-code', req, step.username);
@@ -9383,6 +9583,7 @@ class Authn {
       // Two factors really were presented: the password, and a code from the
       // app enrolled a moment ago. `otp` and `mfa`, as at `/authn/totp`.
       const said = { request: req, risk: step.risk,
+                     application: String(step.authn.application || ''),
                      credential: { kind: 'totp' } };
       const started = this.startSession(res, step.username,
                                         this.firstAmrOf(step).concat(['otp']),
@@ -10078,6 +10279,7 @@ class Authn {
       // disabled after the wallet step, and a null here returned the browser
       // to a caller that sent it straight back.
       const said = { request: req, risk: step.risk,
+                     application: String(step.authn.application || ''),
                      credential: { kind: 'password' } };
       const started = this.startSession(res, step.username, amr, 'mfa',
                                         step.authn.protocol, said);
@@ -10473,6 +10675,9 @@ export = {
   // somewhere else would be a sign-out that revoked nothing and logged nothing,
   // and it would look exactly like this one from the outside.
   sessionsOf: slot.forward('sessionsOf'),
+  // The SAML 2.0 attribute authority's question (#189): which live session
+  // gave a service provider a NameID.
+  sessionsMatching: slot.forward('sessionsMatching'),
   sessionById: slot.forward('sessionById'),
   endSessionById: slot.forward('endSessionById'),
   endEverySessionIn: slot.forward('endEverySessionIn'),

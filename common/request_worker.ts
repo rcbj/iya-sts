@@ -849,8 +849,10 @@ class RequestWorker {
     });
     this.server = server;
     // Every connection is from the front process on this machine, over a
-    // socket in a directory only it and this worker know. Keep-alive is what
-    // makes the proxy hop cheap, so it is left on and the timeout is generous.
+    // socket in a directory only it and this worker know. The front process
+    // asks for `Connection: close` on every request (#77, request_pool.js's
+    // proxy()), so a connection carries one request; the keep-alive timeout
+    // is kept generous for a caller that does not.
     server.keepAliveTimeout = 65000;
     server.headersTimeout = 70000;
 
@@ -1325,6 +1327,13 @@ class RequestWorker {
       }
       if (message.tls.trustAnchorPem) {
         process.env.STS_TLS_SERVER_ANCHOR_PEM = message.tls.trustAnchorPem;
+      }
+      // THE OTHER LEAVES THE SOCKET PRESENTS (#248) — an ML-DSA certificate
+      // beside the RSA one — concatenated for the chain's reason, and public
+      // for the same one. The SAML metadata a worker serves publishes them.
+      if (message.tls.extraCertPems && message.tls.extraCertPems.length) {
+        process.env.STS_TLS_SERVER_EXTRA_CERTS_PEM =
+          message.tls.extraCertPems.join('');
       }
     }
     // -------------------------------------------------------------------

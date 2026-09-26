@@ -336,6 +336,9 @@ var config = {
     basicAuthRealm: "sts",                       // Token endpoint Basic realm
     maxAuthorizationServerProfiles: 200,         // Named authorization servers (per realm)
     maxDevicesPerPerson: 20,                     // Devices one person may hold
+    deviceAuthorization: false,                  // Device authorization grant (RFC 8628)
+    deviceCodeLifetimeS: 600,                    // Device code lifetime (seconds)
+    deviceCodeIntervalS: 5,                      // Device code polling interval (seconds)
     ciba: false,                                 // CIBA (backchannel authentication)
     cibaDefaultExpiryS: 120,                     // CIBA request lifetime (s)
     cibaMaxExpiryS: 600,                         // CIBA request longest lifetime (s)
@@ -436,6 +439,7 @@ var config = {
     revocationCrlIssuersFile: "",               // Certificates that may sign an indirect CRL
     revocationLdap: "ldaps",                    // LDAP revocation addresses
     revocationLdapCaFile: "",                   // CA certificates for ldaps revocation directories
+    revocationHttpsCaFile: "",                  // CA certificates for https CRL and OCSP servers
     revocationLdapDirectory: "",                // Directory for CRL names relative to their issuer
     enrollmentMaxCertificatesPerEntry: 20       // Enrolled certificates one entry may hold
   },
@@ -561,6 +565,7 @@ var config = {
     encryptLogoutNameId: false,                                            // Encrypt the NameID in a LogoutRequest
     autocreateApplications: true,                                          // Register a service provider on sight
     requireSignedAuthnRequests: "auto",                                    // Require signed requests from service providers
+    unsolicitedSso: true,                                                  // Identity-provider-initiated sign-in
     defaultSingleLogoutService: "",                                        // Fallback logout return address
     requestTtlMin: 10,                                                     // Held AuthnRequest lifetime (minutes)
     mockSpContextTtlMin: 30,                                               // Mock service provider RelayState lifetime (minutes)
@@ -582,6 +587,7 @@ var config = {
     signResponse: true,                                                    // Sign the response
     nameIdFormat: "urn:oasis:names:tc:SAML:1.1:nameid-format:unspecified", // Default NameIdentifier format
     defaultProfile: "post",                                                // Default browser profile
+    doNotCacheCondition: false,                                            // Mark a Browser/POST assertion DoNotCache
     artifactTtlS: 300,                                                     // Artifact lifetime (seconds)
     autocreateApplications: true,                                          // Register relying parties on sight
     requestTtlMin: 10,                                                     // Held flow lifetime (minutes)
@@ -778,6 +784,7 @@ var config = {
     bulkMaxOperations: 100,      // Bulk operation limit
     bulkMaxPayloadSize: 1048576, // Bulk payload limit
     authDiscovery: false,        // Authenticate discovery too
+    inventOnCreate: true,        // Fill a provisioned person in (development mode)
     authRealm: "SCIM",           // Authentication realm
     scopeRead: "scim:read",      // OAuth scope to read
     scopeWrite: "scim:write",    // OAuth scope to write

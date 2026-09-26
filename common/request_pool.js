@@ -587,7 +587,11 @@ function setServerCertificate(material) {
   // `process.env` at the other end while the key deliberately does not.
   tlsMaterial = { certPem: material.certPem, keyPem: material.keyPem,
                   chainPem: (material.chainPem || []).slice(0),
-                  trustAnchorPem: material.trustAnchorPem || '' };
+                  trustAnchorPem: material.trustAnchorPem || '',
+                  // The other leaves the socket presents (#248): public, and
+                  // what `tls_server.presentedCertificatePems()` answers in a
+                  // worker beside the first.
+                  extraCertPems: (material.extraCertPems || []).slice(0) };
   log.debug("Leaving setServerCertificate().");
 }
 
@@ -938,6 +942,15 @@ quickExits[SURFACE_POOL] = 0;
 const givenUp = {};
 givenUp[PROTOCOL_POOL] = false;
 givenUp[SURFACE_POOL] = false;
+// How many dead workers each pool has replaced, for stats(). See
+// replacementFor().
+const replaced = {};
+replaced[PROTOCOL_POOL] = 0;
+replaced[SURFACE_POOL] = 0;
+// The module a worker runs. Only tests/request_worker_replacement.js changes
+// it, to fork a stub that answers the same channel without loading the stack;
+// reset() puts it back.
+let workerModule = WORKER_MODULE;
 let stopped = false;
 let starting = null;
 
@@ -2162,7 +2175,7 @@ function fork(pool, slot) {
   const socket = path.join(ensureSocketDir(),
                            (which === SURFACE_POOL ? 's' : 'w') +
                            (nextSocket++) + '.sock');
-  const child = child_process.fork(WORKER_MODULE, [socket], {
+  const child = child_process.fork(workerModule, [socket], {
     // stdout and stderr are the front process's, so a worker's bunyan lines
     // land in the same stream as everything else. They carry the pid.
     stdio: ['ignore', 'inherit', 'inherit', 'ipc'],
@@ -2210,6 +2223,10 @@ function fork(pool, slot) {
   });
   const entry = { child: child, pid: child.pid, pool: which, socket: socket,
                   ready: false,
+                  // Its position in the pool, which a replacement takes over
+                  // — and with it the persistence origin (see fork()'s
+                  // header and replacementFor()).
+                  slot: typeof slot === 'number' ? slot : null,
                   // -------------------------------------------------------
                   // ONE AGENT PER WORKER, AND IT IS A BOUND RATHER THAN A
                   // CACHE (2026-09-12).
@@ -2243,6 +2260,12 @@ function fork(pool, slot) {
                   // socket reused in the instant the worker closes it, which
                   // arrives as an ECONNRESET on a request that had been
                   // accepted rather than on one that never left.
+                  //
+                  // **AND `keepAlive: false` ALONE DID NOT MEAN IT (#77).**
+                  // With a finite `maxSockets` node still sends
+                  // `Connection: keep-alive` and hands a freed socket to the
+                  // next queued request. proxy() sends `Connection: close`,
+                  // which is what makes this true.
                   //
                   // **THE HAZARD A BOUND CREATES, WRITTEN DOWN BECAUSE IT IS
                   // THE REASON THE NUMBER IS NOT SMALL**: this service makes
@@ -2307,6 +2330,18 @@ function fork(pool, slot) {
         log.error(errorCodes.tag('STS-WORKER-0017') +
                   'request_pool: worker ' + entry.pid + ' could not start: ' +
                   message.error);
+        // A WORKER THAT COULD NOT START IS ENDED, SO THAT IT IS REPLACED
+        // (2026-09-26). It used to stay: alive, never ready, holding its
+        // place in the pool, so the pool ran a worker short for the life of
+        // the process. Ended, it goes through reap() like any worker that
+        // died — counted as a failed start, so a worker that can never start
+        // is tried QUICK_EXIT_LIMIT times and then given up on.
+        try {
+          child.kill('SIGKILL');
+        } catch (e) {
+          log.debug('request_pool: could not end worker ' + entry.pid +
+                    ', which could not start: ' + ((e && e.message) || e));
+        }
         resolve(null);
         return;
       }
@@ -2415,10 +2450,15 @@ function reap(entry, code, signal) {
   }
   failOperations(entry);
   const how = signal ? 'was killed with ' + signal : 'exited with code ' + code;
+  // A FAILED START: a worker that never became ready, however long it took
+  // to fail, or one that went within QUICK_EXIT_MS of being forked having
+  // served nothing. A worker that was ready resets the count (fork()), so
+  // this counts failed starts IN A ROW.
   const shortLived = (Date.now() - entry.startedAt) < QUICK_EXIT_MS &&
                      entry.served === 0;
+  const failedStart = !entry.ready || shortLived;
   const pool = entry.pool || PROTOCOL_POOL;
-  if (shortLived && !stopped) {
+  if (failedStart && !stopped) {
     quickExits[pool]++;
   }
   if (entry.inFlight) {
@@ -2438,8 +2478,9 @@ function reap(entry, code, signal) {
     // pool, which is what workers.surfaceCount=0 means. See poolFor().
     log.error(errorCodes.tag('STS-WORKER-0023') +
       'request_pool: ' + quickExits[pool] + ' ' + pool + ' workers in a ' +
-      'row exited within ' + QUICK_EXIT_MS + 'ms without serving anything, ' +
-      'so this service has STOPPED FORKING THEM and ' +
+      'row failed to start (never ready, or gone within ' + QUICK_EXIT_MS +
+      'ms without serving anything), so this service has STOPPED FORKING ' +
+      'THEM and ' +
       (pool === SURFACE_POOL
         ? 'is sending the hosted surfaces to the protocol workers — which ' +
           'is what workers.surfaceCount=0 means'
@@ -2451,7 +2492,108 @@ function reap(entry, code, signal) {
       'memory; ' + WORKER_MODULE + ' run by hand with a socket path says ' +
       'which.');
   }
+  replaceIfWanted(entry);
   log.debug('Leaving reap().');
+}
+
+// ---------------------------------------------------------------------------
+// A WORKER THAT DIES IS REPLACED (2026-09-26).
+//
+// Until this date the pool was forked once, in start(), and a worker that
+// exited — a crash, the kernel's OOM killer, a SIGKILL from anybody — was
+// reaped and never replaced: the pool ran a worker short for the life of the
+// process, and when the last one went, every request was handled on the
+// front process's one thread. rcbj met it more than once. reap() now asks
+// this, and forks one worker into the dead one's place.
+//
+// **THE SAME POOL AND THE SAME SLOT.** The slot is what the persistence
+// origin is named after (`adoptOrigin()` in persistence_postgres.js), so the
+// replacement takes over what its predecessor wrote under that origin. The
+// predecessor's claim on it lapses on its own — a dead process renews
+// nothing — and adoptOrigin() waits that out (ORIGIN_WAIT_MS in
+// persistence.js, inside the worker's own start timeout); a claim somebody
+// still holds leaves the replacement on a random origin, and it says so.
+//
+// **NOT WHILE STOPPING, NOT AFTER GIVING UP, AND NEVER PAST THE CONFIGURED
+// SIZE.** stop() sets `stopped` before its workers exit, so a drain forks
+// nothing. A pool that has given up (QUICK_EXIT_LIMIT failed starts in a row)
+// stays given up — a worker that cannot start is a configuration or a machine
+// out of memory, and forking it for ever would turn a slow service into one
+// that does nothing but fork. And a pool already holding `size()` workers
+// forks nothing, whatever died.
+//
+// A decision over its arguments, exported for tests/request_worker_
+// replacement.js; `state` defaults to this module's own.
+// ---------------------------------------------------------------------------
+function replacementFor(dead, live, state) {
+  log.debug("Entering replacementFor().");
+  const pool = (dead && dead.pool) || PROTOCOL_POOL;
+  const s = state || {};
+  const isStopped = s.stopped === undefined ? stopped : s.stopped;
+  const hasGivenUp = s.givenUp === undefined ? givenUp[pool] : s.givenUp;
+  const wanted = s.wanted === undefined ? size(pool) : s.wanted;
+  if (isStopped) {
+    log.debug("Leaving replacementFor(). Stopping.");
+    return { replace: false, pool: pool, why: 'the pool is stopping' };
+  }
+  if (hasGivenUp) {
+    log.debug("Leaving replacementFor(). Given up.");
+    return { replace: false, pool: pool,
+             why: 'the ' + pool + ' pool has given up on its workers' };
+  }
+  const held = (live || []).filter(function (one) {
+    return one !== dead && (one.pool || PROTOCOL_POOL) === pool;
+  });
+  if (held.length >= wanted) {
+    log.debug("Leaving replacementFor(). Full.");
+    return { replace: false, pool: pool,
+             why: 'the ' + pool + ' pool already holds ' + held.length +
+                  ' of ' + wanted + ' worker(s)' };
+  }
+  const taken = held.map(function (one) { return one.slot; });
+  let slot = (dead && typeof dead.slot === 'number' &&
+              taken.indexOf(dead.slot) < 0) ? dead.slot : null;
+  for (let i = 0; slot === null && i < wanted; i++) {
+    if (taken.indexOf(i) < 0) {
+      slot = i;
+    }
+  }
+  log.debug("Leaving replacementFor(). Slot " + slot + ".");
+  return { replace: true, pool: pool, slot: slot };
+}
+
+// For tests/request_worker_replacement.js only: fork a stub in place of
+// request_worker.js. reset() restores the real module.
+function useWorkerModule(modulePath) {
+  log.debug("Entering useWorkerModule().");
+  workerModule = modulePath || WORKER_MODULE;
+  log.debug("Leaving useWorkerModule().");
+}
+
+// A copy of the worker table, for the same test.
+function workerTable() {
+  log.debug("Entering workerTable().");
+  log.debug("Leaving workerTable().");
+  return workers.slice();
+}
+
+function replaceIfWanted(dead) {
+  log.debug("Entering replaceIfWanted().");
+  const plan = replacementFor(dead, workers);
+  if (!plan.replace) {
+    log.info('request_pool: ' + plan.pool + ' worker ' + dead.pid +
+             ' is not replaced: ' + plan.why + '.');
+    log.debug("Leaving replaceIfWanted(). Not replaced.");
+    return null;
+  }
+  replaced[plan.pool]++;
+  log.warn(errorCodes.tag('STS-WORKER-0043') +
+           'request_pool: forking a replacement for ' + plan.pool +
+           ' worker ' + dead.pid + ' in slot ' + plan.slot + ' (' +
+           replaced[plan.pool] + ' replaced in this pool so far).');
+  const next = fork(plan.pool, plan.slot);
+  log.debug("Leaving replaceIfWanted().");
+  return next;
 }
 
 // The ready workers of ONE pool — the protocol pool when none is named. Every
@@ -3793,10 +3935,19 @@ function middleware(options) {
 // no body into memory and parses nothing: `req` is piped in and the answer is
 // piped out.
 // Above this declared body size a proxied request's headers are sent to its
-// worker at once; see the block above `req.pipe(upstream)` in proxy(). The
+// worker at once; see the block above the body's `data` handler in proxy(). The
 // body parsers' own limit (`common/app.js`), which is the size past which a
 // body is either refused on its headers or streamed.
 const PROMPT_HEADERS_BYTES = 5 * 1024 * 1024;
+
+// The largest body proxy() keeps a copy of, so that a request none of whose
+// bytes reached its worker can be sent again (#77). Every body the service
+// accepts in JSON, a form or a SCIM call is far below it; a dataset upload is
+// above it and is simply never repeated.
+const REPLAY_BODY_BYTES = 1024 * 1024;
+
+// How many requests were sent again that way, for stats().
+let replayCount = 0;
 
 function proxy(entry, req, res, atGeneration, ticket) {
   log.debug('Entering proxy(). pid=' + entry.pid + ' ' + req.method + ' ' +
@@ -3862,6 +4013,40 @@ function proxy(entry, req, res, atGeneration, ticket) {
   };
 
   const headers = Object.assign({}, req.headers);
+
+  // ---------------------------------------------------------------------
+  // THE CLIENT'S HOP-BY-HOP HEADERS STAY ON THE CLIENT'S HOP, AND THIS HOP
+  // SAYS `Connection: close` (#77, 2026-09-26).
+  //
+  // The answer's hop-by-hop headers were dropped below and the request's
+  // were not, so a client's `Connection: keep-alive` reached the worker as
+  // if this process had said it (RFC 9110 section 7.6.1: a proxy removes
+  // them, and every header the Connection field names).
+  //
+  // **AND WITHOUT THE `close` THE AGENT'S `keepAlive: false` WAS NOT WHAT IT
+  // SAID.** Node's client sends `Connection: keep-alive` from any agent whose
+  // `maxSockets` is finite — `workers.maxSockets` is — and when a request is
+  // queued behind that cap, the agent hands it the socket the previous
+  // answer just freed. Measured with this agent: 336 of 400 requests
+  // written on a reused connection. So the race the agent's own comment
+  // refuses keep-alive to avoid — a request written onto a connection the
+  // worker is closing — was open exactly when the pool was busiest. With
+  // `close` the worker ends the connection after its answer, node's client
+  // sees it in the answer and never frees the socket for reuse, and every
+  // dispatched request has a connection of its own.
+  //
+  // The framing headers are kept even when the Connection field names them:
+  // they describe the body this process is about to send.
+  // ---------------------------------------------------------------------
+  String(headers.connection || '').split(',').forEach(function (named) {
+    const name = named.trim().toLowerCase();
+    if (name && name !== 'content-length' && name !== 'transfer-encoding') {
+      delete headers[name];
+    }
+  });
+  delete headers['keep-alive'];
+  delete headers['proxy-connection'];
+  headers.connection = 'close';
 
   // ---------------------------------------------------------------------
   // THE CLIENT CERTIFICATE, AND THE HEADERS A CLIENT MAY NOT SET.
@@ -3983,18 +4168,56 @@ function proxy(entry, req, res, atGeneration, ticket) {
     headers.host = req.headers.host;
   }
 
-  const upstream = http.request({
-    socketPath: entry.socket,
-    path: req.originalUrl || req.url,
-    method: req.method,
-    headers: headers,
-    // THIS WORKER'S OWN AGENT, which is what bounds how many connections the
-    // front process may have open to it at once. See the block where it is
-    // made: without it this used the global agent, `maxSockets: Infinity`, and
-    // a bulk load answered one request in five thousand with a 502 that named
-    // `connect EAGAIN`.
-    agent: entry.agent
-  }, function (answer) {
+  // -------------------------------------------------------------------------
+  // WHETHER ANY BYTE OF THIS REQUEST HAS REACHED THE WORKER, AND A COPY OF
+  // THE BODY UNTIL ONE HAS (#77, 2026-09-26).
+  //
+  // A dispatched request failed as `write EPIPE` with nothing answered: the
+  // kernel refused this process's write because the worker's end of the
+  // connection was already closed. What closed it was not found — the
+  // worker went on serving and logged nothing — but what it MEANS is
+  // exact: a write the kernel refuses delivers nothing, so if no write of
+  // this request was ever accepted, the worker never saw one byte of it,
+  // never ran a handler for it, and sending it again on a new connection
+  // cannot do anything twice. The 502 that said "it can simply be made
+  // again" was right, and this process can make it again itself.
+  //
+  // `delivered` is set by a write callback, which node calls only once the
+  // kernel has taken the bytes — from that moment the worker can read them,
+  // and nothing about this request is repeated whatever fails later. The
+  // copy is dropped then too, and it is not kept for a body over
+  // REPLAY_BODY_BYTES, which is sent exactly as it was and not repeated.
+  // -------------------------------------------------------------------------
+  let upstream = null;
+  let delivered = false;
+  let replayed = false;
+  let ended = false;
+  // A connection that has failed is written to no more, and an early
+  // answer (#215) stops the body being forwarded; see the `data` handler.
+  let failed = false;
+  let detached = false;
+  const replay = { chunks: [], bytes: 0, kept: true };
+  const dropReplay = function () {
+    log.debug("Entering dropReplay().");
+    replay.kept = false;
+    replay.chunks = [];
+    log.debug("Leaving dropReplay().");
+  };
+  // One per connection, so that a late callback from a connection that has
+  // been given up says nothing about the one replacing it.
+  const wroteOn = function (one) {
+    log.debug("Entering wroteOn().");
+    log.debug("Leaving wroteOn().");
+    return function (err) {
+      if (!err && one === upstream && !delivered) {
+        delivered = true;
+        dropReplay();
+      }
+    };
+  };
+
+  const onAnswer = function (answer) {
+    log.debug("Entering onAnswer().");
     // **AND NOT ALONGSIDE A SESSION COOKIE (2026-09-07).** The pin is APPENDED
     // to `set-cookie`, and a client that keeps only the last one it is sent —
     // which several of this repository's own test browsers do, on the premise
@@ -4083,6 +4306,22 @@ function proxy(entry, req, res, atGeneration, ticket) {
     // the pipe from now on. See ticketAbandoned().
     answered = true;
     res.status(answer.statusCode);
+    // **EACH HEADER GOES OUT UNDER THE NAME THE WORKER SPELLED IT WITH
+    // (2026-09-26, #209).** `answer.headers` is keyed in lower case, and
+    // setting it back by those keys sent `content-type:` where the process
+    // answering by itself sends `Content-Type:`. RFC 9110 section 5.1 makes
+    // a field name case-insensitive, and libest's estclient — Cisco's
+    // reference EST client — compares it byte for byte: every EST request a
+    // dispatched service answered failed "Missing HTTP content type header",
+    // and only on the modes that dispatch. The spelling comes from
+    // `rawHeaders`; the values are still `answer.headers`', merged as
+    // before. A name the worker did not send (the pin's `set-cookie` on an
+    // answer that set none) keeps its lower-case key.
+    const spelled = {};
+    const raw = answer.rawHeaders || [];
+    for (let i = 0; i + 1 < raw.length; i += 2) {
+      spelled[String(raw[i]).toLowerCase()] = String(raw[i]);
+    }
     Object.keys(answer.headers).forEach(function (name) {
       // The worker's instruction to this process, and no business of the
       // client's — for the reason the hop-by-hop headers below are dropped, and
@@ -4097,7 +4336,7 @@ function proxy(entry, req, res, atGeneration, ticket) {
           name === 'transfer-encoding') {
         return;
       }
-      res.setHeader(name, answer.headers[name]);
+      res.setHeader(spelled[name] || name, answer.headers[name]);
     });
     // AN ANSWER BEFORE THE REQUEST'S BODY HAD ALL ARRIVED (#215) is a
     // refusal made on the headers — a dataset upload over its cap, or with
@@ -4109,7 +4348,7 @@ function proxy(entry, req, res, atGeneration, ticket) {
     // is answered, and is untouched.
     if (!req.complete) {
       res.setHeader('Connection', 'close');
-      req.unpipe(upstream);
+      detached = true;
       req.resume();
     }
     answer.pipe(res);
@@ -4127,9 +4366,95 @@ function proxy(entry, req, res, atGeneration, ticket) {
       finish();
       res.destroy();
     });
-  });
+    log.debug("Leaving onAnswer().");
+  };
 
-  upstream.on('error', function (err) {
+  const open = function () {
+    log.debug("Entering open().");
+    const one = http.request({
+      socketPath: entry.socket,
+      path: req.originalUrl || req.url,
+      method: req.method,
+      headers: headers,
+      // THIS WORKER'S OWN AGENT, which is what bounds how many connections
+      // the front process may have open to it at once. See the block where
+      // it is made: without it this used the global agent, `maxSockets:
+      // Infinity`, and a bulk load answered one request in five thousand
+      // with a 502 that named `connect EAGAIN`.
+      agent: entry.agent
+    }, onAnswer);
+    one.on('error', onUpstreamError);
+    log.debug("Leaving open().");
+    return one;
+  };
+
+  // Sent again on a new connection to the SAME worker: its ticket, its
+  // `inFlight` and the barrier it was held for all belong to that worker,
+  // and a worker that has really gone refuses the new connection, which
+  // ends in the 502 below as it always did.
+  const sendAgain = function (err) {
+    log.debug("Entering sendAgain().");
+    if (clientGone || done) {
+      // The client left while the body was still arriving; its `close`
+      // handler has already let the request go.
+      log.debug("Leaving sendAgain(). Nobody is waiting.");
+      return;
+    }
+    if (!replay.kept) {
+      // The body went on arriving after the connection failed, and passed
+      // REPLAY_BODY_BYTES: there is no whole copy to send, so this is the
+      // failure it would have been.
+      gaveUp(err);
+      log.debug("Leaving sendAgain(). No copy of the body.");
+      return;
+    }
+    replayCount++;
+    warnSparingly('STS-WORKER-0042',
+                  'request_pool: the connection to worker ' + entry.pid +
+                  ' failed before any of ' + req.method + ' ' + req.url +
+                  ' reached it (' + err.message + '), so it was sent again ' +
+                  'on a new connection.');
+    const chunks = replay.chunks;
+    dropReplay();
+    failed = false;
+    upstream = open();
+    chunks.forEach(function (chunk) {
+      upstream.write(chunk, wroteOn(upstream));
+    });
+    upstream.end(wroteOn(upstream));
+    log.debug("Leaving sendAgain().");
+  };
+
+  const onUpstreamError = function (err) {
+    log.debug("Entering onUpstreamError().");
+    // Nothing more is written to a connection that has failed — see the
+    // body's `data` handler below.
+    failed = true;
+    if (!replayed && !answered && !delivered && !clientGone && replay.kept &&
+        !res.headersSent) {
+      replayed = true;
+      if (ended) {
+        sendAgain(err);
+      } else {
+        // The rest of the body is still arriving from the client; it is
+        // copied as it comes, and sent once it is all here.
+        req.once('end', function () {
+          sendAgain(err);
+        });
+        // A client paused for a drain that will now never come.
+        req.resume();
+      }
+      log.debug("Leaving onUpstreamError(). Sending it again.");
+      return;
+    }
+    gaveUp(err);
+    log.debug("Leaving onUpstreamError().");
+  };
+
+  // The request is not going to be answered by the worker: its ticket, the
+  // log line and the 502.
+  const gaveUp = function (err) {
+    log.debug("Entering gaveUp().");
     // `!answered` IS THE WHOLE OF THE ARGUMENT: the worker never ran the
     // handler (or died before a byte of the answer left it), so there is
     // nothing for it to announce and nothing a reader is owed.
@@ -4141,6 +4466,7 @@ function proxy(entry, req, res, atGeneration, ticket) {
       log.debug('request_pool: ' + req.method + ' ' + req.url + ' was ' +
                 'abandoned on worker ' + entry.pid + ' after its client ' +
                 'went away: ' + err.message);
+      log.debug("Leaving gaveUp(). The client had gone.");
       return;
     }
     log.error(errorCodes.tag('STS-WORKER-0030') +
@@ -4150,6 +4476,7 @@ function proxy(entry, req, res, atGeneration, ticket) {
       // Already streaming. There is no status left to send, so the connection
       // is destroyed — which is what a truncated answer has to look like.
       res.destroy();
+      log.debug("Leaving gaveUp(). Already streaming.");
       return;
     }
     errorCodes.mark(res, 'STS-WORKER-0030');
@@ -4158,7 +4485,10 @@ function proxy(entry, req, res, atGeneration, ticket) {
     res.send('The request worker handling this request went away (' +
              err.message + '). A worker holds no state of its own that this ' +
              'request needed, so it can simply be made again.\n');
-  });
+    log.debug("Leaving gaveUp().");
+  };
+
+  upstream = open();
 
   // -------------------------------------------------------------------------
   // A LARGE BODY'S HEADERS GO TO THE WORKER BEFORE ITS FIRST BYTE (#215,
@@ -4178,8 +4508,44 @@ function proxy(entry, req, res, atGeneration, ticket) {
   if ((isFinite(declared) && declared > PROMPT_HEADERS_BYTES) ||
       (req.headers && req.headers['transfer-encoding'])) {
     upstream.flushHeaders();
+    // Written with no callback to say whether they arrived, so the worker
+    // may have them, and may already be answering: not sent again (#77).
+    dropReplay();
   }
-  req.pipe(upstream);
+  // -------------------------------------------------------------------------
+  // THE BODY IS WRITTEN HERE RATHER THAN PIPED (#77), because a pipe writes
+  // with no callback and the callback is the only thing that says a byte
+  // reached the worker. The pipe's back-pressure is kept: a write the
+  // connection cannot take yet pauses the client until it drains.
+  // -------------------------------------------------------------------------
+  req.on('data', function (chunk) {
+    if (replay.kept && !delivered) {
+      replay.bytes += chunk.length;
+      if (replay.bytes > REPLAY_BODY_BYTES) {
+        dropReplay();
+      } else {
+        replay.chunks.push(chunk);
+      }
+    }
+    // An early answer's drain (#215) and a failed connection take nothing
+    // more: the one stopped reading, the other cannot be written to.
+    if (detached || failed) {
+      return;
+    }
+    const writing = upstream;
+    if (!writing.write(chunk, wroteOn(writing))) {
+      req.pause();
+      writing.once('drain', function () {
+        req.resume();
+      });
+    }
+  });
+  req.on('end', function () {
+    ended = true;
+    if (!detached && !failed) {
+      upstream.end(wroteOn(upstream));
+    }
+  });
   req.on('aborted', function () {
     upstream.destroy();
     // THE CLIENT WENT AWAY. If the worker had already begun answering it will
@@ -4611,6 +4977,7 @@ function stats() {
     pools: POOLS.map(function (pool) {
       return { pool: pool, configured: size(pool),
                ready: readyWorkers(pool).length, gaveUp: givenUp[pool],
+               replaced: replaced[pool],
                affinities: affinities[pool].size,
                prefixes: pool === SURFACE_POOL ? surfacePrefixes() : [] };
     }),
@@ -4619,6 +4986,9 @@ function stats() {
     // THE BATCH LANE per pool: in flight, waiting, the cap, which workers are
     // in the lane, and how many were ever queued, refused or timed out.
     batch: batchStats(),
+    // Requests sent again because none of their bytes had reached the worker
+    // when its connection failed (#77, STS-WORKER-0042). See proxy().
+    replayed: replayCount,
     // THE BARRIER'S OWN BOOKKEEPING, reported because the failure it can have
     // is invisible from outside: a ticket nothing will ever clear makes this
     // service answer correctly and 2,000ms slower per read, for ever. See
@@ -4650,7 +5020,9 @@ function reset() {
   POOLS.forEach(function (pool) {
     givenUp[pool] = false;
     quickExits[pool] = 0;
+    replaced[pool] = 0;
   });
+  workerModule = WORKER_MODULE;
   stopped = false;
   starting = null;
   // AND THE BARRIER, because it is process-wide module state exactly as the
@@ -4766,5 +5138,13 @@ module.exports = {
   admitBatch: admitBatch,
   batchStats: batchStats,
   leastLoaded: leastLoaded,
+  // A DEAD WORKER'S REPLACEMENT (2026-09-26), for
+  // tests/request_worker_replacement.js: the decision, and — to drive the
+  // real fork() and reap() with a stub worker — the module a worker runs
+  // and fork() itself.
+  replacementFor: replacementFor,
+  useWorkerModule: useWorkerModule,
+  fork: fork,
+  workerTable: workerTable,
   PEER_AUTHORIZED_HEADER: PEER_AUTHORIZED_HEADER
 };

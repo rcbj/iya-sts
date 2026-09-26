@@ -67,6 +67,7 @@ type Json = any;
 // What this file needs of the logout family.
 interface LogoutFamily {
   terminate(key?: string, selection?: string[], opts?: Json): Json;
+  heldIds?(key?: string): string[];
 }
 
 interface AccountStateDeps {
@@ -189,6 +190,26 @@ class AccountState {
   // END EVERYTHING THE PERSON HOLDS — step 2 of the header. Answers what the
   // global logout answered, or why nothing could be ended here.
   // -------------------------------------------------------------------------
+  // -------------------------------------------------------------------------
+  // THE IDS OF WHAT A PERSON HOLDS NOW (#226), for an `endEverything()`
+  // later that must end only these — or null where no sign-out module is
+  // loaded in this process, which the caller reads as "cannot say".
+  // -------------------------------------------------------------------------
+  heldBy(who: string): string[] | null {
+    const { log, findLogout } = this.deps;
+    log.debug("Entering AccountState.heldBy(). who=" + who);
+    const logout = findLogout();
+    if (!logout || typeof logout.heldIds !== 'function') {
+      log.debug("Leaving AccountState.heldBy(). No logout family.");
+      return null;
+    }
+    const ids = logout.heldIds(this.keyOf(who));
+    log.debug("Leaving AccountState.heldBy(). " + ids.length + ".");
+    return ids;
+  }
+
+  // `opts.selection`, when given, is the ids to end (`heldBy()`), and
+  // nothing else; absent, EVERYTHING — a global logout.
   endEverything(who: string, opts?: Json): Json {
     const { log, findLogout, errorCodes } = this.deps;
     log.debug("Entering AccountState.endEverything(). who=" + who);
@@ -202,7 +223,8 @@ class AccountState {
     }
     let result: Json = null;
     try {
-      result = logout.terminate(this.keyOf(who), [], {
+      result = logout.terminate(this.keyOf(who),
+                                Array.isArray(o.selection) ? o.selection : [], {
         actor: o.actor || '', channel: o.channel || 'internal',
         by: o.by || 'the account was disabled by an administrator'
       });
@@ -403,6 +425,7 @@ export = {
   instanceOrigin: (): string => slot.origin(),
   isDisabled: slot.forward('isDisabled'),
   endEverything: slot.forward('endEverything'),
+  heldBy: slot.forward('heldBy'),
   setDisabled: slot.forward('setDisabled'),
   directoryChanged: slot.forward('directoryChanged')
 };

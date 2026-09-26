@@ -819,7 +819,12 @@ serviceState.start().then(function (both) {
                                      keyPem: tlsMaterial.privateKeyPem,
                                      chainPem: tlsMaterial.chainPem,
                                      trustAnchorPem:
-                                       tlsMaterial.trustAnchorPem });
+                                       tlsMaterial.trustAnchorPem,
+                                     // The other leaves the socket presents
+                                     // (#248), public like the chain.
+                                     extraCertPems: tlsServer
+                                       .presentedCertificatePems()
+                                       .slice(1) });
   // THE BBS PAIR IS NOT HANDED OVER HERE ANY MORE (2026-09-22, #49 P5): it is
   // a member of each realm's key set, so it reaches the workers in the key
   // sets the pool already sends (`keystore.sharedAll()`), and was made per
@@ -999,6 +1004,19 @@ if (useHttps) {
   // invisible: the far end sees a closed socket and this log said nothing.
   tlsServer.observeConnectionsOn(mainServer,
                                  'the main port (' + PORT + ')');
+  // THE LEAVES THIS PORT PRESENTS GO ON THIS NODE'S CLUSTER ROW (#248), and
+  // again whenever the listener is re-issued: the SAML identity provider's
+  // metadata publishes the back channel's certificate, and behind a balancer
+  // that is every live node's (`cluster/cluster.js`). A no-op outside a
+  // cluster — nothing reads the row. Required here, where it is first needed,
+  // like the listener's other late wiring.
+  const clusterMembership = require('./cluster/cluster');
+  clusterMembership.setListenerCertificates(
+    tlsServer.presentedCertificatePems());
+  tlsServer.onServerCertificateChange(function () {
+    clusterMembership.setListenerCertificates(
+      tlsServer.presentedCertificatePems());
+  });
   // THE CLIENT'S JA4 TLS FINGERPRINT (#62 P0, 2026-09-22), read off the
   // ClientHello before the TLS engine takes the socket — see
   // tls/client_hello.ts. Installed BEFORE the PROXY protocol below, so that

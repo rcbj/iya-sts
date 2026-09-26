@@ -755,10 +755,15 @@ async function main() {
   check('the confirmation method is cm:bearer for Browser/POST',
         textOf(assertionEl, 'ConfirmationMethod') === CM_BEARER,
         textOf(assertionEl, 'ConfirmationMethod'));
-  // The single-use policy: the assertion passed through the browser, so the
-  // relying party is told not to keep it.
-  check('a DoNotCacheCondition is present on the POST profile',
-        !!byLocal(assertionEl, 'DoNotCacheCondition'));
+  // The single-use policy (oasis-sstc-saml-bindings-1.1 section 4.1.2) is
+  // the RELYING PARTY's to keep, so a DoNotCacheCondition is optional: iya-sts
+  // sends none by default since #189 (saml11.doNotCacheCondition), because a
+  // stock Shibboleth SP refuses it. Either form is correct, which also keeps
+  // this job green against an sts pinned from before #189.
+  const doNotCache = byLocal(assertionEl, 'DoNotCacheCondition');
+  check('a DoNotCacheCondition, when present, sits in the Conditions',
+        !doNotCache || (doNotCache.parentNode &&
+                        doNotCache.parentNode.localName === 'Conditions'));
   check('there is a SubjectLocality recording where the browser was',
         !!byLocal(assertionEl, 'SubjectLocality'));
   check('there is an AuthenticationStatement',
@@ -775,7 +780,14 @@ async function main() {
         attrEls.length + ' attribute(s)');
   let sawMace = false;
   for (let i = 0; i < attrEls.length; i++) {
-    if ((attrEls[i].getAttribute('AttributeNamespace') || '').indexOf('urn:mace:dir') === 0) {
+    // Two spellings of the same urn:mace attribute: the namespace-and-name
+    // split sts sent before #189, and the whole URN under Shibboleth's URI
+    // namespace, which a stock Shibboleth attribute map reads (#189).
+    const ns = attrEls[i].getAttribute('AttributeNamespace') || '';
+    const name = attrEls[i].getAttribute('AttributeName') || '';
+    if (ns.indexOf('urn:mace:dir') === 0 ||
+        (ns === 'urn:mace:shibboleth:1.0:attributeNamespace:uri' &&
+         name.indexOf('urn:mace:dir:attribute-def:') === 0)) {
       sawMace = true;
     }
   }

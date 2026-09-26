@@ -214,16 +214,16 @@ async function theDowngradeIsRefused(t) {
   t.check(!stripped.ok, 'a leaf with ONLY the classical signature is ' +
           'refused, although that signature verifies: accepting it would ' +
           'make the post-quantum half optional (the downgrade)');
-  t.equal(errorCodes.codeOf(stripped), 'STS-PKI-0196',
-          'as STS-PKI-0196, the missing alternative signature');
+  t.equal(errorCodes.codeOf(stripped), 'STS-PKI-0202',
+          'as STS-PKI-0202, the missing alternative signature');
 
   const forged = await leafUnder(issuer, 'stranger');
   const wrong = await pki.verifyLeaf(REALM, forged, chain);
   t.check(!wrong.ok, 'a leaf whose alternative signature was made by a ' +
           'key that is NOT the issuer\'s is refused, although its classical ' +
           'signature verifies');
-  t.equal(errorCodes.codeOf(wrong), 'STS-PKI-0195',
-          'as STS-PKI-0195, the wrong alternative signature');
+  t.equal(errorCodes.codeOf(wrong), 'STS-PKI-0201',
+          'as STS-PKI-0201, the wrong alternative signature');
   log.debug("Leaving theDowngradeIsRefused().");
 }
 
@@ -294,7 +294,7 @@ async function anAlgorithmThatCannotSignIsRefused(t) {
   const refused = await pki.buildChain(REFUSED, { altKeyAlg: 'ml-kem-768' });
   t.check(!refused.ok, 'a build naming ML-KEM — a KEM, which cannot sign — ' +
           'is refused');
-  t.equal(errorCodes.codeOf(refused), 'STS-PKI-0194', 'as STS-PKI-0194');
+  t.equal(errorCodes.codeOf(refused), 'STS-PKI-0200', 'as STS-PKI-0200');
   t.check(!pki.hasChain(REFUSED), 'and nothing was stored');
   log.debug("Leaving anAlgorithmThatCannotSignIsRefused().");
 }

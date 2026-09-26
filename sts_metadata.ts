@@ -1206,7 +1206,8 @@ const SPECS: Spec[] = [
               '2026-08-24 in a <samlp:Response> of its own — THERE IS A WEB ' +
               'BROWSER SSO PROFILE NOW, at /saml2, and the three rows below ' +
               'cover its bindings, profiles and metadata. What is still ' +
-              'absent: no <samlp:AttributeQuery> is answered (assertions ' +
+              'absent: nothing — a <samlp:AttributeQuery> IS answered since ' +
+              '#189, at /saml2/aa, under a release policy (assertions ' +
               'ARE encrypted since 2026-08-27, and a service provider\'s ' +
               'AuthnRequest signature IS verified since 2026-09-17 — ' +
               'against its registered certificate, in every mode). A ' +
@@ -1259,10 +1260,16 @@ const SPECS: Spec[] = [
               'Logout (4.4), both directions, WITHOUT front-channel fan-out ' +
               '— an identity-provider-initiated logout NAMES the other ' +
               'service providers and builds a LogoutRequest for each rather ' +
-              'than firing them into frames it cannot observe. NOT here: ' +
-              'identity-provider-initiated SSO with an unsolicited Response, ' +
+              'than firing them into frames it cannot observe, and ending ' +
+              'the session a cookie-less (back-channel) LogoutRequest names ' +
+              'by its SessionIndex (#192); identity-provider-initiated SSO ' +
+              'with an unsolicited Response (4.1.5, /saml2/unsolicited, ' +
+              '#189); and the Assertion Query and Request profile\'s ' +
+              'attribute query (6, /saml2/aa, #189) about a subject the ' +
+              'asking service provider holds a live session for. NOT here: ' +
               'the ECP profile (4.2), Name Identifier Management (4.5), and ' +
-              'the Assertion Query and Request profile (6). As a SERVICE ' +
+              'the profile\'s AuthnQuery and AuthzDecisionQuery. As a ' +
+              'SERVICE ' +
               'PROVIDER of a federation partner (#167), Single Logout in ' +
               'both ' +
               'directions at /federation/slo/{id}: the partner\'s signed ' +
@@ -1285,7 +1292,9 @@ const SPECS: Spec[] = [
     url:
       'https://docs.oasis-open.org/security/saml/v2.0/saml-metadata-2.0-os.pdf',
     coverage: 'partial: a signed EntityDescriptor holding one ' +
-              'IDPSSODescriptor, and ONE PER SERVICE PROVIDER — a distinct ' +
+              'IDPSSODescriptor and, since #189, an ' +
+              'AttributeAuthorityDescriptor, and ONE PER SERVICE PROVIDER — ' +
+              'a distinct ' +
               'entityID and its own endpoints, which is what Okta and Ping ' +
               'publish, with WantAuthnRequestsSigned following what is ' +
               'enforced. In development it is minted for any entityID ' +
@@ -1727,6 +1736,39 @@ const SPECS: Spec[] = [
               'urn:openid:params:jwt:claim:auth_req_id and rt_hash; the ' +
               'section 4 metadata in discovery and registration. A push to ' +
               'a device is #164\'s.' },
+  { id: 'rfc8628', name: 'RFC 8628 — OAuth 2.0 Device Authorization Grant',
+    where: 'IETF',
+    url: 'https://www.rfc-editor.org/rfc/rfc8628',
+    coverage: 'full (#150, 2026-09-26), where oauth2.deviceAuthorization ' +
+              'is on (off by default): the device authorization endpoint ' +
+              'with client authentication as at the token endpoint, a ' +
+              'registered grant and the scope policy, an eight-letter user ' +
+              'code from a twenty-letter alphabet and ' +
+              'verification_uri_complete; the verification URI is the ' +
+              'person\'s /portal/device, where a code only brings up the ' +
+              'request — client and scopes — and approving is a second act ' +
+              '(section 5.4), with five wrong codes a session refused for ' +
+              'ten minutes (section 5.1); the device_code grant with every ' +
+              'section 3.5 error, slow_down growing the interval by five ' +
+              'seconds, one token response per approval claimed once for ' +
+              'the cluster, and the codes swept by the ' +
+              'oauth2.device-code-sweep job; the section 4 metadata. A DPoP ' +
+              'proof on the device request binds the device code to its ' +
+              'key.' },
+  { id: 'oidc-key-binding', name: 'OpenID Connect Key Binding 1.0',
+    where: 'OpenID Foundation',
+    url: 'https://openid.net/specs/openid-connect-key-binding-1_0.html',
+    coverage: 'full (#150, 2026-09-26), in every mode: the bound_key ' +
+              'scope, honoured with response_type=code and dpop_jkt only; ' +
+              'a DPoP proof at the token endpoint whose c_s256 is the ' +
+              'hash of the authorization or device code; an ID Token with ' +
+              'cnf.jwk and the JOSE header typ dpop+id_token; a refresh ' +
+              'held to the same key whether or not RFC 9449 bound the ' +
+              'refresh token; and section 7 — a bound ID Token presented ' +
+              'at token exchange (Native SSO included) only with a proof ' +
+              'from its key. ML-DSA-44, -65 and -87 keys are accepted, as ' +
+              'for any DPoP proof. An id_token_hint is a hint, not a ' +
+              'credential, and is not held to the key.' },
   { id: 'oidc-native-sso', name: 'OpenID Connect Native SSO for Mobile ' +
                                   'Apps 1.0',
     where: 'OpenID Foundation',
@@ -2213,6 +2255,35 @@ const SPECS: Spec[] = [
               'verified_claims (Identity Assurance section 6), and the ' +
               'Claims Provider role (this service\'s signed UserInfo serves ' +
               'another aggregator, which is the draft\'s CP side).' },
+  { id: 'oidc-enterprise', name: 'OpenID Connect Enterprise Extensions 1.0 ' +
+                                 '(draft 01)',
+    where: 'OpenID Foundation',
+    url: 'https://openid.net/specs/openid-connect-enterprise-extensions-1_0.html',
+    coverage: 'full (#148), in every mode. Section 2: session_expiry (the ' +
+              'session\'s absolute end, whenever a token is issued on a ' +
+              'session), tenant (the trust realm\'s id) and aud_sub (an ' +
+              'account id an administrator records per person per client, ' +
+              'console and /admin-api) in the ID Token and ' +
+              'claims_supported. Section 3: tenant refused as ' +
+              'invalid_request when it names another realm; domain_hint ' +
+              'sends the person to the federation relationship whose ' +
+              'fedHomeRealmDomain holds it. Section 4: the portal\'s ' +
+              'third-party-initiated login adds tenant, domain_hint and ' +
+              'target_link_uri. MISSING: an aud_sub learned from the client, ' +
+              'which arrives with OpenID Provider Commands (#151).' },
+  { id: 'oidc-ephemeral', name: 'OpenID Connect Ephemeral Subject ' +
+                                'Identifier (draft 03)',
+    where: 'OpenID Foundation',
+    url: 'https://openid.net/specs/openid-connect-ephemeral-subject-identifier-1_0.html',
+    coverage: 'full (#149), in every mode: subject_type ephemeral at ' +
+              'registration (DCR, the console, the management API) and in ' +
+              'subject_types_supported; 160 random bits per authentication ' +
+              'and client, the same for its ID Tokens, UserInfo, refresh ' +
+              'and Logout Token and never reused; a persisted per-realm ' +
+              'mapping that takes an id_token_hint back to the person and is ' +
+              'purged by a scheduler job once no token or session of that ' +
+              'authentication can remain; Shared Signals events to the ' +
+              'client\'s own stream name its ephemeral sub.' },
   { id: 'jarm', name: 'JWT Secured Authorization Response Mode for OAuth ' +
                      '2.0 (JARM)',
     where: 'OpenID Foundation',
@@ -3599,8 +3670,8 @@ const ENDPOINTS: EndpointEntry[] = [
           'every certificate this service issues resolves to. Ungated, and ' +
           'it has to be: a relying party fetches this before it has decided ' +
           'to trust anything. EVERY CERTIFICATE NAMES IT OVER PLAIN HTTP, on ' +
-          '`pki.httpPort`, a second listener that answers /pki/ and nothing ' +
-          'else — RFC 5280 section 8 says a CA SHOULD NOT write an https or ' +
+          '`pki.httpPort`, a second listener that answers /pki/ (and ' +
+          'SCEP, since #210) and nothing else — RFC 5280 section 8 says a CA SHOULD NOT write an https or ' +
           'ldaps URI into an extension, and RFC 5019 section 5 says an OCSP ' +
           'responder MUST answer plain HTTP. The main port answers these ' +
           'paths too.' },
@@ -4124,6 +4195,13 @@ const ENDPOINTS: EndpointEntry[] = [
           'ServiceProviderConfig ADVERTISES rather than against the express ' +
           'body parser\'s service-wide one, because a client reads a ' +
           'published limit as a promise.' },
+  { path: '/scim/v2/*', group: 'SCIM', name: 'Any other path under the base',
+    specs: ['rfc7644'],
+    what: 'A path under /scim/v2 that names no endpoint, answered 404 in the ' +
+          'SCIM Error schema (section 3.12) rather than by express as an ' +
+          'HTML page, so a client that mistyped a resource type gets a body ' +
+          'it can parse (#206). Registered after every endpoint above, per ' +
+          'method.' },
   { path: '/scim/v2/Me', group: 'SCIM', name: '/Me, the authenticated subject',
     specs: ['rfc7644', 'rfc7235'],
     what: 'Section 3.11\'s alias for the subject the request authenticated ' +
@@ -5580,6 +5658,14 @@ const ENDPOINTS: EndpointEntry[] = [
           'request shows its client, scopes and binding_message; an ' +
           'approval that asks for more than the session proved offers a ' +
           'stronger sign-in first.' },
+  { path: '/portal/device', group: 'User portal',
+    name: 'Sign in a device — RFC 8628\'s verification URI',
+    specs: ['rfc8628'],
+    effect: 'finds the device waiting with the code typed, shows its ' +
+            'client and scopes, and approves or denies it',
+    what: 'NON-SPEC page (#150): the verification URI. A code, typed or ' +
+          'prefilled, only brings the request up; approving is a second ' +
+          'act (section 5.4).' },
   { path: '/portal/devices', group: 'User portal',
     name: 'Your devices — ou=devices, and Native SSO',
     specs: ['oidc-native-sso'],
@@ -8808,7 +8894,10 @@ const ENDPOINTS: EndpointEntry[] = [
           'unsigned request is refused where ' +
           'saml2.requireSignedAuthnRequests (on in product) or the service ' +
           'provider\'s metadata requires a signature, and every request is ' +
-          'refused once that metadata has expired.' },
+          'refused once that metadata has expired. Since #190 a request is ' +
+          'also refused when its Destination is not this endpoint (or it is ' +
+          'signed and names none), its IssueInstant is not fresh, its ' +
+          'Version is not 2.0, or its ID has been answered before.' },
   { path: '/saml2/sso/:sp', group: 'SAML 2.0',
     name: 'Single Sign-On service for ONE service provider',
     specs: ['saml2', 'saml2-bindings', 'saml2-profiles', 'xmldsig'],
@@ -8819,6 +8908,46 @@ const ENDPOINTS: EndpointEntry[] = [
           'answer; the AuthnRequest\'s own Issuer decides who the assertion ' +
           'is for either way, so a request that disagrees with the path is ' +
           'answered for its Issuer.' },
+  { path: '/saml2/unsolicited', group: 'SAML 2.0',
+    name: 'Identity-provider-initiated sign-in',
+    specs: ['saml2', 'saml2-profiles', 'saml2-bindings', 'xmldsig'],
+    effect: 'starts a browser sign-on session, as the SSO service does',
+    what: 'An UNSOLICITED Response (saml-profiles-2.0-os section 4.1.5, ' +
+          '#189): providerId names the service provider (the path segment ' +
+          'may instead), shire one of its registered assertion consumer ' +
+          'services (the default otherwise), target the RelayState, and ' +
+          'binding post, simplesign or artifact (the endpoint\'s own ' +
+          'binding otherwise; never HTTP-Redirect). Signs the person in ' +
+          'through /authn/login when there is no session; the Response ' +
+          'and its assertion carry no InResponseTo. The service provider ' +
+          'must be registered in product, and saml2.unsolicitedSso turns ' +
+          'it off for a realm.' },
+  { path: '/saml2/unsolicited/:sp', group: 'SAML 2.0',
+    name: 'Identity-provider-initiated sign-in for ONE service provider',
+    specs: ['saml2', 'saml2-profiles'],
+    effect: 'the same, and it is the same endpoint',
+    what: 'In product, a 404 for a name nobody registered (#112). The path ' +
+          'segment names the service provider when providerId does not.' },
+  { path: '/saml2/aa', group: 'SAML 2.0', name: 'Attribute authority',
+    specs: ['saml2', 'saml2-bindings', 'saml2-profiles', 'xmldsig'],
+    what: 'POST a SOAP 1.1 envelope carrying a <samlp:AttributeQuery> ' +
+          '(the Assertion Query and Request profile, saml-profiles-2.0-os ' +
+          'section 6; #189) and get back a Response with an assertion ' +
+          'carrying the subject\'s attributes — signed, encrypted where ' +
+          'the service provider\'s sign-ins are, and holding no ' +
+          'AuthnStatement. A BACK CHANNEL with a release policy: the ' +
+          'caller is the service provider its Issuer names, authenticated ' +
+          'as the artifact resolver\'s caller is; the subject is one a ' +
+          'live session here gave that service provider, by the NameID ' +
+          'it was given (else UnknownPrincipal); the issuance policy is ' +
+          'asked; and what is released is what its sign-in released, ' +
+          'narrowed to the attributes the query names.' },
+  { path: '/saml2/aa/:sp', group: 'SAML 2.0',
+    name: 'Attribute authority for ONE service provider',
+    specs: ['saml2', 'saml2-bindings'],
+    what: 'In product, a 404 for a name nobody registered (#112). The ' +
+          'AttributeService the per-application metadata publishes, in an ' +
+          'AttributeAuthorityDescriptor of its own.' },
   { path: '/saml2/ars', group: 'SAML 2.0', name: 'Artifact Resolution Service',
     specs: ['saml2', 'saml2-bindings', 'saml2-profiles'],
     what: 'POST a SOAP 1.1 envelope carrying an ArtifactResolve and get one ' +
@@ -8853,7 +8982,11 @@ const ENDPOINTS: EndpointEntry[] = [
           'SingleLogoutService of the service provider\'s consumed ' +
           'metadata, else a declared one, else ' +
           'saml2.defaultSingleLogoutService — and is otherwise a GUESS, ' +
-          'said out loud.' },
+          'said out loud. A LogoutRequest arriving with NO cookie — a ' +
+          'service provider\'s back-channel POST — ends the session its ' +
+          'SessionIndex names when that session gave it that NameID ' +
+          '(#192). The LogoutRequests identity-provider-initiated logout ' +
+          'builds are signed on the Redirect binding\'s query string.' },
   { path: '/saml2/slo/:sp', group: 'SAML 2.0',
     name: 'Single Logout service for ONE service provider',
     specs: ['saml2', 'saml2-bindings', 'saml2-profiles'],
@@ -9225,6 +9358,7 @@ const ENDPOINTS: EndpointEntry[] = [
     name: 'Authorization ' +
       'endpoint',
     specs: ['rfc6749', 'oidc', 'rfc7636', 'rfc9396', 'rfc9207',
+            'oidc-enterprise', 'oidc-key-binding',
             'rfc9700', 'rfc9101', 'rfc9126', 'rfc9470',
             'oauth-multiple-response-types', 'jarm', 'fapi1-advanced'],
     effect: 'needs ' +
@@ -9683,9 +9817,11 @@ const ENDPOINTS: EndpointEntry[] = [
   { path: '/oauth2/token', group: 'OAuth 2.0 / OIDC', name: 'Token endpoint',
     specs: ['rfc6749', 'oidc', 'rfc8693', 'rfc9396', 'oid4vci', 'rfc9449',
             'rfc7800', 'rfc9700', 'oidc-native-sso', 'oidc-ciba',
+            'rfc8628', 'oidc-key-binding',
             'rfc8705', 'rfc8707', 'rfc7523', 'rfc7522', 'rfc9068'],
     what: 'authorization_code, refresh_token, client_credentials, password, ' +
-          'token-exchange, and OID4VCI\'s pre-authorized_code with tx_code ' +
+          'token-exchange, RFC 8628\'s device_code (#150), and OID4VCI\'s ' +
+          'pre-authorized_code with tx_code ' +
           'enforcement. An RFC 8693 exchange can come back with a REFRESH ' +
           'TOKEN beside the exchanged access token — an ordinary one of this ' +
           'service, redeemable at the refresh grant and bound and rotated ' +
@@ -9903,7 +10039,7 @@ const ENDPOINTS: EndpointEntry[] = [
   { path: '/oauth2/userinfo', group: 'OAuth 2.0 / OIDC', name: 'UserInfo ' +
       'endpoint',
     specs: ['oidc', 'oidc-ida-claims', 'oidc-ida', 'rfc6750', 'rfc9449',
-            'rfc7591',
+            'rfc7591', 'oidc-ephemeral',
             'rfc8705', 'rfc8707',
             'rfc9068', 'rfc9470'],
     effect: 'answers 401 with a WWW-Authenticate challenge when followed ' +
@@ -10038,6 +10174,12 @@ const ENDPOINTS: EndpointEntry[] = [
     specs: ['oidc-claims-aggregation'],
     what: 'add-provider, update-provider, remove-provider and revoke-link: ' +
           'the console\'s four acts.' },
+  { path: '/oauth2/device_authorization', group: 'OAuth 2.0 / OIDC',
+    name: 'Device Authorization Endpoint',
+    specs: ['rfc8628', 'oidc-key-binding'],
+    what: 'RFC 8628 section 3.1 (#150): a device with no usable browser ' +
+          'asks for a device_code and a user_code, and the person approves ' +
+          'on /portal/device. 404 where oauth2.deviceAuthorization is off.' },
   { path: '/oauth2/bc-authorize', group: 'OAuth 2.0 / OIDC',
     name: 'Backchannel Authentication Endpoint (CIBA)',
     specs: ['oidc-ciba', 'fapi-ciba', 'oauth-grant-management'],
@@ -10606,7 +10748,11 @@ const ENDPOINTS: EndpointEntry[] = [
           'requester and encrypted to the RA; the reply is a CertRep signed ' +
           'by the RA. Refusals after the message is read are CertRep FAILURE ' +
           'with a failInfo; not refused over plain HTTP in either mode, ' +
-          'because the security is the CMS envelope (RFC 8894 section 2.1).' },
+          'because the security is the CMS envelope (RFC 8894 section 2.1) ' +
+          '— and served on the plain-HTTP listener (`pki.httpPort`) as well ' +
+          'as the main port, since sscep and most device firmware speak no ' +
+          'TLS (#210). A POST is application/x-pki-message, or ' +
+          'application/octet-stream as micromdm\'s client sends it (#211).' },
   { path: '/enroll/scep/pkiclient.exe', group: 'SCEP',
     name: 'The SCEP server (CGI name)', specs: ['rfc8894'],
     effect: 'as /enroll/scep',
@@ -10693,7 +10839,7 @@ const PROTOCOLS: Protocol[] = [
     specs: ['rfc6749', 'oidc', 'rfc8414', 'rfc9700', 'oauth21',
             'oidc-session', 'oidc-ida-claims', 'oidc-ida', 'oidc-native-sso',
             'oidc-ciba', 'fapi-ciba', 'oauth-grant-management',
-            'oidc-claims-aggregation'],
+            'oidc-claims-aggregation', 'oidc-enterprise', 'oidc-ephemeral'],
     what: 'A mock authorization server and OpenID Provider: all five grants, ' +
           'PKCE, DPoP, introspection, revocation, dynamic registration, ' +
           'UserInfo and RP-initiated logout, with as many named ' +

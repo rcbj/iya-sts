@@ -569,6 +569,11 @@ const NAV = [
       // credential on their own entry. Drawn by `portal_ciba.ts`.
       { path: BASE + '/ciba', label: 'Sign-in requests',
         heading: 'Sign-in requests' },
+      // SIGN IN A DEVICE (#150, 2026-09-26), for CIBA's reason: the code a
+      // television or a command line shows is typed here, and an approval
+      // signs this person in on it (RFC 8628). Drawn by `portal_device.ts`.
+      { path: BASE + '/device', label: 'Sign in a device',
+        heading: 'Sign in a device' },
       // CONNECTED CLAIM SOURCES (#147, 2026-09-24), in this section for the
       // same reason: a link hands this service a token at another provider
       // that vouches for this person. Drawn by `portal_claim_sources.ts`.
@@ -3915,7 +3920,13 @@ class Portal {
   // 4's `iss` (this realm's issuer, which the relying party must know and
   // must check) and `login_hint` (the person looking at the page, who chose
   // to click). The relying party then sends an ordinary authorization request
-  // here. `target_link_uri` is not sent — this page has no deep link to name.
+  // here.
+  //
+  // AND ENTERPRISE EXTENSIONS SECTION 4 (#148): `tenant` (this realm's id),
+  // `domain_hint` (the realm's DNS domain, the domain of the person's
+  // account here) and `target_link_uri` — the application's registered home
+  // page, where it registered an https one, since this page has no deeper
+  // link to name.
   // ---------------------------------------------------------------------------
   private initiateLoginLink(row, issuer, username) {
     const self = this;
@@ -3928,6 +3939,14 @@ class Portal {
     const url = new URL(row.initiateLogin);
     url.searchParams.set('iss', issuer);
     url.searchParams.set('login_hint', username);
+    url.searchParams.set('tenant', String(realms.current().id));
+    const domain = String(realms.domainOf(realms.current()) || '');
+    if (domain) {
+      url.searchParams.set('domain_hint', domain);
+    }
+    if (/^https:\/\//i.test(String(row.homePage || ''))) {
+      url.searchParams.set('target_link_uri', String(row.homePage));
+    }
     log.debug("Leaving Portal.initiateLoginLink().");
     return '<a class="launch" rel="noopener" href="' +
       self.esc(url.toString()) + '">Sign in</a>';
@@ -6303,6 +6322,7 @@ const portalSelfIssued = require('./portal_self_issued');
 const portalDevices = require('./portal_devices');
 // /portal/ciba (#131), the same arrangement, registered after that.
 const portalCiba = require('./portal_ciba');
+const portalDevice = require('./portal_device');
 const portalClaimSources = require('./portal_claim_sources');
 
 // Standalone, build the default now, as loading this module always did.
@@ -6430,6 +6450,19 @@ export = {
       audit: audit, errorCodes: errorCodes, config: config
     });
     portalCiba.register({
+      app: target, BASE: BASE, log: helpers.log,
+      esc: slot.forward('esc'),
+      shell: slot.forward('shell'),
+      send: slot.forward('send'),
+      requireSignIn: slot.forward('requireSignIn'),
+      refuseShape: slot.forward('refuseShape'),
+      innerCode: slot.forward('innerCode'),
+      baseUrlOf: helpers.baseUrlOf, parseBody: helpers.parseBody,
+      validation: validation, websecurity: websecurity,
+      accessGate: accessGate,
+      audit: audit, errorCodes: errorCodes, config: config
+    });
+    portalDevice.register({
       app: target, BASE: BASE, log: helpers.log,
       esc: slot.forward('esc'),
       shell: slot.forward('shell'),

@@ -1,0 +1,111 @@
+<!--
+  THE SHIBBOLETH SP 3 PEER'S CONFIGURATION (#189). The package's own
+  shibboleth2.xml with what an interoperability run needs and nothing else:
+
+  * NO entityID on <SSO>: the job names the identity provider on every
+    /Shibboleth.sso/Login with ?entityID=, because this service publishes a
+    separate identity provider (and entityID) per service provider, and the
+    SAML 1.1 profile has one of its own.
+  * TWO metadata files the control server writes (control.py), the per-SP SAML
+    2.0 document and the per-relying-party SAML 1.1 one, exactly as the
+    service published them.
+  * NO TLS ANCHOR (#248): the SOAP back channel (artifact resolution and
+    the attribute query) is authenticated by the ExplicitKey trust engine
+    against the metadata alone, because the identity provider's metadata
+    publishes the certificate its listener presents. Until #248 a StaticPKIX
+    engine with the service's Root, handed over by the job, stood beside it;
+    it is gone so that metadata is the only thing the SP can trust it by.
+  * signing="true": every AuthnRequest, LogoutRequest, ArtifactResolve and
+    AttributeQuery is signed, which is what a product-mode realm requires.
+  * handlerSSL="false" and http cookies: the peers speak plain HTTP on the
+    suite's private bridge. The front door's TLS is not what is under test;
+    every message to and from the service is.
+  * The AttributeResolver handler at /AttrQuery, so the job can ask this SP
+    to run a SAML 2.0 or SAML 1.1 attribute query for a NameID it names.
+-->
+<SPConfig xmlns="urn:mace:shibboleth:3.0:native:sp:config"
+    xmlns:conf="urn:mace:shibboleth:3.0:native:sp:config"
+    clockSkew="180">
+
+    <!-- plugins.so carries the AttributeResolver handler (/AttrQuery). -->
+    <OutOfProcess tranLogFormat="%u|%s|%IDP|%i|%ac|%t|%attr|%n|%b|%E|%S|%SS|%L|%UA|%a">
+        <Extensions>
+            <Library path="plugins.so" fatal="true"/>
+        </Extensions>
+    </OutOfProcess>
+    <InProcess>
+        <Extensions>
+            <Library path="plugins-lite.so" fatal="true"/>
+        </Extensions>
+    </InProcess>
+
+    <ApplicationDefaults entityID="@ENTITY_ID@"
+        REMOTE_USER="eppn subject-id pairwise-id persistent-id"
+        signing="true" encryption="false"
+        cipherSuites="DEFAULT:!EXP:!LOW:!aNULL:!eNULL:!DES:!IDEA:!SEED:!RC4:!3DES:!kRSA:!SSLv2:!SSLv3:!TLSv1:!TLSv1.1">
+
+        <Sessions lifetime="28800" timeout="3600" relayState="ss:mem"
+                  checkAddress="false" handlerSSL="false" cookieProps="http"
+                  redirectLimit="none">
+
+            <SSO>SAML2 SAML1</SSO>
+
+
+            <Logout>SAML2 Local</Logout>
+
+            <!-- The same initiator, sending the AuthnRequest on HTTP-POST. -->
+            <SessionInitiator type="Chaining" Location="/LoginPost" id="LoginPost">
+                <SessionInitiator type="SAML2" template="bindingTemplate.html"
+                    outgoingBindings="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST"/>
+            </SessionInitiator>
+
+            <!--
+              SAML 1.1 alone, so a SAML 1.1 sign-in is not first offered to
+              the SAML 2.0 initiator, which warns about an acsIndex that is
+              not SAML 2.0's before it declines.
+            -->
+            <SessionInitiator type="Chaining" Location="/LoginShib1" id="LoginShib1">
+                <SessionInitiator type="Shib1"/>
+            </SessionInitiator>
+
+            <LogoutInitiator type="Admin" Location="/Logout/Admin" acl="127.0.0.1 ::1" />
+
+            <Handler type="MetadataGenerator" Location="/Metadata" signing="false"/>
+            <Handler type="Status" Location="/Status" acl="0.0.0.0/0 ::/0"/>
+            <Handler type="Session" Location="/Session" showAttributeValues="true"
+                contentType="application/json"/>
+            <Handler type="AttributeResolver" Location="/AttrQuery"
+                acl="0.0.0.0/0 ::/0"/>
+        </Sessions>
+
+        <Errors supportContact="root@localhost"
+            helpLocation="/about.html"
+            styleSheet="/shibboleth-sp/main.css"/>
+
+        <MetadataProvider type="Chaining">
+            <MetadataProvider type="XML" validate="true"
+                path="/etc/shibboleth/peer/idp-saml2.xml"/>
+            <MetadataProvider type="XML" validate="true"
+                path="/etc/shibboleth/peer/idp-saml11.xml"/>
+        </MetadataProvider>
+
+        <TrustEngine type="ExplicitKey"/>
+
+        <AttributeExtractor type="XML" validate="true" reloadChanges="false" path="attribute-map.xml"/>
+
+        <AttributeResolver type="Query" subjectMatch="true"/>
+
+        <AttributeFilter type="XML" validate="true" path="attribute-policy.xml"/>
+
+        <CredentialResolver type="File" use="signing"
+            key="sp-signing-key.pem" certificate="sp-signing-cert.pem"/>
+        <CredentialResolver type="File" use="encryption"
+            key="sp-encrypt-key.pem" certificate="sp-encrypt-cert.pem"/>
+
+    </ApplicationDefaults>
+
+    <SecurityPolicyProvider type="XML" validate="true" path="security-policy.xml"/>
+
+    <ProtocolProvider type="XML" validate="true" reloadChanges="false" path="protocols.xml"/>
+
+</SPConfig>

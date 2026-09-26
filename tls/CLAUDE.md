@@ -29,7 +29,17 @@ A LIBRARY with six routes on the main app. Nothing here binds anything.
   through `trustClientCertificatesOn()`. It starts EMPTY, and every section
   below about it is unchanged by the deletion.
 * **The sighting.** `observeConnectionsOn()`, which `server.js` installs on the
-  main port.
+  main port — and since #201 the first thing it does with a connection whose
+  chain OpenSSL verified is `holdToPathRules()`: that chain, held to
+  `pki.pathRuleProblem()` (`pki.peerChainProblem()`), and reported UNVERIFIED —
+  `authorized` false, `authorizationError` naming the rule, `STS-PKI-0198` logged
+  — where it breaks them. x509-limbo found OpenSSL accepting such chains (a
+  malformed name under a name constraint among them). It runs on
+  `secureConnection`, a turn before node's HTTP server parses the first request,
+  so every reader of `socket.authorized` — sign-in, RFC 8705, the XACML gate,
+  SCIM, the request pool's forwarded flag — sees the answer. A demoted
+  certificate still binds a token, as any unverified one does (RFC 8705 section
+  3).
 * **The JA4 reader** (`client_hello.ts`, #62 P0) — see *THE CLIENT'S JA4
   FINGERPRINT*, below.
 * **Six routes**, all on the main app and all visible to
@@ -931,6 +941,24 @@ the branch AGAIN, leaving two Intermediates of one name and one CRL address
 chain comes from what `issueUnder()` returns, and `common/pki.js`'s
 `repairBranch()` re-asks "is it stale?" inside the build queue. **An observer
 that ISSUES must not assume the realm branches are current when it runs.**
+
+## WHAT THE SOCKET PRESENTS, ASKED FROM ANY PROCESS (2026-09-26, #248)
+
+The SAML identity provider's metadata publishes the certificate its back
+channel presents (`saml/listener_keys.ts`), which needs every LEAF the main
+port presents — with `tls.certificateAlgorithms` naming two, OpenSSL picks
+per client — as the SOCKET presents them. `presentedCertificatePems()` is
+that answer: in a process that owns the socket, every entry of
+`SERVER_CERTIFICATES`; in a handed-in process, the first leaf it was handed
+and **the other leaves handed with it**. Until #248 only the first travelled:
+a worker's other entries were certificates the worker made for itself and
+nothing presents, so a worker would have published an ML-DSA leaf nobody
+serves. The others now travel beside the chain — `STS_TLS_SERVER_EXTRA_CERTS_PEM`
+at the fork (concatenated, public, the chain's argument) and
+`extraCertPems` in every re-issue's `serverCertificateBundle()` — and a
+worker adopts them with the rest. Public material only; no key moves that
+did not already. **In a cluster each node's leaves ride on its membership
+row** (`cluster/CLAUDE.md`), because no node can ask another's socket.
 
 ## THE TRUSTSTORE IS A TEST CONTROL ONLY IN DEVELOPMENT MODE (2026-09-12)
 

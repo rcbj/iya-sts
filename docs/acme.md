@@ -124,6 +124,33 @@ no challenge. certbot names no profile, so the order gets `acme.defaultProfile`
 (`tls-client` unless changed): **set it to `tls-server`** for a realm whose
 clients are web servers, or use a client that names a profile.
 
+`--required-profile` or `--preferred-profile` (certbot 4.0 and later) names a
+profile; `certbot renew` keeps it, consults `renewalInfo` (RFC 9773), and
+reissues the same names. certbot has **no key rollover** (RFC 8555 section
+7.3.5) at all; lego below does. The suite drives certbot 5.8.0 through
+registration, issuance, renewal, revocation, `update_account` and
+`unregister` (`tests/vendored/sts_acme_certbot.js`).
+
+### lego
+
+```bash
+export LEGO_CA_CERTIFICATES=sts-root.pem
+lego accounts register --server https://host:8081/realm/acme-demo/enroll/acme/directory \
+  --accept-tos -m you@example.com --eab --eab.kid eab-a-… --eab.hmac <hmacKey>
+lego run --server https://host:8081/realm/acme-demo/enroll/acme/directory \
+  -m you@example.com --profile tls-server -d web1.example.com --http
+```
+
+lego logs that the authorization is already valid and skips the challenge; it
+still wants a solver named (`--http`), which binds nothing. It consults
+`renewalInfo` before a renewal, `accounts keyrollover` changes the account key,
+and `certificates revoke --reason N` revokes. `--not-after` and `--not-before`
+are refused (`malformed`): the realm sets a certificate's lifetime. A
+registration refused once leaves lego holding a key with no account, and it
+then asks for the account BY that key (`onlyReturnExisting`) rather than
+registering — use a fresh `--path`. The suite drives lego v5.5.2
+(`tests/vendored/sts_acme_lego.js`).
+
 ### acme.sh
 
 ```bash
@@ -152,7 +179,11 @@ certificate it `replaces` (RFC 9773); the replaced certificate is not revoked.
 **The CSR must name exactly the order's identifiers** (section 7.4): every
 subjectAltName and the common name must each be one of them, and all of them
 must be named. The certificate is built from the order and the entry, not
-copied from the CSR: its subject is `CN=<entry>, O=<organisation>`, it always
+copied from the CSR: its subject is `CN=<entry>, O=<organisation>` — or, when
+it names a host, `CN=<the first dns or ip identifier>, UID=<entry>,
+O=<organisation>`, because certbot and lego read a certificate's names back as
+its CN plus its dNSNames and every renewal asked for the entry's name as a host
+until this was so (#207) — it always
 carries the entry's `urn:sts:person:<name>` or `urn:sts:application:<id>` URI,
 and its key usages are the profile's.
 

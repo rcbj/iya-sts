@@ -169,6 +169,10 @@ import krb5Principals = require('../kerberos/krb5_principals');
 // Stored Kerberos keys (2026-09-12), a plain require for the reason
 // `admin_actions.ts` gives beside its own.
 import krb5PersonKeys = require('../kerberos/krb5_person_keys');
+// A PERSON'S ATTRIBUTE EDITOR (#228): which attributes an administrator may
+// change, with what the entry holds. A library whose directory arrives
+// through its own slot, so this require loads no route module.
+import personEditor = require('../ldap/person_editor');
 import oauth2 = require('../oauth-oidc/oauth2');
 // The recent back-channel logout deliveries (2026-09-17, #36), which the
 // sign-out page lists so a delivery queued as `pending` can be seen to have
@@ -443,6 +447,7 @@ interface AdminViewsDeps {
   delegationPolicy: typeof delegationPolicy;
   krb5Principals: typeof krb5Principals;
   krb5PersonKeys: typeof krb5PersonKeys;
+  personEditor: typeof personEditor;
   // The krbtgt rotation (#169), lazily, for `admin_actions.ts`'s reason.
   krbtgtRotation: () => any;
   oauth2: typeof oauth2;
@@ -525,6 +530,7 @@ class AdminViews {
       delegationPolicy: delegationPolicy,
       krb5Principals: krb5Principals,
       krb5PersonKeys: krb5PersonKeys,
+      personEditor: personEditor,
       krbtgtRotation: function () {
         return require('../kerberos/krb5_krbtgt_rotation');
       },
@@ -6676,6 +6682,10 @@ class AdminViews {
     // PUBLIC half of their keys — never a key. Read once, for the page's
     // Kerberos section and this reply's `kerberos`.
     const kerberos = this.deps.krb5PersonKeys.personKerberosState(key);
+    // WHAT AN ADMINISTRATOR MAY CHANGE ON THEIR ENTRY (#228): every editable
+    // attribute with the values it holds, and the schema's attributes that are
+    // withheld with the door to use instead. Null where there is no entry.
+    const attributeEditor = this.deps.personEditor.editorFor(key);
     log.debug("Leaving AdminViews.userDetailJson().");
     return {
       detail: detail, row: row, sessionRows: sessionRows, live: live,
@@ -6690,6 +6700,7 @@ class AdminViews {
       endedPage: endedPage, sessionlessPage: sessionlessPage, artifactPage:
                                                                 artifactPage,
       federationLinkPage: federationLinkPage, kerberos: kerberos,
+      attributeEditor: attributeEditor,
       json: (function () {
       return {
           user: row,
@@ -6745,7 +6756,11 @@ class AdminViews {
           // Their Kerberos principal and the public half of their keys
           // (#59). A keytab is made with POST
           // /admin-api/kerberos/principals/reset-person-keytab.
-          kerberos: kerberos
+          kerberos: kerberos,
+          // What POST /admin-api/users/set-attribute, /add-attribute and
+          // /remove-attribute may change on their entry (#228), and what
+          // they hold now; null where the directory holds no entry for them.
+          attributeEditor: attributeEditor
       };
       }())
     };

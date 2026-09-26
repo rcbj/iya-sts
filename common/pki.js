@@ -539,7 +539,7 @@ function alternativeKeyAlgFrom(asked) {
                       'authority here can hold. It must be a post-quantum ' +
                       'signature algorithm — ' + known.join(', ') + ' — or ' +
                       '"none" for a classical-only authority.'] },
-                           'STS-PKI-0194');
+                           'STS-PKI-0200');
   }
   log.debug("Leaving alternativeKeyAlgFrom(). " + id);
   return { ok: true, altKeyAlg: id };
@@ -2422,6 +2422,1388 @@ async function issueSigningKeyPair(realmId, opts) {
 }
 
 // ===========================================================================
+// RFC 5280 SECTION 6.1, ONCE: THE RULES EVERY PATH HERE IS HELD TO
+// (#201, 2026-09-24).
+//
+// **UNTIL THIS DATE THERE WERE THREE SETS OF RULES AND NONE OF THEM WAS
+// WHOLE.** `authorityProblem()` below held a path to cA, keyCertSign and
+// pathLenConstraint and to nothing else — so `verifyLeaf()`,
+// `verifySignerChain()` and `registerCertificate()` accepted a path through a
+// CA whose nameConstraints EXCLUDED the leaf, and a certificate carrying a
+// critical extension nothing here implements. `verifyPathToAnchors()` refused
+// both, but refused EVERY path through a nameConstraints CA, built its path
+// greedily (the first issuer whose NAME matched, never the next one), and
+// counted self-issued certificates against a pathLenConstraint that RFC 5280
+// section 6.1.4(l) says they do not count against. C2SP x509-limbo, driven
+// through all of them by `tests/x509_limbo.js`, is what found each of those.
+//
+// So the certificate FACTS are read once (`pathFactsOf()`), and one function
+// (`pathRuleProblem()`) answers, for a path leaf first and anchor last, every
+// section 6.1 question that is not a signature or a clock:
+//
+//   * every certificate: parses; no extension twice (4.2); no critical
+//     extension this module does not implement (4.2), unless the caller
+//     names it; a subjectAltName that parses and is critical when the
+//     subject is empty (4.2.1.6); an ML-DSA key whose keyUsage names only
+//     what RFC 9881 section 5 permits;
+//   * every certificate above the leaf: cA=TRUE (6.1.4(k)), keyCertSign where
+//     a keyUsage is present (6.1.4(n)), a pathLenConstraint not exceeded by
+//     the NON-SELF-ISSUED certificates below it (6.1.4(l), (m)), a non-empty
+//     subject (4.1.2.6);
+//   * the leaf: keyCertSign only on a CA (4.2.1.9), nameConstraints only on a
+//     CA (4.2.1.10);
+//   * NAME CONSTRAINTS (4.2.1.10, 6.1.3(b), (c), 6.1.4(g)), for dNSName,
+//     rfc822Name, uniformResourceIdentifier, iPAddress and directoryName —
+//     every name of every certificate below a constraining CA, the leaf
+//     always and a self-issued intermediate never, against each CA's
+//     permitted and excluded subtrees. A constraint in a form this module
+//     does not evaluate (otherName, x400Address, ediPartyName, registeredID,
+//     or a subtree with a minimum or maximum) refuses a certificate that
+//     carries a name of that form, which is what 4.2.1.10 requires of an
+//     application that cannot process it. A malformed extension is refused.
+//   * CERTIFICATE POLICIES (6.1.3(d)-(f), 6.1.4(a)-(j), 6.1.5), whole: the
+//     valid_policy_tree, explicit_policy, inhibit_anyPolicy and
+//     policy_mapping, with certificatePolicies, policyMappings,
+//     policyConstraints and inhibitAnyPolicy read and so understood when
+//     critical (`pathPolicyOutcome()`; NIST PKITS section 4.8-4.12 holds it).
+//
+// What it does NOT answer is argued where it is not: a signature and the
+// issuer-to-subject link are the path BUILDER's (a path is only ever made of
+// certificates that verified each other); the clock is `pathValidityProblem()`;
+// revocation is `revocation_status.js`'s; the purpose of the leaf
+// (extKeyUsage, a digitalSignature bit) is each CALLER's, because an
+// attestation EK and a JWS signing key are asked different things.
+//
+// Everything here is SYNCHRONOUS, pkijs and asn1js only, so a synchronous door
+// (`verifyIssuedDirectly()`) asks the same rules as the asynchronous ones.
+// ===========================================================================
+
+const PATH_EXTENSION_OIDS = {
+  subjectKeyIdentifier: '2.5.29.14',
+  keyUsage: '2.5.29.15',
+  subjectAltName: '2.5.29.17',
+  basicConstraints: '2.5.29.19',
+  nameConstraints: '2.5.29.30',
+  authorityKeyIdentifier: '2.5.29.35',
+  extKeyUsage: '2.5.29.37',
+  // RFC 5280 section 6.1's policy processing (#201): read, and so understood
+  // when critical.
+  certificatePolicies: '2.5.29.32',
+  policyMappings: '2.5.29.33',
+  policyConstraints: '2.5.29.36',
+  inhibitAnyPolicy: '2.5.29.54'
+};
+const ANY_POLICY = '2.5.29.32.0';
+// The most nodes one path's valid_policy_tree may hold. A tree grows with
+// the product of the policies and mappings along the path, and an unbounded
+// one is a denial of service (CVE-2023-0464 in OpenSSL); a path past it is
+// refused rather than evaluated.
+const PATH_MAX_POLICY_NODES = 10000;
+// Every extension this module reads and so may accept marked critical. The
+// purpose extensions (keyUsage, extKeyUsage) are the caller's to ask about,
+// and understanding them is what lets a caller ask.
+const PATH_UNDERSTOOD_CRITICAL = Object.keys(PATH_EXTENSION_OIDS)
+  .map(function (name) { return PATH_EXTENSION_OIDS[name]; });
+const PATH_KEY_USAGE_BITS = ['digitalSignature', 'nonRepudiation',
+                             'keyEncipherment', 'dataEncipherment',
+                             'keyAgreement', 'keyCertSign', 'cRLSign',
+                             'encipherOnly', 'decipherOnly'];
+const PATH_EMAIL_ADDRESS_OID = '1.2.840.113549.1.9.1';
+// RFC 9881 section 2's three ML-DSA parameter sets, and section 5's rule for
+// the keyUsage a certificate carrying one of them may state.
+const PATH_ML_DSA_OIDS = ['2.16.840.1.101.3.4.3.17',
+                          '2.16.840.1.101.3.4.3.18',
+                          '2.16.840.1.101.3.4.3.19'];
+const PATH_ML_DSA_USAGES = ['digitalSignature', 'nonRepudiation',
+                            'keyCertSign', 'cRLSign'];
+// Signature algorithms whose hash is broken, by the OID a certificate's
+// signatureAlgorithm names: MD2 and MD5 are refused on every path; SHA-1 on
+// every path but this service's own hierarchy in development, where
+// `pki.signatureAlgorithm` `sha1-*` may have built it (#181) —
+// `opts.allowSha1`, which only `verifyLeaf()` passes. RSASSA-PSS names its
+// hash in its parameters, SHA-1 when they name none (RFC 4055 section 3.1).
+const PATH_MD_SIGNATURES = ['1.2.840.113549.1.1.2', '1.2.840.113549.1.1.4'];
+const PATH_SHA1_SIGNATURES = ['1.2.840.113549.1.1.5', '1.3.14.3.2.29',
+                              '1.2.840.10045.4.1', '1.2.840.10040.4.3'];
+const PATH_RSASSA_PSS = '1.2.840.113549.1.1.10';
+const PATH_SHA1 = '1.3.14.3.2.26';
+const PATH_EC_PUBLIC_KEY = '1.2.840.10045.2.1';
+// GeneralName's CHOICE tags (RFC 5280 section 4.2.1.6), and the forms this
+// module evaluates a name constraint in.
+const GENERAL_NAME_FORMS = { 0: 'otherName', 1: 'email', 2: 'dns',
+                             3: 'x400Address', 4: 'dn', 5: 'ediPartyName',
+                             6: 'uri', 7: 'ip', 8: 'registeredID' };
+const PATH_EVALUATED_FORMS = ['email', 'dns', 'uri', 'ip', 'dn'];
+// THE BUILDER'S BOUNDS. A path is at most this many certificates, and one
+// build checks at most this many signatures — Go's
+// `maxChainSignatureChecks` is 100; this is higher because a failed rule
+// check makes the builder try the next path rather than stop. x509-limbo's
+// `pathological::` cases are what these are held to.
+const PATH_MAX_LENGTH = 12;
+const PATH_MAX_SIGNATURES = 256;
+// And the name-constraint work one path may cost: names times subtrees,
+// summed over every constraining CA. OpenSSL's NAME_CHECK_MAX is the same
+// 2^20; a path past it is refused rather than evaluated, because what it
+// buys an attacker is CPU (x509-limbo `pathological::nc-dos-*`).
+const PATH_MAX_NAME_CHECKS = 1 << 20;
+
+// One DER value from bytes, refusing trailing bytes: an extension value that
+// is one value followed by something else is not the value it claims to be.
+function derValueOf(bytes) {
+  log.debug("Entering derValueOf().");
+  const view = new Uint8Array(bytes);
+  const parsed = asn1js.fromBER(view);
+  if (parsed.offset === -1 || parsed.offset !== view.byteLength) {
+    log.debug("Leaving derValueOf(). Not one DER value.");
+    throw new Error('not one DER value' +
+                    (parsed.result && parsed.result.error
+                      ? ' (' + parsed.result.error + ')' : ''));
+  }
+  log.debug("Leaving derValueOf().");
+  return parsed.result;
+}
+
+// The bytes of a primitive value as ASCII, or null when any byte is not
+// (an IA5String is seven-bit).
+function asciiOf(node) {
+  log.debug("Entering asciiOf().");
+  const bytes = Buffer.from(node.valueBlock.valueHexView || []);
+  for (let i = 0; i < bytes.length; i++) {
+    if (bytes[i] > 0x7e || bytes[i] < 0x20) {
+      log.debug("Leaving asciiOf(). Not printable ASCII.");
+      return null;
+    }
+  }
+  log.debug("Leaving asciiOf().");
+  return bytes.toString('latin1');
+}
+
+// A Name as a list of RDNs, each the sorted `oid=value` of its attributes
+// with a string value compared as RFC 5280 section 7.1 asks — case folded,
+// leading and trailing space removed, internal space collapsed — and any
+// other value by its DER. Two names are the same name when these lists are
+// equal; a directoryName constraint is a PREFIX of this list.
+function rdnsOfName(node) {
+  log.debug("Entering rdnsOfName().");
+  if (!(node instanceof asn1js.Sequence)) {
+    log.debug("Leaving rdnsOfName(). Not a Name.");
+    throw new Error('a Name is not a SEQUENCE');
+  }
+  // An EMPTY RDN (a SET with no attribute) is read as no RDN at all: the
+  // ASN.1 says SIZE (1..MAX), and pkijs writes one for an empty name — the
+  // Fulcio-shaped certificates the SPIFFE sigstore tests make, and a TPM
+  // attestation key's — so what it means is not in doubt.
+  const sets = node.valueBlock.value.filter(function (set) {
+    return !(set instanceof asn1js.Set) || set.valueBlock.value.length > 0;
+  });
+  const out = sets.map(function (set) {
+    if (!(set instanceof asn1js.Set)) {
+      throw new Error('a RelativeDistinguishedName is not a SET');
+    }
+    return set.valueBlock.value.map(function (atv) {
+      // asn1js declares a generic ValueBlock; a constructed one has `value`.
+      const block = /** @type {any} */ (atv.valueBlock);
+      const parts = block && block.value;
+      if (!parts || parts.length !== 2 ||
+          !(parts[0] instanceof asn1js.ObjectIdentifier)) {
+        throw new Error('an attribute is not a type and a value');
+      }
+      const value = parts[1];
+      const text = value instanceof asn1js.BaseStringBlock
+        ? String(value.getValue()).trim().replace(/\s+/g, ' ').toLowerCase()
+        : '#' + Buffer.from(value.toBER(false)).toString('hex');
+      return parts[0].getValue() + '=' + text;
+    }).sort().join('+');
+  });
+  log.debug("Leaving rdnsOfName(). " + out.length + " RDN(s).");
+  return out;
+}
+
+// The e-mail addresses a subject carries in the PKCS #9 emailAddress
+// attribute, which section 6.1.3(b) holds to rfc822Name constraints.
+function subjectEmailsOf(node) {
+  log.debug("Entering subjectEmailsOf().");
+  const out = [];
+  node.valueBlock.value.forEach(function (set) {
+    (set.valueBlock.value || []).forEach(function (atv) {
+      const parts = atv.valueBlock.value;
+      if (parts[0].getValue() === PATH_EMAIL_ADDRESS_OID &&
+          parts[1] instanceof asn1js.BaseStringBlock) {
+        out.push(String(parts[1].getValue()));
+      }
+    });
+  });
+  log.debug("Leaving subjectEmailsOf(). " + out.length + ".");
+  return out;
+}
+
+// One GeneralName: `{ form, value }` — a string for email, dns and uri (null
+// when not ASCII, which no name in those forms may be), the bytes for ip,
+// the RDN list for dn, and nothing for a form this module does not evaluate.
+function generalNameOf(node) {
+  log.debug("Entering generalNameOf().");
+  if (node.idBlock.tagClass !== 3) {
+    log.debug("Leaving generalNameOf(). Untagged.");
+    throw new Error('a GeneralName is not context-tagged');
+  }
+  const form = GENERAL_NAME_FORMS[node.idBlock.tagNumber];
+  if (!form) {
+    log.debug("Leaving generalNameOf(). Unknown tag.");
+    throw new Error('a GeneralName has tag ' + node.idBlock.tagNumber);
+  }
+  let value = null;
+  if (form === 'email' || form === 'dns' || form === 'uri') {
+    if (node.idBlock.isConstructed) {
+      throw new Error('a ' + form + ' GeneralName is constructed');
+    }
+    value = asciiOf(node);
+  } else if (form === 'ip') {
+    if (node.idBlock.isConstructed) {
+      throw new Error('an iPAddress GeneralName is constructed');
+    }
+    value = Buffer.from(node.valueBlock.valueHexView || []);
+  } else if (form === 'dn') {
+    const inner = node.valueBlock && node.valueBlock.value;
+    if (!inner || inner.length !== 1) {
+      throw new Error('a directoryName holds no single Name');
+    }
+    value = rdnsOfName(inner[0]);
+  }
+  log.debug("Leaving generalNameOf(). " + form);
+  return { form: form, value: value };
+}
+
+// GeneralNames ::= SEQUENCE SIZE (1..MAX) OF GeneralName.
+function generalNamesOf(bytes) {
+  log.debug("Entering generalNamesOf().");
+  const node = derValueOf(bytes);
+  if (!(node instanceof asn1js.Sequence) || !node.valueBlock.value.length) {
+    log.debug("Leaving generalNamesOf(). Not a non-empty SEQUENCE.");
+    throw new Error('GeneralNames is not a non-empty SEQUENCE');
+  }
+  const out = node.valueBlock.value.map(generalNameOf);
+  log.debug("Leaving generalNamesOf(). " + out.length + ".");
+  return out;
+}
+
+// NameConstraints (section 4.2.1.10): `{ permitted, excluded }`, each a list
+// of `{ form, value, bounded }` or null when absent. `bounded` is a subtree
+// with a minimum other than 0 or any maximum, which this profile says a CA
+// MUST NOT use and which is therefore not evaluated.
+function nameConstraintsOf(bytes) {
+  log.debug("Entering nameConstraintsOf().");
+  const node = derValueOf(bytes);
+  if (!(node instanceof asn1js.Sequence)) {
+    throw new Error('NameConstraints is not a SEQUENCE');
+  }
+  const out = { permitted: null, excluded: null };
+  node.valueBlock.value.forEach(function (part) {
+    const tag = part.idBlock.tagNumber;
+    if (part.idBlock.tagClass !== 3 || (tag !== 0 && tag !== 1) ||
+        !part.idBlock.isConstructed) {
+      throw new Error('NameConstraints holds something other than ' +
+                      'permittedSubtrees [0] and excludedSubtrees [1]');
+    }
+    const key = tag === 0 ? 'permitted' : 'excluded';
+    if (out[key]) {
+      throw new Error('NameConstraints names ' + key + 'Subtrees twice');
+    }
+    const subtrees = /** @type {any} */ (part.valueBlock).value || [];
+    if (!subtrees.length) {
+      // GeneralSubtrees ::= SEQUENCE SIZE (1..MAX): an empty one is not DER
+      // this ASN.1 can produce.
+      throw new Error(key + 'Subtrees is an empty sequence');
+    }
+    out[key] = subtrees.map(function (subtree) {
+      if (!(subtree instanceof asn1js.Sequence) ||
+          !subtree.valueBlock.value.length) {
+        throw new Error('a GeneralSubtree is not a SEQUENCE');
+      }
+      const fields = subtree.valueBlock.value;
+      const base = generalNameOf(fields[0]);
+      let bounded = false;
+      fields.slice(1).forEach(function (field) {
+        const which = field.idBlock.tagNumber;
+        const bytesOf = Buffer.from(
+          /** @type {any} */ (field.valueBlock).valueHexView || []);
+        if (which === 0 && bytesOf.length === 1 && bytesOf[0] === 0) {
+          return;
+        }
+        bounded = true;
+      });
+      return { form: base.form, value: base.value, bounded: bounded };
+    });
+  });
+  if (!out.permitted && !out.excluded) {
+    // "Conforming CAs ... MUST NOT issue certificates where name constraints
+    // is an empty sequence" — at least one of the two MUST be present.
+    throw new Error('NameConstraints has neither permittedSubtrees nor ' +
+                    'excludedSubtrees');
+  }
+  log.debug("Leaving nameConstraintsOf().");
+  return out;
+}
+
+// A host name in RFC 1034 section 3.5's preferred syntax as RFC 1123 section
+// 2.1 relaxed it: letters, digits and hyphens, no label empty, longer than
+// 63 or starting or ending with a hyphen. `wildcard` allows a whole `*` as
+// the first label, which is how a certificate names every host one level
+// down; nothing else may hold a `*`.
+function hostNameValid(name, wildcard) {
+  log.debug("Entering hostNameValid().");
+  if (!name || name.length > 253) {
+    log.debug("Leaving hostNameValid(). Empty or too long.");
+    return false;
+  }
+  const labels = name.split('.');
+  const ok = labels.every(function (label, at) {
+    if (wildcard && at === 0 && label === '*' && labels.length > 1) {
+      return true;
+    }
+    return /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/i.test(label);
+  });
+  log.debug("Leaving hostNameValid(). " + ok);
+  return ok;
+}
+
+// An iPAddress constraint: an address and a mask of the same family whose
+// bits are ones and then zeros (section 4.2.1.10).
+function ipConstraintValid(bytes) {
+  log.debug("Entering ipConstraintValid().");
+  if (bytes.length !== 8 && bytes.length !== 32) {
+    log.debug("Leaving ipConstraintValid(). Wrong length.");
+    return false;
+  }
+  const mask = bytes.subarray(bytes.length / 2);
+  let zero = false;
+  for (let i = 0; i < mask.length; i++) {
+    for (let bit = 7; bit >= 0; bit--) {
+      const one = (mask[i] >> bit) & 1;
+      if (one && zero) {
+        log.debug("Leaving ipConstraintValid(). A non-contiguous mask.");
+        return false;
+      }
+      if (!one) {
+        zero = true;
+      }
+    }
+  }
+  log.debug("Leaving ipConstraintValid().");
+  return true;
+}
+
+// Whether a constraint's own base is well formed for its form. A malformed
+// one refuses the path: what it was meant to limit cannot be known.
+function constraintBaseProblem(subtree) {
+  log.debug("Entering constraintBaseProblem(). " + subtree.form);
+  const v = subtree.value;
+  let problem = '';
+  if (subtree.form === 'dns') {
+    // An empty dNSName constraint is the whole namespace; a leading period
+    // is URI syntax, not dNSName (section 4.2.1.10), and a `*` is never a
+    // constraint.
+    if (v === null || (v !== '' && !hostNameValid(v, false))) {
+      problem = 'the dNSName constraint "' + v + '" is not a host name';
+    }
+  } else if (subtree.form === 'email') {
+    const at = v === null ? -1 : v.indexOf('@');
+    if (v === null || !v) {
+      problem = 'an rfc822Name constraint is empty or not ASCII';
+    } else if (at >= 0) {
+      if (at === 0 || v.indexOf('@', at + 1) >= 0 ||
+          !hostNameValid(v.slice(at + 1), false)) {
+        problem = 'the rfc822Name constraint "' + v + '" is not a mailbox';
+      }
+    } else if (!hostNameValid(v.replace(/^\./, ''), false)) {
+      problem = 'the rfc822Name constraint "' + v + '" is not a host or ' +
+                'domain';
+    }
+  } else if (subtree.form === 'uri') {
+    if (v === null || !hostNameValid(v.replace(/^\./, ''), false)) {
+      problem = 'the URI constraint "' + v + '" is not a host or domain';
+    }
+  } else if (subtree.form === 'ip') {
+    if (!ipConstraintValid(v)) {
+      problem = 'an iPAddress constraint is not an address and a ' +
+                'contiguous mask of one family';
+    }
+  }
+  log.debug("Leaving constraintBaseProblem().");
+  return problem;
+}
+
+// The host a URI names, or '' when it names none this module may compare —
+// an IP literal, or no authority at all (section 4.2.1.10: a URI constraint
+// "applies to the host part of the name").
+function uriHostOf(uri) {
+  log.debug("Entering uriHostOf().");
+  let host = '';
+  try {
+    host = new URL(uri).hostname.toLowerCase();
+  } catch (e) {
+    log.debug("Caught in uriHostOf(): " + ((e && e.message) || e));
+    host = '';
+  }
+  if (!hostNameValid(host, false)) {
+    host = '';
+  }
+  log.debug("Leaving uriHostOf(). " + (host || 'none'));
+  return host;
+}
+
+// Does `name` (one of a certificate's names) fall inside `subtree`? Both of
+// the same form; a name malformed for its form is inside nothing and, where
+// it is constrained, refused by the caller.
+function nameWithinSubtree(name, subtree) {
+  log.debug("Entering nameWithinSubtree(). " + name.form);
+  const c = subtree.value;
+  let inside = false;
+  if (name.form === 'dns') {
+    const n = String(name.value).toLowerCase().replace(/^\*\./, '');
+    const base = String(c).toLowerCase();
+    inside = base === '' || n === base || n.endsWith('.' + base);
+  } else if (name.form === 'email') {
+    const at = name.value.lastIndexOf('@');
+    const host = name.value.slice(at + 1).toLowerCase();
+    if (c.indexOf('@') >= 0) {
+      const cat = c.lastIndexOf('@');
+      inside = name.value.slice(0, at) === c.slice(0, cat) &&
+               host === c.slice(cat + 1).toLowerCase();
+    } else if (c.charAt(0) === '.') {
+      inside = host.endsWith(c.toLowerCase());
+    } else {
+      inside = host === c.toLowerCase();
+    }
+  } else if (name.form === 'uri') {
+    const host = uriHostOf(name.value);
+    const base = String(c).toLowerCase();
+    inside = !!host && (base.charAt(0) === '.' ? host.endsWith(base)
+                                                : host === base);
+  } else if (name.form === 'ip') {
+    const half = c.length / 2;
+    if (name.value.length === half) {
+      inside = true;
+      for (let i = 0; i < half; i++) {
+        if ((name.value[i] & c[half + i]) !== (c[i] & c[half + i])) {
+          inside = false;
+        }
+      }
+    }
+  } else if (name.form === 'dn') {
+    inside = c.length <= name.value.length && c.every(function (rdn, at) {
+      return name.value[at] === rdn;
+    });
+  }
+  log.debug("Leaving nameWithinSubtree(). " + inside);
+  return inside;
+}
+
+// Whether one of a certificate's names is well formed for its form — asked
+// only of a name some CA above it constrains.
+function constrainedNameProblem(name) {
+  log.debug("Entering constrainedNameProblem(). " + name.form);
+  let problem = '';
+  if (name.form === 'dns' && (name.value === null ||
+                              !hostNameValid(name.value, true))) {
+    problem = 'the dNSName "' + name.value + '" is not a host name';
+  } else if (name.form === 'email') {
+    const at = name.value === null ? -1 : name.value.lastIndexOf('@');
+    if (at <= 0 || name.value.indexOf('@') !== at ||
+        !hostNameValid(name.value.slice(at + 1), false)) {
+      problem = 'the rfc822Name "' + name.value + '" is not a mailbox';
+    }
+  } else if (name.form === 'uri' && (name.value === null ||
+                                     !uriHostOf(name.value))) {
+    problem = 'the URI "' + name.value + '" names no host a constraint ' +
+              'can be applied to';
+  } else if (name.form === 'ip' && name.value.length !== 4 &&
+             name.value.length !== 16) {
+    problem = 'an iPAddress is neither four nor sixteen bytes';
+  }
+  log.debug("Leaving constrainedNameProblem().");
+  return problem;
+}
+
+// The DER a pkijs Name was decoded from, or its re-encoding where pkijs kept
+// none (a name built rather than read).
+function nameBytesOf(name) {
+  log.debug("Entering nameBytesOf().");
+  const kept = name && name.valueBeforeDecode;
+  const bytes = kept && kept.byteLength ? new Uint8Array(kept)
+    : new Uint8Array(name.toSchema().toBER(false));
+  log.debug("Leaving nameBytesOf().");
+  return bytes;
+}
+
+// ---------------------------------------------------------------------------
+// THE FACTS OF ONE CERTIFICATE, read once and kept on the entry
+// (`certificateFromDer()`'s shape, or anything with `der`). `problem` is set
+// when the certificate cannot be held to the rules at all — it does not
+// parse, it repeats an extension, or an extension this module reads is
+// malformed — and every rule question then refuses it.
+// ---------------------------------------------------------------------------
+function pathFactsOf(one) {
+  log.debug("Entering pathFactsOf().");
+  if (one.pathFacts) {
+    log.debug("Leaving pathFactsOf(). Already read.");
+    return one.pathFacts;
+  }
+  const facts = { problem: '', extensions: [], critical: [], ca: false,
+                  hasBasicConstraints: false, pathLen: null,
+                  keyUsage: null, ekus: null, names: [], subjectRdns: [],
+                  issuerRdns: [], nameConstraints: null, sanCritical: false,
+                  hasSan: false, selfIssued: false, spkiOid: '',
+                  keyIdentifier: '', authorityKeyIdentifier: '',
+                  notBefore: 0, notAfter: 0, pk: null, commonNames: [],
+                  weakSignature: '', policies: null, policyMappings: null,
+                  requireExplicitPolicy: null, inhibitPolicyMapping: null,
+                  inhibitAnyPolicy: null };
+  try {
+    const pk = pkijs.Certificate.fromBER(new Uint8Array(one.der));
+    facts.pk = pk;
+    // The names AS ENCODED: pkijs re-encodes an empty subject as a
+    // SEQUENCE holding an empty SET, which is not what was signed.
+    const subjectNode = derValueOf(nameBytesOf(pk.subject));
+    facts.subjectRdns = rdnsOfName(subjectNode);
+    facts.issuerRdns = rdnsOfName(derValueOf(nameBytesOf(pk.issuer)));
+    facts.selfIssued = facts.subjectRdns.join(',') ===
+                       facts.issuerRdns.join(',');
+    subjectEmailsOf(subjectNode)
+      .forEach(function (address) {
+        facts.names.push({ form: 'email', value: address, fromSubject: true });
+      });
+    if (facts.subjectRdns.length) {
+      facts.names.push({ form: 'dn', value: facts.subjectRdns,
+                         fromSubject: true });
+    }
+    (pk.subject.typesAndValues || []).forEach(function (atv) {
+      if (atv.type === '2.5.4.3' && atv.value &&
+          typeof atv.value.valueBlock.value === 'string') {
+        facts.commonNames.push(atv.value.valueBlock.value);
+      }
+    });
+    facts.spkiOid = pk.subjectPublicKeyInfo.algorithm.algorithmId;
+    // An EC key's parameters MUST be a named curve (RFC 5480 section 2.1.1:
+    // implicitCurve and specifiedCurve MUST NOT be used): a curve spelled
+    // out in the certificate is whatever curve its issuer wrote down.
+    if (facts.spkiOid === PATH_EC_PUBLIC_KEY &&
+        !(pk.subjectPublicKeyInfo.algorithm.algorithmParams instanceof
+          asn1js.ObjectIdentifier)) {
+      throw new Error('its EC key names no named curve (RFC 5480 section ' +
+                      '2.1.1 forbids specifiedCurve and implicitCurve)');
+    }
+    const signedWith = pk.signatureAlgorithm.algorithmId;
+    if (PATH_MD_SIGNATURES.indexOf(signedWith) >= 0) {
+      facts.weakSignature = 'md';
+    } else if (PATH_SHA1_SIGNATURES.indexOf(signedWith) >= 0) {
+      facts.weakSignature = 'sha1';
+    } else if (signedWith === PATH_RSASSA_PSS) {
+      let hash = PATH_SHA1;
+      try {
+        const params = new pkijs.RSASSAPSSParams({
+          schema: pk.signatureAlgorithm.algorithmParams });
+        hash = params.hashAlgorithm.algorithmId;
+      } catch (e) {
+        log.debug("Caught in pathFactsOf(): " + ((e && e.message) || e));
+        hash = PATH_SHA1;
+      }
+      facts.weakSignature = hash === PATH_SHA1 ? 'sha1' : '';
+    }
+    facts.notBefore = pk.notBefore.value.getTime();
+    facts.notAfter = pk.notAfter.value.getTime();
+    const seen = {};
+    (pk.extensions || []).forEach(function (ext) {
+      const oid = ext.extnID;
+      if (seen[oid]) {
+        throw new Error('the extension ' + oid + ' appears twice (RFC 5280 ' +
+                        'section 4.2)');
+      }
+      seen[oid] = true;
+      facts.extensions.push(oid);
+      if (ext.critical) {
+        facts.critical.push(oid);
+      }
+      const bytes = Buffer.from(ext.extnValue.valueBlock.valueHexView);
+      if (oid === PATH_EXTENSION_OIDS.basicConstraints) {
+        const node = derValueOf(bytes);
+        if (!(node instanceof asn1js.Sequence)) {
+          throw new Error('basicConstraints is not a SEQUENCE');
+        }
+        facts.hasBasicConstraints = true;
+        node.valueBlock.value.forEach(function (field) {
+          if (field instanceof asn1js.Boolean) {
+            facts.ca = !!field.getValue();
+          } else if (field instanceof asn1js.Integer) {
+            facts.pathLen = field.valueBlock.valueDec;
+          } else {
+            throw new Error('basicConstraints holds an unexpected field');
+          }
+        });
+      } else if (oid === PATH_EXTENSION_OIDS.keyUsage) {
+        const node = derValueOf(bytes);
+        if (!(node instanceof asn1js.BitString)) {
+          throw new Error('keyUsage is not a BIT STRING');
+        }
+        const raw = Buffer.from(node.valueBlock.valueHexView || []);
+        facts.keyUsage = PATH_KEY_USAGE_BITS.filter(function (name, bit) {
+          return raw.length > (bit >> 3) &&
+                 ((raw[bit >> 3] >> (7 - (bit & 7))) & 1) === 1;
+        });
+      } else if (oid === PATH_EXTENSION_OIDS.extKeyUsage) {
+        const node = derValueOf(bytes);
+        if (!(node instanceof asn1js.Sequence) ||
+            !node.valueBlock.value.length) {
+          throw new Error('extKeyUsage is not a non-empty SEQUENCE');
+        }
+        facts.ekus = node.valueBlock.value.map(function (purpose) {
+          if (!(purpose instanceof asn1js.ObjectIdentifier)) {
+            throw new Error('extKeyUsage holds something not a purpose');
+          }
+          return purpose.getValue();
+        });
+      } else if (oid === PATH_EXTENSION_OIDS.subjectAltName) {
+        facts.hasSan = true;
+        facts.sanCritical = !!ext.critical;
+        generalNamesOf(bytes).forEach(function (name) {
+          facts.names.push(name);
+        });
+      } else if (oid === PATH_EXTENSION_OIDS.nameConstraints) {
+        facts.nameConstraints = nameConstraintsOf(bytes);
+      } else if (oid === PATH_EXTENSION_OIDS.certificatePolicies) {
+        facts.policies = certificatePoliciesOf(bytes);
+      } else if (oid === PATH_EXTENSION_OIDS.policyMappings) {
+        facts.policyMappings = policyMappingsOf(bytes);
+      } else if (oid === PATH_EXTENSION_OIDS.policyConstraints) {
+        const pc = policyConstraintsOf(bytes);
+        facts.requireExplicitPolicy = pc.requireExplicitPolicy;
+        facts.inhibitPolicyMapping = pc.inhibitPolicyMapping;
+      } else if (oid === PATH_EXTENSION_OIDS.inhibitAnyPolicy) {
+        const node = derValueOf(bytes);
+        if (!(node instanceof asn1js.Integer) ||
+            node.valueBlock.isHexOnly || node.valueBlock.valueDec < 0) {
+          throw new Error('inhibitAnyPolicy is not a SkipCerts INTEGER');
+        }
+        facts.inhibitAnyPolicy = node.valueBlock.valueDec;
+      } else if (oid === PATH_EXTENSION_OIDS.subjectKeyIdentifier) {
+        const node = derValueOf(bytes);
+        facts.keyIdentifier = node instanceof asn1js.OctetString
+          ? Buffer.from(node.valueBlock.valueHexView).toString('hex') : '';
+      } else if (oid === PATH_EXTENSION_OIDS.authorityKeyIdentifier) {
+        const node = derValueOf(bytes);
+        const id = node instanceof asn1js.Sequence
+          ? node.valueBlock.value.filter(function (field) {
+            return field.idBlock.tagClass === 3 &&
+                   field.idBlock.tagNumber === 0;
+          })[0] : null;
+        facts.authorityKeyIdentifier = id
+          ? Buffer.from(/** @type {any} */ (id.valueBlock).valueHexView ||
+                        []).toString('hex') : '';
+      }
+    });
+  } catch (e) {
+    log.debug("Caught in pathFactsOf(): " + ((e && e.message) || e));
+    facts.problem = 'it cannot be held to RFC 5280: ' +
+                    ((e && e.message) || e);
+  }
+  one.pathFacts = facts;
+  log.debug("Leaving pathFactsOf()." + (facts.problem ? ' Unusable.' : ''));
+  return facts;
+}
+
+// The certificate's subject for a sentence.
+function pathSubjectOf(one) {
+  log.debug("Entering pathSubjectOf().");
+  let text = '';
+  try {
+    text = oneLineName(new nodeCrypto.X509Certificate(one.der).subject);
+  } catch (e) {
+    log.debug("Caught in pathSubjectOf(): " + ((e && e.message) || e));
+    text = '';
+  }
+  log.debug("Leaving pathSubjectOf().");
+  return text || 'the certificate with an empty subject';
+}
+
+// Does a wildcard dNSName reach into `subtree`? `*.example.com` names every
+// host one label below example.com, so an excluded `bar.example.com` is
+// inside what it can be presented for even though the name itself is not
+// inside the subtree. Refused, as CVE-2025-61727's fix refuses it: neither
+// RFC 5280 nor RFC 9525 says how a constraint meets a wildcard, and the
+// defensive reading is the one that cannot be used to escape an exclusion.
+function wildcardReaches(name, subtree) {
+  log.debug("Entering wildcardReaches().");
+  const n = String(name.value || '').toLowerCase();
+  const base = String(subtree.value || '').toLowerCase();
+  const reaches = n.indexOf('*.') === 0 &&
+                  base.endsWith('.' + n.slice(2));
+  log.debug("Leaving wildcardReaches(). " + reaches);
+  return reaches;
+}
+
+// The first name of `below` that the constraints of `ca` refuse, as a
+// sentence, or ''. `isLeaf` adds the leaf's common names that are host names
+// as dNSNames when it carries no subjectAltName at all — the only case in
+// which a TLS client still matches on the CN (RFC 6125 section 6.4.4), and
+// so a name a dNSName constraint has to reach; OpenSSL constrains it too.
+// `budget.checks` counts names times subtrees across the path.
+function constraintProblem(ca, below, isLeaf, budget) {
+  log.debug("Entering constraintProblem().");
+  const nc = pathFactsOf(ca).nameConstraints;
+  const facts = pathFactsOf(below);
+  let names = facts.names;
+  if (isLeaf && !facts.hasSan) {
+    names = names.concat(facts.commonNames.filter(function (cn) {
+      return hostNameValid(cn, true);
+    }).map(function (cn) {
+      return { form: 'dns', value: cn, fromCommonName: true };
+    }));
+  }
+  budget.checks += names.length *
+    ((nc.permitted || []).length + (nc.excluded || []).length);
+  if (budget.checks > PATH_MAX_NAME_CHECKS) {
+    log.debug("Leaving constraintProblem(). Too much work.");
+    return 'it and the CAs above it carry more names and name constraints ' +
+           'between them than this service will compare (' +
+           PATH_MAX_NAME_CHECKS + ' comparisons)';
+  }
+  for (let n = 0; n < names.length; n++) {
+    const name = names[n];
+    const permitted = (nc.permitted || []).filter(function (subtree) {
+      return subtree.form === name.form;
+    });
+    const excluded = (nc.excluded || []).filter(function (subtree) {
+      return subtree.form === name.form;
+    });
+    if (!permitted.length && !excluded.length) {
+      continue;
+    }
+    const unevaluated = permitted.concat(excluded).some(function (subtree) {
+      return subtree.bounded ||
+             PATH_EVALUATED_FORMS.indexOf(subtree.form) < 0;
+    });
+    if (unevaluated) {
+      log.debug("Leaving constraintProblem(). A form not evaluated.");
+      return 'it carries a ' + name.form + ' name and a CA above it ' +
+             'constrains that form in a way this service does not evaluate ' +
+             '(RFC 5280 section 4.2.1.10 then requires the certificate be ' +
+             'refused)';
+    }
+    const malformed = constrainedNameProblem(name);
+    if (malformed) {
+      log.debug("Leaving constraintProblem(). A malformed name.");
+      return malformed + ', and a CA above it constrains that form';
+    }
+    if (permitted.length && !permitted.some(function (subtree) {
+      return nameWithinSubtree(name, subtree);
+    })) {
+      log.debug("Leaving constraintProblem(). Not permitted.");
+      return 'its ' + name.form + ' name ' + describePathName(name) +
+             ' is outside every permitted subtree of that form';
+    }
+    if (excluded.some(function (subtree) {
+      return nameWithinSubtree(name, subtree) ||
+             (name.form === 'dns' && wildcardReaches(name, subtree));
+    })) {
+      log.debug("Leaving constraintProblem(). Excluded.");
+      return 'its ' + name.form + ' name ' + describePathName(name) +
+             ' is inside an excluded subtree';
+    }
+  }
+  log.debug("Leaving constraintProblem(). Within them.");
+  return '';
+}
+
+// ---------------------------------------------------------------------------
+// CERTIFICATE POLICIES (RFC 5280 sections 4.2.1.4-4.2.1.14 and 6.1, #201).
+// ---------------------------------------------------------------------------
+
+// certificatePolicies: the policy OIDs, in order. A policy named twice is
+// refused (section 4.2.1.4: "MUST NOT appear more than once"); qualifiers
+// are read as present and not interpreted — section 6.1 carries them and
+// decides nothing on them.
+function certificatePoliciesOf(bytes) {
+  log.debug("Entering certificatePoliciesOf().");
+  const node = derValueOf(bytes);
+  if (!(node instanceof asn1js.Sequence) || !node.valueBlock.value.length) {
+    throw new Error('certificatePolicies is not a non-empty SEQUENCE');
+  }
+  const out = [];
+  node.valueBlock.value.forEach(function (info) {
+    const parts = info instanceof asn1js.Sequence
+      ? info.valueBlock.value : null;
+    if (!parts || !parts.length || parts.length > 2 ||
+        !(parts[0] instanceof asn1js.ObjectIdentifier)) {
+      throw new Error('a PolicyInformation is not a policy and qualifiers');
+    }
+    const oid = parts[0].getValue();
+    if (out.indexOf(oid) >= 0) {
+      throw new Error('certificatePolicies names ' + oid + ' twice (RFC ' +
+                      '5280 section 4.2.1.4)');
+    }
+    out.push(oid);
+  });
+  log.debug("Leaving certificatePoliciesOf(). " + out.length + ".");
+  return out;
+}
+
+// policyMappings: `[{ issuer, subject }]`.
+function policyMappingsOf(bytes) {
+  log.debug("Entering policyMappingsOf().");
+  const node = derValueOf(bytes);
+  if (!(node instanceof asn1js.Sequence) || !node.valueBlock.value.length) {
+    throw new Error('policyMappings is not a non-empty SEQUENCE');
+  }
+  const out = node.valueBlock.value.map(function (pair) {
+    const parts = pair instanceof asn1js.Sequence ? pair.valueBlock.value
+                                                  : null;
+    if (!parts || parts.length !== 2 ||
+        !(parts[0] instanceof asn1js.ObjectIdentifier) ||
+        !(parts[1] instanceof asn1js.ObjectIdentifier)) {
+      throw new Error('a policy mapping is not two policy OIDs');
+    }
+    return { issuer: parts[0].getValue(), subject: parts[1].getValue() };
+  });
+  log.debug("Leaving policyMappingsOf(). " + out.length + ".");
+  return out;
+}
+
+// policyConstraints: `{ requireExplicitPolicy, inhibitPolicyMapping }`, each
+// a SkipCerts or null. "Conforming CAs MUST NOT issue certificates where
+// policy constraints is an empty sequence" (section 4.2.1.11).
+function policyConstraintsOf(bytes) {
+  log.debug("Entering policyConstraintsOf().");
+  const node = derValueOf(bytes);
+  if (!(node instanceof asn1js.Sequence) || !node.valueBlock.value.length) {
+    throw new Error('policyConstraints is not a non-empty SEQUENCE');
+  }
+  const out = { requireExplicitPolicy: null, inhibitPolicyMapping: null };
+  node.valueBlock.value.forEach(function (field) {
+    const tag = field.idBlock.tagNumber;
+    const raw = Buffer.from(
+      /** @type {any} */ (field.valueBlock).valueHexView || []);
+    if (field.idBlock.tagClass !== 3 || (tag !== 0 && tag !== 1) ||
+        field.idBlock.isConstructed || !raw.length || raw.length > 4 ||
+        (raw[0] & 0x80)) {
+      throw new Error('policyConstraints holds something other than two ' +
+                      'SkipCerts');
+    }
+    const key = tag === 0 ? 'requireExplicitPolicy' : 'inhibitPolicyMapping';
+    if (out[key] !== null) {
+      throw new Error('policyConstraints names ' + key + ' twice');
+    }
+    out[key] = raw.readUIntBE(0, raw.length);
+  });
+  log.debug("Leaving policyConstraintsOf().");
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// RFC 5280 SECTION 6.1's POLICY PROCESSING, WHOLE (#201).
+//
+// The valid_policy_tree, explicit_policy, inhibit_anyPolicy and
+// policy_mapping, exactly as sections 6.1.2-6.1.5 define them, over `path`
+// (leaf first, anchor last — the anchor is not processed, section 6.1:
+// certificates 1..n run from the one the anchor issued down to the leaf).
+// `opts` carries the four inputs a caller may set; none of this service's
+// callers sets one, so the defaults — initial-policy-set {anyPolicy} and the
+// three indicators clear — are what runs, and a path is refused only where
+// its own certificates demand an explicit policy (requireExplicitPolicy)
+// and the tree came out empty, or where a mapping names anyPolicy.
+//
+// Answers `{ ok, why, userConstrainedPolicySet, explicitPolicy }`. The
+// qualifiers are carried by no node: nothing here reads them, and section
+// 6.1 decides nothing on them.
+// ---------------------------------------------------------------------------
+function pathPolicyOutcome(path, opts) {
+  log.debug("Entering pathPolicyOutcome().");
+  const options = opts || {};
+  const n = path.length - 1;
+  const initial = (options.initialPolicySet && options.initialPolicySet.length)
+    ? options.initialPolicySet.slice(0) : [ANY_POLICY];
+  if (n < 1) {
+    log.debug("Leaving pathPolicyOutcome(). Nothing below the anchor.");
+    return { ok: true, why: '', userConstrainedPolicySet: initial,
+             explicitPolicy: false };
+  }
+  let explicitPolicy = options.initialExplicitPolicy ? 0 : n + 1;
+  let inhibitAnyPolicy = options.initialInhibitAnyPolicy ? 0 : n + 1;
+  let policyMapping = options.initialPolicyMappingInhibit ? 0 : n + 1;
+  let count = 1;
+  const nodeOf = function (policy, expected, parent) {
+    log.debug("Entering nodeOf().");
+    const node = { policy: policy, expected: expected.slice(0),
+                   parent: parent, children: [],
+                   depth: parent ? parent.depth + 1 : 0 };
+    if (parent) {
+      parent.children.push(node);
+    }
+    count++;
+    log.debug("Leaving nodeOf().");
+    return node;
+  };
+  let root = nodeOf(ANY_POLICY, [ANY_POLICY], null);
+  const atDepth = function (depth) {
+    log.debug("Entering atDepth().");
+    const out = [];
+    const walk = function (node) {
+      if (node.depth === depth) {
+        out.push(node);
+        return;
+      }
+      node.children.forEach(walk);
+    };
+    if (root) {
+      walk(root);
+    }
+    log.debug("Leaving atDepth().");
+    return out;
+  };
+  const remove = function (node) {
+    log.debug("Entering remove().");
+    if (!node.parent) {
+      root = null;
+    } else {
+      node.parent.children = node.parent.children.filter(function (one) {
+        return one !== node;
+      });
+    }
+    log.debug("Leaving remove().");
+  };
+  // Delete every node shallower than `depth` that has no children, until
+  // none is left; the root going makes the tree NULL.
+  const prune = function (depth) {
+    log.debug("Entering prune().");
+    for (let d = depth - 1; d >= 0 && root; d--) {
+      atDepth(d).forEach(function (node) {
+        if (!node.children.length) {
+          remove(node);
+        }
+      });
+    }
+    log.debug("Leaving prune().");
+  };
+  const refuse = function (why) {
+    log.debug("Entering refuse().");
+    log.debug("Leaving refuse().");
+    return { ok: false, why: why, userConstrainedPolicySet: [],
+             explicitPolicy: true };
+  };
+  for (let i = 1; i <= n; i++) {
+    const cert = path[n - i];
+    const facts = pathFactsOf(cert);
+    // (d) the certificate's policies.
+    if (facts.policies && root) {
+      const parents = atDepth(i - 1);
+      facts.policies.forEach(function (policy) {
+        if (policy === ANY_POLICY) {
+          return;
+        }
+        let matched = false;
+        parents.forEach(function (parent) {
+          if (parent.expected.indexOf(policy) >= 0) {
+            nodeOf(policy, [policy], parent);
+            matched = true;
+          }
+        });
+        if (!matched) {
+          parents.filter(function (parent) {
+            return parent.policy === ANY_POLICY;
+          }).forEach(function (parent) {
+            nodeOf(policy, [policy], parent);
+          });
+        }
+      });
+      if (facts.policies.indexOf(ANY_POLICY) >= 0 &&
+          (inhibitAnyPolicy > 0 || (i < n && facts.selfIssued))) {
+        parents.forEach(function (parent) {
+          parent.expected.forEach(function (policy) {
+            const has = parent.children.some(function (child) {
+              return child.policy === policy;
+            });
+            if (!has) {
+              nodeOf(policy, [policy], parent);
+            }
+          });
+        });
+      }
+      prune(i);
+      if (count > PATH_MAX_POLICY_NODES) {
+        log.debug("Leaving pathPolicyOutcome(). Too many nodes.");
+        return refuse('the certificate policies and mappings along the ' +
+                      'path make more than ' + PATH_MAX_POLICY_NODES +
+                      ' policy tree nodes');
+      }
+    } else {
+      // (e) no certificatePolicies: the tree is NULL.
+      root = null;
+    }
+    // (f)
+    if (explicitPolicy <= 0 && !root) {
+      log.debug("Leaving pathPolicyOutcome(). Explicit policy, no tree.");
+      return refuse('"' + pathSubjectOf(cert) + '" leaves no acceptable ' +
+                    'certificate policy and the path requires an explicit ' +
+                    'one (RFC 5280 section 6.1.3(f))');
+    }
+    if (i === n) {
+      break;
+    }
+    // Preparation for certificate i+1 (section 6.1.4).
+    const mappings = facts.policyMappings || [];
+    if (mappings.some(function (m) {
+      return m.issuer === ANY_POLICY || m.subject === ANY_POLICY;
+    })) {
+      log.debug("Leaving pathPolicyOutcome(). anyPolicy mapped.");
+      return refuse('"' + pathSubjectOf(cert) + '" maps anyPolicy, which ' +
+                    'RFC 5280 section 6.1.4(a) refuses');
+    }
+    if (mappings.length && root) {
+      const issuers = [];
+      mappings.forEach(function (m) {
+        if (issuers.indexOf(m.issuer) < 0) {
+          issuers.push(m.issuer);
+        }
+      });
+      issuers.forEach(function (issuerPolicy) {
+        const mapped = mappings.filter(function (m) {
+          return m.issuer === issuerPolicy;
+        }).map(function (m) { return m.subject; })
+          .filter(function (p, at, all) { return all.indexOf(p) === at; });
+        const level = atDepth(i);
+        const holders = level.filter(function (node) {
+          return node.policy === issuerPolicy;
+        });
+        if (policyMapping > 0) {
+          if (holders.length) {
+            holders.forEach(function (node) {
+              node.expected = mapped.slice(0);
+            });
+          } else {
+            const any = level.filter(function (node) {
+              return node.policy === ANY_POLICY;
+            })[0];
+            if (any && any.parent) {
+              nodeOf(issuerPolicy, mapped, any.parent);
+            }
+          }
+        } else {
+          holders.forEach(remove);
+          prune(i);
+        }
+      });
+    }
+    // (h) (i) (j)
+    if (!facts.selfIssued) {
+      explicitPolicy = explicitPolicy > 0 ? explicitPolicy - 1 : 0;
+      policyMapping = policyMapping > 0 ? policyMapping - 1 : 0;
+      inhibitAnyPolicy = inhibitAnyPolicy > 0 ? inhibitAnyPolicy - 1 : 0;
+    }
+    if (facts.requireExplicitPolicy !== null) {
+      explicitPolicy = Math.min(explicitPolicy, facts.requireExplicitPolicy);
+    }
+    if (facts.inhibitPolicyMapping !== null) {
+      policyMapping = Math.min(policyMapping, facts.inhibitPolicyMapping);
+    }
+    if (facts.inhibitAnyPolicy !== null) {
+      inhibitAnyPolicy = Math.min(inhibitAnyPolicy, facts.inhibitAnyPolicy);
+    }
+  }
+  // Wrap-up (section 6.1.5).
+  const leafFacts = pathFactsOf(path[0]);
+  if (explicitPolicy > 0) {
+    explicitPolicy--;
+  }
+  if (leafFacts.requireExplicitPolicy === 0) {
+    explicitPolicy = 0;
+  }
+  // (g) the intersection with the initial-policy-set.
+  if (root && initial.indexOf(ANY_POLICY) < 0) {
+    const boundary = [];
+    const collect = function (node) {
+      node.children.forEach(function (child) {
+        if (node.policy === ANY_POLICY) {
+          boundary.push(child);
+        }
+        if (child.policy === ANY_POLICY) {
+          collect(child);
+        }
+      });
+    };
+    collect(root);
+    boundary.forEach(function (node) {
+      if (node.policy !== ANY_POLICY && initial.indexOf(node.policy) < 0) {
+        remove(node);
+      }
+    });
+    const leafAny = atDepth(n).filter(function (node) {
+      return node.policy === ANY_POLICY;
+    })[0];
+    if (leafAny) {
+      const present = boundary.map(function (node) { return node.policy; });
+      initial.forEach(function (policy) {
+        if (present.indexOf(policy) < 0) {
+          nodeOf(policy, [policy], leafAny.parent);
+        }
+      });
+      remove(leafAny);
+    }
+    prune(n);
+  }
+  if (explicitPolicy <= 0 && !root) {
+    log.debug("Leaving pathPolicyOutcome(). No policy in the end.");
+    return refuse('no certificate policy acceptable to the path and to ' +
+                  'this service remains, and the path requires an explicit ' +
+                  'one (RFC 5280 section 6.1.5(g))');
+  }
+  // The user-constrained-policy-set (section 6.1.6), in the ANCHOR's policy
+  // domain: the valid_policy of every node whose parent is anyPolicy — the
+  // nodes step (g)(iii) calls the valid_policy_node_set — and anyPolicy only
+  // where it reaches the leaf. The leaf level's own policies are mapped
+  // ones, named in the subject's domain after a policyMappings, and are not
+  // the answer (NIST PKITS 4.10, 4.11).
+  const user = [];
+  const gather = function (node) {
+    node.children.forEach(function (child) {
+      if (node.policy === ANY_POLICY &&
+          (child.policy !== ANY_POLICY || child.depth === n) &&
+          user.indexOf(child.policy) < 0) {
+        user.push(child.policy);
+      }
+      if (child.policy === ANY_POLICY) {
+        gather(child);
+      }
+    });
+  };
+  if (root) {
+    gather(root);
+  }
+  log.debug("Leaving pathPolicyOutcome(). " + user.join(','));
+  return { ok: true, why: '', userConstrainedPolicySet: user,
+           explicitPolicy: explicitPolicy <= 0 };
+}
+
+// A name for a sentence.
+function describePathName(name) {
+  log.debug("Entering describePathName().");
+  let text;
+  if (name.form === 'ip') {
+    text = name.value.length === 4 ? Array.from(name.value).join('.')
+                                   : name.value.toString('hex');
+  } else if (name.form === 'dn') {
+    text = name.value.join(', ');
+  } else {
+    text = String(name.value);
+  }
+  log.debug("Leaving describePathName().");
+  return '"' + text + '"';
+}
+
+// ---------------------------------------------------------------------------
+// THE RULES. `path` is leaf first and anchor last — entries with `der`, as
+// `certificateFromDer()` makes them. `opts.allowCritical` names critical
+// extensions (by name or OID) the caller evaluates itself. Answers null, or
+// `{ check, index, why }`, `check` one of:
+//
+//   unusable        the certificate cannot be held to the rules (see
+//                   `pathFactsOf()`)
+//   critical        a critical extension nothing here implements
+//   weak-signature  a certificate signed with MD2, MD5 or (unless
+//                   `opts.allowSha1`) SHA-1
+//   malformed       a rule of RFC 5280 section 4 a relying party can and
+//                   does hold a certificate to (named in `why`)
+//   not-ca          a certificate above the leaf is not a CA
+//   key-cert-sign   one whose keyUsage does not permit keyCertSign
+//   path-len        a pathLenConstraint exceeded (`pathLen`, `below`)
+//   name-constraints  a name outside what a CA above it permits
+//   policy          RFC 5280 section 6.1's certificate policy processing
+//                   refuses it (`pathPolicyOutcome()`, `opts.policy` its
+//                   four inputs)
+//
+// in that order along the path from the leaf: the first certificate with a
+// problem is the one reported.
+// ---------------------------------------------------------------------------
+function pathRuleProblem(path, opts) {
+  log.debug("Entering pathRuleProblem(). " + path.length +
+            " certificate(s).");
+  const options = opts || {};
+  const allowed = (options.allowCritical || []).map(function (name) {
+    return PATH_EXTENSION_OIDS[name] || name;
+  });
+  const refuse = function (check, index, why, extra) {
+    log.debug("Entering refuse(). check=" + check);
+    log.debug("Leaving refuse().");
+    return Object.assign({ check: check, index: index,
+                           why: '"' + pathSubjectOf(path[index]) + '" ' +
+                                why }, extra || {});
+  };
+  for (let i = 0; i < path.length; i++) {
+    const facts = pathFactsOf(path[i]);
+    if (facts.problem) {
+      log.debug("Leaving pathRuleProblem(). Unusable at " + i + ".");
+      return refuse('unusable', i, facts.problem);
+    }
+    const unknown = facts.critical.filter(function (oid) {
+      return PATH_UNDERSTOOD_CRITICAL.indexOf(oid) < 0 &&
+             allowed.indexOf(oid) < 0;
+    });
+    if (unknown.length) {
+      log.debug("Leaving pathRuleProblem(). Critical at " + i + ".");
+      return refuse('critical', i, 'carries a critical extension this ' +
+                    'service does not implement (' + unknown.join(', ') +
+                    '), which RFC 5280 section 4.2 says must be refused');
+    }
+    if (i < path.length - 1 && facts.weakSignature &&
+        (facts.weakSignature === 'md' || !options.allowSha1)) {
+      log.debug("Leaving pathRuleProblem(). A broken hash at " + i + ".");
+      return refuse('weak-signature', i, 'is signed with ' +
+                    (facts.weakSignature === 'md' ? 'MD2 or MD5'
+                                                  : 'SHA-1') +
+                    ', a hash whose collisions are practical, so the ' +
+                    'signature does not bind what it signs');
+    }
+    if (!facts.subjectRdns.length && (!facts.hasSan || !facts.sanCritical)) {
+      log.debug("Leaving pathRuleProblem(). Empty subject at " + i + ".");
+      return refuse('malformed', i, 'has an empty subject and no critical ' +
+                    'subjectAltName (RFC 5280 section 4.2.1.6)');
+    }
+    if (PATH_ML_DSA_OIDS.indexOf(facts.spkiOid) >= 0 && facts.keyUsage &&
+        facts.keyUsage.some(function (usage) {
+          return PATH_ML_DSA_USAGES.indexOf(usage) < 0;
+        })) {
+      log.debug("Leaving pathRuleProblem(). ML-DSA usage at " + i + ".");
+      return refuse('malformed', i, 'holds an ML-DSA key and a keyUsage ' +
+                    'naming ' + facts.keyUsage.join(', ') + ' — RFC 9881 ' +
+                    'section 5 permits only digitalSignature, ' +
+                    'nonRepudiation, keyCertSign and cRLSign');
+    }
+    // Above the leaf a certificate that is not a CA is refused as not-ca
+    // below, whatever its keyUsage says; this is the leaf's rule.
+    if (i === 0 && !facts.ca && facts.keyUsage &&
+        facts.keyUsage.indexOf('keyCertSign') >= 0) {
+      log.debug("Leaving pathRuleProblem(). keyCertSign on a non-CA.");
+      return refuse('malformed', i, 'asserts keyCertSign and is not a CA ' +
+                    '(RFC 5280 section 4.2.1.9)');
+    }
+    if (!facts.ca && facts.nameConstraints) {
+      log.debug("Leaving pathRuleProblem(). nameConstraints on a non-CA.");
+      return refuse('malformed', i, 'carries nameConstraints and is not a ' +
+                    'CA (RFC 5280 section 4.2.1.10)');
+    }
+    if (i === 0) {
+      continue;
+    }
+    if (!facts.ca) {
+      log.debug("Leaving pathRuleProblem(). Not a CA at " + i + ".");
+      return refuse('not-ca', i, 'signs the certificate below it and is not ' +
+                    'a certificate authority (basicConstraints cA is not ' +
+                    'set)');
+    }
+    if (facts.keyUsage && facts.keyUsage.indexOf('keyCertSign') < 0) {
+      log.debug("Leaving pathRuleProblem(). keyCertSign at " + i + ".");
+      return refuse('key-cert-sign', i, 'carries a keyUsage that does not ' +
+                    'permit keyCertSign');
+    }
+    if (!facts.subjectRdns.length) {
+      log.debug("Leaving pathRuleProblem(). A CA with no subject.");
+      return refuse('malformed', i, 'is a CA with an empty subject (RFC 5280 ' +
+                    'section 4.1.2.6)');
+    }
+    // Section 6.1.4(l): a self-issued certificate does not count against a
+    // pathLenConstraint above it, and the leaf never does.
+    let below = 0;
+    for (let k = 1; k < i; k++) {
+      if (!pathFactsOf(path[k]).selfIssued) {
+        below++;
+      }
+    }
+    if (facts.pathLen !== null && below > Number(facts.pathLen)) {
+      log.debug("Leaving pathRuleProblem(). pathLen at " + i + ".");
+      return refuse('path-len', i, 'allows ' + facts.pathLen + ' CA ' +
+                    'certificate(s) below it (pathLenConstraint) and the ' +
+                    'path has ' + below, { pathLen: facts.pathLen,
+                                           below: below });
+    }
+  }
+  // Name constraints, top down: each constraining CA against every
+  // certificate below it that is the leaf or not self-issued.
+  const budget = { checks: 0 };
+  for (let i = path.length - 1; i > 0; i--) {
+    if (!pathFactsOf(path[i]).nameConstraints) {
+      continue;
+    }
+    for (let j = i - 1; j >= 0; j--) {
+      if (j > 0 && pathFactsOf(path[j]).selfIssued) {
+        continue;
+      }
+      const problem = constraintProblem(path[i], path[j], j === 0, budget);
+      if (problem) {
+        log.debug("Leaving pathRuleProblem(). Name constraints.");
+        return refuse('name-constraints', j, problem + ' (nameConstraints ' +
+                      'of "' + pathSubjectOf(path[i]) + '", RFC 5280 ' +
+                      'section 4.2.1.10)', { constrainedBy: i });
+      }
+    }
+  }
+  // Certificate policies (section 6.1), once the rules above hold.
+  const policy = pathPolicyOutcome(path, options.policy);
+  if (!policy.ok) {
+    log.debug("Leaving pathRuleProblem(). Policy.");
+    return { check: 'policy', index: 0, why: policy.why };
+  }
+  log.debug("Leaving pathRuleProblem(). The path holds.");
+  return null;
+}
+
+// Every certificate inside its validity window at `now` (milliseconds),
+// widened by `skewMs`. The instant is taken at the granularity a
+// certificate's times are written in — whole seconds — so a certificate is
+// valid through the whole second its notAfter names (x509-limbo
+// `rfc5280::validity::notafter-fractional`). `{ index, why }` or null.
+function pathValidityProblem(path, now, skewMs) {
+  log.debug("Entering pathValidityProblem().");
+  const at = Math.floor(now / 1000) * 1000;
+  const skew = Number(skewMs) || 0;
+  for (let i = 0; i < path.length; i++) {
+    const facts = pathFactsOf(path[i]);
+    if (facts.problem) {
+      continue;
+    }
+    if (facts.notBefore - skew > at || facts.notAfter + skew < at) {
+      log.debug("Leaving pathValidityProblem(). Outside at " + i + ".");
+      return { index: i, check: 'validity',
+               why: '"' + pathSubjectOf(path[i]) + '" is outside its ' +
+                    'validity window (' +
+                    new Date(facts.notBefore).toISOString() + ' to ' +
+                    new Date(facts.notAfter).toISOString() + ')' };
+    }
+  }
+  log.debug("Leaving pathValidityProblem().");
+  return null;
+}
+
+// Did `issuer` sign `cert`? Names first — the RDN lists compared as section
+// 7.1 compares them — then the signature, with the vendored engine, which
+// reads ML-DSA, SLH-DSA and Ed25519 as well as what pkijs reads.
+async function pathSigned(cert, issuer) {
+  log.debug("Entering pathSigned().");
+  const a = pathFactsOf(cert);
+  const b = pathFactsOf(issuer);
+  if (a.problem || b.problem ||
+      a.issuerRdns.join(',') !== b.subjectRdns.join(',')) {
+    log.debug("Leaving pathSigned(). The names differ.");
+    return false;
+  }
+  let ok = false;
+  try {
+    ok = !!(await x509.verifySignature(a.pk, b.pk));
+  } catch (e) {
+    log.debug("Caught in pathSigned(): " + ((e && e.message) || e));
+    ok = false;
+  }
+  log.debug("Leaving pathSigned(). " + ok);
+  return ok;
+}
+
+// ===========================================================================
 // WHAT EACH CERTIFICATE ON A PATH IS ALLOWED TO DO (2026-09-13).
 //
 // A signature walk answers WHO SIGNED WHAT and nothing about whether the signer
@@ -2461,34 +3843,38 @@ async function basicConstraintsOf(pem) {
   return (bc && bc.value) || null;
 }
 
-// `pems` is the path, leaf first; `links` is `x509.verifyChain()` over it.
-// Null when every issuer may issue; otherwise
-// `{ index, check, pathLen, below }` with `check` one of `not-ca`, `key-cert-sign` and `path-len`.
-async function authorityProblem(pems, links) {
+// `pems` is the path, leaf first. Null when every certificate on it holds
+// RFC 5280's rules; otherwise `pathRuleProblem()`'s answer — `{ index, check,
+// why }`, with `pathLen` and `below` for `path-len`. **SINCE #201 IT IS THE
+// SHARED RULES AND NOT A SECOND COPY OF THREE OF THEM**: it was cA,
+// keyCertSign and pathLenConstraint and nothing else, so a path through a
+// CA whose nameConstraints excluded the leaf, or one carrying a critical
+// extension nothing here implements, was accepted by every caller. `links`
+// is no longer read and is kept so the three callers did not change shape.
+async function authorityProblem(pems, links, opts) {
   log.debug("Entering authorityProblem(). " + pems.length + " certificate(s).");
-  for (let i = 1; i < pems.length; i++) {
-    const bc = await basicConstraintsOf(pems[i]);
-    if (!bc || !bc.ca) {
-      log.debug("Leaving authorityProblem(). Certificate " + i + " is not a " +
-                "CA.");
-      return { index: i, check: 'not-ca' };
-    }
-    if (!x509.keyUsagePermits(links[i] && links[i].keyUsage, 'keyCertSign')) {
-      log.debug("Leaving authorityProblem(). Certificate " + i + " may not " +
-                "sign certificates.");
-      return { index: i, check: 'key-cert-sign' };
-    }
-    // Intermediates below THIS one — the leaf does not count.
-    const below = i - 1;
-    if (bc.pathLen !== null && bc.pathLen !== undefined &&
-        below > Number(bc.pathLen)) {
-      log.debug("Leaving authorityProblem(). pathLen exceeded at " + i + ".");
-      return { index: i, check: 'path-len', pathLen: bc.pathLen,
-               below: below };
-    }
-  }
-  log.debug("Leaving authorityProblem(). Every issuer may issue.");
-  return null;
+  const path = pems.map(function (pem) {
+    return certificateFromDer(pemToDer(pem)) || { der: Buffer.alloc(0) };
+  });
+  const problem = pathRuleProblem(path, opts || {});
+  log.debug("Leaving authorityProblem(). " +
+            (problem ? problem.check + ' at ' + problem.index
+                     : 'The path holds.'));
+  return problem;
+}
+
+// The code each of the rules' refusals is recorded under at the three doors
+// that hold a path to them (#201). The three about who may issue keep the
+// door's own code, as they always had one.
+function authorityCode(problem, issuerCode) {
+  log.debug("Entering authorityCode(). check=" + problem.check);
+  const codes = { 'name-constraints': 'STS-PKI-0194',
+                  critical: 'STS-PKI-0195', malformed: 'STS-PKI-0196',
+                  unusable: 'STS-PKI-0196', 'weak-signature': 'STS-PKI-0197',
+                  policy: 'STS-PKI-0199' };
+  const code = codes[problem.check] || issuerCode;
+  log.debug("Leaving authorityCode(). " + code);
+  return code;
 }
 
 // The certificate whose key verifies the signature. Null when it may sign;
@@ -2529,10 +3915,15 @@ function authoritySentence(problem, subject) {
     out = 'The certificate "' + subject + '" carries a KeyUsage that does ' +
           'not permit keyCertSign, so it may not sign the certificate below ' +
           'it.';
-  } else {
+  } else if (problem.check === 'path-len') {
     out = 'The certificate "' + subject + '" allows ' + problem.pathLen +
           ' intermediate CA certificate(s) below it and the chain puts ' +
           problem.below + ' there.';
+  } else {
+    // The rules #201 added — name constraints, a critical extension nothing
+    // here implements, a certificate RFC 5280 section 4 refuses — say which
+    // certificate in their own sentence.
+    out = 'The certificate path breaks RFC 5280: ' + problem.why + '.';
   }
   log.debug("Leaving authoritySentence().");
   return out;
@@ -2918,13 +4309,16 @@ async function verifyLeaf(realmId, leafPem, presentedChainPems, opts) {
     log.debug("Leaving nameAt().");
     return links[index] ? links[index].subject : '';
   };
-  const issuerProblem = await authorityProblem(path, links);
+  // A development realm may have built its hierarchy with SHA-1 (#181,
+  // `pki.signatureAlgorithm`); its own paths are then SHA-1 by construction.
+  const issuerProblem = await authorityProblem(path, links, {
+    allowSha1: mode.usesBrokenAlgorithms() });
   if (issuerProblem) {
     log.debug('Leaving verifyLeaf(). An issuer on the path may not issue.');
     return errorCodes.mark({ ok: false, links: links,
              why: authoritySentence(issuerProblem,
                                     nameAt(issuerProblem.index)) },
-                           'STS-PKI-0158');
+                           authorityCode(issuerProblem, 'STS-PKI-0158'));
   }
   const leafProblem = await signerProblem(leafPem, links);
   if (leafProblem) {
@@ -2946,8 +4340,8 @@ async function verifyLeaf(realmId, leafPem, presentedChainPems, opts) {
               altProblem.check + '.');
     return errorCodes.mark({ ok: false, links: links,
              why: alternativeSentence(altProblem, nameAt(altProblem.index)) },
-             altProblem.check === 'alt-missing' ? 'STS-PKI-0196'
-                                                : 'STS-PKI-0195');
+             altProblem.check === 'alt-missing' ? 'STS-PKI-0202'
+                                                : 'STS-PKI-0201');
   }
   // =======================================================================
   // **AND NOTHING ON IT MAY BE REVOKED (2026-09-12).** The header above said
@@ -3164,7 +4558,7 @@ function uploadedJwsAlg(publicKey) {
 // pretending the issuer was not supplied.
 function issuedBy(cert, issuer) {
   log.debug("Entering issuedBy().");
-  if (cert.issuer !== issuer.subject) {
+  if (!namesChain(cert, issuer)) {
     log.debug("Leaving issuedBy(). The names differ.");
     return 0;
   }
@@ -3183,9 +4577,28 @@ function issuedBy(cert, issuer) {
   return 1;
 }
 
+// Does `cert` name `issuer` as its issuer? The two names compared as RFC
+// 5280 section 7.1 compares them (`rdnsOfName()`: case, and leading,
+// trailing and repeated spaces, do not count), not as node spells them —
+// until #201 a chain whose names differed only in capitalisation or
+// whitespace did not chain here (NIST PKITS 4.3.3-4.3.5, 4.3.11). Node's
+// string comparison stands where the names cannot be read.
+function namesChain(cert, issuer) {
+  log.debug("Entering namesChain().");
+  const a = certificateFromDer(cert.raw);
+  const b = issuer === cert ? a : certificateFromDer(issuer.raw);
+  const fa = a ? pathFactsOf(a) : null;
+  const fb = b ? pathFactsOf(b) : null;
+  const same = fa && fb && !fa.problem && !fb.problem
+    ? fa.issuerRdns.join(',') === fb.subjectRdns.join(',')
+    : cert.issuer === issuer.subject;
+  log.debug("Leaving namesChain(). " + same);
+  return same;
+}
+
 function selfSignedCert(cert) {
   log.debug("Entering selfSignedCert().");
-  if (cert.subject !== cert.issuer) {
+  if (!namesChain(cert, cert)) {
     log.debug("Leaving selfSignedCert(). No.");
     return false;
   }
@@ -3499,8 +4912,10 @@ async function registerCertificate(realmId, opts) {
     }), links);
     if (issuerProblem) {
       log.debug('Leaving registerCertificate(). An issuer may not issue.');
-      return uploadRefusal('STS-PKI-0151', authoritySentence(issuerProblem,
-        oneLineName(path[issuerProblem.index].cert.subject)));
+      return uploadRefusal(authorityCode(issuerProblem, 'STS-PKI-0151'),
+        authoritySentence(issuerProblem,
+                          oneLineName(path[issuerProblem.index].cert
+                            .subject)));
     }
     // A WRONG ALTERNATIVE SIGNATURE IS REFUSED HERE TOO (#68) — the foreign
     // rule of `alternativeProblem()`: somebody else's hybrid CA may issue a
@@ -3511,7 +4926,7 @@ async function registerCertificate(realmId, opts) {
     if (altProblem) {
       log.debug('Leaving registerCertificate(). A wrong alternative ' +
                 'signature.');
-      return uploadRefusal('STS-PKI-0195', alternativeSentence(altProblem,
+      return uploadRefusal('STS-PKI-0201', alternativeSentence(altProblem,
         oneLineName(path[altProblem.index].cert.subject)));
     }
     if (!x509.keyUsagePermits(links[0].keyUsage, 'digitalSignature')) {
@@ -3912,6 +5327,16 @@ async function verifySignerChain(realmId, material) {
                     '. A certificate registered by value is its own whole ' +
                     'chain, and it has to hold.', { links: links });
     }
+    // The rules a certificate is held to on its own (#201): a pinned
+    // certificate carrying a critical extension nothing here implements is
+    // refused as it would be anywhere on a path.
+    const alone = await authorityProblem([leaf.pem], links);
+    if (alone) {
+      log.debug('Leaving verifySignerChain(). The pinned certificate ' +
+                'breaks a rule.');
+      return refuse(authorityCode(alone, 'STS-PKI-0157'),
+                    authoritySentence(alone, leafName), { links: links });
+    }
     const signs = await signerProblem(leaf.pem, links, { allowCa: true });
     if (signs) {
       log.debug('Leaving verifySignerChain(). The pinned key may not sign.');
@@ -3951,44 +5376,67 @@ async function verifySignerChain(realmId, material) {
              revocation: verdict.revocation || null };
   }
 
-  // --- ANYBODY ELSE'S: complete to a registered self-signed root ------------
-  if (path.length === 1 || !top.uploaded || !selfSignedCert(top.cert)) {
+  // --- ANYBODY ELSE'S: a path to a registered self-signed root -------------
+  //
+  // **BUILT BY `verifyPathToAnchors()` SINCE #201**, the self-signed
+  // certificates registered with the key as its anchors and the rest as
+  // intermediates. The greedy walk above answers only whether the path ends
+  // at this service's Root; as the builder of a foreign path it took the
+  // first issuer whose name matched and never the next, so an expired
+  // sibling or a cross-certificate registered beside the right one refused a
+  // chain that held, and it held the path to cA, keyCertSign and
+  // pathLenConstraint and nothing else — a registered chain through a CA
+  // whose nameConstraints excluded the leaf verified assertions (x509-limbo,
+  // `tests/x509_limbo.js`). The anchors are what the operator registered,
+  // which is the trust decision `registerCertificate()` records.
+  const anchors = registered.filter(function (one) {
+    return selfSignedCert(one.cert);
+  }).map(function (one) {
+    return certificateFromDer(one.cert.raw);
+  }).filter(Boolean);
+  if (!anchors.length || path.length === 1) {
     log.debug('Leaving verifySignerChain(). Incomplete.');
     return refuse('STS-PKI-0156', 'The chain of "' + leafName + '" in ' +
                   source + ' is incomplete: nothing registered with it ' +
-                  'issued "' + oneLineName(top.cert.subject) + '" (its issuer is "' +
-                  oneLineName(top.cert.issuer) + '"). A certificate that is ' +
-                  'not this realm\'s must be registered with its WHOLE ' +
-                  'chain, up to and including the self-signed root, and ' +
-                  'the whole chain is validated every time the key ' +
-                  'verifies a signature.',
+                  'issued "' + oneLineName(top.cert.subject) + '" (its ' +
+                  'issuer is "' + oneLineName(top.cert.issuer) + '"). A ' +
+                  'certificate that is not this realm\'s must be registered ' +
+                  'with its WHOLE chain, up to and including the ' +
+                  'self-signed root, and the whole chain is validated every ' +
+                  'time the key verifies a signature.',
                   { path: subjects });
   }
+  const intermediates = registered.filter(function (one) {
+    return !selfSignedCert(one.cert);
+  }).map(function (one) {
+    return one.cert.raw;
+  });
+  const foreign = await verifyPathToAnchors(leaf.cert.raw, intermediates,
+                                          anchors, {});
+  if (!foreign.ok) {
+    const code = foreign.check === 'no-path' || foreign.check === 'exhausted'
+      ? 'STS-PKI-0156'
+      : (foreign.check === 'signature' || foreign.check === 'validity')
+        ? 'STS-PKI-0157'
+        : authorityCode({ check: foreign.check }, 'STS-PKI-0158');
+    log.debug('Leaving verifySignerChain(). The path was refused (' +
+              foreign.check + ').');
+    return refuse(code, 'The chain of "' + leafName + '" in ' + source +
+                  ' does not hold: ' + foreign.reason + '.',
+                  { path: subjects });
+  }
+  const chainPems = foreign.chain.map(function (one) { return one.pem; });
+  const chainSubjects = foreign.chain.map(function (one) {
+    return oneLineName(one.x509.subject);
+  });
   let links;
   try {
-    links = await x509.verifyChain(path.map(function (one) {
-      return one.pem;
-    }));
+    links = await x509.verifyChain(chainPems);
   } catch (e) {
     log.debug("Caught in verifySignerChain(): " + ((e && e.message) || e));
     log.debug('Leaving verifySignerChain(). The path would not parse.');
     return refuse('STS-PKI-0161', 'The chain of "' + leafName + '" could not ' +
-                  'be read: ' + e.message + '.', { path: subjects });
-  }
-  const broken = linkProblem(links);
-  if (broken) {
-    log.debug('Leaving verifySignerChain(). A link fails.');
-    return refuse('STS-PKI-0157', 'The chain does not verify: ' + broken + '.',
-                  { links: links, path: subjects });
-  }
-  const issuerProblem = await authorityProblem(path.map(function (one) {
-    return one.pem;
-  }), links);
-  if (issuerProblem) {
-    log.debug('Leaving verifySignerChain(). An issuer may not issue.');
-    return refuse('STS-PKI-0158', authoritySentence(issuerProblem,
-                    subjects[issuerProblem.index]),
-                  { links: links, path: subjects });
+                  'be read: ' + e.message + '.', { path: chainSubjects });
   }
   // The foreign rule of `alternativeProblem()` (#68): wrong is refused.
   const altProblem = await alternativeProblem(path.map(function (one) {
@@ -3996,7 +5444,7 @@ async function verifySignerChain(realmId, material) {
   }), links, { required: false });
   if (altProblem) {
     log.debug('Leaving verifySignerChain(). A wrong alternative signature.');
-    return refuse('STS-PKI-0195', alternativeSentence(altProblem,
+    return refuse('STS-PKI-0201', alternativeSentence(altProblem,
                     subjects[altProblem.index]),
                   { links: links, path: subjects });
   }
@@ -4004,10 +5452,11 @@ async function verifySignerChain(realmId, material) {
   if (signs) {
     log.debug('Leaving verifySignerChain(). The leaf may not sign.');
     return refuse('STS-PKI-0159', signerSentence(signs, leafName),
-                  { links: links, path: subjects });
+                  { links: links, path: chainSubjects });
   }
   log.debug('Leaving verifySignerChain(). Anchored at a registered root.');
-  return { ok: true, anchor: 'registered-root', links: links, path: subjects };
+  return { ok: true, anchor: 'registered-root', links: links,
+           path: chainSubjects, chain: chainPems };
 }
 
 // A short sentence for a door's log line and audit detail.
@@ -7516,23 +8965,22 @@ function report(realmId) {
 //
 // **`verifyPathToAnchors()` IS GO'S `x509.Certificate.Verify()`** with
 // caller-supplied roots and `ExtKeyUsageAny`, because SPIRE is what the
-// attestors copy. It builds the path greedily by ISSUER with `issuedBy()`
-// above — a root that issued the current certificate first, then the first
-// unused intermediate — and checks every signature with the vendored
-// `x509.verifyChain()`, which reads ML-DSA, SLH-DSA and composite signatures.
-// Every certificate must be inside its validity window; every one above the
-// leaf a CA whose pathLenConstraint allows what is below it and whose
-// keyUsage, where stated, permits keyCertSign; the path must end at a
-// certificate in the anchors, which need not be self-signed (Go's roots are a
-// pool, so a root's own signature is never asked about).
+// attestors copy. Since #201 it BACKTRACKS over every issuer whose name
+// matches and whose key verifies — it took the first name match and stopped,
+// until x509-limbo's path-building cases — checks each signature with the
+// vendored engine, which reads ML-DSA, SLH-DSA and composite signatures, and
+// holds the path to `pathRuleProblem()` and `pathValidityProblem()`, the one
+// set of RFC 5280 rules every path here is held to (see the section header
+// above `pathRuleProblem()`). The path must end at a certificate in the
+// anchors, which need not be self-signed (Go's roots are a pool, so a root's
+// own signature is never asked about).
 //
-// **TWO THINGS FAIL CLOSED WHERE GO WOULD EVALUATE THEM.** A critical
-// extension this module does not understand is refused on any certificate —
-// Go refuses those too — unless the caller names it (`tpm_devid` names
-// subjectAltName, which EK certificates mark critical, exactly as SPIRE
-// strips it). And a CA carrying nameConstraints is refused, because they are
-// not evaluated here: a path accepted without checking what its CA was
-// limited to would be accepted wrongly.
+// **A CRITICAL EXTENSION THIS MODULE DOES NOT UNDERSTAND IS REFUSED** on any
+// certificate — Go refuses those too — unless the caller names it
+// (`opts.allowCritical`). **NAME CONSTRAINTS ARE EVALUATED since #201**; they
+// were refused wholesale, which refused every legitimate constrained CA and
+// was the one thing here that failed closed only because nothing was
+// checked.
 //
 // **THE OPENSSH HALF** reads RFC 4251's wire types and OpenSSH's
 // PROTOCOL.certkeys: ssh-rsa, ecdsa-sha2-nistp256/384/521, ssh-ed25519 and
@@ -7650,184 +9098,347 @@ function subjectText(one) {
         ? ' (' + String(one.x509.subjectAltName) + ')' : '');
 }
 
-// A critical extension nothing here evaluates, or a CA's nameConstraints,
-// as a sentence; '' when neither.
-async function foreignCriticalProblem(one, isCa, allowed) {
-  log.debug("Entering foreignCriticalProblem().");
-  const understood = ['basicConstraints', 'keyUsage', 'extKeyUsage',
-                      'subjectAltName', 'authorityKeyIdentifier',
-                      'subjectKeyIdentifier'];
-  const extensions = await extensionsOf(one);
-  const name = '"' + subjectText(one) + '"';
-  for (let i = 0; i < extensions.length; i++) {
-    const ext = extensions[i];
-    if (isCa && ext.name === 'nameConstraints') {
-      log.debug("Leaving foreignCriticalProblem(). nameConstraints.");
-      return name + ' carries nameConstraints, which this server does not ' +
-             'evaluate, so a path through it is refused';
-    }
-    if (ext.critical && understood.indexOf(ext.name) < 0 &&
-        allowed.indexOf(ext.name) < 0) {
-      log.debug("Leaving foreignCriticalProblem(). Unhandled.");
-      return name + ' carries an unhandled critical extension (' +
-             ext.name + ')';
-    }
-  }
-  log.debug("Leaving foreignCriticalProblem().");
-  return '';
-}
-
-// What stops `one` signing a path with `below` CA certificates beneath it,
-// or ''.
-async function foreignCaProblem(one, below) {
-  log.debug("Entering foreignCaProblem().");
-  const name = '"' + subjectText(one) + '"';
-  if (!one.x509.ca) {
-    log.debug("Leaving foreignCaProblem(). Not a CA.");
-    return name + ' issued a certificate and is not a CA ' +
-           '(basicConstraints cA is not set)';
-  }
-  const extensions = await extensionsOf(one);
-  const bc = extensions.filter(function (ext) {
-    return ext.name === 'basicConstraints';
-  })[0];
-  const pathLen = bc && bc.value ? bc.value.pathLen : null;
-  if (pathLen !== null && pathLen !== undefined && below > pathLen) {
-    log.debug("Leaving foreignCaProblem(). pathLen.");
-    return name + ' allows ' + pathLen + ' CA certificate(s) below it ' +
-           '(pathLenConstraint) and the path has ' + below;
-  }
-  const ku = extensions.filter(function (ext) {
-    return ext.name === 'keyUsage';
-  })[0];
-  if (ku && Array.isArray(ku.value) && ku.value.indexOf('keyCertSign') < 0) {
-    log.debug("Leaving foreignCaProblem(). keyUsage.");
-    return name + '\'s keyUsage does not permit keyCertSign';
-  }
-  log.debug("Leaving foreignCaProblem().");
-  return '';
-}
-
 // Build and verify a path from `leafDer` through `intermediateDers` to one of
 // `anchors` (certificateFromDer() answers). `opts.now` is milliseconds;
-// `opts.allowCritical` names critical extensions not to refuse. Resolves
-// `{ ok: true, chain }` — leaf first, the anchor last — or
-// `{ ok: false, reason }`. Never rejects.
+// `opts.skewMs` widens every validity window; `opts.allowCritical` names
+// critical extensions not to refuse. Resolves `{ ok: true, chain }` — leaf
+// first, the anchor last — or `{ ok: false, reason, check }`. Never rejects.
+//
+// **IT BACKTRACKS (#201).** Every issuer whose name matches and whose key
+// verifies the certificate is a candidate, an anchor before an intermediate
+// and one whose subjectKeyIdentifier matches the authorityKeyIdentifier
+// before one that does not; a candidate path that fails a rule or the clock
+// is abandoned for the next. The first version took the first issuer whose
+// NAME matched and stopped there, so a cross-signed intermediate, a rolled
+// key under the same name or an expired sibling refused a path that
+// existed. Bounded by PATH_MAX_LENGTH and PATH_MAX_SIGNATURES, with no
+// certificate — nor a second certificate with the same subject and key —
+// used twice in one path, so a loop of cross-certificates ends.
+/**
+ * @returns {Promise<{ ok: boolean, chain?: any[], reason?: string,
+ *                     check?: string, policies?: string[] }>}
+ */
 async function verifyPathToAnchors(leafDer, intermediateDers, anchors, opts) {
   log.debug("Entering verifyPathToAnchors().");
   const options = opts || {};
   const leaf = certificateFromDer(leafDer);
   if (!leaf) {
     log.debug("Leaving verifyPathToAnchors(). No leaf.");
-    return { ok: false, reason: 'the leaf is not an X.509 certificate' };
+    return { ok: false, check: 'unusable',
+             reason: 'the leaf is not an X.509 certificate' };
   }
   const intermediates = [];
   for (let i = 0; i < (intermediateDers || []).length; i++) {
     const one = certificateFromDer(intermediateDers[i]);
     if (!one) {
       log.debug("Leaving verifyPathToAnchors(). A bad intermediate.");
-      return { ok: false, reason: 'intermediate certificate ' + i +
-               ' is not an X.509 certificate' };
+      return { ok: false, check: 'unusable',
+               reason: 'intermediate certificate ' + i +
+                       ' is not an X.509 certificate' };
     }
     intermediates.push(one);
   }
   const roots = anchors || [];
   if (!roots.length) {
     log.debug("Leaving verifyPathToAnchors(). No anchors.");
-    return { ok: false, reason: 'no trust anchor is configured' };
+    return { ok: false, check: 'no-anchor',
+             reason: 'no trust anchor is configured' };
   }
-  const path = [leaf];
-  const used = {};
-  let current = leaf;
+  const now = options.now === undefined ? Date.now() : options.now;
+  const isAnchor = function (one) {
+    log.debug("Entering isAnchor().");
+    log.debug("Leaving isAnchor().");
+    return roots.some(function (root) { return root.der.equals(one.der); });
+  };
+  // What the path has to hold before it is accepted: the rules, then the
+  // clock. The first failure met is kept for the refusal when nothing holds.
+  let firstFailure = null;
+  // The user-constrained-policy-set of the path accepted (RFC 5280 section
+  // 6.1.6), for a caller that asked for policies.
+  let acceptedPolicies = [];
+  const accept = function (path) {
+    log.debug("Entering accept(). " + path.length + " certificate(s).");
+    const problem = pathRuleProblem(path, options) ||
+                    pathValidityProblem(path, now, options.skewMs);
+    if (problem) {
+      firstFailure = firstFailure || problem;
+      log.debug("Leaving accept(). " + problem.check);
+      return false;
+    }
+    acceptedPolicies = pathPolicyOutcome(path, options.policy)
+      .userConstrainedPolicySet;
+    log.debug("Leaving accept().");
+    return true;
+  };
   // A leaf that IS one of the anchors verifies as itself, as in Go.
-  let anchored = roots.some(function (root) {
-    return root.der.equals(leaf.der);
-  });
-  while (!anchored) {
-    const top = current;
-    const root = roots.filter(function (candidate) {
-      return issuedBy(top.x509, candidate.x509) > 0;
-    })[0];
-    if (root) {
-      path.push(root);
-      anchored = true;
-      break;
-    }
-    let next = -1;
-    intermediates.forEach(function (candidate, index) {
-      if (next < 0 && !used[index] &&
-          issuedBy(top.x509, candidate.x509) > 0) {
-        next = index;
-      }
-    });
-    if (next < 0) {
-      log.debug("Leaving verifyPathToAnchors(). No path.");
-      return { ok: false, reason: 'no path from "' +
-               subjectText(top) +
-               '" to a configured trust anchor' };
-    }
-    used[next] = true;
-    path.push(intermediates[next]);
-    current = intermediates[next];
+  if (isAnchor(leaf)) {
+    const alone = accept([leaf]);
+    log.debug("Leaving verifyPathToAnchors(). The leaf is an anchor.");
+    return alone ? { ok: true, chain: [leaf], policies: acceptedPolicies }
+                 : { ok: false, check: firstFailure.check,
+                     reason: firstFailure.why };
   }
-  let links = [];
+  let signatures = 0;
+  let exhausted = false;
+  let unsigned = '';
+  const identityOf = function (one) {
+    log.debug("Entering identityOf().");
+    const facts = pathFactsOf(one);
+    const spki = facts.pk ? Buffer.from(facts.pk.subjectPublicKeyInfo
+      .toSchema().toBER(false)).toString('hex') : one.der.toString('hex');
+    log.debug("Leaving identityOf().");
+    return facts.subjectRdns.join(',') + '|' + spki;
+  };
+  // The issuers of `top` worth trying, best first.
+  const candidatesFor = function (top, path) {
+    log.debug("Entering candidatesFor().");
+    const facts = pathFactsOf(top);
+    const inPath = path.map(identityOf);
+    const out = roots.map(function (one) {
+      return { one: one, anchor: true };
+    }).concat(intermediates.filter(function (one) {
+      return !isAnchor(one);
+    }).map(function (one) {
+      return { one: one, anchor: false };
+    })).filter(function (candidate) {
+      const theirs = pathFactsOf(candidate.one);
+      return !theirs.problem &&
+             theirs.subjectRdns.join(',') === facts.issuerRdns.join(',') &&
+             inPath.indexOf(identityOf(candidate.one)) < 0;
+    });
+    const rank = function (candidate) {
+      log.debug("Entering rank().");
+      const theirs = pathFactsOf(candidate.one);
+      const keyed = facts.authorityKeyIdentifier && theirs.keyIdentifier &&
+                    facts.authorityKeyIdentifier === theirs.keyIdentifier;
+      log.debug("Leaving rank().");
+      return (candidate.anchor ? 0 : 2) + (keyed ? 0 : 1);
+    };
+    out.sort(function (a, b) { return rank(a) - rank(b); });
+    log.debug("Leaving candidatesFor(). " + out.length + ".");
+    return out;
+  };
+  const extend = async function (path) {
+    log.debug("Entering extend(). " + path.length + " certificate(s).");
+    if (path.length >= PATH_MAX_LENGTH) {
+      exhausted = true;
+      log.debug("Leaving extend(). Too long.");
+      return null;
+    }
+    const top = path[path.length - 1];
+    const candidates = candidatesFor(top, path);
+    for (let c = 0; c < candidates.length; c++) {
+      if (signatures >= PATH_MAX_SIGNATURES) {
+        exhausted = true;
+        log.debug("Leaving extend(). Out of signature checks.");
+        return null;
+      }
+      signatures++;
+      const candidate = candidates[c];
+      if (!(await pathSigned(top, candidate.one))) {
+        unsigned = unsigned || 'the signature on "' + pathSubjectOf(top) +
+                   '" does not verify under the key of "' +
+                   pathSubjectOf(candidate.one) + '", the only certificate ' +
+                   'that names itself as its issuer';
+        continue;
+      }
+      const longer = path.concat([candidate.one]);
+      if (candidate.anchor) {
+        if (accept(longer)) {
+          log.debug("Leaving extend(). Anchored.");
+          return longer;
+        }
+        continue;
+      }
+      const found = await extend(longer);
+      if (found) {
+        log.debug("Leaving extend(). Found below.");
+        return found;
+      }
+    }
+    log.debug("Leaving extend(). Nothing from here.");
+    return null;
+  };
+  let chain = null;
   try {
-    links = await x509.verifyChain(path.map(function (one) {
-      return one.pem;
-    }));
+    chain = await extend([leaf]);
   } catch (e) {
     log.debug("Caught in verifyPathToAnchors(): " + ((e && e.message) || e));
-    log.debug("Leaving verifyPathToAnchors(). The engine could not read it.");
-    return { ok: false, reason: 'the path could not be read: ' +
-             ((e && e.message) || e) };
+    log.debug("Leaving verifyPathToAnchors(). The builder threw.");
+    return { ok: false, check: 'unusable',
+             reason: 'the path could not be built: ' +
+                     ((e && e.message) || e) };
   }
-  const at = options.now === undefined ? Date.now() : options.now;
-  for (let i = 0; i < path.length; i++) {
-    const one = path[i];
-    const name = '"' + subjectText(one) + '"';
-    if (Date.parse(one.x509.validFrom) > at ||
-        Date.parse(one.x509.validTo) < at) {
-      log.debug("Leaving verifyPathToAnchors(). Outside validity.");
-      return { ok: false, reason: name + ' is outside its validity window (' +
-               one.x509.validFrom + ' to ' + one.x509.validTo + ')' };
+  if (chain) {
+    // A FOREIGN hybrid path (#68): a wrong alternative signature is refused;
+    // an absent or uncheckable one is the issuer's business — see
+    // `alternativeProblem()`. Asked of the path the builder accepted.
+    const altPems = chain.map(function (one) {
+      return one.pem;
+    });
+    const altProblem = await alternativeProblem(altPems,
+      await x509.verifyChain(altPems), { required: false });
+    if (altProblem) {
+      log.debug("Leaving verifyPathToAnchors(). A wrong alternative " +
+                "signature.");
+      return { ok: false, check: 'alternative-signature',
+               reason: alternativeSentence(altProblem,
+                                           pathSubjectOf(chain[altProblem.index])) };
     }
-    if (i < path.length - 1 && !(links[i] && links[i].signatureValid)) {
-      log.debug("Leaving verifyPathToAnchors(). A bad signature.");
-      return { ok: false, reason: 'the signature on ' + name + ' does not ' +
-               'verify under the key of the certificate above it' +
-               (links[i] && links[i].error ? ' (' + links[i].error + ')'
-                                           : '') };
-    }
-    const critical = await foreignCriticalProblem(one, i > 0,
-                                                  options.allowCritical || []);
-    if (critical) {
-      log.debug("Leaving verifyPathToAnchors(). An extension.");
-      return { ok: false, reason: critical };
-    }
-    if (i > 0) {
-      const problem = await foreignCaProblem(one, i - 1);
-      if (problem) {
-        log.debug("Leaving verifyPathToAnchors(). Not a usable CA.");
-        return { ok: false, reason: problem };
-      }
-    }
+    log.debug("Leaving verifyPathToAnchors(). " + chain.length +
+              " certificate(s).");
+    return { ok: true, chain: chain, policies: acceptedPolicies };
   }
-  // A FOREIGN hybrid path (#68): a wrong alternative signature is refused; an
-  // absent or uncheckable one is the issuer's business — see
-  // `alternativeProblem()`.
-  const altProblem = await alternativeProblem(path.map(function (one) {
-    return one.pem;
-  }), links, { required: false });
-  if (altProblem) {
-    log.debug("Leaving verifyPathToAnchors(). A wrong alternative " +
-              "signature.");
-    return { ok: false,
-             reason: alternativeSentence(altProblem,
-                                         subjectText(path[altProblem.index])) };
+  if (firstFailure) {
+    log.debug("Leaving verifyPathToAnchors(). " + firstFailure.check);
+    return { ok: false, check: firstFailure.check, reason: firstFailure.why };
   }
-  log.debug("Leaving verifyPathToAnchors(). " + path.length +
-            " certificate(s).");
-  return { ok: true, chain: path };
+  const leafFacts = pathFactsOf(leaf);
+  if (leafFacts.problem) {
+    log.debug("Leaving verifyPathToAnchors(). An unusable leaf.");
+    return { ok: false, check: 'unusable',
+             reason: '"' + pathSubjectOf(leaf) + '" ' + leafFacts.problem };
+  }
+  log.debug("Leaving verifyPathToAnchors(). No path.");
+  return { ok: false,
+           check: exhausted ? 'exhausted' : (unsigned ? 'signature'
+                                                      : 'no-path'),
+           reason: exhausted
+             ? 'no path to a configured trust anchor was found within ' +
+               PATH_MAX_LENGTH + ' certificates and ' + PATH_MAX_SIGNATURES +
+               ' signature checks'
+             : (unsigned || 'no path from "' + pathSubjectOf(leaf) +
+                            '" to a configured trust anchor') };
+}
+
+// ---------------------------------------------------------------------------
+// THE CHAIN OPENSSL VERIFIED, HELD TO THE SAME RULES (#201).
+//
+// Two surfaces here let OpenSSL build and verify a path — the main port's
+// client certificate (`socket.authorized`) and every outbound request
+// (`common/outbound_tls.ts`) — and x509-limbo found OpenSSL accepting paths
+// the rules above refuse: a nameConstraints on an end entity, an empty or
+// malformed constraint, a malformed name under a constraint, a wildcard that
+// reaches into an excluded subtree (CVE-2025-61727), a root with no
+// basicConstraints. OpenSSL is not replaced — it still builds the path,
+// checks every signature and the clock — and what it verified is then asked
+// these rules too. `peer` is node's DETAILED peer certificate
+// (`getPeerCertificate(true)`), whose `issuerCertificate` links are the chain
+// node reports, ending at the anchor. Answers `pathRuleProblem()`'s verdict
+// or null; a chain it cannot read is left to OpenSSL's answer.
+// ---------------------------------------------------------------------------
+function peerChainProblem(peer) {
+  log.debug("Entering peerChainProblem().");
+  const path = [];
+  const seen = {};
+  let current = peer;
+  while (current && current.raw && path.length < PATH_MAX_LENGTH) {
+    const key = String(current.fingerprint256 || path.length);
+    if (seen[key]) {
+      break;
+    }
+    seen[key] = true;
+    const one = certificateFromDer(current.raw);
+    if (!one) {
+      log.debug("Leaving peerChainProblem(). Unreadable.");
+      return null;
+    }
+    path.push(one);
+    current = current.issuerCertificate;
+  }
+  if (!path.length) {
+    log.debug("Leaving peerChainProblem(). No certificate.");
+    return null;
+  }
+  const problem = pathRuleProblem(path, {});
+  log.debug("Leaving peerChainProblem(). " +
+            (problem ? problem.check : 'It holds.'));
+  return problem;
+}
+
+// ---------------------------------------------------------------------------
+// THE SYNCHRONOUS DOOR (#201): is `leaf` issued, directly, by one of
+// `authorities`, and does the two-certificate path hold the rules above?
+//
+// For the doors that answer inside a synchronous handler and deliberately
+// walk no chain — the SPIRE Server API's caller check (`spiffe_auth.ts`,
+// whose SVIDs this service's Issuing CA signs directly) and an OpenID4VCI
+// key attestation's `x5c` (`vc_issuer.ts`). They used node's
+// `checkIssued()` and `verify()` and nothing else, so a leaf that was
+// itself a CA, carried a critical extension nothing reads or sat outside a
+// name constraint was accepted. The signature is node's, so an authority
+// with a key OpenSSL cannot read (a post-quantum one) verifies nothing
+// here; the asynchronous `verifyPathToAnchors()` is the door for those.
+//
+// `authorities` are `{ certificate: X509Certificate, ... }` or DER/PEM;
+// `opts` as `verifyPathToAnchors()`. `{ ok: true, index }` — which authority
+// — or `{ ok: false, check, reason }`.
+// ---------------------------------------------------------------------------
+function verifyIssuedDirectly(leafDer, authorities, opts) {
+  log.debug("Entering verifyIssuedDirectly().");
+  const options = opts || {};
+  const leaf = certificateFromDer(leafDer);
+  if (!leaf) {
+    log.debug("Leaving verifyIssuedDirectly(). No leaf.");
+    return { ok: false, check: 'unusable',
+             reason: 'the certificate is not an X.509 certificate' };
+  }
+  let firstFailure = null;
+  let signedByAny = false;
+  const entryOf = function (given) {
+    log.debug("Entering entryOf().");
+    let entry = null;
+    if (given && given.certificate && given.certificate.raw) {
+      entry = certificateFromDer(given.certificate.raw);
+    } else if (given && given.raw) {
+      entry = certificateFromDer(given.raw);
+    } else if (Buffer.isBuffer(given)) {
+      entry = certificateFromDer(given);
+    } else if (typeof given === 'string') {
+      entry = certificateFromDer(pemToDer(given));
+    }
+    log.debug("Leaving entryOf().");
+    return entry;
+  };
+  for (let i = 0; i < (authorities || []).length; i++) {
+    const authority = entryOf(authorities[i]);
+    if (!authority) {
+      continue;
+    }
+    let signed = false;
+    try {
+      signed = leaf.x509.checkIssued(authority.x509) &&
+               leaf.x509.verify(authority.x509.publicKey);
+    } catch (e) {
+      // `verify` throws for a key of the wrong type — the ordinary case when
+      // the authorities hold an EC and an RSA key. It did not sign this.
+      log.debug("Caught in verifyIssuedDirectly(): " +
+                ((e && e.message) || e));
+      signed = false;
+    }
+    if (!signed) {
+      continue;
+    }
+    signedByAny = true;
+    const path = [leaf, authority];
+    const problem = pathRuleProblem(path, options) ||
+                    pathValidityProblem(path, options.now === undefined
+                      ? Date.now() : options.now, options.skewMs);
+    if (!problem) {
+      log.debug("Leaving verifyIssuedDirectly(). Authority " + i + ".");
+      return { ok: true, index: i, chain: path };
+    }
+    firstFailure = firstFailure || problem;
+  }
+  if (firstFailure) {
+    log.debug("Leaving verifyIssuedDirectly(). " + firstFailure.check);
+    return { ok: false, check: firstFailure.check,
+             reason: firstFailure.why };
+  }
+  log.debug("Leaving verifyIssuedDirectly(). Nothing signed it.");
+  return { ok: false, check: signedByAny ? 'unusable' : 'no-path',
+           reason: 'no authority given issued and signed "' +
+                   pathSubjectOf(leaf) + '"' };
 }
 
 
@@ -8688,6 +10299,11 @@ module.exports = {
   spkiOf: spkiOf,
   keyUsageOf: keyUsageOf,
   verifyPathToAnchors: verifyPathToAnchors,
+  verifyIssuedDirectly: verifyIssuedDirectly,
+  peerChainProblem: peerChainProblem,
+  pathFactsOf: pathFactsOf,
+  pathPolicyOutcome: pathPolicyOutcome,
+  pathRuleProblem: pathRuleProblem,
   // --- WebAuthn attestation certificates (#105) ---
   attestationCertificateFacts: attestationCertificateFacts,
   attestationKeyIdentifier: attestationKeyIdentifier,

@@ -80,6 +80,10 @@ import mode = require('../common/mode');
 // is marked on the response object and never put in an error_description.
 import errorCodes = require('../common/error_codes');
 import cacheRegistry = require('../common/cache_registry');
+// THE PATH RULES (#201): a key attestation's `x5c` leaf is held to them
+// through the one synchronous issuer door. A leaf library that requires
+// nothing here.
+import pki = require('../common/pki');
 // The register the admin console counts credentials in. The three builders
 // below sign with jsonwebtoken (or with BBS) directly rather than through
 // helpers.signJwt(), so they are not counted by the recorder that catches every
@@ -875,27 +879,40 @@ class VcIssuer {
     const candidates: any[] = trusted.map(function (t) {
       return { label: t.label, key: t.cert.publicKey };
     });
+    let last = 'no certificate in oid4vci.keyAttestationTrustedCertificates ' +
+               'verifies it';
+    let refusedX5c = '';
     if (Array.isArray(header.x5c) && header.x5c.length) {
+      // A LEAF A TRUSTED ATTESTER ISSUED, AND THE TWO-CERTIFICATE PATH
+      // HOLDS RFC 5280 (#201): until then node's `checkIssued()` and
+      // `verify()` alone, so a leaf that was itself a CA, had expired or
+      // carried a critical extension nothing here implements vouched for
+      // the key it held. `pki.verifyIssuedDirectly()` is the one
+      // synchronous door for a one-hop issuer check.
+      let der: Buffer = Buffer.alloc(0);
       try {
-        const leaf = new crypto.X509Certificate(
-          Buffer.from(String(header.x5c[0]), 'base64'));
-        trusted.forEach(function (t) {
-          if (leaf.checkIssued(t.cert) && leaf.verify(t.cert.publicKey)) {
-            candidates.unshift({ label: 'a certificate ' + t.label +
-                                        ' issued', key: leaf.publicKey });
-          }
-        });
+        der = Buffer.from(String(header.x5c[0]), 'base64');
       } catch (e) {
         // An x5c that cannot be read names nobody; the trusted certificates
         // themselves are still tried below.
         log.debug("Caught in VcIssuer.verifyKeyAttestation(): " +
                   ((e && e.message) || e));
       }
+      trusted.forEach(function (t) {
+        const direct = pki.verifyIssuedDirectly(der,
+                                                [{ certificate: t.cert }]);
+        if (direct.ok) {
+          candidates.unshift({ label: 'a certificate ' + t.label +
+                                      ' issued',
+                               key: direct.chain[0].x509.publicKey });
+        } else if (direct.check !== 'no-path') {
+          refusedX5c = refusedX5c || '; the x5c certificate ' + t.label +
+                       ' issued is refused: ' + direct.reason;
+        }
+      });
     }
     let claims: any = null;
     let by = '';
-    let last = 'no certificate in oid4vci.keyAttestationTrustedCertificates ' +
-               'verifies it';
     for (let i = 0; i < candidates.length && !claims; i++) {
       try {
         claims = stsCrypto.verifyJws(String(token), candidates[i].key,
@@ -908,7 +925,8 @@ class VcIssuer {
       }
     }
     if (!claims) {
-      throw new Error('the key attestation does not verify: ' + last);
+      throw new Error('the key attestation does not verify: ' + last +
+                      refusedX5c);
     }
     if (!claims.iat) {
       throw new Error('the key attestation carries no iat.');

@@ -1169,11 +1169,15 @@ const SCIM_OPERATIONS = [
   { operation: 'discovery', label: 'Discovery', method: 'GET',
     what: 'ServiceProviderConfig, ResourceTypes or Schemas (section 4). What ' +
           'a client reads before it does anything else, and the one thing ' +
-          'here that touches no directory entry.' }
+          'here that touches no directory entry.' },
+  { operation: 'unknown', label: 'Unknown path', method: '',
+    what: 'A request to a path under /scim/v2 that names no endpoint, ' +
+          'answered 404 in the SCIM Error schema (RFC 7644 section 3.12) ' +
+          'rather than by express as an HTML page (#206).' }
 ];
 
 const SCIM_RESOURCE_TYPES = ['User', 'Group', 'Bulk', 'ServiceProviderConfig',
-                             'ResourceType', 'Schema', 'Self'];
+                             'ResourceType', 'Schema', 'Self', 'None'];
 
 // ---------------------------------------------------------------------------
 // THE COUNTERS ARE PER TRUST REALM, AND THEY WERE NOT UNTIL 2026-09-06.

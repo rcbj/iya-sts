@@ -42,11 +42,11 @@ A browser arrives at `/saml11/sso` with:
 
 | Parameter | What is done with it |
 |---|---|
-| `TARGET` | the resource the person wants; echoed back byte for byte — SAML 1.1's RelayState |
+| `TARGET` | the resource the person wants; echoed back byte for byte — SAML 1.1's RelayState. Shibboleth's request profile spells it `target`, which is read the same way |
 | `shire` | Shibboleth's name for the assertion consumer URL, the only thing in the protocol that carries one |
 | `providerId` | who the assertion is **for** — its audience |
 | `time` | read and logged, not enforced |
-| `profile` | **non-spec**: `post` or `artifact` |
+| `profile` | **non-spec**: `post` or `artifact`; without it, the binding the relying party registered for its `shire` decides |
 | `format` | **non-spec**: the NameIdentifier format to answer with |
 
 **Shibboleth's request profile** (`shire`, `target`, `providerId`, `time`,
@@ -70,16 +70,22 @@ screen.
 
 ### Browser/POST and Browser/Artifact
 
-**The two profiles are chosen here, not asked for.** Nothing in SAML 1.1 lets
-a relying party choose, so `saml11.defaultProfile` decides, and the non-spec
-`profile` parameter (or an arriving `SAMLart`) overrides it — the same kind of
-device as WS-Trust's `/sts?encrypt=1`, and marked as non-spec wherever it
-appears.
+**The two profiles are chosen here.** Nothing in SAML 1.1 lets a relying
+party ask in the protocol, but a relying party whose metadata was consumed
+registered each assertion consumer service WITH its profile — a Shibboleth SP
+publishes `/SAML/POST` as `browser-post` and `/SAML/Artifact` as
+`artifact-01` — so the `shire` it sends chooses, which is what a Shibboleth
+identity provider does. Otherwise `saml11.defaultProfile` decides, and the
+non-spec `profile` parameter (or an arriving `SAMLart`) overrides it — the same
+kind of device as WS-Trust's `/sts?encrypt=1`, and marked as non-spec wherever
+it appears.
 
 * **Browser/POST** (profiles section 4.2) puts the whole signed Response in a
   self-submitting form. The assertion is confirmed
-  `urn:oasis:names:tc:SAML:1.0:cm:bearer` and carries a `DoNotCacheCondition`,
-  because it passed through the browser.
+  `urn:oasis:names:tc:SAML:1.0:cm:bearer`. It carries no `DoNotCacheCondition`
+  unless `saml11.doNotCacheCondition` is on (off by default): the profile does
+  not ask for the condition — single use is the relying party's to keep — and
+  a **Shibboleth** SP's stock policy refuses an assertion carrying it.
 * **Browser/Artifact** (section 4.1) sends a 42-byte artifact (type `0x0001`,
   with a SourceID that is the SHA-1 of the providerID) on a redirect, and the
   relying party fetches the assertion from the responder over SOAP — **the
@@ -106,8 +112,8 @@ names the SOAP request and its `Recipient` names whoever asked.
 |---|---|
 | `AssertionArtifact` | the assertion — **exactly once**, across every node of a cluster: resolving destroys it (bindings section 3.2.3), and a second attempt is refused with a status naming the reason. `saml11.artifactTtlS` only bounds how long an unresolved one lives |
 | `AssertionIDReference` | an assertion this realm issued, from a cache of `saml11.assertionCacheMax`; not one-shot, since holding the reference means already holding the assertion |
-| `AttributeQuery` | an assertion carrying the person's attributes and **no** `AuthenticationStatement` — **development mode only** |
-| `AuthenticationQuery` | answered from a live, authenticated session for that name, with its real method and instant; with no such session, Success and no assertion — **development mode only** |
+| `AttributeQuery` | an assertion carrying the person's attributes and **no** `AuthenticationStatement` — in product under a release policy, below |
+| `AuthenticationQuery` | answered from a live, authenticated session for that name, with its real method and instant; with no such session, Success and no assertion — in product under the same policy |
 
 The fifth type, `AuthorizationDecisionQuery`, is refused by name: this service
 makes no authorization decisions. `AttributeQuery` and `AuthenticationQuery`
@@ -120,8 +126,12 @@ protected by its twenty random bytes and the one-shot rule; an
 `AttributeQuery` is protected by nothing — anybody who can reach the port can
 ask for an assertion about anybody, by name, with no credential and no
 attribute release policy. A real attribute authority uses mutual TLS and a
-policy. Every query is logged saying so, and **product mode refuses both query
-types** (see [the mode table](#development-and-product-mode)).
+policy. Every query is logged saying so. **Product mode answers a query only
+under a release policy**: from a registered relying party (its `Resource`, or
+the responder's path segment), authenticated as it — a signed Request or its
+registered certificate at the TLS handshake — about a person it is signed in
+for from this service now, by the NameIdentifier it was given. Anything else is
+refused (see [the mode table](#development-and-product-mode)).
 
 **Resolving an artifact asks who is calling.** The caller must be the relying
 party the artifact was issued to (named by the responder path segment), and
@@ -146,7 +156,10 @@ The assertion carries an `AuthenticationStatement` whose
 two factors, `am:HardwareToken` for a security key alone, `urn:ietf:rfc:2246`
 for a TLS client certificate, `urn:ietf:rfc:1510` for Kerberos, a federation
 partner's own method where it gave one, and `am:unspecified` otherwise — an
-audience restriction, and an attribute statement including any SAML 1.1
+audience restriction, and an attribute statement: the claim URIs split into
+namespace and name, Shibboleth's names — `AttributeName="urn:mace:dir:attribute-def:uid"`
+in `AttributeNamespace="urn:mace:shibboleth:1.0:attributeNamespace:uri"`, which
+a Shibboleth SP's stock attribute map reads — and any SAML 1.1
 [custom SAML attributes](saml2-sso.md#custom-saml-attributes).
 
 Both the assertion (`saml11.signAssertion`) and the Response
@@ -169,9 +182,17 @@ each overridable per relying party (`saml11AssertionLifetimeMin`,
 SAML 1.1 has no metadata specification, so `/saml11/metadata/{rp}` is a SAML
 2.0 `<EntityDescriptor>` whose `protocolSupportEnumeration` is
 `urn:oasis:names:tc:SAML:1.1:protocol` — what every SAML 1.1 relying party reads
-today. It holds **two descriptors**: an `IDPSSODescriptor` for the browser
+today — and, on the `IDPSSODescriptor`, `urn:mace:shibboleth:1.0` too, which a
+Shibboleth SP requires before it will send Shibboleth's request profile. It holds **two descriptors**: an `IDPSSODescriptor` for the browser
 profiles and an `AttributeAuthorityDescriptor` for the responder, where a
 Shibboleth service provider looks for its attribute authority.
+
+Both descriptors also carry **the TLS certificate the responder presents**
+(#248) — a `use="signing"` KeyDescriptor after the XML signing key — so a
+relying party that authenticates the SOAP back channel (artifact resolution
+and the attribute query) from metadata needs no anchor configured for it. The
+details, and the warning about a listener key you supply yourself, are the
+SAML 2.0 page's: *Metadata, one document per service provider*.
 
 As with SAML 2.0 it is **per relying party and, in development, minted for
 anything asked for** — in product mode `/saml11/metadata/{rp}`,
@@ -213,14 +234,15 @@ subject and the attributes.
 | | Development | Product |
 |---|---|---|
 | `shire` | used as it stands; with none, the mock relying party | must be a registered `samlAssertionConsumerService`, exact match, no mock fallback; an address development merely observed is refused until confirmed |
-| `AttributeQuery`, `AuthenticationQuery` | answered, to anybody who can reach the port — logged as such | refused outright |
+| `AttributeQuery`, `AuthenticationQuery` | answered, to anybody who can reach the port — logged as such | answered only to a registered, authenticated relying party about a person it holds a live session for, by the NameIdentifier it was given |
 | Artifact resolver authentication | not required (follows `saml2.requireSignedAuthnRequests`) | required |
 | Given name, surname, mail, display name | invented | read off the directory entry, or omitted |
 | Empty `saml11.providerId` | replaced with `urn:sts:idp:saml11` | SSO and metadata refuse, naming the setting |
 
-The query refusal in product is not a client-certificate gate on purpose:
-there is no attribute release policy, so a gate would answer any holder of any
-trusted certificate about anybody. The one-shot artifact, the resolver being
+The query policy in product is not a bare client-certificate gate on purpose:
+a gate alone would answer any holder of any trusted certificate about anybody,
+so the certificate (or signature) names the relying party and the live session
+names the people it may ask about. The one-shot artifact, the resolver being
 the right relying party, and the authentication statement reflecting a real
 session hold in **both** modes. See [What is not checked](what-is-not-checked.md).
 
@@ -235,6 +257,7 @@ session hold in **both** modes. See [What is not checked](what-is-not-checked.md
 | `saml11.signResponse` | `STS_SAML11_SIGN_RESPONSE` | `true` | yes | Sign the Response; per relying party with `saml11SignResponse`. Off is development mode only: Browser/POST requires a signed Response, so product always signs it and refuses turning it off (#181). |
 | `saml11.nameIdFormat` | `STS_SAML11_NAMEID_FORMAT` | `urn:oasis:names:tc:SAML:1.1:nameid-format:unspecified` | yes | The NameIdentifier format, unless the non-spec `format` overrides it; per relying party with `saml11NameIdFormat`. |
 | `saml11.defaultProfile` | `STS_SAML11_DEFAULT_PROFILE` | `post` | yes | `post` or `artifact`, when the request does not say. |
+| `saml11.doNotCacheCondition` | `STS_SAML11_DO_NOT_CACHE_CONDITION` | `false` | yes | A `<saml:DoNotCacheCondition/>` on a Browser/POST assertion. Off by default (#189): the profile does not require it, and the Shibboleth SP's stock policy refuses it. **Warning:** turn it on only for relying parties known to honour it. |
 | `saml11.artifactTtlS` | `STS_SAML11_ARTIFACT_TTL_S` | `300` | yes | How long an unresolved artifact lives (it is one-shot regardless); per relying party with `saml11ArtifactTtlS`. |
 | `saml11.autocreateApplications` | `STS_SAML11_AUTOCREATE_APPLICATIONS` | `true` | yes | Create an application entry the first time a relying party is named. |
 | `saml11.requestTtlMin` | `STS_SAML11_REQUEST_TTL_MIN` | `10` | yes | How long a flow is held while the person signs in. |
