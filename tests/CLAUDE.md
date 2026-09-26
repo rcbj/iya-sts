@@ -1325,6 +1325,8 @@ and carrying them twice is what made this table's own arithmetic wrong.
 | `tests/vendored/sts_est_libest.js` **(ours)** | **CISCO'S LIBEST ESTCLIENT AGAINST THE EST SERVER** (#209), at a464ba8, in the DEFAULT realm with people of its own AND in a throwaway realm reached through the label position, `--path-seg <realm>` (#251), where the CA, CRL and people are that realm's and the default realm's password and certificate are refused: bootstrap from the Root then `/cacerts` as the anchors, csrattrs, enroll by Basic, by certificate and with an openssl CSR for a host, `-z`, re-enroll and the superseded certificate refused, serverkeygen with the key matching, and eight refusals (password in product only); then over HTTP the realm-profile pair form, the same `/cacerts` bytes by both forms, a realm named twice (404), `GET /realms`' `estLabelUrl`, `/admin-api/est`'s label-form URLs and a realm refused an EST label's name. Three client lines accepted by name, argued in the file |
 | `tests/vendored/sts_scep_sscep.js` **(ours)** | **SSCEP AGAINST THE SCEP SERVER** (#210), at cb3e539, over the plain-HTTP listener, in two throwaway realms: GetCACaps, GetCACert, the `/admin-api` hint run literally, a portal-made challenge, `-R`, GetCert, GetCRL, the historical renewal onto the CRL, and the refusals (reused, unknown, another realm's RA, 3DES, SHA-1) |
 | `tests/vendored/sts_scep_micromdm.js` **(ours)** | **MICROMDM'S SCEPCLIENT AGAINST THE SCEP SERVER** (#211), v2.3.0: its transport over HTTPS and plain HTTP, three recipient selections, and the `badAlg` its fixed SHA-1/DES draws — it cannot be issued a certificate here, by design (`scep/CLAUDE.md`) — which spends no challenge |
+| `tests/vendored/sts_scep_certmonger.js` **(ours)** | **CERTMONGER AGAINST THE SCEP SERVER** (#249), 0.79.21, its daemon started by the job on a private socket: add-scep-ca, a request with a portal-made challenge (a v1 signer, `STS-SCEP-0011` before #249), CertPoll through its own `scep-submit`, resubmit (a repeated transactionID, `0037` before) and rekey onto the CRL, the refusals (reused, another realm's RA, DES-EDE3, SHA-1) as `CA_UNREACHABLE` plus the monitor's code, and its HTTPS defect — both client defects argued in `scep/CLAUDE.md` |
+| `tests/vendored/sts_scep_jscep.js` **(ours)** | **JSCEP AGAINST THE SCEP SERVER** (#250), 3.0.1 through `tests/tools/jscep-driver`: negotiated AES + SHA-512, GetCACert checked against the Intermediate and Root, GetNextCACert refused, enrol, poll, retry, all six AES × SHA-2 combinations, GetCert, GetCRL, renewal keeping the key and changing it, the refusals (DES, DES-EDE3, SHA-1, reused, unknown, another realm's RA) and HTTPS |
 | `tests/vendored/sts_portal_certificates.js` **(ours)** | **`/portal/certificates` WITH TWO SIGNED-IN BROWSERS** (2026-09-13): an ACME binding key and a SCEP challenge made for the signed-in person whatever the body names and shown once; a refused profile; no CSRF token; the other person's key not deletable and their EST certificate not revocable — each answered as not found and still on the other person's own page; revoking one's own; ACME turned off hiding the card and refusing the door. Both ownership checks mutation-tested through a hook preloaded into the throwaway service |
 | `tests/vendored/sts_oauth21.js` **(ours)** | **OAUTH 2.1 MODE AT THE REAL ENDPOINTS** (2026-09-13), in two throwaway realms — one in OAuth 2.1 mode, one in RFC 9700 mode beside it. **The section to read first is a POSITIVE**: a public client with PKCE and NO `redirect_uri` at the token endpoint gets a token in the 2.1 realm and the SAME request is refused `invalid_grant` in the RFC 9700 realm, which is what makes the acceptance the mode rather than a service that stopped checking. Then the authorization request's `redirect_uri` defaulted to the one registered (and refused with two), an unregistered client refused ON THE SERVER with nothing redirected, PKCE refused for a confidential client (as a PAGE, because RFC 9700's authenticate-before-redirect applies before sign-in) and the nonce exemption issuing, refusing redemption without client authentication and without `redirect_uri`, and redeeming with both; the token endpoint refusing a client that declares nothing (asserted on a REFRESH, because client_credentials is refused by section 4.2 first and cannot show which rule answered — a mutant removing the declaration check survived until then), a public client's client_credentials and its presented secret, two methods, a repeated parameter, SAML client authentication (by the metadata that stops advertising it), and a client assertion addressed to the token endpoint while one to the issuer alone is accepted; three wrong secrets then a 429 that the right secret does not open while another client is unaffected; and registration's two mirrors. Six service mutants through a require hook preloaded into the throwaway service, all caught |
 | `tests/vendored/sts_consent.js` **(ours)** | **THE CONSENT SCREEN, AND THE OVERRIDE THAT MAKES IT NOT APPEAR.** Mostly negatives, for `sts_dpop.js`'s reason: a screen that draws, takes an Allow and hands over a code looks finished and can be worth nothing. What it asserts is that a GET of the screen records NOTHING (or anything that prefetches a link has consented for somebody), that a consent id is spendable ONCE, that a consent asked of one person cannot be drawn OR answered by another's session and that every one of those refusals leaves the pending record answerable by the person it belongs to, that Deny records nothing and the refused scope is asked again, that a second request is silent and a new scope asks about ITSELF ALONE, that `prompt=none` answers `consent_required` and `prompt=consent` asks again without destroying what was already agreed. **And the half that is not drivable from the parent's suite and is why this file is here**: a delegated permission consented globally on an application's entry stops a person who has never been here being asked — with NOTHING written about them — while a second application asking for the same permission is still asked, and removing the override asks everybody again including the people it was covering |
@@ -1876,11 +1878,11 @@ the tests image, where the directory is already there.
 **A new document type in these four families owes a scenario here** in the
 change that adds it.
 
-## THE CERTIFICATE ENROLLMENT CLIENTS (#207-#211, 2026-09-26)
+## THE CERTIFICATE ENROLLMENT CLIENTS (#207-#211, #249, #250, 2026-09-26)
 
 No official conformance suite exists for ACME, EST or SCEP, so the strongest
-independent check of each server is the client its operators run. Five of
-them drive the service from five `local: true` jobs (the table above):
+independent check of each server is the client its operators run. Seven of
+them drive the service from seven `local: true` jobs (the table above):
 
 | Client | Pinned at | Licence | Built |
 |---|---|---|---|
@@ -1889,6 +1891,8 @@ them drive the service from five `local: true` jobs (the table above):
 | scepclient (micromdm/scep) | v2.3.0 | MIT | the same stage (`-version` says "unknown": `go install` stamps none) |
 | estclient (cisco/libest) | a464ba8 (`main`, 2022-09-22) | BSD-3-Clause | the `enroll-c` stage, statically against OpenSSL 1.1.1w (it does not build on OpenSSL 3), both archives sha256-checked |
 | sscep (certnanny) | cb3e539 (`master`, 2024-08-14) | BSD-style | the same stage, against the base's OpenSSL 3, sha256-checked (v0.10.0 cannot GetCert from a CA with a separate RA) |
+| certmonger (Red Hat) | 0.79.21 (Ubuntu 26.04's `0.79.21-1`) | GPL-2.0+ | in the runner: the `.deb` fetched from the archive's pool, sha256-checked, installed with apt for its libraries — run, never vendored |
+| jscep | 3.0.1 | MIT | the `enroll-java` stage: Maven resolves it, `tests/tools/jscep-driver/build.sh` holds every runtime jar to `jars.sha256`, compiles the driver and jlinks a runtime; the runner gets those and the licences |
 
 **IN THE TESTS IMAGE, NOT A COMPOSE PROFILE — and that is the argument.** Each
 client is a command line a job runs and whose files it reads: a second
@@ -1900,6 +1904,24 @@ stay out of the runner) and copied in with their licences
 rebuilds nothing. Nothing is vendored and no key material exists before a run:
 every key, CSR and account is made by the job or the client at run time. The
 cost is about five minutes on a cold tests-image build.
+
+**certmonger is a DAEMON, and it is still in the runner rather than a
+container of its own (#249)**, for the same reason: the job has to read its
+state files and its log, and the daemon needs nothing a container would
+give it. certmonger listens on a private socket when asked (`-n -L -P`),
+which `getcert` reaches through `CERTMONGER_PVT_ADDRESS` — no D-Bus — and it
+keeps its state wherever `CERTMONGER_*_DIR` point, so the job starts it with
+its state in the job's scratch directory, restarts it to change its CA record
+(the only way to make it send DES-EDE3 or SHA-1), and stops it at the end.
+`-d 0` writes to stderr exactly what the daemon would send to syslog, and that
+file is the job's error-and-warning source beside `getcert list`.
+
+**jscep is a library, so the job drives a program over it**
+(`tests/tools/jscep-driver`), which adds only what an embedding application
+must: the keys and request (made by `openssl` at run time), the CA check
+jscep leaves to its application, an HTTPS trust store, and — to send an
+algorithm the server does not offer — jscep's own encoder with that argument
+named. Its header says each.
 
 **Every local mode runs them**; nothing is wired into `./run-tests.sh` beyond
 the jobs themselves, because there is no second container to start. The shared

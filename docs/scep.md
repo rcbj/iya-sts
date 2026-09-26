@@ -113,7 +113,57 @@ sscep enroll -u $URL -c ca.crt-0 -e ca.crt-0 -k newkey.pem -r new.csr \
 `GetCert`, `GetCRL` (the SCEP Issuing CA's CRL) and `CertPoll` (`sscep enroll
 -R`) are answered too. A retried request with the same transactionID and the
 same CSR gets the certificate it already produced, without using up another
-challenge.
+challenge. A DIFFERENT request under a transactionID that already completed —
+what certmonger and jscep send for every request with the same key, since they
+derive the transactionID from it — is a new transaction, authorized from
+scratch (until #249 it was refused `STS-SCEP-0037`, now retired).
+
+## With certmonger
+
+certmonger's `getcert` reads everything it needs from the server, so the plain
+URL and a challenge are all it takes:
+
+```bash
+getcert add-scep-ca -c STS -u http://sts.example.com:8082/realm/acme/enroll/scep/tls-client
+getcert request -c STS -k /etc/pki/tls/private/alice.key \
+  -f /etc/pki/tls/certs/alice.crt -N "CN=alice,O=Example,C=US" \
+  -L "$CHALLENGE" -w
+getcert list        # status: MONITORING
+```
+
+It tracks the certificate and renews it before it expires, with the same key
+(`getcert resubmit`) or a new one (`getcert rekey`); both are signed with the
+certificate being renewed and need no challenge. Three things to know:
+
+* **Use the plain-HTTP URL.** certmonger's `scep-submit` hands `-R` (the CA
+  file for HTTPS) to its GetCACaps and GetCACert requests only; the
+  PKIOperation that enrolls is then made with no CA file and fails
+  "Error 60 … SSL peer certificate … was not OK" unless the service Root is
+  in the host's system trust store. SCEP needs no TLS (RFC 8894 section 2.1):
+  the request is encrypted to the RA and the reply to the requester.
+* **A refusal shows as `CA_UNREACHABLE`**, with `ca-error: … failed to verify
+  signature on server response … no content`, and certmonger retries it.
+  RFC 8894 sends a FAILURE CertRep without signed content and certmonger's
+  reader requires some, so it cannot tell a refusal from an outage. The reason
+  is on Monitoring → SCEP with its error code; stop the retries with
+  `getcert stop-tracking`.
+* **Its transactionID is its public key's digest**, so every request for the
+  same key carries the same one. A second request under a completed
+  transactionID is a new transaction here, authorized from scratch — a
+  challenge again, or the certificate being renewed.
+
+## With jscep
+
+jscep is a Java library: an application calls `Client.enrol()`, and jscep
+negotiates the strongest cipher and digest GetCACaps offers — AES and
+SHA-512 here. The application supplies the `CertificateVerifier` that decides
+whether the CA certificate GetCACert answers is the right one: check the SCEP
+Issuing CA against the realm's Intermediate (`/pki/ca/<realm>/intermediate.cer`)
+and the service Root. For HTTPS, hand `UrlConnectionTransportFactory` an
+`SSLSocketFactory` that trusts the Root. jscep renews with a `PKCSReq` signed
+by the certificate being renewed, as sscep and certmonger do; its
+transactionID is the SHA-1 of the request's public key, so a renewal that keeps
+the key repeats it, which is handled as above.
 
 ## micromdm's scepclient cannot enroll here
 

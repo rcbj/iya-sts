@@ -132,8 +132,15 @@ constants, because a result is a public certificate and the bound is about the
 store's size. It answers:
 
 * **a retried PKCSReq/RenewalReq** with the same transactionID and the same CSR
-  → the stored certificate, and no second redemption. A different CSR →
-  `STS-SCEP-0037`; a different signer key → `STS-SCEP-0039`.
+  → the stored certificate, and no second redemption. A different signer key →
+  `STS-SCEP-0039`. **A different CSR is a NEW transaction** (#249, #250,
+  2026-09-26; it was `STS-SCEP-0037`, now retired): certmonger and jscep derive
+  the transactionID from the public key, so every request for one key repeats
+  it — a `getcert resubmit`, a jscep renewal that keeps the key — and the
+  refusal lasted as long as the result was held. It gives nothing away: the
+  stored result goes back only for the same request, and a new one is
+  authorized from scratch and replaces it. RFC 8894 section 3.2.1.1 puts the
+  uniqueness on the client.
 * **CertPoll** → the stored certificate, to the same signer key only; an
   unknown transactionID → `badCertId` (`STS-SCEP-0038`).
 
@@ -177,7 +184,7 @@ section 2.3; `STS-SCEP-0034`).
   cannot be asked `STS-SCEP-0065`; the claim lives two minutes, so a node that
   died holding it blocks that one transactionID and nothing else.
 
-## What the real clients found (#210, #211, 2026-09-24)
+## What the real clients found (#210, #211, 2026-09-24; #249, #250, 2026-09-26)
 
 * **sscep has no TLS** and refuses an https URL, and SCEP was answered only on
   the main port. `pki/pki_service.ts`'s plain-HTTP listener now answers
@@ -208,6 +215,31 @@ section 2.3; `STS-SCEP-0034`).
   certificate's content comes from the entry, never the CSR (RFC 8894 lets the
   CA change it), so a request must carry `CN=<entry>, O=<organisation>` (or
   `CN=<host>, UID=<entry>, O=…`) to see no warning; the hint does.
+* **certmonger signs with a version 1 certificate**, and every request was
+  refused `STS-SCEP-0011` ("0 match"): its self-signed "mini certificate" has
+  no `[0]` version and no extensions — six TBS fields — and
+  `describeCertificate()` demanded seven, so the signer was dropped from the
+  SignedData's set. It reads six now.
+* **certmonger and jscep repeat the transactionID** for every request with one
+  key (above, *The transaction store*): a same-key renewal inside the day a
+  result is held was `STS-SCEP-0037`. It is a new transaction now.
+* **certmonger cannot read a FAILURE CertRep — a client defect, the service is
+  right.** RFC 8894 section 3.2: FAILURE and PENDING "will lack any signed
+  content", and certmonger's `cm_pkcs7_verify_signed()` calls
+  `PKCS7_verify()` with no content, which fails "no content". So every
+  refusal shows as `CA_UNREACHABLE` with that ca-error, and certmonger retries
+  it until it is stopped. Sending an empty content instead would be a
+  signed content RFC 8894 says a FAILURE lacks; the code is on the monitor.
+* **certmonger's HTTPS stops at the PKIOperation — a client defect.**
+  `scep-submit` passes `-R` (its CA file) to GetCACaps and GetCACert, and its
+  PKIOperation request to `cm_submit_h_init()` with none (0.79.21, `scep.c`),
+  so libcurl uses the system trust store and fails error 60. Over the plain
+  listener it enrolls, renews and rekeys; `docs/scep.md` tells an operator.
+* **jscep needed nothing else.** It negotiates AES and SHA-512 from GetCACaps,
+  renews with a PKCSReq signed by the old certificate, polls, gets
+  certificates and CRLs, refuses to ask GetNextCACert because it is not
+  offered, and reads every FAILURE; every AES size with SHA-256 and SHA-512
+  enrolls, and DES, DES-EDE3 and SHA-1 are `badAlg`.
 
 ## Documented exceptions
 
@@ -217,6 +249,8 @@ section 2.3; `STS-SCEP-0034`).
 | PENDING | Nothing is approved by hand. |
 | GetNextCACert | No pre-announced CA rollover; 501, not in GetCACaps. |
 | SHA-1, MD5, DES, DES-EDE3 | Refused `badAlg` — which is why micromdm's scepclient, fixed on SHA-1 and single DES, cannot enroll (above). |
+| A FAILURE CertRep certmonger can read | RFC 8894 section 3.2 sends it with no signed content, and certmonger requires some (above); it reports every refusal as `CA_UNREACHABLE`. A client defect, recorded on #249. |
+| certmonger over HTTPS | Its PKIOperation request ignores `-R` (above). A client defect; the plain listener is the SCEP transport RFC 8894 section 2.1 names. |
 | KeyAgreeRecipientInfo, RSASSA-PSS signers | An RSA RA has no agreement key; PSS signers are refused `badAlg` as an unknown signature algorithm. |
 | `failInfoText` (RFC 8894's human-readable failure) | The reason is an operator's; it is recorded, not sent. |
 | The five CA / OCSP / KDC profiles | Never over an enrollment protocol (`core.REFUSED_PROFILES`); a challenge for one cannot be created. |
@@ -239,6 +273,19 @@ section 2.3; `STS-SCEP-0034`).
   (#211): its transport over HTTPS and plain HTTP, three ways of choosing the
   recipient, and the `badAlg` its fixed SHA-1 and DES draw (below), which
   spends no challenge.
+* `tests/vendored/sts_scep_certmonger.js` — **certmonger 0.79.21** (#249):
+  the daemon started by the job on a private socket, add-scep-ca, a request
+  with the person's portal challenge, CertPoll through its own `scep-submit`
+  and stored GetCertInitial, resubmit and rekey onto the CRL, the refusals
+  (reused, another realm's RA, DES-EDE3 and SHA-1 by editing its CA record)
+  as `CA_UNREACHABLE` plus the monitor's code, and the HTTPS exception.
+* `tests/vendored/sts_scep_jscep.js` — **jscep 3.0.1** through
+  `tests/tools/jscep-driver` (#250): negotiated algorithms, GetCACert with the
+  CA checked against the Intermediate and Root, GetNextCACert refused, enrol,
+  poll, retry, all six AES × SHA-2 combinations, GetCert, GetCRL, renewal
+  keeping and changing the key, the refusals, and HTTPS.
+* `tests/scep_enrollment.js` section 3a — a version 1 signer and a repeated
+  transactionID, in process (mutants: `parts.length < 7`, the 0037 refusal).
 * `tests/vendored/sts_scep_enrollment.js` with `tests/vendored/scep_client.js`
   (forge + node, nothing from here) — over HTTP, ~70 checks, ~70 seconds (it
   waits out a sixty-second challenge). Mutants caught: no URL-profile check, no

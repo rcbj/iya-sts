@@ -100,5 +100,8 @@ exec "${here}/jre/bin/java" \
   net.iyasec.sts.tests.JscepDriver "$@"
 EOF
 chmod 755 "${OUT}/jscep-driver"
-"${OUT}/jscep-driver" 2>&1 | head -1
+# It runs: with no command it prints its usage and exits 2, which is the
+# answer wanted here and not a failure of the build.
+usage="$("${OUT}/jscep-driver" 2>&1 || true)"
+echo "${usage}" | grep -q '^usage: jscep-driver'
 rm -rf "${work}"
