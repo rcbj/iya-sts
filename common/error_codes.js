@@ -10254,6 +10254,16 @@ const CODES = [
       'directory: the entry was gone or not a person\'s when the ' +
       'write reached it.',
     spec: 'HTTP 400 (API) or a 303 with error=' },
+  { code: 'STS-LDAP-0111',
+    summary: 'An LDAP add or modify named a credential attribute (a ' +
+      'security key, an authenticator app, recovery codes, an app ' +
+      'password, a signing key pair, a HOBA key, a self-issued subject, ' +
+      'the emailed factor, Kerberos keys, a CIBA user code, an enrolment ' +
+      'credential or a device secret). Credentials are written only ' +
+      'through the doors that check them and send CAEP credential-change ' +
+      '(#237), in every mode and for every bind, administrator included; ' +
+      'the refusal names the door.',
+    spec: 'RFC 4511 section 4.1.9 unwillingToPerform (53)' },
   // ===== SCIM ==============================================================
   { code: 'STS-SCIM-0001',
     summary: 'A SCIM endpoint (or HOBA key registration) was called while ' +
@@ -12672,6 +12682,13 @@ const CODES = [
       'with verification "overridden" and the reason. Replace it with a ' +
       'BLOB that verifies as soon as FIDO publishes one.',
     spec: 'loaded; recorded on the audit row and logged as a warning' },
+  { code: 'STS-RISK-0044',
+    summary: 'A security key found cloned (its signature counter went ' +
+      'backwards) could not be recorded on the person\'s risk standing ' +
+      '(#231). The assertion was refused and RISC credential-compromise ' +
+      'was still sent; only the standing, and the risk-response policy\'s ' +
+      'reaction to it, are missing.',
+    spec: 'WebAuthn Level 3 section 6.1.1' },
   // ===== MAIL ==============================================================
   { code: 'STS-MAIL-0001',
     summary: 'A message was not queued because no mail transport is ' +

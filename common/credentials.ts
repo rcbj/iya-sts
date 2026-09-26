@@ -1703,6 +1703,10 @@ class Credentials {
       log.debug('Leaving Credentials.bootstrap(). The write failed.');
       return { ran: false, why: (written.errors || []).join(' ') };
     }
+    // A PASSWORD CREATED, TOLD AS CAEP `credential-change` (#237) where the
+    // realm has a stream that takes it. A realm with no streams — a fresh
+    // deployment, the usual case — sends nothing, and says so at debug.
+    this.noteBootstrapPassword(username, 'at startup');
     // TWO ANNOUNCEMENTS, AND THE DIFFERENCE IS THE ONE THING THAT MATTERS: a
     // generated password is printed because nothing else holds it, and a
     // supplied one is NOT, because the operator already has it and printing
@@ -2208,6 +2212,9 @@ class Credentials {
                      answer.highest + '. It was REFUSED — a counter that ' +
                      'does not go up is a replay or a CLONED authenticator ' +
                      '(WebAuthn Level 3 section 6.1.1).');
+            this.noteKeyCloned(name, credentialId, 'signature counter ' +
+                               signCount + ', highest recorded ' +
+                               answer.highest);
             return coded('STS-AUTHN-0035', { ok: false, reason: 'counter',
               highest: answer.highest,
               detail: 'the signature counter did not increase (now ' +
@@ -2263,6 +2270,134 @@ class Credentials {
       log.debug("Leaving Credentials.noteKeyUsed().");
       return false;
     }
+  }
+
+  // ---------------------------------------------------------------------------
+  // A BOOTSTRAP ADMINISTRATOR'S PASSWORD (#237, 2026-09-26): the startup
+  // bootstrap above, and a new realm's first administrator
+  // (`admin_actions.ts`). Both set a password the service chose or was
+  // given, and neither passed through a door that signals, so each is a CAEP
+  // `credential-change` `create` initiated by `system` — delivered, like
+  // every other, only to a stream that takes the type and covers the person.
+  // Lazily required, never allowed to undo the write.
+  // ---------------------------------------------------------------------------
+  noteBootstrapPassword(username, when) {
+    const { log } = this.deps;
+    log.debug('Entering Credentials.noteBootstrapPassword().');
+    try {
+      require('../ssf/account_signals').credentialChanged({
+        username: String(username || ''), credentialType: 'password',
+        changeType: 'create', initiatingEntity: 'system', via: 'bootstrap',
+        reasonAdmin: 'The bootstrap administrator ' + username + ' was ' +
+                     'given a password ' + String(when || '') + '.',
+        reasonUser: 'A password was set for your account.' });
+    } catch (e) {
+      log.debug('Caught in Credentials.noteBootstrapPassword(): ' +
+                ((e && e.message) || e));
+      // No Shared Signals facade in this process; the password is set.
+    }
+    log.debug('Leaving Credentials.noteBootstrapPassword().');
+  }
+
+  // ---------------------------------------------------------------------------
+  // A SECURITY KEY FOUND CLONED (#231, 2026-09-26). An assertion whose every
+  // other check passed — the signature over this ceremony's challenge
+  // verified against the enrolled key — presented a signature counter that
+  // did not go up: WebAuthn Level 3 section 6.1.1 says that "signals" a
+  // cloned authenticator. It is refused either way (STS-AUTHN-0035); this
+  // is what the refusal now TELLS:
+  //
+  //   * RISC `credential-compromise` with the key's CAEP type
+  //     (`keyCredentialType()`: `fido2-platform` or `fido2-roaming`),
+  //     through `ssf/account_signals.ts`, so `risc.autoEmitTypes` and the
+  //     opt-out gate hold;
+  //   * the risk engine, as `authenticator-compromised`: the person's
+  //     standing goes to HIGH and the `risk-response` policy answers it.
+  //
+  // Called from `spendAssertion()` (the store's counter, every node's) and
+  // by the doors whose in-ceremony check against the ENTRY's counter was the
+  // only failure (`authn.ts`, `device_enrolment.ts`). The key stays
+  // enrolled: removing it is the person's or an administrator's act, and a
+  // receiver told of the compromise can ask for it. Both are LAZY requires
+  // and neither is awaited; the refusal never waits for them.
+  // ---------------------------------------------------------------------------
+  // Whether an assertion's verdict is THAT evidence: the counter check the
+  // only one that failed, so the signature verified. A counter that did not
+  // go up beside a signature that did not verify says nothing about the key.
+  static clonedKeyVerdict(verdict) {
+    helpers.log.debug('Entering Credentials.clonedKeyVerdict().');
+    const failed = (verdict && verdict.failed) || [];
+    helpers.log.debug('Leaving Credentials.clonedKeyVerdict().');
+    return !!verdict && verdict.ok === false && failed.length === 1 &&
+           failed[0] === 'signature counter advanced';
+  }
+
+  noteKeyCloned(username, credentialId, evidence) {
+    const { log, realms } = this.deps;
+    log.debug('Entering Credentials.noteKeyCloned().');
+    const name = String(username || '').trim();
+    const record = this.keysOf(name).filter((one) => {
+      return one.credentialId === String(credentialId);
+    })[0] || null;
+    const label = record ? String(record.label || '') : '';
+    try {
+      const signals = require('../ssf/account_signals');
+      signals.credentialCompromised({ username: name,
+        credentialType: signals.keyCredentialType(record),
+        initiatingEntity: 'system', via: 'sign-in',
+        reasonAdmin: 'A security key of ' + name + (label ? ' ("' + label +
+                     '")' : '') + ' presented a signature counter that did ' +
+                     'not go up (' + evidence + '): it may have been cloned.',
+        reasonUser: 'A security key of yours may have been copied. Remove ' +
+                    'it and enrol a new one.' });
+    } catch (e) {
+      log.debug('Caught in Credentials.noteKeyCloned(): ' +
+                ((e && e.message) || e));
+      // No Shared Signals facade in this process; the refusal stands.
+    }
+    try {
+      require('../risk/risk_engine').noteAuthenticatorCompromise({
+        realm: realms.currentId(), username: name,
+        subject: helpers.subjectForName(name) || '',
+        evidence: evidence }).catch(function (e) {
+        log.debug('Caught in Credentials.noteKeyCloned(): ' +
+                  ((e && e.message) || e));
+        // noteAuthenticatorCompromise() never rejects; belt and braces.
+      });
+    } catch (e) {
+      log.debug('Caught in Credentials.noteKeyCloned(): ' +
+                ((e && e.message) || e));
+      // No risk engine in this process (a test that loads this file alone).
+    }
+    log.info('credentials: a security key of ' + name + ' presented a ' +
+             'counter that did not go up (' + evidence + '); RISC was told ' +
+             'the key is compromised and risk scoring was given the evidence.');
+    log.debug('Leaving Credentials.noteKeyCloned().');
+  }
+
+  // ---------------------------------------------------------------------------
+  // A ONE-TIME CODE PRESENTED AGAIN (#231, 2026-09-26): its step had already
+  // been accepted (RFC 6238 section 5.2), and it was refused (STS-AUTHN-0106).
+  // rcbj's decision on #231 is that this is a RISK SIGNAL and not a Security
+  // Event Token — a person who pressed submit twice looks exactly like
+  // somebody replaying an observed code — so it is recorded in the failures
+  // register under its own door, which `risk/risk_engine.ts` counts as
+  // `totp-replay` and never as a refused password. Lazy and not awaited.
+  // ---------------------------------------------------------------------------
+  private noteTotpReplay(name) {
+    const { log } = this.deps;
+    log.debug('Entering Credentials.noteTotpReplay().');
+    try {
+      const failures = require('../risk/risk_failures');
+      failures.recordFailure(String(name || ''), failures.TOTP_REPLAY_DOOR,
+                             'STS-AUTHN-0106');
+    } catch (e) {
+      log.debug('Caught in Credentials.noteTotpReplay(): ' +
+                ((e && e.message) || e));
+      // The risk modules are not loaded in this process: nothing to record
+      // into, and the refusal stands.
+    }
+    log.debug('Leaving Credentials.noteTotpReplay().');
   }
 
   removeKey(username, credentialId) {
@@ -2793,6 +2928,9 @@ class Credentials {
     if (verdict.ok === false) {
       log.info('credentials: a code for ' + name + ' was refused (' +
                verdict.reason + ').');
+      if (verdict.reason === 'replay') {
+        this.noteTotpReplay(name);
+      }
       log.debug('Leaving Credentials.totpPrepare(). Refused.');
       return { done: coded(errorCodes.codeOf(verdict) || 'STS-AUTHN-0105',
                    { ok: false, reason: verdict.reason,
@@ -2912,6 +3050,7 @@ class Credentials {
                  ready.verdict.counter + ' and was REFUSED: step ' +
                  answer.highest + ' has already been accepted for this ' +
                  'enrolment, by another node or a request racing this one.');
+        this.noteTotpReplay(name);
         return coded('STS-AUTHN-0106', { ok: false, reason: 'replay',
           counter: ready.verdict.counter,
           detail: 'That code has already been used. Wait for your ' +
@@ -6564,6 +6703,8 @@ export = {
   confirmKeyEnrolment: slot.forward('confirmKeyEnrolment'),
   addKeyClaimed: slot.forward('addKeyClaimed'),
   noteKeyUsed: slot.forward('noteKeyUsed'),
+  noteKeyCloned: slot.forward('noteKeyCloned'),
+  noteBootstrapPassword: slot.forward('noteBootstrapPassword'),
   mechanismsFor: slot.forward('mechanismsFor'),
   secondFactorDemand: slot.forward('secondFactorDemand'),
   bootstrap: slot.forward('bootstrap'),

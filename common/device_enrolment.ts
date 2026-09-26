@@ -505,6 +505,11 @@ class DeviceEnrolment {
                 ((e && e.message) || e));
       verdict = { ok: false, failed: [String((e && e.message) || e)] };
     }
+    if (credentials.Credentials.clonedKeyVerdict(verdict)) {
+      // A CLONE, BY THE ENTRY'S COUNTER (#231): see noteKeyCloned().
+      credentials.noteKeyCloned(username, key.credentialId, 'signature ' +
+        'counter ' + verdict.signCount + ', last recorded ' + key.signCount);
+    }
     if (!verdict.ok) {
       challenges.delete(challenge);
       log.debug("Leaving DeviceEnrolment.finishLink(). Assertion.");

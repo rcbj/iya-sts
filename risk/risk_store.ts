@@ -765,7 +765,8 @@ class RiskStore {
           (!o.subject || row.subject === o.subject) &&
           (!o.nameHmac || row.nameHmac === o.nameHmac) &&
           (!o.prefix || row.addressPrefix === o.prefix) &&
-          (!o.door || row.door === o.door);
+          (!o.door || row.door === o.door) &&
+          (!o.excludeDoor || row.door !== o.excludeDoor);
       }).reverse();
     const offset = Number(o.offset) || 0;
     const limit = Number(o.limit) || 50;

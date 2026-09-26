@@ -1153,8 +1153,63 @@ class Krb5PersonKeys {
                 return one.kvno;
               }).join(', ') + ' for tickets already issued under it' : '') +
              '.');
+    // A FIRST KEY IS CREATED, A NEW PASSWORD'S IS AN UPDATE (#236). The
+    // same password gaining or losing an enctype keeps its kvno, and is
+    // housekeeping rather than a new credential: nothing is sent for it.
+    if (!(record || (info && info.kvno))) {
+      this.signalKeys(name, 'create', null, 'derived from the password ' +
+                      'just ' + event + ' (kvno ' + kvno + ')');
+    } else if (!(record && record.stamp === stamp)) {
+      this.signalKeys(name, 'update', null, 'derived from a new password ' +
+                      '(kvno ' + kvno + ')');
+    }
     log.debug('Leaving Krb5PersonKeys.derive(). kvno ' + kvno + '.');
     return { derived: true, kvno: kvno };
+  }
+
+  // -------------------------------------------------------------------------
+  // CAEP `credential-change` FOR A PERSON'S KERBEROS KEYS (#236, 2026-09-26).
+  // `derive()`, `clearPersonKeys()` and `dropPreviousPersonKeys()` are the
+  // only writers of a person's key record, so the event is sent from them
+  // (the #145 rule). The type is this service's own URN: long-term keys are
+  // derived from a password but held, versioned and cleared on their own,
+  // and none of CAEP 1.0 section 3.3.1's values is honest for them
+  // (`ssf/account_signals.ts`). Dropping the previous versions is a
+  // `revoke` — tickets under them stop being accepted — and clearing is a
+  // `delete`. The initiating entity is the administrator where an act names
+  // one, and this service otherwise. Required LAZILY.
+  // -------------------------------------------------------------------------
+  private signalKeys(name: string, change: string,
+                     context: ActContext | null | undefined,
+                     why: string): void {
+    const { log, principals } = this.deps;
+    log.debug('Entering Krb5PersonKeys.signalKeys(). ' + change);
+    const actor = String((context || {}).actor || '');
+    const initiating = !context ? 'system'
+      : (actor && actor === name ? 'user' : 'admin');
+    try {
+      const signals = require('../ssf/account_signals');
+      signals.credentialChanged({ username: name,
+        credentialType: signals.KERBEROS_KEY_CREDENTIAL_TYPE,
+        changeType: change, initiatingEntity: initiating,
+        friendlyName: name + '@' + principals.REALM,
+        via: String((context || {}).via || 'Kerberos'),
+        reasonAdmin: 'The Kerberos keys of ' + name + ' were ' +
+                     (change === 'create' ? 'created'
+                       : change === 'update' ? 'replaced'
+                       : change === 'revoke' ? 'rotated: their previous ' +
+                                               'versions were dropped'
+                       : 'cleared') + ' (' + why + ').',
+        reasonUser: 'The Kerberos keys of your account were ' +
+                    (change === 'create' ? 'created.'
+                      : change === 'update' ? 'replaced.'
+                      : change === 'revoke' ? 'rotated.' : 'cleared.') });
+    } catch (e) {
+      log.debug('Caught in Krb5PersonKeys.signalKeys(): ' +
+                ((e && e.message) || e));
+      // No Shared Signals facade in this process; the keys are written.
+    }
+    log.debug('Leaving Krb5PersonKeys.signalKeys().');
   }
 
   // -------------------------------------------------------------------------
@@ -1575,6 +1630,8 @@ class Krb5PersonKeys {
                String((context || {}).via || 'console'),
       detail: { via: String((context || {}).via || 'console') }
     });
+    this.signalKeys(who, 'delete', context || {}, 'cleared through the ' +
+                    String((context || {}).via || 'console'));
     log.debug('Leaving Krb5PersonKeys.clearPersonKeys(). Cleared.');
     return { ok: true, cleared: true, username: who,
              message: 'The Kerberos keys of ' + who + ' are cleared, ' +
@@ -1717,6 +1774,10 @@ class Krb5PersonKeys {
       });
     if (result.ok) {
       result.username = who;
+      if (result.dropped) {
+        this.signalKeys(who, 'revoke', context || {}, 'previous kvno ' +
+                        result.kvnos.join(', ') + ' dropped');
+      }
     }
     log.debug('Leaving Krb5PersonKeys.dropPreviousPersonKeys(). ok=' +
               result.ok);

@@ -2450,6 +2450,23 @@ class CertEnrollment {
                      FAMILY_LABELS[found.family] + ' was revoked (' +
                      (reason || 'unspecified') + ').',
         reasonUser: 'A certificate of yours was revoked.' });
+      // REVOKED BECAUSE THE KEY IS KNOWN TO SOMEBODY ELSE (#231): RFC 5280
+      // section 5.3.1's `keyCompromise` is a compromise of the credential,
+      // which RISC 1.0 section 2.7 says as `credential-compromise` — beside
+      // the CAEP `credential-change` above, which says only that it went.
+      if (reason === 'keyCompromise') {
+        accountSignals.credentialCompromised({ username: found.entry.id,
+          credentialType: 'x509',
+          initiatingEntity: String(by || '') === String(found.entry.id)
+            ? 'user' : 'admin',
+          via: FAMILY_LABELS[found.family],
+          reasonAdmin: 'A certificate of ' + found.entry.id + ' issued over ' +
+                       FAMILY_LABELS[found.family] + ' (serial ' +
+                       found.record.serialHex + ') was revoked because its ' +
+                       'key was compromised.',
+          reasonUser: 'A certificate of yours was revoked because its key ' +
+                      'may be known to somebody else.' });
+      }
     }
     if (!opts.quiet) {
       audit.record({
@@ -2614,6 +2631,8 @@ class CertEnrollment {
                self.entryLabel(resolved.entry),
       detail: { kid: kid, expiresAt: record.expiresAt }
     });
+    self.signalEnrolmentCredential(resolved.entry, 'eab', 'create',
+                                   record.createdBy, kid);
     log.debug("Leaving CertEnrollment.createEab().");
     return { ok: true, kid: kid, hmacKey: hmacKey, alg: 'HS256',
              expiresAt: record.expiresAt, target: resolved.entry };
@@ -2804,8 +2823,57 @@ class CertEnrollment {
       summary: 'an ACME External Account Binding key was deleted',
       detail: { kid: String(kid) }
     });
+    self.signalEnrolmentCredential(entry, 'eab', 'delete', by, String(kid));
     log.debug("Leaving CertEnrollment.deleteEab().");
     return { ok: true, kid: String(kid), entry: entry };
+  }
+
+  // -------------------------------------------------------------------------
+  // CAEP `credential-change` FOR THE TWO ENROLMENT CREDENTIALS (#236,
+  // 2026-09-26). `createEab()` / `deleteEab()` and `createScepChallenge()` /
+  // `deleteScepChallenge()` are the only writers of the two attributes —
+  // the portal's /portal/certificates, the ACME and SCEP console pages and
+  // `/admin-api` all come here — so the event is sent here (the #145 rule).
+  //
+  //   * an EAB key is a MAC key, not a password a person chose: this
+  //     service's own URN (`ssf/account_signals.ts`);
+  //   * a SCEP challenge password IS a password, so the registered
+  //     `password`, with its name as `friendly_name` so a receiver — and
+  //     the person's mail notice, which is about THE password — can tell it
+  //     from the account's.
+  //
+  // Binding an EAB key to an account and redeeming a challenge send nothing
+  // here: each is followed by the certificate it produced, which `issue()`
+  // already sends as `x509`. Only a PERSON's credential is sent; an
+  // application's has no CAEP subject here. `by` is the actor: the person
+  // themselves is `user`, and anybody else — an unnamed caller of the API
+  // included — `admin`: nothing automatic makes or deletes either.
+  // -------------------------------------------------------------------------
+  private signalEnrolmentCredential(entry, which: 'eab' | 'scep',
+                                    change: string, by, id: string): void {
+    const { log } = this.deps;
+    log.debug("Entering CertEnrollment.signalEnrolmentCredential(). " +
+              which + " " + change);
+    if (!entry || entry.kind !== 'person') {
+      log.debug("Leaving CertEnrollment.signalEnrolmentCredential(). Not " +
+                "a person's.");
+      return;
+    }
+    const actor = String(by || '');
+    const initiating = actor && actor === String(entry.id) ? 'user' : 'admin';
+    const what = which === 'eab' ? 'ACME External Account Binding key'
+                                 : 'SCEP challenge password';
+    accountSignals.credentialChanged({ username: String(entry.id),
+      credentialType: which === 'eab'
+        ? accountSignals.ACME_EAB_KEY_CREDENTIAL_TYPE : 'password',
+      changeType: change, initiatingEntity: initiating,
+      friendlyName: what + ' ' + id,
+      via: which === 'eab' ? FAMILY_LABELS.acme : FAMILY_LABELS.scep,
+      reasonAdmin: 'An ' + what + ' of ' + entry.id + ' was ' +
+                   (change === 'create' ? 'created' : 'deleted') + '.',
+      reasonUser: 'An ' + what + ' of yours was ' +
+                  (change === 'create' ? 'created' : 'deleted') + '.' });
+    log.debug("Leaving CertEnrollment.signalEnrolmentCredential().");
   }
 
   eabsOf(entry) {
@@ -2884,6 +2952,8 @@ class CertEnrollment {
                self.entryLabel(resolved.entry) + ' (' + profile.profile + ')',
       detail: { id: id, profile: profile.profile, expiresAt: record.expiresAt }
     });
+    self.signalEnrolmentCredential(resolved.entry, 'scep', 'create',
+                                   record.createdBy, id);
     log.debug("Leaving CertEnrollment.createScepChallenge().");
     return { ok: true, id: id, challenge: id + '.' + secret,
              profile: profile.profile, expiresAt: record.expiresAt,
@@ -3027,6 +3097,7 @@ class CertEnrollment {
       summary: 'a SCEP challenge password was deleted',
       detail: { id: String(id) }
     });
+    self.signalEnrolmentCredential(entry, 'scep', 'delete', by, String(id));
     log.debug("Leaving CertEnrollment.deleteScepChallenge().");
     return { ok: true, id: String(id), entry: entry };
   }

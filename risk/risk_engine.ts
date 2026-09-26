@@ -58,6 +58,9 @@ import stsCrypto = require('../common/crypto');
 import errorCodes = require('../common/error_codes');
 import InstanceSlot = require('../common/instance_slot');
 import riskStore = require('./risk_store');
+// A LEAF beside the store (config, error codes, the store): only its
+// replayed-code door is read here.
+import riskFailures = require('./risk_failures');
 import riskDatasets = require('./risk_datasets');
 import riskModel = require('./risk_model');
 import cacheRegistry = require('../common/cache_registry');
@@ -107,9 +110,24 @@ const SIGNALS: Record<string, Json> = {
   // credential used is compromised.
   'reported-not-me': { factor: 1,
     what: 'the person reported a sign-in as not theirs' },
+  // #231: ALSO a security key whose signature counter went BACKWARDS —
+  // WebAuthn Level 3 section 6.1.1's sign of a cloned authenticator, found
+  // by `credentials.ts` and handed here by `noteAuthenticatorCompromise()`,
+  // which sets the person's standing to HIGH as `reported-not-me` does.
   'authenticator-compromised': { factor: 50,
     what: 'the security key\'s model is reported revoked or compromised in ' +
-          'the FIDO metadata' },
+          'the FIDO metadata, or the key\'s signature counter went ' +
+          'backwards (a clone)' },
+  // #231: a one-time code from an authenticator app presented a SECOND
+  // time for this person in the last hour (`credentials.ts`,
+  // STS-AUTHN-0106). RFC 6238 section 5.2 forbids accepting it, and it was
+  // refused; what it says about the person is weak — somebody who pressed
+  // submit twice looks exactly like somebody who watched the code being
+  // typed — so it is a signal and a small factor, never a Security Event
+  // Token (rcbj's decision on #231), and never HIGH on its own.
+  'totp-replay': { factor: 2,
+    what: 'a one-time code was presented again for this person in the last ' +
+          'hour' },
   // -------------------------------------------------------------------------
   // THE REGISTERED DEVICE (#164 decision 4, phase 5, 2026-09-26): what the
   // device register says about the device that proved this sign-in —
@@ -166,6 +184,12 @@ const SIGNALS: Record<string, Json> = {
     what: 'the person\'s own registered device, compliant and ' +
           'self-asserted' }
 };
+
+// THE DOOR A REPLAYED ONE-TIME CODE IS RECORDED UNDER (#231), in the
+// failures register (`risk_failures.ts` argues it). Counted as `totp-replay`
+// and NOT as a refused password: the two password signals leave this door
+// out, so a replay is never read as a guessed password.
+const TOTP_REPLAY_DOOR = riskFailures.TOTP_REPLAY_DOOR;
 
 // THE SIGNALS THAT ONLY LOWER A SCORE and do not, alone, make an UNSCORED
 // sign-in scored (#164 phase 5). A first sign-in with nothing else to say is
@@ -1140,13 +1164,19 @@ class RiskEngine {
     }
     const since = at - HOUR_MS;
     const mine = await store.listFailures(realm, { since: since,
-      subject: subject, limit: 1 }, sealing);
+      subject: subject, limit: 1, excludeDoor: TOTP_REPLAY_DOOR }, sealing);
     if (mine.total >= accountFailureThreshold()) {
       add('account-failures', String(mine.total));
     }
+    const replays = await store.listFailures(realm, { since: since,
+      subject: subject, limit: 1, door: TOTP_REPLAY_DOOR }, sealing);
+    if (replays.total) {
+      add('totp-replay', String(replays.total));
+    }
     if (found.prefix) {
       const theirs = await store.listFailures(realm, { since: since,
-        prefix: found.prefix, limit: 1 }, sealing);
+        prefix: found.prefix, limit: 1, excludeDoor: TOTP_REPLAY_DOOR },
+                                              sealing);
       if (theirs.total >= networkFailureThreshold()) {
         add('network-failures', String(theirs.total));
       }
@@ -1571,13 +1601,22 @@ class RiskEngine {
     });
     const since = now() - HOUR_MS;
     const mine = await store.listFailures(realm, { since: since,
-      subject: String(session.user.sub), limit: 1 }, sealing);
+      subject: String(session.user.sub), limit: 1,
+      excludeDoor: TOTP_REPLAY_DOOR }, sealing);
     if (mine.total >= accountFailureThreshold()) {
       signals.push('account-failures');
     }
+    // A code replayed for this person while the session is live (#231).
+    const replays = await store.listFailures(realm, { since: since,
+      subject: String(session.user.sub), limit: 1, door: TOTP_REPLAY_DOOR },
+                                             sealing);
+    if (replays.total) {
+      signals.push('totp-replay');
+    }
     if (found.prefix) {
       const theirs = await store.listFailures(realm, { since: since,
-        prefix: found.prefix, limit: 1 }, sealing);
+        prefix: found.prefix, limit: 1, excludeDoor: TOTP_REPLAY_DOOR },
+                                              sealing);
       if (theirs.total >= networkFailureThreshold()) {
         signals.push('network-failures');
       }
@@ -1834,6 +1873,65 @@ class RiskEngine {
                                             '') + '.');
     log.debug("Leaving RiskEngine.feedback().");
     return { ok: true, verdict: verdict, moved: moved };
+  }
+
+  // -------------------------------------------------------------------------
+  // A SECURITY KEY FOUND CLONED (#231). `common/credentials.ts` saw a key's
+  // signature counter go BACKWARDS on an assertion whose every other check
+  // passed — WebAuthn Level 3 section 6.1.1's evidence that a second copy
+  // of the authenticator exists — and refused it. The key proves
+  // possession of something somebody else also holds, so, as the FIDO
+  // metadata's word about a key's model already does at a sign-in, it is
+  // `authenticator-compromised`; and, as `feedback()`'s "this wasn't me"
+  // does outside a sign-in, it sets the person's standing to HIGH now, so
+  // the `risk-response` policy answers it (ending what they hold, RISC
+  // credential-compromise where enforced). `input`: realm, subject,
+  // username, evidence. Never rejects.
+  // -------------------------------------------------------------------------
+  async noteAuthenticatorCompromise(input: Json): Promise<Json> {
+    const { log, store, now, config } = this.deps;
+    log.debug("Entering RiskEngine.noteAuthenticatorCompromise().");
+    const realm = String((input && input.realm) || '');
+    const subject = String((input && input.subject) || '');
+    const username = String((input && input.username) || '');
+    if (!subject || config.value('risk.assessSignIns') === false) {
+      log.debug("Leaving RiskEngine.noteAuthenticatorCompromise(). Nobody, " +
+                "or sign-ins are not assessed.");
+      return { ok: false, why: 'not assessed' };
+    }
+    try {
+      const sealing = this.sealing();
+      const at = now();
+      const before = await store.subjectOf(realm, subject, sealing);
+      const high = Number(config.value('risk.highScorePercent')) / 100;
+      const score = Math.max(high, before ? Number(before.score) || 0 : 0);
+      const id = 'authenticator:' + at.toString(36) + ':' +
+                 require('crypto').randomBytes(6).toString('hex');
+      await store.upsertSubject({ realm: realm, subject: subject,
+        score: score, level: 'HIGH', reason: 'authenticator-compromised',
+        lastAssessment: id, updatedAt: at }, sealing);
+      this.holdStanding(realm, username,
+        { level: 'HIGH', score: score,
+          signals: ['authenticator-compromised'], assessmentId: id, at: at });
+      this.noteChange(realm, subject, username,
+        before ? String(before.level || '') : '',
+        { id: id, level: 'HIGH', score: score,
+          signals: [{ signal: 'authenticator-compromised',
+                      evidence: String(input.evidence || '') }], at: at });
+      log.info('risk: ' + (username || subject) + '\'s standing is HIGH: a ' +
+               'security key of theirs is a clone (' +
+               String(input.evidence || 'counter went backwards') + ').');
+      log.debug("Leaving RiskEngine.noteAuthenticatorCompromise().");
+      return { ok: true, level: 'HIGH' };
+    } catch (e) {
+      log.debug("Caught in RiskEngine.noteAuthenticatorCompromise(): " +
+                ((e && e.message) || e));
+      log.warn(errorCodes.tag('STS-RISK-0044') + 'risk: a cloned security ' +
+               'key of ' + (username || subject) + ' could not be recorded ' +
+               'on their standing: ' + ((e && e.message) || e));
+      log.debug("Leaving RiskEngine.noteAuthenticatorCompromise(). Failed.");
+      return { ok: false, why: String((e && e.message) || e) };
+    }
   }
 
   // -------------------------------------------------------------------------
@@ -2187,6 +2285,7 @@ export = {
   settle: slot.forward('settle'),
   respond: slot.forward('respond'),
   feedback: slot.forward('feedback'),
+  noteAuthenticatorCompromise: slot.forward('noteAuthenticatorCompromise'),
   metrics: slot.forward('metrics'),
   geography: slot.forward('geography'),
   factors: slot.forward('factors'),

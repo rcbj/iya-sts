@@ -268,12 +268,17 @@ class Siop {
       held.concat([record]).map(function (one) {
         return JSON.stringify(one);
       }));
+    if (written) {
+      this.signalChange(name, 'create', record, by);
+    }
     log.debug("Leaving Siop.enrol(). " + written);
     return written ? { ok: true, enrolled: record } :
       { ok: false, error: 'the directory did not store it.' };
   }
 
-  remove(username: unknown, subject: unknown): Json {
+  // `by` is who removed it, as `enrol()` takes it: the person's own name
+  // from the portal, an administrator's from the console and the API.
+  remove(username: unknown, subject: unknown, by?: unknown): Json {
     const { log, credentials } = this.deps;
     log.debug("Entering Siop.remove(). user=" + username);
     const name = String(username || '').trim();
@@ -291,9 +296,50 @@ class Siop {
       kept.map(function (one) {
         return JSON.stringify(one);
       }));
+    if (written) {
+      const gone = held.filter(function (one) {
+        return one.subject === wanted;
+      })[0];
+      this.signalChange(name, 'delete', gone, by);
+    }
     log.debug("Leaving Siop.remove(). " + written);
     return written ? { ok: true, removed: wanted } :
       { ok: false, error: 'the directory did not store the change.' };
+  }
+
+  // CAEP `credential-change` FOR A SELF-ISSUED SUBJECT (#236, 2026-09-26).
+  // `enrol()` and `remove()` are the only writers of the enrolment — the
+  // wallet round trip, the portal, the console and `/admin-api` all come
+  // here — so the event is sent here (the #145 rule). The type is this
+  // service's own URN: the subject is a KEY the person proved, and CAEP
+  // 1.0 section 3.3.1's `verifiable-credential` would say it is a
+  // credential somebody issued (`ssf/account_signals.ts`). Required
+  // LAZILY, and never allowed to undo a write already made.
+  private signalChange(name: string, change: string, record: Json,
+                       by: unknown): void {
+    const { log } = this.deps;
+    log.debug("Entering Siop.signalChange(). " + change);
+    const actor = String(by || '');
+    const byUser = actor.toLowerCase() === name.toLowerCase() ||
+                   /^self\b/.test(actor);
+    const label = record ? String(record.label || record.subject || '') : '';
+    try {
+      const signals = require('../ssf/account_signals');
+      signals.credentialChanged({ username: name,
+        credentialType: signals.SELF_ISSUED_KEY_CREDENTIAL_TYPE,
+        changeType: change, initiatingEntity: byUser ? 'user' : 'admin',
+        friendlyName: label, via: 'siop',
+        reasonAdmin: (byUser ? name : 'An administrator') + ' ' +
+          (change === 'create' ? 'enrolled' : 'removed') + ' a self-issued ' +
+          'subject for ' + name + '.',
+        reasonUser: 'A self-issued (wallet) key was ' +
+          (change === 'create' ? 'enrolled on' : 'removed from') +
+          ' your account.' });
+    } catch (e) {
+      log.debug("Caught in Siop.signalChange(): " + ((e && e.message) || e));
+      // No Shared Signals facade in this process; the write stands.
+    }
+    log.debug("Leaving Siop.signalChange().");
   }
 
   // -------------------------------------------------------------------------

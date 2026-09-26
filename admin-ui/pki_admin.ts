@@ -1957,6 +1957,20 @@ class PkiAdmin {
                          ' of ' + held.identifier + ' (' +
                          done.entry.reason + ').',
             reasonUser: 'A certificate of yours was revoked.' });
+          // REVOKED FOR `keyCompromise` (#231): the key is known to somebody
+          // else, which RISC 1.0 section 2.7 says as `credential-compromise`
+          // beside the CAEP revoke above. A CA's own revocation, and what it
+          // does to the certificates under it, is #244's.
+          if (done.entry.reason === 'keyCompromise') {
+            accountSignals.credentialCompromised({
+              username: held.identifier, credentialType: 'x509',
+              initiatingEntity: 'admin', via: '/admin/pki',
+              reasonAdmin: 'An administrator revoked the certificate ' +
+                           serial + ' of ' + held.identifier + ' because ' +
+                           'its key was compromised.',
+              reasonUser: 'A certificate of yours was revoked because its ' +
+                          'key may be known to somebody else.' });
+          }
         }
       }
       log.debug('Leaving PkiAdmin.pkiAction(). Revoked.');
