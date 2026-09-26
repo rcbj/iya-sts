@@ -11360,9 +11360,10 @@ const CODES = [
     spec: 'TLS handshake failure (the client closed the connection)' },
   { code: 'STS-TLS-0035',
     summary: 'A connection was closed because its client certificate (or ' +
-      'one in its chain) has an EC key on a curve with no NIST name — ' +
-      'brainpool, secp256k1 — which node 24.16.0 crashes converting for ' +
-      'getPeerCertificate() (#212).',
+      'one in its chain) has an EC key on a curve outside the NIST set ' +
+      '(P-256, P-384, P-521 and the other NIST-named curves); such ' +
+      'certificates are refused before any certificate object is built ' +
+      '(#212).',
     spec: 'the connection is closed after the handshake' },
   // ===== VC ================================================================
   { code: 'STS-VC-0001',

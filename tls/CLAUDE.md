@@ -1103,51 +1103,44 @@ and the debugger's from `tests/tlsfuzzer_debugger.js`. Both run the plan in
 reason; `tests/CLAUDE.md` (*THE TLS FUZZER*) says how it runs. It found four
 things in this module's policy, all fixed here.
 
-* **A CLIENT CERTIFICATE ON A BRAINPOOL CURVE CRASHED THE PROCESS.** Node
-  24.16.0 (OpenSSL 3.5.6) dies with SIGSEGV converting a certificate whose EC
-  key is on a curve with no NIST name (brainpool, secp256k1) into the object
-  `getPeerCertificate()` returns. `toLegacyObject()` crashes the same way on
-  its own; the `X509Certificate` accessors do not. The crash happens for
-  such a certificate anywhere in the chain `getPeerCertificate(true)` walks:
-  a P-256 leaf sent with a brainpool issuer is enough. The revocation check
-  (`fromSocket()`) and the path rules walk that chain on the two listeners
-  that ask for a certificate. There are two defences:
-  1. **`tls.signatureAlgorithms` offers no brainpool scheme**, so a brainpool
-     LEAF fails inside OpenSSL. TLS 1.2 already refused the curve ("wrong
-     curve").
-  2. **`refuseUnreadableCertificatesOn()` guards the whole chain.** It is
+* **A CLIENT CERTIFICATE ON A CURVE OUTSIDE THE NIST SET IS REFUSED.**
+  Certificates whose EC key is on a curve other than P-256/P-384/P-521 (and
+  the other NIST-named curves `ACCEPTED_CLIENT_CURVES` lists) are refused
+  before any certificate object is built (a third-party runtime defect found
+  by #212; details are held privately by the maintainer). The rule covers
+  every certificate in the chain, not only the leaf, because the revocation
+  check (`fromSocket()`) and the path rules walk that chain on the two
+  listeners that ask for a certificate. There are two defences:
+  1. **`tls.signatureAlgorithms` omits brainpool from the offered signature
+     schemes by policy**, so such a LEAF fails inside OpenSSL.
+  2. **`refuseNonNistCurveCertificatesOn()` guards the whole chain.** It is
      prepended to `secureConnection` on every listener registered through
-     `trustClientCertificatesOn()`, and reads the chain ONCE through
-     `getPeerX509Certificate()`, which is the only safe way. That has a
-     price: after it, node's own `getPeerCertificate(true)` on that socket
-     has no `issuerCertificate` (measured; `tests/revocation_status.js`
-     caught the first version of this guard). So what happens next depends
-     on the chain:
-     * a certificate on an unreadable curve anywhere in it: the connection
-       is closed and `getPeerCertificate` answers `{}`, `STS-TLS-0035`;
-     * otherwise `getPeerCertificate` is REPLACED on the socket with node's
-       own objects (each certificate's `toLegacyObject()`, the same
-       conversion). They are linked the way node links them: the chain sent,
-       then issuers from the listener's anchors, and a self-issued top
-       pointing at itself.
+     `trustClientCertificatesOn()`, and reads the chain ONCE, as
+     `X509Certificate` objects. Every later reader is served from that one
+     reading, so they all see the same chain whatever order they ask in
+     (`tests/revocation_status.js` reads the whole chain through it).
+     What happens next depends on the chain:
+     * a certificate on a curve outside the set anywhere in it: the
+       connection is closed and `getPeerCertificate` answers `{}`,
+       `STS-TLS-0035`;
+     * otherwise `getPeerCertificate` is REPLACED on the socket with the
+       objects node would have built. They are linked the way node links
+       them: the chain sent, then issuers from the listener's anchors, and a
+       self-issued top pointing at itself.
 
-  The SPIFFE gRPC listeners belong to grpc-js, so they get only the first
-  defence, `SpiffeGrpc.READABLE_SIGALGS`. That is the whole of what they
-  need: grpc-js calls `getPeerCertificate()` for `getAuthContext()` WITHOUT
-  `detailed`, which converts the leaf alone, and nothing in `spiffe/` walks
-  the chain.
-  `tests/tls_protocol_policy.js` C runs the crash and the guard in child
-  processes: the leaf, the issuer, and a chain read whole. When node fixes
-  the crash, that file says so, and the guard should be revisited. It has
-  not been reported to node.
+  The SPIFFE gRPC listeners belong to grpc-js, so they get the first
+  defence, `SpiffeGrpc.POLICY_SIGALGS`: the same policy list, stated for
+  TLS 1.3. Nothing in `spiffe/` walks the chain.
+  `tests/tls_protocol_policy.js` C holds the guard in a child process: the
+  leaf, the issuer, and a chain read whole.
 * **`tls.groups`**: the key-exchange groups, as OpenSSL tuples. The three
   post-quantum hybrids come first, then X25519 and P-256, then X448, P-384
   and P-521. Node's `auto` offered one hybrid of the three, plus ffdhe2048
   and ffdhe3072. Across tuples OpenSSL sends a HelloRetryRequest for an
   earlier tuple the client supports, so a hybrid-capable client that guessed
   X25519 is moved to the hybrid.
-* **`tls.signatureAlgorithms`**: OpenSSL's list without DSA, SHA-224 and
-  brainpool. Every TLS 1.2 CertificateRequest used to advertise
+* **`tls.signatureAlgorithms`**: OpenSSL's list without DSA and SHA-224,
+  and with brainpool omitted by policy. Every TLS 1.2 CertificateRequest used to advertise
   `dsa_sha224`–`dsa_sha512` and both SHA-224 schemes, and so a `dss_sign`
   certificate type. The CertificateRequest is what this service asks a
   client certificate to be signed with.

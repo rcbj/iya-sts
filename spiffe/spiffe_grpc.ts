@@ -193,10 +193,10 @@ type ServiceName = 'workload' | 'entry' | 'agent' | 'bundle' | 'svid' |
 
 class SpiffeGrpc {
   // The signature schemes the SPIFFE TLS listeners sign with and accept from
-  // a client's SVID (#212): OpenSSL's TLS 1.3 list without the brainpool
-  // schemes, whose certificates node 24.16.0 crashes reading — see where it
-  // is applied, in the credentials below.
-  static readonly READABLE_SIGALGS = 'mldsa65:mldsa87:mldsa44:' +
+  // a client's SVID (#212): OpenSSL's TLS 1.3 list, with brainpool omitted
+  // from the offered signature schemes by policy — see where it is applied,
+  // in the credentials below.
+  static readonly POLICY_SIGALGS = 'mldsa65:mldsa87:mldsa44:' +
     'ecdsa_secp256r1_sha256:ecdsa_secp384r1_sha384:ecdsa_secp521r1_sha512:' +
     'ed25519:ed448:rsa_pss_pss_sha256:rsa_pss_pss_sha384:' +
     'rsa_pss_pss_sha512:rsa_pss_rsae_sha256:rsa_pss_rsae_sha384:' +
@@ -2009,15 +2009,15 @@ class SpiffeGrpc {
       // that would have to be kept in step with a library we do not otherwise
       // touch.
       credentials._getConstructorOptions().rejectUnauthorized = false;
-      // AND NO BRAINPOOL SIGNATURE SCHEME (#212). node 24.16.0 crashes the
-      // process (SIGSEGV) converting a certificate on a brainpool curve for
-      // getPeerCertificate() — which grpc-js calls for getAuthContext(), on
-      // every call this listener authenticates — and OpenSSL's default list
-      // lets a TLS 1.3 client sign its CertificateVerify with one. With this
-      // list such a handshake fails inside OpenSSL; TLS 1.2 already refuses
-      // the curve. tls/CLAUDE.md has the finding.
+      // AND THE POLICY SIGNATURE LIST (#212): brainpool is omitted from the
+      // offered signature schemes by policy, as on every other listener.
+      // Certificates whose EC key is on a curve other than P-256/P-384/P-521
+      // are refused on this service's TLS listeners (a third-party runtime
+      // defect found by #212; details are held privately by the
+      // maintainer); here, where grpc-js owns the socket, this list is the
+      // refusal. tls/CLAUDE.md has the rule.
       credentials._getConstructorOptions().sigalgs =
-        SpiffeGrpc.READABLE_SIGALGS;
+        SpiffeGrpc.POLICY_SIGALGS;
     } catch (e) {
       log.error(errorCodes.tag('STS-SPIFFE-0012') +
                 'spiffe: the ' + surface + ' ' +

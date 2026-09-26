@@ -66,8 +66,9 @@ function certificates(dir) {
     ed25519: ['-newkey', 'ed25519'],
     rsapss: ['-newkey', 'rsa-pss', '-pkeyopt', 'rsa_keygen_bits:2048'],
     mldsa: ['-newkey', 'ml-dsa-65'],
-    brainpool: ['-newkey', 'ec', '-pkeyopt',
-                'ec_paramgen_curve:brainpoolP256r1']
+    // A curve outside the NIST set, for the guard's refusal (#212).
+    nonNist: ['-newkey', 'ec', '-pkeyopt',
+              'ec_paramgen_curve:brainpoolP256r1']
   };
   const made = {};
   Object.keys(kinds).forEach(function (kind) {
@@ -83,13 +84,13 @@ function certificates(dir) {
     }
     made[kind] = pair;
   });
-  // tlslite reads a brainpool key only in the traditional SEC 1 form: its
+  // tlslite reads a non-NIST EC key only in the traditional SEC 1 form: its
   // PKCS #8 parser knows the NIST curves alone ("Unknown curve").
   const sec1 = childProcess.spawnSync('openssl', ['ec', '-in',
-    made.brainpool.key, '-out', made.brainpool.key],
+    made.nonNist.key, '-out', made.nonNist.key],
   { encoding: 'utf8', timeout: 60000 });
   if (sec1.status !== 0) {
-    throw new Error('openssl could not rewrite the brainpool key: ' +
+    throw new Error('openssl could not rewrite the non-NIST key: ' +
                     (sec1.stderr || sec1.error || ''));
   }
   log.debug("Leaving certificates().");

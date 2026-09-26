@@ -78,17 +78,15 @@ CertificateRequest, and with them a `dss_sign` certificate type — an
 invitation to answer the main port's certificate request with a DSA
 certificate, an algorithm FIPS 186-5 no longer approves for signing.
 
-**A client certificate on a brainpool curve is refused** (#212). Node
-24.16.0 crashes the whole process (SIGSEGV) when it converts a certificate
-whose key is on an elliptic curve with no NIST name — brainpool, secp256k1 —
-for `getPeerCertificate()`, and the main port and the debugger's listener read
-the client certificate of every connection. tlsfuzzer found it with a
-brainpool CertificateVerify. So the default signature list offers no
-brainpool scheme (the TLS 1.3 handshake fails inside OpenSSL; TLS 1.2 already
-refuses the curve), and every listener that asks for a certificate closes a
-connection whose certificate CHAIN has such a key — a brainpool issuer
-behind a P-256 leaf crashes node just as well — before anything reads it
-(`STS-TLS-0035`), whatever `tls.signatureAlgorithms` says.
+**A client certificate on a curve outside the NIST set is refused** (#212).
+Certificates whose EC key is on a curve other than P-256/P-384/P-521 (and the
+other NIST-named curves) are refused before any certificate object is built (a
+third-party runtime defect found by #212; details are held privately by the
+maintainer). The rule covers the whole certificate CHAIN, not only the leaf:
+every listener that asks for a certificate — the main port and the debugger's
+— closes such a connection (`STS-TLS-0035`), whatever
+`tls.signatureAlgorithms` says. Separately, brainpool is omitted from the
+offered signature schemes by policy.
 
 > **Warning.** Emptying `tls.groups` or `tls.signatureAlgorithms` restores
 > node's and OpenSSL's defaults, with the finite-field groups, one hybrid
@@ -414,7 +412,7 @@ refusal of an application's certificate — is the same in both modes. See
 | `tls.minVersion` | `STS_TLS_MIN_VERSION` | `TLSv1.2` | no | The lowest TLS version the main port and LDAPS negotiate. |
 | `tls.ciphers` | `STS_TLS_CIPHERS` | BCP 195: the TLS 1.3 suites, then `ECDHE-{ECDSA,RSA}-AES{128,256}-GCM-SHA{256,384}` | no | An OpenSSL cipher list for those sockets, in the server's order; empty means node's own list (see the warning above). One matching nothing stops startup. |
 | `tls.groups` | `STS_TLS_GROUPS` | `X25519MLKEM768:SecP256r1MLKEM768:SecP384r1MLKEM1024 / X25519:P-256 / X448:P-384:P-521` | no | The key-exchange groups, post-quantum hybrids first (see below); empty means node's `auto`. |
-| `tls.signatureAlgorithms` | `STS_TLS_SIGALGS` | OpenSSL's list without DSA, SHA-224 and brainpool | no | The signature schemes signed with, accepted, and asked for in a CertificateRequest; empty means OpenSSL's. |
+| `tls.signatureAlgorithms` | `STS_TLS_SIGALGS` | OpenSSL's list without DSA and SHA-224, brainpool omitted by policy | no | The signature schemes signed with, accepted, and asked for in a CertificateRequest; empty means OpenSSL's. |
 | `tls.trustAnchorsFile` | `STS_TLS_TRUST_ANCHORS_FILE` | *(empty)* | no | A PEM file of CA certificates client certificates are verified against, loaded at startup; unreadable or empty is fatal. |
 | `tls.trustIssuedClientCertificates` | `STS_TLS_TRUST_ISSUED_CLIENT_CERTIFICATES` | `true` | no | Add this service's Root to the client truststore, so a certificate a person issued on the portal signs them in. |
 | `tls.selfSignedKeyBits` | `STS_TLS_SELF_SIGNED_KEY_BITS` | `2048` | no | The RSA key size of the listener certificate made at startup. |

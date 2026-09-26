@@ -2075,60 +2075,53 @@ function adoptServerCertificate(bundle) {
 const externalServers = [];
 
 // ---------------------------------------------------------------------------
-// A CLIENT CERTIFICATE NODE CANNOT READ IS REFUSED, AND EVERY READER IS SERVED
-// FROM ONE SAFE READING (#212, 2026-09-26).
+// A CLIENT CERTIFICATE WHOSE EC KEY IS ON A CURVE OUTSIDE THE NIST SET BELOW
+// IS REFUSED, AND EVERY READER IS SERVED FROM ONE READING (#212, 2026-09-26).
 //
-// tlsfuzzer's test-tls13-ecdsa-brainpool-in-certificate-verify took the
-// whole process down: exit 139, SIGSEGV. Node 24.16.0 (OpenSSL 3.5.6)
-// crashes converting an X.509 certificate whose key is on an elliptic curve
-// with no NIST name — brainpoolP256r1/384r1/512r1, secp256k1 — into the
-// object `getPeerCertificate()` returns (`X509Certificate#toLegacyObject()`
-// crashes the same way, standalone; the X509Certificate accessors do not).
-// It crashes for such a certificate ANYWHERE in the chain `getPeerCertificate
-// (true)` walks — a P-256 leaf presented with a brainpool issuer is enough —
-// and the revocation check and the path rules walk it for every connection
-// that presents a certificate. The main port and the debugger ask every
-// connection for one.
+// Certificates whose EC key is on a curve other than the NIST ones listed
+// in ACCEPTED_CLIENT_CURVES are refused before any certificate object is
+// built for the rest of this service to read (a third-party runtime defect
+// found by #212; details are held privately by the maintainer). The rule
+// applies to EVERY certificate in the chain the peer presents and the chain
+// this listener completes from its anchors, because the revocation check and
+// the path rules walk the whole chain for every connection that presents a
+// certificate. The main port and the debugger ask every connection for one.
 //
-// THE ONE SAFE WAY TO LOOK IS `getPeerX509Certificate()`, AND IT HAS A PRICE
-// OF ITS OWN: once it has been called, a later `getPeerCertificate(true)` on
-// the same socket has no `issuerCertificate` at all (measured on 24.16.0 —
-// the revocation_status suite caught it the first time this guard used it).
-// So this guard reads the chain ONCE, that way, prepended to
-// `secureConnection` so it runs before every other reader, and then:
+// So this guard reads the chain ONCE, as X509Certificate objects, prepended
+// to `secureConnection` so it runs before every other reader, and then:
 //
-//   * a certificate on a curve node cannot read, anywhere in the chain:
+//   * a certificate on a curve outside the set, anywhere in the chain:
 //     `getPeerCertificate` answers node's own "no certificate" ({}), the
 //     connection is closed, `STS-TLS-0035`;
 //   * otherwise `getPeerCertificate(detailed)` is REPLACED on the socket by
-//     the same objects node would have built — each certificate's own
-//     `toLegacyObject()`, which is the same C++ conversion — linked by
-//     `issuerCertificate` exactly as node links them: the chain the client
-//     sent, then issuers found among this listener's trust anchors
+//     the same objects node would have built, from that one reading, linked
+//     by `issuerCertificate` exactly as node links them: the chain the
+//     client sent, then issuers found among this listener's trust anchors
 //     (node completes from the context's store), and a self-issued top
-//     pointing at itself.
+//     pointing at itself. Every reader sees the same chain, whatever order
+//     they ask in.
 //
-// The first defence is `tls.signatureAlgorithms`, whose default offers no
-// brainpool scheme, so a brainpool LEAF fails inside OpenSSL (TLS 1.2 already
-// refuses the curve: "wrong curve"). Only this one covers the chain.
+// The first line is `tls.signatureAlgorithms`, whose default omits brainpool
+// from the offered signature schemes by policy. Only this guard covers the
+// chain.
 // ---------------------------------------------------------------------------
-const NODE_READABLE_CURVES = new Set([
+const ACCEPTED_CLIENT_CURVES = new Set([
   'prime192v1', 'secp224r1', 'prime256v1', 'secp384r1', 'secp521r1',
   'sect163k1', 'sect163r2', 'sect233k1', 'sect233r1', 'sect283k1',
   'sect283r1', 'sect409k1', 'sect409r1', 'sect571k1', 'sect571r1'
 ]);
 
-// Why node cannot convert this certificate, or ''.
-function unreadableKey(cert) {
-  log.debug("Entering unreadableKey().");
+// Why this certificate's key is refused, or ''.
+function refusedCurveKey(cert) {
+  log.debug("Entering refusedCurveKey().");
   const key = cert.publicKey;
   if (key.asymmetricKeyType !== 'ec') {
-    log.debug("Leaving unreadableKey(). Not EC.");
+    log.debug("Leaving refusedCurveKey(). Not EC.");
     return '';
   }
   const curve = String((key.asymmetricKeyDetails || {}).namedCurve || '');
-  log.debug("Leaving unreadableKey(). " + curve);
-  return NODE_READABLE_CURVES.has(curve) ? ''
+  log.debug("Leaving refusedCurveKey(). " + curve);
+  return ACCEPTED_CLIENT_CURVES.has(curve) ? ''
     : 'an EC key on ' + (curve || 'an unnamed curve');
 }
 
@@ -2214,7 +2207,7 @@ function legacyPeerCertificate(read, detailed) {
   return objects[0];
 }
 
-// The first certificate of the peer's chain node cannot convert, described,
+// The first certificate of the peer's chain on a refused curve, described,
 // or '' — and the chain, for the replacement reader.
 function readPeerChain(socket) {
   log.debug("Entering readPeerChain().");
@@ -2227,7 +2220,7 @@ function readPeerChain(socket) {
   const read = peerChainOf(leaf);
   read.problem = '';
   read.chain.some(function (cert, depth) {
-    const why = unreadableKey(cert);
+    const why = refusedCurveKey(cert);
     if (why) {
       read.problem = (depth ? 'the certificate at depth ' + depth
                             : 'the leaf') + ' (' +
@@ -2235,20 +2228,20 @@ function readPeerChain(socket) {
     }
     return !!why;
   });
-  log.debug("Leaving readPeerChain(). " + (read.problem || 'readable'));
+  log.debug("Leaving readPeerChain(). " + (read.problem || 'accepted'));
   return read;
 }
 
 // Kept for callers that only want the verdict.
-function unreadablePeerCertificate(socket) {
-  log.debug("Entering unreadablePeerCertificate().");
+function nonNistCurvePeerCertificate(socket) {
+  log.debug("Entering nonNistCurvePeerCertificate().");
   const read = readPeerChain(socket);
-  log.debug("Leaving unreadablePeerCertificate().");
+  log.debug("Leaving nonNistCurvePeerCertificate().");
   return read ? read.problem : '';
 }
 
-function refuseUnreadableCertificatesOn(server, label) {
-  log.debug('Entering refuseUnreadableCertificatesOn(). label=' + label);
+function refuseNonNistCurveCertificatesOn(server, label) {
+  log.debug('Entering refuseNonNistCurveCertificatesOn(). label=' + label);
   server.prependListener('secureConnection', function (socket) {
     let read = null;
     try {
@@ -2256,7 +2249,7 @@ function refuseUnreadableCertificatesOn(server, label) {
     } catch (e) {
       // A chain X509Certificate itself cannot walk is not one this guard
       // can judge; the socket is left exactly as node made it.
-      log.debug("Caught in refuseUnreadableCertificatesOn(): " +
+      log.debug("Caught in refuseNonNistCurveCertificatesOn(): " +
                 ((e && e.message) || e));
       read = null;
     }
@@ -2283,18 +2276,17 @@ function refuseUnreadableCertificatesOn(server, label) {
     };
     log.warn(errorCodes.tag('STS-TLS-0035') + 'tls: closed a connection on ' +
              label + ' from ' + (socket.remoteAddress || 'an unknown ' +
-             'address') + ': ' + read.problem + ', which node cannot read ' +
-             'without crashing the process (#212). Only NIST curves are ' +
-             'read here.');
+             'address') + ': ' + read.problem + '. Only the NIST curves are ' +
+             'accepted in a client certificate chain (#212).');
     audit.failure('STS-TLS-0035', {
       protocol: 'TLS', channel: 'tls', target: label,
-      summary: 'a client certificate on a curve node cannot read was ' +
-               'refused: ' + read.problem,
+      summary: 'a client certificate on a curve outside the NIST set ' +
+               'was refused: ' + read.problem,
       outcome: 'refused'
     });
     socket.destroy();
   });
-  log.debug('Leaving refuseUnreadableCertificatesOn().');
+  log.debug('Leaving refuseNonNistCurveCertificatesOn().');
 }
 
 function trustClientCertificatesOn(server, label) {
@@ -2317,7 +2309,7 @@ function trustClientCertificatesOn(server, label) {
                          label: String(label || 'a listener') });
   // Every listener that registers here ASKS for a client certificate (the
   // main port, the debugger), so every one is guarded (#212).
-  refuseUnreadableCertificatesOn(server, String(label || 'a listener'));
+  refuseNonNistCurveCertificatesOn(server, String(label || 'a listener'));
   // APPLIED IMMEDIATELY, because anchors may already be loaded — this service
   // can be handed a truststore before the main port binds, and a listener that
   // only picked anchors up on the NEXT change would be one whose behaviour
@@ -4457,8 +4449,8 @@ module.exports = {
   // trustClientCertificatesOn().
   trustClientCertificatesOn: trustClientCertificatesOn,
   // #212: the guard, for a TLS listener that does not register above.
-  refuseUnreadableCertificatesOn: refuseUnreadableCertificatesOn,
-  unreadablePeerCertificate: unreadablePeerCertificate,
+  refuseNonNistCurveCertificatesOn: refuseNonNistCurveCertificatesOn,
+  nonNistCurvePeerCertificate: nonNistCurvePeerCertificate,
   // LDAPS 636 and the SPIRE Server API re-key themselves on this (2026-09-21).
   onServerCertificateChange: onServerCertificateChange,
   // What secureContextOptions() would give a listener created elsewhere: the

@@ -12,24 +12,26 @@
 //   A. `protocolOptions()` — what the main port, LDAPS and the debugger's
 //      listener are built from — carries the post-quantum-first group list
 //      with no finite-field group, the signature list with no DSA, no SHA-224
-//      and no brainpool, and SSL_OP_NO_RENEGOTIATION; and
+//      and brainpool omitted by policy, and SSL_OP_NO_RENEGOTIATION; and
 //      `secureContextOptions()`, which every truststore change re-applies,
 //      carries all of it (a listener must not lose the policy at its first
 //      re-application);
 //   B. a REAL handshake against a server built from it: a client offering
 //      only SecP384r1MLKEM1024 is served, one offering only ffdhe2048 is
 //      refused, and a TLS 1.2 renegotiation is refused;
-//   C. THE CRASH: node 24.16.0 dies with SIGSEGV converting a certificate on
-//      a brainpool curve for getPeerCertificate(). A child process holds
-//      that the bug is still there (a note, not a failure, when node fixes
-//      it), and a second child runs a server that lets brainpool through the
-//      handshake with `refuseUnreadableCertificatesOn()` installed: a
-//      brainpool client certificate is closed and the server lives, a P-256
-//      one is read;
-//   D. the SPIFFE listeners' own signature list has no brainpool scheme.
+//   C. THE NIST-CURVE GUARD: certificates whose EC key is on a curve other
+//      than P-256/P-384/P-521 are refused before any certificate object is
+//      built (a third-party runtime defect found by #212; details are held
+//      privately by the maintainer). A child runs a server whose handshake
+//      lets any curve through, with `refuseNonNistCurveCertificatesOn()`
+//      installed: such a client certificate is closed — as the leaf and as
+//      the issuer — and the server keeps serving, while a P-256 one, and a
+//      P-256 chain, are read whole;
+//   D. the SPIFFE listeners' own signature list omits brainpool by policy.
 //
-// In process because each is a function or a loopback socket; the crash is
-// in CHILD processes, so a regression kills a child and not the suite.
+// In process because each is a function or a loopback socket; the guarded
+// server is a CHILD process, so a regression stops a child and not the
+// suite.
 // ===========================================================================
 
 delete process.env.CONFIG_FILE;
@@ -43,6 +45,10 @@ const tls = require('tls');
 
 const log = require('bunyan').createLogger({ name: 'tls_protocol_policy',
   level: process.env.LOG_LEVEL || 'info' });
+
+// The curve the guard's refusal is exercised with: any EC curve outside the
+// NIST set the guard accepts would do.
+const NON_NIST_CURVE = 'brainpoolP256r1';
 
 // A self-signed certificate with `openssl req`, key and certificate PEMs.
 function selfSigned(dir, name, keyArgs) {
@@ -105,32 +111,6 @@ function handshake(port, options) {
   });
 }
 
-// A node program in a child, its exit status and output.
-function child(program, args, timeoutMs) {
-  log.debug("Entering child().");
-  log.debug("Leaving child().");
-  return new Promise(function (resolve) {
-    const p = childProcess.spawn(process.execPath, ['-e', program]
-      .concat(args || []), { cwd: path.join(__dirname, '..'),
-      env: Object.assign({}, process.env, { LOG_LEVEL: 'fatal' }),
-      stdio: ['ignore', 'pipe', 'pipe'] });
-    let out = '';
-    p.stdout.on('data', function (d) {
-      out += d;
-    });
-    p.stderr.on('data', function (d) {
-      out += d;
-    });
-    const timer = setTimeout(function () {
-      p.kill('SIGKILL');
-    }, timeoutMs || 60000);
-    p.on('close', function (code, signal) {
-      clearTimeout(timer);
-      resolve({ code: code, signal: signal, out: out, process: p });
-    });
-  });
-}
-
 async function run(t) {
   log.debug("Entering run().");
   const tlsServer = require('../tls/tls_server');
@@ -145,8 +125,8 @@ async function run(t) {
             'finite-field group', String(opts.ecdhCurve));
     t.check(!!opts.sigalgs && !/dsa_sha|sha224|brainpool/i.test(
               opts.sigalgs.replace(/mldsa\d+/g, '')),
-            'the signature list has no DSA, no SHA-224 and no brainpool ' +
-            'scheme', String(opts.sigalgs));
+            'the signature list has no DSA and no SHA-224 scheme, and ' +
+            'omits brainpool by policy', String(opts.sigalgs));
     t.check((opts.secureOptions & crypto.constants.SSL_OP_NO_RENEGOTIATION)
               !== 0, 'renegotiation is refused (SSL_OP_NO_RENEGOTIATION)');
     const context = tlsServer.clientTruststoreOptions();
@@ -215,24 +195,12 @@ async function run(t) {
       server.close(resolve);
     });
 
-    t.log.info('=== C. a brainpool client certificate ===');
-    const brainpool = selfSigned(scratch, 'brainpool', ['-newkey', 'ec',
-      '-pkeyopt', 'ec_paramgen_curve:brainpoolP256r1']);
+    t.log.info('=== C. a client certificate on a non-NIST curve ===');
+    const nonNist = selfSigned(scratch, 'non-nist', ['-newkey', 'ec',
+      '-pkeyopt', 'ec_paramgen_curve:' + NON_NIST_CURVE]);
     const p256 = selfSigned(scratch, 'p256', ['-newkey', 'ec', '-pkeyopt',
       'ec_paramgen_curve:P-256']);
-    const bug = await child("const {X509Certificate}=require('crypto');" +
-      "new X509Certificate(require('fs').readFileSync(process.argv[1]))" +
-      ".toLegacyObject();console.log('read')", [brainpool.certFile]);
-    if (bug.signal === 'SIGSEGV' || bug.code === 139) {
-      t.ok('node ' + process.versions.node + ' still crashes converting a ' +
-           'brainpool certificate (SIGSEGV), so the guard is still needed');
-    } else {
-      t.log.info('node ' + process.versions.node + ' no longer crashes ' +
-                 'converting a brainpool certificate (' + JSON.stringify(
-                   { code: bug.code, signal: bug.signal }) + '): the ' +
-                 'guard and the #212 notes in tls/CLAUDE.md can be revisited');
-    }
-    // The server in a child: the handshake lets brainpool through (OpenSSL's
+    // The server in a child: the handshake lets any curve through (OpenSSL's
     // default signature list), and the only thing between the certificate
     // and getPeerCertificate() is the guard.
     const program = "const tls=require('tls'),fs=require('fs');" +
@@ -245,7 +213,7 @@ async function run(t) {
       "(p&&p.issuerCertificate&&p.issuerCertificate.subject?" +
       "p.issuerCertificate.subject.CN:'no-issuer'));" +
       "c.on('error',function(){});c.end('ok\\n');});" +
-      "g.refuseUnreadableCertificatesOn(s,'the policy test');" +
+      "g.refuseNonNistCurveCertificatesOn(s,'the policy test');" +
       "s.listen(0,'127.0.0.1',function(){console.log('PORT '+" +
       "s.address().port)});";
     const serverChild = childProcess.spawn(process.execPath, ['-e', program,
@@ -280,7 +248,7 @@ async function run(t) {
             childOut.slice(-400));
     if (guardedPort) {
       const refused = await handshake(guardedPort, {
-        key: brainpool.key, cert: brainpool.cert, minVersion: 'TLSv1.3' });
+        key: nonNist.key, cert: nonNist.cert, minVersion: 'TLSv1.3' });
       if (refused.socket) {
         await new Promise(function (resolve) {
           refused.socket.on('close', resolve);
@@ -291,11 +259,11 @@ async function run(t) {
       await new Promise(function (resolve) {
         setTimeout(resolve, 500);
       });
-      t.check(childExit === null, 'a brainpool client certificate does not ' +
-              'take the server down', JSON.stringify(childExit) + ' ' +
-              childOut.slice(-400));
+      t.check(childExit === null, 'a client certificate on a non-NIST ' +
+              'curve is closed and the server keeps serving',
+              JSON.stringify(childExit) + ' ' + childOut.slice(-400));
       t.check(childOut.indexOf('READ tlsfuzzer') < 0 &&
-              childOut.indexOf('READ brainpool') < 0,
+              childOut.indexOf('READ non-nist') < 0,
               'and nothing read it', childOut.slice(-400));
       const settle = async function (attempt) {
         log.debug("Entering settle().");
@@ -308,27 +276,28 @@ async function run(t) {
           });
         }
       };
-      // A P-256 leaf whose ISSUER is on a brainpool curve: node's walk of
-      // the chain (getPeerCertificate(true)) crashes on the issuer, and
-      // no signature list can refuse it in the handshake.
-      const bpCa = selfSigned(scratch, 'bp-ca', ['-newkey', 'ec', '-pkeyopt',
-        'ec_paramgen_curve:brainpoolP256r1']);
-      const underBp = issuedBy(scratch, 'under-bp', ['-newkey', 'ec',
-        '-pkeyopt', 'ec_paramgen_curve:P-256'], bpCa);
+      // A P-256 leaf whose ISSUER is on a non-NIST curve: the rule covers
+      // the whole chain, and no signature list can refuse it in the
+      // handshake.
+      const otherCa = selfSigned(scratch, 'non-nist-ca', ['-newkey', 'ec',
+        '-pkeyopt', 'ec_paramgen_curve:' + NON_NIST_CURVE]);
+      const underOther = issuedBy(scratch, 'under-non-nist', ['-newkey',
+        'ec', '-pkeyopt', 'ec_paramgen_curve:P-256'], otherCa);
       await settle(await handshake(guardedPort, {
-        key: underBp.key, cert: underBp.cert, minVersion: 'TLSv1.3' }));
-      t.check(childExit === null && childOut.indexOf('READ under-bp') < 0,
-              'a P-256 leaf presented with a brainpool issuer is closed ' +
-              'too, and the server lives', JSON.stringify(childExit) + ' ' +
-              childOut.slice(-400));
+        key: underOther.key, cert: underOther.cert,
+        minVersion: 'TLSv1.3' }));
+      t.check(childExit === null &&
+              childOut.indexOf('READ under-non-nist') < 0,
+              'a P-256 leaf presented with a non-NIST issuer is closed ' +
+              'too, and the server keeps serving',
+              JSON.stringify(childExit) + ' ' + childOut.slice(-400));
       await settle(await handshake(guardedPort, {
         key: p256.key, cert: p256.cert, minVersion: 'TLSv1.3' }));
       t.check(/READ p256/.test(childOut), 'a P-256 client certificate is ' +
               'read as before', childOut.slice(-400));
-      // AND THE CHAIN SURVIVES THE GUARD: reading it the safe way costs
-      // node's own getPeerCertificate(true) its issuerCertificate, so the
-      // guard serves every reader from its one reading — here, a leaf and
-      // the P-256 CA it came with.
+      // AND THE CHAIN SURVIVES THE GUARD: the guard serves every reader
+      // from its one reading of the chain — here, a leaf and the P-256 CA
+      // it came with.
       const pCa = selfSigned(scratch, 'p256-ca', ['-newkey', 'ec', '-pkeyopt',
         'ec_paramgen_curve:P-256']);
       const underP = issuedBy(scratch, 'under-p256', ['-newkey', 'ec',
@@ -343,9 +312,9 @@ async function run(t) {
 
     t.log.info('=== D. the SPIFFE listeners\' signature list ===');
     const spiffeGrpc = require('../spiffe/spiffe_grpc');
-    const readable = (spiffeGrpc.SpiffeGrpc || {}).READABLE_SIGALGS || '';
-    t.check(!!readable && !/brainpool/i.test(readable),
-            'the SPIFFE TLS listeners offer no brainpool scheme', readable);
+    const policy = (spiffeGrpc.SpiffeGrpc || {}).POLICY_SIGALGS || '';
+    t.check(!!policy && !/brainpool/i.test(policy),
+            'the SPIFFE TLS listeners omit brainpool by policy', policy);
   } finally {
     fs.rmSync(scratch, { recursive: true, force: true });
   }
@@ -355,8 +324,8 @@ async function run(t) {
 module.exports = {
   name: 'tls_protocol_policy',
   describe: 'What tlsfuzzer found in the TLS policy (#212): post-quantum ' +
-            'groups first and no finite-field group, no DSA/SHA-224/' +
-            'brainpool signatures, no renegotiation, and a brainpool client ' +
-            'certificate closed before node crashes reading it',
+            'groups first and no finite-field group, no DSA/SHA-224 ' +
+            'signatures, no renegotiation, and a client certificate on a ' +
+            'curve other than P-256/P-384/P-521 closed by the guard',
   run: run
 };

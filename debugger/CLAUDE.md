@@ -127,8 +127,8 @@ refusal. `trustClientCertificatesOn()` was already registered for the leaf
 - the signature algorithms;
 - the renegotiation refusal;
 - through `trustClientCertificatesOn()`, the guard that closes a client
-  certificate node cannot read. A brainpool certificate crashes node 24.16.0
-  in `getPeerCertificate()` (`tls/CLAUDE.md`).
+  certificate whose EC key is on a curve other than P-256/P-384/P-521
+  (`tls/CLAUDE.md`).
 
 No test stack binds this listener, so `tests/tlsfuzzer_debugger.js` binds it
 over TLS in process, with a stand-in site and the api child's start stubbed,

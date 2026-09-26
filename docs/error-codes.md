@@ -2771,7 +2771,7 @@ Raised from: tls/.
 | `STS-TLS-0032` | The file named by tls.certificateFile holds self-signed certificates, none of which signs the chain the listener presents, so no trust anchor is taken from it. | — |
 | `STS-TLS-0033` | A socket that presents the listener certificate (LDAPS, the SPIRE Server API) threw while being told the certificate was re-issued; the others were still told, and the main port serves the new one. | — |
 | `STS-TLS-0034` | A TLS client REFUSED this service's certificate: it sent a certificate alert (bad_certificate, unsupported_certificate, certificate_revoked, certificate_expired, certificate_unknown or unknown_ca) during the handshake. From a browser it almost always means the client does not trust this service's Root CA (#225). | TLS handshake failure (the client closed the connection) |
-| `STS-TLS-0035` | A connection was closed because its client certificate (or one in its chain) has an EC key on a curve with no NIST name — brainpool, secp256k1 — which node 24.16.0 crashes converting for getPeerCertificate() (#212). | the connection is closed after the handshake |
+| `STS-TLS-0035` | A connection was closed because its client certificate (or one in its chain) has an EC key on a curve outside the NIST set (P-256, P-384, P-521 and the other NIST-named curves); such certificates are refused before any certificate object is built (#212). | the connection is closed after the handshake |
 
 ## STS-VC
 

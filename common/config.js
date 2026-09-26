@@ -8275,12 +8275,14 @@ const SETTINGS = [
   // TLS 1.2 and certificate chains. It is what this service signs with and
   // what it asks a client certificate to be signed with.
   //
-  // AND WITHOUT THE THREE BRAINPOOL TLS 1.3 SCHEMES: node 24.16.0 CRASHES
-  // (SIGSEGV) converting a certificate on a brainpool curve for
-  // getPeerCertificate(), and a TLS 1.3 client could present one to the main
-  // port by signing with them. tls_server.js's refuseUnreadableCertificatesOn()
-  // guards the listeners whatever this says; this makes the handshake fail
-  // inside OpenSSL first.
+  // AND WITHOUT THE THREE BRAINPOOL TLS 1.3 SCHEMES: brainpool is omitted
+  // from the offered signature schemes by policy. Certificates whose EC key
+  // is on a curve other than P-256/P-384/P-521 are refused before any
+  // certificate object is built (a third-party runtime defect found by
+  // #212; details are held privately by the maintainer):
+  // tls_server.js's refuseNonNistCurveCertificatesOn() guards the listeners
+  // whatever this says; this makes such a handshake fail inside OpenSSL
+  // first.
   { key: 'tls.signatureAlgorithms', group: 'TLS',
     label: 'TLS signature algorithms',
     env: 'STS_TLS_SIGALGS', type: 'string',
@@ -8296,15 +8298,15 @@ const SETTINGS = [
                  'debugger\'s listener sign with and accept from a client ' +
                  'certificate, as an OpenSSL list (node\'s sigalgs) — also ' +
                  'what a CertificateRequest advertises. The default is ' +
-                 'OpenSSL\'s own list without DSA, SHA-224 and the ' +
-                 'brainpool TLS 1.3 schemes: ML-DSA, ECDSA on the NIST ' +
+                 'OpenSSL\'s own list without DSA and SHA-224, and with ' +
+                 'brainpool omitted by policy: ML-DSA, ECDSA on the NIST ' +
                  'curves, EdDSA, RSA-PSS, and RSA PKCS #1 v1.5 with ' +
                  'SHA-256 or longer. Empty means OpenSSL\'s default, which ' +
                  'offers DSA and SHA-224 in TLS 1.2 and brainpool in TLS ' +
-                 '1.3 — a client certificate on a brainpool curve is then ' +
-                 'still closed after the handshake (STS-TLS-0035), because ' +
-                 'node cannot read one. A list that builds no TLS context ' +
-                 'stops the service at startup.' },
+                 '1.3 — a client certificate whose EC key is on a curve ' +
+                 'other than the NIST ones is then still closed after the ' +
+                 'handshake (STS-TLS-0035). A list that builds no TLS ' +
+                 'context stops the service at startup.' },
 
   { key: 'tls.trustAnchorsFile', group: 'TLS',
     label: 'Client certificate trust anchors file',
