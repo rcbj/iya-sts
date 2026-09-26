@@ -601,6 +601,10 @@ class ProtocolStack {
                'VcEcdsaSd');
     this.build('oid4vc/vc_data_integrity',
                require('../oid4vc/vc_data_integrity'), 'VcDataIntegrity');
+    // #198: VC-JOSE-COSE's envelopes (vc+jwt, vc+sd-jwt, vc+cose and the vp
+    // forms). A library over the codec, the data model and the suites.
+    this.build('oid4vc/vc_jose_cose', require('../oid4vc/vc_jose_cose'),
+               'VcJoseCose');
     // #129: SIOPv2's relying-party half — the self-issued ID Token's check
     // and the enrolled subjects. A library the verifier, the sign-in, the
     // portal and the console ask; it registers nothing.

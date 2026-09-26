@@ -79,6 +79,7 @@ import vcDataIntegrity = require('./vc_data_integrity');
 import vcDataModel = require('./vc_data_model');
 import vcJsonLd = require('./vc_jsonld');
 import vcStatus = require('./vc_status');
+import vcJoseCose = require('./vc_jose_cose');
 
 type RouteApp = typeof app;
 
@@ -95,6 +96,7 @@ interface VcApiDeps {
   model: typeof vcDataModel;
   jsonld: typeof vcJsonLd;
   status: typeof vcStatus;
+  jose: typeof vcJoseCose;
   issued: any;
   now: () => number;
   checkDocument: (value: any, where: string, opts?: any) => any;
@@ -108,9 +110,10 @@ const BASE = '/vc-api';
 const PUBLISH_PATH = '/oid4vci/status-lists/bitstring/:purpose/publish';
 
 // THE ISSUERS: a securing mechanism and the realm key it signs with.
-// `kind` 'di' is an embedded Data Integrity proof.
+// `kind` 'di' is an embedded Data Integrity proof; 'jose' an ENVELOPE of
+// VC-JOSE-COSE (#198), `form` saying which.
 const ISSUERS: Record<string, { kind: string; cryptosuite?: string;
-                                curve: string }> = {
+                                form?: string; curve: string }> = {
   'eddsa-rdfc-2022': { kind: 'di', cryptosuite: 'eddsa-rdfc-2022',
                        curve: 'Ed25519' },
   'eddsa-jcs-2022': { kind: 'di', cryptosuite: 'eddsa-jcs-2022',
@@ -124,7 +127,10 @@ const ISSUERS: Record<string, { kind: string; cryptosuite?: string;
   'ecdsa-jcs-2019-p384': { kind: 'di', cryptosuite: 'ecdsa-jcs-2019',
                            curve: 'P-384' },
   'ecdsa-sd-2023-p256': { kind: 'di', cryptosuite: 'ecdsa-sd-2023',
-                          curve: 'P-256' }
+                          curve: 'P-256' },
+  'jose-p256': { kind: 'jose', form: 'jwt', curve: 'P-256' },
+  'sd-jwt-p256': { kind: 'jose', form: 'sdjwt', curve: 'P-256' },
+  'cose-p256': { kind: 'jose', form: 'cose', curve: 'P-256' }
 };
 
 // The statements an ecdsa-sd-2023 base proof makes mandatory when the
@@ -177,6 +183,7 @@ class VcApi {
       model: vcDataModel,
       jsonld: vcJsonLd,
       status: vcStatus,
+      jose: vcJoseCose,
       issued: issued,
       checkDocument: validation.checkDocument,
       now: function now(): number {
@@ -456,6 +463,11 @@ class VcApi {
             return document[p.slice(1)] !== undefined;
           });
     }
+    if (issuer.kind === 'jose') {
+      await this.issueEnvelope(res, issuer, document, options, idx);
+      log.debug("Leaving VcApi.issue(). An envelope.");
+      return;
+    }
     let secured: any;
     try {
       secured = await di.signDocument(document, {
@@ -481,6 +493,145 @@ class VcApi {
     log.debug("Leaving VcApi.issue(). Issued by " + issuer.name + ".");
   }
 
+  // The signer a VC-JOSE-COSE issuer or holder uses: the realm key, its
+  // did:key verification method as the kid.
+  private joseSigner(issuer: any): any {
+    const { log } = this.deps;
+    log.debug("Entering VcApi.joseSigner().");
+    log.debug("Leaving VcApi.joseSigner().");
+    return { privateKey: issuer.key.privateKey,
+             publicJwk: issuer.key.publicJwk,
+             kid: issuer.key.verificationMethod };
+  }
+
+  // A credential or presentation secured by an ENVELOPE (#198), in the
+  // issuer's form. `options.disclosurePaths` names what an SD-JWT makes
+  // selectively disclosable (`a.b[0]`, the VC-JOSE-COSE suite's syntax).
+  private async secureEnvelope(issuer: any, document: any,
+                               kind: 'vc' | 'vp', options: any):
+    Promise<any> {
+    const { log, jose } = this.deps;
+    log.debug("Entering VcApi.secureEnvelope(). " + issuer.form);
+    const signer = this.joseSigner(issuer);
+    let secured: any;
+    if (issuer.form === 'jwt') {
+      secured = await jose.secureJwt(document, kind, signer);
+    } else if (issuer.form === 'sdjwt') {
+      const paths = Array.isArray(options.disclosurePaths)
+        ? options.disclosurePaths.map(String) : [];
+      secured = await jose.secureSdJwt(document, kind, signer, paths);
+    } else {
+      secured = await jose.secureCose(document, kind, signer);
+    }
+    log.debug("Leaving VcApi.secureEnvelope().");
+    return jose.envelope(issuer.form, kind, secured);
+  }
+
+  private async issueEnvelope(res: any, issuer: any, document: any,
+                              options: any, idx: string): Promise<void> {
+    const { log } = this.deps;
+    log.debug("Entering VcApi.issueEnvelope().");
+    let envelope: any;
+    try {
+      envelope = await this.secureEnvelope(issuer, document, 'vc', options);
+    } catch (e) {
+      log.debug("Caught in VcApi.issueEnvelope(): " + ((e && e.message) ||
+                                                        e));
+      this.refuse(res, 400, 'STS-VC-0103', 'The credential could not be ' +
+                  'secured: ' + String((e && e.message) || e));
+      log.debug("Leaving VcApi.issueEnvelope(). Refused.");
+      return;
+    }
+    if (idx) {
+      this.remember(document.id, idx,
+                    Date.parse(document.validUntil || '') || 0);
+    }
+    this.send(res, 201, { verifiableCredential: envelope });
+    log.debug("Leaving VcApi.issueEnvelope().");
+  }
+
+  // ---------------------------------------------------------------------------
+  // PROVE (VC-API `/presentations/prove`): a presentation secured by one of
+  // the holders — the same names as the issuers, and the same keys. The
+  // presentation's `holder`, if it names one, must be that key's did:key;
+  // `options.challenge` and `options.domain` go on a Data Integrity proof,
+  // and on an envelope as its `nonce` and `aud`.
+  // ---------------------------------------------------------------------------
+  async prove(req: any, res: any): Promise<void> {
+    const { log, model, di } = this.deps;
+    log.debug("Entering VcApi.prove().");
+    const holder = this.issuerFor(String(req.params.holder || ''));
+    if (!holder) {
+      this.refuse(res, 404, 'STS-VC-0104', 'No holder "' + req.params.holder +
+                  '" here; there are ' + Object.keys(ISSUERS).join(', ') +
+                  '.');
+      log.debug("Leaving VcApi.prove(). Unknown holder.");
+      return;
+    }
+    const body = this.readBody(req, res);
+    if (!body) {
+      log.debug("Leaving VcApi.prove(). The body was refused.");
+      return;
+    }
+    const presentation = body.presentation;
+    const options = (body.options && typeof body.options === 'object')
+      ? body.options : {};
+    const checked = model.checkPresentation(presentation, {});
+    if (!checked.ok) {
+      this.refuse(res, 400, 'STS-VC-0102', 'This presentation does not ' +
+        'conform to the data model: ' + checked.problems.map(function (p) {
+          return p.where + ': ' + p.message;
+        }).join(' '), { problems: checked.problems });
+      log.debug("Leaving VcApi.prove(). Data model.");
+      return;
+    }
+    const named = typeof presentation.holder === 'string'
+      ? presentation.holder
+      : (presentation.holder && presentation.holder.id) || '';
+    if (named && named !== holder.id) {
+      this.refuse(res, 400, 'STS-VC-0102', 'This holder presents as ' +
+                  holder.id + '; the presentation names ' +
+                  JSON.stringify(presentation.holder) + '.');
+      log.debug("Leaving VcApi.prove(). Another holder.");
+      return;
+    }
+    const document = JSON.parse(JSON.stringify(presentation));
+    let out: any;
+    try {
+      if (holder.kind === 'jose') {
+        if (typeof options.challenge === 'string') {
+          document.nonce = options.challenge;
+        }
+        if (typeof options.domain === 'string') {
+          document.aud = options.domain;
+        }
+        out = await this.secureEnvelope(holder, document, 'vp', options);
+      } else {
+        const problem = await this.jsonLdProblem(document);
+        if (problem) {
+          throw new Error(problem);
+        }
+        out = await di.signDocument(document, {
+          cryptosuite: holder.cryptosuite, publicJwk: holder.key.publicJwk,
+          privateKey: holder.key.privateKey,
+          verificationMethod: holder.key.verificationMethod,
+          proofPurpose: 'authentication',
+          challenge: typeof options.challenge === 'string'
+            ? options.challenge : undefined,
+          domain: typeof options.domain === 'string' ? options.domain
+                                                     : undefined });
+      }
+    } catch (e) {
+      log.debug("Caught in VcApi.prove(): " + ((e && e.message) || e));
+      this.refuse(res, 400, 'STS-VC-0103', 'The presentation could not be ' +
+                  'secured: ' + String((e && e.message) || e));
+      log.debug("Leaving VcApi.prove(). Refused.");
+      return;
+    }
+    this.send(res, 201, { verifiablePresentation: out });
+    log.debug("Leaving VcApi.prove(). By " + holder.name + ".");
+  }
+
   // The status index an issued credential took, for a status change.
   private remember(id: string, idx: string, until: number): void {
     const { log, issued, now } = this.deps;
@@ -498,12 +649,52 @@ class VcApi {
   // what failed, each with a `message`.
   // ---------------------------------------------------------------------------
   async verifyCredentialDocument(vc: any, options: any): Promise<any> {
-    const { log, model, di, status, now } = this.deps;
+    const { log, model, di, status, now, jose } = this.deps;
     log.debug("Entering VcApi.verifyCredentialDocument().");
     const errors: any[] = [];
     const warnings: any[] = [];
     const checks: string[] = [];
     const o = options || {};
+    // AN ENVELOPE (#198): its shape, then what it secures, verified; the
+    // credential inside is then held to everything below but a proof,
+    // which it does not carry — the envelope is its securing mechanism.
+    const types = vc && typeof vc === 'object' && vc.type !== undefined
+      ? [].concat(vc.type) : [];
+    if (types.indexOf('EnvelopedVerifiableCredential') >= 0 &&
+        !o.securedByEnvelope) {
+      const shape = model.checkCredential(vc, { enveloped: true });
+      if (!shape.ok) {
+        shape.problems.forEach(function (p: any) {
+          errors.push({ type: 'MALFORMED_VALUE_ERROR', where: p.where,
+                        message: p.message });
+        });
+        log.debug("Leaving VcApi.verifyCredentialDocument(). Envelope " +
+                  "shape.");
+        return { verified: false, checks: checks, warnings: warnings,
+                 errors: errors };
+      }
+      const opened = await jose.verifyEnvelope(vc, 'vc',
+        { verificationMethod: o.verificationMethod });
+      checks.push('envelope');
+      opened.warnings.forEach(function (w: string) {
+        warnings.push({ message: w });
+      });
+      if (!opened.ok) {
+        opened.errors.forEach(function (e: string) {
+          errors.push({ type: 'PROOF_VERIFICATION_ERROR', message: e });
+        });
+        log.debug("Leaving VcApi.verifyCredentialDocument(). Envelope.");
+        return { verified: false, checks: checks, warnings: warnings,
+                 errors: errors };
+      }
+      const inner = await this.verifyCredentialDocument(opened.document,
+        Object.assign({}, o, { securedByEnvelope: true }));
+      log.debug("Leaving VcApi.verifyCredentialDocument(). Enveloped: " +
+                inner.verified);
+      return { verified: inner.verified, checks: checks.concat(inner.checks),
+               warnings: warnings.concat(inner.warnings),
+               errors: inner.errors };
+    }
     const checked = model.checkCredential(vc, { atTime: now() });
     checked.problems.forEach(function (p: any) {
       errors.push({ type: 'MALFORMED_VALUE_ERROR', where: p.where,
@@ -524,12 +715,21 @@ class VcApi {
       return { verified: false, checks: checks, warnings: warnings,
                errors: errors };
     }
-    checks.push('proof');
-    const proofs = await di.verifyAllProofs(vc, {
-      allowedCryptosuites: VERIFIABLE_SUITES,
-      expectedPurpose: 'assertionMethod', expectedChallenge: null,
-      expectedDomain: null, createdRequired: false });
-    if (!proofs.ok) {
+    const proofs = o.securedByEnvelope ? { ok: true, results: [] }
+      : await di.verifyAllProofs(vc, {
+        allowedCryptosuites: VERIFIABLE_SUITES,
+        expectedPurpose: 'assertionMethod', expectedChallenge: null,
+        expectedDomain: null, createdRequired: false });
+    if (!o.securedByEnvelope) {
+      checks.push('proof');
+    }
+    if (o.securedByEnvelope) {
+      if (vc.proof !== undefined) {
+        warnings.push({ message: 'an enveloped credential carries an ' +
+                        'embedded proof as well; the envelope is what was ' +
+                        'verified.' });
+      }
+    } else if (!proofs.ok) {
       errors.push({ type: 'PROOF_VERIFICATION_ERROR',
                     message: proofs.reason || this.proofFailures(proofs) });
     } else {
@@ -601,12 +801,57 @@ class VcApi {
   }
 
   async verifyPresentationDocument(vp: any, options: any): Promise<any> {
-    const { log, model, di, now } = this.deps;
+    const { log, model, di, now, jose } = this.deps;
     log.debug("Entering VcApi.verifyPresentationDocument().");
     const o = options || {};
     const errors: any[] = [];
     const warnings: any[] = [];
     const checks: string[] = [];
+    const types = vp && typeof vp === 'object' && vp.type !== undefined
+      ? [].concat(vp.type) : [];
+    if (types.indexOf('EnvelopedVerifiablePresentation') >= 0 &&
+        !o.securedByEnvelope) {
+      const shape = model.checkPresentation(vp, {});
+      const opened = shape.ok ? await jose.verifyEnvelope(vp, 'vp',
+        { verificationMethod: o.verificationMethod })
+        : { ok: false, errors: shape.problems.map(function (p: any) {
+              return p.where + ': ' + p.message;
+            }), warnings: [], document: null };
+      checks.push('envelope');
+      opened.warnings.forEach(function (w: string) {
+        warnings.push({ message: w });
+      });
+      if (opened.ok) {
+        // The challenge and domain an enveloped presentation answers are
+        // its `nonce` and `aud` claims.
+        const d = opened.document;
+        if (typeof o.challenge === 'string' && d.nonce !== o.challenge) {
+          opened.errors.push('its nonce is ' + JSON.stringify(d.nonce) +
+                             '; the challenge was "' + o.challenge + '".');
+        }
+        if (typeof o.domain === 'string' &&
+            [].concat(d.aud === undefined ? [] : d.aud)
+              .indexOf(o.domain) < 0) {
+          opened.errors.push('its aud is ' + JSON.stringify(d.aud) +
+                             '; the domain was "' + o.domain + '".');
+        }
+      }
+      if (opened.errors.length) {
+        opened.errors.forEach(function (e: string) {
+          errors.push({ type: 'PROOF_VERIFICATION_ERROR', message: e });
+        });
+        log.debug("Leaving VcApi.verifyPresentationDocument(). Envelope.");
+        return { verified: false, checks: checks, warnings: warnings,
+                 errors: errors };
+      }
+      const inner = await this.verifyPresentationDocument(opened.document,
+        Object.assign({}, o, { securedByEnvelope: true }));
+      log.debug("Leaving VcApi.verifyPresentationDocument(). Enveloped: " +
+                inner.verified);
+      return { verified: inner.verified, checks: checks.concat(inner.checks),
+               warnings: warnings.concat(inner.warnings),
+               errors: inner.errors };
+    }
     const checked = model.checkPresentation(vp, { atTime: now() });
     checked.problems.forEach(function (p: any) {
       errors.push({ type: 'MALFORMED_VALUE_ERROR', where: p.where,
@@ -626,7 +871,9 @@ class VcApi {
     }
     const challenge = typeof o.challenge === 'string' ? o.challenge : null;
     const domain = typeof o.domain === 'string' ? o.domain : null;
-    if (vp.proof === undefined) {
+    if (o.securedByEnvelope) {
+      // Answered by the envelope, above.
+    } else if (vp.proof === undefined) {
       if (challenge !== null || domain !== null) {
         errors.push({ type: 'PROOF_VERIFICATION_ERROR', message: 'the ' +
           'presentation carries no proof, so the challenge or domain asked ' +
@@ -651,7 +898,7 @@ class VcApi {
       : [].concat(vp.verifiableCredential);
     for (let i = 0; i < credentials.length; i++) {
       const one = await this.verifyCredentialDocument(credentials[i],
-                                                      { checks: o.checks });
+        { checks: o.checks, verificationMethod: o.verificationMethod });
       one.errors.forEach(function (e: any) {
         errors.push(Object.assign({}, e, { message: 'verifiableCredential[' +
           i + ']: ' + e.message }));
@@ -832,6 +1079,16 @@ class VcApi {
           }));
       }
       log.debug("Leaving POST " + BASE + "/presentations/verify.");
+    });
+    app.post(BASE + '/holders/:holder/presentations/prove',
+             function (req, res) {
+      log.debug("Entering POST " + BASE + "/holders/:holder/presentations/" +
+                "prove.");
+      if (self.admitted(req, res, SCOPE_ISSUE)) {
+        self.run(res, self.prove(req, res));
+      }
+      log.debug("Leaving POST " + BASE + "/holders/:holder/presentations/" +
+                "prove.");
     });
     app.post(BASE + '/credentials/derive', function (req, res) {
       log.debug("Entering POST " + BASE + "/credentials/derive.");
