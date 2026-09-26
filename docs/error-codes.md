@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3575** of them, in **38** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3580** of them, in **38** subsystems.
 
 ## Where a code appears
 
@@ -51,13 +51,13 @@ is an ordinary outcome.
 
 * [HTTP front door (`STS-HTTP`)](#sts-http) — 18
 * [PROXY protocol (`STS-PROXY`)](#sts-proxy) — 9
-* [Service core (`STS-CORE`)](#sts-core) — 61
+* [Service core (`STS-CORE`)](#sts-core) — 62
 * [Worker pools (`STS-WORKER`)](#sts-worker) — 43
 * [Persistence and coordination (`STS-STORE`)](#sts-store) — 62
 * [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 28
 * [Scheduler (`STS-SCHED`)](#sts-sched) — 16
 * [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 79
-* [Certificate authority (`STS-PKI`)](#sts-pki) — 189
+* [Certificate authority (`STS-PKI`)](#sts-pki) — 190
 * [Certificate enrollment core (`STS-ENROLL`)](#sts-enroll) — 51
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 72
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 26
@@ -67,7 +67,7 @@ is an ordinary outcome.
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 97
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 21
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 16
-* [Federation (`STS-FED`)](#sts-fed) — 133
+* [Federation (`STS-FED`)](#sts-fed) — 134
 * [OpenID Federation (`STS-OIDFED`)](#sts-oidfed) — 66
 * [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 164
 * [LDAP directory (`STS-LDAP`)](#sts-ldap) — 84
@@ -81,8 +81,8 @@ is an ordinary outcome.
 * [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 282
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 74
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 32
-* [Admin console (`STS-ADMIN`)](#sts-admin) — 198
-* [Management API (`STS-API`)](#sts-api) — 73
+* [Admin console (`STS-ADMIN`)](#sts-admin) — 199
+* [Management API (`STS-API`)](#sts-api) — 74
 * [User portal (`STS-PORTAL`)](#sts-portal) — 75
 * [Sign-out (`STS-LOGOUT`)](#sts-logout) — 7
 * [Registries (`STS-REG`)](#sts-reg) — 131
@@ -202,6 +202,7 @@ Raised from: server.js, common/protocol_stack.ts, common/config.js, common/confi
 | `STS-CORE-0105` | The service did not start: the appconfig file or the environment still names a setting removed on 2026-09-23 (#171) — gnap.pushAllowInsecure, ssf.pushAllowInsecure, federation.outboundAllowInsecure or xacml.pepNotifyAllowInsecure. | none — the process exits |
 | `STS-CORE-0106` | A development-only setting — one of those STS-CORE-0103 lists, or an application attribute overriding one (#181) — is stored in a realm that is in product mode, and is ignored: its default is in force. Logged once per process and setting or attribute (#104). | none — a warning in the log |
 | `STS-CORE-0107` | A trust realm id is an EST label (a certificate profile). /.well-known/est/<realm>/ and /.well-known/est/<label>/ share one path position (#251), so a realm may not be called by a label's name. | the caller's refusal (errors on a console or /admin-api reply) |
+| `STS-CORE-0108` | The service did not start: a value in the environment, the appconfig file or env/defaults.js fails the check a console or API write of it would (a value outside an enum or a list's csvValues, a number out of bounds, a malformed boolean) — #86. | — |
 
 ## STS-WORKER
 
@@ -673,6 +674,7 @@ Raised from: common/pki.js, common/pki_authoring.ts, common/pki_revocation.js, c
 | `STS-PKI-0200` | A certificate authority build named an alternative key algorithm (pki.alternativeKeyAlgorithm, or altKeyAlg on the form) that is not a pure post-quantum signature algorithm this service generates, nor "none" (#68). | console: the page's error list; /admin-api: HTTP 400 { ok: false, errors } |
 | `STS-PKI-0201` | A certificate carries an ITU-T X.509 clause 9.8 alternative signature that does not verify under its issuer's alternative key (any path: this realm's own, an uploaded chain, a registered root), or — on a path to this realm's own hierarchy — cannot be checked (#68). | the verifier's refusal: whatever the certificate was presented for is refused as an untrusted certificate |
 | `STS-PKI-0202` | A certificate on a path to this realm's own hierarchy carries no alternative signature although its issuer holds an alternative (post-quantum) key — a hybrid path presented as classical, the downgrade #68 refuses. | the verifier's refusal: whatever the certificate was presented for is refused as an untrusted certificate |
+| `STS-PKI-0203` | A Certificate & Key Configuration pane field that takes a closed set (pki_profile, pki_pq_mode, pki_key_alg, pki_alt_key_alg, pki_ks_format) held a value outside it (#86). | HTTP 400 page or { ok: false, errors } |
 
 ## STS-ENROLL
 
@@ -2094,6 +2096,7 @@ Raised from: federation/.
 | `STS-FED-0147` | A partner's SAML Response or wresult carried an encrypted assertion beside another assertion; which one a signature covered and which one was read must not be a choice. | HTTP 400 page |
 | `STS-FED-0148` | A relationship whose OpenID Provider is discovered through an OpenID Federation could not resolve it to its fedTrustAnchor (#134). | HTTP 502 page |
 | `STS-FED-0149` | An OpenID Provider resolved through an OpenID Federation cannot be used: no openid_provider metadata, an issuer that is not its Entity Identifier, no https endpoints, no automatic registration, or no keys (#134). | HTTP 502 page |
+| `STS-FED-0150` | A federation relationship field that takes a closed set of values (fedAuthnMechanism, fedBinding, fedResponseType, or any row with an enum) was set to a value outside it (#86). | HTTP 400 (console and API) |
 
 ## STS-OIDFED
 
@@ -3662,6 +3665,7 @@ Raised from: admin-ui/ (except pki_admin.js), admin-core/.
 | `STS-ADMIN-0817` | A set-aud-sub act named no person or no client, a client_id with spaces, or an aud_sub over 255 characters or with control characters (#148). | none (a console or management API refusal, HTTP 400) |
 | `STS-ADMIN-0818` | A set-aud-sub act named a person with no entry in this realm, or the directory would not write it (#148). | none (a console or management API refusal, HTTP 400) |
 | `STS-ADMIN-0819` | set-attribute, add-attribute or remove-attribute was refused and ldap/person_editor.ts named no more specific reason (#228). | HTTP 400 (API) or a 303 with error= |
+| `STS-ADMIN-0820` | A console form POST held a value outside the closed set the mirroring /admin-api operation's enum declares (#86). | HTTP 400 page |
 
 ## STS-API
 
@@ -3679,7 +3683,7 @@ Raised from: mgmt-api/.
 | `STS-API-0006` | In product mode with the token gate off, the XACML access policy refused a management API caller who does hold a console role. | HTTP 403 forbidden |
 | `STS-API-0007` | In product mode with the token gate off, a management API request arrived with nobody signed in. | HTTP 401 JSON (HTTP 403 page for a browser) |
 | `STS-API-0008` | In product mode with the token gate off, a signed-in management API caller did not hold the console role the method needs. | HTTP 403 forbidden (HTTP 403 page for a browser) |
-| `STS-API-0009` | A management API request body did not match the operation's JSON Schema (an unknown member or a wrong type). | HTTP 400 { ok: false, errors } |
+| `STS-API-0009` | A management API request body did not match the operation's JSON Schema (an unknown member, a wrong type, or a value outside a closed set its enum declares — #86). | HTTP 400 { ok: false, errors } |
 | `STS-API-0010` | A management API request schema would not compile at startup, so that operation runs unvalidated. | — |
 | `STS-API-0011` | The crypto reporter slot that admin-ui/crypto_metadata.ts fills was not installed, so the crypto report, the key list or a key export could not be answered. | HTTP 503 { ok: false, errors } |
 | `STS-API-0012` | The database report could not be built (the probe run rejected). | HTTP 500 { ok: false, errors } |
@@ -3744,6 +3748,7 @@ Raised from: mgmt-api/.
 | `STS-API-0121` | A DPoP proof presented at /admin-api did not verify, and the proof check reported no code of its own. | invalid_dpop_proof (HTTP 401) |
 | `STS-API-0122` | A management API access token was refused because this service has revoked or disowned it, or the person it was issued to has a disabled account. | invalid_token (HTTP 401) |
 | `STS-API-0123` | A management API access token carried the admin scope an operation needs, and the client it was issued to does not declare that scope in its oauthAllowedScope (in the realm that issued it). | HTTP 403 forbidden |
+| `STS-API-0124` | A management API query parameter held a value outside the closed set its operation's enum declares (#86). | HTTP 400 { ok: false, errors } |
 
 ## STS-PORTAL
 

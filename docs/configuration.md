@@ -108,14 +108,22 @@ to `urn:wstrust:mock:sts`.
 
 ### An environment variable is a string, and the table knows what to do with it
 
-A `bool` takes `1/true/yes/on` and `0/false/no/off` in either case; anything else
-is warned about and falls back to that setting's own default, so
-`LDAP_AUTOCREATE_USERS=treu` does not silently turn a feature off. A `csv` is a
+A `bool` takes `1/true/yes/on` and `0/false/no/off` in either case. A `csv` is a
 comma-separated list, trimmed, and may be written as a real array in an appconfig
-file. An `int` may narrow itself with a minimum, a maximum and a multiple-of —
-the four token lifetimes do — and the same three numbers constrain the console's
-form, the management API and the variable read at startup, because there is one
-check rather than three.
+file; a list drawn from a closed set (`csvValues`) holds only its members. An
+`enum` holds one of its `enumValues`, spelt exactly. An `int` may narrow itself
+with a minimum, a maximum and a multiple-of — the four token lifetimes do.
+
+**These are one check, wherever the value is written.** The console's form, the
+management API, a realm's override, the appconfig file and the environment are
+all held to it. A value typed into `/admin/config` that would be refused is
+refused the same way at startup: the service does not start (`STS-CORE-0108`),
+and it names every offending value, the file or variable it came from, and what
+the setting accepts. For example, `LDAP_AUTOCREATE_USERS=treu`,
+`STS_PKI_KEY_ALGORITHM=RSA-2048` (the ids are lower case) or
+`webauthn: { algorithms: 'ES256,NOSUCHALG' }` all stop the start. Every layer
+that holds a value is checked, including one an environment variable currently
+shadows, because it becomes live when the variable is unset.
 
 ## Runtime versus restart-only
 

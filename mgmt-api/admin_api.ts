@@ -250,6 +250,34 @@ import applications = require('../common/applications');
 // computes them and hands them to the action. A library that registers nothing.
 import resourceMetadata = require('../oauth-oidc/protected_resource_metadata');
 import spec = require('./admin_api_spec');
+// THE CLOSED SETS (#86). A LEAF (rule 3): the refusal sentence this file's
+// enum errors use, the query-parameter check, and the register the console
+// gate reads — filled here at wire time from the same table the document is
+// built from. `admin-ui/admin.ts` requires it too, in the ordinary direction.
+import closedSets = require('../common/closed_sets');
+// THE TABLES FOUR MORE CLOSED SETS ARE READ OFF (#86), so the document's
+// enum is the list the handler checks against rather than a copy of it. All
+// four are libraries that register no route and are already loaded by the
+// time this module is (`risk_admin` at 18j, `mail_admin` at 18l, the console
+// and `admin-core` at 18), so each require is a cache hit: the risk
+// catalogue, the built-in mail messages, the claims an identity-assurance
+// verification may cover, and the federation schema's editable fields.
+import riskDatasets = require('../risk/risk_datasets');
+import mailTemplates = require('../common/mail_templates');
+import identityAssurance = require('../common/identity_assurance');
+import federation = require('../federation/federation');
+// And six LEAVES the filters and the PKI and XACML actions are held to (#86):
+// the audit vocabulary, the delegation register's types, the used-assertion
+// history's formats, the issuance kinds, the ISO 3166 alpha-2 codes and
+// XACML's two Effect values. Each requires `helpers` at most and registers
+// nothing; `xacml_model` is the XACML family's table and loads here earlier
+// than the family does (23c), which moves no route because it has none.
+import audit = require('../common/audit');
+import delegation = require('../common/delegation');
+import usedAssertions = require('../common/used_assertions');
+import issuanceGate = require('../common/issuance_gate');
+import countryCodes = require('../common/country_codes');
+import xacmlModel = require('../xacml/xacml_model');
 
 // ---------------------------------------------------------------------------
 // THE DOCUMENT IS THE VALIDATOR (2026-09-06).
@@ -292,7 +320,10 @@ import addFormatsModule = require('ajv-formats');
 const Ajv: any = AjvModule;
 const addFormats: any = addFormatsModule;
 
-const ajv = new Ajv({ strict: false, allErrors: true, coerceTypes: false });
+// `verbose` so an `enum` error carries the value it refused, which the
+// refusal sentence names (#86).
+const ajv = new Ajv({ strict: false, allErrors: true, coerceTypes: false,
+                      verbose: true });
 addFormats(ajv);
 
 // ---------------------------------------------------------------------------
@@ -316,15 +347,13 @@ addFormats(ajv);
 // verbatim, and this wrapper exists only for the length of the compile.
 // ---------------------------------------------------------------------------
 // ---------------------------------------------------------------------------
-// **WHAT IS ENFORCED IS STRUCTURE. `required` AND `enum` ARE STRIPPED FROM THE
-// COMPILED COPY AND KEPT IN THE DOCUMENT.**
+// **WHAT IS ENFORCED IS STRUCTURE AND THE CLOSED SETS. `required` IS STRIPPED
+// FROM THE COMPILED COPY AND KEPT IN THE DOCUMENT.**
 //
 // The rule is the one this file rests on: *the validator adds the checks
 // nothing else makes, and never duplicates a check the handler already makes
-// better.* Two of the four JSON Schema assertions here fall on each side, and
-// the suite decided it rather than taste.
-//
-// ENFORCED, because nothing else in this service checks them:
+// better.* It was applied on 2026-09-06 and three of the four JSON Schema
+// assertions here fell on the ENFORCED side:
 //
 //   * `additionalProperties: false` — a member the operation does not define.
 //     This is the one that catches the silently ignored field, which is the
@@ -334,28 +363,50 @@ addFormats(ajv);
 //     `label` on the authorization-server create — every one of them a member
 //     the handler never read and the job asserted nothing about.
 //   * `type` — a number or an array where a string belongs.
+//   * `enum` — a value outside the closed set the document declares (#86,
+//     2026-09-26). **It was stripped until then**, on the argument that
+//     `applicationsAction()` refuses an unknown kind by naming the kinds and
+//     that ajv would replace the sentence with "must be equal to one of the
+//     allowed values". Both halves were true and the conclusion was wrong,
+//     because the handler that explains itself was the exception: the #86
+//     audit found closed-set fields that a handler silently ignored, silently
+//     replaced with its default, or STORED. So the enum is enforced here, and
+//     the sentence is `common/closed_sets.ts`'s — the field, the value, how
+//     many values it accepts and every one — which is as good as the kinds
+//     refusal was and is the same words at every door.
 //
-// NOT ENFORCED, because a handler already answers them and says more:
+// NOT ENFORCED, because a handler already answers it and says more:
 //
-//   * `enum` — `applicationsAction()` refuses an unknown kind by NAMING the
-//     kinds and COUNTING them, and `sts_admin_api_operations.js` asserts all
-//     three properties, because that list and the one
-//     `GET /applications/new` publishes are one table read through two doors.
 //   * `required` — `logoutAction()` answers a sign-out with no identity with
-//     *Name the identity ... in `user`*, and the same job asserts that wording
-//     SO THAT A CALLER CAN TELL WHICH REFUSAL IT MET.
+//     *Name the identity ... in `user`*, and `sts_admin_api_operations.js`
+//     asserts that wording SO THAT A CALLER CAN TELL WHICH REFUSAL IT MET.
 //
-// In both cases ajv runs first, so enforcing would replace a sentence a caller
-// can act on with "must be equal to one of the allowed values" — and switch off
-// an assertion in the same stroke. That is the opposite of the point.
-//
-// **Both stay in the published document**, where they are exactly right:
-// documentation of the valid set and the mandatory members. What this decides
-// is only WHICH LAYER refuses, and the answer is the layer that can explain
-// itself. Stripped recursively, because these schemas nest — an array's `items`
-// and a `$ref`'d `ClaimEntry` each carry their own.
+// **An enum is compiled with `""` added to it**, when it does not already
+// hold it, and that is not a loophole: an empty string is how a form — and a
+// form-encoded body copied from the console, which this API takes — says
+// "nothing chosen", and the handlers here treat it as absent. The refusal
+// sentence names the declared set, without it. Stripped recursively, because
+// these schemas nest — an array's `items` and a `$ref`'d `ClaimEntry` each
+// carry their own.
 // ---------------------------------------------------------------------------
-const NOT_ENFORCED_HERE = ['enum', 'required'];
+const NOT_ENFORCED_HERE = ['required'];
+
+// ---------------------------------------------------------------------------
+// THE ONE EXCEPTION TO ENFORCING AN ENUM, AND IT IS MARKED WHERE IT APPLIES.
+//
+// A property carrying `x-refused-by-handler: true` keeps its `enum` in the
+// published document and is NOT held to it here, by the console register or
+// by the query check (`common/closed_sets.ts` skips it too). It is for a
+// handler whose refusal of a value outside the set says something the
+// validator cannot: `spiffe/entries/update`'s `field` refuses a field that
+// records what HAPPENED differently from one that does not exist, and
+// `sts_admin_api_operations.js` asserts the difference, because a caller
+// fixing a request has to know which of the two it met. The marker is a
+// vendor extension (OpenAPI's `x-`), so the document says out loud which
+// sets are the handler's to refuse. A new use needs that argument made for
+// it — "the handler refuses it too" is not one; nearly every handler does.
+// ---------------------------------------------------------------------------
+const REFUSED_BY_HANDLER = 'x-refused-by-handler';
 
 // What `AdminApi` needs from the rest of the service: the modules this file
 // used to reach for itself, passed in so that the composition root can build
@@ -393,6 +444,17 @@ interface AdminApiDeps {
   applications: typeof applications;
   resourceMetadata: typeof resourceMetadata;
   spec: typeof spec;
+  closedSets: typeof closedSets;
+  riskDatasets: typeof riskDatasets;
+  mailTemplates: typeof mailTemplates;
+  identityAssurance: typeof identityAssurance;
+  federation: typeof federation;
+  audit: typeof audit;
+  delegation: typeof delegation;
+  usedAssertions: typeof usedAssertions;
+  issuanceGate: typeof issuanceGate;
+  countryCodes: typeof countryCodes;
+  xacmlModel: typeof xacmlModel;
   realms: typeof realms;
   jwtAccessToken: typeof jwtAccessToken;
   mtls: typeof mtls;
@@ -459,6 +521,17 @@ class AdminApi {
       applications: applications,
       resourceMetadata: resourceMetadata,
       spec: spec,
+      closedSets: closedSets,
+      riskDatasets: riskDatasets,
+      mailTemplates: mailTemplates,
+      identityAssurance: identityAssurance,
+      federation: federation,
+      audit: audit,
+      delegation: delegation,
+      usedAssertions: usedAssertions,
+      issuanceGate: issuanceGate,
+      countryCodes: countryCodes,
+      xacmlModel: xacmlModel,
       realms: realms,
       jwtAccessToken: jwtAccessToken,
       mtls: mtls,
@@ -506,6 +579,7 @@ class AdminApi {
     PROTOCOL_SETTINGS_OPERATIONS = instance.buildProtocolSettingsOperations();
     ROUTES = instance.buildRoutes();
     instance.compileRequestSchemas();
+    instance.registerConsoleClosedSets();
     log.info(startupBanner(instance.operationSummaries().length));
     log.debug("Leaving AdminApi.wire().");
   }
@@ -522,9 +596,19 @@ class AdminApi {
       log.debug("Leaving AdminApi.structureOnly().");
       return node;
     }
-    const out = {};
+    const out: any = {};
     Object.keys(node).forEach(function (key) {
       if (NOT_ENFORCED_HERE.indexOf(key) >= 0) {
+        return;
+      }
+      if (key === 'enum' && node[REFUSED_BY_HANDLER] === true) {
+        // The handler refuses this one, in words of its own.
+        return;
+      }
+      if (key === 'enum' && Array.isArray(node.enum)) {
+        // The empty string is absent (see NOT_ENFORCED_HERE's header).
+        out.enum = node.enum.indexOf('') >= 0 ? node.enum.slice()
+                                              : node.enum.concat('');
         return;
       }
       out[key] = self.structureOnly(node[key]);
@@ -596,6 +680,92 @@ class AdminApi {
   }
 
   // ---------------------------------------------------------------------------
+  // THE CONSOLE'S CLOSED SETS, FROM THIS TABLE (#86).
+  //
+  // Every operation here names the console control it is the machine's door
+  // to — `mirrors: 'POST /admin/users and POST /admin/users/new'` — and a
+  // console form posts the SAME `action` the operation is named for (rule 7;
+  // `/permissions/define-permission`'s stutter is that rule showing). So the
+  // enums an action's request schema declares are registered in
+  // `common/closed_sets.ts` under every console page its route mirrors, and
+  // the console gate holds a form POST to them. The console has no copy of
+  // any set: a value this document adds to an enum is accepted on both doors
+  // the moment it is added, and one it removes is refused on both.
+  //
+  // Only a flat field is held there (a form has nothing nested); what a form
+  // spells differently from the API — `leafKeyAlg` for `keyAlg` — is simply
+  // not matched, and is the handler's to refuse. Returns how many controls
+  // hold at least one field.
+  // ---------------------------------------------------------------------------
+  registerConsoleClosedSets() {
+    const { log, spec, closedSets } = this.deps;
+    log.debug("Entering AdminApi.registerConsoleClosedSets().");
+    let held = 0;
+    const pagesOf = function (mirrors) {
+      const pages = [];
+      const re = /POST (\/admin(?:\/[^\s,]*)?)/g;
+      let m;
+      while ((m = re.exec(String(mirrors || ''))) !== null) {
+        pages.push(m[1]);
+      }
+      return pages;
+    };
+    ROUTES.forEach(function (entry) {
+      if (entry.method === 'GET') {
+        return;
+      }
+      // An action may name a control of its own (`source.mirrors` in
+      // `admin_api_spec.ts`), and wins over its route's, as it does in the
+      // document.
+      const rows = (entry.actions || []).map(function (a) {
+        return { action: a.action || '', body: a.requestBody,
+                 pages: pagesOf(a.mirrors || entry.mirrors) };
+      });
+      if (entry.requestBody && !(entry.actions || []).length) {
+        rows.push({ action: '', body: entry.requestBody,
+                    pages: pagesOf(entry.mirrors) });
+      }
+      rows.forEach(function (row) {
+        if (!row.body || !row.pages.length) {
+          return;
+        }
+        const fields = closedSets.collect(row.body, spec.SCHEMAS);
+        if (!fields.length) {
+          return;
+        }
+        row.pages.forEach(function (page) {
+          closedSets.registerConsole(page, row.action, fields);
+        });
+        held = held + 1;
+      });
+    });
+    log.debug("Leaving AdminApi.registerConsoleClosedSets(). " + held +
+              " control(s) hold a closed set.");
+    return held;
+  }
+
+  // ---------------------------------------------------------------------------
+  // A QUERY PARAMETER'S CLOSED SET (#86). The enums an operation's
+  // `parameters` declare `in: query` were published and never checked, so a
+  // filter spelt wrong answered 200 with every row — the answer to a question
+  // nobody asked. Both the route's parameters and its action's are held.
+  // ---------------------------------------------------------------------------
+  checkQueryEnums(entry, req) {
+    const { log, closedSets } = this.deps;
+    log.debug("Entering AdminApi.checkQueryEnums().");
+    const action = String((req.params && req.params.action) || '');
+    const row = (entry.actions || []).filter(function (a) {
+      return a.action === action;
+    })[0];
+    const parameters = (entry.parameters || [])
+      .concat((row && row.parameters) || []);
+    const checked = closedSets.checkQuery(parameters, req.query);
+    log.debug("Leaving AdminApi.checkQueryEnums(). " +
+              (checked.ok ? "Accepted." : "Refused."));
+    return checked;
+  }
+
+  // ---------------------------------------------------------------------------
   // Turn ajv's errors into the `{ ok: false, errors: [...] }` shape every
   // refusal on this API already uses, so a caller parses one thing.
   //
@@ -604,13 +774,22 @@ class AdminApi {
   // beside a body they typed rather than resolving a pointer.
   // ---------------------------------------------------------------------------
   errorsFromAjv(errors) {
-    const { log } = this.deps;
+    const { log, closedSets } = this.deps;
     log.debug("Entering AdminApi.errorsFromAjv().");
     const out = (errors || []).map(function (e) {
       const where = String(e.instancePath || '').replace(/^\//, '')
                                                 .replace(/\//g, '.');
       const missing = e.params && e.params.missingProperty;
       const extra = e.params && e.params.additionalProperty;
+      if (e.keyword === 'enum' && e.params &&
+          Array.isArray(e.params.allowedValues)) {
+        // A value outside a closed set (#86), in the words every door uses.
+        // The `""` the compile added is not part of the declared set.
+        return closedSets.sentence(where || 'the request', e.data,
+          e.params.allowedValues.filter(function (v) {
+            return v !== '';
+          }));
+      }
       if (missing) {
         return '"' + missing + '" is required.';
       }
@@ -1635,6 +1814,13 @@ class AdminApi {
       const type = setting.type === 'bool' ? 'boolean'
           : (setting.type === 'int' ? 'integer' : 'string');
       out[key] = { type: type, description: setting.label || '' };
+      // An `enum` row's set, published (#86). These doors own their body
+      // and `config.js` refuses a value outside it by name; the document
+      // says what that set is, and the console register holds the forms
+      // that post these keys to it.
+      if (setting.type === 'enum' && Array.isArray(setting.enumValues)) {
+        out[key].enum = setting.enumValues.slice();
+      }
     });
     log.debug("Leaving AdminApi.narrowDoorProperties().");
     return out;
@@ -1691,6 +1877,108 @@ class AdminApi {
            'and `ldapmodify` reaches them like every other attribute.\n\n';
   }
 
+  // ---------------------------------------------------------------------------
+  // THE CLOSED SETS THE ROUTE TABLE DECLARES THAT LIVE IN ANOTHER MODULE'S
+  // TABLE (#86). Read once per build of the table, from the constant the
+  // handler checks against, never retyped: a set retyped here is a second
+  // definition, and the #86 audit found three that had gone stale (the
+  // application `kind` filter missing three kinds, `revoke-kind` missing
+  // `gnap_access_token`, `add-value` missing two multi-valued fields).
+  // ---------------------------------------------------------------------------
+  closedLists() {
+    const { log, riskDatasets, mailTemplates, identityAssurance, federation,
+            applications, stats, audit, delegation, usedAssertions,
+            issuanceGate, countryCodes, xacmlModel, pki } = this.deps;
+    log.debug("Entering AdminApi.closedLists().");
+    const namesOf = function (rows) {
+      return rows.map(function (row) {
+        return row.name;
+      });
+    };
+    const kinds = [];
+    stats.ISSUED_FAMILIES.forEach(function (family) {
+      family.kinds.forEach(function (kind) {
+        if (kinds.indexOf(kind) < 0) {
+          kinds.push(kind);
+        }
+      });
+    });
+    const keyAlgs = pki.keyAlgorithms().map(function (one) {
+      return one.id;
+    });
+    const sigAlgs = [];
+    keyAlgs.forEach(function (id) {
+      pki.signatureAlgorithms(id).forEach(function (one) {
+        if (sigAlgs.indexOf(one.id) < 0) {
+          sigAlgs.push(one.id);
+        }
+      });
+    });
+    const out = {
+      // Only a provider this build can import from: an unsupported one's
+      // terms cannot be accepted and nothing can be loaded as it.
+      riskProviders: Object.keys(riskDatasets.PROVIDERS).filter(function (id) {
+        return riskDatasets.PROVIDERS[id].supported !== false;
+      }),
+      riskDatasets: Object.keys(riskDatasets.CATALOGUE),
+      riskFormats: Object.keys(riskDatasets.FORMATS),
+      mailTemplates: mailTemplates.BUILT_IN.map(function (one) {
+        return one.id;
+      }),
+      verifiableClaims: identityAssurance.VERIFIABLE_CLAIMS.slice(),
+      federationSetFields: namesOf(federation.editableFields('set')),
+      federationMultiFields: namesOf(federation.editableFields('multi')),
+      applicationKinds: applications.KIND_IDS.slice(),
+      tokenFamilies: stats.ISSUED_FAMILIES.map(function (family) {
+        return family.family;
+      }),
+      tokenKinds: kinds,
+      revocableKinds: stats.REVOCABLE_KINDS.slice(),
+      applicationSetAttributes: namesOf(applications.editableAttributes('set')),
+      applicationMultiAttributes:
+        namesOf(applications.editableAttributes('multi')),
+      // A key the handler will refuse later for having no signature
+      // algorithm (an ML-KEM one) is still a key algorithm; that refusal
+      // is the handler's, and names why.
+      pkiKeyAlgorithms: keyAlgs,
+      pkiSignatureAlgorithms: sigAlgs,
+      // A CA's alternative (post-quantum) key, #68: `pki.alternativeKeyAlgs()`
+      // and `none` for a classical-only authority — alternativeKeyAlgFrom()'s
+      // own set.
+      pkiAlternativeKeyAlgorithms: pki.alternativeKeyAlgs().concat('none'),
+      pkiUseCases: pki.USE_CASE_IDS.slice(),
+      pkiImportUseCases: ['root'].concat(pki.USE_CASE_IDS),
+      countries: countryCodes.ALPHA2.slice(),
+      auditCategories: audit.CATEGORIES.map(function (one) {
+        return one.category;
+      }),
+      auditActions: audit.ACTIONS.map(function (one) {
+        return one.action;
+      }),
+      auditOutcomes: audit.OUTCOMES.slice(),
+      usedAssertionFormats: Object.keys(usedAssertions.FORMATS),
+      usedAssertionUses: Object.keys(usedAssertions.USES),
+      usedAssertionStates: Object.keys(usedAssertions.STATES),
+      delegationTypes: delegation.TYPES.map(function (one) {
+        return one.type;
+      }),
+      delegationModes: delegation.MODES.map(function (one) {
+        return one.mode;
+      }),
+      delegationOutcomes: delegation.OUTCOMES.slice(),
+      issuanceKinds: issuanceGate.KINDS.slice(),
+      xacmlEffects: Object.keys(xacmlModel.EFFECT).map(function (key) {
+        return xacmlModel.EFFECT[key];
+      }),
+      // CAEP 1.0 section 2's `initiating_entity`, the four values it
+      // defines. `ssf/ssf_events.js` writes the same four into its event
+      // table (not exported); `tests/closed_sets.js` holds the two equal.
+      caepInitiatingEntities: ['admin', 'user', 'policy', 'system']
+    };
+    log.debug("Leaving AdminApi.closedLists().");
+    return out;
+  }
+
   buildRoutes(): any[] {
     const { log, baseUrlOf, config, spec, adminViews, errorCodes,
             encryptionAdmin, databaseAdmin, secretsAdmin, debuggerAdmin,
@@ -1701,6 +1989,7 @@ class AdminApi {
             loadGrantManagementApi, loadClaimsProvidersApi } = this.deps;
     const self = this;
     log.debug("Entering AdminApi.buildRoutes().");
+    const closed = this.closedLists();
     const ROUTES: any[] = [
       { method: 'GET', path: BASE, tag: 'Service',
         operationId: 'getIndex',
@@ -2210,11 +2499,13 @@ class AdminApi {
         handlerOwnsBody: true,
         parameters: [
           { name: 'dataset', in: 'query', required: true,
-            schema: { type: 'string' },
+            schema: { type: 'string', enum: closed.riskDatasets },
             description: 'The dataset, as GET /admin-api/risk lists them.' },
           { name: 'format', in: 'query', required: true,
-            schema: { type: 'string' },
-            description: 'The format of the file once expanded.' },
+            schema: { type: 'string', enum: closed.riskFormats },
+            description: 'The format of the file once expanded. Each ' +
+                         'dataset takes only some of them, which the ' +
+                         'handler refuses by name.' },
           { name: 'realm', in: 'query', required: false,
             schema: { type: 'string' },
             description: 'The realm, for an operator list only.' },
@@ -2230,7 +2521,7 @@ class AdminApi {
             schema: { type: 'string' },
             description: 'An ISO 8601 date.' },
           { name: 'provider', in: 'query', required: false,
-            schema: { type: 'string' } },
+            schema: { type: 'string', enum: closed.riskProviders } },
           { name: 'licence', in: 'query', required: false,
             schema: { type: 'string' } },
           { name: 'attribution', in: 'query', required: false,
@@ -2239,7 +2530,9 @@ class AdminApi {
             schema: { type: 'string', enum: ['true', 'false'] },
             description: '`false` loads without activating.' },
           { name: 'acceptTerms', in: 'query', required: false,
-            schema: { type: 'string', enum: ['true', 'false'] },
+            // `on` is what the console's checkbox sends, and the handler has
+            // always read it as `true` (`risk/risk_upload.ts`).
+            schema: { type: 'string', enum: ['true', 'false', 'on'] },
             description: 'Accept the provider\'s current terms as part of ' +
                          'this import.' }
         ],
@@ -2325,15 +2618,15 @@ class AdminApi {
             requestBody: {
               type: 'object',
               properties: {
-                dataset: { type: 'string' },
-                format: { type: 'string' },
+                dataset: { type: 'string', enum: closed.riskDatasets },
+                format: { type: 'string', enum: closed.riskFormats },
                 content: { type: 'string' },
                 realm: { type: 'string' },
                 version: { type: 'string' },
                 publishedAt: { type: 'string',
                                description: 'An ISO 8601 date.' },
                 sha256: { type: 'string' },
-                provider: { type: 'string' },
+                provider: { type: 'string', enum: closed.riskProviders },
                 licence: { type: 'string' },
                 attribution: { type: 'string' },
                 activate: { type: 'boolean' },
@@ -2355,7 +2648,8 @@ class AdminApi {
                          'been active before (`superseded`).',
             requestBodyRequired: true,
             requestBody: { type: 'object',
-              properties: { dataset: { type: 'string' },
+              properties: { dataset: { type: 'string',
+                                       enum: closed.riskDatasets },
                             version: { type: 'string' },
                             realm: { type: 'string' } },
               required: ['dataset', 'version'],
@@ -2368,7 +2662,8 @@ class AdminApi {
             description: 'Refused when there is no previous version.',
             requestBodyRequired: true,
             requestBody: { type: 'object',
-              properties: { dataset: { type: 'string' },
+              properties: { dataset: { type: 'string',
+                                       enum: closed.riskDatasets },
                             realm: { type: 'string' } },
               required: ['dataset'],
               examples: [{ dataset: 'asn' }],
@@ -2386,7 +2681,8 @@ class AdminApi {
                          'row for the request names the caller.',
             requestBodyRequired: true,
             requestBody: { type: 'object',
-              properties: { provider: { type: 'string' } },
+              properties: { provider: { type: 'string',
+                                        enum: closed.riskProviders } },
               required: ['provider'],
               examples: [{ provider: 'dbip-lite' }],
               additionalProperties: false },
@@ -2396,7 +2692,8 @@ class AdminApi {
             description: 'Its record stays, as `deleted`.',
             requestBodyRequired: true,
             requestBody: { type: 'object',
-              properties: { dataset: { type: 'string' },
+              properties: { dataset: { type: 'string',
+                                       enum: closed.riskDatasets },
                             version: { type: 'string' },
                             realm: { type: 'string' } },
               required: ['dataset', 'version'],
@@ -2432,7 +2729,7 @@ class AdminApi {
         mirrors: 'GET /admin/mail',
         parameters: [
           { name: 'template', in: 'query', required: false,
-            schema: { type: 'string' },
+            schema: { type: 'string', enum: closed.mailTemplates },
             description: 'A message id, to answer its wording.' },
           { name: 'lang', in: 'query', required: false,
             schema: { type: 'string' },
@@ -2529,7 +2826,7 @@ class AdminApi {
             requestBody: {
               type: 'object',
               properties: {
-                template: { type: 'string',
+                template: { type: 'string', enum: closed.mailTemplates,
                             description: 'The message id.' },
                 lang: { type: 'string', description: 'A BCP 47 tag.' },
                 subject: { type: 'string', description: 'One line.' },
@@ -2554,7 +2851,7 @@ class AdminApi {
             requestBody: {
               type: 'object',
               properties: {
-                template: { type: 'string',
+                template: { type: 'string', enum: closed.mailTemplates,
                             description: 'The message id.' },
                 lang: { type: 'string', description: 'A BCP 47 tag.' }
               },
@@ -3537,7 +3834,13 @@ class AdminApi {
             description: 'Only identities that authenticated through this ' +
                          'protocol family. The list\'s `protocols` member ' +
                          'says which values there are; it is read off the ' +
-                         'data, so a family nobody has used is not offered.' }
+                         'data, so a family nobody has used is not offered.' },
+          // Read by the handler and published nowhere until #86.
+          { name: 'factor', in: 'query', required: false,
+            schema: { type: 'string',
+                      enum: ['any', 'totp', 'key', 'none', 'unreadable'] },
+            description: 'Only people holding a second factor of this ' +
+                         'kind, as on GET /admin-api/mfa.' }
         ].concat(this.pagingParameters()).concat(this.detailPagingParameters([
           { name: 'sessions',
             description: 'Sign-on session blocks, which default to ' +
@@ -4851,7 +5154,8 @@ class AdminApi {
                                 description: 'The verification element ' +
                                              '(Identity Assurance section ' +
                                              '5.1).' },
-                claims: { type: 'array', items: { type: 'string' },
+                claims: { type: 'array', items: { type: 'string',
+                         enum: closed.verifiableClaims },
                           description: 'The claims it covered, from ' +
                                        'claims_in_verified_claims_supported.' }
               },
@@ -6438,9 +6742,11 @@ class AdminApi {
             description: 'Substring of the person\'s name, case-insensitive.' },
           { name: 'factor', in: 'query', required: false,
             schema: { type: 'string',
-                      enum: ['any', 'totp', 'key', 'none'] },
+                      enum: ['any', 'totp', 'key', 'none', 'unreadable'] },
             description: '`any` is anybody holding a second factor of either ' +
-                         'kind; `none` is the complement of it.' }
+                         'kind; `none` is the complement of it; ' +
+                         '`unreadable` is a factor whose sealed secret this ' +
+                         'service can no longer open.' }
         ].concat(this.pagingParameters()),
         responseDescription:
           'The roster, the counts, and the RFC 6238 settings.',
@@ -6590,11 +6896,11 @@ class AdminApi {
         mirrors: 'GET /admin/tokens',
         parameters: [
           { name: 'family', in: 'query', required: false,
-            schema: { type: 'string' },
+            schema: { type: 'string', enum: closed.tokenFamilies },
             description: 'One protocol family. The reply\'s `families` ' +
                          'member lists them with the kinds in each.' },
           { name: 'kind', in: 'query', required: false,
-            schema: { type: 'string' },
+            schema: { type: 'string', enum: closed.tokenKinds },
             description: 'One kind. ANDed with `family`, so a kind from ' +
                          'another family matches nothing — which is what an ' +
                          'empty list then means.\n\n**EVERY FILTER HERE ' +
@@ -6890,8 +7196,7 @@ class AdminApi {
             requestBody: {
               type: 'object',
               properties: {
-                kind: { type: 'string',
-                        enum: ['access_token', 'id_token', 'refresh_token'] }
+                kind: { type: 'string', enum: closed.revocableKinds }
               },
               required: ['kind'],
               examples: [{ kind: 'access_token' }],
@@ -8529,7 +8834,7 @@ class AdminApi {
               type: 'object',
               properties: {
                 id: { type: 'string', description: 'The relationship.' },
-                field: { type: 'string',
+                field: { type: 'string', enum: closed.federationSetFields,
                          description: 'The attribute name, e.g. `fedSsoUrl`, ' +
                                       '`fedSigningCertificate`, ' +
                                       '`fedClientId`.' },
@@ -8576,7 +8881,7 @@ class AdminApi {
               properties: {
                 id: { type: 'string', description: 'The relationship.' },
                 field: { type: 'string',
-                         enum: ['fedAttributeMap', 'fedRelease', 'description'],
+                         enum: closed.federationMultiFields,
                          description: 'Which list.' },
                 value: { type: 'string', description: 'The value to add.' }
               },
@@ -8599,7 +8904,7 @@ class AdminApi {
               properties: {
                 id: { type: 'string', description: 'The relationship.' },
                 field: { type: 'string',
-                         enum: ['fedAttributeMap', 'fedRelease', 'description'],
+                         enum: closed.federationMultiFields,
                          description: 'Which list.' },
                 value: { type: 'string',
                          description:
@@ -9509,11 +9814,7 @@ class AdminApi {
                          'case-insensitive. Ignored when `application` is ' +
                          'given.' },
           { name: 'kind', in: 'query', required: false,
-            schema: { type: 'string',
-                      enum: ['oauth2-client', 'oidc-relying-party',
-                             'saml2-service-provider', 'saml11-relying-party',
-                             'wsfed-relying-party', 'wstrust-relying-party',
-                             'oid4vp-verifier', 'kerberos-service'] },
+            schema: { type: 'string', enum: closed.applicationKinds },
             description: 'One kind. A record carrying SEVERAL matches on any ' +
                          'of them — an OAuth client that asked for the ' +
                          'openid scope is also a relying party — so these ' +
@@ -9539,7 +9840,7 @@ class AdminApi {
       // WHAT A CREATE MAY SAY, read off the service. Rule 7 asks for an
       // operation per console page and this is /admin/applications/new's — but
       // it earns its place beyond the parity, because what it answers is the
-      // two CLOSED VOCABULARIES `create` validates against: the eight kinds and
+      // two CLOSED VOCABULARIES `create` validates against: the kinds and
       // the fourteen protocol families, each with what it means. A caller that
       // reads this cannot construct a create the service will refuse, which is
       // the property editableAttributes() gives the console's two selects and
@@ -9676,8 +9977,10 @@ class AdminApi {
                                            'here.' },
                 name: { type: 'string',
                         description: 'Optional friendly name.' },
-                kind: { type: 'string',
-                        description: 'Optional, one of the eight. It is a ' +
+                kind: { type: 'string', enum: closed.applicationKinds,
+                        description: 'Optional, one of the kinds GET ' +
+                                     '/admin-api/applications/new lists. It ' +
+                                     'is a ' +
                                      'claim about what this application IS, ' +
                                      'which is why a value the registry does ' +
                                      'not know is refused rather than ' +
@@ -9815,6 +10118,7 @@ class AdminApi {
                                description: 'The identifier, exactly as the ' +
                                             'registry holds it.' },
                 attribute: { type: 'string',
+                             enum: closed.applicationSetAttributes,
                              description: 'One of the editable single-valued ' +
                                           'attributes. GET ' +
                                           '/admin/ldap/applications ' +
@@ -9856,7 +10160,8 @@ class AdminApi {
               type: 'object',
               properties: {
                 application: { type: 'string' },
-                attribute: { type: 'string' },
+                attribute: { type: 'string',
+                             enum: closed.applicationMultiAttributes },
                 value: { type: 'string' }
               },
               required: ['application', 'attribute', 'value'],
@@ -9879,7 +10184,8 @@ class AdminApi {
               type: 'object',
               properties: {
                 application: { type: 'string' },
-                attribute: { type: 'string' },
+                attribute: { type: 'string',
+                             enum: closed.applicationMultiAttributes },
                 value: { type: 'string' }
               },
               required: ['application', 'attribute', 'value'],
@@ -11025,7 +11331,7 @@ class AdminApi {
                                        'AGAINST THE DOCUMENT IT WAS READ ' +
                                        'FROM: remove rule 0 and every path ' +
                                        'naming rule 1 now means rule 0.' },
-                effect: { type: 'string',
+                effect: { type: 'string', enum: closed.xacmlEffects,
                           description: 'Permit or Deny. Defaults to Permit.' }
               },
               required: ['policy'],
@@ -11335,7 +11641,7 @@ class AdminApi {
                                        'naming rule 1 now means rule 0.' },
                 id: { type: 'string',
                           description: 'A new RuleId.' },
-                effect: { type: 'string',
+                effect: { type: 'string', enum: closed.xacmlEffects,
                           description: 'Permit or Deny.' },
                 description: { type: 'string',
                           description: 'The rule\'s own description.' }
@@ -11726,7 +12032,7 @@ class AdminApi {
                                        'AGAINST THE DOCUMENT IT WAS READ ' +
                                        'FROM: remove rule 0 and every path ' +
                                        'naming rule 1 now means rule 0.' },
-                on: { type: 'string',
+                on: { type: 'string', enum: closed.xacmlEffects,
                           description: 'Permit or Deny — the effect this ' +
                                        'fires on. Defaults to Permit. An ' +
                                        'obligation attached to the wrong ' +
@@ -11762,7 +12068,7 @@ class AdminApi {
                                        'AGAINST THE DOCUMENT IT WAS READ ' +
                                        'FROM: remove rule 0 and every path ' +
                                        'naming rule 1 now means rule 0.' },
-                on: { type: 'string',
+                on: { type: 'string', enum: closed.xacmlEffects,
                           description: 'Permit or Deny. Defaults to Permit.' }
               },
               required: ['policy'],
@@ -11796,7 +12102,7 @@ class AdminApi {
                                        'AGAINST THE DOCUMENT IT WAS READ ' +
                                        'FROM: remove rule 0 and every path ' +
                                        'naming rule 1 now means rule 0.' },
-                on: { type: 'string',
+                on: { type: 'string', enum: closed.xacmlEffects,
                           description: 'Permit or Deny. Defaults to Permit.' }
               },
               required: ['policy', 'path'],
@@ -11828,7 +12134,7 @@ class AdminApi {
                                        'AGAINST THE DOCUMENT IT WAS READ ' +
                                        'FROM: remove rule 0 and every path ' +
                                        'naming rule 1 now means rule 0.' },
-                on: { type: 'string',
+                on: { type: 'string', enum: closed.xacmlEffects,
                           description: 'Permit or Deny. Defaults to Permit.' }
               },
               required: ['policy'],
@@ -11865,7 +12171,7 @@ class AdminApi {
                 id: { type: 'string',
                           description:
                             'A new obligation or advice identifier.' },
-                on: { type: 'string',
+                on: { type: 'string', enum: closed.xacmlEffects,
                           description:
                             'Permit or Deny — the effect it fires on.' }
               },
@@ -13074,6 +13380,7 @@ class AdminApi {
                   description: 'The event type: a short name such as ' +
                                '`session-revoked`, or the whole URI.' },
                 initiating_entity: { type: 'string',
+                                     enum: closed.caepInitiatingEntities,
                   description: 'admin | user | policy | system. It is the ' +
                                'member that lets a receiver tell "an ' +
                                'administrator revoked this" from "a risk ' +
@@ -13727,7 +14034,7 @@ class AdminApi {
             requestBody: {
               type: 'object',
               properties: {
-                keyAlg: { type: 'string',
+                keyAlg: { type: 'string', enum: closed.pkiKeyAlgorithms,
                           description: 'One of the ids in `keyAlgorithms` on ' +
                                        'GET /admin-api/pki: rsa-2048, ' +
                                        'rsa-3072, rsa-4096, ec-p256, ' +
@@ -13739,6 +14046,7 @@ class AdminApi {
                                        'has to be able to verify. Defaults ' +
                                        'to `pki.keyAlgorithm`.' },
                 altKeyAlg: { type: 'string',
+                             enum: closed.pkiAlternativeKeyAlgorithms,
                              description: 'The post-quantum key every ' +
                                           'authority built here holds ' +
                                           'beside its classical one ' +
@@ -13750,6 +14058,7 @@ class AdminApi {
                                           'Defaults to ' +
                                           '`pki.alternativeKeyAlgorithm`.' },
                 signatureAlg: { type: 'string',
+                                enum: closed.pkiSignatureAlgorithms,
                                 description: 'One of the ids in ' +
                                              '`signatureAlgorithms`. OMIT IT ' +
                                              'for "the right one for the key ' +
@@ -13770,7 +14079,7 @@ class AdminApi {
                                              'when no common name is given. ' +
                                              'Defaults to ' +
                                              '`pki.organisation`.' },
-                country: { type: 'string',
+                country: { type: 'string', enum: closed.countries,
                            description: 'The C=, two letters, optional. It ' +
                                         'is encoded as a PrintableString, ' +
                                         'which is interoperability rather ' +
@@ -13974,7 +14283,7 @@ class AdminApi {
                                            'either way, because a CN is a ' +
                                            'display name and a SAN is the ' +
                                            'machine-readable one.' },
-                keyAlg: { type: 'string',
+                keyAlg: { type: 'string', enum: closed.pkiKeyAlgorithms,
                           description: 'The LEAF\'s key algorithm. Defaults ' +
                                        'to the Issuing CA\'s, which is the ' +
                                        'chain a client library is least ' +
@@ -14426,10 +14735,11 @@ class AdminApi {
             requestBody: {
               type: 'object',
               properties: {
-                keyAlg: { type: 'string',
+                keyAlg: { type: 'string', enum: closed.pkiKeyAlgorithms,
                           description: 'One of the ids in `keyAlgorithms`. ' +
                                        'Defaults to `pki.keyAlgorithm`.' },
                 altKeyAlg: { type: 'string',
+                             enum: closed.pkiAlternativeKeyAlgorithms,
                              description: 'The post-quantum key every ' +
                                           'authority built here holds ' +
                                           'beside its classical one ' +
@@ -14478,10 +14788,11 @@ class AdminApi {
                          description:
                            'A realm id, `*process`, or omitted for ' +
                                       'the realm this request arrived in.' },
-                keyAlg: { type: 'string',
+                keyAlg: { type: 'string', enum: closed.pkiKeyAlgorithms,
                           description: 'The key algorithm every CA in this ' +
                                        'branch is generated with.' },
                 altKeyAlg: { type: 'string',
+                             enum: closed.pkiAlternativeKeyAlgorithms,
                              description: 'The post-quantum key every ' +
                                           'authority built here holds ' +
                                           'beside its classical one ' +
@@ -14519,7 +14830,7 @@ class AdminApi {
               properties: {
                 scope: { type: 'string',
                          description: 'A realm id or `*process`.' },
-                useCase: { type: 'string',
+                useCase: { type: 'string', enum: closed.pkiUseCases,
                            description: 'One of `jose`, `xml`, `assertions`, ' +
                                         '`spiffe`, `pep-tls` (a realm) or ' +
                                         '`tls` (the process). Asking for one ' +
@@ -14552,7 +14863,7 @@ class AdminApi {
               properties: {
                 scope: { type: 'string',
                          description: 'A realm id or `*process`.' },
-                useCase: { type: 'string',
+                useCase: { type: 'string', enum: closed.pkiUseCases,
                            description: 'The use case to renew.' }
               },
               required: ['useCase'],
@@ -14589,7 +14900,7 @@ class AdminApi {
                 scope: { type: 'string',
                          description: '`*service` for the Root, otherwise a ' +
                                       'realm id or `*process`.' },
-                useCase: { type: 'string',
+                useCase: { type: 'string', enum: closed.pkiImportUseCases,
                            description: '`root`, or one of the use cases.' },
                 certificatePem: { type: 'string',
                                   description: 'The CA certificate.' },
@@ -14626,7 +14937,8 @@ class AdminApi {
               properties: {
                 scope: { type: 'string',
                          description: 'A realm id or `*process`.' },
-                useCase: { type: 'string', description: 'The use case.' },
+                useCase: { type: 'string', enum: closed.pkiUseCases,
+                           description: 'The use case.' },
                 slot: { type: 'string',
                         description: 'The algorithm, as it appears in that ' +
                                      'use case’s certified list — `RS256`, ' +
@@ -15582,13 +15894,11 @@ class AdminApi {
         parameters: [
           { name: 'category', in: 'query', required: false,
             schema: { type: 'string',
-                      enum: ['authentication', 'session', 'directory', 'admin',
-                             'api', 'application', 'protocol', 'spiffe',
-                             'signals', 'authorization', 'service'] },
+                      enum: closed.auditCategories },
             description: 'One of the categories. The reply\'s `categories` ' +
                          'member describes each of them.' },
           { name: 'action', in: 'query', required: false,
-            schema: { type: 'string' },
+            schema: { type: 'string', enum: closed.auditActions },
             description: 'One action. ANDed with `category`, so an action ' +
                          'from another category matches nothing — which is ' +
                          'what an empty list then means. ' +
@@ -15596,7 +15906,7 @@ class AdminApi {
                          'lists every action with the category it belongs ' +
                          'to.' },
           { name: 'outcome', in: 'query', required: false,
-            schema: { type: 'string', enum: ['success', 'refused', 'error'] },
+            schema: { type: 'string', enum: closed.auditOutcomes },
             description: 'Three rather than two on purpose: a `refused` is ' +
                          'this service working correctly and saying no, an ' +
                          '`error` is this service failing, and collapsing ' +
@@ -15745,17 +16055,16 @@ class AdminApi {
             description: 'Substring of the issuer, the `jti` or `ID`, the ' +
                          'client or the subject, case-insensitive.' },
           { name: 'format', in: 'query', required: false,
-            schema: { type: 'string', enum: ['jwt', 'saml'] },
+            schema: { type: 'string', enum: closed.usedAssertionFormats },
             description: '`jwt` (RFC 7523) or `saml` (RFC 7522).' },
           { name: 'use', in: 'query', required: false,
             schema: { type: 'string',
-                      enum: ['client-authentication', 'authorization-grant',
-                             'request-object'] },
+                      enum: closed.usedAssertionUses },
             description: 'What the assertion was accepted AS — ' +
                          '`request-object` is an RFC 9101 request object ' +
                          'whose `jti` was spent (#35).' },
           { name: 'state', in: 'query', required: false,
-            schema: { type: 'string', enum: ['reserved', 'spent'] },
+            schema: { type: 'string', enum: closed.usedAssertionStates },
             description: '`reserved` (its token request has not finished) or ' +
                          '`spent` (tokens were issued).' }
         ].concat(this.pagingParameters()),
@@ -15850,21 +16159,18 @@ class AdminApi {
         parameters: [
           { name: 'type', in: 'query', required: false,
             schema: { type: 'string',
-                      enum: ['krb5-s4u2self', 'krb5-s4u2proxy-classic',
-                             'krb5-s4u2proxy-rbcd', 'krb5-forwarded',
-                             'wstrust-onbehalfof', 'wstrust-actas',
-                             'oauth-impersonation', 'oauth-delegation'] },
+                      enum: closed.delegationTypes },
             description: 'One mechanism. The reply\'s `types` member ' +
                          'describes each of them, with the specification it ' +
                          'comes from and whether this service polices it.' },
           { name: 'mode', in: 'query', required: false,
-            schema: { type: 'string', enum: ['impersonation', 'delegation'] },
+            schema: { type: 'string', enum: closed.delegationModes },
             description: 'The protocol-independent axis: whether what came ' +
                          'out carries the chain. ' +
                          'ANDed with `type`, so a mode ' +
                          'that does not match the mechanism matches nothing.' },
           { name: 'outcome', in: 'query', required: false,
-            schema: { type: 'string', enum: ['issued', 'refused'] },
+            schema: { type: 'string', enum: closed.delegationOutcomes },
             description: 'Two rather than the audit log\'s three: a ' +
                          'delegation is DECIDED rather than ' +
                          'performed, so there is no third ' +
@@ -16508,7 +16814,7 @@ class AdminApi {
             description: 'Whether the subject is a person or a client ' +
                          'authenticating as itself. Defaults to `user`.' },
           { name: 'kind', in: 'query',
-            schema: { type: 'string' },
+            schema: { type: 'string', enum: closed.issuanceKinds },
             description: 'Which issuance. It becomes the XACML `action-id`, ' +
                          'so a policy may permit an access token and refuse ' +
                          'a refresh token. `GET ' +
@@ -17376,8 +17682,10 @@ class AdminApi {
                          'id, the hint or any selector, case-insensitive.' },
           { name: 'origin', in: 'query', required: false,
             schema: { type: 'string',
+                      // `unstated` is what an entry whose origin was never
+                      // recorded carries (`spiffe/spiffe_registry.ts`).
                       enum: ['seed', 'console', 'api', 'grpc', 'auto',
-                             'ldap'] },
+                             'ldap', 'unstated'] },
             description: 'How the entry got here. `auto` is one this service ' +
                          'INVENTED for a workload that matched nothing, ' +
                          'which is the setting `spiffe.autoCreateEntries` — ' +
@@ -17516,6 +17824,11 @@ class AdminApi {
                                 'federatesWith', 'x509SvidTtl', 'jwtSvidTtl',
                                 'hint', 'expiresAt', 'admin', 'downstream',
                                 'storeSvid'],
+                         // The handler tells a field that records what
+                         // HAPPENED from one that does not exist, and a
+                         // caller needs to know which (#86, see
+                         // REFUSED_BY_HANDLER).
+                         'x-refused-by-handler': true,
                          description: 'Which field. Anything else is refused ' +
                                       'naming these.' },
                 value: { type: 'string',
@@ -18658,12 +18971,25 @@ class AdminApi {
     // OpenAPI document is built from, so an operation cannot acquire a schema
     // without acquiring its enforcement.
     //
-    // A GET is registered exactly as before. Nothing about a query string goes
-    // through here — that is `common/validation.js`'s guard and the per-page
-    // schemas.
+    // A query string's SHAPE is `common/validation.js`'s guard and the
+    // per-page schemas; what goes through here is only its closed sets — a
+    // parameter whose declared `enum` does not hold the value (#86).
     // -------------------------------------------------------------------------
     ROUTES.forEach(function (entry) {
       const path = entry.route || entry.path;
+      // A query parameter outside its declared set is refused before the
+      // handler runs, on a GET and a POST alike (#86).
+      const queryRefused = function (req, res) {
+        const asked = self.checkQueryEnums(entry, req);
+        if (asked.ok) {
+          return false;
+        }
+        log.debug("The management API refused a query parameter against " +
+                  (entry.operationId || path) + "'s declared set.");
+        errorCodes.mark(res, 'STS-API-0124');
+        self.sendJson(res, 400, { ok: false, errors: [asked.sentence] });
+        return true;
+      };
       if (entry.method === 'GET') {
         // A GET that `mirrors` exactly one Protocols page answers that page's
         // endpoints as well, which is rule 7 for the section `respond()` draws
@@ -18675,16 +19001,27 @@ class AdminApi {
                      protocolEndpoints.pages().indexOf(mirrored[1]) >= 0 ?
                      mirrored[1] : null;
         if (!page) {
-          app.get(path, entry.handler);
+          app.get(path, function (req, res) {
+            if (queryRefused(req, res)) {
+              return undefined;
+            }
+            return entry.handler(req, res);
+          });
           return;
         }
         app.get(path, function (req, res) {
+          if (queryRefused(req, res)) {
+            return undefined;
+          }
           res.locals.protocolEndpoints = protocolEndpoints.forPage(req, page);
           return entry.handler(req, res);
         });
         return;
       }
       app.post(path, function (req, res) {
+        if (queryRefused(req, res)) {
+          return undefined;
+        }
         // The route this request matched, so the wrapper can find its schema
         // without re-deriving the path from what express matched.
         req.__adminApiRoute = path;

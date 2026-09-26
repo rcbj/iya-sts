@@ -409,6 +409,14 @@ const JOBS = [
   // missing token, the wrong body type. `local: true`: this repository's own
   // /admin and /admin-api.
   { file: 'sts_admin_risk_upload.js',    browser: false, local: true },
+  // EVERY CLOSED SET AN ADMINISTRATOR CAN TYPE INTO (#86, 2026-09-26): each
+  // enum the OpenAPI document declares — request bodies, query parameters —
+  // refused outside its set with the one sentence, and accepted from it
+  // without the operation running; each console control a set is registered
+  // for refused as a real form; each runtime enum setting refused through
+  // both doors. Discovered from the document, never listed. `local: true`:
+  // this repository's own /admin and /admin-api.
+  { file: 'sts_admin_closed_sets.js',    browser: false, local: true },
   // SIGNING KEY ROTATION OVER HTTP (#42/#48, 2026-09-22): the refusals, a
   // rotation keeping the retired key verifying, the /admin/keys Rotate form,
   // and an emergency after which an earlier token is refused — in a

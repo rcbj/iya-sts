@@ -794,6 +794,12 @@ const CODES = [
       'path position (#251), so a realm may not be called by a label\'s ' +
       'name.',
     spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
+  { code: 'STS-CORE-0108',
+    summary: 'The service did not start: a value in the environment, the ' +
+      'appconfig file or env/defaults.js fails the check a console or API ' +
+      'write of it would (a value outside an enum or a list\'s csvValues, ' +
+      'a number out of bounds, a malformed boolean) — #86.',
+    spec: '' },
   { code: 'STS-WORKER-0001',
     summary: 'The IPC channel to a post-quantum worker process failed, so a ' +
       'job sent to it may not arrive or its answer may not come back.',
@@ -2785,6 +2791,11 @@ const CODES = [
       'downgrade #68 refuses.',
     spec: 'the verifier\'s refusal: whatever the certificate was presented ' +
       'for is refused as an untrusted certificate' },
+  { code: 'STS-PKI-0203',
+    summary: 'A Certificate & Key Configuration pane field that takes a ' +
+      'closed set (pki_profile, pki_pq_mode, pki_key_alg, pki_alt_key_alg, ' +
+      'pki_ks_format) held a value outside it (#86).',
+    spec: 'HTTP 400 page or { ok: false, errors }' },
   { code: 'STS-ENROLL-0001',
     summary: 'A certificate request named a profile that is not one of the nine issued over an enrollment protocol.',
     spec: 'the protocol\'s refusal: ACME malformed / badCSR, EST HTTP 400, SCEP failInfo badRequest' },
@@ -8615,6 +8626,11 @@ const CODES = [
       'its Entity Identifier, no https endpoints, no automatic ' +
       'registration, or no keys (#134).',
     spec: 'HTTP 502 page' },
+  { code: 'STS-FED-0150',
+    summary: 'A federation relationship field that takes a closed set of ' +
+      'values (fedAuthnMechanism, fedBinding, fedResponseType, or any row ' +
+      'with an enum) was set to a value outside it (#86).',
+    spec: 'HTTP 400 (console and API)' },
   // ===== OIDFED ============================================================
   { code: 'STS-OIDFED-0001',
     summary: 'A metadata_policy is not the three levels of JSON objects ' +
@@ -15034,6 +15050,10 @@ const CODES = [
     summary: 'set-attribute, add-attribute or remove-attribute was refused ' +
       'and ldap/person_editor.ts named no more specific reason (#228).',
     spec: 'HTTP 400 (API) or a 303 with error=' },
+  { code: 'STS-ADMIN-0820',
+    summary: 'A console form POST held a value outside the closed set the ' +
+      'mirroring /admin-api operation\'s enum declares (#86).',
+    spec: 'HTTP 400 page' },
   { code: 'STS-API-0001',
     summary: 'A management API request carried no Bearer access token while ' +
       'adminApi.authRequired is on.',
@@ -15072,7 +15092,8 @@ const CODES = [
     spec: 'HTTP 403 forbidden (HTTP 403 page for a browser)' },
   { code: 'STS-API-0009',
     summary: 'A management API request body did not match the operation\'s ' +
-      'JSON Schema (an unknown member or a wrong type).',
+      'JSON Schema (an unknown member, a wrong type, or a value outside a ' +
+      'closed set its enum declares — #86).',
     spec: 'HTTP 400 { ok: false, errors }' },
   { code: 'STS-API-0010',
     summary: 'A management API request schema would not compile at startup, ' +
@@ -15377,6 +15398,10 @@ const CODES = [
       'operation needs, and the client it was issued to does not declare ' +
       'that scope in its oauthAllowedScope (in the realm that issued it).',
     spec: 'HTTP 403 forbidden' },
+  { code: 'STS-API-0124',
+    summary: 'A management API query parameter held a value outside the ' +
+      'closed set its operation\'s enum declares (#86).',
+    spec: 'HTTP 400 { ok: false, errors }' },
   { code: 'STS-PORTAL-0001',
     summary: 'A user portal request\'s query string or form body did not ' +
       'match the shape its route accepts, and was refused before ' +

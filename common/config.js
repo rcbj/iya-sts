@@ -482,10 +482,36 @@ const TYPES = {
       log.debug("Leaving text().");
       return (Array.isArray(v) ? v : [v]).join(',');
     },
-    check: function () {
+    // A row that declares `csvValues` is a list drawn FROM a closed set, and
+    // every entry is held to it exactly as an enum's one value is held to
+    // `enumValues` (#86). The first entry outside it is the one named: a
+    // refusal that listed every bad entry of a long list would bury the
+    // allowed set it has to show. A row without `csvValues` is an open list
+    // — addresses, host names, ids another table owns — and is not checked,
+    // as before. The entries are split and trimmed as parse() does, so what
+    // is checked is exactly what the reader will be handed.
+    check: function (raw, setting) {
       log.debug("Entering check().");
-      log.debug("Leaving check().");
-      return null;
+      const allowed = setting && Array.isArray(setting.csvValues)
+        ? setting.csvValues : null;
+      if (!allowed) {
+        log.debug("Leaving check(). An open list.");
+        return null;
+      }
+      const parts = Array.isArray(raw) ? raw :
+                    String(raw === undefined || raw === null ? '' : raw)
+                      .split(',');
+      const bad = parts.map(function (part) {
+        return String(part).trim();
+      }).filter(function (part) {
+        return part.length > 0 && allowed.indexOf(part) < 0;
+      })[0];
+      if (bad === undefined) {
+        log.debug("Leaving check().");
+        return null;
+      }
+      log.debug("Leaving check(). Refused: " + bad);
+      return 'must be one of ' + allowed.join(', ') + ', got "' + bad + '"';
     }
   },
 
@@ -579,6 +605,113 @@ const REALM_BUILDS_ITS_OWN = '. A TRUST REALM may carry it even so: a ' +
   'realm\'s principal database is built when its Kerberos is turned on and ' +
   'rebuilt when this changes, so nothing about the realm\'s value was ' +
   'consumed at startup';
+
+// ---------------------------------------------------------------------------
+// THE CLOSED SETS (#86, 2026-09-26): what an `enum` row's `enumValues` or a
+// `csv` row's `csvValues` is, for the rows whose reader FILTERS by a constant
+// of its own module.
+//
+// Until #86 each of those rows was a `string` or a `csv` that checked nothing,
+// so /admin/config, POST /admin-api/config/set and a realm override all saved
+// a typo — and the reader then dropped it (a GNAP format, a door, a profile),
+// fell back past it (`risc.subjectFormat`), or failed on it at the next use
+// (`ssf.signingAlgorithm`, an unknown JWS algorithm at the first SET). A
+// saved value that does nothing is the failure a refusal on Save cannot have.
+//
+// THEY ARE WRITTEN OUT, NOT REQUIRED, for `certificateHeaderSetting()`'s
+// reason: this file is a leaf and requires nothing from the repository that
+// could require it back. Each list names the constant it mirrors, and
+// `tests/closed_setting_values.js` holds every one of them EQUAL to it, so a
+// value added to the module and not here fails that test rather than being
+// refused on Save with nobody knowing why.
+//
+// THE SPELLING IS THE ONE THE READER MATCHES. Where a reader lower-cases
+// first (the doors, the TLS algorithms) the list is lower case, and a value
+// in another case is refused here although the reader would have taken it —
+// one spelling on the page is worth that. Where a reader accepts a SECOND
+// spelling on purpose (SSF's `push`/`poll`, the CAEP and RISC event-type
+// URIs, OID4VP's `dc sd-jwt` from a form-decoded `+`) both are listed.
+// ---------------------------------------------------------------------------
+
+// common/vendored/key_material.js's keyAlgIds(), in its order.
+const PKI_KEY_ALGORITHMS = [
+  'rsa-2048', 'rsa-3072', 'rsa-4096', 'ec-p256', 'ec-p384', 'ec-p521',
+  'ed25519',
+  'ml-dsa-44', 'ml-dsa-65', 'ml-dsa-87',
+  'slh-dsa-sha2-128s', 'slh-dsa-sha2-128f', 'slh-dsa-sha2-192s',
+  'slh-dsa-sha2-192f', 'slh-dsa-sha2-256s', 'slh-dsa-sha2-256f',
+  'slh-dsa-shake-128s', 'slh-dsa-shake-128f', 'slh-dsa-shake-192s',
+  'slh-dsa-shake-192f', 'slh-dsa-shake-256s', 'slh-dsa-shake-256f',
+  'mldsa44-rsa2048-pss-sha256', 'mldsa44-rsa2048-pkcs15-sha256',
+  'mldsa44-ed25519-sha512', 'mldsa44-ecdsa-p256-sha256',
+  'mldsa65-rsa3072-pss-sha512', 'mldsa65-rsa3072-pkcs15-sha512',
+  'mldsa65-rsa4096-pss-sha512', 'mldsa65-rsa4096-pkcs15-sha512',
+  'mldsa65-ecdsa-p256-sha512', 'mldsa65-ecdsa-p384-sha512',
+  'mldsa65-ed25519-sha512', 'mldsa87-ecdsa-p384-sha512',
+  'mldsa87-ed448-shake256', 'mldsa87-rsa3072-pss-sha512',
+  'mldsa87-rsa4096-pss-sha512', 'mldsa87-ecdsa-p521-sha512',
+  'ml-kem-512', 'ml-kem-768', 'ml-kem-1024'
+];
+
+// common/vendored/x509.js's SIG_ALGS — every id sigAlg() resolves — in that
+// module's SIG_ALG_ORDER. The two SHA-1 ids stay: the row's `onlyWhile`
+// makes them development-only, which is a different refusal from this one.
+const PKI_SIGNATURE_ALGORITHMS = [
+  'sha256-rsa', 'sha384-rsa', 'sha512-rsa',
+  'sha256-rsapss', 'sha384-rsapss', 'sha512-rsapss',
+  'sha1-rsa', 'sha256-ecdsa', 'sha384-ecdsa', 'sha512-ecdsa', 'sha1-ecdsa',
+  'ed25519',
+  'ml-dsa-44', 'ml-dsa-65', 'ml-dsa-87',
+  'slh-dsa-sha2-128s', 'slh-dsa-sha2-128f', 'slh-dsa-sha2-192s',
+  'slh-dsa-sha2-192f', 'slh-dsa-sha2-256s', 'slh-dsa-sha2-256f',
+  'slh-dsa-shake-128s', 'slh-dsa-shake-128f', 'slh-dsa-shake-192s',
+  'slh-dsa-shake-192f', 'slh-dsa-shake-256s', 'slh-dsa-shake-256f',
+  'mldsa44-rsa2048-pss-sha256', 'mldsa44-rsa2048-pkcs15-sha256',
+  'mldsa44-ed25519-sha512', 'mldsa44-ecdsa-p256-sha256',
+  'mldsa65-rsa3072-pss-sha512', 'mldsa65-rsa3072-pkcs15-sha512',
+  'mldsa65-rsa4096-pss-sha512', 'mldsa65-rsa4096-pkcs15-sha512',
+  'mldsa65-ecdsa-p256-sha512', 'mldsa65-ecdsa-p384-sha512',
+  'mldsa65-ed25519-sha512', 'mldsa87-ecdsa-p384-sha512',
+  'mldsa87-ed448-shake256', 'mldsa87-rsa3072-pss-sha512',
+  'mldsa87-rsa4096-pss-sha512', 'mldsa87-ecdsa-p521-sha512'
+];
+
+// common/crypto.js's JWS_ASYMMETRIC_ALGS. A SET is signed through
+// helpers.js's signJwtAsAsync() with no secret (ssf/ssf_events.js), so the
+// HS* rows of JWS_ALGS — which sign with a CLIENT's secret — cannot sign one.
+const SET_SIGNING_ALGORITHMS = [
+  'RS256', 'RS384', 'RS512', 'PS256', 'PS384', 'PS512',
+  'ES256', 'ES384', 'ES512', 'ES256K', 'EdDSA',
+  'ML-DSA-44', 'ML-DSA-65', 'ML-DSA-87',
+  'SLH-DSA-SHA2-128s', 'SLH-DSA-SHAKE-128s',
+  'ML-DSA-44-ES256', 'ML-DSA-65-ES256', 'ML-DSA-87-ES384',
+  'ML-DSA-44-Ed25519', 'ML-DSA-65-Ed25519', 'ML-DSA-87-Ed448'
+];
+
+// ssf/ssf_subjects.js's PERSON_FORMATS: every one subjectForUser() composes.
+const RISC_SUBJECT_FORMATS = ['account', 'email', 'iss_sub', 'opaque',
+                              'phone_number', 'did', 'uri', 'aliases'];
+
+// common/cert_enrollment.ts's PROFILE_IDS — the nine leaf profiles an
+// enrollment protocol may issue, shared by ACME, EST and SCEP.
+const ENROLLMENT_PROFILES = ['tls-server', 'tls-client', 'tls-server-client',
+                             'digital-signature', 'key-encipherment',
+                             'code-signing', 'email', 'timestamping',
+                             'smartcard-logon'];
+
+// oid4vc/vc_issuer.ts's IMPLEMENTED_ENC_VALUES, for both OID4VCI rows.
+const OID4VCI_ENC_VALUES = ['A128GCM', 'A256GCM'];
+
+// A list of short event-type names, and each again under its URI. The CAEP
+// and RISC readers strip ssf/ssf_events.js's CAEP_PREFIX / RISC_PREFIX before
+// they match, so a whole URI is a spelling they accept.
+function withEventTypeUris(prefix, names) {
+  log.debug("Entering withEventTypeUris().");
+  log.debug("Leaving withEventTypeUris().");
+  return names.concat(names.map(function (name) {
+    return prefix + name;
+  }));
+}
 
 const SETTINGS = [
   // --- Global --------------------------------------------------------------
@@ -935,6 +1068,9 @@ const SETTINGS = [
   { key: 'gnap.tokenFormats', group: 'GNAP', label: 'Token formats offered',
     path: 'gnap.tokenFormats', env: 'STS_GNAP_TOKEN_FORMATS', type: 'csv',
     dflt: 'jwt-signed,jwt-encrypted,macaroon,biscuit,zcap', runtime: true,
+    // Mirrors gnap/gnap_tokens.ts's FORMATS.
+    csvValues: ['jwt-signed', 'jwt-encrypted', 'macaroon', 'biscuit',
+                'zcap'],
     description: 'RFC 9767 section 3.1\'s token_formats_supported. A format ' +
                  'not listed is never issued, and a resource set that ' +
                  'accepts only unlisted formats is refused at registration.' },
@@ -1010,6 +1146,8 @@ const SETTINGS = [
     path: 'gnap.interactionStartModes', env: 'STS_GNAP_INTERACTION_START_MODES',
     type: 'csv',
     dflt: 'redirect,app,user_code,user_code_uri', runtime: true,
+    // Mirrors gnap/gnap_request.ts's START_MODES.
+    csvValues: ['redirect', 'app', 'user_code', 'user_code_uri'],
     description: 'Section 9\'s interaction_start_modes_supported. A client ' +
                  'application may narrow it further with ' +
                  'gnapInteractionStartModes.' },
@@ -1017,11 +1155,15 @@ const SETTINGS = [
                                                      'methods',
     path: 'gnap.finishMethods', env: 'STS_GNAP_FINISH_METHODS', type: 'csv',
     dflt: 'redirect,push', runtime: true,
+    // Mirrors gnap/gnap_request.ts's FINISH_METHODS.
+    csvValues: ['redirect', 'push'],
     description: 'Section 9\'s interaction_finish_methods_supported. push is ' +
                  'also switched by gnap.pushFinish.' },
   { key: 'gnap.keyProofs', group: 'GNAP', label: 'Key proofing methods',
     path: 'gnap.keyProofs', env: 'STS_GNAP_KEY_PROOFS', type: 'csv',
     dflt: 'httpsig,mtls,jwsd,jws', runtime: true,
+    // Mirrors gnap/gnap_keys.ts's PROOF_METHODS.
+    csvValues: ['httpsig', 'mtls', 'jwsd', 'jws'],
     description: 'Section 9\'s key_proofs_supported. mtls needs the main ' +
                  'port to be HTTPS (global.https) so that a client ' +
                  'certificate can arrive at all.' },
@@ -1057,6 +1199,9 @@ const SETTINGS = [
     path: 'gnap.subIdFormats', env: 'STS_GNAP_SUB_ID_FORMATS', type: 'csv',
     dflt: 'opaque,iss_sub,email,account,uri,phone_number,aliases', runtime:
                                                                      true,
+    // Mirrors gnap/gnap_subject.ts's SUB_ID_FORMATS_SUPPORTED.
+    csvValues: ['opaque', 'iss_sub', 'email', 'account', 'uri',
+                'phone_number', 'aliases'],
     description: 'Section 9\'s sub_id_formats_supported, in RFC 9493\'s own ' +
                  'spellings. A format is released only when the person\'s ' +
                  'entry holds the fact it needs.' },
@@ -1065,6 +1210,8 @@ const SETTINGS = [
     path: 'gnap.assertionFormats', env: 'STS_GNAP_ASSERTION_FORMATS',
     type: 'csv',
     dflt: 'id_token,saml2', runtime: true,
+    // Mirrors gnap/gnap_subject.ts's ASSERTION_FORMATS_SUPPORTED.
+    csvValues: ['id_token', 'saml2'],
     description: 'Section 9\'s assertion_formats_supported: an OpenID ' +
                  'Connect ID Token and a SAML 2.0 assertion, built by the ' +
                  'same code the OIDC and SAML families use.' },
@@ -1618,6 +1765,8 @@ const SETTINGS = [
     label: 'Password-only doors that accept a password alone',
     path: 'authn.passwordAloneDoors', env: 'STS_AUTHN_PASSWORD_ALONE_DOORS',
     type: 'csv', dflt: '', runtime: true,
+    // Mirrors common/app_passwords.ts's DOOR_IDS (the reader lower-cases).
+    csvValues: ['ldap', 'wstrust', 'scim', 'ssf', 'est'],
     description: 'Product mode only. A comma-separated list of the ' +
                  'password-only doors — ldap, wstrust, scim, ssf, est — at ' +
                  'which a person who holds or must hold a second factor is ' +
@@ -1979,6 +2128,11 @@ const SETTINGS = [
     label: 'Algorithms offered', path: 'webauthn.algorithms',
     env: 'STS_WEBAUTHN_ALGORITHMS', type: 'csv', dflt: 'ES256,RS256',
     runtime: true,
+    // Mirrors authn/webauthn_policy.ts's ALG_IDS, the verifier's COSE_ALGS
+    // inverted.
+    csvValues: ['ES256', 'ES384', 'ES512', 'EdDSA', 'RS256', 'RS384',
+                'RS512', 'PS256', 'PS384', 'PS512', 'ML-DSA-44',
+                'ML-DSA-65', 'ML-DSA-87'],
     description: '`pubKeyCredParams`, in preference order — the COSE ' +
                  'algorithms this service will accept a credential in. The ' +
                  'names are JOSE spellings and are mapped to COSE ' +
@@ -3632,8 +3786,13 @@ const SETTINGS = [
                  'token is found by the session it was ISSUED on.' },
 
   { key: 'oauth2.eddsaCurve', group: 'OAuth 2.0 / OIDC',
-    label: 'EdDSA curve', env: 'STS_OAUTH2_EDDSA_CURVE', type: 'string',
-    dflt: 'Ed25519', runtime: true, choices: ['Ed25519', 'Ed448'],
+    label: 'EdDSA curve', env: 'STS_OAUTH2_EDDSA_CURVE', type: 'enum',
+    // The two curves `makeStsKeys()` generates an EdDSA key on, and the only
+    // two `signingKeyFromList()` in common/helpers.js can match a `crv` to.
+    // It was a `string` row carrying an unread `choices` list until #86, so
+    // a typo was saved and then matched no key at all.
+    enumValues: ['Ed25519', 'Ed448'],
+    dflt: 'Ed25519', runtime: true,
     description: 'Which Edwards curve an EdDSA signature is made on. RFC ' +
                  '8037 registers ONE algorithm value for both curves and ' +
                  'puts the curve in the key itself, so a client that ' +
@@ -4660,11 +4819,15 @@ const SETTINGS = [
   // ---------------------------------------------------------------------
   { key: 'pki.keyAlgorithm', group: 'PKI',
     label: 'Default CA key algorithm',
-    env: 'STS_PKI_KEY_ALGORITHM', type: 'string', dflt: 'rsa-2048',
+    env: 'STS_PKI_KEY_ALGORITHM', type: 'enum', dflt: 'rsa-2048',
+    enumValues: PKI_KEY_ALGORITHMS,
     runtime: true,
     description: 'Which key algorithm a new certificate authority is built ' +
                  'with when the form names none: rsa-2048, rsa-3072, ' +
-                 'rsa-4096, ec-p256, ec-p384, ec-p521 or ed25519. RSA 2048 ' +
+                 'rsa-4096, ec-p256, ec-p384, ec-p521 or ed25519, or one of ' +
+                 'the post-quantum ids (ML-DSA, SLH-DSA, the composites and ' +
+                 'ML-KEM — which cannot sign, so it is a subject key and ' +
+                 'never an authority\'s). RSA 2048 ' +
                  'is the default because the LEAF this hierarchy exists to ' +
                  'issue signs a client assertion that somebody else\'s OAuth ' +
                  'library has to verify, and RS256 is the one algorithm ' +
@@ -4674,7 +4837,10 @@ const SETTINGS = [
                  'at the build with the list beside it.' },
   { key: 'pki.signatureAlgorithm', group: 'PKI',
     label: 'Default CA signature algorithm',
-    env: 'STS_PKI_SIGNATURE_ALGORITHM', type: 'string', dflt: '',
+    env: 'STS_PKI_SIGNATURE_ALGORITHM', type: 'enum', dflt: '',
+    // '' FIRST, and it is a member of the set rather than an absence of one:
+    // it is the documented "the key's own default" below, and the default.
+    enumValues: [''].concat(PKI_SIGNATURE_ALGORITHMS),
     runtime: true,
     // The two SHA-1 values are DEVELOPMENT ONLY since #181 (2026-09-23).
     onlyWhile: 'usesBrokenAlgorithms',
@@ -5140,6 +5306,8 @@ const SETTINGS = [
     dflt: 'tls-server,tls-client,tls-server-client,digital-signature,' +
           'key-encipherment,code-signing,email,timestamping,smartcard-logon',
     runtime: true,
+    // Mirrors common/cert_enrollment.ts's PROFILE_IDS.
+    csvValues: ENROLLMENT_PROFILES,
     description: 'The /admin/pki profiles an order may name in its `profile` ' +
                  'member (draft-ietf-acme-profiles) and the directory ' +
                  'advertises. Root CA, Intermediate CA, Issuing CA, OCSP ' +
@@ -5215,6 +5383,8 @@ const SETTINGS = [
     dflt: 'tls-server,tls-client,tls-server-client,digital-signature,' +
           'key-encipherment,code-signing,email,timestamping,smartcard-logon',
     runtime: true,
+    // Mirrors common/cert_enrollment.ts's PROFILE_IDS.
+    csvValues: ENROLLMENT_PROFILES,
     description: 'The /admin/pki profiles an EST label may name ' +
                  '(/.well-known/est/<profile>/…). The five CA, OCSP and KDC ' +
                  'profiles are never issued over an enrollment protocol.' },
@@ -5287,6 +5457,8 @@ const SETTINGS = [
     dflt: 'tls-server,tls-client,tls-server-client,digital-signature,' +
           'key-encipherment,code-signing,email,timestamping,smartcard-logon',
     runtime: true,
+    // Mirrors common/cert_enrollment.ts's PROFILE_IDS.
+    csvValues: ENROLLMENT_PROFILES,
     description: 'The /admin/pki profiles a challenge password may be issued ' +
                  'for. The five CA, OCSP and KDC profiles are never issued ' +
                  'over an enrollment protocol.' },
@@ -6659,6 +6831,10 @@ const SETTINGS = [
     env: 'STS_FEDERATION_JWT_ALGORITHMS', type: 'csv',
     dflt: 'RS256,RS384,RS512,PS256,PS384,PS512,ES256,ES384,ES512',
     runtime: true,
+    // Mirrors the two key families of federation/federation_sp.ts's
+    // familyAlgorithms().
+    csvValues: ['RS256', 'RS384', 'RS512', 'PS256', 'PS384', 'PS512',
+                'ES256', 'ES384', 'ES512'],
     description: 'The JWS algorithms an ID Token or a JWT access token from ' +
                  'a federation partner may be signed with. It NARROWS rather ' +
                  'than widens: the algorithm family still comes from the ' +
@@ -7627,6 +7803,9 @@ const SETTINGS = [
     label: 'Server certificate algorithms', env: 'STS_TLS_CERT_ALGS',
     type: 'csv', dflt: 'rsa', runtime: false,
     restartReason: 'the certificates are issued when the listeners are bound',
+    // Mirrors tls/tls_server.js: rsa and common/crypto.js's ML_DSA_OIDS (the
+    // reader lower-cases).
+    csvValues: ['rsa', 'ml-dsa-44', 'ml-dsa-65', 'ml-dsa-87'],
     description: 'Which server certificates the main port and LDAPS present: ' +
                  '"rsa" (the default), and any of ml-dsa-44, ml-dsa-65 and ' +
                  'ml-dsa-87. MORE THAN ONE IS THE INTERESTING SETTING — ' +
@@ -7891,6 +8070,8 @@ const SETTINGS = [
     label: 'Request encryption: enc values',
     env: 'OID4VCI_REQUEST_ENCRYPTION_ENC_VALUES', type: 'csv',
     dflt: 'A128GCM,A256GCM', runtime: true,
+    // Mirrors oid4vc/vc_issuer.ts's IMPLEMENTED_ENC_VALUES.
+    csvValues: OID4VCI_ENC_VALUES,
     description: 'The content encryption algorithms ' +
                  'credential_request_encryption advertises and accepts. Only ' +
                  'A128GCM and A256GCM are implemented; anything else named ' +
@@ -7902,6 +8083,8 @@ const SETTINGS = [
     label: 'Response encryption: enc values',
     env: 'OID4VCI_RESPONSE_ENCRYPTION_ENC_VALUES', type: 'csv',
     dflt: 'A128GCM,A256GCM', runtime: true,
+    // Mirrors oid4vc/vc_issuer.ts's IMPLEMENTED_ENC_VALUES.
+    csvValues: OID4VCI_ENC_VALUES,
     description: 'The content encryption algorithms ' +
                  'credential_response_encryption advertises and accepts. ' +
                  'Same rule as the request row: A128GCM and A256GCM are ' +
@@ -8262,6 +8445,8 @@ const SETTINGS = [
     label: 'Client registration through the federation',
     env: 'STS_OIDFED_CLIENT_REGISTRATION_TYPES', type: 'csv',
     dflt: 'automatic,explicit', runtime: true,
+    // Mirrors oidfed/oidfed.ts's registrationTypes() filter.
+    csvValues: ['automatic', 'explicit'],
     description: 'How a relying party with no registration here may become ' +
                  'a client through the federation (OpenID Federation for ' +
                  'OpenID Connect 1.1, 12): automatic — its first signed ' +
@@ -8556,6 +8741,9 @@ const SETTINGS = [
     label: 'Wallet sign-in credential formats',
     env: 'OID4VP_SIGN_IN_FORMATS', type: 'csv',
     dflt: 'dc+sd-jwt,jwt_vc_json,ldp_vc', runtime: true,
+    // Mirrors oid4vc/vc_verifier.ts's SIGN_IN_FORMATS, and `dc sd-jwt`, which
+    // its reader turns back into dc+sd-jwt.
+    csvValues: ['dc+sd-jwt', 'jwt_vc_json', 'ldp_vc', 'dc sd-jwt'],
     description: 'The credential formats a wallet sign-in asks for, in ' +
                  'order of preference: one DCQL credential query each, and ' +
                  'a credential set saying any one will do. Each signs in ' +
@@ -8792,6 +8980,8 @@ const SETTINGS = [
     restartReason: 'every principal\'s supported encryption types are fixed ' +
                    'at startup' +
                    REALM_BUILDS_ITS_OWN,
+    // Mirrors kerberos/krb5_crypto.js's ETYPES, the ones parseEtypes() accepts.
+    csvValues: ['17', '18', '19', '20', '23'],
     description: 'The encryption types this KDC and acceptor use at all, as ' +
                  'RFC 3961 numbers, strongest first: 18 ' +
                  'aes256-cts-hmac-sha1-96, 17 aes128-cts-hmac-sha1-96, 20 ' +
@@ -9921,7 +10111,8 @@ const SETTINGS = [
 
   { key: 'ssf.signingAlgorithm', group: 'SSF',
     label: 'Algorithm SETs are signed with',
-    env: 'STS_SSF_SIGNING_ALGORITHM', type: 'string', dflt: 'RS256',
+    env: 'STS_SSF_SIGNING_ALGORITHM', type: 'enum', dflt: 'RS256',
+    enumValues: SET_SIGNING_ALGORITHMS,
     runtime: true,
     description: 'Which JWS algorithm every Security Event Token is signed ' +
                  'with. It goes through the same signer every other JWT ' +
@@ -9945,6 +10136,9 @@ const SETTINGS = [
   { key: 'ssf.deliveryMethods', group: 'SSF', label: 'Delivery methods offered',
     env: 'STS_SSF_DELIVERY_METHODS', type: 'csv',
     dflt: 'urn:ietf:rfc:8935,urn:ietf:rfc:8936', runtime: true,
+    // Mirrors ssf/ssf_streams.ts's DELIVERY_METHODS, and the push / poll
+    // shorthand offeredDeliveryMethods() maps onto them.
+    csvValues: ['urn:ietf:rfc:8935', 'urn:ietf:rfc:8936', 'push', 'poll'],
     description: 'Which of SSF\'s two delivery methods this transmitter ' +
                  'will agree to, published in delivery_methods_supported ' +
                  'and enforced at stream creation. The values are the RFC ' +
@@ -10514,6 +10708,12 @@ const SETTINGS = [
           'credential-change,assurance-level-change,token-claims-change,' +
           'risk-level-change',
     runtime: true,
+    // Mirrors ssf/caep.ts's AUTO_ACTS, short and under CAEP_PREFIX.
+    csvValues: withEventTypeUris(
+      'https://schemas.openid.net/secevent/caep/event-type/',
+      ['session-established', 'session-presented', 'session-revoked',
+       'credential-change', 'assurance-level-change', 'token-claims-change',
+       'risk-level-change']),
     description: 'The SHORT NAMES of the CAEP events this service emits by ' +
                  'itself, out of the seven acts it can actually observe — ' +
                  'the seventh, since #62 P4, a person\'s RISK LEVEL ' +
@@ -11026,7 +11226,12 @@ const SETTINGS = [
 
   { key: 'caep.defaultRiskLevel', group: 'CAEP',
     label: 'Default risk level', env: 'STS_CAEP_DEFAULT_RISK_LEVEL',
-    type: 'string', dflt: 'MEDIUM', runtime: true,
+    // The three `current_level` values of risk-level-change in
+    // ssf/ssf_events.js's CAEP_EVENTS, closed there because CAEP closes them:
+    // a fourth here would be a SET no conforming receiver can read, and
+    // `generate()` would have sent it as the level.
+    type: 'enum', enumValues: ['LOW', 'MEDIUM', 'HIGH'], dflt: 'MEDIUM',
+    runtime: true,
     description: 'What a risk-level-change event says when the caller does ' +
                  'not. LOW, MEDIUM or HIGH, UPPER CASE — which is CAEP\'s ' +
                  'own spelling and is the opposite of the complex ' +
@@ -11151,6 +11356,14 @@ const SETTINGS = [
           'credential-compromise,opt-out-initiated,opt-out-cancelled,' +
           'opt-out-effective,opt-in',
     runtime: true,
+    // Mirrors ssf/risc.ts's AUTO_ACTS, short and under RISC_PREFIX.
+    csvValues: withEventTypeUris(
+      'https://schemas.openid.net/secevent/risc/event-type/',
+      ['account-purged', 'account-disabled', 'account-enabled',
+       'identifier-changed', 'account-credential-change-required',
+       'recovery-information-changed', 'identifier-recycled',
+       'recovery-activated', 'credential-compromise', 'opt-out-initiated',
+       'opt-out-cancelled', 'opt-out-effective', 'opt-in']),
     description: 'The SHORT NAMES of the RISC events this service emits by ' +
                  'itself, out of the thirteen acts it can observe (every ' +
                  'one since 2026-09-22, #146). In its own directory: an ' +
@@ -11218,10 +11431,14 @@ const SETTINGS = [
 
   { key: 'risc.subjectFormat', group: 'RISC',
     label: 'How an account subject is named',
-    env: 'STS_RISC_SUBJECT_FORMAT', type: 'string', dflt: 'iss_sub',
+    env: 'STS_RISC_SUBJECT_FORMAT', type: 'enum', dflt: 'iss_sub',
+    enumValues: RISC_SUBJECT_FORMATS,
     runtime: true,
     description: 'WHICH RFC 9493 FORMAT this service composes an account ' +
-                 'subject in — iss_sub, email or opaque — and it is the ' +
+                 'subject in — iss_sub, email, account, opaque, uri, did, ' +
+                 'phone_number or aliases (an iss_sub and, where there is ' +
+                 'one, an email); a format the person\'s entry holds no ' +
+                 'real value for is sent as iss_sub — and it is the ' +
                  'most consequential setting in this group. A RISC event ' +
                  'about an account carries almost nothing but its type and ' +
                  'its subject, so the subject IS the message. iss_sub is ' +
@@ -15040,6 +15257,10 @@ function describe(setting) {
     description: setting.description,
     type: setting.type,
     enumValues: setting.enumValues || undefined,
+    // The closed set a `csv` row's entries are drawn from (#86), present
+    // only where the row declares one — the same absent-unless-meaningful
+    // rule as `enumValues` beside it, so every open list describes as before.
+    csvValues: setting.csvValues || undefined,
     // The int bounds, where a row narrows them. `undefined` is dropped by
     // JSON.stringify, so a row that carries none of them describes exactly as
     // it did before they existed — which is what keeps the management API's
@@ -15307,6 +15528,85 @@ function refuseReplacedSettings() {
   log.debug("Leaving refuseReplacedSettings().");
 }
 refuseReplacedSettings();
+
+// ---------------------------------------------------------------------------
+// A VALUE THE CONSOLE WOULD REFUSE STOPS THE START, WHEREVER IT WAS WRITTEN
+// (#86, 2026-09-26).
+//
+// Every write through /admin/config, /admin-api/config and a realm override
+// runs `TYPES[type].check()` — an enum's `enumValues`, a list's `csvValues`,
+// an integer's bounds and step, a port's range, a boolean's spellings. The
+// appconfig file and the environment ran NONE of it: `value()` parses what it
+// finds, `enum.parse` only trims, and `bool` falls back to its default with a
+// warning. So a typo that Save would have refused by name was used verbatim
+// when it was typed into a file instead — `pki.keyAlgorithm: 'RSA-2048'`
+// failing every CA build, `webauthn.algorithms` dropping a name, an
+// out-of-range lifetime taken as given. One set of rules, whichever door the
+// value came through, is the point of #86, and this is the last door.
+//
+// EVERY LAYER THAT HOLDS A VALUE IS CHECKED, not only the one that wins: the
+// environment variable, its legacy spelling, the operator's file and
+// env/defaults.js. A bad line in the file that an environment variable
+// happens to shadow today is live the day the variable is unset, and a
+// refusal then would name a change nobody made.
+//
+// A refusal to start, like requireComplete() and refuseReplacedSettings()
+// above and for their reason — process.exit(1) with every offending value
+// named, where it was found and what the setting accepts, rather than a stack
+// trace or a service that starts on a value nobody can see is wrong. The
+// check is the write's check exactly; what it does NOT carry is the write's
+// other rule, restart-only, which is about changing a running process and is
+// meaningless for the file it was started from. Development-only VALUES in
+// product mode are `mode.js`'s (`valueInForce()`), not this.
+// ---------------------------------------------------------------------------
+function refuseMalformedSettings() {
+  log.debug("Entering refuseMalformedSettings().");
+  const named = [];
+  SETTINGS.forEach(function (setting) {
+    const dotted = setting.path || setting.key;
+    const layers = [];
+    if (setting.env && process.env[setting.env] !== undefined) {
+      layers.push({ raw: process.env[setting.env],
+                    where: setting.env + ' (in the environment)' });
+    }
+    if (setting.legacyEnv && process.env[setting.legacyEnv] !== undefined) {
+      layers.push({ raw: process.env[setting.legacyEnv],
+                    where: setting.legacyEnv + ' (in the environment)' });
+    }
+    const fromFile = dig(operatorConfig, dotted);
+    if (fromFile !== undefined) {
+      layers.push({ raw: fromFile,
+                    where: dotted + ' (in ' + (process.env.CONFIG_FILE ||
+                                              'the appconfig file') + ')' });
+    }
+    const fromDefaults = dig(defaults, dotted);
+    if (fromDefaults !== undefined) {
+      layers.push({ raw: fromDefaults,
+                    where: dotted + ' (in ' + DEFAULTS_FILE + ')' });
+    }
+    layers.forEach(function (layer) {
+      const problem = TYPES[setting.type].check(layer.raw, setting);
+      if (problem) {
+        named.push('  ' + layer.where + ': "' + setting.key + '" ' + problem);
+      }
+    });
+  });
+  if (!named.length) {
+    log.debug("Leaving refuseMalformedSettings(). Every value passes.");
+    return;
+  }
+  process.stderr.write(
+    '\n' + errorCodes.tag('STS-CORE-0108') + 'config: FATAL — ' +
+    named.length + ' configured value(s) would be refused by /admin/config ' +
+    'and the management API, and are refused here for the same reason:\n\n' +
+    named.join('\n') + '\n\nFix or remove each one. A setting holds one of ' +
+    'the values GET /admin-api/config lists for it (`enumValues`, or ' +
+    '`csvValues` for each entry of a list) and within its bounds.\n\n');
+  log.debug("Leaving refuseMalformedSettings(). Refusing to start.");
+  process.exit(1);
+  log.debug("Leaving refuseMalformedSettings().");
+}
+refuseMalformedSettings();
 
 const audit = auditAppconfig();
 
