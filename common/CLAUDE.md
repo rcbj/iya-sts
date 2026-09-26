@@ -8491,7 +8491,9 @@ rcbj's answers, and where each lives:
   since #187** (section 5.7.4: a claim that does not fulfil them is omitted,
   and an element left with none is omitted whole); they were reported and not
   enforced, as on ordinary claims, until the conformance suite's
-  ekyc-server-one-claim-with-random-value-omitted found one released. Ordinary
+  ekyc-server-one-claim-with-random-value-omitted found one released.
+  **rcbj's decision, 2026-09-26, refining #127's answer 5**: enforced on the
+  claims inside `verified_claims` too, as IDA 5.7.4 requires. Ordinary
   claims keep OIDC Core's rule.
 * **Development invents one** — `demoRecord()`, trust framework
   `urn:sts:demo`, for a person with no record, under

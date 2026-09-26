@@ -55,7 +55,8 @@
 // reported and not enforced, as on every ordinary claim, until #187: section
 // 5.7.4 has the OP omit a claim whose data does not fulfil `value`, `values`
 // or `max_age`, and the conformance suite's
-// ekyc-server-one-claim-with-random-value-omitted found one released. An
+// ekyc-server-one-claim-with-random-value-omitted found one released — rcbj's
+// decision (2026-09-26), refining #127's answer 5. An
 // element left with no claim is omitted whole. ORDINARY claims keep the
 // OIDC Core rule (`oauth2.ts`'s `requestedClaimsOf()` header argues it).
 //

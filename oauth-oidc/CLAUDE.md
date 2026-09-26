@@ -4176,8 +4176,9 @@ otherwise; each carries its regression check.
   INSIDE `verified_claims` were reported and not enforced; a claim that does
   not fulfil them is now omitted, and an element left with none omitted
   whole (`common/identity_assurance.ts`, `tests/identity_assurance.js` 3g–3i).
-  #127's answer was "as IDA requires", and this is what IDA requires;
-  ordinary claims keep OIDC Core 5.5.1's rule.
+  rcbj's decision (2026-09-26), refining #127's answer 5, which had
+  enforced them on the verification only; ordinary claims keep OIDC Core
+  5.5.1's rule.
 * **RP-Initiated Logout 1.0 section 2**: a `post_logout_redirect_uri`
   with neither an `id_token_hint` nor a `client_id` was followed in
   development (#118's acceptance of an unregistered address). Nothing
