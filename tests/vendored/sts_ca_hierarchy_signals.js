@@ -207,16 +207,29 @@ function certificateChange(changeType, serial) {
   };
 }
 
-async function issueTo(who) {
+// Issues the person a key pair and answers its serial, which the issue's
+// answer does not carry: the credential-change (x509, create) it sends
+// does, and is the first such event naming a serial not seen before.
+const SERIALS = [];
+async function issueTo(who, token, streamId) {
   log.debug("Entering issueTo().");
   const issued = await postJson(realmApi + "/pki/issue", { target: "person",
     identifier: who });
   assert.strictEqual(issued.status, 200, issued.raw.slice(0, 400));
-  const serial = String((issued.body && (issued.body.serialHex ||
-    (issued.body.issued && issued.body.issued.serialHex) ||
-    (issued.body.record && issued.body.record.serialHex))) || "");
+  const found = await waitFor(token, streamId, "x509 create",
+    function (set) {
+      const ev = eventOf(set, CAEP + "credential-change");
+      return !!ev && ev.credential_type === "x509" &&
+             ev.change_type === "create" &&
+             SERIALS.indexOf(normal(ev.x509_serial)) < 0;
+    });
+  assert.ok(found.hit, "no credential-change (x509, create) for the key " +
+            "pair: " + JSON.stringify(found.seen).slice(0, 1200));
+  const serial = normal(eventOf(found.hit, CAEP + "credential-change")
+    .x509_serial);
+  SERIALS.push(serial);
   log.debug("Leaving issueTo(). " + serial);
-  return serial;
+  return { serial: serial, set: found.hit };
 }
 
 // The realm's "assertions" Issuing CA, as its Intermediate's register lists
@@ -280,13 +293,12 @@ async function test() {
                   mail: ALICE + "@ca244.test" } }, "created " + ALICE);
 
   log.info("=== a. a key pair for the person ===");
-  const first = await issueTo(ALICE);
-  let found = await waitFor(token, streamId, "x509 create",
-                            certificateChange("create", first));
+  const issuedFirst = await issueTo(ALICE, token, streamId);
+  const first = issuedFirst.serial;
+  let found = { hit: issuedFirst.set, seen: [] };
   check("the key pair is announced (credential-change x509 create), which " +
         "names the person's subject", function () {
-    assert.ok(first, "the issue answered no serial");
-    assert.ok(found.hit, JSON.stringify(found.seen).slice(0, 1200));
+    assert.ok(first && userOf(found.hit), JSON.stringify(found.hit));
   });
   const alice = JSON.stringify(userOf(found.hit));
   const aliceSub = String((userOf(found.hit) || {}).sub || ALICE);
@@ -311,7 +323,7 @@ async function test() {
   });
 
   log.info("=== c. the new Issuing CA revoked for keyCompromise ===");
-  const second = await issueTo(ALICE);
+  const second = (await issueTo(ALICE, token, streamId)).serial;
   const tier = await assertionsCa();
   const revoked = await postJson(realmApi + "/pki/revoke-certificate", {
     scope: REALM, ca: "intermediate", serialHex: tier.serialHex,
