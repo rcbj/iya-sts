@@ -1648,7 +1648,12 @@ profile, pinned by tag (`CONFORMANCE_SUITE_TAG`, `release-v5.3.1`).
   `STS_CONFORMANCE_TIMEOUT` (10800 s since #187: the six jobs take about
   two hours and a quarter). Everywhere else the runner reports the
   job SKIPPED with the reason (`run-report.js`, the `conformance` flag — a
-  deliberate exclusion, as `docker: true` is). `memory` because FAPI-CIBA
+  deliberate exclusion, as `docker: true` is). **In CI the plans are a job
+  of their own** (#187): `tests.yml`'s `tests` job empties the variable and
+  its `conformance` job runs `--modes=memory --only=conformance` under a
+  270-minute timeout, because no number the `tests` job may have fits two
+  hours of plans (`tests/teardown_bounds.js` holds both jobs' arithmetic).
+  `memory` because FAPI-CIBA
   approves through a development-mode test control, and each plan runs in a
   realm of its own under its FAPI profile, so a persisting mode would check the
   same rules again.
