@@ -311,6 +311,14 @@ const JOBS = [
   // realm it leaves behind.
   { file: 'sts_oidc_core.js',            browser: false, local: true },
   { file: 'sts_discovery_realms.js',     browser: false, local: true },
+  // THREE REALMS WHOSE DOMAINS OVERLAP (#85, 2026-09-26): dev.iyasec.io,
+  // test.iyasec.io and prod.iyasec.io, an application and a person in each
+  // under its own dc= RDNs, each person signed in by the authorization code
+  // flow at their own realm, and no realm (nor the default one) knowing
+  // another's person by name, DN or subject, or its application. `local:
+  // true`: this repository's realms, directory and authorization server.
+  // The realms are left standing and a kept stack reuses them.
+  { file: 'sts_realm_overlapping_domains.js', browser: false, local: true },
   // RFC 7009 TOKEN REVOCATION (#102, 2026-09-22): client authentication by
   // mode, another client's token refused invalid_grant, the token types, an
   // unknown hint, and a refresh token taking its grant with it. `local:
