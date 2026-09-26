@@ -274,17 +274,23 @@ class VcDidResolver {
     };
     if (!m || !this.isDid(m[1])) {
       log.debug("Leaving VcDidResolver.dereference(). Not a DID URL.");
+      // error-code: none — a DID Core result, not a response; the route
+      // that answers it marks STS-VC-0109.
       return fail('invalidDidUrl', JSON.stringify(text) + ' is not a DID ' +
                   'URL (DID Core section 3.2).');
     }
     const got = await this.documentOf(m[1], req);
     if (got.error) {
       log.debug("Leaving VcDidResolver.dereference(). " + got.error);
+      // error-code: none — a DID Core result, not a response; the route
+      // that answers it marks STS-VC-0109.
       return fail(got.error === 'invalidDid' ? 'invalidDidUrl' : got.error,
                   got.message);
     }
     if (m[2] || m[3]) {
       log.debug("Leaving VcDidResolver.dereference(). Path or query.");
+      // error-code: none — a DID Core result, not a response; the route
+      // that answers it marks STS-VC-0109.
       return fail('notFound', 'this service defines no resource at a DID ' +
                   'URL path or query (' + (m[2] || '') + (m[3] || '') + ').');
     }
@@ -308,6 +314,8 @@ class VcDidResolver {
     })[0];
     if (!found) {
       log.debug("Leaving VcDidResolver.dereference(). No such fragment.");
+      // error-code: none — a DID Core result, not a response; the route
+      // that answers it marks STS-VC-0109.
       return fail('notFound', 'the DID document has nothing with the id ' +
                   wanted + '.');
     }

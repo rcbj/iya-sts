@@ -247,6 +247,7 @@ class VcApi {
   }
 
   // A refusal, marked with its code and sent as the VC-API's error shape.
+  // error-code: none — every caller passes the code, marked below.
   private refuse(res: any, status: number, code: string, message: string,
                  extra?: any): void {
     const { log, errorCodes } = this.deps;

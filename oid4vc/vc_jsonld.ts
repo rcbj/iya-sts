@@ -201,6 +201,30 @@ class VcJsonLd {
   }
 
   // ---------------------------------------------------------------------------
+  // A jsonld error, with the reason at the bottom of its chain: jsonld wraps
+  // this loader's refusal ("not one this service holds") in its own generic
+  // "Dereferencing a URL did not result in a valid JSON-LD object", and the
+  // URL and the reason are what a caller needs to read.
+  private explained(e: any): Error {
+    const { log } = this.deps;
+    log.debug("Entering VcJsonLd.explained().");
+    const parts: string[] = [];
+    let at = e;
+    for (let depth = 0; at && depth < 8; depth++) {
+      const message = String(at.message || '');
+      if (message && parts.indexOf(message) < 0) {
+        parts.push(message);
+      }
+      at = at.details && at.details.cause ? at.details.cause
+        : (at.cause || null);
+    }
+    const out: any = new Error(parts.reverse().join(' — '));
+    out.details = e && e.details;
+    out.name = (e && e.name) || 'Error';
+    log.debug("Leaving VcJsonLd.explained().");
+    return out;
+  }
+
   // RDFC-1.0 OF A JSON-LD DOCUMENT, as canonical N-Quads. `canonicalIdMap`,
   // when given, is filled with the blank node relabelling (input label ->
   // canonical label), which ecdsa-sd-2023's label map needs. Throws, with
@@ -224,7 +248,13 @@ class VcJsonLd {
       rdfDirection: 'i18n-datatype',
       canonizeOptions: this.canonizeOptions(o.canonicalIdMap)
     };
-    const out = await (jsonld as any).canonize(document, options);
+    let out: any;
+    try {
+      out = await (jsonld as any).canonize(document, options);
+    } catch (e) {
+      log.debug("Caught in VcJsonLd.canonize(): " + ((e && e.message) || e));
+      throw this.explained(e);
+    }
     log.debug("Leaving VcJsonLd.canonize(). " + String(out).length +
               " character(s).");
     return String(out);
@@ -264,9 +294,15 @@ class VcJsonLd {
   async toNQuads(document: any): Promise<string> {
     const { log } = this.deps;
     log.debug("Entering VcJsonLd.toNQuads().");
-    const out = await (jsonld as any).toRDF(document, {
-      format: 'application/n-quads', documentLoader: this.documentLoader(),
-      safe: true, base: null, rdfDirection: 'i18n-datatype' });
+    let out: any;
+    try {
+      out = await (jsonld as any).toRDF(document, {
+        format: 'application/n-quads', documentLoader: this.documentLoader(),
+        safe: true, base: null, rdfDirection: 'i18n-datatype' });
+    } catch (e) {
+      log.debug("Caught in VcJsonLd.toNQuads(): " + ((e && e.message) || e));
+      throw this.explained(e);
+    }
     log.debug("Leaving VcJsonLd.toNQuads().");
     return String(out);
   }
@@ -275,8 +311,14 @@ class VcJsonLd {
   async expand(document: any): Promise<any[]> {
     const { log } = this.deps;
     log.debug("Entering VcJsonLd.expand().");
-    const out = await (jsonld as any).expand(document, {
-      documentLoader: this.documentLoader(), safe: true, base: null });
+    let out: any;
+    try {
+      out = await (jsonld as any).expand(document, {
+        documentLoader: this.documentLoader(), safe: true, base: null });
+    } catch (e) {
+      log.debug("Caught in VcJsonLd.expand(): " + ((e && e.message) || e));
+      throw this.explained(e);
+    }
     log.debug("Leaving VcJsonLd.expand().");
     return out;
   }
@@ -285,9 +327,15 @@ class VcJsonLd {
   async compact(document: any, context: any): Promise<any> {
     const { log } = this.deps;
     log.debug("Entering VcJsonLd.compact().");
-    const out = await (jsonld as any).compact(document, context, {
-      documentLoader: this.documentLoader(), safe: true, base: null,
-      compactToRelative: false });
+    let out: any;
+    try {
+      out = await (jsonld as any).compact(document, context, {
+        documentLoader: this.documentLoader(), safe: true, base: null,
+        compactToRelative: false });
+    } catch (e) {
+      log.debug("Caught in VcJsonLd.compact(): " + ((e && e.message) || e));
+      throw this.explained(e);
+    }
     log.debug("Leaving VcJsonLd.compact().");
     return out;
   }
