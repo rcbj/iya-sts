@@ -1374,6 +1374,16 @@ is what the console and `/admin-api` queue (`STS-ADMIN-0610` without the typed
 API twins draw. Each run's result names the kvno, the last rotation and the next due
 time, which is what `/admin/scheduler` shows for it.
 
+**AN ORDINARY ROTATION THAT KEEPS NOTHING IS ANNOUNCED TOO (#245, 2026-09-26).**
+With `krb5.retainedKeyVersions` 0 the SCHEDULE is off, but a rotation by hand still
+runs, and `retire()` keeps nothing, so every TGT in the realm is refused exactly as
+after "rotate and invalidate". Until #245 only `done.invalidated` was announced, so
+the same outcome went unannounced. `rotate()` now also announces when the result's
+`previousKvno` is not among `retained` (`droppedLiveKey()`; a first key replaces
+nothing). It uses the same event, with the new reason `nothing-retained`, so a
+receiver can tell the act asked for from the one the setting caused.
+`tests/kerberos_krbtgt_rotation.js` F7.
+
 **NO NEW REQUIRE REACHES THE PARENT PROJECT'S COPY SET.** `krb5_kdc.js` changed one
 string (`implemented` names the rotation, `notImplementedYet` the trust key), and it and
 `krb5_principals.js` gained no require; the register and the rotation module are

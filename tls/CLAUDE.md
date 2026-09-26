@@ -948,6 +948,19 @@ is `STS-TLS-0033`; a realm whose SPIFFE socket could not be re-keyed is
 `STS-SPIFFE-0114`. **A new socket that presents this certificate owes a
 registration here**, or it has the same bug.
 
+**A REPLACED LISTENER CERTIFICATE IS ANNOUNCED (#245, 2026-09-26).**
+`takeIssuedCertificate()` sends `tls-certificate-changed` through
+`ssf/service_signals.ts` when a certificate this service had ALREADY issued to
+the listener is replaced by a different one (a rebuilt process branch or Root,
+a reissued TLS Issuing CA). It goes to EVERY realm's streams, because one port
+serves them all. The library is required lazily inside
+`announceCertificateChange()`: this module loads at 20 and Shared Signals at
+23b. The first certificate a process takes over its self-signed bootstrap is
+NOT announced, because nobody could have pinned it. So a restart that
+re-issues is not announced either. A worker never announces, because it
+adopts and never certifies. In a cluster each node re-issues its own
+listener, so each announces its own fingerprints.
+
 **THE EVENT FIRES BEFORE THE REALM BRANCHES ARE REBUILT, AND ITS FIRST RUN
 FOUND TWO OLDER DEFECTS THAT ORDER EXPOSED.** `build-root`'s
 `rebuildEveryScope()` rebuilds the process branch first — which re-issues this

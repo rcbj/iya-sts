@@ -67,12 +67,33 @@ somebody who has just taken an account over from silencing it at once.
 (`hijacking` or `bulk-account`, on the console's disable form or as
 `riscReason` on `/admin-api/users/disable`).
 
-One more event exists, and it belongs to this service rather than to any
-specification: `urn:iya:sts:secevent:event-type:signing-key-rotated`. It goes
-to every stream that asked for it after a signing key rotation, and it names
-the realm, the keys rotated, the reason, and the JWKS and crypto metadata
-addresses. A receiver that does not know the type ignores it, as SSF says it
-should.
+Five more events belong to this service rather than to any specification.
+Each one has no subject, because it is about the issuer rather than about a
+person. A receiver that does not know a type ignores it, as SSF says it should.
+
+| Type (`urn:iya:sts:secevent:event-type:…`) | Sent when | The document to fetch again |
+|---|---|---|
+| `signing-key-rotated` | a realm's signing keys rotate (on the schedule, by hand, or in an emergency) | `jwks_uri`, `crypto_metadata_uri` |
+| `federation-key-rotated` | a realm's OpenID Federation entity key rotates (in an emergency, the current and next keys are revoked), or a retired key is revoked | `entity_configuration_uri` |
+| `spiffe-authority-rotated` | a realm's SPIFFE X.509 or JWT authority is rotated, or the certificate hierarchy under it is rebuilt | `bundle_uri`; `bundle_changed` says whether the bundle itself changed |
+| `tls-certificate-changed` | the certificate the main port presents is re-issued (sent to every realm's streams) | `certificate_uri` |
+| `kerberos-tickets-invalidated` | a krbtgt rotation keeps no previous version, so every TGT in the realm is refused: "rotate and invalidate" (`reason: invalidated`), or an ordinary rotation with `krb5.retainedKeyVersions` 0 (`reason: nothing-retained`) | none |
+
+The first four share one shape: `realm`, `rotated` as `<unit> <previous> ->
+<new>`, `reason` (`scheduled`, `requested` or `emergency`), the address above,
+and `event_timestamp`. Each kind of key has its own type so that a receiver
+subscribes only to the keys it pins, and every type it receives means one
+action: fetch that document again. The refresh-token encryption keys are
+never announced, because they are published nowhere.
+
+**A stream this service deletes is told first.** SSF 1.0 has no event for a
+deleted stream. So when an administrator deletes a stream (on the console or
+through `/admin-api`), or `ssf.inactivityAction: delete` removes one, the
+receiver is first sent `stream-updated` with status `disabled` and the reason,
+and only then is the stream removed. On a push stream the push is attempted
+before the stream goes. On a poll stream the SET leaves with the stream unless
+the receiver polls in between, as with any disable. A receiver that deletes
+its own stream is sent nothing, because it asked.
 
 ### Discovery and stream management
 

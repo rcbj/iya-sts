@@ -1197,6 +1197,77 @@ rotate in the same act and are never named: they are published nowhere. An
 emergency rotation also sends CAEP `session-revoked` and RISC
 `sessions-revoked` (#48, P4) — those are about PEOPLE, and this is not.
 
+## THE OTHER KEYS A RELYING PARTY PINS, AS SIBLING URNs (2026-09-26, #245)
+
+`federation-key-rotated`, `spiffe-authority-rotated` and
+`tls-certificate-changed` join `signing-key-rotated` and
+`kerberos-tickets-invalidated` in the `sts` family, and
+`ssf.serviceKeyChanged(kind, notice)` sends them. **They are SIBLING URNs and
+not more units of #42's event, and the reason is the receiver's handling.** A
+stream chooses what it receives BY TYPE, and each type means one action: fetch
+THIS document again (the JWKS, the Entity Configuration, the SPIFFE bundle, the
+listener's anchor). Widening the #42 event would have handed every receiver that
+caches the JWKS three kinds of change it cannot act on. It would have had to
+parse `rotated` to tell them apart, and the event's `jwks_uri` would name the
+wrong document for all three. So each keeps #42's members (`realm`, `rotated` as
+`<unit> <from> -> <to>`, `reason` from the same three words, one `*_uri`,
+`event_timestamp`). SPIFFE adds `trust_domain` and `bundle_changed`, which is
+false for an X.509 authority re-issued under the Root, because the bundle
+publishes the Root. The type `boolean` is new to `checkMember()` for that
+member.
+
+The OWNERS do not require this module. `ssf/service_signals.ts` is a library in
+`account_signals.ts`'s shape: it reads `ssf.ts` from `require.cache`, runs the
+send inside the key's realm (in every realm for the listener, `*`), and never
+throws into the rotation. `oidfed/federation_keys.ts` announces `rotate()` and
+`revoke()`, but not a next key merely published. `spiffe/spiffe_ca.ts`
+announces both rotations, `scheduled` from its job and `requested` otherwise.
+`tls/tls_server.js` announces a listener certificate it REPLACES; the first
+certificate a process takes over its self-signed bootstrap is not announced.
+`admin-ui/pki_admin.ts` announces a realm whose SPIFFE Issuing CA an act on the
+hierarchy moved. **Not in any setting**: the `sts` family is always offered
+(`supportedEventUris()`), so #86's closed sets needed no new value.
+`kerberos-tickets-invalidated` gained the reason `nothing-retained`: an
+ORDINARY rotation by hand with `krb5.retainedKeyVersions` 0 keeps nothing, and
+until #245 it ended every TGT unannounced (`kerberos/CLAUDE.md`).
+`tests/service_key_signals.js`, `tests/vendored/sts_service_key_signals.js`.
+
+## A CHANGE TO THE CERTIFICATE HIERARCHY TELLS THE PEOPLE UNDER IT (2026-09-26, #244)
+
+`ssf/service_signals.ts` also carries the fan-out that `/admin/pki`'s acts on
+the TIERS owe the people holding leaves. `caRevoked()` handles an Issuing CA or
+Intermediate put on its parent's list: it walks down to every live
+person-held certificate beneath it and sends `revoke`, plus RISC
+`credential-compromise` for `keyCompromise` / `cACompromise`, through
+`accountSignals.credentialCompromised()`, the funnel #231 uses for a leaf.
+`snapshot()` before, and `hierarchyChanged()` after, `build`, `build-root`,
+`build-scope`, `reissue-use-case`, `recertify`, `import-ca` and `clear`, which
+compare per certificate. A slot re-minted from the current tree gets `update`,
+naming the new certificate. Anything else gets `revoke`, naming the old one.
+**What is re-minted is settled from the code, not assumed.** Only the
+register's SLOTS are re-minted (a person's TLS client certificate). The issued
+register (RFC 7523/7522 key pairs, every ACME, EST and SCEP enrolment) never is,
+because this service holds no key for them. A branch rebuild re-certifies only
+the realm's signing keys, so a TLS client certificate is orphaned there. Only
+certificates live under the CURRENT tree count, so a rebuild never re-announces
+what an earlier act orphaned. **The fan-out is batched**: 50 people at a time,
+each batch handed over (into the queue and the push cap) before the next, with
+a turn of the event loop between batches and the console's answer ahead of all
+of it. `tests/ca_hierarchy_signals.js`,
+`tests/vendored/sts_ca_hierarchy_signals.js`.
+
+## A STREAM THIS TRANSMITTER DELETES IS TOLD FIRST (2026-09-26, #245)
+
+`retireStream()`: the console / `/admin-api` delete and
+`ssf.inactivityAction: delete` used to call `streams.removeStream()` directly.
+They now go through `changeStatus(record, 'disabled', reason)`, which transmits
+BEFORE it stops the stream, and only then remove it. SSF 1.0 has no delete
+event, and this is the one notice available. A push is attempted and settled
+before the removal. On a poll stream the SET leaves with the stream, as for any
+disable. An already-disabled stream and this service's own receivers are
+removed without a notice. The receiver's own `DELETE /ssf/stream` sends
+nothing, because it asked.
+
 ## WHAT THIS FAMILY DELIBERATELY DOES NOT DO
 
 Each of these is on `GET /ssf` in the same words, because a mock's omissions are

@@ -333,6 +333,15 @@ that up silently.
      prepend-and-retain machinery and `MAX_RETAINED_AUTHORITIES` exist for the
      SELF-SIGNED path alone now, and `rotateX509Authority()` says which
      mechanism ran rather than reporting the two identically.
+   * **EVERY ROTATION IS ANNOUNCED (#245)**: `announceRotation()` sends
+     `spiffe-authority-rotated` through `ssf/service_signals.ts` (required
+     lazily), with the realm's trust domain and `bundle_changed`. That is false
+     for the PKI-anchored X.509 re-issue (the bundle is the Root) and true for a
+     self-signed or JWT rotation. The reason is `scheduled` from
+     `spiffe.authority-rotation` and `requested` from the console or API. An
+     act on `/admin/pki` that moves the SPIFFE Issuing CA (a reissue, a branch
+     or Root rebuild, an import) is announced by `admin-ui/pki_admin.ts`
+     through the same library.
    * **`trustAnchors` AND `x509Authorities` ARE TWO LISTS AND WERE ONE.** What
      SIGNS an SVID and what a consumer INSTALLS are different certificates now;
      they coincided only because a self-signed authority is both. Every report
