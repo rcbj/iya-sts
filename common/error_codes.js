@@ -10254,6 +10254,16 @@ const CODES = [
       'directory: the entry was gone or not a person\'s when the ' +
       'write reached it.',
     spec: 'HTTP 400 (API) or a 303 with error=' },
+  { code: 'STS-LDAP-0111',
+    summary: 'An LDAP add or modify named a credential attribute (a ' +
+      'security key, an authenticator app, recovery codes, an app ' +
+      'password, a signing key pair, a HOBA key, a self-issued subject, ' +
+      'the emailed factor, Kerberos keys, a CIBA user code, an enrolment ' +
+      'credential or a device secret). Credentials are written only ' +
+      'through the doors that check them and send CAEP credential-change ' +
+      '(#237), in every mode and for every bind, administrator included; ' +
+      'the refusal names the door.',
+    spec: 'RFC 4511 section 4.1.9 unwillingToPerform (53)' },
   // ===== SCIM ==============================================================
   { code: 'STS-SCIM-0001',
     summary: 'A SCIM endpoint (or HOBA key registration) was called while ' +
