@@ -29,7 +29,17 @@ A LIBRARY with six routes on the main app. Nothing here binds anything.
   through `trustClientCertificatesOn()`. It starts EMPTY, and every section
   below about it is unchanged by the deletion.
 * **The sighting.** `observeConnectionsOn()`, which `server.js` installs on the
-  main port.
+  main port — and since #201 the first thing it does with a connection whose
+  chain OpenSSL verified is `holdToPathRules()`: that chain, held to
+  `pki.pathRuleProblem()` (`pki.peerChainProblem()`), and reported UNVERIFIED —
+  `authorized` false, `authorizationError` naming the rule, `STS-PKI-0198` logged
+  — where it breaks them. x509-limbo found OpenSSL accepting such chains (a
+  malformed name under a name constraint among them). It runs on
+  `secureConnection`, a turn before node's HTTP server parses the first request,
+  so every reader of `socket.authorized` — sign-in, RFC 8705, the XACML gate,
+  SCIM, the request pool's forwarded flag — sees the answer. A demoted
+  certificate still binds a token, as any unverified one does (RFC 8705 section
+  3).
 * **The JA4 reader** (`client_hello.ts`, #62 P0) — see *THE CLIENT'S JA4
   FINGERPRINT*, below.
 * **Six routes**, all on the main app and all visible to

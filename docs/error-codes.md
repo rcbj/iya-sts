@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3492** of them, in **38** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3500** of them, in **38** subsystems.
 
 ## Where a code appears
 
@@ -56,8 +56,8 @@ is an ordinary outcome.
 * [Persistence and coordination (`STS-STORE`)](#sts-store) — 62
 * [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 28
 * [Scheduler (`STS-SCHED`)](#sts-sched) — 16
-* [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 78
-* [Certificate authority (`STS-PKI`)](#sts-pki) — 180
+* [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 79
+* [Certificate authority (`STS-PKI`)](#sts-pki) — 186
 * [Certificate enrollment core (`STS-ENROLL`)](#sts-enroll) — 51
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 72
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 25
@@ -72,7 +72,7 @@ is an ordinary outcome.
 * [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 164
 * [LDAP directory (`STS-LDAP`)](#sts-ldap) — 84
 * [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 74
-* [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 143
+* [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 144
 * [TLS and client certificates (`STS-TLS`)](#sts-tls) — 33
 * [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 94
 * [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 104
@@ -417,7 +417,7 @@ Raised from: common/crypto.js, common/pq_jose.js, common/keystore.js, common/sec
 | `STS-KEYS-0020` | An XML-encrypted element is missing one of its two xenc:CipherValue elements. | refusal by the calling protocol |
 | `STS-KEYS-0021` | An XML-encrypted element's wrapped key unwrapped to the wrong length: it was encrypted to a different certificate. | refusal by the calling protocol |
 | `STS-KEYS-0022` | An XML-encrypted element failed its AES-GCM authentication tag. (An AES-CBC failure is STS-KEYS-0078 since #202.) | refusal by the calling protocol |
-| `STS-KEYS-0023` | An XML-encrypted element decrypted with AES-GCM to something that is not well-formed XML. (AES-CBC: STS-KEYS-0078 since #202.) | refusal by the calling protocol |
+| `STS-KEYS-0023` | An XML-encrypted element decrypted with AES-GCM to something that is not well-formed XML — or, since #193, to octets that are not UTF-8 at all (binary data). (AES-CBC: every such failure is STS-KEYS-0078 since #202, one answer, closing the padding oracle.) | refusal by the calling protocol |
 | `STS-KEYS-0024` | An XML-encrypted element's key could not be unwrapped with this service's private key. | refusal by the calling protocol |
 | `STS-KEYS-0025` | An XML-encrypted element could not be read for a reason other than the key. | refusal by the calling protocol |
 | `STS-KEYS-0026` | The keystore was handed a store without both loadKeys and saveKeys, and refused it whole. | — |
@@ -466,13 +466,14 @@ Raised from: common/crypto.js, common/pq_jose.js, common/keystore.js, common/sec
 | `STS-KEYS-0069` | A certificate authority row listed a certificate it still publishes as revoked; the revocation was dropped rather than written. | none — logged. A row may not publish a certificate its own CRL calls revoked; the drop is evidence of a tier write that was lost |
 | `STS-KEYS-0070` | An XML element encrypted to this realm wrapped its key with rsa-1_5 (RSAES-PKCS1-v1_5), and the realm is in product mode, where that key transport is never unwrapped — XML Encryption 1.1 section 6.1.2 (#181). | the caller's refusal: a LogoutRequest's EncryptedID that cannot be read is answered as the SAML binding says |
 | `STS-KEYS-0071` | An XML element's block cipher, key management or OAEP digest is one the caller's allow-list excludes; refused before any key operation (#168). | the caller's refusal — federation answers STS-FED-0139 |
-| `STS-KEYS-0072` | An rsa-oaep EncryptedKey named a digest and mask generation function this service cannot unwrap with: an unknown one, or two that differ (node derives MGF1 from the OAEP digest). | the caller's refusal |
+| `STS-KEYS-0072` | An rsa-oaep or rsa-oaep-mgf1p EncryptedKey named a digest and mask generation function this service cannot unwrap with: an unknown one, or two that differ (node derives MGF1 from the OAEP digest; rsa-oaep-mgf1p fixes MGF1 at SHA-1, so any other digest there, since #193). | the caller's refusal |
 | `STS-KEYS-0073` | An XML element's key is agreed by an AgreementMethod other than ECDH-ES. | the caller's refusal |
 | `STS-KEYS-0074` | An XML element encrypted by ECDH-ES key agreement was handed to a recipient whose private key is not an EC key. | the caller's refusal |
 | `STS-KEYS-0075` | A certificate authority another process in this service sent publishes a tier this process holds as superseded — a copy from before a rebuild — so it was refused, and the hierarchy held here was asserted again where it is itself consistent. | none — logged. A supersession is permanent; adopting the copy put a replaced Intermediate back in every process |
 | `STS-KEYS-0076` | A certificate authority merged with a copy another process had written publishes certificates its own Issuing CAs did not sign — keys certified from the branch a rebuild replaced — and each is certified again from the live Issuing CA. | none — logged. The evidence of a certification that crossed a rebuild; the row would otherwise publish a certificate no published authority signed |
 | `STS-KEYS-0077` | An XML signature was checked with an ECDSA key on a curve weaker than P-256 (secp160, secp192, secp224 and the like), and the realm is in product mode, where such a key verifies nothing (#202). | the caller's refusal: the signature does not verify, and each protocol answers that as it answers a wrong signature |
 | `STS-KEYS-0078` | An AES-CBC XML-encrypted element did not decrypt to a well-formed element: its padding, its UTF-8 or its XML was wrong, and which is deliberately one answer — the padding oracle of XML Encryption 1.1 section 6.1.3, closed (#202). | refusal by the calling protocol |
+| `STS-KEYS-0090` | An XML element encrypted by ECDH-ES key agreement derives its key with something other than a SHA-256/384/512 ConcatKDF (PBKDF2, a SHA-1 digest, none), or names its originator key on a curve this service does not agree over; refused before any key operation (#193 — it was reported as a key encrypted to another certificate). | the caller's refusal |
 
 ## STS-PKI
 
@@ -662,6 +663,12 @@ Raised from: common/pki.js, common/pki_authoring.ts, common/pki_revocation.js, c
 | `STS-PKI-0191` | A certificate authority build, or a key pair issued under one, named a SHA-1 signature algorithm (sha1-rsa or sha1-ecdsa) in a realm that is in product mode, where SHA-1 is never used (#181). | console: the page's error list; /admin-api: HTTP 400 { ok: false, errors } |
 | `STS-PKI-0192` | An encryption key pair was asked for in a key type this service does not issue one of (rsa-3072 and ec-p256, #168). | the caller's refusal |
 | `STS-PKI-0193` | A certificate a merged certificate authority published from an Issuing CA it no longer holds could not be certified again from the live one. | none — logged. The key still signs; its certificate chains to an authority nothing publishes until the slot is certified again |
+| `STS-PKI-0194` | A certificate path a signer's key or an upload depends on breaks a NAME CONSTRAINT: a name of a certificate below a CA is outside what that CA permits or inside what it excludes, is malformed where it is constrained, is in a form constrained in a way this service does not evaluate, or the names and constraints are too many to compare (RFC 5280 section 4.2.1.10; pki.pathRuleProblem, #201). | invalid_grant at the grant, invalid_client at client authentication; the console's error list for an upload |
+| `STS-PKI-0195` | A certificate on a signer's or an uploaded path carries a CRITICAL extension this service does not implement, which RFC 5280 section 4.2 says must be refused (pki.pathRuleProblem, #201). | invalid_grant at the grant, invalid_client at client authentication; the console's error list for an upload |
+| `STS-PKI-0196` | A certificate on a signer's or an uploaded path breaks a rule of RFC 5280 section 4 a relying party holds it to: an extension twice, an unreadable basicConstraints, keyUsage, extKeyUsage, subjectAltName or nameConstraints, an empty subject without a critical subjectAltName, a CA with an empty subject, keyCertSign or nameConstraints on a certificate that is not a CA, or an ML-DSA key with a keyUsage RFC 9881 does not permit (pki.pathRuleProblem, #201). | invalid_grant at the grant, invalid_client at client authentication; the console's error list for an upload |
+| `STS-PKI-0197` | A certificate on a path below its anchor is signed with a broken hash — MD2 or MD5 on every path, SHA-1 on every path but this service's own hierarchy in a development realm (#181) — and the path is refused (pki.pathRuleProblem, #201). | invalid_grant at the grant, invalid_client at client authentication; the console's error list for an upload |
+| `STS-PKI-0198` | A certificate chain OpenSSL verified in a TLS handshake breaks the path rules every other path here is held to (pki.peerChainProblem, #201): on the main port the client certificate is treated as unverified (authorized false); on an outbound request the request fails as a TLS error. Also logged when the rules could not be asked. | none on the wire: an unverified client certificate, or the family's own failure for an outbound request |
+| `STS-PKI-0199` | RFC 5280 section 6.1's certificate policy processing refuses a path: a certificate on it requires an explicit policy (policyConstraints) and no acceptable policy remains in the valid_policy_tree, a policyMappings maps anyPolicy, or the policies and mappings make a tree too large to evaluate (pki.pathPolicyOutcome, #201). | invalid_grant at the grant, invalid_client at client authentication; the console's error list for an upload |
 
 ## STS-ENROLL
 
@@ -2606,6 +2613,7 @@ Raised from: spiffe/.
 | `STS-SPIFFE-0141` | An entry of spiffe.brokers was refused at the console or /admin-api: not a SPIFFE ID, or no reference type from pid, k8s and * (#170). | a refused console or management API action |
 | `STS-SPIFFE-0142` | A rootless Podman workload was not attested by the docker attestor because spiffe.dockerUseRootlessPodman is off, SPIRE's rule; logged once per process (#170). | no docker selectors for that workload |
 | `STS-SPIFFE-0143` | A gRPC handler threw after the call waited for the cluster read barrier, so the exception could not reach grpc-js; a unary call is answered INTERNAL. | INTERNAL for a unary call |
+| `STS-SPIFFE-0144` | A certificate presented to the SPIRE Server or Broker API was signed by an authority this trust domain trusts and is refused: the two-certificate path breaks RFC 5280 (pki.verifyIssuedDirectly — a critical extension nothing here implements, a name constraint, a malformed certificate) or it is not a leaf X509-SVID (cA set, or a keyUsage without digitalSignature or with keyCertSign or cRLSign; X509-SVID section 4.3). #201. | UNAUTHENTICATED / PERMISSION_DENIED, as for any unverified caller |
 
 ## STS-TLS
 

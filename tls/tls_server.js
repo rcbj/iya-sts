@@ -3127,6 +3127,55 @@ let anchorsFileReport = { file: '', loaded: 0 };
 // AFTER THE REVOCATION CHECK (2026-09-12), which is why it waits on a promise:
 // a certificate the policy refuses is recorded as a refusal rather than as an
 // authentication. `checkedSocket()` never rejects.
+// ---------------------------------------------------------------------------
+// WHAT OPENSSL VERIFIED, HELD TO THE PATH RULES EVERY OTHER PATH HERE IS
+// (#201).
+//
+// `socket.authorized` is OpenSSL's answer, and every reader of a client
+// certificate on this port reads it — certificate sign-in, RFC 8705, the
+// XACML gate, SCIM, the portal, and the flag the request pool forwards to a
+// worker. x509-limbo found OpenSSL accepting paths `pki.pathRuleProblem()`
+// refuses (a malformed name under a name constraint, a nameConstraints on an
+// end entity, an empty constraint, a root without basicConstraints). So a
+// chain OpenSSL verified is asked those rules here, once per connection,
+// BEFORE any request on it is read — node's HTTP server parses the first
+// request on a later turn than this event — and one that breaks them is
+// reported as unverified: `authorized` false, `authorizationError` naming
+// the rule. It is still thumbprinted and may still bind a token (RFC 8705
+// section 3 binds to the certificate, not to a CA), exactly as a chain
+// OpenSSL refused is. Required lazily: `pki` is loaded after this module.
+// ---------------------------------------------------------------------------
+function holdToPathRules(socket, label) {
+  log.debug('Entering holdToPathRules().');
+  if (!socket || socket.authorized !== true ||
+      typeof socket.getPeerCertificate !== 'function') {
+    log.debug('Leaving holdToPathRules(). Nothing verified.');
+    return null;
+  }
+  let problem = null;
+  try {
+    problem = require('../common/pki')
+      .peerChainProblem(socket.getPeerCertificate(true));
+  } catch (e) {
+    // A defect here must not make an unverified chain look verified, nor a
+    // verified one unverified for a reason nobody can read. OpenSSL's answer
+    // stands and the failure is logged.
+    log.error(errorCodes.tag('STS-PKI-0198') + 'tls: the path rules could ' +
+              'not be asked of a client chain on ' + label + ': ' +
+              ((e && e.message) || e));
+    problem = null;
+  }
+  if (problem) {
+    socket.authorized = false;
+    socket.authorizationError = 'ERR_STS_PATH_RULES: ' + problem.why;
+    log.warn(errorCodes.tag('STS-PKI-0198') + 'tls: a client certificate ' +
+             'chain on ' + label + ' verified with OpenSSL and breaks RFC ' +
+             '5280, so it is treated as unverified: ' + problem.why + '.');
+  }
+  log.debug('Leaving holdToPathRules().' + (problem ? ' Demoted.' : ''));
+  return problem;
+}
+
 function observeConnectionsOn(server, label) {
   log.debug('Entering observeConnectionsOn(). label=' + label);
   if (!server || typeof server.on !== 'function') {
@@ -3139,6 +3188,7 @@ function observeConnectionsOn(server, label) {
     return false;
   }
   server.on('secureConnection', function (socket) {
+    holdToPathRules(socket, label);
     checkedSocket(socket).then(function (revocation) {
       recordClientCertificate(socket, 'optional', revocation);
     });
@@ -4115,5 +4165,8 @@ module.exports = {
   },
   // Installed by `server.js` on the main HTTPS listener: the sighting, and the
   // failed-handshake log that is otherwise invisible.
-  observeConnectionsOn: observeConnectionsOn
+  observeConnectionsOn: observeConnectionsOn,
+  // #201: the path rules asked of a chain OpenSSL verified; exported for
+  // tests/x509_limbo.js, which holds the main port's posture to x509-limbo.
+  holdToPathRules: holdToPathRules
 };

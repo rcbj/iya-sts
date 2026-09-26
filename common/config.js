@@ -4910,6 +4910,16 @@ const SETTINGS = [
                  'certificate may chain to, BESIDE node\'s own CA store. A ' +
                  'directory certified by a private CA is refused until its ' +
                  'CA is here.' },
+  { key: 'pki.revocationHttpsCaFile', group: 'PKI',
+    label: 'CA certificates for https CRL and OCSP servers',
+    env: 'STS_PKI_REVOCATION_HTTPS_CA_FILE', type: 'string', dflt: '',
+    runtime: true,
+    description: 'A PEM file of CA certificates the certificate of a CRL ' +
+                 'distribution point or OCSP responder reached over https ' +
+                 'may chain to, BESIDE node\'s own CA store (#201). Such a ' +
+                 'server\'s certificate is verified, its host checked as ' +
+                 'RFC 9525 does and its chain held to the path rules; plain ' +
+                 'http, which RFC 5280 and RFC 6960 expect, is unaffected.' },
   { key: 'pki.revocationLdapDirectory', group: 'PKI',
     label: 'Directory for CRL names relative to their issuer',
     env: 'STS_PKI_REVOCATION_LDAP_DIRECTORY', type: 'string', dflt: '',

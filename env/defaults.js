@@ -434,6 +434,7 @@ var config = {
     revocationCrlIssuersFile: "",               // Certificates that may sign an indirect CRL
     revocationLdap: "ldaps",                    // LDAP revocation addresses
     revocationLdapCaFile: "",                   // CA certificates for ldaps revocation directories
+    revocationHttpsCaFile: "",                  // CA certificates for https CRL and OCSP servers
     revocationLdapDirectory: "",                // Directory for CRL names relative to their issuer
     enrollmentMaxCertificatesPerEntry: 20       // Enrolled certificates one entry may hold
   },

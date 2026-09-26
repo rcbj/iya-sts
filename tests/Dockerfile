@@ -336,6 +336,36 @@ COPY tests/package*.json ./tests/
 RUN npm install --prefix ./tests && npm cache clean --force
 
 # ---------------------------------------------------------------------------
+# C2SP x509-LIMBO FOR tests/x509_limbo.js (#201), FETCHED HERE AND NEVER
+# COMMITTED: about two hundred of its cases carry a leaf's private key, and
+# this repository commits no key material. The script pins a commit and the
+# SHA-256 of what it fetches, and fails the build on anything else. Its own
+# layer above the source copy, so editing a test does not download forty
+# megabytes again; outside /usr/src/sts, so neither copy of the tree holds it.
+# ---------------------------------------------------------------------------
+COPY tests/tools/fetch-x509-limbo.sh /usr/src/corpora/fetch-x509-limbo.sh
+RUN /usr/src/corpora/fetch-x509-limbo.sh /usr/src/corpora/x509-limbo
+ENV STS_X509_LIMBO_DIR=/usr/src/corpora/x509-limbo
+# NIST PKITS FOR tests/nist_pkits.js (#201), from csrc.nist.gov, with the test
+# table BoringSSL transcribed from PKITS.pdf — each pinned by SHA-256, never
+# committed (the data carries a PKCS #12 of every private key; only certs/
+# and crls/ are unpacked).
+COPY tests/tools/fetch-nist-pkits.sh /usr/src/corpora/fetch-nist-pkits.sh
+RUN /usr/src/corpora/fetch-nist-pkits.sh /usr/src/corpora/nist-pkits
+ENV STS_NIST_PKITS_DIR=/usr/src/corpora/nist-pkits
+
+# THE W3C XML SIGNATURE AND XML ENCRYPTION INTEROP CASES (#193), for
+# tests/w3c_xmlsec.js. They carry PRIVATE KEYS, so they are never committed:
+# the script downloads a fixed list, each file pinned by sha256, and FAILS
+# THE BUILD on a mismatch. Above the source copy, with only its two inputs
+# copied first, so that editing a test does not fetch ~340 paced requests
+# again. tests/tools/W3C-XMLSEC-PROVENANCE.md says where they come from.
+COPY tests/tools/fetch-w3c-xmlsec.sh tests/tools/w3c-xmlsec.sha256 \
+     /usr/src/corpora/
+RUN /usr/src/corpora/fetch-w3c-xmlsec.sh /usr/src/corpora/w3c-xmlsec.sha256 \
+      /usr/src/corpora/w3c-xmlsec
+ENV STS_W3C_XMLSEC_DIR=/usr/src/corpora/w3c-xmlsec
+
 # THE EXTERNAL TEST VECTORS (#202, #203): C2SP Wycheproof (Apache-2.0) and
 # NIST ACVP (public domain), for tests/wycheproof.js and tests/acvp_pqc.js.
 # Fetched HERE, at a pinned commit, each checked against

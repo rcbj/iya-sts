@@ -73,6 +73,7 @@ import fs = require('fs');
 import os = require('os');
 import path = require('path');
 import https = require('https');
+import OutboundTls = require('../common/outbound_tls');
 import errorCodes = require('../common/error_codes');
 import riskStore = require('./risk_store');
 import riskDatasets = require('./risk_datasets');
@@ -171,7 +172,10 @@ class RiskInstall {
         reject(new Error('only https addresses are fetched, not ' + url));
         return;
       }
-      https.get(url, function (res) {
+      // Verified, host checked as RFC 9525 does, the chain held to the path
+      // rules (#201) — `OutboundTls.verifiedOptions()`, as every dialer
+      // outside the four families asks.
+      https.get(url, OutboundTls.verifiedOptions(null), function (res) {
         const status = res.statusCode || 0;
         if (status >= 300 && status < 400 && res.headers.location) {
           res.resume();
@@ -217,7 +221,10 @@ class RiskInstall {
         reject(new Error('only https addresses are fetched, not ' + url));
         return;
       }
-      https.get(url, function (res) {
+      // Verified, host checked as RFC 9525 does, the chain held to the path
+      // rules (#201) — `OutboundTls.verifiedOptions()`, as every dialer
+      // outside the four families asks.
+      https.get(url, OutboundTls.verifiedOptions(null), function (res) {
         const status = res.statusCode || 0;
         if (status >= 300 && status < 400 && res.headers.location &&
             left > 0) {
