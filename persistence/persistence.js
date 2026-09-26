@@ -1481,6 +1481,46 @@ function resolveDatabaseUrl() {
   });
 }
 
+// ---------------------------------------------------------------------------
+// WHETHER THE DATABASE SERVER'S CERTIFICATE IS VERIFIED — one reading of
+// `persistence.databaseTlsRejectUnauthorized`, shared by the pool this
+// process opens, `status()`'s report of it, and `databaseConnection()` below.
+// ---------------------------------------------------------------------------
+function verifiesDatabaseTls() {
+  log.debug("Entering verifiesDatabaseTls().");
+  log.debug("Leaving verifiesDatabaseTls().");
+  return !!config.value('persistence.databaseTlsRejectUnauthorized');
+}
+
+// ---------------------------------------------------------------------------
+// EVERYTHING `persistence_postgres.create()` IS GIVEN TO DIAL THE DATABASE
+// THE WAY THIS SERVICE DOES (#213, 2026-09-26): the connection string with
+// the configured provider's password put back into it (`resolveDatabaseUrl()`
+// above), and whether the server's certificate is verified.
+//
+// **IT EXISTS FOR A PROCESS THAT IS NOT THE SERVICE.** The install-time
+// risk dataset loader (`risk/risk_install.ts`) dialled `STS_DATABASE_URL` as
+// written and nothing else — so against every stack this repository ships,
+// whose URL carries no password because the password is in OpenBao or AWS
+// Secrets Manager, it could not sign in, and it never verified the server's
+// certificate even where the service did. A second copy of the injection
+// would have been the fix that drifts; the loader calls this instead, so the
+// two processes cannot disagree about how a connection is made. The service
+// itself still reaches the same two functions through `start()` and
+// `openStore()`.
+//
+// Rejects exactly as `resolveDatabaseUrl()` does — with the provider's own
+// tagged error when a configured secret cannot be read, and STS-STORE-0005
+// for a string it cannot edit.
+// ---------------------------------------------------------------------------
+function databaseConnection() {
+  log.debug("Entering databaseConnection().");
+  log.debug("Leaving databaseConnection().");
+  return resolveDatabaseUrl().then(function (url) {
+    return { url: url, verifyTls: verifiesDatabaseTls() };
+  });
+}
+
 function start() {
   log.debug('Entering start().');
   const chosen = mode();
@@ -1663,8 +1703,7 @@ function openStore(chosen, resolvedUrl) {
       // reaches for nothing, which is what lets a test construct one against
       // any database without this file's settings existing at all.
       ? require('./persistence_postgres').create({
-          url: resolvedUrl, log: log,
-          verifyTls: !!config.value('persistence.databaseTlsRejectUnauthorized')
+          url: resolvedUrl, log: log, verifyTls: verifiesDatabaseTls()
         })
       : require('./persistence_ldif').create({ dir: dataDir(), log: log });
   } catch (err) {
@@ -2721,11 +2760,10 @@ function describeDatabase() {
       passwordSecret: password.configured ? password : undefined,
       sslmode: sslmode || 'not set',
       encrypted: encrypted,
-      verifyCertificate:
-        !!config.value('persistence.databaseTlsRejectUnauthorized'),
+      verifyCertificate: verifiesDatabaseTls(),
       tls: encrypted
         ? ('TLS, sslmode=' + sslmode + '; the server certificate is ' +
-           (config.value('persistence.databaseTlsRejectUnauthorized')
+           (verifiesDatabaseTls()
              ? 'verified against this process\'s trust anchors.'
              : 'NOT verified (persistence.databaseTlsRejectUnauthorized is ' +
                'off), which is the honest setting for the self-signed pair ' +
@@ -2808,6 +2846,10 @@ module.exports = {
   // returns, put through `pg`'s own parser: two implementations meeting, which
   // is the arrangement `tests/webauthn_cross_impl.js` describes.
   resolveDatabaseUrl: resolveDatabaseUrl,
+  // The connection an out-of-process tool dials the database with, made the
+  // way this service makes its own (#213) — see databaseConnection().
+  databaseConnection: databaseConnection,
+  verifiesDatabaseTls: verifiesDatabaseTls,
   MODES: MODES,
   mode: mode,
   activeMode: function () {
