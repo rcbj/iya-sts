@@ -49,6 +49,8 @@ import realms = require('../common/realms');
 import applications = require('../common/applications');
 import clusterSecrets = require('../cluster/cluster_secrets');
 import fedHttp = require('../federation/federation_http');
+import config = require('../common/config');
+import nodeCrypto = require('crypto');
 
 type Json = any;
 
@@ -59,14 +61,32 @@ interface PairwiseDeps {
   applications: typeof applications;
   clusterSecrets: typeof clusterSecrets;
   fedHttp: typeof fedHttp;
+  config: typeof config;
+  scheduler: () => Json;
+  now: () => number;
 }
 
 // The label that keeps this derivation apart from every other one made under
 // a shared secret (see `deriveSharedCredential()`).
 const LABEL = 'oidc-pairwise-sub';
+const PURGE_JOB = 'oauth2.ephemeral-subjects-purge';
+
+// EPHEMERAL SUBJECTS (#149, the Ephemeral Subject Identifier draft), PER
+// REALM and PERSISTED — every node answers the same `sub`, and a refresh or
+// a UserInfo call on another node must find it:
+//   `s|<session>|<client>` -> the ephemeral `sub` minted for that
+//                             authentication at that client (section 4:
+//                             the same within one authentication, a new one
+//                             for the next);
+//   `e|<sub>`              -> { local, client, session, until }: who it is,
+//                             for mapping back, and when it may be purged.
+// rcbj's answer: kept as long as the longest token or session of that
+// authentication, then removed by the `oauth2.ephemeral-subjects-purge` job.
+const ephemeral = realms.map({ persist: 'oauth2.ephemeralSubjects' });
 
 class PairwiseSubjects {
-  static readonly SUBJECT_TYPES = ['public', 'pairwise'];
+  static readonly SUBJECT_TYPES = ['public', 'pairwise', 'ephemeral'];
+  static readonly PURGE_JOB = PURGE_JOB;
 
   constructor(private readonly deps: PairwiseDeps) {
     deps.log.debug("Entering PairwiseSubjects.constructor().");
@@ -78,7 +98,13 @@ class PairwiseSubjects {
     helpers.log.debug("Leaving PairwiseSubjects.defaultDeps().");
     return { log: helpers.log, stsCrypto: stsCrypto, realms: realms,
              applications: applications, clusterSecrets: clusterSecrets,
-             fedHttp: fedHttp };
+             fedHttp: fedHttp, config: config,
+             scheduler: function (): Json {
+               return require('../cluster/scheduler');
+             },
+             now: function (): number {
+               return Date.now();
+             } };
   }
 
   // The sector of a client's configuration, or '' when it has none it can be
@@ -125,7 +151,7 @@ class PairwiseSubjects {
   // which every caller turns into a server_error rather than a public `sub`
   // this client registered not to be given.
   // -------------------------------------------------------------------------
-  subjectFor(clientId: Json, localSub: Json): string {
+  subjectFor(clientId: Json, localSub: Json, sessionId?: Json): string {
     const { log, stsCrypto, realms, applications, clusterSecrets } = this.deps;
     log.debug("Entering PairwiseSubjects.subjectFor(). client=" + clientId);
     const local = String(localSub || '');
@@ -134,6 +160,12 @@ class PairwiseSubjects {
       return local;
     }
     const cfg = applications.clientConfigOf(String(clientId));
+    if (cfg.subject_type === 'ephemeral') {
+      const minted = this.ephemeralFor(String(clientId), local,
+                                       String(sessionId || ''));
+      log.debug("Leaving PairwiseSubjects.subjectFor(). ephemeral.");
+      return minted;
+    }
     if (cfg.subject_type !== 'pairwise') {
       log.debug("Leaving PairwiseSubjects.subjectFor(). public.");
       return local;
@@ -152,6 +184,104 @@ class PairwiseSubjects {
     log.debug("Leaving PairwiseSubjects.subjectFor(). pairwise for " +
               sector + ".");
     return derived;
+  }
+
+  // How long an ephemeral mapping outlives its last use: the longest a token
+  // or a session of that authentication can last (#149).
+  private ephemeralLifetimeMs(): number {
+    const { log, config } = this.deps;
+    log.debug("Entering PairwiseSubjects.ephemeralLifetimeMs().");
+    const seconds = Math.max(Number(config.value('authn.sessionLifetimeS')) ||
+                             0,
+                             Number(config.value('oauth2.refreshTokenTtlS')) ||
+                             0, 3600);
+    log.debug("Leaving PairwiseSubjects.ephemeralLifetimeMs().");
+    return seconds * 1000;
+  }
+
+  // EPHEMERAL SUBJECT IDENTIFIER SECTION 4 (#149): 160 random bits,
+  // base64url, never reused — the draft's recommended size. The same `sub`
+  // for every artifact of one authentication (the session) at one client,
+  // so the ID Token, UserInfo, a refresh and a Logout Token agree; a new
+  // authentication gets a new one. With no session to key it (a grant with
+  // no browser), each call mints afresh, as the draft allows. Every use
+  // extends the mapping's life.
+  private ephemeralFor(clientId: string, local: string,
+                       sessionId: string): string {
+    const { log, now } = this.deps;
+    log.debug("Entering PairwiseSubjects.ephemeralFor().");
+    const index = sessionId ? 's|' + sessionId + '|' + clientId : '';
+    let sub = index ? String(ephemeral.get(index) || '') : '';
+    const held = sub ? ephemeral.get('e|' + sub) : null;
+    if (!held || held.local !== local) {
+      sub = nodeCrypto.randomBytes(20).toString('base64url');
+    }
+    const until = now() + this.ephemeralLifetimeMs();
+    ephemeral.set('e|' + sub, { local: local, client: clientId,
+                               session: sessionId, until: until });
+    if (index) {
+      ephemeral.set(index, sub);
+    }
+    log.debug("Leaving PairwiseSubjects.ephemeralFor().");
+    return sub;
+  }
+
+  // The public `sub` behind an ephemeral one, or '' (#149): what a verified
+  // id_token_hint names, mapped back to the person.
+  localFor(sub: Json): string {
+    const { log } = this.deps;
+    log.debug("Entering PairwiseSubjects.localFor().");
+    const held = ephemeral.get('e|' + String(sub || ''));
+    log.debug("Leaving PairwiseSubjects.localFor().");
+    return held ? String(held.local || '') : '';
+  }
+
+  // The scheduler job (#49): mappings past their life are removed, with
+  // their session index.
+  purge(): Json {
+    const { log, now } = this.deps;
+    log.debug("Entering PairwiseSubjects.purge().");
+    const gone: string[] = [];
+    ephemeral.forEach(function (row: Json, key: string): void {
+      if (key.indexOf('e|') === 0 && Number((row || {}).until) < now()) {
+        gone.push(key);
+        if (row.session) {
+          gone.push('s|' + row.session + '|' + row.client);
+        }
+      }
+    });
+    gone.forEach(function (key: string): void {
+      ephemeral.delete(key);
+    });
+    log.debug("Leaving PairwiseSubjects.purge(). " + gone.length + ".");
+    return { summary: gone.length + ' expired ephemeral subject row(s) ' +
+             'removed' };
+  }
+
+  scheduleJobs(): void {
+    const { log, scheduler } = this.deps;
+    const self = this;
+    log.debug("Entering PairwiseSubjects.scheduleJobs().");
+    const s = scheduler();
+    if (s.job(PURGE_JOB)) {
+      log.debug("Leaving PairwiseSubjects.scheduleJobs(). Registered.");
+      return;
+    }
+    s.register({
+      id: PURGE_JOB,
+      title: 'Ephemeral subjects: expired mappings',
+      describe: 'Removes each ephemeral subject identifier whose tokens and ' +
+                'session can no longer be in use (#149).',
+      owner: 'oauth-oidc/pairwise_subjects.ts',
+      kind: 'cluster', scope: 'realm', everyMs: function (): number {
+        return 3600000;
+      },
+      manual: true,
+      run: function (): Json {
+        return self.purge();
+      }
+    });
+    log.debug("Leaving PairwiseSubjects.scheduleJobs(). On the scheduler.");
   }
 
   // -------------------------------------------------------------------------
@@ -225,7 +355,9 @@ class PairwiseSubjects {
 const slot = new InstanceSlot<PairwiseSubjects>(
   'oauth-oidc/pairwise_subjects',
   () => new PairwiseSubjects(PairwiseSubjects.defaultDeps()),
-  null,
+  function (instance: PairwiseSubjects): void {
+    instance.scheduleJobs();
+  },
   helpers.log);
 
 // Standalone, build the default now, as loading a module always did.
@@ -239,5 +371,8 @@ export = {
   SUBJECT_TYPES: PairwiseSubjects.SUBJECT_TYPES,
   sectorOf: slot.forward('sectorOf'),
   subjectFor: slot.forward('subjectFor'),
+  localFor: slot.forward('localFor'),
+  purge: slot.forward('purge'),
+  PURGE_JOB: PURGE_JOB,
   sectorIdentifierProblem: slot.forward('sectorIdentifierProblem')
 };

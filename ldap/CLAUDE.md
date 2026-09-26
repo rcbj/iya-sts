@@ -2684,3 +2684,59 @@ hooks to `credentials.setDirectory()` — `readAppPasswords`, `writeAppPasswords
 (`isPersonEntry()` by placement, never a name) — and `stsAppPassword` is on
 `OWN_NAMES`, `SECRET_ATTRIBUTES` (withheld from every read, a verifier like
 `userPassword`) and `persistence/directory_merge.js`'s `SINGLE`.
+
+## `person_editor.ts`: WHAT AN ADMINISTRATOR MAY CHANGE ON A PERSON (#228, 2026-09-26)
+
+The user page's attribute editor (Set, Add to, Remove from), and `POST
+/admin-api/users/set-attribute`, `/add-attribute` and `/remove-attribute`,
+all go through `ldap/person_editor.ts`. The page is argued in `admin-ui/CLAUDE.md`.
+Three things here are this directory's.
+
+* **THE LIST IS THE SCHEMA, MINUS WHAT IS MANAGED.** This was rcbj's choice,
+  2026-09-26. The universe is `common/inetorgperson.ts`'s rows plus the
+  credential catalogue's that are on neither (`schacDateOfBirth`, `c`,
+  `employeeStatus`), computed per call. So a row added to either list is
+  editable with nothing else to change. It is an ALLOWLIST for the reason
+  the socket's write authorization is one. `memberOf` grants console roles,
+  and every `sts*` attribute is a credential. A name on neither list is
+  refused by name (`STS-LDAP-0103`).
+* **FOUR KINDS ARE WITHHELD, EACH WITH THE DOOR TO USE.**
+  * `userPassword` (secret): `set-password` hashes it.
+  * The binary rows.
+  * `uid`: the username, and what `usernameKeysOf()` reads.
+  * `mail`: `set-mail` verifies it (`verifyWrittenMail()`) and tells the
+    former address.
+  * Whichever attribute the entry's RDN is built from (`STS-LDAP-0104`). That
+    is `cn` for an entry a client certificate filed as `cn=<name>`, asked per
+    entry, because an edit would leave the DN and the entry disagreeing.
+
+  One value or several is each RFC's `SINGLE-VALUE`. `cn` and `sn` are never
+  emptied (RFC 4519 3.12's MUST). A country, a date, a language range, an
+  http(s) `labeledURI` and a DN are checked for their shape. A DN's shape
+  only: a manager elsewhere is ordinary, and this directory keeps no
+  referential integrity.
+* **THE WRITE IS `writePersonAttribute()`, IN PLACE, AND NOT `writePerson()`.**
+  `writePerson()` REPLACES the entry through `putEntry()`, which runs every
+  value through `valuesOf()` and so turns it into a string. An edit of a
+  telephone number has no business re-encoding a binary value that shares the
+  entry. So the slot's writer changes the one attribute, as `writePersonFlag()`
+  does. It keeps `modifiedAt` and `modifyTimestamp` in step, calls
+  `touchDirectory(dn)` (persist, replicate), and hands the before and after to
+  `noteAccountChange('updated', …)`. That is the observer a SCIM PATCH and an
+  `ldapmodify` reach, so Shared Signals reads an edit made here as it reads
+  either of those.
+
+  None of the offered attributes feeds the username index (`uid` and the RDN
+  are withheld) or the address verification (`mail` is withheld). That is why
+  the in-place write is safe without `putEntry()`'s index bookkeeping.
+
+**THE SLOT** is `personEditor.setDirectory({ locate, write })`, filled beside
+the group-claims slot and validated whole. `locate(key)` answers a person
+entry only (`isPersonEntry()`), with a snapshot of its attributes and its RDN's
+types. The library cannot require this file: `admin-core/` loads it at 18, and
+this JavaScript module registers `/admin/ldap/*` when required.
+
+`tests/person_attribute_editor.js` covers it in process: the list, every mode,
+every code from `STS-LDAP-0102` to `0109`, the formats, untouched neighbours,
+the observer, the view and the page. `tests/vendored/sts_person_attributes.js`
+covers the API over HTTP in a realm of its own.

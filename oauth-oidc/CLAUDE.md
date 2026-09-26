@@ -4046,6 +4046,37 @@ home-realm discovery. All in every mode.
 
 Tests: `tests/vendored/sts_enterprise_extensions.js`.
 
+## 3bj. THE EPHEMERAL SUBJECT IDENTIFIER (2026-09-26, #149)
+
+rcbj's answers were every recommendation: a persisted per-realm mapping
+purged by a job, the same `sub` within one authentication, Logout Tokens and
+SSF events naming it for that client, nothing relaxed in development.
+
+* **`pairwise_subjects.ts` owns it**, beside pairwise (#118), because both are
+  the same indirection: `subjectFor(clientId, localSub, sessionId)`. For a
+  client whose `subject_type` is `ephemeral` it returns the `sub` minted for
+  that (session, client), minting 160 random bits the first time. The map is
+  `oauth2.ephemeralSubjects`: `s|<session>|<client>` to the `sub`, and
+  `e|<sub>` to `{ local, client, session, until }`. Every use extends `until`
+  by the larger of `authn.sessionLifetimeS` and `oauth2.refreshTokenTtlS`;
+  the `oauth2.ephemeral-subjects-purge` job removes what has passed it. A
+  grant with no session (no browser) mints afresh on every call.
+* **Every client-facing `sub` passes the session**: `idToken()`
+  (`opts.session_id`), the implicit response and `noteClient()` (so the
+  Logout Token agrees), the `id_token_hint` comparison, and UserInfo (the
+  access token's `sid`, or `stats.sessionIdOfJti()`). Access and refresh
+  tokens keep the PUBLIC `sub`, which is what this service looks a person up
+  by, so a refresh re-derives the same ephemeral one from the same session.
+* **Mapping back**: `localFor(sub)` turns an ephemeral `id_token_hint` into
+  the person at the authorization and CIBA endpoints. Pairwise has no reverse
+  map and still has none: a pairwise hint names nobody here.
+* **SSF**: `ssf.ts`'s `subjectForReceiver()` rewrites an `iss_sub` user to
+  the `sub` the stream's owning client knows (pairwise or ephemeral), using
+  the event's own `session` member; before this a pairwise client's stream
+  was told the public `sub`.
+
+Tests: `tests/vendored/sts_ephemeral_subjects.js`.
+
 ## OPENID CONNECT CORE, READ AGAINST THE CODE (2026-09-22, #118)
 
 The review on #45 found Core bugs that no test had asked about. What changed, and

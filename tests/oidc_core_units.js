@@ -112,8 +112,10 @@ function childMain() {
          redirect_uris: ['https://a.example/cb', 'https://b.example/cb'] })),
          'B. pairwise across two hosts with no sector_identifier_uri is ' +
          'refused, naming the member');
-    note(!!problem({ subject_type: 'ephemeral' }),
-         'B. an unknown subject_type is refused');
+    note(!!problem({ subject_type: 'rotating' }) &&
+         !problem({ subject_type: 'ephemeral' }),
+         'B. an unknown subject_type is refused, and ephemeral (#149) ' +
+         'accepted');
     note(!!problem({ sector_identifier_uri: 'http://a.example/s.json' }),
          'B. an http sector_identifier_uri is refused');
     note(!!problem({ token_endpoint_auth_signing_alg: 'none' }),

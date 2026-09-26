@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3465** of them, in **38** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3490** of them, in **38** subsystems.
 
 ## Where a code appears
 
@@ -52,7 +52,7 @@ is an ordinary outcome.
 * [HTTP front door (`STS-HTTP`)](#sts-http) — 18
 * [PROXY protocol (`STS-PROXY`)](#sts-proxy) — 9
 * [Service core (`STS-CORE`)](#sts-core) — 60
-* [Worker pools (`STS-WORKER`)](#sts-worker) — 41
+* [Worker pools (`STS-WORKER`)](#sts-worker) — 43
 * [Persistence and coordination (`STS-STORE`)](#sts-store) — 62
 * [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 28
 * [Scheduler (`STS-SCHED`)](#sts-sched) — 16
@@ -64,13 +64,13 @@ is an ordinary outcome.
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 47
 * [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 248
 * [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 568
-* [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 84
+* [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 96
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 21
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 16
 * [Federation (`STS-FED`)](#sts-fed) — 133
 * [OpenID Federation (`STS-OIDFED`)](#sts-oidfed) — 66
 * [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 164
-* [LDAP directory (`STS-LDAP`)](#sts-ldap) — 74
+* [LDAP directory (`STS-LDAP`)](#sts-ldap) — 84
 * [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 74
 * [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 143
 * [TLS and client certificates (`STS-TLS`)](#sts-tls) — 33
@@ -81,7 +81,7 @@ is an ordinary outcome.
 * [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 282
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 74
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 32
-* [Admin console (`STS-ADMIN`)](#sts-admin) — 197
+* [Admin console (`STS-ADMIN`)](#sts-admin) — 198
 * [Management API (`STS-API`)](#sts-api) — 73
 * [User portal (`STS-PORTAL`)](#sts-portal) — 72
 * [Sign-out (`STS-LOGOUT`)](#sts-logout) — 7
@@ -251,6 +251,8 @@ Raised from: common/worker_pool.js, common/worker.js, common/request_pool.js, co
 | `STS-WORKER-0039` | workers.surfaceCount is set and workers.dispatch names none of workers.surfaces, so the hosted-surface workers were not started. | — |
 | `STS-WORKER-0040` | A batch request (workers.batch) was refused because workers.batchQueueLimit batch requests were already waiting for the pool's batch lane. | HTTP 503 with Retry-After |
 | `STS-WORKER-0041` | A batch request (workers.batch) waited workers.batchQueueTimeoutS for the pool's batch lane and was refused. | HTTP 503 with Retry-After |
+| `STS-WORKER-0042` | The connection to a request worker failed before any byte of a dispatched request reached it, and the request was sent again on a new connection (#77). | Nothing: the client gets the worker's answer |
+| `STS-WORKER-0043` | A request worker exited (or could not start) and a replacement was forked into its pool and slot. | Nothing directly: requests in flight on the dead worker were answered 502 (STS-WORKER-0030) |
 
 ## STS-STORE
 
@@ -1772,7 +1774,7 @@ Raised from: saml/.
 | `STS-SAML-0036` | The SOAP body posted to the SAML 1.1 SAML responder carries no <samlp:Request>. | SOAP samlp:Response with status samlp:Requester (HTTP 200) |
 | `STS-SAML-0037` | A SAML 1.1 artifact does not resolve: never issued here, expired (saml11.artifactTtlS), or already resolved once. | SOAP samlp:Response with status samlp:Requester (HTTP 200) |
 | `STS-SAML-0038` | A SAML 1.1 AssertionIDReference names an assertion this service does not hold. | SOAP samlp:Response with status samlp:Requester (HTTP 200) |
-| `STS-SAML-0039` | A SAML 1.1 AttributeQuery or AuthenticationQuery was refused because the realm is in product mode and nothing authenticates the caller. | SOAP samlp:Response with status samlp:Requester (HTTP 200) |
+| `STS-SAML-0039` | A SAML 1.1 AttributeQuery or AuthenticationQuery was refused in product mode: it names no registered relying party (Resource or the path segment), or its caller did not authenticate as that relying party (a signed Request or its registered certificate at the TLS handshake). Until #189 every query was refused in product. | SOAP samlp:Response with status samlp:Requester (HTTP 200) |
 | `STS-SAML-0040` | A SAML 1.1 query carries no <saml:Subject> with a NameIdentifier. | SOAP samlp:Response with status samlp:Requester (HTTP 200) |
 | `STS-SAML-0041` | A SAML 1.1 <samlp:Request> carries none of the four request types the responder answers (an AuthorizationDecisionQuery included). | SOAP samlp:Response with status samlp:Requester (HTTP 200) |
 | `STS-SAML-0042` | The mock SAML 1.1 relying party was handed an artifact that does not resolve (already resolved, expired or never issued). | HTTP 400 page |
@@ -1818,6 +1820,18 @@ Raised from: saml/.
 | `STS-SAML-0082` | A SAML 2.0 per-service-provider path (/saml2/metadata/{sp}, /saml2/sso/{sp}, /saml2/slo/{sp} or /saml2/ars/{sp}) named something that is not a registered SAML 2.0 service provider, in product mode (mode.publishesMetadataForUnregisteredProviders()). | an HTTP 404, text/plain |
 | `STS-SAML-0083` | A SAML 1.1 per-relying-party path (/saml11/metadata/{rp}, /saml11/sso/{rp} or /saml11/responder/{rp}) named something that is not a registered SAML 1.1 relying party, in product mode (mode.publishesMetadataForUnregisteredProviders()). | an HTTP 404, text/plain |
 | `STS-SAML-0084` | An administrator's Import from MDQ was refused: the realm is in product mode and has no saml2.metadataTrustAnchors, so the answer could not be verified, and saml2.mdqImportWithoutAnchors is off. | the caller's refusal (errors on a console or /admin-api reply) |
+| `STS-SAML-0085` | A SAML 2.0 AuthnRequest or LogoutRequest was refused: its Destination is not the URL it arrived at (saml-core-2.0-os section 3.2.1), or it is signed and names no Destination (saml-bindings-2.0-os sections 3.4.5.2 and 3.5.5.2). #190. | an HTTP 400 page |
+| `STS-SAML-0086` | A SAML 2.0 AuthnRequest or LogoutRequest was refused: its IssueInstant is missing, not a dateTime, more than a minute in the future, or older than saml2.requestTtlMin (plus a minute). #190. | an HTTP 400 page |
+| `STS-SAML-0087` | A SAML 2.0 AuthnRequest or LogoutRequest was refused: its Version is not "2.0" (saml-core-2.0-os section 3.2.2.1). #190. | an HTTP 400 page |
+| `STS-SAML-0088` | A SAML 2.0 AuthnRequest was refused as a REPLAY: its issuer and ID arrived before, inside the freshness window (the claim scope saml2.authnrequest). #190. | an HTTP 400 page |
+| `STS-SAML-0089` | A SAML 2.0 AuthnRequest was refused because the claim store that records which requests were answered could not be asked (fail closed). #190. | an HTTP 400 page |
+| `STS-SAML-0090` | A SAML 2.0 LogoutRequest with no session cookie (a back-channel logout) named a SessionIndex whose session did not sign into that service provider, or was issued another NameID there. Nothing was ended. #192. | a LogoutResponse with StatusCode Requester / UnknownPrincipal |
+| `STS-SAML-0091` | An identity-provider-initiated sign-in (/saml2/unsolicited) was refused: saml2.unsolicitedSso is off in the realm. #189. | an HTTP 403 page |
+| `STS-SAML-0092` | An identity-provider-initiated sign-in (/saml2/unsolicited) named no service provider (providerId or the path segment). #189. | an HTTP 400 page |
+| `STS-SAML-0093` | An identity-provider-initiated sign-in asked for a binding a Response does not go on (anything but HTTP-POST, POST-SimpleSign or HTTP-Artifact). #189. | an HTTP 400 page |
+| `STS-SAML-0094` | A SAML 2.0 AttributeQuery named a subject no live session here gave the asking service provider (by the NameID it was issued), or that session has ended. #189. | SOAP samlp:Response, Requester / UnknownPrincipal (HTTP 200) |
+| `STS-SAML-0095` | The SAML 2.0 attribute authority received no <samlp:AttributeQuery>, or one naming no Issuer. #189. | SOAP samlp:Response, Requester (HTTP 200) |
+| `STS-SAML-0096` | A SAML 1.1 AttributeQuery or AuthenticationQuery in product mode named a subject no live session here gave the asking relying party (by the NameIdentifier it was issued). #189. | SOAP samlp:Response with status samlp:Requester (HTTP 200) |
 
 ## STS-WSTRUST
 
@@ -2346,6 +2360,16 @@ Raised from: ldap/.
 | `STS-LDAP-0098` | The node-ldapjs in use does not support the routeAnonymousBinds server option, so an anonymous bind is answered by the library and never reaches the bind handler; product mode cannot refuse it (reads on that connection are still refused). | none — logged at startup |
 | `STS-LDAP-0099` | In product mode, a compare named an attribute the bound identity may not read on that entry (ldap/directory_read_policy.ts); answered whether or not the entry holds it, so the refusal says nothing about the value. | LDAP result code 50, insufficientAccessRights |
 | `STS-LDAP-0100` | In product mode, a bind named a DN that is not a person's — an application, a federation, a container — and was refused before its password was read; only people bind to the directory. | LDAP result code 49, invalidCredentials (RFC 4513 section 5.1.3) |
+| `STS-LDAP-0101` | A person's attribute edit (#228) found no directory installed in this process, so there is no entry to change. | HTTP 400 (API) or a 303 with error= |
+| `STS-LDAP-0102` | A person's attribute edit (#228) named nobody in this realm's directory. | HTTP 400 (API) or a 303 with error= |
+| `STS-LDAP-0103` | A person's attribute edit (#228) named an attribute the editor does not change: a credential, a binary value, the username or the address (which have doors of their own), or one outside the person schema. | HTTP 400 (API) or a 303 with error= |
+| `STS-LDAP-0104` | A person's attribute edit (#228) named the attribute the entry's own DN is built from, which would leave the DN and the entry disagreeing. | HTTP 400 (API) or a 303 with error= |
+| `STS-LDAP-0105` | A person's attribute edit (#228) was not set, add or remove, or was an add to an attribute that holds one value. | HTTP 400 (API) or a 303 with error= |
+| `STS-LDAP-0106` | A person's attribute edit (#228) carried a value that is too long, holds a control character, does not have its attribute's shape (a country code, a date, a language range, an http(s) URL, a DN), or was empty for an add or a remove. | HTTP 400 (API) or a 303 with error= |
+| `STS-LDAP-0107` | A person's attribute edit (#228) added a value the attribute already holds. | HTTP 400 (API) or a 303 with error= |
+| `STS-LDAP-0108` | A person's attribute edit (#228) removed a value the attribute does not hold. | HTTP 400 (API) or a 303 with error= |
+| `STS-LDAP-0109` | A person's attribute edit (#228) would have left cn or sn, which RFC 4519 3.12 requires of every person, with no value. | HTTP 400 (API) or a 303 with error= |
+| `STS-LDAP-0110` | A person's attribute edit (#228) was refused by the directory: the entry was gone or not a person's when the write reached it. | HTTP 400 (API) or a 303 with error= |
 
 ## STS-SCIM
 
@@ -3398,7 +3422,7 @@ Raised from: admin-ui/ (except pki_admin.js), admin-core/.
 | `STS-ADMIN-0515` | A delegated-permission grant or revoke named no client application. | HTTP 400 (API) or a 303 with error= |
 | `STS-ADMIN-0516` | The delegated-permission register refused a change made from the console or the management API. | HTTP 400 (API) or a 303 with error= |
 | `STS-ADMIN-0517` | The XACML administration pages refused an action reached through the management API. | HTTP 400 (API) |
-| `STS-ADMIN-0518` | A users action that acts on one person (activation link, password, second-factor clear) named nobody. | HTTP 400 (API) or a 303 with error= |
+| `STS-ADMIN-0518` | A users action that acts on one person (activation link, password, second-factor clear, attribute edit) named nobody. | HTTP 400 (API) or a 303 with error= |
 | `STS-ADMIN-0519` | An activation link could not be issued for the named person. | HTTP 400 (API) or a 303 with error= |
 | `STS-ADMIN-0520` | An operator's clear of a person's authenticator app was refused. | HTTP 400 (API) or a 303 with error= |
 | `STS-ADMIN-0521` | An operator's clear of a person's recovery codes was refused. | HTTP 400 (API) or a 303 with error= |
@@ -3555,6 +3579,7 @@ Raised from: admin-ui/ (except pki_admin.js), admin-core/.
 | `STS-ADMIN-0816` | set-mail named nobody in this realm, or the directory would not write the address (#64). | HTTP 400 (API) |
 | `STS-ADMIN-0817` | A set-aud-sub act named no person or no client, a client_id with spaces, or an aud_sub over 255 characters or with control characters (#148). | none (a console or management API refusal, HTTP 400) |
 | `STS-ADMIN-0818` | A set-aud-sub act named a person with no entry in this realm, or the directory would not write it (#148). | none (a console or management API refusal, HTTP 400) |
+| `STS-ADMIN-0819` | set-attribute, add-attribute or remove-attribute was refused and ldap/person_editor.ts named no more specific reason (#228). | HTTP 400 (API) or a 303 with error= |
 
 ## STS-API
 

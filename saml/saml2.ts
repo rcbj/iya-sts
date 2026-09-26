@@ -70,6 +70,8 @@ const KEY_TRANSPORTS = stsCrypto.KEY_TRANSPORTS;
 interface AttributeRow {
   name: string;
   nameFormat?: string;
+  // The X.500/LDAP attribute profile's LDAP name beside an OID Name (#189).
+  friendlyName?: string;
   value?: unknown;
   values?: unknown[];
 }
@@ -85,6 +87,9 @@ interface BuildOptions {
   authnInstant?: string;
   issuer?: string;
   sign?: boolean;
+  attributeQuery?: boolean;
+  nameQualifier?: string;
+  spNameQualifier?: string;
   [member: string]: unknown;
 }
 
@@ -242,6 +247,15 @@ class Saml2Assertions {
   //                         configured from — an assertion issued by a name
   //                         that is not in that document is refused, and the
   //                         refusal reads as a trust-store problem.
+  //   nameQualifier,        the NameID's qualifiers, where the answer must
+  //   spNameQualifier       repeat a query's (#189): saml-core-2.0-os section
+  //                         3.3.4 has the returned Subject STRONGLY match the
+  //                         query's, qualifiers included.
+  //   attributeQuery        true for an attribute authority's answer (#189):
+  //                         no SubjectConfirmation and no AuthnStatement —
+  //                         the assertion says what the subject's attributes
+  //                         are, not that anybody authenticated just now, and
+  //                         saml-profiles-2.0-os section 6 asks for no more.
   //   sign                  false to return the assertion unsigned. Default
   //                         true, which is what every existing caller gets. It
   //                         is a supported state and not a failure: a service
@@ -317,6 +331,8 @@ class Saml2Assertions {
     const attributeEls = attributes.concat(configured).map((a) => {
       return '<saml:Attribute Name="' + xmlEscape(a.name) + '"' +
         (a.nameFormat ? ' NameFormat="' + xmlEscape(a.nameFormat) + '"' : '') +
+        (a.friendlyName ? ' FriendlyName="' + xmlEscape(a.friendlyName) + '"'
+                        : '') +
         '>' +
         this.attributeValuesOf(a) + '</saml:Attribute>';
     }).join('');
@@ -349,22 +365,29 @@ class Saml2Assertions {
         'Method="urn:oasis:names:tc:SAML:2.0:cm:bearer"/>';
     const sessionIndex = opts.sessionIndex || id;
     const authnInstant = opts.authnInstant || now;
-    const xml =
-      '<saml:Assertion xmlns:saml="urn:oasis:names:tc:SAML:2.0:assertion"' +
-        ' ID="' + id + '" Version="2.0" IssueInstant="' + now + '">' +
-        '<saml:Issuer>' + xmlEscape(issuer) + '</saml:Issuer>' +
-        '<saml:Subject><saml:NameID Format="' + xmlEscape(nameIdFormat) + '">' +
-          xmlEscape(nameIdValue) + '</saml:NameID>' +
-        confirmation + '</saml:Subject>' +
-        '<saml:Conditions NotBefore="' + notBefore + '" NotOnOrAfter="' + exp +
-        '">' + audienceEl + '</saml:Conditions><saml:AuthnStatement ' +
+    const authnStatement = opts.attributeQuery ? ''
+      : '<saml:AuthnStatement ' +
         'AuthnInstant="' + xmlEscape(authnInstant) + '" ' +
             'SessionIndex="' +
           xmlEscape(sessionIndex) + '">' +
         '<saml:AuthnContext><saml:AuthnContextClassRef>' +
           xmlEscape(authnContextClassRef) +
         '</saml:AuthnContextClassRef></saml:AuthnContext>' +
-        '</saml:AuthnStatement>' +
+        '</saml:AuthnStatement>';
+    const xml =
+      '<saml:Assertion xmlns:saml="urn:oasis:names:tc:SAML:2.0:assertion"' +
+        ' ID="' + id + '" Version="2.0" IssueInstant="' + now + '">' +
+        '<saml:Issuer>' + xmlEscape(issuer) + '</saml:Issuer>' +
+        '<saml:Subject><saml:NameID' +
+          (opts.nameQualifier ? ' NameQualifier="' +
+                                xmlEscape(opts.nameQualifier) + '"' : '') +
+          (opts.spNameQualifier ? ' SPNameQualifier="' +
+                                  xmlEscape(opts.spNameQualifier) + '"' : '') +
+          ' Format="' + xmlEscape(nameIdFormat) + '">' +
+          xmlEscape(nameIdValue) + '</saml:NameID>' +
+        (opts.attributeQuery ? '' : confirmation) + '</saml:Subject>' +
+        '<saml:Conditions NotBefore="' + notBefore + '" NotOnOrAfter="' + exp +
+        '">' + audienceEl + '</saml:Conditions>' + authnStatement +
         '<saml:AttributeStatement>' + attributeEls +
         '</saml:AttributeStatement></saml:Assertion>';
     // Counted here rather than at the call sites: WS-Trust and WS-Federation
