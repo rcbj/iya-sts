@@ -4304,6 +4304,15 @@ app.get('/krb5/principals', function (req, res) {
                   'FAST in the AS exchange (RFC 6113; armor: a TGT)' +
                     (principals.preauthProvider() ? '' : ' - not here: ' +
                      'this process has no directory'),
+                  // #204: implicit armor, explicit armor accepted, and
+                  // hide-client-names in both exchanges.
+                  'FAST in the TGS exchange (RFC 6113 implicit armor), ' +
+                    'hide-client-names' +
+                    (principals.preauthProvider() ? '' : ' - not here: ' +
+                     'this process has no directory'),
+                  'user-to-user (ENC-TKT-IN-SKEY, RFC 4120 3.3.3)',
+                  'FAST negotiation (RFC 6806 section 11: enc-pa-rep, ' +
+                    'PA-REQ-ENC-PA-REP)',
                   'OTP pre-authentication (RFC 6560) with an authenticator ' +
                     'app, the password as the PIN',
                   'authentication indicators (RFC 8129): otp',
@@ -4313,9 +4322,8 @@ app.get('/krb5/principals', function (req, res) {
                     'lifetime (#169)' +
                     (principals.keySourceInstalled() ? '' : ' - not here: ' +
                      'this process has no directory')],
-    notImplementedYet: ['FAST in the TGS exchange (RFC 6113 implicit armor)',
-                        'PKINIT (RFC 4556, #179)',
-                        'kpasswd (RFC 3244)', 'user-to-user (ENC-TKT-IN-SKEY)',
+    notImplementedYet: ['PKINIT (RFC 4556, #179)',
+                        'kpasswd (RFC 3244)',
                         'SID filtering across a trust',
                         'rotation of an inter-realm trust key'],
     principals: list
