@@ -165,6 +165,11 @@ async function test() {
   await K.makeRealm(REALM_B, "jscep job B");
   const password = await K.makePerson(REALM, FRAN, FRAN + "@example.test");
   await K.setting(REALM, "scep.attemptsPerAddress", 100000);
+  // Every job of the suite reaches the portal from ONE address, and the
+  // portal's challenge form counts successes too (five a minute by
+  // default): run after the sscep and certmonger jobs it met 429,
+  // STS-HTTP-0018. The limit is this realm's to raise.
+  await K.setting(REALM, "pki.personSelfServicePerAddress", 10000);
   const first = await challenge(REALM, FRAN);
   const url = first.plainUrl;
   const org = (first.hint.match(/\\nO=([^\\]+)\\n/) || [])[1];
