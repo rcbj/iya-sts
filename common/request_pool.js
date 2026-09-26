@@ -95,6 +95,7 @@ const errorCodes = require('./error_codes');
 const clientAddress = require('./client_address');
 // A LEAF: the affinity maps below, described to `/admin/caches` (#74).
 const cacheRegistry = require('./cache_registry');
+const lingeringClose = require('./lingering_close');
 // THE JA4 READER (#62 P0) IS REQUIRED LAZILY, in `clientHelloModule()`
 // below: this file is loaded by `app.js` before the composition root defers
 // instance building, and a load here would build `tls/client_hello`'s
@@ -4346,10 +4347,23 @@ function proxy(entry, req, res, atGeneration, ticket) {
     // the client is told once and cleanly instead of being reset
     // mid-upload. Every other request has been read in full by the time it
     // is answered, and is untouched.
+    //
+    // AND THE CLOSE LINGERS (2026-09-26). Node closes a `Connection: close`
+    // socket the moment the answer is flushed, and a socket closed with the
+    // client's unread upload in its buffer sends a RESET — which makes the
+    // client's kernel throw away the answer it had not yet read, so the
+    // person saw a connection error instead of the refusal.
+    // `lingeringClose.arm()` half-closes and discards what is still
+    // arriving instead (common/lingering_close.js). The connection to the
+    // worker is closed from THIS end once its answer is read in full: the
+    // worker lingers too, waiting for a body this process stopped sending.
     if (!req.complete) {
-      res.setHeader('Connection', 'close');
+      lingeringClose.arm(req, res);
       detached = true;
       req.resume();
+      answer.on('end', function () {
+        upstream.destroy();
+      });
     }
     answer.pipe(res);
     answer.on('end', finish);
@@ -4430,6 +4444,19 @@ function proxy(entry, req, res, atGeneration, ticket) {
     // Nothing more is written to a connection that has failed — see the
     // body's `data` handler below.
     failed = true;
+    if (detached && answered) {
+      // AN EARLY ANSWER'S CONNECTION ENDING (#215, 2026-09-26). The worker
+      // answered before the body had all arrived and this process stopped
+      // forwarding it; the connection going away after that is the
+      // expected end of it, not a worker that could not answer. The answer
+      // itself is piped on its own stream, whose `error` handler reports a
+      // truncation if there was one.
+      log.debug('request_pool: the connection to worker ' + entry.pid +
+                ' for an early answer to ' + req.method + ' ' + req.url +
+                ' ended: ' + err.message);
+      log.debug("Leaving onUpstreamError(). An early answer.");
+      return;
+    }
     if (!replayed && !answered && !delivered && !clientGone && replay.kept &&
         !res.headersSent) {
       replayed = true;

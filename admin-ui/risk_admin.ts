@@ -49,6 +49,7 @@ import admin = require('./admin');
 import adminViews = require('../admin-core/admin_views');
 import helpers = require('../common/helpers');
 import errorCodes = require('../common/error_codes');
+import lingeringClose = require('../common/lingering_close');
 import realms = require('../common/realms');
 import InstanceSlot = require('../common/instance_slot');
 import riskDatasets = require('../risk/risk_datasets');
@@ -1213,7 +1214,7 @@ class RiskAdmin {
       log.debug('Entering POST ' + UPLOAD + '.');
       if (!admin.mayWrite(req)) {
         errorCodes.mark(res, 'STS-RISK-0011');
-        res.set('Connection', 'close');
+        lingeringClose.arm(req, res);
         admin.respondToAction(req, res, PAGE, { ok: false, errors: [
           'This console session may read but not write.'] });
         log.debug('Leaving POST ' + UPLOAD + '. Read-only.');
@@ -1224,7 +1225,7 @@ class RiskAdmin {
                                                         true))
         .then(function (answer: Json): void {
           if (answer.close) {
-            res.set('Connection', 'close');
+            lingeringClose.arm(req, res);
           }
           if (answer.code) {
             errorCodes.mark(res, answer.code);
@@ -1243,7 +1244,7 @@ class RiskAdmin {
         }).catch(function (e: Json): void {
           log.warn(errorCodes.tag('STS-RISK-0037') + 'risk: an upload ' +
                    'failed: ' + ((e && e.stack) || e));
-          res.set('Connection', 'close');
+          lingeringClose.arm(req, res);
           admin.respondToAction(req, res, PAGE, errorCodes.mark({
             ok: false, errors: [String((e && e.message) || e)] },
             'STS-RISK-0037'));

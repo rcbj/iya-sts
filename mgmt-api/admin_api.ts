@@ -127,6 +127,7 @@ import app = require('../common/app');
 // The error-code registry, a leaf. A refusal here is MARKED on the response for
 // the call log and never written into the JSON a caller receives.
 import errorCodes = require('../common/error_codes');
+import lingeringClose = require('../common/lingering_close');
 // Whether a create can race another node's, and the sentence a refused one
 // carries (#46 section 3). A LIBRARY that registers nothing.
 import createClaims = require('../ldap/directory_create_claims');
@@ -2642,7 +2643,7 @@ class AdminApi {
                                   '/admin-api/risk/upload')
             .then(function (answer) {
               if (answer.close) {
-                res.set('Connection', 'close');
+                lingeringClose.arm(req, res);
               }
               if (answer.code) {
                 errorCodes.mark(res, answer.code);
@@ -2654,7 +2655,7 @@ class AdminApi {
               log.warn(errorCodes.tag('STS-RISK-0037') + 'risk: an upload ' +
                        'failed: ' + ((e && e.message) || e));
               errorCodes.mark(res, 'STS-RISK-0037');
-              res.set('Connection', 'close');
+              lingeringClose.arm(req, res);
               self.sendJson(res, 500, { ok: false,
                                         errors: [String((e && e.message) ||
                                                         e)] });
