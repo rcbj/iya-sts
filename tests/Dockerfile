@@ -362,8 +362,6 @@ RUN python3 -m venv /opt/scim2-tester \
         -r /usr/src/scim2-tester/requirements.txt
 ENV STS_SCIM2_TESTER_PYTHON=/opt/scim2-tester/bin/python
 COPY --from=scim2-test-suite /opt/scim2-test-suite /opt/scim2-test-suite
-COPY --from=vc-suites /opt/vc-suites /opt/vc-suites
-ENV STS_VC_SUITES_DIR=/opt/vc-suites
 ENV STS_SCIM2_TEST_SUITE=/opt/scim2-test-suite/scim-compliance
 COPY package*.json ./
 COPY .npmrc ./
@@ -422,6 +420,13 @@ ENV STS_W3C_XMLSEC_DIR=/usr/src/corpora/w3c-xmlsec
 # test vectors*, is the provenance.
 COPY tests/tools/fetch-vectors.sh tests/tools/vectors.sha256 /usr/src/vector-fetch/
 RUN /usr/src/vector-fetch/fetch-vectors.sh /usr/src/sts/tests/vectors
+
+# The W3C VC and DID suites (#194-#199), from their stage above. Here, just
+# above the source copy, rather than beside the other harnesses: this layer
+# changes only when fetch-suites.sh does, and every layer above it stays the
+# one other checkouts' builds of this file already cached.
+COPY --from=vc-suites /opt/vc-suites /opt/vc-suites
+ENV STS_VC_SUITES_DIR=/opt/vc-suites
 
 # The repository. The root .dockerignore decides what is in it — see the header
 # — and the guard is what a context missing the suite says instead of failing
