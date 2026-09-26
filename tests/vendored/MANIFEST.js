@@ -772,6 +772,11 @@ const JOBS = [
   // domain_hint's home-realm discovery. `local: true`: this repository's
   // authorization server and API.
   { file: 'sts_enterprise_extensions.js', browser: false, local: true },
+  // THE EPHEMERAL SUBJECT IDENTIFIER (#149, 2026-09-26): one random `sub`
+  // per authentication across the ID Token, UserInfo and a refresh, another
+  // for the next, and an id_token_hint mapped back. `local: true`: this
+  // repository's authorization server.
+  { file: 'sts_ephemeral_subjects.js',   browser: false, local: true },
   // THE OPENID FOUNDATION'S CONFORMANCE SUITE (#176, 2026-09-24): FAPI 2.0
   // Security Profile and Message Signing, FAPI 1.0 Advanced and FAPI-CIBA,
   // each plan a throwaway realm, every module run, and a FAILED module a

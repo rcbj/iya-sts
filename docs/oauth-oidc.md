@@ -499,6 +499,16 @@ Connect Core section 12.2). An ID Token issued on a browser session carries
   JSON array listing every redirect URI; a value an administrator writes on
   the console is not fetched. UserInfo and Logout Tokens name the same
   pairwise `sub` as the ID Token.
+* **Ephemeral subjects** (the Ephemeral Subject Identifier draft, #149): a
+  client registered with `subject_type=ephemeral` is given a random `sub`
+  (160 bits) for each authentication. Everything one sign-in issues it — the
+  ID Token, UserInfo, a refreshed ID Token, the Logout Token — names that
+  one `sub`. The next sign-in gets another, never reused. The mapping is
+  kept only as long as a token or the session of that sign-in can last, and
+  a scheduler job removes it after that. An `id_token_hint` carrying an
+  ephemeral `sub` still names the person while the mapping lasts.
+* **Shared Signals events** sent to a stream a pairwise or ephemeral client
+  owns name that client's `sub` for the person, not the public one.
 
 ### UserInfo and the claims request
 
