@@ -67,7 +67,8 @@ function offlineFetch(input, init) {
     return Promise.resolve(new Response(body, { status: 200,
       headers: { "Content-Type": "application/ld+json" } }));
   }
-  if (/^https?:/.test(url) && (!own || url.indexOf(new URL(own).origin) !== 0)) {
+  const ours = !!own && url.indexOf(new URL(own).origin) === 0;
+  if (/^https?:/.test(url) && !ours) {
     process.stderr.write("offline-contexts: fetching " + url +
                          " from the network\n");
   }
