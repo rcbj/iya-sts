@@ -163,6 +163,20 @@ const PLANS = [
 // ---------------------------------------------------------------------------
 const EXPECTED = {};
 
+// FAILURE conditions this service keeps, keyed by the suite's condition (a
+// module still fails if anything ELSE in it fails) — the same sentences as
+// `oauth-oidc/CLAUDE.md` 3bi.
+const KNOWN_FAILURES = {
+  // oidcc-server-rotate-keys: the condition hands every key in the rotated
+  // JWKS to nimbus's JWK.parse(), which throws on kty AKP (the post-quantum
+  // ML-DSA and SLH-DSA keys), so the module fails on a key it cannot read
+  // before comparing the ones it can. Seen 2026-09-26 in every plan that
+  // runs the module; the rotation itself succeeds.
+  VerifyNewJwksHasNewSigningKey: "nimbus cannot parse the realm's " +
+    "post-quantum keys (kty AKP); rcbj (2026-09-24): PQC support matters " +
+    "more than a clean run (3bg)"
+};
+
 // Conditions whose WARNING this service keeps, and why — the same sentences
 // as `oauth-oidc/CLAUDE.md` 3bi.
 const KNOWN_WARNINGS = {
@@ -478,7 +492,8 @@ async function test() {
                       ((e && e.message) || e));
       continue;
     }
-    const judged = oidf.judge(plan.key, ran, EXPECTED, KNOWN_WARNINGS);
+    const judged = oidf.judge(plan.key, ran, EXPECTED, KNOWN_WARNINGS,
+                              KNOWN_FAILURES);
     log.info("  " + plan.key + ": " + JSON.stringify(judged.counts) +
              ", plan " + oidf.SUITE + "plan-detail.html?plan=" + ran.planId);
     judged.unexplained.forEach(function (line) {

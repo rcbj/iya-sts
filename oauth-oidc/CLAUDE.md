@@ -4101,7 +4101,10 @@ failure in its driver):
 * `WarnOnUnusableJwksKeys`, and FAILURE conditions that check an algorithm
   list against the suite's JWS table (`ValidateRequestAuthenticationSigning
   AlgValuesSupported`, `VCIValidateProofSigningAlgValuesSupported`,
-  `VP1FinalValidateVpFormatsSupportedInClientMetadata`, `ValidateServerJWKs`):
+  `VP1FinalValidateVpFormatsSupportedInClientMetadata`, `ValidateServerJWKs`,
+  and `VerifyNewJwksHasNewSigningKey`, which hands every key of the rotated
+  JWKS to nimbus's parser and so fails `oidcc-server-rotate-keys` on an AKP
+  key before comparing the rest):
   post-quantum keys and algorithms (SLH-DSA, composite ML-DSA) the suite does
   not know. rcbj on #176: PQC support over a clean run.
 * `VerifyStatusListTokenSignatureUsingEmbeddedJwk`: outside HAIP the suite
