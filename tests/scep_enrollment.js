@@ -344,6 +344,106 @@ async function checkHandler(t, server) {
 }
 
 // ---------------------------------------------------------------------------
+// 3a. WHAT certmonger AND jscep NEEDED (#249, #250).
+//
+// certmonger signs its PKCSReq with a self-signed VERSION 1 certificate — no
+// [0] version, no extensions, six TBS fields where the reader demanded
+// seven, so the signer was never found (STS-SCEP-0011). And both clients
+// derive the transactionID from the public key, so a second request for the
+// same key repeats it: that was refused STS-SCEP-0037 and is now a new
+// transaction; and a renewal that keeps its key is signed by the old
+// certificate over the request's own key, which the two-keys test never saw.
+// Mutants caught: `parts.length < 7` back in describeCertificate(), the 0037
+// refusal back in replayed(), and the same-key renewal branch removed.
+// ---------------------------------------------------------------------------
+function v1SelfSigned(key, commonName) {
+  log.debug("Entering v1SelfSigned().");
+  const asn1 = forge.asn1;
+  const cert = forge.pki.createCertificate();
+  cert.publicKey = forge.pki.publicKeyFromPem(key.publicKeyPem);
+  cert.serialNumber = '01' + nodeCrypto.randomBytes(8).toString('hex');
+  cert.validity.notBefore = new Date(Date.now() - 60000);
+  cert.validity.notAfter = new Date(Date.now() + 86400000);
+  const attrs = [{ name: 'commonName', value: commonName }];
+  cert.setSubject(attrs);
+  cert.setIssuer(attrs);
+  cert.siginfo.algorithmOid = forge.pki.oids.sha256WithRSAEncryption;
+  cert.signatureOid = forge.pki.oids.sha256WithRSAEncryption;
+  const tbs = forge.pki.getTBSCertificate(cert);
+  // The [0] version, dropped: what is left is a version 1 TBSCertificate.
+  tbs.value.shift();
+  const md = forge.md.sha256.create();
+  md.update(asn1.toDer(tbs).getBytes());
+  const signature = forge.pki.privateKeyFromPem(key.privateKeyPem).sign(md);
+  const algorithm = asn1.create(asn1.Class.UNIVERSAL, asn1.Type.SEQUENCE,
+    true, [asn1.create(asn1.Class.UNIVERSAL, asn1.Type.OID, false,
+             asn1.oidToDer(forge.pki.oids.sha256WithRSAEncryption)
+               .getBytes()),
+           asn1.create(asn1.Class.UNIVERSAL, asn1.Type.NULL, false, '')]);
+  const whole = asn1.create(asn1.Class.UNIVERSAL, asn1.Type.SEQUENCE, true,
+    [tbs, algorithm, asn1.create(asn1.Class.UNIVERSAL, asn1.Type.BITSTRING,
+                                 false, String.fromCharCode(0) + signature)]);
+  log.debug("Leaving v1SelfSigned().");
+  return forge.pem.encode({ type: 'CERTIFICATE',
+                            body: asn1.toDer(whole).getBytes() });
+}
+
+async function checkClientConventions(t, server) {
+  log.debug("Entering checkClientConventions().");
+  t.log.info('=== 3a. a version 1 signer, and a transactionID that repeats ===');
+  const url = 'http://127.0.0.1:' + server.address().port + '/enroll/scep';
+  const caCert = await client.getCaCert(url);
+  const key = client.rsaKey(2048);
+  const dev = { key: key, certPem: v1SelfSigned(key, ALICE) };
+  const described = cms.describeCertificate(
+    Buffer.from(dev.certPem.replace(/-----[^-]+-----|\s+/g, ''), 'base64'));
+  t.check(!!described && described.selfIssued &&
+          described.serialRaw.length === 9,
+          'a version 1 certificate is read: its serial, issuer and subject',
+          JSON.stringify(described && described.serialRaw));
+  const txid = 'key-digest-' + RUN;
+  const one = core.createScepChallenge({
+    target: { kind: 'person', id: ALICE }, profile: 'tls-client',
+    createdBy: 'test' });
+  const first = message(dev, caCert.ra, { txid: txid,
+    inner: client.csr(dev.key, { challenge: one.challenge }) });
+  const r1 = client.readCertRep(
+    (await client.pkiOperation(url, first.der)).body, caCert.ra);
+  t.equal(r1.pkiStatus, '0',
+          'a PKCSReq signed by a version 1 self-signed certificate issues ' +
+          '(STS-SCEP-0011 before #249) ' + r1.failInfoName);
+  const two = core.createScepChallenge({
+    target: { kind: 'person', id: ALICE }, profile: 'tls-client',
+    createdBy: 'test' });
+  const second = message(dev, caCert.ra, { txid: txid,
+    inner: client.csr(dev.key, { challenge: two.challenge }) });
+  const r2 = client.readCertRep(
+    (await client.pkiOperation(url, second.der)).body, caCert.ra);
+  t.equal(r2.pkiStatus, '0',
+          'a different request under that completed transactionID is a new ' +
+          'transaction (STS-SCEP-0037 before #249) ' + r2.failInfoName);
+  const spent = message(dev, caCert.ra, { txid: txid,
+    inner: client.csr(dev.key, { challenge: one.challenge,
+                                 commonName: 'another' }) });
+  const r3 = client.readCertRep(
+    (await client.pkiOperation(url, spent.der)).body, caCert.ra);
+  t.equal(r3.failInfoName, 'badRequest',
+          'and it is authorized afresh: the first, spent challenge under ' +
+          'that transactionID is refused');
+  const issued = client.certsOnly(
+    client.openReply(r2.content, key, dev.certPem).inner).certificates[0];
+  const keep = message({ key: key, certPem: issued }, caCert.ra,
+    { txid: 'keep-' + RUN, inner: client.csr(key, {}) });
+  const r4 = client.readCertRep(
+    (await client.pkiOperation(url, keep.der)).body, caCert.ra);
+  t.equal(r4.pkiStatus, '0',
+          'a PKCSReq with no challenge, signed by the certificate this realm ' +
+          'issued over the SAME key, is a renewal (STS-SCEP-0035 before ' +
+          '#249) ' + r4.failInfoName);
+  log.debug("Leaving checkClientConventions().");
+}
+
+// ---------------------------------------------------------------------------
 // 4. THE CONSOLE MODEL AND THE API ROWS.
 // ---------------------------------------------------------------------------
 function fakeReq(query) {
@@ -484,6 +584,7 @@ async function run(t) {
     await checkCodec(t, keys);
     await checkRa(t);
     await checkHandler(t, server);
+    await checkClientConventions(t, server);
     await checkConsole(t);
     checkFailInfo(t);
   } finally {

@@ -519,13 +519,29 @@ class Scep {
                          'request signed with a different key.',
                          cms.FAIL_INFO.badCertId);
     }
+    // A DIFFERENT REQUEST UNDER A COMPLETED transactionID IS A NEW
+    // TRANSACTION, NOT A REFUSAL (#249, #250). certmonger and jscep both
+    // derive the transactionID from the requester's PUBLIC KEY — the
+    // convention of the drafts RFC 8894 replaced — so every request for the
+    // same key carries the same one: a certmonger `getcert resubmit`, a
+    // jscep renewal that keeps its key. Until 2026-09-26 that was refused
+    // STS-SCEP-0037 for as long as the first result was held (a day), and
+    // certmonger, which cannot read a FAILURE CertRep (scep/CLAUDE.md),
+    // retried it until then. Nothing is given away by answering it instead:
+    // the stored result is only ever handed back for the SAME request, and a
+    // new one is authorized from scratch below — a single-use challenge, or
+    // a signer certificate this realm issued — and replaces the stored
+    // result when it succeeds. RFC 8894 section 3.2.1.1 puts the uniqueness
+    // on the client and says nothing of what a CA does when it is not kept.
+    // STS-SCEP-0037 is retired.
     if (held.csrSha256 !== read.csrSha256) {
-      log.debug("Leaving Scep.replayed(). A different request.");
-      return this.failed('STS-SCEP-0037',
-                         'That transactionID already completed ' +
-                         'for a different certificate ' +
-                         'request. A new request needs ' +
-                         'a new transactionID.', cms.FAIL_INFO.badRequest);
+      log.info("scep: transactionID " +
+               String(message.transactionID).slice(0, 80) +
+               " completed earlier for another request signed with the same " +
+               "key; this request is handled as a new transaction.");
+      log.debug("Leaving Scep.replayed(). A new request under a completed " +
+                "transactionID.");
+      return null;
     }
     log.debug("Leaving Scep.replayed(). The stored result.");
     return { ok: true, replay: true, certificatePem: held.certificatePem,
@@ -542,7 +558,26 @@ class Scep {
       log.debug("Leaving Scep.pkcsReq(). Unreadable.");
       return read.refusal;
     }
-    if (this.spkiSha256(read.csr.publicKeyPem) !== message.signer.spkiSha256) {
+    const sameKey = this.spkiSha256(read.csr.publicKeyPem) ===
+      message.signer.spkiSha256;
+    // **AND WHEN THE KEY IS KEPT (#249, #250, 2026-09-26).** A renewal that
+    // keeps its key — certmonger's `getcert resubmit`, a jscep renewal — is
+    // signed by the certificate being renewed over the SAME key the request
+    // names, so the two-keys test below never saw it: it went on as a first
+    // enrollment and was refused for having no challenge (STS-SCEP-0035).
+    // RFC 8894 section 2.3's second case turns on the SIGNER — "a
+    // certificate issued by the SCEP CA" — not on whether the key changed;
+    // so a signer that is not self-issued is asked the renewal question
+    // too, and one this realm did not issue carries on as before.
+    if (sameKey && message.signer.selfIssued === false) {
+      const keeping = await core.authenticatePresentedCertificate(
+        message.signer.pem, 'scep', { clientAuth: false });
+      if (keeping.ok) {
+        log.debug("Leaving Scep.pkcsReq(). A renewal keeping its key.");
+        return this.renewalReq(ctx);
+      }
+    }
+    if (!sameKey) {
       // **A PKCSReq SIGNED BY A CERTIFICATE THIS REALM ISSUED IS A RENEWAL
       // (#210, 2026-09-24).** RFC 8894 section 2.3 names that RenewalReq;
       // the drafts before it (draft-nourse-scep) renewed with a PKCSReq

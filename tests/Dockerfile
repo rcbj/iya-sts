@@ -86,6 +86,24 @@
 #                        354acb8 after the tag. Built against the base's
 #                        OpenSSL 3.
 #
+# AND TWO MORE SCEP CLIENTS (#249, #250, 2026-09-26):
+#
+#   certmonger 0.79.21   Red Hat, GPL-2.0+. The certificate-tracking daemon
+#                        and its scep-submit helper, from Ubuntu 26.04's own
+#                        package (universe), fetched from the archive's pool
+#                        and held to its sha256 before apt installs it and
+#                        its dependencies. Run, never vendored. Installed in
+#                        the runner, below, because the job starts the daemon
+#                        itself on a private socket (no D-Bus).
+#   jscep 3.0.1          MIT (its pom; the ticket said Apache-2.0). A Java
+#                        LIBRARY, so tests/tools/jscep-driver is a thin
+#                        command line over it, built in the `enroll-java`
+#                        stage: Maven resolves the jars, build.sh holds each
+#                        to jars.sha256 and compiles the driver, and jlink
+#                        makes a runtime of only the modules it uses — the
+#                        runner gets that, the jars and the licences, and
+#                        no JDK or Maven.
+#
 # NOTHING OF THEIRS IS VENDORED: each is fetched from its publisher at build
 # time, each archive is held to a sha256 here, and a GitHub archive of a
 # commit is byte-stable. Their licences are copied beside the binaries, into
@@ -159,6 +177,13 @@ RUN curl -fsSL --retry 5 --retry-all-errors -o sscep.tgz \
  && ./configure --prefix=/opt/sscep >/dev/null \
  && make -j"$(nproc)" >/dev/null && cp sscep /out/ \
  && cp COPYING /out/licenses/sscep.COPYING
+
+# jscep, THROUGH ITS DRIVER (#250): see the header and
+# tests/tools/jscep-driver/build.sh, which argues every step. The Maven image
+# is pinned by tag; what reaches the runner is pinned by sha256.
+FROM maven:3.9.16-eclipse-temurin-21-noble AS enroll-java
+COPY tests/tools/jscep-driver /usr/src/jscep-driver
+RUN /usr/src/jscep-driver/build.sh /usr/src/jscep-driver /out/jscep
 
 # THE SECOND SCIM HARNESS, COMPILED IN A STAGE OF ITS OWN (#206).
 # scim2/test-suite is Go, and a Go toolchain in the runner image would be
@@ -500,6 +525,26 @@ COPY --from=corpora /usr/src/sts/tests/vectors /usr/src/sts/tests/vectors
 # one other checkouts' builds of this file already cached.
 COPY --from=vc-suites /opt/vc-suites /opt/vc-suites
 ENV STS_VC_SUITES_DIR=/opt/vc-suites
+
+# THE LAST TWO SCEP CLIENTS (#249, #250), here rather than beside the other
+# three so that adding them rebuilt no layer above. certmonger is Ubuntu's
+# own package, pinned by its archive path and sha256 and installed with apt
+# so its libraries come from the same release; its postinst cannot start a
+# service in a container and does not need to — the job runs the daemon.
+# jscep is its driver, runtime and licences from the `enroll-java` stage.
+ENV CERTMONGER_DEB=certmonger_0.79.21-1_amd64.deb
+ENV CERTMONGER_SHA256=75180fdc2eef1d94f1dfe63703671ed599fe58b654257fb8a792153481ec842e
+RUN curl -fsSL --retry 5 --retry-all-errors -o /tmp/${CERTMONGER_DEB} \
+        http://archive.ubuntu.com/ubuntu/pool/universe/c/certmonger/${CERTMONGER_DEB} \
+ && echo "${CERTMONGER_SHA256}  /tmp/${CERTMONGER_DEB}" | sha256sum -c - \
+ && apt-get update \
+ && DEBIAN_FRONTEND=noninteractive apt-get -y install --no-install-recommends \
+        /tmp/${CERTMONGER_DEB} \
+ && rm -rf /var/lib/apt/lists/* /tmp/${CERTMONGER_DEB} \
+ && certmonger -v && test -x /usr/lib/certmonger/scep-submit
+COPY --from=enroll-java /out/jscep /opt/enroll-clients/jscep
+RUN ln -s /opt/enroll-clients/jscep/jscep-driver /usr/local/bin/jscep-driver \
+ && (jscep-driver 2>&1 | head -1)
 
 # The repository. The root .dockerignore decides what is in it — see the header
 # — and the guard is what a context missing the suite says instead of failing
