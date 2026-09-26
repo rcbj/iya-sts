@@ -134,6 +134,9 @@ import InstanceSlot = require('../common/instance_slot');
 // The closed JSON-LD loader and RDFC-1.0 (#195, #196). A library that
 // requires only `jsonld` and `common/` leaves.
 import vcJsonLd = require('./vc_jsonld');
+// ecdsa-sd-2023's base and derived proofs (#196). A library that requires
+// `vc_jsonld.ts`, `vc_status_codec.ts` and `common/` leaves — never this one.
+import vcEcdsaSd = require('./vc_ecdsa_sd');
 
 interface Check {
   name: string;
@@ -150,6 +153,9 @@ interface Suite {
   // How the document is made into bytes: RFC 8785 JSON, or RDFC-1.0 N-Quads
   // (#195, #196).
   canon: 'jcs' | 'rdfc';
+  // ecdsa-sd-2023 (#196): a base proof to sign, a derived proof to verify,
+  // both `vc_ecdsa_sd.ts`'s.
+  sd?: boolean;
 }
 
 interface VcDataIntegrityDeps {
@@ -162,6 +168,7 @@ interface VcDataIntegrityDeps {
   stsCrypto: typeof stsCrypto;
   // The ambient realm's key set, for `realmKeyFor()` (#194).
   stsKeysFor: () => any;
+  sd: typeof vcEcdsaSd;
 }
 
 const SUITES: Record<string, Suite> = {
@@ -185,7 +192,10 @@ const SUITES: Record<string, Suite> = {
     spec: 'W3C Data Integrity ECDSA Cryptosuites v1.0, section 3.2' },
   'eddsa-rdfc-2022': {
     id: 'eddsa-rdfc-2022', kind: 'ed25519', multibase: 'z', canon: 'rdfc',
-    spec: 'W3C Data Integrity EdDSA Cryptosuites v1.0, section 3.2' }
+    spec: 'W3C Data Integrity EdDSA Cryptosuites v1.0, section 3.2' },
+  'ecdsa-sd-2023': {
+    id: 'ecdsa-sd-2023', kind: 'ec', multibase: 'u', canon: 'rdfc', sd: true,
+    spec: 'W3C Data Integrity ECDSA Cryptosuites v1.0, section 3.6' }
 };
 
 const SUPPORTED_CRYPTOSUITES = Object.keys(SUITES);
@@ -265,7 +275,8 @@ class VcDataIntegrity {
         helpers.log.debug("Entering stsKeysFor().");
         helpers.log.debug("Leaving stsKeysFor().");
         return helpers.stsKeysFor();
-      }
+      },
+      sd: vcEcdsaSd
     };
   }
 
@@ -714,6 +725,11 @@ class VcDataIntegrity {
     // The JCS suite a key signs with names its KIND; the RDFC suite of the
     // same kind signs with the same keys (#195, #196).
     const actualSuite = SUITES[actual];
+    if (suite.sd && !(jwk && jwk.kty === 'EC' && jwk.crv === 'P-256')) {
+      return 'ecdsa-sd-2023 signs with a P-256 key (its derived proof ' +
+        'encodes a 64-byte signature, section 3.5.8); this is ' +
+        ((jwk && (jwk.crv || jwk.kty)) || 'another kind of key') + '.';
+    }
     if (actualSuite && actualSuite.kind === suite.kind &&
         (actualSuite.pqAlg || '') === (suite.pqAlg || '')) {
       return '';
@@ -880,6 +896,22 @@ class VcDataIntegrity {
     if (mismatch) {
       log.debug("Leaving VcDataIntegrity.signDocument(). Wrong key.");
       throw new Error(mismatch);
+    }
+    if (suite.sd) {
+      const { sd } = this.deps;
+      const existing = [].concat(unsecured && unsecured.proof !== undefined ?
+                                 unsecured.proof : []);
+      const based = await sd.createBaseProof(unsecured, {
+        publicJwk: publicJwk, privateKey: o.privateKey,
+        verificationMethod: o.verificationMethod ||
+          (this.didJwkOf(publicJwk) + '#0'),
+        mandatoryPointers: o.mandatoryPointers, created: o.created,
+        proofPurpose: o.proofPurpose || 'assertionMethod' });
+      if (existing.length) {
+        based.proof = existing.concat([based.proof]);
+      }
+      log.debug("Leaving VcDataIntegrity.signDocument(). ecdsa-sd-2023.");
+      return based;
     }
     const extra = o.proofMembers && typeof o.proofMembers === 'object'
       ? o.proofMembers : {};
@@ -1162,7 +1194,8 @@ class VcDataIntegrity {
     if (suite) {
       try {
         signature = this.multibaseDecode(proof.proofValue, suite.multibase);
-        const want = resolved ? this.signatureBytes(suite, resolved.jwk) : 0;
+        const want = resolved && !suite.sd
+          ? this.signatureBytes(suite, resolved.jwk) : 0;
         if (want && signature.length !== want) {
           check('Proof value', false, 'the signature is ' +
                 signature.length + ' bytes; ' + suite.id + ' with this key ' +
@@ -1237,6 +1270,17 @@ class VcDataIntegrity {
       return result;
     }
     let verified = false;
+    if (suite.sd) {
+      // The derived proof over the document carrying only this proof.
+      const { sd } = this.deps;
+      const one = Object.assign({}, unsecured, { proof: proof });
+      const answer = await sd.verifyDerivedProof(one, resolved.jwk);
+      check('Signature', answer.ok, answer.detail);
+      result.ok = checks.every(function (c) { return c.ok; });
+      log.debug("Leaving VcDataIntegrity.verifyProof(). ecdsa-sd-2023 ok=" +
+                result.ok);
+      return result;
+    }
     for (let i = 0; i < configs.length && !verified; i++) {
       try {
         verified = await this.verifyBytes(suite, resolved.jwk,
@@ -1259,6 +1303,17 @@ class VcDataIntegrity {
     result.ok = checks.every(function (c) { return c.ok; });
     log.debug("Leaving VcDataIntegrity.verifyProof(). ok=" + result.ok);
     return result;
+  }
+
+  // An ecdsa-sd-2023 derived proof from the base proof a document carries
+  // (#196; `vc_ecdsa_sd.ts`, section 3.6.6).
+  async deriveProof(securedDocument: any,
+                    selectivePointers: string[]): Promise<any> {
+    const { log, sd } = this.deps;
+    log.debug("Entering VcDataIntegrity.deriveProof().");
+    const out = await sd.deriveProof(securedDocument, selectivePointers);
+    log.debug("Leaving VcDataIntegrity.deriveProof().");
+    return out;
   }
 
   // ---------------------------------------------------------------------------
@@ -1332,6 +1387,7 @@ export = {
   jwkOfMultikey: slot.forward('jwkOfMultikey'),
   verifyAllProofs: slot.forward('verifyAllProofs'),
   realmKeyFor: slot.forward('realmKeyFor'),
+  deriveProof: slot.forward('deriveProof'),
   signPresentation: slot.forward('signPresentation'),
   signDocument: slot.forward('signDocument'),
   multikeyOf: slot.forward('multikeyOf'),

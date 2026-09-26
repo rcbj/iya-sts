@@ -597,6 +597,8 @@ class ProtocolStack {
                'VcJsonLd');
     this.build('oid4vc/vc_data_model', require('../oid4vc/vc_data_model'),
                'VcDataModel');
+    this.build('oid4vc/vc_ecdsa_sd', require('../oid4vc/vc_ecdsa_sd'),
+               'VcEcdsaSd');
     this.build('oid4vc/vc_data_integrity',
                require('../oid4vc/vc_data_integrity'), 'VcDataIntegrity');
     // #129: SIOPv2's relying-party half — the self-issued ID Token's check

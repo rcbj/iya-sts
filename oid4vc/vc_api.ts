@@ -122,12 +122,21 @@ const ISSUERS: Record<string, { kind: string; cryptosuite?: string;
   'ecdsa-jcs-2019-p256': { kind: 'di', cryptosuite: 'ecdsa-jcs-2019',
                            curve: 'P-256' },
   'ecdsa-jcs-2019-p384': { kind: 'di', cryptosuite: 'ecdsa-jcs-2019',
-                           curve: 'P-384' }
+                           curve: 'P-384' },
+  'ecdsa-sd-2023-p256': { kind: 'di', cryptosuite: 'ecdsa-sd-2023',
+                          curve: 'P-256' }
 };
+
+// The statements an ecdsa-sd-2023 base proof makes mandatory when the
+// request names none: who issued it and when it is valid, and its status —
+// what a verifier needs to judge any disclosure at all. Each only where
+// the credential has it (a pointer to nothing is an error, 3.4.12).
+const DEFAULT_MANDATORY = ['/issuer', '/validFrom', '/validUntil',
+  '/issuanceDate', '/expirationDate', '/credentialStatus'];
 
 // What a Data Integrity proof may be on a credential presented here.
 const VERIFIABLE_SUITES = ['eddsa-rdfc-2022', 'eddsa-jcs-2022',
-  'ecdsa-rdfc-2019', 'ecdsa-jcs-2019', 'mldsa44-jcs-2024',
+  'ecdsa-rdfc-2019', 'ecdsa-jcs-2019', 'ecdsa-sd-2023', 'mldsa44-jcs-2024',
   'slhdsa128-jcs-2024'];
 
 const DATA_INTEGRITY_V2 = 'https://w3id.org/security/data-integrity/v2';
@@ -429,9 +438,28 @@ class VcApi {
       log.debug("Leaving VcApi.issue(). JSON-LD.");
       return;
     }
+    let mandatoryPointers: string[] = undefined;
+    if (issuer.cryptosuite === 'ecdsa-sd-2023') {
+      if (options.mandatoryPointers !== undefined &&
+          (!Array.isArray(options.mandatoryPointers) ||
+           options.mandatoryPointers.some(function (p: any) {
+             return typeof p !== 'string';
+           }))) {
+        this.refuse(res, 400, 'STS-VC-0103', 'options.mandatoryPointers is ' +
+                    'an array of JSON pointers.');
+        log.debug("Leaving VcApi.issue(). Bad pointers.");
+        return;
+      }
+      mandatoryPointers = options.mandatoryPointers !== undefined
+        ? options.mandatoryPointers
+        : DEFAULT_MANDATORY.filter(function (p) {
+            return document[p.slice(1)] !== undefined;
+          });
+    }
     let secured: any;
     try {
       secured = await di.signDocument(document, {
+        mandatoryPointers: mandatoryPointers,
         cryptosuite: issuer.cryptosuite, publicJwk: issuer.key.publicJwk,
         privateKey: issuer.key.privateKey,
         verificationMethod: issuer.key.verificationMethod,
@@ -690,6 +718,46 @@ class VcApi {
     log.debug("Leaving VcApi.changeStatus().");
   }
 
+  // ---------------------------------------------------------------------------
+  // DERIVE (VC-API `/credentials/derive`): an ecdsa-sd-2023 derived proof
+  // revealing the mandatory statements and `options.selectivePointers` —
+  // the holder's act, offered so that a base proof issued here can be taken
+  // to a verifier. 201 `{ verifiableCredential }`.
+  // ---------------------------------------------------------------------------
+  async derive(req: any, res: any): Promise<void> {
+    const { log, di } = this.deps;
+    log.debug("Entering VcApi.derive().");
+    const body = this.readBody(req, res);
+    if (!body) {
+      log.debug("Leaving VcApi.derive(). The body was refused.");
+      return;
+    }
+    const vc = body.verifiableCredential;
+    const pointers = body.options && body.options.selectivePointers;
+    if (!vc || typeof vc !== 'object' || (pointers !== undefined &&
+        (!Array.isArray(pointers) || pointers.some(function (p: any) {
+          return typeof p !== 'string';
+        })))) {
+      this.refuse(res, 400, 'STS-VC-0103', 'A derive request is { ' +
+                  '"verifiableCredential": {…}, "options": { ' +
+                  '"selectivePointers": [ JSON pointers ] } }.');
+      log.debug("Leaving VcApi.derive(). Malformed.");
+      return;
+    }
+    let derived: any;
+    try {
+      derived = await di.deriveProof(vc, pointers || []);
+    } catch (e) {
+      log.debug("Caught in VcApi.derive(): " + ((e && e.message) || e));
+      this.refuse(res, 400, 'STS-VC-0103', 'No proof could be derived: ' +
+                  String((e && e.message) || e));
+      log.debug("Leaving VcApi.derive(). Refused.");
+      return;
+    }
+    this.send(res, 201, { verifiableCredential: derived });
+    log.debug("Leaving VcApi.derive().");
+  }
+
   // A verification's answer, as an HTTP response: 200 when verified, 400
   // with the errors when not.
   private answerVerification(res: any, result: any, code: string): void {
@@ -764,6 +832,13 @@ class VcApi {
           }));
       }
       log.debug("Leaving POST " + BASE + "/presentations/verify.");
+    });
+    app.post(BASE + '/credentials/derive', function (req, res) {
+      log.debug("Entering POST " + BASE + "/credentials/derive.");
+      if (self.admitted(req, res, SCOPE_ISSUE)) {
+        self.run(res, self.derive(req, res));
+      }
+      log.debug("Leaving POST " + BASE + "/credentials/derive.");
     });
     app.post(BASE + '/credentials/status', function (req, res) {
       log.debug("Entering POST " + BASE + "/credentials/status.");

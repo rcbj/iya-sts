@@ -217,18 +217,30 @@ class VcJsonLd {
     // (VCDM 2.0 section 11.1) becomes a literal of the i18n datatype, as the
     // Data Integrity cryptosuites expect. Without it safe mode refuses the
     // direction as lossy, and a conforming `name` could not be signed.
+    // jsonld 9 hands `canonizeOptions` to rdf-canonize, and only those:
+    // the algorithm, the output format and the id map go there.
     const options: any = {
-      algorithm: 'RDFC-1.0', format: 'application/n-quads',
       documentLoader: this.documentLoader(), safe: true, base: null,
-      rdfDirection: 'i18n-datatype'
+      rdfDirection: 'i18n-datatype',
+      canonizeOptions: this.canonizeOptions(o.canonicalIdMap)
     };
-    if (o.canonicalIdMap) {
-      options.canonicalIdMap = o.canonicalIdMap;
-    }
     const out = await (jsonld as any).canonize(document, options);
     log.debug("Leaving VcJsonLd.canonize(). " + String(out).length +
               " character(s).");
     return String(out);
+  }
+
+  // What rdf-canonize is told: RDFC-1.0, N-Quads out, and the map to fill.
+  private canonizeOptions(canonicalIdMap?: Map<string, string>): any {
+    const { log } = this.deps;
+    log.debug("Entering VcJsonLd.canonizeOptions().");
+    const out: any = { algorithm: 'RDFC-1.0',
+                       format: 'application/n-quads' };
+    if (canonicalIdMap) {
+      out.canonicalIdMap = canonicalIdMap;
+    }
+    log.debug("Leaving VcJsonLd.canonizeOptions().");
+    return out;
   }
 
   // RDFC-1.0 of a set of N-Quads (a string, one quad per line).
@@ -239,12 +251,9 @@ class VcJsonLd {
     log.debug("Entering VcJsonLd.canonizeNQuads().");
     const o = opts || {};
     const options: any = {
-      algorithm: 'RDFC-1.0', format: 'application/n-quads',
-      inputFormat: 'application/n-quads', safe: true, base: null
+      inputFormat: 'application/n-quads', safe: true, base: null,
+      canonizeOptions: this.canonizeOptions(o.canonicalIdMap)
     };
-    if (o.canonicalIdMap) {
-      options.canonicalIdMap = o.canonicalIdMap;
-    }
     const out = await (jsonld as any).canonize(nquads, options);
     log.debug("Leaving VcJsonLd.canonizeNQuads().");
     return String(out);
