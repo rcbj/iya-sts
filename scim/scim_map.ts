@@ -190,10 +190,14 @@ interface EntryObject {
 // What a caller hands the two egress converters.
 interface ResourceContext {
   location?: string;
+  // Where a User and a Group resource live, for the `$ref` of a group a
+  // person is in and of a group's member (#206).
+  locations?: { User?: string; Group?: string };
   rdnName?: string;
   groups?: Array<{ id?: string; dn?: string; cn?: string }>;
   members?: Array<{ id?: string; dn?: string; cn?: string;
-                    displayName?: string; value?: string; kind?: string }>;
+                    displayName?: string; value?: string; kind?: string;
+                    present?: boolean }>;
 }
 
 // What the two ingress converters answer.
@@ -890,15 +894,11 @@ class ScimMap {
                 "userName is the RDN value: " + resource.userName);
     }
 
-    // `primary` marks the FIRST value of each multi-valued member and is not
-    // stored anywhere — see the header. Set after the loop rather than inside
-    // it because two rows feed `phoneNumbers` and the first value of the
-    // member is not the first value of either row.
-    ['emails', 'phoneNumbers'].forEach(function (member) {
-      if (resource[member].length) {
-        resource[member][0].primary = true;
-      }
-    });
+    // NO `primary` (#206). It marked the FIRST value of each multi-valued
+    // member and was stored nowhere, so a client that sent `primary: false`
+    // on its only phone number read back `true` — a fact this service made
+    // up. The directory cannot say which value is primary, so the published
+    // schema no longer offers the sub-attribute (scim.ts, narrowSchemas()).
 
     if (Object.keys(address).length) {
       address.type = 'work';
@@ -910,12 +910,19 @@ class ScimMap {
     // group — the console says the same thing about the same data, and
     // claiming `indirect` membership we never computed would be a lie about a
     // feature that is not here.
+    // `$ref` (#206) where the group has an id: RFC 7643 section 2.3.7's
+    // reference to the resource, the address a client can GET.
+    const groupsAt = (ctx.locations && ctx.locations.Group) || '';
     (ctx.groups || []).forEach(function (group) {
-      resource.groups.push({
+      const one: Record<string, any> = {
         value: group.id || group.dn,
         display: group.cn || group.dn,
         type: 'direct'
-      });
+      };
+      if (group.id && groupsAt) {
+        one.$ref = groupsAt + encodeURIComponent(group.id);
+      }
+      resource.groups.push(one);
     });
 
     log.debug("Leaving ScimMap.toScimUser(). " +
@@ -1030,8 +1037,23 @@ class ScimMap {
         .filter(function (value) {
           return value !== '';
         });
-      if (values.length) {
-        out[row.ldap] = values;
+      // ONE VALUE ONCE (#206). RFC 7643 section 2.4 says a (type, value)
+      // pair SHOULD NOT appear twice, and an LDAP attribute cannot hold one
+      // value twice at all (RFC 4512 section 2.3), yet a client sending the
+      // same address twice had both written and both read back. Compared as
+      // the attribute's own matching rule compares: `mail` and the two phone
+      // types ignore case, as RFC 7643 has `value` do for both members.
+      const seen: Record<string, boolean> = {};
+      const distinct = values.filter(function (value) {
+        const key = value.toLowerCase();
+        if (seen[key]) {
+          return false;
+        }
+        seen[key] = true;
+        return true;
+      });
+      if (distinct.length) {
+        out[row.ldap] = distinct;
       }
     });
 
@@ -1094,8 +1116,15 @@ class ScimMap {
       resource.externalId = externalId;
     }
 
+    const locations = ctx.locations || {};
     (ctx.members || []).forEach(function (member) {
-      resource.members.push({
+      // RFC 7643 section 4.2 defines `type` on a member as User or Group. A
+      // dangling member is neither and is reported as a User rather than
+      // omitted: the group listing it IS the fact, this directory does no
+      // referential integrity on purpose, and dropping the row would hide
+      // the one thing /admin/groups exists to show.
+      const type = member.kind === 'group' ? 'Group' : 'User';
+      const one: Record<string, any> = {
         // The member's SCIM id (added by scim.ts since 2026-09-14), or its DN
         // where there is none — never the raw value, so that a `memberUid`
         // holding `alice` comes back as the same id the User resource has.
@@ -1103,14 +1132,17 @@ class ScimMap {
         // about one person depending on which attribute their membership
         // happened to be written in.
         value: member.id || member.dn,
-        display: member.cn || member.displayName || member.value,
-        // RFC 7643 section 4.2 defines `type` on a member as User or Group. A
-        // dangling member is neither and is reported as a User rather than
-        // omitted: the group listing it IS the fact, this directory does no
-        // referential integrity on purpose, and dropping the row would hide
-        // the one thing /admin/groups exists to show.
-        type: member.kind === 'group' ? 'Group' : 'User'
-      });
+        type: type
+      };
+      // NO `display` (#206): RFC 7643 section 8.7.1's Group schema has none,
+      // and the one this wrote was the member's DN. A `$ref` instead, where
+      // the member resolves to a resource (section 2.3.7) — never for a
+      // dangling one, which has no address to give.
+      const at = locations[type];
+      if (member.id && member.present !== false && at) {
+        one.$ref = at + encodeURIComponent(member.id);
+      }
+      resource.members.push(one);
     });
 
     log.debug("Leaving ScimMap.toScimGroup(). " + resource.members.length +

@@ -273,6 +273,7 @@ address on the strength of it.
 | `scim.bulkMaxOperations` | `SCIM_BULK_MAX_OPERATIONS` | `100` | yes | How many operations one Bulk request may carry, published as `bulk.maxOperations`. |
 | `scim.bulkMaxPayloadSize` | `SCIM_BULK_MAX_PAYLOAD_SIZE` | `1048576` | yes | The largest Bulk body in bytes, published as `bulk.maxPayloadSize` and checked against that number. |
 | `scim.authDiscovery` | `SCIM_AUTH_DISCOVERY` | `false` | yes | Whether the three discovery documents also need a credential. |
+| `scim.inventOnCreate` | `SCIM_INVENT_ON_CREATE` | `true` | yes | Development mode only: fill a provisioned person in with the invented persona and the /admin/vc attributes the client did not send. Off, a create writes exactly what was sent. |
 | `scim.authRealm` | `SCIM_AUTH_REALM` | `SCIM` | yes | The protection space in every challenge; Digest and HOBA credentials are computed over it. |
 | `scim.scopeRead` | `SCIM_SCOPE_READ` | `scim:read` | yes | The OAuth scope needed to read, published in `scopes_supported`. |
 | `scim.scopeWrite` | `SCIM_SCOPE_WRITE` | `scim:write` | yes | The OAuth scope needed to create, replace, patch, delete or bulk; it does not imply the read scope. |

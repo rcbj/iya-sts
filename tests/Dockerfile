@@ -52,6 +52,19 @@
 # COPY below is what a context missing the suite says instead of failing later
 # inside node.
 # ---------------------------------------------------------------------------
+# THE SECOND SCIM HARNESS, COMPILED IN A STAGE OF ITS OWN (#206).
+# scim2/test-suite is Go, and a Go toolchain in the runner image would be
+# ~600 MB for one binary; so it is fetched at a pinned commit, checked by
+# sha256 and compiled here, and the runner below copies only the binary, its
+# LICENSE and its COMMIT. tests/scim-conformance/build-test-suite.sh argues
+# the pin; tests/CLAUDE.md, *The SCIM conformance harnesses*, is the
+# provenance. The golang image is Debian, whose glibc is older than
+# ubuntu:latest's, so the binary (cgo, for a store only its built-in server
+# uses) runs in the runner unchanged.
+FROM golang:1.26 AS scim2-test-suite
+COPY tests/scim-conformance/build-test-suite.sh /usr/src/build-test-suite.sh
+RUN /usr/src/build-test-suite.sh /opt/scim2-test-suite
+
 FROM ubuntu:latest
 
 # replace shell with bash so we can source files (the nvm install below needs it)
@@ -205,6 +218,23 @@ COPY tests/xml-schemas ./tests/xml-schemas
 COPY tests/tools/fetch-xml-schemas.sh ./tests/tools/fetch-xml-schemas.sh
 RUN ./tests/tools/fetch-xml-schemas.sh /opt/xml-schemas
 ENV STS_XML_SCHEMA_DIR=/opt/xml-schemas
+# THE FIRST SCIM HARNESS (#206): python-scim's scim2-tester, into a virtual
+# environment of its own, every package pinned to a version AND a sha256
+# (--require-hashes; tests/scim-conformance/requirements.txt says how to
+# re-pin). And the second, compiled in the stage at the top of this file.
+# tests/vendored/sts_scim_conformance.js runs both. Above the source copy,
+# for the schemas' reason.
+RUN apt-get update \
+    && DEBIAN_FRONTEND=noninteractive apt-get -y install --no-install-recommends \
+        python3 python3-venv \
+    && rm -rf /var/lib/apt/lists/*
+COPY tests/scim-conformance/requirements.txt /usr/src/scim2-tester/requirements.txt
+RUN python3 -m venv /opt/scim2-tester \
+    && /opt/scim2-tester/bin/pip install --no-cache-dir --require-hashes \
+        -r /usr/src/scim2-tester/requirements.txt
+ENV STS_SCIM2_TESTER_PYTHON=/opt/scim2-tester/bin/python
+COPY --from=scim2-test-suite /opt/scim2-test-suite /opt/scim2-test-suite
+ENV STS_SCIM2_TEST_SUITE=/opt/scim2-test-suite/scim-compliance
 COPY package*.json ./
 COPY .npmrc ./
 COPY node-ldapjs ./node-ldapjs

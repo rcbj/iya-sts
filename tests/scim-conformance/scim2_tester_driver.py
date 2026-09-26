@@ -12,6 +12,12 @@ Arguments come from the environment so no token is on a command line:
   SCIM_BASE_URL   the /scim/v2 base (a trust realm's).
   SCIM_TOKEN      a bearer access token carrying scim:read and scim:write.
   SCIM_CA_FILE    the PEM anchor for the service's TLS certificate.
+  SCIM_FEDERATION_RELATIONSHIP, SCIM_FEDERATION_PEER
+                  a service-provider-side federation relationship of the
+                  realm and its peer, for the federationLinks member.
+
+It adapts what scim2-tester SENDS in three places, each argued where it is
+made below, and never what it checks.
 """
 
 import json
@@ -23,6 +29,7 @@ from httpx2 import Client
 from scim2_client.engines.httpx2 import SyncSCIMClient
 from scim2_tester import check_server
 from scim2_tester import filling
+import scim2_tester.checkers  # noqa: F401 -- loaded so its imports are seen
 
 # THE ONE ADAPTATION, and it changes what is SENT, never what is checked.
 # scim2-tester fills every string member it has no example for with a bare
@@ -37,14 +44,58 @@ from scim2_tester import filling
 _generate = filling.generate_random_value
 
 
+# THE SECOND, for a Group's `members`: scim2-tester fills a member's `$ref`
+# with a User it created and its `type` with a random choice of "User" and
+# "Group", so half its members say they are a Group while naming a User.
+# This service reports the type of what the member IS, so the harness's own
+# comparison failed on whichever half it drew. The type is set to agree
+# with the `$ref` the harness itself chose; nothing about the check changes.
+def consistent_member(member):
+    ref = str(getattr(member, "ref", "") or "")
+    for kind in ("Users", "Groups"):
+        if "/" + kind + "/" in ref and hasattr(member, "type"):
+            member.type = kind[:-1]
+    return member
+
+
+# THE THIRD, for this service's own extension: a federation link names a
+# service-provider-side relationship of the realm and that relationship's
+# peer (scim/CLAUDE.md, #109), which a harness cannot guess — a random one is
+# refused 400 (STS-FED-0105), as it should be. The job creates one in its
+# realm and names it here; the subject stays random.
+RELATIONSHIP = os.environ.get("SCIM_FEDERATION_RELATIONSHIP", "")
+PEER = os.environ.get("SCIM_FEDERATION_PEER", "")
+
+
+def real_link(link):
+    if RELATIONSHIP and hasattr(link, "relationship"):
+        link.relationship = RELATIONSHIP
+        link.issuer = PEER
+    return link
+
+
 def generate_named_value(context, path, mutability=None, required=None):
     value = _generate(context, path, mutability=mutability, required=required)
-    if str(path).endswith("userName") and isinstance(value, str):
+    text = str(path)
+    if text.endswith("userName") and isinstance(value, str):
         return "s2t-" + value
+    if text.endswith("members") and isinstance(value, list):
+        return [consistent_member(one) for one in value]
+    if text.endswith("federationLinks") and isinstance(value, list):
+        return [real_link(one) for one in value]
+    if text.endswith("federationLinks.relationship") and RELATIONSHIP:
+        return RELATIONSHIP
+    if text.endswith("federationLinks.issuer") and PEER:
+        return PEER
     return value
 
 
-filling.generate_random_value = generate_named_value
+# Every module that imported the function by name holds its own reference,
+# so each is pointed at the wrapper, not only `filling`.
+for _name, _module in list(sys.modules.items()):
+    if (_name.startswith("scim2_tester") and
+            getattr(_module, "generate_random_value", None) is _generate):
+        _module.generate_random_value = generate_named_value
 
 
 def plain(value):

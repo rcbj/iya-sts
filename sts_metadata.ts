@@ -4140,6 +4140,13 @@ const ENDPOINTS: EndpointEntry[] = [
           'ServiceProviderConfig ADVERTISES rather than against the express ' +
           'body parser\'s service-wide one, because a client reads a ' +
           'published limit as a promise.' },
+  { path: '/scim/v2/*', group: 'SCIM', name: 'Any other path under the base',
+    specs: ['rfc7644'],
+    what: 'A path under /scim/v2 that names no endpoint, answered 404 in the ' +
+          'SCIM Error schema (section 3.12) rather than by express as an ' +
+          'HTML page, so a client that mistyped a resource type gets a body ' +
+          'it can parse (#206). Registered after every endpoint above, per ' +
+          'method.' },
   { path: '/scim/v2/Me', group: 'SCIM', name: '/Me, the authenticated subject',
     specs: ['rfc7644', 'rfc7235'],
     what: 'Section 3.11\'s alias for the subject the request authenticated ' +
