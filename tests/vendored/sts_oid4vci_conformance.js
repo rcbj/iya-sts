@@ -91,7 +91,17 @@ const PLANS = [
                vci_authorization_code_flow_variant: "wallet_initiated" } }
 ];
 
-const EXPECTED = {};
+const EXPECTED = {
+  // HAIP's FAPI 2.0 module redeems a code twice and then expects the access
+  // token the first redemption bought to be refused at the credential
+  // endpoint. The code's tokens ARE revoked (STS-OAUTH-0143, every mode),
+  // but a DEVELOPMENT realm does not verify an access token at the
+  // OpenID4VCI endpoints — the root CLAUDE.md's documented non-goal; product
+  // refuses a revoked one — so the memory-mode run warns (4xx expected).
+  ["haip/fapi2-security-profile-final-attempt-reuse-authorization-code-" +
+   "after-one-second"]: "a development realm's OpenID4VCI endpoints do not " +
+    "verify an access token (a documented non-goal); product refuses it"
+};
 // Conditions whose WARNING this service keeps, and why — the same sentences
 // as `oauth-oidc/CLAUDE.md` 3bp.
 const KNOWN_WARNINGS = {
@@ -106,16 +116,6 @@ const KNOWN_WARNINGS = {
 };
 // FAILUREs that are the suite's and not this service's, each argued.
 const KNOWN_FAILURES = {
-  // HAIP (#187 with #229, 2026-09-26). The credential's x5c is the realm's
-  // chain without the Root, as HAIP 6.1.1 requires — and every certificate
-  // in it is HYBRID (pki.alternativeKeyAlgorithm, ML-DSA-87 beside the
-  // classical key), about 8 KB of base64 each, so the header runs past the
-  // 20,000 characters nimbus-jose-jwt 10.9 accepts
-  // (Header.MAX_HEADER_STRING_LENGTH) and the suite cannot parse the
-  // credential at all. rcbj's decision on #176: PQC support over a clean
-  // run. Plan-wide, since every module that receives a credential hits it.
-  "haip/*/ParseCredentialAsSdJwt": "nimbus refuses a JOSE header over " +
-    "20,000 characters, and the realm's hybrid (ML-DSA) x5c chain is ~40,000",
   // fapi2-security-profile-final-refresh-token redeems the refresh token a
   // second time with the PoP it already used: it harvests the
   // OAuth-Client-Attestation-Challenge header of the first refresh response

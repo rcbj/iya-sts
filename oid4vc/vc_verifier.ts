@@ -288,6 +288,9 @@ const SIGN_IN_FORMATS = Object.keys(SIGN_IN_QUERY_IDS);
 // Serialization. An unsigned request (`openid4vp-v1-unsigned`) would carry no
 // client identifier and no `expected_origins`, and this door always signs.
 const DC_API_PROTOCOL = 'openid4vp-v1-signed';
+// What the token registry (`common/admin_stats.js`) files a Request Object
+// under: the signer's third argument, since the payload carries no `typ`.
+const REQUEST_OBJECT_KIND = { kind: 'request_object' };
 const DC_API_RESPONSE_MODES = ['dc_api.jwt', 'dc_api'];
 // The content encryption the response may use (Section 8.3): A128GCM is the
 // default a wallet assumes, the others are offered in
@@ -1436,12 +1439,13 @@ class VcVerifier {
       // `typ` goes in the PROTECTED HEADER (RFC 9101 section 10.8, explicit
       // typing), where a strict wallet looks for it; until 2026-09-18 it was
       // only a payload claim and the header said "JWT", which
-      // `tests/vendored/sts_oid4vp_wallet.js` found. The claim is kept: it is
-      // what the token registry labels this JWT by on /admin/tokens.
+      // `tests/vendored/sts_oid4vp_wallet.js` found. The payload claim went
+      // on 2026-09-26 (#187): OpenID4VP defines no `typ` parameter, and the
+      // conformance suite reported it as one the Verifier made up. The token
+      // registry is told the kind out of band (REQUEST_OBJECT_KIND).
       record.requestObject = signed.algorithm ?
         this.signX509Request(payload, signed) :
-        signJwt(
-          Object.assign({ typ: 'oauth-authz-req+jwt' }, payload), null,
+        signJwt(payload, REQUEST_OBJECT_KIND,
           { certificateHeader: 'vp-request-object',
             header: Object.assign({ typ: 'oauth-authz-req+jwt' },
                                   signed.header),
@@ -1573,8 +1577,7 @@ class VcVerifier {
     // too: the wallet authenticates the request the same way either path.
     const requestObject = signed && signed.algorithm ?
       this.signX509Request(payload, signed) :
-      signJwt(
-        Object.assign({ typ: 'oauth-authz-req+jwt' }, payload), null,
+      signJwt(payload, REQUEST_OBJECT_KIND,
         { certificateHeader: 'vp-request-object',
           header: { typ: 'oauth-authz-req+jwt' } });
     log.debug("Leaving VcVerifier.dcApiRequest(). " + responseMode + ".");
@@ -1593,8 +1596,7 @@ class VcVerifier {
     // certificate-header: none — the x509 prefixes carry their own `x5c`,
     // the Verifier's certificate, and `oid4vp.requestObjectCertificateHeader`
     // would add an `x5u` naming the realm's other certificate for the key.
-    const out = signJwt(
-      Object.assign({ typ: 'oauth-authz-req+jwt' }, payload), null,
+    const out = signJwt(payload, REQUEST_OBJECT_KIND,
       { algorithm: signed.algorithm,
         header: Object.assign({ typ: 'oauth-authz-req+jwt' },
                               signed.header) });

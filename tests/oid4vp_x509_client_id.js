@@ -150,6 +150,12 @@ async function body(t) {
           '1b. the Request Object is ES256, typed, carries a three-' +
           'certificate x5c and no x5u, and verifies against the leaf',
           JSON.stringify(sanCheck.header).slice(0, 200));
+  const sanPayload = JSON.parse(Buffer.from(
+    String(san.requestObject).split('.')[1], 'base64url').toString('utf8'));
+  t.check(!('typ' in sanPayload) && sanPayload.client_id === san.clientId,
+          '1b2. and its PAYLOAD carries no typ: OpenID4VP defines no such ' +
+          'parameter, and the conformance suite reported it (#187)',
+          Object.keys(sanPayload).join(','));
   t.check(sanCheck.chainOk,
           '1c. the chain verifies link by link to the service Root, which ' +
           'it does not carry');

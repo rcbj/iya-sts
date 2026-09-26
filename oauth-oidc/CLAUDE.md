@@ -4383,6 +4383,20 @@ failure in its driver):
   and then schema-validates the UserInfo `verified_claims` the same
   omission removes — the suite contradicting itself.
 
+* HAIP's `fapi2-security-profile-final-refresh-token`: the suite redeems
+  the refresh token again with the attestation PoP it already spent, never
+  harvesting the fresh `OAuth-Client-Attestation-Challenge` nor retrying on
+  `use_attestation_challenge`; challenges are single use here (#229).
+* HAIP's `fapi2-security-profile-final-attempt-reuse-authorization-code-
+  after-one-second` warns in a development realm: the code's tokens are
+  revoked, but development does not verify an access token at the
+  OpenID4VCI endpoints (the root CLAUDE.md's non-goal; product does).
+* OpenID4VP's Request Object payload carried a `typ` claim beside the
+  header's (for the token registry's label); OpenID4VP defines no such
+  parameter and the suite reported it, so the payload claim is gone and
+  the registry is told the kind out of band (`tests/oid4vp_x509_client_id.js`
+  1b2).
+
 **Once not run, now run (2026-09-26)**: the HAIP issuer plan, whose every
 wallet authenticates with `attest_jwt_client_auth` (#229, 3bm), and the
 OpenID4VP verifier plan's `x509_san_dns` and `x509_hash` variants (#230).
