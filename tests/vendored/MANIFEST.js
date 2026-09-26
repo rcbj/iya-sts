@@ -755,7 +755,7 @@ const JOBS = [
   // 88 — the AD-only tests skipped by reason, every failure fixed or a
   // documented exception. `local: true`: this repository's KDC.
   { file: 'sts_kerberos_samba.js',       browser: false, local: true,
-    timeoutMs: 2700000 },
+    timeoutMs: 900000 },
   // HEIMDAL'S CLIENT TOOLS BESIDE MIT'S (#205, 2026-09-26): kinit, klist,
   // kgetcred, kvno, ktutil, gss-token and a Heimdal-GSSAPI curl, built into
   // the tests image from a pinned commit — AS and TGS per realm (FAST-armored

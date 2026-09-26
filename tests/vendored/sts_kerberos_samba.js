@@ -125,8 +125,9 @@ const PROFILE_OF = {
 // the KDC would.
 const FLOOR = 200;
 
-// A whole run of every module is a few minutes; this bounds a hung one.
-const RUN_TIMEOUT_MS = 40 * 60 * 1000;
+// A whole run of every module is well under a minute (#204: ~10 s); this
+// bounds a hung one.
+const RUN_TIMEOUT_MS = 10 * 60 * 1000;
 
 // ---------------------------------------------------------------------------
 // THE DOCUMENTED EXCEPTIONS, each also recorded on #204 with its reason.
@@ -185,7 +186,7 @@ const IDMAP = "Samba's winbind NSS mapping on a domain member " +
   "joined to an AD domain, which this KDC is not";
 const EXCEPTIONS = {
   "as_req_tests.AsReqKerberosTests.test_as_req_enc_timestamp_spn": NO_SPN,
-  "as_req_tests.AsReqKerberosTests.test_as_req_enc_timestamp_spn_mac":
+  "as_req_tests.AsReqKerberosTests.test_as_req_enc_timestamp_spn_enterprise":
     NO_SPN,
   "as_req_tests.AsReqKerberosTests.test_krbtgt_single_component_krbtgt":
     SAM_ACCOUNT_KRBTGT,

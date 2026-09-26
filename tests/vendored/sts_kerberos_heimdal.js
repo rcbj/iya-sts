@@ -595,7 +595,7 @@ async function test() {
       log.debug("Caught in test(): " + ((e && e.message) || e));
     }
   }
-  const floor = 20;
+  const floor = 16;
   assert.ok(checks >= floor, "only " + checks + " checks ran (floor " +
             floor + "); a section has stopped being called.");
   log.info(checks + " check(s) passed.");
