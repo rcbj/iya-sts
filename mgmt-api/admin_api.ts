@@ -14247,9 +14247,12 @@ class AdminApi {
 
           { action: 'reset-account', operationId: 'resetRiscAccount',
             summary: 'Put one account\'s RISC state back to where it started',
-            description: 'Clears the lifecycle, the opt-out state, the ' +
+            description: 'Clears the lifecycle, the ' +
                          'credential standing, the identifier history and ' +
-                         'every counter on one row, keeping the row.\n\nIT ' +
+                         'every counter on one row, keeping the row. The ' +
+                         'opt state (RISC section 2.8) is KEPT: it is the ' +
+                         'account holder\'s choice, and a pending opt-out ' +
+                         'still becomes effective on schedule.\n\nIT ' +
                          'DISABLES AND DELETES NOBODY. This register is a ' +
                          'record of what has been SAID about an account; ' +
                          'resetting it forgets the record. The directory ' +
@@ -14273,7 +14276,10 @@ class AdminApi {
             summary: 'Drop every row in the RISC account register',
             description: 'Forgets what has been said about every account. ' +
                          'Nobody is disabled, nobody is deleted and no ' +
-                         'directory entry is touched.\n\nIt is worth knowing ' +
+                         'directory entry is touched. A row whose holder ' +
+                         'chose anything but opt-in is re-created blank with ' +
+                         'that choice kept (RISC section 2.8).\n\nIt is ' +
+                         'worth knowing ' +
                          'what this throws away: a row for an account that ' +
                          'has been PURGED is the only evidence anywhere in ' +
                          'this service that the account existed and that ' +

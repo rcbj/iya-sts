@@ -240,12 +240,18 @@ class AccountSignals {
   }
 
   // RISC recovery-activated (#146): account recovery was started — an
-  // administrator issued a password-reset link, or (#63) a person asked for
-  // one on the forgot-password form.
+  // administrator issued a password-reset link or (#235) an activation link
+  // for somebody who already exists, (#63) a person asked for one on the
+  // forgot-password form, or (#235) a person signed in with a recovery code.
+  // `mailNotice: false` is the last: the person is at the screen, and is not
+  // mailed about what they just typed.
   recoveryActivated(notice?: object): Promise<Delivery> {
     const { log } = this.deps;
     log.debug('Entering AccountSignals.recoveryActivated().');
-    this.mailNotice('recoveryActivated', notice || {});
+    if ((notice as { mailNotice?: boolean } | undefined)?.mailNotice !==
+        false) {
+      this.mailNotice('recoveryActivated', notice || {});
+    }
     log.debug('Leaving AccountSignals.recoveryActivated().');
     return this.deliver('a RISC recovery-activated', 'emitRiscAccountAct',
                         Object.assign({}, notice || {},
@@ -310,7 +316,9 @@ class AccountSignals {
   }
 
   // RISC recovery-information-changed: somebody's recovery codes were
-  // cleared.
+  // cleared, confirmed, or (#235) one of them spent — at sign-in or on the
+  // forgot-password form. A recovery ADDRESS added, changed, removed or
+  // verified is read off the directory write by `risc.ts` instead.
   recoveryInformationChanged(notice?: object): Promise<Delivery> {
     const { log } = this.deps;
     log.debug('Entering AccountSignals.recoveryInformationChanged().');

@@ -4766,7 +4766,8 @@ class SharedSignals {
         message: 'The RISC state of account ' + row.accountId + ' was reset. ' +
           'The directory entry is untouched — this page is about what has ' +
           'been SAID about that account, and nobody has been disabled or ' +
-          'deleted.' });
+          'deleted. Its opt state (' + row.optOut + ') is the account ' +
+          'holder\'s choice and was kept (RISC section 2.8, #233).' });
     }
     if (name === 'clear') {
       const gone = risc.clear();
@@ -4774,7 +4775,9 @@ class SharedSignals {
       return Promise.resolve({ ok: true, errors: [],
         message: gone + ' account row(s) dropped. Nothing in the directory ' +
           'changed: this register is a record of what was said, and clearing ' +
-          'it forgets the record rather than deleting anybody.' });
+          'it forgets the record rather than deleting anybody. An account ' +
+          'whose holder opted out keeps that choice (RISC section 2.8, ' +
+          '#233).' });
     }
     // Spelled the way every other action handler here spells it, with the count
     // from the list rather than from a word typed beside it. That sentence is

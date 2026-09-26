@@ -8756,6 +8756,24 @@ class Authn {
     logArtifact('recovery code', 'as verified and spent by this server',
                 { username: step.username, remaining: verdict.remaining,
                   total: verdict.total });
+    // A RECOVERY CODE SPENT IS TWO RISC EVENTS (#235, rcbj's decision): the
+    // set shrank, which is recovery-information-changed (section 2.10) on
+    // every use and not only the last; and the code IS the recovery
+    // mechanism being exercised, which is recovery-activated (2.9). Both
+    // through `account_signals.ts`, so `risc.autoEmitTypes` and the opt-out
+    // gate decide them as they do every other act. No mail notice: the
+    // person is signing in, and nothing mailed about a code they just typed
+    // was asked for.
+    this.deps.accountSignals.recoveryInformationChanged({
+      username: step.username, initiatingEntity: 'user', via: 'sign-in',
+      reasonAdmin: step.username + ' spent a recovery code at sign-in; ' +
+                   verdict.remaining + ' of ' + verdict.total + ' remain.',
+      reasonUser: 'You used one of your recovery codes.' });
+    this.deps.accountSignals.recoveryActivated({ username: step.username,
+      initiatingEntity: 'user', via: 'sign-in', mailNotice: false,
+      reasonAdmin: step.username + ' signed in with a recovery code in ' +
+                   'place of their second factor.',
+      reasonUser: 'You signed in with a recovery code.' });
 
     // ---------------------------------------------------------------------
     // WHAT THE SESSION CLAIMS, AND `otp` IS A CHOICE RATHER THAN AN OBVIOUS

@@ -2696,6 +2696,19 @@ class AdminActions {
       });
       const mailed = this.mailedLink('activation', who, issued.token, body,
                                      body.actor, 'the users page');
+      // AN ACTIVATION LINK FOR SOMEBODY WHO ALREADY EXISTS SETS THEIR
+      // CREDENTIALS (#235), as its peer issue-password-reset does, and says
+      // the same two RISC events: recovery-activated and
+      // account-credential-change-required. A person CREATED with an
+      // activation link (the `create` action) is a new account and sends
+      // nothing — RISC has no event for one appearing.
+      accountSignals.credentialChangeRequired({ username: who,
+        reasonAdmin: 'An administrator issued an activation link for ' +
+                     who + '.' });
+      accountSignals.recoveryActivated({ username: who,
+        mailed: !!(mailed && mailed.ok),
+        reasonAdmin: 'An administrator started account recovery for ' + who +
+                     ' with an activation link.' });
       if (mailed && mailed.ok) {
         log.debug("Leaving AdminActions.usersAction(). Mailed.");
         return { ok: true, username: who, expiresAt: issued.expiresAt,

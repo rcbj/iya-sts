@@ -10437,7 +10437,14 @@ function writePersonFlag(key, name, value, options) {
   // `consequences: false`: the caller of this writer is
   // `common/account_state.ts`, which ends what the person holds itself and
   // reports it; the directory must not end it a second time.
-  const observed = name === 'pwdAccountLockedTime'
+  //
+  // AND SO IS THE ADDRESS BEING VERIFIED (#235): `stsMailVerified` naming
+  // the entry's `mail` is what makes that address the channel
+  // `/portal/forgot-password` recovers the account through, so its moving is
+  // RISC's recovery-information-changed — read by `ssf/risc.ts` off the
+  // before and after, as the address itself is.
+  const observed = name === 'pwdAccountLockedTime' ||
+                   name === 'stsMailVerified'
     ? attributeSnapshot(stored) : null;
   if (value === null || value === undefined || value === '' ||
       value === false) {
