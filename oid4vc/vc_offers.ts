@@ -945,6 +945,14 @@ class VcOffers {
         offerUser = Object.assign({}, userFor(session.user.username),
                                   session.user.sub ? { sub: session.user.sub } :
                                   {});
+        // THE OFFER IS MADE ON THE SESSION'S AUTHORITY, AND CAEP's
+        // `session-presented` SAYS SO (#240). The pre-authorized code minted
+        // below IS the authorization for a credential about this person, and
+        // nobody authenticated for it: the sign-on session this browser
+        // already held was presented and honoured. A same-device offer, and
+        // any offer where the test controls are open, is not made on a
+        // session at all and reports nothing.
+        authn.notePresented(session, 'OpenID4VCI', req);
       }
       const built = this.buildCredentialOffer(req, configurationIds, offerMode,
                                          { user: offerUser });

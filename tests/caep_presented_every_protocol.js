@@ -46,7 +46,8 @@ const log =
     require('bunyan').createLogger({ name: 'caep_presented_every_protocol',
   level: process.env.LOG_LEVEL || 'info' });
 
-// The four browser SSO profiles, and GNAP's interaction: a module, and the
+// The four browser SSO profiles, GNAP's interaction and the three doors
+// #240 added (CIBA, Native SSO, the pre-authorized offer): a module, and the
 // identifier it passes as `via` so the event says which door the session came
 // back through. A profile added here without a `notePresented()` fails
 // section B by name.
@@ -57,7 +58,17 @@ const PROFILES = [
   { file: '../ws-federation/wsfed.ts', via: 'WS-Federation' },
   // GNAP (2026-09-12): an interaction that meets a live sign-on session
   // approves without a new authentication, which is a presentation.
-  { file: '../gnap/gnap_interact.ts', via: 'GNAP' }
+  { file: '../gnap/gnap_interact.ts', via: 'GNAP' },
+  // #240 (2026-09-26): three more doors honour an existing sign-on session
+  // for a client it was not made for. A CIBA approval on /portal/ciba — the
+  // session's acr, amr and auth_time are what it proves; the Native SSO
+  // exchange — a second app issued tokens on the session the first app's ID
+  // Token names; and a pre-authorized OpenID4VCI offer made for the
+  // signed-in person — its code IS the authorization, made on the session's
+  // authority.
+  { file: '../portal/portal_ciba.ts', via: 'OpenID Connect CIBA' },
+  { file: '../oauth-oidc/oauth2.ts', via: 'OpenID Connect Native SSO' },
+  { file: '../oid4vc/vc_offers.ts', via: 'OpenID4VCI' }
 ];
 
 // A session in the shape `startSession()` leaves one, INCLUDING the flag that

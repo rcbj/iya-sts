@@ -1359,6 +1359,11 @@ with those `acr_values` and `prompt=login` (`oidc_rp.ts`'s `acrValues`
 option), returning to `?stepup=<id>`, and Approve takes after that.
 `portal_ciba.ts`, registered through `register(context)` as
 `portal_devices.ts` is. `oauth-oidc/CLAUDE.md` (3bc) carries the protocol.
+**An approval is single sign-on** (#239, #240, 2026-09-26). The approval
+records the sign-on session it was made on (`facts.sessionId`), and the
+tokens are issued on that session, so its end revokes their refresh token. It
+is also CAEP's `session-presented`, via `OpenID Connect CIBA`. A denial
+honours nothing and sends nothing.
 
 ## `/portal/claim-sources`: CONNECTED CLAIM SOURCES (#147, 2026-09-24)
 

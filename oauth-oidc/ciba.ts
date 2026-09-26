@@ -395,8 +395,12 @@ class Ciba {
 
   // -------------------------------------------------------------------------
   // THE PERSON'S ANSWER (section 8). `facts` is what the approving session
-  // proved: { acr, amr, authTime }. Returns { ok, record } or { ok: false,
-  // why }. Only the hinted person may answer; only a pending request.
+  // proved: { acr, amr, authTime, sessionId }. Returns { ok, record } or {
+  // ok: false, why }. Only the hinted person may answer; only a pending
+  // request. `sessionId` is the sign-on session the approval was made on
+  // (#239): the tokens are issued ON it, so its end revokes their refresh
+  // token as it does every other grant's. Empty for the management API's
+  // test control, which approves with no browser.
   // -------------------------------------------------------------------------
   answer(id: unknown, username: unknown, approve: boolean,
          facts?: Json): Json {
@@ -422,7 +426,8 @@ class Ciba {
     record.approval = approve ? {
       acr: String((facts && facts.acr) || ''),
       amr: (facts && facts.amr) || [],
-      authTime: Number(facts && facts.authTime) || Math.floor(now() / 1000)
+      authTime: Number(facts && facts.authTime) || Math.floor(now() / 1000),
+      sessionId: String((facts && facts.sessionId) || '')
     } : null;
     this.save(record);
     this.deps.audit.record({

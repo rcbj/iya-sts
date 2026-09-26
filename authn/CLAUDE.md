@@ -631,6 +631,13 @@ Two more have been added since the table was written: `reauthenticateSession()`
 sends `reauthenticated` (2026-09-14, the CAEP `assurance-level-change` source —
 see *WHAT AN AUTHENTICATED IDENTITY IS HERE*), and `startSession()` sends
 `presented` when a keyed API caller's credential touches its existing session.
+**`notePresented()` has more callers than the authorization endpoint**: the
+SAML 2.0, SAML 1.1, WS-Federation and GNAP answers from a session, and since
+#240 (2026-09-26) three doors that honour a session for a client it was not
+made for — a CIBA approval on `/portal/ciba`, the Native SSO exchange and a
+pre-authorized OpenID4VCI offer made for the signed-in person.
+`tests/caep_presented_every_protocol.js` holds the list, and
+`ssf/CLAUDE.md`'s table of acts names them.
 
 **`notifySession()` says nothing about an arrival session (#242,
 2026-09-26)** — the `chosen: false` tracking row a cookie-less visitor gets at

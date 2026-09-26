@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3700** of them, in **39** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3701** of them, in **39** subsystems.
 
 ## Where a code appears
 
@@ -63,7 +63,7 @@ is an ordinary outcome.
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 26
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 47
 * [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 251
-* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 665
+* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 666
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 97
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 21
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 16
@@ -1846,6 +1846,7 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0783` | Under FAPI 1.0 Advanced, an authorization request asked for response_type code with a response mode that is not JARM (Part 2 section 5.2.2 item 2, #187). | invalid_request |
 | `STS-OAUTH-0784` | Under FAPI 1.0 Advanced, an authorization request (its signed request object) named no scope; RFC 6749 section 3.3's refusal rather than a default (#187). | invalid_request |
 | `STS-OAUTH-0785` | An RP-Initiated Logout request carried a post_logout_redirect_uri with neither an id_token_hint nor a client_id, so it was not followed (section 2: nothing confirms the address, #187). | none (the sign-out page says so; no redirect) |
+| `STS-OAUTH-0786` | A CAEP session-revoked (or, for a replay, risk-level-change) about a revoked OAuth grant could not be delivered; the revocation stands (#239). | none (a log line) |
 
 ## STS-SAML
 

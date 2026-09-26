@@ -7602,6 +7602,11 @@ const CODES = [
       'client_id, so it was not followed (section 2: nothing confirms the ' +
       'address, #187).',
     spec: 'none (the sign-out page says so; no redirect)' },
+  { code: 'STS-OAUTH-0786',
+    summary: 'A CAEP session-revoked (or, for a replay, risk-level-change) ' +
+      'about a revoked OAuth grant could not be delivered; the revocation ' +
+      'stands (#239).',
+    spec: 'none (a log line)' },
   { code: 'STS-SAML-0001',
     summary: 'A SAML 2.0 sign-in resumed with a held-request id that is ' +
       'unknown or has expired (saml2.requestTtlMin), so there is no ' +

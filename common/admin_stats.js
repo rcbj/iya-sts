@@ -434,6 +434,14 @@ function recordJwt(payload, signed, context) {
     // which is a different relation and is drawn as one.
     setId: issuedUnder.setId || '',
     grant: issuedUnder.grant || '',
+    // THE OAUTH GRANT THIS TOKEN BELONGS TO (#239, 2026-09-26), stated by the
+    // issuer out of band exactly as `setId` is: the Grant Management
+    // `grant_id` where one was named, else the refresh-token family, else the
+    // token response. `grantRefresh` says whether that grant holds a refresh
+    // token — without one, revoking its access token IS the grant's end. What
+    // a revocation of it SAYS over CAEP is `oauth-oidc/oauth_grant_signals.ts`.
+    grantId: issuedUnder.grantId || '',
+    grantRefresh: issuedUnder.grantRefresh === true,
     issuedAt: Date.now(),
     revoked: false,
     revokedAt: 0,
@@ -588,7 +596,61 @@ setJwtRecorder(recordJwt);
 // declaration that makes a store replicate, and a Set has no such declaration.
 const revokedJtis = realms.map({ persist: 'admin_stats.revokedJtis' });
 
-function revoke(jti, via) {
+// ---------------------------------------------------------------------------
+// WHO IS TOLD THAT A TOKEN WAS REVOKED (#239, 2026-09-26): an INVERTED HOOK,
+// filled by `oauth-oidc/oauth_grant_signals.ts`, which turns the revocation
+// of an OAuth grant into CAEP's `session-revoked` about it — GNAP's shape
+// (`gnap/gnap_signals.ts`) for the other family whose grants are delegated
+// sessions.
+//
+// HERE, in the ONE revocation set, because every door that revokes an OAuth
+// token already comes through `revoke()` or `revokeWhere()` —
+// `/oauth2/revoke`, Grant Management's DELETE, a refresh-token replay, a
+// consent withdrawn, `/admin/tokens`, `/logout`, a sign-out's refresh tokens
+// — and an observer at seven call sites is seven that remember and an eighth
+// added later that does not.
+//
+// A SLOT AND NOT A REQUIRE, argued both ways round (rule 3e): the observer
+// delivers through `ssf/ssf.ts`, which requires this file at its load, so a
+// load-time require from here closes that cycle; and a LAZY one would put
+// `oauth-oidc/` and `ssf/` in the parent project's Kerberos COPY closure,
+// which reaches this file (`kerberos/CLAUDE.md`). The observer is told only
+// of a jti NEWLY revoked, is called for its side effect, and can never fail a
+// revocation: what it throws is logged and dropped.
+//
+// `how` is the door's own statement of the act, passed through untouched:
+// `{ initiatingEntity, superseded, replay }` — see the observer's file.
+// ---------------------------------------------------------------------------
+let revocationObserver = null;
+
+function setRevocationObserver(fn) {
+  log.debug("Entering setRevocationObserver().");
+  revocationObserver = typeof fn === 'function' ? fn : null;
+  log.debug("Leaving setRevocationObserver(). " +
+            (revocationObserver ? "Installed." : "Cleared."));
+}
+
+function tellRevocationObserver(jti, record, via, how) {
+  log.debug("Entering tellRevocationObserver().");
+  if (!revocationObserver) {
+    log.debug("Leaving tellRevocationObserver(). Nobody is listening.");
+    return;
+  }
+  try {
+    revocationObserver(Object.assign({ jti: jti }, record || {}),
+                       via || 'unstated', how || {});
+  } catch (e) {
+    log.debug("Caught in tellRevocationObserver(): " +
+              ((e && e.message) || e));
+    // The revocation has happened and is authoritative; a signal that could
+    // not be composed must not undo it or fail its caller.
+    log.warn('admin: the revocation of jti ' + jti + ' could not be ' +
+             'reported: ' + ((e && e.message) || e));
+  }
+  log.debug("Leaving tellRevocationObserver().");
+}
+
+function revoke(jti, via, how) {
   log.debug("Entering revoke(). jti=" + jti);
   if (!jti) {
     log.debug("Leaving revoke(). There was no jti to revoke.");
@@ -611,6 +673,9 @@ function revoke(jti, via) {
   log.info('admin: the token with jti ' + jti + ' is revoked (' +
            (via || 'unstated') + '). ' +
            revokedJtis.size + ' revoked in total.');
+  if (first) {
+    tellRevocationObserver(jti, record, via, how);
+  }
   log.debug("Leaving revoke(). " + (first ? "It is newly revoked." : "It was " +
       "already revoked."));
   return first;
@@ -4382,13 +4447,14 @@ function sessionAuthenticatedOfJti(jti) {
 // console's "revoke every access token" and "revoke everything for this
 // subject" buttons, which exist because revoking one jti at a time is not how
 // anybody tests a resource server's behaviour when its tokens go bad.
-function revokeWhere(predicate, via) {
+// `how` is passed to `revoke()` for its observer, as the door stated it.
+function revokeWhere(predicate, via, how) {
   log.debug("Entering revokeWhere().");
   let count = 0;
   tokens.forEach(function (record) {
     if (!record.revocable || record.revoked) return;
     if (!predicate(record)) return;
-    if (revoke(record.jti, via)) count++;
+    if (revoke(record.jti, via, how)) count++;
   });
   log.debug("Leaving revokeWhere(). Revoked " + count + " token(s).");
   return count;
@@ -4736,6 +4802,7 @@ module.exports = {
   SCIM_RECENT: SCIM_RECENT,
   SCIM_MAX_CLIENTS: SCIM_MAX_CLIENTS,
   revoke: revoke,
+  setRevocationObserver: setRevocationObserver,
   restore: restore,
   purgeExpiredTokens: purgeExpiredTokens,
   revokeWhere: revokeWhere,
