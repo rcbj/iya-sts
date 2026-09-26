@@ -137,8 +137,9 @@ const WHY = {
   keyUpdateLazy: { why: "openssl", reason: "OpenSSL answers a KeyUpdate " +
     "with update_requested when it next WRITES, which RFC 8446 section " +
     "4.6.3 allows (\"prior to sending its next Application Data record\"); " +
-    "the probe's HTTP request is incomplete, so the server writes nothing " +
-    "and tlsfuzzer times out waiting" },
+    "the probe's request is incomplete, so the server writes nothing and " +
+    "tlsfuzzer times out waiting. On LDAPS it depends on timing: seen in " +
+    "one run of two" },
   noTicketAfterResumption: { why: "openssl", reason: "after a PSK " +
     "resumption node's OpenSSL sends no new NewSessionTicket (a full " +
     "handshake gets two); RFC 8446 section 4.6.1 makes tickets optional" },
@@ -576,7 +577,7 @@ const PLAN = [
   { script: "test-tls13-keyshare-omitted.py" },
   { script: "test-tls13-keyupdate.py",
     exceptions: [ex("app data split, conversation with KeyUpdate msg",
-                    "Timeout", "keyUpdateLazy", { on: CR }),
+                    "Timeout", "keyUpdateLazy"),
                  ex("large KeyUpdate message", "illegal_parameter",
                     "alertChoice")] },
   { script: "test-tls13-large-number-of-extensions.py",
