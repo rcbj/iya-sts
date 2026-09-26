@@ -490,9 +490,16 @@ class RiskInstall {
       log.debug("Leaving RiskInstall.one(). Download failed.");
       return true;
     }
+    // A realm's list is the DEFAULT realm's here, which the importer names
+    // 'default'; a service-wide dataset names none. Until #213's run of this
+    // loader against a real stack it passed '' for both, so every operator
+    // list a manifest named was refused as "a list per realm; name the
+    // realm" — the header's promise of the default realm's lists was never
+    // kept.
+    const perRealm = !!(riskDatasets.CATALOGUE[entry.dataset] || {}).perRealm;
     const result = await riskDatasets.importVersion({
       dataset: entry.dataset, format: entry.format, path: file,
-      realm: realm,
+      realm: perRealm ? 'default' : '',
       version: entry.version,
       publishedAt: entry.publishedAt
         ? Date.parse(entry.publishedAt) || Number(entry.publishedAt) : 0,
