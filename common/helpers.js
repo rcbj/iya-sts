@@ -1666,34 +1666,53 @@ function lazyKeySet(realmId, stored) {
   // its private half through the keystore's door by kid — the `extraKeys`
   // arrangement above — and a setter for signerGroupsForAsync()'s backfill,
   // the `bbsKey` arrangement.
-  const groupsStored = (stored.signerGroups || []).length
-    ? stored.signerGroups.map(function (one) {
-        const kid = one.publicJwk && one.publicJwk.kid;
-        const entry = { group: one.group, slot: one.slot, alg: one.alg,
-                        kind: one.kind, pairedSlot: one.pairedSlot || null,
-                        publicJwk: one.publicJwk };
-        Object.defineProperty(entry, 'privateKey', {
-          enumerable: true, configurable: true,
-          get: function () {
-            log.debug("Entering a signer group key's private door.");
-            const held = keystore.privateMaterialFor(realmId);
-            if (!held || !held.groups || !held.groups.has(kid)) {
-              throw new Error('the "' + realmId + '" realm\'s ' + one.slot +
-                ' signing key is held encrypted and could not be ' +
-                'decrypted; see the keystore errors above.');
-            }
-            log.debug("Leaving a signer group key's private door.");
-            return held.groups.get(kid);
+  // The members built from public rows — the stored blob's at construction,
+  // or, when it had none, the keystore's (store or sibling) the first time a
+  // read finds them there. A request worker whose set was built BEFORE
+  // another process made the groups must still see them: the single-node
+  // run of tests/vendored/sts_signer_groups.js found the JWKS it served
+  // without them for good when this was read once, at construction.
+  const groupsFrom = function (rows) {
+    log.debug("Entering groupsFrom().");
+    log.debug("Leaving groupsFrom().");
+    return rows.map(function (one) {
+      const kid = one.publicJwk && one.publicJwk.kid;
+      const entry = { group: one.group, slot: one.slot, alg: one.alg,
+                      kind: one.kind, pairedSlot: one.pairedSlot || null,
+                      publicJwk: one.publicJwk };
+      Object.defineProperty(entry, 'privateKey', {
+        enumerable: true, configurable: true,
+        get: function () {
+          log.debug("Entering a signer group key's private door.");
+          const held = keystore.privateMaterialFor(realmId);
+          if (!held || !held.groups || !held.groups.has(kid)) {
+            throw new Error('the "' + realmId + '" realm\'s ' + one.slot +
+              ' signing key is held encrypted and could not be ' +
+              'decrypted; see the keystore errors above.');
           }
-        });
-        return entry;
-      })
-    : null;
+          log.debug("Leaving a signer group key's private door.");
+          return held.groups.get(kid);
+        }
+      });
+      return entry;
+    });
+  };
+  let groupsStored = (stored.signerGroups || []).length
+    ? groupsFrom(stored.signerGroups) : null;
   let groupsGenerated = null;
   Object.defineProperty(set, 'signerGroups', {
     enumerable: true, configurable: true,
     get: function () {
       log.debug("Entering get().");
+      // Only a realm in the model asks the keystore: every other realm's
+      // reads — the JWKS, every self-verification — stay free.
+      if (!groupsGenerated && !groupsStored &&
+          realms.run(realms.get(realmId), function () {
+            return signerGroups.hybridGroupsOn();
+          })) {
+        const rows = keystore.signerGroupsHeldFor(realmId);
+        groupsStored = rows ? groupsFrom(rows) : null;
+      }
       log.debug("Leaving get().");
       return groupsGenerated || groupsStored || undefined;
     },
