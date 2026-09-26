@@ -1050,6 +1050,21 @@ function acceptsUnencryptedFederatedAssertions() {
   return !isProduct();
 }
 
+// May the OpenID4VP Verifier certify the HOST A REQUEST ARRIVED AT as the
+// dNSName of its `x509_san_dns` Client Identifier (#230), when neither
+// `oid4vp.x509DnsName` nor `global.publicBaseUrl` names one? Development
+// answers yes, which is what lets the bar door answer under every name a
+// container stack reaches it by. Product answers no and refuses the request
+// (STS-VC-0110): the Response URI is built from the same host, so whoever
+// sent the Host header would be handed a Request Object this realm signed,
+// under a certificate a wallet trusts, sending presentations to a host of
+// their choosing.
+function certifiesRequestHost() {
+  log.debug("Entering certifiesRequestHost().");
+  log.debug("Leaving certifiesRequestHost().");
+  return !isProduct();
+}
+
 // May a request object be UNSIGNED — `alg: none` — at the authorization
 // endpoint (2026-09-13)? RFC 9101 section 4 says a request object is signed, or
 // signed and then encrypted, and nothing else; OpenID Connect Core section 6.1
@@ -1930,6 +1945,21 @@ const REQUIREMENTS = [
              '(RFC 7009 section 2.1). A token issued to another client is ' +
              'refused 400 invalid_grant and nothing is revoked.',
     where: 'oauth-oidc/oauth2.ts' },
+  { id: 'oid4vp-x509-host',
+    what: 'The OpenID4VP Verifier\'s x509_san_dns name is configured, never ' +
+          'taken from a request',
+    development: 'With oid4vp.x509DnsName empty and global.publicBaseUrl ' +
+                 'not pinned, the Verifier certifies the host a request ' +
+                 'arrived at (one certificate per name, sixteen at most a ' +
+                 'realm) and names it as its x509_san_dns Client ' +
+                 'Identifier.',
+    product: 'The name is oid4vp.x509DnsName, or the host of ' +
+             'global.publicBaseUrl; with neither, an x509_san_dns request is ' +
+             'refused (STS-VC-0110) — the Response URI is built from the ' +
+             'same host, so a Host header would choose where a signed, ' +
+             'trusted request sends presentations. x509_hash needs no name ' +
+             'and is unaffected.',
+    where: 'oid4vc/vc_verifier.ts, common/pki.js' },
   { id: 'request-objects',
     what: 'A JWT-secured authorization request is signed, and a request_uri ' +
           'is HTTPS',
@@ -2937,6 +2967,7 @@ module.exports = {
   acceptsUnsignedFederatedLogout: acceptsUnsignedFederatedLogout,
   acceptsUnencryptedFederatedAssertions: acceptsUnencryptedFederatedAssertions,
   acceptsUnsignedRequestObjects: acceptsUnsignedRequestObjects,
+  certifiesRequestHost: certifiesRequestHost,
   acceptsLooseRequestUris: acceptsLooseRequestUris,
   acceptsUnsignedSamlRequests: acceptsUnsignedSamlRequests,
   encryptsToObservedCertificates: encryptsToObservedCertificates,

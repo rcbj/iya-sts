@@ -4713,6 +4713,68 @@ function create(options) {
       });
     },
 
+    // WHERE A WINDOW'S PEOPLE WERE (#255), for Monitoring → Geolocation —
+    // `risk_store.geography()`'s database half, which argues the counting.
+    // One statement: GROUPING SETS counts distinct people at the world, each
+    // continent, each country and each city, and GROUPING() says which set a
+    // row is (15, 7, 3, 0). The continent is not in the table — the store
+    // holds a country — so the page's code-to-continent table arrives as two
+    // parallel arrays and is joined in; a code missing from it is ''. With
+    // `sessionIds` (live sessions), DISTINCT ON keeps each session's latest
+    // assessment only.
+    riskGeography: function (realm, opts) {
+      log.debug("Entering riskGeography(). realm=" + realm);
+      const o = opts || {};
+      const live = Array.isArray(o.sessionIds);
+      const params = [realm || '', Number(o.since) || 0,
+                      (o.countries || []).map(String),
+                      (o.continents || []).map(String)];
+      if (live) {
+        params.push(o.sessionIds.map(String));
+      }
+      const source = live
+        ? '(SELECT DISTINCT ON (session_id) * FROM sts_risk_assessments ' +
+          'WHERE realm = $1 AND at >= $2 AND subject <> \'\' AND ' +
+          'session_id = ANY($5::text[]) ORDER BY session_id, at DESC)'
+        : '(SELECT * FROM sts_risk_assessments WHERE realm = $1 AND ' +
+          'at >= $2 AND subject <> \'\')';
+      log.debug("Leaving riskGeography().");
+      return pool.query(
+        'WITH m AS (SELECT * FROM unnest($3::text[], $4::text[]) AS ' +
+        'm(country, continent)), a AS (SELECT s.subject, s.phase, ' +
+        's.country, s.subdivision, s.city, s.latitude, s.longitude, s.at, ' +
+        'coalesce(m.continent, \'\') AS continent FROM ' + source + ' AS s ' +
+        'LEFT JOIN m ON m.country = s.country) ' +
+        'SELECT GROUPING(continent, country, subdivision, city) AS g, ' +
+        'continent, country, subdivision, city, ' +
+        'count(DISTINCT subject) AS people, ' +
+        'count(*) FILTER (WHERE phase = \'user\') AS sign_ins, ' +
+        'count(*) AS assessments, avg(latitude) AS latitude, ' +
+        'avg(longitude) AS longitude, max(at) AS last_at FROM a ' +
+        'GROUP BY GROUPING SETS ((), (continent), (continent, country), ' +
+        '(continent, country, subdivision, city))', params
+      ).then(function (r) {
+        const LEVELS = { 15: 'world', 7: 'continent', 3: 'country',
+                         0: 'city' };
+        return {
+          rows: r.rows.map(function (row) {
+            return {
+              level: LEVELS[Number(row.g)] || 'city',
+              continent: row.continent || '', country: row.country || '',
+              subdivision: row.subdivision || '', city: row.city || '',
+              people: Number(row.people) || 0,
+              signIns: Number(row.sign_ins) || 0,
+              assessments: Number(row.assessments) || 0,
+              latitude: row.latitude === null ? null : Number(row.latitude),
+              longitude: row.longitude === null ? null
+                : Number(row.longitude),
+              lastAt: Number(row.last_at) || 0
+            };
+          })
+        };
+      });
+    },
+
     // The last context a live session was assessed in, replaced whole — what
     // continuous evaluation (P4) compares a later request with.
     riskUpsertSessionContext: function (c) {

@@ -11,6 +11,8 @@ say; the rest are listed after the table and argued in their own sections.
 | `pki_admin.ts` | **The certificate authority**, at `/admin/pki` — Root, Intermediate and Issuing per trust realm, the signing key pairs it issues to applications and (since 2026-09-11) to PEOPLE, and since 2026-09-10 **the Certificate & Key Configuration pane**: the parent project's *PKI / X.509* workflow as one form of a hundred and fifteen fields, over `common/pki_authoring.ts`. It draws its own page (like `crypto_metadata.ts`) and is required at **18a**, which is why it needs no slot. |
 | `crypto_metadata.ts` | **The crypto report**, at `/admin/crypto-metadata` — what this service does when it signs, verifies, encrypts or decrypts, for every identity service it advertises. It draws its own page (like `../sts_metadata.ts`, not like everything else here) and fills `setCryptoReporter()` so `/admin-api/crypto` can mirror it. See the section below. |
 | `federation_diagram.ts` | **The federation picture**, at `/admin/federation/map`. The SECOND drawing in this console and a SEPARATE renderer — see the section below, where the case for not reusing the one above it is made. A library on the same terms, and the only thing it takes from this service beyond `helpers.js` is `delegation_map.ts`'s palette, hexagon and text metric. |
+| `geo_map.ts` | **The geolocation picture** (#255), for `/admin/geolocation`: the world, a continent or a country as a server-drawn SVG in the Equal Earth projection over Natural Earth's outlines (`natural_earth/countries.json`), countries filled on a five-step scale, cities as circles. The THIRD drawing and a THIRD renderer, and it uses no dagre — see *`/admin/geolocation` is the third drawing* below. A library on `federation_diagram.ts`'s terms: `helpers.js`, and `delegation_map.ts`'s palette and text metric. |
+| `geolocation_admin.ts` | **Monitoring → Geolocation** (#255): the realm's assessments counted by place (`risk_store.geography()` through `risk_engine.geography()`), small counts suppressed, and the page; `GET /admin-api/geolocation` answers its `geoView()`. At 18j-ii. |
 
 The others: `admin_scope.ts` (what a realm administrator may not reach, 8d),
 `api_explorer.ts` (`/admin/api-explorer`), `certificate_dialog.ts` and
@@ -3094,6 +3096,117 @@ arithmetic. It is in `tests/` rather than the parent suite for the reason
 was checked against.
 
 ---
+
+## `/admin/geolocation` IS THE THIRD DRAWING, AND THE ONE WITH NO LAYOUT TO DO (#255, 2026-09-26)
+
+Monitoring → Geolocation draws where the realm's people signed in from:
+the world with each country shaded by its count and each continent
+labelled; a continent (`?continent=`); a country and its cities
+(`?country=`). rcbj asked for it on #255 with four decisions: **both**
+meanings of signed in (live sessions by default, or everybody over 24 h,
+7 d or 30 d); Natural Earth vendored; world → continent → country →
+cities; and small counts suppressed.
+
+### It is a Monitoring page and not a Risk section
+
+It answers a different question from the risk pages. Those ask "is the
+scoring right"; this one asks "where are our people". It reads only what
+scoring RECORDED, the place on each assessment. It looks no address up,
+and an address never reaches it: the store keeps the address sealed.
+
+### THE COUNT: people at every level, never summed
+
+`risk_store.geography()` counts distinct subjects at the world, each
+continent, each country and each city in ONE pass. The postgres half is one
+statement with `GROUPING SETS`. A person seen in Lyon and Paris is one
+person in France, so a country's number is not its cities' total, and the
+page says so under the map. The store holds a country but no continent, so
+the page's code-to-continent table is handed in and joined as two arrays.
+**Live sessions** are `authn.sessionsForRisk()`'s, the one answer to
+"who is signed in" (rule 3m's spirit), filtered to the realm. Each is
+counted once, at its LATEST assessment, which is where the person is now.
+
+### SUPPRESSION IS IN THE VIEW, SO THE API CANNOT BYPASS IT
+
+`risk.geoMinimumCount` (3) is applied in `geoView()`, the function both the
+page and `GET /admin-api/geolocation` answer:
+
+* A place under the minimum has `people` and `signIns` null and
+  `suppressed` true. It is shaded with the lightest step and carries no
+  number.
+* A city under the minimum is left out entirely, name included. It is
+  counted only in `hidden`.
+
+The store answers everything. Suppression is a presentation rule for
+personal data, and `tests/geolocation_map.js` asserts that a suppressed
+city's NAME is nowhere in the JSON.
+
+### WHY A THIRD RENDERER, AND WHY THIS ONE NEEDS NO DAGRE
+
+The two pictures before it are graphs, and dagre is what places their
+boxes. A map's shapes are placed by the earth already. What it lacks is a
+projection (Equal Earth, which is equal-area, so a colour is weighed by
+true size: six lines in `project()`) and outlines. What it SHARES with the
+other two is what `federation_diagram.ts` shares: the palette and the text
+metric, so the three pictures look like one console. And the CSP argument
+is the same:
+
+* The SVG is made on the server and inlined, so `script-src 'none'` holds.
+* **Zoom is a link**: every country is an `<a>`, and the next level is a
+  server round trip.
+
+A pan-and-zoom map would have been the console's second scripted page,
+drawing a picture that does not move.
+
+### THE ONE THIRD-PARTY DATASET THIS REPOSITORY SHIPS
+
+`risk/CLAUDE.md` says iya-sts distributes no third-party dataset, and
+`tests/no_third_party_datasets.js` holds it. The rule exists because the
+providers' terms (IPinfo's ShareAlike, GeoLite2's EULA) bind whoever
+redistributes. **Natural Earth is in the public domain**, so nothing binds.
+rcbj chose to vendor it (decision 2).
+
+`natural_earth/countries.json` is derived, not copied.
+`tests/tools/natural-earth.js` makes it from the 1:50m Admin 0 GeoJSON,
+pinned by SHA-256 and upstream commit. It holds one row per ISO 3166-1 code
+(Australia's three features become one; Somaliland and Northern Cyprus go
+to SO and CY, where their addresses geolocate), seven continents (the
+"Seven seas" features by UN region), and rings rounded to 0.01°. Regenerate
+it with that tool rather than editing it. The page credits it ("Made with
+Natural Earth"), which the licence does not require but costs a line.
+
+1:50m and not 1:110m, although the ticket said 110m. The 110m set has no
+Singapore, Malta or Bahrain, and a counted country with no outline is a
+count with no place to draw it. The larger file (1.3 MB) is read once per
+process. The renderer thins points to the scale it draws at, so the world
+is about 370 KB of markup and a country keeps its coastline.
+
+### THREE GEOMETRY DECISIONS, each a thing the obvious version drew wrongly
+
+* **Each view has a central meridian.** Otherwise Russia, Fiji and Oceania
+  span the globe. A ring crossing the view's far side is broken there
+  rather than drawn as a line across the map.
+* **A country's view is its main territory**, plus the polygons within that
+  territory's own size of it. So Corsica, Alaska and Svalbard are in, and
+  Réunion and French Guiana are out. The view then widens to take in every
+  city passed to it.
+* **On a country view the country is pale**, because its circles are drawn
+  in the scale's darkest indigo, and that is the colour it would otherwise
+  be filled with.
+
+The five-step scale was run through the dataviz palette validator
+(`--ordinal`, light surface). The lightest step clears 2:1 against the
+paper, so "one person" never reads as "none". "None" is a neutral grey.
+
+### Rule 7 and 7a
+
+**Rule 7.** `GET /admin-api/geolocation` mirrors the page, with the same
+three parameters as enums (#86 holds them at the API door). A refusal is
+STS-RISK-0042, and a failure STS-RISK-0041.
+
+**Rule 7a.** A continent or country view passes `up`, so the console's
+trail reads `Admin console › Geolocation › France`. The continent step the
+trail cannot hold is the page's own zoom trail, under the window selector.
 
 ## 8. THE GATE, AND WHY THE OLD SENTENCE IS QUALIFIED RATHER THAN DELETED
 
@@ -6367,7 +6480,7 @@ form the register cannot hold, the PKI pane, is held by
 
 ## `/admin/devices`, `/admin/device-registration`, `/admin/devices/monitor`: THE DEVICE REGISTER'S PAGES (#164, #218, 2026-09-26)
 
-One module, `devices_admin.ts` (18p), filed in THREE sections by the filing
+One module, `devices_admin.ts` (18q), filed in THREE sections by the filing
 rule, because the register answers three questions:
 
 - **Directory → Devices** (`/admin/devices`) — *what is in the directory*:

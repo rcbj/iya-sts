@@ -8643,7 +8643,8 @@ const SETTINGS = [
     label: 'Client Identifier prefix of a signed request',
     env: 'OID4VP_CLIENT_ID_PREFIX', type: 'enum',
     enumValues: ['pre-registered', 'decentralized_identifier',
-                 'verifier_attestation', 'openid_federation'],
+                 'verifier_attestation', 'openid_federation',
+                 'x509_san_dns', 'x509_hash'],
     dflt: 'pre-registered', runtime: true,
     description: 'How a wallet is to authenticate a SIGNED request ' +
                  '(OpenID4VP section 5.9). pre-registered: oid4vp.clientId, which the ' +
@@ -8656,7 +8657,43 @@ const SETTINGS = [
                  'realm. ' +
                  'openid_federation: this realm\'s entity identifier, whose ' +
                  'Entity Configuration is at /.well-known/openid-federation. ' +
+                 'x509_san_dns: oid4vp.x509DnsName, a dNSName of the ' +
+                 'Verifier\'s certificate, whose chain the request carries ' +
+                 'in x5c. x509_hash: the SHA-256 of that certificate. Both ' +
+                 'sign with oid4vp.x509SigningAlgorithm; ' +
+                 '/oid4vp/verifier-certificate shows the certificate and ' +
+                 'both Client Identifiers. /oid4vp/start?client_id_prefix= ' +
+                 'chooses per request. ' +
                  'An unsigned request always uses redirect_uri.' },
+
+  { key: 'oid4vp.x509DnsName', group: 'OID4VP',
+    label: 'DNS name of the x509_san_dns Client Identifier',
+    env: 'OID4VP_X509_DNS_NAME', type: 'string', dflt: '', runtime: true,
+    description: 'The DNS name the Verifier\'s certificate carries in its ' +
+                 'subjectAltName and the x509_san_dns Client Identifier ' +
+                 'names (OpenID4VP 1.0 section 5.9.3). It MUST be the host ' +
+                 'of the Response URI, which a wallet that does not ' +
+                 'otherwise trust the Verifier checks, so a request whose ' +
+                 'Response URI is on another host is refused. EMPTY, the ' +
+                 'default: the host of global.publicBaseUrl where that is ' +
+                 'pinned, otherwise — in development only — the host the ' +
+                 'request arrived at. Product mode never certifies a Host ' +
+                 'header: whoever sent one would choose where a signed, ' +
+                 'trusted request sends presentations.' },
+
+  { key: 'oid4vp.x509SigningAlgorithm', group: 'OID4VP',
+    label: 'Signing algorithm of an x509 Client Identifier request',
+    env: 'OID4VP_X509_SIGNING_ALGORITHM', type: 'enum',
+    enumValues: ['ES256', 'ES384', 'ES512', 'PS256', 'RS256', 'EdDSA'],
+    dflt: 'ES256', runtime: true,
+    description: 'The JWS algorithm a Request Object with the x509_san_dns ' +
+                 'or x509_hash Client Identifier is signed with, and so the ' +
+                 'realm key the Verifier\'s certificate is issued over. ' +
+                 'ES256 by default, which OpenID4VC HAIP requires a wallet ' +
+                 'to accept. A post-quantum algorithm is not offered yet: ' +
+                 'the Request Object is signed on the request path, and ' +
+                 'this realm\'s post-quantum keys sign in the worker pool ' +
+                 '(oid4vc/CLAUDE.md, the x509 prefixes).' },
 
   { key: 'oid4vp.verifierAttestation', group: 'OID4VP',
     label: 'Verifier Attestation JWT',
@@ -10947,6 +10984,47 @@ const SETTINGS = [
                  'ONLY: product mode refuses an unverified SET at every ' +
                  'receiver whatever this says (#117).' },
 
+  // FOREIGN TRANSMITTERS (#153): `ssf/ssf_transmitters.ts`, this realm as
+  // the receiver of another identity service's Shared Signals.
+  { key: 'ssf.foreignPollS', group: 'SSF',
+    label: 'Foreign transmitter poll interval (s)',
+    env: 'STS_SSF_FOREIGN_POLL_S', type: 'int', dflt: 30,
+    min: 1, max: 86400, runtime: true,
+    description: 'How often the ssf.foreign-poll scheduler job polls every ' +
+                 'foreign transmitter this realm registered with a poll ' +
+                 'stream (RFC 8936) (#153).' },
+  { key: 'ssf.foreignPollMaxEvents', group: 'SSF',
+    label: 'Events asked per foreign poll',
+    env: 'STS_SSF_FOREIGN_POLL_MAX_EVENTS', type: 'int', dflt: 50,
+    min: 1, max: 1000, runtime: true,
+    description: 'The maxEvents this realm asks a foreign transmitter for in ' +
+                 'one RFC 8936 poll.' },
+  { key: 'ssf.foreignPollMaxRounds', group: 'SSF',
+    label: 'Foreign poll rounds',
+    env: 'STS_SSF_FOREIGN_POLL_MAX_ROUNDS', type: 'int', dflt: 5,
+    min: 1, max: 100, runtime: true,
+    description: 'How many polls one run makes while the transmitter says ' +
+                 'moreAvailable, before leaving the rest to the next run; ' +
+                 'one more acknowledges what the last received.' },
+  { key: 'ssf.foreignMaxTransmitters', group: 'SSF',
+    label: 'Foreign transmitters per realm',
+    env: 'STS_SSF_FOREIGN_MAX_TRANSMITTERS', type: 'int', dflt: 20,
+    min: 1, max: 1000, runtime: true,
+    description: 'The most foreign transmitters one realm may register.' },
+  { key: 'ssf.foreignInboxMax', group: 'SSF',
+    label: 'Foreign SETs kept',
+    env: 'STS_SSF_FOREIGN_INBOX_MAX', type: 'int', dflt: 500,
+    min: 10, max: 100000, runtime: true,
+    description: 'The most Security Event Tokens from foreign transmitters ' +
+                 'kept per realm, the oldest dropped first. What is kept is ' +
+                 'also what a replayed jti is recognised by.' },
+  { key: 'ssf.foreignTimeoutMs', group: 'SSF',
+    label: 'Foreign transmitter timeout (ms)',
+    env: 'STS_SSF_FOREIGN_TIMEOUT_MS', type: 'int', dflt: 10000,
+    min: 500, max: 120000, runtime: true,
+    description: 'How long one request to a foreign transmitter — discovery, ' +
+                 'its token endpoint, stream management, a poll — may take.' },
+
   { key: 'ssf.actOnSignalsInDevelopment', group: 'SSF',
     label: 'The console and portal act on received signals in development',
     env: 'STS_SSF_ACT_ON_SIGNALS_IN_DEVELOPMENT', type: 'bool', dflt: false,
@@ -11479,6 +11557,22 @@ const SETTINGS = [
                  '(lists, automated clients, refused passwords, a ' +
                  'compromised security key) apply however new the person ' +
                  'is. 1 scores from the second sign-in on.' },
+
+  // #255 (2026-09-26, rcbj's decision 4): Monitoring → Geolocation counts
+  // people by place, and a place with one person in it names that person to
+  // anybody who knows where they live. Below this, a count is shaded and not
+  // written, and a city is not drawn at all — on the page and in the API.
+  { key: 'risk.geoMinimumCount', group: 'Risk',
+    label: 'Fewest people a place is numbered with on the map',
+    env: 'STS_RISK_GEO_MINIMUM_COUNT', type: 'int', dflt: 3, min: 1,
+    max: 1000, runtime: true,
+    description: 'On Monitoring → Geolocation and GET ' +
+                 '/admin-api/geolocation, a continent, country or total ' +
+                 'with fewer distinct people than this is shaded but ' +
+                 'carries no number, and a city with fewer is neither drawn ' +
+                 'nor listed — it is counted in its country\'s "other ' +
+                 'cities" line. 1 numbers every place, which can identify a ' +
+                 'person by where they signed in from.' },
 
   // #226 (2026-09-26): a bogon on a list is a signal on everybody behind a
   // NAT or a container bridge. ON is the lists' own word; OFF is for a

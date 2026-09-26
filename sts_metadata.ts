@@ -573,9 +573,19 @@ const SPECS: Spec[] = [
               'does), HTTP Basic and GNAP — ' +
               'published in authorization_schemes. Failed pushes are retried ' +
               'ssf.pushRetries times (0 by default, deliberately) and then ' +
-              'dead-lettered, and streams are persisted in product mode. NOT ' +
-              'covered: this service as a RECEIVER of a foreign transmitter ' +
-              '(#153), and nothing is verified about a subject, so a stream ' +
+              'dead-lettered, and streams are persisted in product mode. ' +
+              'AND THE RECEIVER HALF (#153): a realm registers a foreign ' +
+              'transmitter by its issuer (the section 7 document, which must ' +
+              'name it, and its jwks_uri), creates, reads, updates and ' +
+              'deletes its stream there, sets its status, adds and removes ' +
+              'subjects and asks for verification, receives by poll (RFC ' +
+              '8936, a scheduler job acknowledging what it received) or ' +
+              'push (RFC 8935, the authorization header it gave), verifies ' +
+              'each SET (signature against the transmitter\'s keys, typ, ' +
+              'iss, aud, a jti once), and acts on it through the ' +
+              'signal-response policy for a person a federation ' +
+              'relationship links. NOT covered: nothing is verified about ' +
+              'a subject this transmitter\'s own streams name, so a stream ' +
               'may name somebody who has never been here.' },
   { id: 'rfc8417', name: 'RFC 8417 — Security Event Token (SET)',
     where: 'IETF',
@@ -2712,9 +2722,14 @@ const SPECS: Spec[] = [
               'decentralized_identifier (the realm\'s did:web, a DID URL ' +
               'kid), verifier_attestation (a Verifier Attestation JWT in the ' +
               '`jwt` header, configured or self-attested), or ' +
-              'openid_federation (the realm\'s Entity Configuration); an ' +
-              'unsigned one uses redirect_uri. x509_san_dns, x509_hash and ' +
-              'origin are not offered.' },
+              'openid_federation (the realm\'s Entity Configuration), and ' +
+              'since #230 x509_san_dns and x509_hash (section 5.9.3: the ' +
+              'Verifier\'s own certificate from the realm\'s JOSE Issuing ' +
+              'CA in x5c, a dNSName that is the Response URI\'s host, or ' +
+              'the leaf\'s SHA-256), chosen per realm or per request; an ' +
+              'unsigned one uses redirect_uri. The origin prefix is not ' +
+              'offered (it is the Digital Credentials API\'s own, set by ' +
+              'the browser).' },
   { id: 'siopv2', name: 'Self-Issued OpenID Provider v2',
     where: 'OpenID Foundation',
     url: 'https://openid.net/specs/openid-connect-self-issued-v2-1_0.html',
@@ -4143,6 +4158,15 @@ const ENDPOINTS: EndpointEntry[] = [
           '(min_verification_interval) is not enforced unless ' +
           'ssf.verificationRateLimit is on, which is what makes the 429 ' +
           'reachable.' },
+  { path: '/ssf/transmitters/:id/push', group: 'Shared Signals',
+    name: 'Push endpoint for a foreign transmitter (RFC 8935)',
+    specs: ['ssf', 'rfc8935', 'rfc8417'],
+    what: 'Where a foreign transmitter this realm registered pushes a ' +
+          'Security Event Token (#153): the Authorization header this realm ' +
+          'gave it when the stream was created, then the SET, verified ' +
+          'against the transmitter\'s keys and acted on as the ' +
+          'signal-response policy permits. 202, or 400 with {err, ' +
+          'description}.' },
   { path: '/ssf/poll', group: 'Shared Signals',
     name: 'Poll delivery (RFC 8936)',
     specs: ['rfc8936', 'rfc8417'],
@@ -5267,6 +5291,13 @@ const ENDPOINTS: EndpointEntry[] = [
           'Logout Token, CIBA ping and push and OpenID Provider Command on ' +
           'the shared outbound queue, by kind, with each dead letter\'s ' +
           'code and a Retry.' },
+  { path: '/admin/ssf/transmitters', group: 'Admin',
+    name: 'Foreign SSF transmitters',
+    specs: ['ssf', 'rfc8935', 'rfc8936'],
+    what: 'The transmitters this realm receives Shared Signals from (#153): ' +
+          'register one by its issuer, its stream there and every stream ' +
+          'act, what arrived, whether it verified, the person it named and ' +
+          'what it led to.' },
   { path: '/admin/ssf/dead-letters', group: 'Admin', name: 'Dead letters',
     specs: ['ssf', 'rfc8417', 'rfc8935'],
     what: 'NON-SPEC PAGE (2026-09-14), under Monitoring → Shared Signals: ' +
@@ -6535,6 +6566,16 @@ const ENDPOINTS: EndpointEntry[] = [
           'what people said; and this process\'s time to assess, reactions ' +
           'and live-session re-checks. Add ?format=json, or GET ' +
           '/admin-api/risk/metrics.' },
+  { path: '/admin/geolocation', group: 'Admin',
+    name: 'Geolocation',
+    specs: [],
+    what: 'NON-SPEC (#255). Where the realm\'s people signed in from, on a ' +
+          'server-drawn map (Natural Earth outlines, Equal Earth ' +
+          'projection, no script): the world shaded by country, then ' +
+          '?continent=, then ?country= with its cities; ?window=live (the ' +
+          'default), 24h, 7d or 30d. A place with fewer people than ' +
+          'risk.geoMinimumCount is shaded but not numbered. Add ' +
+          '?format=json, or GET /admin-api/geolocation.' },
   { path: '/admin/vc-status', group: 'Admin',
     name: 'Credential status',
     specs: ['token-status-list', 'bitstring-status-list'],
@@ -7444,6 +7485,9 @@ const ENDPOINTS: EndpointEntry[] = [
   { path: '/admin-api/risk/metrics', group: 'Management API',
     name: 'Risk scoring metrics', specs: ['openapi'],
     what: 'NON-SPEC (#62). GET /admin/risk-scoring over JSON.' },
+  { path: '/admin-api/geolocation', group: 'Management API',
+    name: 'Geolocation', specs: ['openapi'],
+    what: 'NON-SPEC (#255). GET /admin/geolocation over JSON.' },
   { path: '/admin-api/risk/upload', group: 'Management API',
     name: 'Risk dataset upload', specs: ['openapi'],
     what: 'NON-SPEC (#215). POST /admin/risk/upload for a machine: the body ' +
@@ -8038,6 +8082,15 @@ const ENDPOINTS: EndpointEntry[] = [
           'null where nothing has been called, because an average over no ' +
           'samples is absent and a 100% success rate on nothing is the most ' +
           'misleading figure this reply could carry.' },
+  { path: '/admin-api/ssf/transmitters', group: 'Management API',
+    name: 'Foreign SSF transmitters', specs: ['openapi', 'ssf'],
+    what: 'GET /admin/ssf/transmitters over JSON (#153).' },
+  { path: '/admin-api/ssf/transmitters/:action', group: 'Management API',
+    name: 'Register a foreign transmitter, or act on its stream',
+    specs: ['openapi', 'ssf'],
+    what: 'add, create-stream, read-stream, update-stream, delete-stream, ' +
+          'set-status, add-subject, remove-subject, verify, poll-now and ' +
+          'remove: the console\'s acts (#153).' },
   { path: '/admin-api/ssf', group: 'Management API', name: 'Shared Signals',
     specs: ['openapi', 'ssf', 'rfc8417'],
     what: 'GET /admin/ssf over JSON: the streams, their subjects, their ' +
@@ -10756,7 +10809,22 @@ const ENDPOINTS: EndpointEntry[] = [
                                'to the wallet',
     what: 'response_type=vp_token with a DCQL query, a fresh nonce and ' +
           'response_mode=direct_post, passed by value or by reference, with ' +
-          'a QR screen for cross-device.' },
+          'a QR screen for cross-device. `client_id_prefix` names the ' +
+          'Client Identifier Prefix of THIS request (section 5.9) and makes ' +
+          'it signed; an x509 prefix certifies the Verifier first (#230).' },
+  { path: '/oid4vp/verifier-certificate', group: 'VC Presentation (OID4VP)',
+    name: 'The Verifier\'s x509 identity',
+    specs: ['oid4vp', 'rfc5280'],
+    what: 'JSON: the x509_san_dns and x509_hash Client Identifiers this ' +
+          'realm\'s Verifier signs under (OpenID4VP 1.0 section 5.9.3), ' +
+          'each with its certificate, the x5c the Request Object carries ' +
+          'and the trust anchor a wallet is configured with — what a ' +
+          'wallet or a conformance suite needs before it will accept one ' +
+          '(#230). Asking certifies the Verifier as a request would. ' +
+          'no-store. The x509_san_dns half is null, with the refusal, ' +
+          'where no name can be certified (product mode with neither ' +
+          'oid4vp.x509DnsName nor global.publicBaseUrl); 409 when neither ' +
+          'half can answer.' },
   { path: '/oid4vp/request/:id', group: 'VC Presentation (OID4VP)',
     name: 'Request ' +
       'Object',

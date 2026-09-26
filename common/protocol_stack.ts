@@ -1053,6 +1053,16 @@ class ProtocolStack {
                'RiskAdmin');
     this.register(app, require('../admin-ui/risk_admin'),
                   'admin-ui/risk_admin');
+    // 18j-ii. MONITORING → GEOLOCATION (#255, 2026-09-26). 18a's placement
+    // and 18a's reason: the console's shell and the risk libraries above
+    // are loaded, and `mgmt-api/admin_api` requires the page. The map is a
+    // library (`geo_map.ts`, rule 3) built just before it.
+    this.build('admin-ui/geo_map', require('../admin-ui/geo_map'), 'GeoMap');
+    require('../admin-ui/geolocation_admin');
+    this.build('admin-ui/geolocation_admin',
+               require('../admin-ui/geolocation_admin'), 'GeolocationAdmin');
+    this.register(app, require('../admin-ui/geolocation_admin'),
+                  'admin-ui/geolocation_admin');
     // 18k. THE MODE'S PAGE (#181, 2026-09-23). `/admin/mode` — what
     // `global.mode` changes and what is in force in the realm, drawn from
     // `common/mode.js`'s `report()`. 18a's placement and 18a's reason: the
@@ -1104,8 +1114,16 @@ class ProtocolStack {
                'ProviderCommandsAdmin');
     this.register(app, require('../oauth-oidc/provider_commands_admin'),
                   'oauth-oidc/provider_commands_admin');
+    // 18p. FOREIGN SSF TRANSMITTERS (#153): /admin/ssf/transmitters, 18a's
+    // placement and 18a's reason; the library (built at 23b-v) is reached
+    // through its forwarders at request time only.
+    this.build('ssf/ssf_transmitters_admin',
+               require('../ssf/ssf_transmitters_admin'),
+               'SsfTransmittersAdmin');
+    this.register(app, require('../ssf/ssf_transmitters_admin'),
+                  'ssf/ssf_transmitters_admin');
 
-    // 18p. DEVICES (#164, #218): Directory → Devices, Protocols → Device
+    // 18q. DEVICES (#164, #218): Directory → Devices, Protocols → Device
     // registration and Monitoring → Devices, one module for the three. 18a's
     // placement and 18a's reason: the console's shell, the device register
     // (built with `credentials` above) and the authorization server (9),
@@ -1147,6 +1165,8 @@ class ProtocolStack {
     this.build('oauth-oidc/provider_commands_api',
                require('../oauth-oidc/provider_commands_api'),
                'ProviderCommandsApi');
+    this.build('ssf/ssf_transmitters_api',
+               require('../ssf/ssf_transmitters_api'), 'SsfTransmittersApi');
     this.build('mgmt-api/admin_api', require('../mgmt-api/admin_api'),
                'AdminApi');
     this.register(app, require('../mgmt-api/admin_api'), 'mgmt-api/admin_api');
@@ -1378,6 +1398,15 @@ class ProtocolStack {
     this.build('ssf/ssf_cluster', require('../ssf/ssf_cluster'), 'SsfCluster');
     this.build('ssf/ssf', require('../ssf/ssf'), 'SharedSignals');
     this.register(app, require('../ssf/ssf'), 'ssf/ssf');
+    // 23b-v. FOREIGN TRANSMITTERS (#153): this realm as the receiver of
+    // another identity service's Shared Signals — a library whose wire step
+    // registers the `ssf.foreign-poll` job, and whose one route is the push
+    // endpoint. After the directory (21) and `ssf/ssf`, beside which it
+    // belongs; everything it reaches is reached lazily.
+    this.build('ssf/ssf_transmitters', require('../ssf/ssf_transmitters'),
+               'SsfTransmitters');
+    this.register(app, require('../ssf/ssf_transmitters'),
+                  'ssf/ssf_transmitters');
     // 23b-ii. SIGNING KEY ROTATION (#42, 2026-09-22): a library that registers
     // its two scheduler jobs when built and no route. After `ssf/ssf`, whose
     // signingKeyRotated() it calls (lazily, so the order is for a reader).

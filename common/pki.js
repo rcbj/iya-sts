@@ -5933,6 +5933,20 @@ async function certify(scopeId, useCaseId, spec) {
   if (spec.holderSubject) {
     record.holderSubject = String(spec.holderSubject);
   }
+  // HOW IT WAS ISSUED, where the caller said anything beyond the defaults
+  // (2026-09-26, #230): the profile, the keyUsage and the extensions — a
+  // subjectAltName above all. `recertifyUseCase()` renews from the record,
+  // and a renewal that did not carry these re-minted a TLS listener's or the
+  // OpenID4VP Verifier's certificate WITHOUT its names: a certificate over
+  // the same key that no client could match to a host any more.
+  if (spec.profile || spec.keyUsage || spec.extensions) {
+    record.issuedAs = {
+      profile: spec.profile ? String(spec.profile) : '',
+      keyUsage: spec.keyUsage ? spec.keyUsage.slice() : null,
+      extensions: spec.extensions ? JSON.parse(JSON.stringify(
+        spec.extensions)) : null
+    };
+  }
   if (spec.pinned && spec.privateKeyPem) {
     // THE ONE RECORD SHAPE WITH A PRIVATE KEY IN IT — see the header. An
     // operator pasted this pair in and this service has nowhere else to keep
@@ -6268,6 +6282,199 @@ async function issueTlsServerKeyPair(scopeId, useCaseId, spec) {
              anchorPem: root ? root.certificatePem : '',
              replacedSerialHex: was ? was.serialHex : null
            }) };
+}
+
+// ===========================================================================
+// THE OPENID4VP VERIFIER'S CERTIFICATE (2026-09-26, #230): what the
+// `x509_san_dns` and `x509_hash` Client Identifier Prefixes (OpenID4VP 1.0
+// section 5.9.3) sign a Request Object under.
+//
+// Both prefixes put a certificate chain in the Request Object's `x5c` header
+// and have the wallet validate it to an anchor it trusts; `x509_san_dns`
+// then requires the Client Identifier to be a dNSName in the leaf's
+// subjectAltName, `x509_hash` requires it to be the SHA-256 of the leaf's
+// DER. So the Verifier needs a certificate of its own, and this is where it
+// comes from — the one funnel every leaf here goes through, per the root
+// `CLAUDE.md` and rule 3w.
+//
+// **IT IS OVER A KEY THE REALM ALREADY HOLDS, NOT A NEW ONE.** The subject
+// key is the realm's own JOSE signing key for the algorithm the Verifier
+// signs with (`oid4vp.x509SigningAlgorithm`, ES256 by default) — the key
+// `helpers.signJwt()` signs with and that its `jose:<alg>` slot already
+// certifies. A key of its own would be a second private key per realm to
+// seal, rotate and purge, which is what this module's placement argument
+// refuses; and it would buy nothing a wallet can see, because the wallet
+// trusts the CERTIFICATE (its chain and its name), never the key alone.
+// When the realm's key rotates, the fingerprint no longer matches and the
+// next request certifies the new key — the old certificate is superseded.
+//
+// **UNDER THE REALM'S JOSE ISSUING CA, AND NOT A USE CASE OF ITS OWN.** The
+// JOSE authority is the one that certifies what this realm signs JWTs with,
+// and a Request Object is a JWT this realm signs. A tenth Issuing CA would
+// give a wallet a narrower anchor to pin — but wallets configure x509
+// Verifiers by their anchor AND the Client Identifier, and a new use case
+// makes every stored branch incomplete (the top-up `ensureScope()` exists
+// for), for a boundary no wallet asks for.
+//
+// **THE PROFILE IS `digital-signature` NARROWED TO `digitalSignature`**:
+// basicConstraints cA false, keyUsage digitalSignature alone (not
+// nonRepudiation: a Request Object is a request, not a commitment to
+// content), NO extKeyUsage, and a subjectAltName dNSName. Not `tls-server`:
+// its serverAuth EKU would make this a certificate a TLS client accepts for
+// the name, and the key behind it signs tokens, not handshakes. No EKU
+// because OpenID4VP defines none — ISO 18013-5's mdoc reader-authentication
+// EKU is for a different protocol, and a wallet that does not know an EKU
+// may refuse the certificate for carrying one.
+//
+// **ONE SLOT PER DNS NAME** (`oid4vp-verifier:<name>`, and a nameless
+// `oid4vp-verifier` for `x509_hash` where no name is known), bounded at
+// MAX_VERIFIER_CERTIFICATES a realm: in development the name is the host a
+// request arrived at, and a service reached as `localhost` and as `sts`
+// would otherwise reissue one slot on every alternate request, superseding
+// the certificate a wallet had just been handed. WHICH name may be
+// certified is the Verifier's question (`oid4vc/vc_verifier.ts`), because
+// only it knows whether the name came from configuration or a request.
+// ===========================================================================
+const VERIFIER_SLOT = 'oid4vp-verifier';
+const MAX_VERIFIER_CERTIFICATES = 16;
+// A certificate this close to its end is renewed before it is used, so a
+// wallet is never handed one that expires while the request is in flight.
+const VERIFIER_RENEW_BEFORE_MS = 86400000;
+
+function verifierSlotFor(dnsName) {
+  log.debug("Entering verifierSlotFor().");
+  const name = String(dnsName || '').toLowerCase();
+  log.debug("Leaving verifierSlotFor().");
+  return name ? VERIFIER_SLOT + ':' + name : VERIFIER_SLOT;
+}
+
+// The Verifier's certificate for one DNS name ('' for the nameless one) in a
+// realm, as { certificatePem, chainPem, anchorPem, dnsName, notAfter,
+// subjectKeyFingerprint } — or null where there is none, it is over another
+// key than `publicKeyPem` (when given), or it has expired. Synchronous: the
+// Verifier builds its Request Object synchronously and asks this after
+// `certifyVerifierKey()` has made sure.
+function verifierCertificateFor(realmId, dnsName, publicKeyPem) {
+  log.debug("Entering verifierCertificateFor().");
+  const id = realmIdOf(realmId);
+  const held = certificateFor(id, 'jose', verifierSlotFor(dnsName));
+  if (!held) {
+    log.debug("Leaving verifierCertificateFor(). None.");
+    return null;
+  }
+  if (publicKeyPem && held.subjectKeyFingerprint !==
+      thumbprintOf(publicKeyPem)) {
+    log.debug("Leaving verifierCertificateFor(). Over another key.");
+    return null;
+  }
+  if (new Date(held.notAfter).getTime() <= Date.now()) {
+    log.debug("Leaving verifierCertificateFor(). Expired.");
+    return null;
+  }
+  const root = serviceRoot();
+  log.debug("Leaving verifierCertificateFor().");
+  return {
+    certificatePem: held.certificatePem,
+    chainPem: (held.chainPem || []).slice(),
+    anchorPem: root ? root.certificatePem : '',
+    dnsName: String(dnsName || '').toLowerCase(),
+    serialHex: held.serialHex,
+    notBefore: held.notBefore,
+    notAfter: held.notAfter,
+    subject: held.subject,
+    subjectKeyFingerprint: held.subjectKeyFingerprint
+  };
+}
+
+// Certify the Verifier's signing key for a DNS name ('' for none), or answer
+// the certificate already there when it is over that key and not about to
+// expire. `spec`: { dnsName, publicKeyPem, alg, keyAlg }. Answers
+// { ok: true, certificate, issued } or { ok: false, errors } with a code.
+async function certifyVerifierKey(realmId, spec) {
+  log.debug("Entering certifyVerifierKey().");
+  const s = spec || {};
+  const id = realmIdOf(realmId);
+  const dnsName = String(s.dnsName || '').trim().toLowerCase();
+  // A name, never a pattern: a Client Identifier names one host, and a
+  // wildcard certificate would let the request name any host under it.
+  const nameProblem = !dnsName ? '' :
+    (dnsName.indexOf('*') >= 0
+      ? '"' + dnsName + '" is a wildcard; the Verifier\'s certificate ' +
+        'names one host.'
+      : tlsDnsNameProblem(dnsName));
+  if (nameProblem) {
+    log.debug("Leaving certifyVerifierKey(). The name was refused.");
+    return errorCodes.mark({ ok: false, errors: [nameProblem] },
+                           'STS-PKI-0204');
+  }
+  if (!s.publicKeyPem) {
+    log.debug("Leaving certifyVerifierKey(). No key.");
+    return errorCodes.mark({ ok: false,
+             errors: ['The Verifier\'s certificate is over its signing ' +
+                      'key, and none was given.'] }, 'STS-PKI-0204');
+  }
+  const slot = verifierSlotFor(dnsName);
+  const was = certificateFor(id, 'jose', slot);
+  const wanted = thumbprintOf(s.publicKeyPem);
+  if (was && was.subjectKeyFingerprint === wanted &&
+      new Date(was.notAfter).getTime() - Date.now() >
+        VERIFIER_RENEW_BEFORE_MS) {
+    log.debug("Leaving certifyVerifierKey(). Already certified.");
+    return { ok: true, issued: false,
+             certificate: verifierCertificateFor(id, dnsName) };
+  }
+  if (!was) {
+    const held = certificatesFor(id, 'jose').filter(function (one) {
+      return one && (one.slot === VERIFIER_SLOT ||
+                     String(one.slot).indexOf(VERIFIER_SLOT + ':') === 0);
+    }).length;
+    if (held >= MAX_VERIFIER_CERTIFICATES) {
+      log.warn(errorCodes.tag('STS-PKI-0205') + 'pki: "' + (id || 'default') +
+               '" already holds ' + held + ' OpenID4VP Verifier ' +
+               'certificates, so none was issued for "' + dnsName + '". ' +
+               'Set oid4vp.x509DnsName, or pin global.publicBaseUrl, so ' +
+               'the Verifier stops certifying every host it is reached by.');
+      log.debug("Leaving certifyVerifierKey(). Too many.");
+      return errorCodes.mark({ ok: false,
+               errors: ['This realm already holds ' + held + ' OpenID4VP ' +
+                        'Verifier certificates, the most it keeps.'] },
+                             'STS-PKI-0205');
+    }
+  }
+  const branch = await ensureScope(id);
+  if (!branch.ok) {
+    log.debug("Leaving certifyVerifierKey(). No branch.");
+    return branch;
+  }
+  const made = await certify(id, 'jose', {
+    slot: slot,
+    label: 'OpenID4VP Verifier' + (dnsName ? ' (' + dnsName + ')' : ''),
+    commonName: dnsName || 'OpenID4VP Verifier',
+    alg: String(s.alg || ''),
+    keyAlg: String(s.keyAlg || ''),
+    publicKeyPem: s.publicKeyPem,
+    profile: 'digital-signature',
+    keyUsage: ['digitalSignature'],
+    extensions: dnsName ? {
+      subjectAltName: { present: true, critical: false,
+                        names: [{ kind: 'dns', value: dnsName }] }
+    } : {}
+  });
+  if (!made.ok) {
+    log.debug("Leaving certifyVerifierKey(). certify() refused.");
+    return made;
+  }
+  if (was && normalSerialsDiffer(was.serialHex, made.record.serialHex)) {
+    supersede(id, 'jose', was, 'replaced by a new OpenID4VP Verifier ' +
+              'certificate for "' + (dnsName || '(no DNS name)') + '"');
+  }
+  log.info('pki: the OpenID4VP Verifier of "' + (id || 'default') + '" was ' +
+           'certified' + (dnsName ? ' for ' + dnsName : ' with no DNS name') +
+           ', ' + String(s.alg || '') + ', serial ' + made.record.serialHex +
+           ', until ' + made.record.notAfter + '.');
+  log.debug("Leaving certifyVerifierKey(). Issued.");
+  return { ok: true, issued: true,
+           certificate: verifierCertificateFor(id, dnsName) };
 }
 
 // ===========================================================================
@@ -7816,7 +8023,11 @@ async function recertifyUseCase(scopeId, useCaseId) {
       // A hybrid leaf stays hybrid across a renewal (#68).
       altPublicKeyPem: was.altPublicKeyPem || null,
       pinned: was.pinned, privateKeyPem: was.privateKeyPem,
-      publicKeyPemStored: was.publicKeyPem
+      publicKeyPemStored: was.publicKeyPem,
+      // And a named leaf keeps its names (#230): see `issuedAs` in certify().
+      profile: (was.issuedAs && was.issuedAs.profile) || undefined,
+      keyUsage: (was.issuedAs && was.issuedAs.keyUsage) || undefined,
+      extensions: (was.issuedAs && was.issuedAs.extensions) || undefined
     });
     if (made.ok) {
       done += 1;
@@ -7902,7 +8113,10 @@ async function recertifyOrphanedSlots(scopeId, slots) {
       altPublicKeyPem: was.altPublicKeyPem || null,
       keyUsage: usages && usages.length ? usages : undefined,
       pinned: was.pinned, privateKeyPem: was.privateKeyPem,
-      publicKeyPemStored: was.publicKeyPem
+      publicKeyPemStored: was.publicKeyPem,
+      // A named leaf keeps its names (#230): see `issuedAs` in certify().
+      profile: (was.issuedAs && was.issuedAs.profile) || undefined,
+      extensions: (was.issuedAs && was.issuedAs.extensions) || undefined
     });
     if (made.ok) {
       done += 1;
@@ -10498,6 +10712,9 @@ module.exports = {
   publishedCertificateFor: publishedCertificateFor,
   forgetCertificate: forgetCertificate,
   issueTlsServerKeyPair: issueTlsServerKeyPair,
+  certifyVerifierKey: certifyVerifierKey,
+  verifierCertificateFor: verifierCertificateFor,
+  MAX_VERIFIER_CERTIFICATES: MAX_VERIFIER_CERTIFICATES,
   TLS_SERVER_KEY_ALGS: TLS_SERVER_KEY_ALGS,
   DEFAULT_TLS_SERVER_KEY_ALG: DEFAULT_TLS_SERVER_KEY_ALG,
   // Startup. `common/service_state.ts` calls it, for `server.js` and a

@@ -238,6 +238,8 @@ class ProtocolEndpoints {
       '/admin/oid4vp': [
         '/oid4vp/verifier', '/oid4vp/start', '/oid4vp/request/:id',
         '/oid4vp/response', '/oid4vp/result/:state', '/oid4vp/done',
+        // The x509 Client Identifiers (#230), whose settings are here.
+        '/oid4vp/verifier-certificate',
         // The wallet sign-in (#38), whose four settings are on this page.
         '/authn/wallet', '/authn/wallet/wait'
       ].map(route),
@@ -285,6 +287,8 @@ class ProtocolEndpoints {
         '/.well-known/hoba/register'
       ].map(route),
       '/admin/ssf': ['/ssf'].concat(SSF_DELIVERY).map(route),
+      // Foreign transmitters (#153): the push endpoint this realm gives one.
+      '/admin/ssf/transmitters': ['/ssf/transmitters/:id/push'].map(route),
       '/admin/caep': SSF_DELIVERY.map(route),
       '/admin/risc': SSF_DELIVERY.map(route),
       '/admin/federation': ['/federation', '/federation/login/:id',

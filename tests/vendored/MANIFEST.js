@@ -409,6 +409,13 @@ const JOBS = [
   // missing token, the wrong body type. `local: true`: this repository's own
   // /admin and /admin-api.
   { file: 'sts_admin_risk_upload.js',    browser: false, local: true },
+  // MONITORING → GEOLOCATION (#255, 2026-09-26): the live window counting
+  // this job's own sign-in, every window and level in its shape with every
+  // count at or over risk.geoMinimumCount or held back, the four refusals,
+  // and the page — the map inline with no script, the zoom trail, the
+  // outlines credited, ?format=json the API's answer. Loads no dataset.
+  // `local: true`: this repository's own /admin and /admin-api.
+  { file: 'sts_admin_geolocation.js',    browser: false, local: true },
   // EVERY CLOSED SET AN ADMINISTRATOR CAN TYPE INTO (#86, 2026-09-26): each
   // enum the OpenAPI document declares — request bodies, query parameters —
   // refused outside its set with the one sentence, and accepted from it
@@ -774,6 +781,13 @@ const JOBS = [
   // self-issued sign-in and its refusals, and the Verifier's form_post.
   // `local: true`: this repository's own door.
   { file: 'sts_siop.js',                 browser: false, local: true },
+  // THE x509_san_dns AND x509_hash CLIENT IDENTIFIERS (#230, 2026-09-26):
+  // each prefix's Request Object checked as a wallet checks it — the x5c
+  // chain to the service Root, the signature, the dNSName or the hash — a
+  // mismatch refused, the realm's own setting, and the Verifier refusing a
+  // name that is not the Response URI's host. `local: true`: this
+  // repository's Verifier.
+  { file: 'sts_oid4vp_x509.js',          browser: false, local: true },
   // OPENID CONNECT NATIVE SSO AND THE DEVICE REGISTER (#130, 2026-09-23):
   // the device secret and its ou=devices entry, the section 4 exchange and
   // its refusals, RFC 8693's token types, a session ending, revocation.
@@ -843,6 +857,11 @@ const JOBS = [
   // resumed tenant stream and a retried delivery, against the mock relying
   // party. `local: true`.
   { file: 'sts_provider_commands.js',    browser: false, local: true },
+  // SSF AS THE RECEIVER OF A FOREIGN TRANSMITTER (#153, 2026-09-26): one
+  // realm's transmitter as the "foreign" one, another realm receiving by
+  // poll and push, verifying and acting through a federation link.
+  // `local: true`.
+  { file: 'sts_ssf_foreign_receiver.js', browser: false, local: true },
   // THE OPENID FOUNDATION'S CONFORMANCE SUITE (#176, 2026-09-24): FAPI 2.0
   // Security Profile and Message Signing, FAPI 1.0 Advanced and FAPI-CIBA,
   // each plan a throwaway realm, every module run, and a FAILED module a

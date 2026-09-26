@@ -1966,6 +1966,41 @@ class RiskEngine {
   }
 
   // -------------------------------------------------------------------------
+  // WHERE A REALM'S PEOPLE ARE (#255), for Monitoring → Geolocation: the
+  // store's `geography()` over `windowMs`, or — `live` — over the realm's
+  // live sessions, each at its latest assessment. A live session is one
+  // `authn.sessionsForRisk()` answers: person-held, not ended, and carrying
+  // a risk, which every assessed sign-in's session does; the one answer to
+  // "who is signed in" stays `authn`'s. `continents` is the page's
+  // code-to-continent table. `database` says which store counted.
+  // -------------------------------------------------------------------------
+  async geography(realm: string, opts: Json): Promise<Json> {
+    const { log, store, now, lazy } = this.deps;
+    log.debug("Entering RiskEngine.geography().");
+    const o = opts || {};
+    const sealing = this.sealing();
+    let sessionIds: string[] | null = null;
+    let since = now() - Math.max(3600000, Number(o.windowMs) || 86400000);
+    if (o.live) {
+      since = 0;
+      sessionIds = lazy('../authn/authn').sessionsForRisk()
+        .filter(function (row: Json): boolean {
+          return String((row.realm && row.realm.id) || '') === realm;
+        }).map(function (row: Json): string {
+          return String((row.session && row.session.id) || row.id);
+        });
+    }
+    const counted = await store.geography(realm, {
+      since: since, sessionIds: sessionIds,
+      continents: o.continents || {} }, sealing);
+    log.debug("Leaving RiskEngine.geography().");
+    return { realm: realm, live: !!o.live, since: since,
+             liveSessions: sessionIds ? sessionIds.length : null,
+             database: store.failuresInDatabase(sealing),
+             rows: counted.rows || [] };
+  }
+
+  // -------------------------------------------------------------------------
   // THE SCORING SYSTEM, MEASURED (#62): what Monitoring → Risk Scoring draws
   // and `GET /admin-api/risk/metrics` returns. Two kinds of number, and the
   // answer keeps them apart: `assessments` and `standings` are counted in
@@ -2153,6 +2188,7 @@ export = {
   respond: slot.forward('respond'),
   feedback: slot.forward('feedback'),
   metrics: slot.forward('metrics'),
+  geography: slot.forward('geography'),
   factors: slot.forward('factors'),
   calibrate: RiskEngine.calibrate,
   standingFor: slot.forward('standingFor'),

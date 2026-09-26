@@ -15324,6 +15324,30 @@ function peopleByFederationLink(value) {
   return out;
 }
 
+// Every person whose `mail` is this address, compared case-insensitively
+// (#153): a foreign transmitter's `email` subject, matched only where the
+// relationship allows it (`fedSignalEmailMatch`). More than one answer is
+// ambiguous, and the caller refuses it.
+function peopleByMail(address) {
+  log.debug('Entering peopleByMail().');
+  const wanted = String(address || '').trim().toLowerCase();
+  const out = [];
+  if (!wanted) {
+    log.debug('Leaving peopleByMail(). No address.');
+    return out;
+  }
+  eachEntryInRealm(function (stored) {
+    const mails = (stored.attributes.mail || []).map(function (one) {
+      return String(one).toLowerCase();
+    });
+    if (mails.indexOf(wanted) >= 0 && isPersonEntry(stored)) {
+      out.push({ username: usernameOfEntry(stored), dn: stored.dn });
+    }
+  });
+  log.debug('Leaving peopleByMail(). ' + out.length);
+  return out;
+}
+
 // Every link made through one relationship, for the relationship's page.
 function federationLinksThrough(fedId) {
   log.debug('Entering federationLinksThrough(). ' + fedId);
@@ -15430,6 +15454,7 @@ federation.setDirectory({
   // The people a partner's subjects are linked to (#109). See above.
   federationPerson: federationPerson,
   peopleByFederationLink: peopleByFederationLink,
+  peopleByMail: peopleByMail,
   federationLinksThrough: federationLinksThrough,
   plannedPersonDn: plannedPersonDn,
   writeFederationLink: writeFederationLink

@@ -205,9 +205,10 @@ const AUTO_ACTS: Record<string, string> = {
   risk: 'risk-level-change',
   // THE EIGHTH (#164 phase 4, 2026-09-26): a registered device's compliance
   // CHANGED — set by an administrator, the MDM feed under
-  // `device:compliance`, or development's test control (a received CAEP
-  // event joins them with #153). `common/devices.ts`'s `setCompliance()` is
-  // the funnel and `ssf.ts`'s `emitDeviceEvent()` sends it; the same act
+  // `device:compliance`, development's test control, or a registered
+  // foreign transmitter's event (#153). `common/devices.ts`'s
+  // `setCompliance()` is the funnel and `ssf.ts`'s `emitDeviceEvent()`
+  // sends it; the same act
   // name is not needed for the device's `risk-level-change` (act `risk`) or
   // its keys' `credential-change` (act `credential`), which ride the acts
   // above.

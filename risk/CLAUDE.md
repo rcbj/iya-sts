@@ -52,6 +52,15 @@ are three classes of asset, and only the first ships:
 | **B. Administrator-supplied datasets** | DB-IP Lite, IPinfo Lite, the Tor exit list, FireHOL lists, FIDO MDS3, Pwned Passwords, MaxMind GeoLite2 | Inputs, never project assets. `PROVIDERS` in `risk_datasets.ts` carries each one's terms, and the page draws them. |
 | **C. Test data** | Every fixture | SYNTHETIC: documentation and reserved address ranges (RFC 5737, 3849, 2544), documentation ASNs (RFC 5398), invented names — each provider's FORMAT, none of its DATA. `tests/no_third_party_datasets.js` fails on a provider's file in the tree. |
 
+**One exception ships, and it is not a provider's data (#255).** Monitoring
+→ Geolocation draws country outlines from Natural Earth, which is in the
+PUBLIC DOMAIN, so no redistributor is bound by anything. It is class A in
+effect, a dependency with no terms, and it sits in
+`admin-ui/natural_earth/`. `admin-ui/CLAUDE.md` (*`/admin/geolocation` is the third drawing*)
+argues it. The page counts what `risk_store.geography()` answers from the
+assessments here, and draws DB-IP's link beside any place a DB-IP version
+gave.
+
 What each provider's terms change here:
 
 * **DB-IP Lite (CC BY 4.0) — a link, not a sentence.** Its licence asks a web

@@ -563,10 +563,12 @@ class DevicesAdmin {
         predicate: 'opensTestControls',
         source: 'test-control'
       },
+      // #153's receiver acts on a registered foreign transmitter's
+      // device-compliance-change through setCompliance().
       receivedCaep: {
-        built: false,
+        built: true,
         source: 'caep',
-        arrives: 'with #153, the Shared Signals receiver'
+        via: '/admin/ssf/transmitters'
       },
       // What a compliance change, a risk level and a compromise send (#164
       // phase 4): the events and their subject.
@@ -1050,8 +1052,10 @@ class DevicesAdmin {
       'credential, development only (<code>mode.opensTestControls()</code>). ' +
       'Source <code>test-control</code>.</td></tr>' +
       '<tr><td>A received CAEP device-compliance-change</td><td>' +
-      state(false) + '</td><td>Arrives with #153, the Shared Signals ' +
-      'receiver. Source <code>caep</code>.</td></tr></tbody></table>' +
+      state(true) + '</td><td>From a foreign transmitter registered on ' +
+      '<a href="/admin/ssf/transmitters">Shared Signals transmitters</a> ' +
+      '(#153), its device named by id or key thumbprint. Source ' +
+      '<code>caep</code>.</td></tr></tbody></table>' +
       '<h2>What goes out over Shared Signals</h2>' +
       admin.note('CAEP: ' + esc(json.signals.caep.join('; ')) + '. RISC, ' +
         'for a person\'s device compromised or removed: ' +

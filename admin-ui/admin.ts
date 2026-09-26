@@ -1252,6 +1252,15 @@ const SECTIONS = [
       // that it is the one family here that runs the OTHER WAY ROUND — this
       // service delivering an event to a receiver that agreed in advance —
       // so there is no family above it whose page it would be a corner of.
+      // FOREIGN TRANSMITTERS (#153, 2026-09-26), beside the transmitter:
+      // the same framework with this realm as the RECEIVER of another
+      // identity service. Drawn by ssf/ssf_transmitters_admin.ts.
+      { path: '/admin/ssf/transmitters', label: 'SSF transmitters',
+        blurb: 'Other identity services whose Shared Signals this realm ' +
+               'receives: each registered by its issuer, its stream there ' +
+               '(poll or push), what arrived and whether it verified, the ' +
+               'person each event named through a federation relationship, ' +
+               'and what the signal-response policy let it do here.' },
       { path: '/admin/ssf', label: 'Shared Signals',
         blurb: 'The <strong>Shared Signals Framework</strong> (OpenID SSF ' +
                '1.0): the streams this transmitter has agreed, who each one ' +
@@ -2573,6 +2582,17 @@ const SECTIONS = [
                'about their own sign-ins, and &mdash; for this process ' +
                '&mdash; how long an assessment takes and the reactions ' +
                'taken.' },
+      // GEOLOCATION (#255, 2026-09-26), beside the risk pages whose
+      // assessments it counts: `admin-ui/geolocation_admin.ts`.
+      { path: '/admin/geolocation', label: 'Geolocation',
+        blurb: 'Where the realm\'s people signed in from, on a map: the ' +
+               'world with every country shaded by how many people it ' +
+               'counts, then a continent, then a country and its cities. ' +
+               'Live sessions by default, or everybody over the last day, ' +
+               'week or month. Drawn from what risk scoring recorded, so it ' +
+               'needs a geolocation dataset on Monitoring &rarr; Risk; a ' +
+               'place with too few people to be anonymous is shaded and ' +
+               'not numbered.' },
       { path: '/admin/audit', label: 'Audit log',
         blurb: 'What this service was ASKED to do, in the order it was ' +
                'asked, newest first. Every other page here is state; this ' +

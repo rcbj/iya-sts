@@ -104,6 +104,13 @@ async function inProcess(t) {
   // -------------------------------------------------------------------------
   t.log.info('=== B. a certificate is classified by its key ===');
   // -------------------------------------------------------------------------
+  // HYBRID IS OFF BY DEFAULT since 2026-09-26 (rcbj, e8cadc24), so this
+  // child turns it on before anything builds the Root it asserts about.
+  const hybridOn = require('../common/config')
+    .setOverride('pki.alternativeKeyAlgorithm', 'ml-dsa-87');
+  t.check(hybridOn && hybridOn.ok !== false,
+          'pki.alternativeKeyAlgorithm is set to ml-dsa-87 in this child',
+          JSON.stringify(hybridOn));
   await keystore.start();
   if (!realms.get(REALM)) {
     realms.create({ id: REALM, name: REALM });

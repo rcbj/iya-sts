@@ -13,11 +13,10 @@ applications used it.
 
 The register was built in six phases (issues #164 and #218): the register;
 recognition; compliance and the MDM feed; Shared Signals; risk scoring; and
-the issuance policy, an acr and a token claim. All six are built. The one
-door not built is a received CAEP `device-compliance-change`, which arrives
-with the Shared Signals receiver (#153). The console's **Protocols → Device
-registration** page says the same from the running build, and is the one to
-trust.
+the issuance policy, an acr and a token claim. All six are built, and a
+received CAEP `device-compliance-change` is acted on by the Shared Signals
+receiver (#153). The console's **Protocols → Device registration** page
+says the same from the running build, and is the one to trust.
 
 ## Features
 
@@ -139,7 +138,7 @@ counts changes by source, day by day.
 | An administrator: the **Compliance** form on a device's page, or `POST /admin-api/devices/set-compliance` | `admin` | Admin Write. May also set `unknown`, withdrawing a vouch. |
 | An MDM or posture feed: `POST /admin-api/device-compliance` | `mdm` | A client holding an access token with the **`device:compliance`** scope, and nothing else. |
 | The test control: `POST /devices/test/compliance` | `test-control` | Anybody, **in development only**; product answers `403`. |
-| A received CAEP `device-compliance-change` from a trusted transmitter | `caep` | **Not built yet: it arrives with #153**, the Shared Signals receiver. |
+| A received CAEP `device-compliance-change` from a trusted transmitter | `caep` | A foreign transmitter an administrator registered on **Shared Signals transmitters** (#153). The device is named by its id (an `iss_sub` subject's `sub`) or a key thumbprint. |
 
 ### Integrating an MDM or posture feed
 

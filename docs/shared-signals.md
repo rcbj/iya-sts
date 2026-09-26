@@ -305,8 +305,43 @@ names nothing `ssf.receiveAudiences` lists (`invalid_audience`). Left empty,
 the first means this realm's own transmitter issuer and the second means the
 endpoint's own URL, for example `https://host/ssf/receive`. The console's and
 portal's receivers make the same `typ` and `iss` checks against their own
-streams. This service cannot yet be a receiver of another transmitter's
-streams ([#153](https://github.com/rcbj/iya-sts/issues/153)).
+streams. To receive another transmitter's streams, see *Receiving from
+another identity service*, below.
+
+### Receiving from another identity service
+
+A realm can receive CAEP and RISC events from another identity service's
+transmitter, for people who sign in here through a federation relationship
+with it ([#153](https://github.com/rcbj/iya-sts/issues/153)).
+
+1. **Register it** on Protocols → SSF transmitters (`/admin/ssf/transmitters`)
+   or with `POST /admin-api/ssf/transmitters/add`. You give it an id, its
+   issuer, the federation relationship its subjects are mapped through,
+   `poll` or `push`, and how this realm authenticates to it: client
+   credentials at its token endpoint, or a bearer token. Its
+   `/.well-known/ssf-configuration` and `jwks_uri` are fetched and checked.
+2. **Create the stream** (`create-stream`). A poll stream is polled every
+   `ssf.foreignPollS` seconds. A push stream is given
+   `/ssf/transmitters/{id}/push` and an authorization header only the two
+   services know.
+3. **Link people.** A subject `{format: "iss_sub", iss, sub}` with the
+   relationship's issuer names the person whose federation link holds it. An
+   `email` subject is matched only where the relationship sets
+   `fedSignalEmailMatch`.
+
+A Security Event Token is acted on only if it verified: its signature against
+the transmitter's keys, `typ`, `iss`, the stream's `aud`, and a `jti` never
+seen before. Product mode refuses an unverified one. What it leads to is the
+`signal-response` XACML policy's decision:
+
+| Events | Reaction here |
+|---|---|
+| `session-revoked`, `credential-change`, `sessions-revoked`, `credential-compromise`, `account-purged` | end the person's sessions |
+| `account-disabled` | disable the account |
+| `account-enabled` | enable it again, only if that transmitter disabled it |
+
+Development records what it would do and does nothing unless
+`ssf.actOnSignalsInDevelopment` is on.
 
 ### The console and the portal are registered receivers
 
@@ -351,10 +386,10 @@ specifications, and are honoured in both modes.
 * **There is no console or API control that creates a stream.** A stream
   holds a delivery endpoint that this service will call, and that address may
   only come from a receiver that authenticated at `POST /ssf/stream`.
-* **This service is not a receiver of another transmitter.** It does not
-  discover a foreign transmitter, create a stream there or poll it, and it
-  fetches no foreign `jwks_uri`, so a SET another party signed is never
-  verified here ([#153](https://github.com/rcbj/iya-sts/issues/153)).
+* **A realm receives only from a transmitter an administrator registered**
+  ([#153](https://github.com/rcbj/iya-sts/issues/153)). It never follows a
+  URL a SET or a request names; every address comes from that issuer's own
+  configuration document.
 
 ## Development and product mode
 

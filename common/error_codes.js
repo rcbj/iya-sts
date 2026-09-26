@@ -2802,6 +2802,17 @@ const CODES = [
       'closed set (pki_profile, pki_pq_mode, pki_key_alg, pki_alt_key_alg, ' +
       'pki_ks_format) held a value outside it (#86).',
     spec: 'HTTP 400 page or { ok: false, errors }' },
+  { code: 'STS-PKI-0204',
+    summary: 'The OpenID4VP Verifier\'s certificate was refused its name or ' +
+      'its key: a DNS name a certificate cannot carry, a wildcard (the ' +
+      'certificate names one host), or no signing key (#230).',
+    spec: 'the Verifier\'s refusal: STS-VC-0112, HTTP 500 at /oid4vp/start' },
+  { code: 'STS-PKI-0205',
+    summary: 'A realm already holds the most OpenID4VP Verifier ' +
+      'certificates it keeps (one per DNS name, sixteen), so none was ' +
+      'issued for another name — set oid4vp.x509DnsName or pin ' +
+      'global.publicBaseUrl (#230).',
+    spec: 'the Verifier\'s refusal: STS-VC-0112, HTTP 500 at /oid4vp/start' },
   { code: 'STS-ENROLL-0001',
     summary: 'A certificate request named a profile that is not one of the nine issued over an enrollment protocol.',
     spec: 'the protocol\'s refusal: ACME malformed / badCSR, EST HTTP 400, SCEP failInfo badRequest' },
@@ -11796,6 +11807,36 @@ const CODES = [
       'or a did:web other than this realm\'s own, which it does not fetch ' +
       '(notFound) (#199).',
     spec: 'HTTP 400 / 404 / 501 with the resolution result\'s error' },
+  { code: 'STS-VC-0110',
+    summary: 'A Request Object with the x509_san_dns Client Identifier was ' +
+      'asked for in product mode with no DNS name to certify: neither ' +
+      'oid4vp.x509DnsName nor global.publicBaseUrl names one, and the ' +
+      'Host a request arrived with is not certified there — whoever sent ' +
+      'it would choose the host a signed, trusted request sends ' +
+      'presentations to (#230).',
+    spec: 'HTTP 500 text/plain at /oid4vp/start; the sign-in door\'s 500 ' +
+      'page; 409 JSON at /oid4vp/verifier-certificate' },
+  { code: 'STS-VC-0111',
+    summary: 'The x509_san_dns name is not the host of the Response URI, or ' +
+      'that host is an IP address: OpenID4VP 1.0 section 5.9.3 has a ' +
+      'wallet that does not otherwise trust the Client Identifier require ' +
+      'the response_uri\'s FQDN to be it, so such a request would be ' +
+      'refused by every such wallet (#230).',
+    spec: 'HTTP 500 text/plain at /oid4vp/start; 409 JSON at ' +
+      '/oid4vp/verifier-certificate' },
+  { code: 'STS-VC-0112',
+    summary: 'The OpenID4VP Verifier\'s certificate could not be issued, or ' +
+      'was not in place over the key the Request Object is signed with ' +
+      'when it was built, so no x509_san_dns or x509_hash request was ' +
+      'made (#230).',
+    spec: 'HTTP 500 text/plain at /oid4vp/start; 409 JSON at ' +
+      '/oid4vp/verifier-certificate' },
+  { code: 'STS-VC-0113',
+    summary: 'oid4vp.x509SigningAlgorithm names an algorithm this realm ' +
+      'holds no signing key for, so no x509_san_dns or x509_hash request ' +
+      'can be signed (#230).',
+    spec: 'HTTP 500 text/plain at /oid4vp/start; 409 JSON at ' +
+      '/oid4vp/verifier-certificate' },
   { code: 'STS-SSF-0001',
     summary: 'A Shared Signals endpoint was called while the family is ' +
       'turned off (ssf.enabled).',
@@ -12271,6 +12312,55 @@ const CODES = [
       '#169) could not be transmitted after a krbtgt key was rotated with ' +
       'nothing kept; the rotation itself stands.',
     spec: 'none — logged; nothing is sent to a receiver' },
+  { code: 'STS-SSF-0113',
+    summary: 'A foreign SSF transmitter act was refused: an ' +
+      'unknown action, a bad or taken id, the realm\'s limit, no federation ' +
+      'relationship, an unsupported delivery, no credential, or no stream ' +
+      'yet (#153).',
+    spec: 'console / /admin-api refusal (HTTP 400)' },
+  { code: 'STS-SSF-0114',
+    summary: 'A foreign transmitter could not be registered: its ' +
+      '/.well-known/ssf-configuration could not be read or does not name ' +
+      'the issuer, a jwks_uri and a configuration_endpoint, or its jwks_uri ' +
+      'could not be read (#153).',
+    spec: 'console / /admin-api refusal (HTTP 400)' },
+  { code: 'STS-SSF-0115',
+    summary: 'A foreign transmitter refused a stream act — create, ' +
+      'read, update, delete, status, a subject or verification — or could ' +
+      'not be reached (#153).',
+    spec: 'console / /admin-api refusal (HTTP 400)' },
+  { code: 'STS-SSF-0116',
+    summary: 'Polling a foreign transmitter (RFC 8936) failed ' +
+      '(#153).',
+    spec: 'none (logged; the job tries again)' },
+  { code: 'STS-SSF-0117',
+    summary: 'A push to /ssf/transmitters/{id}/push named no push ' +
+      'stream here, or its Authorization header is not the one this realm ' +
+      'gave the transmitter (#153).',
+    spec: 'HTTP 404 or 401 {err}' },
+  { code: 'STS-SSF-0118',
+    summary: 'A Security Event Token from a foreign transmitter ' +
+      'was malformed: not a compact JWS, typ not secevent+jwt, or no jti or ' +
+      'events (#153).',
+    spec: 'HTTP 400 {err: invalid_request}, or a poll setErrs entry' },
+  { code: 'STS-SSF-0119',
+    summary: 'A foreign SET\'s iss is not the transmitter\'s issuer ' +
+      '(#153).',
+    spec: 'HTTP 400 {err: invalid_issuer}, or a poll setErrs entry' },
+  { code: 'STS-SSF-0120',
+    summary: 'A foreign SET\'s aud does not name this realm\'s ' +
+      'stream audience (#153).',
+    spec: 'HTTP 400 {err: invalid_audience}, or a poll setErrs entry' },
+  { code: 'STS-SSF-0121',
+    summary: 'A foreign SET\'s signature does not verify against ' +
+      'the transmitter\'s keys, and it was refused (product mode, or ' +
+      'ssf.receiveRequireSignature) (#153).',
+    spec: 'HTTP 400 {err: invalid_key}, or a poll setErrs entry' },
+  { code: 'STS-SSF-0122',
+    summary: 'Acting on a verified event from a foreign ' +
+      'transmitter — ending a person\'s sessions, disabling or enabling ' +
+      'their account — failed; the SET is recorded (#153).',
+    spec: 'none (logged)' },
   // ===== RISK ==============================================================
   { code: 'STS-RISK-0001',
     summary: 'A dataset import was refused before anything was loaded: the ' +
@@ -12483,6 +12573,20 @@ const CODES = [
       'a URL it can be put into. The provider\'s own reason follows. ' +
       'Nothing is imported and the loader exits non-zero.',
     spec: '' },
+  { code: 'STS-RISK-0041',
+    summary: 'Monitoring → Geolocation (/admin/geolocation or GET ' +
+      '/admin-api/geolocation, #255) could not be drawn or answered: the ' +
+      'store\'s count of the realm\'s assessments by place failed, or the ' +
+      'country outlines (admin-ui/natural_earth/countries.json) could not be ' +
+      'read. The reason follows on the log line.',
+    spec: 'HTTP 500' },
+  { code: 'STS-RISK-0042',
+    summary: 'Monitoring → Geolocation was asked for something it does not ' +
+      'draw (#255): a window other than live, 24h, 7d or 30d, a continent ' +
+      'that is not one of the seven slugs, a country that is not an ISO ' +
+      '3166-1 alpha-2 code on the map, or a country together with a ' +
+      'continent it is not in.',
+    spec: 'HTTP 400' },
   // ===== MAIL ==============================================================
   { code: 'STS-MAIL-0001',
     summary: 'A message was not queued because no mail transport is ' +

@@ -721,6 +721,8 @@ var config = {
     signInSelfIssued: false,                           // Sign in with a self-issued ID (SIOPv2)
     siopIdTokenMaxAgeS: 300,                           // Self-issued ID Token max age (s)
     clientIdPrefix: "pre-registered",                  // Client Identifier prefix of a signed request
+    x509DnsName: "",                                   // DNS name of the x509_san_dns Client Identifier
+    x509SigningAlgorithm: "ES256",                     // Signing algorithm of an x509 Client Identifier request
     verifierAttestation: "",                           // Verifier Attestation JWT
     claims: "given_name,family_name",                  // Requested claims
     presentationRequestTtlS: 600,                      // Presentation request lifetime (s)
@@ -899,6 +901,12 @@ var config = {
     receiveAudiences: "",                                                                                                                                 // Audiences POST /ssf/receive answers to
     receiveIssuers: "",                                                                                                                                   // Issuers POST /ssf/receive accepts
     receiveRequireSignature: false,                                                                                                                       // Refuse a SET whose signature does not verify
+    foreignPollS: 30,                                                                                                                                     // Foreign transmitter poll interval (s)
+    foreignPollMaxEvents: 50,                                                                                                                             // Events asked per foreign poll
+    foreignPollMaxRounds: 5,                                                                                                                              // Foreign poll rounds
+    foreignMaxTransmitters: 20,                                                                                                                           // Foreign transmitters per realm
+    foreignInboxMax: 500,                                                                                                                                 // Foreign SETs kept
+    foreignTimeoutMs: 10000,                                                                                                                              // Foreign transmitter timeout (ms)
     actOnSignalsInDevelopment: false,                                                                                                                     // The console and portal act on received signals in development
     legacySubClaim: false,                                                                                                                                // Also emit the deprecated `sub` claim (development only)
     breakSetSignature: false                                                                                                                              // Sign every SET badly (development only)
@@ -956,6 +964,7 @@ var config = {
     mediumScorePercent: 100,                               // MEDIUM from (percent of a score of 1)
     highScorePercent: 1000,                                // HIGH from (percent of a score of 1)
     minimumHistory: 5,                                     // Earlier sign-ins before a person is scored
+    geoMinimumCount: 3,                                    // Fewest people a place is numbered with on the map
     listsMatchSpecialPurpose: true,                        // Lists match private and reserved addresses
     accountFailureThreshold: 5,                            // Refused passwords for one person that are a signal
     networkFailureThreshold: 20,                           // Refused passwords from one network that are a signal
