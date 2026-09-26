@@ -574,12 +574,13 @@ was purged on the strength of a message never sent.
 | a person is deleted | `account-purged` | `deletePerson()` and the LDAP delete handler |
 | `pwdAccountLockedTime` appears | `account-disabled`, with `reason` only when an administrator gave one (`hijacking`, `bulk-account`) | every write of the entry: `account_state.ts`'s disable, SCIM `active: false`, an `ldapmodify` |
 | `pwdAccountLockedTime` goes | `account-enabled` | the same |
-| `mail` / `telephoneNumber` / `mobile` moves | `identifier-changed`, the subject the OLD value | the same |
+| any value of `mail` / `telephoneNumber` / `mobile` moves or is removed | `identifier-changed`, the subject the OLD value, `new-value` absent for a removal (#234) | the same |
 | a create or a contact change takes an address another account released within `risc.recycleWindowDays` | `identifier-recycled`, the subject the address | the same, read against the register's `releasedIdentifiers` |
-| a password reset, a reset link | `account-credential-change-required` | the admin doors (`observeAct()`) |
-| a reset link | `recovery-activated` | the admin door |
+| the recovery address (first `mail`, verified or not) added, changed, removed or verified on an UPDATE | `recovery-information-changed`, after any `identifier-changed` (#235) | every write of the entry, `writePersonFlag()`'s of `stsMailVerified` included |
+| a password reset, a reset link, an activation link for somebody who exists (#235) | `account-credential-change-required` | the admin doors (`observeAct()`) |
+| a reset link, an activation link for somebody who exists, a recovery code at sign-in (#235) | `recovery-activated` | the admin door, `authn.ts` `finishBackupCode()` |
 | a reset marked "the credential was compromised" | `credential-compromise` (`password`) | the admin doors |
-| recovery codes cleared, or confirmed on the portal | `recovery-information-changed` | the admin doors, `/portal/mfa` |
+| recovery codes cleared, or confirmed on the portal, or ONE SPENT at sign-in or on the forgot-password form (#235) | `recovery-information-changed` | the admin doors, `/portal/mfa`, `finishBackupCode()`, `mail_uses.ts` `requestReset()` |
 | the account holder opts out, cancels, opts in | `opt-out-initiated`, `opt-out-cancelled`, `opt-in` | `POST /portal/signals` |
 | an opt-out's delay has passed | `opt-out-effective` | the `risc.opt-out-effective` scheduler job |
 
@@ -653,6 +654,55 @@ after delivery, so without the claim a second run of the job would send
 - The deprecated `sessions-revoked` is by hand only.
 - A received event is acted on only by the console's and portal's own
   receivers (#62), and by a realm receiving a foreign transmitter (#153).
+
+---
+
+## THE HOLDER'S CHOICE, IDENTIFIERS AS SETS, AND RECOVERY (#233-#235, 2026-09-26)
+
+**A RESET OR CLEAR OF THE REGISTER NEVER MOVES THE OPT STATE (#233).** Until
+then `reset()` put a row back to `opt-in` and `clear()` dropped it, sending
+nothing: a receiver told `opt-out-initiated` or `opt-out-effective` went on
+believing the account was opted out while this transmitter behaved as if it
+had opted in, and a pending opt-out never became effective. Sending
+`opt-out-cancelled` or `opt-in` from the reset was the other mend, and it
+would be an administrator making the holder's section 2.8 choice for them.
+So `reset()` keeps `optOut` and `optOutInitiatedAt`, and `clear()` re-creates
+blank every row not in `opt-in`, keeping both; the job still finds a pending
+one. `tests/risc_register.js` N.
+
+**EVERY VALUE, AS A SET (#234).** `identifierMoves()` read the first `mail` and
+the first of `telephoneNumber` then `mobile`, and wanted an old AND a new one.
+Now each format's values (`mail`; `telephoneNumber` with `mobile`) are a set
+before and after. A value that LEFT is a change, paired with one that arrived
+in the same attribute first and then anywhere in the format; unpaired, it is a
+removal, sent without `new-value` (section 2.5 makes it optional). Every value
+that left is released, a purge releases every value held, and every value that
+ARRIVED is checked for recycling. A number moving between the two phone
+attributes is no change, nor is an address changing case (addresses compare
+case-insensitively). The subject names the value that moved, so
+`moveIdentifier()` moves the row's `email`/`phone` only when that value WAS
+the row's; `followEntry()` then sets them from the entry's first values. An
+absent entry — a create's before, a delete's after — has no moves.
+
+**THE RECOVERY ADDRESS IS READ OFF THE WRITE (#235).** `recoveryChannelActs()`
+takes the channel to be the first `mail` and whether `stsMailVerified` names
+it, because that is what `/portal/forgot-password` mails. Any change of that
+pair on an UPDATE is one `recovery-information-changed` (section 2.10: "a
+recovery email address was added or removed"), after the
+`identifier-changed` a change of address also is. A create, and a second
+address, are not. `ldap_server.js`'s `writePersonFlag()` now hands a write of
+`stsMailVerified` to the account observer, which is how the portal's
+verification link is heard; it did not before. **The other two #235 items are
+door calls through `account_signals.ts`**: a recovery code spent sends
+`recovery-information-changed` (the set shrank) and, at sign-in,
+`recovery-activated` with `mailNotice: false`; an activation link for somebody
+who exists sends `recovery-activated` and
+`account-credential-change-required`, as issue-password-reset does, and one
+issued at create sends nothing. `tests/risc_identifiers_recovery.js`,
+`tests/mail.js` 15f, `tests/vendored/sts_risc_register_recovery.js`.
+
+**Still not done:** `trim()` (`risc.maxAccountsTracked`) drops the oldest row
+whatever its opt state, so a register at its cap can still forget an opt-out.
 
 ---
 
