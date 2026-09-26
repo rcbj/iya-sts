@@ -176,7 +176,18 @@ function records(dir) {
   fs.readdirSync(dir).forEach(function (name) {
     const rec = {};
     let last = null;
-    fs.readFileSync(path.join(dir, name), "utf8").split("\n")
+    let text = "";
+    try {
+      // certmonger writes a record to `<name>.tmp` and renames it; one
+      // listed and gone by the time it is read is that, mid-write.
+      text = name.endsWith(".tmp") ? ""
+                                   : fs.readFileSync(path.join(dir, name),
+                                                     "utf8");
+    } catch (e) {
+      log.debug("Caught in records(): " + ((e && e.message) || e));
+      text = "";
+    }
+    text.split("\n")
       .forEach(function (line) {
         if (line.startsWith(" ") && last) {
           rec[last] += "\n" + line.slice(1);
@@ -201,6 +212,21 @@ function recordOf(kind, id) {
     });
   log.debug("Leaving recordOf().");
   return found[0] || null;
+}
+
+// The SCEP Issuing CA among the certificates certmonger kept for its CA:
+// `ca_encryption_issuer_cert` is the top of what GetCACert answered (the
+// Root), and the rest is `ca_encryption_cert_pool`.
+function issuingOf(ca) {
+  log.debug("Entering issuingOf().");
+  const found = K.pemChain((ca.ca_encryption_issuer_cert || "") + "\n" +
+                           (ca.ca_encryption_cert_pool || ""))
+    .filter(function (x) {
+      return /SCEP Issuing CA/.test(x.subject);
+    });
+  assert.ok(found.length > 0, "certmonger kept no SCEP Issuing CA");
+  log.debug("Leaving issuingOf().");
+  return found[0];
 }
 
 async function waitForCa(id) {
@@ -248,10 +274,15 @@ function logSize() {
   return fs.existsSync(state.log) ? fs.statSync(state.log).size : 0;
 }
 
+// The problem lines of the daemon's log. The documented "no content" line
+// is left out everywhere: it belongs to a refusal, and certmonger re-sends
+// a refused request on its own schedule, so one can land in a later step's
+// slice of the log; a SUCCESS can never produce it (it has content), and
+// every refusal asserts it through `getcert list`'s ca-error instead.
 function problems(text) {
   log.debug("Entering problems().");
   log.debug("Leaving problems().");
-  return K.problemLines(text, /error|warn|fail|crit/i);
+  return K.problemLines(text, /error|warn|fail|crit/i, [NO_CONTENT]);
 }
 
 async function challenge(realm, who) {
@@ -286,9 +317,7 @@ async function refused(id, since, logFrom, codes, what) {
           function () {
     assert.strictEqual(f.status, "CA_UNREACHABLE", JSON.stringify(f));
     assert.ok(NO_CONTENT.test(f["ca-error"] || ""), f["ca-error"]);
-    const bad = problems(logSince(logFrom)).filter(function (line) {
-      return !NO_CONTENT.test(line);
-    });
+    const bad = problems(logSince(logFrom));
     assert.deepStrictEqual(bad, [], bad.join("\n"));
     assert.ok(rows.some(function (row) {
       return codes.indexOf(row.errorCode) >= 0;
@@ -363,7 +392,7 @@ async function test() {
                 c + " not in " + ca.ca_capabilities);
     });
     const ra = K.pemChain(ca.ca_encryption_cert)[0];
-    const issuing = K.pemChain(ca.ca_encryption_issuer_cert)[0];
+    const issuing = issuingOf(ca);
     assert.ok(/SCEP RA/.test(ra.subject), ra.subject);
     assert.ok(ra.checkIssued(issuing) && ra.verify(issuing.publicKey));
     K.chainsTo([issuing, intermediate], bundle.root);
@@ -393,8 +422,7 @@ async function test() {
     assert.strictEqual(requested.status, 0, requested.shown);
     assert.strictEqual(erin.status, "MONITORING", JSON.stringify(erin));
     assert.ok(leaf, "no certificate was written");
-    K.chainsTo([leaf, K.pemChain(ca.ca_encryption_issuer_cert)[0],
-                intermediate], bundle.root);
+    K.chainsTo([leaf, issuingOf(ca), intermediate], bundle.root);
     assert.ok(String(leaf.subjectAltName)
                 .indexOf("URI:urn:sts:person:" + ERIN) >= 0,
               leaf.subjectAltName);
@@ -408,7 +436,7 @@ async function test() {
   const req = recordOf("request", "erin");
   assert.ok(req && req.scep_gic, "the request record holds no " +
             "GetCertInitial message");
-  const issuingPem = K.pemChain(ca.ca_encryption_issuer_cert)[0].toString();
+  const issuingPem = issuingOf(ca).toString();
   const polled = await K.run(SCEP_SUBMIT, ["-u", url], {
     cwd: work, timeoutMs: 60000,
     env: { CERTMONGER_OPERATION: "POLL",

@@ -133,7 +133,9 @@ getcert list        # status: MONITORING
 
 It tracks the certificate and renews it before it expires, with the same key
 (`getcert resubmit`) or a new one (`getcert rekey`); both are signed with the
-certificate being renewed and need no challenge. Three things to know:
+certificate being renewed and need no challenge — whether or not the key
+changes, a PKCSReq signed by a certificate this realm issued is a renewal.
+Three things to know:
 
 * **Use the plain-HTTP URL.** certmonger's `scep-submit` hands `-R` (the CA
   file for HTTPS) to its GetCACaps and GetCACert requests only; the

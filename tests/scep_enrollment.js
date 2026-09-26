@@ -351,8 +351,10 @@ async function checkHandler(t, server) {
 // seven, so the signer was never found (STS-SCEP-0011). And both clients
 // derive the transactionID from the public key, so a second request for the
 // same key repeats it: that was refused STS-SCEP-0037 and is now a new
-// transaction. Mutants caught: `parts.length < 7` back in
-// describeCertificate(), and the 0037 refusal back in replayed().
+// transaction; and a renewal that keeps its key is signed by the old
+// certificate over the request's own key, which the two-keys test never saw.
+// Mutants caught: `parts.length < 7` back in describeCertificate(), the 0037
+// refusal back in replayed(), and the same-key renewal branch removed.
 // ---------------------------------------------------------------------------
 function v1SelfSigned(key, commonName) {
   log.debug("Entering v1SelfSigned().");
@@ -428,6 +430,16 @@ async function checkClientConventions(t, server) {
   t.equal(r3.failInfoName, 'badRequest',
           'and it is authorized afresh: the first, spent challenge under ' +
           'that transactionID is refused');
+  const issued = client.certsOnly(
+    client.openReply(r2.content, key, dev.certPem).inner).certificates[0];
+  const keep = message({ key: key, certPem: issued }, caCert.ra,
+    { txid: 'keep-' + RUN, inner: client.csr(key, {}) });
+  const r4 = client.readCertRep(
+    (await client.pkiOperation(url, keep.der)).body, caCert.ra);
+  t.equal(r4.pkiStatus, '0',
+          'a PKCSReq with no challenge, signed by the certificate this realm ' +
+          'issued over the SAME key, is a renewal (STS-SCEP-0035 before ' +
+          '#249) ' + r4.failInfoName);
   log.debug("Leaving checkClientConventions().");
 }
 

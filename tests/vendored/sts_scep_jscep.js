@@ -80,7 +80,15 @@ const secrets = [];
 // One driver command: its JSON answer, and jscep's own log lines.
 async function jscep(command, args, what) {
   log.debug("Entering jscep(). " + command);
-  const r = await K.run("jscep-driver", [command].concat(common, args),
+  // A call naming its own --intermediate (another realm's) replaces the
+  // job's, so the driver's CA check is made against the right realm.
+  const own = args.some(function (a) {
+    return a.indexOf("--intermediate=") === 0;
+  });
+  const base = common.filter(function (a) {
+    return !own || a.indexOf("--intermediate=") !== 0;
+  });
+  const r = await K.run("jscep-driver", [command].concat(base, args),
                         { cwd: work, secrets: secrets, timeoutMs: 120000 });
   let answer = null;
   const last = r.stdout.trim().split("\n").pop();
@@ -279,8 +287,21 @@ async function test() {
   const gotCrl = await jscep("getcrl", [U, "--identity=" + file("fran.pem"),
     "--key=" + req.key, "--serial=" + K.serialOf(leaf),
     "--out=" + file("scep.crl")], "getcrl");
-  C.check("GetCRL answers the SCEP Issuing CA's CRL", function () {
+  // jscep warns, on every GetCRL, when the Issuing CA carries a CRL
+  // distribution point: RFC 8894 section 3.3.4 has a client use the CRLDP
+  // first and GetCRL "only if the CA does not support CRLDPs". Advice to
+  // the client, and right — this CA does, and the certificate names it
+  // (checked below). The one line a job accepts from jscep, and only here.
+  const cdp = /CA supports distribution points$/;
+  gotCrl.problems = gotCrl.problems.filter(function (line) {
+    return !cdp.test(line);
+  });
+  C.check("GetCRL answers the SCEP Issuing CA's CRL, and the certificate " +
+          "names the distribution point jscep would rather use", function () {
     succeeded(gotCrl);
+    assert.ok(leaf.raw.toString("latin1")
+                .indexOf("/pki/crl/" + REALM + "/scep.crl") >= 0,
+              "the certificate names no CRL distribution point");
     assert.ok(/SCEP Issuing CA/.test(gotCrl.answer.issuer));
     assert.ok(fs.statSync(file("scep.crl")).size > 0);
   });
@@ -356,8 +377,19 @@ async function test() {
     failedWith(unknown, "badRequest");
   });
   const urlB = url.replace("/realm/" + REALM + "/", "/realm/" + REALM_B + "/");
+  const mixed = await jscep("getca", ["--url=" + urlB,
+    "--out=" + file("ca-mixed")], "getca (realm B, realm A's anchor)");
+  C.check("another realm's CA, checked against this realm's Intermediate, " +
+          "is refused by jscep before anything is sent", function () {
+    assert.strictEqual(mixed.answer.ok, false);
+    assert.ok(/could not be verified/.test(mixed.answer.message),
+              mixed.run.shown);
+  });
+  fs.writeFileSync(file("intermediate-b.pem"),
+                   (await K.realmIntermediate(REALM_B)).toString());
   const getcaB = await jscep("getca", ["--url=" + urlB,
-    "--out=" + file("ca-b")], "getca (realm B)");
+    "--intermediate=" + file("intermediate-b.pem"), "--out=" + file("ca-b")],
+    "getca (realm B)");
   assert.ok(getcaB.answer.ok, getcaB.run.shown);
   const other = await challenge(REALM, FRAN);
   const otherReq = await K.opensslRequest(work, "other",

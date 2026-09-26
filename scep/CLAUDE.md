@@ -220,6 +220,14 @@ section 2.3; `STS-SCEP-0034`).
   no `[0]` version and no extensions — six TBS fields — and
   `describeCertificate()` demanded seven, so the signer was dropped from the
   SignedData's set. It reads six now.
+* **A renewal that keeps its key was a first enrollment.** certmonger's
+  `getcert resubmit` and a jscep renewal keeping the key send a PKCSReq
+  signed by the old certificate over the SAME key the request names, and
+  `pkcsReq()` asked the renewal question only when the keys differed (#210's
+  case), so it went on without a challenge and was refused `STS-SCEP-0035`.
+  A signer that is not self-issued is now asked it too (RFC 8894 section 2.3's
+  second case is about the signer, not the key); one this realm did not issue
+  carries on as before.
 * **certmonger and jscep repeat the transactionID** for every request with one
   key (above, *The transaction store*): a same-key renewal inside the day a
   result is held was `STS-SCEP-0037`. It is a new transaction now.

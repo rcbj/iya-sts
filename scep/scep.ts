@@ -558,7 +558,26 @@ class Scep {
       log.debug("Leaving Scep.pkcsReq(). Unreadable.");
       return read.refusal;
     }
-    if (this.spkiSha256(read.csr.publicKeyPem) !== message.signer.spkiSha256) {
+    const sameKey = this.spkiSha256(read.csr.publicKeyPem) ===
+      message.signer.spkiSha256;
+    // **AND WHEN THE KEY IS KEPT (#249, #250, 2026-09-26).** A renewal that
+    // keeps its key — certmonger's `getcert resubmit`, a jscep renewal — is
+    // signed by the certificate being renewed over the SAME key the request
+    // names, so the two-keys test below never saw it: it went on as a first
+    // enrollment and was refused for having no challenge (STS-SCEP-0035).
+    // RFC 8894 section 2.3's second case turns on the SIGNER — "a
+    // certificate issued by the SCEP CA" — not on whether the key changed;
+    // so a signer that is not self-issued is asked the renewal question
+    // too, and one this realm did not issue carries on as before.
+    if (sameKey && message.signer.selfIssued === false) {
+      const keeping = await core.authenticatePresentedCertificate(
+        message.signer.pem, 'scep', { clientAuth: false });
+      if (keeping.ok) {
+        log.debug("Leaving Scep.pkcsReq(). A renewal keeping its key.");
+        return this.renewalReq(ctx);
+      }
+    }
+    if (!sameKey) {
       // **A PKCSReq SIGNED BY A CERTIFICATE THIS REALM ISSUED IS A RENEWAL
       // (#210, 2026-09-24).** RFC 8894 section 2.3 names that RenewalReq;
       // the drafts before it (draft-nourse-scep) renewed with a PKCSReq
