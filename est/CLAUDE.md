@@ -36,6 +36,29 @@ when registered).
   profile being disallowed — a client asking for the CA is not asking for a
   profile. An unlabelled `/simplereenroll` renews as the profile the renewed
   certificate was issued for.
+* **A REALM IS REACHED THROUGH THE LABEL POSITION TOO (#251, rcbj's decision
+  on #209, 2026-09-26).** `/.well-known/est/<realm>/[<profile>/]<op>` is the
+  realm `<realm>`, entered by `common/realms.js`'s `matchPath()` in
+  `app.js`'s first middleware and rewritten to `/.well-known/est/…` before
+  the router — so this directory still knows nothing about realms (common
+  3m). The reason is the clients: RFC 8615 puts the well-known URI at the
+  origin's root, and an EST client is given a host, a port and at most one
+  label; libest's `est_parse_path_seg()` refuses a label with a slash in it.
+  `/realm/<id>/.well-known/est` is a path no such client can be told.
+  **The collision rule is a REFUSAL, not the realm-label pair alone.** The
+  pair (`/.well-known/est/<realm>/<profile>/<op>`) is served, but it cannot
+  be the rule, because it is exactly what estclient cannot send: a realm must
+  be nameable by ONE segment, so that segment must mean one thing. A realm
+  may not be called by any label — the nine profiles and the five refused
+  (`STS-CORE-0107`, the names from `common/enrollment_profiles.ts`) — and a
+  realm created with such a name before the rule is never read in the label
+  position: the label reading wins, so no URL that meant a profile yesterday
+  means a realm today. **A request names its realm once**: a label that
+  names a realm here — after the prefix, or after a first label that already
+  named one — is 404 `STS-EST-0022`, never read as a second realm or as a
+  profile. `/admin/est` shows each endpoint's label-form URL in a realm
+  other than the default (`estView().labelForm`), and `GET /realms` carries
+  each realm's `estLabelUrl`.
 * **THE ORDER OF THE CHECKS IS A DECISION.** Query string, `est.enabled`,
   transport, label, the operation's own setting, the rate limit, the media type
   and the size are all decided with no credential read and no body decoded; then
@@ -136,7 +159,7 @@ records `appPassword` when one was used. `authn/CLAUDE.md` owns the rule.
 
 ## Error codes
 
-`STS-EST-0001`–`0021` for the protocol surface, `0030`–`0033` for the console
+`STS-EST-0001`–`0022` for the protocol surface, `0030`–`0033` for the console
 and `/admin-api`; refusals decided by the core keep their `STS-ENROLL-*` code.
 `tests/error_codes.js` carries `estError(req, res` as a failure pattern.
 
@@ -146,7 +169,7 @@ and `/admin-api`; refusals decided by the core keep their `STS-ENROLL-*` code.
 |---|---|
 | `tests/est_codec.js` | the strict body decoder (the non-canonical case included), OID encoding, a certs-only message read back by pkijs with each certificate BYTE FOR BYTE (EC and ML-DSA), csrattrs structure, multipart framing |
 | `tests/est_handlers.js` | in a child process: every refusal's STATUS AND CODE, plain HTTP answered in development and refused in a product-mode realm, product-mode passwords, a DecryptKeyIdentifier template (501), re-enrollment by client certificate and the supersede, the realm boundary of the certificate listing and the monitor, the Basic header's malformed shapes, the view model's refusals and that no view carries a private key |
-| `tests/vendored/sts_est_libest.js` | **Cisco's libest estclient, the reference client** (#209), in the DEFAULT realm (it can name no other): `-g` bootstrapped from the Root and the answer used as the trust anchors after it, `-a` under a label, `-e` by Basic and by a certificate, `-e` with an `openssl` CSR for a registered host (CN the host, UID the entry), `-z`, `-r` and the superseded certificate then refused, `-q` with the key matching the certificate, and the refusals — none, a wrong password (product only), an unknown label, `root-ca`, an unregistered host, a self-signed certificate, `--auth-token`, `--srp` |
+| `tests/vendored/sts_est_libest.js` | **Cisco's libest estclient, the reference client** (#209), in the DEFAULT realm and — since #251 — in a throwaway realm reached by `--path-seg <realm>` (the label form), whose own people, CA and CRL are asserted to be that realm's: `-g` bootstrapped from the Root and the answer used as the trust anchors after it, `-a` under a label, `-e` by Basic and by a certificate, `-e` with an `openssl` CSR for a registered host (CN the host, UID the entry), `-z`, `-r` and the superseded certificate then refused, `-q` with the key matching the certificate, and the refusals — none, a wrong password (product only), an unknown label, `root-ca`, an unregistered host, a self-signed certificate, `--auth-token`, `--srp` |
 | `tests/vendored/sts_est_enrollment.js` | over HTTPS with `est_client.js` (nothing from `est/`): every profile labelled, the application for itself, an administrator for another person, both `/serverkeygen` templates, re-enrollment and the CRL, revocation through `/admin-api`, and the negatives — cross-realm credentials and certificates, a non-enrolled certificate, refused and disallowed profiles, unregistered names, bad PoP, KEM keys, 413/415/400/404/405/501/503, throttling, product-mode wrong password and secret |
 
 Mutants confirmed caught: the canonical base64 check removed and a dropped
@@ -166,10 +189,11 @@ removed, and the KEM-profile check removed from the console (handlers); the
   error: (null)` on a successful `-q`: libest's
   `est_client_verify_key_and_cert()` dumps the (empty) error queue at its
   `end:` label whatever happened. The job accepts that exact line.
-* **A realm other than the default cannot be reached by any RFC 7030 client**:
-  the well-known URI is at the root (RFC 8615) and estclient takes only a host,
-  a port and a label. Documented exception on #209; routing a realm by label
-  or host name is an open question there.
+* **A realm other than the default could not be reached by any RFC 7030
+  client**: the well-known URI is at the root (RFC 8615) and estclient takes
+  only a host, a port and a label. rcbj decided it on #209: the label
+  position names a realm (#251, *The decisions* above), and the job now runs
+  in a throwaway realm that way.
 * **Three warning lines are the client's**: its note that it has no
   certificate, the `HTTP auth failure` of the 401 that asks for Basic (it never
   sends credentials unasked), and — with only the Root as its trust anchors —

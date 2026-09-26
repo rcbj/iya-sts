@@ -18,6 +18,9 @@
 //     that the authorization is already valid and skips the challenge (it
 //     still wants a solver named, `--http`, which binds nothing here). The
 //     certificate chains to the realm's Intermediate and the service Root.
+//   * `run` with NO profile for a host name: `tls-server` (serverAuth) — an
+//     order of host names only is a server certificate request (#252) — and
+//     `--profile tls-client` for the same host, which a named profile wins.
 //   * `--not-after`, which this server refuses (a certificate's lifetime is
 //     the realm's), and a profile it does not offer, and a host nobody
 //     registered: each refused, nothing written.
@@ -238,10 +241,18 @@ async function test() {
   });
   const plain = await lego(["run", "-m", MAIL, "-c", "plain", "-d", WWW,
                       "--no-random-sleep"].concat(solver));
-  C.check("run with no profile is issued acme.defaultProfile (tls-client)",
-          function () {
+  C.check("run with no profile, for a host name only, is issued " +
+          "tls-server (serverAuth, #252)", function () {
     succeeded(plain, "lego run (no profile)");
-    assertIssued(stored("plain"), [WWW], [EKU.clientAuth], "default");
+    assertIssued(stored("plain"), [WWW], [EKU.serverAuth], "default");
+  });
+  const named = await lego(["run", "-m", MAIL, "--profile", "tls-client",
+                      "-c", "named", "-d", WWW, "--no-random-sleep"]
+                     .concat(solver));
+  C.check("a named profile wins over the host-only default: --profile " +
+          "tls-client is issued clientAuth", function () {
+    succeeded(named, "lego run --profile tls-client");
+    assertIssued(stored("named"), [WWW], [EKU.clientAuth], "named");
   });
   const notAfter = await lego(["run", "-m", MAIL, "-c", "notafter", "-d", WWW,
                          "--not-after",
@@ -308,7 +319,7 @@ async function test() {
                          .concat(solver));
   C.check("the account orders under its new key", function () {
     succeeded(afterRoll, "lego run after keyrollover");
-    assertIssued(stored("rolled"), [APIHOST], [EKU.clientAuth], "rolled");
+    assertIssued(stored("rolled"), [APIHOST], [EKU.serverAuth], "rolled");
   });
 
   // -------------------------------------------------------------------------

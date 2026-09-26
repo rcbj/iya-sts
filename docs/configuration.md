@@ -1399,7 +1399,7 @@ Automatic Certificate Management Environment (RFC 8555), drawn on `/admin/acme`.
 |---|---|---|---|---|
 | `acme.enabled` | `STS_ACME_ENABLED` | `true` | yes | Off makes every /enroll/acme endpoint answer that ACME is turned off in this realm (HTTP 503, an RFC 7807 serverInternal problem naming the setting). |
 | `acme.allowedProfiles` | `STS_ACME_ALLOWED_PROFILES` | `tls-server,tls-client,tls-server-client,digital-signature,key-encipherment,code-signing,email,timestamping,smartcard-logon` | yes | The /admin/pki profiles an order may name in its `profile` member (draft-ietf-acme-profiles) and the directory advertises. |
-| `acme.defaultProfile` | `STS_ACME_DEFAULT_PROFILE` | `tls-client` | yes | Most ACME clients never name a profile. |
+| `acme.defaultProfile` | `STS_ACME_DEFAULT_PROFILE` | `tls-client` | yes | Most ACME clients never name a profile. An order naming none whose identifiers are all dns or ip is issued tls-server when acme.allowedProfiles holds it; every other such order is issued this. |
 | `acme.certificateLifetimeDays` | `STS_ACME_CERTIFICATE_LIFETIME_DAYS` | `90` | yes | The validity of a certificate issued at finalize, shortened to the ACME Issuing CA's own notAfter. |
 | `acme.maxRequestBytes` | `STS_ACME_MAX_REQUEST_BYTES` | `65536` | yes | A flattened JWS larger than this is refused (HTTP 413) before it is parsed. |
 | `acme.attemptsPerIdentity` | `STS_ACME_ATTEMPTS_PER_IDENTITY` | `30` | yes | Refused requests one account (or EAB key id) may make in one web-security window before ACME answers rateLimited. |

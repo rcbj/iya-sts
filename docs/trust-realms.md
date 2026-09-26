@@ -52,7 +52,10 @@ The id becomes a path segment: lower-case letters, digits and hyphens, starting
 with a letter or a digit, at most 31 characters. It may not be `default`, and it
 may not be the first segment of a path this service already serves —
 `GET /admin-api/realms` lists those in `reserved`, read off the live router, so
-the list cannot go stale.
+the list cannot go stale. **Nor may it be an EST label** — a certificate
+profile id such as `tls-server` or `kdc` — because a realm is also reached at
+`/.well-known/est/<id>/…`, the path position EST gives its labels (see
+[EST](est.md), *Reaching a realm through the label*).
 
 ### Its domain
 
@@ -109,6 +112,10 @@ realm cannot build a single URL without it.
   "support": [ "…which families a realm separates, and which are shared…" ]
 }
 ```
+
+Each realm but the default also carries `estLabelUrl`,
+`https://localhost:8081/.well-known/est/acme`: the address of its EST server
+for a client that cannot put a path in front of a well-known URI.
 
 Everything follows from `baseUrl`. Point a client at
 `https://localhost:8081/realm/acme` as its issuer and its discovery, token,

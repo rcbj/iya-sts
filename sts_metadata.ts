@@ -10744,7 +10744,10 @@ const ENDPOINTS: EndpointEntry[] = [
   { path: '/.well-known/est/:label/cacerts', group: 'EST',
     name: 'CA certificates (labelled)', specs: ['rfc7030', 'rfc8951'],
     what: 'The same as /cacerts. The label is a certificate profile id; an ' +
-          'unknown one is 404 and a refused or disallowed one 403.' },
+          'unknown one is 404 and a refused or disallowed one 403. A label ' +
+          'that names a trust realm enters that realm instead (#251), ' +
+          'before this route is matched: /.well-known/est/<realm>/cacerts, ' +
+          'and /.well-known/est/<realm>/<profile>/cacerts inside it.' },
   { path: '/.well-known/est/:label/simpleenroll', group: 'EST',
     name: 'Simple enrollment (labelled)',
     specs: ['rfc7030', 'rfc8951', 'rfc5967'],
@@ -10773,9 +10776,10 @@ const ENDPOINTS: EndpointEntry[] = [
     what: 'Answers 501 under a label as it does without one.' },
   { path: '/admin/est', group: 'EST', name: 'The EST console page',
     specs: ['rfc7030'],
-    what: 'Protocols > EST: the endpoints and the labelled URL of every ' +
-          'profile, the EST Issuing CA, the profiles and the five never ' +
-          'issued, the credentials EST accepts, issuing with a ' +
+    what: 'Protocols > EST: the endpoints (and in a realm other than the ' +
+          'default, their label-form URLs, #251) and the labelled URL of ' +
+          'every profile, the EST Issuing CA, the profiles and the five ' +
+          'never issued, the credentials EST accepts, issuing with a ' +
           'server-generated key, certificate host names, the enrolled ' +
           'certificates with a Revoke on each, and every est.* setting.' },
   { path: '/admin/est/monitor', group: 'EST', name: 'EST enrollments',
