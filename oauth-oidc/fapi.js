@@ -538,7 +538,6 @@ function enabled() {
   return on;
 }
 
-// Whether the FAPI 2.0 Security Profile is in force.
 // The client authentication methods the profile in force allows — every
 // reader asks this, so the three cannot disagree.
 function allowedMethods() {
@@ -555,6 +554,7 @@ function allowedMethods() {
                      : ADVANCED_METHODS;
 }
 
+// Whether the FAPI 2.0 Security Profile is in force.
 function fapi2() {
   log.debug("Entering fapi2().");
   const on = profile() === FAPI2 || profile() === MESSAGE_SIGNING;
