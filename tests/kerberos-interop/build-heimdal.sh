@@ -19,13 +19,18 @@
 # curl is built against that prefix's krb5-config (`--with-gssapi`), so
 # `curl --negotiate` goes through Heimdal's GSSAPI and its Kerberos library —
 # which is the point: the MIT curl in every other job answers the same
-# challenge through a different implementation.
+# challenge through a different implementation. **8.16.0 IS THE LAST curl
+# THAT BUILDS AGAINST HEIMDAL**: 8.17.0 dropped Heimdal from its configure
+# (it now demands MIT's gssapi_generic.h). It is a client in the test runner
+# talking to this service's own stack and nothing else, so the pin costs no
+# exposure; a later curl would mean MIT's GSSAPI again, which is not what
+# #205 asks for.
 set -euo pipefail
 OUT="${1:-/opt/heimdal}"
 HEIMDAL_COMMIT=c4971f73f1afdaf186f867249bcf8b1f87a454ac
 HEIMDAL_SHA256=bc4064dcc07fad5c1da676e6c13bac11c4f7fbc4eb5f71187ed076f8625d00d1
-CURL_VERSION=8.22.0
-CURL_SHA256=f7ef3ae8a22e521f289803fe93543eb64c329b58aa73a9e224dfd915a2a5f4f7
+CURL_VERSION=8.16.0
+CURL_SHA256=40c8cddbcb6cc6251c03dea423a472a6cea4037be654ba5cf5dec6eb2d22ff1d
 WORK="$(mktemp -d)"
 cd "$WORK"
 curl -fsSL --retry 5 --retry-all-errors -o heimdal.tgz \

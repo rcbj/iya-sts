@@ -9436,6 +9436,12 @@ const CODES = [
       'KDC no longer holds (a rotation retired it and its window ended, or ' +
       '"rotate and invalidate" dropped it).',
     spec: 'RFC 6113 section 5.4.1.1; KRB_AP_ERR_BADKEYVER (44)' },
+  { code: 'STS-KRB-0165',
+    summary: 'A FAST-armored TGS-REQ (PA-FX-FAST) did not decode, named ' +
+      'an armor type other than FX_FAST_ARMOR_AP_REQUEST, or was armored ' +
+      'implicitly without a subkey in its PA-TGS-REQ Authenticator.',
+    spec: 'RFC 6113 sections 5.4.1.1 and 5.4.2: KDC_ERR_PREAUTH_FAILED ' +
+      '(24)' },
   // ===== LDAP ==============================================================
   { code: 'STS-LDAP-0001',
     summary: 'An LDAP simple bind presented the reserved password this ' +

@@ -312,13 +312,36 @@ class Krb5Fast {
           'the one armor type is FX_FAST_ARMOR_AP_REQUEST (1)'
         : 'an AS-REQ armored with FAST must carry its armor');
     }
+    const armor = await this.armorFromApReq(armored.armor.value);
+    if (!armor.ok) {
+      log.debug('Leaving Krb5Fast.openAsRequest(). The armor was refused.');
+      return armor;
+    }
+    const opened = await this.openFastReq(armored, armor.armorKey,
+                                          request.reqBody.raw, armor.realm,
+                                          armor.client, 'an AS-REQ');
+    log.debug('Leaving Krb5Fast.openAsRequest().');
+    return opened;
+  }
+
+  // -------------------------------------------------------------------------
+  // FX_FAST_ARMOR_AP_REQUEST (RFC 6113 section 5.4.1.1): the armor AP-REQ's
+  // TGT for a realm this KDC serves, its Authenticator at key usage 11 with a
+  // subkey, and the armor key KRB-FX-CF2(subkey, ticket session key,
+  // "subkeyarmor", "ticketarmor"). Answers `{ ok: true, armorKey, realm,
+  // client }` or a refusal. Split out of openAsRequest() when the TGS exchange
+  // gained FAST (#204), where a client MAY send the same explicit armor.
+  // -------------------------------------------------------------------------
+  private async armorFromApReq(armorValue: Uint8Array): Promise<Json> {
+    const { log, msgs, kcrypto, principals } = this.deps;
+    log.debug('Entering Krb5Fast.armorFromApReq().');
     let apReq;
     try {
-      apReq = msgs.readApReq(armored.armor.value);
+      apReq = msgs.readApReq(armorValue);
     } catch (e) {
-      log.debug('Caught in Krb5Fast.openAsRequest(): ' +
+      log.debug('Caught in Krb5Fast.armorFromApReq(): ' +
                 ((e && e.message) || e));
-      log.debug('Leaving Krb5Fast.openAsRequest(). Armor is not an AP-REQ.');
+      log.debug('Leaving Krb5Fast.armorFromApReq(). Armor is not an AP-REQ.');
       return this.refuse(24, 'STS-KRB-0136', 'the FX_FAST_ARMOR_AP_REQUEST ' +
                          'armor is not an AP-REQ');
     }
@@ -331,7 +354,7 @@ class Krb5Fast {
     if (sname.length !== 2 || sname[0] !== 'krbtgt' ||
         sname[1] !== armorRealm ||
         principals.realmsServed().indexOf(armorRealm) === -1) {
-      log.debug('Leaving Krb5Fast.openAsRequest(). Not our TGS.');
+      log.debug('Leaving Krb5Fast.armorFromApReq(). Not our TGS.');
       return this.refuse(24, 'STS-KRB-0137', 'the armor ticket is for ' +
                          sname.join('/') + '@' + armorRealm + ', not for ' +
                          'the ticket-granting service of a realm this KDC ' +
@@ -339,7 +362,7 @@ class Krb5Fast {
     }
     const krbtgt = principals.find(['krbtgt', armorRealm], armorRealm);
     if (!krbtgt) {
-      log.debug('Leaving Krb5Fast.openAsRequest(). No krbtgt key.');
+      log.debug('Leaving Krb5Fast.armorFromApReq(). No krbtgt key.');
       return this.refuse(31, 'STS-KRB-0137', 'this KDC holds no krbtgt key ' +
                          'for ' + armorRealm + ' to open the armor ticket ' +
                          'with: ' + (principals.krbtgtUnavailableReason() ||
@@ -358,7 +381,7 @@ class Krb5Fast {
                                              apReq.ticket.encPart.etype,
                                              Number(armorKvno));
       if (!kept) {
-        log.debug('Leaving Krb5Fast.openAsRequest(). Armor under a dropped ' +
+        log.debug('Leaving Krb5Fast.armorFromApReq(). Armor under a dropped ' +
                   'krbtgt version.');
         return this.refuse(44, 'STS-KRB-0164', 'the armor ticket was sealed ' +
                            'under key version ' + armorKvno + ' of krbtgt/' +
@@ -375,22 +398,22 @@ class Krb5Fast {
         await kcrypto.etypeById(apReq.ticket.encPart.etype).decrypt(
           key, kcrypto.KEY_USAGE.KDC_REP_TICKET, apReq.ticket.encPart.cipher));
     } catch (e) {
-      log.debug('Caught in Krb5Fast.openAsRequest(): ' +
+      log.debug('Caught in Krb5Fast.armorFromApReq(): ' +
                 ((e && e.message) || e));
-      log.debug('Leaving Krb5Fast.openAsRequest(). Armor ticket sealed.');
+      log.debug('Leaving Krb5Fast.armorFromApReq(). Armor ticket sealed.');
       return this.refuse(31, 'STS-KRB-0137', 'the armor ticket does not ' +
                          'decrypt with this KDC\'s key for krbtgt/' +
                          armorRealm);
     }
     const at = this.now();
     if (ticketPart.endtime.getTime() + this.skewMs() <= at.getTime()) {
-      log.debug('Leaving Krb5Fast.openAsRequest(). Armor ticket expired.');
+      log.debug('Leaving Krb5Fast.armorFromApReq(). Armor ticket expired.');
       return this.refuse(32, 'STS-KRB-0137', 'the armor ticket expired at ' +
                          ticketPart.endtime.toISOString());
     }
     if (ticketPart.starttime &&
         ticketPart.starttime.getTime() > at.getTime() + this.skewMs()) {
-      log.debug('Leaving Krb5Fast.openAsRequest(). Armor not yet valid.');
+      log.debug('Leaving Krb5Fast.armorFromApReq(). Armor not yet valid.');
       return this.refuse(33, 'STS-KRB-0137', 'the armor ticket is not yet ' +
                          'valid');
     }
@@ -401,9 +424,9 @@ class Krb5Fast {
           ticketPart.key.key, kcrypto.KEY_USAGE.AP_REQ_AUTH,
           apReq.authenticator.cipher));
     } catch (e) {
-      log.debug('Caught in Krb5Fast.openAsRequest(): ' +
+      log.debug('Caught in Krb5Fast.armorFromApReq(): ' +
                 ((e && e.message) || e));
-      log.debug('Leaving Krb5Fast.openAsRequest(). Authenticator sealed.');
+      log.debug('Leaving Krb5Fast.armorFromApReq(). Authenticator sealed.');
       return this.refuse(31, 'STS-KRB-0138', 'the armor AP-REQ\'s ' +
                          'Authenticator does not decrypt with the armor ' +
                          'ticket\'s session key at key usage 11');
@@ -411,18 +434,18 @@ class Krb5Fast {
     if (authenticator.cname.name.join('/') !==
           ticketPart.cname.name.join('/') ||
         authenticator.crealm !== ticketPart.crealm) {
-      log.debug('Leaving Krb5Fast.openAsRequest(). Names disagree.');
+      log.debug('Leaving Krb5Fast.armorFromApReq(). Names disagree.');
       return this.refuse(36, 'STS-KRB-0138', 'the armor Authenticator and ' +
                          'the armor ticket name different clients');
     }
     if (Math.abs(at.getTime() - authenticator.ctime.getTime()) >
         this.skewMs()) {
-      log.debug('Leaving Krb5Fast.openAsRequest(). Authenticator skew.');
+      log.debug('Leaving Krb5Fast.armorFromApReq(). Authenticator skew.');
       return this.refuse(37, 'STS-KRB-0138', 'the armor Authenticator\'s ' +
                          'clock is outside the tolerance');
     }
     if (!authenticator.subkey) {
-      log.debug('Leaving Krb5Fast.openAsRequest(). No subkey.');
+      log.debug('Leaving Krb5Fast.armorFromApReq(). No subkey.');
       // RFC 6113 section 5.4.1.1: "The subkey field in the AP-REQ MUST be
       // present." Without it there is no client contribution to the armor.
       return this.refuse(24, 'STS-KRB-0138', 'the armor AP-REQ\'s ' +
@@ -442,7 +465,7 @@ class Krb5Fast {
       (!principals.etypePermitted(ticketPart.key.etype) ?
         ticketPart.key.etype : null);
     if (withheldArmor !== null) {
-      log.debug('Leaving Krb5Fast.openAsRequest(). Withheld enctype.');
+      log.debug('Leaving Krb5Fast.armorFromApReq(). Withheld enctype.');
       return this.refuse(14, 'STS-KRB-0159', 'the FAST armor ' +
                          (withheldArmor === authenticator.subkey.etype ?
                            'subkey' : 'ticket\'s session key') + ' is ' +
@@ -458,13 +481,32 @@ class Krb5Fast {
                             key: ticketPart.key.key },
                           'subkeyarmor', 'ticketarmor');
     } catch (e) {
-      log.debug('Caught in Krb5Fast.openAsRequest(): ' +
+      log.debug('Caught in Krb5Fast.armorFromApReq(): ' +
                 ((e && e.message) || e));
-      log.debug('Leaving Krb5Fast.openAsRequest(). No armor key.');
+      log.debug('Leaving Krb5Fast.armorFromApReq(). No armor key.');
       return this.refuse(24, 'STS-KRB-0138', 'no armor key can be made from ' +
                          'a ' + kcrypto.etypeName(authenticator.subkey.etype) +
                          ' subkey');
     }
+    log.debug('Leaving Krb5Fast.armorFromApReq().');
+    return { ok: true, armorKey: armorKey, realm: armorRealm,
+             client: ticketPart.cname.name.join('/') + '@' +
+                     ticketPart.crealm };
+  }
+
+  // -------------------------------------------------------------------------
+  // THE KrbFastReq (RFC 6113 section 5.4.2), under an armor key however it was
+  // made: the req-checksum over `checksumBytes` — the outer KDC-REQ-BODY in an
+  // AS-REQ, the PA-TGS-REQ's AP-REQ in a TGS-REQ — then the enc-fast-req, the
+  // critical options, and the inner request's realm against the armor's.
+  // Answers `{ ok: true, fast, padata, reqBody }` or a refusal.
+  // -------------------------------------------------------------------------
+  private async openFastReq(armored: Json, armorKey: Key,
+                            checksumBytes: Uint8Array, armorRealm: string,
+                            armorClient: string, what: string):
+      Promise<Json> {
+    const { log, codec, kcrypto } = this.deps;
+    log.debug('Entering Krb5Fast.openFastReq(). ' + what);
     const armorProfile = kcrypto.etypeById(armorKey.etype);
     // THE req-checksum BINDS THE ARMOR TO THE OUTER REQUEST: over the outer
     // KDC-REQ-BODY's own bytes, under the armor key, at key usage 50, and of
@@ -473,15 +515,15 @@ class Krb5Fast {
     try {
       bound = armored.reqChecksum.type === armorProfile.checksumType &&
               await armorProfile.verifyChecksum(armorKey.key,
-                codec.KEY_USAGE.FAST_REQ_CHKSUM, request.reqBody.raw,
+                codec.KEY_USAGE.FAST_REQ_CHKSUM, checksumBytes,
                 armored.reqChecksum.checksum);
     } catch (e) {
-      log.debug('Caught in Krb5Fast.openAsRequest(): ' +
+      log.debug('Caught in Krb5Fast.openFastReq(): ' +
                 ((e && e.message) || e));
       bound = false;
     }
     if (!bound) {
-      log.debug('Leaving Krb5Fast.openAsRequest(). Checksum.');
+      log.debug('Leaving Krb5Fast.openFastReq(). Checksum.');
       return this.refuse(41, 'STS-KRB-0139', 'the FAST req-checksum does ' +
                          'not cover this request\'s body under the armor key ' +
                          '(key usage 50, checksum type ' +
@@ -499,9 +541,9 @@ class Krb5Fast {
       inner = codec.readFastReq(await armorProfile.decrypt(armorKey.key,
         codec.KEY_USAGE.FAST_ENC, armored.encFastReq.cipher));
     } catch (e) {
-      log.debug('Caught in Krb5Fast.openAsRequest(): ' +
+      log.debug('Caught in Krb5Fast.openFastReq(): ' +
                 ((e && e.message) || e));
-      log.debug('Leaving Krb5Fast.openAsRequest(). Inner request.');
+      log.debug('Leaving Krb5Fast.openFastReq(). Inner request.');
       return this.refuse(31, 'STS-KRB-0140', 'the armored KrbFastReq does ' +
                          'not open under the armor key: ' +
                          ((e && e.message) || e));
@@ -510,7 +552,7 @@ class Krb5Fast {
       return bit >= 0 && bit <= 15;
     });
     if (critical.length) {
-      log.debug('Leaving Krb5Fast.openAsRequest(). Critical options.');
+      log.debug('Leaving Krb5Fast.openFastReq(). Critical options.');
       // Section 5.4.2: "If the KDC does not support a critical option, it
       // MUST fail the request" — and no e-data is defined for the error.
       return this.refuse(93, 'STS-KRB-0141', 'FAST option bit(s) ' +
@@ -518,7 +560,7 @@ class Krb5Fast {
                          'implemented here (hide-client-names is bit 1)');
     }
     if (inner.reqBody.realm !== armorRealm) {
-      log.debug('Leaving Krb5Fast.openAsRequest(). Another realm.');
+      log.debug('Leaving Krb5Fast.openFastReq(). Another realm.');
       return this.refuse(24, 'STS-KRB-0137', 'the armor ticket is for ' +
                          'krbtgt/' + armorRealm + ' and the request is for ' +
                          inner.reqBody.realm + '; the armor must identify ' +
@@ -530,13 +572,108 @@ class Krb5Fast {
       realm: armorRealm,
       fastOptions: inner.fastOptions || [],
       cookie: codec.find(inner.padata, codec.PA.FX_COOKIE),
-      armorClient: ticketPart.cname.name.join('/') + '@' + ticketPart.crealm
+      armorClient: armorClient
     };
-    log.info('krb5-fast: an AS-REQ armored by a TGT for ' + fast.armorClient +
+    log.info('krb5-fast: ' + what + ' armored by a TGT for ' +
+             fast.armorClient +
              ' (' + kcrypto.etypeName(armorKey.etype) + ' armor key)');
-    log.debug('Leaving Krb5Fast.openAsRequest(). Opened.');
+    log.debug('Leaving Krb5Fast.openFastReq(). Opened.');
     return { ok: true, fast: fast, padata: inner.padata,
              reqBody: inner.reqBody };
+  }
+
+  // -------------------------------------------------------------------------
+  // FAST IN THE TGS EXCHANGE (RFC 6113 sections 5.4.1.1 and 5.4.2, #204,
+  // 2026-09-26). Called by krb5_kdc.js once the PA-TGS-REQ has verified —
+  // its ticket, its Authenticator and the body checksum — with
+  // `{ apReqBytes, ticketKey, subkey, realm, client }`: the PA-TGS-REQ's
+  // AP-REQ as sent, the ticket's session key, the Authenticator's subkey, the
+  // realm of the TGS answering and the ticket's client.
+  //
+  // THE ARMOR IS IMPLICIT: "the armor key is the same armor key that would be
+  // computed if the TGS-REQ authenticator was used in an
+  // FX_FAST_ARMOR_AP_REQUEST armor", which needs the subkey the section makes
+  // a MUST. An EXPLICIT armor field is opened as in an AS-REQ instead —
+  // section 5.4.2 has a client SHOULD NOT send one, and Active Directory and
+  // Heimdal both accept it, so refusing it would be stricter than every KDC
+  // a client is written against. The req-checksum is over the PA-TGS-REQ's
+  // AP-REQ, and the KrbFastReq's req-body and padata replace the outer ones.
+  //
+  // Until this, the KDC answered a FAST TGS-REQ UNARMORED, as though FAST
+  // were not there (kerberos/CLAUDE.md's NOT BUILT): MIT's client, which
+  // armors every TGS-REQ implicitly, accepted that, and a client holding
+  // section 5.4.3's MUST — reject a TGS reply without PA-FX-FAST — could not
+  // use this KDC at all. Samba's fast_tests found it.
+  // -------------------------------------------------------------------------
+  async openTgsRequest(pa: Json, ctx: Json): Promise<Json> {
+    const { log, codec, kcrypto, principals } = this.deps;
+    log.debug('Entering Krb5Fast.openTgsRequest().');
+    let armored;
+    try {
+      armored = codec.readFastRequest(pa.value);
+    } catch (e) {
+      log.debug('Caught in Krb5Fast.openTgsRequest(): ' +
+                ((e && e.message) || e));
+      log.debug('Leaving Krb5Fast.openTgsRequest(). Not a request.');
+      return this.refuse(24, 'STS-KRB-0165', 'PA-FX-FAST does not decode ' +
+                         'as a PA-FX-FAST-REQUEST');
+    }
+    let armorKey: Key;
+    let client = String(ctx.client || '');
+    if (armored.armor) {
+      if (armored.armor.type !== codec.ARMOR_AP_REQUEST) {
+        log.debug('Leaving Krb5Fast.openTgsRequest(). Armor type.');
+        return this.refuse(24, 'STS-KRB-0165', 'armor type ' +
+                           armored.armor.type + ' is not implemented here; ' +
+                           'a TGS-REQ is armored implicitly, or with ' +
+                           'FX_FAST_ARMOR_AP_REQUEST (1)');
+      }
+      const armor = await this.armorFromApReq(armored.armor.value);
+      if (!armor.ok) {
+        log.debug('Leaving Krb5Fast.openTgsRequest(). Explicit armor.');
+        return armor;
+      }
+      armorKey = armor.armorKey;
+      client = armor.client;
+    } else {
+      if (!ctx.subkey) {
+        log.debug('Leaving Krb5Fast.openTgsRequest(). No subkey.');
+        return this.refuse(24, 'STS-KRB-0165', 'a TGS-REQ armored ' +
+                           'implicitly must carry a subkey in its ' +
+                           'PA-TGS-REQ Authenticator (RFC 6113 section ' +
+                           '5.4.2)');
+      }
+      // #182's rule, as for explicit armor: no armor key of an enctype the
+      // mode withholds.
+      const withheld = !principals.etypePermitted(ctx.subkey.etype)
+        ? ctx.subkey.etype
+        : (!principals.etypePermitted(ctx.ticketKey.etype)
+          ? ctx.ticketKey.etype : null);
+      if (withheld !== null) {
+        log.debug('Leaving Krb5Fast.openTgsRequest(). Withheld enctype.');
+        return this.refuse(14, 'STS-KRB-0159', 'the implicit FAST armor ' +
+                           'would be ' + kcrypto.etypeName(withheld) +
+                           ', which this KDC does not use in product mode ' +
+                           '(RFC 8429 deprecates it)');
+      }
+      try {
+        armorKey = this.cf2({ etype: ctx.subkey.etype, key: ctx.subkey.key },
+                            { etype: ctx.ticketKey.etype,
+                              key: ctx.ticketKey.key },
+                            'subkeyarmor', 'ticketarmor');
+      } catch (e) {
+        log.debug('Caught in Krb5Fast.openTgsRequest(): ' +
+                  ((e && e.message) || e));
+        log.debug('Leaving Krb5Fast.openTgsRequest(). No armor key.');
+        return this.refuse(24, 'STS-KRB-0165', 'no armor key can be made ' +
+                           'from a ' + kcrypto.etypeName(ctx.subkey.etype) +
+                           ' subkey');
+      }
+    }
+    const opened = await this.openFastReq(armored, armorKey, ctx.apReqBytes,
+                                          ctx.realm, client, 'a TGS-REQ');
+    log.debug('Leaving Krb5Fast.openTgsRequest().');
+    return opened;
   }
 
   // -------------------------------------------------------------------------

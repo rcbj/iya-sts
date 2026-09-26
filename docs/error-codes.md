@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3540** of them, in **38** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3541** of them, in **38** subsystems.
 
 ## Where a code appears
 
@@ -69,7 +69,7 @@ is an ordinary outcome.
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 16
 * [Federation (`STS-FED`)](#sts-fed) — 133
 * [OpenID Federation (`STS-OIDFED`)](#sts-oidfed) — 66
-* [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 164
+* [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 165
 * [LDAP directory (`STS-LDAP`)](#sts-ldap) — 84
 * [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 77
 * [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 144
@@ -2308,6 +2308,7 @@ Raised from: kerberos/.
 | `STS-KRB-0162` | A node lost the race to create a trust realm's first random krbtgt key and, re-reading the directory, did not find the winner's key yet; the KDC refuses until it arrives. | — |
 | `STS-KRB-0163` | A trust realm's first random krbtgt key was not made: this node could not ask the shared store whether another node was making it. | — |
 | `STS-KRB-0164` | A FAST armor ticket was sealed under a krbtgt key version the KDC no longer holds (a rotation retired it and its window ended, or "rotate and invalidate" dropped it). | RFC 6113 section 5.4.1.1; KRB_AP_ERR_BADKEYVER (44) |
+| `STS-KRB-0165` | A FAST-armored TGS-REQ (PA-FX-FAST) did not decode, named an armor type other than FX_FAST_ARMOR_AP_REQUEST, or was armored implicitly without a subkey in its PA-TGS-REQ Authenticator. | RFC 6113 sections 5.4.1.1 and 5.4.2: KDC_ERR_PREAUTH_FAILED (24) |
 
 ## STS-LDAP
 

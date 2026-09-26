@@ -377,6 +377,31 @@ function isTgtRequest(sname) {
 // require them and then fail against a real domain the moment it looked at a
 // TGT.
 // ---------------------------------------------------------------------------
+// A PAC carried into a SERVICE ticket loses the two buffers that describe a
+// TGT (buildPacFor() says which and why); one carried into a TGT keeps them.
+// The vendored re-signer keeps every content buffer it is given, so the trim
+// is done here, before it: the buffers are re-laid out by the codec's own
+// assemblePac() and the old signatures, which resignPac() replaces anyway,
+// travel with them.
+function pacForTarget(pacBytes, isTgt) {
+  log.debug('Entering pacForTarget().');
+  if (isTgt) {
+    log.debug('Leaving pacForTarget(). A TGT keeps every buffer.');
+    return pacBytes;
+  }
+  const parsed = kpac.parsePac(pacBytes);
+  const kept = parsed.buffers.filter(function (b) {
+    return b.bytes && b.type !== kpac.TYPE.ATTRIBUTES_INFO &&
+           b.type !== kpac.TYPE.REQUESTOR_SID;
+  }).map(function (b) {
+    return { type: b.type, bytes: b.bytes };
+  });
+  const out = kept.length === parsed.buffers.length
+    ? pacBytes : kpac.assemblePac(kept).bytes;
+  log.debug('Leaving pacForTarget().');
+  return out;
+}
+
 async function buildPacFor(client, opts) {
   log.debug('Entering buildPacFor(). client=' + client.name.join('/'));
   const options = opts || {};
@@ -441,8 +466,15 @@ async function buildPacFor(client, opts) {
     // PAC_WAS_GIVEN_IMPLICITLY when it neither asked nor declined. Reproducing
     // that distinction is the only way the workflow can show what the flag
     // means.
-    attributes: options.pacRequested ? 0x00000001 : 0x00000002,
-    requestorSid: principals.domainSidFor(clientRealm) + '-' + identity.rid
+    // PAC_ATTRIBUTES_INFO and PAC_REQUESTOR in a TGT ONLY (#204,
+    // 2026-09-26): both describe the TGT — whether its PAC was asked for, and
+    // whose request it answered, which the TGS exchange checks — and Active
+    // Directory leaves both out of a service ticket. This KDC put them in
+    // every ticket; Samba's PAC checks found the two extra buffers.
+    attributes: options.isTgt
+      ? (options.pacRequested ? 0x00000001 : 0x00000002) : undefined,
+    requestorSid: options.isTgt
+      ? principals.domainSidFor(clientRealm) + '-' + identity.rid : null
   };
 
   if (options.isTgt) {
@@ -541,7 +573,9 @@ async function issueReferral(ctx) {
   // The referral ticket inherits the presented TGT's flags and lifetime, minus
   // `initial` — it was not obtained with a password — and carries the client's
   // authorization data forward unchanged.
-  const flags = ticketFlagsForReferral(ctx.ticketPart.flags);
+  let flags = ticketFlagsForReferral(ctx.ticketPart.flags);
+  // RFC 6806 section 11: every ticket issued carries enc-pa-rep.
+  if (ctx.request[REQUEST_BYTES]) flags = withEncPaRep(flags);
   const sessionKey = kcrypto.randomBytes(profile.keyBytes);
   const endtime = new Date(Math.min(
     (body.till && body.till > ctx.at ? body.till :
@@ -563,13 +597,37 @@ async function issueReferral(ctx) {
   });
 
   const useSubkey = !!ctx.authenticator.subkey;
-  const replyKey = useSubkey ? ctx.authenticator.subkey.key : ctx.sessionKey;
-  const replyEtype = useSubkey ? ctx.authenticator.subkey.etype :
-                     ctx.apReq.ticket.encPart.etype;
-  const replyProfile = kcrypto.etypeById(replyEtype);
+  let replyKey = useSubkey ? ctx.authenticator.subkey.key : ctx.sessionKey;
+  let replyEtype = useSubkey ? ctx.authenticator.subkey.etype :
+                   ctx.apReq.ticket.encPart.etype;
   const replyUsage = useSubkey
     ? kcrypto.KEY_USAGE.TGS_REP_ENCPART_SUBKEY
     : kcrypto.KEY_USAGE.TGS_REP_ENCPART_SESSKEY;
+  const ticket = {
+    realm: ctx.answeringRealm,
+    sname: referralSname,
+    encPart: {
+      etype: etype,
+      kvno: trust.kvno,
+      cipher: await profile.encrypt(trustKey,
+                                    kcrypto.KEY_USAGE.KDC_REP_TICKET,
+                                    encTicketPart)
+    }
+  };
+  // Armored when the request was (answerTgsReq() argues it).
+  const provider = principals.preauthProvider();
+  let replyPadata = null;
+  if (ctx.fast && provider) {
+    const finished = await provider.finishAsReply({
+      fast: ctx.fast, ticket: ticket, crealm: ctx.ticketPart.crealm,
+      cname: ctx.ticketPart.cname,
+      replyKey: { etype: replyEtype, key: replyKey }, padata: []
+    });
+    replyPadata = finished.padata;
+    replyKey = finished.replyKey.key;
+    replyEtype = finished.replyKey.etype;
+  }
+  const replyProfile = kcrypto.etypeById(replyEtype);
 
   const encRepPart = msgs.encEncKdcRepPart({
     key: { etype: etype, key: sessionKey },
@@ -583,7 +641,9 @@ async function issueReferral(ctx) {
     srealm: ctx.answeringRealm,
     // The reply's sname is the REFERRAL, not what was asked for. A client
     // compares this with its own request to discover that it was referred.
-    sname: referralSname
+    sname: referralSname,
+    encryptedPaData: await encPaRepData(ctx.request,
+                                        { etype: replyEtype, key: replyKey })
   }, msgs.APPLICATION.ENC_TGS_REP_PART);
 
   log.info('krb5: ' + ctx.answeringRealm + ' has no ' +
@@ -596,19 +656,10 @@ async function issueReferral(ctx) {
   log.debug('Leaving issueReferral().');
   return msgs.encKdcRep({
     msgType: msgs.MSG_TYPE.TGS_REP,
+    padata: replyPadata,
     crealm: ctx.ticketPart.crealm,
     cname: ctx.ticketPart.cname,
-    ticket: {
-      realm: ctx.answeringRealm,
-      sname: referralSname,
-      encPart: {
-        etype: etype,
-        kvno: trust.kvno,
-        cipher: await profile.encrypt(trustKey,
-                                      kcrypto.KEY_USAGE.KDC_REP_TICKET,
-                                      encTicketPart)
-      }
-    },
+    ticket: ticket,
     encPart: {
       etype: replyEtype,
       cipher: await replyProfile.encrypt(replyKey, replyUsage, encRepPart)
@@ -1284,6 +1335,139 @@ function recordRawRefusal(reply, transport) {
 // PA-FX-COOKIE — and handleAsReq() carries the whole error inside the armor.
 // PA-ENC-TIMESTAMP is not offered inside FAST: MIT's client never sends it
 // there, and the encrypted challenge is the same proof bound to the armor.
+// ---------------------------------------------------------------------------
+// RFC 6806 SECTION 11 — NEGOTIATION OF FAST AND DETECTING MODIFIED REQUESTS
+// (#204, 2026-09-26). "KDCs conforming to this specification must always set
+// the ticket flag enc-pa-rep (15) in all the issued tickets", and when a
+// request carries PA-REQ-ENC-PA-REP (149) the reply's encrypted-pa-data MUST
+// carry a PA-REQ-ENC-PA-REP whose value is a checksum over the request as
+// received — keyed with the reply key, of that key's required checksum type,
+// at key usage 56 (KEY_USAGE_AS_REQ) — and, since this KDC supports FAST, an
+// empty PA-FX-FAST. It is what lets a client detect a request an attacker
+// modified in flight when the result was a reply rather than an error, and
+// what tells a client, securely, that the KDC does FAST. MIT's and Heimdal's
+// clients send PA-REQ-ENC-PA-REP in every AS-REQ and REJECT a reply whose
+// flag is set and whose checksum is absent or wrong, so the two halves go in
+// together. This KDC did neither until Samba's compatability_tests asked.
+//
+// The bytes are the WHOLE message as it arrived — for an armored request the
+// outer AS-REQ — which handleMessage() hangs on the request under
+// REQUEST_BYTES, because the codec's decoding keeps no copy of them. A
+// request that never went through handleMessage() (none today) is answered
+// without the checksum and without the flag, which is RFC 4120's behaviour.
+// ---------------------------------------------------------------------------
+const REQUEST_BYTES = Symbol('krb5.requestBytes');
+const PA_REQ_ENC_PA_REP = 149;
+const KEY_USAGE_AS_REQ = 56;
+
+function sentEncPaRep(request) {
+  log.debug('Entering sentEncPaRep().');
+  const sent = (request.padata || []).some(function (pa) {
+    return pa.type === PA_REQ_ENC_PA_REP;
+  });
+  log.debug('Leaving sentEncPaRep().');
+  return sent;
+}
+
+// The encrypted-pa-data of a reply to `request`, sealed under `replyKey`
+// ({ etype, key }): null unless the request asked for it.
+async function encPaRepData(request, replyKey) {
+  log.debug('Entering encPaRepData().');
+  const bytes = request[REQUEST_BYTES];
+  if (!bytes || !sentEncPaRep(request)) {
+    log.debug('Leaving encPaRepData(). Not asked for.');
+    return null;
+  }
+  const profile = kcrypto.etypeById(replyKey.etype);
+  const checksum = await profile.checksum(replyKey.key, KEY_USAGE_AS_REQ,
+                                          bytes);
+  const out = [{ type: PA_REQ_ENC_PA_REP,
+                 value: msgs.encChecksum({ type: profile.checksumType,
+                                           checksum: checksum }) }];
+  if (principals.preauthProvider()) {
+    out.push({ type: msgs.PA_TYPE.FX_FAST, value: new Uint8Array(0) });
+  }
+  log.debug('Leaving encPaRepData().');
+  return out;
+}
+
+// The flags a ticket this KDC issues carries, with enc-pa-rep added: RFC 6806
+// section 11 sets it on every one.
+function withEncPaRep(flags) {
+  log.debug('Entering withEncPaRep().');
+  const out = flags.slice();
+  if (out.indexOf(msgs.TICKET_FLAG.ENC_PA_REP) === -1) {
+    out.push(msgs.TICKET_FLAG.ENC_PA_REP);
+  }
+  log.debug('Leaving withEncPaRep().');
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// THE SALT HINTS A KDC-REQ IS ANSWERED WITH, and RFC 4120 section 3.1.3 fixes
+// which (#204, 2026-09-26 — Samba's raw Kerberos tests found both halves):
+//
+//   * a request that lists at least one "newer" enctype — anything first
+//     specified with or after RFC 4120, so not DES, 3DES or RC4 — is answered
+//     with PA-ETYPE-INFO2 ALONE: "a KDC MUST NOT send ETYPE-INFO or PW-SALT
+//     when the client's AS-REQ includes at least one newer etype" (5.2.7.5).
+//     This KDC sent PA-PW-SALT in every KDC_ERR_PREAUTH_REQUIRED;
+//   * a request that lists none gets PA-ETYPE-INFO2 AND PA-ETYPE-INFO, "both
+//     with an entry for each enctype". This KDC never sent PA-ETYPE-INFO.
+//
+// The entries are the request's own enctypes, in its order
+// (krb5_principals.js's etypeInfo2For() argues why).
+// ---------------------------------------------------------------------------
+//
+// "Newer" is a list of what IS newer, not everything that is not older: a
+// number nobody registered — Samba's tests send one on purpose beside rc4-hmac
+// — was not "first officially specified" at any time, and treating it as newer
+// would drop the PA-ETYPE-INFO such a client is owed. RFC 3962's AES, RFC
+// 8009's AES-SHA2 and RFC 6803's Camellia.
+const NEWER_ETYPES = [17, 18, 19, 20, 25, 26];
+
+function listsNewerEtype(etypes) {
+  log.debug('Entering listsNewerEtype().');
+  const newer = (etypes || []).some(function (id) {
+    return NEWER_ETYPES.indexOf(id) !== -1;
+  });
+  log.debug('Leaving listsNewerEtype().');
+  return newer;
+}
+
+// ETYPE-INFO-ENTRY ::= SEQUENCE { etype [0] Int32, salt [1] OCTET STRING
+// OPTIONAL } (RFC 4120 section 5.2.7.4). The vendored codec reads ETYPE-INFO
+// and does not write it, so the encoder is here; its salt is the same bytes
+// ETYPE-INFO2 carries as a KerberosString, and arcfour's entry carries none.
+function encEtypeInfo(entries) {
+  log.debug('Entering encEtypeInfo().');
+  const out = asn1.encSequenceOf(entries.map(function (e) {
+    return asn1.encTaggedSequence([
+      { tag: 0, value: asn1.encInteger(e.etype) },
+      { tag: 1, value: e.salt === null || e.salt === undefined ? null :
+          asn1.encOctetString(prim.utf8(e.salt)) }
+    ]);
+  }));
+  log.debug('Leaving encEtypeInfo().');
+  return out;
+}
+
+// The hint padata for a request's enctypes, in the order a KDC sends them.
+function saltHints(client, etypes) {
+  log.debug('Entering saltHints().');
+  const entries = principals.etypeInfo2For(client, etypes);
+  const hints = [msgs.encPaData({ type: msgs.PA_TYPE.ETYPE_INFO2,
+                                  value: msgs.encEtypeInfo2(entries) })];
+  if (!listsNewerEtype(etypes)) {
+    hints.push(msgs.encPaData({ type: msgs.PA_TYPE.ETYPE_INFO,
+                                value: encEtypeInfo(entries) }));
+    hints.push(msgs.encPaData({ type: msgs.PA_TYPE.PW_SALT,
+                                value: prim.utf8(client.salt) }));
+  }
+  log.debug('Leaving saltHints().');
+  return { entries: entries, padata: hints };
+}
+
 async function preAuthRequiredReply(client, request, fast, offer) {
   log.debug('Entering preAuthRequiredReply().');
   const provider = principals.preauthProvider();
@@ -1291,7 +1475,8 @@ async function preAuthRequiredReply(client, request, fast, offer) {
     ? await provider.offers(client, fast, offer || {})
     : [{ type: msgs.PA_TYPE.ENC_TIMESTAMP, value: new Uint8Array(0) }]
         .concat(provider ? [provider.outerAdvertisement()] : []);
-  const entries = principals.etypeInfo2For(client);
+  const hints = saltHints(client, request.reqBody.etypes);
+  const entries = hints.entries;
   log.info('krb5: ' + client.name.join('/') + ' needs pre-authentication; ' +
                                               'sending ETYPE-INFO2 with ' +
     entries.length + ' entr' + (entries.length === 1 ? 'y' : 'ies') +
@@ -1337,16 +1522,13 @@ async function preAuthRequiredReply(client, request, fast, offer) {
     // the encrypted timestamp; in this reply it is an offer, and there is
     // nothing to put in it.
     //
-    // Then PA-ETYPE-INFO2 and PA-PW-SALT, which is what AD sends. The older
-    // PA-PW-SALT is there for clients that predate ETYPE-INFO2; a client should
-    // prefer the newer one, and being able to see both is the point.
+    // Then the salt hints — saltHints() above: PA-ETYPE-INFO2, and
+    // PA-ETYPE-INFO with PA-PW-SALT only for a client that listed no newer
+    // enctype. This read "PA-ETYPE-INFO2 and PA-PW-SALT, which is what AD
+    // sends" until #204; RFC 4120 forbids the second beside a newer enctype.
     // ---------------------------------------------------------------------
-    eData: asn1.encSequenceOf(methods.map(msgs.encPaData).concat([
-      msgs.encPaData({ type: msgs.PA_TYPE.ETYPE_INFO2,
-                       value: msgs.encEtypeInfo2(entries) }),
-      msgs.encPaData({ type: msgs.PA_TYPE.PW_SALT,
-                       value: prim.utf8(client.salt) })
-    ]))
+    eData: asn1.encSequenceOf(methods.map(msgs.encPaData)
+                                     .concat(hints.padata))
   });
 }
 
@@ -1515,10 +1697,14 @@ async function handleAsReq(request) {
       sname: request.reqBody.sname, eText: opened.eText
     });
   }
-  const reply = await answerAsReq({
+  const inner = {
     pvno: request.pvno, msgType: request.msgType,
     padata: opened.padata, reqBody: opened.reqBody
-  }, opened.fast);
+  };
+  // RFC 6806's checksum is over the OUTER message, as received.
+  Object.defineProperty(inner, REQUEST_BYTES,
+                        { value: request[REQUEST_BYTES], enumerable: false });
+  const reply = await answerAsReq(inner, opened.fast);
   const kind = msgs.identify(reply);
   if (!kind || kind.applicationNumber !== msgs.APPLICATION.KRB_ERROR) {
     log.debug('Leaving handleAsReq(). An armored AS-REP.');
@@ -1802,9 +1988,7 @@ async function answerAsReq(request, fast) {
       // A KDC re-sends ETYPE-INFO2 with PREAUTH_FAILED as well, because the
       // client may have used the wrong salt and this is how it finds out.
       eData: failure.code === 24
-        ? asn1.encSequenceOf([msgs.encPaData({
-            type: msgs.PA_TYPE.ETYPE_INFO2,
-            value: msgs.encEtypeInfo2(principals.etypeInfo2For(client)) })])
+        ? asn1.encSequenceOf(saltHints(client, body.etypes).padata)
         : null
     });
   };
@@ -1880,7 +2064,6 @@ async function answerAsReq(request, fast) {
   // Issue. The session key is fresh per ticket; both copies of it — the one in
   // the ticket for the service and the one in the enc-part for the client —
   // must be the same bytes, which is the whole mechanism.
-  const sessionKey = kcrypto.randomBytes(profile.keyBytes);
   // A SUCCESSFUL AS EXCHANGE NO LONGER CLEARS A SIGN-OUT INSTANT (#111,
   // 2026-09-23). It did, and that put every ticket-granting ticket from
   // before the sign-out back into service — a renewal of one too, since a
@@ -1930,9 +2113,28 @@ async function answerAsReq(request, fast) {
   // hw-authent claims hardware, and an authenticator app is not that.
   if (preauth) flags.push(msgs.TICKET_FLAG.PRE_AUTHENT);
   if (service.okAsDelegate) flags.push(msgs.TICKET_FLAG.OK_AS_DELEGATE);
+  // RFC 6806 section 11, on every ticket issued (encPaRepData() above).
+  if (request[REQUEST_BYTES]) flags.push(msgs.TICKET_FLAG.ENC_PA_REP);
   const renewTill = wantsRenewable ? kdcTime(renewLifetimeSeconds()) : null;
 
-  const serviceKey = await principals.longTermKey(service, etype);
+  // THREE ENCTYPES, NOT ONE (#204, 2026-09-26). The request's etype list
+  // chooses the REPLY key — the client's own, `etype` above — and the SESSION
+  // key, which both the client and the service must be able to use. The
+  // TICKET is sealed with the SERVICE's strongest key whatever the client
+  // listed, because only the service ever opens it (RFC 4120 section 3.1.3;
+  // MIT, Heimdal and Active Directory all do this). This KDC sealed the ticket
+  // with the client's first choice, so a client listing rc4-hmac first got a
+  // TGT sealed under the krbtgt's RC4 key — an offline target chosen by
+  // whoever asked. Samba's as_req tests found it (a TGT's enc-part at 17 or
+  // 23 where the krbtgt's strongest key is 18). The PAC's KDC signature is
+  // the krbtgt's strongest key for the same reason.
+  const sessionEtype = principals.chooseEtype(service, body.etypes) || etype;
+  const ticketEtype = principals.supportedEtypes(service)[0] || etype;
+  const ticketProfile = kcrypto.etypeById(ticketEtype);
+  const krbtgtEtype = principals.supportedEtypes(krbtgt)[0] || etype;
+  const serviceKey = await principals.longTermKey(service, ticketEtype);
+  const sessionKey = kcrypto.randomBytes(
+    kcrypto.etypeById(sessionEtype).keyBytes);
 
   // The PAC. `encodeTicketPart` is passed as a function because the ticket
   // signature has to be computed over the ticket the PAC is going INTO, which
@@ -1950,7 +2152,7 @@ async function answerAsReq(request, fast) {
     log.debug("Leaving encodeTicketPart().");
     return msgs.encEncTicketPart({
       flags: flags,
-      key: { etype: etype, key: sessionKey },
+      key: { etype: sessionEtype, key: sessionKey },
       crealm: asRealm,
       cname: body.cname,
       authtime: authtime,
@@ -1964,9 +2166,9 @@ async function answerAsReq(request, fast) {
     indicatorAd = await provider.indicatorAuthData({
       indicators: preauth.indicators,
       encodeTicketPart: encodeTicketPart,
-      kdcKey: { etype: etype,
-                key: await principals.longTermKey(krbtgt, etype) },
-      serviceKey: { etype: etype, key: serviceKey }
+      kdcKey: { etype: krbtgtEtype,
+                key: await principals.longTermKey(krbtgt, krbtgtEtype) },
+      serviceKey: { etype: ticketEtype, key: serviceKey }
     });
   }
   // A client that DECLINED a PAC gets none. That is not a curiosity: it is the
@@ -1984,9 +2186,9 @@ async function answerAsReq(request, fast) {
     const pacBytes = await buildPacFor(client, {
       authtime: authtime,
       clientRealm: asRealm,
-      serverKey: { etype: etype, key: serviceKey },
-      kdcKey: { etype: etype,
-                key: await principals.longTermKey(krbtgt, etype) },
+      serverKey: { etype: ticketEtype, key: serviceKey },
+      kdcKey: { etype: krbtgtEtype,
+                key: await principals.longTermKey(krbtgt, krbtgtEtype) },
       // Whether the ticket is a TGT decides which two of the four signatures go
       // in.
       isTgt: isTgtRequest(body.sname),
@@ -1999,11 +2201,11 @@ async function answerAsReq(request, fast) {
     realm: asRealm,
     sname: body.sname,
     encPart: {
-      etype: etype,
+      etype: ticketEtype,
       kvno: service.kvno,
-      cipher: await profile.encrypt(serviceKey,
-                                    kcrypto.KEY_USAGE.KDC_REP_TICKET,
-                                    encTicketPart)
+      cipher: await ticketProfile.encrypt(serviceKey,
+                                          kcrypto.KEY_USAGE.KDC_REP_TICKET,
+                                          encTicketPart)
     }
   };
 
@@ -2015,22 +2217,6 @@ async function answerAsReq(request, fast) {
   let replyKey = (preauth && preauth.replyKey) ||
     { etype: replyEtype,
       key: await principals.longTermKey(client, replyEtype) };
-  const encRepPart = msgs.encEncKdcRepPart({
-    key: { etype: etype, key: sessionKey },
-    lastReq: [{ type: 0, value: authtime }],
-    // The nonce must come back UNCHANGED. It is the client's only defence
-    // against a replayed reply, and a KDC that regenerates it breaks every
-    // correct client.
-    nonce: body.nonce,
-    flags: flags,
-    authtime: authtime,
-    starttime: authtime,
-    endtime: endtime,
-    renewTill: renewTill,
-    srealm: asRealm,
-    sname: body.sname
-  }, msgs.APPLICATION.ENC_AS_REP_PART);
-
   log.info('krb5: issued a TGT for ' + body.cname.name.join('/') + '@' +
       asRealm + ' ' +
       'to ' +
@@ -2073,7 +2259,28 @@ async function answerAsReq(request, fast) {
 
   // FAST: the reply's padata goes inside the armor with a KrbFastFinished
   // over this ticket, and the reply key is strengthened.
+  //
+  // OUTSIDE FAST, a reply sealed under the client's own long-term key says
+  // which one (#204, 2026-09-26): PA-ETYPE-INFO2 with exactly one entry, of
+  // the enc-part's enctype and the salt it was derived with (RFC 4120 section
+  // 5.2.7.5 — "MAY also be sent in an AS-REP", and exactly one when it is),
+  // and the key's version number in the enc-part's EncryptedData, which
+  // section 5.2.9 has present "in messages encrypted under long lasting keys,
+  // such as principals' secret keys". Active Directory and Heimdal send both,
+  // and Samba's as_req and compatability tests expect both. Neither applies
+  // to an OTP reply key (the armor key, RFC 6560 section 3.6) or inside
+  // FAST, whose reply key is strengthened and whose padata is PA-FX-FAST.
+  // rc4-hmac's entry would carry no salt, so no hint goes with it, as AD
+  // sends none.
+  const longTermReply = !fast && !(preauth && preauth.replyKey);
   let replyPadata = null;
+  if (longTermReply && replyKey.etype !== 23) {
+    replyPadata = [{
+      type: msgs.PA_TYPE.ETYPE_INFO2,
+      value: msgs.encEtypeInfo2(
+        principals.etypeInfo2For(client, [replyKey.etype]))
+    }];
+  }
   if (fast && provider) {
     const finished = await provider.finishAsReply({
       fast: fast, ticket: ticket, crealm: asRealm, cname: body.cname,
@@ -2082,6 +2289,26 @@ async function answerAsReq(request, fast) {
     replyPadata = finished.padata;
     replyKey = finished.replyKey;
   }
+
+  // The enc-part is built once the reply key is final, because RFC 6806's
+  // checksum in it is keyed with that key — strengthened, inside FAST.
+  const encRepPart = msgs.encEncKdcRepPart({
+    key: { etype: sessionEtype, key: sessionKey },
+    lastReq: [{ type: 0, value: authtime }],
+    // The nonce must come back UNCHANGED. It is the client's only defence
+    // against a replayed reply, and a KDC that regenerates it breaks every
+    // correct client.
+    nonce: body.nonce,
+    flags: flags,
+    authtime: authtime,
+    starttime: authtime,
+    endtime: endtime,
+    renewTill: renewTill,
+    srealm: asRealm,
+    sname: body.sname,
+    encryptedPaData: await encPaRepData(request, replyKey)
+  }, msgs.APPLICATION.ENC_AS_REP_PART);
+
 
   log.debug("Leaving answerAsReq().");
   return msgs.encKdcRep({
@@ -2092,6 +2319,7 @@ async function answerAsReq(request, fast) {
     ticket: ticket,
     encPart: {
       etype: replyKey.etype,
+      kvno: longTermReply ? client.kvno : null,
       cipher: await kcrypto.etypeById(replyKey.etype).encrypt(replyKey.key,
         kcrypto.KEY_USAGE.AS_REP_ENCPART, encRepPart)
     }
@@ -2119,9 +2347,54 @@ async function answerAsReq(request, fast) {
 // the ticket's (otherwise one client's TGT authenticates another), and that the
 // ticket is inside its validity window.
 // ---------------------------------------------------------------------------
+// A TGS-REQ, and — when it was armored with FAST — every error after the
+// armor opened, armored in turn (RFC 6113 section 5.4.4), as handleAsReq()
+// does for the AS exchange. answerTgsReq() records in `state.fast` the moment
+// the armor opens.
 async function handleTgsReq(request) {
   log.debug('Entering handleTgsReq().');
-  const body = request.reqBody;
+  const state = { fast: null };
+  const reply = await answerTgsReq(request, state);
+  const provider = principals.preauthProvider();
+  const kind = msgs.identify(reply);
+  if (!state.fast || !provider || !kind ||
+      kind.applicationNumber !== msgs.APPLICATION.KRB_ERROR) {
+    log.debug('Leaving handleTgsReq().');
+    return reply;
+  }
+  let wrapped;
+  try {
+    wrapped = await provider.wrapError(reply, state.fast);
+  } catch (e) {
+    // handleAsReq()'s reason: the error still reaches the client.
+    log.warn('krb5: a TGS KRB-ERROR could not be armored, so it is sent as ' +
+             'it is: ' + ((e && e.message) || e));
+    log.debug('Leaving handleTgsReq(). Unarmored.');
+    return reply;
+  }
+  const refusal = refusalOf(reply);
+  if (refusal) {
+    try {
+      Object.defineProperty(wrapped, REFUSAL, { enumerable: false,
+                                                configurable: true,
+                                                value: refusal });
+    } catch (e) {
+      // Swallowed with errorReply()'s reason: the reply is correct without
+      // its code.
+      log.debug('Caught in handleTgsReq(): ' + ((e && e.message) || e));
+    }
+  }
+  log.debug('Leaving handleTgsReq(). An armored KRB-ERROR.');
+  return wrapped;
+}
+
+async function answerTgsReq(request, state) {
+  log.debug('Entering answerTgsReq().');
+  let body = request.reqBody;
+  const provider = principals.preauthProvider();
+  const fastPa = provider ? (request.padata || []).filter(function (pa) {
+    return pa.type === msgs.PA_TYPE.FX_FAST;
+  })[0] || null : null;
 
   // **A NAME THIS REALM DOES NOT SERVE IS REFUSED** (2026-09-15), and it is the
   // first thing asked — before the ticket is even looked for, as the AS
@@ -2130,11 +2403,13 @@ async function handleTgsReq(request) {
   // for another trust realm's Kerberos realm, or for one nobody serves, got a
   // ticket out of the wrong database rather than the error RFC 4120 has for
   // exactly this.
-  if (principals.realmsServed().indexOf(body.realm) === -1) {
+  // Under FAST the OUTER body's realm is not the request's (fastTgsRealm());
+  // the inner one is checked the same way once the armor has opened.
+  if (!fastPa && principals.realmsServed().indexOf(body.realm) === -1) {
     log.info('krb5: wrong realm ' + JSON.stringify(body.realm) + ' in a ' +
              'TGS-REQ; this KDC serves ' +
              (principals.realmsServed().join(' and ') || 'no realm here'));
-    log.debug("Leaving handleTgsReq().");
+    log.debug("Leaving answerTgsReq().");
     return errorReply(68, {
       errorCode: 'STS-KRB-0121',
       realm: ourRealm(), sname: body.sname,
@@ -2148,7 +2423,7 @@ async function handleTgsReq(request) {
     return pa.type === msgs.PA_TYPE.TGS_REQ;
   })[0];
   if (!paTgs) {
-    log.debug("Leaving handleTgsReq().");
+    log.debug("Leaving answerTgsReq().");
     // Without the TGT there is nothing to verify. This is not a policy refusal
     // but a structural one, and saying which is useful.
     return errorReply(25, {
@@ -2163,7 +2438,7 @@ async function handleTgsReq(request) {
   try {
     apReq = msgs.readApReq(paTgs.value);
   } catch (e) {
-    log.debug("Leaving handleTgsReq().");
+    log.debug("Leaving answerTgsReq().");
     return errorReply(60, { realm: ourRealm(), sname: body.sname,
       errorCode: 'STS-KRB-0027',
       eText: 'the PA-TGS-REQ does not contain a readable AP-REQ: ' +
@@ -2183,7 +2458,7 @@ async function handleTgsReq(request) {
   const ticketService = principals.find(apReq.ticket.sname.name,
                                         apReq.ticket.realm);
   if (!ticketService) {
-    log.debug("Leaving handleTgsReq().");
+    log.debug("Leaving answerTgsReq().");
     return errorReply(7, { realm: ourRealm(), sname: apReq.ticket.sname,
       errorCode: 'STS-KRB-0028',
       eText: 'the ticket presented is for ' +
@@ -2210,7 +2485,7 @@ async function handleTgsReq(request) {
     }
   } catch (e) {
     log.info('krb5: the presented ticket will not decrypt: ' + e.message);
-    log.debug("Leaving handleTgsReq().");
+    log.debug("Leaving answerTgsReq().");
     return errorReply(31, { realm: ourRealm(), sname: body.sname,
       errorCode: 'STS-KRB-0029',
       eText: 'the ticket does not decrypt with this KDC\'s key for ' +
@@ -2219,7 +2494,7 @@ async function handleTgsReq(request) {
   if (badKeyVersion) {
     log.info('krb5: refusing a TGS-REQ: ' + badKeyVersion + '. ' +
         'KRB_AP_ERR_BADKEYVER.');
-    log.debug("Leaving handleTgsReq().");
+    log.debug("Leaving answerTgsReq().");
     return errorReply(44, { realm: ourRealm(), sname: body.sname,
       errorCode: 'STS-KRB-0115',
       eText: badKeyVersion });
@@ -2234,7 +2509,7 @@ async function handleTgsReq(request) {
       sessionKey, kcrypto.KEY_USAGE.TGS_REQ_AUTH, apReq.authenticator.cipher));
   } catch (e) {
     log.info('krb5: the TGS-REQ Authenticator will not decrypt: ' + e.message);
-    log.debug("Leaving handleTgsReq().");
+    log.debug("Leaving answerTgsReq().");
     return errorReply(31, { realm: ourRealm(), sname: body.sname,
       errorCode: 'STS-KRB-0030',
       eText: 'the Authenticator does not decrypt with the ticket\'s session ' +
@@ -2254,7 +2529,7 @@ async function handleTgsReq(request) {
     log.info('krb5: refusing a TGS-REQ whose session key or subkey is ' +
              kcrypto.etypeName(withheldKey) + ', which product mode does ' +
              'not use.');
-    log.debug("Leaving handleTgsReq().");
+    log.debug("Leaving answerTgsReq().");
     return errorReply(14, { realm: ourRealm(), sname: body.sname,
       errorCode: 'STS-KRB-0157',
       eText: 'the ' + (withheldKey === ticketPart.key.etype ?
@@ -2270,7 +2545,7 @@ async function handleTgsReq(request) {
     log.warn('krb5: the Authenticator names ' +
              authenticator.cname.name.join('/') +
              ' but the ticket names ' + ticketPart.cname.name.join('/'));
-    log.debug("Leaving handleTgsReq().");
+    log.debug("Leaving answerTgsReq().");
     return errorReply(36, { realm: ourRealm(), sname: body.sname,
       errorCode: 'STS-KRB-0031',
       eText: 'the Authenticator and the ticket name different clients' });
@@ -2279,7 +2554,7 @@ async function handleTgsReq(request) {
   // The ticket's own validity window, and the Authenticator's freshness.
   const at = now();
   if (ticketPart.endtime <= at) {
-    log.debug("Leaving handleTgsReq().");
+    log.debug("Leaving answerTgsReq().");
     return errorReply(32, { crealm: ticketPart.crealm, cname: ticketPart.cname,
       errorCode: 'STS-KRB-0032',
       realm: ourRealm(), sname: body.sname,
@@ -2288,7 +2563,7 @@ async function handleTgsReq(request) {
   if (ticketPart.starttime &&
       ticketPart.starttime > new Date(at.getTime() +
                                       clockSkewSeconds() * 1000)) {
-    log.debug("Leaving handleTgsReq().");
+    log.debug("Leaving answerTgsReq().");
     return errorReply(33, { errorCode: 'STS-KRB-0033',
       realm: ourRealm(), sname: body.sname,
       eText: 'the ticket is not yet valid' });
@@ -2355,7 +2630,7 @@ async function handleTgsReq(request) {
                '. A fresh AS-REQ works and its ticket is accepted; this one ' +
                'stays refused. A service ticket already in the cache is ' +
                'untouched, because accepting one never reaches this KDC.');
-      log.debug("Leaving handleTgsReq().");
+      log.debug("Leaving answerTgsReq().");
       return errorReply(20, {
         errorCode: 'STS-KRB-0034',
         crealm: ticketPart.crealm, cname: ticketPart.cname, realm: ourRealm(),
@@ -2373,7 +2648,7 @@ async function handleTgsReq(request) {
   const authSkew = Math.abs(at.getTime() - authenticator.ctime.getTime()) /
                    1000;
   if (authSkew > clockSkewSeconds()) {
-    log.debug("Leaving handleTgsReq().");
+    log.debug("Leaving answerTgsReq().");
     return errorReply(37, { crealm: ticketPart.crealm, cname: ticketPart.cname,
       errorCode: 'STS-KRB-0035',
       realm: ourRealm(), sname: body.sname,
@@ -2385,7 +2660,7 @@ async function handleTgsReq(request) {
   // reader for exactly this: a re-encoding could differ and the checksum would
   // then cover something else, which is indistinguishable from tampering.
   if (!authenticator.cksum) {
-    log.debug("Leaving handleTgsReq().");
+    log.debug("Leaving answerTgsReq().");
     return errorReply(50, { realm: ourRealm(), sname: body.sname,
       errorCode: 'STS-KRB-0036',
       eText: 'the TGS-REQ Authenticator carries no checksum over the request ' +
@@ -2402,13 +2677,55 @@ async function handleTgsReq(request) {
   if (!checksumOk) {
     log.info('krb5: the Authenticator\'s checksum does not cover this ' +
              'request body');
-    log.debug("Leaving handleTgsReq().");
+    log.debug("Leaving answerTgsReq().");
     return errorReply(50, { crealm: ticketPart.crealm, cname: ticketPart.cname,
       errorCode: 'STS-KRB-0037',
       realm: ourRealm(), sname: body.sname,
       eText: 'the Authenticator\'s checksum does not match the request body ' +
              '(checksum type ' +
              authenticator.cksum.type + ', key usage 6)' });
+  }
+
+  // FAST (RFC 6113, #204). The PA-TGS-REQ has verified against the OUTER
+  // body, which is what its Authenticator's checksum covers; from here on the
+  // armored request's body and padata are the request, beside the outer
+  // PA-TGS-REQ that authenticated it.
+  if (fastPa) {
+    const opened = await provider.openTgsRequest(fastPa, {
+      apReqBytes: paTgs.value,
+      ticketKey: { etype: ticketPart.key.etype, key: sessionKey },
+      subkey: authenticator.subkey || null,
+      realm: apReq.ticket.realm,
+      client: ticketPart.cname.name.join('/') + '@' + ticketPart.crealm
+    });
+    if (!opened.ok) {
+      log.debug("Leaving answerTgsReq(). The armor was refused.");
+      return errorReply(opened.code, {
+        // error-code: none — the code is the refusal's own, STS-KRB-0137..0165, chosen in krb5_fast.ts
+        errorCode: opened.errorCode,
+        crealm: ticketPart.crealm, cname: ticketPart.cname,
+        realm: ourRealm(), sname: body.sname, eText: opened.eText
+      });
+    }
+    const inner = {
+      pvno: request.pvno, msgType: request.msgType,
+      padata: [paTgs].concat(opened.padata || []), reqBody: opened.reqBody
+    };
+    Object.defineProperty(inner, REQUEST_BYTES,
+                          { value: request[REQUEST_BYTES], enumerable: false });
+    request = inner;
+    body = inner.reqBody;
+    state.fast = opened.fast;
+    if (principals.realmsServed().indexOf(body.realm) === -1) {
+      log.debug("Leaving answerTgsReq(). The armored request's realm.");
+      return errorReply(68, {
+        errorCode: 'STS-KRB-0121',
+        realm: ourRealm(), sname: body.sname,
+        eText: 'this KDC serves ' +
+               (principals.realmsServed().join(' and ') || 'no realm here') +
+               ', not ' + body.realm
+      });
+    }
   }
 
   // Which realm this request is being answered AS. It comes from the request
@@ -2433,11 +2750,12 @@ async function handleTgsReq(request) {
     if (targetRealm && targetRealm !== answeringRealm) {
       const trust = principals.find(['krbtgt', targetRealm], answeringRealm);
       if (trust) {
-        log.debug("Leaving handleTgsReq().");
+        log.debug("Leaving answerTgsReq().");
         return issueReferral({
           request: request, body: body, ticketPart: ticketPart, trust: trust,
           targetRealm: targetRealm, answeringRealm: answeringRealm, at: at,
-          sessionKey: sessionKey, apReq: apReq, authenticator: authenticator
+          sessionKey: sessionKey, apReq: apReq, authenticator: authenticator,
+          fast: state.fast
         });
       }
       log.info('krb5: ' + ((body.sname || {}).name || []).join('/') + ' ' +
@@ -2456,7 +2774,7 @@ async function handleTgsReq(request) {
                                                     {}).name || [],
         answeringRealm);
     if (!created) {
-      log.debug("Leaving handleTgsReq().");
+      log.debug("Leaving answerTgsReq().");
       return errorReply(7, { crealm: ticketPart.crealm, cname: ticketPart.cname,
         errorCode: 'STS-KRB-0038',
         realm: answeringRealm, sname: body.sname,
@@ -2513,7 +2831,7 @@ async function handleTgsReq(request) {
     log.info('krb5: the issuance policy refused a service ticket for ' +
              ((ticketPart.cname || {}).name || []).join('/') + ' to ' +
              serviceName + '. ' + kerberosRoleAnswer.why);
-    log.debug("Leaving handleTgsReq().");
+    log.debug("Leaving answerTgsReq().");
     return errorReply(12, { crealm: ticketPart.crealm,
       errorCode: 'STS-KRB-0039',
       cname: ticketPart.cname, realm: answeringRealm, sname: body.sname,
@@ -2530,7 +2848,7 @@ async function handleTgsReq(request) {
     log.error(errorCodes.tag('STS-KRB-0022') + 'krb5: there is no krbtgt ' +
                                                'principal for ' +
       answeringRealm + ', so no ticket can be signed');
-    log.debug("Leaving handleTgsReq().");
+    log.debug("Leaving answerTgsReq().");
     return errorReply(7, { crealm: ticketPart.crealm, cname: ticketPart.cname,
       errorCode: 'STS-KRB-0022',
       realm: answeringRealm, sname: body.sname,
@@ -2541,7 +2859,7 @@ async function handleTgsReq(request) {
     principals.onlyWithheldEtypes(body.etypes) : [];
   if (withheld.length) {
     // STS-KRB-0156's case in the TGS exchange (#182): see answerAsReq().
-    log.debug("Leaving handleTgsReq().");
+    log.debug("Leaving answerTgsReq().");
     return errorReply(14, { crealm: ticketPart.crealm, cname: ticketPart.cname,
       errorCode: 'STS-KRB-0156',
       realm: answeringRealm, sname: body.sname,
@@ -2554,7 +2872,7 @@ async function handleTgsReq(request) {
                        .join(', ') });
   }
   if (etype === null) {
-    log.debug("Leaving handleTgsReq().");
+    log.debug("Leaving answerTgsReq().");
     return errorReply(14, { crealm: ticketPart.crealm, cname: ticketPart.cname,
       errorCode: 'STS-KRB-0040',
       realm: answeringRealm, sname: body.sname,
@@ -2565,6 +2883,12 @@ async function handleTgsReq(request) {
                        .join(', ') });
   }
   const profile = kcrypto.etypeById(etype);
+  // The SESSION key is `etype`, the first the request listed that the service
+  // supports; the TICKET is sealed with the service's strongest key and the
+  // PAC's KDC signature made with the krbtgt's (answerAsReq() argues it).
+  const ticketEtype = principals.supportedEtypes(service)[0] || etype;
+  const issuedProfile = kcrypto.etypeById(ticketEtype);
+  const krbtgtEtype = principals.supportedEtypes(krbtgt)[0] || etype;
 
   // ---------------------------------------------------------------------------
   // FORWARDED — UNCONSTRAINED delegation, and the one the KDC cannot police
@@ -2626,7 +2950,7 @@ async function handleTgsReq(request) {
              'which is how that flag protects it from every service at once.';
       delegation.record(Object.assign({}, forwardedIntent,
         { outcome: 'refused', reason: eText }));
-      log.debug("Leaving handleTgsReq().");
+      log.debug("Leaving answerTgsReq().");
       return errorReply(13,
                         { crealm: ticketPart.crealm, cname: ticketPart.cname,
         errorCode: 'STS-KRB-0041',
@@ -2645,7 +2969,7 @@ async function handleTgsReq(request) {
              'otherwise still work.';
       delegation.record(Object.assign({}, forwardedIntent,
         { outcome: 'refused', reason: eText }));
-      log.debug("Leaving handleTgsReq().");
+      log.debug("Leaving answerTgsReq().");
       return errorReply(13,
                         { crealm: ticketPart.crealm, cname: ticketPart.cname,
         errorCode: 'STS-KRB-0042',
@@ -2695,7 +3019,7 @@ async function handleTgsReq(request) {
       msgs.KDC_OPTION.RENEW) !== -1;
   if (wantsRenew) {
     if ((ticketPart.flags || []).indexOf(msgs.TICKET_FLAG.RENEWABLE) === -1) {
-      log.debug("Leaving handleTgsReq().");
+      log.debug("Leaving answerTgsReq().");
       return errorReply(13,
                         { crealm: ticketPart.crealm, cname: ticketPart.cname,
         errorCode: 'STS-KRB-0043',
@@ -2706,7 +3030,7 @@ async function handleTgsReq(request) {
                'afterwards.' });
     }
     if (!ticketPart.renewTill) {
-      log.debug("Leaving handleTgsReq().");
+      log.debug("Leaving answerTgsReq().");
       return errorReply(13,
                         { crealm: ticketPart.crealm, cname: ticketPart.cname,
         errorCode: 'STS-KRB-0044',
@@ -2715,7 +3039,7 @@ async function handleTgsReq(request) {
                'so there is no limit to renew it up to' });
     }
     if (ticketPart.renewTill <= at) {
-      log.debug("Leaving handleTgsReq().");
+      log.debug("Leaving answerTgsReq().");
       return errorReply(32,
                         { crealm: ticketPart.crealm, cname: ticketPart.cname,
         errorCode: 'STS-KRB-0045',
@@ -2727,7 +3051,7 @@ async function handleTgsReq(request) {
                'expire.' });
     }
     if (body.sname.name.join('/') !== apReq.ticket.sname.name.join('/')) {
-      log.debug("Leaving handleTgsReq().");
+      log.debug("Leaving answerTgsReq().");
       return errorReply(13,
                         { crealm: ticketPart.crealm, cname: ticketPart.cname,
         errorCode: 'STS-KRB-0046',
@@ -2761,7 +3085,7 @@ async function handleTgsReq(request) {
   // known to be an S4U one at all, which today is none of them.
   if (s4u.error) {
     if (s4u.intent) delegation.record(s4u.intent);
-    log.debug("Leaving handleTgsReq().");
+    log.debug("Leaving answerTgsReq().");
     return s4u.error;
   }
   const clientName = s4u.clientName;
@@ -2807,6 +3131,8 @@ async function handleTgsReq(request) {
     // owner, and can refuse.
     flags.push(msgs.TICKET_FLAG.FORWARDED);
   }
+  // RFC 6806 section 11: every ticket issued carries enc-pa-rep.
+  if (request[REQUEST_BYTES]) flags = withEncPaRep(flags);
 
   const newSessionKey = kcrypto.randomBytes(profile.keyBytes);
   const authtime = ticketPart.authtime;
@@ -2821,7 +3147,7 @@ async function handleTgsReq(request) {
                         ticketPart.renewTill.getTime()))
     : new Date(Math.min(requestedTill.getTime(), ticketPart.endtime.getTime()));
 
-  const serviceKey = await principals.longTermKey(service, etype);
+  const serviceKey = await principals.longTermKey(service, ticketEtype);
 
   // The PAC again, and here the two keys are genuinely DIFFERENT: the server
   // signature is made with this service's key so the service can check it
@@ -2896,9 +3222,9 @@ async function handleTgsReq(request) {
       indicatorAd = await preauthProvider.indicatorAuthData({
         indicators: carried.indicators,
         encodeTicketPart: encodeTicketPart,
-        kdcKey: { etype: etype,
-                  key: await principals.longTermKey(krbtgt, etype) },
-        serviceKey: { etype: etype, key: serviceKey }
+        kdcKey: { etype: krbtgtEtype,
+                  key: await principals.longTermKey(krbtgt, krbtgtEtype) },
+        serviceKey: { etype: ticketEtype, key: serviceKey }
       });
       log.info('krb5: the authentication indicator(s) ' +
                carried.indicators.join(', ') + ' of the TGT are carried ' +
@@ -2953,10 +3279,11 @@ async function handleTgsReq(request) {
     } else {
       const placeholder = encodeTicketPart(kpac.wrapPacAsAuthorizationData(
           new Uint8Array([0])));
-      const resigned = await kpac.resignPac(carried[0].bytes, {
-        serverKey: { etype: etype, key: serviceKey },
-        kdcKey: { etype: etype,
-                  key: await principals.longTermKey(krbtgt, etype) },
+      const resigned = await kpac.resignPac(
+        pacForTarget(carried[0].bytes, isTgtRequest(body.sname)), {
+        serverKey: { etype: ticketEtype, key: serviceKey },
+        kdcKey: { etype: krbtgtEtype,
+                  key: await principals.longTermKey(krbtgt, krbtgtEtype) },
         includeTicketSignature: !isTgtRequest(body.sname),
         includeExtendedKdcSignature: !isTgtRequest(body.sname),
         ticketBytes: placeholder,
@@ -2978,10 +3305,11 @@ async function handleTgsReq(request) {
     const carried = kpac.findPacs(ticketPart.authorizationData || []);
     const placeholder = encodeTicketPart(kpac.wrapPacAsAuthorizationData(
         new Uint8Array([0])));
-    const resigned = await kpac.resignPac(carried[0].bytes, {
-      serverKey: { etype: etype, key: serviceKey },
-      kdcKey: { etype: etype,
-                key: await principals.longTermKey(krbtgt, etype) },
+    const resigned = await kpac.resignPac(
+      pacForTarget(carried[0].bytes, isTgtRequest(body.sname)), {
+      serverKey: { etype: ticketEtype, key: serviceKey },
+      kdcKey: { etype: krbtgtEtype,
+                key: await principals.longTermKey(krbtgt, krbtgtEtype) },
       includeTicketSignature: !isTgtRequest(body.sname),
       includeExtendedKdcSignature: !isTgtRequest(body.sname),
       ticketBytes: placeholder
@@ -3005,9 +3333,9 @@ async function handleTgsReq(request) {
     const pacBytes = await buildPacFor(ticketClient, {
       authtime: authtime,
       clientRealm: clientRealm,
-      serverKey: { etype: etype, key: serviceKey },
-      kdcKey: { etype: etype,
-                key: await principals.longTermKey(krbtgt, etype) },
+      serverKey: { etype: ticketEtype, key: serviceKey },
+      kdcKey: { etype: krbtgtEtype,
+                key: await principals.longTermKey(krbtgt, krbtgtEtype) },
       isTgt: isTgtRequest(body.sname),
       // In a TGS exchange the client asked for its PAC back when it got the
       // TGT, so the attribute records that it was requested rather than given
@@ -3022,13 +3350,39 @@ async function handleTgsReq(request) {
   // was sent, 8 under the TGT's session key otherwise. A client that always
   // tries one fails whenever the other applies, so which was used is logged.
   const useSubkey = !!authenticator.subkey;
-  const replyKey = useSubkey ? authenticator.subkey.key : sessionKey;
-  const replyEtype = useSubkey ? authenticator.subkey.etype :
-                     apReq.ticket.encPart.etype;
-  const replyProfile = kcrypto.etypeById(replyEtype);
+  let replyKey = useSubkey ? authenticator.subkey.key : sessionKey;
+  let replyEtype = useSubkey ? authenticator.subkey.etype :
+                   apReq.ticket.encPart.etype;
   const replyUsage = useSubkey
     ? kcrypto.KEY_USAGE.TGS_REP_ENCPART_SUBKEY
     : kcrypto.KEY_USAGE.TGS_REP_ENCPART_SESSKEY;
+  const ticket = {
+    realm: answeringRealm,
+    sname: body.sname,
+    encPart: {
+      etype: ticketEtype,
+      kvno: service.kvno,
+      cipher: await issuedProfile.encrypt(serviceKey,
+                                          kcrypto.KEY_USAGE.KDC_REP_TICKET,
+                                          encTicketPart)
+    }
+  };
+  // FAST (#204): the reply's padata goes inside the armor with a
+  // KrbFastFinished over this ticket, and the reply key is strengthened —
+  // which section 5.4.3 makes a MUST in a TGS reply, so that nobody can strip
+  // the FAST padata and make this KDC look as if it had none.
+  let replyPadata = null;
+  if (state.fast && provider) {
+    const finished = await provider.finishAsReply({
+      fast: state.fast, ticket: ticket, crealm: clientRealm,
+      cname: clientName, replyKey: { etype: replyEtype, key: replyKey },
+      padata: []
+    });
+    replyPadata = finished.padata;
+    replyKey = finished.replyKey.key;
+    replyEtype = finished.replyKey.etype;
+  }
+  const replyProfile = kcrypto.etypeById(replyEtype);
 
   const encRepPart = msgs.encEncKdcRepPart({
     key: { etype: etype, key: newSessionKey },
@@ -3040,7 +3394,11 @@ async function handleTgsReq(request) {
     endtime: endtime,
     renewTill: ticketPart.renewTill,
     srealm: answeringRealm,
-    sname: body.sname
+    sname: body.sname,
+    // RFC 6806 section 11's checksum, when the TGS-REQ asked for it — "any
+    // generated KDC reply", the TGS-REP included.
+    encryptedPaData: await encPaRepData(request, { etype: replyEtype,
+                                                  key: replyKey })
   }, msgs.APPLICATION.ENC_TGS_REP_PART);
 
   const s4uNote = s4u.mode === 'none' ? ''
@@ -3129,7 +3487,7 @@ async function handleTgsReq(request) {
         'for a ticket in this user\'s name. The user was not here.'
   });
 
-  log.debug('Leaving handleTgsReq().');
+  log.debug('Leaving answerTgsReq().');
   return msgs.encKdcRep({
     msgType: msgs.MSG_TYPE.TGS_REP,
     // The reply names the client the TICKET is for, which under S4U is the
@@ -3137,19 +3495,10 @@ async function handleTgsReq(request) {
     // requester here would make the reply disagree with the ticket inside it —
     // and a client reads its own identity off the reply, so it would believe it
     // had a ticket for itself.
+    padata: replyPadata,
     crealm: clientRealm,
     cname: clientName,
-    ticket: {
-      realm: answeringRealm,
-      sname: body.sname,
-      encPart: {
-        etype: etype,
-        kvno: service.kvno,
-        cipher: await profile.encrypt(serviceKey,
-                                      kcrypto.KEY_USAGE.KDC_REP_TICKET,
-                                      encTicketPart)
-      }
-    },
+    ticket: ticket,
     encPart: {
       etype: replyEtype,
       cipher: await replyProfile.encrypt(replyKey, replyUsage, encRepPart)
@@ -3288,9 +3637,42 @@ async function catchUpWithCluster() {
 // listing every trust realm's Kerberos name on it would publish the realms of a
 // service whose realms are otherwise told apart by a path somebody has to know.
 // ---------------------------------------------------------------------------
+// A FAST-ARMORED TGS-REQ IS ROUTED BY ITS TICKET, NOT ITS OUTER BODY (#204).
+// RFC 6113 section 5.4.2 has the KDC ignore the outer request once the
+// armored one opens, and a client may put anything there — Samba's
+// test_fast_tgs_outer_wrong_realm sends "TEST". The inner body cannot be read
+// before the realm's keys are in hand, so the realm is taken from the ticket
+// in the PA-TGS-REQ, whose `realm` field — the realm of the service it is
+// for, the ticket-granting service being asked — travels in the clear. Null
+// for anything else, which routes by the body as it always has.
+function fastTgsRealm(request) {
+  log.debug("Entering fastTgsRealm().");
+  const padata = (request && request.padata) || [];
+  const armored = padata.some(function (pa) {
+    return pa.type === msgs.PA_TYPE.FX_FAST;
+  });
+  const paTgs = padata.filter(function (pa) {
+    return pa.type === msgs.PA_TYPE.TGS_REQ;
+  })[0];
+  let realm = null;
+  if (armored && paTgs) {
+    try {
+      realm = String(msgs.readApReq(paTgs.value).ticket.realm || '') || null;
+    } catch (e) {
+      // An unreadable PA-TGS-REQ is refused by handleTgsReq() in its own
+      // words; here it only means the body routes the request.
+      log.debug("Caught in fastTgsRealm(): " + ((e && e.message) || e));
+      realm = null;
+    }
+  }
+  log.debug("Leaving fastTgsRealm().");
+  return realm;
+}
+
 function routeOf(request, options) {
   log.debug("Entering routeOf().");
-  const asked = String(((request || {}).reqBody || {}).realm || '');
+  const asked = fastTgsRealm(request) ||
+                String(((request || {}).reqBody || {}).realm || '');
   const pinned = (options && options.realm) || null;
   if (pinned) {
     if (principals.servedIn(pinned.id).indexOf(asked) === -1) {
@@ -3328,6 +3710,9 @@ async function handleMessage(bytes, options) {
         identified.applicationNumber === msgs.APPLICATION.TGS_REQ) {
       const isAs = identified.applicationNumber === msgs.APPLICATION.AS_REQ;
       const request = msgs.readKdcReq(bytes);
+      // The message as received, for RFC 6806's checksum (encPaRepData()).
+      Object.defineProperty(request, REQUEST_BYTES, { value: bytes,
+                                                      enumerable: false });
       const route = routeOf(request, options);
       log.debug("Leaving handleMessage().");
       return await realms.run(route.realm, async function () {
