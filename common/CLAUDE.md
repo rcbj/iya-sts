@@ -5925,9 +5925,10 @@ Five decisions are in the code and worth knowing before changing it:
 
 The size is the cost: about 7 KB per CA certificate and 4.6 KB per leaf with
 ML-DSA-87. `docs/pki.md` says what that does to a TLS handshake and to an
-`x5c` header. CRLs and OCSP responses are still classical, an open question on
-#68. `tests/pki_hybrid.js` holds all of it, including OpenSSL verifying the
-classical chain untouched.
+`x5c` header. CRLs and OCSP responses stay classical, rcbj's decision on
+#68 (2026-09-26): no published profile defines an alternative signature on
+either, so nothing could verify one. `tests/pki_hybrid.js` holds all of it,
+including OpenSSL verifying the classical chain untouched.
 
 ### 3w, CONTINUED: SIGNER GROUPS, COLLAPSED BY ALGORITHM (2026-09-26, #68 phase 2a)
 

@@ -199,7 +199,10 @@ carries the whole chain in `x5c` grows by the same amount, base64-encoded,
 which can exceed an HTTP server's header limit when the token is sent as a
 bearer. `x5u`, the default, does not carry the chain.
 
-CRLs and OCSP responses are still signed classically only.
+**CRLs and OCSP responses are signed classically only, on purpose.** No
+published profile defines an alternative signature on either, so no client
+could check one, and a second signature nothing verifies would add size and
+no protection.
 
 ### Signer groups: a key pair per use, in a chosen set of algorithms
 
