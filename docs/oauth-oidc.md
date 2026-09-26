@@ -738,6 +738,50 @@ DPoP key, in every mode:
 DPoP keys may be ML-DSA-44, ML-DSA-65 or ML-DSA-87 (`kty: AKP`) as well as
 RSA, EC and OKP.
 
+### OpenID Provider Commands
+
+This service can tell a relying party what to do with an account. It sends
+an OpenID Provider Commands 1.0 (draft 02) Command Token to the
+`command_endpoint` the relying party registered. It is **off by default**;
+turn on `oauth2.providerCommands` in the realm.
+
+1. **Register the client** with `command_endpoint` (https, no fragment), in
+   `POST /oauth2/register`, on `/admin/applications` or through the API.
+2. **Send `metadata`** from Protocols → Provider Commands (`/admin/commands`)
+   or `POST /admin-api/commands/send-tenant`. The answer records what the
+   relying party supports and whether it needs an `aud_sub`.
+3. **Send a command:**
+   * an **account command** about one person: `activate`, `maintain`,
+     `suspend`, `reactivate`, `archive`, `restore`, `delete`, `audit`,
+     `invalidate`, `migrate`, or any of them with `_async`;
+   * a **tenant command** about everybody: `audit_tenant`, `suspend_tenant`,
+     `archive_tenant`, `delete_tenant`, `invalidate_tenant`. These are read
+     as a Server-Sent Events stream.
+
+   Each account state the relying party reports is kept, per relying party.
+4. **Automatic commands** (`oauth2.commandAutomatic`, on while commands are)
+   are sent on these events:
+
+   | Event | Command |
+   |---|---|
+   | a disable | `suspend` |
+   | an enable | `reactivate` |
+   | a directory or SCIM delete | `delete` |
+   | a change to the person or their groups | `maintain` |
+   | an administrator's global sign-out | `invalidate` |
+
+   A command goes only to a relying party that listed it and where the person
+   has an account.
+
+A relying party posts `_async` results, and asks for a fresh `metadata` or
+`audit_tenant`, at `POST /oauth2/commands/callback`, Bearer the
+`callback_token` its command carried. A command that cannot be delivered is
+a dead letter on Monitoring → Outbound deliveries (`/admin/deliveries`),
+beside undelivered Logout Tokens and CIBA notifications, with a Retry.
+
+Command Tokens name an `iss`. Set `global.publicBaseUrl` so an automatic
+command knows its issuer before any command has been sent from the console.
+
 ### Aggregated and distributed claims (Claims Providers)
 
 A realm can hand a relying party claims that another OpenID Provider vouches

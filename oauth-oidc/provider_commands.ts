@@ -1333,6 +1333,44 @@ class ProviderCommands {
   }
 
   // -------------------------------------------------------------------------
+  // THE CONSOLE'S AND THE API'S ACTS (rule 7), one function for both:
+  // `send-account` (clientId, username, command), `send-tenant` (clientId,
+  // command) and `retry-delivery` (delivery). `ctx` is `{ actor, base }`.
+  // -------------------------------------------------------------------------
+  act(body: Json, ctx: Json): Json {
+    const { log, errorCodes } = this.deps;
+    log.debug("Entering ProviderCommands.act().");
+    const b = body || {};
+    const c = ctx || {};
+    const actions = ['send-account', 'send-tenant', 'retry-delivery'];
+    const action = String(b.action || '');
+    let result: Json;
+    if (action === 'send-account') {
+      result = this.send(String(b.clientId || ''), String(b.command || ''),
+                         String(b.username || '').trim(),
+                         { actor: c.actor, base: c.base,
+                           trigger: 'an administrator (' +
+                                    (c.via || 'console') + ')' });
+    } else if (action === 'send-tenant') {
+      result = this.startTenant(String(b.clientId || ''),
+                                String(b.command || ''),
+                                { actor: c.actor, base: c.base });
+    } else if (action === 'retry-delivery') {
+      result = this.retryDelivery(String(b.delivery || ''), c.actor);
+    } else {
+      result = errorCodes.mark({ ok: false, message: 'Unknown action "' +
+        action + '". The ' + actions.length + ' are: ' +
+        actions.slice(0, -1).join(', ') + ' and ' +
+        actions[actions.length - 1] + '.' }, 'STS-OAUTH-0744');
+    }
+    if (!result.ok && !result.errors) {
+      result.errors = [String(result.message || 'refused')];
+    }
+    log.debug("Leaving ProviderCommands.act(). " + action + " " + result.ok);
+    return result;
+  }
+
+  // -------------------------------------------------------------------------
   // WHAT THE CONSOLE AND /admin-api SHOW: every client with a command
   // endpoint and what it said, the register, the deliveries and the runs.
   // -------------------------------------------------------------------------
@@ -1453,6 +1491,7 @@ export = {
   personSignedOut: slot.forward('personSignedOut'),
   sweep: slot.forward('sweep'),
   retryDelivery: slot.forward('retryDelivery'),
+  act: slot.forward('act'),
   report: slot.forward('report'),
   deliveryRows: slot.forward('deliveryRows'),
   deliveryCounts: slot.forward('deliveryCounts'),

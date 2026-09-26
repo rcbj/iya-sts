@@ -16231,10 +16231,9 @@ const CODES = [
     spec: 'invalid_client_metadata (HTTP 400)' },
   { code: 'STS-REG-0199',
     summary: 'A command_endpoint (OpenID Provider Commands, #151) ' +
-      'was not an https URL with no fragment, at registration, update or a ' +
-      'console or API write.',
-    spec: 'HTTP 400 {error: invalid_client_metadata}, or a console / ' +
-      '/admin-api refusal' },
+      'was not an https URL with no fragment, at registration or update ' +
+      '(a console or API write is refused under STS-REG-0071).',
+    spec: 'HTTP 400 {error: invalid_client_metadata}' },
   { code: 'STS-DBG-0001',
     summary: 'The debugger permission was asked for by somebody who may ' +
       'not hold it — not a person, not signed in, not in the ' +

@@ -1054,6 +1054,17 @@ class ProtocolStack {
                'ClaimsProvidersAdmin');
     this.register(app, require('../oauth-oidc/claims_providers_admin'),
                   'oauth-oidc/claims_providers_admin');
+    // 18o. PROVIDER COMMANDS AND OUTBOUND DELIVERIES (#151): /admin/commands
+    // and /admin/deliveries, 18a's placement and 18a's reason. The library
+    // they read (`provider_commands`) is BUILT at 23b-iv, after the
+    // directory, and reached here only through its forwarders at request
+    // time; `mgmt-api/admin_api` reads the API's routes out of
+    // `provider_commands_api`, built below.
+    this.build('oauth-oidc/provider_commands_admin',
+               require('../oauth-oidc/provider_commands_admin'),
+               'ProviderCommandsAdmin');
+    this.register(app, require('../oauth-oidc/provider_commands_admin'),
+                  'oauth-oidc/provider_commands_admin');
     // The management API: everything that console shows and everything it can
     // change, at /admin-api, over JSON. It must come AFTER admin.js and the
     // order is a dependency rather than a preference — it requires that module
@@ -1081,6 +1092,9 @@ class ProtocolStack {
     this.build('oauth-oidc/claims_providers_api',
                require('../oauth-oidc/claims_providers_api'),
                'ClaimsProvidersApi');
+    this.build('oauth-oidc/provider_commands_api',
+               require('../oauth-oidc/provider_commands_api'),
+               'ProviderCommandsApi');
     this.build('mgmt-api/admin_api', require('../mgmt-api/admin_api'),
                'AdminApi');
     this.register(app, require('../mgmt-api/admin_api'), 'mgmt-api/admin_api');

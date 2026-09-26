@@ -871,11 +871,97 @@ class OutboundDelivery {
   }
 }
 
+// ---------------------------------------------------------------------------
+// EVERY KIND, FOR `/admin/deliveries` AND `GET /admin-api/deliveries`: each
+// kind's counts and rows, newest first, and a retry of a dead letter by kind.
+// The modules are reached lazily — each requires this file — and a kind whose
+// module is not loaded is left out.
+// ---------------------------------------------------------------------------
+const KINDS = [
+  { id: 'backchannel-logout', title: 'Back-Channel Logout Tokens',
+    module: './backchannel_logout', page: '/admin/logout',
+    rows: function (m: Json, o: Json): Json[] {
+      return m.list(o);
+    },
+    counts: function (m: Json): Json {
+      return m.counts();
+    },
+    retry: function (m: Json, id: string, actor: string): Json {
+      return m.retry(id, actor);
+    } },
+  { id: 'ciba', title: 'CIBA pings and pushes', module: './ciba',
+    page: '/admin/deliveries',
+    rows: function (m: Json, o: Json): Json[] {
+      return m.deliveryRows(o);
+    },
+    counts: function (m: Json): Json {
+      return m.deliveryCounts();
+    },
+    retry: function (m: Json, id: string, actor: string): Json {
+      return m.retryDelivery(id, actor);
+    } },
+  { id: 'provider-commands', title: 'OpenID Provider Commands',
+    module: './provider_commands', page: '/admin/commands',
+    rows: function (m: Json, o: Json): Json[] {
+      return m.deliveryRows(o);
+    },
+    counts: function (m: Json): Json {
+      return m.deliveryCounts();
+    },
+    retry: function (m: Json, id: string, actor: string): Json {
+      return m.retryDelivery(id, actor);
+    } }
+];
+
+function kindReport(options?: Json): Json {
+  helpers.log.debug("Entering kindReport().");
+  const o = options || {};
+  const limit = Number(o.limit) > 0 ? Number(o.limit) : 200;
+  const out = KINDS.filter(function (k) {
+    return !o.kind || k.id === String(o.kind);
+  }).map(function (k) {
+    const m = require(k.module);
+    return { id: k.id, title: k.title, page: k.page, counts: k.counts(m),
+             rows: k.rows(m, { state: o.state || undefined,
+                               q: o.q || undefined }).slice(0, limit) };
+  });
+  helpers.log.debug("Leaving kindReport(). " + out.length + " kind(s).");
+  return { kinds: out, states: STATES.slice(0) };
+}
+
+function kindRetry(kind: string, id: string, actor: string): Json {
+  helpers.log.debug("Entering kindRetry(). " + kind);
+  const found = KINDS.filter(function (k) {
+    return k.id === String(kind || '');
+  })[0];
+  if (!found) {
+    helpers.log.debug("Leaving kindRetry(). Unknown kind.");
+    return require('../common/error_codes').mark({ ok: false,
+      errors: ['Unknown kind "' + String(kind || '') + '". The ' +
+               KINDS.length + ' are: ' + KINDS.slice(0, -1).map(function (k) {
+                 return k.id;
+               }).join(', ') + ' and ' + KINDS[KINDS.length - 1].id + '.'] },
+      'STS-OAUTH-0742');
+  }
+  const result = found.retry(require(found.module), String(id || ''),
+                             String(actor || ''));
+  if (!result.ok && !result.errors) {
+    result.errors = [String(result.message || 'refused')];
+  }
+  helpers.log.debug("Leaving kindRetry(). " + result.ok);
+  return result;
+}
+
 export = {
   OutboundDelivery: OutboundDelivery,
   STATES: STATES,
   HOLDER: HOLDER,
   compareRows: compareRows,
   mergeRow: mergeRow,
-  freshFields: freshFields
+  freshFields: freshFields,
+  KINDS: KINDS.map(function (k) {
+    return k.id;
+  }),
+  kindReport: kindReport,
+  kindRetry: kindRetry
 };
