@@ -11872,6 +11872,7 @@ class OAuth2Server {
         log.debug("Leaving the token endpoint. Key Binding.");
         errorCodes.mark(res, codeProof.code);
         log.debug("Leaving OAuth2Server.tokenGrant().");
+        // error-code: none — marked above: codeProof.code, 0702 or 0703.
         return self.oauthError(res, 400, codeProof.error,
                                codeProof.description);
       }
@@ -13353,6 +13354,7 @@ class OAuth2Server {
       if (deviceProof) {
         log.debug("Leaving OAuth2Server.tokenGrant(). Key Binding.");
         errorCodes.mark(res, deviceProof.code);
+        // error-code: none — marked above: deviceProof.code, 0702 or 0703.
         return self.oauthError(res, 400, deviceProof.error,
                                deviceProof.description);
       }
@@ -13491,6 +13493,7 @@ class OAuth2Server {
       if (subjectBound) {
         errorCodes.mark(res, subjectBound.code);
         log.debug("Leaving OAuth2Server.tokenGrant(). Key Binding.");
+        // error-code: none — marked above: subjectBound.code, 0707.
         return self.oauthError(res, 400, subjectBound.error,
                                subjectBound.description);
       }
@@ -15328,6 +15331,7 @@ class OAuth2Server {
       log.debug("Entering refuse(). " + code);
       errorCodes.mark(res, code);
       log.debug("Leaving refuse().");
+      // error-code: none — marked on the line above, by the caller's code.
       return self.oauthError(res, status, error, description);
     };
     if (!deviceAuthorization.enabled()) {
