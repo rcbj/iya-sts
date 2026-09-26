@@ -700,6 +700,8 @@ var config = {
     signInSelfIssued: false,                           // Sign in with a self-issued ID (SIOPv2)
     siopIdTokenMaxAgeS: 300,                           // Self-issued ID Token max age (s)
     clientIdPrefix: "pre-registered",                  // Client Identifier prefix of a signed request
+    x509DnsName: "",                                   // DNS name of the x509_san_dns Client Identifier
+    x509SigningAlgorithm: "ES256",                     // Signing algorithm of an x509 Client Identifier request
     verifierAttestation: "",                           // Verifier Attestation JWT
     claims: "given_name,family_name",                  // Requested claims
     presentationRequestTtlS: 600,                      // Presentation request lifetime (s)

@@ -5549,6 +5549,20 @@ stored value when the key can produce it and the right default when it cannot.
 `tests/spiffe_pki.js` guards both, and it is the only place in the service where
 either can be asked.
 
+### THE OPENID4VP VERIFIER'S CERTIFICATE, AND A RENEWAL THAT KEEPS A NAME (2026-09-26, #230)
+
+`certifyVerifierKey()` issues the certificate the Verifier's `x509_san_dns`
+and `x509_hash` Client Identifiers sign under. It comes from the JOSE Issuing
+CA, over the realm key the request is signed with, in slot
+`jose:oid4vp-verifier:<dns name>`. Its header argues the profile, the key and
+the authority; `oid4vc/CLAUDE.md` argues the rest. **What changed here for
+every leaf**: `certify()` records `issuedAs` (profile, keyUsage, extensions)
+when a caller names them, and both renewals — `recertifyUseCase()` and
+`recertifyOrphanedSlots()` — pass it back. Until then a renewal re-minted a
+`pep-tls` listener certificate, and would have re-minted the Verifier's,
+without its subjectAltName: a certificate over the same key that no client
+could match to a host.
+
 ### `pep-tls`: A SERVER KEY PAIR FOR A PROCESS THIS SERVICE DOES NOT RUN, AND THE TOP-UP IT FORCED (2026-09-13)
 
 The sixth use case certifies a remote XACML PEP's HTTPS listener, and it is

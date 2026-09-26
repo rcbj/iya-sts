@@ -3029,6 +3029,20 @@ function ownSignerFor(alg) {
   return { key: found.privateKey, kid: found.publicJwk.kid };
 }
 
+// THE PUBLIC HALF of the key `signJwt()` signs `alg` with, and its internal
+// kid (#230): what the OpenID4VP Verifier's certificate is issued over, so
+// the certificate in a Request Object's `x5c` holds exactly the key the
+// Request Object is signed with. The same `ownSignerFor()`, so the two
+// cannot name different keys; throws where that does.
+function ownPublicKeyFor(alg) {
+  log.debug("Entering ownPublicKeyFor(). alg=" + alg);
+  const signer = ownSignerFor(alg);
+  const publicKeyPem = String(crypto.createPublicKey(signer.key)
+    .export({ type: 'spki', format: 'pem' }));
+  log.debug("Leaving ownPublicKeyFor().");
+  return { kid: signer.kid, publicKeyPem: publicKeyPem };
+}
+
 // The curve keys of the current key set that sign `alg` — the EdDSA pair
 // narrowed by `oauth2.eddsaCurve`, as `signingKeyFromList()` narrows it.
 function classicalKeysFor(alg) {
@@ -5908,6 +5922,7 @@ module.exports = {
   oauthError: oauthError,
   vciError: vciError,
   signJwt: signJwt,
+  ownPublicKeyFor: ownPublicKeyFor,
   setJwtRecorder: setJwtRecorder,
   userFor: userFor,
   setSubjectResolver: setSubjectResolver,

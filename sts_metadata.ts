@@ -2708,9 +2708,14 @@ const SPECS: Spec[] = [
               'decentralized_identifier (the realm\'s did:web, a DID URL ' +
               'kid), verifier_attestation (a Verifier Attestation JWT in the ' +
               '`jwt` header, configured or self-attested), or ' +
-              'openid_federation (the realm\'s Entity Configuration); an ' +
-              'unsigned one uses redirect_uri. x509_san_dns, x509_hash and ' +
-              'origin are not offered.' },
+              'openid_federation (the realm\'s Entity Configuration), and ' +
+              'since #230 x509_san_dns and x509_hash (section 5.9.3: the ' +
+              'Verifier\'s own certificate from the realm\'s JOSE Issuing ' +
+              'CA in x5c, a dNSName that is the Response URI\'s host, or ' +
+              'the leaf\'s SHA-256), chosen per realm or per request; an ' +
+              'unsigned one uses redirect_uri. The origin prefix is not ' +
+              'offered (it is the Digital Credentials API\'s own, set by ' +
+              'the browser).' },
   { id: 'siopv2', name: 'Self-Issued OpenID Provider v2',
     where: 'OpenID Foundation',
     url: 'https://openid.net/specs/openid-connect-self-issued-v2-1_0.html',
@@ -10667,7 +10672,22 @@ const ENDPOINTS: EndpointEntry[] = [
                                'to the wallet',
     what: 'response_type=vp_token with a DCQL query, a fresh nonce and ' +
           'response_mode=direct_post, passed by value or by reference, with ' +
-          'a QR screen for cross-device.' },
+          'a QR screen for cross-device. `client_id_prefix` names the ' +
+          'Client Identifier Prefix of THIS request (section 5.9) and makes ' +
+          'it signed; an x509 prefix certifies the Verifier first (#230).' },
+  { path: '/oid4vp/verifier-certificate', group: 'VC Presentation (OID4VP)',
+    name: 'The Verifier\'s x509 identity',
+    specs: ['oid4vp', 'rfc5280'],
+    what: 'JSON: the x509_san_dns and x509_hash Client Identifiers this ' +
+          'realm\'s Verifier signs under (OpenID4VP 1.0 section 5.9.3), ' +
+          'each with its certificate, the x5c the Request Object carries ' +
+          'and the trust anchor a wallet is configured with — what a ' +
+          'wallet or a conformance suite needs before it will accept one ' +
+          '(#230). Asking certifies the Verifier as a request would. ' +
+          'no-store. The x509_san_dns half is null, with the refusal, ' +
+          'where no name can be certified (product mode with neither ' +
+          'oid4vp.x509DnsName nor global.publicBaseUrl); 409 when neither ' +
+          'half can answer.' },
   { path: '/oid4vp/request/:id', group: 'VC Presentation (OID4VP)',
     name: 'Request ' +
       'Object',

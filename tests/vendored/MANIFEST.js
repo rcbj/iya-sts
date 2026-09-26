@@ -781,6 +781,13 @@ const JOBS = [
   // self-issued sign-in and its refusals, and the Verifier's form_post.
   // `local: true`: this repository's own door.
   { file: 'sts_siop.js',                 browser: false, local: true },
+  // THE x509_san_dns AND x509_hash CLIENT IDENTIFIERS (#230, 2026-09-26):
+  // each prefix's Request Object checked as a wallet checks it — the x5c
+  // chain to the service Root, the signature, the dNSName or the hash — a
+  // mismatch refused, the realm's own setting, and the Verifier refusing a
+  // name that is not the Response URI's host. `local: true`: this
+  // repository's Verifier.
+  { file: 'sts_oid4vp_x509.js',          browser: false, local: true },
   // OPENID CONNECT NATIVE SSO AND THE DEVICE REGISTER (#130, 2026-09-23):
   // the device secret and its ou=devices entry, the section 4 exchange and
   // its refusals, RFC 8693's token types, a session ending, revocation.
