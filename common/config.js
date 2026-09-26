@@ -15256,6 +15256,85 @@ function refuseReplacedSettings() {
 }
 refuseReplacedSettings();
 
+// ---------------------------------------------------------------------------
+// A VALUE THE CONSOLE WOULD REFUSE STOPS THE START, WHEREVER IT WAS WRITTEN
+// (#86, 2026-09-26).
+//
+// Every write through /admin/config, /admin-api/config and a realm override
+// runs `TYPES[type].check()` — an enum's `enumValues`, a list's `csvValues`,
+// an integer's bounds and step, a port's range, a boolean's spellings. The
+// appconfig file and the environment ran NONE of it: `value()` parses what it
+// finds, `enum.parse` only trims, and `bool` falls back to its default with a
+// warning. So a typo that Save would have refused by name was used verbatim
+// when it was typed into a file instead — `pki.keyAlgorithm: 'RSA-2048'`
+// failing every CA build, `webauthn.algorithms` dropping a name, an
+// out-of-range lifetime taken as given. One set of rules, whichever door the
+// value came through, is the point of #86, and this is the last door.
+//
+// EVERY LAYER THAT HOLDS A VALUE IS CHECKED, not only the one that wins: the
+// environment variable, its legacy spelling, the operator's file and
+// env/defaults.js. A bad line in the file that an environment variable
+// happens to shadow today is live the day the variable is unset, and a
+// refusal then would name a change nobody made.
+//
+// A refusal to start, like requireComplete() and refuseReplacedSettings()
+// above and for their reason — process.exit(1) with every offending value
+// named, where it was found and what the setting accepts, rather than a stack
+// trace or a service that starts on a value nobody can see is wrong. The
+// check is the write's check exactly; what it does NOT carry is the write's
+// other rule, restart-only, which is about changing a running process and is
+// meaningless for the file it was started from. Development-only VALUES in
+// product mode are `mode.js`'s (`valueInForce()`), not this.
+// ---------------------------------------------------------------------------
+function refuseMalformedSettings() {
+  log.debug("Entering refuseMalformedSettings().");
+  const named = [];
+  SETTINGS.forEach(function (setting) {
+    const dotted = setting.path || setting.key;
+    const layers = [];
+    if (setting.env && process.env[setting.env] !== undefined) {
+      layers.push({ raw: process.env[setting.env],
+                    where: setting.env + ' (in the environment)' });
+    }
+    if (setting.legacyEnv && process.env[setting.legacyEnv] !== undefined) {
+      layers.push({ raw: process.env[setting.legacyEnv],
+                    where: setting.legacyEnv + ' (in the environment)' });
+    }
+    const fromFile = dig(operatorConfig, dotted);
+    if (fromFile !== undefined) {
+      layers.push({ raw: fromFile,
+                    where: dotted + ' (in ' + (process.env.CONFIG_FILE ||
+                                              'the appconfig file') + ')' });
+    }
+    const fromDefaults = dig(defaults, dotted);
+    if (fromDefaults !== undefined) {
+      layers.push({ raw: fromDefaults,
+                    where: dotted + ' (in ' + DEFAULTS_FILE + ')' });
+    }
+    layers.forEach(function (layer) {
+      const problem = TYPES[setting.type].check(layer.raw, setting);
+      if (problem) {
+        named.push('  ' + layer.where + ': "' + setting.key + '" ' + problem);
+      }
+    });
+  });
+  if (!named.length) {
+    log.debug("Leaving refuseMalformedSettings(). Every value passes.");
+    return;
+  }
+  process.stderr.write(
+    '\n' + errorCodes.tag('STS-CORE-0107') + 'config: FATAL — ' +
+    named.length + ' configured value(s) would be refused by /admin/config ' +
+    'and the management API, and are refused here for the same reason:\n\n' +
+    named.join('\n') + '\n\nFix or remove each one. A setting holds one of ' +
+    'the values GET /admin-api/config lists for it (`enumValues`, or ' +
+    '`csvValues` for each entry of a list) and within its bounds.\n\n');
+  log.debug("Leaving refuseMalformedSettings(). Refusing to start.");
+  process.exit(1);
+  log.debug("Leaving refuseMalformedSettings().");
+}
+refuseMalformedSettings();
+
 const audit = auditAppconfig();
 
 // IS THIS FILE EVEN THIS SERVICE'S? The test is whether it carries any key of

@@ -51,6 +51,13 @@ const log = require('bunyan').createLogger({ name: 'closed_setting_values',
   level: process.env.LOG_LEVEL || 'info' });
 
 const ROOT = path.join(__dirname, '..');
+// CONFIG_FILE is DELETED before config.js is required, as every in-process
+// file that reads settings does (`account_disable.js`, `config_realm_layer.js`):
+// the runner's image names env/local.js, and a module cached with that layer
+// would be handed to every later file — `config_realm_layer.js` asserts the
+// shipped defaults and fails on it. The CHILDREN below build their own
+// environment and set CONFIG_FILE where a case needs one.
+delete process.env.CONFIG_FILE;
 const config = require(path.join(ROOT, 'common', 'config'));
 
 // The six rows #86 turned from `string` into `enum`.
@@ -214,7 +221,7 @@ function childMain() {
     probe('oid4vp.signInFormats', function () {
       const verifier = rq('oid4vc/vc_verifier');
       // Asked for nothing it knows, it answers its whole SIGN_IN_FORMATS.
-      const all = verifier.signInFormats([String(Math.random())]);
+      const all = verifier.signInFormats(['no-such-format-86']);
       // And the reader's second spelling: a `+` a form decoded to a space.
       const spaced = all.filter(function (f) {
         return f.indexOf('+') >= 0;
@@ -389,6 +396,90 @@ function checkRow(t, key) {
   log.debug("Leaving checkRow().");
 }
 
+// ---------------------------------------------------------------------------
+// E. THE APPCONFIG FILE AND THE ENVIRONMENT FOLLOW THE SAME RULES (#86).
+//
+// `config.js`'s `refuseMalformedSettings()` runs when the module loads, so
+// each case is a CHILD that loads it: with a value in the environment, in the
+// appconfig file, or in both with the bad one SHADOWED by a good one above
+// it. The environment is the child's own; this process's is never changed.
+// A good file and an empty environment must start, or every refusal below
+// would be the same failure for a different reason.
+// ---------------------------------------------------------------------------
+function startWith(env, fileBody) {
+  log.debug("Entering startWith().");
+  let file = null;
+  if (fileBody !== null) {
+    file = path.join(os.tmpdir(), 'csv86-' + process.pid + '-' +
+                     require('crypto').randomBytes(6).toString('hex') + '.js');
+    fs.writeFileSync(file, 'module.exports = ' + JSON.stringify(fileBody) +
+                           ';\n');
+  }
+  const clean = {};
+  Object.keys(process.env).forEach(function (key) {
+    if (!/^(STS_|OID4VC|OID4VP|OAUTH2_|LDAP_|KRB5_|CONFIG_FILE$)/.test(key)) {
+      clean[key] = process.env[key];
+    }
+  });
+  const childEnv = Object.assign(clean, { LOG_LEVEL: 'fatal',
+                                          STS_LOG_LEVEL: 'fatal' }, env);
+  if (file) {
+    childEnv.CONFIG_FILE = file;
+  }
+  const result = childProcess.spawnSync(process.execPath,
+    ['-e', 'require(' + JSON.stringify(path.join(ROOT, 'common', 'config')) +
+           ')'], { env: childEnv, encoding: 'utf8', timeout: 60000,
+                   cwd: ROOT });
+  if (file) {
+    try {
+      fs.unlinkSync(file);
+    } catch (e) {
+      // Already gone; nothing else wrote it.
+      log.debug("Caught in startWith(): " + ((e && e.message) || e));
+    }
+  }
+  log.debug("Leaving startWith(). exit " + result.status);
+  return { status: result.status, stderr: String(result.stderr || '') };
+}
+
+function appconfigRules(t) {
+  log.debug("Entering appconfigRules().");
+  t.log.info('=== E. the appconfig file and the environment are held to ' +
+             'the same rules ===');
+  const good = startWith({}, null);
+  t.check(good.status === 0, 'a start with nothing set passes the check',
+          good.stderr.slice(-600));
+  const envBad = startWith({ STS_PKI_KEY_ALGORITHM: 'RSA-2048' }, null);
+  t.check(envBad.status === 1 && /STS-CORE-0107/.test(envBad.stderr) &&
+          /STS_PKI_KEY_ALGORITHM \(in the environment\)/.test(envBad.stderr) &&
+          /pki\.keyAlgorithm/.test(envBad.stderr),
+          'an enum value outside its set in the ENVIRONMENT stops the start, ' +
+          'by name', envBad.stderr.slice(-600));
+  const fileBad = startWith({}, { webauthn: { algorithms: 'ES256,NOSUCHALG' } });
+  t.check(fileBad.status === 1 && /STS-CORE-0107/.test(fileBad.stderr) &&
+          /webauthn\.algorithms \(in /.test(fileBad.stderr) &&
+          /NOSUCHALG/.test(fileBad.stderr),
+          'a list entry outside csvValues in the APPCONFIG FILE stops the ' +
+          'start, by name', fileBad.stderr.slice(-600));
+  const bounds = startWith({}, { totp: { window: -5 } });
+  t.check(bounds.status === 1 && /totp\.window/.test(bounds.stderr),
+          'and so does a number outside its bounds — the write\'s whole ' +
+          'check, not only the closed sets', bounds.stderr.slice(-600));
+  const shadowed = startWith({ STS_OAUTH2_EDDSA_CURVE: 'Ed25519' },
+                             { oauth2: { eddsaCurve: 'Ed999' } });
+  t.check(shadowed.status === 1 && /Ed999/.test(shadowed.stderr) &&
+          !/STS_OAUTH2_EDDSA_CURVE \(in the environment\)/
+            .test(shadowed.stderr),
+          'a bad value SHADOWED by a good environment variable still stops ' +
+          'the start, and the good one is not named',
+          shadowed.stderr.slice(-600));
+  const fine = startWith({ STS_OAUTH2_EDDSA_CURVE: 'Ed448' },
+                         { webauthn: { algorithms: 'ES256,EdDSA' } });
+  t.check(fine.status === 0, 'values inside their sets, in both layers, ' +
+          'start', fine.stderr.slice(-600));
+  log.debug("Leaving appconfigRules().");
+}
+
 function run(t) {
   log.debug("Entering run().");
   t.log.info('=== B-D. each row is checked against its own set ===');
@@ -429,13 +520,15 @@ function run(t) {
             key + ': the list written out in config.js is the module\'s ' +
             'own set');
   });
+  appconfigRules(t);
   log.debug("Leaving run().");
 }
 
 module.exports = {
   name: 'closed_setting_values',
   describe: 'the settings whose reader filters by a closed set are held to ' +
-            'that set on every write, and config.js\'s copy of each set ' +
-            'equals the module constant it mirrors',
+            'that set on every write, config.js\'s copy of each set equals ' +
+            'the module constant it mirrors, and a value in the appconfig ' +
+            'file or the environment is held to the same check at start',
   run: run
 };

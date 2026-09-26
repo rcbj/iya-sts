@@ -788,6 +788,12 @@ const CODES = [
       'default is in force. Logged once per process and setting or ' +
       'attribute (#104).',
     spec: 'none — a warning in the log' },
+  { code: 'STS-CORE-0107',
+    summary: 'The service did not start: a value in the environment, the ' +
+      'appconfig file or env/defaults.js fails the check a console or API ' +
+      'write of it would (a value outside an enum or a list\'s csvValues, ' +
+      'a number out of bounds, a malformed boolean) — #86.',
+    spec: '' },
   { code: 'STS-WORKER-0001',
     summary: 'The IPC channel to a post-quantum worker process failed, so a ' +
       'job sent to it may not arrive or its answer may not come back.',

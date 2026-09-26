@@ -117,3 +117,22 @@ key every appconfig file in this ecosystem has. Because the selected file is a
 layer rather than the configuration, every other setting comes from
 `defaults.js` and the service starts. Do not add a check that refuses a file it
 does not recognise.
+
+## A value in these files is held to the same check as a write (#86, 2026-09-26)
+
+`common/config.js`'s `refuseMalformedSettings()` runs every value the
+environment, the operator's file and `defaults.js` hold through
+`TYPES[type].check()` — the check `/admin/config`, `/admin-api/config` and a
+realm override already made: an enum's `enumValues`, a list's `csvValues`, an
+integer's bounds, a boolean's spellings. One that fails stops the start
+(`STS-CORE-0107`), naming each value and where it was found, beside
+`requireComplete()` and `refuseReplacedSettings()` and for their reason. Every
+layer that holds a value is checked, a shadowed one included.
+
+**It refuses a bad VALUE, never an unrecognised FILE**, so the rule in the
+section above still holds: the parent project's test config carries no key of
+ours, and nothing in it is checked. What the parent's jobs DO hand this module
+is `KRB5_*` variables, and all fourteen were read against the check on the day
+it was written. A new file here, or a new variable in a launcher, that holds a
+value the console would refuse will stop the stack at start — which is the
+point, and the message says which line.
