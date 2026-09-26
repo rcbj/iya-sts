@@ -159,14 +159,23 @@ async function run(t) {
     const twelve = await handshake(port, { maxVersion: 'TLSv1.2' });
     t.check(twelve.ok, 'a TLS 1.2 handshake completes', twelve.error || '');
     if (twelve.ok) {
+      // Refused: an error, or no second handshake within five seconds (the
+      // server's no_renegotiation is a WARNING, and node's client may sit
+      // on it). Renegotiated: the callback without an error.
       const renegotiated = await new Promise(function (resolve) {
+        const timer = setTimeout(function () {
+          resolve('no second handshake within five seconds');
+        }, 5000);
         const done = twelve.socket.renegotiate({}, function (e) {
+          clearTimeout(timer);
           resolve(e ? e.message : '');
         });
         if (done === false) {
+          clearTimeout(timer);
           resolve('renegotiate() refused locally');
         }
         twelve.socket.on('error', function (e) {
+          clearTimeout(timer);
           resolve(e.message);
         });
       });

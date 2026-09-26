@@ -125,10 +125,6 @@ const WHY = {
     "no signature_algorithms or supported_groups; the adapter adds both, " +
     "because this service's only TLS 1.2 key exchange is ECDHE, so the " +
     "probe tests something else" },
-  ldapHttp: { why: "tool", reason: "the probe sends an INCOMPLETE HTTP " +
-    "request and waits on an HTTP server's silence; the adapter translates " +
-    "only complete requests into LDAP, and the directory closes on the " +
-    "fragment" },
   sniParse: { why: "openssl", reason: "OpenSSL's server_name parsing: " +
     "node binds no SNICallback on these listeners, so a name is not " +
     "judged — OpenSSL continues the handshake for an unknown, empty or " +
@@ -481,9 +477,7 @@ const PLAN = [
   { script: "test-record-layer-fragmentation.py",
     exceptions: [ex(/^maximum size/, "Can't represent value",
                     "overflow")] },
-  { script: "test-renegotiation-disabled.py",
-    exceptions: [ex(/incomplete GET|GET after 2nd CH/, "Timeout",
-                    "ldapHttp", { on: ["ldaps"] })] },
+  { script: "test-renegotiation-disabled.py" },
   { script: "test-renegotiation-disabled-client-cert.py", on: CR,
     certificate: "rsa",
     // tlsfuzzer's own run excludes these two too: they renegotiate from a
@@ -501,7 +495,9 @@ const PLAN = [
     certificate: "rsa",
     exceptions: [ex(/sha1/, "illegal_parameter", "sha1Envelope")] },
   { script: "test-serverhello-random.py",
-    exceptions: [ex(OLD, REFUSED_OLD, "oldVersion")] },
+    exceptions: [ex(OLD, REFUSED_OLD, "oldVersion"),
+                 ex(/in SSLv2 compatible ClientHello/, "handshake_failure",
+                    "sslv2Hello")] },
   { script: "test-sessionID-resumption.py",
     exceptions: [ex("session ID resume", "session_id == srv_hello",
                     "sessionCache")] },
@@ -568,7 +564,7 @@ const PLAN = [
   { script: "test-tls13-keyshare-omitted.py" },
   { script: "test-tls13-keyupdate.py",
     exceptions: [ex("app data split, conversation with KeyUpdate msg",
-                    "Timeout", "keyUpdateLazy"),
+                    "Timeout", "keyUpdateLazy", { on: CR }),
                  ex("large KeyUpdate message", "illegal_parameter",
                     "alertChoice")] },
   { script: "test-tls13-large-number-of-extensions.py",
