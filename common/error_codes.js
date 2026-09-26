@@ -981,6 +981,11 @@ const CODES = [
     summary: 'A batch request (workers.batch) waited ' +
       'workers.batchQueueTimeoutS for the pool\'s batch lane and was refused.',
     spec: 'HTTP 503 with Retry-After' },
+  { code: 'STS-WORKER-0042',
+    summary: 'The connection to a request worker failed before any byte of ' +
+      'a dispatched request reached it, and the request was sent again on ' +
+      'a new connection (#77).',
+    spec: 'Nothing: the client gets the worker\'s answer' },
   // ===== STORE =============================================================
   { code: 'STS-STORE-0001',
     summary: 'A scheduled persistence flush threw past its own handler.',

@@ -1213,6 +1213,32 @@ is simply a bug on its own account. **The cap must not be small**: this service
 makes requests to itself, so a worker whose connections are all held by
 requests awaiting a reentrant call needs one more to make progress.
 
+**AND THE AGENT'S `keepAlive: false` WAS NOT WHAT IT SAID (#77, 2026-09-26).**
+Node sends `Connection: keep-alive` from any agent whose `maxSockets` is finite
+and hands a freed socket to the next QUEUED request — measured, 336 of 400
+requests on a reused connection — and `proxy()` forwarded the client's own
+hop-by-hop headers besides. So the race the agent's comment refuses keep-alive
+to avoid was open exactly when a worker was busiest. `proxy()` strips the
+client's `Connection`, `Keep-Alive`, `Proxy-Connection` and whatever
+`Connection` names (the framing headers excepted) and sends
+`Connection: close`: one request per connection, as designed.
+
+**AND A REQUEST NO BYTE OF WHICH REACHED THE WORKER IS SENT AGAIN.** The issue
+was a `502 … write EPIPE` for a `POST /oauth2/register` from a worker that went
+on serving. What closed its end was not found — a replica of the proxy under
+saturation, loop stalls, client aborts and every client framing produced
+nothing — but what the error MEANS is exact: a write the kernel refuses
+delivers nothing. `proxy()` writes the body itself (a pipe writes with no
+callback, and the callback is the only thing that says the kernel took the
+bytes), keeps a copy of a body up to 1 MiB until the first write is accepted,
+and when the connection fails with nothing delivered, nothing answered and the
+client still there, sends the request ONCE more on a new connection to the
+SAME worker — its ticket, `inFlight` and barrier are that worker's, and a
+worker that has really gone refuses the new connection and the client gets
+the 502 it always did. `STS-WORKER-0042`, logged through `warnSparingly()`;
+`stats().replayed` counts them. A request any byte of which was delivered is
+never repeated. `tests/request_proxy_replay.js` pins both halves.
+
 **THE RULE THAT COMES OUT OF IT** is worth more than the mechanism: a store is
 shared by coordination, and anything that is NOT a row in a store — a socket, a
 timer, a listener — is held by one process and reachable from no other. There
