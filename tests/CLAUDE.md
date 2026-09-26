@@ -943,6 +943,8 @@ Two rules that are not optional here:
 | `pq_key_certification.js` | **THE POST-QUANTUM KEYS ARE ISSUED FROM THE EMBEDDED CA** (2026-09-13), which reversed the last entry on `/admin/pki`'s *what one anchor does not cover*. Six claims, none of them in an HTTP reply — the JWKS is byte for byte what it was. **THE TABLE**: `pki.PQ_JOSE_IN_X509` names exactly `pq_jose.PQ_ALGS`, and each composite maps to the X.509 id carrying the SAME domain-separator label, because a mapping to the wrong composite is a certificate over a key whose signatures verify as nothing. **THE WIRING**: warming a realm's keys certifies all eleven there and none in another realm — with a REAL realm, for `pki_hierarchy.js`'s fixture lesson. **THE CROSSING IS A CHECK, AND IT IS THE POINT**: `common/vendored/CLAUDE.md` forbids wiring `pq_jose.js` to the certificate encoder, and what crosses is the public key alone — so a `pq_jose.js` signature is verified under the VENDORED X.509 reading against the key read back out of the CERTIFICATE (not the register's copy, which would compare a value with itself), and the same signature against the untranslated JOSE bytes of an ECDSA composite is shown NOT to verify, which is why the one 0x04 translation is written out. **REALM ISOLATION** — each leaf verifies in its realm and is refused in another for the Intermediate reason, with nothing new written for it. **PUBLIC HALVES ONLY, IDEMPOTENT, SUPERSEDED, RENEWABLE** — every private-key getter throws and nothing reads one; a second certification issues nothing; a different key in a slot supersedes the old certificate at the JOSE Issuing CA; and renewal works for the composites, whose keys node's OpenSSL cannot read, because the register now keeps the subject key. **THE ML-DSA LISTENER CERTIFICATE**, in a child process because `tls.certificateAlgorithms` must be set before `tls_server.js` loads: certified at startup, and re-issued with the RSA one when the Root is replaced. That half needs node 24 and says so rather than passing silently on 22. Four mutants — no 0x04, no idempotency, no generation-time wiring, a renewal that parses the certificate — all caught |
 | `pki.js` | **the certificate authority, and the check a security claim rests on** (2026-09-10). Three of its four sections cannot be reached over HTTP at all, and the reason is the same each time: **what `common/pki.js` HANDS OUT is deliberately less than what it holds**, so an assertion that the Root's key is not in the reply is about a function that has already run — over HTTP the only evidence would be the absence of a string. The PATH CHECK, whose interesting inputs are chains a client cannot be made to send (a complete chain to somebody else's anchor, every link of which verifies; a leaf under an intermediate that did not sign it); the ALGORITHM PAIRING, where an EC key's digest is decided by its CURVE and a P-521 key under SHA-256 is legal, verifying and nobody's intention; and the REALM BOUNDARY, which over HTTP is two base URLs and here is the store itself. Plus the lifetimes read off the vendored PROFILES rather than a table, the leaf carrying no extendedKeyUsage, and a leaf clamped to its Issuing CA's expiry. **It found two real defects on its first run**: the issued JWK's `x5c` was dropping the Issuing CA (a `slice(1)` over a list that does not contain the leaf), and `verifyLeaf()` grafted this realm's tiers onto a chain that already terminated, so a foreign chain was refused with a message about a signature when the thing that is wrong is the ANCHOR. Mutation-tested against six, all caught — and the clientAuth one **survived the first round** because the assertion matched on an extension NAME the encoder never writes; it matches on the OID now |
 | `tls_handshake_alerts.js` | **WHICH SIDE BROKE A TLS HANDSHAKE** (2026-09-26, #225). `tls/tls_server.js`'s `handshakeFailureOf()` held to the exact line #225 logged (the client sent certificate_unknown, 46: it refused this service's certificate), node's code form of unknown_ca, and two failures that are NOT that (an alert about something else, and no alert). Then a REAL handshake: a local listener with a self-signed certificate and **`openssl s_client`** trusting an unrelated CA, and the error node hands the server classified as `unknown_ca` — the reading of OpenSSL's text checked against OpenSSL. **Two things the first versions found**: node's own TLS client sends no alert (it verifies after the handshake; the server sees `socket hang up`), and OpenSSL will not connect with an EMPTY `-CAfile`, so the trust store is an unrelated certificate |
+| `tls_protocol_policy.js` | **WHAT tlsfuzzer FOUND IN THE TLS POLICY** (#212, 2026-09-26). `protocolOptions()` carries the post-quantum-first groups with no finite-field group, the signature list with no DSA, SHA-224 or brainpool, and `SSL_OP_NO_RENEGOTIATION`, and `secureContextOptions()` carries all of it. REAL handshakes against a server built from it: SecP384r1MLKEM1024 served, ffdhe2048 refused, a TLS 1.2 renegotiation refused. THE CRASH, in child processes: node 24.16.0 still dies (SIGSEGV) converting a brainpool certificate — a note, not a failure, when node fixes it — and a server that lets brainpool through the handshake survives a brainpool client certificate with `refuseUnreadableCertificatesOn()` installed, while a P-256 one is read. And the SPIFFE listeners' own list has no brainpool |
+| `tlsfuzzer_debugger.js` | **TLSFUZZER AGAINST THE EMBEDDED DEBUGGER'S LISTENER** (#212, 2026-09-26). No test stack binds `debugger.port` (no debugger tree is embedded), so this file binds it over TLS through `debugger_server.ts`'s own `listen()` — a stand-in site directory, the api child's start stubbed — and runs `tests/vendored/tlsfuzzer_kit.js`'s plan for the `debugger` listener. Needs `STS_TLSFUZZER_DIR` (the tests image); fails naming it anywhere else |
 | `pki_hybrid.js` | **EVERY AUTHORITY IS HYBRID** (2026-09-26, #68 phase 1): ITU-T X.509 (2019) clause 9.8's alternative key and alternative signature on every tier, and the policy `common/pki.js` puts on top of an encoder that deliberately decides nothing. In process because the interesting certificates are ones no client can be made to send: a probe leaf under this realm's Issuing CA with ONLY a classical signature (the downgrade) and one whose alternative signature a STRANGER's ML-DSA-87 key made, both of which need the Issuing CA's private keys through `issuerFor()`. Six sections: every tier holds an ML-DSA-87 key and each alternative signature verifies under its issuer's alternative key; **OpenSSL, through node, still verifies and path-builds the classical chain** (the migration claim, checked by a second implementation); an issued key pair is signed twice and `verifyLeaf()` accepts it; the stripped leaf is refused as `STS-PKI-0202` and the forged one as `STS-PKI-0201`, each beside a CONTROL leaf signed with both keys that is accepted, so the refusals are about the alternative signature and nothing else; a FOREIGN path (`verifyPathToAnchors()`) accepts the stripped leaf and refuses the forged one; `altKeyAlg: 'none'` builds a classical branch whose Intermediate still carries the hybrid Root's alternative signature and whose leaves verify; and a KEM, a composite or a classical key is not offered, ML-KEM refused as `STS-PKI-0200` with nothing stored. It sets aside any Root an earlier file left, for `pki.js`'s reason, and clears its three realms in `finally` |
 | `signer_groups.js` | **THE SIGNER GROUPS' KEYS AND CERTIFICATES** (2026-09-26, #68 phase 2a). The table first: five groups, EVERY JOSE certificate-header use case in exactly one of them (so a new signer added without a group fails here rather than silently signing with a per-algorithm key in a hybrid realm), the three pairings and SLH-DSA alone, and a group slot (`tokens/ES256`) that can never be read as a per-algorithm one. Then a realm switched to `hybrid-groups`: the default realm makes NONE; the switched one makes 35 key pairs with distinct `sts-g-` kids and an RSA-3072 member; every group gets four certificates within a minute with nobody asking, each classical one carrying EXACTLY its ML-DSA partner in `subjectAltPublicKeyInfo` (compared against `pqSubjectPublicKeyPem()` of that partner), no partnered ML-DSA key holding a certificate of its own, the SLH-DSA one plain, the XML group under the XML Signing CA, and every one passing `verifyLeaf()` as hybrid. Last, the keystore: 35 rows in the sealed blob in `extraKeys`' and `pqKeys`' encodings, a private half read back signing for its published key, and a blob with the groups ENRICHING one without them and never the reverse. In process because it is all material a service keeps to itself, and half of it is an absence. It creates `sgroups-a` and removes it in `finally` |
 | `kerberos_principals_paging.js` | **THE TWO LISTS ON `/admin/kerberos/principals` PAGE ON `peoplePage` AND `servicesPage`** (2026-09-13). The view passed `pagedRows()` a `param` option that `pagingOf()` never reads, so both lists followed a bare `?page=` while the page's links wrote the other two and every next link reloaded page 1 — with the nav's own *page 2 of 3* line saying otherwise, because the route re-attached the right name to it. Asserted: each parameter moves its own list and not the other, in the paging and in the rows; a bare `?page=2` moves NEITHER (which tells the fix from one making both follow one parameter); every link the page draws names a parameter the view reads; following the services link draws rows 4–6; and the People links on that page keep the services position. The two list functions are replaced for the file and restored in a `finally`, because more than one page of real service principals is that many random keys sealed on directory entries. With the bug put back, six assertions fail |
@@ -1303,6 +1305,7 @@ and carrying them twice is what made this table's own arithmetic wrong.
 | `tests/vendored/sts_fapi2_message_signing.js` **(ours)** | **FAPI 2.0 MESSAGE SIGNING OVER THE WIRE** (#141, 2026-09-22), in a throwaway realm on `2-message-signing`: the report's rows; discovery with JARM's modes only and a signed request object and PAR required; a plain push, a signed push asking for no JARM mode, and one with no nbf refused; a signed push answered with a PS256 JARM response verified here and redeemed for a DPoP-bound token; an RFC 9701 introspection response signed PS256 and verified; the portal signing in under the profile. 10 checks |
 | `tests/vendored/sts_fapi_conformance.js` **(ours)** | **THE OPENID FOUNDATION'S CONFORMANCE SUITE** (#176, 2026-09-24) — the independent check the four rows above are not. FAPI 2.0 Security Profile, FAPI 2.0 Message Signing, FAPI 1.0 Advanced and FAPI-CIBA, one plan each in a throwaway realm under the profile it tests, every module run through the suite's API; a FAILED or timed-out module fails the job unless `EXPECTED` names it with its reason (empty). `conformance: true`: SKIPPED with the reason where the launcher brought no suite up. See *The OpenID conformance suite*, below |
 | `tests/vendored/sts_scim_conformance.js` **(ours)**, with `tests/scim_conformance_fixes.js` in process | **TWO SCIM 2.0 CONFORMANCE HARNESSES AGAINST `/scim/v2`** (#206, 2026-09-26) — python-scim's **scim2-tester** (discovery, then create / read / list / `.search` / `attributes` / replace / PATCH add-remove-replace of every published attribute / delete per resource type, and a random URL) and **scim2/test-suite** (one result per RFC 7643 / 7644 requirement: filters, sort, pagination, Bulk, If-Match and the rest scim2-tester has no check for), both in a throwaway realm with a `scim:read scim:write` client_credentials token and `scim.inventOnCreate` off. Any scim2-tester ERROR, CRITICAL or DEVIATION and any test-suite FAIL or WARN fails the job unless `EXCEPTIONS` names it with its reason (each also on #206); an exception that did not occur is reported. See *The SCIM conformance harnesses*, below |
+| `tests/vendored/sts_tlsfuzzer.js` **(ours)**, with `tests/tlsfuzzer_debugger.js` and `tests/tls_protocol_policy.js` in process | **TLSFUZZER AGAINST THE MAIN HTTPS PORT AND LDAPS 636** (#212, 2026-09-26) — every applicable script of tlsfuzzer, pinned and fetched into the tests image, through `tests/tlsfuzzer/sts_adapter.py`, with client certificates made at run time (RSA and EC P-256 from a throwaway realm's CA; Ed25519, RSA-PSS, ML-DSA-65 and brainpool self-signed with `openssl`). The plan — each script run, not applicable or run as a refusal, each exception with its reason — is `tests/vendored/tlsfuzzer_kit.js`; a failed probe the plan does not explain fails the job. See *The TLS fuzzer*, below |
 | `tests/vendored/sts_vc_data_model_suite.js` **(ours)** | **THE W3C VC DATA MODEL 2.0 TEST SUITE** (#194, 2026-09-26) against the VC-API adapter (`oid4vc/vc_api.ts`) of a throwaway development realm: the eddsa-rdfc-2022 issuer (`vc2.0`) and the jose-p256 one (`EnvelopingProof`), the credential and presentation verifiers, interop on. Every failure fixed or in `EXCEPTIONS` (three: the suite's enveloped presentation carries a `vp` claim VC-JOSE-COSE forbids). See *The W3C VC and DID suites*, below |
 | `tests/vendored/sts_vc_di_eddsa_suite.js` **(ours)** | **THE W3C DATA INTEGRITY EDDSA SUITE** (#195): eddsa-rdfc-2022 and eddsa-jcs-2022, issuers and verifier, VC 1.1 and 2.0, interop on. No exceptions |
 | `tests/vendored/sts_vc_di_ecdsa_suite.js` **(ours)** | **THE W3C DATA INTEGRITY ECDSA SUITE** (#196): ecdsa-rdfc-2019 and ecdsa-jcs-2019 over P-256 and P-384 and ecdsa-sd-2023, issuers and verifier, interop on — every file but `60-sd-interop.js`, which needs a holder by the name "Digital Bazaar"; section 2 is that test with the holder named: this issuer's base proof derived by Digital Bazaar's library and by `/vc-api/credentials/derive`, each derivation verified by this verifier and by Digital Bazaar's, and a base proof refused. No exceptions |
@@ -1821,6 +1824,97 @@ exceptions.
 `WSTRUST_STS_URL`, `OID4VCI_ISSUER_URL`, `NODE_EXTRA_CA_CERTS`, the admin
 token and the preload; `STS_VC_SUITES_DIR` points at another installation
 (the fetch script, run anywhere with node and git).
+
+## THE TLS FUZZER (#212, 2026-09-26)
+
+tlsfuzzer (<https://github.com/tlsfuzzer/tlsfuzzer>) is the TLS protocol
+conformance and robustness suite: about 170 scripts covering version
+negotiation, extensions, record-layer limits, renegotiation, certificate
+requests and known attacks. It runs against all three TLS listeners:
+* the main port and LDAPS 636, from `tests/vendored/sts_tlsfuzzer.js`, in
+  every local mode;
+* the debugger's listener, from `tests/tlsfuzzer_debugger.js`, in process,
+  because no stack binds it.
+
+| Harness | Licence | Pin | How it gets into the image |
+|---|---|---|---|
+| tlsfuzzer | GPL-2.0 | commit `5eebc4464e5197a7f7392fb9acda99cfc32441f7` (no tags upstream) and the tarball's sha256 | `tests/tlsfuzzer/build-tlsfuzzer.sh` in a layer of the runner above the source copy, into `/opt/tlsfuzzer` (`STS_TLSFUZZER_DIR`). Only `tlsfuzzer/`, `scripts/`, `LICENSE` and `README.md` are copied: upstream's `tests/` holds about forty private keys, and the build refuses if any key file lands |
+| tlslite-ng | LGPL-2.1 | commit `02d1506b` (its `v0.9.0b2` tag, the version tlsfuzzer asks for) and the tarball's sha256 | the same script, `tlslite/` and `LICENSE` |
+| ecdsa, six, kyber-py, dilithium-py | MIT | `==` a version and `--hash=sha256:` in `tests/tlsfuzzer/requirements.txt` | a venv, `/opt/tlsfuzzer/venv`, `pip install --require-hashes --no-deps`. kyber-py gives tlslite-ng ML-KEM, and dilithium-py its ML-DSA client key |
+
+**Why this is not the #253 corpora image.** That image exists because a corpus
+meant hundreds of paced fetches from hosts that rate-limit. This is two
+tarballs from GitHub and four wheels, in a layer that rebuilds only when the
+script or the requirements change. It is also GPL and LGPL code, which is
+better run from upstream than republished in a registry of ours.
+
+**The scripts run unmodified, through `tests/tlsfuzzer/sts_adapter.py`**
+(ours). It imports the upstream code at run time and copies none of it. It
+answers three facts about the far end that no script can be told on its
+command line:
+1. **The main port and the debugger ask every connection for a client
+   certificate and require none.** Where a script's graph expects no
+   CertificateRequest, the one the server sends is processed by tlsfuzzer's
+   own `ExpectCertificateRequest` (so it is still checked). The client then
+   answers it with an empty Certificate.
+2. **LDAPS speaks LDAP.** A complete HTTP request becomes a BindRequest of
+   the same length, sliced back into the same fragments when a script splits
+   the request across records.
+3. **TLS 1.2 is ECDHE-RSA AES-GCM only (BCP 195).** A script's default suites
+   (RSA key exchange, CBC, DHE) are swapped suite for suite, so a list keeps
+   its length. `signature_algorithms` and `supported_groups` are added where
+   the script sent neither, first in its own dictionary, and never to a hello
+   it fuzzes, pads or truncates by byte offset.
+
+**The plan is `tests/vendored/tlsfuzzer_kit.js`'s `PLAN`: every script
+upstream ships, each one of three things.**
+* **Not applicable, with the reason.** The script tests something this
+  service does not offer at all: CBC, RSA key exchange, finite-field DHE,
+  CCM, heartbeat, external PSK, certificate compression, an echo server's
+  replies, or a server certificate type the listeners do not present.
+  Timing scripts are here too: Bleichenbacher/Marvin, Lucky13 and Minerva
+  need a quiet dedicated host and a packet capture, and the first two attack
+  suites that are not offered.
+* **Run, with arguments that describe this service** (its signature list,
+  groups and ticket count). Every probe that fails must match an exception:
+  its name (exact or a pattern), and the alert or text its failure carries.
+  Each exception names a `WHY` entry:
+  * `design`: a choice documented in `tls/CLAUDE.md` and `docs/tls.md`;
+  * `openssl`: Node/OpenSSL behaviour this service cannot configure, also on
+    #212;
+  * `tool`: the probe cannot be pointed at this service as written.
+* **Run as a refusal.** The export-cipher script and the brainpool
+  CertificateVerify script are here, and every probe must be refused. The
+  brainpool one is the regression check for the crash tlsfuzzer found:
+  node 24.16.0 SIGSEGV in `getPeerCertificate()` (`tls/CLAUDE.md`).
+
+A failed probe that no exception explains fails the script. So does a script
+with no summary (a crash) or an unexpected pass (XPASS). An exception not
+seen in a run is logged, because several scripts pick a random subset of
+their probes.
+
+**What it found, and what was fixed** (`tls/CLAUDE.md`, *WHAT tlsfuzzer
+FOUND*):
+* the brainpool crash;
+* `tls.groups`, post-quantum hybrids first and no finite-field groups;
+* `tls.signatureAlgorithms`, with no DSA, SHA-224 or brainpool;
+* no TLS 1.2 renegotiation;
+* the debugger's listener now built from the whole policy.
+
+**By hand**: run `tests/tlsfuzzer/build-tlsfuzzer.sh <dir> <requirements>`,
+or symlink a tlsfuzzer checkout, a tlslite-ng checkout and a venv into a
+directory as `tlsfuzzer`, `tlslite-ng` and `venv`. Then run:
+
+```
+STS_TLSFUZZER_DIR=<dir> STS_TLSFUZZER_CERTS=<dir of kind.key/kind.crt> \
+STS_TLSFUZZER_OUT=<dir for failing logs> \
+  node tests/vendored/tlsfuzzer_kit.js main|ldaps|debugger <host> <port> [script...]
+```
+
+It prints one line per script, and writes each failing script's command and
+output. Run the service with its ports published on 127.0.0.1 at random
+numbers. On 2026-09-26 another session's jobs reached this probe by its
+default-bridge address and rebuilt its Root mid-run.
 
 ## THE PUBLISHED XML SCHEMAS (#188, 2026-09-24)
 

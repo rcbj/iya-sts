@@ -153,7 +153,9 @@ const WHY = {
     "legacy_record_version of the records around a TLS 1.3 handshake " +
     "(tls13_validate_record_header: wrong version number) and aborts with " +
     "decode_error on the 0x0300 tlsfuzzer writes on its compatibility " +
-    "ChangeCipherSpec; RFC 8446 section 5.1 says the field MUST be ignored" },
+    "ChangeCipherSpec — or closes before the alert reaches the client, as " +
+    "the in-process debugger listener does; RFC 8446 section 5.1 says the " +
+    "field MUST be ignored" },
   paddedRecord: { why: "openssl", reason: "OpenSSL takes a TLS 1.3 record " +
     "whose content plus padding exceeds 2^14 + 1 bytes (RFC 8446 section " +
     "5.4 asks for record_overflow), and waits for more of a padded " +
@@ -584,7 +586,8 @@ const PLAN = [
     exceptions: [ex(/mlkem\d+: invalid ECDH point format: hybrid$/,
                     "server_hello", "hybridPointMlkem")] },
   { script: "test-tls13-multiple-ccs-messages.py",
-    exceptions: [ex(/CCS/, "decode_error", "recordVersion")] },
+    exceptions: [ex(/CCS/, ["decode_error", "Unexpected closure",
+                            "BrokenPipe"], "recordVersion")] },
   { script: "test-tls13-nociphers.py" },
   { script: "test-tls13-no-unknown-groups.py", args: ["--groups", GROUPS] },
   { script: "test-tls13-obsolete-curves.py",

@@ -2245,9 +2245,20 @@ Both bind `global.host` (the literal `'0.0.0.0'` until 2026-09-12 — wrong in e
 **`ldap.plainListener`** (default on) leaves 389 unbound when off: `whenReady` RESOLVES
 with `port: null`, `listenError` records that it was switched off rather than failed, and
 LDAPS is the only way in. Product mode with it on is WARNED about at startup, because a
-verified simple bind on 389 is a real password in the clear. **LDAPS takes `tls.minVersion`
-and `tls.ciphers`** from `tls_server.js`'s `protocolOptions()`, at construction and again
-in the `setSecureContext()` re-key.
+verified simple bind on 389 is a real password in the clear. **LDAPS takes `tls.minVersion`,
+`tls.ciphers`, `tls.groups` and `tls.signatureAlgorithms`, and refuses renegotiation,**
+from `tls_server.js`'s `protocolOptions()`, at construction and again in the
+`setSecureContext()` re-key.
+
+**tlsfuzzer runs against 636 (#212).** `tests/vendored/sts_tlsfuzzer.js` runs it with the
+main port's plan; `tests/CLAUDE.md` (*THE TLS FUZZER*) has the details. The scripts send
+`GET / HTTP/1.0`, and the adapter swaps it for an LDAP BindRequest of the same length,
+which this listener answers in every mode. Three things differ from the main port, and each
+is in the plan with its reason:
+* no ALPN is negotiated (ldapjs sets none, and no identifier is registered for LDAP);
+* no client certificate is asked for, so the certificate scripts do not apply;
+* the connection stays open after a response, which exposes a malformed closing alert in
+  two scripts. It is answered correctly, with `illegal_parameter`.
 
 `tests/ldap_tls_product_mode.js` holds all of it in child processes (the directory is
 seeded at require time in the mode the process starts in); mutation-tested against the
