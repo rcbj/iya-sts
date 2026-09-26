@@ -3368,6 +3368,119 @@ function holdsLiveIssuance(username, sub) {
   return live;
 }
 
+// ---------------------------------------------------------------------------
+// WHO HOLDS SOMETHING LIVE THAT A CONFIGURATION CHANGE MOVES (#238).
+//
+// holdsLiveIssuance() above answers the question for ONE person, which is
+// what a directory write asks. A change to an application's permissions, a
+// claim set, a claim setting or a federation release list moves a claim for
+// EVERY holder of a live token or assertion it shaped, and the fan-out in
+// `ssf/ssf.ts` needs them listed: each PERSON once, with the newest live
+// artifact of theirs that `match` accepts — the one whose claims are read
+// back for the event — and the claim set that artifact was built from.
+//
+// Access and ID Tokens, and SAML assertions: the three kinds whose CLAIMS a
+// relying party holds. A refresh token carries none of them — the tokens it
+// mints next are built afresh — and a token with no person behind it (a
+// client_credentials grant) names an application, whose subject waits on
+// #221. One walk of each register, in the ambient realm.
+// ---------------------------------------------------------------------------
+const SET_OF_KIND = { access_token: 'access_token', id_token: 'id_token',
+                      'SAML 2.0': 'saml2', 'SAML 1.1': 'saml11' };
+
+function liveClaimBearers(match) {
+  log.debug("Entering liveClaimBearers().");
+  const accept = typeof match === 'function' ? match : function () {
+    return true;
+  };
+  const nowMs = Date.now();
+  const newest = new Map();
+  const keep = function (username, sub, record, setId, at) {
+    const held = newest.get(username);
+    if (!held || at > held.at) {
+      newest.set(username, { username: username, sub: sub, record: record,
+                             setId: setId, at: at });
+    }
+  };
+  tokens.forEach(function (record) {
+    const setId = SET_OF_KIND[record.kind];
+    if (!setId || !record.username) {
+      return;
+    }
+    const state = tokenStateOf(record, nowMs);
+    if (state !== 'valid' && state !== 'no expiry stated') {
+      return;
+    }
+    if (!accept(Object.assign({ setId: setId }, record))) {
+      return;
+    }
+    keep(String(record.username), String(record.sub || ''), record, setId,
+         Number(record.iat || 0) * 1000);
+  });
+  allArtifacts().forEach(function (one) {
+    const setId = SET_OF_KIND[one.kind];
+    if (!setId || !one.subject) {
+      return;
+    }
+    const state = artifactStateOf(withRevocation(one), nowMs);
+    if (state === 'revoked' || state === 'expired') {
+      return;
+    }
+    const shaped = { setId: setId, kind: one.kind,
+                     username: String(one.subject),
+                     audience: String(one.audience || ''),
+                     client_id: String(one.audience || ''), scope: '' };
+    if (!accept(shaped)) {
+      return;
+    }
+    keep(String(one.subject), '', shaped, setId,
+         Number(one.issuedAt || 0));
+  });
+  const out = Array.from(newest.values());
+  log.debug("Leaving liveClaimBearers(). " + out.length + " holder(s).");
+  return out;
+}
+
+// THE VALUES `names` HAVE NOW in the claim set `setId`, for the holder of
+// `record` (a row liveClaimBearers() answered): what jwtClaims() or
+// samlAttributes() would build for that person and that audience today, the
+// federation release policy included — `null` for a name the artifact would
+// no longer carry, which is how CAEP token-claims-change says a claim is
+// gone. A SAML attribute's value is its one value, or the list of several.
+function claimValuesFor(setId, record, names) {
+  log.debug("Entering claimValuesFor(). set=" + setId);
+  const held = record || {};
+  const context = { username: String(held.username || ''),
+                    subject: String(held.username || ''),
+                    sub: String(held.sub || ''),
+                    client_id: String(held.client_id || ''),
+                    audience: String(held.audience || '') };
+  const out = {};
+  if (setId === 'saml2' || setId === 'saml11') {
+    const attributes = samlAttributes(setId, context);
+    (names || []).forEach(function (name) {
+      const found = attributes.filter(function (attribute) {
+        return attribute.name === name;
+      })[0];
+      if (!found) {
+        out[name] = null;
+        return;
+      }
+      const values = Array.isArray(found.values) ? found.values
+        : [found.value];
+      out[name] = values.length === 1 ? values[0] : values.slice(0);
+    });
+  } else {
+    const claims = jwtClaims(setId, context);
+    (names || []).forEach(function (name) {
+      out[name] = claims[name] !== undefined ? claims[name] : null;
+    });
+  }
+  log.debug("Leaving claimValuesFor(). " + Object.keys(out).length +
+            " claim(s).");
+  return out;
+}
+
 // FOUR ANSWERS FOR AN ARTIFACT SINCE 2026-09-05, AND THE FOURTH REVERSED A
 // DOCUMENTED DECISION.
 //
@@ -4566,6 +4679,10 @@ module.exports = {
   expandValue: expandValue,
   tokenList: tokenList,
   holdsLiveIssuance: holdsLiveIssuance,
+  // The fan-out's two halves (#238): who holds a live artifact a
+  // configuration change shaped, and what its claims would say now.
+  liveClaimBearers: liveClaimBearers,
+  claimValuesFor: claimValuesFor,
   artifactList: artifactList,
   issuedList: issuedList,
   issuedSets: issuedSets,

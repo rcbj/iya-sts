@@ -104,6 +104,11 @@ import claimAttributes = require('../common/claim_attributes');
 // `fp_ua`'s fingerprint (#145). A leaf library.
 import stsCrypto = require('../common/crypto');
 import groupClaims = require('../common/group_claims');
+// THE ROLES CLAIM (#238): a role written, or a group a role names changing
+// its members, moves it. `common/roles.js` is a leaf over `helpers` and
+// `config`, loaded by `admin_stats.js` long before this file, so the require
+// closes no cycle and moves no route.
+import roles = require('../common/roles');
 
 // One register row. See `blankRow()`.
 interface CaepRow {
@@ -163,6 +168,8 @@ interface CaepRegisterDeps {
   groupClaims: { groupsOf(username: unknown): { enabled?: boolean;
                                                 claim: string;
                                                 values: string[] } };
+  roles: { claimFor(who: Record<string, unknown>):
+             Record<string, string[]> | null };
 }
 
 // The acts this service can actually OBSERVE, and their event types — three
@@ -334,6 +341,7 @@ class CaepRegister {
   claimsChangeFor(notice?: Record<string, any> | null):
       { claims: Record<string, any> } | null {
     const { helpers: { log }, claimAttributes, groupClaims } = this.deps;
+    const self = this;
     log.debug("Entering CaepRegister.claimsChangeFor().");
     const asked = notice || {};
     const username = String(asked.username || '');
@@ -341,8 +349,30 @@ class CaepRegister {
       log.debug("Leaving CaepRegister.claimsChangeFor(). Nobody named.");
       return null;
     }
+    // A NOTICE THAT ALREADY SAYS WHICH CLAIMS MOVED (#238): the doors that
+    // are not a directory attribute — identity assurance, a claims provider
+    // unlinked, a fan-out from a configuration change. `claims` is the object
+    // itself, or a function answering it, which is how a fan-out defers the
+    // work until the person is known to hold something live.
+    if (asked.kind === 'claims') {
+      let given: any = asked.claims;
+      if (typeof given === 'function') {
+        given = given();
+      }
+      const out = given && typeof given === 'object' && !Array.isArray(given)
+        ? given : null;
+      log.debug("Leaving CaepRegister.claimsChangeFor(). Given: " +
+                (out ? Object.keys(out).join(', ') || 'nothing' : 'nothing') +
+                ".");
+      return out && Object.keys(out).length ? { claims: out } : null;
+    }
     const claims: Record<string, any> = {};
     let groupsMoved = asked.kind === 'membership';
+    // THE ROLES CLAIM MOVES (#238) when a role naming the person was written
+    // (`roles`), or when a group changed whose name a role's
+    // `roleMemberGroup` carries (`membership` with `rolesMoved`).
+    const rolesMoved = asked.kind === 'roles' ||
+      (asked.kind === 'membership' && asked.rolesMoved === true);
     if (asked.kind === 'updated') {
       const before = asked.before || {};
       const after = asked.after || {};
@@ -367,12 +397,31 @@ class CaepRegister {
       // moves the groups claim exactly as a group's `member` does.
       groupsMoved = JSON.stringify(valuesAt(before, 'memberof')) !==
                     JSON.stringify(valuesAt(after, 'memberof'));
+      // `email_verified` (#238) is not an attribute of its own: it is whether
+      // `stsMailVerified` names the address `mail` holds, which is what
+      // `oauth2.ts`'s emailVerified() reads through the mail channel. Either
+      // half moving can move it — the address changed, or it was proved.
+      const verifiedAt = function (map: Record<string, any>): boolean {
+        const mail = String(valuesAt(map, 'mail')[0] || '').toLowerCase();
+        const proved = String(valuesAt(map, 'stsmailverified')[0] || '')
+          .toLowerCase();
+        return !!mail && mail === proved;
+      };
+      if (verifiedAt(before) !== verifiedAt(after) &&
+          valuesAt(after, 'mail').length) {
+        claims.email_verified = verifiedAt(after);
+      }
     }
+    let groupsClaim = '';
     if (groupsMoved) {
       const groups = groupClaims.groupsOf(username);
       if (groups && groups.enabled !== false && groups.claim) {
         claims[groups.claim] = groups.values.slice(0);
+        groupsClaim = groups.claim;
       }
+    }
+    if (rolesMoved) {
+      self.addRolesClaim(claims, username, groupsClaim);
     }
     if (!Object.keys(claims).length) {
       log.debug("Leaving CaepRegister.claimsChangeFor(). No claim moved.");
@@ -381,6 +430,38 @@ class CaepRegister {
     log.debug("Leaving CaepRegister.claimsChangeFor(). " +
               Object.keys(claims).join(', ') + ".");
     return { claims: claims };
+  }
+
+  // THE ROLES CLAIM AS A TOKEN WOULD CARRY IT NOW (#238), added to `claims`:
+  // `roles.claimFor()`'s own answer, or `null` under the claim's name when the
+  // person holds no configured role any more — the claim is OMITTED from a
+  // token then, and CAEP says a claim that is gone by giving it no value.
+  // Nothing when `roles.claim` is off (no token carries it), and nothing when
+  // the groups claim has the same name: `admin_stats.jwtClaims()` lets the
+  // groups claim win that collision in every token, so it is the one named.
+  private addRolesClaim(claims: Record<string, any>, username: string,
+                        groupsClaim: string): void {
+    const { helpers: { log }, config, groupClaims, roles } = this.deps;
+    log.debug("Entering CaepRegister.addRolesClaim().");
+    if (config.value('roles.claim') === false) {
+      log.debug("Leaving CaepRegister.addRolesClaim(). The claim is off.");
+      return;
+    }
+    const name = String(config.value('roles.claimName') || 'roles');
+    let groupsName = groupsClaim;
+    if (!groupsName) {
+      const groups = groupClaims.groupsOf(username);
+      groupsName = groups && groups.enabled !== false ? groups.claim : '';
+    }
+    if (groupsName && groupsName === name) {
+      log.debug("Leaving CaepRegister.addRolesClaim(). The groups claim " +
+                "has the same name and wins it.");
+      return;
+    }
+    const held = roles.claimFor({ kind: 'user', name: username,
+                                  authenticated: true });
+    claims[name] = held && held[name] ? held[name].slice(0) : null;
+    log.debug("Leaving CaepRegister.addRolesClaim().");
   }
 
   autoEmitActs(): string[] {
@@ -1182,7 +1263,8 @@ class CaepRegister {
       subjects: subjects,
       stepUp: stepUp,
       claimAttributes: claimAttributes,
-      groupClaims: groupClaims
+      groupClaims: groupClaims,
+      roles: roles
     };
   }
 }

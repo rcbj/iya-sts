@@ -66,10 +66,15 @@ interface SsfEmitters {
   emitCredentialChange?(notice: object): Delivery | Promise<Delivery>;
   emitRiscAccountAct?(notice: object): Delivery | Promise<Delivery>;
   emitDeviceEvent?(notice: object): Delivery | Promise<Delivery>;
+  emitClaimsChange?(notice: object): Delivery | Promise<Delivery>;
+  claimsFanOut?(notice: object): Delivery | Promise<Delivery>;
+  emitIdentityAssuranceChange?(notice: object):
+    Delivery | Promise<Delivery>;
 }
 
 type EmitterName = 'emitCredentialChange' | 'emitRiscAccountAct' |
-                   'emitDeviceEvent';
+                   'emitDeviceEvent' | 'emitClaimsChange' | 'claimsFanOut' |
+                   'emitIdentityAssuranceChange';
 
 interface AccountSignalsDeps {
   log: { debug(m: string): void; warn(m: string): void };
@@ -309,6 +314,44 @@ class AccountSignals {
                                       { act: 'sessionsRevoked' }));
   }
 
+  // ---------------------------------------------------------------------
+  // CAEP token-claims-change FROM A DOOR THAT IS NOT A DIRECTORY ATTRIBUTE
+  // (#238) — identity assurance, a claims provider unlinked. `notice`:
+  // `username`, `claims` (the moved claims with their new values, or a
+  // function answering them, called only if the person holds something
+  // live), and optionally `protocol`, `reasonAdmin`, `reasonUser`.
+  // ---------------------------------------------------------------------
+  claimsChanged(notice?: Record<string, any>): Promise<Delivery> {
+    const { log } = this.deps;
+    log.debug('Entering AccountSignals.claimsChanged().');
+    log.debug('Leaving AccountSignals.claimsChanged().');
+    return this.deliver('a CAEP token-claims-change', 'emitClaimsChange',
+                        notice || {});
+  }
+
+  // CAEP token-claims-change to EVERY holder a configuration change moved
+  // (#238): `match(record)` picks the live artifacts it shaped, and
+  // `claimsFor(bearer)` answers the moved claims for one holder. See
+  // `ssf.ts`'s claimsFanOut(), which walks them in slices.
+  claimsFanOut(notice?: Record<string, any>): Promise<Delivery> {
+    const { log } = this.deps;
+    log.debug('Entering AccountSignals.claimsFanOut().');
+    log.debug('Leaving AccountSignals.claimsFanOut().');
+    return this.deliver('a CAEP token-claims-change fan-out',
+                        'claimsFanOut', notice || {});
+  }
+
+  // CAEP assurance-level-change for a person's IDENTITY assurance (#243):
+  // `username`, `namespace`, `current`, and where known `previous` and
+  // `direction`. `common/identity_assurance.ts` decides all four.
+  assuranceChanged(notice?: Record<string, any>): Promise<Delivery> {
+    const { log } = this.deps;
+    log.debug('Entering AccountSignals.assuranceChanged().');
+    log.debug('Leaving AccountSignals.assuranceChanged().');
+    return this.deliver('a CAEP assurance-level-change',
+                        'emitIdentityAssuranceChange', notice || {});
+  }
+
   // RISC recovery-information-changed: somebody's recovery codes were
   // cleared.
   recoveryInformationChanged(notice?: object): Promise<Delivery> {
@@ -352,6 +395,9 @@ export = {
   optOutMoved: slot.forward('optOutMoved'),
   deviceEvent: slot.forward('deviceEvent'),
   sessionsRevoked: slot.forward('sessionsRevoked'),
+  claimsChanged: slot.forward('claimsChanged'),
+  claimsFanOut: slot.forward('claimsFanOut'),
+  assuranceChanged: slot.forward('assuranceChanged'),
   KEY_CREDENTIAL_TYPE: AccountSignals.KEY_CREDENTIAL_TYPE,
   keyCredentialType: AccountSignals.keyCredentialType,
   TOTP_CREDENTIAL_TYPE: AccountSignals.TOTP_CREDENTIAL_TYPE

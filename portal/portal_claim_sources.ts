@@ -200,7 +200,7 @@ class PortalClaimSourcesPage {
       return ctx.send(res, 403, this.page(session, null, csrf.detail));
     }
     if (body.action === 'unlink') {
-      const gone = claimsProviders.unlink(who, String(body.id));
+      const gone = claimsProviders.unlink(who, String(body.id), 'user');
       if (!gone) {
         ctx.errorCodes.mark(res, 'STS-PORTAL-0094');
         log.debug('Leaving POST ' + PATH + '. Not linked.');

@@ -146,6 +146,9 @@ interface ClaimsProvidersDeps {
   // The directory: `credentials.claimsAggregationStore()`, one function by
   // operation name, answering empty where no directory is loaded.
   store: (operation: string, args: any[]) => Json;
+  // `ssf/account_signals.ts`, lazily (#238): a link that went moves the
+  // aggregated and distributed claims of every token the person holds.
+  signals: () => Json;
 }
 
 class ClaimsProviders {
@@ -181,6 +184,9 @@ class ClaimsProviders {
       },
       store: function (operation: string, args: any[]): Json {
         return credentials.claimsAggregationStore(operation, args);
+      },
+      signals: function (): Json {
+        return require('../ssf/account_signals');
       }
     };
   }
@@ -379,12 +385,72 @@ class ClaimsProviders {
     return written ? '' : 'the directory refused the entry';
   }
 
+  // A provider removed is a source gone for EVERY person who linked it
+  // (#238): sourcesFor() offers only registered providers, so tokens issued
+  // from now on name it nowhere. The links stay on the entries, as they
+  // always did; the holders are read before the entry goes.
   remove(id: string): boolean {
     const { log } = this.deps;
+    const self = this;
     log.debug("Entering ClaimsProviders.remove(). " + id);
+    const provider = this.get(String(id));
+    const linked = (this.store('claimSourceTokenHolders', []) || [])
+      .filter(function (holder: Json): boolean {
+        return !!self.linksRaw(holder.username)[String(id)];
+      });
     const gone = !!this.store('deleteClaimProviderEntry', [String(id)]);
+    if (gone) {
+      linked.forEach(function (holder: Json): void {
+        self.announceGone(holder.username, String(id), provider,
+                          'the Claims Provider was removed');
+      });
+    }
     log.debug("Leaving ClaimsProviders.remove(). " + gone);
     return gone;
+  }
+
+  // ---------------------------------------------------------------------------
+  // A SOURCE THAT WENT, SAID AS CAEP token-claims-change (#238). A token
+  // issued while the link stood carries the provider's claims by reference:
+  // `_claim_names` maps each to the provider's id and `_claim_sources` holds
+  // the source — an aggregated JWT, or a distributed source's endpoint and
+  // ACCESS TOKEN. The event names what moved, nested as a nested claim is
+  // (`address.locality`): each of the provider's claim names, and its source,
+  // gone (`null`). **THE SOURCE's VALUE IS NEVER SENT, OLD OR NEW**: it is a
+  // bearer credential or another issuer's signed claims, and a Security Event
+  // Token goes to every receiver of a stream. Sent only if the person holds
+  // something live (`ssf.ts`'s claimsAutoEmit()), and never awaited.
+  // ---------------------------------------------------------------------------
+  private announceGone(username: string, id: string,
+                       provider: Provider | null, why: string,
+                       by?: string): void {
+    const { log, signals } = this.deps;
+    log.debug("Entering ClaimsProviders.announceGone(). " + id);
+    const names: Json = {};
+    ((provider && provider.claims) || []).forEach(function (n: string) {
+      names[n] = null;
+    });
+    const sources: Json = {};
+    sources[id] = null;
+    const claims: Json = { _claim_sources: sources };
+    if (Object.keys(names).length) {
+      claims._claim_names = names;
+    }
+    try {
+      signals().claimsChanged({ username: username,
+        protocol: 'Claims aggregation', initiatingEntity: by || 'admin',
+        reasonAdmin: 'Claims Provider "' + id + '" is no longer a source: ' +
+                     why,
+        reasonUser: 'Information about you from another provider, which ' +
+                    'tokens already issued may carry, is no longer ' +
+                    'provided.',
+        claims: claims });
+    } catch (e: any) {
+      log.debug("Caught in ClaimsProviders.announceGone(): " +
+                ((e && e.message) || e));
+      // The unlink stands; nothing more is said about it.
+    }
+    log.debug("Leaving ClaimsProviders.announceGone().");
   }
 
   // An OpenID Provider's discovery document, for filling the four endpoints
@@ -488,7 +554,9 @@ class ClaimsProviders {
     return out;
   }
 
-  unlink(username: string, id: string): boolean {
+  // `by` is who unlinked it, in CAEP's initiating_entity words: the person on
+  // /portal/claim-sources (`user`), an administrator otherwise.
+  unlink(username: string, id: string, by?: string): boolean {
     const { log } = this.deps;
     log.debug("Entering ClaimsProviders.unlink(). " + id);
     const map = this.linksRaw(username);
@@ -498,6 +566,10 @@ class ClaimsProviders {
     }
     delete map[id];
     const done = this.writeLinks(username, map);
+    if (done) {
+      this.announceGone(username, id, this.get(id), 'the link was removed',
+                        by === 'user' ? 'user' : 'admin');
+    }
     log.debug("Leaving ClaimsProviders.unlink(). " + done);
     return done;
   }
