@@ -375,6 +375,18 @@ RUN python3 -m venv /opt/scim2-tester \
 ENV STS_SCIM2_TESTER_PYTHON=/opt/scim2-tester/bin/python
 COPY --from=scim2-test-suite /opt/scim2-test-suite /opt/scim2-test-suite
 ENV STS_SCIM2_TEST_SUITE=/opt/scim2-test-suite/scim-compliance
+# TLSFUZZER (#212): tlsfuzzer (GPL-2.0) and tlslite-ng (LGPL-2.1) at pinned
+# upstream commits, each tarball checked against a sha256, and their Python
+# dependencies hash-pinned into a venv of their own. Run, never vendored;
+# the upstream `tests/` directory with its private keys is not copied.
+# tests/vendored/sts_tlsfuzzer.js and tests/tlsfuzzer_debugger.js drive it
+# through tests/tlsfuzzer/sts_adapter.py. Above the source copy, for the
+# schemas' reason: only the two files the fetch reads are copied first.
+COPY tests/tlsfuzzer/build-tlsfuzzer.sh tests/tlsfuzzer/requirements.txt \
+     /usr/src/tlsfuzzer-build/
+RUN /usr/src/tlsfuzzer-build/build-tlsfuzzer.sh /opt/tlsfuzzer \
+      /usr/src/tlsfuzzer-build/requirements.txt
+ENV STS_TLSFUZZER_DIR=/opt/tlsfuzzer
 COPY package*.json ./
 COPY .npmrc ./
 COPY node-ldapjs ./node-ldapjs

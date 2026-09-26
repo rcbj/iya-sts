@@ -140,41 +140,67 @@ def main():
 
     if aead:
         swap = aead_substitutes(CipherSuite)
+        ecdhe = set(swap.values())
 
+        # Suite for suite, never merged: a list keeps its LENGTH, because
+        # the fuzzing scripts address a ClientHello's bytes by offset.
         def substitute(ciphers):
             if not ciphers:
                 return ciphers
-            out = []
-            for one in ciphers:
-                one = swap.get(one, one)
-                if one not in out:
-                    out.append(one)
-            return out
+            return [swap.get(one, one) for one in ciphers]
 
         chg = fuzz_messages.ClientHelloGenerator
         original_chg = chg.__init__
 
-        ecdhe = set(swap.values())
-
-        def chg_init(self, ciphers=None, extensions=None, *args, **kwargs):
-            ciphers = substitute(ciphers)
-            # A script written for RSA key exchange sends neither extension,
-            # and ECDHE needs both: without signature_algorithms a TLS 1.2
-            # server may only sign with SHA-1 (RFC 5246 section 7.4.1.4.1),
-            # which OpenSSL's default security level refuses. Added only
-            # where the script sent none of its own.
-            if ciphers and ecdhe.intersection(ciphers) and \
-                    not kwargs.get('ssl2'):
-                extensions = dict(extensions or {})
-                if ExtensionType.signature_algorithms not in extensions:
-                    extensions[ExtensionType.signature_algorithms] = \
-                        SignatureAlgorithmsExtension().create(RSA_SIG_ALL)
-                if ExtensionType.supported_groups not in extensions:
-                    extensions[ExtensionType.supported_groups] = \
-                        SupportedGroupsExtension().create(
-                            [GroupName.x25519, GroupName.secp256r1])
-            original_chg(self, ciphers, extensions, *args, **kwargs)
+        def chg_init(self, ciphers=None, *args, **kwargs):
+            original_chg(self, substitute(ciphers), *args, **kwargs)
         chg.__init__ = chg_init
+
+        # A script written for RSA key exchange sends neither extension, and
+        # ECDHE needs both: without signature_algorithms a TLS 1.2 server may
+        # only sign with SHA-1 (RFC 5246 section 7.4.1.4.1), which OpenSSL's
+        # default security level refuses. Added only where the script sent
+        # none of its own, at GENERATION, FIRST in the script's own
+        # dictionary — some scripts go on to change the dictionary they
+        # passed, and fuzz at offsets counted from the end — and NEVER to a
+        # ClientHello a script fuzzes, pads or truncates by byte position:
+        # added bytes would move every offset it names. Such a hello is
+        # built to be refused while it is parsed, before any suite is chosen.
+        original_generate = chg.generate
+
+        def chg_generate(self, state):
+            if self.ciphers and ecdhe.intersection(self.ciphers) and \
+                    not self.ssl2 and not getattr(self, 'sts_by_offset',
+                                                  False):
+                if self.extensions is None:
+                    self.extensions = {}
+                added = []
+                if ExtensionType.signature_algorithms not in self.extensions:
+                    added.append((ExtensionType.signature_algorithms,
+                                  SignatureAlgorithmsExtension()
+                                  .create(RSA_SIG_ALL)))
+                if ExtensionType.supported_groups not in self.extensions:
+                    added.append((ExtensionType.supported_groups,
+                                  SupportedGroupsExtension().create(
+                                      [GroupName.x25519,
+                                       GroupName.secp256r1])))
+                if added:
+                    theirs = list(self.extensions.items())
+                    self.extensions.clear()
+                    self.extensions.update(added)
+                    self.extensions.update(theirs)
+            return original_generate(self, state)
+        chg.generate = chg_generate
+
+        def by_offset(name):
+            original = getattr(fuzz_messages, name)
+
+            def wrapped(generator, *args, **kwargs):
+                generator.sts_by_offset = True
+                return original(generator, *args, **kwargs)
+            setattr(fuzz_messages, name, wrapped)
+        for name in ('fuzz_message', 'pad_handshake', 'truncate_handshake'):
+            by_offset(name)
 
         esh = ExpectServerHello
         original_esh = esh.__init__

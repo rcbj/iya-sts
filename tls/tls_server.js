@@ -303,6 +303,15 @@ function protocolOptions() {
   if (sigalgs) {
     options.sigalgs = sigalgs;
   }
+  // NO TLS 1.2 RENEGOTIATION, IN EITHER DIRECTION (#212, 2026-09-26).
+  // tlsfuzzer's test-renegotiation-disabled found the main port accepting a
+  // client-initiated secure renegotiation (node only counts them, three per
+  // ten minutes, and then drops the socket). Nothing in this service
+  // renegotiates — a client certificate is asked for in the first handshake
+  // — and each renegotiation is a full handshake's CPU spent at the peer's
+  // choosing, so OpenSSL refuses every one with a no_renegotiation warning.
+  // TLS 1.3 has no renegotiation to refuse.
+  options.secureOptions = crypto.constants.SSL_OP_NO_RENEGOTIATION;
   log.debug("Leaving protocolOptions().");
   return options;
 }
