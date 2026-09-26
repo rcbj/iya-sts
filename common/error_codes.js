@@ -806,6 +806,14 @@ const CODES = [
       'write of it would (a value outside an enum or a list\'s csvValues, ' +
       'a number out of bounds, a malformed boolean) — #86.',
     spec: '' },
+  { code: 'STS-CORE-0120',
+    summary: 'A trust realm was removed (#232) before everything it owed ' +
+      'had been delivered within realms.removalDeliveryTimeoutS — session ' +
+      'ends still waiting on their claim, back-channel Logout Tokens or ' +
+      'SSF events (session-revoked, account-purged, stream-updated) not ' +
+      'yet delivered, or a retirement hook that failed. The realm is ' +
+      'removed anyway.',
+    spec: 'none — logged; the removal succeeds' },
   { code: 'STS-WORKER-0001',
     summary: 'The IPC channel to a post-quantum worker process failed, so a ' +
       'job sent to it may not arrive or its answer may not come back.',

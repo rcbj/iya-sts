@@ -22263,7 +22263,7 @@ class AdminConsole {
       'and <code>GET /realms</code> answers the same thing to a client that ' +
       'cannot read a console.</p>' +
       this.realmSupportTable() +
-      // The two realms.* rows. `realms.enabled` is the one that makes every
+      // The realms.* rows. `realms.enabled` is the one that makes every
       // prefixed path in this service answer or not, which is worth being able
       // to see beside the list of realms it governs.
       this.configFormsFor('/admin/realms');
@@ -35348,50 +35348,66 @@ class AdminConsole {
       });
     });
 
-    app.post('/admin/realms', function (req, res) {
+    app.post('/admin/realms', function (req, res, next) {
       log.debug("Entering the admin trust realms action endpoint.");
       const body = parseBody(req);
-      const result = realmsAction(body);
-      const listView = self.listViewFromBack('/admin/realms', body.back);
-      const id = String(body.id || '').trim();
-      // Back to the realm that was acted on, EXCEPT after a removal — there is
-      // nothing to drill into any more, and a 303 to a drill-down for a realm
-      // that has just gone would answer with this page's own "no such realm"
-      // message, which reads as a failure after an action that succeeded.
-      const back = (id && result.ok !== false &&
-                    String(body.action) !== 'remove')
-        ? '/admin/realms' + queryWith(listView, { realm: id })
-        : '/admin/realms' + queryWith(listView, {});
-      // A NEW REALM'S BOOTSTRAP PASSWORD, ONCE (2026-09-14, #32). Product mode
-      // hands the realm's `admin` a generated password in the create's result,
-      // and a redirect would put it in a query string; so it is drawn on a page
-      // of its own, `/admin/users`' reset arrangement. A JSON caller gets JSON.
-      if (result.ok && result.password &&
-          !/json/i.test(String(req.headers['content-type'] || ''))) {
-        const made = realms.get(result.realm);
-        const realmUrl = self.realmRoot(req) +
-                         (made ? realms.prefixOf(made) : '') +
-                         '/admin';
-        self.respond(req, res, result, 'Realm created', '/admin/realms',
-          '<h2>The "' + self.esc(result.realm) +
-          '" realm\'s administrator, shown once</h2><table ' +
-          'class="key"><tr><th>Username</th><td><code>' +
-          self.esc(result.username) + '</code></td></tr></table>' +
-          '<div class="secret">' + self.esc(result.password) + '</div>' +
-          self.warn('<strong>Note it now.</strong> It is stored as a scrypt ' +
-          'hash and cannot be shown again. It works once, at that realm\'s ' +
-          'sign-in screen, where a new password must be chosen. This account ' +
-          'administers the "' + self.esc(result.realm) +
-          '" realm and nothing else.') +
-          self.note('<a class="btn" href="' + self.esc(back) +
-                    '">Back to the realm</a> ' +
-          '&middot; <a href="' + self.esc(realmUrl) + '">its console</a>'),
-          self.upTo('/admin/realms', 'Realm created', listView));
-        log.debug("Leaving the admin trust realms action endpoint. A " +
-                  "one-time page.");
-        return;
-      }
-      self.respondToAction(req, res, back, result);
+      const answerRealmsAction = function (result) {
+        log.debug("Entering answerRealmsAction().");
+        const listView = self.listViewFromBack('/admin/realms', body.back);
+        const id = String(body.id || '').trim();
+        // Back to the realm that was acted on, EXCEPT after a removal —
+        // there is nothing to drill into any more, and a 303 to a
+        // drill-down for a realm that has just gone would answer with this
+        // page's own "no such realm" message, which reads as a failure after
+        // an action that succeeded.
+        const back = (id && result.ok !== false &&
+                      String(body.action) !== 'remove')
+          ? '/admin/realms' + queryWith(listView, { realm: id })
+          : '/admin/realms' + queryWith(listView, {});
+        // A NEW REALM'S BOOTSTRAP PASSWORD, ONCE (2026-09-14, #32). Product
+        // mode hands the realm's `admin` a generated password in the
+        // create's result, and a redirect would put it in a query string; so
+        // it is drawn on a page of its own, `/admin/users`' reset
+        // arrangement. A JSON caller gets JSON.
+        if (result.ok && result.password &&
+            !/json/i.test(String(req.headers['content-type'] || ''))) {
+          const made = realms.get(result.realm);
+          const realmUrl = self.realmRoot(req) +
+                           (made ? realms.prefixOf(made) : '') +
+                           '/admin';
+          self.respond(req, res, result, 'Realm created', '/admin/realms',
+            '<h2>The "' + self.esc(result.realm) +
+            '" realm\'s administrator, shown once</h2><table ' +
+            'class="key"><tr><th>Username</th><td><code>' +
+            self.esc(result.username) + '</code></td></tr></table>' +
+            '<div class="secret">' + self.esc(result.password) + '</div>' +
+            self.warn('<strong>Note it now.</strong> It is stored as a ' +
+            'scrypt ' +
+            'hash and cannot be shown again. It works once, at that realm\'s ' +
+            'sign-in screen, where a new password must be chosen. This ' +
+            'account ' +
+            'administers the "' + self.esc(result.realm) +
+            '" realm and nothing else.') +
+            self.note('<a class="btn" href="' + self.esc(back) +
+                      '">Back to the realm</a> ' +
+            '&middot; <a href="' + self.esc(realmUrl) + '">its console</a>'),
+            self.upTo('/admin/realms', 'Realm created', listView));
+          log.debug("Leaving answerRealmsAction(). A one-time page.");
+          return;
+        }
+        self.respondToAction(req, res, back, result);
+        log.debug("Leaving answerRealmsAction().");
+      };
+      // A removal answers a promise (#232: the realm is retired first, which
+      // waits a bounded time for what it owes to be delivered); every other
+      // action answers at once. Both are resolved before the page answers.
+      Promise.resolve(realmsAction(body)).then(function (result) {
+        answerRealmsAction(result);
+      }).catch(function (e) {
+        log.debug("Caught in the admin trust realms action endpoint: " +
+                  ((e && e.message) || e));
+        next(e);
+      });
       log.debug("Leaving the admin trust realms action endpoint.");
     });
 

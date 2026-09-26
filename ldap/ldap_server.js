@@ -3503,6 +3503,50 @@ realms.onCreate(function (id) {
 // keeping the rule, it would be leaking a tree nobody can reach — every path to
 // it, HTTP and LDAP alike, named a realm that is gone.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// AND BEFORE IT GOES, EVERYBODY IN IT IS PURGED ALOUD (#232, 2026-09-26).
+//
+// The purge below drops the realm's directory whole, and that is right; what
+// was wrong is that nobody heard. `noteAccountChange()` never ran, so a RISC
+// receiver holding an account in the realm was never sent `account-purged`.
+// `realms.retire()` — the administrator's removal — calls this first, in the
+// realm, while every entry is still there to be read: each PERSON is handed
+// to the account observers exactly as a delete of that one entry would be,
+// `deleted:<name>` with its attributes as they were. `consequences: false`,
+// because the sessions have already been ended by `authn`'s hook, which runs
+// before this one, and ending what a person held a second time would be a
+// second sign-out of every one of them. The anonymous principal is nobody's
+// account and is not purged aloud.
+// ---------------------------------------------------------------------------
+realms.onRetire({
+  name: 'ldap',
+  announce: function (id) {
+    log.debug('Entering the realm directory retirement. id=' + id);
+    const people = [];
+    eachEntryInRealm(function (stored) {
+      if (stored && isPersonEntry(stored)) {
+        people.push(stored);
+      }
+    });
+    let told = 0;
+    people.forEach(function (stored) {
+      const name = usernameOfEntry(stored);
+      if (!name || name === 'anonymous') {
+        return;
+      }
+      noteAccountChange('deleted:' + name, stored.dn,
+                        attributeSnapshot(stored), {},
+                        { consequences: false,
+                          door: 'the trust realm "' + id + '" was removed' });
+      told += 1;
+    });
+    log.info('ldap: the "' + id + '" realm is being removed; ' + told +
+             ' person(s) in its directory were reported purged to the ' +
+             'account observers (RISC account-purged) before it goes.');
+    log.debug('Leaving the realm directory retirement. ' + told + '.');
+  }
+});
+
 realms.onRemove(function (id) {
   log.debug('Entering the realm directory purge. id=' + id);
   // **THIS NO LONGER DELETES ANYTHING, AND THE HANDLER IS KEPT ANYWAY.** It

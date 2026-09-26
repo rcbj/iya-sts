@@ -1615,6 +1615,154 @@ function built(realm) {
   log.debug("Leaving built(). " + builders.length + " store(s) built.");
 }
 
+// ---------------------------------------------------------------------------
+// BEFORE A REALM GOES, ITS PEOPLE AND ITS RECEIVERS ARE TOLD (#232,
+// 2026-09-26).
+//
+// `remove()` below drops the registry row and runs every store's purge — the
+// directory, the sessions, the SSF streams and their delivery queues — and
+// said nothing to anybody while doing it: no RISC `account-purged` for the
+// people in the realm, no CAEP `session-revoked` and no back-channel Logout
+// Token for a live session, and no `stream-updated` to a receiver whose stream
+// vanished. The purges cannot do it: they run in registration order, the
+// directory's goes early, and a purge that sent an event would be sending it
+// into a delivery queue the next purge empties.
+//
+// So `retire()` is the administrator's door, and it runs two phases of hooks
+// BEFORE `remove()`, each in the realm being removed:
+//
+//   1. **announce** (synchronous, in registration order): every session ended
+//      through the ordinary path (`authn`, `initiating_entity: admin`), and
+//      `account-purged` for every person (`ldap_server`, which hands each to
+//      the account observers without ending anything a second time);
+//   2. **deliver** (asynchronous, in registration order, BOUNDED): the
+//      session ends' cluster claims and the realm's outbound deliveries
+//      settle (`authn`), and the SSF queues drain, every stream is told
+//      `stream-updated` `disabled`, and what was never delivered is counted
+//      (`ssf`).
+//
+// **THE BOUND IS `realms.removalDeliveryTimeoutS`** (10 s), read in the realm
+// the removal is made FROM. A receiver that never answers cannot hold a
+// removal for ever; what did not settle inside it is logged with
+// `STS-CORE-0120`, naming each hook, and the realm goes anyway. 0 announces
+// and does not wait at all.
+//
+// **ONLY THE NODE THAT RECEIVED THE ACT RETIRES.** A removal replicated from
+// another node (`persistence.js`) calls `remove()` alone: the sessions are a
+// shared store, so ending them there ended them for the cluster, and the SETs
+// were sent once, by the node that did it. Tests and restore paths call
+// `remove()` too, and are unchanged.
+// ---------------------------------------------------------------------------
+const retirers = [];
+
+// `hook`: `{ name, announce?(id, ctx), deliver?(id, ctx) }`. `ctx` carries
+// `deadline` (an epoch millisecond), `via` and `initiatingEntity`, and
+// `undelivered`, an array a hook pushes `{ what, count }` onto.
+function onRetire(hook) {
+  log.debug("Entering onRetire().");
+  if (hook && typeof hook === 'object' && hook.name) {
+    retirers.push(hook);
+  }
+  log.debug("Leaving onRetire(). " + retirers.length + " hook(s).");
+}
+
+// A promise that settles after `ms`, or at once for 0 or less.
+function waitMs(ms) {
+  log.debug("Entering waitMs().");
+  log.debug("Leaving waitMs().");
+  return new Promise(function (resolve) {
+    if (!(ms > 0)) {
+      resolve('late');
+      return;
+    }
+    setTimeout(function () {
+      resolve('late');
+    }, ms);
+  });
+}
+
+// Tell everybody, wait (bounded) for it to be delivered, then `remove()`.
+// Resolves `remove()`'s answer with a `retirement` member saying what was
+// announced and what was not delivered; never rejects.
+async function retire(id, options) {
+  log.debug("Entering retire(). id=" + id);
+  const o = options || {};
+  const realm = realms.get(String(id || ''));
+  if (!realm) {
+    log.debug("Leaving retire(). No such realm.");
+    return remove(id);
+  }
+  const boundS = Number(config.value('realms.removalDeliveryTimeoutS'));
+  const boundMs = Math.max(0, Number.isFinite(boundS) ? boundS : 10) * 1000;
+  const ctx = {
+    realmId: realm.id,
+    deadline: Date.now() + boundMs,
+    // Read after "The session was ended at" in CAEP's reason_admin.
+    via: String(o.via || 'the removal of the trust realm "' + realm.id +
+                '"'),
+    initiatingEntity: String(o.initiatingEntity || 'admin'),
+    undelivered: []
+  };
+  const failed = [];
+  run(realm, function () {
+    retirers.forEach(function (hook) {
+      if (typeof hook.announce !== 'function') {
+        return;
+      }
+      try {
+        hook.announce(realm.id, ctx);
+      } catch (e) {
+        failed.push(hook.name + ' (announce): ' + ((e && e.message) || e));
+      }
+    });
+  });
+  const late = [];
+  for (let i = 0; i < retirers.length; i++) {
+    const hook = retirers[i];
+    if (typeof hook.deliver !== 'function') {
+      continue;
+    }
+    try {
+      const outcome = await Promise.race([
+        Promise.resolve(run(realm, function () {
+          return hook.deliver(realm.id, ctx);
+        })).then(function () {
+          return 'done';
+        }),
+        waitMs(ctx.deadline - Date.now())
+      ]);
+      if (outcome === 'late') {
+        late.push(hook.name);
+      }
+    } catch (e) {
+      failed.push(hook.name + ' (deliver): ' + ((e && e.message) || e));
+    }
+  }
+  const undelivered = ctx.undelivered.filter(function (one) {
+    return one && Number(one.count) > 0;
+  });
+  if (failed.length || late.length || undelivered.length) {
+    log.error(errorCodes.tag('STS-CORE-0120') + 'realms: before "' +
+              realm.id + '" was removed, not everything it owed was ' +
+              'delivered within realms.removalDeliveryTimeoutS (' +
+              Math.round(boundMs / 1000) + ' s)' +
+              (late.length ? '; still waiting: ' + late.join(', ') : '') +
+              (undelivered.length ? '; undelivered: ' +
+                undelivered.map(function (one) {
+                  return one.count + ' ' + one.what;
+                }).join(', ') : '') +
+              (failed.length ? '; failed: ' + failed.join('; ') : '') +
+              '. The realm is removed anyway, and what was queued for it ' +
+              'goes with it.');
+  }
+  const result = remove(realm.id);
+  result.retirement = { late: late, failed: failed,
+                        undelivered: undelivered,
+                        boundSeconds: Math.round(boundMs / 1000) };
+  log.debug("Leaving retire().");
+  return result;
+}
+
 function remove(id) {
   log.debug("Entering remove(). id=" + id);
   const realm = realms.get(String(id || ''));
@@ -3399,6 +3547,8 @@ module.exports = {
   isEstLabel: isEstLabel,
   onCreate: onCreate,
   onRemove: onRemove,
+  onRetire: onRetire,
+  retire: retire,
   onChange: onChange,
   realmContext: realmContext,
   keyed: keyed,

@@ -1614,7 +1614,8 @@ class Authn {
     // "not disabled", so a deleted person's browser went on signing in to
     // every relying party until the session ran out.
     if (this.sessionAccountGone(session)) {
-      this.dropSession(id, 'the account was deleted', false, req, 'admin');
+      this.dropSession(id, 'the deletion of the account', false, req,
+                       'admin');
       log.debug("Leaving Authn.sessionOf(). The account was deleted; the " +
                 "session was ended.");
       return null;
@@ -4950,6 +4951,72 @@ class Authn {
     log.debug("Leaving Authn.endEverySessionIn(). " + ended.length +
               " ended.");
     return ended;
+  }
+
+  // ---------------------------------------------------------------------------
+  // A TRUST REALM BEING REMOVED (#232): its sessions end through the ordinary
+  // path before its stores are purged, so each is a `session.end` audit row, a
+  // CAEP session-revoked (`initiating_entity` as the removal says — `admin`)
+  // and its relying parties' back-channel Logout Tokens. Until #232 the
+  // partition was dropped whole and nobody was told. `realms.retire()` calls
+  // this in the realm, in its announce phase.
+  // ---------------------------------------------------------------------------
+  retireRealmSessions(realmId, ctx) {
+    const { log } = this.deps;
+    log.debug("Entering Authn.retireRealmSessions(). realm=" + realmId);
+    const c = ctx || {};
+    const ended = this.endEverySessionIn(realmId,
+      String(c.via || 'the removal of the trust realm'),
+      String(c.initiatingEntity || 'admin'));
+    log.info('authn: the "' + realmId + '" realm is being removed; ' +
+             ended.length + ' session(s) in it were ended first.');
+    log.debug("Leaving Authn.retireRealmSessions(). " + ended.length);
+    return ended.length;
+  }
+
+  // ...and its deliver phase: wait, until `ctx.deadline`, for every session
+  // end to have won its cluster claim (`pendingEndReports()`) and for the
+  // realm's outbound deliveries — the Logout Tokens above, and anything else
+  // queued in `oauth-oidc/outbound_delivery.ts`'s kinds — to leave `pending`.
+  // What is still pending is reported on `ctx.undelivered`. Never rejects.
+  async settleRealmEnds(realmId, ctx) {
+    const { log } = this.deps;
+    log.debug("Entering Authn.settleRealmEnds(). realm=" + realmId);
+    const c = ctx || {};
+    const deadline = Number(c.deadline) || 0;
+    const self = this;
+    const pendingOutbound = function () {
+      let total = 0;
+      try {
+        const report = require('../oauth-oidc/outbound_delivery')
+          .kindReport({ limit: 1 });
+        (report.kinds || []).forEach(function (kind) {
+          total += Number((kind.counts || {}).pending) || 0;
+        });
+      } catch (e) {
+        log.debug("Caught in Authn.settleRealmEnds(): " +
+                  ((e && e.message) || e));
+        total = 0;
+      }
+      return total;
+    };
+    let outbound = pendingOutbound();
+    while (Date.now() < deadline &&
+           (self.pendingEndReports() > 0 || outbound > 0)) {
+      await new Promise(function (resolve) {
+        setTimeout(resolve, 50);
+      });
+      outbound = pendingOutbound();
+    }
+    if (Array.isArray(c.undelivered)) {
+      c.undelivered.push({ what: 'session end(s) still waiting on their ' +
+                                 'claim',
+                           count: self.pendingEndReports() });
+      c.undelivered.push({ what: 'outbound delivery(ies) (back-channel ' +
+                                 'Logout Tokens, CIBA, provider commands)',
+                           count: outbound });
+    }
+    log.debug("Leaving Authn.settleRealmEnds(). " + outbound + " pending.");
   }
 
   // Clear the session cookie on this response, whatever the session it named.
@@ -10915,6 +10982,20 @@ scheduler.register({
   everySettingUnit: 's',
   run: function (): any {
     return { ended: slot.get().sweepExpiredSessions() };
+  }
+});
+
+// A realm's removal ends its sessions first and waits for what that sends
+// (#232; `realms.retire()`). Registered here, at 8 in the require order, so it
+// runs before the directory's and Shared Signals' hooks: the sessions end
+// before the people are purged and the streams are closed.
+realms.onRetire({
+  name: 'authn',
+  announce: function (id: string, ctx: any): void {
+    slot.get().retireRealmSessions(id, ctx);
+  },
+  deliver: function (id: string, ctx: any): Promise<void> {
+    return slot.get().settleRealmEnds(id, ctx);
   }
 });
 

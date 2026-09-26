@@ -389,6 +389,11 @@ const JOBS = [
   // SCIM change and a group joined — only for a person holding live tokens.
   // `local: true`: this repository's own transmitter, in a throwaway realm.
   { file: 'sts_caep_credential_changes.js', browser: false, local: true },
+  // A DELETED PERSON'S SESSION ENDS WITH THEM (#241, 2026-09-26): SCIM
+  // DELETE, then the same browser's cookie no longer signs in, and a poll
+  // stream holds session-revoked (initiated by admin) and account-purged.
+  // `local: true`: this repository's directory, sessions and transmitter.
+  { file: 'sts_account_delete_sessions.js', browser: false, local: true },
   // RISC ON ITS OWN (#146, 2026-09-22): a reset link marked compromised
   // (account-credential-change-required, recovery-activated,
   // credential-compromise), a disable's reason, an address recycled, and the

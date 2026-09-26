@@ -5315,17 +5315,51 @@ class AdminActions {
           'another realm: the switcher at the top of the console sidebar, or ' +
           'the same call under a different prefix.'] });
       }
-      const result = realms.remove(id);
-      if (!result.ok) {
+      // THE ADMINISTRATOR'S REMOVAL RETIRES THE REALM FIRST (#232):
+      // `realms.retire()` ends its sessions through the ordinary path, reports
+      // its people purged and tells its streams, waits (bounded by
+      // realms.removalDeliveryTimeoutS) for that to be delivered, and only
+      // then removes it. So this one action answers a PROMISE; both callers
+      // resolve what they are handed.
+      if (!realms.get(id)) {
+        const refused = realms.remove(id);
         log.debug("Leaving AdminActions.realmsAction(). remove refused.");
-        return this.refusedBy('STS-ADMIN-0562', result);
+        return this.refusedBy('STS-ADMIN-0562', refused);
       }
-      log.debug("Leaving AdminActions.realmsAction(). remove ok.");
-      return { ok: true, realm: id,
-               message: 'The realm "' + id + '" is gone, with its sessions, ' +
-                        'its tokens, its statistics, its audit log and its ' +
-                        'signing key. Nothing was removed from the shared ' +
-                        'directory.' };
+      const self = this;
+      log.debug("Leaving AdminActions.realmsAction(). Retiring.");
+      return realms.retire(id, { initiatingEntity: 'admin' })
+        .then(function (result: any): any {
+          if (!result.ok) {
+            return self.refusedBy('STS-ADMIN-0562', result);
+          }
+          const r = result.retirement || {};
+          const lost = (r.undelivered || []).map(function (one: any): string {
+            return one.count + ' ' + one.what;
+          });
+          // It said "Nothing was removed from the shared directory" until
+          // #232, which contradicted the directory's own purge: a realm's
+          // directory is a store of its own and goes with it, whole.
+          return { ok: true, realm: id, retirement: r,
+                   message: 'The realm "' + id + '" is gone, with its ' +
+                            'directory, its sessions, its tokens, its ' +
+                            'Shared Signals streams, its statistics, its ' +
+                            'audit log and its signing key. Before it went ' +
+                            'its sessions were ended (CAEP session-revoked ' +
+                            'and back-channel Logout Tokens), everybody in ' +
+                            'its directory was reported purged (RISC ' +
+                            'account-purged) and every stream was told ' +
+                            'stream-updated disabled' +
+                            (lost.length || (r.late || []).length
+                              ? '; not everything was delivered within ' +
+                                'realms.removalDeliveryTimeoutS (' +
+                                r.boundSeconds + ' s): ' +
+                                lost.concat((r.late || []).map(
+                                  function (one: string): string {
+                                    return one + ' still waiting';
+                                  })).join(', ') + '.'
+                              : '.') };
+        });
     }
 
     log.debug("Leaving AdminActions.realmsAction(). Unknown action.");

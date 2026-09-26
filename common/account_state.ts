@@ -469,7 +469,7 @@ class AccountState {
           channel: 'internal',
           selection: held || undefined,
           initiatingEntity: 'admin',
-          by: 'the account was deleted (' +
+          by: 'the deletion of the account (' +
               String(c.door || 'a directory delete') + ')' });
         log.info('account state: ' + name + ' was deleted; ' +
                  ended.terminated + ' live item(s) they held were ended' +

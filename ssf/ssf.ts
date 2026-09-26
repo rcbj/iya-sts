@@ -300,6 +300,10 @@ class SharedSignals {
   static readonly RISC_CONSOLE_ACTIONS: string[] = ['emit', 'reset-account',
                                                     'clear'];
 
+  // SETs being built, signed or pushed now, per realm (#232): what a realm's
+  // removal waits for before its queues are purged. See transmit().
+  private readonly inFlight = new Map<string, number>();
+
   constructor(private readonly deps: SharedSignalsDeps) {
     deps.log.debug('Entering SharedSignals.constructor().');
     deps.log.debug('Leaving SharedSignals.constructor().');
@@ -603,11 +607,54 @@ class SharedSignals {
     return copy;
   }
 
+  // Every SET goes out through here, and while it is being signed and pushed
+  // it is counted as IN FLIGHT in its realm (#232), so a realm being removed
+  // can wait — bounded — for what it has already said to arrive before the
+  // stream and its queue are purged. The work is transmitNow()'s.
   transmit(record: Json, options?: Json): Promise<TransmitReport> {
+    const { log, realms } = this.deps;
+    log.debug('Entering SharedSignals.transmit().');
+    const realmId = realms.currentId();
+    this.inFlight.set(realmId, (this.inFlight.get(realmId) || 0) + 1);
+    const settled = (): void => {
+      log.debug('Entering settled().');
+      this.inFlight.set(realmId,
+                        Math.max(0, (this.inFlight.get(realmId) || 0) - 1));
+      log.debug('Leaving settled().');
+    };
+    let answer: Promise<TransmitReport>;
+    try {
+      answer = Promise.resolve(this.transmitNow(record, options));
+    } catch (e) {
+      log.debug('Caught in SharedSignals.transmit(): ' +
+                ((e && e.message) || e));
+      settled();
+      log.debug('Leaving SharedSignals.transmit(). Threw.');
+      throw e;
+    }
+    log.debug('Leaving SharedSignals.transmit().');
+    return answer.then(function (report) {
+      settled();
+      return report;
+    }, function (e) {
+      settled();
+      throw e;
+    });
+  }
+
+  // How many SETs are in flight in one realm now (#232).
+  inFlightIn(realmId: string): number {
+    const { log } = this.deps;
+    log.debug('Entering SharedSignals.inFlightIn().');
+    log.debug('Leaving SharedSignals.inFlightIn().');
+    return this.inFlight.get(String(realmId || '')) || 0;
+  }
+
+  private transmitNow(record: Json, options?: Json): Promise<TransmitReport> {
     const { log, audit, events, streams, subjects, transport,
             errorCodes } = this.deps;
     const { iso } = this.deps.helpers;
-    log.debug('Entering SharedSignals.transmit(). ' + record.stream_id);
+    log.debug('Entering SharedSignals.transmitNow(). ' + record.stream_id);
     const asked = options || {};
     const uri = String(asked.uri || '');
     // SSF'S OWN TWO EVENTS ARE ABOUT THE PIPE, AND THE SPECIFICATION LETS THE
@@ -619,7 +666,7 @@ class SharedSignals {
     // agreement would make that MUST impossible to keep.
     const pipeEvent = this.isPipeEvent(uri);
     if (!pipeEvent && record.events_delivered.indexOf(uri) < 0) {
-      log.debug('Leaving SharedSignals.transmit(). Not an agreed type.');
+      log.debug('Leaving SharedSignals.transmitNow(). Not an agreed type.');
       return Promise.resolve(this.transmitRefused('STS-SSF-0026', record, uri,
         {
           ok: false, delivered: false, jti: '',
@@ -632,7 +679,7 @@ class SharedSignals {
     // THE OWNER'S ENTRY, asked at the moment of delivery rather than only when
     // the stream was agreed — see ssf_streams.ts's allowedEventsFor().
     if (!pipeEvent && !streams.deliversEvent(record, uri)) {
-      log.debug('Leaving SharedSignals.transmit(). Not allowed by the ' +
+      log.debug('Leaving SharedSignals.transmitNow(). Not allowed by the ' +
                 'owning application.');
       return Promise.resolve(this.transmitRefused('STS-SSF-0081', record, uri,
         {
@@ -646,7 +693,7 @@ class SharedSignals {
     }
     const verdict: Json = events.validateEvent(uri, asked.payload);
     if (!verdict.ok) {
-      log.debug('Leaving SharedSignals.transmit(). The payload is invalid.');
+      log.debug('Leaving SharedSignals.transmitNow(). The payload is invalid.');
       return Promise.resolve(this.transmitRefused('STS-SSF-0027', record, uri,
         {
           ok: false, delivered: false, jti: '',
@@ -670,7 +717,7 @@ class SharedSignals {
     // -----------------------------------------------------------------------
     const row: Json = events.EVENT_BY_URI[uri];
     if (row && row.subject === 'required' && !asked.subject) {
-      log.debug('Leaving SharedSignals.transmit(). No subject on an event ' +
+      log.debug('Leaving SharedSignals.transmitNow(). No subject on an event ' +
                 'that needs one.');
       return Promise.resolve(this.transmitRefused('STS-SSF-0028', record, uri,
         {
@@ -694,7 +741,7 @@ class SharedSignals {
       log.warn('ssf: ' + note);
     });
     if (asked.subject && !streams.streamCoversSubject(record, asked.subject)) {
-      log.debug('Leaving SharedSignals.transmit(). Not a subject on this ' +
+      log.debug('Leaving SharedSignals.transmitNow(). Not a subject on this ' +
                 'stream.');
       return Promise.resolve(this.transmitRefused('STS-SSF-0029', record, uri,
         {
@@ -747,7 +794,7 @@ class SharedSignals {
         why: 'the stream is dead (ssf.deadStreamTimeoutS); it is not pushed ' +
              'to until a probe or an operator revives it',
         errorCode: 'STS-SSF-0096' });
-      log.debug('Leaving SharedSignals.transmit(). The stream is dead; ' +
+      log.debug('Leaving SharedSignals.transmitNow(). The stream is dead; ' +
                 'dead-lettered.');
       return Promise.resolve({ ok: false, delivered: false,
         deadLettered: true, jti: claims.jti, claims: claims,
@@ -757,7 +804,7 @@ class SharedSignals {
              'with POST /admin-api/ssf/revive.' });
     }
 
-    log.debug("Leaving SharedSignals.transmit().");
+    log.debug("Leaving SharedSignals.transmitNow().");
     return events.signSet(claims).then((token): TransmitReport |
                                            Promise<TransmitReport> => {
       // THE RECORD HELD NOW, AND NOT THE ONE READ BEFORE THE SIGNATURE.
@@ -791,7 +838,7 @@ class SharedSignals {
         queuedAt: iso(), deliveredAt: '', counted: false };
       const queued: Json = streams.enqueue(record, entry);
       if (!queued.ok) {
-        log.debug('Leaving SharedSignals.transmit(). Not queued.');
+        log.debug('Leaving SharedSignals.transmitNow(). Not queued.');
         return this.transmitRefused('STS-SSF-0030', record, uri, {
           ok: false, delivered: false, jti: claims.jti, token: token,
           claims: claims,
@@ -810,7 +857,7 @@ class SharedSignals {
       if (record.delivery.method !== streams.DELIVERY_PUSH) {
         streams.note(record, 'queued', 'Queued ' + claims.jti +
           ' for the receiver to poll.');
-        log.debug('Leaving SharedSignals.transmit(). Queued for poll.');
+        log.debug('Leaving SharedSignals.transmitNow(). Queued for poll.');
         return { ok: true, delivered: false, jti: claims.jti, token: token,
           claims: claims,
           why: 'Queued. This is a poll stream, so nothing is sent until the ' +
@@ -838,7 +885,7 @@ class SharedSignals {
         streams.note(record, 'held', 'Held ' + claims.jti + ': the stream ' +
           'is ' + record.status + ', and it is pushed when the stream is ' +
           'enabled again.');
-        log.debug('Leaving SharedSignals.transmit(). Held on a ' +
+        log.debug('Leaving SharedSignals.transmitNow(). Held on a ' +
                   record.status + ' push stream.');
         return { ok: true, delivered: false, held: true, jti: claims.jti,
           token: token, claims: claims,
@@ -853,7 +900,7 @@ class SharedSignals {
       log.error(errorCodes.tag('STS-SSF-0031') +
                 'ssf: a Security Event Token could not be signed: ' +
                 e.message);
-      log.debug('Leaving SharedSignals.transmit(). The signature failed.');
+      log.debug('Leaving SharedSignals.transmitNow(). The signature failed.');
       return this.transmitRefused('STS-SSF-0031', record, uri, {
         ok: false, delivered: false, jti: '',
         why: 'The event could not be signed with ' +
@@ -4904,7 +4951,101 @@ class SharedSignals {
       actions: SharedSignals.RISC_CONSOLE_ACTIONS,
       eventTypes: this.riscEventTypes.bind(this)
     });
+
+    // A realm being removed tells its receivers before its streams go (#232).
+    // Registered at 23b, after `authn`'s and the directory's hooks, so the
+    // session-revoked and account-purged events they cause are already on
+    // their way when this waits for them.
+    this.deps.realms.onRetire({
+      name: 'ssf',
+      deliver: this.retireRealmStreams.bind(this)
+    });
     log.debug('Leaving SharedSignals.installHooks().');
+  }
+
+  // =========================================================================
+  // A TRUST REALM BEING REMOVED (#232, 2026-09-26) — `realms.retire()`'s
+  // deliver phase, in the realm, after `authn` has ended its sessions and the
+  // directory has reported its people purged.
+  //
+  //   1. Wait (until `ctx.deadline`) for every session end to have won its
+  //      claim and for every SET this realm has in flight to settle — the
+  //      session-revoked and account-purged events those two phases caused.
+  //   2. Count what is still on a queue: a push SET the receiver has not
+  //      taken, a poll SET nobody collected. Those go with the realm, and
+  //      are reported on `ctx.undelivered` (logged as STS-CORE-0120).
+  //   3. Every stream is told `stream-updated` `disabled`, through
+  //      `changeStatus()` — so section 8.1.5's order holds: the event first,
+  //      then the stop — and that push is waited for too.
+  //
+  // A poll receiver can collect only while this lasts; its streams are not
+  // waited on, because collection is the receiver's act and a removal that
+  // waited for it would wait for a receiver that may never come back.
+  // =========================================================================
+  async retireRealmStreams(realmId: string, ctx?: Json): Promise<void> {
+    const { log, streams } = this.deps;
+    log.debug('Entering SharedSignals.retireRealmStreams(). ' + realmId);
+    const c: Json = ctx || {};
+    const deadline = Number(c.deadline) || 0;
+    const authn: Json = this.deps.authn;
+    const pause = function (): Promise<void> {
+      return new Promise(function (resolve) {
+        setTimeout(resolve, 50);
+      });
+    };
+    const settle = async (): Promise<void> => {
+      log.debug('Entering settle().');
+      let quiet = 0;
+      while (Date.now() < deadline && quiet < 2) {
+        const busy = this.inFlightIn(realmId) > 0 ||
+          (typeof authn.pendingEndReports === 'function' &&
+           authn.pendingEndReports() > 0);
+        quiet = busy ? 0 : quiet + 1;
+        await pause();
+      }
+      log.debug('Leaving settle().');
+    };
+    await settle();
+    const all: Json[] = streams.listStreams();
+    let waiting = 0;
+    all.forEach(function (record: Json): void {
+      waiting += streams.queueOf(record).filter(function (entry: Json) {
+        return !streams.isStreamUpdated(entry);
+      }).length;
+    });
+    const reason = 'The trust realm "' + realmId + '" was removed; this ' +
+      'stream, and everything it held, goes with it.';
+    await Promise.all(all.map((record: Json): Promise<Json> => {
+      return this.changeStatus(record, 'disabled', reason)
+        .catch(function (e: Json): Json {
+          log.debug('Caught in SharedSignals.retireRealmStreams(): ' +
+                    ((e && e.message) || e));
+          return null;
+        });
+    }));
+    await settle();
+    let unannounced = 0;
+    all.forEach(function (record: Json): void {
+      const live: Json = streams.getStream(record.stream_id);
+      if (!live) {
+        return;
+      }
+      unannounced += streams.queueOf(live).filter(function (entry: Json) {
+        return streams.isStreamUpdated(entry);
+      }).length;
+    });
+    if (Array.isArray(c.undelivered)) {
+      c.undelivered.push({ what: 'SET(s) on a stream queue (a push not ' +
+                                 'taken, or a poll not collected)',
+                           count: waiting });
+      c.undelivered.push({ what: 'stream-updated SET(s) not delivered',
+                           count: unannounced });
+    }
+    log.info('ssf: the "' + realmId + '" realm is being removed; ' +
+             all.length + ' stream(s) were told stream-updated disabled' +
+             (waiting ? ', and ' + waiting + ' SET(s) were still queued' : '') +
+             '.');
+    log.debug('Leaving SharedSignals.retireRealmStreams().');
   }
 
   // =========================================================================

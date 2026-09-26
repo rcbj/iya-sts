@@ -1638,6 +1638,18 @@ and their entities is `docs/caep-events.md`'s `session-revoked` section.
 `caep.ts`'s own fallback (`byAdmin`, then `user`) is kept for a notice from
 elsewhere that states nothing; `authn` always states one.
 
+**A REALM BEING REMOVED TELLS ITS RECEIVERS FIRST (#232, 2026-09-26).**
+`retireRealmStreams()` is this family's `realms.onRetire()` deliver hook
+(`common/CLAUDE.md`, *`retire()` and `onRetire()`*): it waits, bounded, for
+the realm's SETs in flight — `transmit()` is now a thin wrapper that counts
+them per realm around `transmitNow()` — so the `session-revoked` and
+`account-purged` the realm's removal caused reach their receivers; counts what
+is still queued (a push not taken, a poll nobody collected); then sends
+`stream-updated` `disabled` on every stream through `changeStatus()`, so the
+event goes before the stop. A poll stream is not waited on: collection is the
+receiver's act. What was not delivered is reported and logged as
+`STS-CORE-0120`, and the queues go with the realm.
+
 **AN ARRIVAL SESSION IS NEVER ANNOUNCED (#242).** `authn.notifySession()`
 drops every notice about a session with `chosen: false` — the anonymous
 tracking row a cookie-less visitor gets at a front door — so its expiry, the

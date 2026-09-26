@@ -272,8 +272,8 @@ through it:
 | `POST /admin-api/logout/{global,end}` | **`admin`** | ended at *the admin console at /admin/logout* — it calls the same function that page does |
 | `POST /admin-api/sessions/revoke` | **`admin`** | ended at *the management API at /admin-api/sessions* |
 | an account **disabled** on `/admin/users`, `/admin-api/users/disable`, SCIM `active: false` or an `ldapmodify` of the lock | **`admin`** | *the account was disabled by an administrator …* |
-| a person **deleted** — SCIM `DELETE` or an LDAP delete ([#241](https://github.com/rcbj/iya-sts/issues/241)) | **`admin`** | *the account was deleted (…)* |
-| a trust realm **removed** — every session in it ([#232](https://github.com/rcbj/iya-sts/issues/232)) | **`admin`** | *the trust realm was removed* |
+| a person **deleted** — SCIM `DELETE` or an LDAP delete ([#241](https://github.com/rcbj/iya-sts/issues/241)) | **`admin`** | *the deletion of the account (…)* |
+| a trust realm **removed** — every session in it ([#232](https://github.com/rcbj/iya-sts/issues/232)) | **`admin`** | *the removal of the trust realm "…"* |
 | a federation link removed from a person, or a registered device removed or marked compromised by an administrator | **`admin`** | the act, in words |
 | an **emergency key rotation** — every session of the realm | **`admin`** when an administrator requested it, **`system`** otherwise | *an emergency key rotation* |
 | **risk scoring** ending or disabling a person, and a received SET's signal-response rule | **`policy`** | *the person's risk went to …* |

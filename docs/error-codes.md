@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3695** of them, in **39** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3696** of them, in **39** subsystems.
 
 ## Where a code appears
 
@@ -51,7 +51,7 @@ is an ordinary outcome.
 
 * [HTTP front door (`STS-HTTP`)](#sts-http) — 18
 * [PROXY protocol (`STS-PROXY`)](#sts-proxy) — 9
-* [Service core (`STS-CORE`)](#sts-core) — 62
+* [Service core (`STS-CORE`)](#sts-core) — 63
 * [Worker pools (`STS-WORKER`)](#sts-worker) — 43
 * [Persistence and coordination (`STS-STORE`)](#sts-store) — 62
 * [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 28
@@ -204,6 +204,7 @@ Raised from: server.js, common/protocol_stack.ts, common/config.js, common/confi
 | `STS-CORE-0106` | A development-only setting — one of those STS-CORE-0103 lists, or an application attribute overriding one (#181) — is stored in a realm that is in product mode, and is ignored: its default is in force. Logged once per process and setting or attribute (#104). | none — a warning in the log |
 | `STS-CORE-0107` | A trust realm id is an EST label (a certificate profile). /.well-known/est/<realm>/ and /.well-known/est/<label>/ share one path position (#251), so a realm may not be called by a label's name. | the caller's refusal (errors on a console or /admin-api reply) |
 | `STS-CORE-0108` | The service did not start: a value in the environment, the appconfig file or env/defaults.js fails the check a console or API write of it would (a value outside an enum or a list's csvValues, a number out of bounds, a malformed boolean) — #86. | — |
+| `STS-CORE-0120` | A trust realm was removed (#232) before everything it owed had been delivered within realms.removalDeliveryTimeoutS — session ends still waiting on their claim, back-channel Logout Tokens or SSF events (session-revoked, account-purged, stream-updated) not yet delivered, or a retirement hook that failed. The realm is removed anyway. | none — logged; the removal succeeds |
 
 ## STS-WORKER
 

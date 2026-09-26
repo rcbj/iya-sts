@@ -7911,16 +7911,27 @@ class AdminApi {
 
       { method: 'POST', route: BASE + '/realms/:action', tag: 'Trust realms',
         mirrors: 'POST /admin/realms',
-        handler: function (req, res) {
+        handler: function (req, res, next) {
           log.debug("Entering the management API trust realms action " +
                     "endpoint.");
           const body = parseBody(req);
-          const result = adminActions.realmsAction(self.withAction(req, body));
-          if (!result.ok) {
-            errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-API-0037');
-          }
-          self.sendJson(res, result.ok ? 200 : 400, result);
-          log.debug("Leaving the management API trust realms action endpoint.");
+          // A removal answers a promise (#232: it retires the realm first);
+          // every other action answers at once. Both are resolved here.
+          Promise.resolve(adminActions.realmsAction(self.withAction(req,
+                                                                    body)))
+            .then(function (result) {
+              if (!result.ok) {
+                errorCodes.mark(res, errorCodes.codeOf(result) ||
+                                     'STS-API-0037');
+              }
+              self.sendJson(res, result.ok ? 200 : 400, result);
+              log.debug("Leaving the management API trust realms action " +
+                        "endpoint.");
+            }).catch(function (e) {
+              log.debug("Caught in the management API trust realms action " +
+                        "endpoint: " + ((e && e.message) || e));
+              next(e);
+            });
         },
         actions: [
           { action: 'create', operationId: 'createRealm',

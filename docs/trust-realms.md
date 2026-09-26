@@ -407,14 +407,15 @@ is process-wide: there is one list of realms in a process, and `remove` refuses
 to remove the realm the call arrived in — the caller would be left talking to a
 prefix that had stopped existing.
 
-## Two settings
+## Three settings
 
 | Setting | Environment variable | Default | What it does |
 |---|---|---|---|
 | `realms.enabled` | `STS_REALMS_ENABLED` | `true` | Whether defined realms answer on their prefixes. Turning it **off** leaves every definition in place and stops the paths working — which is what to reach for when a realm is answering something it should not, since nothing has to be deleted to find out whether a realm is the reason for something. |
 | `realms.pathSegment` | `STS_REALMS_PATH_SEGMENT` | `realm` | The segment in front of a realm id. Set it to the empty string for the bare `/acme/oauth2/token` shape, which is what a client ported from a product that spells it that way expects. |
+| `realms.removalDeliveryTimeoutS` | `STS_REALMS_REMOVAL_DELIVERY_TIMEOUT_S` | `10` | How long removing a realm waits for what it owes its receivers and relying parties to be delivered — see *Removing one*. `0` still sends everything and does not wait. Read in the realm the removal is made from. |
 
-Neither can be set *on* a realm: a realm that could switch realms off would be
+The first two cannot be set *on* a realm: a realm that could switch realms off would be
 doing it from inside the request that found it, and a realm that could move its
 own prefix would be changing the prefix already used to find it.
 
@@ -430,3 +431,24 @@ The realm's **directory subtree goes too** — its people, groups, applications,
 federation relationships and SPIFFE registrations — so `dc=acme,dc=example,dc=com`
 answers `NoSuchObject` afterwards and a realm re-created under that id starts
 with a fresh seeded tree. The default realm cannot be removed at all.
+
+**Before it goes, everybody who was relying on it is told**
+([#232](https://github.com/rcbj/iya-sts/issues/232)). Removing a realm from
+`/admin/realms` or `POST /admin-api/realms/remove`:
+
+1. ends every session in it the way a sign-out does — a CAEP
+   `session-revoked` (`initiating_entity: admin`) for each, and the
+   back-channel Logout Tokens of the relying parties on it;
+2. reports every person in its directory purged — RISC `account-purged`;
+3. tells every Shared Signals stream `stream-updated` with status `disabled`;
+4. waits, at most `realms.removalDeliveryTimeoutS` seconds, for all of that
+   to be delivered, and only then removes the realm.
+
+What had not been delivered when the wait ran out — a push receiver that did
+not answer, a Logout Token still being retried, a SET on a **poll** stream
+that nobody collected — is logged (`STS-CORE-0120`), listed in the answer's
+`retirement` member, and goes with the realm. A poll receiver can collect
+only while the wait lasts; the removal does not wait for somebody to come
+and poll. On a cluster the node that received the removal does this once:
+the other nodes remove the realm when they learn of it, and say nothing
+again.

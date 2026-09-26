@@ -270,8 +270,9 @@ var config = {
 
   // --- Trust realms ----------------------------------------------------
   realms: {
-    enabled: true,        // Trust realms enabled
-    pathSegment: "realm"  // Realm path segment
+    enabled: true,               // Trust realms enabled
+    pathSegment: "realm",        // Realm path segment
+    removalDeliveryTimeoutS: 10  // Realm removal: delivery wait (seconds)
   },
 
   // --- OAuth 2.0 / OIDC ------------------------------------------------
