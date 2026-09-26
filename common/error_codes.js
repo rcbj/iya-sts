@@ -4413,6 +4413,11 @@ const CODES = [
       'password or wallet after another factor, or an emailed code or ' +
       'link) (#64).',
     spec: 'the door\'s own refusal page' },
+  { code: 'STS-AUTHN-0270',
+    summary: 'Ignore was posted on a second-factor set-up step that was ' +
+      'REQUIRED rather than offered (#246): only an administrator the ' +
+      'authentication policy OFFERS a second factor may decline it.',
+    spec: 'HTTP 400, the set-up page again' },
   { code: 'STS-OAUTH-0001',
     summary: 'A JWT client assertion could not be read as a JWT (its header ' +
       'is not base64url JSON).',
@@ -11811,6 +11816,14 @@ const CODES = [
       'The alarm: enrol a second factor for this person, and look at the ' +
       'assessment\'s signals.',
     spec: 'permitted; recorded on the audit row and logged as a warning' },
+  { code: 'STS-RISK-0039',
+    summary: 'An administrator with no second factor was sent to set one up ' +
+      '(offered or required, #246) at a sign-in whose risk is HIGH or ' +
+      'MEDIUM. The enrolment goes ahead so the console is never locked out ' +
+      '(#226); whoever holds the password could be the one enrolling, so ' +
+      'confirm it with the person.',
+    spec: 'the set-up step; recorded on the audit row and logged as a ' +
+      'warning' },
   // ===== MAIL ==============================================================
   { code: 'STS-MAIL-0001',
     summary: 'A message was not queued because no mail transport is ' +

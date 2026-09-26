@@ -8690,6 +8690,21 @@ on an emailed factor, carrying an obligation the PEP refuses on even where
 the role question is waived. The facts ride along whenever the policy is
 asked and do not make it asked.
 
+**ADMINISTRATORS HAVE A FIELD OF THEIR OWN (#246, 2026-09-26)**:
+`requireSecondFactorForAdministrators`, `if-held` | `offer` | `always`,
+default `offer` for now (rcbj: "we can offer it, but they can decline").
+The field is read in exactly one place, `credentials.mfaRequirementFor()`,
+which reports `byAdministrator` (the requirement) or `offered`. The sign-in
+screen mints `offered` as the ordinary set-up step marked `optional`, drawn
+with an Ignore button that finishes the sign-in on the password.
+"Administrator" means MEMBERSHIP of the roster's groups, not the console's
+`read`/`write` answer. Those are also true for everybody while the roster
+is empty (the open-console rule), and a rule that makes everybody an
+administrator cannot decide who is one. The default realm's
+`admin.bootstrapUsername` is only ever offered one, even under `always`: it
+is the account a service is recovered through. `tests/admin_second_factor.js`
+holds it.
+
 `tests/authn_policy.js` holds the module, the inheritance, the mail guard,
 the retired settings and a kind registered later.
 

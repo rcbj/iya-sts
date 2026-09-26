@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3490** of them, in **38** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3492** of them, in **38** subsystems.
 
 ## Where a code appears
 
@@ -62,7 +62,7 @@ is an ordinary outcome.
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 72
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 25
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 47
-* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 248
+* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 249
 * [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 568
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 96
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 21
@@ -76,7 +76,7 @@ is an ordinary outcome.
 * [TLS and client certificates (`STS-TLS`)](#sts-tls) — 33
 * [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 94
 * [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 104
-* [Risk scoring (`STS-RISK`)](#sts-risk) — 38
+* [Risk scoring (`STS-RISK`)](#sts-risk) — 39
 * [Mail (`STS-MAIL`)](#sts-mail) — 39
 * [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 282
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 74
@@ -1150,6 +1150,7 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0267` | The emailed code or link door failed unexpectedly; the line carries the stack (#64). | an error page |
 | `STS-AUTHN-0268` | A session was refused: this realm's authentication policy does not accept the mechanism the door named as a first factor (a certificate, a Kerberos ticket, a federation partner, a wallet, a passkey, a password or an emailed code or link) (#64). | the door's own refusal page |
 | `STS-AUTHN-0269` | A session was refused: this realm's authentication policy does not accept the mechanism that answered as a second factor (a password or wallet after another factor, or an emailed code or link) (#64). | the door's own refusal page |
+| `STS-AUTHN-0270` | Ignore was posted on a second-factor set-up step that was REQUIRED rather than offered (#246): only an administrator the authentication policy OFFERS a second factor may decline it. | HTTP 400, the set-up page again |
 
 ## STS-OAUTH
 
@@ -2910,6 +2911,7 @@ Raised from: risk/, admin-ui/risk_admin.ts.
 | `STS-RISK-0036` | The risk.upload-cleanup job removed a leftover upload file that no live process had touched for risk.importStallMinutes, or an upload file could not be deleted after its import. | — |
 | `STS-RISK-0037` | A risk dataset upload failed unexpectedly: its fields could not be checked, or its import threw rather than answering. The upload's file is deleted. | — |
 | `STS-RISK-0038` | An authentication at HIGH or MEDIUM risk was PERMITTED for an application the issuance policy says risk may never lock out (the role-issuance template's neverLockOut, the console by default), because the person holds no second factor to step up with (#226). The alarm: enrol a second factor for this person, and look at the assessment's signals. | permitted; recorded on the audit row and logged as a warning |
+| `STS-RISK-0039` | An administrator with no second factor was sent to set one up (offered or required, #246) at a sign-in whose risk is HIGH or MEDIUM. The enrolment goes ahead so the console is never locked out (#226); whoever holds the password could be the one enrolling, so confirm it with the person. | the set-up step; recorded on the audit row and logged as a warning |
 
 ## STS-MAIL
 

@@ -201,7 +201,11 @@ named by the `role-issuance` template's `neverLockOut` parameter
 
 The alarm is the one place where a step-up the person cannot answer is not a
 refusal. If you see it, enrol a second factor for that administrator and read
-the assessment's signals. Set `neverLockOut` to `none` to put the console
+the assessment's signals. An administrator with no second factor is also offered one,
+or required to set one up, by the authentication policy's
+`requireSecondFactorForAdministrators` (#246). When that happens at HIGH or
+MEDIUM it is recorded under `STS-RISK-0039`, because whoever has the password
+could be the one enrolling. Set `neverLockOut` to `none` to put the console
 under the ordinary rules.
 
 **If you are locked out anyway**, for example by an override of the policy,
