@@ -3280,7 +3280,13 @@ class AdminApi {
                      'oauthAllowedScope declares it, in both modes; an ' +
                      '`admin:write` token is refused here, so a feed\'s ' +
                      'reports are always a feed\'s.',
-        mirrors: 'POST /admin/devices',
+        // NO CONSOLE FORM POSTS AS A FEED, and saying it mirrored the device
+        // page made #86's console gate hold the feed's fields on that page's
+        // forms. An administrator's counterpart is `set-compliance`, which
+        // mirrors the page itself; this line names it without a `POST
+        // /admin…` for `registerConsoleClosedSets()` to read.
+        mirrors: 'no console form — an MDM feed; an administrator uses the ' +
+                 'device page\'s set-compliance',
         parameters: [],
         requestBodyRequired: true,
         requestBody: {
