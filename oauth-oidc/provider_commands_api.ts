@@ -30,6 +30,16 @@ interface ProviderCommandsApiDeps {
 
 const BASE = '/admin-api';
 
+// The closed sets, declared as enums so both doors enforce them (#86).
+const ACCOUNT_COMMANDS = ['activate', 'maintain', 'suspend', 'reactivate',
+  'archive', 'restore', 'delete', 'audit', 'invalidate', 'migrate'];
+const ACCOUNT_ENUM = ACCOUNT_COMMANDS.concat(ACCOUNT_COMMANDS.map(
+  function (one: string): string {
+    return one + '_async';
+  }));
+const TENANT_ENUM = ['metadata', 'audit_tenant', 'suspend_tenant',
+                     'archive_tenant', 'delete_tenant', 'invalidate_tenant'];
+
 class ProviderCommandsApi {
   constructor(private readonly deps: ProviderCommandsApiDeps) {
     deps.log.debug("Entering ProviderCommandsApi.constructor().");
@@ -141,7 +151,7 @@ class ProviderCommandsApi {
               properties: {
                 clientId: { type: 'string', maxLength: 512 },
                 username: { type: 'string', maxLength: 256 },
-                command: { type: 'string', maxLength: 64 }
+                command: { type: 'string', enum: ACCOUNT_ENUM }
               },
               required: ['clientId', 'username', 'command'],
               examples: [{ clientId: 'app', username: 'alice',
@@ -161,7 +171,7 @@ class ProviderCommandsApi {
               type: 'object',
               properties: {
                 clientId: { type: 'string', maxLength: 512 },
-                command: { type: 'string', maxLength: 64 }
+                command: { type: 'string', enum: TENANT_ENUM }
               },
               required: ['clientId', 'command'],
               examples: [{ clientId: 'app', command: 'metadata' }],
