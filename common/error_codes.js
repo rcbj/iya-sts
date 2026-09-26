@@ -12021,6 +12021,14 @@ const CODES = [
       'confirm it with the person.',
     spec: 'the set-up step; recorded on the audit row and logged as a ' +
       'warning' },
+  { code: 'STS-RISK-0040',
+    summary: 'The install-time dataset loader (risk/risk_install.ts) could ' +
+      'not make the database connection the way the service makes it ' +
+      '(#213): persistence.databasePasswordProvider names a secret store ' +
+      'whose password could not be read, or persistence.databaseUrl is not ' +
+      'a URL it can be put into. The provider\'s own reason follows. ' +
+      'Nothing is imported and the loader exits non-zero.',
+    spec: '' },
   // ===== MAIL ==============================================================
   { code: 'STS-MAIL-0001',
     summary: 'A message was not queued because no mail transport is ' +
