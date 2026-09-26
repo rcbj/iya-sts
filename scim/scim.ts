@@ -2361,8 +2361,10 @@ class Scim {
   // permits and scimmy signals by resolving to undefined. A client that always
   // parses the response body is exactly what that case is for.
   // ---------------------------------------------------------------------------
-  // A PATCH VALUE FOR A WHOLE EXTENSION MAY NAME ITS OWN SCHEMA (#206).
+  // TWO PATCH OPERATIONS ON A WHOLE EXTENSION THAT scimmy CANNOT APPLY, PUT
+  // IN THE SHAPE IT CAN (#206). Nothing else about an operation is touched.
   //
+  // 1. A VALUE FOR A WHOLE EXTENSION MAY NAME ITS OWN SCHEMA.
   // `{"op": "add", "path": "urn:…:enterprise:2.0:User", "value":
   // {"schemas": ["urn:…:enterprise:2.0:User"], "employeeNumber": "42"}}` is
   // what scim2-models writes for an extension, and scimmy failed it with
@@ -2373,13 +2375,55 @@ class Scim {
   // container's members), so it is taken off such a value before scimmy
   // applies the operation; everything else in the value is applied as sent.
   // A `schemas` naming some OTHER URN is left for scimmy to refuse.
+  //
+  // 2. `{"op": "remove", "path": "urn:…:enterprise:2.0:User"}` — every
+  // attribute of the extension, RFC 7644 section 3.5.2.2 — failed inside
+  // scimmy with "Cannot convert undefined or null to object", because the
+  // resource egress hands it carries an extension's members in their
+  // namespaced form (scim_map.ts's egressPath()) and never under the bare
+  // URN. It is applied as one `remove` per attribute the extension declares,
+  // which scimmy applies correctly and which is what removing the extension
+  // means; an attribute with no value is removed without complaint.
   // ---------------------------------------------------------------------------
-  private withoutExtensionSchemas(body: any): any {
+  private normalisePatch(body: any, Resource: any): any {
     const { log } = this.deps;
-    log.debug("Entering Scim.withoutExtensionSchemas().");
+    log.debug("Entering Scim.normalisePatch().");
     const operations = body && Array.isArray(body.Operations)
       ? body.Operations : [];
+    const extensionOf = function (path: string): any {
+      if (!/^urn:/i.test(path)) {
+        return null;
+      }
+      try {
+        const found = Resource.schema.definition.attribute(path);
+        return found && Array.isArray(found.attributes) &&
+          String(found.id || '').toLowerCase() === path.toLowerCase()
+          ? found : null;
+      } catch (e) {
+        log.debug("Caught in Scim.normalisePatch(): " +
+                  ((e && e.message) || e));
+        return null;
+      }
+    };
+    const expanded: any[] = [];
     operations.forEach(function (op: any) {
+      const target = String((op && op.path) || '');
+      const extension = String((op && op.op) || '').toLowerCase() ===
+        'remove' ? extensionOf(target) : null;
+      if (!extension) {
+        expanded.push(op);
+        return;
+      }
+      extension.attributes.filter(function (attribute: any) {
+        return !attribute.config.shadow;
+      }).forEach(function (attribute: any) {
+        expanded.push({ op: op.op, path: extension.id + ':' + attribute.name });
+      });
+    });
+    if (body && Array.isArray(body.Operations)) {
+      body.Operations = expanded;
+    }
+    expanded.forEach(function (op: any) {
       const target = String((op && op.path) || '');
       const value = op && op.value;
       if (!/^urn:/i.test(target) || !value || typeof value !== 'object' ||
@@ -2393,7 +2437,7 @@ class Scim {
         delete value.schemas;
       }
     });
-    log.debug("Leaving Scim.withoutExtensionSchemas().");
+    log.debug("Leaving Scim.normalisePatch().");
     return body;
   }
 
@@ -2402,7 +2446,7 @@ class Scim {
     log.debug("Entering Scim.modifyHandler().");
     log.debug("Leaving Scim.modifyHandler().");
     return async (req, res) => {
-      const body = this.withoutExtensionSchemas(this.scimBody(req));
+      const body = this.normalisePatch(this.scimBody(req), Resource);
       const patched = await new Resource(String(req.params.id),
                                          this.queryParams(req))
         .patch(body, { req: req });

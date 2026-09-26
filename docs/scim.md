@@ -46,6 +46,22 @@ what it writes is what everything else then reads.
   token, gets `404`.
 * **Discovery**: `/ServiceProviderConfig`, `/ResourceTypes` and `/Schemas`. The
   User resource type declares the enterprise extension as a `schemaExtension`.
+  **`/Schemas` lists only what the directory stores** (since #206): `nickName`,
+  `locale`, `timezone`, `ims`, `photos`, `entitlements`, `roles`,
+  `x509Certificates`, `name.middleName`, `name.honorificSuffix`, `costCenter`,
+  `manager.displayName`, and the `display` and `primary` of `emails`,
+  `phoneNumbers` and `addresses` are not offered, because nothing here could
+  keep them. `emails.type` is `work` only, `phoneNumbers.type` `work` or
+  `mobile`, `addresses.type` `work`; another type is refused `400
+  invalidValue`.
+* **References**: a Group member, a group a user is in, and a user's manager
+  each carry a `$ref`, the absolute URL of that resource. A member has no
+  `display`.
+* **Filters** compare a `caseExact: false` attribute (`userName`, every email
+  `value`, most of the schema) without regard to case, and refuse `gt`, `ge`,
+  `lt` and `le` on a boolean or binary attribute with `400 invalidFilter`.
+* **An unknown path** under `/scim/v2` is answered `404` in the SCIM Error
+  schema, not as an HTML page.
 
 Filtering, sorting, PATCH and bulk are advertised as supported. **ETag and
 `changePassword` are advertised as unsupported.** The ServiceProviderConfig is
@@ -223,13 +239,20 @@ certificate continues an authentication already recorded elsewhere.
 | `GET /Me` with no credential, or any `POST /Me` | `501` — the alias is unavailable (an anonymous caller has no subject, and a POST would create one that already exists); a credential naming nobody here gets `404` |
 | POST to `.search` without the SearchRequest URN | `400 invalidSyntax` |
 | send a Bulk request over `scim.bulkMaxOperations` | `413 payloadTooLarge` |
+| send `If-Match` (other than `*`) on a PUT, PATCH or DELETE | `412` — there are no entity-tags, so no version can match; nothing is changed |
+| order a boolean in a filter (`active gt true`) | `400 invalidFilter` |
+| send an email of type `home` | `400 invalidValue` |
+| ask for a path under `/scim/v2` that is no endpoint | `404`, as a SCIM Error |
 
 ### Not implemented
 
 * **ETag** versioning. A version built over a one-second timestamp would be a
   concurrency control a client trusts and that is wrong. Responses carry no
   ETag header at all — not even the weak one a web framework would add by
-  default — so they do not contradict the ServiceProviderConfig.
+  default — so they do not contradict the ServiceProviderConfig, and an
+  `If-Match` on a write is refused `412` rather than ignored.
+* The RFC 7643 members listed under *Discovery* above that the directory has
+  no place for, and `primary` on a multi-valued member.
 * **`changePassword`**. SCIM carries no password here.
 * A scheme that RFC 7644 section 2 does not name, such as an API key header.
 

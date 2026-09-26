@@ -112,7 +112,23 @@ const HOME_EMAIL = "the suite hard-codes an email of type \"home\"; mail " +
   "has no type, so emails.type publishes only \"work\" (RFC 7643 section " +
   "2.3.1 lets a service provider restrict canonical values) and a home " +
   "address is refused 400 invalidValue rather than stored as a work one";
+const ACTIVE = "`active` is ALWAYS said on the way out — true unless the " +
+  "account is locked — so a PATCH remove of it reads back true; the " +
+  "directory holds a lock or no lock, and RFC 7643 gives `active` no " +
+  "default, so \"unassigned\" cannot be told from \"active\" (scim/CLAUDE.md, " +
+  "*active IS THE ACCOUNT'S DISABLED STATE*); RFC 7643 section 2.5 lets an " +
+  "unassigned attribute read as absent, and absent would read as not stated " +
+  "to a client that filters on `active eq false`";
+const LINK_APPEND = "scim2-tester builds the resource it ADDS to with every " +
+  "REQUIRED attribute filled, and fills the required `relationship` and " +
+  "`subject` of the optional federationLinks — so the resource already " +
+  "holds a link, the add appends a second as RFC 7644 section 3.5.2.1 says " +
+  "an add to a multi-valued attribute does, and the harness compares the " +
+  "two links to the one it sent";
 const EXCEPTIONS = {
+  "scim2-tester check_remove_attribute [User] active": ACTIVE,
+  ["scim2-tester check_add_attribute [User] urn:ietf:params:scim:schemas:" +
+    "extension:iya-sts:2.0:User:federationLinks"]: LINK_APPEND,
   "test-suite RFC7643-2.1-L366/schemas_present/Group": FUZZED_REF,
   "test-suite RFC7643-2.1-L369/attribute_name_format/Group": FUZZED_REF,
   "test-suite RFC7643-2.3.7-L578/get_member_ref_returns_resource":
@@ -376,7 +392,11 @@ async function test() {
     if (!row.failing) {
       return;
     }
-    const key = row.harness + " " + row.id;
+    // scim2-tester reports many results under one title — one per attribute
+    // it patches — so its key carries the attribute its message names.
+    const named = row.harness === "scim2-tester"
+      ? (/'([^']+)'/.exec(row.message) || [])[1] : "";
+    const key = row.harness + " " + row.id + (named ? " " + named : "");
     if (EXCEPTIONS[key]) {
       excepted[key] = true;
       log.info("  [exception] " + key + " (" + row.outcome + "): " +
