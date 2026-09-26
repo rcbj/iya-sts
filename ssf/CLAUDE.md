@@ -703,8 +703,11 @@ who exists sends `recovery-activated` and
 issued at create sends nothing. `tests/risc_identifiers_recovery.js`,
 `tests/mail.js` 15f, `tests/vendored/sts_risc_register_recovery.js`.
 
-**Still not done:** `trim()` (`risc.maxAccountsTracked`) drops the oldest row
-whatever its opt state, so a register at its cap can still forget an opt-out.
+**AND THE CAP NEVER FORGETS AN OPT-OUT (#260).** `trim()`
+(`risc.maxAccountsTracked`) drops the oldest OPTED-IN row, never a row whose
+holder opted out and never the row just added. When nothing else is left to
+drop, the register stays over its cap and logs `STS-SSF-0130` rather than
+choose whose choice to lose. `tests/risc_register.js` section O.
 
 ---
 

@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3701** of them, in **39** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3702** of them, in **39** subsystems.
 
 ## Where a code appears
 
@@ -75,7 +75,7 @@ is an ordinary outcome.
 * [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 144
 * [TLS and client certificates (`STS-TLS`)](#sts-tls) — 35
 * [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 110
-* [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 115
+* [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 116
 * [Risk scoring (`STS-RISK`)](#sts-risk) — 44
 * [Mail (`STS-MAIL`)](#sts-mail) — 39
 * [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 282
@@ -3026,6 +3026,7 @@ Raised from: ssf/.
 | `STS-SSF-0121` | A foreign SET's signature does not verify against the transmitter's keys, and it was refused (product mode, or ssf.receiveRequireSignature) (#153). | HTTP 400 {err: invalid_key}, or a poll setErrs entry |
 | `STS-SSF-0122` | Acting on a verified event from a foreign transmitter — ending a person's sessions, disabling or enabling their account — failed; the SET is recorded (#153). | none (logged) |
 | `STS-SSF-0123` | A key event of this service's own (federation-key-rotated, spiffe-authority-rotated or tls-certificate-changed, #245) could not be transmitted after the key moved; the change itself stands. | none — logged; nothing is sent to a receiver |
+| `STS-SSF-0130` | The RISC account register is over risc.maxAccountsTracked and every row left is an account holder's opt-out (#260), which is never dropped to make room: RISC 1.0 section 2.8 makes the choice theirs. The register stays over its cap until the cap is raised. | none — logged; the opt-outs are kept |
 
 ## STS-RISK
 
