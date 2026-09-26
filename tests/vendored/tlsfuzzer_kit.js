@@ -209,6 +209,11 @@ const WHY = {
     "pops split_message's post-send hook as though it were a fragment and " +
     "fails before anything is judged. The same probe passes on a quiet " +
     "service (2026-09-26, memory mode)" },
+  overflowClose: { why: "openssl", reason: "an oversized TLS 1.3 record " +
+    "is refused either way: OpenSSL sends record_overflow and node closes " +
+    "the socket, and on a busy service (other lanes beside it) the close can " +
+    "reach the client before the alert does. Passes on a quiet service " +
+    "(2026-09-26, memory mode)" },
   levelZeroAlert: { why: "tool", reason: "the script's closing alert is " +
     "built with the DESCRIPTION as its level (AlertGenerator(" +
     "close_notify)), so it is sent with level 0; the directory keeps the " +
@@ -609,7 +614,9 @@ const PLAN = [
     exceptions: [
       ex(/^too big plaintext/, "ApplicationData", "paddedRecord"),
       ex(/^max size of Finished msg/, "Timeout", "paddedRecord"),
-      ex(/^max size payload/, "illegal_parameter", "alertChoice")] },
+      ex(/^max size payload/, "illegal_parameter", "alertChoice"),
+      ex(/^too big payload in app_data/, "Unexpected closure from peer",
+         "overflowClose")] },
   { script: "test-tls13-record-padding.py" },
   { script: "test-tls13-rsa-signatures.py" },
   { script: "test-tls13-serverhello-random.py",
