@@ -86,7 +86,8 @@ the client certificate of every connection. tlsfuzzer found it with a
 brainpool CertificateVerify. So the default signature list offers no
 brainpool scheme (the TLS 1.3 handshake fails inside OpenSSL; TLS 1.2 already
 refuses the curve), and every listener that asks for a certificate closes a
-connection whose certificate chain has such a key before anything reads it
+connection whose certificate CHAIN has such a key — a brainpool issuer
+behind a P-256 leaf crashes node just as well — before anything reads it
 (`STS-TLS-0035`), whatever `tls.signatureAlgorithms` says.
 
 > **Warning.** Emptying `tls.groups` or `tls.signatureAlgorithms` restores

@@ -1106,26 +1106,39 @@ things in this module's policy, all fixed here.
 * **A CLIENT CERTIFICATE ON A BRAINPOOL CURVE CRASHED THE PROCESS.** Node
   24.16.0 (OpenSSL 3.5.6) dies with SIGSEGV converting a certificate whose EC
   key is on a curve with no NIST name (brainpool, secp256k1) into the object
-  `getPeerCertificate()` returns. `new X509Certificate(pem).toLegacyObject()`
-  crashes the same way on its own; the `X509Certificate` accessors do not.
-  Two listeners here ask every connection for a certificate and read it, and
-  OpenSSL's default signature list let a TLS 1.3 client sign its
-  CertificateVerify with brainpool. TLS 1.2 already refused the curve
-  ("wrong curve"). There are two defences:
-  1. `tls.signatureAlgorithms` offers no brainpool scheme, so the handshake
-     fails inside OpenSSL.
-  2. `refuseUnreadableCertificatesOn()` is prepended to `secureConnection` on
-     every listener registered through `trustClientCertificatesOn()`. It
-     walks the chain through `getPeerX509Certificate()` and replaces the
-     socket's `getPeerCertificate` with node's "no certificate" answer, so no
-     later listener or request reads it. It then closes the connection,
-     `STS-TLS-0035`. This holds whatever the setting says.
+  `getPeerCertificate()` returns. `toLegacyObject()` crashes the same way on
+  its own; the `X509Certificate` accessors do not. The crash happens for
+  such a certificate anywhere in the chain `getPeerCertificate(true)` walks:
+  a P-256 leaf sent with a brainpool issuer is enough. The revocation check
+  (`fromSocket()`) and the path rules walk that chain on the two listeners
+  that ask for a certificate. There are two defences:
+  1. **`tls.signatureAlgorithms` offers no brainpool scheme**, so a brainpool
+     LEAF fails inside OpenSSL. TLS 1.2 already refused the curve ("wrong
+     curve").
+  2. **`refuseUnreadableCertificatesOn()` guards the whole chain.** It is
+     prepended to `secureConnection` on every listener registered through
+     `trustClientCertificatesOn()`, and reads the chain ONCE through
+     `getPeerX509Certificate()`, which is the only safe way. That has a
+     price: after it, node's own `getPeerCertificate(true)` on that socket
+     has no `issuerCertificate` (measured; `tests/revocation_status.js`
+     caught the first version of this guard). So what happens next depends
+     on the chain:
+     * a certificate on an unreadable curve anywhere in it: the connection
+       is closed and `getPeerCertificate` answers `{}`, `STS-TLS-0035`;
+     * otherwise `getPeerCertificate` is REPLACED on the socket with node's
+       own objects (each certificate's `toLegacyObject()`, the same
+       conversion). They are linked the way node links them: the chain sent,
+       then issuers from the listener's anchors, and a self-issued top
+       pointing at itself.
 
-  The SPIFFE gRPC listeners are grpc-js's (`getAuthContext()` calls
-  `getPeerCertificate()`), so they get their own list without brainpool,
-  `SpiffeGrpc.READABLE_SIGALGS`. `tests/tls_protocol_policy.js` C runs the
-  crash and the guard in child processes. When node fixes the crash, that
-  file says so; then revisit the guard. It has not been reported to node yet.
+  The SPIFFE gRPC listeners belong to grpc-js (`getAuthContext()` calls
+  `getPeerCertificate()`), so they get only the first defence:
+  `SpiffeGrpc.READABLE_SIGALGS`. The brainpool-issuer route is still open
+  there. It is recorded on #212, because grpc-js owns that socket.
+  `tests/tls_protocol_policy.js` C runs the crash and the guard in child
+  processes: the leaf, the issuer, and a chain read whole. When node fixes
+  the crash, that file says so, and the guard should be revisited. It has
+  not been reported to node.
 * **`tls.groups`**: the key-exchange groups, as OpenSSL tuples. The three
   post-quantum hybrids come first, then X25519 and P-256, then X448, P-384
   and P-521. Node's `auto` offered one hybrid of the three, plus ffdhe2048
