@@ -2408,7 +2408,13 @@ function credentialOnFile(registered) {
     // quiet pass it is for a half-configured secret client — `client_auth.js`
     // refuses it by name (STS-OAUTH-0015), which is the sentence that says
     // what to register.
-    method === 'self_signed_tls_client_auth';
+    method === 'self_signed_tls_client_auth' ||
+    // ATTESTATION-BASED CLIENT AUTHENTICATION (#229): what verifies it is the
+    // REALM's trusted attesters, not anything on the entry, so a client that
+    // declared it always has something to be checked against — and is
+    // refused by name (STS-OAUTH-0724) where the realm trusts nobody, rather
+    // than waved through as half-configured.
+    /^attest_jwt_client_auth(_dpop)?$/.test(method);
   log.debug("Leaving credentialOnFile().");
   return !!have;
 }
@@ -2516,6 +2522,9 @@ async function observeClientAuthentication(opts) {
     audiences: opts.audiences || [],
     // OAuth 2.1 mode's issuer-as-sole-audience rule — the issuer, or empty.
     strictAudience: opts.strictAudience || '',
+    // The issuer identifier, which a Client Attestation PoP must name as its
+    // audience (#229).
+    issuer: opts.issuer || '',
     presentedSecret: opts.clientSecret,
     assertion: opts.assertion,
     assertionType: opts.assertionType,
@@ -2542,8 +2551,12 @@ async function observeClientAuthentication(opts) {
   });
   if (!checked.ok) {
     log.debug("Leaving observeClientAuthentication(). It did not verify.");
+    // The OAuth error and status a verifier chose, where it chose one — a
+    // client attestation's `use_attestation_challenge` is a 400 with a
+    // challenge to retry with, not a 401 (#229).
     return { authenticated: false, method: method, why: checked.description,
-             errorCode: checked.errorCode || 'STS-OAUTH-0137' };
+             errorCode: checked.errorCode || 'STS-OAUTH-0137',
+             oauthError: checked.error || '', status: checked.status || 0 };
   }
   log.debug("Leaving observeClientAuthentication(). Authenticated by " +
             method + ".");
@@ -2599,6 +2612,9 @@ async function checkClientAuthentication(opts) {
     audiences: opts.audiences || [],
     // OAuth 2.1 mode's issuer-as-sole-audience rule — the issuer, or empty.
     strictAudience: opts.strictAudience || '',
+    // The issuer identifier, which a Client Attestation PoP must name as its
+    // audience (#229).
+    issuer: opts.issuer || '',
     presentedSecret: opts.clientSecret,
     assertion: opts.assertion,
     assertionType: opts.assertionType,
@@ -2627,7 +2643,11 @@ async function checkClientAuthentication(opts) {
     log.debug("Leaving checkClientAuthentication(). The client did not " +
               "authenticate.");
     return { ok: false, errorCode: checked.errorCode || 'STS-OAUTH-0137',
-             error: 'invalid_client', requirement: 'client-authentication',
+             // `invalid_client` unless the verifier named another error
+             // (#229's `use_attestation_challenge`, with its own status).
+             error: checked.error || 'invalid_client',
+             status: checked.status || 401,
+             requirement: 'client-authentication',
              description: 'RFC 9700 section 2.5: this client\'s entry in the ' +
                           'application registry declares ' +
                           'token_endpoint_auth_method=' + method + ', ' +

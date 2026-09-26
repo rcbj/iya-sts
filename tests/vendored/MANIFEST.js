@@ -295,7 +295,8 @@ const JOBS = [
   // ACME, libest's estclient against EST, sscep and micromdm's scepclient
   // against SCEP — each at the version tests/Dockerfile pins, driven as an
   // operator would run it, in a throwaway realm (estclient: the default
-  // realm, which is all an EST client can name). tests/CLAUDE.md, *THE
+  // realm, and a throwaway realm named in the EST label position, #251 —
+  // the one way an EST client can name one). tests/CLAUDE.md, *THE
   // CERTIFICATE ENROLLMENT CLIENTS*.
   { file: 'sts_acme_certbot.js',         browser: false, local: true,
     timeoutMs: 900000 },
@@ -952,6 +953,11 @@ const JOBS = [
   // A person's attributes set, added to and removed from through
   // /admin-api (#228), in a realm of its own.
   { file: 'sts_person_attributes.js',    browser: false, local: true },
+  // OAuth 2.0 Attestation-Based Client Authentication (#229): a client
+  // attester made at run time, the challenge endpoint, PAR, the code and
+  // refresh token bound to the client instance, the DPoP combined mode and
+  // introspection, in a realm of its own.
+  { file: 'sts_client_attestation.js',   browser: false, local: true },
   { file: 'vc_did.js',                   browser: false },
   // ---------------------------------------------------------------------
   // LAST, ALL THREE OF THEM, AND THE ORDER IS THE WHOLE OF WHY IT IS SAFE

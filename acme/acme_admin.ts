@@ -220,7 +220,10 @@ class AcmeAdmin {
            '</tbody></table><p class="sub">An order names one in its ' +
            '<code>profile</code> member (draft-ietf-acme-profiles); the ' +
            'directory advertises the allowed ones in ' +
-           '<code>meta.profiles</code>.</p>';
+           '<code>meta.profiles</code>. An order naming none is issued ' +
+           '<code>tls-server</code> when every identifier is a ' +
+           '<code>dns</code> or <code>ip</code> name and that profile is ' +
+           'allowed here, and the default above otherwise.</p>';
   }
 
   eabHtml(req, json) {

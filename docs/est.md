@@ -35,6 +35,36 @@ The same six answer under a **label**, `/.well-known/est/<profile>/…`, where
 the label is a certificate profile. The unlabelled path issues the realm's
 `est.defaultProfile` (`tls-client` unless changed).
 
+### Reaching a realm through the label
+
+A realm other than the default is also reached **by naming it in the label
+position**, at the root of the origin — for EST clients that are given a host,
+a port and at most one label and can put nothing in front of
+`/.well-known/est` (RFC 8615 puts a well-known URI at the root; libest's
+estclient is one such client):
+
+| Path | Reaches |
+|---|---|
+| `/.well-known/est/<realm>/<operation>` | realm `<realm>`, its `est.defaultProfile` |
+| `/.well-known/est/<realm>/<profile>/<operation>` | realm `<realm>`, that profile |
+| `/realm/<realm>/.well-known/est/[<profile>/]<operation>` | the same, by the prefix |
+
+The two forms reach the same server with the same settings, CA and
+certificates. The rules:
+
+* **A realm may not be called by a label's name** — any of the nine profiles
+  above or the five never issued. Creating one is refused (`STS-CORE-0107`), so
+  one segment always means one thing. (A realm created with such a name before
+  2026-09-26 keeps it, is reached by its prefix only, and the segment still
+  means the profile.)
+* **A request names its realm once.** A label that names a realm after the
+  realm was already named — `/realm/a/.well-known/est/b/cacerts`, or
+  `/.well-known/est/a/b/cacerts` — is refused 404 (`STS-EST-0022`), never
+  read as a second realm or as a profile.
+* An unknown name in the label position is an unknown label: 404.
+* `/admin/est` in a realm, and `GET /realms` for every realm (`estLabelUrl`),
+  show the label-form address.
+
 | Profile (label) | Needs |
 |---|---|
 | `tls-server` | a dNSName or iPAddress registered on the entry |
@@ -149,10 +179,12 @@ estclient -e -s host -p 8081 -o out -y web.csr --path-seg tls-server -u alice -h
 Things to know, each found by the suite's run of it
 (`tests/vendored/sts_est_libest.js`):
 
-* **It reaches the DEFAULT REALM only.** estclient builds its URL as
-  `https://host:port/.well-known/est[/label]/op` and can be told nothing else,
-  and a realm's EST is at `/realm/<id>/.well-known/est`. No RFC 7030 client can
-  name a path in front of the well-known URI (RFC 8615 puts it at the root).
+* **It reaches another realm through the label** (#251): estclient builds its
+  URL as `https://host:port/.well-known/est[/label]/op` and accepts ONE label
+  segment, so `--path-seg <realm>` names the realm (see *Reaching a realm
+  through the label*) and the profile is that realm's `est.defaultProfile`.
+  A labelled profile inside a realm needs two segments, which estclient
+  refuses to send; `/realm/<id>/.well-known/est` it cannot build at all.
 * With only the Root as `EST_OPENSSL_CACERT`, every `-r` warns "unable to get
   local issuer certificate": estclient verifies what it was issued against its
   trust anchors, which must hold the Issuing CA and the Intermediate — the

@@ -788,6 +788,12 @@ const CODES = [
       'default is in force. Logged once per process and setting or ' +
       'attribute (#104).',
     spec: 'none — a warning in the log' },
+  { code: 'STS-CORE-0107',
+    summary: 'A trust realm id is an EST label (a certificate profile). ' +
+      '/.well-known/est/<realm>/ and /.well-known/est/<label>/ share one ' +
+      'path position (#251), so a realm may not be called by a label\'s ' +
+      'name.',
+    spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
   { code: 'STS-WORKER-0001',
     summary: 'The IPC channel to a post-quantum worker process failed, so a ' +
       'job sent to it may not arrive or its answer may not come back.',
@@ -3218,6 +3224,11 @@ const CODES = [
   { code: 'STS-EST-0021',
     summary: 'A /simplereenroll named a certificate that has expired or been revoked.',
     spec: 'HTTP 400' },
+  { code: 'STS-EST-0022',
+    summary: 'An EST label named a trust realm where the realm was already ' +
+      'named — by the /realm/<id> prefix or by an earlier label segment ' +
+      '(#251). A request names its realm once.',
+    spec: 'HTTP 404 with a plain-text sentence' },
   { code: 'STS-EST-0030',
     summary: 'A query string on /admin/est or /admin/est/monitor failed validation.',
     spec: 'HTTP 400 on the console' },
@@ -7163,17 +7174,193 @@ const CODES = [
       'without a DPoP proof from the key its cnf names (OpenID Connect Key ' +
       'Binding section 7, #150).',
     spec: 'HTTP 400 {error: invalid_dpop_proof}' },
-  { code: 'STS-OAUTH-0708',
+  { code: 'STS-OAUTH-0720',
+    summary: 'A request carried more than one OAuth-Client-Attestation ' +
+      'header, or one that is not a JWT in token68 syntax (#229, ' +
+      'section 7.1 item 1).',
+    spec: 'token / PAR / introspection / revocation ' +
+      '{error: invalid_client} (HTTP 401)' },
+  { code: 'STS-OAUTH-0721',
+    summary: 'The OAuth-Client-Attestation header does not hold a JWT ' +
+      'whose header can be read (#229).',
+    spec: 'token / PAR / introspection / revocation ' +
+      '{error: invalid_client} (HTTP 401)' },
+  { code: 'STS-OAUTH-0722',
+    summary: 'A Client Attestation\'s typ is not ' +
+      'oauth-client-attestation+jwt (#229, section 4).',
+    spec: 'token / PAR / introspection / revocation ' +
+      '{error: invalid_client} (HTTP 401)' },
+  { code: 'STS-OAUTH-0723',
+    summary: 'A Client Attestation is signed with an algorithm this server ' +
+      'does not accept: not an asymmetric one in the JWS table, or ' +
+      'a MAC (#229, section 7.1 item 3).',
+    spec: 'token / PAR / introspection / revocation ' +
+      '{error: invalid_client} (HTTP 401)' },
+  { code: 'STS-OAUTH-0724',
+    summary: 'A client attestation was presented in a realm that trusts no ' +
+      'client attester: oauth2.clientAttestationTrustAnchors and ' +
+      'oauth2.clientAttestationTrustedKeys are both empty (#229).',
+    spec: 'token / PAR / introspection / revocation ' +
+      '{error: invalid_client} (HTTP 401)' },
+  { code: 'STS-OAUTH-0725',
+    summary: 'A Client Attestation\'s x5c is unreadable, its signing ' +
+      'certificate is self-signed, or its path does not hold to a ' +
+      'trust anchor in oauth2.clientAttestationTrustAnchors (#229, ' +
+      'section 10.8).',
+    spec: 'token / PAR / introspection / revocation ' +
+      '{error: invalid_client} (HTTP 401)' },
+  { code: 'STS-OAUTH-0726',
+    summary: 'No trusted attester key verifies a Client Attestation: no ' +
+      'configured key with its kid, or the signature does not ' +
+      'verify (#229, section 7.1 item 4).',
+    spec: 'token / PAR / introspection / revocation ' +
+      '{error: invalid_client} (HTTP 401)' },
+  { code: 'STS-OAUTH-0727',
+    summary: 'A Client Attestation lacks sub, exp or cnf, or a claim has ' +
+      'the wrong type (#229, section 4).',
+    spec: 'token / PAR / introspection / revocation ' +
+      '{error: invalid_client} (HTTP 401)' },
+  { code: 'STS-OAUTH-0728',
+    summary: 'A Client Attestation has expired, or its nbf or iat is in ' +
+      'the future (#229, section 4).',
+    spec: 'token / PAR / introspection / revocation ' +
+      '{error: invalid_client} (HTTP 401)' },
+  { code: 'STS-OAUTH-0729',
+    summary: 'A Client Attestation\'s cnf carries no public jwk, a ' +
+      'symmetric one, or private key material (#229, section 7.1 ' +
+      'item 5).',
+    spec: 'token / PAR / introspection / revocation ' +
+      '{error: invalid_client} (HTTP 401)' },
+  { code: 'STS-OAUTH-0730',
+    summary: 'A Client Attestation is older than ' +
+      'oauth2.clientAttestationMaxAgeS (#229, section 7.1 item 6).',
+    spec: 'token / PAR {error: use_fresh_attestation} (HTTP 400)' },
+  { code: 'STS-OAUTH-0731',
+    summary: 'A Client Attestation\'s sub is not the client_id the request ' +
+      'names (#229, sections 7.1 item 7 and 7.5).',
+    spec: 'token / PAR / introspection / revocation ' +
+      '{error: invalid_client} (HTTP 401)' },
+  { code: 'STS-OAUTH-0732',
+    summary: 'A request carried more than one OAuth-Client-Attestation-PoP ' +
+      'header, or one that is not a JWT in token68 syntax (#229, ' +
+      'section 7.2 item 1).',
+    spec: 'token / PAR / introspection / revocation ' +
+      '{error: invalid_client} (HTTP 401)' },
+  { code: 'STS-OAUTH-0733',
+    summary: 'A Client Attestation PoP\'s typ is not ' +
+      'oauth-client-attestation-pop+jwt, or its alg is not an ' +
+      'accepted asymmetric one (#229, section 5.1).',
+    spec: 'token / PAR / introspection / revocation ' +
+      '{error: invalid_client} (HTTP 401)' },
+  { code: 'STS-OAUTH-0734',
+    summary: 'A Client Attestation PoP does not verify under the key in ' +
+      'the attestation\'s cnf (#229, section 7.2 item 4).',
+    spec: 'token / PAR / introspection / revocation ' +
+      '{error: invalid_client} (HTTP 401)' },
+  { code: 'STS-OAUTH-0735',
+    summary: 'A Client Attestation PoP lacks aud, jti or iat, or a claim ' +
+      'has the wrong type (#229, section 5.1).',
+    spec: 'token / PAR / introspection / revocation ' +
+      '{error: invalid_client} (HTTP 401)' },
+  { code: 'STS-OAUTH-0736',
+    summary: 'A Client Attestation PoP does not name this authorization ' +
+      'server\'s issuer identifier as its single audience (#229, ' +
+      'section 7.2 item 7).',
+    spec: 'token / PAR / introspection / revocation ' +
+      '{error: invalid_client} (HTTP 401)' },
+  { code: 'STS-OAUTH-0737',
+    summary: 'A Client Attestation PoP is older than ' +
+      'oauth2.clientAttestationPopMaxAgeS, expired, or dated in the ' +
+      'future (#229, section 7.2 item 6).',
+    spec: 'token / PAR / introspection / revocation ' +
+      '{error: invalid_client} (HTTP 401)' },
+  { code: 'STS-OAUTH-0738',
+    summary: 'A Client Attestation PoP carries no challenge where ' +
+      'oauth2.clientAttestationChallengeRequired asks for one ' +
+      '(#229, section 6.1).',
+    spec: 'token / PAR {error: use_attestation_challenge} (HTTP 400) ' +
+      'with an OAuth-Client-Attestation-Challenge header' },
+  { code: 'STS-OAUTH-0739',
+    summary: 'A Client Attestation PoP\'s challenge is not one this realm ' +
+      'issued, has expired, or has been used (#229, section 6.1).',
+    spec: 'token / PAR {error: use_attestation_challenge} (HTTP 400) ' +
+      'with an OAuth-Client-Attestation-Challenge header' },
+  { code: 'STS-OAUTH-0740',
+    summary: 'A Client Attestation PoP was presented again: its jti has ' +
+      'been used (#229, section 12.1).',
+    spec: 'token / PAR / introspection / revocation ' +
+      '{error: invalid_client} (HTTP 401)' },
+  { code: 'STS-OAUTH-0741',
+    summary: 'The used-assertion history is full of unexpired rows, so a ' +
+      'Client Attestation PoP or challenge is refused rather than ' +
+      'accepted unrecorded (#229).',
+    spec: 'token / PAR {error: invalid_client} (HTTP 503)' },
+  { code: 'STS-OAUTH-0742',
+    summary: 'A Client Attestation PoP or challenge could not be recorded ' +
+      'as used, so it is refused rather than accepted unrecorded ' +
+      '(#229).',
+    spec: 'token / PAR {error: invalid_client} (HTTP 503)' },
+  { code: 'STS-OAUTH-0743',
+    summary: 'A request carried a Client Attestation and no proof of ' +
+      'possession of its key: no OAuth-Client-Attestation-PoP ' +
+      'header and no DPoP proof (#229, section 7).',
+    spec: 'token / PAR / introspection / revocation ' +
+      '{error: invalid_client} (HTTP 401)' },
+  { code: 'STS-OAUTH-0744',
+    summary: 'The DPoP combined mode was used at an endpoint that verifies ' +
+      'no DPoP proof (introspection, revocation, CIBA) (#229, ' +
+      'section 7.3).',
+    spec: 'token / PAR / introspection / revocation ' +
+      '{error: invalid_client} (HTTP 401)' },
+  { code: 'STS-OAUTH-0745',
+    summary: 'In the DPoP combined mode the DPoP proof\'s key is not the ' +
+      'key the Client Attestation binds (#229, section 7.3 item 4).',
+    spec: 'token / PAR / introspection / revocation ' +
+      '{error: invalid_client} (HTTP 401)' },
+  { code: 'STS-OAUTH-0746',
+    summary: 'A client that declared attest_jwt_client_auth proved its key ' +
+      'with DPoP alone, or one that declared ' +
+      'attest_jwt_client_auth_dpop sent an ' +
+      'OAuth-Client-Attestation-PoP (#229, section 7).',
+    spec: 'token / PAR / introspection / revocation ' +
+      '{error: invalid_client} (HTTP 401)' },
+  { code: 'STS-OAUTH-0747',
+    summary: 'POST /oauth2/challenge in a realm that trusts no client ' +
+      'attester (#229, section 6.3).',
+    spec: '/oauth2/challenge {error: invalid_request} (HTTP 400)' },
+  { code: 'STS-OAUTH-0748',
+    summary: 'A refresh token issued on a client attestation was redeemed ' +
+      'without an attestation of the same client instance key ' +
+      '(#229, section 10.3).',
+    spec: 'token {error: invalid_grant} (HTTP 400)' },
+  { code: 'STS-OAUTH-0749',
+    summary: 'An authorization code pushed under a client attestation was ' +
+      'redeemed without an attestation of the same client instance ' +
+      'key (#229, section 10.4).',
+    spec: 'token {error: invalid_grant} (HTTP 400)' },
+  { code: 'STS-OAUTH-0750',
+    summary: 'oauth2.clientAttestationTrustAnchors holds a certificate ' +
+      'that cannot be read, or oauth2.clientAttestationTrustedKeys ' +
+      'is not a JWKS or holds a symmetric or private key; the ' +
+      'unreadable part is ignored (#229).',
+    spec: 'log only' },
+  { code: 'STS-OAUTH-0751',
+    summary: 'A client that declared attest_jwt_client_auth or ' +
+      'attest_jwt_client_auth_dpop sent no OAuth-Client-Attestation ' +
+      'header, or did not authenticate with it (#229, section 7.5).',
+    spec: 'token / PAR / introspection / revocation ' +
+      '{error: invalid_client} (HTTP 401)' },
+  { code: 'STS-OAUTH-0783',
     summary: 'Under FAPI 1.0 Advanced, an authorization request asked for ' +
       'response_type code with a response mode that is not JARM (Part 2 ' +
       'section 5.2.2 item 2, #187).',
     spec: 'invalid_request' },
-  { code: 'STS-OAUTH-0709',
+  { code: 'STS-OAUTH-0784',
     summary: 'Under FAPI 1.0 Advanced, an authorization request (its ' +
       'signed request object) named no scope; RFC 6749 section 3.3\'s ' +
       'refusal rather than a default (#187).',
     spec: 'invalid_request' },
-  { code: 'STS-OAUTH-0710',
+  { code: 'STS-OAUTH-0785',
     summary: 'An RP-Initiated Logout request carried a ' +
       'post_logout_redirect_uri with neither an id_token_hint nor a ' +
       'client_id, so it was not followed (section 2: nothing confirms the ' +

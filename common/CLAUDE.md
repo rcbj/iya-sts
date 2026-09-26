@@ -1752,6 +1752,23 @@ strips the prefix before the router sees the URL, which is why no route
 registration in this service carries a realm and no protocol module was edited.
 **Nothing may be registered above it.**
 
+**THE PREFIX IS ONE OF TWO WAYS A PATH NAMES A REALM (2026-09-26, #251).** The
+other is EST's label position: `/.well-known/est/<realm>/…` enters `<realm>`
+and is rewritten to `/.well-known/est/…`, because an RFC 7030 client is given a
+host, a port and at most one label and can put nothing in front of a
+well-known URI (libest's estclient refuses even a second segment). It is
+decided in the SAME place — `matchPath()` falls through to `matchEstLabel()`
+when the path does not open with the prefix — so the same middleware enters
+it, a request worker derives it by the same rule from the same `originalUrl`,
+and `unknownRealmPath()` catches up on it the same way. A realm may not be
+called by an EST label's name (`validateId()`, `STS-CORE-0107`; the names come
+from the data leaf `enrollment_profiles.ts`, which realms.js may require and
+`cert_enrollment.ts` could not be), and a realm that already was is never
+read there: the label reading wins. `est/CLAUDE.md` argues the collision rule
+and the "named once" refusal. **A third way needs the argument made again**,
+not this one copied: this one exists because a specification puts its paths
+at the root and the clients cannot be told otherwise.
+
 `AsyncLocalStorage` is the right primitive rather than a convenient one. A
 request here is a chain of awaits and callbacks — an LDAP search, an RSA
 signature, a gRPC call — and a module-level `currentRealm` variable would be
@@ -8334,6 +8351,19 @@ say the same thing. The UID is what keeps the subject DN naming exactly ONE
 entry, since a host may be registered on two and `ldap_server.js`'s
 `locateEntry()` turns a person's subject DN back into an entry.
 `tests/vendored/sts_acme_certbot.js` and `sts_acme_lego.js` renew through it.
+
+**A REQUEST THAT NAMES NO PROFILE AND ONLY HOSTS IS A `tls-server` REQUEST
+(2026-09-26, #252, rcbj's decision on #207).** `profileForIdentifiers(family,
+types)`: every identifier `dns` or `ip` → `tls-server` when the family's
+`allowedProfiles` holds it; anything else — an `email`, a
+`permanent-identifier`, or a MIX of those with host names — → the family's
+`defaultProfile`. A mixed request names an entry as well as a host and did not
+say which the certificate is for, so it is not guessed; a realm that disallows
+`tls-server` keeps its default, so the choice never reaches past the allowed
+list; a NAMED profile is never passed through this. Only ACME knows its
+identifiers before choosing (EST's label and SCEP's realm choose before a CSR
+is read), so ACME is the one caller — but the rule is the profiles', so it is
+here. `acme/CLAUDE.md` has how the new-order reads it.
 
 **CERTIFICATE AUTHENTICATION CHECKS THREE THINGS AND THE THIRD IS THE
 MAPPING**: `pki.verifyLeaf()` in this realm (another realm's certificate does not

@@ -175,9 +175,16 @@ class EstAdmin {
     log.debug("Entering EstAdmin.estPageBody().");
     const endpointRows = json.endpoints.map(function (one) {
       return '<tr><td><code>' + esc(one.method) + '</code></td><td><code>' +
-             esc(one.url) + '</code></td><td>' + esc(one.what) +
+             esc(one.url) + '</code>' + (one.labelFormUrl
+               ? '<div class="sub">or <code>' + esc(one.labelFormUrl) +
+                 '</code></div>' : '') + '</td><td>' + esc(one.what) +
              '</td><td>RFC 7030 ' + esc(one.section) + '</td></tr>';
     }).join('');
+    const labelFormNote = json.labelForm
+      ? '<p class="sub"><strong>The label form</strong> <code>' +
+        esc(json.labelForm.base) + '</code>. ' + esc(json.labelForm.note) +
+        '</p>'
+      : '';
     const authority = json.hierarchy.authority;
     const caBlock = json.hierarchy.built && authority
       ? '<table class="kv"><tr><th>Subject</th><td><code>' +
@@ -289,7 +296,7 @@ class EstAdmin {
         esc(json.mode.product)) +
       '<h2>Endpoints</h2><table><thead><tr><th>Method</th><th>URL</th><th>' +
       'What</th><th>Section</th></tr></thead><tbody>' + endpointRows +
-      '</tbody></table>' +
+      '</tbody></table>' + labelFormNote +
       '<h2>EST Issuing CA</h2>' + caBlock +
       '<h2>Profiles</h2><p class="sub">A label in the path names the ' +
       'certificate profile ' +

@@ -89,6 +89,11 @@ const config = require('./config');
 // (`errorCodes.mark()` on the result), so a reply serialised from it is
 // byte-for-byte what it was.
 const errorCodes = require('./error_codes');
+// The names an EST label may be — the enrollment profiles — for the one path
+// position a realm shares with them (`matchPath()`, #251). A LEAF of data that
+// requires nothing: `cert_enrollment.ts`, where the profiles are decided,
+// requires this file and twenty others, so it could not be required here.
+const enrollmentProfiles = require('./enrollment_profiles');
 
 const log = bunyan.createLogger({ name: 'sts-realms' });
 
@@ -430,8 +435,8 @@ function matchPath(pathname) {
   let head = String(pathname || '');
   if (segment) {
     if (head.indexOf('/' + segment + '/') !== 0) {
-      log.debug("Leaving matchPath().");
-      return null;
+      log.debug("Leaving matchPath(). Asking the EST label position.");
+      return matchEstLabel(head);
     }
     head = head.slice(segment.length + 1);
   }
@@ -440,12 +445,110 @@ function matchPath(pathname) {
   const id = (slash < 0 ? head.slice(1) : head.slice(1, slash));
   const realm = realms.get(id);
   if (!realm) {
-    log.debug("Leaving matchPath().");
-    return null;
+    log.debug("Leaving matchPath(). Asking the EST label position.");
+    return segment ? null : matchEstLabel(String(pathname || ''));
   }
   const rest = slash < 0 ? '/' : head.slice(slash);
   log.debug("Leaving matchPath().");
   return { realm: realm, rest: rest || '/' };
+}
+
+// ---------------------------------------------------------------------------
+// THE SECOND WAY A PATH NAMES A REALM: THE EST LABEL (#251, rcbj's decision
+// on #209, 2026-09-26).
+//
+// RFC 7030's paths are under a WELL-KNOWN URI, which RFC 8615 puts at the root
+// of the origin, and an EST client is configured with a host, a port and at
+// most ONE label: libest's estclient builds
+// `https://host:port/.well-known/est[/<label>]/<operation>` and nothing else,
+// and refuses a label containing a slash. So `/realm/<id>/.well-known/est` —
+// which is where the prefix puts a realm's EST — is a path no RFC 7030 client
+// can be told. The label position can be: `/.well-known/est/<realm>/<op>`
+// enters `<realm>` exactly as `/realm/<realm>/.well-known/est/<op>` does, and
+// `/.well-known/est/<realm>/<label>/<op>` names a profile inside it for a
+// client that can send two segments.
+//
+// **IT IS ENTERED HERE, IN THE ONE PLACE THAT ENTERS A REALM**, by the same
+// middleware (`common/app.js`'s `enterRealm`) that strips the prefix, and the
+// rest is rewritten to `/.well-known/est/<op>` so `est/est.ts` knows nothing
+// about realms — the whole design's trick. A request worker runs the same
+// middleware on the same `originalUrl` and derives the same realm.
+//
+// **A LABEL AND A REALM MAY NOT SHARE A NAME**, and the rule chosen is the
+// refusal rather than a two-segment realm-label pair ONLY, because the pair is
+// what estclient cannot send: a realm reachable by the label form must be
+// nameable by ONE segment, so that segment must mean one thing. So
+// `validateId()` refuses a realm called by an EST label (every enrollment
+// profile, issued or refused — STS-CORE-0107), and a realm that was created
+// with such a name before this rule is never read here: the LABEL reading
+// wins, so no URL that meant a profile yesterday means a realm today. That
+// realm is still reached by its prefix.
+//
+// **ONE REALM OR NONE, NEVER A MIX**: this is asked only when the path does
+// NOT open with the realm prefix. `/realm/a/.well-known/est/b/…` is realm a
+// with a label `b`, and est.ts refuses a label that names a realm
+// (STS-EST-0022) — as it does `/.well-known/est/a/b/…`. A realm is named once.
+//
+// The default realm is never entered this way (it has no prefix to be the
+// equivalent of), and an unknown name is not a realm: it falls through to
+// est.ts, whose answer for a label it does not know is 404.
+// ---------------------------------------------------------------------------
+const EST_BASE = '/.well-known/est/';
+
+function estLabelOf(pathname) {
+  log.debug("Entering estLabelOf().");
+  const path = String(pathname || '');
+  if (path.indexOf(EST_BASE) !== 0) {
+    log.debug("Leaving estLabelOf(). Not an EST path.");
+    return null;
+  }
+  const after = path.slice(EST_BASE.length);
+  const slash = after.indexOf('/');
+  // A label is followed by an operation: `/.well-known/est/<x>` alone is the
+  // unlabelled path's operation `<x>`, not a label.
+  if (slash <= 0) {
+    log.debug("Leaving estLabelOf(). No label.");
+    return null;
+  }
+  log.debug("Leaving estLabelOf().");
+  return { label: after.slice(0, slash), rest: after.slice(slash) };
+}
+
+function isEstLabel(name) {
+  log.debug("Entering isEstLabel().");
+  log.debug("Leaving isEstLabel().");
+  return enrollmentProfiles.EST_LABELS.indexOf(String(name)) >= 0;
+}
+
+function matchEstLabel(pathname) {
+  log.debug("Entering matchEstLabel().");
+  const found = estLabelOf(pathname);
+  if (!found || isEstLabel(found.label)) {
+    log.debug("Leaving matchEstLabel(). Not a realm in the label position.");
+    return null;
+  }
+  const realm = realms.get(found.label);
+  if (!realm) {
+    log.debug("Leaving matchEstLabel(). No such realm.");
+    return null;
+  }
+  log.debug("Leaving matchEstLabel(). Realm " + realm.id + ".");
+  return { realm: realm, rest: EST_BASE.slice(0, -1) + found.rest,
+           form: 'est-label' };
+}
+
+// The label-form address of the ambient realm's EST server, for the pages
+// and documents that show one: `/.well-known/est/<id>`, or null in the
+// default realm (which has no other form) and in a realm whose id is a label.
+function estLabelPath(realm) {
+  log.debug("Entering estLabelPath().");
+  const r = realm || current();
+  if (!r || r.id === DEFAULT_ID || isEstLabel(r.id)) {
+    log.debug("Leaving estLabelPath(). None.");
+    return null;
+  }
+  log.debug("Leaving estLabelPath().");
+  return EST_BASE + r.id;
 }
 
 // ---------------------------------------------------------------------------
@@ -480,6 +583,15 @@ function unknownRealmPath(pathname) {
   }
   const segment = pathSegment();
   let head = String(pathname || '');
+  // The EST label position names a realm too (#251, `matchEstLabel()`), and a
+  // realm created on another node a moment ago is as absent there.
+  const est = estLabelOf(head);
+  if (est && ID_PATTERN.test(est.label) && !isEstLabel(est.label) &&
+      !realms.has(est.label) && est.label !== DEFAULT_ID) {
+    log.debug("Leaving unknownRealmPath(). Possibly a realm not yet here, " +
+              "in the EST label position.");
+    return true;
+  }
   if (segment) {
     if (head.indexOf('/' + segment + '/') !== 0) {
       log.debug("Leaving unknownRealmPath(). No realm prefix.");
@@ -620,6 +732,14 @@ function validateId(id) {
                 'realms.pathSegment is set to, because clearing that setting ' +
                 'would make the realm shadow the endpoint.');
     firstCode(errors, 'STS-CORE-0011');
+  }
+  if (isEstLabel(value)) {
+    errors.push('"' + value + '" is an EST label (a certificate profile), ' +
+                'and /.well-known/est/<realm>/ reaches a realm through the ' +
+                'same path position as /.well-known/est/<label>/ reaches a ' +
+                'profile. A realm may not be called by a label\'s name, so ' +
+                'that one segment always means one thing.');
+    firstCode(errors, 'STS-CORE-0107');
   }
   if (realms.has(value)) {
     errors.push('A realm called "' + value + '" is already defined.');
@@ -3173,8 +3293,12 @@ function realmSupport() {
             'directory: an ACME External Account Binding key, an EST ' +
             'credential and a SCEP challenge are each bound to an entry in ' +
             'one realm, and a certificate another realm issued fails the ' +
-            'Intermediate check. What is shared is EST\'s per-address rate ' +
-            'limit, which is keyed by the client address and not the realm.' },
+            'Intermediate check. EST is reached by the path prefix OR by ' +
+            'naming the realm in the EST label position, ' +
+            '/.well-known/est/<realm>/..., because an EST client cannot ' +
+            'put a path in front of a well-known URI (#251). What is ' +
+            'shared is EST\'s per-address rate limit, which is keyed by ' +
+            'the client address and not the realm.' },
     { family: 'OpenID Federation', state: 'full', by: 'path',
       cards: ['OpenID Federation'],
       note: 'Each realm is a federation entity of its own: its Entity ' +
@@ -3271,6 +3395,8 @@ module.exports = {
   currentPrefix: currentPrefix,
   href: href,
   matchPath: matchPath,
+  estLabelPath: estLabelPath,
+  isEstLabel: isEstLabel,
   onCreate: onCreate,
   onRemove: onRemove,
   onChange: onChange,

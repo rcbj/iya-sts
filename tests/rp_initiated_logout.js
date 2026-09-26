@@ -286,7 +286,7 @@ function childMain() {
     note(r.status === 200 && !r.headers.location &&
            /neither an id_token_hint nor/.test(r.text),
          'd3b. an https address with no client named is not followed in ' +
-         'development either (STS-OAUTH-0710), and the page says why',
+         'development either (STS-OAUTH-0785), and the page says why',
          r.status + ' ' + r.headers.location);
     r = await logout({});
     note(r.status === 200 && /text\/html/.test(r.headers['content-type']) &&

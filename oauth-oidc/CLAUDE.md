@@ -691,7 +691,8 @@ so must `admin-ui/admin.ts`.
    PROTOCOL half of section 2.5.** `oauth2_bcp.js` decides whether a client has
    to authenticate at all (the policy); this decides whether what arrived proves
    it (the mechanics). It registers nothing and requires `common/` libraries,
-   `mtls.js`, `assertion_grant.js` and `saml_assertion_grant.js`, none of which
+   `mtls.js`, `assertion_grant.js`, `saml_assertion_grant.js` and — since #229
+   — `client_attestation.ts` (the two attestation methods, 3bm), none of which
    requires it back, so it cannot join a cycle. Four things:
 
    **NOTHING FALLS THROUGH UNCHECKED ANY MORE.** `private_key_jwt` and
@@ -4183,7 +4184,7 @@ otherwise; each carries its regression check.
   with neither an `id_token_hint` nor a `client_id` was followed in
   development (#118's acceptance of an unregistered address). Nothing
   confirms such an address, which is the section's MUST NOT, so it is not
-  followed in any mode (STS-OAUTH-0710). A NAMED client that registered
+  followed in any mode (STS-OAUTH-0785). A NAMED client that registered
   none still has development's leniency.
 * **The OP iframe (Session Management, #121)** hashes with a SHA-256 of its
   own where Web Crypto is missing or its digest rejects — the suite's
@@ -4197,9 +4198,9 @@ otherwise; each carries its regression check.
   the default stays the stricter reading. rcbj's call whether to keep it.
 
 **FAPI** (`tests/fapi_advanced_units.js`): under 1.0 Advanced, `code`
-without JARM is `invalid_request` (the MODE is wrong, STS-OAUTH-0708, which
+without JARM is `invalid_request` (the MODE is wrong, STS-OAUTH-0783, which
 RFC 9126 section 2.3 answers at PAR), and a request naming no scope is
-refused rather than given a default (STS-OAUTH-0709; RFC 6749 3.3 permits
+refused rather than given a default (STS-OAUTH-0784; RFC 6749 3.3 permits
 either, and a signed request object carrying none is usually a client that
 put scope outside it). Message Signing KEEPS JARM: section 5.4.1 has an AS
 implementing response signing "require use of" it, so the plan's
@@ -4281,6 +4282,85 @@ failure in its driver):
 issuer plan, whose every wallet authenticates with
 `attest_jwt_client_auth` (#229), and the OpenID4VP verifier plan's
 `x509_san_dns` and `x509_hash` variants (#230).
+
+## 3bm. OAUTH 2.0 ATTESTATION-BASED CLIENT AUTHENTICATION (2026-09-26, #229)
+
+**draft-ietf-oauth-attestation-based-client-auth-11** (3 September 2026, the
+latest revision when it was built), which the OpenID4VC High Assurance
+Interoperability Profile calls Wallet Attestation and the OpenID Foundation's
+HAIP issuer plan authenticates every wallet with. `client_attestation.ts` is a
+library (rule 3) and its header is the design; this is what a maintainer
+changing anything near it needs to know.
+
+* **TWO METHODS, ONE PATH.** `attest_jwt_client_auth` (a Client Attestation
+  PoP JWT) and `attest_jwt_client_auth_dpop` (the DPoP proof is the PoP,
+  section 5.2) are `client_auth.js` methods like the other eight, so the RFC
+  9700 policy, the observation, the role gate, product mode's confidential
+  client rule and FAPI all treat them as they treat `private_key_jwt`. The
+  credential is two HTTP header fields, so `verify()` hands the REQUEST over;
+  `oauth2_bcp.js` passes the issuer identifier (the PoP's audience) and hands
+  back the verifier's own OAuth error and status, since
+  `use_attestation_challenge` and `use_fresh_attestation` are 400s, not 401s.
+  `credentialOnFile()` is true for both: the trust is the realm's, not the
+  entry's.
+* **TRUST IS PER REALM, TWO SETTINGS, EMPTY BY DEFAULT.**
+  `oauth2.clientAttestationTrustAnchors` (an `x5c` path to a configured
+  anchor, `pki.verifyPathToAnchors()`, leaf never self-signed — HAIP 4.4.1)
+  and `oauth2.clientAttestationTrustedKeys` (a JWKS, `kid` narrows). An
+  attester vouches for a wallet PRODUCT, not one entry, which is why it is not
+  an application attribute. With neither set the methods, the challenge
+  endpoint and the section 8 lists are not advertised, and `POST
+  /oauth2/challenge` answers 400. Asymmetric algorithms only, post-quantum
+  included; a MAC attestation (section 12.2) is refused — there is no shared
+  key to verify it with.
+* **FRESHNESS: CHALLENGES REQUIRED BY DEFAULT, SINGLE-USE.** A challenge comes
+  from `POST /oauth2/challenge` or from the `OAuth-Client-Attestation-Challenge`
+  header this service puts on EVERY response to a request carrying an
+  attestation (section 6.2, refusals included), which is what makes single use
+  workable: the client always holds the one it was handed last. Issued ones are
+  a persisted per-realm map (`oauth2.attestationChallenges`, a cache-registry
+  row, ejected by the scheduler, expiry checked at the read); spent ones and
+  each PoP's `jti` go in `common/used_assertions.js` (new format
+  `attestation-challenge`, new use `client-attestation-pop`, the PoP keyed by
+  the instance key's JWK Thumbprint URI), reserved and kept only on a 2xx.
+  The combined mode uses DPoP's own nonce and `jti` instead, and the challenge
+  endpoint hands out a DPoP nonce too when `oauth2.dpopNonceRequired` is on.
+* **ONE ANSWER PER REQUEST.** `verifyRequest()` keeps its promise on the
+  request under a Symbol, `verifiedOnce()`'s reason: the token endpoint asks
+  twice and a second verification would find the first one's `jti`.
+* **THE COMBINED MODE NEEDS A DPoP PROOF THE ENDPOINT VERIFIED**, so it exists
+  at the token and PAR endpoints only, which leave the proof's thumbprint on
+  `req.stsDpopJkt`; the verifier never verifies a DPoP proof itself (its
+  `jti` would be spent twice). Introspection, revocation and CIBA take the PoP
+  mode. A client that DECLARED one method is held to that method's proof
+  (`STS-OAUTH-0746`).
+* **IN EVERY MODE, AFTER THE OBSERVATION** — `requestRefusal()` at the token and
+  PAR endpoints, beside `mtls.declaredRefusal()` and for its reason: a client
+  that declared attestation asked to be held to it. An attestation sent by any
+  other client (section 7.6's additional signal) is verified where the realm
+  trusts an attester and refused if it does not hold; where it trusts none it
+  is ignored. Nothing is relaxed in development.
+* **BINDINGS.** A refresh token minted on a verified attestation carries
+  `attested_jkt` inside its JWE and the refresh grant requires an attestation
+  of the same key (section 10.3, `STS-OAUTH-0748`). A push made under one
+  records `attestedJkt`; the code minted from that `request_uri` (never from a
+  query parameter) carries `attested_jkt` and is redeemed only by that
+  instance (section 10.4, `0749`). CIBA's `auth_req_id` is not bound (a
+  RECOMMENDED the draft leaves to the artifact).
+* **`client_id` MAY BE ABSENT** (section 7.5): `clientFrom()` reads the
+  attestation's `sub` unverified to choose the client, as it reads a client
+  assertion's, and the verified `sub` must equal it.
+* **FAPI 2.0 names mTLS and `private_key_jwt` only** (section 5.3.2.1 item 6);
+  HAIP allows Wallet Attestation beneath it. `fapi.js`'s `allowedMethods()`
+  adds the two only under a FAPI 2.0 profile with
+  `oauth2.fapiAllowClientAttestation` on (off); FAPI 1.0 never.
+* **NOT DONE, SAID**: a MAC-protected attestation; `jku`; the revocation of an
+  attester's certificate or a Wallet Attestation's status list; the resource
+  server half (section 7's RS side — this service's resources ask for none);
+  challenge-endpoint rate limiting beyond the store's bound.
+
+Codes `STS-OAUTH-0720`..`0751`. Tests: `tests/client_attestation.js` (in
+process) and `tests/vendored/sts_client_attestation.js` (over HTTP).
 
 ## OPENID CONNECT CORE, READ AGAINST THE CODE (2026-09-22, #118)
 

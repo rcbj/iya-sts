@@ -84,14 +84,8 @@ const PLANS = [
     offer: "cross-device" },
   // HAIP's issuer plan authenticates every wallet with OAuth 2.0
   // Attestation-Based Client Authentication (`attest_jwt_client_auth`,
-  // draft-ietf-oauth-attestation-based-client-auth), which this
-  // authorization server does not implement: every module stops at its
-  // first token request. It is listed NOT RUN so the gap is in the run's
-  // own output, and runs once the method exists (rcbj/iya-sts#229).
+  // #229, `oauth-oidc/CLAUDE.md` 3bm); see prepare() for the attester.
   { key: "haip", name: "oid4vci-1_0-issuer-haip-test-plan", haip: true,
-    pending: "this authorization server does not implement " +
-             "attest_jwt_client_auth, which HAIP requires of every " +
-             "wallet (#229)",
     variant: { credential_format: "sd_jwt_vc", grant_management: "disabled",
                vci_authorization_code_flow_variant: "wallet_initiated" } }
 ];
