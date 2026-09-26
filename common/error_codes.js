@@ -7194,6 +7194,132 @@ const CODES = [
     summary: 'An operator\'s retry of a CIBA notification was ' +
       'refused: unknown, not a dead letter, or no endpoint now (#151).',
     spec: 'console / /admin-api refusal (HTTP 400)' },
+  { code: 'STS-OAUTH-0722',
+    summary: 'An OpenID Provider Command was not sent because ' +
+      'federation.outbound is off (#151).',
+    spec: 'none (a dead letter)' },
+  { code: 'STS-OAUTH-0723',
+    summary: 'An OpenID Provider Command was not sent because the ' +
+      'client\'s command_endpoint cannot be dialled (#151).',
+    spec: 'none (a dead letter)' },
+  { code: 'STS-OAUTH-0724',
+    summary: 'An OpenID Provider Command was refused because the ' +
+      'command_endpoint resolves to an internal address in product mode ' +
+      '(#151).',
+    spec: 'none (a dead letter)' },
+  { code: 'STS-OAUTH-0725',
+    summary: 'A command_endpoint\'s host name did not resolve ' +
+      '(#151).',
+    spec: 'none (a dead letter)' },
+  { code: 'STS-OAUTH-0726',
+    summary: 'A command_endpoint answered with a redirect, which ' +
+      'is not followed (#151).',
+    spec: 'none (a dead letter)' },
+  { code: 'STS-OAUTH-0727',
+    summary: 'A Command Token could not be built or signed — the ' +
+      'client registered alg none, or signing failed (#151).',
+    spec: 'none (a dead letter)' },
+  { code: 'STS-OAUTH-0728',
+    summary: 'An OpenID Provider Command timed out; retried with ' +
+      'backoff (#151).',
+    spec: 'none (retried, then a dead letter)' },
+  { code: 'STS-OAUTH-0729',
+    summary: 'An OpenID Provider Command failed to connect; ' +
+      'retried with backoff (#151).',
+    spec: 'none (retried, then a dead letter)' },
+  { code: 'STS-OAUTH-0730',
+    summary: 'A command_endpoint answered a status the draft does ' +
+      'not name — 5xx, 408 and 429 are retried, the rest are not (#151).',
+    spec: 'none (a dead letter)' },
+  { code: 'STS-OAUTH-0731',
+    summary: 'A command attempt was deferred because the claim ' +
+      'store was unavailable (#151).',
+    spec: 'none (the sweep tries again)' },
+  { code: 'STS-OAUTH-0732',
+    summary: 'An OpenID Provider Command was still unsent past ' +
+      'oauth2.commandRetentionS and was dead-lettered (#151).',
+    spec: 'none (a dead letter)' },
+  { code: 'STS-OAUTH-0733',
+    summary: 'The provider commands summary line: some were dead- ' +
+      'lettered or deferred since the last one (#151).',
+    spec: 'none (a log line)' },
+  { code: 'STS-OAUTH-0734',
+    summary: 'The provider commands sweep failed in a realm ' +
+      '(#151).',
+    spec: 'none (a log line)' },
+  { code: 'STS-OAUTH-0735',
+    summary: 'No issuer is known for a Command Token: set ' +
+      'global.publicBaseUrl, or send one command from the console so the ' +
+      'realm\'s address is learned (#151).',
+    spec: 'none (a dead letter or a failed run)' },
+  { code: 'STS-OAUTH-0736',
+    summary: 'A relying party answered a command with ' +
+      'invalid_request (section 3) (#151).',
+    spec: 'none (a dead letter)' },
+  { code: 'STS-OAUTH-0737',
+    summary: 'A relying party answered a command with ' +
+      'unrecognized_provider: it does not know this issuer (#151).',
+    spec: 'none (a dead letter)' },
+  { code: 'STS-OAUTH-0738',
+    summary: 'A relying party answered unsupported_command (#151).',
+    spec: 'none (a dead letter)' },
+  { code: 'STS-OAUTH-0739',
+    summary: 'A relying party answered incompatible_state: the ' +
+      'account was not in a state the command may start from; the state it ' +
+      'gave is recorded (#151).',
+    spec: 'none (a dead letter)' },
+  { code: 'STS-OAUTH-0740',
+    summary: 'A relying party answered access_denied to a migrate ' +
+      'command (#151).',
+    spec: 'none (a dead letter)' },
+  { code: 'STS-OAUTH-0741',
+    summary: 'A relying party answered ' +
+      'authentication_not_transferable to a migrate command (#151).',
+    spec: 'none (a dead letter)' },
+  { code: 'STS-OAUTH-0742',
+    summary: 'An operator\'s retry of a command delivery was ' +
+      'refused: unknown, not a dead letter, or no command_endpoint now ' +
+      '(#151).',
+    spec: 'console / /admin-api refusal (HTTP 400)' },
+  { code: 'STS-OAUTH-0743',
+    summary: 'A relying party\'s answer to a command is not the ' +
+      'draft\'s: no matching sub and account_state, a metadata answer ' +
+      'without commands_supported or context, or a stream that is not ' +
+      'text/event-stream (#151).',
+    spec: 'none (a dead letter or a failed run)' },
+  { code: 'STS-OAUTH-0744',
+    summary: 'A command was not sent: provider commands are off, ' +
+      'the command is unknown, the client has no command_endpoint, the ' +
+      'person has no subject there, or the client requires an aud_sub none ' +
+      'is recorded for (#151).',
+    spec: 'console / /admin-api refusal (HTTP 400)' },
+  { code: 'STS-OAUTH-0745',
+    summary: 'A tenant command\'s stream could not be resumed: the ' +
+      'relying party answered last-event-id-unavailable (#151).',
+    spec: 'none (a failed run)' },
+  { code: 'STS-OAUTH-0746',
+    summary: 'A tenant command\'s stream ended without command- ' +
+      'complete after every resumption (#151).',
+    spec: 'none (a failed run)' },
+  { code: 'STS-OAUTH-0747',
+    summary: 'A call to /oauth2/commands/callback carried no ' +
+      'callback token, or an unknown or expired one (#151).',
+    spec: 'HTTP 401 {error: invalid_token} with WWW-Authenticate' },
+  { code: 'STS-OAUTH-0748',
+    summary: 'A call to /oauth2/commands/callback was malformed: ' +
+      'an async result not naming the command\'s sub and an account_state, ' +
+      'or a command_requested other than metadata or audit_tenant (#151).',
+    spec: 'HTTP 400 {error: invalid_request}' },
+  { code: 'STS-OAUTH-0749',
+    summary: 'An automatic OpenID Provider Command could not be ' +
+      'queued after a directory change or a sign-out; the change stands ' +
+      '(#151).',
+    spec: 'none (a log line)' },
+  { code: 'STS-OAUTH-0750',
+    summary: 'The mock relying party\'s command endpoint refused a ' +
+      'command — the development test control answering as a relying party ' +
+      'would (#151).',
+    spec: 'HTTP 400, 401, 409 or 404 {error}' },
   { code: 'STS-SAML-0001',
     summary: 'A SAML 2.0 sign-in resumed with a held-request id that is ' +
       'unknown or has expired (saml2.requestTtlMin), so there is no ' +
@@ -16103,6 +16229,12 @@ const CODES = [
     summary: 'FAPI-CIBA: a registration under a FAPI profile asked for the ' +
       'push delivery mode, which the profile does not allow (#142).',
     spec: 'invalid_client_metadata (HTTP 400)' },
+  { code: 'STS-REG-0199',
+    summary: 'A command_endpoint (OpenID Provider Commands, #151) ' +
+      'was not an https URL with no fragment, at registration, update or a ' +
+      'console or API write.',
+    spec: 'HTTP 400 {error: invalid_client_metadata}, or a console / ' +
+      '/admin-api refusal' },
   { code: 'STS-DBG-0001',
     summary: 'The debugger permission was asked for by somebody who may ' +
       'not hold it — not a person, not signed in, not in the ' +

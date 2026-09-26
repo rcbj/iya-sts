@@ -1325,6 +1325,21 @@ class ProtocolStack {
     // reaches is reached lazily, so the order is for a reader.
     this.build('kerberos/krb5_krbtgt_rotation',
                require('../kerberos/krb5_krbtgt_rotation'), 'KrbtgtRotation');
+    // 23b-iv. OPENID PROVIDER COMMANDS (#151): the library — Command Tokens
+    // on the shared outbound queue, tenant runs, the account-state register
+    // — whose wire step registers the `oauth2.command-sweep` job and adds it
+    // to the directory's account observers, so it is built after
+    // `ldap/ldap_server` (21); its one route is the callback. Then the mock
+    // relying party's command endpoint (development only).
+    this.build('oauth-oidc/provider_commands',
+               require('../oauth-oidc/provider_commands'),
+               'ProviderCommands');
+    this.register(app, require('../oauth-oidc/provider_commands'),
+                  'oauth-oidc/provider_commands');
+    this.build('oauth-oidc/command_mock_rp',
+               require('../oauth-oidc/command_mock_rp'), 'CommandMockRp');
+    this.register(app, require('../oauth-oidc/command_mock_rp'),
+                  'oauth-oidc/command_mock_rp');
     // -------------------------------------------------------------------------
     // 23c. XACML 3.0 — the PDP, the policy repository, the PIP, the embedded
     // PEPs and the PAP console.

@@ -4358,6 +4358,121 @@ const SETTINGS = [
     description: 'The wait before a failed ping or push is tried again, ' +
                  'doubling each time.' },
 
+  // OPENID PROVIDER COMMANDS (#151): `oauth-oidc/provider_commands.ts`, a
+  // kind of the shared outbound queue, its tenant runs and callbacks.
+  { key: 'oauth2.providerCommands', group: 'OAuth 2.0 / OIDC',
+    label: 'OpenID Provider Commands',
+    env: 'STS_OAUTH2_PROVIDER_COMMANDS', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'Send OpenID Provider Commands (draft 02, #151): a signed ' +
+                 'Command Token POSTed to each relying party\'s registered ' +
+                 'command_endpoint — account commands about one person, ' +
+                 'tenant commands about all of them — and accept their ' +
+                 'callbacks at /oauth2/commands/callback. OFF by default: it ' +
+                 'tells other services what to do with accounts.' },
+  { key: 'oauth2.commandAutomatic', group: 'OAuth 2.0 / OIDC',
+    label: 'Automatic provider commands',
+    env: 'STS_OAUTH2_COMMAND_AUTOMATIC', type: 'bool', dflt: true,
+    runtime: true,
+    description: 'While provider commands are on: send suspend on a disable, ' +
+                 'reactivate on an enable, delete on a directory or SCIM ' +
+                 'delete, maintain on a change to the person or their groups ' +
+                 'and invalidate on an administrator\'s global sign-out — ' +
+                 'only to a relying party whose metadata answer listed the ' +
+                 'command, and where the person has an account there.' },
+  { key: 'oauth2.commandTokenTtlS', group: 'OAuth 2.0 / OIDC',
+    label: 'Command Token lifetime (s)',
+    env: 'STS_OAUTH2_COMMAND_TOKEN_TTL_S', type: 'int', dflt: 120,
+    min: 10, max: 120, runtime: true,
+    description: 'How long a Command Token is valid; the draft asks for at ' +
+                 'most two minutes, so a retry after a backoff signs it ' +
+                 'again with the same jti.' },
+  { key: 'oauth2.commandAttempts', group: 'OAuth 2.0 / OIDC',
+    label: 'Command attempts',
+    env: 'STS_OAUTH2_COMMAND_ATTEMPTS', type: 'int', dflt: 5,
+    min: 1, max: 20, runtime: true,
+    description: 'How many times a command is tried before it is a dead ' +
+                 'letter. Only a timeout, a connection failure, 5xx, 408 and ' +
+                 '429 are tried again.' },
+  { key: 'oauth2.commandTimeoutMs', group: 'OAuth 2.0 / OIDC',
+    label: 'Command timeout (ms)',
+    env: 'STS_OAUTH2_COMMAND_TIMEOUT_MS', type: 'int', dflt: 10000,
+    min: 500, max: 120000, runtime: true,
+    description: 'How long one command request may take.' },
+  { key: 'oauth2.commandBackoffMs', group: 'OAuth 2.0 / OIDC',
+    label: 'Command backoff (ms)',
+    env: 'STS_OAUTH2_COMMAND_BACKOFF_MS', type: 'int', dflt: 2000,
+    min: 0, max: 600000, runtime: true,
+    description: 'The wait before a failed command is tried again, doubling ' +
+                 'each time.' },
+  { key: 'oauth2.commandLeaseMs', group: 'OAuth 2.0 / OIDC',
+    label: 'Command attempt lease (ms)',
+    env: 'STS_OAUTH2_COMMAND_LEASE_MS', type: 'int', dflt: 60000,
+    min: 1000, max: 3600000, runtime: true,
+    description: 'How long one process holds an attempt before another may ' +
+                 'take it over; never less than the timeout and a second.' },
+  { key: 'oauth2.commandRetentionS', group: 'OAuth 2.0 / OIDC',
+    label: 'Command retention (s)',
+    env: 'STS_OAUTH2_COMMAND_RETENTION_S', type: 'int', dflt: 86400,
+    min: 60, max: 2592000, runtime: true,
+    description: 'How long a command delivery and a finished tenant run are ' +
+                 'kept; a delivery still pending this long is dead-lettered.' },
+  { key: 'oauth2.commandMaxRows', group: 'OAuth 2.0 / OIDC',
+    label: 'Command rows kept',
+    env: 'STS_OAUTH2_COMMAND_MAX_ROWS', type: 'int', dflt: 5000,
+    min: 10, max: 1000000, runtime: true,
+    description: 'The most command deliveries kept per realm; past it the ' +
+                 'oldest FINISHED one goes first.' },
+  { key: 'oauth2.commandConcurrency', group: 'OAuth 2.0 / OIDC',
+    label: 'Commands in flight',
+    env: 'STS_OAUTH2_COMMAND_CONCURRENCY', type: 'int', dflt: 8,
+    min: 1, max: 256, runtime: true,
+    description: 'How many command attempts one sweep makes at once in one ' +
+                 'process.' },
+  { key: 'oauth2.commandSummaryS', group: 'OAuth 2.0 / OIDC',
+    label: 'Command summary interval (s)',
+    env: 'STS_OAUTH2_COMMAND_SUMMARY_S', type: 'int', dflt: 60,
+    min: 1, max: 86400, runtime: true,
+    description: 'At most one log line per realm this often, counting the ' +
+                 'commands sent, retried and dead-lettered.' },
+  { key: 'oauth2.commandSweepS', group: 'OAuth 2.0 / OIDC',
+    label: 'Command sweep interval (s)',
+    env: 'STS_OAUTH2_COMMAND_SWEEP_S', type: 'int', dflt: 15,
+    min: 1, max: 3600, runtime: true,
+    description: 'How often the oauth2.command-sweep scheduler job sends ' +
+                 'what is due and drops expired callback tokens and old ' +
+                 'tenant runs.' },
+  { key: 'oauth2.commandCallbackTtlS', group: 'OAuth 2.0 / OIDC',
+    label: 'Command callback token lifetime (s)',
+    env: 'STS_OAUTH2_COMMAND_CALLBACK_TTL_S', type: 'int', dflt: 86400,
+    min: 60, max: 2592000, runtime: true,
+    description: 'How long a callback_token this service put in a Command ' +
+                 'Token is accepted at /oauth2/commands/callback.' },
+  { key: 'oauth2.commandStreamIdleMs', group: 'OAuth 2.0 / OIDC',
+    label: 'Tenant command stream idle timeout (ms)',
+    env: 'STS_OAUTH2_COMMAND_STREAM_IDLE_MS', type: 'int', dflt: 30000,
+    min: 1000, max: 600000, runtime: true,
+    description: 'How long a tenant command\'s event stream may be silent ' +
+                 'before it is treated as dropped and resumed.' },
+  { key: 'oauth2.commandStreamResumes', group: 'OAuth 2.0 / OIDC',
+    label: 'Tenant command stream resumptions',
+    env: 'STS_OAUTH2_COMMAND_STREAM_RESUMES', type: 'int', dflt: 3,
+    min: 0, max: 20, runtime: true,
+    description: 'How many times a tenant command\'s stream that dropped ' +
+                 'before command-complete is resumed with Last-Event-ID ' +
+                 'before the run fails.' },
+  { key: 'oauth2.commandStreamMaxEvents', group: 'OAuth 2.0 / OIDC',
+    label: 'Tenant command stream event cap',
+    env: 'STS_OAUTH2_COMMAND_STREAM_MAX_EVENTS', type: 'int', dflt: 1000000,
+    min: 1, max: 100000000, runtime: true,
+    description: 'The most events one tenant command\'s stream may carry.' },
+  { key: 'oauth2.commandMetadataMaxGroups', group: 'OAuth 2.0 / OIDC',
+    label: 'Groups in a metadata command',
+    env: 'STS_OAUTH2_COMMAND_METADATA_MAX_GROUPS', type: 'int', dflt: 200,
+    min: 0, max: 10000, runtime: true,
+    description: 'The most directory groups the metadata command\'s OP ' +
+                 'metadata lists.' },
+
   // THE SHARED OUTBOUND QUEUE'S OTHER FOUR NUMBERS (#151): CIBA's ping and
   // push became a kind of `oauth-oidc/outbound_delivery.ts`, which keeps
   // every kind's dead letters, bounds its store and summarises per realm.
