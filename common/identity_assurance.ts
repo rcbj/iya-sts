@@ -85,6 +85,12 @@ import mode = require('./mode');
 import credentials = require('./credentials');
 import claimAttributes = require('./claim_attributes');
 import errorCodes = require('./error_codes');
+// WHAT A CHANGE HERE SAYS OVER SHARED SIGNALS (#238, #243): the moved
+// `verified_claims` and the person's identity assurance level. A library
+// that requires nothing of this service but the logger and reads `ssf.ts`
+// out of `require.cache` when an event is due, so the require closes no
+// cycle and loads nothing early (see its header).
+import accountSignals = require('../ssf/account_signals');
 
 // A loose JSON-shaped value: a request, a record, an answer.
 type Json = any;
@@ -151,6 +157,23 @@ const MAX_RECORD_BYTES = 8192;
 const MAX_REQUEST_DEPTH = 8;
 const MAX_REQUEST_NODES = 256;
 
+// THE IDENTITY ASSURANCE LEVEL AS CAEP assurance-level-change SAYS IT (#243).
+// This service's own namespace, carrying the verification's own
+// `assurance_level` as it was recorded — never mapped onto a NIST level,
+// because that would assert a conformance nobody assessed (the reason
+// `ssf/caep.ts` has `urn:sts:acr`). CAEP 1.0 section 3.4 allows a custom
+// namespace agreed between the two parties. Two values are this namespace's
+// own: `verified`, a verification recorded under a trust framework that
+// states no level, and `none`, nothing recorded.
+const IAL_NAMESPACE = 'urn:sts:ial';
+
+// `NIST-IAL` ONLY WHERE THE VERIFICATION SAYS IT IS NIST's: the trust
+// framework is SP 800-63A (the Identity Assurance predefined value
+// `nist_800_63A`) and the level is one of 800-63's three. Anything else stays
+// in IAL_NAMESPACE, spelled as recorded.
+const NIST_IAL_FRAMEWORKS = Object.freeze(['nist_800_63a']);
+const NIST_IAL_LEVEL = /^ial([123])$/i;
+
 // Section 6's bounds on `purpose`.
 const PURPOSE_MIN = 3;
 const PURPOSE_MAX = 300;
@@ -158,6 +181,8 @@ const PURPOSE_MAX = 300;
 
 interface IdentityAssuranceDeps {
   log: typeof helpers.log;
+  signals: { claimsChanged(notice: Json): unknown;
+             assuranceChanged(notice: Json): unknown };
   config: typeof config;
   mode: typeof mode;
   credentials: typeof credentials;
@@ -187,6 +212,7 @@ class IdentityAssurance {
       credentials: credentials,
       claimAttributes: claimAttributes,
       errorCodes: errorCodes,
+      signals: accountSignals,
       now: Date.now
     };
   }
@@ -370,13 +396,153 @@ class IdentityAssurance {
     return records;
   }
 
-  private store(username: string, records: Json[]): boolean {
+  // THE ONE WRITE, for `record()`, `remove()` and `recordAutomatic()` alike —
+  // which is why what the write MOVED is told to Shared Signals here (#238,
+  // #243) and nowhere else. `how` is who initiated it, in CAEP's words.
+  private store(username: string, records: Json[], how?: string): boolean {
     const { log, credentials } = this.deps;
     log.debug("Entering IdentityAssurance.store().");
+    const before = this.list(username);
     const written = credentials.writeIdaVerifications(username,
       records.length ? JSON.stringify(records) : '');
+    if (written) {
+      this.announce(username, before, records, how || 'admin');
+    }
     log.debug("Leaving IdentityAssurance.store(). " + written);
     return written;
+  }
+
+  // -------------------------------------------------------------------------
+  // WHAT A WRITE MOVED, SAID OVER SHARED SIGNALS (#238, #243).
+  //
+  // **`verified_claims`**, as CAEP token-claims-change, when what a token
+  // could carry moved: a verification's framework, level or claims. Not its
+  // `time` or its id — a sign-in rewriting its own automatic record with the
+  // same verification of the same values is the ordinary case and moves
+  // nothing a relying party holds. The value is releasable() below, computed
+  // only if the person holds something live.
+  //
+  // **The identity assurance level**, as CAEP assurance-level-change, when
+  // assuranceOf() moved. `previous_level` only when the namespace stayed the
+  // same — a level in another namespace is not a previous value of this one,
+  // and CAEP says an absent one is unknown — and `change_direction` only where
+  // the two levels have an order (assuranceOf()'s `rank`).
+  //
+  // Neither is awaited, and neither can undo the write: account_signals
+  // swallows everything.
+  // -------------------------------------------------------------------------
+  private announce(username: string, before: Json[], after: Json[],
+                   how: string): void {
+    const { log, signals } = this.deps;
+    const self = this;
+    log.debug("Entering IdentityAssurance.announce().");
+    const shape = function (records: Json[]): string {
+      return IdentityAssurance.canonical(records.map(function (one: Json) {
+        const v = one.verification || {};
+        return { f: v.trust_framework, l: v.assurance_level || '',
+                 c: one.claims };
+      }));
+    };
+    if (shape(before) !== shape(after)) {
+      signals.claimsChanged({ username: username,
+        protocol: 'Identity assurance', initiatingEntity: how,
+        reasonAdmin: 'The identity verifications recorded for this person ' +
+                     'changed',
+        reasonUser: 'The verified information about you that tokens ' +
+                    'already issued may carry changed.',
+        claims: function () {
+          return { verified_claims: self.releasable(username) };
+        } });
+    }
+    const was = IdentityAssurance.assuranceOf(before);
+    const now = IdentityAssurance.assuranceOf(after);
+    if (was.namespace !== now.namespace || was.level !== now.level) {
+      const same = was.namespace === now.namespace;
+      const direction = !same || was.rank === now.rank ? ''
+        : (now.rank > was.rank ? 'increase' : 'decrease');
+      signals.assuranceChanged({ username: username,
+        namespace: now.namespace, current: now.level,
+        previous: same ? was.level : '', direction: direction,
+        initiatingEntity: how });
+    }
+    log.debug("Leaving IdentityAssurance.announce().");
+  }
+
+  // THE PERSON'S IDENTITY ASSURANCE LEVEL (#243), from their verifications,
+  // newest first as list() answers them: the newest that STATES an
+  // `assurance_level` decides it. `rank` orders levels within a namespace
+  // where they have an order — IAL1 < IAL2 < IAL3 in NIST-IAL, and `none` <
+  // `verified` < a stated level in IAL_NAMESPACE; two stated levels there
+  // share a rank, because this service does not know an arbitrary
+  // framework's order.
+  static assuranceOf(records: Json[]):
+      { namespace: string; level: string; rank: number } {
+    helpers.log.debug("Entering IdentityAssurance.assuranceOf().");
+    const stated = (records || []).filter(function (one: Json) {
+      return IdentityAssurance.isObject(one && one.verification) &&
+             String(one.verification.assurance_level || '').trim() !== '';
+    })[0];
+    if (stated) {
+      const framework = String(stated.verification.trust_framework || '')
+        .trim().toLowerCase();
+      const level = String(stated.verification.assurance_level).trim();
+      const nist = NIST_IAL_LEVEL.exec(level);
+      helpers.log.debug("Leaving IdentityAssurance.assuranceOf(). Stated.");
+      if (nist && NIST_IAL_FRAMEWORKS.indexOf(framework) >= 0) {
+        return { namespace: 'NIST-IAL', level: 'IAL' + nist[1],
+                 rank: Number(nist[1]) };
+      }
+      return { namespace: IAL_NAMESPACE, level: level, rank: 2 };
+    }
+    helpers.log.debug("Leaving IdentityAssurance.assuranceOf().");
+    return (records || []).length
+      ? { namespace: IAL_NAMESPACE, level: 'verified', rank: 1 }
+      : { namespace: IAL_NAMESPACE, level: 'none', rank: 0 };
+  }
+
+  // WHAT A TOKEN COULD CARRY AS `verified_claims` NOW (#238): every recorded
+  // verification whose claims still hold on the entry — respond()'s staleness
+  // rule, without a request narrowing it — as its framework and level with
+  // those claims. Never `evidence`: a Security Event Token goes to every
+  // receiver of a stream, and what a document check found is not what a
+  // claims change needs to say. `null` when nothing is releasable, which is
+  // how CAEP says the claim is gone. (Development's invented demo
+  // verification is not a record and is not reported.)
+  releasable(username: string): Json {
+    const { log } = this.deps;
+    log.debug("Entering IdentityAssurance.releasable().");
+    const records = this.list(username);
+    const names: string[] = [];
+    records.forEach(function (one: Json) {
+      Object.keys(one.claims).forEach(function (name) {
+        if (names.indexOf(name) < 0) {
+          names.push(name);
+        }
+      });
+    });
+    const current = names.length ? this.currentValues(username, names).values
+      : {};
+    const out: Json[] = [];
+    records.forEach(function (one: Json) {
+      const claims: Json = {};
+      Object.keys(one.claims).forEach(function (name) {
+        if (IdentityAssurance.canonical(one.claims[name]) ===
+            IdentityAssurance.canonical(current[name])) {
+          claims[name] = one.claims[name];
+        }
+      });
+      if (!Object.keys(claims).length) {
+        return;
+      }
+      const verification: Json = {
+        trust_framework: one.verification.trust_framework };
+      if (one.verification.assurance_level) {
+        verification.assurance_level = one.verification.assurance_level;
+      }
+      out.push({ verification: verification, claims: claims });
+    });
+    log.debug("Leaving IdentityAssurance.releasable(). " + out.length + ".");
+    return out.length ? out : null;
   }
 
   // What the entry holds NOW for each of `names`, through the catalogue every
@@ -778,7 +944,8 @@ class IdentityAssurance {
 
   // Keeps a record, newest first, replacing a record from the same automatic
   // source when `replaces` names one, and capping the list.
-  private add(username: string, fields: Json, replaces?: string): Json {
+  private add(username: string, fields: Json, replaces?: string,
+              how?: string): Json {
     const { log } = this.deps;
     log.debug("Entering IdentityAssurance.add().");
     const record = Object.assign({
@@ -794,7 +961,7 @@ class IdentityAssurance {
       return !replaces || one.source !== replaces;
     });
     const records = [record].concat(kept).slice(0, MAX_RECORDS);
-    if (!this.store(username, records)) {
+    if (!this.store(username, records, how)) {
       log.debug("Leaving IdentityAssurance.add(). Not stored.");
       return { ok: false, error: 'the directory did not store it (no entry ' +
                                  'for "' + username + '" in this realm).' };
@@ -901,7 +1068,7 @@ class IdentityAssurance {
         source: kind, by: 'the sign-in',
         verification: { trust_framework: framework, time: now,
                         evidence: [evidence] },
-        claims: agreed }, kind);
+        claims: agreed }, kind, 'system');
       log.debug("Leaving IdentityAssurance.recordAutomatic(). " + stored.ok);
       return stored;
     } catch (e) {
@@ -1283,6 +1450,9 @@ export = {
     slot.install(instance),
   instanceOrigin: (): string => slot.origin(),
   EVIDENCE_TYPES: EVIDENCE_TYPES,
+  IAL_NAMESPACE: IAL_NAMESPACE,
+  assuranceOf: IdentityAssurance.assuranceOf,
+  releasable: slot.forward('releasable'),
   DEMO_FRAMEWORK: DEMO_FRAMEWORK,
   DOCUMENT_TYPES: DOCUMENT_TYPES,
   CHECK_METHODS: CHECK_METHODS,

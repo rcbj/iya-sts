@@ -2844,6 +2844,13 @@ function putEntry(dn, attributes, options) {
     noteMembershipChange(stored.dn, previous ? previous.attributes : {},
                          stored.attributes);
   }
+  // A role's members, the same way (#238): `roles.write()` and an `ldapadd`
+  // both arrive here.
+  if (moduleLoaded &&
+      (isRoleEntry(stored) || (previous && isRoleEntry(previous)))) {
+    noteRoleChange(stored.dn, previous ? previous.attributes : {},
+                   stored.attributes);
+  }
   log.debug('Leaving putEntry(). The directory now holds ' + entries.size +
             ' entry/entries.');
   return stored;
@@ -10443,6 +10450,10 @@ function writePersonFlag(key, name, value, options) {
   // `/portal/forgot-password` recovers the account through, so its moving is
   // RISC's recovery-information-changed — read by `ssf/risc.ts` off the
   // before and after, as the address itself is.
+  //
+  // AND `stsMailVerified` (#238): a person proving the address they already
+  // had moves `email_verified` in every token they hold, and the observer is
+  // what tells CAEP so.
   const observed = name === 'pwdAccountLockedTime' ||
                    name === 'stsMailVerified'
     ? attributeSnapshot(stored) : null;
@@ -12838,6 +12849,8 @@ server.del('', function (req, res, next) {
                       {});
   } else if (deletedGroup) {
     noteMembershipChange(stored.dn, deletedAttributes, {});
+  } else if (isRoleEntry(stored)) {
+    noteRoleChange(stored.dn, deletedAttributes, {});
   }
   // Note what is NOT done here: the DN is left in any group that lists it as a
   // member. See the header — referential integrity is a directory feature and
@@ -13038,6 +13051,8 @@ function ldapModifyNow(req, res, next) {
                       attributeSnapshot(stored));
   } else if (groupRuleFor(stored)) {
     noteMembershipChange(stored.dn, beforeModify, stored.attributes);
+  } else if (isRoleEntry(stored)) {
+    noteRoleChange(stored.dn, beforeModify, stored.attributes);
   }
   log.info('ldap: modified ' + dn + '.');
   // Recorded AFTER the working copy has replaced the stored one, and that is
@@ -13212,6 +13227,10 @@ server.modifyDN('', function (req, res, next) {
     // A group renamed: every member's claim names it by the name that moved.
     noteMembershipChange(stored.dn, before, stored.attributes,
                          { everyMember: true });
+  } else if (isRoleEntry(stored) || isRoleEntry({ dn: dn })) {
+    // A role renamed (#238): every holder's claim names it by the new name.
+    noteRoleChange(stored.dn, before, stored.attributes,
+                   { everyMember: true });
   }
   // The kind is taken from the NEW DN, because that is what the entry is now —
   // and a rename can move an entry between containers, which is exactly the
@@ -14898,6 +14917,7 @@ function deleteRole(name) {
   entries.delete(normalizeDn(stored.dn));
   touchDirectory();
   auditPolicyDirectory('entry.delete', stored.dn, stored.attributes, false);
+  noteRoleChange(stored.dn, stored.attributes, {});
   log.debug('Leaving deleteRole(). ' + entries.size + ' entry/entries left.');
   return true;
 }
@@ -16139,6 +16159,11 @@ function noteMembershipChange(groupDn, before, after, options) {
           return !was.has(dn);
         }));
   const seen = {};
+  // WHETHER A ROLE NAMES THIS GROUP (#238), under the name it had or has:
+  // then the members' roles claim moved with their groups claim. Asked once,
+  // and only when somebody is affected.
+  const rolesMoved = affected.length > 0 &&
+    roleNamesGroup([(before && before.cn) || [], (after && after.cn) || []]);
   affected.forEach(function (dn) {
     if (seen[dn]) {
       return;
@@ -16151,10 +16176,127 @@ function noteMembershipChange(groupDn, before, after, options) {
     }
     tellAccountObservers({ kind: 'membership', dn: String(stored.dn),
       username: usernameOfEntry(stored), realm: realmFor(stored.dn).id,
-      group: String(groupDn) });
+      group: String(groupDn), rolesMoved: rolesMoved });
   });
   log.debug('Leaving noteMembershipChange(). ' + Object.keys(seen).length +
             ' member(s) affected.');
+}
+
+// ---------------------------------------------------------------------------
+// A ROLE's MEMBERS CHANGED (#238), told to the same observer once per PERSON
+// whose roles claim it moved — the relation noteMembershipChange() above
+// reports for a group, one container over.
+//
+// `ou=roles` holds who holds a role (`roleMemberUser`, `roleMemberGroup`),
+// and the roles claim in every token is built from it (`common/roles.js`'s
+// claimFor()); an entry here was neither a person nor a group, so a write to
+// it told nobody. The people affected are the `roleMemberUser` values that
+// moved and every member of a `roleMemberGroup` group that moved — or, for a
+// role created, deleted or renamed (`everyMember`), all of them. A
+// description edited moves nobody. `roleMemberApplication` is an
+// application's own role, and an application has no CAEP subject here yet
+// (#221). The kind is `roles`; RISC has no reading of it.
+// ---------------------------------------------------------------------------
+function isRoleEntry(stored) {
+  log.debug('Entering isRoleEntry().');
+  const role = !!(stored && stored.dn) && isUnder(stored.dn, rolesDn()) &&
+               normalizeDn(stored.dn) !== normalizeDn(rolesDn());
+  log.debug('Leaving isRoleEntry(). ' + role);
+  return role;
+}
+
+// Does any role's `roleMemberGroup` name one of these group names? `lists`
+// is a list of value lists (a group's `cn` before and after), compared
+// case-insensitively as `roles.js` compares them.
+function roleNamesGroup(lists) {
+  log.debug('Entering roleNamesGroup().');
+  const wanted = new Set();
+  (lists || []).forEach(function (list) {
+    (list || []).forEach(function (value) {
+      wanted.add(String(value).trim().toLowerCase());
+    });
+  });
+  const named = wanted.size > 0 && entriesUnder(rolesDn()).some(
+    function (role) {
+      return (role.attributes.rolemembergroup || []).some(function (value) {
+        return wanted.has(String(value).trim().toLowerCase());
+      });
+    });
+  log.debug('Leaving roleNamesGroup(). ' + named);
+  return named;
+}
+
+// Every person entry in the group whose common name is `name`, keyed by
+// normalised DN.
+function personsInGroupNamed(name, into) {
+  log.debug('Entering personsInGroupNamed().');
+  const wanted = String(name).trim().toLowerCase();
+  groupIndexNow().byDn.forEach(function (group) {
+    if (String(group.cn || '').toLowerCase() !== wanted) {
+      return;
+    }
+    const stored = getEntry(group.dn);
+    (stored ? membersOf(stored) : []).forEach(function (one) {
+      const member = getEntry(one.dn);
+      if (member && isPersonEntry(member)) {
+        into.set(normalizeDn(member.dn), member);
+      }
+    });
+  });
+  log.debug('Leaving personsInGroupNamed().');
+}
+
+function noteRoleChange(dn, before, after, options) {
+  log.debug('Entering noteRoleChange(). ' + dn);
+  if (!accountObserver && !accountListeners.length) {
+    log.debug('Leaving noteRoleChange(). Nobody is observing.');
+    return;
+  }
+  const was = before || {};
+  const now = after || {};
+  const every = !!(options && options.everyMember) ||
+                !Object.keys(was).length || !Object.keys(now).length;
+  const moved = function (name) {
+    const lower = function (map) {
+      return new Set((map[name] || []).map(function (value) {
+        return String(value).trim().toLowerCase();
+      }).filter(Boolean));
+    };
+    const from = lower(was);
+    const to = lower(now);
+    // Everybody named either side when the role itself came, went or was
+    // renamed; otherwise only the values on one side and not the other.
+    const out = new Set();
+    from.forEach(function (value) {
+      if (every || !to.has(value)) {
+        out.add(value);
+      }
+    });
+    to.forEach(function (value) {
+      if (every || !from.has(value)) {
+        out.add(value);
+      }
+    });
+    return Array.from(out);
+  };
+  const people = new Map();
+  moved('rolememberuser').forEach(function (name) {
+    const located = locateEntry(name);
+    if (located.stored && isPersonEntry(located.stored)) {
+      people.set(normalizeDn(located.stored.dn), located.stored);
+    }
+  });
+  moved('rolemembergroup').forEach(function (name) {
+    personsInGroupNamed(name, people);
+  });
+  const role = String(((now.cn || was.cn || [])[0]) || dn);
+  people.forEach(function (stored) {
+    tellAccountObservers({ kind: 'roles', dn: String(stored.dn),
+      username: usernameOfEntry(stored), realm: realmFor(stored.dn).id,
+      role: role });
+  });
+  log.debug('Leaving noteRoleChange(). ' + people.size + ' person(s) ' +
+            'affected.');
 }
 
 // The lock value on an attribute snapshot, or ''.

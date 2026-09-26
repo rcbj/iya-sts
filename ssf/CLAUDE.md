@@ -1291,6 +1291,12 @@ the half a reader cannot discover from a protocol trace.
   CAEP's eight now has an act here.
 * **It does not retry a failed push unless `ssf.pushRetries` says to.** See
   above.
+* **It sends nothing when a realm's authentication policy is TIGHTENED**
+  (#243, 2026-09-26). A live session keeps the `acr` it was established at —
+  that authentication did happen at that level — and CAEP 1.0 has no event
+  for "the level this realm requires went up": `assurance-level-change` says
+  a subject's assurance moved, and it did not. The next sign-in or step-up is
+  held to the new policy.
 * ~~It is not a receiver of anybody else's transmitter~~ — **reversed
   2026-09-26 (#153)**: a realm registers a foreign transmitter by its issuer
   and receives from it; see *THIS REALM AS A RECEIVER*, below.
@@ -1513,6 +1519,7 @@ administrator credential acts below) and `assurance-level-change` on
 | a session is presented and honoured | `session-presented` | `authn.notePresented()`, from `oauth-oidc/oauth2.ts`'s authorization endpoint, `saml2_sso.ts`, `saml11_sso.ts`, `wsfed.ts` and `gnap/gnap_interact.ts` |
 | a session ends | `session-revoked` | `authn.dropSession()`, which every sign-out door reaches |
 | the same person re-authenticates on a session they hold, and `acr` moves | `assurance-level-change` | `authn.reauthenticateSession()`'s `reauthenticated` notice |
+| a person's identity assurance level moves (#243) | `assurance-level-change`, same act | `common/identity_assurance.ts`'s one write, through `account_signals.assuranceChanged()` — *EVERY OTHER DOOR*, below |
 
 **A RE-AUTHENTICATION IS NOT A SESSION EVENT, AND THAT IS WHY THE FOURTH ROW
 EXISTS.** Until 2026-09-14 the same person stepping up in the same browser went
@@ -1871,6 +1878,73 @@ fingerprint, as CAEP defines the member, and not the header.
 * Acting on a RECEIVED event: the console's and portal's receivers (#62)
   and foreign transmitters (#153), a received `device-compliance-change`
   included (below).
+
+## TOKEN-CLAIMS-CHANGE FROM EVERY OTHER DOOR, AND TO EVERY HOLDER (#238, 2026-09-26)
+
+#145 made the directory's account observer the one input; a claim that came
+from anywhere else could never produce the event. Now:
+
+* **A role** (`ou=roles`) is reported by `ldap_server.js` as an observer
+  notice of its own, `kind: 'roles'`, once per person it moved
+  (`noteRoleChange()`: `putEntry()` — so `roles.write()` and `ldapadd` —
+  `deleteRole()`, and the LDAP modify, delete and rename). **`roles` and
+  `membership` are `SharedSignals.CLAIMS_ONLY_KINDS`**: `directoryChanged()`
+  hands neither to RISC. A `membership` notice carries `rolesMoved` when a
+  role's `roleMemberGroup` names the group, and `claimsChangeFor()` adds the
+  roles claim (`roles.claimFor()`, or `null`) — unless `groups.claimName`
+  equals `roles.claimName`, where the groups claim wins in every token.
+* **`email_verified`** is read off an `updated` notice as `stsMailVerified`
+  against `mail`; `writePersonFlag()` now tells the observer about
+  `stsMailVerified` as it does about the lock.
+* **Doors that are not the directory** — `identity_assurance.ts`
+  (`verified_claims`) and `claims_providers.ts` (`_claim_names` /
+  `_claim_sources`) — go through `account_signals.claimsChanged()` to
+  `emitClaimsChange()`, which is `claimsAutoEmit()` with `kind: 'claims'`.
+  The notice's `claims` may be a FUNCTION, called only after the live-issuance
+  check, so nothing is computed for somebody who holds nothing. A notice may
+  name its `protocol`, `initiatingEntity` and reasons.
+
+**THE FAN-OUT** is `claimsFanOut()`, for a configuration change that moves a
+claim in every holder's tokens: `admin_stats.liveClaimBearers(match)` lists
+each PERSON once with their newest live access token, ID Token or SAML
+assertion the change shaped (the record's claim set is `claimSet` — never
+`setId`, which a token record already carries), and `claimsFor(bearer)` gives
+the moved claims, usually `admin_stats.claimValuesFor()` — what that set would
+carry for that holder and audience now, `null` for gone. Each holder goes
+through `claimsAutoEmit()` with `liveChecked: true` (the listing WAS the
+check; asking again would walk the register once per holder). **It walks in
+slices of `FAN_OUT_SLICE` (100)**, each slice's deliveries awaited and the
+next started on a later turn of the event loop, so requests keep being
+answered and at most one slice queues behind the push cap. That is this
+family's half of the batch lane; `request_pool.js`'s batch lane is about
+inbound requests and is not involved.
+
+The doors that call it, each lazily and never into its write:
+`applications.js` (a permission revoked where grants are enforced, removed
+from its resource, or an allowed scope the policy now refuses: `scope` less
+the value), `admin_stats.setClaimSet()`, `claim_attributes.setSelection()`, a
+`roles.claim*` / `groups.claim*` setting through `config.js`, and a federation
+release list (`federation.js`'s `announceReleaseChange()`) —
+`admin_stats.announceClaimsReshaped()` for the last four. **Not sent:**
+adding a grant or scope (a token carries what was asked for),
+`appRequiredRole` (who may be ISSUED a token, no claim in one), the UserInfo
+set (built per call), and an application's own `client_credentials` tokens,
+whose subject waits on #221.
+
+**IDENTITY ASSURANCE (#243)** — `identity_assurance.ts`'s `store()` is the
+one write for `record()`, `remove()` and `recordAutomatic()`, and announces
+what moved: `verified_claims` when a framework, level or claim moved (not a
+`time`, so a sign-in rewriting its own record says nothing), and the level
+from `assuranceOf()` through `emitIdentityAssuranceChange()`:
+`assurance-level-change` about the PERSON, on the `reauthenticated` act. The
+namespace is `urn:sts:ial` with the verification's own `assurance_level`,
+and `NIST-IAL` only for `nist_800_63A` with IAL1–3 (rcbj's reason for
+`urn:sts:acr`: no mapping onto a conformance nobody assessed). `previous_level`
+only when the namespace stayed; `change_direction` only where the levels are
+ordered.
+
+`tests/caep_claims_doors.js` and `tests/vendored/sts_caep_claims_doors.js`
+hold both.
 
 ## THIS REALM AS A RECEIVER OF A FOREIGN TRANSMITTER (2026-09-26, #153)
 

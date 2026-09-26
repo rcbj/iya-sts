@@ -28,9 +28,9 @@ The short version:
 | `session-established` | **yes** — every sign-in, through every protocol that starts a session |
 | `session-presented` | **yes** — single sign-on, in four browser SSO profiles |
 | `session-revoked` | **yes** — every sign-out, and every expiry |
-| `token-claims-change` | **yes** — a directory change that moves a claim of somebody holding live tokens or assertions, and a modified [GNAP](gnap.md) grant |
+| `token-claims-change` | **yes** — a directory change, a role, an identity verification, an address proved, a claims provider unlinked, or a configuration change (permissions, allowed scopes, claim sets, claim settings, a federation release list) that moves a claim of somebody holding live tokens or assertions, and a modified [GNAP](gnap.md) grant |
 | `credential-change` | **yes** — any credential of a person created, changed, revoked or deleted, at every door that changes one |
-| `assurance-level-change` | **yes** — a re-authentication on a held session that moves its `acr` |
+| `assurance-level-change` | **yes** — a re-authentication on a held session that moves its `acr`, and an identity verification recorded or removed that moves a person's identity assurance level |
 | `device-compliance-change` | no — by hand only, until [#164](https://github.com/rcbj/iya-sts/issues/164) gives it a source |
 | `risk-level-change` | **yes** — when a person's risk level changes and the `risk-response` policy permits announcing it ([Risk scoring](risk-scoring.md#when-a-persons-risk-changes)) |
 
@@ -48,7 +48,8 @@ arrived" are the third.
    (default on) and `caep.autoEmitTypes` (default: all seven — the three
    session events, `credential-change`, `assurance-level-change`, which goes
    out when the same person re-authenticates on a session they already hold
-   and its `acr` changes, on the `urn:sts:acr` scale, `token-claims-change`,
+   and its `acr` changes, on the `urn:sts:acr` scale, and when their identity
+   assurance level moves, on `urn:sts:ial` or `NIST-IAL`, `token-claims-change`,
    and `risk-level-change`).
    Naming any other type in
    `autoEmitTypes` is **dropped with a warning** rather than
@@ -388,11 +389,54 @@ somebody left the group that authorises them.
     for one now empty;
   - a group joined or left, or a group renamed, and a person's own `memberOf`:
     the groups claim, with the whole list as it is now.
+  - a **role** given or taken away (`/admin/roles`, `/admin-api/roles`, or an
+    `ldapadd`, `ldapmodify`, `ldapdelete` or rename under `ou=roles`), for
+    each person it named or whose group it named: the roles claim as it is
+    now, or `null` when they hold no configured role any more. A description
+    edited moves nobody;
+  - a group joined or left **that a role names**: the roles claim beside the
+    groups claim;
+  - `email_verified`, when the address is proved (a verification link, a
+    trusted door writing it) or changes;
+  - an **identity verification** recorded, removed or recorded by a sign-in
+    ([Identity Assurance](oauth-oidc.md#verified-claims-openid-connect-for-identity-assurance-10)): `verified_claims` as a token
+    could carry it — each verification's `trust_framework` and
+    `assurance_level` with the claims still current on the entry, **never its
+    evidence**. A sign-in that rewrites its own automatic record with the same
+    claims sends nothing;
+  - a **Claims Provider** unlinked, or removed for everybody who linked it:
+    `_claim_names` and `_claim_sources` with that provider's members `null`.
+    **A source's value is never sent** — it holds a distributed source's access
+    token or another issuer's signed claims.
   The door does not matter: the console, `/admin-api`, SCIM, an `ldapmodify` of
   the person or of a group. A person with nothing live gets no event, because
   it would be about tokens that do not exist. The subject names the person
   (`iss_sub`), since the change is to every token they hold rather than to one
   session.
+- **Sent to every holder** when a CONFIGURATION change moves a claim in
+  tokens already issued — one event per person holding a live artifact it
+  shaped, with the value their newest such artifact would carry now:
+  - a delegated permission revoked from a client (where grants are enforced:
+    product mode, or `oauth2.delegatedPermissionsEnforced`), a permission
+    removed from its resource, or an allowed scope removed that the scope
+    policy now refuses: `scope`, less what went;
+  - a custom claim added, changed or removed, or a directory attribute
+    selected or dropped, on the access-token, ID Token or SAML claim sets;
+  - `roles.claim`, `roles.claimName` and the `groups.claim*` settings: the
+    claim under its old and new name;
+  - a federation partner's release list edited, enabled, disabled or deleted:
+    the claims now released or withheld for that application.
+
+  The holders are walked **in slices of 100**, each slice's deliveries
+  finished before the next starts on a later turn of the event loop, behind
+  the push cap (`ssf.pushConcurrency`) — so a change touching thousands of
+  holders runs in the background and answers requests throughout. Adding a
+  grant or a scope sends nothing (a token carries what was asked for), and so
+  does `appRequiredRole`, which changes who may be issued a token rather than
+  any claim in one. The UserInfo claim set sends nothing: a UserInfo response
+  is built on every call. **An application's own tokens** (a
+  `client_credentials` grant, with no person) are not the subject of these
+  events yet — see [#221](https://github.com/rcbj/iya-sts/issues/221).
 
 ## `credential-change`
 
@@ -461,6 +505,21 @@ was good for, both lower assurance without anybody signing in again.
   one event about this session has been missed, or two transmitters are talking
   about it.
 - **Default payload:** the configured namespace and `aal2`.
+- **Sent by itself** in two cases:
+  - a re-authentication on a held session moves its `acr`, on this service's
+    own `urn:sts:acr` scale, about the session;
+  - an **identity verification** recorded, removed or recorded by a sign-in
+    moves the person's **identity assurance level**, about the person. The
+    level is the `assurance_level` of their newest verification that states
+    one, carried as recorded in this service's namespace **`urn:sts:ial`** —
+    mapping an arbitrary trust framework onto NIST's levels would claim a
+    conformance nobody assessed. **`NIST-IAL` is used only when that
+    verification's `trust_framework` is `nist_800_63A`** and its level is
+    `IAL1`, `IAL2` or `IAL3`. `urn:sts:ial` has two values of its own:
+    `verified` (verifications stating no level) and `none` (nothing
+    recorded). `previous_level` is sent only when the namespace did not
+    change, and `change_direction` only where the levels have an order
+    (IAL1 < IAL2 < IAL3; `none` < `verified` < a stated level).
 
 ## `device-compliance-change`
 
@@ -545,6 +604,15 @@ None of these is the subject of a session event:
   including revoking every token a person holds;
 - reading the **admin console**, which presents the same session on every page
   and reports nothing, because it is not a protocol SSO.
+
+And one change sends **no CAEP event of any kind**: a realm's **authentication
+policy being tightened** (Directory → Policies — a second factor required, a
+mechanism withdrawn). A live session keeps the `acr` it was established at,
+because that authentication did happen at that level, and CAEP 1.0 has no event
+for "the level this realm requires went up": `assurance-level-change` says a
+subject's assurance moved, and it did not. The next sign-in or step-up is held
+to the new policy. `GET /ssf` states this under *What it deliberately does not
+do*.
 
 ## Seeing what happened
 

@@ -15541,6 +15541,68 @@ function checkOverrideCode(key, raw, forRealm) {
   return TYPES[setting.type].check(raw, setting) ? 'STS-CORE-0006' : '';
 }
 
+// ---------------------------------------------------------------------------
+// A SETTING THAT RESHAPES A CLAIM IN TOKENS ALREADY ISSUED (#238): the roles
+// claim and the groups claim — whether one is carried, what it is called, and
+// what names a group in it. Each maps to the setting that NAMES the claim, so
+// the event can name it as it was and as it is. CAEP token-claims-change to
+// every holder goes through `admin_stats.js`'s announceClaimsReshaped(),
+// LAZILY required: this module is the first loaded here and requires none of
+// them. Never throws into the write it follows.
+// ---------------------------------------------------------------------------
+const CLAIM_SHAPING_SETTINGS = {
+  'roles.claim': 'roles.claimName',
+  'roles.claimName': 'roles.claimName',
+  'groups.claim': 'groups.claimName',
+  'groups.claimName': 'groups.claimName',
+  'groups.claimValue': 'groups.claimName',
+  'groups.claimFromMemberOf': 'groups.claimName'
+};
+
+// What a claim-shaping setting and its claim's name are before a write, or
+// null for any other setting.
+function claimShapeBefore(key) {
+  log.debug("Entering claimShapeBefore().");
+  const nameKey = CLAIM_SHAPING_SETTINGS[key];
+  if (!nameKey) {
+    log.debug("Leaving claimShapeBefore(). Not a claim setting.");
+    return null;
+  }
+  log.debug("Leaving claimShapeBefore().");
+  return { value: JSON.stringify(value(key)),
+           name: String(value(nameKey) || '') };
+}
+
+function announceClaimShape(key, before) {
+  log.debug("Entering announceClaimShape().");
+  if (!before || JSON.stringify(value(key)) === before.value) {
+    log.debug("Leaving announceClaimShape(). Nothing moved.");
+    return;
+  }
+  const now = String(value(CLAIM_SHAPING_SETTINGS[key]) || '');
+  const names = [before.name, now].filter(function (one, i, all) {
+    return one && all.indexOf(one) === i;
+  });
+  try {
+    // ONLY ONCE IT IS LOADED: a setting written while the stack is still
+    // being required (a test, a startup step) must not pull the claim
+    // registry in at this point of the require order — and a process that
+    // never loaded it has issued nothing to announce.
+    const cached = require.cache[require.resolve('./admin_stats')];
+    if (!cached || !cached.loaded) {
+      log.debug("Leaving announceClaimShape(). The registry is not loaded.");
+      return;
+    }
+    const stats = cached.exports;
+    stats.announceClaimsReshaped({ sets: stats.ISSUED_CLAIM_SETS,
+      names: names, why: 'The setting ' + key + ' changed' });
+  } catch (e) {
+    log.warn('config: ' + key + ' changed and no token-claims-change could ' +
+             'be started for it: ' + ((e && e.message) || e));
+  }
+  log.debug("Leaving announceClaimShape().");
+}
+
 function setOverride(key, raw) {
   log.debug("Entering setOverride(). key=" + key);
   // WHICH REALM THIS WRITE LANDS IN IS DECIDED FIRST, BECAUSE THE CHECK
@@ -15591,6 +15653,7 @@ function setOverride(key, raw) {
   // that could turn realms off, or move its own prefix, would be doing it from
   // inside the request that found it.
   // ---------------------------------------------------------------------
+  const shape = claimShapeBefore(key);
   if (realm) {
     realm.overrides[key] = raw;
   } else {
@@ -15605,6 +15668,7 @@ function setOverride(key, raw) {
   // After the write and after the log line, so that a store which reads the
   // value back reads the new one. See setOverrideStore() above.
   overridesChanged(realm ? realm.id : null);
+  announceClaimShape(key, shape);
   log.debug("Leaving setOverride().");
   return { ok: true, errors: [], key: key, realm: realm ? realm.id : null };
 }
@@ -15634,6 +15698,7 @@ function clearOverride(key) {
       ' to reset; it is already coming from ' + sourceOf(key) + '.'] },
                            'STS-CORE-0007');
   }
+  const shape = claimShapeBefore(key);
   delete where[key];
   applyLogLevel();
   log.info('config: ' + key + ' is back to its ' + sourceOf(key) + ' value' +
@@ -15643,6 +15708,7 @@ function clearOverride(key) {
   // told about writes would still hold it and would put it back on the next
   // start. A reset that does not survive a restart is worse than no reset.
   overridesChanged(realm ? realm.id : null);
+  announceClaimShape(key, shape);
   log.debug("Leaving clearOverride().");
   return { ok: true, errors: [], key: key, realm: realm ? realm.id : null };
 }

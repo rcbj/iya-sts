@@ -2813,6 +2813,12 @@ class SharedSignals {
           'this subject" path needs.',
         'A `verified: true` on an Add Subject request is believed. There is ' +
           'no confirmation step here to skip.',
+        'It sends nothing when a realm\'s authentication policy is ' +
+          'TIGHTENED (Directory → Policies — a second factor required, a ' +
+          'mechanism withdrawn). A live session keeps the level it was ' +
+          'established at, and CAEP 1.0 has no event for "the level this ' +
+          'realm requires went up": assurance-level-change says a ' +
+          'subject\'s assurance moved, and it did not (#243).',
         'Streams are in memory and die with the process, like everything ' +
           'else this service mints — the signing key is regenerated on every ' +
           'start, so a restored queue would be tokens nothing can verify.'
@@ -3926,7 +3932,9 @@ class SharedSignals {
     const { log } = this.deps;
     log.debug('Entering SharedSignals.directoryChanged().');
     const asked = notice || {};
-    if (asked.kind !== 'membership') {
+    // A ROLE's members (#238) are, like a group's, a change to somebody's
+    // claims that RISC has no reading of.
+    if (SharedSignals.CLAIMS_ONLY_KINDS.indexOf(String(asked.kind)) < 0) {
       this.riscAutoEmit(asked);
     }
     this.claimsAutoEmit(asked);
@@ -3999,6 +4007,174 @@ class SharedSignals {
         : 'The risk this service sees in your sign-ins changed.' });
   }
 
+  // The observer notices that move claims and nothing RISC reads.
+  static readonly CLAIMS_ONLY_KINDS = ['membership', 'roles'];
+
+  // How many holders one turn of the event loop takes in a fan-out. See
+  // claimsFanOut().
+  static readonly FAN_OUT_SLICE = 100;
+
+  // ---------------------------------------------------------------------------
+  // CAEP token-claims-change FROM A DOOR THAT IS NOT A DIRECTORY ATTRIBUTE
+  // (#238): identity assurance (`verified_claims`), a claims provider unlinked
+  // (`_claim_names` / `_claim_sources`). Reached through
+  // `ssf/account_signals.ts`'s claimsChanged(), and sent by the same
+  // claimsAutoEmit() a directory write goes through — the live issuance is
+  // checked first, and `claims` may be a function so that nothing is computed
+  // for a person who holds nothing. Never rejects.
+  // ---------------------------------------------------------------------------
+  emitClaimsChange(notice?: Json): Promise<EmitResult> {
+    const { log } = this.deps;
+    log.debug('Entering SharedSignals.emitClaimsChange().');
+    log.debug('Leaving SharedSignals.emitClaimsChange().');
+    return this.claimsAutoEmit(Object.assign({}, notice || {},
+                                             { kind: 'claims' }));
+  }
+
+  // ---------------------------------------------------------------------------
+  // CAEP token-claims-change TO EVERY HOLDER A CONFIGURATION CHANGE MOVED
+  // (#238): an application's permissions or allowed scopes, a claim set, a
+  // claim setting, a federation release list. One event PER PERSON — a CAEP
+  // subject names a principal, and an application-scoped subject waits on
+  // #221 — to each person holding a live artifact `match` accepts
+  // (`admin_stats.liveClaimBearers()`, which is the live-issuance check), with
+  // the claims `claimsFor(bearer)` answers for their newest such artifact.
+  //
+  // **IN SLICES, SO A LARGE REALM DOES NOT WEDGE ANYTHING.** FAN_OUT_SLICE
+  // holders at a time, each slice's deliveries awaited and the next slice
+  // started on a later turn of the event loop — so requests keep being
+  // answered between slices, and at most one slice's pushes queue behind the
+  // per-process push cap (`ssf.pushConcurrency`) at once. A configuration
+  // change touching ten thousand holders is a background walk, not a stall.
+  //
+  // The cheap questions first, as claimsAutoEmit() asks them: SSF on, the act
+  // chosen, a stream that takes the type — none of which reads a register.
+  // Never rejects.
+  // ---------------------------------------------------------------------------
+  claimsFanOut(notice?: Json): Promise<EmitResult> {
+    const { log, caep, events, streams, stats } = this.deps;
+    log.debug('Entering SharedSignals.claimsFanOut().');
+    const asked = notice || {};
+    if (!this.enabled() || typeof asked.claimsFor !== 'function') {
+      log.debug('Leaving SharedSignals.claimsFanOut(). SSF is off, or ' +
+                'nothing says what moved.');
+      return Promise.resolve({ sent: 0, streams: 0 });
+    }
+    if (caep.autoEmitActs().indexOf('claims') < 0) {
+      log.debug('Leaving SharedSignals.claimsFanOut(). Not an emitted act.');
+      return Promise.resolve({ sent: 0, streams: 0, why: 'not emitted' });
+    }
+    const uri = events.CAEP_PREFIX + 'token-claims-change';
+    if (!streams.listStreams().some(function (record) {
+      return streams.deliversEvent(record, uri);
+    })) {
+      log.debug('Leaving SharedSignals.claimsFanOut(). No stream takes ' +
+                'token-claims-change.');
+      return Promise.resolve({ sent: 0, streams: 0, why: 'no stream' });
+    }
+    const what = String(asked.reasonAdmin || 'A configuration change');
+    let sent = 0;
+    let people = 0;
+    const walk = (bearers: Json[], from: number): Promise<EmitResult> => {
+      if (from >= bearers.length) {
+        log.info('caep: ' + what + ' — token-claims-change went to ' + sent +
+                 ' stream delivery(ies) for ' + people + ' of ' +
+                 bearers.length + ' holder(s).');
+        return Promise.resolve({ sent: sent, streams: people,
+                                 holders: bearers.length });
+      }
+      const slice = bearers.slice(from, from + SharedSignals.FAN_OUT_SLICE);
+      return Promise.all(slice.map((bearer: Json) => {
+        return this.claimsAutoEmit({ kind: 'claims',
+          username: bearer.username, liveChecked: true,
+          claims: function () {
+            return asked.claimsFor(bearer);
+          },
+          protocol: asked.protocol, initiatingEntity: asked.initiatingEntity,
+          reasonAdmin: asked.reasonAdmin, reasonUser: asked.reasonUser });
+      })).then((results: EmitResult[]) => {
+        results.forEach(function (one) {
+          sent += one.sent || 0;
+          people += one.sent ? 1 : 0;
+        });
+        return new Promise(function (resolve) {
+          setImmediate(resolve);
+        });
+      }).then(() => {
+        return walk(bearers, from + SharedSignals.FAN_OUT_SLICE);
+      });
+    };
+    log.debug('Leaving SharedSignals.claimsFanOut(). Walking.');
+    return Promise.resolve().then(() => {
+      return walk(stats.liveClaimBearers(asked.match), 0);
+    }).catch((e) => {
+      log.debug('Caught in SharedSignals.claimsFanOut(): ' +
+                ((e && e.message) || e));
+      log.warn('caep: ' + what + ' — the token-claims-change fan-out ' +
+               'stopped after ' + sent + ' delivery(ies): ' +
+               ((e && e.message) || e));
+      return { sent: sent, streams: people,
+               why: String((e && e.message) || e) };
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // CAEP assurance-level-change FOR A PERSON'S IDENTITY ASSURANCE (#243).
+  //
+  // `common/identity_assurance.ts` decides the level and its namespace — its
+  // own `urn:sts:ial`, or `NIST-IAL` only where the verification's trust
+  // framework is NIST SP 800-63's — and says it here through
+  // `ssf/account_signals.ts`'s assuranceChanged(). `notice`: `username`,
+  // `namespace`, `current`, and where known `previous` and `direction`. The
+  // subject is the PERSON: their identity assurance moved, not a session's.
+  // It rides the same act as the `acr` change (`caep.autoEmitTypes` names
+  // the TYPE, and both are assurance-level-change). Never rejects.
+  // ---------------------------------------------------------------------------
+  emitIdentityAssuranceChange(notice?: Json): Promise<EmitResult> {
+    const { log, caep, subjects } = this.deps;
+    const { subjectForName } = this.deps.helpers;
+    log.debug('Entering SharedSignals.emitIdentityAssuranceChange().');
+    const asked = notice || {};
+    const username = String(asked.username || '');
+    const namespace = String(asked.namespace || '');
+    const current = String(asked.current || '');
+    if (!this.enabled() || !username || !namespace || !current) {
+      log.debug('Leaving SharedSignals.emitIdentityAssuranceChange(). SSF ' +
+                'is off, or nobody or no level is named.');
+      return Promise.resolve({ sent: 0, streams: 0 });
+    }
+    if (caep.autoEmitActs().indexOf('reauthenticated') < 0) {
+      log.info('caep: an assurance-level-change about ' + username + ' was ' +
+               'NOT emitted: caep.enabled, caep.autoEmit or ' +
+               'caep.autoEmitTypes excludes it.');
+      log.debug('Leaving SharedSignals.emitIdentityAssuranceChange(). Not ' +
+                'an emitted act.');
+      return Promise.resolve({ sent: 0, streams: 0, why: 'not emitted' });
+    }
+    const values: Json = { namespace: namespace, current_level: current };
+    if (asked.previous) {
+      values.previous_level = String(asked.previous);
+    }
+    if (asked.direction === 'increase' || asked.direction === 'decrease') {
+      values.change_direction = asked.direction;
+    }
+    log.debug('Leaving SharedSignals.emitIdentityAssuranceChange().');
+    return this.emitProtocolEvent({
+      req: null, protocol: 'Identity assurance',
+      type: 'assurance-level-change',
+      subject: subjects.complexSubject({ user: { format: 'iss_sub',
+        iss: this.issuerFor(null),
+        sub: subjectForName(username) || username } }),
+      values: values,
+      initiatingEntity: String(asked.initiatingEntity || 'admin'),
+      reasonAdmin: String(asked.reasonAdmin || '') ||
+        ('The identity assurance of ' + username + ' went from ' +
+         (values.previous_level || 'an unknown level') + ' to ' + current +
+         ' (' + namespace + ').'),
+      reasonUser: 'The assurance this service holds about your identity ' +
+                  'changed.' });
+  }
+
   claimsAutoEmit(notice?: Json): Promise<EmitResult> {
     const { log, caep, events, streams, stats, subjects } = this.deps;
     const { subjectForName } = this.deps.helpers;
@@ -4033,7 +4209,10 @@ class SharedSignals {
       // over 5,000 SCIM memberships: 11.6 ms each without this feature,
       // 21.8 ms with the order reversed, 10.5 ms in this one).
       const sub = subjectForName(username) || username;
-      if (!stats.holdsLiveIssuance(username, sub)) {
+      // A fan-out has already listed the person from the same register
+      // (claimsFanOut()); asking again would walk it once per holder.
+      if (asked.liveChecked !== true &&
+          !stats.holdsLiveIssuance(username, sub)) {
         log.debug('caep: ' + username + ' holds nothing live, so no ' +
                   'token-claims-change is considered.');
         return { sent: 0, streams: 0, why: 'nothing live' };
@@ -4043,14 +4222,20 @@ class SharedSignals {
         return { sent: 0, streams: 0, why: 'no claim moved' };
       }
       const which = Object.keys(change.claims).join(', ');
+      // A door other than the directory (#238) names itself and says why.
       return this.emitProtocolEvent({
-        req: null, protocol: 'Directory', type: 'token-claims-change',
+        req: null, protocol: String(asked.protocol || 'Directory'),
+        type: 'token-claims-change',
         subject: subjects.complexSubject({ user: { format: 'iss_sub',
           iss: this.issuerFor(null), sub: sub } }),
-        values: change, initiatingEntity: 'admin',
-        reasonAdmin: 'The directory entry of ' + username + ' changed ' +
-                     which + ', which tokens already issued carry.',
-        reasonUser: 'Information about you in tokens already issued ' +
+        values: change,
+        initiatingEntity: String(asked.initiatingEntity || 'admin'),
+        reasonAdmin: asked.reasonAdmin
+          ? String(asked.reasonAdmin) + ' (' + username + ': ' + which + ')'
+          : 'The directory entry of ' + username + ' changed ' + which +
+            ', which tokens already issued carry.',
+        reasonUser: String(asked.reasonUser || '') ||
+                    'Information about you in tokens already issued ' +
                     'changed.' });
     }).catch((e) => {
       log.debug('Caught in SharedSignals.claimsAutoEmit(): ' +
@@ -5054,6 +5239,12 @@ export = {
   emitCredentialChange: slot.forward('emitCredentialChange'),
   // A device's CAEP events (#164 phase 4), through account_signals.ts.
   emitDeviceEvent: slot.forward('emitDeviceEvent'),
+  // token-claims-change from a door that is not a directory attribute, and
+  // to every holder a configuration change moved; assurance-level-change for
+  // identity assurance (#238, #243), through account_signals.ts.
+  emitClaimsChange: slot.forward('emitClaimsChange'),
+  claimsFanOut: slot.forward('claimsFanOut'),
+  emitIdentityAssuranceChange: slot.forward('emitIdentityAssuranceChange'),
   // A person's risk level changed (#62 P4): `risk/risk_engine.ts` sends it.
   riskAutoEmit: slot.forward('riskAutoEmit'),
   riscReport: slot.forward('riscReport'),

@@ -750,6 +750,13 @@ Discovery publishes `verified_claims_supported`, `trust_frameworks_supported`,
 `claims_in_verified_claims_supported`. Aggregated and distributed verified
 claims, and attachments, are not supported.
 
+**A verification recorded or removed is announced over Shared Signals**, to a
+person holding live tokens: CAEP `token-claims-change` carrying the new
+`verified_claims` (frameworks, levels and claims — never evidence), and CAEP
+`assurance-level-change` when their identity assurance level moved, in this
+service's `urn:sts:ial` namespace, or `NIST-IAL` for an `nist_800_63A`
+verification. See [the CAEP events](caep-events.md#assurance-level-change).
+
 ### Enterprise Extensions: `session_expiry`, `tenant`, `aud_sub`, `domain_hint`
 
 OpenID Connect Enterprise Extensions 1.0 (#148), in every mode:

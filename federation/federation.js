@@ -2463,6 +2463,100 @@ function releaseFilterFor(context) {
 }
 
 // ---------------------------------------------------------------------------
+// A RELEASE LIST THAT MOVED IS A CLAIM CHANGE FOR EVERY TOKEN ALREADY ISSUED
+// TO ITS APPLICATION (#238).
+//
+// What releaseIndexNow() above takes from one relationship: the application
+// and the names released to it, or null — no policy — for a relationship
+// that is not an enabled identity-provider-side one naming an application
+// with a list. A list edited, an application renamed, a relationship enabled,
+// disabled or deleted each move it, and each moves claims in tokens and
+// assertions that application already holds: a name withheld now is gone
+// (`null`), a name released now appears.
+//
+// So each holder of a live artifact for the application (by `client_id` or
+// by audience, as releaseFilterFor() matches) is sent the names whose
+// released-or-not answer moved — out of everything the set would carry for
+// them unfiltered (`admin_stats.claimNamesFor()`) and both lists — with the
+// value the artifact would carry now. Through `admin_stats.js`'s
+// announceClaimsReshaped(), LAZILY required: this module is required by it
+// (rule 3o), so a plain require would close the cycle. Never throws.
+// ---------------------------------------------------------------------------
+function releasePolicyOf(record) {
+  log.debug("Entering releasePolicyOf().");
+  if (!record || record.fedRole !== 'identity-provider' ||
+      !isEnabled(record)) {
+    log.debug("Leaving releasePolicyOf(). No policy.");
+    return null;
+  }
+  const application = String(record.fedApplication || '').trim();
+  const names = (record.fedRelease || []).map(function (one) {
+    return String(one).trim();
+  }).filter(function (one) {
+    return one !== '';
+  });
+  log.debug("Leaving releasePolicyOf().");
+  return application && names.length
+    ? { application: application, names: names } : null;
+}
+
+function announceReleaseChange(id, before, after) {
+  log.debug("Entering announceReleaseChange(). id=" + id);
+  const applications = [];
+  [before, after].forEach(function (one) {
+    if (one && applications.indexOf(one.application) < 0) {
+      applications.push(one.application);
+    }
+  });
+  applications.forEach(function (application) {
+    const was = before && before.application === application
+      ? new Set(before.names) : null;
+    const now = after && after.application === application
+      ? new Set(after.names) : null;
+    const released = function (list, name) {
+      return !list || list.has(name);
+    };
+    const same = (!was && !now) || (!!was && !!now && was.size === now.size &&
+      Array.from(was).every(function (name) {
+        return now.has(name);
+      }));
+    if (same) {
+      return;
+    }
+    try {
+      const stats = require('../common/admin_stats');
+      stats.announceClaimsReshaped({ sets: stats.ISSUED_CLAIM_SETS,
+        protocol: 'Federation',
+        why: 'The release list of federation relationship "' + id +
+             '" for "' + application + '" changed',
+        match: function (token) {
+          return token.client_id === application ||
+                 String(token.audience || '').split(/\s+/)
+                   .indexOf(application) >= 0;
+        },
+        names: function (bearer) {
+          const candidates = new Set(stats.claimNamesFor(bearer.claimSet,
+                                                         bearer.username));
+          (was || new Set()).forEach(function (name) {
+            candidates.add(name);
+          });
+          (now || new Set()).forEach(function (name) {
+            candidates.add(name);
+          });
+          return Array.from(candidates).filter(function (name) {
+            return released(was, name) !== released(now, name);
+          });
+        } });
+    } catch (e) {
+      log.warn('federation: the release list of ' + id + ' changed and no ' +
+               'token-claims-change could be started for it: ' +
+               ((e && e.message) || e));
+    }
+  });
+  log.debug("Leaving announceReleaseChange().");
+}
+
+// ---------------------------------------------------------------------------
 // WRITING.
 // ---------------------------------------------------------------------------
 function persist(record, why) {
@@ -2756,6 +2850,9 @@ function update(id, change) {
   log.debug('Entering update(). id=' + id + ', field=' +
             (change && change.field));
   const record = get(id);
+  // What the partner's release list was, read before the change is applied
+  // to `record` below (#238).
+  const releaseBefore = releasePolicyOf(record);
   if (!record) {
     log.debug('Leaving update(). No such relationship.');
     actionRefused('STS-FED-0065', id,
@@ -2922,6 +3019,7 @@ function update(id, change) {
   }
   forgetReleaseIndexes();
   const stored = get(id);
+  announceReleaseChange(id, releaseBefore, releasePolicyOf(stored));
   const readiness = readinessOf(stored);
   recordChange('federation.update', stored,
                field + ' was changed on the federation relationship ' + id,
@@ -2970,6 +3068,7 @@ function remove(id) {
              errors: ['The directory would not delete ' + record.dn + '.'] };
   }
   forgetReleaseIndexes();
+  announceReleaseChange(id, releasePolicyOf(record), null);
   recordChange('federation.delete', record,
                'the federation relationship ' + id + ' was deleted',
                { dn: record.dn,

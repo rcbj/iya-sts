@@ -3025,6 +3025,11 @@ function setClaimSet(id, entries) {
     return errorCodes.mark({ ok: false, errors: errors }, code);
   }
   const beforeNames = set.claims.map(function (claim) { return claim.name; });
+  // A claim kept under its name with a different value moved too (#238).
+  const beforeValues = {};
+  set.claims.forEach(function (claim) {
+    beforeValues[claim.name] = JSON.stringify(claim);
+  });
   const afterNames = cleaned.map(function (claim) { return claim.name; });
   const added = afterNames.filter(function (name) {
     return beforeNames.indexOf(name) < 0;
@@ -3051,6 +3056,16 @@ function setClaimSet(id, entries) {
       'custom claim(s): ' +
            (afterNames.join(', ') || '(none)'));
   recordClaimSetChange(id, set, added, removed, cleaned.length, true, []);
+  const moved = added.concat(removed, cleaned.filter(function (claim) {
+    return beforeValues[claim.name] !== undefined &&
+           beforeValues[claim.name] !== JSON.stringify(claim);
+  }).map(function (claim) {
+    return claim.name;
+  }));
+  if (moved.length) {
+    announceClaimsReshaped({ sets: [id], names: moved,
+      why: 'The ' + set.label + ' claim set changed ' + moved.join(', ') });
+  }
   log.debug("Leaving setClaimSet(). Installed " + cleaned.length +
             " claim(s).");
   return { ok: true, errors: [], claims: cleaned };
@@ -3367,6 +3382,187 @@ function holdsLiveIssuance(username, sub) {
   log.debug("Leaving holdsLiveIssuance(). " + live);
   return live;
 }
+
+// ---------------------------------------------------------------------------
+// WHO HOLDS SOMETHING LIVE THAT A CONFIGURATION CHANGE MOVES (#238).
+//
+// holdsLiveIssuance() above answers the question for ONE person, which is
+// what a directory write asks. A change to an application's permissions, a
+// claim set, a claim setting or a federation release list moves a claim for
+// EVERY holder of a live token or assertion it shaped, and the fan-out in
+// `ssf/ssf.ts` needs them listed: each PERSON once, with the newest live
+// artifact of theirs that `match` accepts — the one whose claims are read
+// back for the event — and the claim set that artifact was built from.
+//
+// Access and ID Tokens, and SAML assertions: the three kinds whose CLAIMS a
+// relying party holds. A refresh token carries none of them — the tokens it
+// mints next are built afresh — and a token with no person behind it (a
+// client_credentials grant) names an application, whose subject waits on
+// #221. One walk of each register, in the ambient realm.
+// ---------------------------------------------------------------------------
+const SET_OF_KIND = { access_token: 'access_token', id_token: 'id_token',
+                      'SAML 2.0': 'saml2', 'SAML 1.1': 'saml11' };
+
+function liveClaimBearers(match) {
+  log.debug("Entering liveClaimBearers().");
+  const accept = typeof match === 'function' ? match : function () {
+    return true;
+  };
+  const nowMs = Date.now();
+  const newest = new Map();
+  const keep = function (username, sub, record, fromSet, at) {
+    const held = newest.get(username);
+    if (!held || at > held.at) {
+      newest.set(username, { username: username, sub: sub, record: record,
+                             claimSet: fromSet, at: at });
+    }
+  };
+  tokens.forEach(function (record) {
+    const fromSet = SET_OF_KIND[record.kind];
+    if (!fromSet || !record.username) {
+      return;
+    }
+    const state = tokenStateOf(record, nowMs);
+    if (state !== 'valid' && state !== 'no expiry stated') {
+      return;
+    }
+    if (!accept(Object.assign({}, record, { claimSet: fromSet }))) {
+      return;
+    }
+    keep(String(record.username), String(record.sub || ''), record, fromSet,
+         Number(record.iat || 0) * 1000);
+  });
+  allArtifacts().forEach(function (one) {
+    const fromSet = SET_OF_KIND[one.kind];
+    if (!fromSet || !one.subject) {
+      return;
+    }
+    const state = artifactStateOf(withRevocation(one), nowMs);
+    if (state === 'revoked' || state === 'expired') {
+      return;
+    }
+    const shaped = { claimSet: fromSet, kind: one.kind,
+                     username: String(one.subject),
+                     audience: String(one.audience || ''),
+                     client_id: String(one.audience || ''), scope: '' };
+    if (!accept(shaped)) {
+      return;
+    }
+    keep(String(one.subject), '', shaped, fromSet,
+         Number(one.issuedAt || 0));
+  });
+  const out = Array.from(newest.values());
+  log.debug("Leaving liveClaimBearers(). " + out.length + " holder(s).");
+  return out;
+}
+
+// THE VALUES `names` HAVE NOW in the claim set `setId`, for the holder of
+// `record` (a row liveClaimBearers() answered): what jwtClaims() or
+// samlAttributes() would build for that person and that audience today, the
+// federation release policy included — `null` for a name the artifact would
+// no longer carry, which is how CAEP token-claims-change says a claim is
+// gone. A SAML attribute's value is its one value, or the list of several.
+function claimValuesFor(setId, record, names) {
+  log.debug("Entering claimValuesFor(). set=" + setId);
+  const held = record || {};
+  const context = { username: String(held.username || ''),
+                    subject: String(held.username || ''),
+                    sub: String(held.sub || ''),
+                    client_id: String(held.client_id || ''),
+                    audience: String(held.audience || '') };
+  const out = {};
+  if (setId === 'saml2' || setId === 'saml11') {
+    const attributes = samlAttributes(setId, context);
+    (names || []).forEach(function (name) {
+      const found = attributes.filter(function (attribute) {
+        return attribute.name === name;
+      })[0];
+      if (!found) {
+        out[name] = null;
+        return;
+      }
+      const values = Array.isArray(found.values) ? found.values
+        : [found.value];
+      out[name] = values.length === 1 ? values[0] : values.slice(0);
+    });
+  } else {
+    const claims = jwtClaims(setId, context);
+    (names || []).forEach(function (name) {
+      out[name] = claims[name] !== undefined ? claims[name] : null;
+    });
+  }
+  log.debug("Leaving claimValuesFor(). " + Object.keys(out).length +
+            " claim(s).");
+  return out;
+}
+
+// EVERY CLAIM NAME `setId` WOULD CARRY for `username` with no audience — so
+// with no federation release policy applied, which releaseFilterFor() finds
+// only by a client or an audience. The candidates a release list can
+// withhold (#238, `federation/federation.js`).
+function claimNamesFor(setId, username) {
+  log.debug("Entering claimNamesFor(). set=" + setId);
+  const context = { username: String(username || ''),
+                    subject: String(username || '') };
+  const out = (setId === 'saml2' || setId === 'saml11')
+    ? samlAttributes(setId, context).map(function (attribute) {
+      return attribute.name;
+    })
+    : Object.keys(jwtClaims(setId, context));
+  log.debug("Leaving claimNamesFor(). " + out.length + " name(s).");
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// THE CLAIM SETS WERE RESHAPED (#238): CAEP token-claims-change to every
+// person holding a live artifact built from one of `sets` (and, where given,
+// that `match` accepts — a release list's application), naming `names` — an
+// array, or a function of the holder where they differ per holder — with the
+// values that artifact would carry now (claimValuesFor()). The doors are
+// setClaimSet() below, `claim_attributes.ts`'s setSelection(), a claim
+// setting written through `config.js`, and a federation release list. The
+// UserInfo set moves no issued claim: it is re-read on every call, and no
+// artifact is listed under it.
+//
+// Through `ssf/account_signals.ts`'s claimsFanOut(), LAZILY required — it is
+// SSF's library, and this module is loaded long before — which walks the
+// holders in slices after this call has returned, and never throws.
+// ---------------------------------------------------------------------------
+function announceClaimsReshaped(change) {
+  log.debug("Entering announceClaimsReshaped().");
+  const asked = change || {};
+  const sets = Array.isArray(asked.sets) ? asked.sets : [];
+  if (!sets.length) {
+    log.debug("Leaving announceClaimsReshaped(). No set.");
+    return;
+  }
+  try {
+    require('../ssf/account_signals').claimsFanOut({
+      protocol: String(asked.protocol || 'Claim configuration'),
+      initiatingEntity: 'admin',
+      reasonAdmin: String(asked.why || 'The claim configuration changed'),
+      reasonUser: 'How information about you is put into tokens changed, ' +
+                  'and tokens already issued to you carry the old form.',
+      match: function (token) {
+        return sets.indexOf(token.claimSet) >= 0 &&
+               (typeof asked.match !== 'function' || asked.match(token));
+      },
+      claimsFor: function (bearer) {
+        const names = typeof asked.names === 'function'
+          ? asked.names(bearer) : asked.names;
+        return names && names.length
+          ? claimValuesFor(bearer.claimSet, bearer.record, names) : null;
+      } });
+  } catch (e) {
+    log.warn('admin: a token-claims-change for "' + String(asked.why || '') +
+             '" could not be started: ' + ((e && e.message) || e));
+  }
+  log.debug("Leaving announceClaimsReshaped().");
+}
+
+// The four sets an issued artifact is built from, which every claim setting
+// shapes.
+const ISSUED_CLAIM_SETS = ['access_token', 'id_token', 'saml2', 'saml11'];
 
 // FOUR ANSWERS FOR AN ARTIFACT SINCE 2026-09-05, AND THE FOURTH REVERSED A
 // DOCUMENTED DECISION.
@@ -4566,6 +4762,13 @@ module.exports = {
   expandValue: expandValue,
   tokenList: tokenList,
   holdsLiveIssuance: holdsLiveIssuance,
+  // The fan-out's two halves (#238): who holds a live artifact a
+  // configuration change shaped, and what its claims would say now.
+  liveClaimBearers: liveClaimBearers,
+  claimValuesFor: claimValuesFor,
+  claimNamesFor: claimNamesFor,
+  announceClaimsReshaped: announceClaimsReshaped,
+  ISSUED_CLAIM_SETS: ISSUED_CLAIM_SETS,
   artifactList: artifactList,
   issuedList: issuedList,
   issuedSets: issuedSets,

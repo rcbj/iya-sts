@@ -933,6 +933,17 @@ partner is on the day it is created, and treating it as the first would mean
 registering a partner silently stopped it receiving what it received the day
 before. The console says so where the list is empty, and so does the API.
 
+**A LIST THAT MOVES IS A CLAIM CHANGE FOR TOKENS ALREADY ISSUED (#238,
+2026-09-26).** `update()` and `remove()` compare the relationship's policy
+before and after (`releasePolicyOf()`: an enabled identity-provider-side
+relationship naming an application and a list, or none), and when it moved,
+`announceReleaseChange()` sends CAEP `token-claims-change` to each person
+holding a live artifact for that application — the names whose
+released-or-not answer changed, with what the artifact would carry now —
+through `admin_stats.announceClaimsReshaped()`, lazily (rule 3o: that module
+requires this one). A relationship is created disabled, so `create()` moves
+nothing. `ssf/CLAUDE.md` has the fan-out.
+
 **It applies LAST**, after the three layers that produce claims, because it is a
 filter rather than a source. Applied earlier, a typed claim could lose to an
 attribute claim purely because the typed one had already been filtered out.

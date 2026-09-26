@@ -9535,11 +9535,108 @@ function updateApplication(identifier, change) {
               editedByHand: true }
   });
   log.info('applications: "' + identifier + '" — ' + what + '.');
+  if (mode === 'remove') {
+    announceScopeRemoval(String(identifier), record, attribute, value);
+  }
   log.debug("Leaving updateApplication(). " + what + ".");
   log.debug("Leaving updateApplication().");
   return { ok: true, changed: true,
            application: viewAfterWrite(identifier, record),
            message: what + '.' };
+}
+
+// ---------------------------------------------------------------------------
+// A SCOPE THAT TOKENS ALREADY ISSUED CARRY, NO LONGER GRANTED (#238) — CAEP
+// token-claims-change to every person holding one, through
+// `ssf/account_signals.ts`'s claimsFanOut(). Three removals move `scope`:
+//
+//   * `oauthDelegatedPermission` on a client: a permission REVOKED from it.
+//     Only where a grant is enforced (`mode.honoursUngrantedPermissions()`,
+//     or `oauth2.delegatedPermissionsEnforced` in development) — otherwise the
+//     next request is issued exactly what the last one was, and nothing any
+//     token carries has changed. The tokens are the client's, audienced to
+//     the permission's base and carrying its name.
+//   * `oauthPermission` on a resource: the permission no longer EXISTS, so no
+//     request names it (forPermission() matches only a defined one) in either
+//     mode. Every client's tokens audienced to the base and carrying the name.
+//   * `oauthAllowedScope` on a client: the scope policy is asked whether it
+//     would still grant it (`scope_policy.ts`'s judge()) — a protected scope
+//     in both modes, any scope in product — and only a scope it now refuses
+//     moved. The client's tokens carrying it.
+//
+// The claim is `scope` as the holder's newest such token carries it, less
+// the value that went. Adding a grant or a scope moves no token already
+// issued — a token carries what was asked for — and `appRequiredRole` changes
+// who may be ISSUED a token, which is no claim in one (#238's decision).
+// LAZILY required, both of them: `scope_policy.ts` requires this module, and
+// the signals library is SSF's. Never throws into the write — and never
+// waits on it: the fan-out runs after this write has returned.
+// ---------------------------------------------------------------------------
+function announceScopeRemoval(identifier, record, attribute, value) {
+  log.debug("Entering announceScopeRemoval(). " + attribute);
+  const has = function (scope, name) {
+    return String(scope || '').split(/\s+/).indexOf(name) >= 0;
+  };
+  const audiences = function (token, base) {
+    return String(token.audience || '').split(/\s+/).indexOf(base) >= 0;
+  };
+  let match = null;
+  let removed = '';
+  try {
+    if (attribute === 'oauthDelegatedPermission') {
+      const enforced = !mode.honoursUngrantedPermissions() ||
+        !!config.value('oauth2.delegatedPermissionsEnforced');
+      const defined = enforced ? forPermission(value) : null;
+      if (defined && defined.baseUri) {
+        removed = defined.name;
+        match = function (token) {
+          return token.claimSet === 'access_token' &&
+                 token.client_id === identifier &&
+                 audiences(token, defined.baseUri) && has(token.scope, removed);
+        };
+      }
+    } else if (attribute === 'oauthPermission') {
+      const base = permissionBaseOf((record.fields || {})
+        .oauthPermissionBaseUri);
+      removed = parsePermissionValue(value).name;
+      if (base && removed) {
+        match = function (token) {
+          return token.claimSet === 'access_token' &&
+                 audiences(token, base) && has(token.scope, removed);
+        };
+      }
+    } else if (attribute === 'oauthAllowedScope') {
+      const judged = require('./scope_policy').judge(value, identifier);
+      if (judged.kept.indexOf(value) < 0) {
+        removed = value;
+        match = function (token) {
+          return token.claimSet === 'access_token' &&
+                 token.client_id === identifier && has(token.scope, removed);
+        };
+      }
+    }
+    if (!match) {
+      log.debug("Leaving announceScopeRemoval(). No issued claim moved.");
+      return;
+    }
+    require('../ssf/account_signals').claimsFanOut({
+      protocol: 'Applications', initiatingEntity: 'admin', match: match,
+      reasonAdmin: '"' + removed + '" is no longer granted through ' +
+                   attribute + ' on "' + identifier + '"',
+      reasonUser: 'A permission that tokens already issued to you carry ' +
+                  'was withdrawn.',
+      claimsFor: function (bearer) {
+        return { scope: String(bearer.record.scope || '').split(/\s+/)
+          .filter(function (one) {
+            return one && one !== removed;
+          }).join(' ') };
+      } });
+  } catch (e) {
+    log.warn('applications: a token-claims-change for the removal of "' +
+             value + '" from ' + attribute + ' on "' + identifier +
+             '" could not be started: ' + ((e && e.message) || e));
+  }
+  log.debug("Leaving announceScopeRemoval().");
 }
 
 // ---------------------------------------------------------------------------
