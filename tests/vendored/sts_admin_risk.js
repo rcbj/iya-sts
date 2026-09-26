@@ -303,8 +303,9 @@ async function ruleSeven() {
         function () {
           assert.strictEqual(unknown.status, 400, unknown.text.slice(0, 300));
           assert.strictEqual(unknown.body.errors[0],
-                             'Unknown action "explode". The 5 are: import, ' +
-                             'activate, rollback, delete, accept-terms.');
+                             'Unknown action "explode". The 6 are: import, ' +
+                             'activate, rollback, delete, accept-terms, ' +
+                             'upload.');
         });
   const deleted = await api("POST", "/admin-api/risk/delete", {
     dataset: DATASET, realm: REALM, version: "run-" + STAMP + "-b" });
