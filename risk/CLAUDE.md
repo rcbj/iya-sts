@@ -607,6 +607,17 @@ true of it before a byte is kept:
   upload it is the service, as for any presented chain.
 * **Rollback**: the serial `no` must exceed every BLOB already processed
   (`parameters.mdsNo`), or STS-RISK-0024.
+* **The signature override** (2026-09-26, rcbj: FIDO published a BLOB
+  whose signature does not verify): `overrideSignature` on an UPLOAD, the
+  console's checkbox and the API's query field, never the download job.
+  `pki.verifyFidoMdsBlob()` lets through exactly the anchor, path and
+  signature failures, reading the payload unverified; the JWS shape, the
+  `x5c` and the payload's shape are still required. Revocation is skipped
+  (an unverified chain has none worth asking), the rollback check is not.
+  The version is `verification: overridden` with `signatureOverride` and
+  `signatureOverrideBy` in its parameters, and the audit row and a warning
+  carry STS-RISK-0043. Any other dataset asking for it is STS-RISK-0001.
+  `tests/risk_mds.js` J.
 * **The latest only** (`latestOnly`, FIDO's terms): activating a BLOB
   deletes every older version's rows at once; the version rows stay as the
   record. The shrink check does not apply — the signature is the integrity

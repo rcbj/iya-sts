@@ -614,6 +614,35 @@ names:
 - **A serial number greater than any BLOB already processed.** An older one
   is a rollback and is refused.
 
+### When FIDO publishes a BLOB that does not verify
+
+It has happened: a BLOB whose signature does not verify under its own
+signing certificate. The download job refuses it (`STS-RISK-0022`) and keeps
+the BLOB you already have. If you have none, or yours has gone stale, you can
+load that BLOB anyway **by uploading it** on Monitoring → Risk with **FIDO
+MDS3 only: load the BLOB even if its signature or signing chain does not
+verify** ticked, or with `overrideSignature=true` on
+`POST /admin-api/risk/upload`.
+
+> **Warning.** An overridden BLOB is unauthenticated: nothing shows it came
+> from FIDO, and its chain's revocation is not checked. A BLOB that marks an
+> authenticator model compromised decides registrations and risk scores, so
+> check where the file came from before you override. Load a BLOB that
+> verifies as soon as FIDO publishes one.
+
+What the override does and does not change:
+
+- It lets through a chain that does not reach the root and a signature that
+  does not verify. A file that is not a JWS with an `x5c` header, or whose
+  payload is not a BLOB, is still refused.
+- The serial-number check still applies, so an overridden BLOB cannot roll
+  back to an older one, and the next BLOB FIDO publishes replaces it as usual.
+- The version is recorded with verification `overridden`. The reason it did
+  not verify and the administrator who overrode it are kept on the version
+  and the audit row, and a warning is logged (`STS-RISK-0043`).
+- It is refused for every dataset other than `fido.mds3`, and the
+  `risk.mds-refresh` job never uses it.
+
 As FIDO's terms require, **only the latest BLOB is kept**: when a new one
 becomes active, the older one's rows are deleted at once. It stops answering
 `risk.mdsStaleGraceDays` after the date the BLOB says the next one is due; run

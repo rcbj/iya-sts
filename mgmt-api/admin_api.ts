@@ -2613,7 +2613,15 @@ class AdminApi {
             // always read it as `true` (`risk/risk_upload.ts`).
             schema: { type: 'string', enum: ['true', 'false', 'on'] },
             description: 'Accept the provider\'s current terms as part of ' +
-                         'this import.' }
+                         'this import.' },
+          { name: 'overrideSignature', in: 'query', required: false,
+            schema: { type: 'string', enum: ['true', 'false', 'on'] },
+            description: '`fido.mds3` only: load the BLOB even if its ' +
+                         'signature or signing chain does not verify. Its ' +
+                         'contents are then UNAUTHENTICATED; the version is ' +
+                         'recorded with `verification: overridden` and the ' +
+                         'reason, and revocation is not checked. Refused ' +
+                         'for any other dataset.' }
         ],
         requestBodyTypes: ['application/octet-stream', 'application/gzip',
                            'application/zip'],

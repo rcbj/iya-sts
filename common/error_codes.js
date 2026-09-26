@@ -12399,7 +12399,8 @@ const CODES = [
   { code: 'STS-RISK-0001',
     summary: 'A dataset import was refused before anything was loaded: the ' +
       'dataset, the format or the realm is not one this service knows, or ' +
-      'the format is not one that dataset takes.',
+      'the format is not one that dataset takes, or the signature override ' +
+      'was asked for a dataset other than fido.mds3.',
     spec: '' },
   { code: 'STS-RISK-0002',
     summary: 'A dataset import was refused: the file\'s SHA-256 is not the ' +
@@ -12621,6 +12622,14 @@ const CODES = [
       '3166-1 alpha-2 code on the map, or a country together with a ' +
       'continent it is not in.',
     spec: 'HTTP 400' },
+  { code: 'STS-RISK-0043',
+    summary: 'A FIDO MDS3 BLOB was LOADED although its signature or signing ' +
+      'chain does not verify, because the administrator who uploaded it ' +
+      'ticked the signature override. Its contents are unauthenticated and ' +
+      'its chain\'s revocation was not checked; the version is recorded ' +
+      'with verification "overridden" and the reason. Replace it with a ' +
+      'BLOB that verifies as soon as FIDO publishes one.',
+    spec: 'loaded; recorded on the audit row and logged as a warning' },
   // ===== MAIL ==============================================================
   { code: 'STS-MAIL-0001',
     summary: 'A message was not queued because no mail transport is ' +

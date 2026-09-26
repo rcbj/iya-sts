@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3685** of them, in **39** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3686** of them, in **39** subsystems.
 
 ## Where a code appears
 
@@ -76,7 +76,7 @@ is an ordinary outcome.
 * [TLS and client certificates (`STS-TLS`)](#sts-tls) — 35
 * [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 108
 * [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 114
-* [Risk scoring (`STS-RISK`)](#sts-risk) — 42
+* [Risk scoring (`STS-RISK`)](#sts-risk) — 43
 * [Mail (`STS-MAIL`)](#sts-mail) — 39
 * [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 282
 * [Device register (`STS-DEVICE`)](#sts-device) — 38
@@ -3021,7 +3021,7 @@ Raised from: risk/, admin-ui/risk_admin.ts.
 
 | Code | What failed | Client sees |
 |---|---|---|
-| `STS-RISK-0001` | A dataset import was refused before anything was loaded: the dataset, the format or the realm is not one this service knows, or the format is not one that dataset takes. | — |
+| `STS-RISK-0001` | A dataset import was refused before anything was loaded: the dataset, the format or the realm is not one this service knows, or the format is not one that dataset takes, or the signature override was asked for a dataset other than fido.mds3. | — |
 | `STS-RISK-0002` | A dataset import was refused: the file's SHA-256 is not the one its manifest or the caller named. Nothing was loaded and the active version stays. | — |
 | `STS-RISK-0003` | A dataset version was refused because it has fewer rows than risk.datasetShrinkLimitPercent allows against the active version — what a truncated download looks like. Its rows were deleted and the active version stays. | — |
 | `STS-RISK-0004` | A dataset version was refused because no line of the file was a row of its format. | — |
@@ -3063,6 +3063,7 @@ Raised from: risk/, admin-ui/risk_admin.ts.
 | `STS-RISK-0040` | The install-time dataset loader (risk/risk_install.ts) could not make the database connection the way the service makes it (#213): persistence.databasePasswordProvider names a secret store whose password could not be read, or persistence.databaseUrl is not a URL it can be put into. The provider's own reason follows. Nothing is imported and the loader exits non-zero. | — |
 | `STS-RISK-0041` | Monitoring → Geolocation (/admin/geolocation or GET /admin-api/geolocation, #255) could not be drawn or answered: the store's count of the realm's assessments by place failed, or the country outlines (admin-ui/natural_earth/countries.json) could not be read. The reason follows on the log line. | HTTP 500 |
 | `STS-RISK-0042` | Monitoring → Geolocation was asked for something it does not draw (#255): a window other than live, 24h, 7d or 30d, a continent that is not one of the seven slugs, a country that is not an ISO 3166-1 alpha-2 code on the map, or a country together with a continent it is not in. | HTTP 400 |
+| `STS-RISK-0043` | A FIDO MDS3 BLOB was LOADED although its signature or signing chain does not verify, because the administrator who uploaded it ticked the signature override. Its contents are unauthenticated and its chain's revocation was not checked; the version is recorded with verification "overridden" and the reason. Replace it with a BLOB that verifies as soon as FIDO publishes one. | loaded; recorded on the audit row and logged as a warning |
 
 ## STS-MAIL
 

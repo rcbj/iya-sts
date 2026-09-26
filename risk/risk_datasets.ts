@@ -472,6 +472,14 @@ class RiskDatasets {
       return { refusal: this.refused('STS-RISK-0001', refusal, o) };
     }
     const entry = CATALOGUE[o.dataset];
+    // The signature override is for the one signed dataset, and is an
+    // administrator's act on an upload: the download job never sets it.
+    if (o.overrideSignature && entry.kind !== 'fido') {
+      log.debug("Leaving RiskDatasets.admission(). Override.");
+      return { refusal: this.refused('STS-RISK-0001', 'The signature ' +
+        'override is for the FIDO MDS3 BLOB (fido.mds3) only; ' + o.dataset +
+        ' carries no signature to override.', o) };
+    }
     const format = FORMATS[o.format];
     // Whose data this is: what the caller named, the dataset's own, or the
     // format's. It must be a provider this service knows and supports, so
@@ -819,6 +827,15 @@ class RiskDatasets {
   //   3. the serial number `no` GREATER than the active BLOB's: an older one
   //      is a rollback and is refused (STS-RISK-0024), whatever it is signed
   //      with;
+  //      Under an administrator's SIGNATURE OVERRIDE (`overrideSignature`,
+  //      an upload's checkbox, never the download job) a failure of step 1
+  //      is recorded rather than refused — the version's `verification` is
+  //      `overridden`, its reason is kept in `parameters.signatureOverride`,
+  //      the audit row and a warning (STS-RISK-0043) say so — and step 2 is
+  //      skipped, because a chain nobody verified has no revocation worth
+  //      asking about. Steps 3 and 4 hold unchanged: an overridden BLOB is
+  //      still refused if it is a rollback, and the next good one replaces
+  //      it as any newer BLOB does;
   //   4. then the entries, one row per key an authenticator model is listed
   //      under (AAGUID, AAID, attestation key identifier), activated — and
   //      every OLDER version's rows deleted at once (`latestOnly`): FIDO's
@@ -855,15 +872,18 @@ class RiskDatasets {
     const pki = require('../common/pki');
     const verified = await pki.verifyFidoMdsBlob(text, {
       anchorsPem: String(config.value('risk.mdsTrustAnchors') || ''),
-      now: now() });
+      now: now(), overrideSignature: o.overrideSignature === true });
     if (!verified.ok) {
       log.debug("Leaving RiskDatasets.importMds(). Does not verify.");
       return refuse('STS-RISK-0022', 'The BLOB does not verify: ' +
                     verified.reason + '. Nothing was loaded.');
     }
-    const verdict = await require('../common/revocation_status').verdictFor({
-      leaf: verified.chainPems[0], chain: verified.chainPems.slice(1),
-      verified: true }, { external: 'fetch' });
+    const overridden = verified.overridden ? String(verified.overridden) : '';
+    const verdict = overridden
+      ? { status: 'unchecked (signature overridden)' }
+      : await require('../common/revocation_status').verdictFor({
+        leaf: verified.chainPems[0], chain: verified.chainPems.slice(1),
+        verified: true }, { external: 'fetch' });
     if (verdict.refused || verdict.status === 'revoked') {
       log.debug("Leaving RiskDatasets.importMds(). Revocation.");
       return refuse('STS-RISK-0023', 'The BLOB\'s signing chain is ' +
@@ -893,11 +913,13 @@ class RiskDatasets {
     const nextUpdate = Date.parse(String(payload.nextUpdate || ''));
     const staged = Object.assign({}, meta, {
       version: String(o.version || 'no-' + serial),
-      verification: 'signature',
+      verification: overridden ? 'overridden' : 'signature',
       nextUpdateAt: isFinite(nextUpdate) ? nextUpdate : 0,
       parameters: Object.assign({}, meta.parameters, {
         mdsNo: serial, revocation: String(verdict.status || ''),
-        legalHeader: String(payload.legalHeader || '').slice(0, 500) }) });
+        legalHeader: String(payload.legalHeader || '').slice(0, 500) },
+        overridden ? { signatureOverride: overridden.slice(0, 500),
+                       signatureOverrideBy: String(o.actor || '') } : {}) });
     const began = await store.beginVersion(staged);
     if (!began) {
       log.debug("Leaving RiskDatasets.importMds(). Already recorded.");
@@ -948,12 +970,23 @@ class RiskDatasets {
         }
       }
     }
-    this.auditRow('risk.dataset.import', o, staged.version, 'success', '',
-                  'FIDO MDS3 BLOB ' + serial + ': ' + written +
+    const unverified = overridden
+      ? ' WITHOUT A VERIFIED SIGNATURE (overridden by ' +
+        String(o.actor || 'an administrator') + ': ' + overridden + ')'
+      : '';
+    if (overridden) {
+      log.warn(errorCodes.tag('STS-RISK-0043') + 'risk: FIDO MDS3 BLOB ' +
+               serial + ' loaded' + unverified + '.');
+    }
+    this.auditRow('risk.dataset.import', o, staged.version, 'success',
+                  overridden ? 'STS-RISK-0043' : '',
+                  'FIDO MDS3 BLOB ' + serial + unverified + ': ' + written +
                   ' authenticator key(s) loaded' +
                   (activated ? ' and activated' : '') +
                   (dropped ? '; ' + dropped + ' older row(s) deleted' : ''));
-    log.info('risk: FIDO MDS3 BLOB ' + serial + ' verified (revocation ' +
+    log.info('risk: FIDO MDS3 BLOB ' + serial +
+             (overridden ? ' NOT verified (overridden)' : ' verified') +
+             ' (revocation ' +
              String(verdict.status || 'unchecked') + '): ' + written +
              ' authenticator key(s)' + (activated ? ', now active' : '') +
              (dropped ? '; the older BLOB\'s ' + dropped + ' row(s) deleted'
@@ -963,7 +996,10 @@ class RiskDatasets {
              version: staged.version, state: activated ? 'active' : 'ready',
              rows: written, skipped: 0, activated: activated,
              sha256: meta.sha256, serial: serial,
-             message: 'FIDO MDS3 BLOB ' + serial + ' verified: ' + written +
+             overridden: overridden || undefined,
+             message: 'FIDO MDS3 BLOB ' + serial +
+                      (overridden ? ' loaded' + unverified
+                                  : ' verified') + ': ' + written +
                       ' authenticator key(s) loaded' +
                       (activated ? ', now active' : '') + '.' };
   }

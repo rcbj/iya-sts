@@ -10289,6 +10289,16 @@ function describeDeviceAnchors() {
 //
 // Answers `{ ok: true, header, payload, chainPems }` or `{ ok: false,
 // reason }`. Never rejects.
+//
+// **`opts.overrideSignature`** is an administrator's act on one upload,
+// never the download job's: FIDO has published a BLOB whose signature or
+// chain does not verify, and the operator has decided to load it anyway.
+// It lets exactly three failures through — no anchor, no path to one, a
+// signature that does not verify — and answers `{ ok: true, overridden:
+// reason, ... }` with the payload read WITHOUT its signature, so the caller
+// can record that it was never verified and why. A token that is not a JWS
+// with an `x5c`, or whose payload is not a BLOB, is refused all the same:
+// the override is about trust, not about reading something that is not one.
 // ---------------------------------------------------------------------------
 const MDS_ALGORITHMS = ['RS256', 'RS384', 'RS512', 'PS256', 'PS384', 'PS512',
                         'ES256', 'ES384', 'ES512', 'EdDSA'];
@@ -10338,43 +10348,73 @@ async function verifyFidoMdsBlob(token, opts) {
   const ders = x5c.map(function (one) {
     return Buffer.from(String(one), 'base64');
   });
+  let failure = '';
   const anchors = fidoMdsRoots(options.anchorsPem);
-  if (!anchors.length) {
-    log.debug("Leaving verifyFidoMdsBlob(). No anchor.");
-    return { ok: false, reason: 'no FIDO MDS trust anchor: none is ' +
-             'configured (risk.mdsTrustAnchors) and GlobalSign Root CA - R3 ' +
-             'is not in this node\'s root store' };
-  }
-  const path = await verifyPathToAnchors(ders[0], ders.slice(1), anchors,
-                                         { now: options.now });
-  if (!path.ok) {
-    log.debug("Leaving verifyFidoMdsBlob(). No path.");
-    return { ok: false, reason: 'the BLOB\'s signing chain does not verify: ' +
-             path.reason };
-  }
-  const leaf = certificateFromDer(ders[0]);
   let verified = null;
-  try {
-    verified = stsCrypto.verifyCompactJws(text, leaf.pem,
-                                          { algorithms: MDS_ALGORITHMS });
-  } catch (e) {
-    log.debug("Caught in verifyFidoMdsBlob(): " + ((e && e.message) || e));
-    log.debug("Leaving verifyFidoMdsBlob(). Signature.");
-    return { ok: false, reason: 'the BLOB\'s signature does not verify ' +
-             'under its signing certificate: ' + ((e && e.message) || e) };
+  if (!anchors.length) {
+    failure = 'no FIDO MDS trust anchor: none is configured ' +
+      '(risk.mdsTrustAnchors) and GlobalSign Root CA - R3 is not in this ' +
+      'node\'s root store';
+  } else {
+    const path = await verifyPathToAnchors(ders[0], ders.slice(1), anchors,
+                                           { now: options.now });
+    if (!path.ok) {
+      failure = 'the BLOB\'s signing chain does not verify: ' + path.reason;
+    } else {
+      try {
+        verified = stsCrypto.verifyCompactJws(text,
+                                              certificateFromDer(ders[0]).pem,
+                                              { algorithms: MDS_ALGORITHMS });
+      } catch (e) {
+        log.debug("Caught in verifyFidoMdsBlob(): " +
+                  ((e && e.message) || e));
+        failure = 'the BLOB\'s signature does not verify under its signing ' +
+          'certificate: ' + ((e && e.message) || e);
+      }
+    }
   }
-  const payload = (verified && (verified.claims || verified.payload)) || null;
+  if (failure && !options.overrideSignature) {
+    log.debug("Leaving verifyFidoMdsBlob(). " + failure);
+    return { ok: false, reason: failure };
+  }
+  let payload = null;
+  if (failure) {
+    // THE OVERRIDE: the payload as it stands, its signature unverified.
+    try {
+      payload = JSON.parse(Buffer.from(parts[1], 'base64url')
+        .toString('utf8'));
+    } catch (e) {
+      log.debug("Caught in verifyFidoMdsBlob(): " + ((e && e.message) || e));
+      // Not JSON is not a BLOB, and the check below says so.
+      payload = null;
+    }
+  } else {
+    payload = (verified && (verified.claims || verified.payload)) || null;
+  }
   if (!payload || typeof payload !== 'object' ||
       !Array.isArray(payload.entries) || !isFinite(Number(payload.no))) {
     log.debug("Leaving verifyFidoMdsBlob(). Not a BLOB payload.");
     return { ok: false, reason: 'the payload is not an MDS3 BLOB: it needs ' +
              'a serial number (no) and a list of entries' };
   }
+  let chainPems = [];
+  try {
+    chainPems = ders.map(function (der) {
+      return certificateFromDer(der).pem;
+    });
+  } catch (e) {
+    log.debug("Caught in verifyFidoMdsBlob(): " + ((e && e.message) || e));
+    // Only reachable under the override: a verified chain parsed already.
+    chainPems = [];
+  }
+  if (failure) {
+    log.debug("Leaving verifyFidoMdsBlob(). NOT verified, overridden, no=" +
+              payload.no + ".");
+    return { ok: true, overridden: failure, header: header,
+             payload: payload, chainPems: chainPems };
+  }
   log.debug("Leaving verifyFidoMdsBlob(). Verified, no=" + payload.no + ".");
-  return { ok: true, header: header, payload: payload,
-           chainPems: ders.map(function (der) {
-             return certificateFromDer(der).pem;
-           }) };
+  return { ok: true, header: header, payload: payload, chainPems: chainPems };
 }
 
 

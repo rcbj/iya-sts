@@ -820,6 +820,15 @@ class RiskAdmin {
         '<label><input type="checkbox" name="acceptTerms" ' +
         'id="risk-upload-accept"> I have read and accept the provider\'s ' +
         'terms (below), recorded in my name</label><br>') +
+      // THE SIGNATURE OVERRIDE, for the FIDO MDS3 BLOB only: FIDO has
+      // published BLOBs whose signature does not verify, and this loads one
+      // anyway, recorded as `overridden` with the reason, in this
+      // administrator's name (`risk_datasets.importMds()`).
+      '<label><input type="checkbox" name="overrideSignature" ' +
+      'id="risk-upload-override-signature"> FIDO MDS3 only: load the BLOB ' +
+      'even if its signature or signing chain does not verify. <strong>Its ' +
+      'contents are then unauthenticated</strong>; the version is recorded ' +
+      'as <code>overridden</code>, with the reason, in my name</label><br>' +
       '<label>File (<code>.gz</code>, <code>.zip</code> holding one file, ' +
       'or plain text) <input type="file" name="file" id="risk-upload-file" ' +
       'required></label><br><button type="submit" id="risk-upload">' +
