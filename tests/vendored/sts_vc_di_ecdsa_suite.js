@@ -140,6 +140,12 @@ async function sdInterop(ctx, dir) {
   check("this verifier verified this service's derived proof", function () {
     assert.strictEqual(ours.status, 200, ours.text.slice(0, 800));
   });
+  // The suite's loader fetches every https context from the web, and a
+  // runner container has no route to w3.org: the mocha run above gets the
+  // held copies through its --require hook, and this in-process check
+  // needs the same hook installed here, or it depends on the network (it
+  // passed on a host with one and failed in the runner without).
+  require(path.join(__dirname, "..", "vc-suites", "offline-contexts.cjs"));
   const nm = path.join(dir, "node_modules", "@digitalbazaar");
   const vcLib = await import(path.join(nm, "vc", "lib", "index.js"));
   const di = await import(path.join(nm, "data-integrity", "lib",
