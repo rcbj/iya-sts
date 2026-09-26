@@ -10856,7 +10856,8 @@ const CODES = [
     spec: '' },
   { code: 'STS-TLS-0021',
     summary: 'A TLS handshake failed on a listener this module watches — ' +
-      'a version, cipher or certificate mismatch, or a non-TLS client. It ' +
+      'a version or cipher mismatch, or a non-TLS client; a client refusing ' +
+      'this service\'s certificate is STS-TLS-0034 since #225. It ' +
       'named the required-client-certificate listener until 2026-09-16, when ' +
       'that listener was deleted; it is now the main port, where a client ' +
       'certificate is asked for and never required',
@@ -10919,6 +10920,13 @@ const CODES = [
       're-issued; the others were still told, and the main port serves the ' +
       'new one.',
     spec: '' },
+  { code: 'STS-TLS-0034',
+    summary: 'A TLS client REFUSED this service\'s certificate: it sent a ' +
+      'certificate alert (bad_certificate, unsupported_certificate, ' +
+      'certificate_revoked, certificate_expired, certificate_unknown or ' +
+      'unknown_ca) during the handshake. From a browser it almost always ' +
+      'means the client does not trust this service\'s Root CA (#225).',
+    spec: 'TLS handshake failure (the client closed the connection)' },
   // ===== VC ================================================================
   { code: 'STS-VC-0001',
     summary: 'An oid4vci encryption setting names no content encryption ' +

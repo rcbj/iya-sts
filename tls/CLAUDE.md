@@ -62,6 +62,27 @@ walks the Express router, so it could never see 8443 or 9443, and this module's
 rows there were the plain-HTTP views with the listeners described in their text.
 Everything this module now answers is a route on the router the page walks.
 
+## A CLIENT REFUSING OUR CERTIFICATE IS NOT "THE HANDSHAKE ITSELF" (2026-09-26, #225)
+
+The main port's `tlsClientError` handler said *"this is the handshake itself
+rather than a certificate being refused"* for EVERY failure. rcbj's Chrome,
+which did not trust the service Root, filled the log with it. But
+`ssl3_read_bytes … alert … SSL alert number 46` means this service RECEIVED
+the alert: the CLIENT refused this service's certificate. The sentence sent
+the diagnosis the wrong way.
+
+`handshakeFailureOf()` now reads the alert the peer sent (node's
+`ERR_SSL_*_ALERT_*` code, or OpenSSL's alert number on a read). The
+certificate alerts (42–46, 48) are logged under `STS-TLS-0034`, naming the
+alert and where to get the Root. Everything else keeps `STS-TLS-0021`.
+
+**node's own TLS client never produces this:** it verifies AFTER the
+handshake and drops the socket, which the server sees as "socket hang up"
+(the health-check path, debug only). Browsers and OpenSSL refuse DURING the
+handshake and send the alert, which is why `tests/tls_handshake_alerts.js`
+drives `openssl s_client`, and against an UNRELATED CA file, because OpenSSL
+will not even connect with an empty one.
+
 ## What moved, what was replaced and what was lost
 
 `common/config.js`'s removal note and the block above `observeConnectionsOn()`

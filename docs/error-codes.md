@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3540** of them, in **38** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3541** of them, in **38** subsystems.
 
 ## Where a code appears
 
@@ -73,7 +73,7 @@ is an ordinary outcome.
 * [LDAP directory (`STS-LDAP`)](#sts-ldap) — 84
 * [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 77
 * [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 144
-* [TLS and client certificates (`STS-TLS`)](#sts-tls) — 33
+* [TLS and client certificates (`STS-TLS`)](#sts-tls) — 34
 * [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 104
 * [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 104
 * [Risk scoring (`STS-RISK`)](#sts-risk) — 40
@@ -2669,7 +2669,7 @@ Raised from: tls/.
 | `STS-TLS-0018` | Recording a verified client certificate as an authentication threw; the connection was unaffected. | — |
 | `STS-TLS-0019` | The service did not start: tls.trustAnchorsFile could not be read. | — |
 | `STS-TLS-0020` | The service did not start: tls.trustAnchorsFile holds no PEM certificate. | — |
-| `STS-TLS-0021` | A TLS handshake failed on a listener this module watches — a version, cipher or certificate mismatch, or a non-TLS client. It named the required-client-certificate listener until 2026-09-16, when that listener was deleted; it is now the main port, where a client certificate is asked for and never required | TLS handshake failure |
+| `STS-TLS-0021` | A TLS handshake failed on a listener this module watches — a version or cipher mismatch, or a non-TLS client; a client refusing this service's certificate is STS-TLS-0034 since #225. It named the required-client-certificate listener until 2026-09-16, when that listener was deleted; it is now the main port, where a client certificate is asked for and never required | TLS handshake failure |
 | `STS-TLS-0022` *(retired)* | A TLS handshake failed on the optional-client-certificate listener. Retired 2026-09-16 with that listener; STS-TLS-0021 is the one code for a failed handshake now | TLS handshake failure |
 | `STS-TLS-0023` | A /tls or /tls/forwarded request carried a format parameter other than json or html. | HTTP 400 |
 | `STS-TLS-0024` | POST /tls/trust or /tls/trust/clear was refused because product mode does not open the truststore to anybody who can reach the port. | HTTP 403 |
@@ -2682,6 +2682,7 @@ Raised from: tls/.
 | `STS-TLS-0031` *(retired)* | The required-client-certificate listener refused a verified certificate this service issued that is not a TLS client identity. Retired 2026-09-16 with that listener: the same certificate is now refused where it is USED — no session at GET /tls/sign-in, no client authentication at the token endpoint — rather than at a socket | HTTP 403 with the connection report |
 | `STS-TLS-0032` | The file named by tls.certificateFile holds self-signed certificates, none of which signs the chain the listener presents, so no trust anchor is taken from it. | — |
 | `STS-TLS-0033` | A socket that presents the listener certificate (LDAPS, the SPIRE Server API) threw while being told the certificate was re-issued; the others were still told, and the main port serves the new one. | — |
+| `STS-TLS-0034` | A TLS client REFUSED this service's certificate: it sent a certificate alert (bad_certificate, unsupported_certificate, certificate_revoked, certificate_expired, certificate_unknown or unknown_ca) during the handshake. From a browser it almost always means the client does not trust this service's Root CA (#225). | TLS handshake failure (the client closed the connection) |
 
 ## STS-VC
 

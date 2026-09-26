@@ -3230,6 +3230,65 @@ function holdToPathRules(socket, label) {
   return problem;
 }
 
+// ---------------------------------------------------------------------------
+// WHICH SIDE BROKE A HANDSHAKE, AND WHY (2026-09-26, #225).
+//
+// rcbj signed in to /admin from Chrome on his laptop and the log filled with
+// `ssl/tls alert certificate unknown … SSL alert number 46`, each line saying
+// "this is the handshake itself rather than a certificate being refused" —
+// which sent the diagnosis the wrong way. OpenSSL's `ssl3_read_bytes … alert`
+// means this service RECEIVED the alert: the CLIENT checked this service's
+// certificate and refused it, which from a browser almost always means it
+// does not trust this service's Root. That is a certificate being refused,
+// by the other end.
+//
+// So the failure is classified before it is logged. An alert the peer SENT
+// is read off node's error — its code (`ERR_SSL_SSLV3_ALERT_…`,
+// `ERR_SSL_TLSV1_ALERT_…`) or OpenSSL's `SSL alert number N` on a read — and
+// the alerts of RFC 8446 section 6.2 (and RFC 5246 7.2.2 before it) that are
+// about the certificate the peer was SENT are named as that. Everything else
+// is a handshake that failed for another reason: a version, a cipher, a
+// client that is not speaking TLS. A pure function, exported for
+// tests/tls_handshake_alerts.js.
+// ---------------------------------------------------------------------------
+const CERTIFICATE_ALERTS = {
+  42: 'bad_certificate',
+  43: 'unsupported_certificate',
+  44: 'certificate_revoked',
+  45: 'certificate_expired',
+  46: 'certificate_unknown',
+  48: 'unknown_ca'
+};
+
+function handshakeFailureOf(error) {
+  log.debug('Entering handshakeFailureOf().');
+  const message = String((error && error.message) || '');
+  const code = String((error && error.code) || '');
+  const numbered = /SSL alert number (\d+)/.exec(message);
+  const received = /_read_bytes|read_bytes:/.test(message) ||
+                   /^ERR_SSL_(SSLV3|TLSV1)_ALERT_/.test(code);
+  const alert = numbered ? Number(numbered[1]) : null;
+  const byCode = {
+    ERR_SSL_SSLV3_ALERT_BAD_CERTIFICATE: 42,
+    ERR_SSL_SSLV3_ALERT_UNSUPPORTED_CERTIFICATE: 43,
+    ERR_SSL_SSLV3_ALERT_CERTIFICATE_REVOKED: 44,
+    ERR_SSL_SSLV3_ALERT_CERTIFICATE_EXPIRED: 45,
+    ERR_SSL_SSLV3_ALERT_CERTIFICATE_UNKNOWN: 46,
+    ERR_SSL_TLSV1_ALERT_UNKNOWN_CA: 48
+  };
+  const number = alert !== null ? alert
+    : (byCode[code] !== undefined ? byCode[code] : null);
+  if (received && number !== null && CERTIFICATE_ALERTS[number]) {
+    log.debug('Leaving handshakeFailureOf(). The peer refused the ' +
+              'certificate: ' + CERTIFICATE_ALERTS[number] + '.');
+    return { kind: 'peer-refused-certificate', alert: number,
+             alertName: CERTIFICATE_ALERTS[number] };
+  }
+  log.debug('Leaving handshakeFailureOf(). Another handshake failure.');
+  return { kind: 'handshake', alert: received ? number : null,
+           alertName: null };
+}
+
 function observeConnectionsOn(server, label) {
   log.debug('Entering observeConnectionsOn(). label=' + label);
   if (!server || typeof server.on !== 'function') {
@@ -3251,8 +3310,10 @@ function observeConnectionsOn(server, label) {
   // a request, so without this it is invisible: the far end sees a closed
   // connection and this log says nothing at all. It is the single most
   // confusing failure in mutual TLS, so it is logged with the reason OpenSSL
-  // gave. On this port a client certificate is never REQUIRED, so what lands
-  // here is a broken handshake rather than a refused credential.
+  // gave. On this port a client certificate is never REQUIRED, so a failure
+  // here is never this service refusing a client's credential — but it may
+  // be the CLIENT refusing THIS service's certificate, which
+  // handshakeFailureOf() tells apart and says so (#225).
   server.on('tlsClientError', function (error, socket) {
     // A PEER THAT CLOSED BEFORE SAYING ANYTHING (2026-09-21) is a load
     // balancer's TCP health check — a connect and a close — or a client that
@@ -3267,11 +3328,32 @@ function observeConnectionsOn(server, label) {
                 'client that gave up.');
       return;
     }
-    log.warn('tls: a handshake failed on ' + label + ' from ' +
-             ((socket && socket.remoteAddress) || 'an unknown address') +
-             ': ' + error.message + '. A client certificate is asked for and ' +
-             'never required here, so this is the handshake itself rather ' +
-             'than a certificate being refused.');
+    const from = (socket && socket.remoteAddress) || 'an unknown address';
+    const failure = handshakeFailureOf(error);
+    if (failure.kind === 'peer-refused-certificate') {
+      log.warn(errorCodes.tag('STS-TLS-0034') + 'tls: the client at ' + from +
+               ' REFUSED this service\'s certificate on ' + label + ' (it ' +
+               'sent the TLS alert ' + failure.alertName + ', ' +
+               failure.alert + '). From a browser this almost always means ' +
+               'it does not trust this service\'s Root CA: install the Root ' +
+               'from GET /tls/server-certificate (the last certificate) in ' +
+               'its trust store, and reach the service by a name in the ' +
+               'certificate (tls.hostnames, tls.ips). OpenSSL said: ' +
+               error.message);
+      audit.failure('STS-TLS-0034', {
+        protocol: 'TLS', channel: 'tls',
+        target: label,
+        summary: 'the client refused this service\'s certificate: TLS ' +
+                 'alert ' + failure.alertName,
+        outcome: 'refused'
+      });
+      return;
+    }
+    log.warn('tls: a handshake failed on ' + label + ' from ' + from + ': ' +
+             error.message + '. A client certificate is asked for and never ' +
+             'required here, and the client sent no alert refusing this ' +
+             'service\'s certificate, so this is the handshake itself — a ' +
+             'version, a cipher, or a client not speaking TLS.');
     audit.failure('STS-TLS-0021', {
       protocol: 'TLS', channel: 'tls',
       target: label,
@@ -4222,6 +4304,8 @@ module.exports = {
   // Installed by `server.js` on the main HTTPS listener: the sighting, and the
   // failed-handshake log that is otherwise invisible.
   observeConnectionsOn: observeConnectionsOn,
+  // Exported for tests/tls_handshake_alerts.js (#225).
+  handshakeFailureOf: handshakeFailureOf,
   // #201: the path rules asked of a chain OpenSSL verified; exported for
   // tests/x509_limbo.js, which holds the main port's posture to x509-limbo.
   holdToPathRules: holdToPathRules
