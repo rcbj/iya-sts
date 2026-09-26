@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3513** of them, in **38** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3514** of them, in **38** subsystems.
 
 ## Where a code appears
 
@@ -74,7 +74,7 @@ is an ordinary outcome.
 * [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 77
 * [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 144
 * [TLS and client certificates (`STS-TLS`)](#sts-tls) — 33
-* [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 103
+* [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 104
 * [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 104
 * [Risk scoring (`STS-RISK`)](#sts-risk) — 39
 * [Mail (`STS-MAIL`)](#sts-mail) — 39
@@ -2772,6 +2772,7 @@ Raised from: oid4vc/.
 | `STS-VC-0106` | The VC-API verifier refused a credential or presentation: the data model, JSON-LD safe mode, a proof (the key, the purpose, the challenge or domain, the signature, the issuer), or a status list entry (#194-#198). | HTTP 400 {verified: false, errors} |
 | `STS-VC-0107` | A VC-API status change named a credential this realm issued no status for, a status type or purpose it does not publish, or tried to clear a revocation (#197). | HTTP 404 / 400 {errors} |
 | `STS-VC-0108` | A VC-API request body was not a JSON object, or carried a polluting key or more depth or members than any document this service accepts (validation.checkDocument, #194). | HTTP 400 {errors} |
+| `STS-VC-0109` | A DID the VC-API resolver was asked for could not be resolved, or a DID URL dereferenced: not a DID (invalidDid, invalidDidUrl), a method it does not support, a representation it does not produce, or a did:web other than this realm's own, which it does not fetch (notFound) (#199). | HTTP 400 / 404 / 501 with the resolution result's error |
 
 ## STS-SSF
 

@@ -80,6 +80,7 @@ import vcDataModel = require('./vc_data_model');
 import vcJsonLd = require('./vc_jsonld');
 import vcStatus = require('./vc_status');
 import vcJoseCose = require('./vc_jose_cose');
+import vcDidResolver = require('./vc_did_resolver');
 
 type RouteApp = typeof app;
 
@@ -97,6 +98,7 @@ interface VcApiDeps {
   jsonld: typeof vcJsonLd;
   status: typeof vcStatus;
   jose: typeof vcJoseCose;
+  resolver: typeof vcDidResolver;
   issued: any;
   now: () => number;
   checkDocument: (value: any, where: string, opts?: any) => any;
@@ -184,6 +186,7 @@ class VcApi {
       jsonld: vcJsonLd,
       status: vcStatus,
       jose: vcJoseCose,
+      resolver: vcDidResolver,
       issued: issued,
       checkDocument: validation.checkDocument,
       now: function now(): number {
@@ -1005,6 +1008,54 @@ class VcApi {
     log.debug("Leaving VcApi.derive().");
   }
 
+  // A query parameter as one string, or undefined (a repeated one refused
+  // by treating it as absent — the caller then gets the error it earned).
+  private queryString(req: any, name: string): string {
+    const { log } = this.deps;
+    log.debug("Entering VcApi.queryString(). " + name);
+    const v = req.query ? req.query[name] : undefined;
+    log.debug("Leaving VcApi.queryString().");
+    return typeof v === 'string' ? v : undefined;
+  }
+
+  async resolveDid(req: any, res: any): Promise<void> {
+    const { log, resolver, errorCodes } = this.deps;
+    log.debug("Entering VcApi.resolveDid().");
+    const did = this.queryString(req, 'did') || '';
+    const fn = this.queryString(req, 'function') || 'resolve';
+    const accept = this.queryString(req, 'accept');
+    const options = accept === undefined ? {} : { accept: accept };
+    const out = fn === 'resolveRepresentation'
+      ? await resolver.resolveRepresentation(did, options, req)
+      : await resolver.resolve(did, options, req);
+    const error = out.didResolutionMetadata.error;
+    if (error) {
+      errorCodes.mark(res, 'STS-VC-0109');
+    }
+    // error-code: none — marked above when it is a refusal.
+    this.send(res, !error ? 200 : (error === 'notFound' ? 404
+      : (error === 'methodNotSupported' ||
+         error === 'representationNotSupported' ? 501 : 400)), out);
+    log.debug("Leaving VcApi.resolveDid(). " + (error || 'resolved'));
+  }
+
+  async dereferenceDidUrl(req: any, res: any): Promise<void> {
+    const { log, resolver, errorCodes } = this.deps;
+    log.debug("Entering VcApi.dereferenceDidUrl().");
+    const accept = this.queryString(req, 'accept');
+    const out = await resolver.dereference(
+      this.queryString(req, 'didUrl') || '',
+      accept === undefined ? {} : { accept: accept }, req);
+    const error = out.dereferencingMetadata.error;
+    if (error) {
+      errorCodes.mark(res, 'STS-VC-0109');
+    }
+    // error-code: none — marked above when it is a refusal.
+    this.send(res, !error ? 200 : (error === 'notFound' ? 404
+      : (error === 'methodNotSupported' ? 501 : 400)), out);
+    log.debug("Leaving VcApi.dereferenceDidUrl(). " + (error || 'found'));
+  }
+
   // A verification's answer, as an HTTP response: 200 when verified, 400
   // with the errors when not.
   private answerVerification(res: any, result: any, code: string): void {
@@ -1103,6 +1154,23 @@ class VcApi {
         self.changeStatus(req, res);
       }
       log.debug("Leaving POST " + BASE + "/credentials/status.");
+    });
+    // DID RESOLUTION AND DEREFERENCING (#199): DID Core section 7's two
+    // functions over `vc_did_resolver.ts`, answering its result structures
+    // as JSON. `function` is resolve (the default) or resolveRepresentation.
+    app.get(BASE + '/resolve', function (req, res) {
+      log.debug("Entering GET " + BASE + "/resolve.");
+      if (self.admitted(req, res, SCOPE_VERIFY)) {
+        self.run(res, self.resolveDid(req, res));
+      }
+      log.debug("Leaving GET " + BASE + "/resolve.");
+    });
+    app.get(BASE + '/dereference', function (req, res) {
+      log.debug("Entering GET " + BASE + "/dereference.");
+      if (self.admitted(req, res, SCOPE_VERIFY)) {
+        self.run(res, self.dereferenceDidUrl(req, res));
+      }
+      log.debug("Leaving GET " + BASE + "/dereference.");
     });
     app.post(PUBLISH_PATH, function (req, res) {
       log.debug("Entering POST " + PUBLISH_PATH + ".");

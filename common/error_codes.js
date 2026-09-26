@@ -11288,6 +11288,13 @@ const CODES = [
       'polluting key or more depth or members than any document this ' +
       'service accepts (validation.checkDocument, #194).',
     spec: 'HTTP 400 {errors}' },
+  { code: 'STS-VC-0109',
+    summary: 'A DID the VC-API resolver was asked for could not be resolved, ' +
+      'or a DID URL dereferenced: not a DID (invalidDid, invalidDidUrl), a ' +
+      'method it does not support, a representation it does not produce, ' +
+      'or a did:web other than this realm\'s own, which it does not fetch ' +
+      '(notFound) (#199).',
+    spec: 'HTTP 400 / 404 / 501 with the resolution result\'s error' },
   { code: 'STS-SSF-0001',
     summary: 'A Shared Signals endpoint was called while the family is ' +
       'turned off (ssf.enabled).',

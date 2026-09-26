@@ -628,6 +628,8 @@ class ProtocolStack {
     // over the libraries above — the Data Integrity suites, the status lists
     // and the data model. After the verifier, whose libraries it reads; it
     // requires no route module.
+    this.build('oid4vc/vc_did_resolver',
+               require('../oid4vc/vc_did_resolver'), 'VcDidResolver');
     require('../oid4vc/vc_api');
     this.build('oid4vc/vc_api', require('../oid4vc/vc_api'), 'VcApi');
     this.register(app, require('../oid4vc/vc_api'), 'oid4vc/vc_api');
