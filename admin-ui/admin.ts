@@ -11734,6 +11734,21 @@ class AdminConsole {
           carryBack + '<div class="formrow"><button class="danger">Turn off ' +
           'their emailed second factor</button></div></form>'
         : '') +
+      // THE ACCOUNT IDS CLIENTS KNOW THIS PERSON BY (#148): each sent as the
+      // ID Token's `aud_sub` to that client (Enterprise Extensions 2.3).
+      (state.write
+        ? '<div id="aud-sub"><p class="sub">Account ids at clients ' +
+          '(<code>aud_sub</code>): ' + (credentials.audSubsOf(key).map(
+            (v: string) => '<code>' + this.esc(v) + '</code>').join(', ') ||
+            'none') + '</p><form method="post" action="/admin/users">' +
+          '<input type="hidden" name="action" value="set-aud-sub">' +
+          '<input type="hidden" name="user" value="' + this.esc(key) + '">' +
+          carryBack + '<div class="formrow"><label>client_id <input ' +
+          'type="text" name="client" size="24" maxlength="256" required>' +
+          '</label> <label>aud_sub <input type="text" name="value" ' +
+          'size="24" maxlength="255"></label> <button type="submit">Set ' +
+          '(empty removes)</button></div></form></div>'
+        : '') +
       (state.write
         ? '<form method="post" action="/admin/users">' +
           '<input type="hidden" name="action" value="set-mail">' +
@@ -12857,6 +12872,128 @@ class AdminConsole {
     return heading + state + why + form;
   }
 
+  // -------------------------------------------------------------------------
+  // CHANGE THEIR ATTRIBUTES (#228, 2026-09-26): the application page's three
+  // forms, for a person. What may be changed, and every refusal, are
+  // `ldap/person_editor.ts`'s; this draws its answer. The Set select offers
+  // every attribute this entry lets be edited, Add to only the multi-valued
+  // ones, and Remove from only those that hold a value — so a form cannot
+  // offer what the action would refuse for the plainest reason.
+  // -------------------------------------------------------------------------
+  userAttributesSection(key, editor, gate, back) {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering AdminConsole.userAttributesSection(). key=" + key);
+    const heading = '<h2 id="attributes">Change their attributes</h2>';
+    if (!editor) {
+      log.debug("Leaving AdminConsole.userAttributesSection(). No entry.");
+      return heading + this.note('There is no directory entry for this ' +
+        'person here, so there is nothing to change. The section above says ' +
+        'why.');
+    }
+    const usable = editor.attributes.filter(function (row) {
+      return row.editable;
+    });
+    const option = function (row) {
+      log.debug("Entering option(). " + row.name);
+      log.debug("Leaving option().");
+      return '<option value="' + self.esc(row.name) + '">' +
+        self.esc(row.name + ' — ' + row.label +
+                 (row.values.length ? ' (' + row.values.length + ')' : '')) +
+        '</option>';
+    };
+    const form = function (action, label, rows, required, placeholder) {
+      log.debug("Entering form(). " + action);
+      log.debug("Leaving form().");
+      const id = action.slice(0, action.indexOf('-'));
+      return '<form method="post" action="/admin/users">' +
+        '<input type="hidden" name="action" value="' + self.esc(action) + '">' +
+        '<input type="hidden" name="user" value="' + self.esc(key) + '">' +
+        '<input type="hidden" name="from" value="user">' +
+        '<input type="hidden" name="back" value="' + self.esc(back) + '">' +
+        '<div class="formrow"><label for="' + id + 'personattr">' + label +
+        '</label><select id="' + id + 'personattr" name="attribute">' +
+        rows.map(option).join('') + '</select><label for="' + id +
+        'personval">' + (id === 'set' ? 'to' : 'the value') + '</label>' +
+        '<input type="text" id="' + id + 'personval" name="value" size="34"' +
+        (required ? ' required' : '') + ' placeholder="' +
+        self.esc(placeholder) + '"><button type="submit">' +
+        label.split(' ')[0] + '</button></div></form>';
+    };
+    const listing = '<details><summary>What each attribute takes, and what ' +
+      'is not offered</summary>' +
+      '<table><tr><th>Attribute</th><th>Values</th><th>Schema</th>' +
+      '<th>Takes</th></tr>' +
+      editor.attributes.map(function (row) {
+        return '<tr><td><code>' + self.esc(row.name) + '</code> ' +
+          self.esc(row.label) + '</td><td>' + (row.multi ? 'several' : 'one') +
+          (row.must ? ', required' : '') + '</td><td>' + self.esc(row.schema) +
+          '</td><td>' + (row.editable
+            ? self.esc(row.note || 'text')
+            : '<span class="state-none">' + self.esc(row.why) + '</span>') +
+          '</td></tr>';
+      }).join('') + '</table>' +
+      '<table><tr><th>Not offered</th><th>Why</th></tr>' +
+      editor.withheld.map(function (row) {
+        return '<tr><td><code>' + self.esc(row.name) + '</code> ' +
+          self.esc(row.label) + '</td><td>' + self.esc(row.why) + '</td></tr>';
+      }).join('') + '</table></details>';
+    const explain = this.note('These write <code>' + this.esc(editor.dn) +
+      '</code> in place, one attribute at a time, as an ' +
+      '<code>ldapmodify</code> of it would — and the directory tells Shared ' +
+      'Signals of the change as it tells it of a SCIM or LDAP write. ' +
+      '<strong>Set</strong> replaces every value with one (empty clears it); ' +
+      '<strong>Add to</strong> and <strong>Remove from</strong> act on one ' +
+      'value of an attribute that holds several. An identity verification ' +
+      'covers a value only while the entry still holds it, so changing a ' +
+      'verified value lets that verification lapse for it.') +
+      this.note('<strong>What these will not change.</strong> The password ' +
+      'and every other credential (the controls below), the address (its ' +
+      'own form, below, because a write of it is verified), the username ' +
+      'and the attribute the entry is named ' +
+      'by, binary values such as certificates and photographs, group ' +
+      'memberships (<a href="/admin/groups">Groups</a>), and what this ' +
+      'service records about their sign-ins. <code>ldapmodify</code> still ' +
+      'reaches those; the difference between offering an operation and ' +
+      'merely not preventing it is the point.');
+    if (!gate.write) {
+      log.debug("Leaving AdminConsole.userAttributesSection(). Read only.");
+      return heading + explain + this.note('Changing an attribute needs ' +
+        '<strong>Admin Write</strong>.') + listing;
+    }
+    const multi = usable.filter(function (row) {
+      return row.multi;
+    });
+    const held = usable.filter(function (row) {
+      return row.values.length > 0;
+    });
+    log.debug("Leaving AdminConsole.userAttributesSection(). " +
+              usable.length + " editable.");
+    // THE ADDRESS, which the editor withholds: `set-mail` (#64) marks what it
+    // writes VERIFIED and tells the former address, which a generic Set
+    // would not. The action was the management API's alone until #228; a
+    // form here is its console half (rule 7).
+    const current = String(editor.mail || '');
+    const mailForm = '<form method="post" action="/admin/users">' +
+      '<input type="hidden" name="action" value="set-mail">' +
+      '<input type="hidden" name="user" value="' + this.esc(key) + '">' +
+      '<input type="hidden" name="from" value="user">' +
+      '<input type="hidden" name="back" value="' + this.esc(back) + '">' +
+      '<div class="formrow"><label for="personmail">Set the address to' +
+      '</label><input type="email" id="personmail" name="mail" size="34" ' +
+      'required value="' + this.esc(current) + '"><button ' +
+      'type="submit">Set the address</button><span class="sub">Verified, ' +
+      'because an administrator set it; the former address is told.' +
+      '</span></div></form>';
+    return heading + explain +
+      form('set-attribute', 'Set', usable, false, 'empty clears it') +
+      (multi.length
+        ? form('add-attribute', 'Add to', multi, true, '') : '') +
+      (held.length
+        ? form('remove-attribute', 'Remove from', held, true, '') : '') +
+      mailForm + listing;
+  }
+
   userCredentialControlsSection(key, factors, gate, back) {
     const { log } = this.deps;
     const self = this;
@@ -13309,6 +13446,12 @@ class AdminConsole {
       artifactNav.foot +
 
       directory.html +
+
+      // WHAT AN ADMINISTRATOR MAY CHANGE ON THAT ENTRY (#228), directly under
+      // the entry it changes — the application page's Set / Add to / Remove
+      // from, over `ldap/person_editor.ts`'s list.
+      this.userAttributesSection(key, view.attributeEditor, gateStateFor(req),
+                                 back) +
 
       // ---------------------------------------------------------------------
       // AFTER THE DIRECTORY ENTRY AND BEFORE THE TWO SIGN-OUT BUTTONS
@@ -13918,7 +14061,9 @@ class AdminConsole {
     const back = String(body.from || '') === 'user' && who
       ? this.userReturnTo(body, who,
           /^federation-/.test(String(body.action || ''))
-            ? '#federation-links' : '#credential-controls')
+            ? '#federation-links'
+            : (/-attribute$|^set-mail$/.test(String(body.action || ''))
+                ? '#attributes' : '#credential-controls'))
       : '/admin/users' +
         queryWith(this.listViewFromBack('/admin/users', body.back), {});
     // A ONE-TIME SECRET IS ANSWERED WITH A PAGE (2026-09-13): a reset password
@@ -16310,7 +16455,8 @@ class AdminConsole {
     const listView = this.listViewFromBack('/admin/users', body && body.back);
     log.debug("Leaving AdminConsole.userReturnTo().");
     return '/admin/users' + queryWith(listView, { user: String(key) }) +
-           (['#credentials', '#credential-controls'].indexOf(anchor) >= 0
+           (['#credentials', '#credential-controls',
+             '#attributes'].indexOf(anchor) >= 0
              ? anchor : '');
   }
 

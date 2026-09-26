@@ -750,6 +750,9 @@ class ProtocolStack {
     this.build('kerberos/krb5_person_keys',
                require('../kerberos/krb5_person_keys'),
                'Krb5PersonKeys');
+    // #228: loaded by the two admin-core layers below, which ask it.
+    this.build('ldap/person_editor', require('../ldap/person_editor'),
+               'PersonEditor');
     this.build('admin-core/admin_actions',
                require('../admin-core/admin_actions'),
                'AdminActions');

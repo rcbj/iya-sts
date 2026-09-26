@@ -408,6 +408,8 @@ function vendoredJobs(options) {
                 // Needs the OpenID conformance suite (#176); see the skip in
                 // main().
                 conformance: !!entry.conformance,
+                // Needs a SAML interoperability peer (#189-#192); likewise.
+                samlPeer: String(entry.samlPeer || ''),
                 // A job may raise its own watchdog and may not lower it; see
                 // runJob(), where that rule is enforced rather than trusted.
                 timeoutMs: Number(entry.timeoutMs) || 0,
@@ -526,6 +528,15 @@ function haveDocker() {
 // It answers `null` when nothing changed and when the fetch failed, which are
 // the same instruction to the caller: go on using what you have.
 // ---------------------------------------------------------------------------
+// THE SAML INTEROPERABILITY PEERS (#189-#192): the variable that says each
+// one is up, by the name its MANIFEST entry gives it.
+const SAML_PEER_URLS = {
+  shibboleth: 'SAML_PEER_SHIBBOLETH_URL',
+  simplesamlphp: 'SAML_PEER_SSP_URL',
+  pysaml2: 'SAML_PEER_PYSAML2_URL',
+  keycloak: 'SAML_PEER_KEYCLOAK_URL'
+};
+
 async function refreshTrust(url, current) {
   log.debug('Entering refreshTrust().');
   let pem = '';
@@ -1703,6 +1714,27 @@ async function main() {
                   'the suite, and what stands is the local FAPI jobs ' +
                   '(sts_fapi_baseline, sts_fapi_advanced, sts_fapi2, ' +
                   'sts_fapi2_message_signing, sts_fapi_ciba).';
+      log.warn('[' + n + '/' + jobs.length + '] SKIPPING ' + job.name + ' — ' +
+               why);
+      results.push(Object.assign({}, job, {
+        status: 'skipped', ms: 0, code: null, assertions: [],
+        failures: [], why: why
+      }));
+      continue;
+    }
+    if (job.samlPeer && !process.env[SAML_PEER_URLS[job.samlPeer]]) {
+      // A DELIBERATE EXCLUSION, as the conformance one above is
+      // (#189-#192): the peer is a second container ./run-tests.sh brings up
+      // only in the modes STS_TEST_SAML_PEERS_MODES names, handing the job
+      // its address. The reason says what is therefore unchecked here.
+      const why = 'no ' + SAML_PEER_URLS[job.samlPeer] + ': this run ' +
+                  'brought up no ' + job.samlPeer + ' SAML peer. ' +
+                  './run-tests.sh does in the modes ' +
+                  'STS_TEST_SAML_PEERS_MODES names (`memory` and ' +
+                  '`single-node` by default); in this ' +
+                  'one the interoperability of the SAML profiles with ' +
+                  job.samlPeer + ' is unchecked, and what stands is the ' +
+                  'local SAML jobs and tests/saml_interop_findings.js.';
       log.warn('[' + n + '/' + jobs.length + '] SKIPPING ' + job.name + ' — ' +
                why);
       results.push(Object.assign({}, job, {

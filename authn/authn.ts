@@ -3784,6 +3784,12 @@ class Authn {
                                           : null;
     let riskDecision = String(extra.riskDecision || 'permit');
     if (extra.gated !== true) {
+      // THE APPLICATION IS THE CALLER'S TO NAME, and every screen's finisher
+      // names `step.authn.application`. Until #226 (2026-09-26) the six
+      // second-factor finishers named none, so after a step-up the policy was
+      // asked about "": the console's `neverLockOut` rules never matched,
+      // and a HIGH console sign-in that had just answered its step-up with a
+      // security key was refused by the ordinary HIGH rule.
       const sessionAnswer = gate.check(Object.assign({
         application: String(extra.application || ''),
         kind: gate.ISSUANCE.SESSION,
@@ -4520,6 +4526,26 @@ class Authn {
     return out;
   }
 
+  // THE SESSIONS OF THIS REALM THAT `test` ACCEPTS (#189), without the cookie
+  // and without expiring them. For a SAML attribute authority, which is asked
+  // about a subject by the NameID a service provider was GIVEN — a transient
+  // or an emailAddress NameID is not the username, so the question is which
+  // live session gave that service provider that NameID, and nothing but the
+  // session holds the answer.
+  sessionsMatching(test) {
+    const { log } = this.deps;
+    log.debug("Entering Authn.sessionsMatching().");
+    const out = [];
+    sessions.forEach(function (session) {
+      if (test(session)) {
+        out.push(session);
+      }
+    });
+    log.debug("Leaving Authn.sessionsMatching(). " + out.length +
+              " session(s).");
+    return out;
+  }
+
   // One session by its id, without the cookie and without expiring it. Used by
   // /logout to draw a row for a session that is not the caller's; `sessionOf()`
   // stays the function that reads the cookie and sweeps what it finds expired.
@@ -4716,6 +4742,33 @@ class Authn {
   // first thing checked, because every sign-in in this service passes through
   // here.
   // ---------------------------------------------------------------------------
+  // The one usable service-provider relationship whose fedHomeRealmDomain
+  // holds `domainHint` (#148), or null — none, or more than one, which is
+  // not a choice this service makes for the person.
+  private homeRealmFor(domainHint) {
+    const { log, federation } = this.deps;
+    log.debug("Entering Authn.homeRealmFor().");
+    const wanted = String(domainHint || '').trim().toLowerCase();
+    if (!wanted) {
+      log.debug("Leaving Authn.homeRealmFor(). No hint.");
+      return null;
+    }
+    const ids = federation.list().filter(function (r) {
+      return [].concat(r.fedHomeRealmDomain || []).map(function (d) {
+        return String(d).toLowerCase();
+      }).indexOf(wanted) >= 0;
+    }).map(function (r) {
+      return r.fedId;
+    });
+    const resolved = ids.length
+      ? federation.usableServiceProviders(ids, 'A domain_hint')
+      : { usable: [] };
+    log.debug("Leaving Authn.homeRealmFor(). " + resolved.usable.length +
+              " usable.");
+    return resolved.usable.length === 1 ?
+      resolved.usable[0].relationship : null;
+  }
+
   private federationFor(applicationId) {
     const { log, federation, applications, errorCodes } = this.deps;
     log.debug("Entering Authn.federationFor(). application=" +
@@ -5135,6 +5188,22 @@ class Authn {
     // ---------------------------------------------------------------------
     const chosen = this.mechanismFor(opts.application);
     const home = chosen.federation;
+    // ENTERPRISE EXTENSIONS SECTION 3.1 (#148): a `domain_hint` names the
+    // person's home realm, and a relationship whose fedHomeRealmDomain holds
+    // it is where their sign-in happens — asked only when the application
+    // names no partner of its own to go to, which is the more specific
+    // configuration.
+    const hinted = (home && home.relationship && home.auto) ? null :
+      this.homeRealmFor(opts.domainHint);
+    if (hinted) {
+      log.info('authn: domain_hint "' + String(opts.domainHint) + '" names ' +
+               'the home realm of the federation relationship "' +
+               hinted.fedId + '", so this sign-in goes straight there.');
+      log.debug("Leaving Authn.beginAuthentication(). Home realm.");
+      return federation.PATHS.login + '/' + encodeURIComponent(hinted.fedId) +
+        '?returnTo=' + encodeURIComponent(returnTo) +
+        '&application=' + encodeURIComponent(String(opts.application || ''));
+    }
     if (home && home.relationship && home.auto) {
       const target = federation.PATHS.login + '/' +
         encodeURIComponent(home.relationship.fedId) +
@@ -6013,6 +6082,7 @@ class Authn {
     const amr = this.firstAmrOf(step).concat(
       this.firstAmrOf(step).indexOf('otp') >= 0 ? [] : ['otp']);
     const said = { request: req, risk: step.risk,
+                   application: String(step.authn.application || ''),
                    credential: { kind: 'email-' + kind } };
     const started = this.startSession(res, step.username, amr, 'mfa',
                                       step.authn.protocol, said);
@@ -8031,12 +8101,13 @@ class Authn {
     const answered = verdict.answeredBy ||
       { id: verdict.credentialId, aaguid: verdict.aaguid };
     const flags = verdict.flags || {};
-    const said = { request: req, risk: step.risk, credential: {
-      kind: 'webauthn', id: answered.id || '',
-      aaguid: answered.aaguid
-        ? credentials.Credentials.aaguidString(answered.aaguid) : '',
-      backupEligible: typeof flags.be === 'boolean' ? flags.be : undefined,
-      backupState: typeof flags.bs === 'boolean' ? flags.bs : undefined } };
+    const said = { request: req, risk: step.risk,
+      application: String(step.authn.application || ''), credential: {
+        kind: 'webauthn', id: answered.id || '',
+        aaguid: answered.aaguid
+          ? credentials.Credentials.aaguidString(answered.aaguid) : '',
+        backupEligible: typeof flags.be === 'boolean' ? flags.be : undefined,
+        backupState: typeof flags.bs === 'boolean' ? flags.bs : undefined } };
     const started = this.startSession(res, step.username, amr, acr,
                                       step.authn.protocol, said);
     if (this.refusedSession(res, base, step.authn, step.username, started,
@@ -8228,6 +8299,7 @@ class Authn {
     // list.
     const amr = this.firstAmrOf(step).concat(['otp']);
     const said = { request: req, risk: step.risk,
+                   application: String(step.authn.application || ''),
                    credential: { kind: 'totp' } };
     const started = this.startSession(res, step.username, amr, 'mfa',
                                       step.authn.protocol, said);
@@ -8447,6 +8519,7 @@ class Authn {
     // never a first factor, so `pwd` is always in the list.
     const amr = this.firstAmrOf(step).concat(['otp']);
     const said = { request: req, risk: step.risk,
+                   application: String(step.authn.application || ''),
                    credential: { kind: 'backup-code' } };
     const started = this.startSession(res, step.username, amr, 'mfa',
                                       step.authn.protocol, said);
@@ -9383,6 +9456,7 @@ class Authn {
       // Two factors really were presented: the password, and a code from the
       // app enrolled a moment ago. `otp` and `mfa`, as at `/authn/totp`.
       const said = { request: req, risk: step.risk,
+                     application: String(step.authn.application || ''),
                      credential: { kind: 'totp' } };
       const started = this.startSession(res, step.username,
                                         this.firstAmrOf(step).concat(['otp']),
@@ -10078,6 +10152,7 @@ class Authn {
       // disabled after the wallet step, and a null here returned the browser
       // to a caller that sent it straight back.
       const said = { request: req, risk: step.risk,
+                     application: String(step.authn.application || ''),
                      credential: { kind: 'password' } };
       const started = this.startSession(res, step.username, amr, 'mfa',
                                         step.authn.protocol, said);
@@ -10473,6 +10548,9 @@ export = {
   // somewhere else would be a sign-out that revoked nothing and logged nothing,
   // and it would look exactly like this one from the outside.
   sessionsOf: slot.forward('sessionsOf'),
+  // The SAML 2.0 attribute authority's question (#189): which live session
+  // gave a service provider a NameID.
+  sessionsMatching: slot.forward('sessionsMatching'),
   sessionById: slot.forward('sessionById'),
   endSessionById: slot.forward('endSessionById'),
   endEverySessionIn: slot.forward('endEverySessionIn'),

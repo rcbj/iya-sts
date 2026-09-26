@@ -1206,7 +1206,8 @@ const SPECS: Spec[] = [
               '2026-08-24 in a <samlp:Response> of its own — THERE IS A WEB ' +
               'BROWSER SSO PROFILE NOW, at /saml2, and the three rows below ' +
               'cover its bindings, profiles and metadata. What is still ' +
-              'absent: no <samlp:AttributeQuery> is answered (assertions ' +
+              'absent: nothing — a <samlp:AttributeQuery> IS answered since ' +
+              '#189, at /saml2/aa, under a release policy (assertions ' +
               'ARE encrypted since 2026-08-27, and a service provider\'s ' +
               'AuthnRequest signature IS verified since 2026-09-17 — ' +
               'against its registered certificate, in every mode). A ' +
@@ -1259,10 +1260,16 @@ const SPECS: Spec[] = [
               'Logout (4.4), both directions, WITHOUT front-channel fan-out ' +
               '— an identity-provider-initiated logout NAMES the other ' +
               'service providers and builds a LogoutRequest for each rather ' +
-              'than firing them into frames it cannot observe. NOT here: ' +
-              'identity-provider-initiated SSO with an unsolicited Response, ' +
+              'than firing them into frames it cannot observe, and ending ' +
+              'the session a cookie-less (back-channel) LogoutRequest names ' +
+              'by its SessionIndex (#192); identity-provider-initiated SSO ' +
+              'with an unsolicited Response (4.1.5, /saml2/unsolicited, ' +
+              '#189); and the Assertion Query and Request profile\'s ' +
+              'attribute query (6, /saml2/aa, #189) about a subject the ' +
+              'asking service provider holds a live session for. NOT here: ' +
               'the ECP profile (4.2), Name Identifier Management (4.5), and ' +
-              'the Assertion Query and Request profile (6). As a SERVICE ' +
+              'the profile\'s AuthnQuery and AuthzDecisionQuery. As a ' +
+              'SERVICE ' +
               'PROVIDER of a federation partner (#167), Single Logout in ' +
               'both ' +
               'directions at /federation/slo/{id}: the partner\'s signed ' +
@@ -1285,7 +1292,9 @@ const SPECS: Spec[] = [
     url:
       'https://docs.oasis-open.org/security/saml/v2.0/saml-metadata-2.0-os.pdf',
     coverage: 'partial: a signed EntityDescriptor holding one ' +
-              'IDPSSODescriptor, and ONE PER SERVICE PROVIDER — a distinct ' +
+              'IDPSSODescriptor and, since #189, an ' +
+              'AttributeAuthorityDescriptor, and ONE PER SERVICE PROVIDER — ' +
+              'a distinct ' +
               'entityID and its own endpoints, which is what Okta and Ping ' +
               'publish, with WantAuthnRequestsSigned following what is ' +
               'enforced. In development it is minted for any entityID ' +
@@ -2213,6 +2222,35 @@ const SPECS: Spec[] = [
               'verified_claims (Identity Assurance section 6), and the ' +
               'Claims Provider role (this service\'s signed UserInfo serves ' +
               'another aggregator, which is the draft\'s CP side).' },
+  { id: 'oidc-enterprise', name: 'OpenID Connect Enterprise Extensions 1.0 ' +
+                                 '(draft 01)',
+    where: 'OpenID Foundation',
+    url: 'https://openid.net/specs/openid-connect-enterprise-extensions-1_0.html',
+    coverage: 'full (#148), in every mode. Section 2: session_expiry (the ' +
+              'session\'s absolute end, whenever a token is issued on a ' +
+              'session), tenant (the trust realm\'s id) and aud_sub (an ' +
+              'account id an administrator records per person per client, ' +
+              'console and /admin-api) in the ID Token and ' +
+              'claims_supported. Section 3: tenant refused as ' +
+              'invalid_request when it names another realm; domain_hint ' +
+              'sends the person to the federation relationship whose ' +
+              'fedHomeRealmDomain holds it. Section 4: the portal\'s ' +
+              'third-party-initiated login adds tenant, domain_hint and ' +
+              'target_link_uri. MISSING: an aud_sub learned from the client, ' +
+              'which arrives with OpenID Provider Commands (#151).' },
+  { id: 'oidc-ephemeral', name: 'OpenID Connect Ephemeral Subject ' +
+                                'Identifier (draft 03)',
+    where: 'OpenID Foundation',
+    url: 'https://openid.net/specs/openid-connect-ephemeral-subject-identifier-1_0.html',
+    coverage: 'full (#149), in every mode: subject_type ephemeral at ' +
+              'registration (DCR, the console, the management API) and in ' +
+              'subject_types_supported; 160 random bits per authentication ' +
+              'and client, the same for its ID Tokens, UserInfo, refresh ' +
+              'and Logout Token and never reused; a persisted per-realm ' +
+              'mapping that takes an id_token_hint back to the person and is ' +
+              'purged by a scheduler job once no token or session of that ' +
+              'authentication can remain; Shared Signals events to the ' +
+              'client\'s own stream name its ephemeral sub.' },
   { id: 'jarm', name: 'JWT Secured Authorization Response Mode for OAuth ' +
                      '2.0 (JARM)',
     where: 'OpenID Foundation',
@@ -8808,7 +8846,10 @@ const ENDPOINTS: EndpointEntry[] = [
           'unsigned request is refused where ' +
           'saml2.requireSignedAuthnRequests (on in product) or the service ' +
           'provider\'s metadata requires a signature, and every request is ' +
-          'refused once that metadata has expired.' },
+          'refused once that metadata has expired. Since #190 a request is ' +
+          'also refused when its Destination is not this endpoint (or it is ' +
+          'signed and names none), its IssueInstant is not fresh, its ' +
+          'Version is not 2.0, or its ID has been answered before.' },
   { path: '/saml2/sso/:sp', group: 'SAML 2.0',
     name: 'Single Sign-On service for ONE service provider',
     specs: ['saml2', 'saml2-bindings', 'saml2-profiles', 'xmldsig'],
@@ -8819,6 +8860,46 @@ const ENDPOINTS: EndpointEntry[] = [
           'answer; the AuthnRequest\'s own Issuer decides who the assertion ' +
           'is for either way, so a request that disagrees with the path is ' +
           'answered for its Issuer.' },
+  { path: '/saml2/unsolicited', group: 'SAML 2.0',
+    name: 'Identity-provider-initiated sign-in',
+    specs: ['saml2', 'saml2-profiles', 'saml2-bindings', 'xmldsig'],
+    effect: 'starts a browser sign-on session, as the SSO service does',
+    what: 'An UNSOLICITED Response (saml-profiles-2.0-os section 4.1.5, ' +
+          '#189): providerId names the service provider (the path segment ' +
+          'may instead), shire one of its registered assertion consumer ' +
+          'services (the default otherwise), target the RelayState, and ' +
+          'binding post, simplesign or artifact (the endpoint\'s own ' +
+          'binding otherwise; never HTTP-Redirect). Signs the person in ' +
+          'through /authn/login when there is no session; the Response ' +
+          'and its assertion carry no InResponseTo. The service provider ' +
+          'must be registered in product, and saml2.unsolicitedSso turns ' +
+          'it off for a realm.' },
+  { path: '/saml2/unsolicited/:sp', group: 'SAML 2.0',
+    name: 'Identity-provider-initiated sign-in for ONE service provider',
+    specs: ['saml2', 'saml2-profiles'],
+    effect: 'the same, and it is the same endpoint',
+    what: 'In product, a 404 for a name nobody registered (#112). The path ' +
+          'segment names the service provider when providerId does not.' },
+  { path: '/saml2/aa', group: 'SAML 2.0', name: 'Attribute authority',
+    specs: ['saml2', 'saml2-bindings', 'saml2-profiles', 'xmldsig'],
+    what: 'POST a SOAP 1.1 envelope carrying a <samlp:AttributeQuery> ' +
+          '(the Assertion Query and Request profile, saml-profiles-2.0-os ' +
+          'section 6; #189) and get back a Response with an assertion ' +
+          'carrying the subject\'s attributes — signed, encrypted where ' +
+          'the service provider\'s sign-ins are, and holding no ' +
+          'AuthnStatement. A BACK CHANNEL with a release policy: the ' +
+          'caller is the service provider its Issuer names, authenticated ' +
+          'as the artifact resolver\'s caller is; the subject is one a ' +
+          'live session here gave that service provider, by the NameID ' +
+          'it was given (else UnknownPrincipal); the issuance policy is ' +
+          'asked; and what is released is what its sign-in released, ' +
+          'narrowed to the attributes the query names.' },
+  { path: '/saml2/aa/:sp', group: 'SAML 2.0',
+    name: 'Attribute authority for ONE service provider',
+    specs: ['saml2', 'saml2-bindings'],
+    what: 'In product, a 404 for a name nobody registered (#112). The ' +
+          'AttributeService the per-application metadata publishes, in an ' +
+          'AttributeAuthorityDescriptor of its own.' },
   { path: '/saml2/ars', group: 'SAML 2.0', name: 'Artifact Resolution Service',
     specs: ['saml2', 'saml2-bindings', 'saml2-profiles'],
     what: 'POST a SOAP 1.1 envelope carrying an ArtifactResolve and get one ' +
@@ -8853,7 +8934,11 @@ const ENDPOINTS: EndpointEntry[] = [
           'SingleLogoutService of the service provider\'s consumed ' +
           'metadata, else a declared one, else ' +
           'saml2.defaultSingleLogoutService — and is otherwise a GUESS, ' +
-          'said out loud.' },
+          'said out loud. A LogoutRequest arriving with NO cookie — a ' +
+          'service provider\'s back-channel POST — ends the session its ' +
+          'SessionIndex names when that session gave it that NameID ' +
+          '(#192). The LogoutRequests identity-provider-initiated logout ' +
+          'builds are signed on the Redirect binding\'s query string.' },
   { path: '/saml2/slo/:sp', group: 'SAML 2.0',
     name: 'Single Logout service for ONE service provider',
     specs: ['saml2', 'saml2-bindings', 'saml2-profiles'],
@@ -9225,6 +9310,7 @@ const ENDPOINTS: EndpointEntry[] = [
     name: 'Authorization ' +
       'endpoint',
     specs: ['rfc6749', 'oidc', 'rfc7636', 'rfc9396', 'rfc9207',
+            'oidc-enterprise',
             'rfc9700', 'rfc9101', 'rfc9126', 'rfc9470',
             'oauth-multiple-response-types', 'jarm', 'fapi1-advanced'],
     effect: 'needs ' +
@@ -9903,7 +9989,7 @@ const ENDPOINTS: EndpointEntry[] = [
   { path: '/oauth2/userinfo', group: 'OAuth 2.0 / OIDC', name: 'UserInfo ' +
       'endpoint',
     specs: ['oidc', 'oidc-ida-claims', 'oidc-ida', 'rfc6750', 'rfc9449',
-            'rfc7591',
+            'rfc7591', 'oidc-ephemeral',
             'rfc8705', 'rfc8707',
             'rfc9068', 'rfc9470'],
     effect: 'answers 401 with a WWW-Authenticate challenge when followed ' +
@@ -10693,7 +10779,7 @@ const PROTOCOLS: Protocol[] = [
     specs: ['rfc6749', 'oidc', 'rfc8414', 'rfc9700', 'oauth21',
             'oidc-session', 'oidc-ida-claims', 'oidc-ida', 'oidc-native-sso',
             'oidc-ciba', 'fapi-ciba', 'oauth-grant-management',
-            'oidc-claims-aggregation'],
+            'oidc-claims-aggregation', 'oidc-enterprise', 'oidc-ephemeral'],
     what: 'A mock authorization server and OpenID Provider: all five grants, ' +
           'PKCE, DPoP, introspection, revocation, dynamic registration, ' +
           'UserInfo and RP-initiated logout, with as many named ' +

@@ -311,6 +311,21 @@ const JOBS = [
   // realm it leaves behind.
   { file: 'sts_oidc_core.js',            browser: false, local: true },
   { file: 'sts_discovery_realms.js',     browser: false, local: true },
+  // THREE REALMS WHOSE DOMAINS OVERLAP (#85, 2026-09-26): dev.iyasec.io,
+  // test.iyasec.io and prod.iyasec.io, an application and a person in each
+  // under its own dc= RDNs, each person signed in by the authorization code
+  // flow at their own realm, and no realm (nor the default one) knowing
+  // another's person by name, DN or subject, or its application. `local:
+  // true`: this repository's realms, directory and authorization server.
+  // The realms are left standing and a kept stack reuses them.
+  { file: 'sts_realm_overlapping_domains.js', browser: false, local: true },
+  // TWO REALMS, TWO UNRELATED DOMAINS (#87, 2026-09-26): an application, a
+  // person and a group in each at exactly the DN expected, each person signed
+  // in by the authorization code flow, the whole of each realm's tree under
+  // its own base with every DN-valued attribute pointing inside it, and
+  // neither realm knowing the other's objects. `local: true`: this
+  // repository's realms, directory and authorization server.
+  { file: 'sts_two_realm_domains.js',    browser: false, local: true },
   // RFC 7009 TOKEN REVOCATION (#102, 2026-09-22): client authentication by
   // mode, another client's token refused invalid_grant, the token types, an
   // unknown hint, and a refresh token taking its grant with it. `local:
@@ -752,6 +767,16 @@ const JOBS = [
   // portal, aggregated and distributed claims, revocation. `local: true`:
   // this repository's authorization server, portal and API.
   { file: 'sts_claims_aggregation.js',   browser: false, local: true },
+  // OPENID CONNECT ENTERPRISE EXTENSIONS (#148, 2026-09-26): session_expiry,
+  // tenant and aud_sub in the ID Token, tenant refused for another realm,
+  // domain_hint's home-realm discovery. `local: true`: this repository's
+  // authorization server and API.
+  { file: 'sts_enterprise_extensions.js', browser: false, local: true },
+  // THE EPHEMERAL SUBJECT IDENTIFIER (#149, 2026-09-26): one random `sub`
+  // per authentication across the ID Token, UserInfo and a refresh, another
+  // for the next, and an id_token_hint mapped back. `local: true`: this
+  // repository's authorization server.
+  { file: 'sts_ephemeral_subjects.js',   browser: false, local: true },
   // THE OPENID FOUNDATION'S CONFORMANCE SUITE (#176, 2026-09-24): FAPI 2.0
   // Security Profile and Message Signing, FAPI 1.0 Advanced and FAPI-CIBA,
   // each plan a throwaway realm, every module run, and a FAILED module a
@@ -792,6 +817,24 @@ const JOBS = [
   // wallet, and makes the suite's issuer key at run time.
   { file: 'sts_oid4vp_conformance.js',   browser: false, local: true,
     conformance: true, timeoutMs: 3600000 },
+  // THE SAML INTEROPERABILITY PEERS (#189-#192, 2026-09-24): four independent
+  // SAML service providers, each a second container under the `saml-peers`
+  // compose profile (tests/saml-peers/), each driven by a job of its own
+  // against a development and a product realm, with the peer's own log as the
+  // error-and-warning source. `samlPeer` — like `conformance`, a DELIBERATE
+  // exclusion the runner reports as SKIPPED with its reason where the
+  // launcher brought no peer up (STS_TEST_SAML_PEERS_MODES, `memory` and
+  // `single-node` by default). Keycloak's watchdog covers its JVM starting
+  // when its job hands it the anchor. `local: true`: this repository's
+  // identity providers, and these jobs are written here.
+  { file: 'sts_saml_interop_shibboleth.js', browser: false, local: true,
+    samlPeer: 'shibboleth', timeoutMs: 900000 },
+  { file: 'sts_saml_interop_pysaml2.js', browser: false, local: true,
+    samlPeer: 'pysaml2', timeoutMs: 900000 },
+  { file: 'sts_saml_interop_simplesamlphp.js', browser: false, local: true,
+    samlPeer: 'simplesamlphp', timeoutMs: 900000 },
+  { file: 'sts_saml_interop_keycloak.js', browser: false, local: true,
+    samlPeer: 'keycloak', timeoutMs: 1200000 },
   // OPENID FEDERATION 1.1 (#132, 2026-09-23): the default realm a Trust
   // Anchor and a throwaway realm its subordinate — Entity Configurations,
   // fetch, list, resolve, Trust Marks, a registered subordinate and the
@@ -860,6 +903,9 @@ const JOBS = [
   // #64's addresses: an administrator's verified, a person's own change
   // pending until its link is followed, and the recovery-code reset.
   { file: 'sts_email_verification.js',   browser: false, local: true },
+  // A person's attributes set, added to and removed from through
+  // /admin-api (#228), in a realm of its own.
+  { file: 'sts_person_attributes.js',    browser: false, local: true },
   { file: 'vc_did.js',                   browser: false },
   // ---------------------------------------------------------------------
   // LAST, ALL THREE OF THEM, AND THE ORDER IS THE WHOLE OF WHY IT IS SAFE
@@ -1027,6 +1073,10 @@ const LOCAL_HELPERS = [
   // foreign certificate that names no list, so every chain this suite mints
   // names one — `tests/tools/pep-credential.js` included.
   'test_crl_host.js',
+  // WHAT THE FOUR SAML INTEROPERABILITY JOBS SHARE (#189-#192): the check
+  // ledger, the management API, a browser that walks the peer's origin and
+  // the service's, and the peer's own log as the error-and-warning source.
+  'saml_peer_kit.js',
   // A ZIP ARCHIVE BUILT FROM THE FORMAT (#215), for the dataset upload's
   // tests — `sts_admin_risk_upload.js` and the in-process
   // `tests/risk_upload.js`: one entry, several, a directory and __MACOSX/

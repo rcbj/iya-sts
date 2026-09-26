@@ -340,13 +340,23 @@ class RequestSignature {
 
   // -------------------------------------------------------------------------
   // THE OCTETS THE HTTP-POST-SimpleSign BINDING SIGNS (the OASIS "SAML V2.0
-  // HTTP POST 'SimpleSign' Binding" Version 1.0, as its signing rule reads):
+  // HTTP POST 'SimpleSign' Binding" Version 1.0, section 2.5, step 2):
   // `SAMLRequest=<value>&RelayState=<value>&SigAlg=<value>` (or
-  // SAMLResponse), where each value is the FORM CONTROL VALUE — after the
-  // form encoding is undone, and NOT otherwise decoded, so the SAMLRequest is
-  // its base64 text — with RelayState present only when the form carried
-  // one. '' when a field it needs is missing or arrived more than once (a
+  // SAMLResponse), where the message's value is "the raw, unencoded XML
+  // making up the SAML protocol message (NOT the base64-encoded version)" —
+  // the form control BASE64-DECODED — and RelayState and SigAlg are the form
+  // control values, with RelayState present only when the form carried one.
+  // The binding's own note says why: browsers alter the line breaks of a
+  // form control that wraps, so the base64 text is not what the signer made.
+  // '' when a field it needs is missing or arrived more than once (a
   // repeated control is the same hazard as a repeated query parameter).
+  //
+  // **THIS SIGNED THE BASE64 TEXT UNTIL #189 (2026-09-24)**, in both
+  // directions, and so agreed only with itself: the Shibboleth SP refused
+  // every SimpleSign Response this service sent ("Message was signed, but
+  // signature could not be verified"), and a SimpleSign request signed by
+  // any other implementation failed here. OpenSAML's SimpleSigningRule is
+  // the reference reading and decodes the control.
   // -------------------------------------------------------------------------
   simpleSignOctets(params: Record<string, unknown>, messageField: string):
       string {
@@ -368,8 +378,9 @@ class RequestSignature {
       log.debug("Leaving RequestSignature.simpleSignOctets(). Incomplete.");
       return '';
     }
+    const raw = Buffer.from(message, 'base64').toString('utf8');
     log.debug("Leaving RequestSignature.simpleSignOctets().");
-    return messageField + '=' + message +
+    return messageField + '=' + raw +
            (relay !== undefined ? '&RelayState=' + relay : '') +
            '&SigAlg=' + sigAlg;
   }

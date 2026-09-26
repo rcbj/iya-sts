@@ -391,8 +391,8 @@ async function partI(t) {
   const unknown = await riskAdmin.riskAction({ action: 'explode',
                                                dataset: 'asn' }, 'a test');
   t.equal(unknown.errors && unknown.errors[0],
-          'Unknown action "explode". The 5 are: import, activate, rollback, ' +
-          'delete, accept-terms.',
+          'Unknown action "explode". The 6 are: import, activate, rollback, ' +
+          'delete, accept-terms, upload.',
           'I1. an unknown action is refused in rule 7\'s sentence');
   const imported = await riskAdmin.riskAction({
     action: 'import', dataset: 'iplist.operator-allow', realm: 'acme',

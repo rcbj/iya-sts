@@ -6919,6 +6919,23 @@ const SETTINGS = [
                  'recorded as not verified, which counts as UNSIGNED when ' +
                  'this is on.' },
 
+  { key: 'saml2.unsolicitedSso', group: 'SAML 2.0',
+    label: 'Identity-provider-initiated sign-in',
+    env: 'STS_SAML2_UNSOLICITED_SSO', type: 'bool', dflt: true,
+    runtime: true,
+    description: 'Whether /saml2/unsolicited[/{sp}] sends an UNSOLICITED ' +
+                 'Response (saml-profiles-2.0-os section 4.1.5) — a sign-in ' +
+                 'started at this identity provider, for a service provider ' +
+                 'that did not ask: `providerId` (or the path segment) ' +
+                 'names it, `shire` one of its registered assertion ' +
+                 'consumer services, `target` the RelayState. The service ' +
+                 'provider must be registered in product, the address must ' +
+                 'be one its metadata or its entry registered, and the ' +
+                 'issuance policy is asked as for any sign-in. The ' +
+                 'assertion carries no InResponseTo, so a service provider ' +
+                 'decides for itself whether it accepts one; turn this off ' +
+                 'for a realm whose providers should only ever be answered.' },
+
   { key: 'saml2.defaultSingleLogoutService', group: 'SAML 2.0',
     label: 'Fallback logout return address',
     env: 'STS_SAML2_DEFAULT_SLO_SERVICE', type: 'string', dflt: '',
@@ -7206,6 +7223,23 @@ const SETTINGS = [
                  'consumer, so it is the one that works when somebody points ' +
                  'this at a URL and watches. A request naming `profile` or ' +
                  'carrying `SAMLart` overrides it.' },
+
+  { key: 'saml11.doNotCacheCondition', group: 'SAML 1.1 assertions',
+    label: 'Mark a Browser/POST assertion DoNotCache',
+    env: 'STS_SAML11_DO_NOT_CACHE_CONDITION', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'Put a <saml:DoNotCacheCondition/> in the Conditions of ' +
+                 'an assertion sent on the Browser/POST profile. OFF by ' +
+                 'default (#189): the profile does not ask for one — its ' +
+                 'single-use policy (oasis-sstc-saml-bindings-1.1 section ' +
+                 '4.1.2) is the RELYING PARTY\'s to keep — and saml-core ' +
+                 '1.1 section 2.3.2.1 makes an assertion whose condition ' +
+                 'a relying party does not understand Indeterminate. ' +
+                 'WARNING: turning it on makes the Shibboleth SP refuse ' +
+                 'every such assertion with its stock security-policy.xml ' +
+                 '("DoNotCacheCondition not successfully validated by ' +
+                 'policy"); turn it on only for relying parties known to ' +
+                 'honour the condition.' },
 
   { key: 'saml11.artifactTtlS', group: 'SAML 1.1 assertions',
     label: 'Artifact ' +
@@ -10711,6 +10745,26 @@ const SETTINGS = [
                  '(lists, automated clients, refused passwords, a ' +
                  'compromised security key) apply however new the person ' +
                  'is. 1 scores from the second sign-in on.' },
+
+  // #226 (2026-09-26): a bogon on a list is a signal on everybody behind a
+  // NAT or a container bridge. ON is the lists' own word; OFF is for a
+  // service tested on one machine or run where every person shares a
+  // private address.
+  { key: 'risk.listsMatchSpecialPurpose', group: 'Risk',
+    label: 'Lists match private and reserved addresses',
+    env: 'STS_RISK_LISTS_MATCH_SPECIAL_PURPOSE', type: 'bool', dflt: true,
+    runtime: true,
+    description: 'On, a Tor, reputation or operator deny list matches a ' +
+                 'loopback, private (RFC 1918, RFC 6598, unique-local), ' +
+                 'link-local or reserved address exactly as the list ' +
+                 'says — and FireHOL\'s level 1 lists the bogons, ' +
+                 '10.0.0.0/8, 172.16.0.0/12 and 192.168.0.0/16 among them. ' +
+                 'Off sets those matches aside, and the assessment records ' +
+                 'which lists were set aside. Turn it off when the service ' +
+                 'is tested on one machine, or when every person arrives ' +
+                 'through one bridge, NAT or proxy whose address is private: ' +
+                 'there one listed bogon is a signal on everybody at once. ' +
+                 'The operator allow list is not affected.' },
 
   { key: 'risk.accountFailureThreshold', group: 'Risk',
     label: 'Refused passwords for one person that are a signal',

@@ -7,7 +7,7 @@
 // 2026-09-24), held in process so a regression is caught without the suite's
 // three containers. `tests/vendored/sts_oidcc_conformance.js` and its
 // siblings are the plans themselves; this file is the regression check for
-// each service fix they led to, and `oauth-oidc/CLAUDE.md` 3bi is the record.
+// each service fix they led to, and `oauth-oidc/CLAUDE.md` 3bk is the record.
 //
 //   1. RFC 6749 SECTION 6 IN EVERY MODE. A refresh token presented by a
 //      client other than the one it was issued to, or asking for scope its

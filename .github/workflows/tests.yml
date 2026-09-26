@@ -302,8 +302,12 @@ jobs:
           docker compose version
 
       - name: Run the OpenID conformance suite's plans
+        # The SAML interoperability peers (#189-#192) are the tests job's;
+        # the launcher would start them in `memory` by default, for jobs
+        # `--only=conformance` does not run.
         env:
           STS_TEST_CONFORMANCE_MODES: memory
+          STS_TEST_SAML_PEERS_MODES: ""
         run: ./run-tests.sh --modes=memory --only=conformance --no-browser
 
       # See the tests job: the runner writes tests/report as root.

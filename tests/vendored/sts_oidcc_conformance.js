@@ -166,7 +166,7 @@ const EXPECTED = {};
 
 // FAILURE conditions this service keeps, keyed by the suite's condition (a
 // module still fails if anything ELSE in it fails) — the same sentences as
-// `oauth-oidc/CLAUDE.md` 3bi.
+// `oauth-oidc/CLAUDE.md` 3bk.
 const KNOWN_FAILURES = {
   // oidcc-server-rotate-keys: the condition hands every key in the rotated
   // JWKS to nimbus's JWK.parse(), which throws on kty AKP (the post-quantum
@@ -179,7 +179,7 @@ const KNOWN_FAILURES = {
 };
 
 // Conditions whose WARNING this service keeps, and why — the same sentences
-// as `oauth-oidc/CLAUDE.md` 3bi.
+// as `oauth-oidc/CLAUDE.md` 3bk.
 const KNOWN_WARNINGS = {
   WarnOnUnusableJwksKeys: "the realm's JWKS carries post-quantum keys " +
     "(kty AKP, ML-DSA and SLH-DSA) the suite cannot parse; rcbj " +

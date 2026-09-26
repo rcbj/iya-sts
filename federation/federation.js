@@ -966,6 +966,14 @@ const SCHEMA = {
             'mail where it has one. Compared case-insensitively and ' +
             'exactly: example.com does not admit sub.example.com. Empty: no ' +
             'domain rule.' },
+    { name: 'fedHomeRealmDomain', kind: 'multi', role: 'service-provider',
+      from: 'this register',
+      what: 'HOME-REALM DISCOVERY (#148): an authorization request whose ' +
+            'OpenID Connect Enterprise Extensions `domain_hint` is one of ' +
+            'these goes straight to this partner\'s sign-in, unless the ' +
+            'application names a partner of its own. Compared ' +
+            'case-insensitively and exactly. A routing hint only — who is ' +
+            'ADMITTED is fedSubjectDomain\'s.' },
     { name: 'fedSubjectPattern', kind: 'single', role: 'service-provider',
       from: 'this register',
       what: 'A RULE ON TOP OF THE POLICY: a regular expression the local ' +
@@ -1276,6 +1284,7 @@ const EDITABLE = {
   fedAttributeMap: 'multi',
   fedSubjectGroup: 'multi',
   fedSubjectDomain: 'multi',
+  fedHomeRealmDomain: 'multi',
   fedRelease: 'multi',
   description: 'multi'
 };
@@ -2778,7 +2787,7 @@ function update(id, change) {
   let value = String(info.value == null ? '' : info.value);
   // A DOMAIN IS COMPARED CASE-INSENSITIVELY, so it is stored lower-cased and
   // without the `@` somebody pasting an address would bring (#109).
-  if (field === 'fedSubjectDomain') {
+  if (field === 'fedSubjectDomain' || field === 'fedHomeRealmDomain') {
     value = value.trim().replace(/^@+/, '').toLowerCase();
   }
   const refusal = subjectFieldProblem(field, value) ||

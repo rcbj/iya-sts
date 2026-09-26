@@ -1371,7 +1371,10 @@ const SCHEMA = {
             'what an empty value means) gives every client the same `sub`; ' +
             '`pairwise` gives this client one of its own, derived from the ' +
             'person, the sector and a secret every node shares, so two ' +
-            'clients of different sectors cannot correlate one person.' },
+            'clients of different sectors cannot correlate one person; ' +
+            '`ephemeral` (#149) gives it a random one for each ' +
+            'authentication, the same for everything that authentication ' +
+            'issues and never again after.' },
     { name: 'oauthSectorIdentifierUri', kind: 'single',
       from: 'POST /oauth2/register, the console, the management API, or by ' +
             'hand',
@@ -5632,11 +5635,12 @@ function oidcSubjectMetadataProblem(values) {
     text[members[i]] = String(value || '').trim();
   }
   if (text.subject_type &&
-      ['public', 'pairwise'].indexOf(text.subject_type) < 0) {
+      ['public', 'pairwise', 'ephemeral'].indexOf(text.subject_type) < 0) {
     log.debug("Leaving oidcSubjectMetadataProblem(). An unknown type.");
     return refusal('subject_type', '"' + text.subject_type + '" is not ' +
                    'one this service supports; subject_types_supported is ' +
-                   '["public", "pairwise"] (OIDC Core section 8).');
+                   '["public", "pairwise", "ephemeral"] (OIDC Core section ' +
+                   '8; the Ephemeral Subject Identifier draft, #149).');
   }
   if (text.sector_identifier_uri) {
     let parsed = null;

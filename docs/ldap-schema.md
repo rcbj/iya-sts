@@ -109,6 +109,7 @@ All the inetOrgPerson attributes (RFC 2798, RFC 4519) can be stored, and
 | `hobaPublicKey` | RFC 7486 HOBA keys, `<kid> <base64 DER>` | public |
 | `stsSelfIssuedSubject` | SIOPv2 subjects the person enrolled (a DID or a JWK thumbprint URI), as JSON (#129) | withheld |
 | `stsCibaUserCode` | the CIBA user code the person set on `/portal/ciba` (#131) | scrypt-hashed, withheld |
+| `stsAudSub` | the account id a client knows the person by, `<client_id> <aud_sub>` per value, sent as that client's ID Token `aud_sub` (#148) | plain |
 | `stsClaimSourceTokens` | the person's access and refresh tokens at each Claims Provider they linked on `/portal/claim-sources`, one JSON value (#147) | **sealed** where keys persist, withheld |
 
 ### Assertion key pairs (RFC 7523 and RFC 7522)
@@ -233,7 +234,7 @@ draws it with a description of every field.
 | Keys | `fedSigningCertificate` (**decides whose assertions are believed**), `fedJwks`, `fedEncryptionKey` (**withheld**), `fedEncryptionKeyType`, `fedKeyManagementAlgorithm`, `fedContentEncryptionAlgorithm`, `fedSignRequest` |
 | OIDC as client | `fedClientId`, `fedClientSecret` (**withheld**), `fedScope`, `fedResponseType` |
 | Policy | `fedAllowUnsolicited`, `fedAllowUnencrypted`, `fedAcceptSignout`, `fedRequireSignedLogout`, `fedMayAssertAdministrators`, `fedAuthnMechanism`, `fedAuthnRelationship` |
-| Subjects and provisioning | `fedSubjectPolicy`, `fedSubjectPattern`, `fedSubjectDomain`, `fedSubjectGroup`, `fedUsernameSource`, `fedAutocreateUsers`, `fedUpdateUserAttributes`, `fedAttributeMap`, `fedRelease` |
+| Subjects and provisioning | `fedSubjectPolicy`, `fedSubjectPattern`, `fedSubjectDomain`, `fedSubjectGroup`, `fedHomeRealmDomain` (#148, the domains whose `domain_hint` goes to this partner), `fedUsernameSource`, `fedAutocreateUsers`, `fedUpdateUserAttributes`, `fedAttributeMap`, `fedRelease` |
 | Observation | `fedFirstSeen`, `fedLastSeen`, `fedLastUser`, `fedUsers`, `fedAuthentications`, `fedLastError`, `fedLastErrorAt` |
 
 ## Roles: `ou=roles`

@@ -2244,6 +2244,12 @@ function fork(pool, slot) {
                   // arrives as an ECONNRESET on a request that had been
                   // accepted rather than on one that never left.
                   //
+                  // **AND `keepAlive: false` ALONE DID NOT MEAN IT (#77).**
+                  // With a finite `maxSockets` node still sends
+                  // `Connection: keep-alive` and hands a freed socket to the
+                  // next queued request. proxy() sends `Connection: close`,
+                  // which is what makes this true.
+                  //
                   // **THE HAZARD A BOUND CREATES, WRITTEN DOWN BECAUSE IT IS
                   // THE REASON THE NUMBER IS NOT SMALL**: this service makes
                   // requests to ITSELF — `common/oidc_rp.ts`'s back channel
@@ -3793,10 +3799,19 @@ function middleware(options) {
 // no body into memory and parses nothing: `req` is piped in and the answer is
 // piped out.
 // Above this declared body size a proxied request's headers are sent to its
-// worker at once; see the block above `req.pipe(upstream)` in proxy(). The
+// worker at once; see the block above the body's `data` handler in proxy(). The
 // body parsers' own limit (`common/app.js`), which is the size past which a
 // body is either refused on its headers or streamed.
 const PROMPT_HEADERS_BYTES = 5 * 1024 * 1024;
+
+// The largest body proxy() keeps a copy of, so that a request none of whose
+// bytes reached its worker can be sent again (#77). Every body the service
+// accepts in JSON, a form or a SCIM call is far below it; a dataset upload is
+// above it and is simply never repeated.
+const REPLAY_BODY_BYTES = 1024 * 1024;
+
+// How many requests were sent again that way, for stats().
+let replayCount = 0;
 
 function proxy(entry, req, res, atGeneration, ticket) {
   log.debug('Entering proxy(). pid=' + entry.pid + ' ' + req.method + ' ' +
@@ -3862,6 +3877,40 @@ function proxy(entry, req, res, atGeneration, ticket) {
   };
 
   const headers = Object.assign({}, req.headers);
+
+  // ---------------------------------------------------------------------
+  // THE CLIENT'S HOP-BY-HOP HEADERS STAY ON THE CLIENT'S HOP, AND THIS HOP
+  // SAYS `Connection: close` (#77, 2026-09-26).
+  //
+  // The answer's hop-by-hop headers were dropped below and the request's
+  // were not, so a client's `Connection: keep-alive` reached the worker as
+  // if this process had said it (RFC 9110 section 7.6.1: a proxy removes
+  // them, and every header the Connection field names).
+  //
+  // **AND WITHOUT THE `close` THE AGENT'S `keepAlive: false` WAS NOT WHAT IT
+  // SAID.** Node's client sends `Connection: keep-alive` from any agent whose
+  // `maxSockets` is finite — `workers.maxSockets` is — and when a request is
+  // queued behind that cap, the agent hands it the socket the previous
+  // answer just freed. Measured with this agent: 336 of 400 requests
+  // written on a reused connection. So the race the agent's own comment
+  // refuses keep-alive to avoid — a request written onto a connection the
+  // worker is closing — was open exactly when the pool was busiest. With
+  // `close` the worker ends the connection after its answer, node's client
+  // sees it in the answer and never frees the socket for reuse, and every
+  // dispatched request has a connection of its own.
+  //
+  // The framing headers are kept even when the Connection field names them:
+  // they describe the body this process is about to send.
+  // ---------------------------------------------------------------------
+  String(headers.connection || '').split(',').forEach(function (named) {
+    const name = named.trim().toLowerCase();
+    if (name && name !== 'content-length' && name !== 'transfer-encoding') {
+      delete headers[name];
+    }
+  });
+  delete headers['keep-alive'];
+  delete headers['proxy-connection'];
+  headers.connection = 'close';
 
   // ---------------------------------------------------------------------
   // THE CLIENT CERTIFICATE, AND THE HEADERS A CLIENT MAY NOT SET.
@@ -3983,18 +4032,56 @@ function proxy(entry, req, res, atGeneration, ticket) {
     headers.host = req.headers.host;
   }
 
-  const upstream = http.request({
-    socketPath: entry.socket,
-    path: req.originalUrl || req.url,
-    method: req.method,
-    headers: headers,
-    // THIS WORKER'S OWN AGENT, which is what bounds how many connections the
-    // front process may have open to it at once. See the block where it is
-    // made: without it this used the global agent, `maxSockets: Infinity`, and
-    // a bulk load answered one request in five thousand with a 502 that named
-    // `connect EAGAIN`.
-    agent: entry.agent
-  }, function (answer) {
+  // -------------------------------------------------------------------------
+  // WHETHER ANY BYTE OF THIS REQUEST HAS REACHED THE WORKER, AND A COPY OF
+  // THE BODY UNTIL ONE HAS (#77, 2026-09-26).
+  //
+  // A dispatched request failed as `write EPIPE` with nothing answered: the
+  // kernel refused this process's write because the worker's end of the
+  // connection was already closed. What closed it was not found — the
+  // worker went on serving and logged nothing — but what it MEANS is
+  // exact: a write the kernel refuses delivers nothing, so if no write of
+  // this request was ever accepted, the worker never saw one byte of it,
+  // never ran a handler for it, and sending it again on a new connection
+  // cannot do anything twice. The 502 that said "it can simply be made
+  // again" was right, and this process can make it again itself.
+  //
+  // `delivered` is set by a write callback, which node calls only once the
+  // kernel has taken the bytes — from that moment the worker can read them,
+  // and nothing about this request is repeated whatever fails later. The
+  // copy is dropped then too, and it is not kept for a body over
+  // REPLAY_BODY_BYTES, which is sent exactly as it was and not repeated.
+  // -------------------------------------------------------------------------
+  let upstream = null;
+  let delivered = false;
+  let replayed = false;
+  let ended = false;
+  // A connection that has failed is written to no more, and an early
+  // answer (#215) stops the body being forwarded; see the `data` handler.
+  let failed = false;
+  let detached = false;
+  const replay = { chunks: [], bytes: 0, kept: true };
+  const dropReplay = function () {
+    log.debug("Entering dropReplay().");
+    replay.kept = false;
+    replay.chunks = [];
+    log.debug("Leaving dropReplay().");
+  };
+  // One per connection, so that a late callback from a connection that has
+  // been given up says nothing about the one replacing it.
+  const wroteOn = function (one) {
+    log.debug("Entering wroteOn().");
+    log.debug("Leaving wroteOn().");
+    return function (err) {
+      if (!err && one === upstream && !delivered) {
+        delivered = true;
+        dropReplay();
+      }
+    };
+  };
+
+  const onAnswer = function (answer) {
+    log.debug("Entering onAnswer().");
     // **AND NOT ALONGSIDE A SESSION COOKIE (2026-09-07).** The pin is APPENDED
     // to `set-cookie`, and a client that keeps only the last one it is sent —
     // which several of this repository's own test browsers do, on the premise
@@ -4109,7 +4196,7 @@ function proxy(entry, req, res, atGeneration, ticket) {
     // is answered, and is untouched.
     if (!req.complete) {
       res.setHeader('Connection', 'close');
-      req.unpipe(upstream);
+      detached = true;
       req.resume();
     }
     answer.pipe(res);
@@ -4127,9 +4214,95 @@ function proxy(entry, req, res, atGeneration, ticket) {
       finish();
       res.destroy();
     });
-  });
+    log.debug("Leaving onAnswer().");
+  };
 
-  upstream.on('error', function (err) {
+  const open = function () {
+    log.debug("Entering open().");
+    const one = http.request({
+      socketPath: entry.socket,
+      path: req.originalUrl || req.url,
+      method: req.method,
+      headers: headers,
+      // THIS WORKER'S OWN AGENT, which is what bounds how many connections
+      // the front process may have open to it at once. See the block where
+      // it is made: without it this used the global agent, `maxSockets:
+      // Infinity`, and a bulk load answered one request in five thousand
+      // with a 502 that named `connect EAGAIN`.
+      agent: entry.agent
+    }, onAnswer);
+    one.on('error', onUpstreamError);
+    log.debug("Leaving open().");
+    return one;
+  };
+
+  // Sent again on a new connection to the SAME worker: its ticket, its
+  // `inFlight` and the barrier it was held for all belong to that worker,
+  // and a worker that has really gone refuses the new connection, which
+  // ends in the 502 below as it always did.
+  const sendAgain = function (err) {
+    log.debug("Entering sendAgain().");
+    if (clientGone || done) {
+      // The client left while the body was still arriving; its `close`
+      // handler has already let the request go.
+      log.debug("Leaving sendAgain(). Nobody is waiting.");
+      return;
+    }
+    if (!replay.kept) {
+      // The body went on arriving after the connection failed, and passed
+      // REPLAY_BODY_BYTES: there is no whole copy to send, so this is the
+      // failure it would have been.
+      gaveUp(err);
+      log.debug("Leaving sendAgain(). No copy of the body.");
+      return;
+    }
+    replayCount++;
+    warnSparingly('STS-WORKER-0042',
+                  'request_pool: the connection to worker ' + entry.pid +
+                  ' failed before any of ' + req.method + ' ' + req.url +
+                  ' reached it (' + err.message + '), so it was sent again ' +
+                  'on a new connection.');
+    const chunks = replay.chunks;
+    dropReplay();
+    failed = false;
+    upstream = open();
+    chunks.forEach(function (chunk) {
+      upstream.write(chunk, wroteOn(upstream));
+    });
+    upstream.end(wroteOn(upstream));
+    log.debug("Leaving sendAgain().");
+  };
+
+  const onUpstreamError = function (err) {
+    log.debug("Entering onUpstreamError().");
+    // Nothing more is written to a connection that has failed — see the
+    // body's `data` handler below.
+    failed = true;
+    if (!replayed && !answered && !delivered && !clientGone && replay.kept &&
+        !res.headersSent) {
+      replayed = true;
+      if (ended) {
+        sendAgain(err);
+      } else {
+        // The rest of the body is still arriving from the client; it is
+        // copied as it comes, and sent once it is all here.
+        req.once('end', function () {
+          sendAgain(err);
+        });
+        // A client paused for a drain that will now never come.
+        req.resume();
+      }
+      log.debug("Leaving onUpstreamError(). Sending it again.");
+      return;
+    }
+    gaveUp(err);
+    log.debug("Leaving onUpstreamError().");
+  };
+
+  // The request is not going to be answered by the worker: its ticket, the
+  // log line and the 502.
+  const gaveUp = function (err) {
+    log.debug("Entering gaveUp().");
     // `!answered` IS THE WHOLE OF THE ARGUMENT: the worker never ran the
     // handler (or died before a byte of the answer left it), so there is
     // nothing for it to announce and nothing a reader is owed.
@@ -4141,6 +4314,7 @@ function proxy(entry, req, res, atGeneration, ticket) {
       log.debug('request_pool: ' + req.method + ' ' + req.url + ' was ' +
                 'abandoned on worker ' + entry.pid + ' after its client ' +
                 'went away: ' + err.message);
+      log.debug("Leaving gaveUp(). The client had gone.");
       return;
     }
     log.error(errorCodes.tag('STS-WORKER-0030') +
@@ -4150,6 +4324,7 @@ function proxy(entry, req, res, atGeneration, ticket) {
       // Already streaming. There is no status left to send, so the connection
       // is destroyed — which is what a truncated answer has to look like.
       res.destroy();
+      log.debug("Leaving gaveUp(). Already streaming.");
       return;
     }
     errorCodes.mark(res, 'STS-WORKER-0030');
@@ -4158,7 +4333,10 @@ function proxy(entry, req, res, atGeneration, ticket) {
     res.send('The request worker handling this request went away (' +
              err.message + '). A worker holds no state of its own that this ' +
              'request needed, so it can simply be made again.\n');
-  });
+    log.debug("Leaving gaveUp().");
+  };
+
+  upstream = open();
 
   // -------------------------------------------------------------------------
   // A LARGE BODY'S HEADERS GO TO THE WORKER BEFORE ITS FIRST BYTE (#215,
@@ -4178,8 +4356,44 @@ function proxy(entry, req, res, atGeneration, ticket) {
   if ((isFinite(declared) && declared > PROMPT_HEADERS_BYTES) ||
       (req.headers && req.headers['transfer-encoding'])) {
     upstream.flushHeaders();
+    // Written with no callback to say whether they arrived, so the worker
+    // may have them, and may already be answering: not sent again (#77).
+    dropReplay();
   }
-  req.pipe(upstream);
+  // -------------------------------------------------------------------------
+  // THE BODY IS WRITTEN HERE RATHER THAN PIPED (#77), because a pipe writes
+  // with no callback and the callback is the only thing that says a byte
+  // reached the worker. The pipe's back-pressure is kept: a write the
+  // connection cannot take yet pauses the client until it drains.
+  // -------------------------------------------------------------------------
+  req.on('data', function (chunk) {
+    if (replay.kept && !delivered) {
+      replay.bytes += chunk.length;
+      if (replay.bytes > REPLAY_BODY_BYTES) {
+        dropReplay();
+      } else {
+        replay.chunks.push(chunk);
+      }
+    }
+    // An early answer's drain (#215) and a failed connection take nothing
+    // more: the one stopped reading, the other cannot be written to.
+    if (detached || failed) {
+      return;
+    }
+    const writing = upstream;
+    if (!writing.write(chunk, wroteOn(writing))) {
+      req.pause();
+      writing.once('drain', function () {
+        req.resume();
+      });
+    }
+  });
+  req.on('end', function () {
+    ended = true;
+    if (!detached && !failed) {
+      upstream.end(wroteOn(upstream));
+    }
+  });
   req.on('aborted', function () {
     upstream.destroy();
     // THE CLIENT WENT AWAY. If the worker had already begun answering it will
@@ -4619,6 +4833,9 @@ function stats() {
     // THE BATCH LANE per pool: in flight, waiting, the cap, which workers are
     // in the lane, and how many were ever queued, refused or timed out.
     batch: batchStats(),
+    // Requests sent again because none of their bytes had reached the worker
+    // when its connection failed (#77, STS-WORKER-0042). See proxy().
+    replayed: replayCount,
     // THE BARRIER'S OWN BOOKKEEPING, reported because the failure it can have
     // is invisible from outside: a ticket nothing will ever clear makes this
     // service answer correctly and 2,000ms slower per read, for ever. See

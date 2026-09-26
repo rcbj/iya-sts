@@ -345,6 +345,11 @@ function checkTheJobTimeoutIsAboveOurs(t) {
   const conformanceBound = Number(
     (/STS_CONFORMANCE_TIMEOUT="\$\{STS_CONFORMANCE_TIMEOUT:-(\d+)\}"/
       .exec(launcher) || [])[1]) || 0;
+  // And one that brings up the SAML interoperability peers (#189-#192,
+  // `memory` and `single-node` by default) has STS_SAML_PEERS_TIMEOUT added.
+  const peersBound = Number(
+    (/STS_SAML_PEERS_TIMEOUT="\$\{STS_SAML_PEERS_TIMEOUT:-(\d+)\}"/
+      .exec(launcher) || [])[1]) || 0;
   // Unless the `tests` job empties STS_TEST_CONFORMANCE_MODES (#187): the
   // plans are the `conformance` job's then, whose arithmetic is below.
   const testsJob = workflow.slice(workflow.indexOf('\n  tests:'),
@@ -352,8 +357,8 @@ function checkTheJobTimeoutIsAboveOurs(t) {
   const testsRunConformance =
     !/STS_TEST_CONFORMANCE_MODES:\s*""/.test(testsJob);
   const modeBound = Math.max(
-    sharedBound + (testsRunConformance ? conformanceBound : 0),
-    singleNodeBound);
+    sharedBound + (testsRunConformance ? conformanceBound : 0) + peersBound,
+    singleNodeBound + peersBound);
   const teardownBound = Number(
     /STS_TEARDOWN_TIMEOUT="\$\{STS_TEARDOWN_TIMEOUT:-(\d+)\}"/
       .exec(launcher)[1]);
@@ -410,8 +415,11 @@ function checkTheJobTimeoutIsAboveOurs(t) {
       conformanceAt, workflow.indexOf('\n  cluster:', conformanceAt));
     const conformanceMinutes = Number(
       (/timeout-minutes:\s*(\d+)/.exec(conformanceJob) || [])[1]);
+    // The SAML peers' bound too, unless the job empties their modes.
+    const conformancePeers =
+      /STS_TEST_SAML_PEERS_MODES:\s*""/.test(conformanceJob) ? 0 : peersBound;
     const conformanceWorst = sharedBound + conformanceBound +
-      teardownBound * 2;
+      conformancePeers + teardownBound * 2;
     t.check(/--modes=memory\b/.test(conformanceJob) &&
             /--only=conformance\b/.test(conformanceJob),
             'the `conformance` job runs the memory mode\'s conformance jobs',

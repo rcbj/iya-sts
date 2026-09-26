@@ -547,6 +547,45 @@ class SharedSignals {
     return this.deps.helpers.randomId(16);
   }
 
+  // THE SUBJECT AS THIS RECEIVER KNOWS THE PERSON (#149). A stream's owner
+  // is a client, and a client registered for pairwise or ephemeral subjects
+  // was never told the person's public `sub`: an event naming it would name
+  // somebody that client has never heard of, and an ephemeral one would
+  // correlate what the client asked not to. So an `iss_sub` user — the
+  // subject itself or a complex subject's `user` — is rewritten to that
+  // client's `sub` for the session the event names (rcbj's answer on #149).
+  // A public client, and a stream no client owns, get the event unchanged.
+  subjectForReceiver(record: Json, subject: Json): Json {
+    const { log } = this.deps;
+    log.debug('Entering SharedSignals.subjectForReceiver().');
+    const owner = String((record && record.createdBy) || '');
+    if (!subject || !owner) {
+      log.debug('Leaving SharedSignals.subjectForReceiver(). Unchanged.');
+      return subject;
+    }
+    const copy = JSON.parse(JSON.stringify(subject));
+    const user = copy.format === 'complex' ? copy.user : copy;
+    if (!user || user.format !== 'iss_sub' || !user.sub) {
+      log.debug('Leaving SharedSignals.subjectForReceiver(). No iss_sub.');
+      return subject;
+    }
+    const session = copy.format === 'complex' && copy.session
+      ? String(copy.session.id || '') : '';
+    try {
+      user.sub = require('../oauth-oidc/pairwise_subjects')
+        .subjectFor(owner, String(user.sub), session);
+    } catch (e: any) {
+      // A pairwise client with no sector: the event goes with the subject
+      // it was built with, and the log says why.
+      log.debug('Caught in SharedSignals.subjectForReceiver(): ' +
+                ((e && e.message) || e));
+      log.warn('ssf: ' + ((e && e.message) || e));
+      return subject;
+    }
+    log.debug('Leaving SharedSignals.subjectForReceiver().');
+    return copy;
+  }
+
   transmit(record: Json, options?: Json): Promise<TransmitReport> {
     const { log, audit, events, streams, subjects, transport,
             errorCodes } = this.deps;
@@ -658,7 +697,7 @@ class SharedSignals {
     // 2026-09-22. It is added here, after the subject-list check above,
     // because "the subject that identifies a stream itself is always
     // implicitly added to the stream".
-    const subject = asked.subject ||
+    const subject = this.subjectForReceiver(record, asked.subject) ||
       (pipeEvent ? { format: 'opaque', id: String(record.stream_id) } : null);
     const claims: Json = events.buildSet({
       issuer: record.iss,
