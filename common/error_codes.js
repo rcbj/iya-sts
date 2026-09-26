@@ -6834,8 +6834,9 @@ const CODES = [
       'oauth2.cibaMaxPendingPerPerson requests waiting (#131, section 14).',
     spec: 'access_denied (HTTP 403)' },
   { code: 'STS-OAUTH-0636',
-    summary: 'A CIBA ping or push to a client notification endpoint was ' +
-      'given up after its attempts, or could not be sent at all (#131).',
+    summary: 'A CIBA notification endpoint answered a status other than ' +
+      '2xx or 400 — 5xx, 408 and 429 are retried, the rest are not (#131; ' +
+      'the shared outbound queue since #151).',
     spec: 'none — the client polls, or never learns' },
   { code: 'STS-OAUTH-0637',
     summary: 'The CIBA Backchannel Authentication Endpoint failed ' +
@@ -7137,6 +7138,62 @@ const CODES = [
       'without a DPoP proof from the key its cnf names (OpenID Connect Key ' +
       'Binding section 7, #150).',
     spec: 'HTTP 400 {error: invalid_dpop_proof}' },
+  { code: 'STS-OAUTH-0708',
+    summary: 'A CIBA ping or push was not sent because ' +
+      'federation.outbound is off (#151, the shared outbound queue).',
+    spec: 'none (a dead letter)' },
+  { code: 'STS-OAUTH-0709',
+    summary: 'A CIBA ping or push was not sent because the ' +
+      'client\'s notification endpoint cannot be dialled (#151).',
+    spec: 'none (a dead letter)' },
+  { code: 'STS-OAUTH-0710',
+    summary: 'A CIBA ping or push was refused because the ' +
+      'notification endpoint resolves to an internal address in product ' +
+      'mode (#151).',
+    spec: 'none (a dead letter)' },
+  { code: 'STS-OAUTH-0711',
+    summary: 'A CIBA notification endpoint\'s host name did not ' +
+      'resolve (#151).',
+    spec: 'none (a dead letter)' },
+  { code: 'STS-OAUTH-0712',
+    summary: 'A CIBA notification endpoint answered with a ' +
+      'redirect, which is not followed (#151).',
+    spec: 'none (a dead letter)' },
+  { code: 'STS-OAUTH-0713',
+    summary: 'A CIBA ping or push could not be built (#151).',
+    spec: 'none (a dead letter)' },
+  { code: 'STS-OAUTH-0714',
+    summary: 'A CIBA ping or push timed out; retried with backoff ' +
+      '(#151).',
+    spec: 'none (retried, then a dead letter)' },
+  { code: 'STS-OAUTH-0715',
+    summary: 'A CIBA ping or push failed to connect; retried with ' +
+      'backoff (#151).',
+    spec: 'none (retried, then a dead letter)' },
+  { code: 'STS-OAUTH-0716',
+    summary: 'A CIBA notification endpoint answered 400, which is ' +
+      'not retried (#151).',
+    spec: 'none (a dead letter)' },
+  { code: 'STS-OAUTH-0717',
+    summary: 'A CIBA notification attempt was deferred because the ' +
+      'claim store was unavailable (#151).',
+    spec: 'none (the sweep tries again)' },
+  { code: 'STS-OAUTH-0718',
+    summary: 'A CIBA ping or push was still unsent past ' +
+      'oauth2.cibaNotifyRetentionS and was dead-lettered (#151).',
+    spec: 'none (a dead letter)' },
+  { code: 'STS-OAUTH-0719',
+    summary: 'The CIBA notification summary line: some were dead- ' +
+      'lettered or deferred since the last one (#151).',
+    spec: 'none (a log line)' },
+  { code: 'STS-OAUTH-0720',
+    summary: 'The CIBA notification sweep failed in a realm ' +
+      '(#151).',
+    spec: 'none (a log line)' },
+  { code: 'STS-OAUTH-0721',
+    summary: 'An operator\'s retry of a CIBA notification was ' +
+      'refused: unknown, not a dead letter, or no endpoint now (#151).',
+    spec: 'console / /admin-api refusal (HTTP 400)' },
   { code: 'STS-SAML-0001',
     summary: 'A SAML 2.0 sign-in resumed with a held-request id that is ' +
       'unknown or has expired (saml2.requestTtlMin), so there is no ' +

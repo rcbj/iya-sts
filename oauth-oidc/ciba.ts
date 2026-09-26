@@ -67,14 +67,19 @@ import clusterClaims = require('../cluster/cluster_claims');
 import fedHttp = require('../federation/federation_http');
 import credentials = require('../common/credentials');
 import stsCrypto = require('../common/crypto');
+import applications = require('../common/applications');
+import outbound = require('./outbound_delivery');
 
 type Json = any;
 
 // The two stores. PER TRUST REALM, persisted where minted rows are.
 const requests = realms.map({ persist: 'oauth2.cibaRequests',
                               retain: 'age' });
+// A notification is a row of `outbound_delivery.ts`'s shared queue (#151):
+// tombstoned and merged by rank, as every kind's store is.
 const deliveries = realms.map({ persist: 'oauth2.cibaDeliveries',
-                                retain: 'age' });
+                                tombstone: true,
+                                mergeRow: outbound.mergeRow });
 
 const GRANT_TYPE = 'urn:openid:params:grant-type:ciba';
 const MODES = Object.freeze(['poll', 'ping', 'push']);
@@ -97,14 +102,92 @@ interface CibaDeps {
   credentials: typeof credentials;
   stsCrypto: typeof stsCrypto;
   now: () => number;
+  // A timer for the queue's own retries (`outbound_delivery.ts`).
+  later?: (fn: () => void, ms: number) => void;
 }
 
 class Ciba {
   static readonly GRANT_TYPE = GRANT_TYPE;
   static readonly MODES = MODES;
+  // PING AND PUSH ARE A KIND OF THE SHARED OUTBOUND QUEUE (#151): the fence,
+  // the merge, retention, the summary line, the audit row and the retry by
+  // hand CIBA's own copy of the pattern did not have.
+  private readonly outbox: InstanceType<typeof outbound.OutboundDelivery>;
 
   constructor(private readonly deps: CibaDeps) {
     deps.log.debug("Entering Ciba.constructor().");
+    const self = this;
+    this.outbox = new outbound.OutboundDelivery({
+      label: 'CIBA notification',
+      store: deliveries,
+      attemptScope: ATTEMPT_SCOPE,
+      attribute: ADDRESS_ATTRIBUTE,
+      body: 'json',
+      settings: {
+        attempts: 'oauth2.cibaNotifyAttempts',
+        timeoutMs: 'oauth2.cibaNotifyTimeoutMs',
+        backoffMs: 'oauth2.cibaNotifyBackoffMs',
+        retentionS: 'oauth2.cibaNotifyRetentionS',
+        maxRows: 'oauth2.cibaNotifyMaxRows',
+        concurrency: 'oauth2.cibaNotifyConcurrency',
+        summaryS: 'oauth2.cibaNotifySummaryS'
+      },
+      codes: {
+        outboundOff: 'STS-OAUTH-0708', url: 'STS-OAUTH-0709',
+        internal: 'STS-OAUTH-0710', unresolved: 'STS-OAUTH-0711',
+        redirect: 'STS-OAUTH-0712', build: 'STS-OAUTH-0713',
+        timeout: 'STS-OAUTH-0714', network: 'STS-OAUTH-0715',
+        status400: 'STS-OAUTH-0716', status: 'STS-OAUTH-0636',
+        deferred: 'STS-OAUTH-0717', stale: 'STS-OAUTH-0718',
+        summary: 'STS-OAUTH-0719', sweepFailed: 'STS-OAUTH-0720',
+        retry: 'STS-OAUTH-0721'
+      },
+      deadLetterHint: 'Dead letters are listed on /admin/deliveries and ' +
+        'retried from there.',
+      prepare: function (row: Json): Promise<Json> {
+        return Promise.resolve({ body: row.body,
+          headers: { Authorization: 'Bearer ' + row.token } });
+      },
+      onFinish: function (row: Json, state: string, code: string,
+                          why: string): void {
+        self.audited(row, state, code, why);
+      },
+      onRetry: function (row: Json): Json {
+        const now = applications.cibaOf(row.clientId);
+        if (!now.endpoint) {
+          return { problem: row.clientId + ' has no ' +
+            'backchannel_client_notification_endpoint now, so a retry ' +
+            'would fail the same way.' };
+        }
+        return { patch: { uri: now.endpoint } };
+      },
+      viewExtra: function (row: Json): Json {
+        return { authReqId: row.authReqId, mode: row.mode,
+                 username: row.username || '' };
+      },
+      searchText: function (row: Json): string {
+        return String(row.authReqId || '') + ' ' + String(row.mode || '');
+      },
+      sweepJob: {
+        id: SWEEP_JOB,
+        title: 'CIBA sweep',
+        describe: 'Attempts every CIBA ping and push that is due, ' +
+                  'dead-letters one still pending past ' +
+                  'oauth2.cibaNotifyRetentionS, expires backchannel ' +
+                  'authentication requests nobody answered in time, and ' +
+                  'drops what finished more than an hour ago.',
+        owner: 'oauth-oidc/ciba.ts',
+        everySetting: 'oauth2.cibaSweepS'
+      },
+      onSweepRealm: function (): Json {
+        return self.sweepRequests();
+      }
+    }, {
+      log: deps.log, config: deps.config, realms: deps.realms,
+      errorCodes: deps.errorCodes, fedHttp: deps.fedHttp,
+      claims: deps.claims, now: deps.now,
+      later: deps.later || outbound.OutboundDelivery.later
+    });
     deps.log.debug("Leaving Ciba.constructor().");
   }
 
@@ -434,190 +517,148 @@ class Ciba {
   }
 
   // -------------------------------------------------------------------------
-  // PING AND PUSH (sections 10.2 and 10.3): a delivery per notification,
-  // attempted at once and by the sweep until it lands or dies.
+  // PING AND PUSH (sections 10.2 and 10.3): a delivery per notification on
+  // the shared queue, attempted at once and by the sweep until it lands or
+  // is a dead letter.
   // -------------------------------------------------------------------------
   queue(record: Json, body: Json): Json {
-    const { log, now } = this.deps;
+    const { log } = this.deps;
+    const self = this;
     log.debug("Entering Ciba.queue(). " + record.mode);
-    const row = {
-      id: nodeCrypto.randomBytes(16).toString('base64url'),
-      realm: this.deps.realms.currentId(),
+    const queued = this.outbox.queue({
       authReqId: record.id, clientId: record.clientId, mode: record.mode,
       uri: record.notificationEndpoint, token: record.notificationToken,
-      body: body, state: 'pending', attempts: 0, dueAt: now(),
-      createdAt: now(), status: 0, why: ''
-    };
-    deliveries.set(row.id, row);
-    this.attempt(row.id).catch(function (e) {
+      username: record.username || '', body: body
+    });
+    this.outbox.dispatch([queued.row]).catch(function (e) {
       log.debug("Caught in Ciba.queue(): " + ((e && e.message) || e));
     });
-    log.debug("Leaving Ciba.queue().");
-    return row;
+    log.debug("Leaving Ciba.queue(). " + queued.row.id);
+    return self.outbox.view(queued.row);
   }
 
-  // Retried: a transport failure, a timeout, 5xx, 408 and 429.
-  private retryable(result: Json): boolean {
-    this.deps.log.debug("Entering Ciba.retryable().");
-    const status = Number(result && result.status) || 0;
-    this.deps.log.debug("Leaving Ciba.retryable().");
-    return status === 0 ? ['url', 'attribute', 'outbound-off', 'internal',
-      'redirect', 'ca-file'].indexOf(String(result.kind)) < 0 :
-      (status >= 500 || status === 408 || status === 429);
+  // One audit row when a notification finishes, summarised.
+  private audited(row: Json, state: string, code: string, why: string): void {
+    const { log, audit } = this.deps;
+    log.debug("Entering Ciba.audited(). " + state);
+    audit.audit({
+      action: 'oauth2.ciba.notify',
+      outcome: state === 'sent' ? 'success' : 'error',
+      errorCode: state === 'sent' ? '' : code,
+      summarised: true,
+      actor: row.username || '',
+      protocol: 'OAuth 2.0 / OIDC',
+      channel: 'internal',
+      target: row.clientId,
+      summary: state === 'sent'
+        ? 'the CIBA ' + row.mode + ' for request ' + row.authReqId +
+          ' was accepted by ' + row.clientId + ' (HTTP ' + row.status + ')'
+        : 'the CIBA ' + row.mode + ' for request ' + row.authReqId +
+          ' was not delivered to ' + row.clientId + ' and is a dead ' +
+          'letter: ' + why,
+      detail: { delivery: row.id, authReqId: row.authReqId, uri: row.uri,
+                attempts: String(row.attempts), state: state }
+    });
+    log.debug("Leaving Ciba.audited().");
   }
 
-  async attempt(id: string): Promise<string> {
-    const { log, claims, fedHttp, now, errorCodes } = this.deps;
+  // One attempt of one notification, through the shared queue.
+  attempt(id: string): Promise<string> {
+    const { log, realms } = this.deps;
     log.debug("Entering Ciba.attempt(). " + id);
-    const row = deliveries.get(id);
-    if (!row || row.state !== 'pending' || Number(row.dueAt) > now()) {
-      log.debug("Leaving Ciba.attempt(). Not due.");
-      return 'not-due';
-    }
-    const n = Number(row.attempts) + 1;
-    const lease = this.setting('oauth2.cibaNotifyTimeoutMs') * 2;
-    const claimed: Json = await claims.claim({ scope: ATTEMPT_SCOPE,
-      value: id + ':' + n, ttlMs: lease });
-    if (!claimed.ok) {
-      log.debug("Leaving Ciba.attempt(). Claimed elsewhere.");
-      return 'claimed-elsewhere';
-    }
-    row.dueAt = now() + lease;
-    deliveries.set(id, row);
-    const target: Json = { id: row.clientId };
-    target[ADDRESS_ATTRIBUTE] = row.uri;
-    let result: Json;
-    try {
-      result = await fedHttp.deliverJson(target, ADDRESS_ATTRIBUTE, row.body,
-        { Authorization: 'Bearer ' + row.token },
-        { timeoutMs: this.setting('oauth2.cibaNotifyTimeoutMs') });
-    } catch (e) {
-      log.debug("Caught in Ciba.attempt(): " + ((e && e.message) || e));
-      result = { ok: false, status: 0, kind: 'build',
-                 why: String((e && e.message) || e) };
-    }
-    const current = deliveries.get(id) || row;
-    current.attempts = n;
-    current.status = Number(result.status) || 0;
-    if (result.ok) {
-      current.state = 'sent';
-      current.finishedAt = now();
-      deliveries.set(id, current);
-      log.info('ciba: the ' + current.mode + ' for "' + current.clientId +
-               '" was delivered.');
-      log.debug("Leaving Ciba.attempt(). Sent.");
-      return 'sent';
-    }
-    const attempts = this.setting('oauth2.cibaNotifyAttempts');
-    if (!this.retryable(result) || n >= attempts) {
-      current.state = 'dead';
-      current.finishedAt = now();
-      current.why = String(result.why || 'it failed');
-      deliveries.set(id, current);
-      log.warn(errorCodes.tag('STS-OAUTH-0636') + 'ciba: the ' +
-               current.mode + ' for "' + current.clientId + '" to ' +
-               current.uri + ' was given up after ' + n + ' attempt(s): ' +
-               current.why);
-      log.debug("Leaving Ciba.attempt(). Dead.");
-      return 'dead';
-    }
-    current.why = String(result.why || 'it failed');
-    current.dueAt = now() + this.setting('oauth2.cibaNotifyBackoffMs') *
-      Math.pow(2, n - 1);
-    deliveries.set(id, current);
-    log.debug("Leaving Ciba.attempt(). Retrying.");
-    return 'retry';
+    log.debug("Leaving Ciba.attempt().");
+    return this.outbox.attempt(realms.currentId(), id);
   }
 
-  // THE SWEEP (the `oauth2.ciba-sweep` job, #49): every realm's due
-  // deliveries attempted, waiting requests past their expiry expired, and
-  // what finished longer ago than an hour dropped.
-  async sweep(): Promise<Json> {
-    const { log, realms, now } = this.deps;
-    const self = this;
+  // An operator's retry of a dead notification (a new generation).
+  retryDelivery(id: string, actor?: string): Json {
+    const { log } = this.deps;
+    log.debug("Entering Ciba.retryDelivery(). " + id);
+    const done = this.outbox.retry(id, actor || '', 'CIBA notification');
+    log.debug("Leaving Ciba.retryDelivery(). " + done.ok);
+    return done.ok ? { ok: true, row: this.outbox.view(done.row),
+                       message: 'The notification to ' + done.row.clientId +
+                         ' was queued again; it is sent after this answer.' }
+                   : done;
+  }
+
+  // THE SWEEP (the `oauth2.ciba-sweep` job, #49): the shared queue's sweep
+  // — due notifications attempted, stale ones dead-lettered, finished ones
+  // past retention dropped — and, per realm, `sweepRequests()`.
+  sweep(): Promise<Json> {
+    const { log } = this.deps;
     log.debug("Entering Ciba.sweep().");
-    const counts = { attempted: 0, expired: 0, dropped: 0 };
-    // `realms.run()` takes the realm itself, not its id.
-    for (const realm of realms.list()) {
-      await realms.run(realm, async function () {
-        const cut = now() - RETENTION_MS;
-        const due: string[] = [];
-        const gone: string[] = [];
-        deliveries.forEach(function (row: Json, key: string) {
-          if (row.state === 'pending' && Number(row.dueAt) <= now()) {
-            due.push(key);
-          } else if (row.state !== 'pending' &&
-                     Number(row.finishedAt) < cut) {
-            gone.push(key);
-          }
-        });
-        gone.forEach(function (key) {
-          deliveries.delete(key);
-          counts.dropped++;
-        });
-        for (const key of due) {
-          await self.attempt(key);
-          counts.attempted++;
-        }
-        const old: string[] = [];
-        requests.forEach(function (record: Json, key: string) {
-          if (record.state === 'pending' && record.expiresAt <= now()) {
-            self.expire(record);
-            counts.expired++;
-          } else if (record.state !== 'pending' &&
-                     Number(record.finishedAt || record.redeemedAt ||
-                            record.expiresAt) < cut) {
-            old.push(key);
-          }
-        });
-        old.forEach(function (key) {
-          requests.delete(key);
-          counts.dropped++;
-        });
-      });
-    }
-    log.debug("Leaving Ciba.sweep(). " + JSON.stringify(counts));
+    log.debug("Leaving Ciba.sweep().");
+    return this.outbox.sweep();
+  }
+
+  // The requests half of a realm's sweep: waiting requests past their
+  // expiry expired, and what finished longer ago than an hour dropped.
+  private sweepRequests(): Json {
+    const { log, now } = this.deps;
+    const self = this;
+    log.debug("Entering Ciba.sweepRequests().");
+    const counts = { expired: 0, dropped: 0 };
+    const cut = now() - RETENTION_MS;
+    const old: string[] = [];
+    requests.forEach(function (record: Json, key: string) {
+      if (record.state === 'pending' && record.expiresAt <= now()) {
+        self.expire(record);
+        counts.expired++;
+      } else if (record.state !== 'pending' &&
+                 Number(record.finishedAt || record.redeemedAt ||
+                        record.expiresAt) < cut) {
+        old.push(key);
+      }
+    });
+    old.forEach(function (key) {
+      requests.delete(key);
+      counts.dropped++;
+    });
+    log.debug("Leaving Ciba.sweepRequests(). " + JSON.stringify(counts));
     return counts;
   }
 
   scheduleSweep(): void {
     const { log } = this.deps;
-    const self = this;
     log.debug("Entering Ciba.scheduleSweep().");
-    const scheduler = require('../cluster/scheduler');
-    if (scheduler.job(SWEEP_JOB)) {
-      log.debug("Leaving Ciba.scheduleSweep(). Registered.");
-      return;
-    }
-    scheduler.register({
-      id: SWEEP_JOB,
-      title: 'CIBA sweep',
-      describe: 'Attempts every CIBA ping and push that is due, expires ' +
-                'backchannel authentication requests nobody answered in ' +
-                'time, and drops what finished more than an hour ago.',
-      owner: 'oauth-oidc/ciba.ts',
-      everySetting: 'oauth2.cibaSweepS', everySettingUnit: 's',
-      run: function (): Promise<Json> {
-        return self.sweep();
-      }
-    });
-    log.debug("Leaving Ciba.scheduleSweep(). On the scheduler.");
+    this.outbox.scheduleSweep();
+    log.debug("Leaving Ciba.scheduleSweep().");
   }
 
-  // The deliveries, for the console and the tests: never the token.
+  // The deliveries, for the console and the tests: never the token or the
+  // body.
   deliveryViews(authReqId?: unknown): Json[] {
     const { log } = this.deps;
+    const self = this;
     log.debug("Entering Ciba.deliveryViews().");
-    const out: Json[] = [];
-    deliveries.forEach(function (row: Json) {
-      if (authReqId === undefined || row.authReqId === String(authReqId)) {
-        out.push({ id: row.id, clientId: row.clientId, mode: row.mode,
-                   uri: row.uri, state: row.state, attempts: row.attempts,
-                   status: row.status, why: row.why });
+    const rows = this.outbox.rows({
+      where: authReqId === undefined ? undefined : function (row: Json) {
+        return row.authReqId === String(authReqId);
       }
+    }).map(function (row: Json) {
+      return self.outbox.view(row);
     });
-    log.debug("Leaving Ciba.deliveryViews(). " + out.length + ".");
-    return out;
+    log.debug("Leaving Ciba.deliveryViews(). " + rows.length + ".");
+    return rows;
+  }
+
+  // The shared queue's list and counts, for `/admin/deliveries` (#151).
+  deliveryRows(options?: Json): Json[] {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering Ciba.deliveryRows().");
+    log.debug("Leaving Ciba.deliveryRows().");
+    return this.outbox.rows(options).map(function (row: Json) {
+      return self.outbox.view(row);
+    });
+  }
+
+  deliveryCounts(): Json {
+    const { log } = this.deps;
+    log.debug("Entering Ciba.deliveryCounts().");
+    log.debug("Leaving Ciba.deliveryCounts().");
+    return this.outbox.counts();
   }
 
   // A request as a page or the API shows it: never the notification token.
@@ -668,5 +709,8 @@ export = {
   queue: slot.forward('queue'),
   attempt: slot.forward('attempt'),
   sweep: slot.forward('sweep'),
-  deliveryViews: slot.forward('deliveryViews')
+  deliveryViews: slot.forward('deliveryViews'),
+  deliveryRows: slot.forward('deliveryRows'),
+  deliveryCounts: slot.forward('deliveryCounts'),
+  retryDelivery: slot.forward('retryDelivery')
 };

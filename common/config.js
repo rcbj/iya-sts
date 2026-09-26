@@ -4358,6 +4358,36 @@ const SETTINGS = [
     description: 'The wait before a failed ping or push is tried again, ' +
                  'doubling each time.' },
 
+  // THE SHARED OUTBOUND QUEUE'S OTHER FOUR NUMBERS (#151): CIBA's ping and
+  // push became a kind of `oauth-oidc/outbound_delivery.ts`, which keeps
+  // every kind's dead letters, bounds its store and summarises per realm.
+  { key: 'oauth2.cibaNotifyRetentionS', group: 'OAuth 2.0 / OIDC',
+    label: 'CIBA notification retention (s)',
+    env: 'STS_OAUTH2_CIBA_NOTIFY_RETENTION_S', type: 'int', dflt: 3600,
+    min: 60, max: 2592000, runtime: true,
+    description: 'How long a ping or push delivery is kept after it was ' +
+                 'queued, sent or dead; one still pending this long is ' +
+                 'dead-lettered, so nothing is pending for ever.' },
+  { key: 'oauth2.cibaNotifyMaxRows', group: 'OAuth 2.0 / OIDC',
+    label: 'CIBA notification rows kept',
+    env: 'STS_OAUTH2_CIBA_NOTIFY_MAX_ROWS', type: 'int', dflt: 2000,
+    min: 10, max: 1000000, runtime: true,
+    description: 'The most ping and push deliveries kept per realm; past ' +
+                 'it the oldest FINISHED one goes first, and a pending one ' +
+                 'is never dropped to make room.' },
+  { key: 'oauth2.cibaNotifyConcurrency', group: 'OAuth 2.0 / OIDC',
+    label: 'CIBA notifications in flight',
+    env: 'STS_OAUTH2_CIBA_NOTIFY_CONCURRENCY', type: 'int', dflt: 8,
+    min: 1, max: 256, runtime: true,
+    description: 'How many ping and push attempts one sweep makes at once ' +
+                 'in one process.' },
+  { key: 'oauth2.cibaNotifySummaryS', group: 'OAuth 2.0 / OIDC',
+    label: 'CIBA notification summary interval (s)',
+    env: 'STS_OAUTH2_CIBA_NOTIFY_SUMMARY_S', type: 'int', dflt: 60,
+    min: 1, max: 86400, runtime: true,
+    description: 'At most one log line per realm this often, counting the ' +
+                 'pings and pushes sent, retried and dead-lettered.' },
+
   { key: 'oauth2.cibaSweepS', group: 'OAuth 2.0 / OIDC',
     label: 'CIBA sweep interval (s)',
     env: 'STS_OAUTH2_CIBA_SWEEP_S', type: 'int', dflt: 30,

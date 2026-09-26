@@ -242,6 +242,16 @@ interface DeliveryResult {
   why: string;
   url: string;
   cacheControl: string;
+  // Only where the caller asked for it (`keepBody`, #151): the answer's body
+  // as text, capped at `federation.maxBodyBytes`, and its Content-Type.
+  body?: string;
+  contentType?: string;
+}
+
+// A delivery's options: its timeout, and whether the answer's body is kept.
+interface DeliverOptions {
+  timeoutMs?: number;
+  keepBody?: boolean;
 }
 
 // What `fetchJson()` answers. It never rejects.
@@ -560,7 +570,7 @@ class FederationHttp {
   // whole result. It NEVER rejects.
   // -------------------------------------------------------------------------
   deliverForm(record: any, attribute: string, form: Record<string, string>,
-              options?: { timeoutMs?: number }): Promise<DeliveryResult> {
+              options?: DeliverOptions): Promise<DeliveryResult> {
     this.deps.log.debug("Entering FederationHttp.deliverForm().");
     this.deps.log.debug("Leaving FederationHttp.deliverForm().");
     return this.deliver(record, attribute,
@@ -575,7 +585,7 @@ class FederationHttp {
   // connection pinned, no redirect, the cap.
   deliverJson(record: any, attribute: string, payload: any,
               headers: Record<string, string>,
-              options?: { timeoutMs?: number }): Promise<DeliveryResult> {
+              options?: DeliverOptions): Promise<DeliveryResult> {
     this.deps.log.debug("Entering FederationHttp.deliverJson().");
     this.deps.log.debug("Leaving FederationHttp.deliverJson().");
     return this.deliver(record, attribute, 'application/json',
@@ -584,7 +594,7 @@ class FederationHttp {
 
   private deliver(record: any, attribute: string, contentType: string,
                   body: string, extraHeaders: Record<string, string>,
-                  options?: { timeoutMs?: number }): Promise<DeliveryResult> {
+                  options?: DeliverOptions): Promise<DeliveryResult> {
     const { log, errorCodes } = this.deps;
     const self = this;
     const opts = options || {};
@@ -695,8 +705,15 @@ class FederationHttp {
               return;
             }
             let bytes = 0;
+            // KEPT ONLY WHEN ASKED (#151): an OpenID Provider Command's answer
+            // is a JSON body the command's outcome is read from. Everything
+            // else here still discards what comes back.
+            const kept: Buffer[] = [];
             response.on('data', function (chunk) {
               bytes += chunk.length;
+              if (opts.keepBody && bytes <= cap) {
+                kept.push(chunk);
+              }
               if (bytes > cap) {
                 // Drained to the cap and no further: the body is discarded
                 // anyway, and a relying party that answers forever is this
@@ -707,9 +724,16 @@ class FederationHttp {
             const finish = function () {
               log.debug("Entering finish().");
               const ok = status >= 200 && status < 300;
-              done({ ok: ok, status: status, kind: ok ? '' : 'status',
+              const extra: any = {};
+              if (opts.keepBody) {
+                extra.body = Buffer.concat(kept).toString('utf8');
+                extra.contentType = String(response.headers['content-type'] ||
+                                           '');
+              }
+              done(Object.assign({ ok: ok, status: status,
+                     kind: ok ? '' : 'status',
                      cacheControl: cacheControl,
-                     why: ok ? '' : 'it answered ' + status });
+                     why: ok ? '' : 'it answered ' + status }, extra));
               log.debug("Leaving finish().");
             };
             response.on('end', finish);

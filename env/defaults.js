@@ -346,6 +346,10 @@ var config = {
     cibaNotifyTimeoutMs: 5000,                   // CIBA notification timeout (ms)
     cibaNotifyAttempts: 5,                       // CIBA notification attempts
     cibaNotifyBackoffMs: 2000,                   // CIBA notification backoff (ms)
+    cibaNotifyRetentionS: 3600,                  // CIBA notification retention (s)
+    cibaNotifyMaxRows: 2000,                     // CIBA notification rows kept
+    cibaNotifyConcurrency: 8,                    // CIBA notifications in flight
+    cibaNotifySummaryS: 60,                      // CIBA notification summary interval (s)
     cibaSweepS: 30,                              // CIBA sweep interval (s)
     maxRequestedClaims: 64,                      // Claims one claims request may name
     idaTrustFrameworks: "urn:sts:local",         // Identity Assurance trust frameworks

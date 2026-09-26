@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3526** of them, in **38** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3540** of them, in **38** subsystems.
 
 ## Where a code appears
 
@@ -63,7 +63,7 @@ is an ordinary outcome.
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 25
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 47
 * [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 249
-* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 587
+* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 601
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 97
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 21
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 16
@@ -1682,7 +1682,7 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0633` | A Native SSO exchange's device secret is bound to a sign-on session that has ended, that is not the ID Token's sid, or that is no longer the device owner's (#130). | invalid_request (HTTP 400) |
 | `STS-OAUTH-0634` | A client not enabled for Native SSO asked the revocation endpoint to revoke a device secret (#130). Nothing was revoked. | invalid_grant (HTTP 400) |
 | `STS-OAUTH-0635` | A CIBA request was refused because the person already has oauth2.cibaMaxPendingPerPerson requests waiting (#131, section 14). | access_denied (HTTP 403) |
-| `STS-OAUTH-0636` | A CIBA ping or push to a client notification endpoint was given up after its attempts, or could not be sent at all (#131). | none — the client polls, or never learns |
+| `STS-OAUTH-0636` | A CIBA notification endpoint answered a status other than 2xx or 400 — 5xx, 408 and 429 are retried, the rest are not (#131; the shared outbound queue since #151). | none — the client polls, or never learns |
 | `STS-OAUTH-0637` | The CIBA Backchannel Authentication Endpoint failed unexpectedly (#131). | server_error (HTTP 500) |
 | `STS-OAUTH-0638` | A CIBA request or token request arrived in a realm where oauth2.ciba is off (#131). | invalid_request (HTTP 404) or unsupported_grant_type |
 | `STS-OAUTH-0639` | A CIBA authentication request was malformed (#131). | invalid_request (HTTP 400) |
@@ -1754,6 +1754,20 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0705` | An authorization request asked for bound_key outside response_type=code (OpenID Connect Key Binding, #150). | redirect {error: invalid_request} |
 | `STS-OAUTH-0706` | A refresh of a grant whose ID Token is key-bound carried no proof from that key (OpenID Connect Key Binding, #150). | HTTP 400 {error: invalid_dpop_proof} |
 | `STS-OAUTH-0707` | A key-bound ID Token was presented at token exchange without a DPoP proof from the key its cnf names (OpenID Connect Key Binding section 7, #150). | HTTP 400 {error: invalid_dpop_proof} |
+| `STS-OAUTH-0708` | A CIBA ping or push was not sent because federation.outbound is off (#151, the shared outbound queue). | none (a dead letter) |
+| `STS-OAUTH-0709` | A CIBA ping or push was not sent because the client's notification endpoint cannot be dialled (#151). | none (a dead letter) |
+| `STS-OAUTH-0710` | A CIBA ping or push was refused because the notification endpoint resolves to an internal address in product mode (#151). | none (a dead letter) |
+| `STS-OAUTH-0711` | A CIBA notification endpoint's host name did not resolve (#151). | none (a dead letter) |
+| `STS-OAUTH-0712` | A CIBA notification endpoint answered with a redirect, which is not followed (#151). | none (a dead letter) |
+| `STS-OAUTH-0713` | A CIBA ping or push could not be built (#151). | none (a dead letter) |
+| `STS-OAUTH-0714` | A CIBA ping or push timed out; retried with backoff (#151). | none (retried, then a dead letter) |
+| `STS-OAUTH-0715` | A CIBA ping or push failed to connect; retried with backoff (#151). | none (retried, then a dead letter) |
+| `STS-OAUTH-0716` | A CIBA notification endpoint answered 400, which is not retried (#151). | none (a dead letter) |
+| `STS-OAUTH-0717` | A CIBA notification attempt was deferred because the claim store was unavailable (#151). | none (the sweep tries again) |
+| `STS-OAUTH-0718` | A CIBA ping or push was still unsent past oauth2.cibaNotifyRetentionS and was dead-lettered (#151). | none (a dead letter) |
+| `STS-OAUTH-0719` | The CIBA notification summary line: some were dead- lettered or deferred since the last one (#151). | none (a log line) |
+| `STS-OAUTH-0720` | The CIBA notification sweep failed in a realm (#151). | none (a log line) |
+| `STS-OAUTH-0721` | An operator's retry of a CIBA notification was refused: unknown, not a dead letter, or no endpoint now (#151). | console / /admin-api refusal (HTTP 400) |
 
 ## STS-SAML
 
