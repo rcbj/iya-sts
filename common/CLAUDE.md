@@ -1704,6 +1704,23 @@ handed nine modules it did not ask for.
 `tests/account_disable.js` drives every door above that a single process can
 reach, with a control before each.
 
+**A DELETED PERSON ENDS THE SAME WAY (#241, 2026-09-26).** SCIM's `DELETE`
+and an LDAP delete reach the directory's `noteAccountChange()` with a
+`deleted:` kind, which hands the delete to `directoryDeleted()` here: every
+live thing the person held AT THE DELETE — read synchronously through
+`heldBy()`, #226's arrangement — is ended after the write has been answered,
+through the same `logout.terminate()`, with `initiating_entity: admin`. Until
+#241 the directory skipped a delete on the belief that a deleted entry "takes
+its sessions with it by other means", and nothing did: `sessionOf()` asked only
+whether the account was disabled, a missing entry read as not disabled, and a
+deleted person kept single sign-on until their session ran out. **Reading
+what they held at the delete** is what keeps a person made again under the same
+name before the deferred step runs from losing the session they have.
+**`authn.sessionOf()` is the catch-up**: a session whose `urn:uuid:` subject
+names no entry is ended through `dropSession()` the next time it is presented,
+which is how a delete made on another node ends the sessions this node holds.
+`tests/account_delete.js` holds all three.
+
 ## `realms.js`: several logical copies of this service, in one process
 
 A **trust realm** is a whole mock identity service — its own configuration, its

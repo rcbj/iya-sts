@@ -10254,6 +10254,12 @@ const CODES = [
       'directory: the entry was gone or not a person\'s when the ' +
       'write reached it.',
     spec: 'HTTP 400 (API) or a 303 with error=' },
+  { code: 'STS-LDAP-0120',
+    summary: 'A person was deleted from the directory (#241) and handing ' +
+      'the delete to account_state.ts failed, so what they held may not ' +
+      'have been ended at once. authn.sessionOf() still ends a session ' +
+      'whose person has no entry the next time it is presented.',
+    spec: 'none — logged; the delete stands' },
   // ===== SCIM ==============================================================
   { code: 'STS-SCIM-0001',
     summary: 'A SCIM endpoint (or HOBA key registration) was called while ' +

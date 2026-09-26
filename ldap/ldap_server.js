@@ -12828,7 +12828,7 @@ server.del('', function (req, res, next) {
   touchDirectory();
   if (deletedPerson) {
     noteAccountChange('deleted:' + deletedName, stored.dn, deletedAttributes,
-                      {});
+                      {}, { door: 'an LDAP delete' });
   } else if (deletedGroup) {
     noteMembershipChange(stored.dn, deletedAttributes, {});
   }
@@ -16034,10 +16034,32 @@ function noteAccountChange(kind, dn, before, after, options) {
                 'with it: ' + ((e && e.message) || e));
     }
   }
+  // A PERSON DELETED ENDS WHAT THEY HOLD (#241, 2026-09-26), exactly as a
+  // disable does and through the same file — every sign-on session with its
+  // CAEP session-revoked (`admin`) and back-channel Logout Tokens, every
+  // token, every connection — after this write has returned. This comment
+  // used to say a deleted entry "takes its sessions with it by other means";
+  // there were none, and a person deleted over SCIM or LDAP kept single
+  // sign-on until their session ran out. `consequences: false` is a caller
+  // that has ended everything itself: a realm being removed.
+  if (String(kind).indexOf('deleted:') === 0 &&
+      !(options && options.consequences === false)) {
+    try {
+      require('../common/account_state').directoryDeleted({
+        username: String(kind).slice('deleted:'.length),
+        realm: realmFor(dn).id,
+        door: String((options && options.door) || 'a directory delete') });
+    } catch (e) {
+      log.error(errorCodes.tag('STS-LDAP-0120') + 'ldap: ' + dn + ' was ' +
+                'deleted and what the person held could not be ended with ' +
+                'it: ' + ((e && e.message) || e));
+    }
+  }
   // A FEDERATION LINK THAT WENT (#109, 2026-09-22) ends the sessions that
   // partner signed the person in to — `federation/federation_links.ts`'s act,
   // lazily required for account_state's reason, after this write returns. A
-  // DELETED entry takes its sessions with it by other means.
+  // DELETED entry is not asked here: the block above ends every session they
+  // held, whichever partner made it.
   const linksBefore = (before && before.federationlink) || [];
   const linksAfter = (after && after.federationlink) || [];
   const unlinked = linksBefore.filter(function (value) {
@@ -16361,7 +16383,8 @@ function deletePerson(dn) {
   // AFTER the entry is gone, so a RISC account-purged reports a purge that
   // actually happened; and with the name carried, because
   // canonicalUsernameOfDn() can no longer read an entry that is not there.
-  noteAccountChange('deleted:' + goneName, stored.dn, goneAttributes, {});
+  noteAccountChange('deleted:' + goneName, stored.dn, goneAttributes, {},
+                    { door: 'a SCIM DELETE' });
   log.debug('Leaving deletePerson(). ' + entries.size + ' entry/entries left.');
   return { ok: true, dn: stored.dn, dangling: membershipsNaming(stored.dn) };
 }

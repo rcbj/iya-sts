@@ -2083,6 +2083,13 @@ owns the two places it decides a SESSION.
   once; this is the second half, for a session that act could not reach (a lock
   written by an `ldapmodify` on a node whose copy of the session it did not
   hold).
+* **`sessionOf()` ends a session whose person was DELETED** (#241,
+  2026-09-26), through `dropSession()`, for a session a delete could not reach
+  at once — above all one made on another node. It asks the SUBJECT
+  (`sessionAccountGone()`: a `urn:uuid:` that names no entry), not the name, so
+  a person made again under the same name does not keep the deleted one's
+  session. A session with no such subject (keyed callers, the anonymous
+  principal, a process with no directory) is never "gone".
 * **The screens answer "Authentication failed"**, the same sentence a wrong
   password gets, for the account-enumeration reason `credentials.verify()`'s
   callers give — and `finishPasswordSignIn()` asks BEFORE any ceremony, so a

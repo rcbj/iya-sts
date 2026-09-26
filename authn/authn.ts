@@ -1593,6 +1593,20 @@ class Authn {
                 "session was ended.");
       return null;
     }
+    // A SESSION WHOSE PERSON WAS DELETED IS OVER (#241, 2026-09-26). Deleting
+    // a person ends every session at once, the way disabling does (the
+    // directory hands the delete to `common/account_state.ts`); this is the
+    // catch-up half, for a session that act could not reach — above all a
+    // delete made on ANOTHER node, which reaches this one as a replicated
+    // entry going away and nothing else. Until #241 a missing entry read as
+    // "not disabled", so a deleted person's browser went on signing in to
+    // every relying party until the session ran out.
+    if (this.sessionAccountGone(session)) {
+      this.dropSession(id, 'the account was deleted', false, req);
+      log.debug("Leaving Authn.sessionOf(). The account was deleted; the " +
+                "session was ended.");
+      return null;
+    }
     this.noteSessionUsed(sessions.realmMap(), id, session);
     this.noticeRiskDrift(session, req);
     log.debug("Leaving Authn.sessionOf(). Signed in as " +
@@ -1614,6 +1628,31 @@ class Authn {
                                              session.user.username);
     log.debug("Leaving Authn.sessionAccountDisabled(). " + disabled);
     return disabled;
+  }
+
+  // Whether a signed-in session's person has no directory entry any more
+  // (#241). Asked of the SUBJECT, `urn:uuid:<entryUUID>`, and not of the name:
+  // a person deleted and made again under the same name is a new entry with a
+  // new subject, and the old session is still the deleted one's. A session
+  // with no such subject — the anonymous principal before it is chosen, a
+  // keyed API caller, a process with no directory to ask — is never "gone".
+  sessionAccountGone(session) {
+    const { log, helpers } = this.deps;
+    log.debug("Entering Authn.sessionAccountGone().");
+    if (!session || !session.user || session.authenticated === false ||
+        session.chosen === false || session.credentialKey) {
+      log.debug("Leaving Authn.sessionAccountGone(). Not a person's.");
+      return false;
+    }
+    const sub = String(session.user.sub || '');
+    if (!/^urn:uuid:/i.test(sub) || !helpers.hasSubjectResolver()) {
+      log.debug("Leaving Authn.sessionAccountGone(). No subject to ask " +
+                "about.");
+      return false;
+    }
+    const gone = helpers.nameForSubject(sub) === '';
+    log.debug("Leaving Authn.sessionAccountGone(). " + gone);
+    return gone;
   }
 
   // ---------------------------------------------------------------------------

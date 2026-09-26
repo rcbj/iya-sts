@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3692** of them, in **39** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3693** of them, in **39** subsystems.
 
 ## Where a code appears
 
@@ -70,7 +70,7 @@ is an ordinary outcome.
 * [Federation (`STS-FED`)](#sts-fed) — 134
 * [OpenID Federation (`STS-OIDFED`)](#sts-oidfed) — 67
 * [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 169
-* [LDAP directory (`STS-LDAP`)](#sts-ldap) — 84
+* [LDAP directory (`STS-LDAP`)](#sts-ldap) — 85
 * [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 77
 * [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 144
 * [TLS and client certificates (`STS-TLS`)](#sts-tls) — 35
@@ -2493,6 +2493,7 @@ Raised from: ldap/.
 | `STS-LDAP-0108` | A person's attribute edit (#228) removed a value the attribute does not hold. | HTTP 400 (API) or a 303 with error= |
 | `STS-LDAP-0109` | A person's attribute edit (#228) would have left cn or sn, which RFC 4519 3.12 requires of every person, with no value. | HTTP 400 (API) or a 303 with error= |
 | `STS-LDAP-0110` | A person's attribute edit (#228) was refused by the directory: the entry was gone or not a person's when the write reached it. | HTTP 400 (API) or a 303 with error= |
+| `STS-LDAP-0120` | A person was deleted from the directory (#241) and handing the delete to account_state.ts failed, so what they held may not have been ended at once. authn.sessionOf() still ends a session whose person has no entry the next time it is presented. | none — logged; the delete stands |
 
 ## STS-SCIM
 
