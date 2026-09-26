@@ -8098,7 +8098,10 @@ async function recertifyOrphanedSlots(scopeId, slots) {
       altPublicKeyPem: was.altPublicKeyPem || null,
       keyUsage: usages && usages.length ? usages : undefined,
       pinned: was.pinned, privateKeyPem: was.privateKeyPem,
-      publicKeyPemStored: was.publicKeyPem
+      publicKeyPemStored: was.publicKeyPem,
+      // A named leaf keeps its names (#230): see `issuedAs` in certify().
+      profile: (was.issuedAs && was.issuedAs.profile) || undefined,
+      extensions: (was.issuedAs && was.issuedAs.extensions) || undefined
     });
     if (made.ok) {
       done += 1;

@@ -570,7 +570,8 @@ Self-Issued OP); a self-issued subject — a DID or an RFC 9278 JWK thumbprint
 URI — is **ENROLLED on the person's entry** (`stsSelfIssuedSubject`, withheld
 from LDAP reads), by the person or by an administrator; **an unenrolled
 subject is refused in BOTH modes**, so there is no `mode.js` predicate; and a
-signed request may use **all four Client Identifier prefixes**.
+signed request may use **all four Client Identifier prefixes** — six since
+#230 added `x509_san_dns` and `x509_hash` (the section below).
 
 * **The person enrols by PROVING the key.** `/portal/self-issued`'s *Enrol a
   wallet* is `/authn/wallet?siop=1&enrol=1`: `vc_signin.ts` starts a SIOPv2
@@ -607,6 +608,84 @@ signed request may use **all four Client Identifier prefixes**.
 `tests/siop.js` holds the library and the request builder in process;
 `tests/vendored/sts_siop.js` (local) drives the sign-in, both enrolments, the
 refusals and the bar door's `form_post` over HTTP.
+
+## THE x509 CLIENT IDENTIFIER PREFIXES: `x509_san_dns` AND `x509_hash` (#230, 2026-09-26)
+
+Found by #187: the OIDF `oid4vp-1final-verifier-test-plan` has signed
+variants only for these two, and the Verifier had four other prefixes. Both
+are OpenID4VP 1.0 section 5.9.3. The Request Object is signed with the key of
+a certificate whose chain it carries in `x5c`, and the wallet validates the
+chain to an anchor it trusts. Then `x509_san_dns:<name>` must be a dNSName of
+the leaf, and `x509_hash:<b64url SHA-256 of the leaf's DER>` must be its hash.
+
+* **THE CERTIFICATE IS `common/pki.js`'s `certifyVerifierKey()`** (rules 3w
+  and 3r: new PKI code goes there, never here). It is issued from the realm's
+  JOSE Issuing CA over the realm key `helpers.signJwt()` signs
+  `oid4vp.x509SigningAlgorithm` with (ES256 by default, which HAIP has every
+  wallet accept). The profile is `digital-signature` narrowed to
+  `digitalSignature`, with no EKU and a SAN dNSName. That function's header
+  argues each choice: the realm's key rather than a new one, the JOSE CA
+  rather than a use case of its own, and why not `tls-server`. There is one
+  slot per DNS name, sixteen at most per realm (`STS-PKI-0205`).
+* **ISSUED BEFORE THE BUILD, READ DURING IT.** Issuing a certificate is
+  asynchronous and `buildVpRequest()` is not. So `prepareSignedClientId()`
+  is awaited first by `/oid4vp/start`, by `/authn/wallet` and by the
+  verifier-certificate document. It issues the certificate, or answers the
+  one in place when it is over the same key and more than a day from
+  expiry. `x509Material()` then reads it synchronously and refuses
+  (`STS-VC-0112`) where it is missing or over another key. A rotated realm
+  key is certified again on the next request, and the old certificate is
+  superseded.
+* **`x5c` STOPS BELOW THE ROOT**: it carries the leaf, the Issuing CA and the
+  Intermediate. The Root is the anchor a wallet is configured with. The
+  request carries no `x5u` either (`signX509Request()`, and a
+  `certificate-header: none` exemption). `oid4vp.requestObjectCertificateHeader`
+  would name the realm's other certificate for the same key, so a wallet
+  would be handed two chains that disagree about who the Verifier is.
+* **THE NAME IS THE RESPONSE URI'S HOST, OR THE REQUEST IS NOT BUILT.**
+  Section 5.9.3 has a wallet that does not otherwise trust the Client
+  Identifier require the `response_uri`'s FQDN to be it. A configured
+  `oid4vp.x509DnsName` that is not the host is refused (`STS-VC-0111`), and
+  so is an IP address, rather than sent to be refused by every wallet.
+* **PRODUCT NEVER CERTIFIES A `Host` HEADER** (`mode.certifiesRequestHost()`,
+  `STS-VC-0110`). The name is `oid4vp.x509DnsName`, else the host of a
+  pinned `global.publicBaseUrl`, else (development only) the request's
+  host. The Response URI is built from that same host, so certifying it
+  would hand whoever sent the header a Request Object this realm signed,
+  under a certificate wallets trust, that sends presentations to their
+  host. `x509_hash` needs no name, and signs under a nameless certificate
+  where none can be had, so it works unconfigured in product.
+* **PER REALM OR PER REQUEST.** `oid4vp.clientIdPrefix` is the realm's
+  choice, and `/oid4vp/start?client_id_prefix=` is one request's choice
+  (section 5.9 has the Verifier choose per request). Naming a prefix makes
+  the request signed. The sign-in's Digital Credentials API request is
+  signed under the same certificate.
+* **`GET /oid4vp/verifier-certificate`** is what a wallet, or the
+  conformance suite playing one, is configured from. It gives both Client
+  Identifiers, each with its `x5c` and `trust_anchor_pem`, and is
+  `no-store`. Asking for it certifies the Verifier as a request would. Where
+  no name can be had, `x509_san_dns` is `null` with the refusal.
+* **A RENEWAL KEEPS THE NAME.** `certify()` now records how a leaf was
+  issued (`issuedAs`: profile, keyUsage, extensions), and
+  `recertifyUseCase()` and `recertifyOrphanedSlots()` pass it back. Before
+  this, renewing the JOSE or `pep-tls` Issuing CA's certificates re-minted
+  a named leaf WITHOUT its subjectAltName.
+* **NOT BUILT: a post-quantum signing algorithm.** The Request Object is
+  signed on the request path, and the post-quantum keys sign in the worker
+  pool. The setting's description says so.
+
+`tests/oid4vp_x509_client_id.js` holds this in process.
+`tests/vendored/sts_oid4vp_x509.js` (local) checks each prefix over HTTP as a
+wallet does, using only node's `crypto`, and refuses the mismatches.
+
+**What the conformance driver (#187) sets.** The realm is set as for the
+`redirect_uri` variant. The suite's configuration gets
+`client.client_id` = the bare DNS name for `x509_san_dns` (the suite adds the
+prefix itself) and `client.request_object_trust_anchor_pem` = the
+`trust_anchor_pem` from `/oid4vp/verifier-certificate`. The variant is
+`request_method: request_uri_signed`. The End-User starts at
+`/oid4vp/start?client_id_prefix=<prefix>`. In product mode, also set
+`oid4vp.x509DnsName` to the realm's host.
 
 ## THE 2026-09-12 HARD-CODED-VALUE SWEEP
 
