@@ -2763,7 +2763,7 @@ class OAuth2Server {
       // `pairwise` since #118 (OIDC Core section 8): a client that registers
       // subject_type=pairwise is told a sub of its own sector's, computed by
       // `pairwise_subjects.ts`.
-      subject_types_supported: ['public', 'pairwise'],
+      subject_types_supported: ['public', 'pairwise', 'ephemeral'],
       // OIDC Core section 10.2 (2026-09-17): an ID Token is encrypted — signed
       // first, then encrypted to the key in the client's inline `jwks` — when
       // the client registered `id_token_encrypted_response_alg`. The lists
@@ -3843,11 +3843,13 @@ class OAuth2Server {
   // place every reader of a CLIENT-facing subject asks: the ID Token, the
   // UserInfo response and the Logout Tokens that must name what the ID Token
   // named. `pairwise_subjects.ts` decides.
-  subjectFor(clientId: Json, localSub: Json): Json {
+  // `sessionId` is the authentication an ephemeral subject belongs to
+  // (#149); a public or pairwise client ignores it.
+  subjectFor(clientId: Json, localSub: Json, sessionId?: Json): Json {
     const { log, pairwiseSubjects } = this.deps;
     log.debug("Entering OAuth2Server.subjectFor().");
     log.debug("Leaving OAuth2Server.subjectFor().");
-    return pairwiseSubjects.subjectFor(clientId, localSub);
+    return pairwiseSubjects.subjectFor(clientId, localSub, sessionId);
   }
 
   // -------------------------------------------------------------------------
@@ -4011,7 +4013,8 @@ class OAuth2Server {
     // -----------------------------------------------------------------------
     const payload = self.definedOnly(Object.assign({
       iss: self.issuerOf(base),
-      sub: opts.sub || self.subjectFor(opts.client_id, user.sub),
+      sub: opts.sub || self.subjectFor(opts.client_id, user.sub,
+                                       opts.session_id),
       aud: opts.client_id,
       iat: iat, nbf: iat, exp: iat +
                                self.idTokenTtl(opts.client_id),
@@ -6733,7 +6736,7 @@ class OAuth2Server {
     frontchannel.noteClient(authInfo, String(query.client_id),
                             { iss: self.issuerOf(base),
                               sub: self.subjectFor(query.client_id,
-                                                   user.sub) });
+                                                   user.sub, sessionId) });
 
     if (types.indexOf('code') >= 0) {
       const code = randomId(24);
@@ -8553,7 +8556,7 @@ class OAuth2Server {
     // answer to this request (section 3.1.2.1): with prompt=none it is
     // login_required, and otherwise the person signs in again.
     const hintMismatch = !!(idTokenHint && idTokenHint.ok && session &&
-      self.subjectFor(q.client_id, (session.user || {}).sub) !==
+      self.subjectFor(q.client_id, (session.user || {}).sub, session.id) !==
         idTokenHint.sub);
     // THE SECOND PASS: the person was sent to sign in because of the hint and
     // came back as somebody else again. Refused rather than sent round again,
@@ -8878,7 +8881,8 @@ class OAuth2Server {
       // that subject is one this directory can name (#118).
       hint: q.login_hint ||
             (idTokenHint && idTokenHint.ok
-              ? (nameForSubject(idTokenHint.sub) || '') : ''),
+              ? (nameForSubject(pairwiseSubjects.localFor(idTokenHint.sub) ||
+                                idTokenHint.sub) || '') : ''),
       forceMfa: forceMfa, forceKey: !!screen.forceKey,
       protocol: 'OAuth 2.0 / OIDC',
       // WHICH APPLICATION this is, so that an entry naming a federation
@@ -9790,7 +9794,11 @@ class OAuth2Server {
     // that section 5.3.2's rule — it MUST match the ID Token's `sub` — holds
     // for a pairwise client too. The access token keeps the public subject,
     // because it is what this endpoint looks the person up by.
-    body.sub = self.subjectFor(claims.client_id, claims.sub || user.sub);
+    // The session the access token was issued on, so an ephemeral client is
+    // told the `sub` its ID Token carried (#149, Core 5.3.2).
+    body.sub = self.subjectFor(claims.client_id, claims.sub || user.sub,
+                               claims.sid ||
+                                 stats.sessionIdOfJti(claims.jti));
     logArtifact('UserInfo response', 'as returned', body);
 
     // Section 5.3.2: the response is JSON unless the client registered a
@@ -15475,7 +15483,9 @@ class OAuth2Server {
                  why: 'the ' + kind + ' is not a token this authorization ' +
                       'server issued and still stands by.' };
       }
-      username = String(nameForSubject(String(claims.sub || '')) || '');
+      // An ephemeral `sub` is mapped back to the person first (#149).
+      username = String(nameForSubject(pairwiseSubjects.localFor(
+        String(claims.sub || '')) || String(claims.sub || '')) || '');
     }
     const person = username ? this.provisionedPerson(username) : null;
     if (!person || !person.sub) {
