@@ -992,6 +992,16 @@ const SCHEMA = {
             'else is true, a valid link included (STS-FED-0093). Turning it ' +
             'on makes this partner\'s signing key a key to the console for ' +
             'every administrator linked to it.' },
+    // --- A PARTNER'S SHARED SIGNALS (#153) ----------------------------------
+    { name: 'fedSignalEmailMatch', kind: 'single',
+      role: 'service-provider', from: 'this register',
+      what: 'LET THIS PARTNER\'S SHARED SIGNALS NAME A PERSON BY MAIL. OFF ' +
+            'by default: a Security Event Token from a transmitter with ' +
+            'this partner\'s issuer names a person by `iss_sub`, through ' +
+            'the person\'s federationLink. On, an `email` subject matches ' +
+            'the one person with that mail address as well — an address ' +
+            'is not an identifier (OpenID Connect Core section 5.7), so ' +
+            'only for a partner whose addresses this realm trusts.' },
     // --- A PARTNER'S SIGN-OUT (#167) ---------------------------------------
     // federation/federation_slo.ts is what reads these, in both directions:
     // the partner telling this service a session ended, and this service
@@ -1268,6 +1278,7 @@ const EDITABLE = {
   fedSubjectPolicy: 'set',
   fedSubjectPattern: 'set',
   fedMayAssertAdministrators: 'set',
+  fedSignalEmailMatch: 'set',
   fedAllowUnsolicited: 'set',
   fedEncryptionKeyType: 'set',
   fedKeyManagementAlgorithm: 'set',
@@ -1609,6 +1620,15 @@ function peopleLinkedBy(value) {
   log.debug("Leaving peopleLinkedBy().");
   return directoryHas('peopleByFederationLink')
     ? directory.peopleByFederationLink(String(value || '')) : [];
+}
+
+// Every person with this mail address (#153), for a foreign transmitter's
+// `email` subject where the relationship allows it.
+function peopleByMail(address) {
+  log.debug("Entering peopleByMail().");
+  log.debug("Leaving peopleByMail().");
+  return directoryHas('peopleByMail')
+    ? directory.peopleByMail(String(address || '')) : [];
 }
 
 function linkedThrough(fedId) {
@@ -2586,6 +2606,7 @@ function create(spec) {
     // two above are.
     record.fedSubjectPolicy = DEFAULT_SUBJECT_POLICY;
     record.fedMayAssertAdministrators = boolText(false);
+    record.fedSignalEmailMatch = boolText(false);
     record.fedSignRequest = boolText(false);
     // A PARTNER'S SIGN-OUT (#167): honoured, and signed — the most secure
     // default, and the one a partner that follows its specification meets.
@@ -2873,6 +2894,7 @@ function update(id, change) {
   if (row.name === 'fedEnabled' || row.name === 'fedAutocreateUsers' ||
       row.name === 'fedUpdateUserAttributes' ||
       row.name === 'fedMayAssertAdministrators' ||
+      row.name === 'fedSignalEmailMatch' ||
       row.name === 'fedSignRequest' || row.name === 'fedAllowUnsolicited' ||
       row.name === 'fedAllowUnencrypted') {
     record[field] = boolText(boolOf(record[field], false));
@@ -3403,6 +3425,7 @@ module.exports = {
   // The people a partner's subjects are linked to (#109); see their header.
   federatedPerson: federatedPerson,
   peopleLinkedBy: peopleLinkedBy,
+  peopleByMail: peopleByMail,
   linkedThrough: linkedThrough,
   plannedPersonDn: plannedPersonDn,
   writeFederationLink: writeFederationLink,

@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3624** of them, in **38** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3634** of them, in **38** subsystems.
 
 ## Where a code appears
 
@@ -75,7 +75,7 @@ is an ordinary outcome.
 * [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 144
 * [TLS and client certificates (`STS-TLS`)](#sts-tls) — 34
 * [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 104
-* [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 104
+* [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 114
 * [Risk scoring (`STS-RISK`)](#sts-risk) — 40
 * [Mail (`STS-MAIL`)](#sts-mail) — 39
 * [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 282
@@ -2989,6 +2989,16 @@ Raised from: ssf/.
 | `STS-SSF-0110` | No reaction to a signal this service's own console or portal received could be decided: the signal-response policy is disabled, missing or does not load. The event is recorded and nothing is ended. | — |
 | `STS-SSF-0111` | A reaction the signal-response policy permitted to a received signal failed: the receiving surface's sessions for the person could not be ended. | — |
 | `STS-SSF-0112` | The kerberos-tickets-invalidated event (this service's own, #169) could not be transmitted after a krbtgt key was rotated with nothing kept; the rotation itself stands. | none — logged; nothing is sent to a receiver |
+| `STS-SSF-0113` | A foreign SSF transmitter act was refused: an unknown action, a bad or taken id, the realm's limit, no federation relationship, an unsupported delivery, no credential, or no stream yet (#153). | console / /admin-api refusal (HTTP 400) |
+| `STS-SSF-0114` | A foreign transmitter could not be registered: its /.well-known/ssf-configuration could not be read or does not name the issuer, a jwks_uri and a configuration_endpoint, or its jwks_uri could not be read (#153). | console / /admin-api refusal (HTTP 400) |
+| `STS-SSF-0115` | A foreign transmitter refused a stream act — create, read, update, delete, status, a subject or verification — or could not be reached (#153). | console / /admin-api refusal (HTTP 400) |
+| `STS-SSF-0116` | Polling a foreign transmitter (RFC 8936) failed (#153). | none (logged; the job tries again) |
+| `STS-SSF-0117` | A push to /ssf/transmitters/{id}/push named no push stream here, or its Authorization header is not the one this realm gave the transmitter (#153). | HTTP 404 or 401 {err} |
+| `STS-SSF-0118` | A Security Event Token from a foreign transmitter was malformed: not a compact JWS, typ not secevent+jwt, or no jti or events (#153). | HTTP 400 {err: invalid_request}, or a poll setErrs entry |
+| `STS-SSF-0119` | A foreign SET's iss is not the transmitter's issuer (#153). | HTTP 400 {err: invalid_issuer}, or a poll setErrs entry |
+| `STS-SSF-0120` | A foreign SET's aud does not name this realm's stream audience (#153). | HTTP 400 {err: invalid_audience}, or a poll setErrs entry |
+| `STS-SSF-0121` | A foreign SET's signature does not verify against the transmitter's keys, and it was refused (product mode, or ssf.receiveRequireSignature) (#153). | HTTP 400 {err: invalid_key}, or a poll setErrs entry |
+| `STS-SSF-0122` | Acting on a verified event from a foreign transmitter — ending a person's sessions, disabling or enabling their account — failed; the SET is recorded (#153). | none (logged) |
 
 ## STS-RISK
 

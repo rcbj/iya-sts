@@ -290,7 +290,9 @@ const SIGNAL_ATTRIBUTE = {
   // `caep`, `risc` or `ssf`: the namespace the event's URI is in.
   FAMILY: 'urn:sts:xacml:signal-family',
   // Which of this service's surfaces received it: `admin-console` or
-  // `user-portal` (`ssf/ssf_receivers.ts`'s SURFACES).
+  // `user-portal` (`ssf/ssf_receivers.ts`'s SURFACES) — or, since #153,
+  // `foreign:<id>`, a FOREIGN transmitter this realm registered
+  // (`ssf/ssf_transmitters.ts`).
   SURFACE: 'urn:sts:xacml:signal-surface',
   // A risk or assurance event's `current_level`, where it carries one.
   LEVEL: 'urn:sts:xacml:signal-current-level'
@@ -303,7 +305,17 @@ const SIGNAL_RESPONSE = {
   // the console's or the portal's relying-party sessions. Never the
   // provider's — a receiver acts on what it holds, and what the provider
   // holds is the transmitter's to end.
-  END_SESSIONS: 'signal-end-sessions'
+  END_SESSIONS: 'signal-end-sessions',
+  // FROM A FOREIGN TRANSMITTER (#153): this realm is the provider the person
+  // signs in to, and the event is another identity service's statement
+  // about the same person (mapped through a federation relationship). End
+  // the person's sessions HERE — every one, as a global sign-out does.
+  END_PERSON_SESSIONS: 'signal-end-person-sessions',
+  // Disable the person's account here (the administrative lock), and enable
+  // it again — the latter only for a lock that transmitter's own
+  // account-disabled put there, which the receiver checks, not the policy.
+  DISABLE_ACCOUNT: 'signal-disable-account',
+  ENABLE_ACCOUNT: 'signal-enable-account'
 };
 
 // ---------------------------------------------------------------------------
@@ -1027,7 +1039,26 @@ const TEMPLATES: TemplateRow[] = [
         label: 'risk-level-change levels that end them',
         dflt: 'HIGH', type: 'string',
         help: 'Comma separated current_level values of CAEP ' +
-              'risk-level-change. Empty builds no such rule.' }
+              'risk-level-change. Empty builds no such rule.' },
+      // FOREIGN TRANSMITTERS (#153): events another identity service sent
+      // about a person this realm maps through a federation relationship.
+      { name: 'foreignEndSessionEvents',
+        label: 'Foreign events that end the person\'s sessions here',
+        dflt: 'session-revoked, credential-change, sessions-revoked, ' +
+              'credential-compromise, account-purged',
+        type: 'string',
+        help: 'Comma separated short names, from a foreign transmitter ' +
+              'only. Empty builds no such rule.' },
+      { name: 'foreignDisableEvents',
+        label: 'Foreign events that disable the account here',
+        dflt: 'account-disabled', type: 'string',
+        help: 'Comma separated short names. Empty: a foreign transmitter ' +
+              'never disables anybody here.' },
+      { name: 'foreignEnableEvents',
+        label: 'Foreign events that enable it again',
+        dflt: 'account-enabled', type: 'string',
+        help: 'Comma separated short names. An account is enabled only if ' +
+              'the same transmitter\'s event disabled it.' }
     ],
     build: function (answers, options) {
       log.debug('Entering buildSignalResponse().');
@@ -1040,6 +1071,14 @@ const TEMPLATES: TemplateRow[] = [
       const riskLevels = B.listOf(given.endSessionsOnRiskLevels ===
                                   undefined ? 'HIGH'
                                             : given.endSessionsOnRiskLevels);
+      const foreignEnd = B.listOf(given.foreignEndSessionEvents === undefined
+        ? 'session-revoked, credential-change, sessions-revoked, ' +
+          'credential-compromise, account-purged'
+        : given.foreignEndSessionEvents);
+      const foreignDisable = B.listOf(given.foreignDisableEvents ===
+        undefined ? 'account-disabled' : given.foreignDisableEvents);
+      const foreignEnable = B.listOf(given.foreignEnableEvents === undefined
+        ? 'account-enabled' : given.foreignEnableEvents);
       const env = model.CATEGORY.ENVIRONMENT;
       const bagOf = function (values: string[]): any {
         log.debug("Entering bagOf().");
@@ -1069,7 +1108,40 @@ const TEMPLATES: TemplateRow[] = [
                  condition: B.apply(F1 + 'and', conjuncts),
                  obligations: [], advice: [] };
       };
+      const actionIs = function (action: string): any {
+        log.debug("Entering actionIs().");
+        log.debug("Leaving actionIs().");
+        return B.apply(F1 + 'string-is-in', [
+          B.value(TYPE.STRING, action),
+          B.designator(model.CATEGORY.ACTION, model.ATTRIBUTE.ACTION_ID,
+                       TYPE.STRING)]);
+      };
+      // A foreign transmitter's surface is `foreign:<id>`; this service's
+      // own receivers never match, so their rules and these never mix.
+      const fromForeign = B.apply(F3 + 'string-starts-with', [
+        B.value(TYPE.STRING, 'foreign:'),
+        B.apply(F1 + 'string-one-and-only', [
+          B.designator(env, SIGNAL_ATTRIBUTE.SURFACE, TYPE.STRING)])]);
       const rules: any[] = [];
+      if (foreignEnd.length) {
+        rules.push(rule('foreign-end-sessions', 'From a foreign ' +
+          'transmitter, end the person\'s sessions here on ' +
+          foreignEnd.join(', ') + '.',
+          [actionIs(SIGNAL_RESPONSE.END_PERSON_SESSIONS), fromForeign,
+           anyIn(SIGNAL_ATTRIBUTE.EVENT, foreignEnd)]));
+      }
+      if (foreignDisable.length) {
+        rules.push(rule('foreign-disable', 'From a foreign transmitter, ' +
+          'disable the account on ' + foreignDisable.join(', ') + '.',
+          [actionIs(SIGNAL_RESPONSE.DISABLE_ACCOUNT), fromForeign,
+           anyIn(SIGNAL_ATTRIBUTE.EVENT, foreignDisable)]));
+      }
+      if (foreignEnable.length) {
+        rules.push(rule('foreign-enable', 'From a foreign transmitter, ' +
+          'enable it again on ' + foreignEnable.join(', ') + '.',
+          [actionIs(SIGNAL_RESPONSE.ENABLE_ACCOUNT), fromForeign,
+           anyIn(SIGNAL_ATTRIBUTE.EVENT, foreignEnable)]));
+      }
       if (endOn.length) {
         rules.push(rule('end-sessions', 'End the receiving surface\'s own ' +
           'sessions for the person on ' + endOn.join(', ') + '.',

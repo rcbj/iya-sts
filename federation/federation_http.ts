@@ -1071,9 +1071,21 @@ class FederationHttp {
   // It sends nothing but `Accept`. It NEVER rejects: `{ ok, status, body,
   // contentType, kind, why, url }`.
   // -------------------------------------------------------------------------
+  // A DISCOVERED ENDPOINT, WITH A BODY (#153): a foreign SSF transmitter's
+  // stream management, status, subject, verification and poll endpoints are
+  // named in the configuration document fetched from the issuer an
+  // administrator registered — the same kind of URL as the document itself,
+  // held to the same bounds, and so the same function with `method`,
+  // `headers` (the transmitter's access token) and `body` (JSON, sent as
+  // `contentType`). Every rule above still applies: the internal-address
+  // refusal in product mode, the pinned connection, no redirect, the cap.
   fetchPublished(raw: string, options?: { accept?: string;
                                           timeoutMs?: number;
-                                          maxBytes?: number }):
+                                          maxBytes?: number;
+                                          method?: string;
+                                          headers?: Record<string, string>;
+                                          body?: string;
+                                          contentType?: string }):
       Promise<{ ok: boolean; status: number; body: Buffer;
                 contentType: string; kind: string; why: string;
                 url: string }> {
@@ -1141,13 +1153,19 @@ class FederationHttp {
           hostname: target.hostname,
           port: target.port || (secure ? 443 : 80),
           path: target.pathname + target.search,
-          method: 'GET',
-          headers: {
+          method: String(opts.method || 'GET').toUpperCase(),
+          headers: Object.assign({}, opts.headers || {}, {
             'Accept': String(opts.accept || '*/*'),
             'User-Agent': self.deps.userAgent
-          },
+          }),
           rejectUnauthorized: secure
         };
+        if (opts.body !== undefined) {
+          requestOptions.headers['Content-Type'] =
+            String(opts.contentType || 'application/json');
+          requestOptions.headers['Content-Length'] =
+            Buffer.byteLength(String(opts.body));
+        }
         if (secure) {
           self.applyTls(requestOptions, policy);
         }
@@ -1214,6 +1232,9 @@ class FederationHttp {
                  why: 'the request failed: ' +
                       (e.code ? e.code + ' — ' : '') + e.message });
         });
+        if (opts.body !== undefined) {
+          request.write(String(opts.body));
+        }
         request.end();
       });
     });

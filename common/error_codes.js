@@ -12265,6 +12265,55 @@ const CODES = [
       '#169) could not be transmitted after a krbtgt key was rotated with ' +
       'nothing kept; the rotation itself stands.',
     spec: 'none — logged; nothing is sent to a receiver' },
+  { code: 'STS-SSF-0113',
+    summary: 'A foreign SSF transmitter act was refused: an ' +
+      'unknown action, a bad or taken id, the realm\'s limit, no federation ' +
+      'relationship, an unsupported delivery, no credential, or no stream ' +
+      'yet (#153).',
+    spec: 'console / /admin-api refusal (HTTP 400)' },
+  { code: 'STS-SSF-0114',
+    summary: 'A foreign transmitter could not be registered: its ' +
+      '/.well-known/ssf-configuration could not be read or does not name ' +
+      'the issuer, a jwks_uri and a configuration_endpoint, or its jwks_uri ' +
+      'could not be read (#153).',
+    spec: 'console / /admin-api refusal (HTTP 400)' },
+  { code: 'STS-SSF-0115',
+    summary: 'A foreign transmitter refused a stream act — create, ' +
+      'read, update, delete, status, a subject or verification — or could ' +
+      'not be reached (#153).',
+    spec: 'console / /admin-api refusal (HTTP 400)' },
+  { code: 'STS-SSF-0116',
+    summary: 'Polling a foreign transmitter (RFC 8936) failed ' +
+      '(#153).',
+    spec: 'none (logged; the job tries again)' },
+  { code: 'STS-SSF-0117',
+    summary: 'A push to /ssf/transmitters/{id}/push named no push ' +
+      'stream here, or its Authorization header is not the one this realm ' +
+      'gave the transmitter (#153).',
+    spec: 'HTTP 404 or 401 {err}' },
+  { code: 'STS-SSF-0118',
+    summary: 'A Security Event Token from a foreign transmitter ' +
+      'was malformed: not a compact JWS, typ not secevent+jwt, or no jti or ' +
+      'events (#153).',
+    spec: 'HTTP 400 {err: invalid_request}, or a poll setErrs entry' },
+  { code: 'STS-SSF-0119',
+    summary: 'A foreign SET\'s iss is not the transmitter\'s issuer ' +
+      '(#153).',
+    spec: 'HTTP 400 {err: invalid_issuer}, or a poll setErrs entry' },
+  { code: 'STS-SSF-0120',
+    summary: 'A foreign SET\'s aud does not name this realm\'s ' +
+      'stream audience (#153).',
+    spec: 'HTTP 400 {err: invalid_audience}, or a poll setErrs entry' },
+  { code: 'STS-SSF-0121',
+    summary: 'A foreign SET\'s signature does not verify against ' +
+      'the transmitter\'s keys, and it was refused (product mode, or ' +
+      'ssf.receiveRequireSignature) (#153).',
+    spec: 'HTTP 400 {err: invalid_key}, or a poll setErrs entry' },
+  { code: 'STS-SSF-0122',
+    summary: 'Acting on a verified event from a foreign ' +
+      'transmitter — ending a person\'s sessions, disabling or enabling ' +
+      'their account — failed; the SET is recorded (#153).',
+    spec: 'none (logged)' },
   // ===== RISK ==============================================================
   { code: 'STS-RISK-0001',
     summary: 'A dataset import was refused before anything was loaded: the ' +

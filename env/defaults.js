@@ -878,6 +878,12 @@ var config = {
     receiveAudiences: "",                                                                                                                                 // Audiences POST /ssf/receive answers to
     receiveIssuers: "",                                                                                                                                   // Issuers POST /ssf/receive accepts
     receiveRequireSignature: false,                                                                                                                       // Refuse a SET whose signature does not verify
+    foreignPollS: 30,                                                                                                                                     // Foreign transmitter poll interval (s)
+    foreignPollMaxEvents: 50,                                                                                                                             // Events asked per foreign poll
+    foreignPollMaxRounds: 5,                                                                                                                              // Foreign poll rounds
+    foreignMaxTransmitters: 20,                                                                                                                           // Foreign transmitters per realm
+    foreignInboxMax: 500,                                                                                                                                 // Foreign SETs kept
+    foreignTimeoutMs: 10000,                                                                                                                              // Foreign transmitter timeout (ms)
     actOnSignalsInDevelopment: false,                                                                                                                     // The console and portal act on received signals in development
     legacySubClaim: false,                                                                                                                                // Also emit the deprecated `sub` claim (development only)
     breakSetSignature: false                                                                                                                              // Sign every SET badly (development only)

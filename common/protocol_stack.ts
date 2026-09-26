@@ -1093,6 +1093,14 @@ class ProtocolStack {
                'ProviderCommandsAdmin');
     this.register(app, require('../oauth-oidc/provider_commands_admin'),
                   'oauth-oidc/provider_commands_admin');
+    // 18p. FOREIGN SSF TRANSMITTERS (#153): /admin/ssf/transmitters, 18a's
+    // placement and 18a's reason; the library (built at 23b-v) is reached
+    // through its forwarders at request time only.
+    this.build('ssf/ssf_transmitters_admin',
+               require('../ssf/ssf_transmitters_admin'),
+               'SsfTransmittersAdmin');
+    this.register(app, require('../ssf/ssf_transmitters_admin'),
+                  'ssf/ssf_transmitters_admin');
     // The management API: everything that console shows and everything it can
     // change, at /admin-api, over JSON. It must come AFTER admin.js and the
     // order is a dependency rather than a preference — it requires that module
@@ -1123,6 +1131,8 @@ class ProtocolStack {
     this.build('oauth-oidc/provider_commands_api',
                require('../oauth-oidc/provider_commands_api'),
                'ProviderCommandsApi');
+    this.build('ssf/ssf_transmitters_api',
+               require('../ssf/ssf_transmitters_api'), 'SsfTransmittersApi');
     this.build('mgmt-api/admin_api', require('../mgmt-api/admin_api'),
                'AdminApi');
     this.register(app, require('../mgmt-api/admin_api'), 'mgmt-api/admin_api');
@@ -1354,6 +1364,15 @@ class ProtocolStack {
     this.build('ssf/ssf_cluster', require('../ssf/ssf_cluster'), 'SsfCluster');
     this.build('ssf/ssf', require('../ssf/ssf'), 'SharedSignals');
     this.register(app, require('../ssf/ssf'), 'ssf/ssf');
+    // 23b-v. FOREIGN TRANSMITTERS (#153): this realm as the receiver of
+    // another identity service's Shared Signals — a library whose wire step
+    // registers the `ssf.foreign-poll` job, and whose one route is the push
+    // endpoint. After the directory (21) and `ssf/ssf`, beside which it
+    // belongs; everything it reaches is reached lazily.
+    this.build('ssf/ssf_transmitters', require('../ssf/ssf_transmitters'),
+               'SsfTransmitters');
+    this.register(app, require('../ssf/ssf_transmitters'),
+                  'ssf/ssf_transmitters');
     // 23b-ii. SIGNING KEY ROTATION (#42, 2026-09-22): a library that registers
     // its two scheduler jobs when built and no route. After `ssf/ssf`, whose
     // signingKeyRotated() it calls (lazily, so the order is for a reader).

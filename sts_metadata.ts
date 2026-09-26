@@ -573,9 +573,19 @@ const SPECS: Spec[] = [
               'does), HTTP Basic and GNAP — ' +
               'published in authorization_schemes. Failed pushes are retried ' +
               'ssf.pushRetries times (0 by default, deliberately) and then ' +
-              'dead-lettered, and streams are persisted in product mode. NOT ' +
-              'covered: this service as a RECEIVER of a foreign transmitter ' +
-              '(#153), and nothing is verified about a subject, so a stream ' +
+              'dead-lettered, and streams are persisted in product mode. ' +
+              'AND THE RECEIVER HALF (#153): a realm registers a foreign ' +
+              'transmitter by its issuer (the section 7 document, which must ' +
+              'name it, and its jwks_uri), creates, reads, updates and ' +
+              'deletes its stream there, sets its status, adds and removes ' +
+              'subjects and asks for verification, receives by poll (RFC ' +
+              '8936, a scheduler job acknowledging what it received) or ' +
+              'push (RFC 8935, the authorization header it gave), verifies ' +
+              'each SET (signature against the transmitter\'s keys, typ, ' +
+              'iss, aud, a jti once), and acts on it through the ' +
+              'signal-response policy for a person a federation ' +
+              'relationship links. NOT covered: nothing is verified about ' +
+              'a subject this transmitter\'s own streams name, so a stream ' +
               'may name somebody who has never been here.' },
   { id: 'rfc8417', name: 'RFC 8417 — Security Event Token (SET)',
     where: 'IETF',
@@ -4120,6 +4130,15 @@ const ENDPOINTS: EndpointEntry[] = [
           '(min_verification_interval) is not enforced unless ' +
           'ssf.verificationRateLimit is on, which is what makes the 429 ' +
           'reachable.' },
+  { path: '/ssf/transmitters/:id/push', group: 'Shared Signals',
+    name: 'Push endpoint for a foreign transmitter (RFC 8935)',
+    specs: ['ssf', 'rfc8935', 'rfc8417'],
+    what: 'Where a foreign transmitter this realm registered pushes a ' +
+          'Security Event Token (#153): the Authorization header this realm ' +
+          'gave it when the stream was created, then the SET, verified ' +
+          'against the transmitter\'s keys and acted on as the ' +
+          'signal-response policy permits. 202, or 400 with {err, ' +
+          'description}.' },
   { path: '/ssf/poll', group: 'Shared Signals',
     name: 'Poll delivery (RFC 8936)',
     specs: ['rfc8936', 'rfc8417'],
@@ -5244,6 +5263,13 @@ const ENDPOINTS: EndpointEntry[] = [
           'Logout Token, CIBA ping and push and OpenID Provider Command on ' +
           'the shared outbound queue, by kind, with each dead letter\'s ' +
           'code and a Retry.' },
+  { path: '/admin/ssf/transmitters', group: 'Admin',
+    name: 'Foreign SSF transmitters',
+    specs: ['ssf', 'rfc8935', 'rfc8936'],
+    what: 'The transmitters this realm receives Shared Signals from (#153): ' +
+          'register one by its issuer, its stream there and every stream ' +
+          'act, what arrived, whether it verified, the person it named and ' +
+          'what it led to.' },
   { path: '/admin/ssf/dead-letters', group: 'Admin', name: 'Dead letters',
     specs: ['ssf', 'rfc8417', 'rfc8935'],
     what: 'NON-SPEC PAGE (2026-09-14), under Monitoring → Shared Signals: ' +
@@ -7920,6 +7946,15 @@ const ENDPOINTS: EndpointEntry[] = [
           'null where nothing has been called, because an average over no ' +
           'samples is absent and a 100% success rate on nothing is the most ' +
           'misleading figure this reply could carry.' },
+  { path: '/admin-api/ssf/transmitters', group: 'Management API',
+    name: 'Foreign SSF transmitters', specs: ['openapi', 'ssf'],
+    what: 'GET /admin/ssf/transmitters over JSON (#153).' },
+  { path: '/admin-api/ssf/transmitters/:action', group: 'Management API',
+    name: 'Register a foreign transmitter, or act on its stream',
+    specs: ['openapi', 'ssf'],
+    what: 'add, create-stream, read-stream, update-stream, delete-stream, ' +
+          'set-status, add-subject, remove-subject, verify, poll-now and ' +
+          'remove: the console\'s acts (#153).' },
   { path: '/admin-api/ssf', group: 'Management API', name: 'Shared Signals',
     specs: ['openapi', 'ssf', 'rfc8417'],
     what: 'GET /admin/ssf over JSON: the streams, their subjects, their ' +
