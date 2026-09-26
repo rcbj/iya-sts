@@ -322,12 +322,12 @@ async function childMain() {
        'enters it, rewritten to /.well-known/est/cacerts',
        JSON.stringify(viaLabel && { id: viaLabel.realm.id,
                                     rest: viaLabel.rest }));
-  const pair = realms.matchPath('/.well-known/est/' + A +
-                                '/tls-server/simpleenroll');
-  note(pair && pair.realm.id === A &&
-       pair.rest === '/.well-known/est/tls-server/simpleenroll',
+  const pairForm = realms.matchPath('/.well-known/est/' + A +
+                                    '/tls-server/simpleenroll');
+  note(pairForm && pairForm.realm.id === A &&
+       pairForm.rest === '/.well-known/est/tls-server/simpleenroll',
        'and /.well-known/est/<realm>/<profile>/<op> keeps the profile label',
-       JSON.stringify(pair && pair.rest));
+       JSON.stringify(pairForm && pairForm.rest));
   note(realms.matchPath('/.well-known/est/tls-server/simpleenroll') === null,
        'a profile label is not a realm');
   note(realms.matchPath('/.well-known/est/nosuch-' + stamp + '/cacerts') ===
@@ -349,9 +349,9 @@ async function childMain() {
   note(selfTwice.status === 404 && selfTwice.code === 'STS-EST-0022',
        'even when it names the same realm again',
        selfTwice.status + ' ' + selfTwice.code);
-  const unknownLabel = await call(A, 'cacerts', { label: 'nosuch' });
-  note(unknownLabel.status === 404 && unknownLabel.code === 'STS-EST-0002',
-       'an unknown label is still STS-EST-0002', unknownLabel.code);
+  const nosuchLabel = await call(A, 'cacerts', { label: 'nosuch' });
+  note(nosuchLabel.status === 404 && nosuchLabel.code === 'STS-EST-0002',
+       'an unknown label is still STS-EST-0002', nosuchLabel.code);
   const labelIds = ['tls-server', 'email', 'kdc', 'root-ca'];
   labelIds.forEach(function (id) {
     const errors = realms.validateId(id);
