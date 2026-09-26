@@ -208,7 +208,7 @@ function certificateChange(changeType, serial) {
 }
 
 // Issues the person a key pair and answers its serial, which the issue's
-// answer does not carry: the credential-change (x509, create) it sends
+// answer does not carry: the credential-change (x509) it sends
 // does, and is the first such event naming a serial not seen before.
 const SERIALS = [];
 async function issueTo(who, token, streamId) {
@@ -219,8 +219,9 @@ async function issueTo(who, token, streamId) {
   const found = await waitFor(token, streamId, "x509 create",
     function (set) {
       const ev = eventOf(set, CAEP + "credential-change");
+      // A second key pair REPLACES the first: `update` then.
       return !!ev && ev.credential_type === "x509" &&
-             ev.change_type === "create" &&
+             (ev.change_type === "create" || ev.change_type === "update") &&
              SERIALS.indexOf(normal(ev.x509_serial)) < 0;
     });
   assert.ok(found.hit, "no credential-change (x509, create) for the key " +
