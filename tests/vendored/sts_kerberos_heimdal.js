@@ -530,6 +530,14 @@ function signedIn(status, body, who, what) {
   log.debug("Leaving signedIn().");
 }
 
+// A BROWSER'S User-Agent on both requests, as saml_peer_kit.js sends: the
+// risk evaluator (#62) scores curl's and node's own agents as automated
+// clients, and a product realm's issuance policy refuses such a session
+// (STS-RISK-0016) after the ticket was accepted — which is that policy
+// working, not SPNEGO failing. What is under test here is the negotiation.
+const AGENT = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 " +
+  "(KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36 sts_kerberos_heimdal/1.0";
+
 // THE ACCEPTOR'S NAME IS HTTP/<host>, IN A REALM OF ITS OWN. Heimdal's GSSAPI
 // derives the service name from the URL — HTTP@<host> — and the acceptor
 // answers for ONE service principal, `krb5.servicePrincipal` (a ticket for
@@ -574,7 +582,8 @@ async function spnego() {
   const url = base + "/realm/" + SRID + "/authn/spnego";
   const cafile = process.env.NODE_EXTRA_CA_CERTS || "";
   const bodyFile = path.join(H.dir, "spnego.html");
-  const curl = await run("curl", ["-sS", "--negotiate", "-u", ":"]
+  const curl = await run("curl", ["-sS", "--negotiate", "-u", ":",
+                                  "-A", AGENT]
     .concat(cafile ? ["--cacert", cafile] : [])
     .concat(["-o", bodyFile, "-w", "%{http_code}", url]), { cache: cache });
   const body = fs.existsSync(bodyFile) ? fs.readFileSync(bodyFile, "utf8")
@@ -594,7 +603,8 @@ async function spnego() {
               token.out.slice(0, 200));
   });
   const sent = await fetch(url, { headers: {
-    Authorization: token.out.trim() }, redirect: "manual" });
+    Authorization: token.out.trim(), "User-Agent": AGENT },
+                                  redirect: "manual" });
   const sentBody = await sent.text();
   check("that token at /authn/spnego is a 200 naming " + who + " and a " +
         "session cookie", function () {
