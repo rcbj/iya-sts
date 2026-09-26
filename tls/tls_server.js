@@ -2074,6 +2074,99 @@ function adoptServerCertificate(bundle) {
 // ---------------------------------------------------------------------------
 const externalServers = [];
 
+// ---------------------------------------------------------------------------
+// A CLIENT CERTIFICATE NODE CANNOT READ IS REFUSED BEFORE ANYTHING READS IT
+// (#212, 2026-09-26).
+//
+// tlsfuzzer's test-tls13-ecdsa-brainpool-in-certificate-verify took the
+// whole process down: exit 139, SIGSEGV. Node 24.16.0 (OpenSSL 3.5.6)
+// crashes converting an X.509 certificate whose key is on an elliptic curve
+// with no NIST name — brainpoolP256r1/384r1/512r1, secp256k1 — into the
+// object `getPeerCertificate()` returns (`X509Certificate#toLegacyObject()`
+// crashes the same way, standalone; the X509Certificate accessors do not).
+// The main port and the debugger ASK every connection for a certificate and
+// read it on every request, and OpenSSL's default signature list lets a TLS
+// 1.3 client sign its CertificateVerify with a brainpool key, so any client
+// with such a certificate could stop the service.
+//
+// Two defences, and this is the second. The first is
+// `tls.signatureAlgorithms`, whose default no longer offers the three
+// brainpool TLS 1.3 schemes, so such a handshake fails inside OpenSSL
+// (TLS 1.2 already refuses the curve: "wrong curve"). This one holds however
+// that setting is changed: prepended to `secureConnection`, so it runs before
+// every reader, it walks the peer chain through `getPeerX509Certificate()`
+// (safe) and, for a certificate on such a curve, replaces the socket's
+// `getPeerCertificate` with node's own answer for "no certificate" — so no
+// listener after it on this emit, and no request, converts it — and closes
+// the connection. `STS-TLS-0035`.
+// ---------------------------------------------------------------------------
+const NODE_READABLE_CURVES = new Set([
+  'prime192v1', 'secp224r1', 'prime256v1', 'secp384r1', 'secp521r1',
+  'sect163k1', 'sect163r2', 'sect233k1', 'sect233r1', 'sect283k1',
+  'sect283r1', 'sect409k1', 'sect409r1', 'sect571k1', 'sect571r1'
+]);
+
+// The first certificate of the peer's chain node cannot convert, described,
+// or '' when there is none (or no certificate at all).
+function unreadablePeerCertificate(socket) {
+  log.debug("Entering unreadablePeerCertificate().");
+  let cert = typeof socket.getPeerX509Certificate === 'function'
+    ? socket.getPeerX509Certificate() : undefined;
+  const seen = new Set();
+  for (let depth = 0; cert && depth < 16 && !seen.has(cert.fingerprint256);
+       depth += 1) {
+    seen.add(cert.fingerprint256);
+    const key = cert.publicKey;
+    const curve = key.asymmetricKeyType === 'ec'
+      ? String((key.asymmetricKeyDetails || {}).namedCurve || '') : '';
+    if (key.asymmetricKeyType === 'ec' && !NODE_READABLE_CURVES.has(curve)) {
+      log.debug("Leaving unreadablePeerCertificate(). " + curve);
+      return (depth ? 'the certificate at depth ' + depth : 'the leaf') +
+        ' (' + cert.subject.replace(/\n/g, ', ') + ') has an EC key on ' +
+        (curve || 'an unnamed curve');
+    }
+    cert = cert.issuerCertificate;
+  }
+  log.debug("Leaving unreadablePeerCertificate(). None.");
+  return '';
+}
+
+function refuseUnreadableCertificatesOn(server, label) {
+  log.debug('Entering refuseUnreadableCertificatesOn(). label=' + label);
+  server.prependListener('secureConnection', function (socket) {
+    let problem = '';
+    try {
+      problem = unreadablePeerCertificate(socket);
+    } catch (e) {
+      // A chain X509Certificate itself cannot walk is not one this guard
+      // can judge; the handshake has already accepted it, as before.
+      log.debug("Caught in refuseUnreadableCertificatesOn(): " +
+                ((e && e.message) || e));
+    }
+    if (!problem) {
+      return;
+    }
+    socket.getPeerCertificate = function () {
+      log.debug("Entering getPeerCertificate() (refused).");
+      log.debug("Leaving getPeerCertificate() (refused).");
+      return {};
+    };
+    log.warn(errorCodes.tag('STS-TLS-0035') + 'tls: closed a connection on ' +
+             label + ' from ' + (socket.remoteAddress || 'an unknown ' +
+             'address') + ': ' + problem + ', which node cannot read ' +
+             'without crashing the process (#212). Only NIST curves are ' +
+             'read here.');
+    audit.failure('STS-TLS-0035', {
+      protocol: 'TLS', channel: 'tls', target: label,
+      summary: 'a client certificate on a curve node cannot read was ' +
+               'refused: ' + problem,
+      outcome: 'refused'
+    });
+    socket.destroy();
+  });
+  log.debug('Leaving refuseUnreadableCertificatesOn().');
+}
+
 function trustClientCertificatesOn(server, label) {
   log.debug('Entering trustClientCertificatesOn(). label=' + label);
   if (!server || typeof server.setSecureContext !== 'function') {
@@ -2092,6 +2185,9 @@ function trustClientCertificatesOn(server, label) {
   }
   externalServers.push({ server: server,
                          label: String(label || 'a listener') });
+  // Every listener that registers here ASKS for a client certificate (the
+  // main port, the debugger), so every one is guarded (#212).
+  refuseUnreadableCertificatesOn(server, String(label || 'a listener'));
   // APPLIED IMMEDIATELY, because anchors may already be loaded — this service
   // can be handed a truststore before the main port binds, and a listener that
   // only picked anchors up on the NEXT change would be one whose behaviour
@@ -4230,6 +4326,9 @@ module.exports = {
   // /tls/trust reaches it too — see the block above
   // trustClientCertificatesOn().
   trustClientCertificatesOn: trustClientCertificatesOn,
+  // #212: the guard, for a TLS listener that does not register above.
+  refuseUnreadableCertificatesOn: refuseUnreadableCertificatesOn,
+  unreadablePeerCertificate: unreadablePeerCertificate,
   // LDAPS 636 and the SPIRE Server API re-key themselves on this (2026-09-21).
   onServerCertificateChange: onServerCertificateChange,
   // What secureContextOptions() would give a listener created elsewhere: the

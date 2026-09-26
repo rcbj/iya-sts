@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3573** of them, in **38** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3574** of them, in **38** subsystems.
 
 ## Where a code appears
 
@@ -73,7 +73,7 @@ is an ordinary outcome.
 * [LDAP directory (`STS-LDAP`)](#sts-ldap) — 84
 * [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 77
 * [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 144
-* [TLS and client certificates (`STS-TLS`)](#sts-tls) — 34
+* [TLS and client certificates (`STS-TLS`)](#sts-tls) — 35
 * [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 104
 * [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 104
 * [Risk scoring (`STS-RISK`)](#sts-risk) — 40
@@ -2715,6 +2715,7 @@ Raised from: tls/.
 | `STS-TLS-0032` | The file named by tls.certificateFile holds self-signed certificates, none of which signs the chain the listener presents, so no trust anchor is taken from it. | — |
 | `STS-TLS-0033` | A socket that presents the listener certificate (LDAPS, the SPIRE Server API) threw while being told the certificate was re-issued; the others were still told, and the main port serves the new one. | — |
 | `STS-TLS-0034` | A TLS client REFUSED this service's certificate: it sent a certificate alert (bad_certificate, unsupported_certificate, certificate_revoked, certificate_expired, certificate_unknown or unknown_ca) during the handshake. From a browser it almost always means the client does not trust this service's Root CA (#225). | TLS handshake failure (the client closed the connection) |
+| `STS-TLS-0035` | A connection was closed because its client certificate (or one in its chain) has an EC key on a curve with no NIST name — brainpool, secp256k1 — which node 24.16.0 crashes converting for getPeerCertificate() (#212). | the connection is closed after the handshake |
 
 ## STS-VC
 

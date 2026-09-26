@@ -202,6 +202,12 @@ const WHY = {
     "close_notify)), so it is sent with level 0; the directory keeps the " +
     "connection open, reads it, and answers illegal_parameter — correctly. " +
     "The main port's HTTP/1.0 server has closed the connection first" },
+  brainpoolRefused: { why: "design", reason: "a client certificate on a " +
+    "brainpool curve is refused (#212): node 24.16.0 crashes converting " +
+    "one for getPeerCertificate(), so tls.signatureAlgorithms offers no " +
+    "brainpool scheme and the handshake fails in OpenSSL; " +
+    "refuseUnreadableCertificatesOn() closes any that gets through " +
+    "(STS-TLS-0035)" },
   cipherOrder: { why: "design", reason: "honorCipherOrder: the SERVER's " +
     "BCP 195 order wins, which puts AES-128-GCM before AES-256-GCM for TLS " +
     "1.2 where the probe expects the client's first choice" }
@@ -210,11 +216,11 @@ const WHY = {
 // The signature algorithms this service advertises (tls.signatureAlgorithms'
 // default), in tlsfuzzer's names and the order a CertificateRequest carries
 // them: the TLS 1.3 list, and the TLS 1.2 list OpenSSL derives from it (no
-// ML-DSA and no brainpool, which are TLS 1.3 schemes).
+// ML-DSA, a TLS 1.3 scheme). No brainpool in either (#212: node crashes
+// reading such a certificate).
 const SIGALGS_13 = "mldsa65 mldsa87 mldsa44 ecdsa_secp256r1_sha256 " +
   "ecdsa_secp384r1_sha384 ecdsa_secp521r1_sha512 ed25519 ed448 " +
-  "ecdsa_brainpoolP256r1tls13_sha256 ecdsa_brainpoolP384r1tls13_sha384 " +
-  "ecdsa_brainpoolP512r1tls13_sha512 rsa_pss_pss_sha256 rsa_pss_pss_sha384 " +
+  "rsa_pss_pss_sha256 rsa_pss_pss_sha384 " +
   "rsa_pss_pss_sha512 rsa_pss_rsae_sha256 rsa_pss_rsae_sha384 " +
   "rsa_pss_rsae_sha512 rsa_pkcs1_sha256 rsa_pkcs1_sha384 rsa_pkcs1_sha512";
 const SIGALGS_12 = "ecdsa_secp256r1_sha256 ecdsa_secp384r1_sha384 " +
@@ -541,8 +547,14 @@ const PLAN = [
   { script: "test-tls13-dhe-shared-secret-padding.py",
     exceptions: [ex(/ffdhe/, "handshake_failure", "noFfdhe")] },
   { script: "test-tls13-ecdhe-curves.py" },
+  // RUN AS A REFUSAL, AND THE REGRESSION CHECK FOR THE CRASH #212 FOUND:
+  // with brainpool offered, the first probe of this script took the service
+  // down (SIGSEGV in node's getPeerCertificate()). Every probe must now be
+  // refused in the handshake, and the service must still be there after.
   { script: "test-tls13-ecdsa-brainpool-in-certificate-verify.py", on: CR,
-    certificate: "brainpool", args: ["-s", SIGALGS_13] },
+    certificate: "brainpool", args: ["-s", SIGALGS_13], refusal: true,
+    exceptions: [ex(/./, ["illegal_parameter", "handshake_failure",
+                          "Unexpected closure"], "brainpoolRefused")] },
   { script: "test-tls13-ecdsa-in-certificate-verify.py", on: CR,
     certificate: "ec", args: ["-s", SIGALGS_13] },
   { script: "test-tls13-eddsa-in-certificate-verify.py", on: CR,
