@@ -634,8 +634,11 @@ after another. Now:
   goes on that list, with the reason.
 * **The protocol jobs run in LANES**, named in `MANIFEST.js` (`lane:`,
   default `main`); lanes run side by side, each serial in manifest order. The
-  three bulk loads are lane `bulk`. `main` keeps every browser job, so no two
-  browsers ever run at once.
+  three bulk loads are lane `bulk`; the OpenID conformance plans are lanes
+  `conformance` (the OpenID Connect plans, alone) and `conformance-b` (the
+  other five) — about 2¼ hours serially, which made them the long pole of
+  the first scheduled memory run (it hit its bound). `main` keeps every
+  browser job, so no two browsers ever run at once.
 * **An `exclusive: true` job is a barrier**: the lanes drain before it and
   wait for it. `admin_api`, `sts_admin_api_operations` and
   `sts_admin_console` are exclusive because they `revoke-all` (every job's own
