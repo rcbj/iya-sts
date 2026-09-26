@@ -6459,6 +6459,16 @@ const ENDPOINTS: EndpointEntry[] = [
           'what people said; and this process\'s time to assess, reactions ' +
           'and live-session re-checks. Add ?format=json, or GET ' +
           '/admin-api/risk/metrics.' },
+  { path: '/admin/geolocation', group: 'Admin',
+    name: 'Geolocation',
+    specs: [],
+    what: 'NON-SPEC (#255). Where the realm\'s people signed in from, on a ' +
+          'server-drawn map (Natural Earth outlines, Equal Earth ' +
+          'projection, no script): the world shaded by country, then ' +
+          '?continent=, then ?country= with its cities; ?window=live (the ' +
+          'default), 24h, 7d or 30d. A place with fewer people than ' +
+          'risk.geoMinimumCount is shaded but not numbered. Add ' +
+          '?format=json, or GET /admin-api/geolocation.' },
   { path: '/admin/vc-status', group: 'Admin',
     name: 'Credential status',
     specs: ['token-status-list', 'bitstring-status-list'],
@@ -7331,6 +7341,9 @@ const ENDPOINTS: EndpointEntry[] = [
   { path: '/admin-api/risk/metrics', group: 'Management API',
     name: 'Risk scoring metrics', specs: ['openapi'],
     what: 'NON-SPEC (#62). GET /admin/risk-scoring over JSON.' },
+  { path: '/admin-api/geolocation', group: 'Management API',
+    name: 'Geolocation', specs: ['openapi'],
+    what: 'NON-SPEC (#255). GET /admin/geolocation over JSON.' },
   { path: '/admin-api/risk/upload', group: 'Management API',
     name: 'Risk dataset upload', specs: ['openapi'],
     what: 'NON-SPEC (#215). POST /admin/risk/upload for a machine: the body ' +

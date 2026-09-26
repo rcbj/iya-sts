@@ -2500,6 +2500,17 @@ const SECTIONS = [
                'about their own sign-ins, and &mdash; for this process ' +
                '&mdash; how long an assessment takes and the reactions ' +
                'taken.' },
+      // GEOLOCATION (#255, 2026-09-26), beside the risk pages whose
+      // assessments it counts: `admin-ui/geolocation_admin.ts`.
+      { path: '/admin/geolocation', label: 'Geolocation',
+        blurb: 'Where the realm\'s people signed in from, on a map: the ' +
+               'world with every country shaded by how many people it ' +
+               'counts, then a continent, then a country and its cities. ' +
+               'Live sessions by default, or everybody over the last day, ' +
+               'week or month. Drawn from what risk scoring recorded, so it ' +
+               'needs a geolocation dataset on Monitoring &rarr; Risk; a ' +
+               'place with too few people to be anonymous is shaded and ' +
+               'not numbered.' },
       { path: '/admin/audit', label: 'Audit log',
         blurb: 'What this service was ASKED to do, in the order it was ' +
                'asked, newest first. Every other page here is state; this ' +

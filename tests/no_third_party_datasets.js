@@ -24,6 +24,14 @@
 //     GeoLite/GeoIP, FireHOL or a blocklist, the Tor exit list, the FIDO MDS
 //     BLOB, Pwned Passwords.
 //
+// ONE THIRD-PARTY DATASET IS SHIPPED, and it is not a provider's (#255,
+// rcbj's decision 2): `admin-ui/natural_earth/countries.json`, the country
+// outlines Monitoring → Geolocation draws, derived from Natural Earth, which
+// is in the PUBLIC DOMAIN — no terms bind whoever redistributes it, which
+// is the whole of the argument above. Its name names no provider, so the
+// rule does not refuse it, and the check below says so, so that a rename
+// that did would be caught here rather than by the image losing its map.
+//
 // Code and documentation that NAME a provider (this file, `risk/*.ts`, the
 // CLAUDE.md files) are not data files and are not refused; synthetic
 // fixtures live inside the test files, in each provider's format and with
@@ -94,6 +102,7 @@ async function run(t) {
           offending('data/GeoLite2-City.mmdb') &&
           offending('x/firehol_level1.netset') &&
           !offending('tests/no_third_party_datasets.js') &&
+          !offending('admin-ui/natural_earth/countries.json') &&
           !offending('risk/risk_datasets.ts'),
           'and the rule refuses a provider\'s file by its name and format, ' +
           'not the code that reads one');

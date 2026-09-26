@@ -12294,6 +12294,20 @@ const CODES = [
       'a URL it can be put into. The provider\'s own reason follows. ' +
       'Nothing is imported and the loader exits non-zero.',
     spec: '' },
+  { code: 'STS-RISK-0041',
+    summary: 'Monitoring → Geolocation (/admin/geolocation or GET ' +
+      '/admin-api/geolocation, #255) could not be drawn or answered: the ' +
+      'store\'s count of the realm\'s assessments by place failed, or the ' +
+      'country outlines (admin-ui/natural_earth/countries.json) could not be ' +
+      'read. The reason follows on the log line.',
+    spec: 'HTTP 500' },
+  { code: 'STS-RISK-0042',
+    summary: 'Monitoring → Geolocation was asked for something it does not ' +
+      'draw (#255): a window other than live, 24h, 7d or 30d, a continent ' +
+      'that is not one of the seven slugs, a country that is not an ISO ' +
+      '3166-1 alpha-2 code on the map, or a country together with a ' +
+      'continent it is not in.',
+    spec: 'HTTP 400' },
   // ===== MAIL ==============================================================
   { code: 'STS-MAIL-0001',
     summary: 'A message was not queued because no mail transport is ' +

@@ -11141,6 +11141,22 @@ const SETTINGS = [
                  'compromised security key) apply however new the person ' +
                  'is. 1 scores from the second sign-in on.' },
 
+  // #255 (2026-09-26, rcbj's decision 4): Monitoring → Geolocation counts
+  // people by place, and a place with one person in it names that person to
+  // anybody who knows where they live. Below this, a count is shaded and not
+  // written, and a city is not drawn at all — on the page and in the API.
+  { key: 'risk.geoMinimumCount', group: 'Risk',
+    label: 'Fewest people a place is numbered with on the map',
+    env: 'STS_RISK_GEO_MINIMUM_COUNT', type: 'int', dflt: 3, min: 1,
+    max: 1000, runtime: true,
+    description: 'On Monitoring → Geolocation and GET ' +
+                 '/admin-api/geolocation, a continent, country or total ' +
+                 'with fewer distinct people than this is shaded but ' +
+                 'carries no number, and a city with fewer is neither drawn ' +
+                 'nor listed — it is counted in its country\'s "other ' +
+                 'cities" line. 1 numbers every place, which can identify a ' +
+                 'person by where they signed in from.' },
+
   // #226 (2026-09-26): a bogon on a list is a signal on everybody behind a
   // NAT or a container bridge. ON is the lists' own word; OFF is for a
   // service tested on one machine or run where every person shares a
