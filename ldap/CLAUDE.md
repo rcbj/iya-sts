@@ -2021,6 +2021,15 @@ every reader goes through.
   the requirement (`appRequiredRole`) is on the application entry. And that the
   six built-in roles are in NO container, so an empty `ou=roles` is the ordinary
   state of a service refusing nobody.
+  **A write to it is an account-observer notice** (#238, 2026-09-26):
+  `noteRoleChange()` tells the observer `kind: 'roles'` once per person whose
+  roles claim it moved — a `roleMemberUser` that came or went, a member of a
+  `roleMemberGroup` that came or went, everybody on a create, delete or
+  rename — from `putEntry()`, `deleteRole()` and the LDAP modify, delete and
+  rename; a group's `membership` notice says `rolesMoved` when a role names
+  the group, and `writePersonFlag()` tells it of `stsMailVerified` as of the
+  lock. Shared Signals turns them into `token-claims-change`
+  (`ssf/CLAUDE.md`, *EVERY OTHER DOOR*).
 * **policies** — that a write over LDAP **skips the typechecker**. Every write
   through `/admin/xacml` and `/admin-api/xacml` is statically validated so a
   policy that does not typecheck is refused at write time; an `ldapmodify` of

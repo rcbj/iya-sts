@@ -8606,6 +8606,27 @@ answered in `requestedClaimsOf()` beside the ordinary claims — so the
 federation release policy applies to it as to any requested claim.
 `tests/identity_assurance.js` holds it.
 
+**WHAT A WRITE MOVED IS ANNOUNCED (#238, #243, 2026-09-26).** `store()` is
+the one write for `record()`, `remove()` and `recordAutomatic()`, so it is
+where Shared Signals hears of it, through `ssf/account_signals.ts`: CAEP
+`token-claims-change` with `verified_claims` from `releasable()` (framework,
+level and the claims still current — never evidence) when a framework, level
+or claim moved, and CAEP `assurance-level-change` when `assuranceOf()` moved.
+The level is the newest STATED `assurance_level`, in `IAL_NAMESPACE`
+(`urn:sts:ial`), with `verified` and `none` as that namespace's own values;
+`NIST-IAL` only for `nist_800_63A` with IAL1–3. `ssf/CLAUDE.md`, *EVERY OTHER
+DOOR*, argues both; `tests/caep_claims_doors.js` holds them.
+
+**A CLAIM-SHAPING SETTING, A CLAIM SET AND A PERMISSION ALSO ANNOUNCE (#238).**
+`config.js`'s `setOverride()` / `clearOverride()` hand a change to
+`roles.claim*` or `groups.claim*` to `admin_stats.announceClaimsReshaped()`
+(only once `admin_stats` is loaded, so a write early in the require order
+pulls nothing in); `admin_stats.setClaimSet()`,
+`claim_attributes.setSelection()` and `applications.updateApplication()`'s
+removals of `oauthDelegatedPermission`, `oauthPermission` and
+`oauthAllowedScope` call it or `claimsFanOut()` directly. Each lazily, after
+its write, never into it. `ssf/CLAUDE.md` has the fan-out.
+
 ## `devices.ts`: THE DEVICE REGISTER (#130, 2026-09-23; #164 and #218, 2026-09-26)
 
 A device is an entry under `ou=devices` (`ldap/CLAUDE.md`) with ONE owner —

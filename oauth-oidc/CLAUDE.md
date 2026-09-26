@@ -4032,6 +4032,16 @@ dial itself over TLS, so that job publishes the service's own Root in the
 directory shared with the service and names it as the OP realm's
 `federation.outboundCaFile`.
 
+**A SOURCE THAT GOES IS ANNOUNCED (#238, 2026-09-26).** `unlink()` (the
+person on `/portal/claim-sources`, `initiating_entity` `user`, or an
+administrator) and `remove()` (for every person who had linked the provider)
+send CAEP `token-claims-change` through `ssf/account_signals.ts`:
+`_claim_sources` with the provider's member `null`, and `_claim_names` with
+each claim it supplied `null` — nested, as a nested claim is. **A source's
+value is never sent, old or new**: it is a distributed source's access token
+or another issuer's signed claims, and a SET goes to every receiver of a
+stream. `tests/caep_claims_doors.js` holds it.
+
 ## 3bi. OPENID CONNECT ENTERPRISE EXTENSIONS 1.0 (2026-09-26, #148)
 
 rcbj's answers were every recommendation: a tenant is the trust realm's id
