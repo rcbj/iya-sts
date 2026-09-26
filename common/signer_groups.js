@@ -150,6 +150,39 @@ function isGroupSlot(slot) {
   return String(slot || '').indexOf('/') > 0;
 }
 
+// ---------------------------------------------------------------------------
+// THE XML GROUP'S SIGNATURE ALGORITHMS (#68 phase 4b): each value of
+// `saml.signatureAlgorithm` and the XML group member that signs it. The RSA
+// family all sign with the RSA-3072 key; ECDSA with the P-256 or P-384 key
+// (through the vendored GENERAL engine, rcbj's D8); ML-DSA and SLH-DSA with
+// the group's own post-quantum keys under the W3C xmldsig-more DRAFT
+// identifiers, each with a plain certificate of its own for KeyInfo (D7).
+// Anything but the RSA family needs a `hybrid-groups` realm: the
+// per-algorithm model has an RSA key for XML and nothing else.
+// ---------------------------------------------------------------------------
+const XML_SIGNATURE_SLOTS = {
+  'rsa-sha256': 'RS256', 'rsa-sha384': 'RS256', 'rsa-sha512': 'RS256',
+  'rsa-sha1': 'RS256',
+  'ecdsa-sha256': 'ES256', 'ecdsa-sha384': 'ES384',
+  'ml-dsa-44': 'ML-DSA-44', 'ml-dsa-65': 'ML-DSA-65', 'ml-dsa-87': 'ML-DSA-87',
+  'slh-dsa-sha2-128s': 'SLH-DSA-SHA2-128s'
+};
+
+// The XML group slot that signs a `saml.signatureAlgorithm` value.
+function xmlSlotFor(name) {
+  log.debug("Entering xmlSlotFor(). " + name);
+  log.debug("Leaving xmlSlotFor().");
+  return slotOf('xml', XML_SIGNATURE_SLOTS[String(name)] || 'RS256');
+}
+
+// Is a `saml.signatureAlgorithm` value the RSA family's, which the
+// per-algorithm XML key can sign?
+function isRsaXmlAlgorithm(name) {
+  log.debug("Entering isRsaXmlAlgorithm().");
+  log.debug("Leaving isRsaXmlAlgorithm().");
+  return /^rsa-/.test(String(name || ''));
+}
+
 // The realm's model, read in the AMBIENT realm (`keys.signerModel` is
 // `runtime: true`, so the realm's override answers first).
 function model() {
@@ -178,5 +211,8 @@ module.exports = {
   slotOf: slotOf,
   isGroupSlot: isGroupSlot,
   model: model,
-  hybridGroupsOn: hybridGroupsOn
+  hybridGroupsOn: hybridGroupsOn,
+  XML_SIGNATURE_SLOTS: XML_SIGNATURE_SLOTS,
+  xmlSlotFor: xmlSlotFor,
+  isRsaXmlAlgorithm: isRsaXmlAlgorithm
 };

@@ -6608,7 +6608,10 @@ const SETTINGS = [
   { key: 'saml.signatureAlgorithm', group: 'SAML',
     label: 'XML signature algorithm',
     env: 'STS_SAML_SIGNATURE_ALGORITHM', type: 'enum',
-    enumValues: ['rsa-sha256', 'rsa-sha384', 'rsa-sha512', 'rsa-sha1'],
+    enumValues: ['rsa-sha256', 'rsa-sha384', 'rsa-sha512', 'rsa-sha1',
+                 // The signer groups' (#68): a hybrid-groups realm only.
+                 'ecdsa-sha256', 'ecdsa-sha384', 'ml-dsa-44', 'ml-dsa-65',
+                 'ml-dsa-87', 'slh-dsa-sha2-128s'],
     dflt: 'rsa-sha256', runtime: true,
     // `rsa-sha1` is DEVELOPMENT ONLY since #181 (2026-09-23).
     onlyWhile: 'usesBrokenAlgorithms', onlyWhileValues: ['rsa-sha1'],
@@ -6617,8 +6620,16 @@ const SETTINGS = [
                  'response, a SAML metadata document, the WS-Federation ' +
                  'metadata and a signed federated AuthnRequest — and the ' +
                  'SigAlg of the HTTP Redirect binding\'s query-string ' +
-                 'signature. The digest follows the algorithm. RSA only, ' +
-                 'because the key these are made with is RSA. `rsa-sha1` is ' +
+                 'signature. The digest follows the algorithm. The RSA ' +
+                 'values sign with this realm\'s RSA XML key. The rest need ' +
+                 'keys.signerModel = hybrid-groups, and sign with the XML ' +
+                 'signer group\'s own key: ecdsa-sha256 and ecdsa-sha384 its ' +
+                 'P-256 and P-384 keys, and ml-dsa-44/65/87 and ' +
+                 'slh-dsa-sha2-128s its post-quantum keys, under the W3C ' +
+                 'xmldsig-more DRAFT identifiers — WARNING: a draft, which ' +
+                 'few service providers verify yet. In a realm without that ' +
+                 'key (or before it is certified) the realm signs rsa-sha256 ' +
+                 'instead and says so once (#68). `rsa-sha1` is ' +
                  'BROKEN and offered for the reason rsa-1_5 is: deployed ' +
                  'service providers still demand it and a client library is ' +
                  'entitled to be tested against them. WARNING: rsa-sha1 is ' +

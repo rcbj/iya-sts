@@ -1577,9 +1577,11 @@ class Saml2Sso {
     // answer.
     const how = documentSettings.signatureOptions();
     const signed = stsCrypto.signXml(xml, {
-      // The XML signing key (#42, D2): `STS.xml`, not the JOSE key.
-      privateKeyPem: STS.xml.privateKeyPem,
-      certPem: STS.xml.certPem,
+      // The XML signing key (#42, D2): `STS.xml`, not the JOSE key — and
+      // `STS.xmlSigner`, the one for the configured algorithm (#68).
+      privateKeyPem: STS.xmlSigner.privateKeyPem,
+      privateKey: STS.xmlSigner.privateKey,
+      certPem: STS.xmlSigner.certPem,
       sigAlg: how.sigAlg,
       c14nAlg: how.c14nAlg,
       placement: placement === 'prepend'
@@ -1613,9 +1615,12 @@ class Saml2Sso {
     const { stsCrypto } = this.deps;
     const { STS, log } = this.deps.helpers;
     log.debug("Entering Saml2Sso.signQueryString().");
-    // The XML signing key (#42, D2), which the metadata publishes for it.
+    // The XML signing key (#42, D2), which the metadata publishes for it —
+    // for the configured algorithm, `STS.xmlSigner` (#68).
+    const signer = STS.xmlSigner;
     const signature = stsCrypto.signQueryString(queryString,
-                                                STS.xml.privateKeyPem, sigAlg);
+                                                signer.privateKeyPem, sigAlg,
+                                                signer.privateKey);
     log.debug("Leaving Saml2Sso.signQueryString().");
     return signature;
   }
@@ -4170,7 +4175,7 @@ class Saml2Sso {
       // still verifying. ENCRYPTION: the current key alone, so new encryption
       // goes to it while something encrypted to a retired one still opens.
       if (use === 'signing') {
-        return helpers.ownRsaCertificates('xml').map(function (one: any) {
+        return helpers.ownXmlSigningCertificates().map(function (one: any) {
           return '<md:KeyDescriptor use="signing"><ds:KeyInfo xmlns:ds="' +
             NS_DS + '"><ds:X509Data><ds:X509Certificate>' +
             stsCrypto.stripPem(one.certPem) + '</ds:X509Certificate>' +

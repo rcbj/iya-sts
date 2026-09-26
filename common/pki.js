@@ -5671,7 +5671,11 @@ async function certifySignerGroups(realmId, members) {
   const failed = [];
   for (let i = 0; i < list.length; i++) {
     const one = list[i] || {};
-    if (one.kind === 'pq' && one.pairedSlot) {
+    // A partnered ML-DSA key's certificate is its partner's — EXCEPT in the
+    // XML group, where an XML signature's KeyInfo and the SAML metadata carry
+    // an X.509 certificate whose subjectPublicKeyInfo must be the signing key,
+    // so each gets a plain RFC 9881 certificate of its own (rcbj's D7).
+    if (one.kind === 'pq' && one.pairedSlot && one.group !== 'xml') {
       continue;
     }
     const grp = signerGroups.group(one.group);
@@ -5689,8 +5693,11 @@ async function certifySignerGroups(realmId, members) {
         : String(nodeCrypto.createPublicKey({ key: one.publicJwk,
                                               format: 'jwk' })
                    .export({ type: 'spki', format: 'pem' }));
-      const partner = one.pairedSlot ? bySlot[one.pairedSlot] : null;
-      if (one.pairedSlot && !partner) {
+      // The ALTERNATIVE key is a classical key's ML-DSA partner; an ML-DSA
+      // key's own certificate (D7) carries none.
+      const partner = one.pairedSlot && one.kind !== 'pq'
+        ? bySlot[one.pairedSlot] : null;
+      if (one.pairedSlot && one.kind !== 'pq' && !partner) {
         failed.push(one.slot + ': its partner ' + one.pairedSlot +
                     ' is missing');
         continue;
@@ -5720,7 +5727,8 @@ async function certifySignerGroups(realmId, members) {
       slot: one.slot, alg: one.alg, kid: kid, keyAlg: keyAlg,
       label: one.slot + ' signing key' + (altPem ? ' (hybrid)' : ''),
       commonName: (grp ? grp.label : one.group) + ' (' + one.alg +
-                  (partner(one) ? ' + ' + partner(one).alg : '') + ')',
+                  (altPem && partner(one) ? ' + ' + partner(one).alg : '') +
+                  ')',
       publicKeyPem: spkiPem,
       altPublicKeyPem: altPem,
       keyUsage: ['digitalSignature', 'nonRepudiation']
@@ -5861,7 +5869,7 @@ async function certifyStandbyKeys(realmId, keys, nodeCryptoModule) {
     // certificate over both halves, issued for the primary key; the
     // partnered ML-DSA key has none of its own.
     if (one.kind === 'group') {
-      if (one.memberKind === 'pq' && one.pairedSlot) {
+      if (one.memberKind === 'pq' && one.pairedSlot && one.group !== 'xml') {
         continue;
       }
       const groupDone = await certifyStandbyGroupEntry(id, one, standby,
@@ -5935,7 +5943,7 @@ async function certifyStandbyGroupEntry(id, one, standby, nodeC) {
       ? pqSubjectPublicKeyPem(one.alg, one.publicJwk)
       : String(nodeC.createPublicKey({ key: one.publicJwk, format: 'jwk' })
                  .export({ type: 'spki', format: 'pem' }));
-    if (one.pairedSlot) {
+    if (one.pairedSlot && one.memberKind !== 'pq') {
       const partner = standby.filter(function (other) {
         return other.unit === one.unit && other.role === one.role &&
                other.slot === one.pairedSlot;

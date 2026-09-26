@@ -575,10 +575,12 @@ class CryptoMetadataDocument {
     log.debug("Entering CryptoMetadataDocument.signedXml().");
     const xml = this.toXml(m);
     const how = require('../saml/document_settings').signatureOptions();
-    const signer = helpers.STS.xml;
+    // The key for the configured algorithm (#68): `STS.xmlSigner`.
+    const signer = helpers.STS.xmlSigner;
     const id = (/ID="([^"]+)"/.exec(xml) || [])[1];
     const signed = stsCrypto.signXml(xml, {
       privateKeyPem: signer.privateKeyPem,
+      privateKey: signer.privateKey,
       certPem: signer.certPem,
       sigAlg: how.sigAlg, c14nAlg: how.c14nAlg,
       placement: stsCrypto.PLACEMENT.FIRST,

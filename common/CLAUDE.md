@@ -5816,8 +5816,28 @@ changed:
 * Retirement and the emergency drop were already by unit and by kid, and
   needed nothing.
 
-Still to come: ECDSA and ML-DSA XML signatures (4b, which needs an injected
-signer in `crypto.signXml()`).
+**Phase 4b, ECDSA and post-quantum XML.** `helpers.xmlSignatureChoice()` is
+ONE decision. Both `document_settings.signatureOptions()` (the URI) and
+`STS.xmlSigner` (the key) read it, so the two cannot disagree. It falls back
+to rsa-sha256 in a realm without the group key.
+
+`STS.xml` stays RSA, because the metadata publishes it for ENCRYPTION too.
+The eight XML signers and both query-string signers take `STS.xmlSigner`.
+`crypto.signXml()` keeps RSA byte for byte, and adds two paths:
+
+* **Post-quantum** goes through `signEnveloped()` with an injected
+  `pq_jose.sign`, since the vendored file holds the identifiers.
+* **ECDSA** goes through the vendored GENERAL engine with node's `ieee-p1363`
+  r||s (rcbj's D8). `signEnveloped()`'s classical branch is RSA-only forge,
+  and the vendored file is not edited here.
+
+`crypto.signQueryString()` gains the same two branches in our own code. The
+XML group's ML-DSA keys get plain certificates of their own (D7), because
+KeyInfo must hold the signing key.
+
+`ownXmlSigningCertificates()` is for verification and `use="signing"`
+KeyDescriptors only. `ownRsaCertificates()` stays RSA, which is what its name
+says.
 
 ### A LEAF IS ISSUED FOR A PROFILE, AND THE TWO PROFILES' KEY PAIRS ARE TWO (2026-09-11)
 

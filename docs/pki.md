@@ -235,6 +235,20 @@ still signs with the per-algorithm key. The keys are made in the background
 when the service starts, or on the first signature after a realm is switched.
 Until they exist, signatures use the per-algorithm keys.
 
+**XML** signs with the `xml` group. `saml.signatureAlgorithm` picks the key:
+
+* the RSA values use the RSA-3072 key
+* `ecdsa-sha256` and `ecdsa-sha384` use the P-256 and P-384 keys
+* `ml-dsa-44/65/87` and `slh-dsa-sha2-128s` use the post-quantum keys, under
+  the W3C xmldsig-more draft identifiers
+
+KeyInfo must carry a certificate whose key IS the signing key, so each of the
+XML group's ML-DSA keys also gets a plain certificate of its own, besides
+being the alternative key in its partner's hybrid certificate. The SAML
+metadata lists every XML signing certificate under `use="signing"`, with the
+configured one first. The encryption KeyDescriptor stays RSA, because an
+ECDSA or ML-DSA key cannot receive an encrypted assertion.
+
 **In the JWKS**, a group's classical key carries its hybrid certificate in
 `x5c`. Its ML-DSA partner is published **without** `x5c`, because RFC 7517
 requires the first certificate to hold the JWK's own key, and this

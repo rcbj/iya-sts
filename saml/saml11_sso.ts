@@ -986,9 +986,11 @@ class Saml11Sso {
     // saml/document_settings.ts.
     const how = documentSettings.signatureOptions();
     const signed = stsCrypto.signXml(xml, {
-      // The XML signing key (#42, D2): `STS.xml`, not the JOSE key.
-      privateKeyPem: STS.xml.privateKeyPem,
-      certPem: STS.xml.certPem,
+      // The XML signing key (#42, D2): `STS.xml`, not the JOSE key — and
+      // `STS.xmlSigner`, the one for the configured algorithm (#68).
+      privateKeyPem: STS.xmlSigner.privateKeyPem,
+      privateKey: STS.xmlSigner.privateKey,
+      certPem: STS.xmlSigner.certPem,
       sigAlg: how.sigAlg,
       c14nAlg: how.c14nAlg,
       placement: placement === 'append'
@@ -2472,7 +2474,7 @@ class Saml11Sso {
       log.debug("Leaving keyDescriptor().");
       // One per live generation of the XML key (#42), for signing.
       if (use === 'signing') {
-        return helpers.ownRsaCertificates('xml').map(function (one: any) {
+        return helpers.ownXmlSigningCertificates().map(function (one: any) {
           return '<md:KeyDescriptor use="signing"><ds:KeyInfo xmlns:ds="' +
             NS_DS + '"><ds:X509Data><ds:X509Certificate>' +
             stsCrypto.stripPem(one.certPem) + '</ds:X509Certificate>' +

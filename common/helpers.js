@@ -2404,10 +2404,11 @@ function xmlKeyFor(keySet) {
 // `ownRsaDecryptionKeys()` and `ownRsaCertificates('xml')` hold it too —
 // whatever the model is now, so switching back strands nothing.
 // ---------------------------------------------------------------------------
-function groupXmlMember(keys) {
+function groupXmlMember(keys, slot) {
   log.debug("Entering groupXmlMember().");
+  const wanted = slot || signerGroups.slotOf('xml', 'RS256');
   const found = groupMembersOf(keys).filter(function (one) {
-    return one.slot === signerGroups.slotOf('xml', 'RS256');
+    return one.slot === wanted;
   })[0] || null;
   log.debug("Leaving groupXmlMember(). " + (found ? 'Held.' : 'None.'));
   return found;
@@ -2442,13 +2443,27 @@ function groupXmlKeyView(keys) {
     log.debug("Leaving groupXmlKeyView(). Not made yet.");
     return null;
   }
+  const view = xmlViewOf(keys, member);
+  log.debug("Leaving groupXmlKeyView(). " + (view ? view.kid : 'Not ' +
+            'certified yet.'));
+  return view;
+}
+
+// An XML group member as the view an XML signer reads — `xmlKeyView()`'s
+// shape, plus `alg` and `kind` — or null until its certificate exists (an
+// XML signature travels with its certificate). A post-quantum member has no
+// PEM: `privateKey` is the raw bytes `pq_jose.js` signs with, and
+// `crypto.signXml()` takes it (#68 phase 4b).
+function xmlViewOf(keys, member) {
+  log.debug("Entering xmlViewOf().");
   const held = groupXmlCertificate(keys, member);
   if (!held) {
-    log.debug("Leaving groupXmlKeyView(). Not certified yet.");
+    log.debug("Leaving xmlViewOf(). Not certified yet.");
     return null;
   }
   const view = {
-    kid: member.publicJwk.kid, group: 'xml',
+    kid: member.publicJwk.kid, group: 'xml', alg: member.alg,
+    kind: member.kind,
     certPem: held.certificatePem,
     certB64: stsCrypto.stripPem(held.certificatePem),
     certChainPem: held.chainPem.slice(),
@@ -2468,11 +2483,63 @@ function groupXmlKeyView(keys) {
     get: function () {
       log.debug("Entering get().");
       log.debug("Leaving get().");
-      return member.privateKey.export({ type: 'pkcs8', format: 'pem' });
+      return member.kind === 'pq' ? undefined
+        : member.privateKey.export({ type: 'pkcs8', format: 'pem' });
     }
   });
-  log.debug("Leaving groupXmlKeyView(). kid=" + view.kid);
+  log.debug("Leaving xmlViewOf(). kid=" + view.kid);
   return view;
+}
+
+// ---------------------------------------------------------------------------
+// WHICH ALGORITHM AND WHICH KEY SIGN XML — ONE DECISION (#68 phase 4b).
+//
+// `saml/document_settings.ts` turns the answer's `name` into a
+// SignatureMethod URI, and `STS.xmlSigner` hands every XML signer the
+// answer's key: both read THIS, so the URI and the key can never disagree.
+// The RSA family signs as it always has (the XML group's RSA-3072 key in a
+// hybrid-groups realm, the per-algorithm XML key otherwise). ECDSA, ML-DSA and
+// SLH-DSA sign with the XML group's own key — and fall back to rsa-sha256,
+// said once, in a realm without that key or before it is certified: a
+// signature under the wrong key is refused by every verifier, a signature
+// under the default algorithm by none.
+// ---------------------------------------------------------------------------
+const xmlFallbackSaid = new Set();
+
+function xmlSignatureChoice() {
+  log.debug("Entering xmlSignatureChoice().");
+  const keys = stsKeysFor();
+  const asked = String(mode.valueInForce('saml.signatureAlgorithm') ||
+                       'rsa-sha256');
+  const rsaView = function () {
+    log.debug("Entering rsaView().");
+    log.debug("Leaving rsaView().");
+    return groupXmlKeyView(keys) || xmlKeyFor(keys);
+  };
+  if (signerGroups.isRsaXmlAlgorithm(asked)) {
+    log.debug("Leaving xmlSignatureChoice(). " + asked + ".");
+    return { name: asked, view: rsaView() };
+  }
+  const member = signerGroups.hybridGroupsOn()
+    ? groupXmlMember(keys, signerGroups.xmlSlotFor(asked)) : null;
+  const view = member ? xmlViewOf(keys, member) : null;
+  if (!view) {
+    const said = keys.realm + '|' + asked;
+    if (!xmlFallbackSaid.has(said)) {
+      xmlFallbackSaid.add(said);
+      log.warn(errorCodes.tag('STS-CORE-0028') + 'helpers: ' +
+               'saml.signatureAlgorithm is "' + asked + '" in the "' +
+               keys.realm + '" realm, which ' +
+               (signerGroups.hybridGroupsOn()
+                 ? 'has no certified XML group key for it yet'
+                 : 'is not in the hybrid-groups signer model, so has no ' +
+                   'key for it') + '; XML is signed with rsa-sha256 instead.');
+    }
+    log.debug("Leaving xmlSignatureChoice(). Fell back to rsa-sha256.");
+    return { name: 'rsa-sha256', view: rsaView(), fellBack: true };
+  }
+  log.debug("Leaving xmlSignatureChoice(). " + asked + ".");
+  return { name: asked, view: view };
 }
 
 // FORGET THE BUILT KEY SETS so the factory runs again, which is as close to a
@@ -2506,6 +2573,14 @@ const STS = /** @type {any} */ (new Proxy({}, {
       // per-algorithm XML key.
       const current = stsKeysFor();
       return groupXmlKeyView(current) || xmlKeyFor(current);
+    }
+    // `STS.xmlSigner` (#68 phase 4b): the key for the CONFIGURED XML
+    // signature algorithm — xmlSignatureChoice()'s. `STS.xml` stays the RSA
+    // key, because the SAML metadata publishes its certificate for
+    // ENCRYPTION too, and an ECDSA or ML-DSA key cannot receive an encrypted
+    // assertion.
+    if (prop === 'xmlSigner') {
+      return xmlSignatureChoice().view;
     }
     return stsKeysFor()[prop];
   },
@@ -2698,6 +2773,70 @@ function ownRsaCertificates(useCaseId, keySet) {
   });
   log.debug("Leaving ownRsaCertificates(). " + out.length + " candidate(s).");
   return out;
+}
+
+// ---------------------------------------------------------------------------
+// EVERY CERTIFICATE AN XML SIGNATURE OF THIS REALM MAY BE MADE UNDER (#68
+// phase 4b): the RSA ones `ownRsaCertificates('xml')` lists, and the XML
+// signer group's ECDSA and post-quantum certificates (ML-DSA's own, D7) —
+// current and every live generation — with the CONFIGURED signer's first. For
+// verifying this realm's own XML and for the metadata's `use="signing"`
+// KeyDescriptors ONLY: `ownRsaCertificates()` stays RSA because the same
+// metadata publishes an ENCRYPTION key, which an ECDSA or ML-DSA key is not.
+// ---------------------------------------------------------------------------
+function ownXmlSigningCertificates(keySet) {
+  log.debug("Entering ownXmlSigningCertificates().");
+  const keys = keySet || stsKeysFor();
+  const out = ownRsaCertificates('xml', keys);
+  const seen = new Set(out.map(function (one) {
+    return String(one.kid);
+  }));
+  let pki = null;
+  try {
+    pki = require('./pki');
+  } catch (e) {
+    log.debug("Caught in ownXmlSigningCertificates(): " +
+              ((e && e.message) || e));
+    pki = null;
+  }
+  if (!pki) {
+    log.debug("Leaving ownXmlSigningCertificates(). RSA only.");
+    return out;
+  }
+  const now = Date.now();
+  const candidates = groupMembersOf(keys).filter(function (one) {
+    return one.group === 'xml';
+  }).map(function (one) {
+    return { kid: one.publicJwk.kid, slot: one.slot, role: 'current' };
+  }).concat(standbyOf(keys).filter(function (one) {
+    return one.kind === 'group' && one.group === 'xml' &&
+           standbyLive(one, now);
+  }).map(function (one) {
+    return { kid: one.kid, slot: one.slot, role: one.role };
+  }));
+  const extra = [];
+  candidates.forEach(function (one) {
+    if (seen.has(one.kid)) {
+      return;
+    }
+    const held = pki.publishedCertificateFor(keys.realm, 'xml', one.slot,
+                                             one.kid);
+    if (held) {
+      seen.add(one.kid);
+      extra.push({ kid: one.kid, certPem: held.certificatePem,
+                   role: one.role, chainPem: held.chainPem.slice() });
+    }
+  });
+  const choice = xmlSignatureChoice();
+  const first = extra.filter(function (one) {
+    return choice.view && one.kid === choice.view.kid;
+  });
+  const rest = extra.filter(function (one) {
+    return !(choice.view && one.kid === choice.view.kid);
+  });
+  log.debug("Leaving ownXmlSigningCertificates(). " +
+            (out.length + extra.length) + ".");
+  return first.concat(out, rest);
 }
 
 function peekJoseHeader(token) {
@@ -3012,7 +3151,9 @@ function verifyOwnCompactJws(token, opts) {
 // ---------------------------------------------------------------------------
 function verifyOwnXml(xml, opts) {
   log.debug("Entering verifyOwnXml().");
-  const candidates = ownRsaCertificates('xml');
+  // Every XML signing certificate, the signer groups' ECDSA and
+  // post-quantum ones included (#68).
+  const candidates = ownXmlSigningCertificates();
   let first = null;
   for (let i = 0; i < candidates.length; i++) {
     const answer = stsCrypto.verifyXmlSignature(xml, Object.assign({}, opts,
@@ -5699,6 +5840,8 @@ module.exports = {
   groupSignerFor: groupSignerFor,
   groupJwkEntries: groupJwkEntries,
   groupPublishedJwks: groupPublishedJwks,
+  xmlSignatureChoice: xmlSignatureChoice,
+  ownXmlSigningCertificates: ownXmlSigningCertificates,
   // For tests/signer_groups.js (#68): a token's header, and the public JWK
   // of one of this realm's keys by kid. Neither is a private key.
   peekJoseHeader: peekJoseHeader,

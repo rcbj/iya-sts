@@ -197,9 +197,23 @@ async function inProcess(t) {
           wrong.push(grp.id + '/' + pair.slot + ': its alternative key is ' +
                      'not its ML-DSA partner');
         }
-        if (certOf(grp.id, pair.pq.slot)) {
+        const own = certOf(grp.id, pair.pq.slot);
+        if (grp.id !== 'xml' && own) {
           wrong.push(grp.id + '/' + pair.pq.slot + ': has a certificate of ' +
                      'its own');
+        }
+        // THE XML GROUP'S ML-DSA KEYS DO (rcbj's D7): a plain certificate
+        // whose subjectPublicKeyInfo IS the ML-DSA key, for XML KeyInfo.
+        if (grp.id === 'xml') {
+          const ownParts = own ? x509.alternativeParts(require('pkijs')
+            .Certificate.fromBER(new nodeCrypto.X509Certificate(
+              own.certificatePem).raw)) : null;
+          if (!own || ownParts.altPublicKeyPem ||
+              own.subjectPublicKeyPem.replace(/\s/g, '') !==
+                expected.replace(/\s/g, '')) {
+            wrong.push('xml/' + pair.pq.slot + ': no plain certificate over ' +
+                       'its own key');
+          }
         }
       } else if (parsed.altPublicKeyPem) {
         wrong.push(grp.id + '/' + pair.slot + ': SLH-DSA carries an ' +
@@ -214,9 +228,10 @@ async function inProcess(t) {
   }
   t.equal(wrong.join('; '), '',
           'each classical certificate carries EXACTLY its ML-DSA partner in ' +
-          'subjectAltPublicKeyInfo, no partnered ML-DSA key has a ' +
-          'certificate of its own, the SLH-DSA one is plain, and every one ' +
-          'verifies as hybrid under the realm\'s own hierarchy');
+          'subjectAltPublicKeyInfo, no partnered JOSE ML-DSA key has a ' +
+          'certificate of its own while each XML one has a plain one over ' +
+          'itself (D7), the SLH-DSA one is plain, and every one verifies as ' +
+          'hybrid under the realm\'s own hierarchy');
   t.equal(certOf('xml', 'RS256') && certOf('xml', 'RS256').useCase, 'xml',
           'the XML group is certified by the XML Signing CA, the JOSE groups ' +
           'by the JOSE one');
@@ -433,6 +448,7 @@ async function whichKeySigns(t, m) {
           'while the default realm\'s STS.xml is still its per-algorithm key');
 
   await rotation(t, m, inRealm, kidOf);
+  await xmlAlgorithms(t, m, inRealm);
   log.debug("Leaving whichKeySigns().");
 }
 
@@ -551,6 +567,81 @@ async function rotation(t, m, inRealm, kidOf) {
   t.equal(others.join(','), othersBefore.join(','),
           'and no other group key moved');
   log.debug("Leaving rotation().");
+}
+
+// ---------------------------------------------------------------------------
+// K. ECDSA AND POST-QUANTUM XML SIGNATURES (phase 4b).
+// ---------------------------------------------------------------------------
+async function xmlAlgorithms(t, m, inRealm) {
+  log.debug("Entering xmlAlgorithms().");
+  const stsCrypto = require('../common/crypto');
+  const documentSettings = require('../saml/document_settings');
+  t.log.info('=== K. the XML group signs ECDSA and ML-DSA ===');
+  const document = '<Assertion xmlns="urn:oasis:names:tc:SAML:2.0:assertion" ' +
+                   'ID="_alg" Version="2.0" IssueInstant="2026-09-26T00:00:00Z">' +
+                   '<Issuer>probe</Issuer></Assertion>';
+  const cases = [['ecdsa-sha256', 'xml/ES256', 'ecdsa-sha256'],
+                 ['ml-dsa-65', 'xml/ML-DSA-65', 'ml-dsa-65']];
+  for (let i = 0; i < cases.length; i++) {
+    const name = cases[i][0];
+    const slot = cases[i][1];
+    m.realms.setOverride(REALM, 'saml.signatureAlgorithm', name);
+    const how = inRealm(function () {
+      return documentSettings.signatureOptions();
+    });
+    const signer = inRealm(function () {
+      return m.helpers.STS.xmlSigner;
+    });
+    const cert = m.pki.certificateFor(REALM, 'xml', slot);
+    t.check(how.sigName === name && how.sigAlg.indexOf(cases[i][2]) > 0 &&
+            !!cert && signer.certPem === cert.certificatePem,
+            name + ': the SignatureMethod and the key come from ONE ' +
+            'decision — the URI names ' + cases[i][2] + ' and the key is ' +
+            slot + ' with its own certificate', JSON.stringify(how));
+    const signed = inRealm(function () {
+      return stsCrypto.signXml(document, {
+        privateKeyPem: signer.privateKeyPem, privateKey: signer.privateKey,
+        certPem: signer.certPem, sigAlg: how.sigAlg, c14nAlg: how.c14nAlg,
+        what: 'a ' + name + ' probe' });
+    });
+    t.check(signed.indexOf(how.sigAlg) > 0 &&
+            signed.indexOf(stsCrypto.stripPem(cert.certificatePem)) > 0,
+            name + ': the document carries that SignatureMethod and that ' +
+            'certificate in KeyInfo');
+    const verdict = inRealm(function () {
+      return m.helpers.verifyOwnXml(signed, { element: 'Assertion' });
+    });
+    t.check(verdict && verdict.ok, name + ': and this service verifies it',
+            JSON.stringify(verdict));
+    const query = 'SAMLRequest=abc&RelayState=xyz&SigAlg=' +
+                  encodeURIComponent(how.sigAlg);
+    const querySignature = inRealm(function () {
+      return stsCrypto.signQueryString(query, signer.privateKeyPem,
+                                       how.sigAlg, signer.privateKey);
+    });
+    const queryVerdict = stsCrypto.verifyQueryString(query, {
+      certPem: cert.certificatePem, sigAlg: how.sigAlg,
+      signature: querySignature });
+    t.check(queryVerdict && queryVerdict.ok,
+            name + ': a Redirect-binding query signature verifies too',
+            JSON.stringify(queryVerdict));
+  }
+  const metadataKeys = inRealm(function () {
+    return m.helpers.ownXmlSigningCertificates();
+  });
+  t.equal(metadataKeys[0] && metadataKeys[0].certPem,
+          m.pki.certificateFor(REALM, 'xml', 'xml/ML-DSA-65').certificatePem,
+          'the configured signer\'s certificate is FIRST among the ' +
+          'metadata\'s signing keys');
+  m.realms.clearOverride(REALM, 'saml.signatureAlgorithm');
+  m.realms.setOverride('', 'saml.signatureAlgorithm', 'ecdsa-sha256');
+  const fallback = documentSettings.signatureOptions();
+  m.realms.clearOverride('', 'saml.signatureAlgorithm');
+  t.equal(fallback.sigName, 'rsa-sha256',
+          'a per-algorithm realm asked for ecdsa-sha256 signs rsa-sha256 — ' +
+          'it has no key for it, and a signature under the wrong key would ' +
+          'be refused everywhere');
+  log.debug("Leaving xmlAlgorithms().");
 }
 
 module.exports = {
