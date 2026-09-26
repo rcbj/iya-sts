@@ -162,6 +162,12 @@ const WHY = {
     "ECDHE key share in the hybrid point encoding and a client " +
     "ec_point_formats list without `uncompressed`, both of which RFC 8422 " +
     "section 5.1.2 excludes; it then waits for the rest of the handshake" },
+  hybridPointMlkem: { why: "openssl", reason: "OpenSSL accepts the " +
+    "ECDH half of a SecP256r1MLKEM768 or SecP384r1MLKEM1024 key share in " +
+    "the hybrid point encoding (0x06/0x07); the hybrid-group draft " +
+    "(draft-ietf-tls-ecdhe-mlkem) asks for the uncompressed point, and so " +
+    "does tlsfuzzer. X25519MLKEM768, the default's first group, has no " +
+    "point encoding to get wrong" },
   defaultCurve: { why: "openssl", reason: "a TLS 1.2 client that sends no " +
     "supported_groups is given OpenSSL's first configured curve (X25519, " +
     "tls.groups) where tlsfuzzer expects P-256" },
@@ -574,7 +580,9 @@ const PLAN = [
                     "legacyVersion")] },
   { script: "test-tls13-mldsa-in-certificate-verify.py", on: CR,
     certificate: "mldsa", args: ["-s", SIGALGS_13] },
-  { script: "test-tls13-mlkem.py" },
+  { script: "test-tls13-mlkem.py",
+    exceptions: [ex(/mlkem\d+: invalid ECDH point format: hybrid$/,
+                    "server_hello", "hybridPointMlkem")] },
   { script: "test-tls13-multiple-ccs-messages.py",
     exceptions: [ex(/CCS/, "decode_error", "recordVersion")] },
   { script: "test-tls13-nociphers.py" },
