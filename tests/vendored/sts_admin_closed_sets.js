@@ -168,8 +168,8 @@ async function tokenForScope(scope) {
   }
   const id = "closed-sets-" + scope.replace(/[^a-z0-9]+/gi, "-")
     .toLowerCase() + "-" + Date.now().toString(36);
-  const secret = "closed-sets-" + Math.random().toString(36).slice(2) +
-                 Date.now().toString(36);
+  const secret = "closed-sets-" +
+                 require("crypto").randomBytes(24).toString("base64url");
   const made = await postJson(API + "/applications/create", {
     identifier: id, kind: "oauth2-client", name: id, protocols: ["oauth2"],
     fields: { oauthClientId: [id], oauthAllowedScope: [scope],

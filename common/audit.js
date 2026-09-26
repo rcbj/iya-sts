@@ -510,6 +510,8 @@ const ACTIONS = [
     label: 'A key was removed from a device' },
   { action: 'device.compliance', category: 'directory',
     label: 'A device\'s compliance was set' },
+  { action: 'device.enrol.refused', category: 'authentication',
+    label: 'A device key with no verified attestation was refused' },
   { action: 'user.create', category: 'directory', label: 'A user was created' },
   { action: 'user.delete', category: 'directory', label: 'A user was deleted' },
   { action: 'user.update', category: 'directory', label: 'A user was updated' },
