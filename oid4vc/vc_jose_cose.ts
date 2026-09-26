@@ -13,7 +13,7 @@
 // This issuer's `jwt_vc_json` is the OLDER model — a VCDM 1.1 credential in
 // a `vc` claim of a JWT (OpenID4VCI Appendix A.1) — and this specification
 // says a VCDM 2.0 credential secured this way carries NEITHER a `vc` nor a
-// `vp` claim (section 3.1.1): the payload is the document. So nothing here
+// `vp` claim (section 1.1.2.1): the payload is the document. So nothing here
 // replaces or reads `jwt_vc_json`; the two are different formats and each
 // verifier keeps its own.
 //
@@ -25,7 +25,7 @@
 //     `application/vc` (COSE), and the `vp` forms for a presentation;
 //   * a signature that does not verify, or an algorithm outside the list
 //     (`ALGORITHMS`: the asymmetric ones this service holds keys of);
-//   * a `vc` or `vp` claim (3.1.1), and a payload that is not a conforming
+//   * a `vc` or `vp` claim (1.1.2.1), and a payload that is not a conforming
 //     credential or presentation (`vc_data_model.ts`);
 //   * an `exp` passed or an `nbf` not reached (RFC 7519 sections 4.1.4 and
 //     4.1.5 — MUSTs), with the clock allowance every JWT here gets;
@@ -550,7 +550,7 @@ class VcJoseCose {
       if (document.vc !== undefined || document.vp !== undefined) {
         errors.push('the payload carries a "vc" or "vp" claim, which a ' +
                     'VCDM 2.0 envelope MUST NOT (VC-JOSE-COSE section ' +
-                    '3.1.1).');
+                    '1.1.2.1).');
       }
     } catch (e) {
       log.debug("Caught in VcJoseCose.verify(): " + ((e && e.message) || e));

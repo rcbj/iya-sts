@@ -255,12 +255,35 @@ function tally(tests) {
 
 // ---------------------------------------------------------------------------
 // EVERY FAILURE FIXED OR DOCUMENTED. `exceptions` maps a test's full title
-// to its reason; `pendingReasons` maps a PENDING title (a test the suite
-// itself skips) to why nothing here runs it. An unexplained pending test is
-// reported, and so is an exception that did not occur.
+// to its reason — or, where a title carries something run-specific (a
+// realm's DID), is an array of `{ match: RegExp, reason }`; `pendingReasons`
+// maps a PENDING title (a test the suite itself skips) to why nothing here
+// runs it. An unexplained pending test is reported, and so is an exception
+// that did not occur.
 // ---------------------------------------------------------------------------
-function judge(what, tests, exceptions, pendingReasons) {
+function judge(what, tests, given, pendingReasons) {
   log.debug("Entering judge(). " + what);
+  const exceptions = {};
+  const patterns = Array.isArray(given) ? given : [];
+  if (!Array.isArray(given)) {
+    Object.keys(given || {}).forEach(function (title) {
+      exceptions[title] = given[title];
+    });
+  }
+  tests.forEach(function (t) {
+    patterns.forEach(function (p) {
+      if (t.state === "failed" && p.match.test(t.title)) {
+        exceptions[t.title] = p.reason;
+        p.seen = true;
+      }
+    });
+  });
+  patterns.forEach(function (p) {
+    if (!p.seen) {
+      log.info("  [exception not seen] " + p.match + " — it passed or did " +
+               "not run; if that holds, take it off the list.");
+    }
+  });
   const counts = tally(tests);
   log.info("  " + what + ": " + counts.passed + " passed, " + counts.failed +
            " failed, " + counts.pending + " pending");
@@ -283,7 +306,7 @@ function judge(what, tests, exceptions, pendingReasons) {
     }
   });
   Object.keys(exceptions).forEach(function (title) {
-    if (!seen[title]) {
+    if (!seen[title] && !Array.isArray(given)) {
       log.info("  [exception not seen] " + title + " — it passed or did " +
                "not run; if that holds, take it off the list.");
     }

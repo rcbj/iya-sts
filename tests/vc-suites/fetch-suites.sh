@@ -87,7 +87,7 @@ for suite in vc-data-model-2.0-test-suite vc-di-eddsa-test-suite \
              vc-di-ecdsa-test-suite vc-bitstring-status-list-test-suite \
              vc-jose-cose-test-suite; do
   ( cd "${DEST}/${suite}" \
-    && npm ci --ignore-scripts --no-audit --no-fund \
+    && npm ci --ignore-scripts --omit=dev --no-audit --no-fund \
     && npm cache clean --force )
 done
 

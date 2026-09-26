@@ -49,11 +49,11 @@ const SUITE = "vc-data-model-2.0-test-suite";
 
 // The suite's ENVELOPED PRESENTATION fixture is a VC-JWT 1.1 token — its
 // payload carries the presentation in a `vp` claim — which VC-JOSE-COSE
-// section 3.1.1 says a VCDM 2.0 envelope MUST NOT carry, and the
+// section 1.1.2.1 says a VCDM 2.0 envelope MUST NOT carry, and the
 // VC-JOSE-COSE suite (#198, its test 15) requires a verifier to refuse. The
 // two suites cannot both pass; this verifier follows the Recommendation.
 const LEGACY_VP = "the suite's enveloped presentation is a VC-JWT 1.1 " +
-  "token with a `vp` claim, which VC-JOSE-COSE section 3.1.1 forbids in a " +
+  "token with a `vp` claim, which VC-JOSE-COSE section 1.1.2.1 forbids in a " +
   "VCDM 2.0 envelope (and the VC-JOSE-COSE suite's test 15 requires a " +
   "verifier to refuse); this verifier refuses it";
 const EXCEPTIONS = {};
