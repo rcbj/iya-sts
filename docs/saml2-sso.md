@@ -83,6 +83,29 @@ provider encrypts an `EncryptedID` to — the NameID formats this identity provi
 `WantAuthnRequestsSigned` according to the signing policy below, the
 bindings it speaks, and an `<md:Organization>` from `saml.organization*`.
 
+**It also publishes the TLS certificate the back channel presents** (#248):
+the certificate the main port serves, which is what a service provider meets
+when it resolves an artifact at `/saml2/ars` or sends an attribute query to
+`/saml2/aa`. It is a `use="signing"` KeyDescriptor of its own, after the XML
+signing and encryption keys, in the `IDPSSODescriptor` and in the
+`AttributeAuthorityDescriptor`, so a service provider that authenticates the
+SOAP peer from metadata — the Shibboleth SP's `ExplicitKey` trust engine,
+SimpleSAMLphp's SOAP client — needs no CA or anchor configured for it. There is
+one per certificate the port presents (`tls.certificateAlgorithms` may name
+two) and, in a cluster, one per live node, since each node presents a leaf of
+its own; none when the main port is plain HTTP. The document is built per
+request, so after the listener is re-issued (*Replace the Root CA* on
+`/admin/pki`, or `POST /admin-api/pki/build-root`) the next fetch names the
+new certificate — fetch it again rather than caching it.
+
+> **Warning.** `use="signing"` is the only use SAML metadata gives a TLS key,
+> so a service provider that accepts an XML signature by ANY signing key in
+> the document would accept one made with the listener's key. That key is
+> generated and held by this service beside its XML key — but if you supply
+> the listener certificate yourself (`tls.certificateFile`) and share its key
+> with a proxy or load balancer, that device holds a key this metadata vouches
+> for. Keep such a key as close as the signing key, or terminate TLS here.
+
 ### Signing in: the Single Sign-On service
 
 The AuthnRequest arrives on the Redirect binding (DEFLATE, base64, and an

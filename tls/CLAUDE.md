@@ -932,6 +932,24 @@ chain comes from what `issueUnder()` returns, and `common/pki.js`'s
 `repairBranch()` re-asks "is it stale?" inside the build queue. **An observer
 that ISSUES must not assume the realm branches are current when it runs.**
 
+## WHAT THE SOCKET PRESENTS, ASKED FROM ANY PROCESS (2026-09-26, #248)
+
+The SAML identity provider's metadata publishes the certificate its back
+channel presents (`saml/listener_keys.ts`), which needs every LEAF the main
+port presents — with `tls.certificateAlgorithms` naming two, OpenSSL picks
+per client — as the SOCKET presents them. `presentedCertificatePems()` is
+that answer: in a process that owns the socket, every entry of
+`SERVER_CERTIFICATES`; in a handed-in process, the first leaf it was handed
+and **the other leaves handed with it**. Until #248 only the first travelled:
+a worker's other entries were certificates the worker made for itself and
+nothing presents, so a worker would have published an ML-DSA leaf nobody
+serves. The others now travel beside the chain — `STS_TLS_SERVER_EXTRA_CERTS_PEM`
+at the fork (concatenated, public, the chain's argument) and
+`extraCertPems` in every re-issue's `serverCertificateBundle()` — and a
+worker adopts them with the rest. Public material only; no key moves that
+did not already. **In a cluster each node's leaves ride on its membership
+row** (`cluster/CLAUDE.md`), because no node can ask another's socket.
+
 ## THE TRUSTSTORE IS A TEST CONTROL ONLY IN DEVELOPMENT MODE (2026-09-12)
 
 `POST /tls/trust` and `POST /tls/trust/clear` answered anybody who could reach the port,
