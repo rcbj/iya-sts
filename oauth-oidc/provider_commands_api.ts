@@ -117,13 +117,13 @@ class ProviderCommandsApi {
             result = loadCommands().act(body, { via: 'api',
               actor: 'admin-api', base: baseUrlOf(req) });
           } catch (e: any) {
-            log.error(errorCodes.tag('STS-OAUTH-0744') + 'provider ' +
+            log.error(errorCodes.tag('STS-OAUTH-0776') + 'provider ' +
                       'commands: an /admin-api action failed: ' +
                       ((e && e.stack) || e));
             result = { ok: false, errors: ['The action could not be ' +
                                            'completed.'] };
           }
-          answer(res, result, 'STS-OAUTH-0744');
+          answer(res, result, 'STS-OAUTH-0776');
           log.debug("Leaving the management API commands action. ok=" +
                     result.ok);
         },
@@ -211,7 +211,7 @@ class ProviderCommandsApi {
                                        'admin-api')
             : { ok: false, errors: ['Unknown action "' +
                 String(req.params.action || '') + '". The 1 is: retry.'] };
-          answer(res, result, 'STS-OAUTH-0742');
+          answer(res, result, 'STS-OAUTH-0774');
           log.debug("Leaving the management API deliveries action. ok=" +
                     result.ok);
         },

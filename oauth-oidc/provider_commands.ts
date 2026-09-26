@@ -59,7 +59,7 @@
 // party knows from its ID Tokens. A command started from a request uses that
 // request's issuer, and remembers it for the realm; an automatic one uses a
 // pinned `oauth2.issuer` or `global.publicBaseUrl`, else the remembered one,
-// else it is a dead letter saying so (STS-OAUTH-0735).
+// else it is a dead letter saying so (STS-OAUTH-0767).
 //
 // **7. THE CALLBACK** — `POST /oauth2/commands/callback`, Bearer the
 // `callback_token` this service put in the Command Token (stored hashed, one
@@ -120,12 +120,12 @@ const AUTOMATIC_FROM = {
 
 // The section 3 errors a relying party answers, and this service's codes.
 const ERROR_CODES = {
-  invalid_request: 'STS-OAUTH-0736',
-  unrecognized_provider: 'STS-OAUTH-0737',
-  unsupported_command: 'STS-OAUTH-0738',
-  incompatible_state: 'STS-OAUTH-0739',
-  access_denied: 'STS-OAUTH-0740',
-  authentication_not_transferable: 'STS-OAUTH-0741'
+  invalid_request: 'STS-OAUTH-0768',
+  unrecognized_provider: 'STS-OAUTH-0769',
+  unsupported_command: 'STS-OAUTH-0770',
+  incompatible_state: 'STS-OAUTH-0771',
+  access_denied: 'STS-OAUTH-0772',
+  authentication_not_transferable: 'STS-OAUTH-0773'
 };
 
 // The deliveries (the shared queue's rows), the register, what each client
@@ -194,14 +194,14 @@ class ProviderCommands {
         summaryS: 'oauth2.commandSummaryS'
       },
       codes: {
-        outboundOff: 'STS-OAUTH-0722', url: 'STS-OAUTH-0723',
-        internal: 'STS-OAUTH-0724', unresolved: 'STS-OAUTH-0725',
-        redirect: 'STS-OAUTH-0726', build: 'STS-OAUTH-0727',
-        timeout: 'STS-OAUTH-0728', network: 'STS-OAUTH-0729',
-        status400: 'STS-OAUTH-0736', status: 'STS-OAUTH-0730',
-        deferred: 'STS-OAUTH-0731', stale: 'STS-OAUTH-0732',
-        summary: 'STS-OAUTH-0733', sweepFailed: 'STS-OAUTH-0734',
-        retry: 'STS-OAUTH-0742'
+        outboundOff: 'STS-OAUTH-0754', url: 'STS-OAUTH-0755',
+        internal: 'STS-OAUTH-0756', unresolved: 'STS-OAUTH-0757',
+        redirect: 'STS-OAUTH-0758', build: 'STS-OAUTH-0759',
+        timeout: 'STS-OAUTH-0760', network: 'STS-OAUTH-0761',
+        status400: 'STS-OAUTH-0768', status: 'STS-OAUTH-0762',
+        deferred: 'STS-OAUTH-0763', stale: 'STS-OAUTH-0764',
+        summary: 'STS-OAUTH-0765', sweepFailed: 'STS-OAUTH-0766',
+        retry: 'STS-OAUTH-0774'
       },
       deadLetterHint: 'Dead letters are listed on /admin/commands and ' +
         '/admin/deliveries, and retried from there.',
@@ -566,7 +566,7 @@ class ProviderCommands {
       log.debug("Leaving ProviderCommands.signedToken(). alg none.");
       throw errorCodes.mark(new Error('this client registered ' +
         'id_token_signed_response_alg "none", and a Command Token MUST be ' +
-        'signed'), 'STS-OAUTH-0727');
+        'signed'), 'STS-OAUTH-0759');
     }
     const claims = this.claimsFor(row);
     const token = await signJwtAsAsync(claims, alg,
@@ -587,7 +587,7 @@ class ProviderCommands {
       log.debug("Leaving ProviderCommands.prepare(). No issuer.");
       throw errorCodes.mark(new Error('no issuer is known for this realm — ' +
         'set global.publicBaseUrl, or send a command from the console once ' +
-        'so its address is learned'), 'STS-OAUTH-0735');
+        'so its address is learned'), 'STS-OAUTH-0767');
     }
     if (row.token && Number(row.tokenExp) - 5 > Math.floor(now() / 1000)) {
       log.debug("Leaving ProviderCommands.prepare(). The token stands.");
@@ -627,7 +627,7 @@ class ProviderCommands {
             !body.context || body.context.iss !== row.iss ||
             String(body.context.tenant) !== String(row.tenant)) {
           log.debug("Leaving ProviderCommands.judge(). A bad metadata answer.");
-          return { ok: false, retry: false, code: 'STS-OAUTH-0743',
+          return { ok: false, retry: false, code: 'STS-OAUTH-0775',
                    why: 'the metadata answer is not section 7.1\'s: it ' +
                         'needs commands_supported (listing metadata) and a ' +
                         'context naming this iss and tenant' };
@@ -639,7 +639,7 @@ class ProviderCommands {
         if (body && (String(body.sub || '') !== String(row.sub) ||
                      STATES.indexOf(String(body.account_state)) < 0)) {
           log.debug("Leaving ProviderCommands.judge(). A bad answer.");
-          return { ok: false, retry: false, code: 'STS-OAUTH-0743',
+          return { ok: false, retry: false, code: 'STS-OAUTH-0775',
                    why: 'the answer does not name the same sub and an ' +
                         'account_state of ' + STATES.join(', ') };
         }
@@ -727,14 +727,14 @@ class ProviderCommands {
     };
     if (!this.enabled()) {
       log.debug("Leaving ProviderCommands.send(). Off.");
-      return refuse('STS-OAUTH-0744', 'OpenID Provider Commands are off in ' +
+      return refuse('STS-OAUTH-0776', 'OpenID Provider Commands are off in ' +
                     'this realm (oauth2.providerCommands).');
     }
     const cmd = String(command || '');
     const isAccount = ProviderCommands.isAccountCommand(cmd);
     if (!isAccount && cmd !== 'metadata') {
       log.debug("Leaving ProviderCommands.send(). Unknown.");
-      return refuse('STS-OAUTH-0744', 'Unknown command "' + cmd + '". ' +
+      return refuse('STS-OAUTH-0776', 'Unknown command "' + cmd + '". ' +
         'An account command is one of ' + ACCOUNT_COMMANDS.join(', ') +
         ' (or its _async variant); a tenant command is one of ' +
         TENANT_COMMANDS.join(', ') + '.');
@@ -742,7 +742,7 @@ class ProviderCommands {
     const endpoint = applications.commandEndpointOf(clientId);
     if (!endpoint) {
       log.debug("Leaving ProviderCommands.send(). No endpoint.");
-      return refuse('STS-OAUTH-0744', 'Client "' + clientId + '" registered ' +
+      return refuse('STS-OAUTH-0776', 'Client "' + clientId + '" registered ' +
                     'no command_endpoint.');
     }
     const fields: Json = {
@@ -757,7 +757,7 @@ class ProviderCommands {
       const sub = this.subjectFor(clientId, username);
       if (!sub) {
         log.debug("Leaving ProviderCommands.send(). No subject.");
-        return refuse('STS-OAUTH-0744', 'There is no subject for "' +
+        return refuse('STS-OAUTH-0776', 'There is no subject for "' +
           String(username || '') + '" at ' + clientId + ': the person has ' +
           'no entry here, or the client registered ephemeral subjects, ' +
           'which name an authentication rather than an account.');
@@ -768,7 +768,7 @@ class ProviderCommands {
       const known = this.learnedFor(clientId);
       if (known && known.audSubRequired && !fields.audSub) {
         log.debug("Leaving ProviderCommands.send(). aud_sub required.");
-        return refuse('STS-OAUTH-0744', clientId + ' said aud_sub_required, ' +
+        return refuse('STS-OAUTH-0776', clientId + ' said aud_sub_required, ' +
           'and no aud_sub is recorded for ' + username + ' there (#148).');
       }
       if (/_async$/.test(cmd)) {
@@ -819,13 +819,13 @@ class ProviderCommands {
           '(oauth2.providerCommands).'
         : 'Unknown tenant command "' + cmd + '". The ' +
           TENANT_COMMANDS.length + ' are: ' + TENANT_COMMANDS.join(', ') +
-          '.' }, 'STS-OAUTH-0744');
+          '.' }, 'STS-OAUTH-0776');
     }
     const endpoint = applications.commandEndpointOf(clientId);
     if (!endpoint) {
       log.debug("Leaving ProviderCommands.startTenant(). No endpoint.");
       return errorCodes.mark({ ok: false, message: 'Client "' + clientId +
-        '" registered no command_endpoint.' }, 'STS-OAUTH-0744');
+        '" registered no command_endpoint.' }, 'STS-OAUTH-0776');
     }
     const run: Json = {
       id: randomId(16), realm: realms.currentId(), clientId: String(clientId),
@@ -891,7 +891,7 @@ class ProviderCommands {
     };
     if (!run.iss) {
       log.debug("Leaving ProviderCommands.executeRun(). No issuer.");
-      return fail('STS-OAUTH-0735', 'no issuer is known for this realm');
+      return fail('STS-OAUTH-0767', 'no issuer is known for this realm');
     }
     const registered: Json = applications.registrationOf(run.clientId) || {};
     const alg = String(registered.id_token_signed_response_alg || 'RS256');
@@ -912,7 +912,7 @@ class ProviderCommands {
           log.debug("Caught in ProviderCommands.executeRun(): " +
                     ((e && e.message) || e));
           log.debug("Leaving ProviderCommands.executeRun(). Not signed.");
-          return fail('STS-OAUTH-0727', 'the Command Token could not be ' +
+          return fail('STS-OAUTH-0759', 'the Command Token could not be ' +
                       'signed: ' + ((e && e.message) || e));
         }
       }
@@ -947,20 +947,20 @@ class ProviderCommands {
                   result.status);
         return fail(ERROR_CODES[error] ||
                     (error === 'last-event-id-unavailable'
-                      ? 'STS-OAUTH-0745' : 'STS-OAUTH-0730'),
+                      ? 'STS-OAUTH-0777' : 'STS-OAUTH-0762'),
                     'the relying party answered ' + result.status +
                     (error ? ' ' + error : ''));
       }
       if (result.ok && !result.ended) {
         // A JSON answer to a streaming command: not section 7.2's.
         log.debug("Leaving ProviderCommands.executeRun(). Not a stream.");
-        return fail('STS-OAUTH-0743', 'the answer was not a ' +
+        return fail('STS-OAUTH-0775', 'the answer was not a ' +
                     'text/event-stream');
       }
       // The stream ended, or dropped, without command-complete: resume.
       if (run.resumes >= maxResumes) {
         log.debug("Leaving ProviderCommands.executeRun(). Out of resumes.");
-        return fail('STS-OAUTH-0746', 'the stream ended without ' +
+        return fail('STS-OAUTH-0778', 'the stream ended without ' +
                     'command-complete after ' + run.resumes + ' resumption' +
                     (run.resumes === 1 ? '' : 's') + ' (' +
                     String(result.why || 'it closed') + ')');
@@ -1040,7 +1040,7 @@ class ProviderCommands {
     const held: Json = key ? callbacks.get(key) : null;
     if (!held || Number(held.expiresAt) <= now()) {
       log.debug("Leaving ProviderCommands.acceptCallback(). Invalid token.");
-      return { status: 401, error: 'invalid_token', code: 'STS-OAUTH-0747',
+      return { status: 401, error: 'invalid_token', code: 'STS-OAUTH-0779',
                description: 'The callback token is unknown or expired.' };
     }
     const b = body || {};
@@ -1049,7 +1049,7 @@ class ProviderCommands {
       if (asked !== 'metadata' && asked !== 'audit_tenant') {
         log.debug("Leaving ProviderCommands.acceptCallback(). Unknown ask.");
         return { status: 400, error: 'invalid_request',
-                 code: 'STS-OAUTH-0748', description: 'command_requested ' +
+                 code: 'STS-OAUTH-0780', description: 'command_requested ' +
                  'must be metadata or audit_tenant.' };
       }
       const started = asked === 'metadata'
@@ -1060,7 +1060,7 @@ class ProviderCommands {
       log.debug("Leaving ProviderCommands.acceptCallback(). Requested " +
                 asked);
       return started.ok ? { status: 204 }
-        : { status: 400, error: 'invalid_request', code: 'STS-OAUTH-0748',
+        : { status: 400, error: 'invalid_request', code: 'STS-OAUTH-0780',
             description: String(started.message || '') };
     }
     if (held.purpose === 'result' &&
@@ -1075,7 +1075,7 @@ class ProviderCommands {
       return { status: 204 };
     }
     log.debug("Leaving ProviderCommands.acceptCallback(). Malformed.");
-    return { status: 400, error: 'invalid_request', code: 'STS-OAUTH-0748',
+    return { status: 400, error: 'invalid_request', code: 'STS-OAUTH-0780',
              description: held.purpose === 'result'
                ? 'An async result names the command\'s sub and an ' +
                  'account_state of ' + STATES.join(', ') + '.'
@@ -1101,7 +1101,7 @@ class ProviderCommands {
     const answer = this.enabled()
       ? this.acceptCallback(bearer ? bearer[1] : '', body || {},
                             helpers.baseUrlOf(req))
-      : { status: 404, error: 'invalid_request', code: 'STS-OAUTH-0744',
+      : { status: 404, error: 'invalid_request', code: 'STS-OAUTH-0776',
           description: 'OpenID Provider Commands are off.' };
     if (answer.status === 204) {
       log.debug("Leaving ProviderCommands.callbackRoute(). 204.");
@@ -1172,7 +1172,7 @@ class ProviderCommands {
     } catch (e) {
       log.debug("Caught in ProviderCommands.automatic(): " +
                 ((e && e.message) || e));
-      log.warn(errorCodes.tag('STS-OAUTH-0749') + 'provider commands: the ' +
+      log.warn(errorCodes.tag('STS-OAUTH-0781') + 'provider commands: the ' +
                'automatic ' + command + ' for ' + username + ' could not ' +
                'be queued: ' + ((e && e.message) || e));
     }
@@ -1398,7 +1398,7 @@ class ProviderCommands {
       result = errorCodes.mark({ ok: false, message: 'Unknown action "' +
         action + '". The ' + actions.length + ' are: ' +
         actions.slice(0, -1).join(', ') + ' and ' +
-        actions[actions.length - 1] + '.' }, 'STS-OAUTH-0744');
+        actions[actions.length - 1] + '.' }, 'STS-OAUTH-0776');
     }
     if (!result.ok && !result.errors) {
       result.errors = [String(result.message || 'refused')];

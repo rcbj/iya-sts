@@ -102,6 +102,37 @@ FAPI realm: a cipher suite belongs to the socket, not to a realm.
 * **A random 128-bit serial**, so a browser that trusted a previous start's
   certificate does not meet `SEC_ERROR_REUSED_ISSUER_AND_SERIAL`.
 
+### When a browser refuses the certificate
+
+A browser trusts this service's certificate only once the service's **Root
+CA** is in its trust store. Until then it refuses the certificate during the
+handshake, and the service logs one line per refused connection:
+
+```
+[STS-TLS-0034] tls: the client at 172.29.0.1 REFUSED this service's certificate on the main port (8081) (it sent the TLS alert certificate_unknown, 46). …
+```
+
+(`unknown_ca`, 48, from OpenSSL and curl; `certificate_unknown`, 46, from
+Chrome.) Because browsers open several connections at once, expect a few of
+these per page load. To trust the Root:
+
+```bash
+curl -k https://localhost:8081/tls/server-certificate > sts-chain.pem   # leaf, chain, Root — the Root is LAST
+# Chrome and Chromium on Linux read the NSS database:
+certutil -d sql:$HOME/.pki/nssdb -A -t "C,," -n "iya-sts Root" -i sts-root.pem
+```
+
+Save the last certificate in `sts-chain.pem` as `sts-root.pem` first. Or
+import it under `chrome://settings/certificates` → Authorities. Reach the
+service by a name the certificate carries (`tls.hostnames`, `tls.ips`); a
+laptop's host name or LAN address fails as a name mismatch instead. In
+development mode the Root is rebuilt at every start, so re-import after a
+restart; in product mode it survives restarts, but not `down -v` or a
+`build-root`.
+
+`STS-TLS-0021` is every OTHER failed handshake: a version or cipher
+mismatch, or a client not speaking TLS.
+
 ### Post-quantum server certificates
 
 `tls.certificateAlgorithms` is `rsa` by default and accepts `ml-dsa-44`,

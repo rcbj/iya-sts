@@ -2757,6 +2757,28 @@ const CODES = [
       '(pki.pathPolicyOutcome, #201).',
     spec: 'invalid_grant at the grant, invalid_client at client ' +
       'authentication; the console\'s error list for an upload' },
+  { code: 'STS-PKI-0200',
+    summary: 'A certificate authority build named an alternative key ' +
+      'algorithm (pki.alternativeKeyAlgorithm, or altKeyAlg on the form) ' +
+      'that is not a pure post-quantum signature algorithm this service ' +
+      'generates, nor "none" (#68).',
+    spec: 'console: the page\'s error list; /admin-api: HTTP 400 ' +
+      '{ ok: false, errors }' },
+  { code: 'STS-PKI-0201',
+    summary: 'A certificate carries an ITU-T X.509 clause 9.8 alternative ' +
+      'signature that does not verify under its issuer\'s alternative key ' +
+      '(any path: this realm\'s own, an uploaded chain, a registered root), ' +
+      'or — on a path to this realm\'s own hierarchy — cannot be checked ' +
+      '(#68).',
+    spec: 'the verifier\'s refusal: whatever the certificate was presented ' +
+      'for is refused as an untrusted certificate' },
+  { code: 'STS-PKI-0202',
+    summary: 'A certificate on a path to this realm\'s own hierarchy carries ' +
+      'no alternative signature although its issuer holds an alternative ' +
+      '(post-quantum) key — a hybrid path presented as classical, the ' +
+      'downgrade #68 refuses.',
+    spec: 'the verifier\'s refusal: whatever the certificate was presented ' +
+      'for is refused as an untrusted certificate' },
   { code: 'STS-ENROLL-0001',
     summary: 'A certificate request named a profile that is not one of the nine issued over an enrollment protocol.',
     spec: 'the protocol\'s refusal: ACME malformed / badCSR, EST HTTP 400, SCEP failInfo badRequest' },
@@ -7187,135 +7209,311 @@ const CODES = [
       'lettered or deferred since the last one (#151).',
     spec: 'none (a log line)' },
   { code: 'STS-OAUTH-0720',
+    summary: 'A request carried more than one OAuth-Client-Attestation ' +
+      'header, or one that is not a JWT in token68 syntax (#229, ' +
+      'section 7.1 item 1).',
+    spec: 'token / PAR / introspection / revocation ' +
+      '{error: invalid_client} (HTTP 401)' },
+  { code: 'STS-OAUTH-0721',
+    summary: 'The OAuth-Client-Attestation header does not hold a JWT ' +
+      'whose header can be read (#229).',
+    spec: 'token / PAR / introspection / revocation ' +
+      '{error: invalid_client} (HTTP 401)' },
+  { code: 'STS-OAUTH-0722',
+    summary: 'A Client Attestation\'s typ is not ' +
+      'oauth-client-attestation+jwt (#229, section 4).',
+    spec: 'token / PAR / introspection / revocation ' +
+      '{error: invalid_client} (HTTP 401)' },
+  { code: 'STS-OAUTH-0723',
+    summary: 'A Client Attestation is signed with an algorithm this server ' +
+      'does not accept: not an asymmetric one in the JWS table, or ' +
+      'a MAC (#229, section 7.1 item 3).',
+    spec: 'token / PAR / introspection / revocation ' +
+      '{error: invalid_client} (HTTP 401)' },
+  { code: 'STS-OAUTH-0724',
+    summary: 'A client attestation was presented in a realm that trusts no ' +
+      'client attester: oauth2.clientAttestationTrustAnchors and ' +
+      'oauth2.clientAttestationTrustedKeys are both empty (#229).',
+    spec: 'token / PAR / introspection / revocation ' +
+      '{error: invalid_client} (HTTP 401)' },
+  { code: 'STS-OAUTH-0725',
+    summary: 'A Client Attestation\'s x5c is unreadable, its signing ' +
+      'certificate is self-signed, or its path does not hold to a ' +
+      'trust anchor in oauth2.clientAttestationTrustAnchors (#229, ' +
+      'section 10.8).',
+    spec: 'token / PAR / introspection / revocation ' +
+      '{error: invalid_client} (HTTP 401)' },
+  { code: 'STS-OAUTH-0726',
+    summary: 'No trusted attester key verifies a Client Attestation: no ' +
+      'configured key with its kid, or the signature does not ' +
+      'verify (#229, section 7.1 item 4).',
+    spec: 'token / PAR / introspection / revocation ' +
+      '{error: invalid_client} (HTTP 401)' },
+  { code: 'STS-OAUTH-0727',
+    summary: 'A Client Attestation lacks sub, exp or cnf, or a claim has ' +
+      'the wrong type (#229, section 4).',
+    spec: 'token / PAR / introspection / revocation ' +
+      '{error: invalid_client} (HTTP 401)' },
+  { code: 'STS-OAUTH-0728',
+    summary: 'A Client Attestation has expired, or its nbf or iat is in ' +
+      'the future (#229, section 4).',
+    spec: 'token / PAR / introspection / revocation ' +
+      '{error: invalid_client} (HTTP 401)' },
+  { code: 'STS-OAUTH-0729',
+    summary: 'A Client Attestation\'s cnf carries no public jwk, a ' +
+      'symmetric one, or private key material (#229, section 7.1 ' +
+      'item 5).',
+    spec: 'token / PAR / introspection / revocation ' +
+      '{error: invalid_client} (HTTP 401)' },
+  { code: 'STS-OAUTH-0730',
+    summary: 'A Client Attestation is older than ' +
+      'oauth2.clientAttestationMaxAgeS (#229, section 7.1 item 6).',
+    spec: 'token / PAR {error: use_fresh_attestation} (HTTP 400)' },
+  { code: 'STS-OAUTH-0731',
+    summary: 'A Client Attestation\'s sub is not the client_id the request ' +
+      'names (#229, sections 7.1 item 7 and 7.5).',
+    spec: 'token / PAR / introspection / revocation ' +
+      '{error: invalid_client} (HTTP 401)' },
+  { code: 'STS-OAUTH-0732',
+    summary: 'A request carried more than one OAuth-Client-Attestation-PoP ' +
+      'header, or one that is not a JWT in token68 syntax (#229, ' +
+      'section 7.2 item 1).',
+    spec: 'token / PAR / introspection / revocation ' +
+      '{error: invalid_client} (HTTP 401)' },
+  { code: 'STS-OAUTH-0733',
+    summary: 'A Client Attestation PoP\'s typ is not ' +
+      'oauth-client-attestation-pop+jwt, or its alg is not an ' +
+      'accepted asymmetric one (#229, section 5.1).',
+    spec: 'token / PAR / introspection / revocation ' +
+      '{error: invalid_client} (HTTP 401)' },
+  { code: 'STS-OAUTH-0734',
+    summary: 'A Client Attestation PoP does not verify under the key in ' +
+      'the attestation\'s cnf (#229, section 7.2 item 4).',
+    spec: 'token / PAR / introspection / revocation ' +
+      '{error: invalid_client} (HTTP 401)' },
+  { code: 'STS-OAUTH-0735',
+    summary: 'A Client Attestation PoP lacks aud, jti or iat, or a claim ' +
+      'has the wrong type (#229, section 5.1).',
+    spec: 'token / PAR / introspection / revocation ' +
+      '{error: invalid_client} (HTTP 401)' },
+  { code: 'STS-OAUTH-0736',
+    summary: 'A Client Attestation PoP does not name this authorization ' +
+      'server\'s issuer identifier as its single audience (#229, ' +
+      'section 7.2 item 7).',
+    spec: 'token / PAR / introspection / revocation ' +
+      '{error: invalid_client} (HTTP 401)' },
+  { code: 'STS-OAUTH-0737',
+    summary: 'A Client Attestation PoP is older than ' +
+      'oauth2.clientAttestationPopMaxAgeS, expired, or dated in the ' +
+      'future (#229, section 7.2 item 6).',
+    spec: 'token / PAR / introspection / revocation ' +
+      '{error: invalid_client} (HTTP 401)' },
+  { code: 'STS-OAUTH-0738',
+    summary: 'A Client Attestation PoP carries no challenge where ' +
+      'oauth2.clientAttestationChallengeRequired asks for one ' +
+      '(#229, section 6.1).',
+    spec: 'token / PAR {error: use_attestation_challenge} (HTTP 400) ' +
+      'with an OAuth-Client-Attestation-Challenge header' },
+  { code: 'STS-OAUTH-0739',
+    summary: 'A Client Attestation PoP\'s challenge is not one this realm ' +
+      'issued, has expired, or has been used (#229, section 6.1).',
+    spec: 'token / PAR {error: use_attestation_challenge} (HTTP 400) ' +
+      'with an OAuth-Client-Attestation-Challenge header' },
+  { code: 'STS-OAUTH-0740',
+    summary: 'A Client Attestation PoP was presented again: its jti has ' +
+      'been used (#229, section 12.1).',
+    spec: 'token / PAR / introspection / revocation ' +
+      '{error: invalid_client} (HTTP 401)' },
+  { code: 'STS-OAUTH-0741',
+    summary: 'The used-assertion history is full of unexpired rows, so a ' +
+      'Client Attestation PoP or challenge is refused rather than ' +
+      'accepted unrecorded (#229).',
+    spec: 'token / PAR {error: invalid_client} (HTTP 503)' },
+  { code: 'STS-OAUTH-0742',
+    summary: 'A Client Attestation PoP or challenge could not be recorded ' +
+      'as used, so it is refused rather than accepted unrecorded ' +
+      '(#229).',
+    spec: 'token / PAR {error: invalid_client} (HTTP 503)' },
+  { code: 'STS-OAUTH-0743',
+    summary: 'A request carried a Client Attestation and no proof of ' +
+      'possession of its key: no OAuth-Client-Attestation-PoP ' +
+      'header and no DPoP proof (#229, section 7).',
+    spec: 'token / PAR / introspection / revocation ' +
+      '{error: invalid_client} (HTTP 401)' },
+  { code: 'STS-OAUTH-0744',
+    summary: 'The DPoP combined mode was used at an endpoint that verifies ' +
+      'no DPoP proof (introspection, revocation, CIBA) (#229, ' +
+      'section 7.3).',
+    spec: 'token / PAR / introspection / revocation ' +
+      '{error: invalid_client} (HTTP 401)' },
+  { code: 'STS-OAUTH-0745',
+    summary: 'In the DPoP combined mode the DPoP proof\'s key is not the ' +
+      'key the Client Attestation binds (#229, section 7.3 item 4).',
+    spec: 'token / PAR / introspection / revocation ' +
+      '{error: invalid_client} (HTTP 401)' },
+  { code: 'STS-OAUTH-0746',
+    summary: 'A client that declared attest_jwt_client_auth proved its key ' +
+      'with DPoP alone, or one that declared ' +
+      'attest_jwt_client_auth_dpop sent an ' +
+      'OAuth-Client-Attestation-PoP (#229, section 7).',
+    spec: 'token / PAR / introspection / revocation ' +
+      '{error: invalid_client} (HTTP 401)' },
+  { code: 'STS-OAUTH-0747',
+    summary: 'POST /oauth2/challenge in a realm that trusts no client ' +
+      'attester (#229, section 6.3).',
+    spec: '/oauth2/challenge {error: invalid_request} (HTTP 400)' },
+  { code: 'STS-OAUTH-0748',
+    summary: 'A refresh token issued on a client attestation was redeemed ' +
+      'without an attestation of the same client instance key ' +
+      '(#229, section 10.3).',
+    spec: 'token {error: invalid_grant} (HTTP 400)' },
+  { code: 'STS-OAUTH-0749',
+    summary: 'An authorization code pushed under a client attestation was ' +
+      'redeemed without an attestation of the same client instance ' +
+      'key (#229, section 10.4).',
+    spec: 'token {error: invalid_grant} (HTTP 400)' },
+  { code: 'STS-OAUTH-0750',
+    summary: 'oauth2.clientAttestationTrustAnchors holds a certificate ' +
+      'that cannot be read, or oauth2.clientAttestationTrustedKeys ' +
+      'is not a JWKS or holds a symmetric or private key; the ' +
+      'unreadable part is ignored (#229).',
+    spec: 'log only' },
+  { code: 'STS-OAUTH-0751',
+    summary: 'A client that declared attest_jwt_client_auth or ' +
+      'attest_jwt_client_auth_dpop sent no OAuth-Client-Attestation ' +
+      'header, or did not authenticate with it (#229, section 7.5).',
+    spec: 'token / PAR / introspection / revocation ' +
+      '{error: invalid_client} (HTTP 401)' },
+  { code: 'STS-OAUTH-0752',
     summary: 'The CIBA notification sweep failed in a realm ' +
       '(#151).',
     spec: 'none (a log line)' },
-  { code: 'STS-OAUTH-0721',
+  { code: 'STS-OAUTH-0753',
     summary: 'An operator\'s retry of a CIBA notification was ' +
       'refused: unknown, not a dead letter, or no endpoint now (#151).',
     spec: 'console / /admin-api refusal (HTTP 400)' },
-  { code: 'STS-OAUTH-0722',
+  { code: 'STS-OAUTH-0754',
     summary: 'An OpenID Provider Command was not sent because ' +
       'federation.outbound is off (#151).',
     spec: 'none (a dead letter)' },
-  { code: 'STS-OAUTH-0723',
+  { code: 'STS-OAUTH-0755',
     summary: 'An OpenID Provider Command was not sent because the ' +
       'client\'s command_endpoint cannot be dialled (#151).',
     spec: 'none (a dead letter)' },
-  { code: 'STS-OAUTH-0724',
+  { code: 'STS-OAUTH-0756',
     summary: 'An OpenID Provider Command was refused because the ' +
       'command_endpoint resolves to an internal address in product mode ' +
       '(#151).',
     spec: 'none (a dead letter)' },
-  { code: 'STS-OAUTH-0725',
+  { code: 'STS-OAUTH-0757',
     summary: 'A command_endpoint\'s host name did not resolve ' +
       '(#151).',
     spec: 'none (a dead letter)' },
-  { code: 'STS-OAUTH-0726',
+  { code: 'STS-OAUTH-0758',
     summary: 'A command_endpoint answered with a redirect, which ' +
       'is not followed (#151).',
     spec: 'none (a dead letter)' },
-  { code: 'STS-OAUTH-0727',
+  { code: 'STS-OAUTH-0759',
     summary: 'A Command Token could not be built or signed — the ' +
       'client registered alg none, or signing failed (#151).',
     spec: 'none (a dead letter)' },
-  { code: 'STS-OAUTH-0728',
+  { code: 'STS-OAUTH-0760',
     summary: 'An OpenID Provider Command timed out; retried with ' +
       'backoff (#151).',
     spec: 'none (retried, then a dead letter)' },
-  { code: 'STS-OAUTH-0729',
+  { code: 'STS-OAUTH-0761',
     summary: 'An OpenID Provider Command failed to connect; ' +
       'retried with backoff (#151).',
     spec: 'none (retried, then a dead letter)' },
-  { code: 'STS-OAUTH-0730',
+  { code: 'STS-OAUTH-0762',
     summary: 'A command_endpoint answered a status the draft does ' +
       'not name — 5xx, 408 and 429 are retried, the rest are not (#151).',
     spec: 'none (a dead letter)' },
-  { code: 'STS-OAUTH-0731',
+  { code: 'STS-OAUTH-0763',
     summary: 'A command attempt was deferred because the claim ' +
       'store was unavailable (#151).',
     spec: 'none (the sweep tries again)' },
-  { code: 'STS-OAUTH-0732',
+  { code: 'STS-OAUTH-0764',
     summary: 'An OpenID Provider Command was still unsent past ' +
       'oauth2.commandRetentionS and was dead-lettered (#151).',
     spec: 'none (a dead letter)' },
-  { code: 'STS-OAUTH-0733',
+  { code: 'STS-OAUTH-0765',
     summary: 'The provider commands summary line: some were dead- ' +
       'lettered or deferred since the last one (#151).',
     spec: 'none (a log line)' },
-  { code: 'STS-OAUTH-0734',
+  { code: 'STS-OAUTH-0766',
     summary: 'The provider commands sweep failed in a realm ' +
       '(#151).',
     spec: 'none (a log line)' },
-  { code: 'STS-OAUTH-0735',
+  { code: 'STS-OAUTH-0767',
     summary: 'No issuer is known for a Command Token: set ' +
       'global.publicBaseUrl, or send one command from the console so the ' +
       'realm\'s address is learned (#151).',
     spec: 'none (a dead letter or a failed run)' },
-  { code: 'STS-OAUTH-0736',
+  { code: 'STS-OAUTH-0768',
     summary: 'A relying party answered a command with ' +
       'invalid_request (section 3) (#151).',
     spec: 'none (a dead letter)' },
-  { code: 'STS-OAUTH-0737',
+  { code: 'STS-OAUTH-0769',
     summary: 'A relying party answered a command with ' +
       'unrecognized_provider: it does not know this issuer (#151).',
     spec: 'none (a dead letter)' },
-  { code: 'STS-OAUTH-0738',
+  { code: 'STS-OAUTH-0770',
     summary: 'A relying party answered unsupported_command (#151).',
     spec: 'none (a dead letter)' },
-  { code: 'STS-OAUTH-0739',
+  { code: 'STS-OAUTH-0771',
     summary: 'A relying party answered incompatible_state: the ' +
       'account was not in a state the command may start from; the state it ' +
       'gave is recorded (#151).',
     spec: 'none (a dead letter)' },
-  { code: 'STS-OAUTH-0740',
+  { code: 'STS-OAUTH-0772',
     summary: 'A relying party answered access_denied to a migrate ' +
       'command (#151).',
     spec: 'none (a dead letter)' },
-  { code: 'STS-OAUTH-0741',
+  { code: 'STS-OAUTH-0773',
     summary: 'A relying party answered ' +
       'authentication_not_transferable to a migrate command (#151).',
     spec: 'none (a dead letter)' },
-  { code: 'STS-OAUTH-0742',
+  { code: 'STS-OAUTH-0774',
     summary: 'An operator\'s retry of a command delivery was ' +
       'refused: unknown, not a dead letter, or no command_endpoint now ' +
       '(#151).',
     spec: 'console / /admin-api refusal (HTTP 400)' },
-  { code: 'STS-OAUTH-0743',
+  { code: 'STS-OAUTH-0775',
     summary: 'A relying party\'s answer to a command is not the ' +
       'draft\'s: no matching sub and account_state, a metadata answer ' +
       'without commands_supported or context, or a stream that is not ' +
       'text/event-stream (#151).',
     spec: 'none (a dead letter or a failed run)' },
-  { code: 'STS-OAUTH-0744',
+  { code: 'STS-OAUTH-0776',
     summary: 'A command was not sent: provider commands are off, ' +
       'the command is unknown, the client has no command_endpoint, the ' +
       'person has no subject there, or the client requires an aud_sub none ' +
       'is recorded for (#151).',
     spec: 'console / /admin-api refusal (HTTP 400)' },
-  { code: 'STS-OAUTH-0745',
+  { code: 'STS-OAUTH-0777',
     summary: 'A tenant command\'s stream could not be resumed: the ' +
       'relying party answered last-event-id-unavailable (#151).',
     spec: 'none (a failed run)' },
-  { code: 'STS-OAUTH-0746',
+  { code: 'STS-OAUTH-0778',
     summary: 'A tenant command\'s stream ended without command- ' +
       'complete after every resumption (#151).',
     spec: 'none (a failed run)' },
-  { code: 'STS-OAUTH-0747',
+  { code: 'STS-OAUTH-0779',
     summary: 'A call to /oauth2/commands/callback carried no ' +
       'callback token, or an unknown or expired one (#151).',
     spec: 'HTTP 401 {error: invalid_token} with WWW-Authenticate' },
-  { code: 'STS-OAUTH-0748',
+  { code: 'STS-OAUTH-0780',
     summary: 'A call to /oauth2/commands/callback was malformed: ' +
       'an async result not naming the command\'s sub and an account_state, ' +
       'or a command_requested other than metadata or audit_tenant (#151).',
     spec: 'HTTP 400 {error: invalid_request}' },
-  { code: 'STS-OAUTH-0749',
+  { code: 'STS-OAUTH-0781',
     summary: 'An automatic OpenID Provider Command could not be ' +
       'queued after a directory change or a sign-out; the change stands ' +
       '(#151).',
     spec: 'none (a log line)' },
-  { code: 'STS-OAUTH-0750',
+  { code: 'STS-OAUTH-0782',
     summary: 'The mock relying party\'s command endpoint refused a ' +
       'command — the development test control answering as a relying party ' +
       'would (#151).',
@@ -11017,7 +11215,8 @@ const CODES = [
     spec: '' },
   { code: 'STS-TLS-0021',
     summary: 'A TLS handshake failed on a listener this module watches — ' +
-      'a version, cipher or certificate mismatch, or a non-TLS client. It ' +
+      'a version or cipher mismatch, or a non-TLS client; a client refusing ' +
+      'this service\'s certificate is STS-TLS-0034 since #225. It ' +
       'named the required-client-certificate listener until 2026-09-16, when ' +
       'that listener was deleted; it is now the main port, where a client ' +
       'certificate is asked for and never required',
@@ -11080,6 +11279,13 @@ const CODES = [
       're-issued; the others were still told, and the main port serves the ' +
       'new one.',
     spec: '' },
+  { code: 'STS-TLS-0034',
+    summary: 'A TLS client REFUSED this service\'s certificate: it sent a ' +
+      'certificate alert (bad_certificate, unsupported_certificate, ' +
+      'certificate_revoked, certificate_expired, certificate_unknown or ' +
+      'unknown_ca) during the handshake. From a browser it almost always ' +
+      'means the client does not trust this service\'s Root CA (#225).',
+    spec: 'TLS handshake failure (the client closed the connection)' },
   // ===== VC ================================================================
   { code: 'STS-VC-0001',
     summary: 'An oid4vci encryption setting names no content encryption ' +
@@ -11503,6 +11709,60 @@ const CODES = [
       'already enrolled for somebody, or the person holds the most they may ' +
       '(#129).',
     spec: 'HTTP 400 page' },
+  { code: 'STS-VC-0100',
+    summary: 'A VC-API test endpoint (/vc-api/*, the Bitstring Status ' +
+      'List publish hook) was called in a realm whose test controls are ' +
+      'closed — a product realm — and answered as though it did not exist ' +
+      '(#194).',
+    spec: 'HTTP 404' },
+  { code: 'STS-VC-0101',
+    summary: 'A VC-API test endpoint was presented an access token it ' +
+      'refused: not issued by this realm, not an access token, revoked, ' +
+      'without the vc-api:issue / vc-api:verify scope it needs, or issued ' +
+      'to a client that no longer declares that scope (#194).',
+    spec: 'HTTP 401 / 403 with WWW-Authenticate' },
+  { code: 'STS-VC-0102',
+    summary: 'The VC-API issuer refused a credential that does not conform ' +
+      'to the VC Data Model (a MUST of VCDM 2.0 or 1.1 broken), or that ' +
+      'names an issuer other than the key it is asked to sign with (#194).',
+    spec: 'HTTP 400 {errors}' },
+  { code: 'STS-VC-0103',
+    summary: 'The VC-API issuer refused a credential JSON-LD safe mode ' +
+      'rejects — a context this service does not hold (it fetches none), ' +
+      'an undefined term, a redefined protected term, a relative IRI — or ' +
+      'one its cryptosuite could not sign (#194-#196).',
+    spec: 'HTTP 400 {errors}' },
+  { code: 'STS-VC-0104',
+    summary: 'A VC-API issue request named an issuer (a securing mechanism ' +
+      'and key) this service does not offer (#194).',
+    spec: 'HTTP 404 {errors}' },
+  { code: 'STS-VC-0105',
+    summary: 'A VC-API request failed inside this service rather than on ' +
+      'its input (#194).',
+    spec: 'HTTP 500 {errors}' },
+  { code: 'STS-VC-0106',
+    summary: 'The VC-API verifier refused a credential or presentation: ' +
+      'the data model, JSON-LD safe mode, a proof (the key, the purpose, ' +
+      'the challenge or domain, the signature, the issuer), or a status ' +
+      'list entry (#194-#198).',
+    spec: 'HTTP 400 {verified: false, errors}' },
+  { code: 'STS-VC-0107',
+    summary: 'A VC-API status change named a credential this realm issued ' +
+      'no status for, a status type or purpose it does not publish, or ' +
+      'tried to clear a revocation (#197).',
+    spec: 'HTTP 404 / 400 {errors}' },
+  { code: 'STS-VC-0108',
+    summary: 'A VC-API request body was not a JSON object, or carried a ' +
+      'polluting key or more depth or members than any document this ' +
+      'service accepts (validation.checkDocument, #194).',
+    spec: 'HTTP 400 {errors}' },
+  { code: 'STS-VC-0109',
+    summary: 'A DID the VC-API resolver was asked for could not be resolved, ' +
+      'or a DID URL dereferenced: not a DID (invalidDid, invalidDidUrl), a ' +
+      'method it does not support, a representation it does not produce, ' +
+      'or a did:web other than this realm\'s own, which it does not fetch ' +
+      '(notFound) (#199).',
+    spec: 'HTTP 400 / 404 / 501 with the resolution result\'s error' },
   { code: 'STS-SSF-0001',
     summary: 'A Shared Signals endpoint was called while the family is ' +
       'turned off (ssf.enabled).',
@@ -12182,6 +12442,14 @@ const CODES = [
       'confirm it with the person.',
     spec: 'the set-up step; recorded on the audit row and logged as a ' +
       'warning' },
+  { code: 'STS-RISK-0040',
+    summary: 'The install-time dataset loader (risk/risk_install.ts) could ' +
+      'not make the database connection the way the service makes it ' +
+      '(#213): persistence.databasePasswordProvider names a secret store ' +
+      'whose password could not be read, or persistence.databaseUrl is not ' +
+      'a URL it can be put into. The provider\'s own reason follows. ' +
+      'Nothing is imported and the loader exits non-zero.',
+    spec: '' },
   // ===== MAIL ==============================================================
   { code: 'STS-MAIL-0001',
     summary: 'A message was not queued because no mail transport is ' +

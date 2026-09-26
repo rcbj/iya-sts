@@ -942,7 +942,7 @@ function kindRetry(kind: string, id: string, actor: string): Json {
                KINDS.length + ' are: ' + KINDS.slice(0, -1).map(function (k) {
                  return k.id;
                }).join(', ') + ' and ' + KINDS[KINDS.length - 1].id + '.'] },
-      'STS-OAUTH-0742');
+      'STS-OAUTH-0774');
   }
   const result = found.retry(require(found.module), String(id || ''),
                              String(actor || ''));

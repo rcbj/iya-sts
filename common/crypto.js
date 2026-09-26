@@ -277,7 +277,9 @@ function signXml(xml, opts) {
   const what = options.what || 'XML document';
   log.debug('Entering signXml(). what=' + what + ', placement=' +
             (options.placement || PLACEMENT.AFTER_ISSUER));
-  if (!options.privateKeyPem) {
+  // A post-quantum signer-group key (#68 phase 4b) is raw bytes and has no
+  // PEM, so `privateKey` stands in for it; every other caller passes a PEM.
+  if (!options.privateKeyPem && !options.privateKey) {
     log.debug('Leaving signXml(). No private key.');
     throw new Error('signXml: privateKeyPem is required to sign ' + what + '.');
   }
@@ -307,6 +309,67 @@ function signXml(xml, opts) {
       .parseFromString(String(xml), 'text/xml').documentElement;
     const id = root ? idOf(root) : '';
     refUri = id ? ('#' + id) : '';
+  }
+  // -------------------------------------------------------------------
+  // THE SIGNER GROUPS' XML ALGORITHMS (2026-09-26, #68 phase 4b).
+  //
+  // RSA — every signature this service made before #68 — goes through
+  // `signEnveloped()` exactly as it did, byte for byte. The two new families
+  // are ADDITIVE and each takes the vendored path that can carry it:
+  //
+  //   * POST-QUANTUM (ML-DSA, SLH-DSA; the W3C xmldsig-more draft's
+  //     identifiers): `signEnveloped()` itself, which takes an injected
+  //     `signer` for exactly these and holds the identifiers but not the
+  //     lattice — `pq_jose.js` signs, as it does every post-quantum JWS.
+  //   * ECDSA: the vendored GENERAL engine (`xmldsig.signXml()`), because
+  //     `signEnveloped()`'s classical branch is RSA through forge and the
+  //     vendored file is not edited here (rcbj's D8). The signature is the
+  //     raw r||s XML Signature 1.1 section 6.4.3 specifies, which node's
+  //     `ieee-p1363` encoding produces.
+  // -------------------------------------------------------------------
+  const method = XML_SIGNATURE_METHODS[options.sigAlg] || null;
+  const pqMethod = xmldsig.SIG_METHODS[options.sigAlg] &&
+    xmldsig.SIG_METHODS[options.sigAlg].postQuantum
+    ? xmldsig.SIG_METHODS[options.sigAlg] : null;
+  if (pqMethod) {
+    const pqAlg = String(pqMethod.alg);
+    const pqKey = options.privateKey;
+    const pqSigned = xmldsig.signEnveloped(xml, {
+      certPem: options.certPem,
+      placement: options.placement || PLACEMENT.AFTER_ISSUER,
+      refUri: refUri,
+      sigAlg: options.sigAlg,
+      c14nAlg: options.c14nAlg,
+      includeKeyInfo: options.includeKeyInfo,
+      signer: function (octets) {
+        return Buffer.from(pqJose.sign(pqAlg, pqKey,
+                                       Buffer.from(octets, 'binary')));
+      }
+    });
+    log.debug('Leaving signXml(). ' + pqAlg + ', ' + pqSigned.length +
+              ' characters.');
+    return pqSigned;
+  }
+  if (method && method.family === 'ecdsa') {
+    const ecKey = options.privateKey ||
+                  nodeCrypto.createPrivateKey(options.privateKeyPem);
+    const ecHash = String(method.hash);
+    const ecSigned = xmldsig.signXml(xml, {
+      mode: 'enveloped',
+      sigAlg: options.sigAlg,
+      c14nAlg: options.c14nAlg || xmldsig.C14N_EXCLUSIVE,
+      keyInfo: options.includeKeyInfo === false ? 'none' : 'x509',
+      certPem: options.certPem,
+      refUri: refUri,
+      placement: options.placement || PLACEMENT.AFTER_ISSUER,
+      signer: function (octets) {
+        return nodeCrypto.sign(ecHash, Buffer.from(octets, 'binary'),
+                               { key: ecKey, dsaEncoding: 'ieee-p1363' });
+      }
+    });
+    const ecXml = typeof ecSigned === 'string' ? ecSigned : ecSigned.xml;
+    log.debug('Leaving signXml(). ECDSA, ' + ecXml.length + ' characters.');
+    return ecXml;
   }
   const signed = xmldsig.signEnveloped(xml, {
     privateKeyPem: options.privateKeyPem,
@@ -1220,8 +1283,32 @@ function verifyXmlSignature(xml, opts) {
 // order produces a signature that verifies nowhere and whose only symptom at
 // the far end is "invalid signature".
 // ---------------------------------------------------------------------------
-function signQueryString(queryString, privateKeyPem, sigAlg) {
+// `privateKey` (#68 phase 4b) is a signer-group key for an ECDSA or
+// post-quantum `sigAlg` — a KeyObject, or the raw bytes `pq_jose.js` signs
+// with — for which the vendored signer, RSA through forge, has no path. The
+// ECDSA signature is the raw r||s XML Signature 1.1 specifies, which is what
+// the binding's SigAlg names; RSA takes the vendored path as it always has.
+function signQueryString(queryString, privateKeyPem, sigAlg, privateKey) {
   log.debug('Entering signQueryString().');
+  const pqMethod = xmldsig.SIG_METHODS[sigAlg] &&
+    xmldsig.SIG_METHODS[sigAlg].postQuantum
+    ? xmldsig.SIG_METHODS[sigAlg] : null;
+  const method = XML_SIGNATURE_METHODS[sigAlg] || null;
+  if (pqMethod && privateKey) {
+    const pqSignature = Buffer.from(pqJose.sign(String(pqMethod.alg),
+      privateKey, Buffer.from(String(queryString), 'utf8')))
+      .toString('base64');
+    log.debug('Leaving signQueryString(). ' + pqMethod.alg + '.');
+    return pqSignature;
+  }
+  if (method && method.family === 'ecdsa' && (privateKey || privateKeyPem)) {
+    const ecSignature = nodeCrypto.sign(String(method.hash),
+      Buffer.from(String(queryString), 'utf8'),
+      { key: privateKey || nodeCrypto.createPrivateKey(privateKeyPem),
+        dsaEncoding: 'ieee-p1363' }).toString('base64');
+    log.debug('Leaving signQueryString(). ECDSA.');
+    return ecSignature;
+  }
   if (!privateKeyPem) {
     log.debug('Leaving signQueryString(). No private key.');
     throw new Error('signQueryString: privateKeyPem is required.');
@@ -6028,6 +6115,59 @@ async function verifyRawSignature(scheme, key, data, signature) {
   }
 }
 
+// THE SIGNING HALF OF THE PRIMITIVE ABOVE (#194-#196, 2026-09-26), for the
+// Data Integrity cryptosuites that sign bytes rather than a JWS: the RDFC
+// suites, and ecdsa-sd-2023's base and per-statement signatures. Same
+// `scheme` (families 'ecdsa' and 'eddsa' only — nothing here signs raw bytes
+// with RSA, and a post-quantum signature goes through `pq_jose`'s pool);
+// `privateKey` is a node KeyObject or a private JWK. Throws for a key of the
+// wrong kind, because a signer handed the wrong key is a bug, not an input.
+function signRawSignature(scheme, privateKey, data) {
+  const s = scheme || {};
+  log.debug("Entering signRawSignature(). " + s.family + "/" +
+            (s.hash || ''));
+  const key = privateKey && privateKey.type === 'private' ? privateKey
+    : nodeCrypto.createPrivateKey(privateKey && privateKey.kty
+        ? { key: privateKey, format: 'jwk' } : privateKey);
+  const type = String(key.asymmetricKeyType || '');
+  const message = Buffer.from(data || []);
+  if (s.family === 'ecdsa' && type === 'ec') {
+    const out = nodeCrypto.sign(s.hash, message, { key: key,
+      dsaEncoding: s.encoding === 'der' ? 'der' : 'ieee-p1363' });
+    log.debug("Leaving signRawSignature(). ECDSA.");
+    return out;
+  }
+  if (s.family === 'eddsa' && (type === 'ed25519' || type === 'ed448')) {
+    const out = nodeCrypto.sign(null, message, key);
+    log.debug("Leaving signRawSignature(). EdDSA.");
+    return out;
+  }
+  log.debug("Leaving signRawSignature(). Refused.");
+  throw new Error('signRawSignature: a ' + (type || 'unknown') + ' key ' +
+                  'does not sign ' + String(s.family || 'nothing') + '.');
+}
+
+// HMAC-SHA-256 of `data` under `key` — ecdsa-sd-2023's blank node labels
+// (vc-di-ecdsa section 3.4.4, createHmacIdLabelMapFunction).
+function hmacSha256(key, data) {
+  log.debug("Entering hmacSha256().");
+  const out = nodeCrypto.createHmac('sha256', Buffer.from(key || []))
+    .update(Buffer.from(data || [])).digest();
+  log.debug("Leaving hmacSha256().");
+  return out;
+}
+
+// A fresh key pair of a kind `generateKeyPairSync()` names ('ec' with a
+// namedCurve, 'ed25519') — ecdsa-sd-2023's proof-scoped key, made and thrown
+// away inside one signature.
+function ephemeralKeyPair(kind, curve) {
+  log.debug("Entering ephemeralKeyPair(). " + kind + " " + (curve || ''));
+  const pair = nodeCrypto.generateKeyPairSync(kind,
+    curve ? { namedCurve: curve } : undefined);
+  log.debug("Leaving ephemeralKeyPair().");
+  return pair;
+}
+
 // An ECDSA signature held as its two integers, big-endian and unpadded (Go's
 // big.Int.Bytes(), an SSH mpint), as the r||s the primitive above takes.
 // `curve` is node's name ('prime256v1'). null when either integer is longer
@@ -7786,6 +7926,9 @@ module.exports = {
   RAW_SIGNATURE_FAMILIES: RAW_SIGNATURE_FAMILIES,
   publicKeyFromSpki: publicKeyFromSpki,
   verifyRawSignature: verifyRawSignature,
+  signRawSignature: signRawSignature,
+  hmacSha256: hmacSha256,
+  ephemeralKeyPair: ephemeralKeyPair,
   olpcCanonicalJson: olpcCanonicalJson,
   jcsCanonicalJson: jcsCanonicalJson,
   spkiFromPublicKeyPem: spkiFromPublicKeyPem,

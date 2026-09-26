@@ -87,6 +87,8 @@ on:
 
 permissions:
   contents: read
+  # The private test corpora image on ghcr.io (#253).
+  packages: read
 
 concurrency:
   group: aws-cluster-${{ github.event.inputs.environment }}
@@ -240,6 +242,15 @@ jobs:
             -e TF_VAR_image_tag="${tag}" \
             -e TF_VAR_allowed_cidrs="[\"${runner_ip}/32\"]" \
             "${TF_IMAGE}"
+
+      # THE TEST CORPORA ARE A PRIVATE IMAGE ON GHCR.IO (#253): tests/Dockerfile
+      # copies them out of ghcr.io/rcbj/iya-sts-test-corpora by digest, and a
+      # private package is pulled only by a logged-in client. GITHUB_TOKEN
+      # carries packages: read (the workflow's permissions) and the package
+      # grants this repository access.
+      - name: Log in to GitHub Container Registry
+        run: echo "${{ secrets.GITHUB_TOKEN }}" |
+             docker login ghcr.io -u "${{ github.actor }}" --password-stdin
 
       - name: Run the suite against ${{ env.TF_ENV }}
         env:

@@ -172,7 +172,7 @@ class CommandMockRp {
                 extra?: Json): unknown {
     const { log, errorCodes } = this.deps;
     log.debug("Entering CommandMockRp.error(). " + error);
-    errorCodes.mark(res, 'STS-OAUTH-0750');
+    errorCodes.mark(res, 'STS-OAUTH-0782');
     res.set('Cache-Control', 'no-store');
     log.debug("Leaving CommandMockRp.error().");
     return res.status(status).json(Object.assign({ error: error,
@@ -195,7 +195,7 @@ class CommandMockRp {
       this.spendKnob(req, 'fail');
       log.debug("Leaving CommandMockRp.handle(). A 503, as asked.");
       res.set('Cache-Control', 'no-store');
-      this.deps.errorCodes.mark(res, 'STS-OAUTH-0750');
+      this.deps.errorCodes.mark(res, 'STS-OAUTH-0782');
       res.status(503).json({ error: 'temporarily_unavailable' });
       return undefined;
     }

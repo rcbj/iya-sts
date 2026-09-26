@@ -324,7 +324,7 @@ async function test() {
     const dead = refused.deliveries.filter(function (d) {
       return d.command === "activate" && d.state === "dead";
     })[0];
-    assert.strictEqual(dead.errorCode, "STS-OAUTH-0739");
+    assert.strictEqual(dead.errorCode, "STS-OAUTH-0771");
     assert.strictEqual(dead.status, 409);
   });
 

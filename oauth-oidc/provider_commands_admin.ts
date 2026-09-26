@@ -290,10 +290,10 @@ class ProviderCommandsAdmin {
           : commands.act(body, { via: 'console', actor: self.actorOf(req),
                                  base: baseUrlOf(req) });
       } catch (e: any) {
-        log.error(errorCodes.tag('STS-OAUTH-0744') + 'provider commands: a ' +
+        log.error(errorCodes.tag('STS-OAUTH-0776') + 'provider commands: a ' +
                   'console action failed: ' + ((e && e.stack) || e));
         result = errorCodes.mark({ ok: false, errors:
-          ['The action could not be completed.'] }, 'STS-OAUTH-0744');
+          ['The action could not be completed.'] }, 'STS-OAUTH-0776');
       }
       admin.respondToAction(req, res, PAGE, result);
       log.debug("Leaving the admin commands action.");
@@ -316,7 +316,7 @@ class ProviderCommandsAdmin {
                              String(body.delivery || ''), self.actorOf(req))
         : errorCodes.mark({ ok: false, errors: ['Unknown action "' +
             String(body.action || '') + '". The 1 is: retry.'] },
-            'STS-OAUTH-0742');
+            'STS-OAUTH-0774');
       admin.respondToAction(req, res, DELIVERIES, result);
       log.debug("Leaving the admin deliveries action.");
     });

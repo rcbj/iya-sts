@@ -247,6 +247,10 @@ import introspectionJwt = require('./introspection_jwt');
 import idTokenEncryption = require('./id_token_encryption');
 // JARM (#139, #143): the JWT-secured authorization response.
 import jarm = require('./jarm');
+// OAuth 2.0 Attestation-Based Client Authentication (#229): the challenge
+// endpoint, the metadata, the requests' refusals and the bindings. A library
+// requiring `common/` modules only.
+import clientAttestation = require('./client_attestation');
 // OIDC Core section 8's pairwise subjects (#118). A LIBRARY that requires
 // nothing here back.
 import pairwiseSubjects = require('./pairwise_subjects');
@@ -455,6 +459,7 @@ interface OAuth2ServerDeps {
   introspectionJwt: typeof introspectionJwt;
   idTokenEncryption: typeof idTokenEncryption;
   jarm: typeof jarm;
+  clientAttestation: typeof clientAttestation;
   pairwiseSubjects: typeof pairwiseSubjects;
   stepUp: typeof stepUp;
   requestObject: typeof requestObject;
@@ -1599,6 +1604,7 @@ class OAuth2Server {
       introspectionJwt: introspectionJwt,
       idTokenEncryption: idTokenEncryption,
       jarm: jarm,
+      clientAttestation: clientAttestation,
       pairwiseSubjects: pairwiseSubjects,
       stepUp: stepUp,
       requestObject: requestObject,
@@ -2074,6 +2080,27 @@ class OAuth2Server {
     // API is the REALM's (`/oauth2/grants`), whichever of its authorization
     // servers issued the grant.
     Object.assign(metadata, this.deps.grantManagement.metadata(base));
+    // OAUTH 2.0 ATTESTATION-BASED CLIENT AUTHENTICATION (#229, section 8):
+    // the challenge endpoint and the three lists, and the two methods in the
+    // three `*_auth_methods_supported` lists — ONLY where this realm trusts
+    // an attester, since a method no attestation could pass is a promise a
+    // client acts on. The challenge endpoint is the REALM's, like the store
+    // it hands challenges out of, whichever authorization server is asked.
+    Object.assign(metadata, this.deps.clientAttestation.metadata(
+      base + '/oauth2/challenge'));
+    if (!this.deps.clientAttestation.configured()) {
+      ['token_endpoint_auth_methods_supported',
+       'revocation_endpoint_auth_methods_supported',
+       'introspection_endpoint_auth_methods_supported'].forEach(
+        function (name) {
+          const listed = (metadata as Json)[name];
+          if (Array.isArray(listed)) {
+            (metadata as Json)[name] = listed.filter(function (m: string) {
+              return clientAttestation.METHODS.indexOf(m) < 0;
+            });
+          }
+        });
+    }
     // RFC 9700 mode, when it is on, narrows three of the members above:
     // response_types_supported loses everything that would issue an access
     // token from the authorization endpoint, grant_types_supported loses
@@ -2586,14 +2613,16 @@ class OAuth2Server {
     log.debug("Entering OAuth2Server.signPublishedDocument().");
     const alg = String(config.value('oauth2.signedMetadataAlgorithm') ||
                        'RS256');
-    if (alg === 'RS256') {
+    // The use case's signer-group key in a hybrid-groups realm (#68), else
+    // the per-algorithm key — `signingKeyFor()` decides both.
+    const signer = signingKeyFor(alg, useCase);
+    if (alg === 'RS256' && signer.kid === STS.kid) {
       log.debug("Leaving OAuth2Server.signPublishedDocument(). RS256.");
       return stsCrypto.signJws(claims, STS.privateKey,
         { algorithm: 'RS256', issuer: issuer, expiresIn: lifetimeS,
           keyid: publishedKidFor(STS.kid),
           header: certificateHeaderFor(useCase, 'RS256', STS.kid) });
     }
-    const signer = signingKeyFor(alg);
     const iat = nowSec();
     const payload = Object.assign({}, claims,
                                   { iss: issuer, iat: iat,
@@ -3151,7 +3180,11 @@ class OAuth2Server {
                     Number(one.retiredUntil) > Date.now());
           }).map(function (one: any): Json {
             return one.publicJwk;
-          })))
+          }))
+          // THE SIGNER GROUPS' KEYS (#68), after every per-algorithm key so
+          // `keys[0]` stays the RSA key — classical ones with their hybrid
+          // certificate in `x5c`, a partnered ML-DSA key bare (D5).
+          .concat(helpers.groupPublishedJwks(STS)))
         // THE REQUEST OBJECT ENCRYPTION KEYS (RFC 9101 section 6.1,
         // 2026-09-13), LAST — after every signing key, for the ordering rule
         // above — and marked `use: "enc"`, which is what tells a client these
@@ -3456,6 +3489,15 @@ class OAuth2Server {
                     e.message);
         }
       }
+    }
+    // A CLIENT ATTESTATION NAMES THE CLIENT TOO (#229), and may likewise be
+    // the only thing that does: draft-ietf-oauth-attestation-based-client-
+    // auth section 7.5 lets a token request omit client_id, and a refresh
+    // carries none. Read UNVERIFIED for the purpose the assertion's `sub` is
+    // read for above — `client_attestation.ts` then requires the verified
+    // attestation's `sub` to be this very name.
+    if (!body.client_id && !assertedClientId && !body.client_assertion) {
+      assertedClientId = this.deps.clientAttestation.subjectOf(req);
     }
     log.debug("Leaving OAuth2Server.clientFrom(). client_id from the body: " +
               (body.client_id || assertedClientId || '(none)'));
@@ -3795,6 +3837,13 @@ class OAuth2Server {
       // refuses it on every node.
       grant_id: opts.grant_id ? String(opts.grant_id) : undefined,
       grant_gen: opts.grant_id ? Number(opts.grant_gen) || 1 : undefined,
+      // THE CLIENT INSTANCE (#229, draft-ietf-oauth-attestation-based-
+      // client-auth section 10.3): where the Token Request carried a verified
+      // client attestation, the refresh token is bound to the attested key,
+      // inside the JWE where no client reads it, and the refresh grant
+      // requires an attestation of the same key.
+      attested_jkt: (opts.request && opts.request.stsClientAttestation &&
+                     opts.request.stsClientAttestation.jkt) || undefined,
       // OPENID CONNECT KEY BINDING (#150), inside the JWE: the thumbprint of
       // the key a bound ID Token names, carried through every refresh, and
       // held against the refresh request's DPoP proof. Separate from `cnf`,
@@ -6895,6 +6944,13 @@ class OAuth2Server {
         // is bound. Stored verbatim and never derived — the whole value of the
         // parameter is that it was fixed BEFORE the code existed.
         dpop_jkt: query.dpop_jkt ? String(query.dpop_jkt) : '',
+        // #229, section 10.4: the attested client instance key the PUSHED
+        // request was made under, taken from the pushed record and never from
+        // the query — a parameter in the browser's URL is not what the client
+        // instance proved at the back channel.
+        attested_jkt: (req.stsJar && req.stsJar.source === 'par' &&
+                       req.stsJar.pushed && req.stsJar.pushed.attestedJkt) ||
+                      '',
         // What the wallet asked to be authorized for, if it used
         // authorization_details rather than a scope. The token response has to
         // echo it back with the credential_identifiers it grants. A merged
@@ -10896,6 +10952,10 @@ class OAuth2Server {
                                checked.description);
       }
       dpopJkt = checked.jkt;
+      // For a client attestation's DPoP combined mode (#229, section 7.3),
+      // which compares this key with the attested one: the proof is verified
+      // ONCE, here, and its `jti` spent, so the verifier reads the answer.
+      req.stsDpopJkt = dpopJkt;
       dpopProof = checked;
       log.debug("This Token Request carries a valid DPoP proof. jkt=" +
                 dpopJkt);
@@ -10998,6 +11058,8 @@ class OAuth2Server {
       // What a client assertion may name as its audience — see above.
       audiences: assertionAudiences,
       strictAudience: strictAudience,
+      // What a Client Attestation PoP must name (#229).
+      issuer: self.issuerOf(base),
       registered: registeredClient
     });
     if (!clientAuth.ok) {
@@ -11015,7 +11077,9 @@ class OAuth2Server {
                 clientAuth.requirement + ").");
       errorCodes.mark(res, clientAuth.errorCode || 'STS-OAUTH-0137');
       log.debug("Leaving OAuth2Server.tokenGrant().");
-      return self.oauthError(res, 401, clientAuth.error,
+      // 401 unless the verifier chose otherwise (#229's 400
+      // `use_attestation_challenge`).
+      return self.oauthError(res, clientAuth.status || 401, clientAuth.error,
                              clientAuth.description);
     }
 
@@ -11312,6 +11376,7 @@ class OAuth2Server {
       request: req,
       audiences: assertionAudiences,
       strictAudience: strictAudience,
+      issuer: self.issuerOf(base),
       registered: registeredClient
     });
     // Recorded on the Token Request for refreshToken(), which decides from it
@@ -11448,6 +11513,26 @@ class OAuth2Server {
       // error-code: none — marked above with mtls.declaredRefusal()'s code
       return self.oauthError(res, declared.status, declared.error,
                         declared.description);
+    }
+    // OAUTH 2.0 ATTESTATION-BASED CLIENT AUTHENTICATION (#229), IN EVERY
+    // MODE, for the reason the RFC 8705 declaration above is: a client that
+    // declared attestation is held to it, and an attestation any other
+    // client sends as section 7.6's additional signal must hold. Read off the
+    // observation, so nothing is verified a second time.
+    const attestationProblem = await self.deps.clientAttestation
+      .requestRefusal({ registered: registeredClient,
+                        observation: clientObservation, request: req,
+                        clientId: String(client.client_id || ''),
+                        issuer: self.issuerOf(base) });
+    if (attestationProblem) {
+      log.debug("Leaving the token endpoint. The client attestation was " +
+                "refused.");
+      errorCodes.mark(res, attestationProblem.errorCode);
+      log.debug("Leaving OAuth2Server.tokenGrant().");
+      // error-code: none — marked above with the refusal's own code
+      return self.oauthError(res, attestationProblem.status,
+                             attestationProblem.error,
+                             attestationProblem.description);
     }
 
     // ---------------------------------------------------------------------
@@ -11864,6 +11949,20 @@ class OAuth2Server {
         }
         log.debug("The authorization code's dpop_jkt matches the proof. jkt=" +
                   dpopJkt);
+      }
+      // #229, section 10.4: a code whose pushed request was made under a
+      // client attestation is redeemed by that client INSTANCE — the same
+      // attested key — and not merely by the client.
+      const attestedCode = self.deps.clientAttestation.bindingRefusal(req,
+        record.attested_jkt, 'authorization code');
+      if (attestedCode) {
+        log.debug("Leaving the token endpoint. The code is bound to another " +
+                  "attested instance key.");
+        errorCodes.mark(res, attestedCode.errorCode);
+        log.debug("Leaving OAuth2Server.tokenGrant().");
+        // error-code: none — marked above with the refusal's own code
+        return self.oauthError(res, 400, attestedCode.error,
+                               attestedCode.description);
       }
       // OpenID Connect Key Binding section 2 (#150): c_s256 over this code.
       const codeProof = self.boundKeyProofRefusal(record.scope, code,
@@ -12346,6 +12445,20 @@ class OAuth2Server {
             'This refresh token is bound to DPoP key ' + boundTo +
             ', but the proof was signed by ' + dpopJkt + '.');
         }
+      }
+      // #229, SECTION 10.3: a refresh token issued on a client attestation is
+      // bound to the client INSTANCE key, and refreshing proves that key
+      // with an attestation again.
+      const attestedRefresh = self.deps.clientAttestation.bindingRefusal(req,
+        claims.attested_jkt, 'refresh token');
+      if (attestedRefresh) {
+        log.debug("Leaving the token endpoint. The refresh token is bound " +
+                  "to another attested instance key.");
+        errorCodes.mark(res, attestedRefresh.errorCode);
+        log.debug("Leaving OAuth2Server.tokenGrant().");
+        // error-code: none — marked above with the refusal's own code
+        return self.oauthError(res, 400, attestedRefresh.error,
+                               attestedRefresh.description);
       }
       // OPENID CONNECT KEY BINDING (#150): a grant whose ID Token is bound to
       // a key is refreshed only with a proof from that key, whether or not
@@ -14142,6 +14255,38 @@ class OAuth2Server {
 // claimAttributes gate debuggerAccess credentials websecurity clusterClaims
 // clusterBarrier capabilities
 
+  // ---------------------------------------------------------------------------
+  // THE CHALLENGE ENDPOINT (#229, draft-ietf-oauth-attestation-based-client-
+  // auth-11 section 6.3) — `POST /oauth2/challenge`. A fresh challenge for a
+  // Client Attestation PoP, uncacheable, and — where this realm asks for DPoP
+  // nonces — a fresh DPoP nonce in `DPoP-Nonce` beside it, which section 6.3
+  // makes a MUST so a combined-mode client need not be refused once to get
+  // one. The store and its bound are `client_attestation.ts`'s; a realm that
+  // trusts no client attester advertises no endpoint and hands out nothing,
+  // since a challenge there is good for nothing.
+  // ---------------------------------------------------------------------------
+  private challengeEndpoint(req: Req, res: Res): Json {
+    const { log, errorCodes, dpop, clientAttestation } = this.deps;
+    log.debug("Entering OAuth2Server.challengeEndpoint().");
+    res.set('Cache-Control', 'no-store');
+    if (!clientAttestation.configured()) {
+      log.debug("Leaving OAuth2Server.challengeEndpoint(). No attester.");
+      errorCodes.mark(res, 'STS-OAUTH-0747');
+      return this.oauthError(res, 400, 'invalid_request', 'This ' +
+        'authorization server trusts no client attester ' +
+        '(oauth2.clientAttestationTrustAnchors and ' +
+        'oauth2.clientAttestationTrustedKeys are empty), so it has no ' +
+        'challenge to give and advertises no challenge_endpoint.');
+    }
+    if (dpop.nonceModeOn()) {
+      res.set('DPoP-Nonce', dpop.issueNonce());
+    }
+    const challenge = clientAttestation.issueChallenge();
+    log.debug("Leaving OAuth2Server.challengeEndpoint().");
+    return res.status(200).type('application/json')
+      .send(JSON.stringify({ attestation_challenge: challenge }));
+  }
+
   private parEndpoint(req: Req, res: Res): Json {
     const { log, errorCodes } = this.deps;
     const self = this;
@@ -14389,6 +14534,9 @@ class OAuth2Server {
                       checked.errorCode || 'STS-OAUTH-0416');
       }
       dpopJkt = checked.jkt;
+      // The token endpoint's reason: a client attestation's combined mode
+      // reads the key this proof was verified under (#229).
+      req.stsDpopJkt = dpopJkt;
     }
 
     // --- 4. CLIENT AUTHENTICATION, AS AT THE TOKEN ENDPOINT
@@ -14428,6 +14576,8 @@ class OAuth2Server {
       request: req,
       audiences: assertionAudiences,
       strictAudience: strictAudience,
+      // What a Client Attestation PoP must name (#229).
+      issuer: self.issuerOf(base),
       registered: registered
     };
     const policy = await bcp.checkClientAuthentication(authentication);
@@ -14443,7 +14593,7 @@ class OAuth2Server {
       }
       log.debug("Leaving OAuth2Server.parRequest(). RFC 9700 mode refused " +
                 "the client.");
-      return refuse(401, policy.error, policy.description,
+      return refuse(policy.status || 401, policy.error, policy.description,
                     policy.errorCode || 'STS-OAUTH-0422',
                     presented.basic ?
                       { 'WWW-Authenticate': self.basicChallenge() } : null);
@@ -14538,6 +14688,20 @@ class OAuth2Server {
                 "method did not authenticate.");
       return refuse(401, declared.error, declared.description,
                     declared.errorCode, null);
+    }
+    // #229: a declared client attestation, and one sent as an additional
+    // signal — the token endpoint's rule, at the push that HAIP makes every
+    // wallet authenticate at.
+    const attestationProblem = await self.deps.clientAttestation
+      .requestRefusal({ registered: registered, observation: observation,
+                        request: req, clientId: clientId,
+                        issuer: self.issuerOf(base) });
+    if (attestationProblem) {
+      log.debug("Leaving OAuth2Server.parRequest(). The client attestation " +
+                "was refused.");
+      return refuse(attestationProblem.status, attestationProblem.error,
+                    attestationProblem.description,
+                    attestationProblem.errorCode, null);
     }
     // The token endpoint's rule, at the endpoint RFC 9126 section 2 says
     // authenticates a client as that one does — a CONFIDENTIAL client only
@@ -14759,6 +14923,10 @@ class OAuth2Server {
       alg: objectAlg,
       encrypted: objectEncrypted,
       dpopJkt: dpopJkt,
+      // #229, section 10.4: the attested client instance key, which the code
+      // this request_uri yields is then bound to.
+      attestedJkt: (req.stsClientAttestation &&
+                    req.stsClientAttestation.jkt) || '',
       redirectRelaxed: !!vetted.relaxed
     });
     if (!kept.ok) {
@@ -15022,6 +15190,10 @@ class OAuth2Server {
       strictAudience: (oauth21.strictClientAssertionAudience() ||
                        self.deps.fapi.strictAssertionAudience()) ?
                       self.issuerOf(base) : '',
+      // What a Client Attestation PoP must name (#229). The DPoP combined
+      // mode is not available here: nothing verifies a DPoP proof at these
+      // endpoints, so the attestation's refusal says to send a PoP.
+      issuer: self.issuerOf(base),
       registered: registered
     });
     if (!observed.authenticated) {
@@ -17434,6 +17606,10 @@ class OAuth2Server {
     });
 
     app.post('/oauth2/par', self.parEndpoint.bind(self));
+    // #229: OAuth 2.0 Attestation-Based Client Authentication's challenge
+    // endpoint, the realm's (its store is), so not repeated per named
+    // authorization server below.
+    app.post('/oauth2/challenge', self.challengeEndpoint.bind(self));
 
     // SECTION 2.3's 405 IS MIDDLEWARE AND NOT A ROUTE, for
     // /admin/sts-metadata's reason: that page lists the methods the ROUTER

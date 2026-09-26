@@ -15956,6 +15956,34 @@ function canonicalUsernameOfDn(dn) {
 // nameUsableInDn(), so scim.js calls THAT and takes the DN it returns. One
 // definition of what creating a person means, at all three doors.
 
+// Two attribute snapshots hold the same values, the two timestamps aside and
+// value order ignored. writePerson() asks it to tell a rewrite that changed
+// nothing from a modification.
+function sameAttributesApartFromTimestamps(a, b) {
+  log.debug('Entering sameAttributesApartFromTimestamps().');
+  const skip = ['createtimestamp', 'modifytimestamp'];
+  const namesOf = function (snapshot) {
+    return Object.keys(snapshot || {}).filter(function (name) {
+      return skip.indexOf(name) < 0 && (snapshot[name] || []).length > 0;
+    }).sort();
+  };
+  const left = namesOf(a);
+  const right = namesOf(b);
+  if (left.join('\u0000') !== right.join('\u0000')) {
+    log.debug('Leaving sameAttributesApartFromTimestamps(). Names differ.');
+    return false;
+  }
+  const same = left.every(function (name) {
+    const x = (a[name] || []).map(String).sort();
+    const y = (b[name] || []).map(String).sort();
+    return x.length === y.length && x.every(function (value, i) {
+      return value === y[i];
+    });
+  });
+  log.debug('Leaving sameAttributesApartFromTimestamps(). ' + same);
+  return same;
+}
+
 // Create or replace a person's entry. The caller has already merged whatever it
 // means to keep (see scim_map.js's window rule), so this REPLACES, exactly as
 // writeApplication() does and for the same reason: a merge here would make it
@@ -16002,6 +16030,20 @@ function writePerson(dn, attributes, options) {
   stored.attributes.modifytimestamp = [generalizedTime()];
   // Who wrote the address (#64): SCIM says `scim`; see verifyWrittenMail().
   verifyWrittenMail(stored, before, (options && options.mailSource) || '');
+  // A REWRITE THAT CHANGED NOTHING IS NOT A MODIFICATION (2026-09-26). SCIM
+  // replaces the whole entry through here for every PATCH, including one that
+  // adds a value the resource already holds, and RFC 7644 section 3.5.2.1
+  // says such an add changes nothing — so `meta.lastModified`, which is this
+  // entry's `modifyTimestamp`, must not move either. It did whenever the
+  // rewrite crossed a second boundary, which is why scim2/test-suite's
+  // add_existing_no_timestamp_change failed intermittently.
+  if (existing && sameAttributesApartFromTimestamps(before,
+                                                    attributeSnapshot(stored))) {
+    stored.attributes.modifytimestamp =
+      (before.modifytimestamp || [stored.attributes.modifytimestamp[0]])
+        .slice(0);
+    stored.modifiedAt = existing.modifiedAt || stored.modifiedAt;
+  }
   noteAccountChange(existing ? 'updated' : 'created', stored.dn, before,
                     attributeSnapshot(stored));
   log.debug('Leaving writePerson(). The entry was ' +

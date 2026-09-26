@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3570** of them, in **38** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3617** of them, in **38** subsystems.
 
 ## Where a code appears
 
@@ -57,13 +57,13 @@ is an ordinary outcome.
 * [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 28
 * [Scheduler (`STS-SCHED`)](#sts-sched) — 16
 * [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 79
-* [Certificate authority (`STS-PKI`)](#sts-pki) — 186
+* [Certificate authority (`STS-PKI`)](#sts-pki) — 189
 * [Certificate enrollment core (`STS-ENROLL`)](#sts-enroll) — 51
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 72
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 25
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 47
 * [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 249
-* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 630
+* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 662
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 97
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 21
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 16
@@ -73,10 +73,10 @@ is an ordinary outcome.
 * [LDAP directory (`STS-LDAP`)](#sts-ldap) — 84
 * [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 77
 * [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 144
-* [TLS and client certificates (`STS-TLS`)](#sts-tls) — 33
-* [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 94
+* [TLS and client certificates (`STS-TLS`)](#sts-tls) — 34
+* [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 104
 * [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 104
-* [Risk scoring (`STS-RISK`)](#sts-risk) — 39
+* [Risk scoring (`STS-RISK`)](#sts-risk) — 40
 * [Mail (`STS-MAIL`)](#sts-mail) — 39
 * [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 282
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 74
@@ -669,6 +669,9 @@ Raised from: common/pki.js, common/pki_authoring.ts, common/pki_revocation.js, c
 | `STS-PKI-0197` | A certificate on a path below its anchor is signed with a broken hash — MD2 or MD5 on every path, SHA-1 on every path but this service's own hierarchy in a development realm (#181) — and the path is refused (pki.pathRuleProblem, #201). | invalid_grant at the grant, invalid_client at client authentication; the console's error list for an upload |
 | `STS-PKI-0198` | A certificate chain OpenSSL verified in a TLS handshake breaks the path rules every other path here is held to (pki.peerChainProblem, #201): on the main port the client certificate is treated as unverified (authorized false); on an outbound request the request fails as a TLS error. Also logged when the rules could not be asked. | none on the wire: an unverified client certificate, or the family's own failure for an outbound request |
 | `STS-PKI-0199` | RFC 5280 section 6.1's certificate policy processing refuses a path: a certificate on it requires an explicit policy (policyConstraints) and no acceptable policy remains in the valid_policy_tree, a policyMappings maps anyPolicy, or the policies and mappings make a tree too large to evaluate (pki.pathPolicyOutcome, #201). | invalid_grant at the grant, invalid_client at client authentication; the console's error list for an upload |
+| `STS-PKI-0200` | A certificate authority build named an alternative key algorithm (pki.alternativeKeyAlgorithm, or altKeyAlg on the form) that is not a pure post-quantum signature algorithm this service generates, nor "none" (#68). | console: the page's error list; /admin-api: HTTP 400 { ok: false, errors } |
+| `STS-PKI-0201` | A certificate carries an ITU-T X.509 clause 9.8 alternative signature that does not verify under its issuer's alternative key (any path: this realm's own, an uploaded chain, a registered root), or — on a path to this realm's own hierarchy — cannot be checked (#68). | the verifier's refusal: whatever the certificate was presented for is refused as an untrusted certificate |
+| `STS-PKI-0202` | A certificate on a path to this realm's own hierarchy carries no alternative signature although its issuer holds an alternative (post-quantum) key — a hybrid path presented as classical, the downgrade #68 refuses. | the verifier's refusal: whatever the certificate was presented for is refused as an untrusted certificate |
 
 ## STS-ENROLL
 
@@ -1766,37 +1769,69 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0717` | A CIBA notification attempt was deferred because the claim store was unavailable (#151). | none (the sweep tries again) |
 | `STS-OAUTH-0718` | A CIBA ping or push was still unsent past oauth2.cibaNotifyRetentionS and was dead-lettered (#151). | none (a dead letter) |
 | `STS-OAUTH-0719` | The CIBA notification summary line: some were dead- lettered or deferred since the last one (#151). | none (a log line) |
-| `STS-OAUTH-0720` | The CIBA notification sweep failed in a realm (#151). | none (a log line) |
-| `STS-OAUTH-0721` | An operator's retry of a CIBA notification was refused: unknown, not a dead letter, or no endpoint now (#151). | console / /admin-api refusal (HTTP 400) |
-| `STS-OAUTH-0722` | An OpenID Provider Command was not sent because federation.outbound is off (#151). | none (a dead letter) |
-| `STS-OAUTH-0723` | An OpenID Provider Command was not sent because the client's command_endpoint cannot be dialled (#151). | none (a dead letter) |
-| `STS-OAUTH-0724` | An OpenID Provider Command was refused because the command_endpoint resolves to an internal address in product mode (#151). | none (a dead letter) |
-| `STS-OAUTH-0725` | A command_endpoint's host name did not resolve (#151). | none (a dead letter) |
-| `STS-OAUTH-0726` | A command_endpoint answered with a redirect, which is not followed (#151). | none (a dead letter) |
-| `STS-OAUTH-0727` | A Command Token could not be built or signed — the client registered alg none, or signing failed (#151). | none (a dead letter) |
-| `STS-OAUTH-0728` | An OpenID Provider Command timed out; retried with backoff (#151). | none (retried, then a dead letter) |
-| `STS-OAUTH-0729` | An OpenID Provider Command failed to connect; retried with backoff (#151). | none (retried, then a dead letter) |
-| `STS-OAUTH-0730` | A command_endpoint answered a status the draft does not name — 5xx, 408 and 429 are retried, the rest are not (#151). | none (a dead letter) |
-| `STS-OAUTH-0731` | A command attempt was deferred because the claim store was unavailable (#151). | none (the sweep tries again) |
-| `STS-OAUTH-0732` | An OpenID Provider Command was still unsent past oauth2.commandRetentionS and was dead-lettered (#151). | none (a dead letter) |
-| `STS-OAUTH-0733` | The provider commands summary line: some were dead- lettered or deferred since the last one (#151). | none (a log line) |
-| `STS-OAUTH-0734` | The provider commands sweep failed in a realm (#151). | none (a log line) |
-| `STS-OAUTH-0735` | No issuer is known for a Command Token: set global.publicBaseUrl, or send one command from the console so the realm's address is learned (#151). | none (a dead letter or a failed run) |
-| `STS-OAUTH-0736` | A relying party answered a command with invalid_request (section 3) (#151). | none (a dead letter) |
-| `STS-OAUTH-0737` | A relying party answered a command with unrecognized_provider: it does not know this issuer (#151). | none (a dead letter) |
-| `STS-OAUTH-0738` | A relying party answered unsupported_command (#151). | none (a dead letter) |
-| `STS-OAUTH-0739` | A relying party answered incompatible_state: the account was not in a state the command may start from; the state it gave is recorded (#151). | none (a dead letter) |
-| `STS-OAUTH-0740` | A relying party answered access_denied to a migrate command (#151). | none (a dead letter) |
-| `STS-OAUTH-0741` | A relying party answered authentication_not_transferable to a migrate command (#151). | none (a dead letter) |
-| `STS-OAUTH-0742` | An operator's retry of a command delivery was refused: unknown, not a dead letter, or no command_endpoint now (#151). | console / /admin-api refusal (HTTP 400) |
-| `STS-OAUTH-0743` | A relying party's answer to a command is not the draft's: no matching sub and account_state, a metadata answer without commands_supported or context, or a stream that is not text/event-stream (#151). | none (a dead letter or a failed run) |
-| `STS-OAUTH-0744` | A command was not sent: provider commands are off, the command is unknown, the client has no command_endpoint, the person has no subject there, or the client requires an aud_sub none is recorded for (#151). | console / /admin-api refusal (HTTP 400) |
-| `STS-OAUTH-0745` | A tenant command's stream could not be resumed: the relying party answered last-event-id-unavailable (#151). | none (a failed run) |
-| `STS-OAUTH-0746` | A tenant command's stream ended without command- complete after every resumption (#151). | none (a failed run) |
-| `STS-OAUTH-0747` | A call to /oauth2/commands/callback carried no callback token, or an unknown or expired one (#151). | HTTP 401 {error: invalid_token} with WWW-Authenticate |
-| `STS-OAUTH-0748` | A call to /oauth2/commands/callback was malformed: an async result not naming the command's sub and an account_state, or a command_requested other than metadata or audit_tenant (#151). | HTTP 400 {error: invalid_request} |
-| `STS-OAUTH-0749` | An automatic OpenID Provider Command could not be queued after a directory change or a sign-out; the change stands (#151). | none (a log line) |
-| `STS-OAUTH-0750` | The mock relying party's command endpoint refused a command — the development test control answering as a relying party would (#151). | HTTP 400, 401, 409 or 404 {error} |
+| `STS-OAUTH-0720` | A request carried more than one OAuth-Client-Attestation header, or one that is not a JWT in token68 syntax (#229, section 7.1 item 1). | token / PAR / introspection / revocation {error: invalid_client} (HTTP 401) |
+| `STS-OAUTH-0721` | The OAuth-Client-Attestation header does not hold a JWT whose header can be read (#229). | token / PAR / introspection / revocation {error: invalid_client} (HTTP 401) |
+| `STS-OAUTH-0722` | A Client Attestation's typ is not oauth-client-attestation+jwt (#229, section 4). | token / PAR / introspection / revocation {error: invalid_client} (HTTP 401) |
+| `STS-OAUTH-0723` | A Client Attestation is signed with an algorithm this server does not accept: not an asymmetric one in the JWS table, or a MAC (#229, section 7.1 item 3). | token / PAR / introspection / revocation {error: invalid_client} (HTTP 401) |
+| `STS-OAUTH-0724` | A client attestation was presented in a realm that trusts no client attester: oauth2.clientAttestationTrustAnchors and oauth2.clientAttestationTrustedKeys are both empty (#229). | token / PAR / introspection / revocation {error: invalid_client} (HTTP 401) |
+| `STS-OAUTH-0725` | A Client Attestation's x5c is unreadable, its signing certificate is self-signed, or its path does not hold to a trust anchor in oauth2.clientAttestationTrustAnchors (#229, section 10.8). | token / PAR / introspection / revocation {error: invalid_client} (HTTP 401) |
+| `STS-OAUTH-0726` | No trusted attester key verifies a Client Attestation: no configured key with its kid, or the signature does not verify (#229, section 7.1 item 4). | token / PAR / introspection / revocation {error: invalid_client} (HTTP 401) |
+| `STS-OAUTH-0727` | A Client Attestation lacks sub, exp or cnf, or a claim has the wrong type (#229, section 4). | token / PAR / introspection / revocation {error: invalid_client} (HTTP 401) |
+| `STS-OAUTH-0728` | A Client Attestation has expired, or its nbf or iat is in the future (#229, section 4). | token / PAR / introspection / revocation {error: invalid_client} (HTTP 401) |
+| `STS-OAUTH-0729` | A Client Attestation's cnf carries no public jwk, a symmetric one, or private key material (#229, section 7.1 item 5). | token / PAR / introspection / revocation {error: invalid_client} (HTTP 401) |
+| `STS-OAUTH-0730` | A Client Attestation is older than oauth2.clientAttestationMaxAgeS (#229, section 7.1 item 6). | token / PAR {error: use_fresh_attestation} (HTTP 400) |
+| `STS-OAUTH-0731` | A Client Attestation's sub is not the client_id the request names (#229, sections 7.1 item 7 and 7.5). | token / PAR / introspection / revocation {error: invalid_client} (HTTP 401) |
+| `STS-OAUTH-0732` | A request carried more than one OAuth-Client-Attestation-PoP header, or one that is not a JWT in token68 syntax (#229, section 7.2 item 1). | token / PAR / introspection / revocation {error: invalid_client} (HTTP 401) |
+| `STS-OAUTH-0733` | A Client Attestation PoP's typ is not oauth-client-attestation-pop+jwt, or its alg is not an accepted asymmetric one (#229, section 5.1). | token / PAR / introspection / revocation {error: invalid_client} (HTTP 401) |
+| `STS-OAUTH-0734` | A Client Attestation PoP does not verify under the key in the attestation's cnf (#229, section 7.2 item 4). | token / PAR / introspection / revocation {error: invalid_client} (HTTP 401) |
+| `STS-OAUTH-0735` | A Client Attestation PoP lacks aud, jti or iat, or a claim has the wrong type (#229, section 5.1). | token / PAR / introspection / revocation {error: invalid_client} (HTTP 401) |
+| `STS-OAUTH-0736` | A Client Attestation PoP does not name this authorization server's issuer identifier as its single audience (#229, section 7.2 item 7). | token / PAR / introspection / revocation {error: invalid_client} (HTTP 401) |
+| `STS-OAUTH-0737` | A Client Attestation PoP is older than oauth2.clientAttestationPopMaxAgeS, expired, or dated in the future (#229, section 7.2 item 6). | token / PAR / introspection / revocation {error: invalid_client} (HTTP 401) |
+| `STS-OAUTH-0738` | A Client Attestation PoP carries no challenge where oauth2.clientAttestationChallengeRequired asks for one (#229, section 6.1). | token / PAR {error: use_attestation_challenge} (HTTP 400) with an OAuth-Client-Attestation-Challenge header |
+| `STS-OAUTH-0739` | A Client Attestation PoP's challenge is not one this realm issued, has expired, or has been used (#229, section 6.1). | token / PAR {error: use_attestation_challenge} (HTTP 400) with an OAuth-Client-Attestation-Challenge header |
+| `STS-OAUTH-0740` | A Client Attestation PoP was presented again: its jti has been used (#229, section 12.1). | token / PAR / introspection / revocation {error: invalid_client} (HTTP 401) |
+| `STS-OAUTH-0741` | The used-assertion history is full of unexpired rows, so a Client Attestation PoP or challenge is refused rather than accepted unrecorded (#229). | token / PAR {error: invalid_client} (HTTP 503) |
+| `STS-OAUTH-0742` | A Client Attestation PoP or challenge could not be recorded as used, so it is refused rather than accepted unrecorded (#229). | token / PAR {error: invalid_client} (HTTP 503) |
+| `STS-OAUTH-0743` | A request carried a Client Attestation and no proof of possession of its key: no OAuth-Client-Attestation-PoP header and no DPoP proof (#229, section 7). | token / PAR / introspection / revocation {error: invalid_client} (HTTP 401) |
+| `STS-OAUTH-0744` | The DPoP combined mode was used at an endpoint that verifies no DPoP proof (introspection, revocation, CIBA) (#229, section 7.3). | token / PAR / introspection / revocation {error: invalid_client} (HTTP 401) |
+| `STS-OAUTH-0745` | In the DPoP combined mode the DPoP proof's key is not the key the Client Attestation binds (#229, section 7.3 item 4). | token / PAR / introspection / revocation {error: invalid_client} (HTTP 401) |
+| `STS-OAUTH-0746` | A client that declared attest_jwt_client_auth proved its key with DPoP alone, or one that declared attest_jwt_client_auth_dpop sent an OAuth-Client-Attestation-PoP (#229, section 7). | token / PAR / introspection / revocation {error: invalid_client} (HTTP 401) |
+| `STS-OAUTH-0747` | POST /oauth2/challenge in a realm that trusts no client attester (#229, section 6.3). | /oauth2/challenge {error: invalid_request} (HTTP 400) |
+| `STS-OAUTH-0748` | A refresh token issued on a client attestation was redeemed without an attestation of the same client instance key (#229, section 10.3). | token {error: invalid_grant} (HTTP 400) |
+| `STS-OAUTH-0749` | An authorization code pushed under a client attestation was redeemed without an attestation of the same client instance key (#229, section 10.4). | token {error: invalid_grant} (HTTP 400) |
+| `STS-OAUTH-0750` | oauth2.clientAttestationTrustAnchors holds a certificate that cannot be read, or oauth2.clientAttestationTrustedKeys is not a JWKS or holds a symmetric or private key; the unreadable part is ignored (#229). | log only |
+| `STS-OAUTH-0751` | A client that declared attest_jwt_client_auth or attest_jwt_client_auth_dpop sent no OAuth-Client-Attestation header, or did not authenticate with it (#229, section 7.5). | token / PAR / introspection / revocation {error: invalid_client} (HTTP 401) |
+| `STS-OAUTH-0752` | The CIBA notification sweep failed in a realm (#151). | none (a log line) |
+| `STS-OAUTH-0753` | An operator's retry of a CIBA notification was refused: unknown, not a dead letter, or no endpoint now (#151). | console / /admin-api refusal (HTTP 400) |
+| `STS-OAUTH-0754` | An OpenID Provider Command was not sent because federation.outbound is off (#151). | none (a dead letter) |
+| `STS-OAUTH-0755` | An OpenID Provider Command was not sent because the client's command_endpoint cannot be dialled (#151). | none (a dead letter) |
+| `STS-OAUTH-0756` | An OpenID Provider Command was refused because the command_endpoint resolves to an internal address in product mode (#151). | none (a dead letter) |
+| `STS-OAUTH-0757` | A command_endpoint's host name did not resolve (#151). | none (a dead letter) |
+| `STS-OAUTH-0758` | A command_endpoint answered with a redirect, which is not followed (#151). | none (a dead letter) |
+| `STS-OAUTH-0759` | A Command Token could not be built or signed — the client registered alg none, or signing failed (#151). | none (a dead letter) |
+| `STS-OAUTH-0760` | An OpenID Provider Command timed out; retried with backoff (#151). | none (retried, then a dead letter) |
+| `STS-OAUTH-0761` | An OpenID Provider Command failed to connect; retried with backoff (#151). | none (retried, then a dead letter) |
+| `STS-OAUTH-0762` | A command_endpoint answered a status the draft does not name — 5xx, 408 and 429 are retried, the rest are not (#151). | none (a dead letter) |
+| `STS-OAUTH-0763` | A command attempt was deferred because the claim store was unavailable (#151). | none (the sweep tries again) |
+| `STS-OAUTH-0764` | An OpenID Provider Command was still unsent past oauth2.commandRetentionS and was dead-lettered (#151). | none (a dead letter) |
+| `STS-OAUTH-0765` | The provider commands summary line: some were dead- lettered or deferred since the last one (#151). | none (a log line) |
+| `STS-OAUTH-0766` | The provider commands sweep failed in a realm (#151). | none (a log line) |
+| `STS-OAUTH-0767` | No issuer is known for a Command Token: set global.publicBaseUrl, or send one command from the console so the realm's address is learned (#151). | none (a dead letter or a failed run) |
+| `STS-OAUTH-0768` | A relying party answered a command with invalid_request (section 3) (#151). | none (a dead letter) |
+| `STS-OAUTH-0769` | A relying party answered a command with unrecognized_provider: it does not know this issuer (#151). | none (a dead letter) |
+| `STS-OAUTH-0770` | A relying party answered unsupported_command (#151). | none (a dead letter) |
+| `STS-OAUTH-0771` | A relying party answered incompatible_state: the account was not in a state the command may start from; the state it gave is recorded (#151). | none (a dead letter) |
+| `STS-OAUTH-0772` | A relying party answered access_denied to a migrate command (#151). | none (a dead letter) |
+| `STS-OAUTH-0773` | A relying party answered authentication_not_transferable to a migrate command (#151). | none (a dead letter) |
+| `STS-OAUTH-0774` | An operator's retry of a command delivery was refused: unknown, not a dead letter, or no command_endpoint now (#151). | console / /admin-api refusal (HTTP 400) |
+| `STS-OAUTH-0775` | A relying party's answer to a command is not the draft's: no matching sub and account_state, a metadata answer without commands_supported or context, or a stream that is not text/event-stream (#151). | none (a dead letter or a failed run) |
+| `STS-OAUTH-0776` | A command was not sent: provider commands are off, the command is unknown, the client has no command_endpoint, the person has no subject there, or the client requires an aud_sub none is recorded for (#151). | console / /admin-api refusal (HTTP 400) |
+| `STS-OAUTH-0777` | A tenant command's stream could not be resumed: the relying party answered last-event-id-unavailable (#151). | none (a failed run) |
+| `STS-OAUTH-0778` | A tenant command's stream ended without command- complete after every resumption (#151). | none (a failed run) |
+| `STS-OAUTH-0779` | A call to /oauth2/commands/callback carried no callback token, or an unknown or expired one (#151). | HTTP 401 {error: invalid_token} with WWW-Authenticate |
+| `STS-OAUTH-0780` | A call to /oauth2/commands/callback was malformed: an async result not naming the command's sub and an account_state, or a command_requested other than metadata or audit_tenant (#151). | HTTP 400 {error: invalid_request} |
+| `STS-OAUTH-0781` | An automatic OpenID Provider Command could not be queued after a directory change or a sign-out; the change stands (#151). | none (a log line) |
+| `STS-OAUTH-0782` | The mock relying party's command endpoint refused a command — the development test control answering as a relying party would (#151). | HTTP 400, 401, 409 or 404 {error} |
 
 ## STS-SAML
 
@@ -2709,7 +2744,7 @@ Raised from: tls/.
 | `STS-TLS-0018` | Recording a verified client certificate as an authentication threw; the connection was unaffected. | — |
 | `STS-TLS-0019` | The service did not start: tls.trustAnchorsFile could not be read. | — |
 | `STS-TLS-0020` | The service did not start: tls.trustAnchorsFile holds no PEM certificate. | — |
-| `STS-TLS-0021` | A TLS handshake failed on a listener this module watches — a version, cipher or certificate mismatch, or a non-TLS client. It named the required-client-certificate listener until 2026-09-16, when that listener was deleted; it is now the main port, where a client certificate is asked for and never required | TLS handshake failure |
+| `STS-TLS-0021` | A TLS handshake failed on a listener this module watches — a version or cipher mismatch, or a non-TLS client; a client refusing this service's certificate is STS-TLS-0034 since #225. It named the required-client-certificate listener until 2026-09-16, when that listener was deleted; it is now the main port, where a client certificate is asked for and never required | TLS handshake failure |
 | `STS-TLS-0022` *(retired)* | A TLS handshake failed on the optional-client-certificate listener. Retired 2026-09-16 with that listener; STS-TLS-0021 is the one code for a failed handshake now | TLS handshake failure |
 | `STS-TLS-0023` | A /tls or /tls/forwarded request carried a format parameter other than json or html. | HTTP 400 |
 | `STS-TLS-0024` | POST /tls/trust or /tls/trust/clear was refused because product mode does not open the truststore to anybody who can reach the port. | HTTP 403 |
@@ -2722,6 +2757,7 @@ Raised from: tls/.
 | `STS-TLS-0031` *(retired)* | The required-client-certificate listener refused a verified certificate this service issued that is not a TLS client identity. Retired 2026-09-16 with that listener: the same certificate is now refused where it is USED — no session at GET /tls/sign-in, no client authentication at the token endpoint — rather than at a socket | HTTP 403 with the connection report |
 | `STS-TLS-0032` | The file named by tls.certificateFile holds self-signed certificates, none of which signs the chain the listener presents, so no trust anchor is taken from it. | — |
 | `STS-TLS-0033` | A socket that presents the listener certificate (LDAPS, the SPIRE Server API) threw while being told the certificate was re-issued; the others were still told, and the main port serves the new one. | — |
+| `STS-TLS-0034` | A TLS client REFUSED this service's certificate: it sent a certificate alert (bad_certificate, unsupported_certificate, certificate_revoked, certificate_expired, certificate_unknown or unknown_ca) during the handshake. From a browser it almost always means the client does not trust this service's Root CA (#225). | TLS handshake failure (the client closed the connection) |
 
 ## STS-VC
 
@@ -2825,6 +2861,16 @@ Raised from: oid4vc/.
 | `STS-VC-0092` | oid4vp.verifierAttestation cannot be used — unreadable, not typ verifier-attestation+jwt, no sub, expired, or its cnf is not this realm's request-signing key — so no signed request with the verifier_attestation prefix was built (#129). | HTTP 500 |
 | `STS-VC-0093` | A SIOPv2 enrolment was started or collected by a browser holding no sign-on session, or for a person other than the one now signed in; or a self-issued ID was asked for as a second factor, which it is not offered as (#129). | HTTP 403 / 400 page |
 | `STS-VC-0094` | A key proved by a SIOPv2 enrolment was not enrolled: it is already enrolled for somebody, or the person holds the most they may (#129). | HTTP 400 page |
+| `STS-VC-0100` | A VC-API test endpoint (/vc-api/*, the Bitstring Status List publish hook) was called in a realm whose test controls are closed — a product realm — and answered as though it did not exist (#194). | HTTP 404 |
+| `STS-VC-0101` | A VC-API test endpoint was presented an access token it refused: not issued by this realm, not an access token, revoked, without the vc-api:issue / vc-api:verify scope it needs, or issued to a client that no longer declares that scope (#194). | HTTP 401 / 403 with WWW-Authenticate |
+| `STS-VC-0102` | The VC-API issuer refused a credential that does not conform to the VC Data Model (a MUST of VCDM 2.0 or 1.1 broken), or that names an issuer other than the key it is asked to sign with (#194). | HTTP 400 {errors} |
+| `STS-VC-0103` | The VC-API issuer refused a credential JSON-LD safe mode rejects — a context this service does not hold (it fetches none), an undefined term, a redefined protected term, a relative IRI — or one its cryptosuite could not sign (#194-#196). | HTTP 400 {errors} |
+| `STS-VC-0104` | A VC-API issue request named an issuer (a securing mechanism and key) this service does not offer (#194). | HTTP 404 {errors} |
+| `STS-VC-0105` | A VC-API request failed inside this service rather than on its input (#194). | HTTP 500 {errors} |
+| `STS-VC-0106` | The VC-API verifier refused a credential or presentation: the data model, JSON-LD safe mode, a proof (the key, the purpose, the challenge or domain, the signature, the issuer), or a status list entry (#194-#198). | HTTP 400 {verified: false, errors} |
+| `STS-VC-0107` | A VC-API status change named a credential this realm issued no status for, a status type or purpose it does not publish, or tried to clear a revocation (#197). | HTTP 404 / 400 {errors} |
+| `STS-VC-0108` | A VC-API request body was not a JSON object, or carried a polluting key or more depth or members than any document this service accepts (validation.checkDocument, #194). | HTTP 400 {errors} |
+| `STS-VC-0109` | A DID the VC-API resolver was asked for could not be resolved, or a DID URL dereferenced: not a DID (invalidDid, invalidDidUrl), a method it does not support, a representation it does not produce, or a did:web other than this realm's own, which it does not fetch (notFound) (#199). | HTTP 400 / 404 / 501 with the resolution result's error |
 
 ## STS-SSF
 
@@ -2986,6 +3032,7 @@ Raised from: risk/, admin-ui/risk_admin.ts.
 | `STS-RISK-0037` | A risk dataset upload failed unexpectedly: its fields could not be checked, or its import threw rather than answering. The upload's file is deleted. | — |
 | `STS-RISK-0038` | An authentication at HIGH or MEDIUM risk was PERMITTED for an application the issuance policy says risk may never lock out (the role-issuance template's neverLockOut, the console by default), because the person holds no second factor to step up with (#226). The alarm: enrol a second factor for this person, and look at the assessment's signals. | permitted; recorded on the audit row and logged as a warning |
 | `STS-RISK-0039` | An administrator with no second factor was sent to set one up (offered or required, #246) at a sign-in whose risk is HIGH or MEDIUM. The enrolment goes ahead so the console is never locked out (#226); whoever holds the password could be the one enrolling, so confirm it with the person. | the set-up step; recorded on the audit row and logged as a warning |
+| `STS-RISK-0040` | The install-time dataset loader (risk/risk_install.ts) could not make the database connection the way the service makes it (#213): persistence.databasePasswordProvider names a secret store whose password could not be read, or persistence.databaseUrl is not a URL it can be put into. The provider's own reason follows. Nothing is imported and the loader exits non-zero. | — |
 
 ## STS-MAIL
 

@@ -232,6 +232,7 @@ var config = {
     source: "auto",                  // Where signing keys come from; restart to apply
     plaintextRetention: "timed",     // How long a decrypted private key is kept
     plaintextTtlS: 300,              // Decrypted key idle timeout (seconds)
+    signerModel: "per-algorithm",    // Signer model
     kidFormat: "internal",           // Signed token kid format
     kekProvider: "file",             // Key-encryption key provider; restart to apply
     kekFile: "/run/secrets/sts-kek", // Key-encryption key file; restart to apply
@@ -297,6 +298,14 @@ var config = {
     saml2BearerRequireRegisteredIssuer: true,    // Require a registered SAML assertion issuer
     saml2BearerMaxLifetimeS: 300,                // Longest SAML assertion lifetime accepted (s)
     clientAssertionSkewS: 60,                    // Client assertion clock skew (s)
+    clientAttestationTrustAnchors: "",           // Trusted client attesters: certificate anchors (PEM)
+    clientAttestationTrustedKeys: "",            // Trusted client attesters: keys (JWKS)
+    clientAttestationChallengeRequired: true,    // Require a server challenge in a client attestation PoP
+    clientAttestationChallengeTtlS: 300,         // Client attestation challenge lifetime (s)
+    clientAttestationChallengeCacheSize: 10000,  // Client attestation challenges held per realm
+    clientAttestationMaxAgeS: 86400,             // Oldest client attestation accepted (s)
+    clientAttestationPopMaxAgeS: 300,            // Oldest client attestation PoP accepted (s)
+    fapiAllowClientAttestation: false,           // FAPI 2.0: accept client attestation (HAIP)
     assertionReplayCacheSize: 1000,              // Assertion replay cache size (per realm)
     dpopNonceRequired: false,                    // Require a DPoP server nonce
     dpopIatSkewS: 300,                           // DPoP proof iat window (s)
@@ -433,6 +442,7 @@ var config = {
     autoBuild: true,                            // Build the certificate authority at startup; restart to apply
     keyAlgorithm: "rsa-2048",                   // Default CA key algorithm
     signatureAlgorithm: "",                     // Default CA signature algorithm
+    alternativeKeyAlgorithm: "ml-dsa-87",       // CA alternative (post-quantum) key algorithm
     organisation: "sts",                        // Default organisation name (O=)
     personSelfService: true,                    // Let a person issue their own signing key pair
     leafLifetimeDays: 365,                      // Default lifetime of an issued key pair (days)

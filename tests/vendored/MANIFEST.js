@@ -414,6 +414,7 @@ const JOBS = [
   // throwaway realm, so the emergency signs nobody else out. `local: true`:
   // this repository's own /admin and /admin-api.
   { file: 'sts_key_rotation.js',         browser: false, local: true },
+  { file: 'sts_signer_groups.js',        browser: false, local: true },
   // THE CONSOLE AND THE PORTAL RENEW THEIR TOKENS INSIDE THE SAME SESSION
   // (2026-09-12). Both surfaces are this repository's own, and section 5 waits
   // out a sixty-second sign-on session, which is why the watchdog is raised.
@@ -789,6 +790,25 @@ const JOBS = [
   // exception. `local: true`: this repository's SCIM surface.
   { file: 'sts_scim_conformance.js',     browser: false, local: true,
     timeoutMs: 900000 },
+  // THE W3C VERIFIABLE CREDENTIALS AND DID TEST SUITES (#194-#199,
+  // 2026-09-26): each Working Group suite, pinned and installed in the tests
+  // image by tests/vc-suites/fetch-suites.sh, run against the VC-API test
+  // adapter (oid4vc/vc_api.ts) of a throwaway development realm — or, for
+  // the DID suite, over fixtures generated from this service's DIDs and
+  // resolver. Every failure fixed or a documented exception. `local: true`:
+  // this repository's oid4vc/ and its test adapter.
+  { file: 'sts_vc_data_model_suite.js',  browser: false, local: true,
+    timeoutMs: 900000 },
+  { file: 'sts_vc_di_eddsa_suite.js',    browser: false, local: true,
+    timeoutMs: 900000 },
+  { file: 'sts_vc_di_ecdsa_suite.js',    browser: false, local: true,
+    timeoutMs: 900000 },
+  { file: 'sts_vc_bitstring_status_suite.js', browser: false, local: true,
+    timeoutMs: 900000 },
+  { file: 'sts_vc_jose_cose_suite.js',   browser: false, local: true,
+    timeoutMs: 900000 },
+  { file: 'sts_did_test_suite.js',       browser: false, local: true,
+    timeoutMs: 900000 },
   // OPENID CONNECT ENTERPRISE EXTENSIONS (#148, 2026-09-26): session_expiry,
   // tenant and aud_sub in the ID Token, tenant refused for another realm,
   // domain_hint's home-realm discovery. `local: true`: this repository's
@@ -909,6 +929,11 @@ const JOBS = [
   // A person's attributes set, added to and removed from through
   // /admin-api (#228), in a realm of its own.
   { file: 'sts_person_attributes.js',    browser: false, local: true },
+  // OAuth 2.0 Attestation-Based Client Authentication (#229): a client
+  // attester made at run time, the challenge endpoint, PAR, the code and
+  // refresh token bound to the client instance, the DPoP combined mode and
+  // introspection, in a realm of its own.
+  { file: 'sts_client_attestation.js',   browser: false, local: true },
   { file: 'vc_did.js',                   browser: false },
   // ---------------------------------------------------------------------
   // LAST, ALL THREE OF THEM, AND THE ORDER IS THE WHOLE OF WHY IT IS SAFE

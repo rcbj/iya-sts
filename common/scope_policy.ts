@@ -22,7 +22,8 @@
 //   * THIS SERVICE'S OWN PROTECTED SCOPES — `admin:read` and `admin:write`
 //     (/admin-api), the SCIM pair (`scim.scopeRead`, `scim.scopeWrite`), the
 //     Shared Signals pair (`ssf.authScopeRead`, `ssf.authScopeWrite`), the
-//     embedded debugger's permission and Grant Management's two (#142). Issued ONLY to a client whose
+//     embedded debugger's permission, Grant Management's two (#142) and the
+//     VC-API test endpoints' two (#194). Issued ONLY to a client whose
 //     `oauthAllowedScope` lists them, IN BOTH MODES: the resource servers
 //     behind them are this service's own, development already gates them, and
 //     a gate any client can mint a key for is not one. Each of those resource
@@ -89,6 +90,13 @@ const ADMIN_SCOPES = Object.freeze(['admin:read', 'admin:write']);
 // for the debugger permission's reason below.
 const GRANT_MANAGEMENT_SCOPES = Object.freeze(['grant_management_query',
                                                'grant_management_revoke']);
+
+// The VC-API test endpoints' two (#194, `oid4vc/vc_api.ts`): an endpoint
+// that signs any document its caller writes with a realm's key is this
+// service's own resource server, and a development-only one is still no
+// reason to let any client mint the key to it. Written out for the
+// debugger permission's reason below; `tests/scope_policy.js` compares.
+const VC_API_SCOPES = Object.freeze(['vc-api:issue', 'vc-api:verify']);
 
 // `debugger/debugger_access.ts`'s PERMISSION_ID. See the header.
 const DEBUGGER_PERMISSION = 'urn:sts:debugger-api:debugger';
@@ -176,7 +184,7 @@ class ScopePolicy {
      String(config.value('scim.scopeWrite') || 'scim:write'),
      String(config.value('ssf.authScopeRead') || 'ssf:read'),
      String(config.value('ssf.authScopeWrite') || 'ssf:write'),
-     DEBUGGER_PERMISSION].concat(GRANT_MANAGEMENT_SCOPES)
+     DEBUGGER_PERMISSION].concat(GRANT_MANAGEMENT_SCOPES, VC_API_SCOPES)
       .forEach(function (one) {
       if (names.indexOf(one) < 0) {
         names.push(one);

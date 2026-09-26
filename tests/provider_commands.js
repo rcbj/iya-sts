@@ -189,7 +189,7 @@ async function body(t) {
   const deadRow = c.report({}).deliveries.filter(function (row) {
     return row.id === again.row.id;
   })[0];
-  t.check(deadRow.state === 'dead' && deadRow.errorCode === 'STS-OAUTH-0739',
+  t.check(deadRow.state === 'dead' && deadRow.errorCode === 'STS-OAUTH-0771',
           '3a. incompatible_state is a dead letter with its code',
           JSON.stringify(deadRow));
   answers.push({ ok: false, status: 503, kind: 'status',

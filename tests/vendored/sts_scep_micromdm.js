@@ -161,8 +161,47 @@ async function test() {
   // -------------------------------------------------------------------------
   log.info("=== 1. over HTTPS: the transport, and badAlg ===");
   const one = await challenge(REALM);
+  // WHICH CERTIFICATES GetCACert ANSWERS DECIDES WHAT scepclient's DEFAULT
+  // CAN DO (2026-09-26). With no selector it envelopes to EVERY certificate
+  // GetCACert answered, and smallstep/pkcs7 encrypts to RSA keys only. The
+  // RA, the Issuing CA and the Intermediate are this realm's and RSA; the
+  // Root is the SERVICE's, and an earlier job in the run
+  // (sts_admin_api_operations' build-root, the PKI workbench) may have
+  // rebuilt it with an EC key — so the default is refused by the client
+  // itself, before any PKIOperation is sent, in a run where that job came
+  // first. The chain is read with sscep here, and where it is not all RSA
+  // the default's refusal is asserted and the transport is driven with
+  // -key-encipherment-selector, which names the RA alone.
+  const getca = await K.run("sscep", ["getca", "-u", one.plainUrl, "-c",
+                                      path.join(work, "ca.crt")]);
+  assert.strictEqual(getca.status, 0, getca.shown);
+  const answered = fs.readdirSync(work).filter(function (name) {
+    return /^ca\.crt-\d+$/.test(name);
+  }).map(function (name) {
+    return K.pemChain(fs.readFileSync(path.join(work, name), "utf8"))[0];
+  });
+  const allRsa = answered.length > 0 && answered.every(function (cert) {
+    return cert.publicKey.asymmetricKeyType === "rsa";
+  });
+  log.info("GetCACert answered " + answered.length + " certificate(s): " +
+           answered.map(function (cert) {
+             return cert.publicKey.asymmetricKeyType;
+           }).join(", ") + (allRsa ? "" : " — the default cannot encrypt " +
+           "to every one, so the transport is driven with " +
+           "-key-encipherment-selector"));
+  if (!allRsa) {
+    const every = await scepclient(path.join(work, "every"), [
+      "-server-url", one.url, "-challenge", one.challenge, "-cn", DAVE],
+      "scepclient over https, every certificate as a recipient");
+    C.check("with a non-RSA certificate in the chain the default (every " +
+            "certificate a recipient) is refused by the client itself",
+            function () {
+      failed(every, /only RSA keys are supported/);
+    });
+  }
   const https = await scepclient(path.join(work, "https"), [
-    "-server-url", one.url, "-challenge", one.challenge, "-cn", DAVE],
+    "-server-url", one.url, "-challenge", one.challenge, "-cn", DAVE]
+    .concat(allRsa ? [] : ["-key-encipherment-selector"]),
     "scepclient over https");
   const after = await monitorCounts();
   C.check("GetCACert lists the RA, the Issuing CA, the Intermediate and " +
@@ -189,9 +228,6 @@ async function test() {
 
   // -------------------------------------------------------------------------
   log.info("=== 2. over plain HTTP, the recipient chosen three ways ===");
-  const getca = await K.run("sscep", ["getca", "-u", one.plainUrl, "-c",
-                                      path.join(work, "ca.crt")]);
-  assert.strictEqual(getca.status, 0, getca.shown);
   const ra = K.pemChain(fs.readFileSync(path.join(work, "ca.crt-0"),
                                         "utf8"))[0];
   const selected = await scepclient(path.join(work, "selected"), [

@@ -139,8 +139,8 @@ class Ciba {
         timeout: 'STS-OAUTH-0714', network: 'STS-OAUTH-0715',
         status400: 'STS-OAUTH-0716', status: 'STS-OAUTH-0636',
         deferred: 'STS-OAUTH-0717', stale: 'STS-OAUTH-0718',
-        summary: 'STS-OAUTH-0719', sweepFailed: 'STS-OAUTH-0720',
-        retry: 'STS-OAUTH-0721'
+        summary: 'STS-OAUTH-0719', sweepFailed: 'STS-OAUTH-0752',
+        retry: 'STS-OAUTH-0753'
       },
       deadLetterHint: 'Dead letters are listed on /admin/deliveries and ' +
         'retried from there.',

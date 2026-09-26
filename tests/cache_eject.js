@@ -103,6 +103,8 @@ function childMain() {
       'federation.release-index', 'gnap.signatures',
       'krb5.authenticator-replay', 'oauth2.redeemed-codes',
       'oauth2.client-jwks', 'oauth2.request-uri', 'oauth2.signed-metadata',
+      // The challenges a client attestation's PoP carries (#229).
+      'oauth2.attestation-challenges',
       'oauth2.used-assertions', 'oid4vci.nonces', 'oid4vci.status-entries',
       // OpenID Federation's resolved Trust Chains (#132), and the Entity
       // Collections a process made without fetching (#136).
@@ -112,13 +114,16 @@ function childMain() {
       'oid4vp.status-lists-fetched', 'oid4vp.transactions',
       'revocation.ca-certificates', 'revocation.crl', 'revocation.failures',
       'revocation.ocsp', 'risk.standings', 'scim.digest-nonce-counts',
-      'scim.digest-nonces', 'scim.hoba-challenges', 'scim.hoba-signatures'
+      'scim.digest-nonces', 'scim.hoba-challenges', 'scim.hoba-signatures',
+      // The VC-API test adapter's issued credentials (#194-#199): a row
+      // expires with the credential's validity or a default window.
+      'vc-api.issued'
     ].sort();
     const ejecting = registry.ejecting().filter(function (n) {
       return !/^test\./.test(n);
     });
     note(JSON.stringify(ejecting) === JSON.stringify(expected),
-         'B1. exactly the thirty stores whose entries expire eject them',
+         'B1. exactly the thirty-one stores whose entries expire eject them',
          JSON.stringify({ missing: expected.filter(function (n) {
            return ejecting.indexOf(n) < 0;
          }), extra: ejecting.filter(function (n) {
