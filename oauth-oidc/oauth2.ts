@@ -2811,7 +2811,9 @@ class OAuth2Server {
                            // OpenID Connect for Identity Assurance 1.0
                            // section 7 (#127): the element itself.
                            ['verified_claims']),
-      claim_types_supported: ['normal'],
+      // OIDC Core 5.6: all three, the other two from Claims Providers a
+      // person linked (#147, `claims_providers.ts`).
+      claim_types_supported: ['normal', 'aggregated', 'distributed'],
       // Three parameters this server reads and two it does not, stated as the
       // booleans the specification defines rather than left to a client to
       // discover by sending one and watching it be ignored. The authorization
@@ -4169,6 +4171,28 @@ class OAuth2Server {
                                               base, payload, user),
                                             'requested claim(s)'));
     }
+    // AGGREGATED AND DISTRIBUTED CLAIMS (#147, OIDC Core 5.6.2): a claim the
+    // `id_token` member asked for that the entry did not answer, and that a
+    // Claims Provider the person linked supplies, is referenced to that
+    // provider. `claims_providers.ts` argues what is sent and when; it never
+    // replaces a value the entry holds, and a provider that fails is left out.
+    const unanswered = self.requestedClaimNames(opts.claims, 'id_token')
+      .filter(function (name: string): boolean {
+        return payloadWithCustom[name] === undefined;
+      });
+    if (unanswered.length) {
+      try {
+        const referenced = await self.claimsProviders().sourcesFor(
+          user.username, unanswered);
+        if (referenced) {
+          Object.assign(payloadWithCustom, referenced);
+        }
+      } catch (e: any) {
+        // The rest of the ID Token is still owed (OIDC Core 5.5.1).
+        log.warn(errorCodes.tag('STS-OAUTH-0682') + 'idToken(): the Claims ' +
+                 'Providers could not be asked: ' + ((e && e.message) || e));
+      }
+    }
     // OIDC Core section 3.1.3.7: an ID Token is signed with the algorithm the
     // client REGISTERED as `id_token_signed_response_alg`, and with RS256 when
     // it registered none — which is what every client here does unless it says
@@ -4967,6 +4991,14 @@ class OAuth2Server {
   // The names one member of a parsed claims request asks for, in the order the
   // client wrote them. A helper rather than an inline Object.keys() because
   // three call sites need it and one of them is the console.
+  // The Claims Provider library (#147), loaded when first asked: it reads
+  // the directory and the outbound policy, which load around this module.
+  claimsProviders(): Json {
+    this.deps.log.debug("Entering OAuth2Server.claimsProviders().");
+    this.deps.log.debug("Leaving OAuth2Server.claimsProviders().");
+    return require('./claims_providers');
+  }
+
   requestedClaimNames(request: Json, member: Json): Json {
     const { log } = this.deps;
     log.debug("Entering OAuth2Server.requestedClaimNames().");
@@ -9753,7 +9785,32 @@ class OAuth2Server {
     // of those into a rejected promise that express 4 does not see at all,
     // which would swap a 500 with a stack trace in the log for a request that
     // hangs. So the await is confined to the one expression that needs it.
-    const protection = self.protectUserinfo(body, registered, base, claims);
+    //
+    // AGGREGATED AND DISTRIBUTED CLAIMS (#147) join the chain first: a claim
+    // the `userinfo` member asked for that nothing above answered, and that a
+    // Claims Provider the person linked supplies (`claims_providers.ts`). A
+    // provider that fails is left out, and so is the whole step if the
+    // library itself throws — the rest of the response is still owed.
+    const unanswered = self.requestedClaimNames(request, 'userinfo')
+      .filter(function (name: string): boolean {
+        return body[name] === undefined;
+      });
+    const referenced = unanswered.length
+      ? Promise.resolve().then(function () {
+          return self.claimsProviders().sourcesFor(username, unanswered);
+        }).catch(function (e: any) {
+          log.warn(errorCodes.tag('STS-OAUTH-0682') + 'userinfoResponse(): ' +
+                   'the Claims Providers could not be asked: ' +
+                   ((e && e.message) || e));
+          return null;
+        })
+      : Promise.resolve(null);
+    const protection = referenced.then(function (sources: Json) {
+      if (sources) {
+        Object.assign(body, sources);
+      }
+      return self.protectUserinfo(body, registered, base, claims);
+    });
     protection.then(function (protectedOut) {
       res.status(200).type(protectedOut.contentType)
          .set('Cache-Control', 'no-store').send(protectedOut.body);

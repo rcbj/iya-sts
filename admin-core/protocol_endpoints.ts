@@ -354,6 +354,10 @@ class ProtocolEndpoints {
         '/oidfed/register', '/oidfed/extended-list', '/oidfed/collection',
         '/oidfed/subordinate-events'
       ].map(route),
+      // ===== Claims Providers endpoints row (#147) =====
+      '/admin/claim-providers': [
+        '/portal/claim-sources', '/portal/claim-sources/callback'
+      ].map(route),
       // ===== SCEP endpoints row =====
       '/admin/scep': [
         '/enroll/scep', '/enroll/scep/pkiclient.exe', '/enroll/scep/:profile',

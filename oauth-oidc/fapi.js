@@ -694,7 +694,7 @@ function authorizationRefusal(query, context) {
     // section 2.3 answers with invalid_request).
     if (type === 'code' && !jarm) {
       log.debug("Leaving authorizationRefusal(). code without JARM.");
-      return refusal('STS-OAUTH-0678', 'invalid_request', 'response-type',
+      return refusal('STS-OAUTH-0688', 'invalid_request', 'response-type',
                      'response_type "code" is allowed only with ' +
                      'response_mode=jwt (JARM), and this request\'s ' +
                      'response_mode is "' + String(q.response_mode || '') +
@@ -724,7 +724,7 @@ function authorizationRefusal(query, context) {
   // ensure-request-object-without-scope-fails module expects the refusal.
   if (advanced() && !fapi2() && !String(q.scope || '').trim()) {
     log.debug("Leaving authorizationRefusal(). No scope.");
-    return refusal('STS-OAUTH-0679', 'invalid_request', 'scope-required',
+    return refusal('STS-OAUTH-0689', 'invalid_request', 'scope-required',
                    'the request names no scope; under this profile only ' +
                    'the parameters of the signed request object are used ' +
                    '(Part 2 section 5.2.2 item 10), so scope belongs in it, ' +

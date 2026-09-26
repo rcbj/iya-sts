@@ -1356,6 +1356,16 @@ const SECTIONS = [
                'trusts, the Trust Marks it issues and carries, resolving ' +
                'another entity\'s Trust Chain, and the ' +
                '<code>oidfed.*</code> settings.' },
+      // CLAIMS PROVIDERS (#147, 2026-09-24), beside the two above for the same
+      // reason: another party this realm is configured to trust, here for
+      // claims about a person — OpenID Connect aggregated and distributed
+      // claims. Drawn by oauth-oidc/claims_providers_admin.ts.
+      { path: '/admin/claim-providers', label: 'Claims Providers',
+        blurb: 'The OpenID Providers this realm fetches claims from for a ' +
+               'person who linked one on the portal, passed to a relying ' +
+               'party as aggregated or distributed claims (OpenID Connect ' +
+               'Core 5.6.2): the register, the redirect URI to register at ' +
+               'each, every person\'s link, and revoking one.' },
 
       // FIVE PAGES ADDED ON 2026-08-27, AND EVERY ONE OF THEM EXISTS BECAUSE
       // ITS FAMILY HAD SETTINGS AND NO PAGE. Kerberos has nineteen appconfig
@@ -27977,7 +27987,16 @@ class AdminConsole {
         // `?format=json` and a POST from a script is exactly what CSRF is not
         // about — but the token is cheap to send and letting `Content-Type:
         // application/json` past would make the header the bypass.
-        if (needsWrite) {
+        //
+        // **THE ONE POST WHOSE TOKEN IS CHECKED PAST THIS POINT (#215)** is the
+        // dataset upload, `POST /admin/risk/upload`: its body is a file of up
+        // to gigabytes that `common/app.js` leaves unread — the same predicate
+        // decides both — so the token is not in `parseBody(req)` here. The
+        // upload handler (`risk/risk_upload.ts`) reads the form's fields
+        // first and checks this session's token against them before it
+        // writes a byte of the file; the role and the policy are still
+        // decided below, on the headers, as for every write.
+        if (needsWrite && !app.isStreamedUpload(req)) {
           const token = websecurity.checkCsrf(state.session ? state.session.id :
                                               '',
                                               parseBody(req));

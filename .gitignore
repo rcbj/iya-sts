@@ -57,3 +57,10 @@ debugger/embedded/
 # The one native module (#40): compiled inside an image build only, by
 # build-native.sh, and never committed or sent from a host.
 spiffe/native/*.node
+
+# THE EXTERNAL TEST VECTORS (#202, #203): C2SP Wycheproof and NIST ACVP,
+# fetched at a pinned commit and checked by SHA-256 when the tests image is
+# built (tests/tools/fetch-vectors.sh). Never committed: they carry test keys,
+# and this repository commits no key material. A local copy made for a host
+# run lives here too and is ignored for the same reason.
+tests/vectors/

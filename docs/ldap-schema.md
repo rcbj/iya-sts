@@ -49,6 +49,7 @@ dc=example,dc=com                       domain, dcObject
 │   └── ou=agents                       applicationProcess + spiffeAgent
 ├── ou=devices                          device + stsDevice          (#130)
 ├── ou=oidfed                           stsOidfedEntry              (#132)
+├── ou=claimproviders                   stsClaimProvider            (#147)
 ├── ou=trustAnchors                     stsTrustAnchor              (default realm only)
 └── ou=crl                              cRLDistributionPoint        (created on first CRL)
 ```
@@ -108,6 +109,7 @@ All the inetOrgPerson attributes (RFC 2798, RFC 4519) can be stored, and
 | `hobaPublicKey` | RFC 7486 HOBA keys, `<kid> <base64 DER>` | public |
 | `stsSelfIssuedSubject` | SIOPv2 subjects the person enrolled (a DID or a JWK thumbprint URI), as JSON (#129) | withheld |
 | `stsCibaUserCode` | the CIBA user code the person set on `/portal/ciba` (#131) | scrypt-hashed, withheld |
+| `stsClaimSourceTokens` | the person's access and refresh tokens at each Claims Provider they linked on `/portal/claim-sources`, one JSON value (#147) | **sealed** where keys persist, withheld |
 
 ### Assertion key pairs (RFC 7523 and RFC 7522)
 
@@ -334,6 +336,18 @@ entry means.
 | `stsOidfedEvent` | on an `events` entry: one subordinate's history, one JSON event per value (`iat`, `event`, and `event_description` and `information_uri` where given). Appended and never rewritten, and merged by value when two nodes write at once. The entry outlives the subordinate |
 | `stsOidfedKeys` | on the one `cn=keys` entry: the realm's Federation Entity Key table, one JSON row per value, each private key **sealed** where keys persist. **Withheld from every read**, and each row's private key is replaced by a placeholder in searches and in the directory dump |
 
+## Claims Providers: `ou=claimproviders` (#147)
+
+The OpenID Providers this realm fetches aggregated or distributed claims from
+([OpenID Connect](oauth-oidc.md)). One entry per provider, named `cn=<id>`;
+`oauth-oidc/claims_providers.ts` owns what an entry means.
+
+| Attribute | Meaning |
+|---|---|
+| `objectClass` | `top`, `stsClaimProvider` |
+| `stsClaimProviderData` | the provider, as one JSON value: its id and name, issuer, authorization, token, claims and JWKS endpoints, this realm's client id and authentication method there, the scope asked for, the claims it supplies, and `aggregated` or `distributed` |
+| `stsClaimProviderSecret` | this realm's client secret at the provider. **Sealed** where keys persist, and **withheld from every read** |
+
 ## Trust anchors and CRLs
 
 `ou=trustAnchors` exists only in the default realm, with one
@@ -359,7 +373,8 @@ included (`SECRET_ATTRIBUTES` in `ldap/ldap_server.js`):
   `stsSelfIssuedSubject`, `stsIdaVerification`, `stsCibaUserCode`
 * devices: `stsDeviceSecretHash`
 * client secrets: `oauthClientSecret`, `appRegistrationAccessToken`,
-  `fedClientSecret`
+  `fedClientSecret`, `stsClaimProviderSecret`
+* tokens held for a person at another provider: `stsClaimSourceTokens`
 * private keys: `oauthAssertionPrivateKey`, `oauthSamlAssertionPrivateKey`,
   `stsAssertionPrivateKey`, `stsSamlAssertionPrivateKey`,
   `stsEnrolledPrivateKey`, `appEnrolledPrivateKey`, `fedEncryptionKey`

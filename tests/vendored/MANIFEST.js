@@ -370,6 +370,13 @@ const JOBS = [
   // refused SCIM Basic password recorded under a digest, never the name.
   // `local: true`: this repository's own /admin and /admin-api.
   { file: 'sts_admin_risk.js',           browser: false, local: true },
+  // A RISK DATASET UPLOADED AS A FILE (#215): a synthetic .gz and .zip
+  // through the console's multipart form (a real session and CSRF token)
+  // and through POST /admin-api/risk/upload, each watched from loading to
+  // active, and the refusals — over the cap, a zip of two files, a bomb, a
+  // missing token, the wrong body type. `local: true`: this repository's own
+  // /admin and /admin-api.
+  { file: 'sts_admin_risk_upload.js',    browser: false, local: true },
   // SIGNING KEY ROTATION OVER HTTP (#42/#48, 2026-09-22): the refusals, a
   // rotation keeping the retired key verifying, the /admin/keys Rotate form,
   // and an emergency after which an earlier token is refused — in a
@@ -740,6 +747,11 @@ const JOBS = [
   // CIBA under a FAPI profile.
   { file: 'sts_grant_management.js',     browser: false, local: true },
   { file: 'sts_fapi_ciba.js',            browser: false, local: true },
+  // OPENID CONNECT CLAIMS AGGREGATION (#147, 2026-09-24): a realm of this
+  // service as the Claims Provider of another — the register, linking on the
+  // portal, aggregated and distributed claims, revocation. `local: true`:
+  // this repository's authorization server, portal and API.
+  { file: 'sts_claims_aggregation.js',   browser: false, local: true },
   // THE OPENID FOUNDATION'S CONFORMANCE SUITE (#176, 2026-09-24): FAPI 2.0
   // Security Profile and Message Signing, FAPI 1.0 Advanced and FAPI-CIBA,
   // each plan a throwaway realm, every module run, and a FAILED module a
@@ -811,6 +823,16 @@ const JOBS = [
   // (RSA-OAEP and ECDH-ES), WS-Federation, a JWE ID Token, every refused
   // algorithm, plaintext in product, rotation and its grace period.
   { file: 'sts_federation_encryption.js', browser: false, local: true },
+  // EVERY SAML 2.0, SAML 1.1, WS-TRUST AND WS-FEDERATION DOCUMENT THIS
+  // SERVICE EMITS, AGAINST THE PUBLISHED OASIS AND W3C XML SCHEMAS (#188,
+  // 2026-09-24): metadata, Responses on every binding, the ArtifactResponse,
+  // logout in both directions, the SAML 1.1 responder, each WS-Trust
+  // version's answers and faults, the WS-Federation sign-in response, and
+  // the federation module's outbound requests — in a development and a
+  // product realm, validated by `xmllint --nonet` against the schemas the
+  // tests image fetched and pinned (tests/xml-schemas/). `local: true`:
+  // this repository's own documents.
+  { file: 'sts_xml_schema_validation.js', browser: false, local: true },
   // #171 (2026-09-23): the outbound transport policy over HTTP — the write
   // doors in a product realm, SSF push to this job's own listeners in both
   // modes (a skip ignored in product, a CA file honoured), the RFC 9728
@@ -1004,7 +1026,13 @@ const LOCAL_HELPERS = [
   // service dials a job's listeners at. A product-mode service refuses a
   // foreign certificate that names no list, so every chain this suite mints
   // names one — `tests/tools/pep-credential.js` included.
-  'test_crl_host.js'
+  'test_crl_host.js',
+  // A ZIP ARCHIVE BUILT FROM THE FORMAT (#215), for the dataset upload's
+  // tests — `sts_admin_risk_upload.js` and the in-process
+  // `tests/risk_upload.js`: one entry, several, a directory and __MACOSX/
+  // beside the data, a declared size that lies. Node's zlib; nothing from
+  // yauzl, which is the reader under test.
+  'zip_writer.js'
 ];
 
 // ---------------------------------------------------------------------------

@@ -687,12 +687,69 @@ app.options('*', corsPolicy.preflight());
 // is the OCSP case exactly: the text parser would drain the stream and decode
 // DER as UTF-8, so `scep/scep.ts` would verify a signature over bytes the
 // client never signed and refuse every correct request as badMessageCheck.
-app.use(bodyParser.raw({
+//
+// **AND THE TWO DATASET UPLOAD PATHS ARE EXEMPT FROM BOTH (#215, 2026-09-24).**
+// Both parsers read the WHOLE body into memory, capped at 5 MB — right for a
+// SOAP envelope or a form, and wrong for the one thing here whose body is
+// meant to be large: a risk dataset file, which is several hundred megabytes
+// for a DB-IP city file. `POST /admin/risk/upload` (a multipart form) and
+// `POST /admin-api/risk/upload` (the file as the body) read their own body
+// as a STREAM, to disk, in `risk/risk_upload.ts` — and a handler that reads
+// a stream the parser has already drained waits for ever (the OCSP hang
+// above, exactly). So the exemption is here, and it is EXACT:
+//
+//   * **the method and the path, and nothing else** — `isStreamedUpload()`
+//     below, read off `req.path` after the realm middleware has taken the
+//     `/realm/<id>` prefix off, so a realm's upload is the same path. It
+//     matches the way express will route: case-insensitively and with an
+//     optional trailing slash, express's defaults, because a request the
+//     exemption missed and the route caught would be a drained body at the
+//     handler. The handler refuses one (STS-RISK-0031) rather than hang.
+//   * **authentication still comes first.** Nothing about the exemption
+//     reads a byte: the body is left in the socket for the route, and the
+//     console's gate and the API's token gate run on the headers before the
+//     route does. The two things the console gate would have read from the
+//     BODY — the CSRF token and a realm administrator's reach — are checked
+//     by the upload handler from the form's fields, before the file part is
+//     written (the gate is told to leave the token to it by the same
+//     predicate).
+//   * **no other path changes.** A request that is not a POST to one of the
+//     two is handed to the parsers exactly as before.
+//
+// The dispatch path needs no exemption: `request_pool.js` PIPES a body to
+// its worker (`proxy()`), and the parsers run in the worker, where this
+// exemption applies again.
+const STREAMED_UPLOAD_PATH = /^\/admin(?:-api)?\/risk\/upload\/?$/i;
+
+// Whether this request is one of the two uploads. A hot path — every request
+// asks it, twice — so no Entering/Leaving pair. `baseUrl` as well as `path`,
+// because the console's gate asks from inside `app.use('/admin', …)`, where
+// express has taken the mount off `req.path`.
+function isStreamedUpload(req) {
+  return req.method === 'POST' &&
+    STREAMED_UPLOAD_PATH.test(String(req.baseUrl || '') +
+                              String(req.path || ''));
+}
+
+// A parser, skipped for the two uploads. See the block above.
+function unlessStreamedUpload(parser) {
+  log.debug("Entering unlessStreamedUpload().");
+  log.debug("Leaving unlessStreamedUpload().");
+  return function (req, res, next) {
+    if (isStreamedUpload(req)) {
+      next();
+      return;
+    }
+    parser(req, res, next);
+  };
+}
+
+app.use(unlessStreamedUpload(bodyParser.raw({
   type: ['application/kerberos', 'application/octet-stream',
          'application/ocsp-request', 'application/pkcs10',
          'application/x-pki-message'],
   limit: '5mb'
-}));
+})));
 
 // Accept any content-type as raw text (SOAP arrives as text/xml or
 // application/soap+xml). It runs AFTER the raw parser above, and body-parser
@@ -713,7 +770,7 @@ app.use(bodyParser.raw({
 // here sees. One caveat is inherent rather than fixable here: with a
 // `Content-Encoding` the stream is inflated first, so the buffer is the decoded
 // content, which is also what RFC 9530's `Content-Digest` is defined over.
-app.use(bodyParser.text({
+app.use(unlessStreamedUpload(bodyParser.text({
   type: function () {
     log.debug("Entering type().");
     log.debug("Leaving type().");
@@ -725,7 +782,7 @@ app.use(bodyParser.text({
     req.rawBody = buffer;
     log.debug("Leaving verify().");
   }
-}));
+})));
 
 // The CORS decision for every request that is not OPTIONS, now that a body has
 // been read. See `common/cors.js`; it refuses nothing, it decides a header.
@@ -981,7 +1038,7 @@ app.get('/healthcheck', function (req, res) {
   log.debug("Leaving the healthcheck endpoint.");
 });
 
-// The app, with four members hung off it. One `Object.assign` rather than an
+// The app, with its members hung off it. One `Object.assign` rather than an
 // assignment followed by four more (#50, 2026-09-16): the same object either
 // way, and the type checker accepts only this form.
 module.exports = Object.assign(app, {
@@ -998,5 +1055,9 @@ module.exports = Object.assign(app, {
   // For tests/front_process_realm_arrival.js, which drives it beside the
   // request pool's second ask; nothing in the service calls it off the
   // export.
-  enterRealm: enterRealm
+  enterRealm: enterRealm,
+  // The two dataset uploads the body parsers leave alone (#215): the
+  // console's gate asks it too, to leave the CSRF token — which is in the
+  // unread body — to the upload handler.
+  isStreamedUpload: isStreamedUpload
 });

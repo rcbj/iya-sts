@@ -359,6 +359,14 @@ class ProtocolStack {
     // #131: /portal/ciba, where a person answers a backchannel sign-in.
     this.build('portal/portal_ciba', require('../portal/portal_ciba'),
                'PortalCiba');
+    // #147: /portal/claim-sources, where a person links a Claims Provider.
+    // Its require loads `oauth-oidc/claims_providers` early, which declares a
+    // map and nothing else at load; the library is BUILT below with `oauth2`'s
+    // other libraries, and the page reaches it only through its forwarders,
+    // at request time.
+    this.build('portal/portal_claim_sources',
+               require('../portal/portal_claim_sources'),
+               'PortalClaimSources');
     // THE MAIL CHANNEL (#63, 2026-09-22): two LIBRARIES (rule 3) that
     // register no route — the channel and its uses — built here, before the
     // portal whose `/portal/email`, `/portal/verify-email` and
@@ -424,6 +432,13 @@ class ProtocolStack {
     // routes (/oauth2/grants/{id}) are registered just after `oauth2`'s.
     this.build('oauth-oidc/grant_management',
                require('../oauth-oidc/grant_management'), 'GrantManagement');
+    // Claims Aggregation (#147): the Claims Provider register, a person's
+    // links and the aggregated and distributed claims `oauth2` reads when it
+    // builds an ID Token or UserInfo — a library whose wire step registers
+    // the `oauth2.claim-sources-refresh` job. Its portal page and console
+    // page register with the portal and the console.
+    this.build('oauth-oidc/claims_providers',
+               require('../oauth-oidc/claims_providers'), 'ClaimsProviders');
     this.build('oauth-oidc/refresh_token_crypto',
                require('../oauth-oidc/refresh_token_crypto'),
                'RefreshTokenCrypto');
@@ -961,6 +976,12 @@ class ProtocolStack {
                'RiskDatasets');
     this.build('risk/risk_failures', require('../risk/risk_failures'),
                'RiskFailures');
+    // The dataset upload (#215): a library that streams an uploaded file to
+    // disk and hands it to the datasets above; its per-process clean-up job
+    // is registered when it is wired. Before the page, whose upload route
+    // and `mgmt-api/admin_api`'s both call it.
+    this.build('risk/risk_upload', require('../risk/risk_upload'),
+               'RiskUpload');
     // The Pwned Passwords screen (#62 P6): a library every password door
     // reaches lazily. Built here, with the risk modules it belongs beside.
     this.build('common/breached_passwords',
@@ -1001,6 +1022,17 @@ class ProtocolStack {
                'GrantManagementAdmin');
     this.register(app, require('../oauth-oidc/grant_management_admin'),
                   'oauth-oidc/grant_management_admin');
+    // 18n. CLAIMS PROVIDERS (#147): /admin/claim-providers, beside
+    // Federation. 18a's placement and 18a's reason: the console's shell and
+    // the register (built with `oauth2`'s libraries) already loaded, and
+    // `mgmt-api/admin_api` reads the API's routes out of
+    // `claims_providers_api`, built below.
+    require('../oauth-oidc/claims_providers_admin');
+    this.build('oauth-oidc/claims_providers_admin',
+               require('../oauth-oidc/claims_providers_admin'),
+               'ClaimsProvidersAdmin');
+    this.register(app, require('../oauth-oidc/claims_providers_admin'),
+                  'oauth-oidc/claims_providers_admin');
     // The management API: everything that console shows and everything it can
     // change, at /admin-api, over JSON. It must come AFTER admin.js and the
     // order is a dependency rather than a preference — it requires that module
@@ -1025,6 +1057,9 @@ class ProtocolStack {
     this.build('oauth-oidc/grant_management_api',
                require('../oauth-oidc/grant_management_api'),
                'GrantManagementApi');
+    this.build('oauth-oidc/claims_providers_api',
+               require('../oauth-oidc/claims_providers_api'),
+               'ClaimsProvidersApi');
     this.build('mgmt-api/admin_api', require('../mgmt-api/admin_api'),
                'AdminApi');
     this.register(app, require('../mgmt-api/admin_api'), 'mgmt-api/admin_api');

@@ -3792,6 +3792,12 @@ function middleware(options) {
 // One request, streamed to a worker and streamed back. The front process copies
 // no body into memory and parses nothing: `req` is piped in and the answer is
 // piped out.
+// Above this declared body size a proxied request's headers are sent to its
+// worker at once; see the block above `req.pipe(upstream)` in proxy(). The
+// body parsers' own limit (`common/app.js`), which is the size past which a
+// body is either refused on its headers or streamed.
+const PROMPT_HEADERS_BYTES = 5 * 1024 * 1024;
+
 function proxy(entry, req, res, atGeneration, ticket) {
   log.debug('Entering proxy(). pid=' + entry.pid + ' ' + req.method + ' ' +
             req.url);
@@ -4093,6 +4099,19 @@ function proxy(entry, req, res, atGeneration, ticket) {
       }
       res.setHeader(name, answer.headers[name]);
     });
+    // AN ANSWER BEFORE THE REQUEST'S BODY HAD ALL ARRIVED (#215) is a
+    // refusal made on the headers — a dataset upload over its cap, or with
+    // no room for it — and the worker has closed its end. The client's
+    // connection is closed after this answer too, and what is still coming
+    // is drained rather than written to a worker that stopped reading, so
+    // the client is told once and cleanly instead of being reset
+    // mid-upload. Every other request has been read in full by the time it
+    // is answered, and is untouched.
+    if (!req.complete) {
+      res.setHeader('Connection', 'close');
+      req.unpipe(upstream);
+      req.resume();
+    }
     answer.pipe(res);
     answer.on('end', finish);
     answer.on('error', function (err) {
@@ -4141,6 +4160,25 @@ function proxy(entry, req, res, atGeneration, ticket) {
              'request needed, so it can simply be made again.\n');
   });
 
+  // -------------------------------------------------------------------------
+  // A LARGE BODY'S HEADERS GO TO THE WORKER BEFORE ITS FIRST BYTE (#215,
+  // 2026-09-24).
+  //
+  // Node sends a client request's headers with its first write, so a
+  // request whose body had not begun to arrive reached the worker as
+  // NOTHING: a dataset upload declaring more than `risk.uploadMaxBytes`,
+  // which the upload refuses on its headers alone, sat here until the
+  // client's first chunk — or, from a client that waits to be told (an
+  // `Expect: 100-continue` it does not get, or a test sending headers
+  // only), until the request timed out as a 408. Flushed only where the
+  // body is large enough for that to matter — declared over what the body
+  // parsers would take at all, or of no declared length — so every
+  // ordinary request is sent exactly as it was, headers and body together.
+  const declared = Number((req.headers || {})['content-length']);
+  if ((isFinite(declared) && declared > PROMPT_HEADERS_BYTES) ||
+      (req.headers && req.headers['transfer-encoding'])) {
+    upstream.flushHeaders();
+  }
   req.pipe(upstream);
   req.on('aborted', function () {
     upstream.destroy();

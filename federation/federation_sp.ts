@@ -3777,9 +3777,41 @@ class FederationSp {
       const amr = this.federatedAmr(payload.amr);
       const finish = (extra) => {
         log.debug("Entering finish().");
+        // AGGREGATED AND DISTRIBUTED CLAIMS (#147, OIDC Core 5.6.2) from the
+        // ID Token and UserInfo together: gathered, taken out of the bag —
+        // they are references, never attributes about the person — and
+        // resolved by `claims_providers.ts`, which honours a source only
+        // when it names a Claims Provider THIS realm registered and its keys
+        // verify it. A resolved value fills a claim the partner did not send
+        // itself; a source that cannot be honoured is logged and skipped.
+        const names = Object.assign({}, bag['_claim_names'] || {},
+                                    (extra && extra._claim_names) || {});
+        const sources = Object.assign({}, bag['_claim_sources'] || {},
+                                      (extra && extra._claim_sources) || {});
+        delete bag['_claim_names'];
+        delete bag['_claim_sources'];
         Object.keys(extra || {}).forEach((name) => {
+          if (name === '_claim_names' || name === '_claim_sources') return;
           if (bag[name] === undefined) bag[name] = extra[name];
         });
+        if (Object.keys(sources).length) {
+          log.debug("Leaving finish(). Resolving " +
+                    Object.keys(sources).length + " claim source(s).");
+          return Promise.resolve().then(() => {
+            return require('../oauth-oidc/claims_providers').resolve({
+              _claim_names: names, _claim_sources: sources });
+          }).then((resolved) => {
+            Object.keys(resolved.claims || {}).forEach((name) => {
+              if (bag[name] === undefined) bag[name] = resolved.claims[name];
+            });
+            return finish(null);
+          }, (e) => {
+            log.warn(errorCodes.tag('STS-OAUTH-0683') + 'federation: the ' +
+                     'claim sources ' + record.fedId + ' sent could not be ' +
+                     'resolved: ' + ((e && e.message) || e));
+            return finish(null);
+          });
+        }
         log.debug("Leaving finish().");
         // The key that verified the ID Token is checked for revocation here,
         // on the one path into the sign-in, whether or not UserInfo was asked.
@@ -4201,11 +4233,24 @@ class FederationSp {
   // partner sends a wresult to and, since #168, the key it encrypts the
   // token to. It is what AD FS imports a relying party from. Unsigned, for
   // the SAML document's reason above.
+  //
+  // **fed:ApplicationServiceEndpoint IS REQUIRED, AND WAS MISSING UNTIL
+  // #188 (2026-09-24).** WS-Federation 1.2's schema gives
+  // ApplicationServiceType a sequence of ApplicationServiceEndpoint
+  // (minOccurs 1), SingleSignOutNotificationEndpoint and
+  // PassiveRequestorEndpoint, so a document holding only the last is invalid
+  // against the published schema and a validating importer refuses it — which
+  // tests/vendored/sts_xml_schema_validation.js found. Both name the one
+  // address this relationship has, as AD FS's own relying-party documents do.
   // ---------------------------------------------------------------------------
   private wsfedMetadata(req, res, record, base, encryption) {
     const { log, logArtifact, xmlEscape } = this.deps;
     log.debug("Entering FederationSp.wsfedMetadata().");
     const fed = 'http://docs.oasis-open.org/wsfed/federation/200706';
+    const endpoint = '<wsa:EndpointReference ' +
+      'xmlns:wsa="http://www.w3.org/2005/08/addressing"><wsa:Address>' +
+      xmlEscape(this.acsUrl(base, record)) +
+      '</wsa:Address></wsa:EndpointReference>';
     const xml = '<?xml version="1.0" encoding="UTF-8"?>\n' +
       '<md:EntityDescriptor xmlns:md="' + NS_MD + '" ' +
         'xmlns:ds="http://www.w3.org/2000/09/xmldsig#" ' +
@@ -4214,10 +4259,10 @@ class FederationSp {
         'xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" ' +
         'xmlns:fed="' + fed + '" xsi:type="fed:ApplicationServiceType" ' +
         'protocolSupportEnumeration="' + fed + '">' + encryption +
-      '<fed:PassiveRequestorEndpoint><wsa:EndpointReference ' +
-        'xmlns:wsa="http://www.w3.org/2005/08/addressing"><wsa:Address>' +
-        xmlEscape(this.acsUrl(base, record)) +
-      '</wsa:Address></wsa:EndpointReference></fed:PassiveRequestorEndpoint>' +
+      '<fed:ApplicationServiceEndpoint>' + endpoint +
+        '</fed:ApplicationServiceEndpoint>' +
+      '<fed:PassiveRequestorEndpoint>' + endpoint +
+        '</fed:PassiveRequestorEndpoint>' +
       '</md:RoleDescriptor></md:EntityDescriptor>';
     logArtifact('federation WS-Federation relying party metadata', 'as served',
                 xml);

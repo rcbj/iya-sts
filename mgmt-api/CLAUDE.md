@@ -1750,3 +1750,28 @@ status — and `POST /admin-api/vc-status/{suspend|reinstate|revoke}` with
 a PATH SEGMENT, as every other action here is, so one operation per verb
 appears in the OpenAPI document with its own `operationId` and its own
 description of what it does to the lists.
+
+## `POST /admin-api/risk/upload`: THE FIRST OPERATION WHOSE BODY IS A FILE (#215, 2026-09-24)
+
+The twin (rule 7) of Monitoring → Risk's upload form. **The body is the
+dataset file itself** — `application/octet-stream`, `application/gzip` or
+`application/zip`, none of which decides how it is read (its first bytes do)
+— and the fields are **query parameters**, checked by name by the handler
+(`handlerOwnsBody: true`; an unknown or repeated one is refused). It is a
+plain `path` row placed ABOVE `/risk/:action`, which would otherwise take
+`upload` as an action it does not know; `consoleOperationOf()` still reads it
+as the `upload` action on `/admin/risk` for the policy and `admin_scope.ts`,
+and the handler asks the realm rule again with the query's fields.
+
+**Nothing here reads the body.** `common/app.js` leaves this path unread and
+`risk/risk_upload.ts` streams it to disk (`risk/CLAUDE.md`). **It answers 202**
+once the file is stored and the version recorded `loading`, 200 for a version
+already recorded, 400 for a refusal before that, 413 over
+`risk.uploadMaxBytes` (from the declared length, before a byte is read), 415
+for another body type and 507 when the upload directory has no room — every
+refusal with `Connection: close`, so a client is not left sending a large
+body into an answered request.
+
+**Two members the spec builder learned for it** (`admin_api_spec.ts`):
+`requestBodyTypes` publishes the body as `type: string, format: binary`
+under each type, and `extraResponses` adds statuses beyond 200 and 400.

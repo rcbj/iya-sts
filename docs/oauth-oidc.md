@@ -669,6 +669,40 @@ Discovery publishes `verified_claims_supported`, `trust_frameworks_supported`,
 `claims_in_verified_claims_supported`. Aggregated and distributed verified
 claims, and attachments, are not supported.
 
+### Aggregated and distributed claims (Claims Providers)
+
+A realm can hand a relying party claims that another OpenID Provider vouches
+for (OpenID Connect Core section 5.6.2, and the Claims Aggregation draft).
+
+1. **An administrator registers the Claims Provider** on
+   `/admin/claim-providers` or `POST /admin-api/claim-providers/add-provider`.
+   The registration names the provider's issuer (its endpoints can be filled
+   from its discovery document), this realm's client id and secret there
+   (the secret is sealed), and the claims it supplies. It also says whether
+   those claims are delivered **aggregated** (the default) or
+   **distributed**. At the provider, register this realm as a client whose
+   redirect URI is the one the page shows
+   (`<realm>/portal/claim-sources/callback`). Its UserInfo responses must be
+   signed.
+2. **A person links the provider** on `/portal/claim-sources`. They sign in
+   and agree at the provider, and come back linked. Their tokens there are
+   kept sealed on their own directory entry. An administrator sees every link
+   and can revoke one.
+3. **A relying party asks for one of those claims by name** with the `claims`
+   request parameter. If the person's own entry does not answer it, the ID
+   Token or UserInfo response carries `_claim_names` and `_claim_sources`:
+   * **aggregated**: the provider's signed UserInfo JWT, which this service
+     verified against the provider's keys, for the person's subject there;
+   * **distributed**: the provider's endpoint and an access token for it.
+
+   A value the person's own entry holds is never replaced.
+
+`claim_types_supported` lists `normal`, `aggregated` and `distributed`.
+
+**As a federation service provider**, claim sources an upstream OpenID
+Provider sends are resolved too, but only from a Claims Provider registered in
+the realm, and only when that provider's keys verify them.
+
 UserInfo takes the access token in the `Authorization` header or, on a
 form-encoded `POST`, as an `access_token` body parameter (RFC 6750 section
 2.2). Sending both is refused.
@@ -1538,7 +1572,7 @@ endpoints on this page:
 ### Not implemented
 
 * The device authorization grant: there is no device authorization endpoint.
-* Aggregated and distributed claims (#147) and a Self-Issued OP (#129).
+* A Self-Issued OP (#129).
 * Enforcing `value`/`values` or `essential` in a claims request, other than
   for `acr`.
 * Encrypted access tokens, and the RFC 9068 `roles` and `entitlements` claims.
@@ -1656,7 +1690,7 @@ on [OAuth security](oauth-security.md#configuration).
 | `oauth2.softwareStatementLifetimeS` | `STS_OAUTH2_SOFTWARE_STATEMENT_LIFETIME_S` | `31536000` | yes | How long a software statement this realm issues is valid; 0 issues one with no `exp`. |
 | `oauth2.registeredClientIdPrefix` | `STS_OAUTH2_REGISTERED_CLIENT_ID_PREFIX` | `sts-client-` | yes | What a dynamically registered `client_id` starts with. |
 | `oauth2.registeredClientIdBytes` | `STS_OAUTH2_REGISTERED_CLIENT_ID_BYTES` | `8` | yes | How many random bytes follow that prefix. |
-| `oauth2.registeredSecretBytes` | `STS_OAUTH2_REGISTERED_SECRET_BYTES` | `24` | yes | How many random bytes make a registered client's secret and registration access token. |
+| `oauth2.registeredSecretBytes` | `STS_OAUTH2_REGISTERED_SECRET_BYTES` | `48` | yes | How many random bytes make a registered client's secret and registration access token. 48 by default so a `client_secret_jwt` secret is long enough for HS512 (RFC 7518 section 3.2, enforced in product). **Below 24, even HS256 is refused in product.** |
 | `oauth2.registeredSecretLifetimeS` | `STS_OAUTH2_REGISTERED_SECRET_LIFETIME_S` | `0` | yes | The `client_secret_expires_at` published for a registered client, as seconds after registration; 0 is never. |
 | `oauth2.clientSecretOverlapS` | `STS_OAUTH2_CLIENT_SECRET_OVERLAP_S` | `604800` | yes | How long a rotated-out client secret keeps working beside the new one; 0 ends it at once. |
 | `oauth2.clientSecretExpiryWarningDays` | `STS_OAUTH2_CLIENT_SECRET_EXPIRY_WARNING_DAYS` | `14` | yes | How many days before a client secret expires the daily job warns and the console marks it. |

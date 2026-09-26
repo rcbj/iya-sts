@@ -186,6 +186,25 @@ RUN apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get -y install --no-install-recommends \
         krb5-user \
     && rm -rf /var/lib/apt/lists/*
+# THE PUBLISHED XML SCHEMAS AND A VALIDATOR FOR THEM (#188, 2026-09-24):
+# libxml2's `xmllint`, and every OASIS and W3C schema
+# tests/vendored/sts_xml_schema_validation.js validates this service's SAML,
+# WS-Trust and WS-Federation documents against — FETCHED here, each checked
+# against the sha256 in tests/xml-schemas/SCHEMAS (the build fails on a
+# single differing byte), with the catalogue that lets the job run
+# `xmllint --nonet` so nothing is fetched while the suite runs. Nothing is
+# vendored: the list, the catalogue and the driver schema are this
+# repository's, the schemas are their publishers'. Its own layers below the
+# compiler's, and above the source copy so that editing a test re-fetches
+# nothing; only the two paths the fetch reads are copied first.
+RUN apt-get update \
+    && DEBIAN_FRONTEND=noninteractive apt-get -y install --no-install-recommends \
+        libxml2-utils \
+    && rm -rf /var/lib/apt/lists/*
+COPY tests/xml-schemas ./tests/xml-schemas
+COPY tests/tools/fetch-xml-schemas.sh ./tests/tools/fetch-xml-schemas.sh
+RUN ./tests/tools/fetch-xml-schemas.sh /opt/xml-schemas
+ENV STS_XML_SCHEMA_DIR=/opt/xml-schemas
 COPY package*.json ./
 COPY .npmrc ./
 COPY node-ldapjs ./node-ldapjs
@@ -200,6 +219,19 @@ RUN if [ ! -f node-ldapjs/package.json ]; then \
 RUN npm install --omit=dev && npm cache clean --force
 COPY tests/package*.json ./tests/
 RUN npm install --prefix ./tests && npm cache clean --force
+
+# ---------------------------------------------------------------------------
+# THE EXTERNAL TEST VECTORS (#202, #203): C2SP Wycheproof (Apache-2.0) and
+# NIST ACVP (public domain), for tests/wycheproof.js and tests/acvp_pqc.js.
+# Fetched HERE, at a pinned commit, each checked against
+# tests/tools/vectors.sha256 — a mismatch fails the build — because both
+# carry test keys and this repository commits no key material. Above the
+# source copy so the ~130 MB is fetched once and cached until the script or
+# the checksums change; tests/vectors is in .dockerignore, so `COPY . ./`
+# below cannot replace it with a host copy. tests/CLAUDE.md, *The external
+# test vectors*, is the provenance.
+COPY tests/tools/fetch-vectors.sh tests/tools/vectors.sha256 /usr/src/vector-fetch/
+RUN /usr/src/vector-fetch/fetch-vectors.sh /usr/src/sts/tests/vectors
 
 # The repository. The root .dockerignore decides what is in it — see the header
 # — and the guard is what a context missing the suite says instead of failing

@@ -2193,6 +2193,26 @@ const SPECS: Spec[] = [
               'grant_management_endpoint. A grant expires with its last ' +
               'token. MISSING: grant_management_action_required (OPTIONAL, ' +
               'false here); sharing a grant between client ids.' },
+  { id: 'oidc-claims-aggregation', name: 'OpenID Connect Claims ' +
+                                         'Aggregation (with Core 5.6.2)',
+    where: 'OpenID Foundation',
+    url: 'https://openid.net/specs/openid-connect-claims-aggregation-1_0.html',
+    coverage: 'full (#147), in every mode, both directions. As an OP: a ' +
+              'per-realm register of Claims Providers (console and ' +
+              '/admin-api), a person linking one on /portal/claim-sources ' +
+              'by an authorization code flow with PKCE, their tokens sealed ' +
+              'on their own entry and refreshed by a scheduler job; a claim ' +
+              'a claims request names that the entry does not answer is ' +
+              'sent as an aggregated claim (the provider\'s signed ' +
+              'UserInfo JWT, verified against its keys and held to the ' +
+              'linked subject first) or a distributed one (endpoint and ' +
+              'access token), per provider; claim_types_supported lists all ' +
+              'three. As a federation RP: _claim_sources from an upstream ' +
+              'OP are resolved, and honoured only from a provider this realm ' +
+              'registered, verified against its keys. MISSING: aggregated ' +
+              'verified_claims (Identity Assurance section 6), and the ' +
+              'Claims Provider role (this service\'s signed UserInfo serves ' +
+              'another aggregator, which is the draft\'s CP side).' },
   { id: 'jarm', name: 'JWT Secured Authorization Response Mode for OAuth ' +
                      '2.0 (JARM)',
     where: 'OpenID Foundation',
@@ -2341,8 +2361,9 @@ const SPECS: Spec[] = [
               'recorded consent, and a refresh token without it ends with ' +
               'the sign-on session. Section 12\'s refresh keeps auth_time, ' +
               'amr and acr. Section 6\'s request object is RFC 9101\'s row. ' +
-              'NOT covered: aggregated and distributed claims (section ' +
-              '5.6.2, #147), a Self-Issued OP (section 7, #129), ' +
+              'Section 5.6.2\'s aggregated and distributed claims are the ' +
+              'oidc-claims-aggregation row (#147). ' +
+              'NOT covered: a Self-Issued OP (section 7, #129), ' +
               '`value`/`values` on a claims request other than acr, and a ' +
               'client in development mode that registered no redirect URI is ' +
               'not held to one.' },
@@ -5535,6 +5556,21 @@ const ENDPOINTS: EndpointEntry[] = [
           'that party, and a token exchange of one by anybody else is ' +
           'refused invalid_request in every mode. The identity is the ' +
           'session\'s; the form names only the delegate.' },
+  { path: '/portal/claim-sources', group: 'User portal',
+    name: 'Connected claim sources — linking a Claims Provider',
+    specs: ['oidc-claims-aggregation'],
+    effect: 'lists the realm\'s Claims Providers, links one by sending the ' +
+            'person to it, and unlinks one',
+    what: 'NON-SPEC page (#147): the setup phase of Claims Aggregation, ' +
+          'the person\'s. Link runs an authorization code flow with PKCE ' +
+          'to the provider.' },
+  { path: '/portal/claim-sources/callback', group: 'User portal',
+    name: 'Connected claim sources — the provider\'s answer',
+    specs: ['oidc-claims-aggregation'],
+    effect: 'redeems the code, checks who the person is at the provider ' +
+            'from its signed claims, and seals the tokens on their entry',
+    what: 'The redirect URI a Claims Provider sends the person back to ' +
+          '(#147).' },
   { path: '/portal/ciba', group: 'User portal',
     name: 'Sign-in requests — answering OpenID Connect CIBA',
     specs: ['oidc-ciba'],
@@ -6242,6 +6278,19 @@ const ENDPOINTS: EndpointEntry[] = [
           'every version loaded or refused; a lookup of one address; and the ' +
           'realm\'s refused passwords, attributed to a person or a name\'s ' +
           'digest and a network, never an address. Add ?format=json.' },
+  { path: '/admin/risk/upload', group: 'Admin',
+    name: 'Risk dataset upload',
+    specs: [],
+    effect: 'stores an uploaded dataset file and begins importing it',
+    what: 'NON-SPEC (#215). POST only: Monitoring → Risk\'s file upload, a ' +
+          'multipart/form-data form whose fields (the CSRF token first) ' +
+          'come before its one file. The file is streamed to ' +
+          'risk.uploadDirectory — this path is exempt from the body ' +
+          'parsers — hashed on the way, and imported as it is read: gzip ' +
+          'and zip expanded by their content, a decompression bomb and a ' +
+          'zip of more than one file refused. The answer comes once the ' +
+          'file is stored; the version shows loading, then active or ' +
+          'refused. Mirrored by POST /admin-api/risk/upload.' },
   { path: '/admin/risk-scoring', group: 'Admin',
     name: 'Risk scoring',
     specs: [],
@@ -7124,6 +7173,12 @@ const ENDPOINTS: EndpointEntry[] = [
   { path: '/admin-api/risk/metrics', group: 'Management API',
     name: 'Risk scoring metrics', specs: ['openapi'],
     what: 'NON-SPEC (#62). GET /admin/risk-scoring over JSON.' },
+  { path: '/admin-api/risk/upload', group: 'Management API',
+    name: 'Risk dataset upload', specs: ['openapi'],
+    what: 'NON-SPEC (#215). POST /admin/risk/upload for a machine: the body ' +
+          'is the file (application/octet-stream, application/gzip or ' +
+          'application/zip), the fields are query parameters; 202 once ' +
+          'the file is stored and the version is loading.' },
   { path: '/admin-api/risk/:action', group: 'Management API',
     name: 'Risk actions', specs: ['openapi'],
     what: 'NON-SPEC (#62). import, activate, rollback, delete and ' +
@@ -9968,6 +10023,21 @@ const ENDPOINTS: EndpointEntry[] = [
     name: 'Revoke a grant', specs: ['oauth-grant-management'],
     what: 'revoke-grant: what a client\'s DELETE does, done by an ' +
           'administrator.' },
+  { path: '/admin/claim-providers', group: 'OAuth 2.0 / OIDC',
+    name: 'The Claims Providers console page',
+    specs: ['oidc-claims-aggregation'],
+    what: 'The Claims Provider register (#147): add, update, remove, the ' +
+          'redirect URI to register at a provider, and every person\'s link ' +
+          'with a Revoke button.' },
+  { path: '/admin-api/claim-providers', group: 'OAuth 2.0 / OIDC',
+    name: 'The Claims Providers console page over JSON',
+    specs: ['oidc-claims-aggregation'],
+    what: 'What GET /admin/claim-providers draws, out of the same call.' },
+  { path: '/admin-api/claim-providers/:action', group: 'OAuth 2.0 / OIDC',
+    name: 'Change the Claims Provider register',
+    specs: ['oidc-claims-aggregation'],
+    what: 'add-provider, update-provider, remove-provider and revoke-link: ' +
+          'the console\'s four acts.' },
   { path: '/oauth2/bc-authorize', group: 'OAuth 2.0 / OIDC',
     name: 'Backchannel Authentication Endpoint (CIBA)',
     specs: ['oidc-ciba', 'fapi-ciba', 'oauth-grant-management'],
@@ -10622,7 +10692,8 @@ const PROTOCOLS: Protocol[] = [
   { name: 'OAuth2 / OIDC', groups: ['OAuth 2.0 / OIDC'],
     specs: ['rfc6749', 'oidc', 'rfc8414', 'rfc9700', 'oauth21',
             'oidc-session', 'oidc-ida-claims', 'oidc-ida', 'oidc-native-sso',
-            'oidc-ciba', 'fapi-ciba', 'oauth-grant-management'],
+            'oidc-ciba', 'fapi-ciba', 'oauth-grant-management',
+            'oidc-claims-aggregation'],
     what: 'A mock authorization server and OpenID Provider: all five grants, ' +
           'PKCE, DPoP, introspection, revocation, dynamic registration, ' +
           'UserInfo and RP-initiated logout, with as many named ' +

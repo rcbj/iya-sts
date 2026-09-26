@@ -3945,7 +3945,80 @@ though the comments in `oauth2.ts` credit RFC 7521 and RFC 7522, which define
 no metadata; whether they stay is rcbj's call.
 None is a failure; the suite says so itself.
 
-## 3bh. WHAT THE REST OF THE CONFORMANCE SUITE FOUND (2026-09-24, #187)
+## 3bh. OPENID CONNECT CLAIMS AGGREGATION (2026-09-24, #147)
+
+`claims_providers.ts` is the library; its header argues the design, and this
+section is the summary a reader of this directory needs. rcbj's answers on
+#147 were every recommendation: both sides, aggregated or distributed per
+provider (aggregated by default), a person's tokens sealed on their own entry,
+the setup phase the person's own on the portal with the administrator able to
+see and revoke, and the latest draft text with Core 5.6.2.
+
+* **The register** is `ou=claimproviders` in the realm's directory tree, one
+  `stsClaimProvider` entry per provider (`stsClaimProviderData`, and
+  `stsClaimProviderSecret` sealed and withheld). Console
+  `/admin/claim-providers` (`claims_providers_admin.ts`), and
+  `/admin-api/claim-providers` (`claims_providers_api.ts`, rule 7), which
+  both call `view()` and `act()`. A provider may be registered by
+  DISCOVERY: the endpoints left empty are filled from its issuer's document.
+* **The setup phase** is `/portal/claim-sources`
+  (`portal/portal_claim_sources.ts`): an authorization code flow with PKCE
+  to the provider, back to `/portal/claim-sources/callback`, the code
+  redeemed with the client's secret, and the person's subject AT THE
+  PROVIDER read off a signed UserInfo response its keys verify. The tokens are
+  one JSON value on the person's entry (`stsClaimSourceTokens`), sealed where
+  keys persist and withheld from every read. The flow is bound to the person
+  who started it and spent once (`STS-OAUTH-0679`).
+* **Delivery**: `idToken()` and `userinfoResponse()` pass the claims the
+  `claims` request's member names and the entry did NOT answer to
+  `sourcesFor()`. A provider whose declared `claims` include one, and which
+  the person linked, is referenced in `_claim_names`, and its source is:
+  * **aggregated**, the provider's signed UserInfo JWT, fetched now, VERIFIED
+    against its keys, its `iss` the provider's and its `sub` the one linked,
+    and only the names that JWT carries referenced;
+  * **distributed**, its claims endpoint and the person's access token there.
+
+  A provider that fails is left out with `STS-OAUTH-0682` logged, and so is
+  the whole step if the library throws: the rest of the ID Token or UserInfo
+  is still owed (Core 5.5.1). UserInfo stays a promise chain, not an `async`
+  handler, for the reason its own comment gives. `claim_types_supported`
+  lists all three types.
+* **The consuming side**: `federation_sp.ts`'s `finishOidc()` gathers
+  `_claim_names` / `_claim_sources` from the partner's ID Token and UserInfo,
+  takes them out of the bag (they are references, never attributes), and
+  `resolve()` honours a source ONLY when it names a provider this realm
+  registered — an aggregated JWT by its `iss`, a distributed one by an
+  endpoint equal to that provider's claims endpoint — and only when that
+  provider's keys verify it. **Nothing a foreign token names is dialled**;
+  that is what keeps this off the root `CLAUDE.md`'s list of URLs a caller
+  chooses. A resolved value fills only a claim the partner did not send
+  itself.
+* **Every URL dialled is an administrator's** (a provider's four endpoints),
+  through `federation_http.requestConfigured()`: the kill switch, the URL
+  policy and the outbound TLS policy apply; the internal-address rule does
+  not, as for a federation partner's own configured URLs.
+* **The `oauth2.claim-sources-refresh` job** (#49) refreshes a token five
+  minutes before it expires and drops setup flows older than ten. A token
+  that cannot be refreshed is marked `stale`, never sent, and the person links
+  again.
+* **What is not built**: aggregated `verified_claims` (Identity Assurance
+  section 6, `common/identity_assurance.ts` answers `normal` only), and a
+  scope that brings a provider's claims without a `claims` request — a
+  source is sent only when a relying party ASKED for the claim by name.
+
+**Tests**: `tests/claims_aggregation.js` (in process: the register, sealing,
+a flow finished by another person, a JWT about another subject or by another
+key, the consuming side refusing an unregistered issuer and endpoint without
+dialling it, refresh, the acts) and `tests/vendored/sts_claims_aggregation.js`
+(over HTTP, a second realm of this service as the Claims Provider serving a
+configured `credit_score`: registration by discovery, linking on the portal
+across both realms, aggregated in the ID Token and UserInfo verified against
+the provider realm's JWKS, distributed, revocation). A local stack cannot
+dial itself over TLS, so that job publishes the service's own Root in the
+directory shared with the service and names it as the OP realm's
+`federation.outboundCaFile`.
+
+## 3bi. WHAT THE REST OF THE CONFORMANCE SUITE FOUND (2026-09-24, #187)
 
 #176's four FAPI plans were one job; #187 runs every other plan of the suite
 that applies — OpenID Connect (the certification profiles, `oidcc-test-plan`
@@ -3991,9 +4064,9 @@ otherwise; each carries its regression check.
   the default stays the stricter reading. rcbj's call whether to keep it.
 
 **FAPI** (`tests/fapi_advanced_units.js`): under 1.0 Advanced, `code`
-without JARM is `invalid_request` (the MODE is wrong, STS-OAUTH-0678, which
+without JARM is `invalid_request` (the MODE is wrong, STS-OAUTH-0688, which
 RFC 9126 section 2.3 answers at PAR), and a request naming no scope is
-refused rather than given a default (STS-OAUTH-0679; RFC 6749 3.3 permits
+refused rather than given a default (STS-OAUTH-0689; RFC 6749 3.3 permits
 either, and a signed request object carrying none is usually a client that
 put scope outside it). Message Signing KEEPS JARM: section 5.4.1 has an AS
 implementing response signing "require use of" it, so the plan's
@@ -4135,6 +4208,6 @@ the decisions rcbj made on #118:
 
 Left for their own tickets:
 * ~~Session Management's `check_session_iframe`: #121.~~ Built (3ax).
-* Aggregated and distributed claims: #147.
+* ~~Aggregated and distributed claims: #147.~~ Built (3bh).
 * Self-Issued OP: #129.
 * `value`/`values` enforcement for claims other than `acr`.
