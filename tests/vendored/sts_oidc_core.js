@@ -415,7 +415,7 @@ async function test() {
         "values, the address and phone scopes and their claims", function () {
     assert.strictEqual(r.status, 200, r.raw.slice(0, 200));
     assert.deepStrictEqual(r.body.subject_types_supported.slice().sort(),
-                           ["pairwise", "public"]);
+                           ["ephemeral", "pairwise", "public"]);
     ["none", "login", "consent", "select_account"].forEach(function (one) {
       assert.ok(r.body.prompt_values_supported.indexOf(one) >= 0, one);
     });
