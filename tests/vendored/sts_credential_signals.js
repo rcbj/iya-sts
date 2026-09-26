@@ -421,7 +421,9 @@ async function test() {
   // names the door that writes the attribute.
   check("and its diagnostic message names the door, /portal/mfa",
     function () {
-      assert.ok(totp.diagnostic.indexOf("stsTotpCredential") >= 0 &&
+      // The server names the attribute lower-cased, as it matches it.
+      assert.ok(totp.diagnostic.toLowerCase()
+                  .indexOf("ststotpcredential") >= 0 &&
                 totp.diagnostic.indexOf("/portal/mfa") >= 0,
                 JSON.stringify(totp));
     });
