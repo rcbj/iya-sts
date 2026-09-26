@@ -74,9 +74,10 @@ import applications = require('./applications');
 import audit = require('./audit');
 
 // OpenID Connect Core 1.0 section 5.4, plus section 11's offline_access. All
-// six, including the two this service issues no claims for.
+// six, including the two this service issues no claims for — and OpenID
+// Connect Key Binding's `bound_key` (#150), which asks for a bound ID Token.
 const OIDC_SCOPES = Object.freeze(['openid', 'profile', 'email', 'address',
-  'phone', 'offline_access']);
+  'phone', 'offline_access', 'bound_key']);
 
 // `/admin-api`'s two, as `common/roles.js` maps them to ADMIN_READ and
 // ADMIN_WRITE. Not settings: the management API's vocabulary is fixed.

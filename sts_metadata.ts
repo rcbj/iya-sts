@@ -1736,6 +1736,39 @@ const SPECS: Spec[] = [
               'urn:openid:params:jwt:claim:auth_req_id and rt_hash; the ' +
               'section 4 metadata in discovery and registration. A push to ' +
               'a device is #164\'s.' },
+  { id: 'rfc8628', name: 'RFC 8628 — OAuth 2.0 Device Authorization Grant',
+    where: 'IETF',
+    url: 'https://www.rfc-editor.org/rfc/rfc8628',
+    coverage: 'full (#150, 2026-09-26), where oauth2.deviceAuthorization ' +
+              'is on (off by default): the device authorization endpoint ' +
+              'with client authentication as at the token endpoint, a ' +
+              'registered grant and the scope policy, an eight-letter user ' +
+              'code from a twenty-letter alphabet and ' +
+              'verification_uri_complete; the verification URI is the ' +
+              'person\'s /portal/device, where a code only brings up the ' +
+              'request — client and scopes — and approving is a second act ' +
+              '(section 5.4), with five wrong codes a session refused for ' +
+              'ten minutes (section 5.1); the device_code grant with every ' +
+              'section 3.5 error, slow_down growing the interval by five ' +
+              'seconds, one token response per approval claimed once for ' +
+              'the cluster, and the codes swept by the ' +
+              'oauth2.device-code-sweep job; the section 4 metadata. A DPoP ' +
+              'proof on the device request binds the device code to its ' +
+              'key.' },
+  { id: 'oidc-key-binding', name: 'OpenID Connect Key Binding 1.0',
+    where: 'OpenID Foundation',
+    url: 'https://openid.net/specs/openid-connect-key-binding-1_0.html',
+    coverage: 'full (#150, 2026-09-26), in every mode: the bound_key ' +
+              'scope, honoured with response_type=code and dpop_jkt only; ' +
+              'a DPoP proof at the token endpoint whose c_s256 is the ' +
+              'hash of the authorization or device code; an ID Token with ' +
+              'cnf.jwk and the JOSE header typ dpop+id_token; a refresh ' +
+              'held to the same key whether or not RFC 9449 bound the ' +
+              'refresh token; and section 7 — a bound ID Token presented ' +
+              'at token exchange (Native SSO included) only with a proof ' +
+              'from its key. ML-DSA-44, -65 and -87 keys are accepted, as ' +
+              'for any DPoP proof. An id_token_hint is a hint, not a ' +
+              'credential, and is not held to the key.' },
   { id: 'oidc-native-sso', name: 'OpenID Connect Native SSO for Mobile ' +
                                   'Apps 1.0',
     where: 'OpenID Foundation',
@@ -5672,6 +5705,14 @@ const ENDPOINTS: EndpointEntry[] = [
           'request shows its client, scopes and binding_message; an ' +
           'approval that asks for more than the session proved offers a ' +
           'stronger sign-in first.' },
+  { path: '/portal/device', group: 'User portal',
+    name: 'Sign in a device — RFC 8628\'s verification URI',
+    specs: ['rfc8628'],
+    effect: 'finds the device waiting with the code typed, shows its ' +
+            'client and scopes, and approves or denies it',
+    what: 'NON-SPEC page (#150): the verification URI. A code, typed or ' +
+          'prefilled, only brings the request up; approving is a second ' +
+          'act (section 5.4).' },
   { path: '/portal/devices', group: 'User portal',
     name: 'Your devices — ou=devices, and Native SSO',
     specs: ['oidc-native-sso'],
@@ -9364,7 +9405,7 @@ const ENDPOINTS: EndpointEntry[] = [
     name: 'Authorization ' +
       'endpoint',
     specs: ['rfc6749', 'oidc', 'rfc7636', 'rfc9396', 'rfc9207',
-            'oidc-enterprise',
+            'oidc-enterprise', 'oidc-key-binding',
             'rfc9700', 'rfc9101', 'rfc9126', 'rfc9470',
             'oauth-multiple-response-types', 'jarm', 'fapi1-advanced'],
     effect: 'needs ' +
@@ -9823,9 +9864,11 @@ const ENDPOINTS: EndpointEntry[] = [
   { path: '/oauth2/token', group: 'OAuth 2.0 / OIDC', name: 'Token endpoint',
     specs: ['rfc6749', 'oidc', 'rfc8693', 'rfc9396', 'oid4vci', 'rfc9449',
             'rfc7800', 'rfc9700', 'oidc-native-sso', 'oidc-ciba',
+            'rfc8628', 'oidc-key-binding',
             'rfc8705', 'rfc8707', 'rfc7523', 'rfc7522', 'rfc9068'],
     what: 'authorization_code, refresh_token, client_credentials, password, ' +
-          'token-exchange, and OID4VCI\'s pre-authorized_code with tx_code ' +
+          'token-exchange, RFC 8628\'s device_code (#150), and OID4VCI\'s ' +
+          'pre-authorized_code with tx_code ' +
           'enforcement. An RFC 8693 exchange can come back with a REFRESH ' +
           'TOKEN beside the exchanged access token — an ordinary one of this ' +
           'service, redeemable at the refresh grant and bound and rotated ' +
@@ -10178,6 +10221,12 @@ const ENDPOINTS: EndpointEntry[] = [
     specs: ['oidc-claims-aggregation'],
     what: 'add-provider, update-provider, remove-provider and revoke-link: ' +
           'the console\'s four acts.' },
+  { path: '/oauth2/device_authorization', group: 'OAuth 2.0 / OIDC',
+    name: 'Device Authorization Endpoint',
+    specs: ['rfc8628', 'oidc-key-binding'],
+    what: 'RFC 8628 section 3.1 (#150): a device with no usable browser ' +
+          'asks for a device_code and a user_code, and the person approves ' +
+          'on /portal/device. 404 where oauth2.deviceAuthorization is off.' },
   { path: '/oauth2/bc-authorize', group: 'OAuth 2.0 / OIDC',
     name: 'Backchannel Authentication Endpoint (CIBA)',
     specs: ['oidc-ciba', 'fapi-ciba', 'oauth-grant-management'],

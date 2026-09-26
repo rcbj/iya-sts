@@ -818,6 +818,10 @@ const JOBS = [
   // for the next, and an id_token_hint mapped back. `local: true`: this
   // repository's authorization server.
   { file: 'sts_ephemeral_subjects.js',   browser: false, local: true },
+  // RFC 8628 AND OPENID CONNECT KEY BINDING (#150, 2026-09-26): the device
+  // flow end to end through /portal/device, c_s256, a bound ID Token, its
+  // refresh and section 7, and an ML-DSA-44 DPoP key. `local: true`.
+  { file: 'sts_device_key_binding.js',   browser: false, local: true },
   // THE OPENID FOUNDATION'S CONFORMANCE SUITE (#176, 2026-09-24): FAPI 2.0
   // Security Profile and Message Signing, FAPI 1.0 Advanced and FAPI-CIBA,
   // each plan a throwaway realm, every module run, and a FAILED module a

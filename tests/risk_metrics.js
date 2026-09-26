@@ -181,8 +181,13 @@ function childMain() {
           : (device ? [{ signal: 'new-device' }] : []),
         feedback: answer });
     }
-    const cal = (await riskAdmin.metricsView({ realm: CAL,
-                                               window: '7d' })).calibration;
+    // The page is per realm (2026-09-26): CAL's metrics are drawn in it.
+    const inCal = function (query) {
+      return realms.run(realms.get(CAL), function () {
+        return riskAdmin.metricsView(query);
+      });
+    };
+    const cal = (await inCal({ window: '7d' })).calibration;
     t.check(cal.thresholds.high.suggested === 14.8 &&
             cal.thresholds.medium.suggested === 14.2 &&
             Math.abs(cal.thresholds.high.share - 50 / 150) < 1e-9 &&
@@ -215,7 +220,7 @@ function childMain() {
                        'tor-exit=8,no-such-signal=3,new-device=-1');
     let tuned = null;
     try {
-      tuned = await riskAdmin.metricsView({ realm: CAL, window: '7d' });
+      tuned = await inCal({ window: '7d' });
     } finally {
       config.clearOverride('risk.signalFactors');
     }
