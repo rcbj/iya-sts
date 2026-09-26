@@ -251,6 +251,10 @@ async function test() {
                                   value: true }, "turned commands on");
   await ok(api + "/config/set", { key: "oauth2.commandBackoffMs",
                                   value: 200 }, "shortened the backoff");
+  // The mock relying party is this service, dialled at its own address,
+  // whose certificate is this run's own: sts_ciba.js's arrangement.
+  await ok(api + "/config/set", { key: "federation.outboundSkipTlsVerification",
+    value: true }, "let the realm reach its own mock relying party");
   await registry.ensurePerson(base, PERSON, PASSWORD);
 
   log.info("=== 1. registration ===");

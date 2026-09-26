@@ -208,7 +208,10 @@ class CommandMockRp {
     }
     let verified: Json = null;
     try {
-      verified = helpers.verifyOwnCompactJws(token);
+      // The algorithms named, never taken from the token (RFC 8725 section
+      // 3.1): the asymmetric ones a relying party verifies with the keys.
+      verified = helpers.verifyOwnCompactJws(token, {
+        algorithms: require('../common/crypto').JWS_ASYMMETRIC_ALGS });
     } catch (e) {
       log.debug("Caught in CommandMockRp.handle(): " +
                 ((e && e.message) || e));
