@@ -4327,8 +4327,10 @@ C13b); every other token's chain still runs to the Root.
 **OpenID4VCI response encryption** (HAIP's plan): the issuer encrypted a
 Credential Response with RSA-OAEP-256 only and refused the EC P-256 key the
 suite sends; it now takes ECDH-ES to an EC key on P-256, P-384 or P-521 and
-advertises both (`oid4vc/vc_issuer.ts`, `tests/oidcc_conformance_findings.js`
-section 6).
+advertises both, and honours section 8.2's `zip` DEF (raw DEFLATE before
+encryption, advertised in `zip_values_supported`), which the plan's second
+happy flow asks for (`oid4vc/vc_issuer.ts`, `common/crypto.js`
+encryptJweCompact(), `tests/oidcc_conformance_findings.js` section 6).
 
 **OpenID4VP**: the Verifier speaks `direct_post.jwt` (8.3.1, an ephemeral
 ECDH-ES key per transaction named by the JWE kid, STS-VC-0096), and its

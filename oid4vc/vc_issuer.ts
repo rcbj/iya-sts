@@ -573,6 +573,9 @@ class VcIssuer {
       credential_response_encryption: {
         alg_values_supported: VCI_ENC_ALGS.slice(),
         enc_values_supported: this.responseEncValues(),
+        // DEFLATE before encryption (section 8.2's `zip`, #187). Requests
+        // are not decompressed — credential_request_encryption says none.
+        zip_values_supported: ['DEF'],
         encryption_required:
           config.value('oid4vci.responseEncryptionRequired') === true
       },
@@ -2435,9 +2438,10 @@ class VcIssuer {
              this.responseEncValues().join(' or ') + '; "' + encryption.enc +
              '" was requested.';
     }
-    if (encryption.zip) {
-      log.debug("Leaving VcIssuer.encryptionProblem(). zip requested.");
-      return 'This issuer does not compress responses, so zip cannot be used.';
+    if (encryption.zip !== undefined && encryption.zip !== 'DEF') {
+      log.debug("Leaving VcIssuer.encryptionProblem(). Unsupported zip.");
+      return 'This issuer compresses responses with zip DEF only; "' +
+             encryption.zip + '" was requested.';
     }
     log.debug("Leaving VcIssuer.encryptionProblem(). The parameters are " +
               "usable.");
@@ -2445,8 +2449,10 @@ class VcIssuer {
   }
 
   // A JWE in compact serialization: RSA-OAEP-256 (to an RSA key) or ECDH-ES
-  // (to an EC key, #187) for the content key, AES-GCM for the content. Written out by hand rather than with a JOSE library,
-  // because having the steps visible is the point of a mock.
+  // (to an EC key, #187) for the content key, AES-GCM for the content, and
+  // DEF before it when the wallet asked (#187). Written out by hand rather
+  // than with a JOSE library, because having the steps visible is the point
+  // of a mock.
   encryptToJwe(plaintext, encryption) {
     const { log, stsCrypto } = this.deps;
     log.debug("Entering VcIssuer.encryptToJwe(). enc=" + encryption.enc);
@@ -2458,7 +2464,8 @@ class VcIssuer {
       jwk: encryption.jwk,
       enc: encryption.enc,
       alg: encryption.jwk && encryption.jwk.kty === 'EC' ? 'ECDH-ES' :
-        VCI_ENC_ALG
+        VCI_ENC_ALG,
+      zip: encryption.zip === 'DEF' ? 'DEF' : undefined
     });
     log.debug("Leaving VcIssuer.encryptToJwe(). " + compact.length +
               " characters.");

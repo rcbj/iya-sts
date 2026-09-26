@@ -134,8 +134,11 @@ means the whole configured set.
 * **Encryption.** A request may be a JWE to the realm's own RSA-OAEP-256 key
   (`credential_request_encryption`), and a wallet may ask for an encrypted
   response (`credential_response_encryption`): RSA-OAEP-256 to an RSA key,
-  ECDH-ES to an EC key on P-256, P-384 or P-521 (#187). The `enc` values
-  offered are A128GCM and A256GCM. Either direction can be made mandatory.
+  ECDH-ES to an EC key on P-256, P-384 or P-521 (#187), compressed with
+  `zip` DEF first when the wallet asks (`zip_values_supported`). The `enc`
+  values offered are A128GCM and A256GCM. Either direction can be made
+  mandatory. A request is never decompressed, so the request side
+  advertises no `zip`.
 * **Deferred issuance.** A credential request on the access token from a
   deferred offer is answered with a `transaction_id` instead of a credential.
   `POST /oid4vci/deferred_credential` answers `issuance_pending` until

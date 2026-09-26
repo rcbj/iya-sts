@@ -295,6 +295,41 @@ function checkCredentialResponseEcdh(t) {
   }
   t.equal(opened.plaintext, '{"credentials":[]}',
           '6d. the response is an ECDH-ES JWE the wallet\'s key opens');
+  // Section 8.2's zip (DEF, raw DEFLATE before encryption), which the HAIP
+  // plan's second happy flow asks for.
+  t.equal(issuer.encryptionProblem({ jwk: jwk, enc: 'A128GCM', zip: 'DEF' }),
+          '', '6e. zip DEF is accepted');
+  t.check(/zip DEF only/.test(issuer.encryptionProblem({
+    jwk: jwk, enc: 'A128GCM', zip: 'GZIP' })), '6f. and nothing else');
+  // The wallet's side by hand, to an RSA key so that the unwrap is one call:
+  // decryptJweCompact() reads no compressed JWE (this service accepts none).
+  const rsa = nodeCrypto.generateKeyPairSync('rsa', { modulusLength: 2048 });
+  const rsaJwk = rsa.publicKey.export({ format: 'jwk' });
+  const zipped = issuer.encryptToJwe('{"credentials":["x"]}',
+    { jwk: rsaJwk, enc: 'A128GCM', zip: 'DEF' }).split('.');
+  const zhead = JSON.parse(Buffer.from(zipped[0], 'base64url')
+    .toString('utf8'));
+  let inflated = '';
+  try {
+    const cek = nodeCrypto.privateDecrypt({ key: rsa.privateKey,
+      padding: nodeCrypto.constants.RSA_PKCS1_OAEP_PADDING,
+      oaepHash: 'sha256' }, Buffer.from(zipped[1], 'base64url'));
+    const decipher = nodeCrypto.createDecipheriv('aes-128-gcm', cek,
+      Buffer.from(zipped[2], 'base64url'));
+    decipher.setAAD(Buffer.from(zipped[0], 'ascii'));
+    decipher.setAuthTag(Buffer.from(zipped[4], 'base64url'));
+    inflated = require('zlib').inflateRawSync(Buffer.concat([
+      decipher.update(Buffer.from(zipped[3], 'base64url')),
+      decipher.final()])).toString('utf8');
+  } catch (e) {
+    log.debug("Caught in checkCredentialResponseEcdh(): " +
+              ((e && e.message) || e));
+    inflated = 'refused: ' + e.message;
+  }
+  t.check(zhead.zip === 'DEF' && inflated === '{"credentials":["x"]}',
+          '6g. a zip DEF response says so in its header and its content is ' +
+          'raw DEFLATE of the payload (RFC 7518 section 7.3)',
+          JSON.stringify(zhead).slice(0, 80) + ' ' + inflated);
   log.debug("Leaving checkCredentialResponseEcdh().");
 }
 

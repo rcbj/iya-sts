@@ -77,6 +77,7 @@
 // ---------------------------------------------------------------------------
 
 const nodeCrypto = require('crypto');
+const zlib = require('zlib');
 const forge = require('node-forge');
 // FORGE'S GENERATOR IS NODE'S (#65, section 13). forge keeps a Fortuna DRBG
 // of its own and draws from it INSIDE the library — the blinding of every
@@ -4131,6 +4132,21 @@ function encryptJweCompact(plaintext, opts) {
   if (options.cty) {
     header.cty = options.cty;
   }
+  // RFC 7516 section 4.1.3's `zip`, DEF alone (RFC 7518 section 7.3: raw
+  // DEFLATE, RFC 1951), applied to the plaintext BEFORE it is sealed (#187:
+  // OpenID4VCI section 8.2's Credential Response compression, which a wallet
+  // asks for from `zip_values_supported`). Anything else is refused by name.
+  let body = Buffer.from(plaintext, 'utf8');
+  if (options.zip !== undefined && options.zip !== null &&
+      options.zip !== '') {
+    if (options.zip !== 'DEF') {
+      log.debug('Leaving encryptJweCompact(). Unsupported zip.');
+      throw new Error('encryptJweCompact: unsupported zip "' + options.zip +
+                      '"; this service compresses with DEF only.');
+    }
+    header.zip = 'DEF';
+    body = zlib.deflateRawSync(body);
+  }
   if (options.jwk && options.jwk.kid) {
     header.kid = options.jwk.kid;
   }
@@ -4150,7 +4166,7 @@ function encryptJweCompact(plaintext, opts) {
   const headerB64 = b64u(Buffer.from(JSON.stringify(header), 'utf8'));
 
   const sealed = sealContent(spec, wrapped.cek, iv,
-      Buffer.from(headerB64, 'ascii'), Buffer.from(plaintext, 'utf8'));
+      Buffer.from(headerB64, 'ascii'), body);
 
   const compact = [headerB64, b64u(wrapped.encryptedKey), b64u(iv),
                    b64u(sealed.ciphertext), b64u(sealed.tag)].join('.');
