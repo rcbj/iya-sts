@@ -814,6 +814,18 @@ const CODES = [
       'yet delivered, or a retirement hook that failed. The realm is ' +
       'removed anyway.',
     spec: 'none — logged; the removal succeeds' },
+  { code: 'STS-CORE-0121',
+    summary: 'A sign-in or an issuance was refused because its trust realm ' +
+      'is being removed (#262): realms.retire() marks the realm retiring ' +
+      'before it ends its sessions and announces the removal, and from ' +
+      'then on no session, token, authorization code, assertion, ticket, ' +
+      'credential, certificate or SVID is started or issued in it, in ' +
+      'either mode. Also logged once, as information, when the mark is set.',
+    spec: 'the protocol\'s own refusal — invalid_grant at the token ' +
+      'endpoint, access_denied at the authorization endpoint, ' +
+      'credential_request_denied at OpenID4VCI, a SAML Responder / ' +
+      'RequestDenied status, a SOAP fault, a 503 problem at ACME, EST ' +
+      'and SCEP, and a refused session at every sign-in door' },
   { code: 'STS-WORKER-0001',
     summary: 'The IPC channel to a post-quantum worker process failed, so a ' +
       'job sent to it may not arrive or its answer may not come back.',

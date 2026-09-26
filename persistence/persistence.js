@@ -919,7 +919,12 @@ function realmRows() {
       // as a change (realmChangeOf() has nothing to say about it).
       domain: realm.domain,
       createdAt: realm.createdAt,
-      overrides: realm.overrides || {}
+      overrides: realm.overrides || {},
+      // THE RETIRING MARK (#262): set by `realms.retire()` before it ends
+      // anything, and carried to every other process with the row. Null
+      // for a realm nobody is removing.
+      retiringSince: Number(realm.retiringSince) > 0
+        ? Number(realm.retiringSince) : null
     };
   });
 }
@@ -964,13 +969,17 @@ function realmChangeOf(row, was) {
   });
   const name = row.name !== was.name;
   const description = row.description !== was.description;
-  if (!name && !description && !cleared.length && !Object.keys(set).length) {
+  // ONE-WAY (#262): a mark the shadow lacks is a change; nothing unmarks.
+  const retiring = Number(row.retiringSince) > 0 &&
+    !(Number(was.retiringSince) > 0);
+  if (!name && !description && !retiring && !cleared.length &&
+      !Object.keys(set).length) {
     log.debug("Leaving realmChangeOf(). Unchanged.");
     return null;
   }
   log.debug("Leaving realmChangeOf().");
   return { row: row, name: name, description: description, set: set,
-           cleared: cleared };
+           cleared: cleared, retiring: retiring };
 }
 
 function realmsDelta(removals) {
@@ -1012,6 +1021,9 @@ function advanceRealmShadow(delta) {
     }
     if (change.description) {
       was.description = change.row.description;
+    }
+    if (change.retiring) {
+      was.retiringSince = change.row.retiringSince;
     }
     was.overrides = was.overrides || {};
     change.cleared.forEach(function (key) {
@@ -2033,8 +2045,11 @@ function restoreRealms(rows, replicated) {
       // `replicated`, so the realm registry does not re-judge a change the
       // process that made it already judged (realms.js,
       // kerberosOverrideProblem()).
+      // `retiringSince` too (#262): another process's `retire()` marked
+      // the realm, and this one must refuse new sign-ins in it as well.
       realms.update(row.id, { name: row.name, description: row.description,
                               overrides: row.overrides || {},
+                              retiringSince: row.retiringSince || null,
                               replicated: true });
       return;
     }
@@ -2064,6 +2079,12 @@ function restoreRealms(rows, replicated) {
     if (row.createdAt) {
       result.realm.createdAt = row.createdAt;
     }
+    // A realm stored RETIRING (#262) — its removal was begun and not
+    // finished, by a process that stopped — stays retiring until an
+    // administrator removes it again.
+    if (Number(row.retiringSince) > 0) {
+      result.realm.retiringSince = Number(row.retiringSince);
+    }
     made++;
   });
   log.debug('Leaving restoreRealms(). ' + made + ' restored.');
@@ -2075,7 +2096,9 @@ function shadowRowOf(row) {
   log.debug("Entering shadowRowOf().");
   log.debug("Leaving shadowRowOf().");
   return JSON.stringify({ name: row.name, description: row.description,
-                          overrides: row.overrides || {} });
+                          overrides: row.overrides || {},
+                          retiringSince: Number(row.retiringSince) > 0
+                            ? Number(row.retiringSince) : null });
 }
 
 // The entries, per realm, replacing what was seeded. A realm the store has
@@ -2414,6 +2437,8 @@ function applyRealmsChange() {
       });
       Object.assign(overrides, mine.set);
       return Object.assign({}, row, {
+        retiringSince: row.retiringSince ||
+          (mine.retiring ? mine.row.retiringSince : null),
         name: mine.name ? mine.row.name : row.name,
         description: mine.description ? mine.row.description
                                       : row.description,
@@ -2835,6 +2860,23 @@ realms.onChange(function (id, what) {
   // event in the service at the risk of the only one that loses data.
   // ---------------------------------------------------------------------
   directoryChanged();
+});
+
+// A REALM BEING RETIRED IS WRITTEN DOWN BEFORE ANYTHING IS ENDED (#262).
+// `realms.retire()` marks the realm retiring — the change event above has
+// already made the registry dirty — and awaits this, within its bound,
+// before its announce phase: the flush writes the row with `retiring_at` and
+// its change-log row, so every other process and node refuses new sign-ins
+// in the realm (applied through `restoreRealms(…, true)`) before the sessions
+// are ended. With nothing persisted it resolves at once: one process holds
+// the only copy of the mark.
+realms.onRetire({
+  name: 'persistence',
+  mark: function () {
+    log.debug("Entering the persistence retirement mark hook.");
+    log.debug("Leaving the persistence retirement mark hook.");
+    return flush();
+  }
 });
 
 module.exports = {

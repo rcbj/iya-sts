@@ -2216,6 +2216,35 @@ test and restore path call `remove()` alone — the sessions are a shared
 store, so they were ended for the cluster, and the SETs were sent once.
 `tests/realm_removal_signals.js` holds it over a real push receiver.
 
+**A realm being retired starts nothing new (#262).** Until then a sign-in in
+the bounded wait succeeded and started a session the announce phase had
+walked past, which the purge then dropped with no `session-revoked`. So the
+FIRST line of `retire()` — before its first await — is `markRetiring()`:
+`retiringSince` on the realm record, and a `changed(id, 'retire')`. Then a
+third, earlier phase of hooks, **`mark` (async, bounded)**, runs before
+announce; `persistence.js`'s is a `flush()`, which writes the mark
+(`sts_realms.retiring_at`) and its change-log row before a single session is
+ended. **The mark is on the REALM ROW because that is what every process
+shares in both modes** — a minted store would not do, development mode
+persists nothing minted — and other processes take it through
+`restoreRealms(…, true)` → `update({ retiringSince, replicated: true })`,
+the only way an update may set it. It is ONE-WAY: nothing clears it but the
+removal (the row goes) or defining the id again (a new row), so a process
+that dies half way leaves the realm refusing until an administrator removes
+it again. While it is set, `isRetiring()` is true and `retiringRefusal()`
+answers `{ realm, since, why }` marked `STS-CORE-0121`, and:
+
+| Where | What refuses |
+|---|---|
+| `issuance_gate.check()` | FIRST, before the disabled account: every kind, with `retiring: true` on the answer — so every site that asks the gate (sessions, every token grant, authorization codes, SAML 2.0 and 1.1, WS-Federation, WS-Trust, Kerberos, GNAP) is refused, and records `STS-CORE-0121` where it can tell (the token endpoint answers `invalid_grant`; the locked KDC records its own policy code, and the gate's log line carries 0121) |
+| `authn.startSession()` | FIRST, for every door — the sign-in screen asks the gate early and then passes `gated: true` |
+| `cert_enrollment.issue()`, OpenID4VCI's credential and deferred endpoints, `SpiffeCa`'s three mints | ask `retiringRefusal()` themselves, not being gate sites: 503, `credential_request_denied`, a thrown mint |
+
+Nothing that is not NEW is refused — sign-out, revocation, introspection,
+UserInfo, metadata, JWKS and above all SSF's poll endpoint, which a poll
+receiver must reach during the wait. `tests/realm_retiring.js` holds the
+window open with a hook of its own and asks every door.
+
 ### `onChange()`: a realm row changed, and it is an EVENT rather than a slot
 
 Added 2026-08-27 for persistence. `onCreate()` and `onRemove()` already covered

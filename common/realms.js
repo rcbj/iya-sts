@@ -1151,6 +1151,14 @@ function update(id, changes) {
     }
     realm.overrides = Object.assign({}, spec.overrides);
   }
+  // THE RETIRING MARK (#262) arrives only on a REPLICATED update — another
+  // process's `retire()` — and only ever SETS it: see `markRetiring()`.
+  if (spec.replicated && Number(spec.retiringSince) > 0 &&
+      !(Number(realm.retiringSince) > 0)) {
+    realm.retiringSince = Number(spec.retiringSince);
+    log.info('realms: "' + realm.id + '" is being removed by another ' +
+             'process; new sign-ins and issuance in it are refused here too.');
+  }
   if (spec.name !== undefined) {
     realm.name = String(spec.name).trim() || realm.id;
   }
@@ -1653,9 +1661,110 @@ function built(realm) {
 // were sent once, by the node that did it. Tests and restore paths call
 // `remove()` too, and are unchanged.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// A REALM BEING RETIRED TAKES NOTHING NEW (#262, 2026-09-26).
+//
+// `retire()` below ends every session and announces the realm's going, then
+// waits — up to `realms.removalDeliveryTimeoutS` — for that to be delivered.
+// Until #262 a sign-in made in that window SUCCEEDED: it started a session
+// the announce phase had already walked past, and the purge then dropped it
+// with no `session-revoked` and no Logout Token, which is exactly the silent
+// ending #232 exists to prevent. The same held for a token, an assertion or a
+// certificate issued in the window.
+//
+// So the FIRST thing `retire()` does is mark the realm RETIRING, and while it
+// is, nothing new is started or issued in it, in both modes:
+//
+//   * `common/issuance_gate.js`'s `check()` refuses FIRST, before the disabled
+//     account and before any shortcut — every issuance site asks it: a
+//     session, every token grant, an authorization code, a SAML or
+//     WS-Federation assertion, a WS-Trust token, a Kerberos ticket, a GNAP
+//     grant;
+//   * `authn`'s `startSession()` refuses first as well, because the sign-in
+//     screen asks the gate ahead of time and then passes `gated: true`;
+//   * the three issuers that do not ask the gate ask `retiringRefusal()`
+//     directly: `common/cert_enrollment.ts` (ACME, EST, SCEP), OpenID4VCI's
+//     credential endpoint and the SPIFFE authority's two mints.
+//
+// Every refusal is `STS-CORE-0121`. What is NOT refused is everything that
+// is not new: a sign-out, a revocation, introspection, UserInfo, metadata, a
+// JWKS, and above all SSF's poll endpoint, which a poll receiver must be able
+// to reach during the wait to collect the events the retirement queued.
+//
+// **THE MARK IS ON THE REALM ROW (`retiringSince`, an epoch millisecond)**,
+// because the realm row is what every process already shares in both modes —
+// `persistence.js` writes it to the store and the change log carries it to
+// every other process and node, which apply it through `update()` with
+// `replicated`. A minted store would not do: development mode persists
+// nothing minted. `retire()` then waits (inside the same bound) for the
+// `mark` hooks — `persistence.js`'s is a flush — so the row is written before
+// the first session is ended, and LISTEN/NOTIFY makes the others prompt.
+//
+// **IT IS ONE-WAY.** Nothing clears it but the removal itself (the row goes)
+// or creating the id again (a new row). A process that dies half way through
+// a retirement leaves the realm retiring — refusing sign-ins — until an
+// administrator removes it again, which is the act they had already asked for.
+// ---------------------------------------------------------------------------
+
+// Whether `realmOrId` (default: the ambient realm) is being retired. Read from
+// the REGISTRY rather than from the ambient object, so a request that entered
+// the realm before the mark still sees it.
+function isRetiring(realmOrId) {
+  log.debug("Entering isRetiring().");
+  const id = realmOrId === undefined || realmOrId === null
+    ? currentId()
+    : (typeof realmOrId === 'object' ? String(realmOrId.id || '')
+                                     : String(realmOrId));
+  const realm = realms.get(id);
+  const answer = !!(realm && Number(realm.retiringSince) > 0);
+  log.debug("Leaving isRetiring(). " + answer);
+  return answer;
+}
+
+// Null, or the refusal an issuer sends when the realm (default: the ambient
+// realm) is being retired: `{ realm, since, why }`, marked `STS-CORE-0121`.
+function retiringRefusal(realmOrId) {
+  log.debug("Entering retiringRefusal().");
+  if (!isRetiring(realmOrId)) {
+    log.debug("Leaving retiringRefusal(). Not retiring.");
+    return null;
+  }
+  const id = realmOrId === undefined || realmOrId === null
+    ? currentId()
+    : (typeof realmOrId === 'object' ? String(realmOrId.id || '')
+                                     : String(realmOrId));
+  const realm = realms.get(id);
+  log.debug("Leaving retiringRefusal(). Refused.");
+  return errorCodes.mark({
+    realm: id,
+    since: Number(realm && realm.retiringSince) || 0,
+    why: 'The trust realm "' + id + '" is being removed, so nothing new is ' +
+         'signed in or issued in it.'
+  }, 'STS-CORE-0121');
+}
+
+// Mark `realm` retiring, here and — through the change event — everywhere.
+// Idempotent: a second retirement keeps the first mark.
+function markRetiring(realm) {
+  log.debug("Entering markRetiring(). id=" + realm.id);
+  if (Number(realm.retiringSince) > 0) {
+    log.debug("Leaving markRetiring(). Already retiring.");
+    return;
+  }
+  realm.retiringSince = Date.now();
+  log.info(errorCodes.tag('STS-CORE-0121') + 'realms: "' + realm.id +
+           '" is being removed; new sign-ins and issuance in it are ' +
+           'refused from now on.');
+  changed(realm.id, 'retire');
+  log.debug("Leaving markRetiring().");
+}
+
 const retirers = [];
 
-// `hook`: `{ name, announce?(id, ctx), deliver?(id, ctx) }`. `ctx` carries
+// `hook`: `{ name, mark?(id, ctx), announce?(id, ctx), deliver?(id, ctx) }`.
+// `mark` is awaited (bounded) after the realm is marked retiring and before
+// anything is announced — `persistence.js` writes the mark down there. `ctx`
+// carries
 // `deadline` (an epoch millisecond), `via` and `initiatingEntity`, and
 // `undelivered`, an array a hook pushes `{ what, count }` onto.
 function onRetire(hook) {
@@ -1704,6 +1813,33 @@ async function retire(id, options) {
     undelivered: []
   };
   const failed = [];
+  const late = [];
+  // FIRST, before anything is announced (#262): from here on no new session
+  // or issuance starts in the realm, so nothing is started that the announce
+  // phase below would walk past. Then the `mark` hooks, awaited within the
+  // bound, so the other processes are told before the sessions are ended.
+  markRetiring(realm);
+  for (let i = 0; i < retirers.length; i++) {
+    const hook = retirers[i];
+    if (typeof hook.mark !== 'function') {
+      continue;
+    }
+    try {
+      const outcome = await Promise.race([
+        Promise.resolve(run(realm, function () {
+          return hook.mark(realm.id, ctx);
+        })).then(function () {
+          return 'done';
+        }),
+        waitMs(ctx.deadline - Date.now())
+      ]);
+      if (outcome === 'late') {
+        late.push(hook.name + ' (mark)');
+      }
+    } catch (e) {
+      failed.push(hook.name + ' (mark): ' + ((e && e.message) || e));
+    }
+  }
   run(realm, function () {
     retirers.forEach(function (hook) {
       if (typeof hook.announce !== 'function') {
@@ -1716,7 +1852,6 @@ async function retire(id, options) {
       }
     });
   });
-  const late = [];
   for (let i = 0; i < retirers.length; i++) {
     const hook = retirers[i];
     if (typeof hook.deliver !== 'function') {
@@ -3549,6 +3684,8 @@ module.exports = {
   onRemove: onRemove,
   onRetire: onRetire,
   retire: retire,
+  isRetiring: isRetiring,
+  retiringRefusal: retiringRefusal,
   onChange: onChange,
   realmContext: realmContext,
   keyed: keyed,

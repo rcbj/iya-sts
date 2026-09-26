@@ -1217,6 +1217,20 @@ says so at length and names both fixes: correct the key, or set
 `keys.source=generated` to accept a new key on every start, which is what
 development mode does.
 
+### A realm being retired is a column of its row (#262, schema version 10)
+
+`sts_realms.retiring_at` is `realms.retire()`'s mark (`common/CLAUDE.md`,
+*`retire()` and `onRetire()`*). It rides the realm row rather than a minted
+store because the realm registry is replicated in BOTH modes and minted state
+only in product. `realmRows()` carries it as `retiringSince`,
+`realmChangeOf()` reports a mark the shadow lacks as `retiring`, the upsert
+writes it with `COALESCE(sts_realms.retiring_at, EXCLUDED.retiring_at)` so no
+write ever clears one, and `restoreRealms()` hands it to a replicated
+`update()` (or sets it on a realm restored at start, whose removal was begun
+and not finished). This module's `realms.onRetire()` hook is a `mark` that
+flushes, so the row and its change-log row are committed before `retire()`
+ends anything. The ldif driver needs nothing: it writes the rows as JSON.
+
 ### The schema version moved to 2
 
 `sts_keys` is the fourth table and the first with a `PRIMARY KEY` that is a realm

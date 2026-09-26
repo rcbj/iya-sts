@@ -3320,7 +3320,9 @@ class Saml2Sso {
                String((session.user || {}).username) + '" to "' + spEntityId +
                '". ' + roleAnswer.why);
       pendingRequests.delete(String(params.rid || ''));
-      errorCodes.mark(res, 'STS-SAML-0010');
+      // A realm being removed (#262) is its own code.
+      errorCodes.mark(res, roleAnswer.retiring ? 'STS-CORE-0121'
+                                               : 'STS-SAML-0010');
       const denied = this.buildResponse({
         issuer: idpEntityId, sp: spEntityId,
         destination: acsUrl, inResponseTo: request.id,
@@ -3519,7 +3521,9 @@ class Saml2Sso {
       session: session
     });
     if (!roleAnswer.allowed) {
-      errorCodes.mark(res, 'STS-SAML-0010');
+      // A realm being removed (#262) is its own code.
+      errorCodes.mark(res, roleAnswer.retiring ? 'STS-CORE-0121'
+                                               : 'STS-SAML-0010');
       const denied = this.buildResponse({
         issuer: idpEntityId, sp: spEntityId, destination: acsUrl,
         inResponseTo: '', status: STATUS_RESPONDER,
@@ -3699,7 +3703,9 @@ class Saml2Sso {
     });
     if (!roleAnswer.allowed) {
       log.debug("Leaving Saml2Sso.attributeQuery(). The issuance policy.");
-      return answer('STS-SAML-0010', STATUS_RESPONDER,
+      return answer(roleAnswer.retiring ? 'STS-CORE-0121'
+                                        : 'STS-SAML-0010',
+                    STATUS_RESPONDER,
                     'urn:oasis:names:tc:SAML:2.0:status:RequestDenied',
                     roleAnswer.why, '');
     }

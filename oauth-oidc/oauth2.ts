@@ -6880,7 +6880,9 @@ class OAuth2Server {
     if (!roleAnswer.allowed) {
       log.debug("Leaving OAuth2Server.issueAuthorizationResponse(). The " +
                 "issuance policy refused it.");
-      errorCodes.mark(res, 'STS-OAUTH-0156');
+      // A realm being removed (#262) is its own code; the policy's is 0156.
+      errorCodes.mark(res, roleAnswer.retiring ? 'STS-CORE-0121'
+                                               : 'STS-OAUTH-0156');
       log.debug("Leaving OAuth2Server.issueAuthorizationResponse().");
       return self.redirectBack(res, base, redirectUri, query.state,
         { error: 'access_denied', error_description: roleAnswer.why },
@@ -10744,6 +10746,17 @@ class OAuth2Server {
         log.debug("Leaving the token endpoint's refusal wrapper. The " +
                   "account is disabled.");
         errorCodes.mark(res, 'STS-OAUTH-0551');
+        log.debug("Leaving OAuth2Server.tokenEndpoint().");
+        return self.oauthError(res, 400, 'invalid_grant', e.message);
+      }
+      // A REALM BEING REMOVED (#262): the gate refused before any policy
+      // was asked. `invalid_grant`, the disabled account's reading — no
+      // grant in the realm is good any more, whatever a policy would say.
+      if (e && e.name === 'IssuanceRefused' && e.issuance &&
+          e.issuance.retiring) {
+        log.debug("Leaving the token endpoint's refusal wrapper. The " +
+                  "realm is being removed.");
+        errorCodes.mark(res, 'STS-CORE-0121');
         log.debug("Leaving OAuth2Server.tokenEndpoint().");
         return self.oauthError(res, 400, 'invalid_grant', e.message);
       }

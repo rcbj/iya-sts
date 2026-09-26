@@ -1489,6 +1489,27 @@ class SpiffeCa {
   // signing, and the two realms disagreeing about who issued it is exactly what
   // a trust domain is for.
   // ---------------------------------------------------------------------------
+  // ---------------------------------------------------------------------------
+  // A REALM BEING REMOVED MINTS NOTHING NEW (#262, 2026-09-26), in both modes:
+  // `realms.retire()` marks it before it announces the removal, and an SVID
+  // minted in the wait would outlive the authority that signed it by
+  // seconds. Thrown, as every other refusal here is; the callers answer it
+  // as a failed mint. `STS-CORE-0121` is logged here.
+  // ---------------------------------------------------------------------------
+  refuseRetiring(what, realmId) {
+    const { log, realms, errorCodes } = this.deps;
+    log.debug("Entering SpiffeCa.refuseRetiring().");
+    const refusal = realms.retiringRefusal(this.realmIdOf(realmId));
+    if (!refusal) {
+      log.debug("Leaving SpiffeCa.refuseRetiring(). Not retiring.");
+      return;
+    }
+    log.info(errorCodes.tag('STS-CORE-0121') + 'spiffe: ' + what +
+             ' was refused. ' + refusal.why);
+    log.debug("Leaving SpiffeCa.refuseRetiring(). Refused.");
+    throw new Error('Cannot mint ' + what + ': ' + refusal.why);
+  }
+
   refuseForeignDomain(what, id, realmId) {
     const { log, spiffeId } = this.deps;
     log.debug("Entering SpiffeCa.refuseForeignDomain().");
@@ -1524,6 +1545,7 @@ class SpiffeCa {
                       parsed.reason);
     }
     this.refuseForeignDomain('an X509-SVID', parsed.id, opts.realm);
+    this.refuseRetiring('an X509-SVID', opts.realm);
     // ---------------------------------------------------------------------
     // **THE TARGET REALM'S KEY TYPE, NOT THE AMBIENT REALM'S (2026-09-12).**
     // This read `config.value('spiffe.x509KeyType')` while minting for
@@ -1599,6 +1621,7 @@ class SpiffeCa {
       throw new Error('Cannot sign a CSR for ' + id + ': ' + parsed.reason);
     }
     this.refuseForeignDomain('an X509-SVID', parsed.id, opts.realm);
+    this.refuseRetiring('an X509-SVID', opts.realm);
     let publicPem;
     try {
       const csr =
@@ -1926,6 +1949,7 @@ class SpiffeCa {
                       parsed.reason);
     }
     this.refuseForeignDomain('a JWT-SVID', parsed.id, opts.realm);
+    this.refuseRetiring('a JWT-SVID', opts.realm);
     const list = (audiences || []).map(function (a) {
       return String(a == null ? '' : a).trim();
     }).filter(Boolean);

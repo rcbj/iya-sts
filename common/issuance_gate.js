@@ -177,6 +177,27 @@ function check(request) {
   // file is a leaf loaded by modules that load before it, and the question is
   // only ever asked of a running service.
   // ---------------------------------------------------------------------
+  // -------------------------------------------------------------------------
+  // A REALM BEING REMOVED ISSUES NOTHING NEW (#262, 2026-09-26), asked before
+  // everything, the disabled account included: it is about the realm and not
+  // the person, and it holds in both modes and whatever any policy says.
+  // `realms.retire()` marks the realm before it ends the sessions and
+  // announces the removal, so a session or a token started in the bounded
+  // wait that follows would outlive the announcement and be dropped by the
+  // purge unannounced. `STS-CORE-0121`, carried on the answer (`retiring`)
+  // and logged here, so every issuance site records it whatever code it
+  // puts on its own response.
+  // -------------------------------------------------------------------------
+  const retiring = retiringRealm();
+  if (retiring) {
+    log.info(errorCodes.tag('STS-CORE-0121') + 'issuance_gate: ' +
+             String(asked.kind || 'issuance') + ' refused. ' + retiring.why);
+    log.debug('Leaving check(). The realm is being removed.');
+    return errorCodes.mark({
+      allowed: false, decision: 'Deny', retiring: true,
+      why: retiring.why, roles: [], required: [], policy: null
+    }, 'STS-CORE-0121');
+  }
   const subject = asked.subject || {};
   if (subject.kind === 'user' && subject.name &&
       disabledSubject(String(subject.name))) {
@@ -421,6 +442,22 @@ function deviceRequirementOf() {
   }
   log.debug("Leaving deviceRequirementOf(). " + out.join(', '));
   return out;
+}
+
+// The ambient realm's retirement refusal, or null. `realms.js` is required
+// LAZILY, for `account_state`'s reason below: this file is a leaf, and the
+// question is only ever asked of a running service. Never throws.
+function retiringRealm() {
+  log.debug("Entering retiringRealm().");
+  let refusal = null;
+  try {
+    refusal = require('./realms').retiringRefusal();
+  } catch (e) {
+    log.debug("Caught in retiringRealm(): " + ((e && e.message) || e));
+    refusal = null;
+  }
+  log.debug("Leaving retiringRealm(). " + !!refusal);
+  return refusal;
 }
 
 function disabledSubject(name) {
