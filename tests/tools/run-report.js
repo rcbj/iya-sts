@@ -1431,10 +1431,12 @@ async function refreshAdminApiToken(instance, jobTimeoutMs) {
 // more than the default are named here. x509_limbo drives 9802 cases through
 // six validators and was killed at 300 s in a full run on a loaded machine
 // (its first driver alone took 78 s) while every case agreed; the other three
-// are the same kind of file. A raise only ever lengthens: the larger of this
-// and --timeout wins, exactly as for a protocol job.
+// are the same kind of file. Its signer pass alone was measured at 6-17 min
+// on a machine running other sessions' stacks, so it has 25. A raise only
+// ever lengthens: the larger of this and --timeout wins, exactly as for a
+// protocol job.
 const UNIT_WATCHDOG_MS = {
-  x509_limbo: 900000,
+  x509_limbo: 1500000,
   nist_pkits: 600000,
   acvp_pqc: 600000,
   wycheproof: 600000
