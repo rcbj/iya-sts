@@ -1392,6 +1392,15 @@ to REFUSE them well:
 
 Every ordinary request is proxied exactly as before.
 
+**A RELAYED HEADER KEEPS THE WORKER'S SPELLING (2026-09-26, #209).** The
+front process set the worker's headers back by `answer.headers`' lower-case
+keys, so a dispatched answer said `content-type:` where a process answering
+by itself says `Content-Type:`. Legal — field names are case-insensitive (RFC
+9110 section 5.1) — and still a difference the dispatched path must not make:
+libest's estclient compares names byte for byte and failed every EST request
+in `single-node` and in no other mode. The spelling is read from
+`rawHeaders`; `tests/request_barrier.js` section 11 holds it on the wire.
+
 ### A SECOND POOL FOR THE CONSOLE AND THE PORTAL (2026-09-13)
 
 `workers.surfaceCount` workers kept for this service's OWN two hosted
