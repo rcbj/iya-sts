@@ -1895,7 +1895,7 @@ same way, through `pairwise_subjects.deviceIdFor()`:
 * a public client is told the register's id.
 
 An application's device has no `user` member and is sent as it is: pairwise
-subjects protect End-Users. `oauth-oidc/CLAUDE.md` 3bk argues the claim.
+subjects protect End-Users. `oauth-oidc/CLAUDE.md` 3bo argues the claim.
 
 **RISK SCORING SETS A DEVICE'S LEVEL** (#164 phase 5): after a sign-in the
 person's own device proved, the device takes that sign-in's level, so the

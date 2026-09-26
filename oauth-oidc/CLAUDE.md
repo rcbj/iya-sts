@@ -685,7 +685,8 @@ so must `admin-ui/admin.ts`.
    PROTOCOL half of section 2.5.** `oauth2_bcp.js` decides whether a client has
    to authenticate at all (the policy); this decides whether what arrived proves
    it (the mechanics). It registers nothing and requires `common/` libraries,
-   `mtls.js`, `assertion_grant.js` and `saml_assertion_grant.js`, none of which
+   `mtls.js`, `assertion_grant.js`, `saml_assertion_grant.js` and — since #229
+   — `client_attestation.ts` (the two attestation methods, 3bm), none of which
    requires it back, so it cannot join a cycle. Four things:
 
    **NOTHING FALLS THROUGH UNCHECKED ANY MORE.** `private_key_jwt` and
@@ -4089,7 +4090,134 @@ SSF events naming it for that client, nothing relaxed in development.
 
 Tests: `tests/vendored/sts_ephemeral_subjects.js`.
 
-## 3bk. THE REGISTERED DEVICE IN TOKENS: `device_id`, `urn:sts:acr:compliant-device` AND THE ISSUANCE POLICY (2026-09-26, #164 phase 6)
+## 3bk. RFC 8628 DEVICE AUTHORIZATION AND OPENID CONNECT KEY BINDING (2026-09-26, #150)
+
+rcbj's answers were every recommendation: build RFC 8628 here, since Key
+Binding names the device flow; ML-DSA DPoP keys where the JOSE registry
+allows; and section 7's proof of possession wherever a bound ID Token is
+presented.
+
+* **`device_authorization.ts` owns the device codes**, off by default
+  (`oauth2.deviceAuthorization`, per realm) for CIBA's reason. A persisted
+  per-realm map, `oauth2.deviceCodes`: `d|<device_code>` to the record and
+  `u|<USER-CODE>` to the device code. An approval is recorded on
+  `/portal/device` (`portal/portal_device.ts`) with the approving session's
+  id, acr, amr and auth_time, so the device's tokens end with that session.
+  A redemption is a cluster claim, so one approval is one token response on
+  any node. The `oauth2.device-code-sweep` job removes what has expired.
+* **The endpoint** (`deviceAuthorizationRequest()`) authenticates the client
+  through `authenticateEndpointCaller()`, as PAR and CIBA do, requires the
+  grant to be registered and asks the scope policy. An optional DPoP proof
+  binds the device code to its key.
+* **The portal page's two protections are RFC 8628 section 5's.** A code
+  only ever brings the request up — the client, the scopes and a sentence
+  about phishing — and approving is a second POST (section 5.4). A session
+  that types five codes that match nothing is refused for ten minutes
+  (section 5.1). The count is per process and capped at the insert.
+* **Key Binding** is in `oauth2.ts`, in every mode:
+  * `vetAuthorizationRequest()` refuses `bound_key` without `dpop_jkt` or
+    outside `response_type=code` (0704, 0705).
+  * `boundKeyProofRefusal()` holds the redeeming proof's `c_s256` to the code
+    (0702, 0703), at the authorization_code and device_code grants.
+  * The `issue()` closure passes `dpopJwk` through. `idToken()` then adds
+    `cnf.jwk` and the header `typ: dpop+id_token`.
+  * The refresh token carries `kb_jkt` inside its JWE. It is separate from
+    `cnf`, because RFC 9449 section 5 leaves a confidential client's refresh
+    token unbound (#176), and a bound ID Token must stay with one key (0706).
+* **Section 7 is `boundIdTokenRefusal()`**, asked where an ID Token is a
+  CREDENTIAL: the token exchange grant, Native SSO's included (0707).
+  `id_token_hint` is a HINT, naming a person who is then asked, and it cannot
+  carry a DPoP proof from a browser, so it is not held to the key.
+* **ML-DSA in DPoP**: `dpop.ts`'s `SIGNING_ALGS` takes ML-DSA-44, -65 and -87.
+  RFC 9964 defines the AKP thumbprint members and the JOSE registry names
+  those three. SLH-DSA and the composites stay out: they are signed here
+  under draft names, and a binding to a name no client shares is none. An
+  AKP key's `priv` is refused like `d`, and its `alg` must match the proof's.
+* **`bound_key` is a reserved OpenID scope**, beside the six, in
+  `scope_policy.ts`, `jwt_access_token.ts` and `protocolScopes()`.
+
+Tests: `tests/vendored/sts_device_key_binding.js`.
+
+## 3bm. OAUTH 2.0 ATTESTATION-BASED CLIENT AUTHENTICATION (2026-09-26, #229)
+
+**draft-ietf-oauth-attestation-based-client-auth-11** (3 September 2026, the
+latest revision when it was built), which the OpenID4VC High Assurance
+Interoperability Profile calls Wallet Attestation and the OpenID Foundation's
+HAIP issuer plan authenticates every wallet with. `client_attestation.ts` is a
+library (rule 3) and its header is the design; this is what a maintainer
+changing anything near it needs to know.
+
+* **TWO METHODS, ONE PATH.** `attest_jwt_client_auth` (a Client Attestation
+  PoP JWT) and `attest_jwt_client_auth_dpop` (the DPoP proof is the PoP,
+  section 5.2) are `client_auth.js` methods like the other eight, so the RFC
+  9700 policy, the observation, the role gate, product mode's confidential
+  client rule and FAPI all treat them as they treat `private_key_jwt`. The
+  credential is two HTTP header fields, so `verify()` hands the REQUEST over;
+  `oauth2_bcp.js` passes the issuer identifier (the PoP's audience) and hands
+  back the verifier's own OAuth error and status, since
+  `use_attestation_challenge` and `use_fresh_attestation` are 400s, not 401s.
+  `credentialOnFile()` is true for both: the trust is the realm's, not the
+  entry's.
+* **TRUST IS PER REALM, TWO SETTINGS, EMPTY BY DEFAULT.**
+  `oauth2.clientAttestationTrustAnchors` (an `x5c` path to a configured
+  anchor, `pki.verifyPathToAnchors()`, leaf never self-signed — HAIP 4.4.1)
+  and `oauth2.clientAttestationTrustedKeys` (a JWKS, `kid` narrows). An
+  attester vouches for a wallet PRODUCT, not one entry, which is why it is not
+  an application attribute. With neither set the methods, the challenge
+  endpoint and the section 8 lists are not advertised, and `POST
+  /oauth2/challenge` answers 400. Asymmetric algorithms only, post-quantum
+  included; a MAC attestation (section 12.2) is refused — there is no shared
+  key to verify it with.
+* **FRESHNESS: CHALLENGES REQUIRED BY DEFAULT, SINGLE-USE.** A challenge comes
+  from `POST /oauth2/challenge` or from the `OAuth-Client-Attestation-Challenge`
+  header this service puts on EVERY response to a request carrying an
+  attestation (section 6.2, refusals included), which is what makes single use
+  workable: the client always holds the one it was handed last. Issued ones are
+  a persisted per-realm map (`oauth2.attestationChallenges`, a cache-registry
+  row, ejected by the scheduler, expiry checked at the read); spent ones and
+  each PoP's `jti` go in `common/used_assertions.js` (new format
+  `attestation-challenge`, new use `client-attestation-pop`, the PoP keyed by
+  the instance key's JWK Thumbprint URI), reserved and kept only on a 2xx.
+  The combined mode uses DPoP's own nonce and `jti` instead, and the challenge
+  endpoint hands out a DPoP nonce too when `oauth2.dpopNonceRequired` is on.
+* **ONE ANSWER PER REQUEST.** `verifyRequest()` keeps its promise on the
+  request under a Symbol, `verifiedOnce()`'s reason: the token endpoint asks
+  twice and a second verification would find the first one's `jti`.
+* **THE COMBINED MODE NEEDS A DPoP PROOF THE ENDPOINT VERIFIED**, so it exists
+  at the token and PAR endpoints only, which leave the proof's thumbprint on
+  `req.stsDpopJkt`; the verifier never verifies a DPoP proof itself (its
+  `jti` would be spent twice). Introspection, revocation and CIBA take the PoP
+  mode. A client that DECLARED one method is held to that method's proof
+  (`STS-OAUTH-0746`).
+* **IN EVERY MODE, AFTER THE OBSERVATION** — `requestRefusal()` at the token and
+  PAR endpoints, beside `mtls.declaredRefusal()` and for its reason: a client
+  that declared attestation asked to be held to it. An attestation sent by any
+  other client (section 7.6's additional signal) is verified where the realm
+  trusts an attester and refused if it does not hold; where it trusts none it
+  is ignored. Nothing is relaxed in development.
+* **BINDINGS.** A refresh token minted on a verified attestation carries
+  `attested_jkt` inside its JWE and the refresh grant requires an attestation
+  of the same key (section 10.3, `STS-OAUTH-0748`). A push made under one
+  records `attestedJkt`; the code minted from that `request_uri` (never from a
+  query parameter) carries `attested_jkt` and is redeemed only by that
+  instance (section 10.4, `0749`). CIBA's `auth_req_id` is not bound (a
+  RECOMMENDED the draft leaves to the artifact).
+* **`client_id` MAY BE ABSENT** (section 7.5): `clientFrom()` reads the
+  attestation's `sub` unverified to choose the client, as it reads a client
+  assertion's, and the verified `sub` must equal it.
+* **FAPI 2.0 names mTLS and `private_key_jwt` only** (section 5.3.2.1 item 6);
+  HAIP allows Wallet Attestation beneath it. `fapi.js`'s `allowedMethods()`
+  adds the two only under a FAPI 2.0 profile with
+  `oauth2.fapiAllowClientAttestation` on (off); FAPI 1.0 never.
+* **NOT DONE, SAID**: a MAC-protected attestation; `jku`; the revocation of an
+  attester's certificate or a Wallet Attestation's status list; the resource
+  server half (section 7's RS side — this service's resources ask for none);
+  challenge-endpoint rate limiting beyond the store's bound.
+
+Codes `STS-OAUTH-0720`..`0751`. Tests: `tests/client_attestation.js` (in
+process) and `tests/vendored/sts_client_attestation.js` (over HTTP).
+
+## 3bo. THE REGISTERED DEVICE IN TOKENS: `device_id`, `urn:sts:acr:compliant-device` AND THE ISSUANCE POLICY (2026-09-26, #164 phase 6)
 
 rcbj's decisions 3 and 8. `common/CLAUDE.md` covers where the device fact
 comes from; this section covers what this directory does with it.

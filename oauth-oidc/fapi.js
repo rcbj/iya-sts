@@ -113,6 +113,18 @@ const BASELINE_METHODS = ['tls_client_auth', 'self_signed_tls_client_auth',
 const ADVANCED_METHODS = ['tls_client_auth', 'self_signed_tls_client_auth',
                           'private_key_jwt'];
 
+// OAUTH 2.0 ATTESTATION-BASED CLIENT AUTHENTICATION (#229) — which FAPI 2.0
+// section 5.3.2.1 item 6 does not list (it names mTLS and private_key_jwt),
+// and which the OpenID4VC High Assurance Interoperability Profile allows
+// beneath FAPI 2.0 as Wallet Attestation (HAIP 1.0 section 4: "Client
+// authentication: Wallet Attestation as defined in Section 4.4.1 can be
+// used"). So it is added to FAPI 2.0's list only where the realm says it is
+// running HAIP's arrangement (`oauth2.fapiAllowClientAttestation`, off), and
+// never to FAPI 1.0's. Spelt here rather than read from
+// `client_attestation.ts`, which this leaf must not require.
+const ATTESTATION_METHODS = ['attest_jwt_client_auth',
+                             'attest_jwt_client_auth_dpop'];
+
 // Part 2 section 5.2.2 item 2: `code id_token`, or `code` with JARM.
 const ADVANCED_RESPONSE_TYPES = ['code id_token', 'code'];
 
@@ -526,6 +538,22 @@ function enabled() {
   return on;
 }
 
+// The client authentication methods the profile in force allows — every
+// reader asks this, so the three cannot disagree.
+function allowedMethods() {
+  log.debug("Entering allowedMethods().");
+  if (!(advanced() || fapi2())) {
+    log.debug("Leaving allowedMethods(). Baseline.");
+    return BASELINE_METHODS.concat(['none']);
+  }
+  const attestation = fapi2() &&
+    config.value('oauth2.fapiAllowClientAttestation') === true;
+  log.debug("Leaving allowedMethods(). " + (attestation
+    ? 'Advanced, with client attestation.' : 'Advanced.'));
+  return attestation ? ADVANCED_METHODS.concat(ATTESTATION_METHODS)
+                     : ADVANCED_METHODS;
+}
+
 // Whether the FAPI 2.0 Security Profile is in force.
 function fapi2() {
   log.debug("Entering fapi2().");
@@ -773,8 +801,7 @@ function clientAuthenticationRefusal(method) {
     log.debug("Leaving clientAuthenticationRefusal(). Nothing to judge.");
     return null;
   }
-  const allowed = (advanced() || fapi2()) ? ADVANCED_METHODS
-                                          : BASELINE_METHODS.concat(['none']);
+  const allowed = allowedMethods();
   if (allowed.indexOf(used) >= 0) {
     log.debug("Leaving clientAuthenticationRefusal(). Allowed.");
     return null;
@@ -831,8 +858,7 @@ function registrationRefusal(metadata) {
   }
   const meta = metadata || {};
   const method = String(meta.token_endpoint_auth_method || '');
-  const methods = (advanced() || fapi2()) ? ADVANCED_METHODS
-                                          : BASELINE_METHODS.concat(['none']);
+  const methods = allowedMethods();
   if (method && methods.indexOf(method) < 0) {
     log.debug("Leaving registrationRefusal(). A method FAPI refuses.");
     return refusal('STS-REG-0174', 'invalid_client_metadata',
@@ -1244,13 +1270,12 @@ function applyToMetadata(metadata) {
     return metadata;
   }
   metadata.code_challenge_methods_supported = ['S256'];
-  const allowedMethods = (advanced() || fapi2()) ? ADVANCED_METHODS
-                                    : BASELINE_METHODS.concat(['none']);
+  const allowedList = allowedMethods();
   const methods = metadata.token_endpoint_auth_methods_supported;
   if (Array.isArray(methods)) {
     metadata.token_endpoint_auth_methods_supported =
       methods.filter(function (one) {
-        return allowedMethods.indexOf(one) >= 0;
+        return allowedList.indexOf(one) >= 0;
       });
   }
   if (advanced() || fapi2()) {

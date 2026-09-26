@@ -120,9 +120,35 @@ certbot certonly --server https://host:8081/realm/acme-demo/enroll/acme/director
 ```
 
 The authorization for `web1.example.com` is already valid, so certbot performs
-no challenge. certbot names no profile, so the order gets `acme.defaultProfile`
-(`tls-client` unless changed): **set it to `tls-server`** for a realm whose
-clients are web servers, or use a client that names a profile.
+no challenge. certbot names no profile, and an order whose identifiers are all
+host names gets **`tls-server`** (serverAuth) — see *Orders* below.
+
+`--required-profile` or `--preferred-profile` (certbot 4.0 and later) names a
+profile; `certbot renew` keeps it, consults `renewalInfo` (RFC 9773), and
+reissues the same names. certbot has **no key rollover** (RFC 8555 section
+7.3.5) at all; lego below does. The suite drives certbot 5.8.0 through
+registration, issuance, renewal, revocation, `update_account` and
+`unregister` (`tests/vendored/sts_acme_certbot.js`).
+
+### lego
+
+```bash
+export LEGO_CA_CERTIFICATES=sts-root.pem
+lego accounts register --server https://host:8081/realm/acme-demo/enroll/acme/directory \
+  --accept-tos -m you@example.com --eab --eab.kid eab-a-… --eab.hmac <hmacKey>
+lego run --server https://host:8081/realm/acme-demo/enroll/acme/directory \
+  -m you@example.com --profile tls-server -d web1.example.com --http
+```
+
+lego logs that the authorization is already valid and skips the challenge; it
+still wants a solver named (`--http`), which binds nothing. It consults
+`renewalInfo` before a renewal, `accounts keyrollover` changes the account key,
+and `certificates revoke --reason N` revokes. `--not-after` and `--not-before`
+are refused (`malformed`): the realm sets a certificate's lifetime. A
+registration refused once leaves lego holding a key with no account, and it
+then asks for the account BY that key (`onlyReturnExisting`) rather than
+registering — use a fresh `--path`. The suite drives lego v5.5.2
+(`tests/vendored/sts_acme_lego.js`).
 
 ### acme.sh
 
@@ -144,7 +170,20 @@ acme.sh --issue --server https://host:8081/realm/acme-demo/enroll/acme/directory
 
 An identifier the entry does not own refuses the whole order with
 `rejectedIdentifier`, one subproblem per identifier. An order may name a
-`profile`; with none it gets `acme.defaultProfile`. `notBefore` and `notAfter`
+`profile`, and a named profile is always the one used (or refused
+`invalidProfile` when the realm does not allow it). **An order naming none**
+gets its profile from its identifiers:
+
+| The order's identifiers | Profile |
+|---|---|
+| all `dns` or `ip` (one or more) | `tls-server`, when `acme.allowedProfiles` holds it; otherwise `acme.defaultProfile` |
+| any `email` or `permanent-identifier`, alone or mixed with host names | `acme.defaultProfile` (`tls-client` unless changed) |
+
+A host-only order is asking for a server certificate whether or not it says
+so (a bare `certbot certonly -d www.example.com` was issued a clientAuth-only
+certificate until 2026-09-26). A mixed order names an entry as well as a host,
+and which of the two it is for is what it did not say, so it keeps the realm's
+default. `notBefore` and `notAfter`
 are refused: a certificate is valid for `acme.certificateLifetimeDays` (90 by
 default), shortened to the Issuing CA's own expiry. An order may name the
 certificate it `replaces` (RFC 9773); the replaced certificate is not revoked.
@@ -152,7 +191,11 @@ certificate it `replaces` (RFC 9773); the replaced certificate is not revoked.
 **The CSR must name exactly the order's identifiers** (section 7.4): every
 subjectAltName and the common name must each be one of them, and all of them
 must be named. The certificate is built from the order and the entry, not
-copied from the CSR: its subject is `CN=<entry>, O=<organisation>`, it always
+copied from the CSR: its subject is `CN=<entry>, O=<organisation>` — or, when
+it names a host, `CN=<the first dns or ip identifier>, UID=<entry>,
+O=<organisation>`, because certbot and lego read a certificate's names back as
+its CN plus its dNSNames and every renewal asked for the entry's name as a host
+until this was so (#207) — it always
 carries the entry's `urn:sts:person:<name>` or `urn:sts:application:<id>` URI,
 and its key usages are the profile's.
 
@@ -202,7 +245,7 @@ done.
 |---|---|---|---|---|
 | `acme.enabled` | `STS_ACME_ENABLED` | `true` | yes | Off makes every `/enroll/acme` endpoint answer 503 with a `serverInternal` problem naming the setting; accounts, orders and certificates are kept. |
 | `acme.allowedProfiles` | `STS_ACME_ALLOWED_PROFILES` | all nine leaf profiles | yes | The `/admin/pki` profiles an order may name and the directory advertises; the five CA, OCSP and KDC profiles are never issued whatever this says. |
-| `acme.defaultProfile` | `STS_ACME_DEFAULT_PROFILE` | `tls-client` | yes | The profile of an order that names none; it must also be in `acme.allowedProfiles`. |
+| `acme.defaultProfile` | `STS_ACME_DEFAULT_PROFILE` | `tls-client` | yes | The profile of an order that names none and is not host names only (those get `tls-server`); it must also be in `acme.allowedProfiles`. |
 | `acme.certificateLifetimeDays` | `STS_ACME_CERTIFICATE_LIFETIME_DAYS` | `90` | yes | The validity of a certificate issued at finalize, shortened to the ACME Issuing CA's own expiry. |
 | `acme.maxRequestBytes` | `STS_ACME_MAX_REQUEST_BYTES` | `65536` | yes | A flattened JWS larger than this is refused (413) before it is parsed; a post-quantum CSR is the largest legitimate request. |
 | `acme.attemptsPerIdentity` | `STS_ACME_ATTEMPTS_PER_IDENTITY` | `30` | yes | Refused requests one account or EAB key id may make in a web-security window before `rateLimited`. |

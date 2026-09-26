@@ -13,6 +13,13 @@
 // being asked for, and the CA is always this realm's EST Issuing CA). The
 // unlabelled path issues `est.defaultProfile`.
 //
+// **A REALM CAN BE NAMED IN THE LABEL POSITION TOO** (#251):
+// `/.well-known/est/<realm>/…` is entered as that realm and rewritten to
+// `/.well-known/est/…` by `common/realms.js`'s `matchPath()` before the router,
+// so nothing here knows it happened — except that a label which names a realm
+// reaching THIS file means the realm was already named, and is refused
+// (STS-EST-0022).
+//
 //   GET  cacerts          the CA certificates, certs-only (section 4.1)
 //   POST simpleenroll     a PKCS#10 in, a certificate out (4.2.1)
 //   POST simplereenroll   the same, renewing a certificate (4.2.2)
@@ -81,6 +88,7 @@ import helpers = require('../common/helpers');
 const { log } = helpers;
 import config = require('../common/config');
 import errorCodes = require('../common/error_codes');
+import realms = require('../common/realms');
 import validation = require('../common/validation');
 import applications = require('../common/applications');
 import core = require('../common/cert_enrollment');
@@ -345,6 +353,25 @@ class Est {
          core.REFUSED_PROFILES.some(function (one) {
            return one.id === String(label);
          }));
+      // A LABEL THAT NAMES A TRUST REALM, reached here only when the realm
+      // was already named — by the `/realm/<id>` prefix or by a label segment
+      // before this one — because `realms.matchPath()` enters a realm named
+      // in the first label position and strips it (#251). A request names
+      // its realm once, so this is refused rather than read as a second
+      // realm or as a profile.
+      if (!known && realms.get(String(label)) &&
+          String(label) !== realms.DEFAULT_ID) {
+        errorCodes.mark(res, 'STS-EST-0022');
+        this.estError(req, res, ctx, 404, 'The EST label "' +
+                      String(label).slice(0, 40) + '" names a trust realm, ' +
+                      'and this request already named one. Name the realm ' +
+                      'once: /.well-known/est/<realm>/[<profile>/]' +
+                      '<operation> or /realm/<realm>/.well-known/est/' +
+                      '[<profile>/]<operation>.');
+        log.debug("Leaving Est.refusedBeforeAuthentication(). A realm, " +
+                  "named twice.");
+        return true;
+      }
       if (!known) {
         errorCodes.mark(res, 'STS-EST-0002');
         this.estError(req, res, ctx, 404, 'There is no EST label "' +

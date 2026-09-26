@@ -178,6 +178,7 @@ the diagram and a walk through each layer.
 | OpenID4VP 1.0 — a Verifier, and a sign-in with a wallet in any credential format, through the W3C Digital Credentials API | `/oid4vp/verifier`, `/authn/wallet` | [oid4vp](oid4vp.md) |
 | Token Status List and W3C Bitstring Status List — what this issuer publishes about what it issued | `/oid4vci/status-lists*`, `/admin/vc-status` | [oid4vci](oid4vci.md) |
 | W3C DID Core with DIF domain linkage | `/.well-known/did.json` | [oid4vp](oid4vp.md) |
+| The W3C VC-API test endpoints — Data Integrity (RDFC, JCS, ecdsa-sd-2023), VC-JOSE-COSE and DID resolution for the W3C test suites; a development test control | `/vc-api/*` | [vc-api](vc-api.md) |
 | Shared Signals (SSF 1.0) with CAEP and RISC — a transmitter, and a receiver of its own | `/ssf/*`, `/admin/ssf` | [shared-signals](shared-signals.md) |
 | XACML 3.0 and ALFA — a PDP, a policy repository, and the PEPs that decide this service's own issuance | `/xacml/*`, `/admin/xacml` | [xacml](xacml.md) |
 | GNAP (RFC 9635) with RFC 9767 resource server connections | `/gnap/*`, `/admin/gnap` | [gnap](gnap.md) |

@@ -2076,14 +2076,20 @@ class RiskEngine {
     log.debug("Entering RiskEngine.view().");
     const sealing = this.sealing();
     const o = opts || {};
-    // `subject` and `days` for one person's own page (#62 P6).
+    // `subject` and `days` for one person's own page (#62 P6). The two
+    // lists are paged by their callers — `limit`/`offset` the assessments,
+    // `subjectsLimit`/`subjectsOffset` the standings — and `subjectsTotal`
+    // is how many people there are, `assessments.total` how many sign-ins.
     const assessments = await store.listAssessments(realm, {
       since: now() - (Number(o.days) || 7) * 86400000, level: o.level || '',
       subject: String(o.subject || ''),
-      limit: 50, offset: Number(o.offset) || 0 }, sealing);
-    const subjects = await store.listSubjects(realm, { limit: 25 }, sealing);
+      limit: Number(o.limit) || 50, offset: Number(o.offset) || 0 }, sealing);
+    const subjects = await store.listSubjects(realm, {
+      limit: Number(o.subjectsLimit) || 25,
+      offset: Number(o.subjectsOffset) || 0 }, sealing);
     log.debug("Leaving RiskEngine.view().");
-    return { assessments: assessments, subjects: subjects,
+    return { assessments: assessments, subjects: subjects.rows,
+             subjectsTotal: subjects.total,
              inDatabase: store.failuresInDatabase(sealing),
              signals: Object.keys(SIGNALS).map(function (id: string): Json {
                return Object.assign({ signal: id }, SIGNALS[id]);

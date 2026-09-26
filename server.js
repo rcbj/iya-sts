@@ -83,7 +83,8 @@ const app = require('./common/app');
 // below; `realms` for the id of the realm it warms. Both modules are already
 // loaded by this line — app.js requires realms, and helpers is this line —
 // so neither adds a require to the order.
-const { log, PORT, HOST, warmPqKeys } = require('./common/helpers');
+const { log, PORT, HOST, warmPqKeys,
+        warmSignerGroups } = require('./common/helpers');
 const realms = require('./common/realms');
 const config = require('./common/config');
 // A LIBRARY, rule 3's shape: it registers no route and its position in the
@@ -245,6 +246,13 @@ function announce() {
   // made on first use if this does not finish — the slow path is the one
   // that existed before, which is a fallback rather than a fault.
   warmPqKeys(realms.DEFAULT_ID);
+  // THE SIGNER GROUPS (#68), for every realm whose `keys.signerModel` is
+  // `hybrid-groups` — `warmSignerGroups()` reads it in each realm and returns
+  // at once for the rest. Not awaited, for warmPqKeys()'s reason. A realm
+  // switched to the model LATER makes its keys on its first group signature.
+  realms.list().forEach(function (realm) {
+    warmSignerGroups(realm.id);
+  });
   // THE VERSION FIRST, before the endpoint tour below, because it is the one
   // line in this banner that answers a question about the PROCESS rather than
   // about a URL — and it is the line somebody scrolls a container's log back
@@ -811,7 +819,12 @@ serviceState.start().then(function (both) {
                                      keyPem: tlsMaterial.privateKeyPem,
                                      chainPem: tlsMaterial.chainPem,
                                      trustAnchorPem:
-                                       tlsMaterial.trustAnchorPem });
+                                       tlsMaterial.trustAnchorPem,
+                                     // The other leaves the socket presents
+                                     // (#248), public like the chain.
+                                     extraCertPems: tlsServer
+                                       .presentedCertificatePems()
+                                       .slice(1) });
   // THE BBS PAIR IS NOT HANDED OVER HERE ANY MORE (2026-09-22, #49 P5): it is
   // a member of each realm's key set, so it reaches the workers in the key
   // sets the pool already sends (`keystore.sharedAll()`), and was made per
@@ -991,6 +1004,19 @@ if (useHttps) {
   // invisible: the far end sees a closed socket and this log said nothing.
   tlsServer.observeConnectionsOn(mainServer,
                                  'the main port (' + PORT + ')');
+  // THE LEAVES THIS PORT PRESENTS GO ON THIS NODE'S CLUSTER ROW (#248), and
+  // again whenever the listener is re-issued: the SAML identity provider's
+  // metadata publishes the back channel's certificate, and behind a balancer
+  // that is every live node's (`cluster/cluster.js`). A no-op outside a
+  // cluster — nothing reads the row. Required here, where it is first needed,
+  // like the listener's other late wiring.
+  const clusterMembership = require('./cluster/cluster');
+  clusterMembership.setListenerCertificates(
+    tlsServer.presentedCertificatePems());
+  tlsServer.onServerCertificateChange(function () {
+    clusterMembership.setListenerCertificates(
+      tlsServer.presentedCertificatePems());
+  });
   // THE CLIENT'S JA4 TLS FINGERPRINT (#62 P0, 2026-09-22), read off the
   // ClientHello before the TLS engine takes the socket — see
   // tls/client_hello.ts. Installed BEFORE the PROXY protocol below, so that

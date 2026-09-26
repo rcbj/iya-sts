@@ -587,7 +587,11 @@ function setServerCertificate(material) {
   // `process.env` at the other end while the key deliberately does not.
   tlsMaterial = { certPem: material.certPem, keyPem: material.keyPem,
                   chainPem: (material.chainPem || []).slice(0),
-                  trustAnchorPem: material.trustAnchorPem || '' };
+                  trustAnchorPem: material.trustAnchorPem || '',
+                  // The other leaves the socket presents (#248): public, and
+                  // what `tls_server.presentedCertificatePems()` answers in a
+                  // worker beside the first.
+                  extraCertPems: (material.extraCertPems || []).slice(0) };
   log.debug("Leaving setServerCertificate().");
 }
 
@@ -4302,6 +4306,22 @@ function proxy(entry, req, res, atGeneration, ticket) {
     // the pipe from now on. See ticketAbandoned().
     answered = true;
     res.status(answer.statusCode);
+    // **EACH HEADER GOES OUT UNDER THE NAME THE WORKER SPELLED IT WITH
+    // (2026-09-26, #209).** `answer.headers` is keyed in lower case, and
+    // setting it back by those keys sent `content-type:` where the process
+    // answering by itself sends `Content-Type:`. RFC 9110 section 5.1 makes
+    // a field name case-insensitive, and libest's estclient — Cisco's
+    // reference EST client — compares it byte for byte: every EST request a
+    // dispatched service answered failed "Missing HTTP content type header",
+    // and only on the modes that dispatch. The spelling comes from
+    // `rawHeaders`; the values are still `answer.headers`', merged as
+    // before. A name the worker did not send (the pin's `set-cookie` on an
+    // answer that set none) keeps its lower-case key.
+    const spelled = {};
+    const raw = answer.rawHeaders || [];
+    for (let i = 0; i + 1 < raw.length; i += 2) {
+      spelled[String(raw[i]).toLowerCase()] = String(raw[i]);
+    }
     Object.keys(answer.headers).forEach(function (name) {
       // The worker's instruction to this process, and no business of the
       // client's — for the reason the hop-by-hop headers below are dropped, and
@@ -4316,7 +4336,7 @@ function proxy(entry, req, res, atGeneration, ticket) {
           name === 'transfer-encoding') {
         return;
       }
-      res.setHeader(name, answer.headers[name]);
+      res.setHeader(spelled[name] || name, answer.headers[name]);
     });
     // AN ANSWER BEFORE THE REQUEST'S BODY HAD ALL ARRIVED (#215) is a
     // refusal made on the headers — a dataset upload over its cap, or with

@@ -419,6 +419,14 @@ async function signInAt(door, who) {
                  form({ authn_id: authnId, username: who,
                         password: PASSWORD, action: "login",
                         csrf_token: csrfOf(r.text) }));
+  // An administrator is OFFERED a second factor since #246 (the Admin Read
+  // grant above makes `who` one); this job ignores it, as rcbj asked.
+  const offerId = r.status === 200 && /id="mfa-setup-ignore"/.test(r.text)
+    ? (r.text.match(/name="mfa_id" value="([^"]+)"/) || [])[1] || "" : "";
+  if (offerId) {
+    r = await b.go("POST", "/authn/mfa-setup",
+                   form({ mfa_id: offerId, action: "ignore" }));
+  }
   assert.ok(r.status === 303 || r.status === 302,
     "the sign-in form should redirect, got " + r.status + " " +
     String(r.text).slice(0, 200));

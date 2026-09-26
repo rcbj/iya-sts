@@ -137,8 +137,7 @@ async function settled(prefix, realm, version) {
   log.debug("Entering settled(). " + version);
   const deadline = Date.now() + 60000;
   for (;;) {
-    const r = await call("GET", base + prefix + "/admin-api/risk?realm=" +
-                         encodeURIComponent(realm));
+    const r = await call("GET", base + prefix + "/admin-api/risk");
     assert.strictEqual(r.status, 200, "GET /admin-api/risk answered " +
                        r.status + " " + r.text.slice(0, 300));
     const d = r.body.datasets.filter(function (one) {
@@ -185,8 +184,8 @@ async function theApi() {
     assert.strictEqual(done.version.rowCount, 3000,
                        JSON.stringify(done.version));
   });
-  const look = await call("GET", base + "/admin-api/risk?realm=default" +
-                          "&address=198.18.65.7");
+  const look = await call("GET", base + "/admin-api/risk?" +
+                          "address=198.18.65.7");
   check("a lookup inside it names the list and the version", function () {
     assert.strictEqual(look.status, 200, look.text.slice(0, 300));
     assert.strictEqual(look.body.lookup.datasets[DATASET], r.body.version,

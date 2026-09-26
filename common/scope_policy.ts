@@ -22,10 +22,10 @@
 //   * THIS SERVICE'S OWN PROTECTED SCOPES — `admin:read` and `admin:write`
 //     (/admin-api), the SCIM pair (`scim.scopeRead`, `scim.scopeWrite`), the
 //     Shared Signals pair (`ssf.authScopeRead`, `ssf.authScopeWrite`), the
-//     embedded debugger's permission, Grant Management's two (#142) and
-//     the device compliance feed's `device:compliance` (#164). Issued ONLY
-//     to a client whose `oauthAllowedScope` lists them, IN BOTH MODES: the
-//     resource servers
+//     embedded debugger's permission, Grant Management's two (#142), the
+//     VC-API test endpoints' two (#194) and the device compliance feed's
+//     `device:compliance` (#164). Issued ONLY to a client whose
+//     `oauthAllowedScope` lists them, IN BOTH MODES: the resource servers
 //     behind them are this service's own, development already gates them, and
 //     a gate any client can mint a key for is not one. Each of those resource
 //     servers asks `declares()` again on every call, so removing a value cuts
@@ -75,9 +75,10 @@ import applications = require('./applications');
 import audit = require('./audit');
 
 // OpenID Connect Core 1.0 section 5.4, plus section 11's offline_access. All
-// six, including the two this service issues no claims for.
+// six, including the two this service issues no claims for — and OpenID
+// Connect Key Binding's `bound_key` (#150), which asks for a bound ID Token.
 const OIDC_SCOPES = Object.freeze(['openid', 'profile', 'email', 'address',
-  'phone', 'offline_access']);
+  'phone', 'offline_access', 'bound_key']);
 
 // `/admin-api`'s two, as `common/roles.js` maps them to ADMIN_READ and
 // ADMIN_WRITE. Not settings: the management API's vocabulary is fixed.
@@ -90,6 +91,13 @@ const ADMIN_SCOPES = Object.freeze(['admin:read', 'admin:write']);
 // for the debugger permission's reason below.
 const GRANT_MANAGEMENT_SCOPES = Object.freeze(['grant_management_query',
                                                'grant_management_revoke']);
+
+// The VC-API test endpoints' two (#194, `oid4vc/vc_api.ts`): an endpoint
+// that signs any document its caller writes with a realm's key is this
+// service's own resource server, and a development-only one is still no
+// reason to let any client mint the key to it. Written out for the
+// debugger permission's reason below; `tests/scope_policy.js` compares.
+const VC_API_SCOPES = Object.freeze(['vc-api:issue', 'vc-api:verify']);
 
 // THE MDM FEED'S (#164 phase 3): the one scope `/admin-api`'s device
 // compliance operation takes instead of `admin:write`, so a posture feed
@@ -186,7 +194,7 @@ class ScopePolicy {
      String(config.value('ssf.authScopeRead') || 'ssf:read'),
      String(config.value('ssf.authScopeWrite') || 'ssf:write'),
      DEBUGGER_PERMISSION, DEVICE_COMPLIANCE_SCOPE]
-      .concat(GRANT_MANAGEMENT_SCOPES)
+      .concat(GRANT_MANAGEMENT_SCOPES, VC_API_SCOPES)
       .forEach(function (one) {
       if (names.indexOf(one) < 0) {
         names.push(one);

@@ -15,7 +15,11 @@
 //   * the SP is registered by CONSUMING its own metadata (#37), and it trusts
 //     the identity provider through the metadata this service publishes for
 //     it — both profiles' documents, as they are, handed to the peer's
-//     control server with the service's TLS anchor for the back channel;
+//     control server, and NOTHING ELSE (#248): no TLS anchor. The back
+//     channel is authenticated by Shibboleth's ExplicitKey engine against the
+//     listener certificate the metadata publishes, and the job checks that
+//     certificate IS the one the service presents, and that the SP refuses
+//     the back channel when the metadata is stripped of it;
 //   * SAML 2.0, SP-initiated: the AuthnRequest on HTTP-Redirect and on
 //     HTTP-POST, the Response on HTTP-POST, POST-SimpleSign and
 //     HTTP-Artifact (resolved by the SP over SOAP), every assertion
@@ -44,6 +48,7 @@
 const { Command, Option } = require("commander");
 const names = require("./random_username.js");
 const kitFactory = require("./saml_peer_kit.js");
+const tls = require("tls");
 
 const kit = kitFactory.create("sts_saml_interop_shibboleth");
 const log = kit.log;
@@ -135,17 +140,67 @@ async function makeWorld(realmMode) {
   w.idp2 = (/entityID="([^"]+)"/.exec(w.idp2Metadata) || [])[1];
   w.idp11 = (/entityID="([^"]+)"/.exec(w.idp11Metadata) || [])[1];
 
-  const configured = await control("/configure", { files: {
-    "idp-saml2.xml": w.idp2Metadata,
-    "idp-saml11.xml": w.idp11Metadata,
-    "sts-ca.pem": await kit.stsAnchor() } });
-  kit.must(configured.status === 200 && configured.body &&
-           configured.body.ok, "the Shibboleth peer would not take the " +
-           "identity provider's metadata: " + configured.text.slice(0, 600));
+  // THE METADATA AND NOTHING ELSE (#248): no TLS anchor goes with it.
+  await configure(w.idp2Metadata, w.idp11Metadata);
   log.info("realm " + realm + " (" + realmMode + "): SP " + w.sp +
            "; identity providers " + w.idp2 + " and " + w.idp11);
   log.debug("Leaving makeWorld().");
   return w;
+}
+
+// Hands the peer its two identity provider documents and restarts shibd.
+async function configure(idp2Xml, idp11Xml) {
+  log.debug("Entering configure().");
+  const configured = await control("/configure", { files: {
+    "idp-saml2.xml": idp2Xml,
+    "idp-saml11.xml": idp11Xml } });
+  kit.must(configured.status === 200 && configured.body &&
+           configured.body.ok, "the Shibboleth peer would not take the " +
+           "identity provider's metadata: " + configured.text.slice(0, 600));
+  log.debug("Leaving configure().");
+}
+
+// The certificate the service's main port presents, as base64 DER — what the
+// SP meets on the back channel. null for a plain-http service.
+async function presentedCertificate() {
+  log.debug("Entering presentedCertificate().");
+  const u = new URL(kit.base());
+  if (u.protocol !== "https:") {
+    log.debug("Leaving presentedCertificate(). Plain HTTP.");
+    return null;
+  }
+  const b64 = await new Promise(function (resolve, reject) {
+    const socket = tls.connect({
+      host: u.hostname, port: Number(u.port) || 443,
+      servername: /^[\d.]+$/.test(u.hostname) ? undefined : u.hostname,
+      // Reading the certificate, not trusting it: the question is WHICH
+      // certificate arrives, and the answer is compared with the metadata.
+      rejectUnauthorized: false
+    }, function () {
+      const cert = socket.getPeerCertificate();
+      socket.end();
+      resolve(cert && cert.raw ? cert.raw.toString("base64") : "");
+    });
+    socket.on("error", reject);
+  });
+  log.debug("Leaving presentedCertificate().");
+  return b64;
+}
+
+// The certificates of one role descriptor's `use="signing"` KeyDescriptors.
+function signingKeysOf(xml, role) {
+  log.debug("Entering signingKeysOf(). " + role);
+  const body = (new RegExp("<md:" + role + "[\\s>][\\s\\S]*?</md:" + role +
+                           ">").exec(xml) || [""])[0];
+  const out = [];
+  const re = /<md:KeyDescriptor use="signing">[\s\S]*?<ds:X509Certificate>([^<]+)</g;
+  let m = re.exec(body);
+  while (m) {
+    out.push(m[1].replace(/\s+/g, ""));
+    m = re.exec(body);
+  }
+  log.debug("Leaving signingKeysOf(). " + out.length);
+  return out;
 }
 
 // The SP's protected page, as JSON: what mod_shib put in the environment.
@@ -396,6 +451,101 @@ async function attributeQuery(w) {
 }
 
 // ===========================================================================
+// THE BACK CHANNEL, AUTHENTICATED FROM METADATA (#248)
+//
+// Every artifact and attribute-query scenario above already ran with no TLS
+// anchor handed to the SP, so each is a back channel authenticated from the
+// metadata. This section says so in as many words: the certificate the
+// metadata publishes in both roles of both documents IS the one the service
+// presents, and — the control that shows the SP checks at all — with that
+// KeyDescriptor taken out of the documents, the SP refuses the back channel:
+// an artifact is not resolved and an attribute query is not answered.
+// ===========================================================================
+async function backChannel(w) {
+  log.debug("Entering backChannel().");
+  const presented = await presentedCertificate();
+  if (!presented) {
+    log.info(w.mode + ": the service is plain HTTP; there is no back-channel " +
+             "certificate to publish or authenticate");
+    log.debug("Leaving backChannel(). Plain HTTP.");
+    return;
+  }
+  for (const doc of [["SAML 2.0", w.idp2Metadata],
+                     ["SAML 1.1", w.idp11Metadata]]) {
+    for (const role of ["IDPSSODescriptor", "AttributeAuthorityDescriptor"]) {
+      await kit.check(w.mode + ": the " + doc[0] + " metadata's " + role +
+                      " publishes the certificate the back channel presents, " +
+                      "use=\"signing\"", async function () {
+        const keys = signingKeysOf(doc[1], role);
+        kit.assert(keys.indexOf(presented) >= 0, "the service presents " +
+                   presented.slice(0, 40) + "…, and the " + role + " names " +
+                   keys.length + " signing key(s), none of them that one");
+      });
+    }
+  }
+  if (w.mode !== "development") {
+    log.debug("Leaving backChannel(). The control runs once, in development.");
+    return;
+  }
+  // THE CONTROL: the same two documents without the listener's descriptor.
+  const strip = function (xml) {
+    log.debug("Entering strip().");
+    log.debug("Leaving strip().");
+    return xml.replace(/<md:KeyDescriptor[\s\S]*?<\/md:KeyDescriptor>/g,
+                       function (descriptor) {
+                         return descriptor.indexOf(presented) >= 0
+                           ? "" : descriptor;
+                       });
+  };
+  const bare2 = strip(w.idp2Metadata);
+  const bare11 = strip(w.idp11Metadata);
+  await kit.check(w.mode + ": the control's documents no longer name the " +
+                  "listener certificate", async function () {
+    kit.assert(bare2.indexOf(presented) < 0 && bare11.indexOf(presented) < 0,
+               "the listener's KeyDescriptor was not taken out");
+  });
+  await configure(bare2, bare11);
+  try {
+    const watch = kit.logWatch("shibboleth", LOGS, isProblem);
+    const b = kit.browser();
+    await signIn(w, b, login({ entityID: w.idp2, acsIndex: ACS.artifact }));
+    const env = await sessionAt(b);
+    await kit.check(w.mode + ": CONTROL — with no listener key in the " +
+                    "metadata, the SP does not resolve the artifact (its " +
+                    "back channel refuses the service)", async function () {
+      kit.assert(!env, "the SP holds a session anyway, so it resolved the " +
+                 "artifact over a back channel it could not have " +
+                 "authenticated: " + JSON.stringify(env));
+    });
+    const b2 = kit.browser();
+    await signIn(w, b2, login({ entityID: w.idp2, acsIndex: ACS.post }));
+    const q = await b2.hop(PEER + "/Shibboleth.sso/AttrQuery?entityID=" +
+      encodeURIComponent(w.idp2) + "&nameId=" + encodeURIComponent(w.person) +
+      "&protocol=" + encodeURIComponent(NS.saml2p) + "&format=" +
+      encodeURIComponent("urn:oasis:names:tc:SAML:1.1:nameid-format:" +
+                         "unspecified"));
+    await kit.check(w.mode + ": CONTROL — and the attribute query is not " +
+                    "answered", async function () {
+      kit.assert(!(q.status === 200 && q.body.indexOf(w.person) >= 0),
+                 "the SP's AttrQuery handler answered " + q.status + " " +
+                 kit.squash(q.body).slice(0, 300));
+    });
+    await kit.sleep(300);
+    const lines = watch.since().filter(isProblem);
+    lines.forEach(function (l) {
+      log.info("shibboleth (control, expected): " + l);
+    });
+    await kit.check(w.mode + ": CONTROL — Shibboleth logged why",
+                    async function () {
+      kit.assert(lines.length > 0, "no warning or error was logged");
+    });
+  } finally {
+    await configure(w.idp2Metadata, w.idp11Metadata);
+  }
+  log.debug("Leaving backChannel().");
+}
+
+// ===========================================================================
 // SINGLE LOGOUT
 // ===========================================================================
 async function singleLogout(w) {
@@ -510,6 +660,9 @@ async function test() {
     }
     if (run("slo")) {
       await singleLogout(w);
+    }
+    if (run("backchannel")) {
+      await backChannel(w);
     }
   }
   log.debug("Leaving test().");

@@ -81,6 +81,7 @@ import applications = require('./applications');
 import audit = require('./audit');
 import config = require('./config');
 import credentials = require('./credentials');
+import enrollmentProfiles = require('./enrollment_profiles');
 import errorCodes = require('./error_codes');
 import keyMaterial = require('./vendored/key_material');
 import keystore = require('./keystore');
@@ -116,39 +117,14 @@ const FAMILY_LABELS = { acme: 'ACME', est: 'EST', scep: 'SCEP' };
 // THE PROFILES.
 //
 // **NINE ARE ISSUED AND FIVE ARE NOT, AND THE FIVE ARE A DECISION rcbj MADE
-// RATHER THAN A GAP.** /admin/pki offers fourteen because an OPERATOR sitting
-// at that page is the authority; an enrollment protocol hands a certificate to
-// whoever holds a credential, and for five profiles holding the certificate is
-// holding a power over everybody else in the realm. The `why` of each is drawn
-// on every protocol page and returned by every refusal.
+// RATHER THAN A GAP** — the argument is beside the lists, which live in the
+// leaf `./enrollment_profiles` since 2026-09-26 (#251): `common/realms.js`
+// needs the names to keep an EST label and a trust realm apart, and cannot
+// require this module. They are DECIDED here, as before.
 // ---------------------------------------------------------------------------
-const PROFILE_IDS = ['tls-server', 'tls-client', 'tls-server-client',
-                     'digital-signature', 'key-encipherment', 'code-signing',
-                     'email', 'timestamping', 'smartcard-logon'];
+const PROFILE_IDS = enrollmentProfiles.PROFILE_IDS;
 
-const REFUSED_PROFILES = [
-  { id: 'root-ca',
-    why: 'A Root CA is a trust anchor. Its holder could issue a certificate ' +
-         'for anybody and be believed by everything that trusts this ' +
-         'service\'s Root — and it is self-signed, so it would not even ' +
-         'chain to this authority.' },
-  { id: 'intermediate-ca',
-    why: 'An Intermediate CA may sign further CAs. Its holder could build a ' +
-         'branch of this hierarchy nobody operates.' },
-  { id: 'issuing-ca',
-    why: 'An Issuing CA signs certificates. Its holder could issue a ' +
-         'certificate naming any person or application in the realm, which ' +
-         'is exactly the rule this whole module exists to enforce.' },
-  { id: 'ocsp-responder',
-    why: 'An OCSP Responder certificate issued by this realm\'s CA is a ' +
-         'DELEGATED responder (RFC 6960 section 4.2.2.2): its holder could ' +
-         'sign "good" about a certificate this service revoked, and a ' +
-         'relying party would believe it.' },
-  { id: 'kdc',
-    why: 'A Kerberos KDC certificate lets its holder answer PKINIT as the ' +
-         'realm\'s KDC and impersonate it to every client that trusts this ' +
-         'authority.' }
-];
+const REFUSED_PROFILES = enrollmentProfiles.REFUSED_PROFILES;
 
 // What each issued profile REQUIRES of the request or the entry, beyond the
 // identity rule. Drawn on the pages from this table.
@@ -999,6 +975,50 @@ class CertEnrollment {
   }
 
   // ---------------------------------------------------------------------------
+  // THE PROFILE OF A REQUEST THAT NAMES NONE, FROM WHAT IT ASKS FOR (#252,
+  // rcbj's decision on #207, 2026-09-26).
+  //
+  // `family.defaultProfile` is `tls-client`, and until this was written a bare
+  // `certbot certonly -d www.example.test` was issued a clientAuth-only
+  // certificate — a certificate for a web server that no TLS client will accept
+  // from one. A request whose identifiers are ALL host names (`dns`, and `ip`,
+  // which RFC 8738 makes the same kind of name) is asking for a server
+  // certificate whatever it forgot to say, so it gets `tls-server`.
+  //
+  // THE RULE, WRITTEN DOWN:
+  //   * every identifier `dns` or `ip` (and at least one) → `tls-server`, when
+  //     `family.allowedProfiles` holds it;
+  //   * anything else — a person or application by `permanent-identifier`, an
+  //     `email`, or a MIX of host names and those — → `family.defaultProfile`,
+  //     as before: a mixed order names an entry as well as a host, and which of
+  //     the two it is for is exactly what it did not say;
+  //   * a realm whose `allowedProfiles` leaves `tls-server` out has decided it
+  //     issues no server certificate, so a host-only order there keeps the
+  //     realm default too — the default does not reach past the allowed list;
+  //   * a NAMED profile is never replaced: the caller checks it with
+  //     `checkProfile()` and uses it, and this is not asked.
+  //
+  // Only ACME knows the identifiers before it chooses (an EST or SCEP profile
+  // is chosen by the path or the realm before a CSR is read), so ACME is the
+  // one caller; the rule is here because the profiles are.
+  // ---------------------------------------------------------------------------
+  profileForIdentifiers(family, types) {
+    const { log } = this.deps;
+    log.debug("Entering CertEnrollment.profileForIdentifiers().");
+    const list = Array.isArray(types) ? types.map(String) : [];
+    const hostsOnly = list.length > 0 && list.every(function (one) {
+      return one === 'dns' || one === 'ip';
+    });
+    if (hostsOnly && this.allowedProfiles(family).indexOf('tls-server') >= 0) {
+      log.debug("Leaving CertEnrollment.profileForIdentifiers(). tls-server.");
+      return 'tls-server';
+    }
+    log.debug("Leaving CertEnrollment.profileForIdentifiers(). The realm " +
+              "default.");
+    return this.defaultProfile(family);
+  }
+
+  // ---------------------------------------------------------------------------
   // PKCS#10.
   //
   // **THE PROOF OF POSSESSION IS VERIFIED, WHICH IS MORE THAN THIS SERVICE HAS
@@ -1657,6 +1677,45 @@ class CertEnrollment {
   }
 
   // ---------------------------------------------------------------------------
+  // THE SUBJECT'S NAMING ATTRIBUTES, from the entry and the names it owns.
+  //
+  // **A CERTIFICATE THAT NAMES A HOST HAS THAT HOST AS ITS COMMON NAME, AND
+  // THE ENTRY'S IDENTIFIER AS ITS UID (#207, #208, 2026-09-24).** Until then
+  // every certificate was `CN=<entry id>`, and a server certificate for
+  // `www.example.test` said `CN=alice`. certbot and lego both read a
+  // certificate's names back as its CN plus its dNSNames when they renew —
+  // so every renewal asked for an order naming `alice`, a host nobody
+  // registered, and was refused `rejectedIdentifier`: neither client could
+  // renew a single certificate this service had issued it. The CA/Browser
+  // Forum's rule is the same one (Baseline Requirements 7.1.4.3: a common
+  // name, where present, is one of the subjectAltName values).
+  //
+  // **THE UID IS WHAT KEEPS THE DN NAMING EXACTLY ONE ENTRY.** A host name
+  // may be registered on two entries, and a person's subject DN is written
+  // to `x509subject`, which `ldap/ldap_server.js`'s `locateEntry()` reads to
+  // turn a certificate's DN into an entry. `CN=www.example.test, O=…` alone
+  // would name whichever of the two it met first; with `UID=<entry id>` it
+  // names the one it was issued to. A certificate naming no host keeps
+  // `CN=<entry id>` as before.
+  // ---------------------------------------------------------------------------
+  subjectFor(entry, names) {
+    const { log } = this.deps;
+    log.debug("Entering CertEnrollment.subjectFor().");
+    const host = (names || []).filter(function (one) {
+      return one.kind === 'dns';
+    }).concat((names || []).filter(function (one) {
+      return one.kind === 'ip';
+    }))[0];
+    if (!host) {
+      log.debug("Leaving CertEnrollment.subjectFor(). No host.");
+      return [{ name: 'CN', value: entry.id }];
+    }
+    log.debug("Leaving CertEnrollment.subjectFor(). A host.");
+    return [{ name: 'CN', value: host.value },
+            { name: 'UID', value: entry.id }];
+  }
+
+  // ---------------------------------------------------------------------------
   // ISSUE.
   //
   //   spec.family       'acme' | 'est' | 'scep'
@@ -1744,8 +1803,8 @@ class CertEnrollment {
         'pki.enrollmentMaxCertificatesPerEntry allows. Revoke one first.'));
     }
     const org = self.organisationOf();
-    const subject = [{ name: 'CN', value: resolved.entry.id },
-                     { name: 'O', value: org.organisation }]
+    const subject = self.subjectFor(resolved.entry, names.names)
+      .concat([{ name: 'O', value: org.organisation }])
       .concat(org.country ? [{ name: 'C', value: org.country }] : []);
     const days = Number(config.value(family + '.certificateLifetimeDays'));
     const issued = await pki.issueEnrolled(realms.currentId(), family, {
@@ -3552,6 +3611,7 @@ export = {
   isKind: slot.forward('isKind'),
   wellFormedId: slot.forward('wellFormedId'),
   entryUri: slot.forward('entryUri'),
+  organisationOf: slot.forward('organisationOf'),
   entryFromUri: slot.forward('entryFromUri'),
   entryLabel: slot.forward('entryLabel'),
   resolveEntry: slot.forward('resolveEntry'),
@@ -3569,6 +3629,7 @@ export = {
   allowedProfiles: slot.forward('allowedProfiles'),
   checkProfile: slot.forward('checkProfile'),
   defaultProfile: slot.forward('defaultProfile'),
+  profileForIdentifiers: slot.forward('profileForIdentifiers'),
   parseCsr: slot.forward('parseCsr'),
   targetFromRequest: slot.forward('targetFromRequest'),
   namesFor: slot.forward('namesFor'),

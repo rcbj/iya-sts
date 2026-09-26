@@ -793,6 +793,10 @@ class SpMetadata {
     if (policy && policy.ca) {
       options.ca = policy.ca;
     }
+    // The host check, and the verified chain held to the path rules (#201).
+    if (policy && policy.checkServerIdentity) {
+      options.checkServerIdentity = policy.checkServerIdentity;
+    }
     if (vetted.address) {
       // PINNED to the address that was checked; the Host header and the TLS
       // server name still come from the URL.

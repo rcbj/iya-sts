@@ -2343,6 +2343,27 @@ const SETTINGS = [
   // on a protocol page because it names the realm's SIGNING KEYS, which every
   // family here signs with; `common/jose_kid.js` argues the rest. Runtime,
   // so a realm may carry it — a `kid` is read per signature.
+  // THE SIGNER MODEL (2026-09-26, #68). See `common/signer_groups.js`.
+  { key: 'keys.signerModel', group: 'Key material',
+    label: 'Signer model',
+    path: 'keys.signerModel', env: 'STS_KEYS_SIGNER_MODEL', type: 'enum',
+    enumValues: ['per-algorithm', 'hybrid-groups'],
+    dflt: 'per-algorithm', runtime: true,
+    description: 'How this realm\'s signing keys are divided. ' +
+                 '`per-algorithm` — the default — is one key per JWS ' +
+                 'algorithm (an RSA key, six curve keys and eleven ' +
+                 'post-quantum keys) shared by every JOSE use, and one RSA ' +
+                 'key for every XML signature. `hybrid-groups` gives each of ' +
+                 'five signer groups — OAuth/OIDC tokens, verifiable ' +
+                 'credentials, Security Event Tokens, WS-Trust and GNAP, XML ' +
+                 '— keys of its OWN, in a chosen set of algorithms: RSA-3072, ' +
+                 'P-256 and P-384, each certified together with an ML-DSA key ' +
+                 '(65, 44 and 87) in one hybrid certificate (ITU-T X.509 ' +
+                 'clause 9.8), and SLH-DSA-SHA2-128s alone. A signature in a ' +
+                 'group\'s use signs with the group\'s key for its ' +
+                 'algorithm; an algorithm outside the set still signs with ' +
+                 'the per-algorithm key. Every key is a key pair of its own; ' +
+                 'what the hybrid certificate shares is the certificate.' },
   { key: 'keys.kidFormat', group: 'Key material',
     label: 'Signed token kid format',
     path: 'keys.kidFormat', env: 'STS_KEYS_KID_FORMAT', type: 'enum',
@@ -3749,7 +3770,103 @@ const SETTINGS = [
                  'allowance for two machines that are not synchronised. It ' +
                  'is also how long past its expiry an assertion\'s jti is ' +
                  'remembered, so the replay cache and the expiry check cover ' +
-                 'exactly the same span with no gap between them.' },
+                 'exactly the same span with no gap between them. It is ' +
+                 'also the skew a client attestation and its PoP are ' +
+                 'allowed (#229).' },
+
+  // -------------------------------------------------------------------------
+  // OAUTH 2.0 ATTESTATION-BASED CLIENT AUTHENTICATION (#229, 2026-09-26),
+  // draft-ietf-oauth-attestation-based-client-auth-11 —
+  // `oauth-oidc/client_attestation.ts` argues each row. Per trust realm, and
+  // the same in both modes: an attestation is a credential a client
+  // DECLARED, and the strict answer is the one a HAIP wallet meets anywhere.
+  // -------------------------------------------------------------------------
+  { key: 'oauth2.clientAttestationTrustAnchors', group: 'OAuth 2.0 / OIDC',
+    label: 'Trusted client attesters: certificate anchors (PEM)',
+    env: 'STS_OAUTH2_CLIENT_ATTESTATION_TRUST_ANCHORS', type: 'string',
+    dflt: '', runtime: true,
+    description: 'PEM certificates, concatenated: the trust anchors a ' +
+                 'Client Attestation\'s x5c chain must lead to ' +
+                 '(attest_jwt_client_auth, draft-ietf-oauth-attestation-' +
+                 'based-client-auth section 10.8). The signing certificate ' +
+                 'may not be self-signed (HAIP 1.0 section 4.4.1), and the ' +
+                 'whole path is checked as RFC 5280 says. Empty, with ' +
+                 'oauth2.clientAttestationTrustedKeys empty too, trusts no ' +
+                 'attester: the two attestation methods are then not ' +
+                 'advertised and every attestation is refused.' },
+
+  { key: 'oauth2.clientAttestationTrustedKeys', group: 'OAuth 2.0 / OIDC',
+    label: 'Trusted client attesters: keys (JWKS)',
+    env: 'STS_OAUTH2_CLIENT_ATTESTATION_TRUSTED_KEYS', type: 'string',
+    dflt: '', runtime: true,
+    description: 'A JWKS ({"keys": [...]}) of client attester public keys: ' +
+                 'a Client Attestation that carries no x5c must verify ' +
+                 'under one of them, narrowed by its kid. Symmetric and ' +
+                 'private keys are refused — a MAC-protected attestation ' +
+                 '(section 12.2) is not accepted here. Post-quantum (AKP) ' +
+                 'keys are accepted like any other.' },
+
+  { key: 'oauth2.clientAttestationChallengeRequired', group: 'OAuth 2.0 / OIDC',
+    label: 'Require a server challenge in a client attestation PoP',
+    env: 'STS_OAUTH2_CLIENT_ATTESTATION_CHALLENGE_REQUIRED', type: 'bool',
+    dflt: true, runtime: true,
+    description: 'Require every Client Attestation PoP to carry a challenge ' +
+                 'this server issued — from POST /oauth2/challenge, or the ' +
+                 'OAuth-Client-Attestation-Challenge header on the response ' +
+                 'to the previous request — each good for one request ' +
+                 '(section 6). A PoP without one is answered 400 ' +
+                 'use_attestation_challenge with a fresh challenge. Off, a ' +
+                 'challenge is still checked when sent and the PoP\'s jti ' +
+                 'and iat are the only replay protection — weaker, and not ' +
+                 'recommended. The DPoP combined mode uses DPoP nonces ' +
+                 'instead (oauth2.dpopNonceRequired).' },
+
+  { key: 'oauth2.clientAttestationChallengeTtlS', group: 'OAuth 2.0 / OIDC',
+    label: 'Client attestation challenge lifetime (s)',
+    env: 'STS_OAUTH2_CLIENT_ATTESTATION_CHALLENGE_TTL_S', type: 'int',
+    dflt: 300, min: 10, max: 3600, runtime: true,
+    description: 'How long a challenge this server hands out is accepted ' +
+                 'in a Client Attestation PoP.' },
+
+  { key: 'oauth2.clientAttestationChallengeCacheSize',
+    group: 'OAuth 2.0 / OIDC',
+    label: 'Client attestation challenges held per realm',
+    env: 'STS_OAUTH2_CLIENT_ATTESTATION_CHALLENGE_CACHE_SIZE', type: 'int',
+    dflt: 10000, min: 10, max: 1000000, runtime: true,
+    description: 'The most unexpired challenges a realm holds. At the bound ' +
+                 'the oldest is dropped, and a client presenting it is ' +
+                 'answered use_attestation_challenge with a fresh one.' },
+
+  { key: 'oauth2.clientAttestationMaxAgeS', group: 'OAuth 2.0 / OIDC',
+    label: 'Oldest client attestation accepted (s)',
+    env: 'STS_OAUTH2_CLIENT_ATTESTATION_MAX_AGE_S', type: 'int',
+    dflt: 86400, min: 60, max: 31536000, runtime: true,
+    description: 'How long after its iat a Client Attestation is still ' +
+                 'fresh enough (section 7.1 item 6); an older one is ' +
+                 'answered use_fresh_attestation. Its own exp still ends it ' +
+                 'sooner.' },
+
+  { key: 'oauth2.clientAttestationPopMaxAgeS', group: 'OAuth 2.0 / OIDC',
+    label: 'Oldest client attestation PoP accepted (s)',
+    env: 'STS_OAUTH2_CLIENT_ATTESTATION_POP_MAX_AGE_S', type: 'int',
+    dflt: 300, min: 10, max: 3600, runtime: true,
+    description: 'How long after its iat a Client Attestation PoP is ' +
+                 'accepted (section 7.2 item 6), plus ' +
+                 'oauth2.clientAssertionSkewS. Its jti is remembered for ' +
+                 'the same window, so a replay is refused for as long as ' +
+                 'the PoP could be accepted at all.' },
+
+  { key: 'oauth2.fapiAllowClientAttestation', group: 'OAuth 2.0 / OIDC',
+    label: 'FAPI 2.0: accept client attestation (HAIP)',
+    env: 'STS_OAUTH2_FAPI_ALLOW_CLIENT_ATTESTATION', type: 'bool',
+    dflt: false, runtime: true,
+    description: 'Under a FAPI 2.0 profile (oauth2.fapi 2-security or ' +
+                 '2-message-signing), accept attest_jwt_client_auth and ' +
+                 'attest_jwt_client_auth_dpop beside mTLS and ' +
+                 'private_key_jwt, as the OpenID4VC High Assurance ' +
+                 'Interoperability Profile allows (HAIP 1.0 section 4). Off, ' +
+                 'FAPI 2.0 section 5.3.2.1 item 6 is held to as written. ' +
+                 'FAPI 1.0 never accepts them.' },
 
   // -------------------------------------------------------------------------
   // THE 2026-09-12 HARD-CODED-VALUE SWEEP OF oauth-oidc/ AND oid4vc/.
@@ -4448,6 +4565,31 @@ const SETTINGS = [
                  '(compromised-device, x50).' },
 
   // OPENID CONNECT CIBA (#131). `oauth-oidc/ciba.ts` argues them.
+  { key: 'oauth2.deviceAuthorization', group: 'OAuth 2.0 / OIDC',
+    label: 'Device authorization grant (RFC 8628)',
+    env: 'STS_OAUTH2_DEVICE_AUTHORIZATION', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'Answer RFC 8628 at /oauth2/device_authorization: a device ' +
+                 'with no browser is given a device code and a user code, ' +
+                 'the person approves on /portal/device, and the device ' +
+                 'polls the token endpoint with the device_code grant ' +
+                 '(#150). OFF by default: a new way in is something a realm ' +
+                 'turns on, and section 5.4 describes the phishing a device ' +
+                 'flow invites.' },
+  { key: 'oauth2.deviceCodeLifetimeS', group: 'OAuth 2.0 / OIDC',
+    label: 'Device code lifetime (seconds)',
+    env: 'STS_OAUTH2_DEVICE_CODE_LIFETIME_S', type: 'int', dflt: 600,
+    min: 60, max: 1800, runtime: true,
+    description: 'How long a device code and its user code stay valid ' +
+                 '(RFC 8628 expires_in). Short, because the user code is ' +
+                 'short.' },
+  { key: 'oauth2.deviceCodeIntervalS', group: 'OAuth 2.0 / OIDC',
+    label: 'Device code polling interval (seconds)',
+    env: 'STS_OAUTH2_DEVICE_CODE_INTERVAL_S', type: 'int', dflt: 5,
+    min: 1, max: 60, runtime: true,
+    description: 'The minimum wait between a device\'s polls (RFC 8628 ' +
+                 'interval); a poll sooner is answered slow_down and the ' +
+                 'interval grows by five seconds.' },
   { key: 'oauth2.ciba', group: 'OAuth 2.0 / OIDC',
     label: 'CIBA (backchannel authentication)',
     env: 'STS_OAUTH2_CIBA', type: 'bool', dflt: false, runtime: true,
@@ -4575,8 +4717,11 @@ const SETTINGS = [
     env: 'PKI_HTTP_PORT', type: 'port', dflt: 8082, runtime: false,
     restartReason: 'the listener is bound when the process starts',
     description: 'A second HTTP listener, PLAIN rather than TLS, that ' +
-                 'answers the revocation endpoints under `/pki/` and refuses ' +
-                 'every other path. Every certificate this service issues ' +
+                 'answers the revocation endpoints under `/pki/` and SCEP ' +
+                 'under `/enroll/scep` (RFC 8894 is HTTP and secures its ' +
+                 'own messages; sscep and most device firmware speak no ' +
+                 'TLS), and refuses every other path. Every certificate ' +
+                 'this service issues ' +
                  'names it for its CRL, its OCSP responder and its issuer\'s ' +
                  'certificate.\n\n**WHY PLAIN.** RFC 5280 section 8 says a ' +
                  'CA SHOULD NOT put an https URI in an extension — a client ' +
@@ -4727,6 +4872,41 @@ const SETTINGS = [
                  'key\'s own default is used, logged once, STS-CORE-0106), ' +
                  'setting either is refused (STS-CORE-0103), and a build or ' +
                  'a key pair that names one is refused (STS-PKI-0191).' },
+  // THE SECOND KEY EVERY AUTHORITY HOLDS (2026-09-26, #68, rcbj's D4: "whole
+  // chain hybrid"). ITU-T X.509 (2019) clause 9.8's alternative public key
+  // and alternative signature, on the Root, every Intermediate and every
+  // Issuing CA, and an alternative signature on every certificate they issue.
+  // A DEFAULT for the next build like the rows above: a hierarchy keeps the
+  // algorithm it was built with.
+  { key: 'pki.alternativeKeyAlgorithm', group: 'PKI',
+    label: 'CA alternative (post-quantum) key algorithm',
+    env: 'STS_PKI_ALTERNATIVE_KEY_ALGORITHM', type: 'enum',
+    enumValues: ['ml-dsa-87', 'ml-dsa-65', 'ml-dsa-44',
+                 'slh-dsa-sha2-256s', 'slh-dsa-sha2-192s',
+                 'slh-dsa-sha2-128s', 'none'],
+    dflt: 'ml-dsa-87', runtime: true,
+    description: 'The post-quantum key every certificate authority this ' +
+                 'service builds carries BESIDE its classical one, in the ' +
+                 'non-critical subjectAltPublicKeyInfo, altSignatureAlgorithm ' +
+                 'and altSignatureValue extensions of ITU-T X.509 (2019) ' +
+                 'clause 9.8 — a hybrid certificate. Each authority signs ' +
+                 'every certificate it issues twice: classically in the ' +
+                 'ordinary fields, which every validator reads, and with this ' +
+                 'key over the preTBSCertificate, which a hybrid-aware ' +
+                 'validator reads. This service is one: a certificate issued ' +
+                 'by an authority holding an alternative key MUST carry a ' +
+                 'valid alternative signature to verify here (STS-PKI-0201, ' +
+                 'STS-PKI-0202), so the classical signature alone is never a ' +
+                 'way past it. ML-DSA-87 (FIPS 204, category 5) is the ' +
+                 'default because an authority outlives the keys it ' +
+                 'certifies. The value is read at the NEXT build of a tier; ' +
+                 'a hierarchy keeps what it was built with. SLH-DSA (FIPS ' +
+                 '205) is offered for a hash-based anchor and costs SECONDS ' +
+                 'per signature, i.e. per certificate issued. WARNING: ' +
+                 '`none` builds classical-only authorities, whose ' +
+                 'certificates a quantum-capable attacker can forge; it ' +
+                 'exists for a client that cannot parse a large certificate, ' +
+                 'and nothing else.' },
   { key: 'pki.organisation', group: 'PKI',
     label: 'Default organisation name (O=)',
     env: 'STS_PKI_ORGANISATION', type: 'string', dflt: 'sts',
@@ -5083,6 +5263,16 @@ const SETTINGS = [
                  'certificate may chain to, BESIDE node\'s own CA store. A ' +
                  'directory certified by a private CA is refused until its ' +
                  'CA is here.' },
+  { key: 'pki.revocationHttpsCaFile', group: 'PKI',
+    label: 'CA certificates for https CRL and OCSP servers',
+    env: 'STS_PKI_REVOCATION_HTTPS_CA_FILE', type: 'string', dflt: '',
+    runtime: true,
+    description: 'A PEM file of CA certificates the certificate of a CRL ' +
+                 'distribution point or OCSP responder reached over https ' +
+                 'may chain to, BESIDE node\'s own CA store (#201). Such a ' +
+                 'server\'s certificate is verified, its host checked as ' +
+                 'RFC 9525 does and its chain held to the path rules; plain ' +
+                 'http, which RFC 5280 and RFC 6960 expect, is unaffected.' },
   { key: 'pki.revocationLdapDirectory', group: 'PKI',
     label: 'Directory for CRL names relative to their issuer',
     env: 'STS_PKI_REVOCATION_LDAP_DIRECTORY', type: 'string', dflt: '',
@@ -5140,8 +5330,11 @@ const SETTINGS = [
                  'digital-signature', 'key-encipherment', 'code-signing',
                  'email', 'timestamping', 'smartcard-logon'],
     dflt: 'tls-client', runtime: true,
-    description: 'Most ACME clients never name a profile. It must also be in ' +
-                 'acme.allowedProfiles, or an order naming none is refused.' },
+    description: 'Most ACME clients never name a profile. An order naming ' +
+                 'none whose identifiers are all dns or ip is issued ' +
+                 'tls-server when acme.allowedProfiles holds it (#252); ' +
+                 'every other such order is issued this. It must also be in ' +
+                 'acme.allowedProfiles, or such an order is refused.' },
   { key: 'acme.certificateLifetimeDays', group: 'ACME',
     label: 'Certificate lifetime (days)',
     env: 'STS_ACME_CERTIFICATE_LIFETIME_DAYS', type: 'int', dflt: 90,
@@ -6733,7 +6926,10 @@ const SETTINGS = [
   { key: 'saml.signatureAlgorithm', group: 'SAML',
     label: 'XML signature algorithm',
     env: 'STS_SAML_SIGNATURE_ALGORITHM', type: 'enum',
-    enumValues: ['rsa-sha256', 'rsa-sha384', 'rsa-sha512', 'rsa-sha1'],
+    enumValues: ['rsa-sha256', 'rsa-sha384', 'rsa-sha512', 'rsa-sha1',
+                 // The signer groups' (#68): a hybrid-groups realm only.
+                 'ecdsa-sha256', 'ecdsa-sha384', 'ml-dsa-44', 'ml-dsa-65',
+                 'ml-dsa-87', 'slh-dsa-sha2-128s'],
     dflt: 'rsa-sha256', runtime: true,
     // `rsa-sha1` is DEVELOPMENT ONLY since #181 (2026-09-23).
     onlyWhile: 'usesBrokenAlgorithms', onlyWhileValues: ['rsa-sha1'],
@@ -6742,8 +6938,16 @@ const SETTINGS = [
                  'response, a SAML metadata document, the WS-Federation ' +
                  'metadata and a signed federated AuthnRequest — and the ' +
                  'SigAlg of the HTTP Redirect binding\'s query-string ' +
-                 'signature. The digest follows the algorithm. RSA only, ' +
-                 'because the key these are made with is RSA. `rsa-sha1` is ' +
+                 'signature. The digest follows the algorithm. The RSA ' +
+                 'values sign with this realm\'s RSA XML key. The rest need ' +
+                 'keys.signerModel = hybrid-groups, and sign with the XML ' +
+                 'signer group\'s own key: ecdsa-sha256 and ecdsa-sha384 its ' +
+                 'P-256 and P-384 keys, and ml-dsa-44/65/87 and ' +
+                 'slh-dsa-sha2-128s its post-quantum keys, under the W3C ' +
+                 'xmldsig-more DRAFT identifiers — WARNING: a draft, which ' +
+                 'few service providers verify yet. In a realm without that ' +
+                 'key (or before it is certified) the realm signs rsa-sha256 ' +
+                 'instead and says so once (#68). `rsa-sha1` is ' +
                  'BROKEN and offered for the reason rsa-1_5 is: deployed ' +
                  'service providers still demand it and a client library is ' +
                  'entitled to be tested against them. WARNING: rsa-sha1 is ' +
@@ -9386,6 +9590,21 @@ const SETTINGS = [
                  'the question it is asking. RFC 7644 section 4 says nothing ' +
                  'either way, so both are conforming and both are worth ' +
                  'being able to try.' },
+
+  { key: 'scim.inventOnCreate', group: 'SCIM',
+    label: 'Fill a provisioned person in (development mode)',
+    env: 'SCIM_INVENT_ON_CREATE', type: 'bool', dflt: true, runtime: true,
+    description: 'DEVELOPMENT MODE ONLY, and ON there by default: a person a ' +
+                 'SCIM client creates is given the invented persona values ' +
+                 '(a cn, sn, givenName, displayName and mail) and the ' +
+                 'credential-claim attributes /admin/vc selects, wherever ' +
+                 'the client sent none — so the provisioned person can be ' +
+                 'issued a credential like one who signed in. OFF, a SCIM ' +
+                 'create writes exactly what the client sent, and reading ' +
+                 'the resource back returns only that, which is what a ' +
+                 'provisioning client checking its own round trip — and ' +
+                 'the SCIM conformance harnesses (#206) — expects. Product ' +
+                 'mode invents nothing whatever this says.' },
 
   { key: 'scim.authRealm', group: 'SCIM', label: 'Authentication realm',
     env: 'SCIM_AUTH_REALM', type: 'string', dflt: 'SCIM', runtime: true,

@@ -31,6 +31,17 @@ Every trust realm has its own server, under its own prefix:
 
 In a realm: `https://host:8081/realm/acme/enroll/scep`.
 
+**The same server answers on the plain-HTTP listener** (`pki.httpPort`, 8082 by
+default — the one that serves the CRLs and OCSP): `http://host:8082/enroll/scep`
+and `http://host:8082/realm/acme/enroll/scep` (#210). sscep and much of the
+device firmware SCEP exists for have no TLS at all. Every other path this
+service answers stays on the main port.
+
+A POSTed PKIOperation may be labelled `application/x-pki-message`, which RFC
+8894 section 4.3 names, **or `application/octet-stream`** (micromdm's client),
+**or carry no Content-Type** (sscep); either way the bytes checked are the
+bytes sent. Any other declared type is 415.
+
 GetCACaps answers `POSTPKIOperation`, `SHA-256`, `SHA-512`, `AES`,
 `SCEPStandard` and `Renewal`.
 
@@ -53,34 +64,67 @@ curl -s -X POST https://host:8081/admin-api/scep/create-challenge \
   -d '{"kind":"person","identifier":"alice","profile":"tls-client"}'
 ```
 
-The reply carries `challenge`, the SCEP URL for its profile, and a ready-to-paste
-`sscep` sequence. Whoever redeems the challenge is issued a certificate **as the
+The reply carries `challenge`, the SCEP URL for its profile (`url`, on the main
+port, and `plainUrl`, on the plain-HTTP listener), and a ready-to-paste `sscep`
+sequence that runs as it is written — the suite runs it
+(`tests/vendored/sts_scep_sscep.js`). Whoever redeems the challenge is issued a certificate **as the
 entry it names**: a request naming anybody else in its subjectAltName is refused.
 
 ## With sscep
 
+sscep has no TLS, so it uses the plain-HTTP URL:
+
 ```bash
-URL=https://host:8081/enroll/scep/tls-client
+URL=http://host:8082/enroll/scep/tls-client
 sscep getca -u $URL -c ca.crt              # ca.crt-0 is the RA, ca.crt-1 the SCEP Issuing CA
 openssl req -new -newkey rsa:2048 -nodes -keyout key.pem -out req.csr \
-  -subj "/CN=alice" -config <(printf '[req]\ndistinguished_name=dn\nattributes=a\n[dn]\n[a]\nchallengePassword=%s\n' "$CHALLENGE")
-sscep enroll -u $URL -c ca.crt-1 -e ca.crt-0 -k key.pem -r req.csr -l cert.pem \
+  -addext "subjectAltName=URI:urn:sts:person:alice" \
+  -config <(printf '[req]\nprompt=no\ndistinguished_name=dn\nattributes=a\n[dn]\nCN=alice\nO=Example\nC=US\n[a]\nchallengePassword=%s\n' "$CHALLENGE")
+sscep enroll -u $URL -c ca.crt-0 -e ca.crt-0 -k key.pem -r req.csr -l cert.pem \
   -S sha256 -E aes
 ```
 
+Three details each stopped this working once:
+
+* **`prompt=no`.** Without it OpenSSL reads the `[a]` section as prompt text and
+  puts no challengePassword in the request, which is refused.
+* **`-c ca.crt-0`**, the RA. sscep verifies the reply with `-c`, and the RA signs
+  every CertRep; the Issuing CA there fails every reply as "error verifying
+  signature".
+* **The subject the certificate will carry** — `CN=<entry>, O=<organisation>`,
+  or `CN=<host>, UID=<entry>, O=…` for a host — or sscep warns that the subject
+  it got back is not the one it asked for. The certificate's content comes
+  from the entry, never the CSR; the hint writes the right one.
+
 `-S sha256 -E aes` matters: SHA-1, MD5, DES and 3DES are refused.
 
-**Renewal** (`RenewalReq`) is signed by the certificate being renewed and needs
-no challenge; the renewed certificate is revoked as `superseded`:
+**Renewal** needs no challenge and is signed by the certificate being renewed;
+the renewed certificate is revoked as `superseded`. sscep has no `RenewalReq`:
+it renews with a `PKCSReq` signed by the old certificate — the form before
+RFC 8894, which section 2.3 notes most implementations keep — and a PKCSReq
+whose signer is a certificate this realm issued is handled exactly as a
+RenewalReq (#210):
 
 ```bash
-sscep enroll -u $URL -c ca.crt-1 -e ca.crt-0 -k newkey.pem -r new.csr \
+sscep enroll -u $URL -c ca.crt-0 -e ca.crt-0 -k newkey.pem -r new.csr \
   -K key.pem -O cert.pem -l newcert.pem -S sha256 -E aes
 ```
 
-`GetCert`, `GetCRL` (the SCEP Issuing CA's CRL) and `CertPoll` are answered
-too. A retried request with the same transactionID and the same CSR gets the
-certificate it already produced, without using up another challenge.
+`GetCert`, `GetCRL` (the SCEP Issuing CA's CRL) and `CertPoll` (`sscep enroll
+-R`) are answered too. A retried request with the same transactionID and the
+same CSR gets the certificate it already produced, without using up another
+challenge.
+
+## micromdm's scepclient cannot enroll here
+
+micromdm/scep's `scepclient` (v2.3.0, and its `main` as of 2026-01) signs every
+request over **SHA-1** and envelopes it with **single DES** — the fixed
+defaults of the smallstep/pkcs7 library it is built on — and has no option to
+change either; it reads GetCACaps only to choose POST. Both are refused
+`badAlg` (`STS-SCEP-0020` for the signature), in both modes, and the refusal
+spends no challenge. Its transport works — GetCACert, GetCACaps and a POSTed
+PKIOperation as `application/octet-stream` — which the suite holds
+(`tests/vendored/sts_scep_micromdm.js`).
 
 ## Profiles
 

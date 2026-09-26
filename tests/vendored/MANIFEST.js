@@ -291,6 +291,23 @@ const JOBS = [
   // The portal's /portal/certificates page: a person's own enrollment
   // credentials and certificates, driven with two signed-in browsers.
   { file: 'sts_portal_certificates.js',  browser: false, local: true },
+  // THE REAL CLIENTS (#207-#211, 2026-09-26): certbot and lego against
+  // ACME, libest's estclient against EST, sscep and micromdm's scepclient
+  // against SCEP — each at the version tests/Dockerfile pins, driven as an
+  // operator would run it, in a throwaway realm (estclient: the default
+  // realm, and a throwaway realm named in the EST label position, #251 —
+  // the one way an EST client can name one). tests/CLAUDE.md, *THE
+  // CERTIFICATE ENROLLMENT CLIENTS*.
+  { file: 'sts_acme_certbot.js',         browser: false, local: true,
+    timeoutMs: 900000 },
+  { file: 'sts_acme_lego.js',            browser: false, local: true,
+    timeoutMs: 900000 },
+  { file: 'sts_est_libest.js',           browser: false, local: true,
+    timeoutMs: 600000 },
+  { file: 'sts_scep_sscep.js',           browser: false, local: true,
+    timeoutMs: 600000 },
+  { file: 'sts_scep_micromdm.js',        browser: false, local: true,
+    timeoutMs: 600000 },
   // ssfAllowedEvents (2026-09-12): an application entry limiting which Shared
   // Signals event types a stream it owns is sent. `local: true` because the
   // attribute is this repository's own and the assertion spans an /admin-api
@@ -398,6 +415,7 @@ const JOBS = [
   // throwaway realm, so the emergency signs nobody else out. `local: true`:
   // this repository's own /admin and /admin-api.
   { file: 'sts_key_rotation.js',         browser: false, local: true },
+  { file: 'sts_signer_groups.js',        browser: false, local: true },
   // THE CONSOLE AND THE PORTAL RENEW THEIR TOKENS INSIDE THE SAME SESSION
   // (2026-09-12). Both surfaces are this repository's own, and section 5 waits
   // out a sixty-second sign-on session, which is why the watchdog is raised.
@@ -773,6 +791,31 @@ const JOBS = [
   // portal, aggregated and distributed claims, revocation. `local: true`:
   // this repository's authorization server, portal and API.
   { file: 'sts_claims_aggregation.js',   browser: false, local: true },
+  // SCIM 2.0 CONFORMANCE (#206, 2026-09-26): python-scim's scim2-tester and
+  // scim2/test-suite, both installed in the tests image, against /scim/v2 of
+  // a throwaway realm; every error and warning fixed or a documented
+  // exception. `local: true`: this repository's SCIM surface.
+  { file: 'sts_scim_conformance.js',     browser: false, local: true,
+    timeoutMs: 900000 },
+  // THE W3C VERIFIABLE CREDENTIALS AND DID TEST SUITES (#194-#199,
+  // 2026-09-26): each Working Group suite, pinned and installed in the tests
+  // image by tests/vc-suites/fetch-suites.sh, run against the VC-API test
+  // adapter (oid4vc/vc_api.ts) of a throwaway development realm — or, for
+  // the DID suite, over fixtures generated from this service's DIDs and
+  // resolver. Every failure fixed or a documented exception. `local: true`:
+  // this repository's oid4vc/ and its test adapter.
+  { file: 'sts_vc_data_model_suite.js',  browser: false, local: true,
+    timeoutMs: 900000 },
+  { file: 'sts_vc_di_eddsa_suite.js',    browser: false, local: true,
+    timeoutMs: 900000 },
+  { file: 'sts_vc_di_ecdsa_suite.js',    browser: false, local: true,
+    timeoutMs: 900000 },
+  { file: 'sts_vc_bitstring_status_suite.js', browser: false, local: true,
+    timeoutMs: 900000 },
+  { file: 'sts_vc_jose_cose_suite.js',   browser: false, local: true,
+    timeoutMs: 900000 },
+  { file: 'sts_did_test_suite.js',       browser: false, local: true,
+    timeoutMs: 900000 },
   // OPENID CONNECT ENTERPRISE EXTENSIONS (#148, 2026-09-26): session_expiry,
   // tenant and aud_sub in the ID Token, tenant refused for another realm,
   // domain_hint's home-realm discovery. `local: true`: this repository's
@@ -783,6 +826,10 @@ const JOBS = [
   // for the next, and an id_token_hint mapped back. `local: true`: this
   // repository's authorization server.
   { file: 'sts_ephemeral_subjects.js',   browser: false, local: true },
+  // RFC 8628 AND OPENID CONNECT KEY BINDING (#150, 2026-09-26): the device
+  // flow end to end through /portal/device, c_s256, a bound ID Token, its
+  // refresh and section 7, and an ML-DSA-44 DPoP key. `local: true`.
+  { file: 'sts_device_key_binding.js',   browser: false, local: true },
   // THE OPENID FOUNDATION'S CONFORMANCE SUITE (#176, 2026-09-24): FAPI 2.0
   // Security Profile and Message Signing, FAPI 1.0 Advanced and FAPI-CIBA,
   // each plan a throwaway realm, every module run, and a FAILED module a
@@ -884,6 +931,11 @@ const JOBS = [
   // A person's attributes set, added to and removed from through
   // /admin-api (#228), in a realm of its own.
   { file: 'sts_person_attributes.js',    browser: false, local: true },
+  // OAuth 2.0 Attestation-Based Client Authentication (#229): a client
+  // attester made at run time, the challenge endpoint, PAR, the code and
+  // refresh token bound to the client instance, the DPoP combined mode and
+  // introspection, in a realm of its own.
+  { file: 'sts_client_attestation.js',   browser: false, local: true },
   { file: 'vc_did.js',                   browser: false },
   // ---------------------------------------------------------------------
   // LAST, ALL THREE OF THEM, AND THE ORDER IS THE WHOLE OF WHY IT IS SAFE
@@ -1028,6 +1080,11 @@ const LOCAL_HELPERS = [
   // self-signed signer and the envelope, forge.asn1 and node's crypto for the
   // SignedData and the CertRep. Nothing from scep/ or cert_enrollment.js.
   'scep_client.js',
+  // What the five real-client enrollment jobs share (#207-#211): the
+  // management API, a trust bundle FILE for a client that is not node, a
+  // bounded runner that masks secrets, the portal sign-in under a realm, a
+  // CRL reader and `openssl req` at run time. Nothing from the service.
+  'enroll_clients_kit.js',
   // A registered OAuth client and a PKCE pair, for the jobs that start an
   // authorization request: product mode refuses an unknown client_id and a
   // public client without PKCE (2026-09-18).

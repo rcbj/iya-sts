@@ -397,8 +397,10 @@ async function partI(t) {
   const imported = await riskAdmin.riskAction({
     action: 'import', dataset: 'iplist.operator-allow', realm: 'acme',
     format: 'ip-list', content: '192.0.2.123\n' }, 'a test');
-  const view = await riskAdmin.riskView({ realm: 'acme',
-                                          address: '192.0.2.123' });
+  // The page is per realm (2026-09-26): acme's view is the one drawn in it.
+  const view = await realms.run(realms.get('acme'), function () {
+    return riskAdmin.riskView({ address: '192.0.2.123' });
+  });
   t.check(imported.ok && view.lookup.lists.some(function (l) {
     return l.category === 'operator-allow';
   }) && view.datasets.length === Object.keys(riskDatasets.CATALOGUE).length,

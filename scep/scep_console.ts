@@ -165,6 +165,9 @@ interface ScepConsoleDeps {
   // Required when first called, as the JavaScript did, for the reason
   // given where each is called.
   loadScep(): typeof import('./scep');
+  // The plain-HTTP base SCEP is also answered on (#210): the address the
+  // revocation listener publishes, with the ambient realm's prefix.
+  plainBase(): string;
 }
 
 class ScepConsole {
@@ -193,6 +196,12 @@ class ScepConsole {
       ra: ra,
       loadScep: function () {
         return require('./scep');
+      },
+      // LAZILY, like `loadScep`: `pki_revocation.js` is a library, but it
+      // reaches the PKI store, and nothing about drawing a console page
+      // should load that before the page is asked for.
+      plainBase: function () {
+        return require('../common/pki_revocation').httpBaseInRealm();
       }
     };
   }
@@ -236,6 +245,15 @@ class ScepConsole {
     }
     log.debug("Leaving ScepConsole.actorOf().");
     return (state && state.username) || '';
+  }
+
+  // The SCEP URL for a profile on the plain-HTTP listener, which is where a
+  // client with no TLS — sscep, most device firmware — reaches it (#210).
+  plainUrlOf(profile) {
+    const { log, plainBase } = this.deps;
+    log.debug("Entering ScepConsole.plainUrlOf().");
+    log.debug("Leaving ScepConsole.plainUrlOf().");
+    return plainBase() + '/enroll/scep' + (profile ? '/' + profile : '');
   }
 
   endpointsOf(req) {
@@ -425,18 +443,34 @@ class ScepConsole {
     return { kind: value.kind, id: String(value.identifier) };
   }
 
+  // **THE HINT NAMES THE PLAIN-HTTP URL (#210, 2026-09-24).** It named the
+  // https one until then, which sscep refuses outright ("illegal URL") — it
+  // has no TLS — so the one client the hint was written for could not run
+  // it. `url` here is the plain listener's (`plainUrlOf()`).
   sscepHint(url, challenge, entry) {
     const { log, core } = this.deps;
     log.debug("Entering ScepConsole.sscepHint().");
+    const org = core.organisationOf();
     log.debug("Leaving ScepConsole.sscepHint().");
     return [
       'sscep getca -u ' + url + ' -c ca.crt',
+      // `prompt=no` (#210): without it OpenSSL reads the [a] section as
+      // prompt text, writes NO challengePassword into the request, and
+      // every request the hint made was refused STS-SCEP-0035. The subject
+      // is the one the certificate will carry (the core's CN and O), since
+      // sscep warns when the two differ.
       'openssl req -new -newkey rsa:2048 -nodes -keyout key.pem -out req.csr ' +
-        '-subj "/CN=' + entry.id + '" -addext "subjectAltName=URI:' +
-        core.entryUri(entry) + '" -config <(printf "[req]\\n' +
-        'distinguished_name=dn\\nattributes=a\\n[dn]\\n[a]\\n' +
-        'challengePassword=' + challenge + '\\n")',
-      'sscep enroll -u ' + url + ' -c ca.crt-1 -e ca.crt-0 -k key.pem ' +
+        '-addext "subjectAltName=URI:' +
+        core.entryUri(entry) + '" -config <(printf "[req]\\nprompt=no\\n' +
+        'distinguished_name=dn\\nattributes=a\\n[dn]\\nCN=' + entry.id +
+        '\\nO=' + org.organisation +
+        (org.country ? '\\nC=' + org.country : '') +
+        '\\n[a]\\nchallengePassword=' + challenge + '\\n")',
+      // `-c` is the certificate sscep VERIFIES THE REPLY WITH, and the RA
+      // signs every CertRep: ca.crt-0 (GetCACert lists the RA first). The
+      // hint said ca.crt-1, the Issuing CA, until #210, and sscep refused
+      // every reply as "error verifying signature".
+      'sscep enroll -u ' + url + ' -c ca.crt-0 -e ca.crt-0 -k key.pem ' +
         '-r req.csr -l cert.pem -S sha256 -E aes'
     ].join('\n');
   }
@@ -474,6 +508,7 @@ class ScepConsole {
                             made.errors);
       }
       const url = baseUrlOf(ctx.req) + '/enroll/scep/' + made.profile;
+      const plainUrl = this.plainUrlOf(made.profile);
       monitor.record('scep', { operation: 'create-challenge',
                                outcome: 'credential', status: 200,
                                profile: made.profile,
@@ -483,7 +518,8 @@ class ScepConsole {
       return { ok: true, id: made.id, challenge: made.challenge,
                profile: made.profile, expiresAt: made.expiresAt,
                target: made.target, entryUri: core.entryUri(made.target),
-               url: url, hint: this.sscepHint(url, made.challenge, made.target),
+               url: url, plainUrl: plainUrl,
+               hint: this.sscepHint(plainUrl, made.challenge, made.target),
                message: 'A challenge password was created for ' +
                         core.entryUri(made.target) + ' (' + made.profile +
                         '). It is shown once.' };

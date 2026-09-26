@@ -279,6 +279,30 @@ function childMain() {
          order.body.authorizations.length === 2,
          'an order for identifiers the entry owns is ready at once',
          order.text.slice(0, 300));
+    // #252: an order naming no profile, from its identifiers.
+    const hostOnly = await client.newOrder(aliceKey, kid,
+      [{ type: 'dns', value: 'www.' + ALICE + '.test' }]);
+    note(hostOnly.status === 201 && hostOnly.body.profile === 'tls-server',
+         'a dns-only order naming no profile is tls-server',
+         hostOnly.text.slice(0, 300));
+    const mixed = await client.newOrder(aliceKey, kid,
+      [{ type: 'permanent-identifier', value: ALICE },
+       { type: 'dns', value: 'www.' + ALICE + '.test' }]);
+    note(mixed.status === 201 && mixed.body.profile === 'tls-client',
+         'a mixed order naming no profile keeps acme.defaultProfile',
+         mixed.text.slice(0, 300));
+    const entryOnly = await client.newOrder(aliceKey, kid,
+      [{ type: 'permanent-identifier', value: ALICE }]);
+    note(entryOnly.status === 201 && entryOnly.body.profile === 'tls-client',
+         'an entry-only order naming no profile keeps acme.defaultProfile',
+         entryOnly.text.slice(0, 300));
+    const namedClient = await client.newOrder(aliceKey, kid,
+      [{ type: 'dns', value: 'www.' + ALICE + '.test' }],
+      { profile: 'tls-client' });
+    note(namedClient.status === 201 &&
+         namedClient.body.profile === 'tls-client',
+         'a named profile wins over the host-only default',
+         namedClient.text.slice(0, 300));
     const authz = await client.postAsGet(order.body.authorizations[0],
                                          aliceKey, kid);
     note(authz.body.status === 'valid' &&

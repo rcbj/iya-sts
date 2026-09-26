@@ -5039,7 +5039,14 @@ const NOT_DRIVEN_HERE = {
   // design; `sts_devices.js` drives it with a feed client that declares the
   // scope and reads the CAEP event it sends off a poll stream.
   "POST /device-compliance": "sts_devices.js drives it with an MDM client " +
-    "holding the device:compliance scope, and checks the event it sends"
+    "holding the device:compliance scope, and checks the event it sends",
+  // A RISK DATASET UPLOAD (#215). Driven by `sts_admin_risk_upload.js`: the
+  // body is the dataset FILE itself, streamed and never parsed as JSON, so
+  // this file's example-replaying walk has no shape to send it in, and what
+  // matters is checked there — the gzip expanded as it is read, the version
+  // imported and activated, the size bound refused before the body arrives.
+  "POST /risk/upload": "sts_admin_risk_upload.js drives it: a dataset file " +
+    "streamed as the request body, imported and read back"
 };
 
 function everyDocumentedOperationWasDriven(doc) {

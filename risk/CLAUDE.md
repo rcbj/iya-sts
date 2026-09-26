@@ -85,7 +85,7 @@ What each provider's terms change here:
 
 **Pulling the data at install time is `risk_install.ts`.** `node
 risk/risk_install.js --manifest datasets.json --accept-terms
-dbip-lite,tor-project` with `STS_DATABASE_URL` set. A dataset whose provider
+dbip-lite,tor-project`, run in a container of the service's image. A dataset whose provider
 is not named in `--accept-terms` is refused and its terms printed; a URL is
 fetched over HTTPS only, kept as it arrived, and imported exactly as an
 upload is — a `.gz` or `.zip` expanded by `risk_expand.ts` as it is read
@@ -97,6 +97,31 @@ fetched by the `risk.mds-refresh` scheduler job — see *The FIDO metadata*,
 below, and the root `CLAUDE.md`'s row of addresses the service dials. It imports the service's datasets and the
 default realm's lists; another realm's list goes through the console or the
 API, where the realm is known to exist.
+
+**THE LOADER'S DATABASE CONNECTION IS THE SERVICE'S OWN (#213,
+2026-09-26).** It dialled `STS_DATABASE_URL` as written and nothing else, and
+every stack this repository ships keeps the password out of that URL (OpenBao
+in compose, Secrets Manager on AWS) — so on a new deployment's first install,
+the one occasion the loader exists for, it could not sign in, and the only
+way round was the operator reading the secret into `PGPASSWORD`. It also
+never verified the server's certificate where the service did. Now
+`RiskInstall.driverOptions()` asks `persistence.databaseConnection()` — the
+same `resolveDatabaseUrl()` injection and `verifiesDatabaseTls()` the
+service opens its pool with, SHARED rather than copied, so the two cannot
+drift — through `config.js`, which reads the same `CONFIG_FILE` the image
+names. A password in `STS_DATABASE_URL` still works where no provider is
+configured. **"No database named" is not "no URL"**: `persistence.databaseUrl`
+has a development default, so the loader refuses (`STS-RISK-0012`) when
+neither `STS_DATABASE_URL` is set nor `persistence.mode` is postgres, rather
+than dial localhost. A provider configured and unreadable is `STS-RISK-0040`
+and dials nothing. `persistence.js` is required inside `driverOptions()`, not
+at the top, so a test loading the loader for its argument parsing does not
+load the settings graph. **Tests**: `tests/risk_install_connection.js` (in
+process: the injected URL through `pg`'s parser, `verifyTls` followed and
+PASSED to `persistence_postgres.create()`, the two refusals) and
+`run-tests.sh`'s `riskInstallCheck` step, which `docker exec`s the loader
+with no extra environment in every postgres mode (`single-node`, `cluster`)
+against the OpenBao-backed database and imports a synthetic operator list.
 
 ## AN ACCEPTANCE IS RECORDED, AND AN IMPORT NEEDS ONE (2026-09-23)
 

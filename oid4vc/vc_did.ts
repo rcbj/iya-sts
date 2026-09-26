@@ -366,9 +366,19 @@ class VcDid {
                 e.message);
     }
     log.debug("Leaving VcDid.stsDidDocument().");
+    // THE MULTIKEY CONTEXT WHEN A MULTIKEY IS PUBLISHED (#199, 2026-09-26):
+    // the BBS generations are `Multikey` methods with a `publicKeyMultibase`,
+    // and neither term is defined by the DID or the JWS 2020 context — so a
+    // JSON-LD consumer in safe mode refused this document, and one that was
+    // not dropped the BBS keys as undefined terms. The W3C DID test suite's
+    // fixtures, generated from this document, found it.
+    const contexts = ['https://www.w3.org/ns/did/v1',
+                      'https://w3id.org/security/suites/jws-2020/v1'];
+    if (methods.some(function (m: any) { return m.type === 'Multikey'; })) {
+      contexts.push('https://w3id.org/security/multikey/v1');
+    }
     return {
-      '@context': ['https://www.w3.org/ns/did/v1',
-                   'https://w3id.org/security/suites/jws-2020/v1'],
+      '@context': contexts,
       id: did,
       verificationMethod: methods,
       authentication: [methods[0].id],

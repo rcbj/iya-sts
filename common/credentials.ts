@@ -203,6 +203,10 @@ interface CredentialsDeps {
   // `persistence/persistence.js`, loaded where it is used — see
   // `sharedStore()`.
   loadPersistence(): typeof import('../persistence/persistence');
+  // #246: the console roles a person holds (`admin-ui/admin_rbac.ts`), loaded
+  // where it is used — the console is built at 18, long after this module,
+  // and requiring it here would close a cycle through the directory.
+  consoleRolesOf(username: string): { read: boolean; write: boolean };
 }
 
 // ===========================================================================
@@ -320,6 +324,34 @@ class Credentials {
       capabilities: capabilities,
       nodeCrypto: function () {
         return require('crypto');
+      },
+      consoleRolesOf: function consoleRolesOf(username: string) {
+        helpers.log.debug("Entering consoleRolesOf().");
+        let held = { read: false, write: false };
+        try {
+          const rbac = require('../admin-ui/admin_rbac');
+          const roles = rbac.rolesOf(username) || {};
+          // MEMBERSHIP OF THE ROSTER'S GROUPS, not `read`/`write`: those are
+          // also true for EVERYBODY while the roster is empty (the console's
+          // open-console rule), and nobody is an administrator for #246 by
+          // a rule that makes everybody one.
+          const groups = Array.isArray(roles.groups) ? roles.groups : [];
+          held = {
+            read: groups.some(function (g: any) {
+              return g.role === 'read' || g.role === 'write';
+            }),
+            write: groups.some(function (g: any) {
+              return g.role === 'write';
+            })
+          };
+        } catch (e) {
+          // No console in this process (a test that loads only this module),
+          // or a directory that cannot answer: nobody is an administrator.
+          helpers.log.debug("Caught in consoleRolesOf(): " +
+                            ((e && e.message) || e));
+        }
+        helpers.log.debug("Leaving consoleRolesOf().");
+        return held;
       },
       loadPersistence: function () {
         return require('../persistence/persistence');
@@ -5922,9 +5954,33 @@ class Credentials {
     // #64: the authentication policy's `requireSecondFactor`, which replaced
     // `authn.mfaRequired`. `always` is the old `true`.
     const byRealm = this.deps.authnPolicy.requireSecondFactor() === 'always';
+    // #246: ADMINISTRATORS, by the same policy's own field — `offer` (the
+    // default for now) shows the set-up step with an Ignore button, `always`
+    // requires it. The default realm's built-in administrator is only ever
+    // OFFERED one: rcbj's "we can offer it, but they can decline", and the
+    // account a service with no other administrator is recovered through.
+    const forAdmins = name
+      ? String(this.deps.authnPolicy.requireSecondFactorForAdministrators())
+      : 'if-held';
+    let byAdministrator = false;
+    let offered = false;
+    if (forAdmins !== 'if-held') {
+      const roles = this.deps.consoleRolesOf(name);
+      if (roles.read || roles.write) {
+        const builtIn = this.deps.realms.currentId() === 'default' &&
+          name === String(config.value('admin.bootstrapUsername') || '')
+            .trim();
+        byAdministrator = forAdmins === 'always' && !builtIn;
+        offered = !byAdministrator;
+      }
+    }
+    const required = byUser || byRealm || byAdministrator;
     log.debug("Leaving Credentials.mfaRequirementFor(). user=" + byUser +
-              ", realm=" + byRealm);
-    return { required: byUser || byRealm, byUser: byUser, byRealm: byRealm };
+              ", realm=" + byRealm + ", administrator=" + byAdministrator +
+              ", offered=" + (offered && !required));
+    return { required: required, byUser: byUser, byRealm: byRealm,
+             byAdministrator: byAdministrator,
+             offered: offered && !required };
   }
 
   setMfaRequired(username, required) {

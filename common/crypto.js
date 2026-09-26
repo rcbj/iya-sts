@@ -277,7 +277,9 @@ function signXml(xml, opts) {
   const what = options.what || 'XML document';
   log.debug('Entering signXml(). what=' + what + ', placement=' +
             (options.placement || PLACEMENT.AFTER_ISSUER));
-  if (!options.privateKeyPem) {
+  // A post-quantum signer-group key (#68 phase 4b) is raw bytes and has no
+  // PEM, so `privateKey` stands in for it; every other caller passes a PEM.
+  if (!options.privateKeyPem && !options.privateKey) {
     log.debug('Leaving signXml(). No private key.');
     throw new Error('signXml: privateKeyPem is required to sign ' + what + '.');
   }
@@ -307,6 +309,67 @@ function signXml(xml, opts) {
       .parseFromString(String(xml), 'text/xml').documentElement;
     const id = root ? idOf(root) : '';
     refUri = id ? ('#' + id) : '';
+  }
+  // -------------------------------------------------------------------
+  // THE SIGNER GROUPS' XML ALGORITHMS (2026-09-26, #68 phase 4b).
+  //
+  // RSA — every signature this service made before #68 — goes through
+  // `signEnveloped()` exactly as it did, byte for byte. The two new families
+  // are ADDITIVE and each takes the vendored path that can carry it:
+  //
+  //   * POST-QUANTUM (ML-DSA, SLH-DSA; the W3C xmldsig-more draft's
+  //     identifiers): `signEnveloped()` itself, which takes an injected
+  //     `signer` for exactly these and holds the identifiers but not the
+  //     lattice — `pq_jose.js` signs, as it does every post-quantum JWS.
+  //   * ECDSA: the vendored GENERAL engine (`xmldsig.signXml()`), because
+  //     `signEnveloped()`'s classical branch is RSA through forge and the
+  //     vendored file is not edited here (rcbj's D8). The signature is the
+  //     raw r||s XML Signature 1.1 section 6.4.3 specifies, which node's
+  //     `ieee-p1363` encoding produces.
+  // -------------------------------------------------------------------
+  const method = XML_SIGNATURE_METHODS[options.sigAlg] || null;
+  const pqMethod = xmldsig.SIG_METHODS[options.sigAlg] &&
+    xmldsig.SIG_METHODS[options.sigAlg].postQuantum
+    ? xmldsig.SIG_METHODS[options.sigAlg] : null;
+  if (pqMethod) {
+    const pqAlg = String(pqMethod.alg);
+    const pqKey = options.privateKey;
+    const pqSigned = xmldsig.signEnveloped(xml, {
+      certPem: options.certPem,
+      placement: options.placement || PLACEMENT.AFTER_ISSUER,
+      refUri: refUri,
+      sigAlg: options.sigAlg,
+      c14nAlg: options.c14nAlg,
+      includeKeyInfo: options.includeKeyInfo,
+      signer: function (octets) {
+        return Buffer.from(pqJose.sign(pqAlg, pqKey,
+                                       Buffer.from(octets, 'binary')));
+      }
+    });
+    log.debug('Leaving signXml(). ' + pqAlg + ', ' + pqSigned.length +
+              ' characters.');
+    return pqSigned;
+  }
+  if (method && method.family === 'ecdsa') {
+    const ecKey = options.privateKey ||
+                  nodeCrypto.createPrivateKey(options.privateKeyPem);
+    const ecHash = String(method.hash);
+    const ecSigned = xmldsig.signXml(xml, {
+      mode: 'enveloped',
+      sigAlg: options.sigAlg,
+      c14nAlg: options.c14nAlg || xmldsig.C14N_EXCLUSIVE,
+      keyInfo: options.includeKeyInfo === false ? 'none' : 'x509',
+      certPem: options.certPem,
+      refUri: refUri,
+      placement: options.placement || PLACEMENT.AFTER_ISSUER,
+      signer: function (octets) {
+        return nodeCrypto.sign(ecHash, Buffer.from(octets, 'binary'),
+                               { key: ecKey, dsaEncoding: 'ieee-p1363' });
+      }
+    });
+    const ecXml = typeof ecSigned === 'string' ? ecSigned : ecSigned.xml;
+    log.debug('Leaving signXml(). ECDSA, ' + ecXml.length + ' characters.');
+    return ecXml;
   }
   const signed = xmldsig.signEnveloped(xml, {
     privateKeyPem: options.privateKeyPem,
@@ -1220,8 +1283,32 @@ function verifyXmlSignature(xml, opts) {
 // order produces a signature that verifies nowhere and whose only symptom at
 // the far end is "invalid signature".
 // ---------------------------------------------------------------------------
-function signQueryString(queryString, privateKeyPem, sigAlg) {
+// `privateKey` (#68 phase 4b) is a signer-group key for an ECDSA or
+// post-quantum `sigAlg` — a KeyObject, or the raw bytes `pq_jose.js` signs
+// with — for which the vendored signer, RSA through forge, has no path. The
+// ECDSA signature is the raw r||s XML Signature 1.1 specifies, which is what
+// the binding's SigAlg names; RSA takes the vendored path as it always has.
+function signQueryString(queryString, privateKeyPem, sigAlg, privateKey) {
   log.debug('Entering signQueryString().');
+  const pqMethod = xmldsig.SIG_METHODS[sigAlg] &&
+    xmldsig.SIG_METHODS[sigAlg].postQuantum
+    ? xmldsig.SIG_METHODS[sigAlg] : null;
+  const method = XML_SIGNATURE_METHODS[sigAlg] || null;
+  if (pqMethod && privateKey) {
+    const pqSignature = Buffer.from(pqJose.sign(String(pqMethod.alg),
+      privateKey, Buffer.from(String(queryString), 'utf8')))
+      .toString('base64');
+    log.debug('Leaving signQueryString(). ' + pqMethod.alg + '.');
+    return pqSignature;
+  }
+  if (method && method.family === 'ecdsa' && (privateKey || privateKeyPem)) {
+    const ecSignature = nodeCrypto.sign(String(method.hash),
+      Buffer.from(String(queryString), 'utf8'),
+      { key: privateKey || nodeCrypto.createPrivateKey(privateKeyPem),
+        dsaEncoding: 'ieee-p1363' }).toString('base64');
+    log.debug('Leaving signQueryString(). ECDSA.');
+    return ecSignature;
+  }
   if (!privateKeyPem) {
     log.debug('Leaving signQueryString(). No private key.');
     throw new Error('signQueryString: privateKeyPem is required.');
@@ -1394,6 +1481,16 @@ const BLOCK_CIPHERS = {
   'aes256-cbc': { uri: XENC_NS + 'aes256-cbc', keyBytes: 32, mode: 'AES-CBC',
                   ivBytes: 16, tagBytes: 0 },
   'aes128-cbc': { uri: XENC_NS + 'aes128-cbc', keyBytes: 16, mode: 'AES-CBC',
+                  ivBytes: 16, tagBytes: 0 },
+  // AES-192 IN BOTH MODES JOINED ON 2026-09-24 (#193). XML Encryption 1.1
+  // section 5.2 lists both as OPTIONAL, and this service unwrapped a 192-bit
+  // key (kw-aes192) and then refused the content it protected: the W3C
+  // interop set's P-384 and RSA-3072 cases are exactly that pair. It is a
+  // cipher this service READS; nothing encrypts with it unless a caller
+  // asks by name — `saml2.encryptionAlgorithm`'s enum does not offer it.
+  'aes192-gcm': { uri: XENC11_NS + 'aes192-gcm', keyBytes: 24, mode: 'AES-GCM',
+                  ivBytes: 12, tagBytes: 16 },
+  'aes192-cbc': { uri: XENC_NS + 'aes192-cbc', keyBytes: 24, mode: 'AES-CBC',
                   ivBytes: 16, tagBytes: 0 }
 };
 
@@ -1951,6 +2048,49 @@ function agreedKey(agreement, privateKey, keyBytes) {
 }
 
 // ---------------------------------------------------------------------------
+// WHAT AN ECDH-ES AGREEMENT ASKS FOR, BEFORE ANY KEY OPERATION (#193). A key
+// derivation this service does not perform (PBKDF2, a SHA-1 ConcatKDF, none)
+// or an originator key on a curve it does not agree over is a property of
+// the DOCUMENT, and until 2026-09-24 it surfaced from inside agreedKey()'s
+// throw — reported, under STS-KEYS-0024, as a key encrypted to a different
+// certificate. The W3C interop set's AGRMNT.9 (ECDH-ES with PBKDF2) is the
+// case that showed it. '' when the agreement is one agreedKey() performs.
+// ---------------------------------------------------------------------------
+function agreementRefusal(agreement) {
+  log.debug("Entering agreementRefusal().");
+  const kdf = agreement.getElementsByTagNameNS('*', 'KeyDerivationMethod')[0];
+  const kdfUri = kdf ? String(kdf.getAttribute('Algorithm') || '') : '';
+  if (kdfUri !== CONCAT_KDF_URI) {
+    log.debug("Leaving agreementRefusal(). Not ConcatKDF.");
+    return 'the ECDH-ES agreement derives its key with ' +
+      (kdfUri || 'no KeyDerivationMethod') + ', and this service derives ' +
+      'with ConcatKDF only (XML Encryption 1.1 section 5.4.1)';
+  }
+  const params = kdf.getElementsByTagNameNS('*', 'ConcatKDFParams')[0];
+  const digestEl = params ? params.getElementsByTagNameNS('*',
+    'DigestMethod')[0] : null;
+  const hash = nameOfUri(OAEP_DIGESTS,
+                         digestEl ? digestEl.getAttribute('Algorithm') : '');
+  if (!params || !hash || hash === 'sha1') {
+    log.debug("Leaving agreementRefusal(). An unusable KDF digest.");
+    return 'the ConcatKDF names ' + (digestEl
+      ? digestEl.getAttribute('Algorithm') : 'no digest') + ', and this ' +
+      'service derives with SHA-256, SHA-384 or SHA-512 only';
+  }
+  const originator = agreement.getElementsByTagNameNS('*',
+    'OriginatorKeyInfo')[0];
+  const curveEl = originator ? originator.getElementsByTagNameNS('*',
+    'NamedCurve')[0] : null;
+  if (!curveEl || !XML_EC_CURVES[curveEl.getAttribute('URI')]) {
+    log.debug("Leaving agreementRefusal(). No usable originator curve.");
+    return 'the agreement carries no originator ECKeyValue on a curve this ' +
+      'service agrees over (' + Object.keys(XML_EC_OIDS).join(', ') + ')';
+  }
+  log.debug("Leaving agreementRefusal(). Usable.");
+  return '';
+}
+
+// ---------------------------------------------------------------------------
 // THE AES-CBC PADDING ORACLE, CLOSED (#202, 2026-09-24).
 //
 // Jager and Somorovsky, "How To Break XML Encryption" (CCS 2011), and XML
@@ -2155,6 +2295,12 @@ function decryptElement(xml, privateKeyPem, opts) {
                   ', and this service agrees only with ECDH-ES' },
                            'STS-KEYS-0073');
   }
+  const agreementWhy = agreement ? agreementRefusal(agreement) : '';
+  if (agreementWhy) {
+    log.debug("Leaving decryptElement(). " + agreementWhy);
+    return errorCodes.mark({ ok: false, refused: true, algorithm: 'ecdh-es',
+                             why: agreementWhy }, 'STS-KEYS-0090');
+  }
   const managementName = transport ? transport.name : 'ecdh-es';
   const managementRefused = refusedAlgorithm(options, 'allowedKeyManagement',
                                              managementName,
@@ -2182,10 +2328,22 @@ function decryptElement(xml, privateKeyPem, opts) {
              'to it with rsa-oaep' }, 'STS-KEYS-0070');
   }
   // rsa-oaep's digest and MGF, each SHA-1 where absent (section 5.5.2).
+  //
+  // **rsa-oaep-mgf1p NAMES A DIGEST TOO (#193)**, and until 2026-09-24 this
+  // read it as SHA-1 whatever the EncryptedKey said: section 5.5.1 lets its
+  // DigestMethod be any digest while its mask generation function is FIXED
+  // at MGF1 with SHA-1. A SHA-256 one (the W3C interop set's WRAP.2) was
+  // unwrapped under the wrong digest and reported as a key encrypted to a
+  // different certificate. Node derives MGF1 from the OAEP digest, so that
+  // pair is refused BY NAME here, exactly as rsa-oaep's differing pair is.
+  // (The PSource label, `<xenc:OAEPparams>`, is read once, below — #202's,
+  // which #193 had found the same day.)
   let oaepHash = '';
-  if (transport && transport.name === 'rsa-oaep') {
+  if (transport && (transport.name === 'rsa-oaep' ||
+                    transport.name === 'rsa-oaep-mgf1p')) {
+    const mgf1p = transport.name === 'rsa-oaep-mgf1p';
     const digestEl = childByLocal(keyMethod, 'DigestMethod');
-    const mgfEl = childByLocal(keyMethod, 'MGF');
+    const mgfEl = mgf1p ? null : childByLocal(keyMethod, 'MGF');
     const digest = digestEl ? nameOfUri(OAEP_DIGESTS,
                                         digestEl.getAttribute('Algorithm'))
                             : 'sha1';
@@ -2194,21 +2352,24 @@ function decryptElement(xml, privateKeyPem, opts) {
     if (!digest || !mgf || digest !== mgf) {
       log.debug("Leaving decryptElement(). An unusable OAEP digest.");
       return errorCodes.mark({ ok: false, refused: true,
-               algorithm: 'rsa-oaep',
-               why: 'the rsa-oaep key transport names ' +
+               algorithm: transport.name,
+               why: 'the ' + transport.name + ' key transport names ' +
                     (digestEl ? digestEl.getAttribute('Algorithm') : 'SHA-1') +
                     ' as its digest and ' +
                     (mgfEl ? mgfEl.getAttribute('Algorithm') : 'MGF1-SHA-1') +
-                    ' as its mask generation function; this service ' +
-                    'unwraps only a matching pair of SHA-1, SHA-256, ' +
-                    'SHA-384 or SHA-512' }, 'STS-KEYS-0072');
+                    ' as its mask generation function' +
+                    (mgf1p ? ' (rsa-oaep-mgf1p fixes MGF1 at SHA-1)' : '') +
+                    '; this service unwraps only a matching pair of ' +
+                    'SHA-1, SHA-256, SHA-384 or SHA-512' }, 'STS-KEYS-0072');
     }
-    const digestRefused = refusedAlgorithm(options, 'allowedOaepDigests',
-                                           digest, 'OAEP digest');
-    if (digestRefused) {
-      log.debug("Leaving decryptElement(). The caller does not take the " +
-                "OAEP digest " + digest + ".");
-      return digestRefused;
+    if (!mgf1p) {
+      const digestRefused = refusedAlgorithm(options, 'allowedOaepDigests',
+                                             digest, 'OAEP digest');
+      if (digestRefused) {
+        log.debug("Leaving decryptElement(). The caller does not take the " +
+                  "OAEP digest " + digest + ".");
+        return digestRefused;
+      }
     }
     oaepHash = digest;
   }
@@ -2315,10 +2476,23 @@ function decryptElement(xml, privateKeyPem, opts) {
         'tag did not verify, so the ciphertext was altered after it was ' +
         'encrypted' }, 'STS-KEYS-0022');
     }
-    // Fatal on a malformed sequence, as forge's decodeUtf8() was: a
-    // plaintext that is not UTF-8 is not a document (STS-KEYS-0025).
-    const plain = new TextDecoder('utf-8', { fatal: true })
-      .decode(opened.plain);
+    // The plaintext as UTF-8, STRICTLY. For CBC it was decoded and checked
+    // inside cbcPlaintextUsable() above, and any failure there is the ONE
+    // refusal (STS-KEYS-0078, #202) — so what can fail here is GCM, which is
+    // authenticated: binary plaintext is a document that is not XML and is
+    // refused as one (STS-KEYS-0023, #193 — the W3C interop set's binary
+    // ECDH-ES cases showed it; it was "could not be read", STS-KEYS-0025).
+    let plain;
+    try {
+      plain = new TextDecoder('utf-8', { fatal: true }).decode(opened.plain);
+    } catch (e) {
+      log.debug("Caught in decryptElement(): " + ((e && e.message) || e));
+      log.debug("Leaving decryptElement(). The plaintext is not UTF-8.");
+      return errorCodes.mark({ ok: false, why: 'the decryption produced ' +
+               'octets that are not UTF-8 text, so not an XML element — ' +
+               'binary data, which this service does not decrypt' },
+                             'STS-KEYS-0023');
+    }
     // ---------------------------------------------------------------------
     // DOES IT PARSE? A cipher that finished is not a document that survived.
     // For GCM (authenticated) a plaintext that is not XML is the sender's
@@ -2457,8 +2631,9 @@ const JWS_ALGS = {
 // are absent from DPoP: RFC 7638 defines a JWK Thumbprint for RSA, EC, OKP and
 // oct and not for AKP, so a DPoP proof signed with one could not be bound to
 // anything. See oauth-oidc/dpop.ts. (RFC 9964 has since defined the
-// AKP members and `THUMBPRINT_MEMBERS` carries them, 2026-09-13; DPoP still
-// refuses these algorithms by name.)
+// AKP members and `THUMBPRINT_MEMBERS` carries them, 2026-09-13; since #150
+// DPoP takes the three JOSE-registered ML-DSA algorithms and refuses the
+// rest by name.)
 pqJose.PQ_ALGS.forEach(function (alg) {
   JWS_ALGS[alg] = { family: 'pq', hash: null, kty: 'AKP', alg: alg,
                     ownSigner: true };
@@ -5992,6 +6167,59 @@ async function verifyRawSignature(scheme, key, data, signature) {
   }
 }
 
+// THE SIGNING HALF OF THE PRIMITIVE ABOVE (#194-#196, 2026-09-26), for the
+// Data Integrity cryptosuites that sign bytes rather than a JWS: the RDFC
+// suites, and ecdsa-sd-2023's base and per-statement signatures. Same
+// `scheme` (families 'ecdsa' and 'eddsa' only — nothing here signs raw bytes
+// with RSA, and a post-quantum signature goes through `pq_jose`'s pool);
+// `privateKey` is a node KeyObject or a private JWK. Throws for a key of the
+// wrong kind, because a signer handed the wrong key is a bug, not an input.
+function signRawSignature(scheme, privateKey, data) {
+  const s = scheme || {};
+  log.debug("Entering signRawSignature(). " + s.family + "/" +
+            (s.hash || ''));
+  const key = privateKey && privateKey.type === 'private' ? privateKey
+    : nodeCrypto.createPrivateKey(privateKey && privateKey.kty
+        ? { key: privateKey, format: 'jwk' } : privateKey);
+  const type = String(key.asymmetricKeyType || '');
+  const message = Buffer.from(data || []);
+  if (s.family === 'ecdsa' && type === 'ec') {
+    const out = nodeCrypto.sign(s.hash, message, { key: key,
+      dsaEncoding: s.encoding === 'der' ? 'der' : 'ieee-p1363' });
+    log.debug("Leaving signRawSignature(). ECDSA.");
+    return out;
+  }
+  if (s.family === 'eddsa' && (type === 'ed25519' || type === 'ed448')) {
+    const out = nodeCrypto.sign(null, message, key);
+    log.debug("Leaving signRawSignature(). EdDSA.");
+    return out;
+  }
+  log.debug("Leaving signRawSignature(). Refused.");
+  throw new Error('signRawSignature: a ' + (type || 'unknown') + ' key ' +
+                  'does not sign ' + String(s.family || 'nothing') + '.');
+}
+
+// HMAC-SHA-256 of `data` under `key` — ecdsa-sd-2023's blank node labels
+// (vc-di-ecdsa section 3.4.4, createHmacIdLabelMapFunction).
+function hmacSha256(key, data) {
+  log.debug("Entering hmacSha256().");
+  const out = nodeCrypto.createHmac('sha256', Buffer.from(key || []))
+    .update(Buffer.from(data || [])).digest();
+  log.debug("Leaving hmacSha256().");
+  return out;
+}
+
+// A fresh key pair of a kind `generateKeyPairSync()` names ('ec' with a
+// namedCurve, 'ed25519') — ecdsa-sd-2023's proof-scoped key, made and thrown
+// away inside one signature.
+function ephemeralKeyPair(kind, curve) {
+  log.debug("Entering ephemeralKeyPair(). " + kind + " " + (curve || ''));
+  const pair = nodeCrypto.generateKeyPairSync(kind,
+    curve ? { namedCurve: curve } : undefined);
+  log.debug("Leaving ephemeralKeyPair().");
+  return pair;
+}
+
 // An ECDSA signature held as its two integers, big-endian and unpadded (Go's
 // big.Int.Bytes(), an SSH mpint), as the r||s the primitive above takes.
 // `curve` is node's name ('prime256v1'). null when either integer is longer
@@ -7873,6 +8101,9 @@ module.exports = {
   RAW_SIGNATURE_FAMILIES: RAW_SIGNATURE_FAMILIES,
   publicKeyFromSpki: publicKeyFromSpki,
   verifyRawSignature: verifyRawSignature,
+  signRawSignature: signRawSignature,
+  hmacSha256: hmacSha256,
+  ephemeralKeyPair: ephemeralKeyPair,
   olpcCanonicalJson: olpcCanonicalJson,
   jcsCanonicalJson: jcsCanonicalJson,
   spkiFromPublicKeyPem: spkiFromPublicKeyPem,

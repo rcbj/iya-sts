@@ -245,6 +245,12 @@ class PortalCertificatesPage {
       'page once and cannot be shown again.</div>' +
       '<table><tr><th>SCEP URL</th><td><code>' +
       esc(base + '/enroll/scep/' + fresh.profile) + '</code></td></tr>' +
+      // The plain-HTTP address too (#210): sscep and most device firmware
+      // speak no TLS, and SCEP secures its own messages.
+      '<tr><th>Plain-HTTP SCEP URL</th><td><code>' +
+      esc(require('../common/pki_revocation').httpBaseInRealm() +
+          '/enroll/scep/' + fresh.profile) +
+      '</code></td></tr>' +
       '<tr><th>Challenge password</th><td><code>' + esc(fresh.challenge) +
       '</code></td></tr><tr><th>Profile</th><td><code>' +
       esc(fresh.profile) + '</code></td></tr><tr><th>Usable until</th><td>' +

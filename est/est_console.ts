@@ -46,6 +46,7 @@ const { log, baseUrlOf } = helpers;
 import errorCodes = require('../common/error_codes');
 import validation = require('../common/validation');
 import mode = require('../common/mode');
+import realms = require('../common/realms');
 import core = require('../common/cert_enrollment');
 import monitor = require('../common/enrollment_monitor');
 import keyMaterial = require('../common/vendored/key_material');
@@ -111,6 +112,7 @@ interface EstConsoleDeps {
   errorCodes: typeof errorCodes;
   validation: typeof validation;
   mode: typeof mode;
+  realms: typeof realms;
   core: typeof core;
   monitor: typeof monitor;
   keyMaterial: typeof keyMaterial;
@@ -136,6 +138,7 @@ class EstConsole {
       errorCodes: errorCodes,
       validation: validation,
       mode: mode,
+      realms: realms,
       core: core,
       monitor: monitor,
       keyMaterial: keyMaterial,
@@ -216,10 +219,18 @@ class EstConsole {
   // ---------------------------------------------------------------------------
   estView(req) {
     const { log, baseUrlOf, core, adminViews, config, keyMaterial,
-            codec } = this.deps;
+            codec, realms } = this.deps;
     log.debug("Entering EstConsole.estView().");
     const query = (req && req.query) || {};
     const base = baseUrlOf(req);
+    // THE LABEL FORM (#251): the one address an RFC 7030 client that takes
+    // only a host, a port and one label can be given for a realm other than
+    // the default — `/.well-known/est/<realm>` at the ORIGIN, not under the
+    // realm's prefix. None in the default realm, which needs none.
+    const labelPath = realms.estLabelPath();
+    const origin = base.slice(0, base.length -
+                              realms.currentPrefix().length);
+    const labelBase = labelPath ? origin + labelPath : null;
     const allowed = core.allowedProfiles(FAMILY);
     const defaultProfile = core.defaultProfile(FAMILY);
     const chain = core.caChainOf(FAMILY);
@@ -237,8 +248,18 @@ class EstConsole {
       endpoints: OPERATIONS.map(function (op) {
         return { operation: op.name, method: op.method, section: op.section,
                  what: op.what,
-                 url: base + '/.well-known/est/' + op.name };
+                 url: base + '/.well-known/est/' + op.name,
+                 labelFormUrl: labelBase ? labelBase + '/' + op.name : null };
       }),
+      labelForm: labelBase ? {
+        base: labelBase,
+        note: 'For an EST client that can be given only a host, a port and ' +
+              'one label (libest\'s estclient is one): this realm is named ' +
+              'in the label position, and a profile after it ' +
+              '(' + labelBase + '/<profile>/<operation>) for a client that ' +
+              'can send two segments. The /realm/ form and this one reach ' +
+              'the same server; a request names the realm once.'
+      } : null,
       hierarchy: {
         built: !!chain.ok,
         note: chain.ok ? '' : 'This realm has no EST Issuing CA yet: nothing ' +

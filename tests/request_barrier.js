@@ -673,6 +673,98 @@ function checkTheFrontProcessWaitsForAnsweredWrites(t) {
   log.debug("Leaving checkTheFrontProcessWaitsForAnsweredWrites().");
 }
 
+// ---------------------------------------------------------------------------
+// 11. A HEADER GOES OUT UNDER THE NAME THE WORKER SPELLED IT WITH (#209,
+// 2026-09-26).
+//
+// proxy() set every header back by `answer.headers`' lower-case keys, so a
+// dispatched answer said `content-type:` where the process answering by
+// itself says `Content-Type:`. Field names are case-insensitive (RFC 9110
+// section 5.1), and libest's estclient compares them byte for byte: every EST
+// request failed "Missing HTTP content type header" in the modes that
+// dispatch, and in no other. Real sockets, as section 8: a worker on a unix
+// socket answering with mixed-case names and two Set-Cookie headers, an
+// express app in front, and the raw bytes read off the wire.
+// ---------------------------------------------------------------------------
+async function checkHeaderNamesKeepTheirSpelling(t) {
+  log.debug("Entering checkHeaderNamesKeepTheirSpelling().");
+  t.log.info('=== a relayed header keeps the worker\'s spelling ===');
+  const http = require('http');
+  const net = require('net');
+  const os = require('os');
+  const path = require('path');
+  const fs = require('fs');
+  const express = require('express');
+
+  pool.reset();
+  const socketPath = path.join(os.tmpdir(), 'sts-spelling-' + process.pid +
+                               '-' + Date.now() + '.sock');
+  const upstreamServer = http.createServer(function (req, res) {
+    req.resume();
+    res.setHeader('Content-Type', 'application/pkcs7-mime; ' +
+                  'smime-type=certs-only');
+    res.setHeader('Content-Transfer-Encoding', 'base64');
+    res.setHeader('X-Mixed-Case', 'kept');
+    res.setHeader('Set-Cookie', ['a=1; Path=/', 'b=2; Path=/']);
+    res.end('MIIB');
+  });
+  await new Promise(function (resolve) {
+    upstreamServer.listen(socketPath, resolve);
+  });
+  const entry = { pid: 802, socket: socketPath, tickets: new Set(),
+                  agent: new http.Agent({ keepAlive: false }),
+                  inFlight: 0, served: 0, generation: 0 };
+  const app = express();
+  app.use(function (req, res) {
+    pool.proxy(entry, req, res, 0, null);
+  });
+  const front = http.createServer(app);
+  await new Promise(function (resolve) {
+    front.listen(0, '127.0.0.1', resolve);
+  });
+  const wire = await new Promise(function (resolve, reject) {
+    let got = '';
+    const socket = net.connect(front.address().port, '127.0.0.1',
+                               function () {
+      socket.write('GET /.well-known/est/cacerts HTTP/1.1\r\n' +
+                   'Host: sts\r\nConnection: close\r\n\r\n');
+    });
+    socket.on('data', function (d) {
+      got += d;
+    });
+    socket.on('end', function () {
+      resolve(got);
+    });
+    socket.on('error', reject);
+  });
+  const head = wire.split('\r\n\r\n')[0];
+  t.check(/\r\nContent-Type: application\/pkcs7-mime/.test(head),
+          'Content-Type goes out spelled as the worker spelled it',
+          head);
+  t.check(/\r\nContent-Transfer-Encoding: base64/.test(head) &&
+          /\r\nX-Mixed-Case: kept/.test(head),
+          'and so does every other header the worker sent', head);
+  // The worker's two, each a header of its own (the pool's pin may follow
+  // them — this path has no affinity of its own).
+  t.check(/\r\nSet-Cookie: a=1; Path=\//.test(head) &&
+          /\r\nSet-Cookie: b=2; Path=\//.test(head),
+          'the worker\'s two Set-Cookie headers are still two headers', head);
+  t.check(!/\r\ncontent-type:/.test(head),
+          'no header goes out in the lower case of answer.headers\' keys',
+          head);
+  await new Promise(function (resolve) { front.close(resolve); });
+  entry.agent.destroy();
+  await new Promise(function (resolve) { upstreamServer.close(resolve); });
+  try {
+    fs.unlinkSync(socketPath);
+  } catch (e) {
+    log.debug("Caught in checkHeaderNamesKeepTheirSpelling(): " +
+              ((e && e.message) || e));
+  }
+  pool.reset();
+  log.debug("Leaving checkHeaderNamesKeepTheirSpelling().");
+}
+
 async function run(t) {
   log.debug("Entering run().");
   checkTheFrontProcessWaitsForAnsweredWrites(t);
@@ -685,6 +777,7 @@ async function run(t) {
   await checkSyncRoundsAreShared(t);
   await checkAClientThatLeavesReleasesItsPlace(t);
   await checkABehindWorkerStaysBehind(t);
+  await checkHeaderNamesKeepTheirSpelling(t);
   // THE POOL IS PROCESS-WIDE MODULE STATE AND THIS FILE ARMED TICKETS IN IT.
   // Left behind, they would make every later file's reader wait the bound.
   pool.reset();

@@ -248,6 +248,8 @@ import applications = require('../common/applications');
 import mode = require('../common/mode');
 import authnContext = require('./authn_context');
 import documentSettings = require('./document_settings');
+// The certificate the back channel presents, as a metadata key (#248).
+import listenerKeys = require('./listener_keys');
 import returnAddress = require('./return_address');
 import personAttributes = require('./person_attributes');
 // THE CLUSTER CLAIM (2026-09-14, #46), which an artifact is spent through so
@@ -535,6 +537,7 @@ interface Saml11SsoDeps {
   mode: typeof mode;
   authnContext: typeof authnContext;
   documentSettings: typeof documentSettings;
+  listenerKeys: typeof listenerKeys;
   returnAddress: typeof returnAddress;
   personAttributes: typeof personAttributes;
   clusterClaims: typeof clusterClaims;
@@ -587,6 +590,7 @@ class Saml11Sso {
       mode: mode,
       authnContext: authnContext,
       documentSettings: documentSettings,
+      listenerKeys: listenerKeys,
       returnAddress: returnAddress,
       personAttributes: personAttributes,
       clusterClaims: clusterClaims,
@@ -1008,9 +1012,11 @@ class Saml11Sso {
     // saml/document_settings.ts.
     const how = documentSettings.signatureOptions();
     const signed = stsCrypto.signXml(xml, {
-      // The XML signing key (#42, D2): `STS.xml`, not the JOSE key.
-      privateKeyPem: STS.xml.privateKeyPem,
-      certPem: STS.xml.certPem,
+      // The XML signing key (#42, D2): `STS.xml`, not the JOSE key — and
+      // `STS.xmlSigner`, the one for the configured algorithm (#68).
+      privateKeyPem: STS.xmlSigner.privateKeyPem,
+      privateKey: STS.xmlSigner.privateKey,
+      certPem: STS.xmlSigner.certPem,
       sigAlg: how.sigAlg,
       c14nAlg: how.c14nAlg,
       placement: placement === 'append'
@@ -2608,18 +2614,23 @@ class Saml11Sso {
   // rule, and the rule is in each schema separately.
   // ---------------------------------------------------------------------------
   metadataFor(base, rpId) {
-    const { STS, documentSettings, errorCodes, genId, log, logArtifact,
-            xmlEscape } = this.deps;
+    const { STS, documentSettings, errorCodes, genId, listenerKeys, log,
+            logArtifact, xmlEscape } = this.deps;
     log.debug("Entering Saml11Sso.metadataFor(). rp=" + (rpId || '(unscoped)'));
     const id = genId();
     const providerId = this.providerIdFor(rpId);
     const where = this.endpointsFor(base, rpId);
+    // THE BACK CHANNEL'S TLS CERTIFICATE (#248), in both roles, because the
+    // responder is both: the IdP role's ArtifactResolutionService and the
+    // attribute authority's AttributeService. saml/listener_keys.ts argues
+    // `use="signing"` and why it goes last.
+    const backChannelKeys = listenerKeys.keyDescriptors();
     const keyDescriptor = (use) => {
       log.debug("Entering keyDescriptor().");
       log.debug("Leaving keyDescriptor().");
       // One per live generation of the XML key (#42), for signing.
       if (use === 'signing') {
-        return helpers.ownRsaCertificates('xml').map(function (one: any) {
+        return helpers.ownXmlSigningCertificates().map(function (one: any) {
           return '<md:KeyDescriptor use="signing"><ds:KeyInfo xmlns:ds="' +
             NS_DS + '"><ds:X509Data><ds:X509Certificate>' +
             stsCrypto.stripPem(one.certPem) + '</ds:X509Certificate>' +
@@ -2654,6 +2665,7 @@ class Saml11Sso {
           ' protocolSupportEnumeration="' + PROTOCOL_SAML11 + ' ' +
             PROTOCOL_SHIB1 + '">' +
           keyDescriptor('signing') +
+          backChannelKeys +
           // The metadata schema's sequence: ArtifactResolutionService, then
           // SingleLogoutService, then NameIDFormat, then SingleSignOnService.
           // There is no SingleLogoutService here at all — SAML 1.1 has no
@@ -2680,6 +2692,7 @@ class Saml11Sso {
         '<md:AttributeAuthorityDescriptor' +
           ' protocolSupportEnumeration="' + PROTOCOL_SAML11 + '">' +
           keyDescriptor('signing') +
+          backChannelKeys +
           service('AttributeService', BINDING_SOAP, where.responder) +
           NAMEID_FORMATS.map((format) => {
             return '<md:NameIDFormat>' + format + '</md:NameIDFormat>';
