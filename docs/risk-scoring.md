@@ -765,6 +765,7 @@ kept in step with `common/config.js`.
 | `risk.supersededRetentionDays` | `STS_RISK_SUPERSEDED_RETENTION_DAYS` | `30` | How long a superseded version's rows are kept for rollback. |
 | `risk.geoStaleAfterDays` | `STS_RISK_GEO_STALE_AFTER_DAYS` | `45` | Age after which geolocation and ASN data counts for nothing. |
 | `risk.ipListStaleAfterHours` | `STS_RISK_IP_LIST_STALE_AFTER_HOURS` | `24` | Age after which a Tor or reputation list counts for nothing. |
+| `risk.geoMinimumCount` | `STS_RISK_GEO_MINIMUM_COUNT` | `3` | The fewest people a place is numbered with on Monitoring → Geolocation; fewer is shaded and not numbered, and such a city is not drawn. |
 
 ## Design decisions
 
@@ -841,6 +842,32 @@ events it sends. At `HIGH`, each one ends its own sessions for that person
   - the breached-password screening counts.
 
   `GET /admin-api/risk/metrics?window=24h` returns the same data as JSON.
+- **Monitoring → Geolocation** (`/admin/geolocation`, #255) draws where
+  the realm's people signed in from, as a map. It starts with the world,
+  each country shaded by how many people it counts and each continent
+  labelled with its total. Select a country to see its continent, and a
+  country on a continent to see its cities, drawn as circles whose area is
+  proportional to the people counted there. Every level is a link, and the
+  map is drawn on the server with no script.
+  - **Live sessions** is the default: the realm's live sessions, each
+    counted where its latest assessment placed it. The other windows count
+    everybody who signed in over the last 24 hours, 7 days or 30 days,
+    wherever they were.
+  - **People are counted at each level, not summed.** A person seen in two
+    cities is one person in their country.
+  - **Small counts are suppressed.** A place with fewer than
+    `risk.geoMinimumCount` people (3) is shaded but carries no number, and
+    such a city is neither drawn nor listed; it is counted in its country's
+    "other cities" line.
+  - It needs a geolocation dataset. Without one, every sign-in is counted
+    under *Location unknown*.
+  - The country outlines are Natural Earth's 1:50m countries, which are in
+    the public domain and ship with the service. They are the one third-party
+    dataset that does.
+
+  `GET /admin-api/geolocation` returns the same counts, with the same
+  suppression. It takes `window` (`live`, `24h`, `7d` or `30d`),
+  `continent` and `country`.
 - **Each person's page under Directory → Users** opens with their current
   risk, drawn large in the level's colour: LOW green, MEDIUM amber, HIGH
   red, grey for someone never assessed. It shows the score, the level it
@@ -851,7 +878,7 @@ events it sends. At `HIGH`, each one ends its own sessions for that person
   `POST /admin-api/risk/import`, `activate`, `rollback`, `delete` and
   `accept-terms`, described in the
   [OpenAPI document](management-api.md).
-- **Error codes** `STS-RISK-0001` to `STS-RISK-0026` are listed on
+- **Error codes** `STS-RISK-0001` to `STS-RISK-0042` are listed on
   [Error codes](error-codes.md).
 
 ## Related

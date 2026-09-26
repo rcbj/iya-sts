@@ -1042,6 +1042,16 @@ class ProtocolStack {
                'RiskAdmin');
     this.register(app, require('../admin-ui/risk_admin'),
                   'admin-ui/risk_admin');
+    // 18j-ii. MONITORING → GEOLOCATION (#255, 2026-09-26). 18a's placement
+    // and 18a's reason: the console's shell and the risk libraries above
+    // are loaded, and `mgmt-api/admin_api` requires the page. The map is a
+    // library (`geo_map.ts`, rule 3) built just before it.
+    this.build('admin-ui/geo_map', require('../admin-ui/geo_map'), 'GeoMap');
+    require('../admin-ui/geolocation_admin');
+    this.build('admin-ui/geolocation_admin',
+               require('../admin-ui/geolocation_admin'), 'GeolocationAdmin');
+    this.register(app, require('../admin-ui/geolocation_admin'),
+                  'admin-ui/geolocation_admin');
     // 18k. THE MODE'S PAGE (#181, 2026-09-23). `/admin/mode` — what
     // `global.mode` changes and what is in force in the realm, drawn from
     // `common/mode.js`'s `report()`. 18a's placement and 18a's reason: the

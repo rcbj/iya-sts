@@ -216,6 +216,8 @@ import schedulerAdmin = require('../admin-ui/scheduler_admin');
 import mailAdmin = require('../admin-ui/mail_admin');
 // Monitoring → Risk (#62): its view and its four actions, rule 7.
 import riskAdmin = require('../admin-ui/risk_admin');
+// Monitoring → Geolocation (#255): its one view, rule 7.
+import geolocationAdmin = require('../admin-ui/geolocation_admin');
 // The embedded protocol debugger's report (2026-09-13). A page module required
 // at 18 like the one above, and it reads the listener's status lazily, so this
 // require moves no route.
@@ -2463,6 +2465,71 @@ class AdminApi {
                                       errors: [String((e && e.message) ||
                                                       e)] });
             log.debug("Leaving the management API risk metrics endpoint. " +
+                      "Failed.");
+          });
+        } },
+
+      // Monitoring → Geolocation (#255): `geolocationAdmin.geoView()`, the
+      // counts the page draws, suppression applied the same way.
+      { method: 'GET', path: BASE + '/geolocation', tag: 'Risk',
+        operationId: 'getGeolocation',
+        summary: 'Where the realm\'s people signed in from',
+        description: 'The realm\'s people counted by place, from what risk ' +
+                     'scoring recorded: the `total` of the place asked ' +
+                     'for (the `world` total beside it), the seven ' +
+                     '`continents`, the `countries` (every one at the ' +
+                     'world level, a continent\'s with `continent`, one with ' +
+                     '`country`) and, with `country`, its `cities` with ' +
+                     'their coordinates. Each place has `people` (distinct, ' +
+                     'counted at that level, never summed), `signIns` and ' +
+                     '`lastAt`. A place with fewer people than ' +
+                     '`minimumCount` (`risk.geoMinimumCount`) has `people` ' +
+                     'and `signIns` null and `suppressed` true, and such a ' +
+                     'city is left out and counted in `hidden`. `unknown` ' +
+                     'is where no dataset placed the address; ' +
+                     '`countryOnly`, in a country, where only its country ' +
+                     'was known. `window` live counts the live sessions ' +
+                     '(`liveSessions`), each at its latest assessment.',
+        mirrors: 'GET /admin/geolocation',
+        parameters: [
+          { name: 'window', in: 'query', required: false,
+            schema: { type: 'string', enum: ['live', '24h', '7d', '30d'] },
+            description: 'Live sessions, or everybody over a span; live ' +
+                         'when absent.' },
+          { name: 'continent', in: 'query', required: false,
+            schema: { type: 'string', enum: ['africa', 'antarctica', 'asia',
+                                             'europe', 'north-america',
+                                             'oceania', 'south-america'] },
+            description: 'One continent\'s countries.' },
+          { name: 'country', in: 'query', required: false,
+            schema: { type: 'string', pattern: '^[A-Za-z]{2}$' },
+            description: 'One country (ISO 3166-1 alpha-2) and its cities.' }
+        ],
+        responseDescription: 'The counts by place.',
+        responseSchema: { type: 'object',
+          description: '`total`, `continents`, `countries`, `cities`, ' +
+                       '`hidden`, `unknown`, `minimumCount`, `datasets`, ' +
+                       '`attributions`.' },
+        handler: function (req, res) {
+          log.debug("Entering the management API geolocation endpoint.");
+          geolocationAdmin.geoView(req.query).then(function (view) {
+            if (!view.ok) {
+              errorCodes.mark(res, 'STS-RISK-0042');
+              self.sendJson(res, 400, { ok: false, errors: view.errors });
+              log.debug("Leaving the management API geolocation endpoint. " +
+                        "Refused.");
+              return;
+            }
+            self.sendJson(res, 200, view);
+            log.debug("Leaving the management API geolocation endpoint.");
+          }).catch(function (e) {
+            log.warn(errorCodes.tag('STS-RISK-0041') + 'geolocation: the ' +
+                     'view failed: ' + ((e && e.message) || e));
+            errorCodes.mark(res, 'STS-RISK-0041');
+            self.sendJson(res, 500, { ok: false,
+                                      errors: [String((e && e.message) ||
+                                                      e)] });
+            log.debug("Leaving the management API geolocation endpoint. " +
                       "Failed.");
           });
         } },
