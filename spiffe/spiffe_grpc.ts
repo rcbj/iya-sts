@@ -192,6 +192,17 @@ type ServiceName = 'workload' | 'entry' | 'agent' | 'bundle' | 'svid' |
   'trustdomain' | 'debug' | 'broker';
 
 class SpiffeGrpc {
+  // The signature schemes the SPIFFE TLS listeners sign with and accept from
+  // a client's SVID (#212): OpenSSL's TLS 1.3 list without the brainpool
+  // schemes, whose certificates node 24.16.0 crashes reading — see where it
+  // is applied, in the credentials below.
+  static readonly READABLE_SIGALGS = 'mldsa65:mldsa87:mldsa44:' +
+    'ecdsa_secp256r1_sha256:ecdsa_secp384r1_sha384:ecdsa_secp521r1_sha512:' +
+    'ed25519:ed448:rsa_pss_pss_sha256:rsa_pss_pss_sha384:' +
+    'rsa_pss_pss_sha512:rsa_pss_rsae_sha256:rsa_pss_rsae_sha384:' +
+    'rsa_pss_rsae_sha512:rsa_pkcs1_sha256:rsa_pkcs1_sha384:' +
+    'rsa_pkcs1_sha512';
+
   constructor(private readonly deps: SpiffeGrpcDeps) {
     deps.log.debug("Entering SpiffeGrpc.constructor().");
     deps.log.debug("Leaving SpiffeGrpc.constructor().");
@@ -1998,6 +2009,15 @@ class SpiffeGrpc {
       // that would have to be kept in step with a library we do not otherwise
       // touch.
       credentials._getConstructorOptions().rejectUnauthorized = false;
+      // AND NO BRAINPOOL SIGNATURE SCHEME (#212). node 24.16.0 crashes the
+      // process (SIGSEGV) converting a certificate on a brainpool curve for
+      // getPeerCertificate() — which grpc-js calls for getAuthContext(), on
+      // every call this listener authenticates — and OpenSSL's default list
+      // lets a TLS 1.3 client sign its CertificateVerify with one. With this
+      // list such a handshake fails inside OpenSSL; TLS 1.2 already refuses
+      // the curve. tls/CLAUDE.md has the finding.
+      credentials._getConstructorOptions().sigalgs =
+        SpiffeGrpc.READABLE_SIGALGS;
     } catch (e) {
       log.error(errorCodes.tag('STS-SPIFFE-0012') +
                 'spiffe: the ' + surface + ' ' +
