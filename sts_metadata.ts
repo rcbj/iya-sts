@@ -2092,6 +2092,31 @@ const SPECS: Spec[] = [
               'Indicators (RFC 8707) are features of their own, in every ' +
               'mode, rather than constraints this mode enforces. GET /oauth2/rfc9700 lists every requirement with ' +
               'which of those it is.' },
+  { id: 'oauth-attestation',
+    name: 'OAuth 2.0 Attestation-Based Client Authentication ' +
+          '(draft-ietf-oauth-attestation-based-client-auth-11)',
+    where: 'IETF',
+    url: 'https://datatracker.ietf.org/doc/draft-ietf-oauth-attestation-' +
+         'based-client-auth/11/',
+    coverage: 'full, per trust realm and the same in both modes, OFF until ' +
+              'an attester is trusted (#229): attest_jwt_client_auth and ' +
+              'attest_jwt_client_auth_dpop at the token and PAR endpoints ' +
+              '(the first at introspection, revocation and CIBA too), the ' +
+              'OAuth-Client-Attestation and -PoP header fields, an ' +
+              'attester trusted by an x5c path to a configured anchor ' +
+              '(the leaf never self-signed) or by a configured JWKS, the ' +
+              'cnf key proved by a PoP JWT (audience the issuer, jti spent ' +
+              'once in the used-assertion history) or by the DPoP proof ' +
+              '(combined mode), single-use server challenges from POST ' +
+              '/oauth2/challenge and a fresh one on every response (required ' +
+              'by default), use_attestation_challenge and ' +
+              'use_fresh_attestation, refresh tokens bound to the client ' +
+              'instance key and codes bound through PAR (sections 10.3 and ' +
+              '10.4), section 7.6\'s attestation as an additional signal ' +
+              'verified when sent, and the section 8 metadata. Not done: a ' +
+              'MAC-protected attestation (section 12.2), a jku, an ' +
+              'attester certificate\'s revocation, and the resource server ' +
+              'half (this service\'s resources do not ask for one).' },
   { id: 'oauth21', name: 'The OAuth 2.1 Authorization Framework ' +
                          '(draft-ietf-oauth-v2-1-16)',
     where: 'IETF', url: 'https://datatracker.ietf.org/doc/draft-ietf-oauth-v2-1/16/',
@@ -9865,7 +9890,8 @@ const ENDPOINTS: EndpointEntry[] = [
     specs: ['rfc6749', 'oidc', 'rfc8693', 'rfc9396', 'oid4vci', 'rfc9449',
             'rfc7800', 'rfc9700', 'oidc-native-sso', 'oidc-ciba',
             'rfc8628', 'oidc-key-binding',
-            'rfc8705', 'rfc8707', 'rfc7523', 'rfc7522', 'rfc9068'],
+            'rfc8705', 'rfc8707', 'rfc7523', 'rfc7522', 'rfc9068',
+            'oauth-attestation'],
     what: 'authorization_code, refresh_token, client_credentials, password, ' +
           'token-exchange, RFC 8628\'s device_code (#150), and OID4VCI\'s ' +
           'pre-authorized_code with tx_code ' +
@@ -10131,9 +10157,19 @@ const ENDPOINTS: EndpointEntry[] = [
           'authenticate as a client in every mode and is refused 400 ' +
           'invalid_client otherwise; a JSON request must authenticate in ' +
           'product mode (401) and need not in development.' },
+  { path: '/oauth2/challenge', group: 'OAuth 2.0 / OIDC',
+    name: 'Client attestation challenge endpoint',
+    specs: ['oauth-attestation', 'rfc9449'],
+    what: 'POST for { attestation_challenge }: a single-use challenge a ' +
+          'Client Attestation PoP carries (draft-ietf-oauth-attestation-' +
+          'based-client-auth-11 section 6.3), uncacheable, with a fresh ' +
+          'DPoP-Nonce beside it where this realm asks for DPoP nonces. The ' +
+          'realm\'s, whichever authorization server is asked; 400 in a ' +
+          'realm that trusts no client attester, which advertises no ' +
+          'challenge_endpoint either.' },
   { path: '/oauth2/par', group: 'OAuth 2.0 / OIDC',
     name: 'Pushed authorization request endpoint',
-    specs: ['rfc9126', 'rfc9101', 'rfc9449'],
+    specs: ['rfc9126', 'rfc9101', 'rfc9449', 'oauth-attestation'],
     what: 'POST the parameters of an authorization request, authenticated ' +
           'as at the token endpoint, and get 201 { request_uri, expires_in } ' +
           'to send the browser to /oauth2/authorize with. The push is ' +
@@ -10964,7 +11000,7 @@ SPECS.forEach(function (s) {
 const PROTOCOLS: Protocol[] = [
   { name: 'OAuth2 / OIDC', groups: ['OAuth 2.0 / OIDC'],
     specs: ['rfc6749', 'oidc', 'rfc8414', 'rfc9700', 'oauth21',
-            'oidc-session', 'oidc-ida-claims', 'oidc-ida', 'oidc-native-sso',
+            'oauth-attestation', 'oidc-session', 'oidc-ida-claims', 'oidc-ida', 'oidc-native-sso',
             'oidc-ciba', 'fapi-ciba', 'oauth-grant-management',
             'oidc-claims-aggregation', 'oidc-enterprise', 'oidc-ephemeral'],
     what: 'A mock authorization server and OpenID Provider: all five grants, ' +

@@ -103,6 +103,8 @@ function childMain() {
       'federation.release-index', 'gnap.signatures',
       'krb5.authenticator-replay', 'oauth2.redeemed-codes',
       'oauth2.client-jwks', 'oauth2.request-uri', 'oauth2.signed-metadata',
+      // The challenges a client attestation's PoP carries (#229).
+      'oauth2.attestation-challenges',
       'oauth2.used-assertions', 'oid4vci.nonces', 'oid4vci.status-entries',
       // OpenID Federation's resolved Trust Chains (#132), and the Entity
       // Collections a process made without fetching (#136).

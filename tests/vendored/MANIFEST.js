@@ -924,6 +924,11 @@ const JOBS = [
   // A person's attributes set, added to and removed from through
   // /admin-api (#228), in a realm of its own.
   { file: 'sts_person_attributes.js',    browser: false, local: true },
+  // OAuth 2.0 Attestation-Based Client Authentication (#229): a client
+  // attester made at run time, the challenge endpoint, PAR, the code and
+  // refresh token bound to the client instance, the DPoP combined mode and
+  // introspection, in a realm of its own.
+  { file: 'sts_client_attestation.js',   browser: false, local: true },
   { file: 'vc_did.js',                   browser: false },
   // ---------------------------------------------------------------------
   // LAST, ALL THREE OF THEM, AND THE ORDER IS THE WHOLE OF WHY IT IS SAFE
