@@ -8672,3 +8672,19 @@ meets NO risk step-up (`risk_engine.satisfiedBy()`'s `kinds`, D1).
 `tests/email_factor.js` drives it end to end in process;
 `tests/vendored/sts_email_factor.js` over HTTP into Mailpit.
 
+
+## `closed_sets.ts`: THE CLOSED SETS AN ADMINISTRATOR'S INPUT IS HELD TO (#86, 2026-09-26)
+
+A LEAF (rule 3) requiring only `bunyan`. It holds no set of its own — every
+set is an `enum` in `/admin-api`'s OpenAPI document — and gives the three
+doors what they need to hold that one declaration: `collect()` (every enum a
+request schema declares outside `anyOf`/`oneOf`, following `$ref`), the
+console register `mgmt-api/admin_api.ts` fills at wire time and
+`admin-ui/admin.ts`'s gate reads, `checkQuery()`, `formValues()` (every value
+of a repeated form field, which `helpers.parseBody()` cannot give) and
+`sentence()`, the one refusal all three give. **A register in a leaf that both
+modules require in the ordinary direction, like `cache_registry.js` — not a
+slot**: neither module calls the other, so rule 3e's test is never reached.
+Its three rules (an empty form or query value is absent, case is exact, an
+enum inside an alternative is ajv's) are argued in its header; the design is
+`mgmt-api/CLAUDE.md`'s *Every closed set is held, at every door*.

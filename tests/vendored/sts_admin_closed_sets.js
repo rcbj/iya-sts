@@ -31,7 +31,8 @@
 //      operation's `action` — with a value outside the set; the console must
 //      refuse it 400 `invalid_value` before any handler runs.
 //   4. THE SETTINGS. Every runtime setting of type `enum` in `GET
-//      /admin-api/config` is set to a value outside `enumValues` through
+//      /admin-api/config`, and every `csv` one carrying `csvValues` (a list
+//      with one entry outside it), is set to a value outside its set through
 //      `POST /admin-api/config/set-many` (refused, all-or-nothing) and through
 //      the console's `set-many` on `/admin/config`; afterwards no setting
 //      holds the value.
@@ -81,13 +82,13 @@ const EXTRA = "__probe86__";
 // The words `common/closed_sets.ts`'s sentence always carries.
 const SENTENCE = /which is not one of the \d+ values? it accepts:/;
 
-// The floors, measured on the day this was written (79 body enums, 23 query
-// enums, 74 console controls, 70 enum settings) and set below them so an
+// The floors, set below what was measured once #86's audit had declared its
+// enums (116 body enums and 154 console controls in process) so an
 // enum removed on purpose does not fail the job, while an extractor that
 // stopped seeing a whole shape does.
-const MINIMUM_BODY_ENUMS = 70;
+const MINIMUM_BODY_ENUMS = 100;
 const MINIMUM_QUERY_ENUMS = 20;
-const MINIMUM_CONSOLE_PROBES = 40;
+const MINIMUM_CONSOLE_PROBES = 100;
 const MINIMUM_ENUM_SETTINGS = 50;
 
 let checks = 0;
@@ -448,14 +449,19 @@ async function theSettings(cookie) {
   const listed = await call("GET", API + "/config");
   assert.strictEqual(listed.status, 200, listed.text.slice(0, 300));
   const all = (listed.body && (listed.body.settings || listed.body)) || [];
+  // An `enum` row, and a `csv` row whose entries are held to `csvValues`;
+  // for the second the probe is a list with one entry outside the set,
+  // beside one from it, so the refusal is about the entry and not the list.
   const rows = (Array.isArray(all) ? all : []).filter(function (s) {
-    return s && s.type === "enum" && s.runtime &&
-           Array.isArray(s.enumValues);
+    return s && s.runtime &&
+           ((s.type === "enum" && Array.isArray(s.enumValues)) ||
+            (s.type === "csv" && Array.isArray(s.csvValues) &&
+             s.csvValues.length));
   });
   const token = cookie ? await csrfTokenFor(cookie) : "";
   for (const s of rows) {
     const body = {};
-    body[s.key] = OUTSIDE;
+    body[s.key] = s.type === "csv" ? s.csvValues[0] + "," + OUTSIDE : OUTSIDE;
     const r = await postJson(API + "/config/set-many", body);
     check("set-many refuses " + s.key + "=" + OUTSIDE, function () {
       assert.ok(r.status >= 400 && r.status < 500, s.key + ": " +
@@ -465,7 +471,7 @@ async function theSettings(cookie) {
     });
     if (cookie) {
       const fields = { csrf_token: token, action: "set-many" };
-      fields[s.key] = OUTSIDE;
+      fields[s.key] = body[s.key];
       await postForm(base + "/admin/config", cookie, fields);
     }
   }
@@ -474,13 +480,14 @@ async function theSettings(cookie) {
   check("no setting holds a value outside its set after both doors were " +
         "tried", function () {
           const held = (Array.isArray(again) ? again : []).filter(function (s) {
-            return s && String(s.value) === OUTSIDE;
+            return s && String(s.value).indexOf(OUTSIDE) >= 0;
           }).map(function (s) {
             return s.key;
           });
           assert.deepStrictEqual(held, [], "stored: " + held.join(", "));
         });
-  check(rows.length + " enum settings probed (floor " + MINIMUM_ENUM_SETTINGS +
+  check(rows.length + " closed-set settings probed (floor " +
+        MINIMUM_ENUM_SETTINGS +
         ")", function () {
           assert.ok(rows.length >= MINIMUM_ENUM_SETTINGS, "only " +
                     rows.length + " runtime enum settings were listed");

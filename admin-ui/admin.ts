@@ -17554,7 +17554,13 @@ class AdminConsole {
     // so a typo is a warning in the log and the service-wide value silently in
     // force, which is the failure a select cannot have.
     const choices = described.type === 'bool' ? ['true', 'false']
-      : (described.type === 'enum' ? (described.enumValues || []) : null);
+      : (described.type === 'enum'
+        // The empty value is the inherit option drawn first, not a second
+        // blank line (#86).
+        ? (described.enumValues || []).filter(function (option) {
+            return option !== '';
+          })
+        : null);
     const control = choices
       ? '<select id="' + this.esc(id) + '" name="field.' +
         this.esc(row.attribute) + '"' +
@@ -17636,7 +17642,13 @@ class AdminConsole {
     // so a typo is a warning in the log and the service-wide value silently in
     // force, which is the failure a select cannot have.
     const choices = described.type === 'bool' ? ['true', 'false']
-      : (described.type === 'enum' ? (described.enumValues || []) : null);
+      : (described.type === 'enum'
+        // The empty value is the inherit option drawn first, not a second
+        // blank line (#86).
+        ? (described.enumValues || []).filter(function (option) {
+            return option !== '';
+          })
+        : null);
     const control = choices
       ? '<select id="' + this.esc(id) + '" name="field.' +
         this.esc(row.attribute) + '"' +
@@ -22566,9 +22578,12 @@ class AdminConsole {
         '"' + hint +
         (setting.editable ? '' : ' disabled') + '>' +
         setting.enumValues.map(function (option) {
+          // An enum whose set holds the empty string (#86 made
+          // `pki.signatureAlgorithm` one) draws it as what it means rather
+          // than as a blank line.
           return '<option value="' + self.esc(option) + '"' +
             (option === setting.text ? ' selected' : '') + '>' +
-            self.esc(option) +
+            self.esc(option === '' ? '(empty — the default)' : option) +
                  '</option>';
         }).join('') + '</select>'
       : (setting.type === 'bool'
@@ -22973,9 +22988,12 @@ class AdminConsole {
         '"' + hint +
         '>' +
         (setting.enumValues || []).map(function (option) {
+          // An enum whose set holds the empty string (#86 made
+          // `pki.signatureAlgorithm` one) draws it as what it means rather
+          // than as a blank line.
           return '<option value="' + self.esc(option) + '"' +
             (option === setting.text ? ' selected' : '') + '>' +
-            self.esc(option) +
+            self.esc(option === '' ? '(empty — the default)' : option) +
                  '</option>';
         }).join('') + '</select>'
       : (setting.type === 'bool'

@@ -42,10 +42,11 @@ const log = require('bunyan').createLogger({ name: 'closed_sets',
 const ROOT = path.join(__dirname, '..');
 const closedSets = require(path.join(ROOT, 'common', 'closed_sets'));
 
-// The floors for B, set below what was measured on the day (79 body enums,
-// 74 console controls) for `sts_admin_closed_sets.js`'s reason.
-const MINIMUM_BODY_ENUMS = 70;
-const MINIMUM_CONSOLE_CONTROLS = 40;
+// The floors for B, set below what was measured once #86's audit had
+// declared its enums (116 body enums, 154 console controls), for
+// `sts_admin_closed_sets.js`'s reason.
+const MINIMUM_BODY_ENUMS = 100;
+const MINIMUM_CONSOLE_CONTROLS = 100;
 
 function unitRules(t) {
   log.debug("Entering unitRules().");
