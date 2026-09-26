@@ -36,28 +36,42 @@ const log = require('bunyan').createLogger({
 const realms = require('../common/realms');
 const bcp = require('../oauth-oidc/oauth2_bcp');
 
-// A throwaway realm left standing is a failure in a later file
-// (tests/sender_constraints.js), so every one made here is removed.
-const MADE = [];
+// ONE throwaway realm for the whole file, removed at the end: a realm left
+// standing is a failure in a later file (tests/sender_constraints.js), and
+// every realm made — even one removed again — leaves an OpenID Federation
+// registration event in the default realm's directory, whose 2,000-entry cap
+// the full in-process run reaches (tests/xacml_pep_realms.js found it when
+// this file made six). The sections that need a setting set it for their
+// own call and clear it after.
+const REALM = 'occf';
+let made = false;
 
-function throwaway(id, overrides) {
-  log.debug("Entering throwaway(). id=" + id);
-  if (!realms.get(id)) {
-    realms.create({ id: id, label: id });
-    MADE.push(id);
+function ensureRealm() {
+  log.debug("Entering ensureRealm().");
+  if (!realms.get(REALM)) {
+    realms.create({ id: REALM, label: REALM });
+    made = true;
   }
-  Object.keys(overrides || {}).forEach(function (key) {
-    realms.setOverride(id, key, String(overrides[key]));
-  });
-  log.debug("Leaving throwaway().");
-  return realms.get(id);
+  log.debug("Leaving ensureRealm().");
 }
 
-function inRealm(id, fn) {
+// `fn` in the realm with `overrides` set, each cleared again afterwards.
+function inRealm(overrides, fn) {
   log.debug("Entering inRealm().");
-  const answer = realms.run(realms.get(id), fn);
-  log.debug("Leaving inRealm().");
-  return answer;
+  ensureRealm();
+  const keys = Object.keys(overrides || {});
+  keys.forEach(function (key) {
+    realms.setOverride(REALM, key, String(overrides[key]));
+  });
+  try {
+    const answer = realms.run(realms.get(REALM), fn);
+    log.debug("Leaving inRealm().");
+    return answer;
+  } finally {
+    keys.forEach(function (key) {
+      realms.clearOverride(REALM, key);
+    });
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -66,9 +80,7 @@ function inRealm(id, fn) {
 function checkRefreshBinding(t) {
   log.debug("Entering checkRefreshBinding().");
   t.log.info('=== 1. a refresh token is its own client\'s, in every mode ===');
-  throwaway('occf-plain', {});
-
-  const other = inRealm('occf-plain', function () {
+  const other = inRealm({}, function () {
     return bcp.checkRefreshRequest({
       claims: { jti: 'occf-1', client_id: 'client-two', scope: 'openid' },
       clientId: 'client-one', body: {} });
@@ -81,14 +93,14 @@ function checkRefreshBinding(t) {
           '1c. and the refusal cites RFC 6749, whose rule it is',
           other && other.description);
 
-  const own = inRealm('occf-plain', function () {
+  const own = inRealm({}, function () {
     return bcp.checkRefreshRequest({
       claims: { jti: 'occf-2', client_id: 'client-one', scope: 'openid' },
       clientId: 'client-one', body: {} });
   });
   t.equal(own && own.ok, true, '1d. its own client redeems it');
 
-  const wider = inRealm('occf-plain', function () {
+  const wider = inRealm({}, function () {
     return bcp.checkRefreshRequest({
       claims: { jti: 'occf-3', client_id: 'client-one', scope: 'openid' },
       clientId: 'client-one', body: { scope: 'openid profile' } });
@@ -97,7 +109,7 @@ function checkRefreshBinding(t) {
           '1e. a refresh asking for more than its grant is refused, ' +
           'invalid_scope, in every mode');
 
-  const narrower = inRealm('occf-plain', function () {
+  const narrower = inRealm({}, function () {
     return bcp.checkRefreshRequest({
       claims: { jti: 'occf-4', client_id: 'client-one',
                 scope: 'openid profile' },
@@ -105,7 +117,7 @@ function checkRefreshBinding(t) {
   });
   t.equal(narrower && narrower.ok, true, '1f. and a narrower one is not');
 
-  const unnamed = inRealm('occf-plain', function () {
+  const unnamed = inRealm({}, function () {
     return bcp.checkRefreshRequest({
       claims: { jti: 'occf-5', client_id: 'client-one' },
       clientId: '', body: {} });
@@ -122,16 +134,12 @@ function checkRefreshBinding(t) {
 function checkCodeSingleUse(t) {
   log.debug("Entering checkCodeSingleUse().");
   t.log.info('=== 2. a code is single use, in every mode ===');
-  throwaway('occf-code', {});
-  throwaway('occf-courtesy', { 'oauth2.codeReplayIdempotent': 'true' });
-  throwaway('occf-mode', { 'oauth2.codeReplayIdempotent': 'true',
-                           'oauth2.rfc9700': 'true' });
   const replay = function () {
     return bcp.checkCodeReplay({ clientId: 'client-one', secondsAgo: 3,
                                  issuedJtis: ['at-jti', 'rt-jti', ''] });
   };
 
-  const plain = inRealm('occf-code', replay);
+  const plain = inRealm({}, replay);
   t.equal(plain && plain.errorCode, 'STS-OAUTH-0143',
           '2a. a code presented twice is refused with RFC 9700 mode off ' +
           '(oidcc-codereuse)');
@@ -141,9 +149,12 @@ function checkCodeSingleUse(t) {
           '2c. naming the tokens the first redemption bought, to revoke ' +
           '(oidcc-codereuse-30seconds)');
 
-  t.equal(inRealm('occf-courtesy', replay).ok, true,
+  t.equal(inRealm({ 'oauth2.codeReplayIdempotent': true }, replay).ok,
+          true,
           '2d. oauth2.codeReplayIdempotent restores the old courtesy');
-  t.equal(inRealm('occf-mode', replay).errorCode, 'STS-OAUTH-0143',
+  t.equal(inRealm({ 'oauth2.codeReplayIdempotent': true,
+                   'oauth2.rfc9700': true }, replay).errorCode,
+          'STS-OAUTH-0143',
           '2e. and RFC 9700 mode ignores it');
   log.debug("Leaving checkCodeSingleUse().");
 }
@@ -156,18 +167,15 @@ function checkFragmentSetting(t) {
   t.log.info('=== 3. a request_uri fragment is checked while the realm ' +
              'says so ===');
   const ro = require('../oauth-oidc/request_object');
-  throwaway('occf-fragment', {});
-  throwaway('occf-no-fragment', { 'oauth2.requestUriFragmentCheck':
-                                    'false' });
   // A fragment of the right shape that is the digest of something else —
   // what the suite's request_uri modules send.
   const other = require('crypto').createHash('sha256')
     .update('random bytes').digest('base64url');
   const uri = 'https://c.example/ro#' + other;
-  t.check(/SHA-256 of a different/.test(inRealm('occf-fragment', function () {
+  t.check(/SHA-256 of a different/.test(inRealm({}, function () {
     return ro.fragmentProblem(uri, 'eyJhbGciOiJub25lIn0.eyJhIjoxfQ.');
   })), '3a. by default a digest fragment of other content is refused');
-  t.equal(inRealm('occf-no-fragment', function () {
+  t.equal(inRealm({ 'oauth2.requestUriFragmentCheck': false }, function () {
     return ro.fragmentProblem(uri, 'eyJhbGciOiJub25lIn0.eyJhIjoxfQ.');
   }), '', '3b. with oauth2.requestUriFragmentCheck off it is only a ' +
           'version name (oidcc-request-uri-*)');
@@ -292,9 +300,10 @@ function checkCredentialResponseEcdh(t) {
 
 function removeRealms() {
   log.debug("Entering removeRealms().");
-  MADE.splice(0).forEach(function (id) {
-    realms.remove(id);
-  });
+  if (made && realms.get(REALM)) {
+    realms.remove(REALM);
+  }
+  made = false;
   log.debug("Leaving removeRealms().");
 }
 
