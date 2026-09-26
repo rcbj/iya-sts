@@ -3915,7 +3915,13 @@ class Portal {
   // 4's `iss` (this realm's issuer, which the relying party must know and
   // must check) and `login_hint` (the person looking at the page, who chose
   // to click). The relying party then sends an ordinary authorization request
-  // here. `target_link_uri` is not sent — this page has no deep link to name.
+  // here.
+  //
+  // AND ENTERPRISE EXTENSIONS SECTION 4 (#148): `tenant` (this realm's id),
+  // `domain_hint` (the realm's DNS domain, the domain of the person's
+  // account here) and `target_link_uri` — the application's registered home
+  // page, where it registered an https one, since this page has no deeper
+  // link to name.
   // ---------------------------------------------------------------------------
   private initiateLoginLink(row, issuer, username) {
     const self = this;
@@ -3928,6 +3934,14 @@ class Portal {
     const url = new URL(row.initiateLogin);
     url.searchParams.set('iss', issuer);
     url.searchParams.set('login_hint', username);
+    url.searchParams.set('tenant', String(realms.current().id));
+    const domain = String(realms.domainOf(realms.current()) || '');
+    if (domain) {
+      url.searchParams.set('domain_hint', domain);
+    }
+    if (/^https:\/\//i.test(String(row.homePage || ''))) {
+      url.searchParams.set('target_link_uri', String(row.homePage));
+    }
     log.debug("Leaving Portal.initiateLoginLink().");
     return '<a class="launch" rel="noopener" href="' +
       self.esc(url.toString()) + '">Sign in</a>';
