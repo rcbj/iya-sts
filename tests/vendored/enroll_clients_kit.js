@@ -329,6 +329,17 @@ function chainsTo(chain, root) {
   log.debug("Leaving chainsTo().");
 }
 
+// A realm's Intermediate, which chains every Issuing CA to the Root and
+// which a SCEP GetCACert does not carry.
+async function realmIntermediate(realm) {
+  log.debug("Entering realmIntermediate().");
+  const r = await fetch(base + "/pki/ca/" + realm + "/intermediate.cer");
+  assert.strictEqual(r.status, 200, "the realm Intermediate is published");
+  const x = new nodeCrypto.X509Certificate(Buffer.from(await r.arrayBuffer()));
+  log.debug("Leaving realmIntermediate().");
+  return x;
+}
+
 async function crlSerials(realm, ca) {
   log.debug("Entering crlSerials(). ca=" + ca);
   const r = await fetch(base + "/pki/crl/" + realm + "/" + ca + ".crl");
@@ -496,6 +507,7 @@ module.exports = {
   serialOf: serialOf,
   chainsTo: chainsTo,
   crlSerials: crlSerials,
+  realmIntermediate: realmIntermediate,
   opensslRequest: opensslRequest,
   portalSignIn: portalSignIn
 };
