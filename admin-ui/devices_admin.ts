@@ -53,6 +53,8 @@ import pki = require('../common/pki');
 import config = require('../common/config');
 import mode = require('../common/mode');
 import oauth2 = require('../oauth-oidc/oauth2');
+// The SPKI thumbprint of a certificate an MDM names a device by (#164).
+import stsCrypto = require('../common/crypto');
 
 type Req = import('express').Request;
 type Res = import('express').Response;
@@ -64,7 +66,19 @@ const MONITOR = '/admin/devices/monitor';
 
 // The actions the list page takes, for the sentence an unknown one is
 // answered with (the parity jobs read the list back out of it).
-const ACTIONS = ['create', 'update', 'remove', 'add-key', 'remove-key'];
+const ACTIONS = ['create', 'update', 'remove', 'add-key', 'remove-key',
+                 'set-compliance', 'set-status'];
+
+// DEVELOPMENT'S COMPLIANCE TEST CONTROL (#164 decision 9, phase 3): a public
+// path, not under /admin, that sets a device's compliance with no credential
+// at all — what a client under test drives to see its session and tokens
+// react — refused in product by `mode.opensTestControls()`.
+const TEST_CONTROL = '/devices/test/compliance';
+
+// The compliance states a DOOR may set. `unknown` is what a device starts
+// as; an administrator may put it back (withdrawing a vouch), and a feed or
+// the test control reports one of the two CAEP knows.
+const FEED_STATES = ['compliant', 'not-compliant'];
 
 // The filters a list takes, each a query parameter of the same name.
 const FILTERS = ['q', 'ownerKind', 'owner', 'application', 'compliance',
@@ -277,6 +291,112 @@ class DevicesAdmin {
     return out;
   }
 
+  // -------------------------------------------------------------------------
+  // THE MDM / POSTURE FEED (#164 decision 2, phase 3): `POST
+  // /admin-api/device-compliance`, under the protected `device:compliance`
+  // scope (the gate in `mgmt-api/admin_api.ts`). The body is one report or
+  // `{ reports: [...] }`; each report names its device by `id`, by a key
+  // `thumbprint` (with an optional `keyKind`: x509, jwk or webauthn), or by
+  // the device's `certificate` (PEM, matched by its SubjectPublicKeyInfo —
+  // what an MDM that issued or inventoried the certificate knows), and says
+  // `status` (compliant or not-compliant) and, optionally, `reason`. It sets
+  // COMPLIANCE ONLY: ownership, keys and status are an administrator's.
+  //
+  // Every report is answered on its own, in order, and one that names no
+  // device or no status is refused without stopping the rest — a posture
+  // feed sends a whole fleet and one retired device must not lose the other
+  // nine hundred. The change is recorded `source: mdm` with the CLIENT as
+  // the actor, so Monitoring → Devices and CAEP's reason say which feed.
+  // -------------------------------------------------------------------------
+  mdmFeed(body: Json, clientId: string, source?: string): Json {
+    const { log } = this.deps;
+    log.debug("Entering DevicesAdmin.mdmFeed().");
+    const b = body || {};
+    const from = source === 'test-control' ? 'test-control' : 'mdm';
+    const reports: Json[] = Array.isArray(b.reports) ? b.reports : [b];
+    const max = Number(config.value('devices.complianceFeedMaxReports'));
+    if (!reports.length || reports.length > max) {
+      log.debug("Leaving DevicesAdmin.mdmFeed(). Batch size.");
+      return this.refuse('STS-DEVICE-0034', 'A compliance report carries ' +
+        'between 1 and ' + max + ' reports ' +
+        '(devices.complianceFeedMaxReports); this one carries ' +
+        reports.length + '.');
+    }
+    const results = reports.map((report: Json, index: number): Json => {
+      const one = report && typeof report === 'object' ? report : {};
+      const device = this.deviceNamedBy(one);
+      const status = String(one.status || '').trim();
+      if (!device) {
+        return errorCodes.mark({ index: index, ok: false, errors: [
+          'No device in this realm is named by that ' +
+          (one.id ? 'id' : one.thumbprint ? 'thumbprint' : one.certificate
+            ? 'certificate' : 'report — give id, thumbprint or ' +
+                              'certificate') + '.'] }, 'STS-DEVICE-0007');
+      }
+      if (FEED_STATES.indexOf(status) < 0) {
+        return errorCodes.mark({ index: index, id: device.id, ok: false,
+          errors: ['A report\'s status is compliant or not-compliant, not "' +
+                   status.slice(0, 32) + '".'] }, 'STS-DEVICE-0011');
+      }
+      const done = devices.setCompliance(device.id, status, from,
+        clientId || from, String(one.reason || '').slice(0, 500) ||
+        (from === 'mdm' ? 'Reported by the MDM feed' +
+                          (clientId ? ' ' + clientId : '') + '.'
+                        : 'Set by the development test control.'));
+      return done.ok
+        ? { index: index, id: device.id, ok: true, previous: done.previous,
+            status: done.status, changed: done.changed,
+            signalled: done.signalled }
+        : Object.assign({ index: index, id: device.id }, done);
+    });
+    const applied = results.filter(function (r: Json) {
+      return r.ok;
+    }).length;
+    log.info('devices: ' + from + ' feed' + (clientId ? ' ' + clientId : '') +
+             ' reported ' + reports.length + ' device(s); ' + applied +
+             ' applied.');
+    log.debug("Leaving DevicesAdmin.mdmFeed(). " + applied + " applied.");
+    const out: Json = { ok: applied > 0, applied: applied,
+                        refused: results.length - applied, results: results,
+                        message: applied + ' of ' + results.length +
+                                 ' report(s) applied.' };
+    if (!applied) {
+      out.errors = ['No report was applied: ' + results.map(function (r) {
+        return (r.errors || []).join(' ');
+      }).join(' | ')];
+      errorCodes.mark(out, errorCodes.codeOf(results[0]) ||
+                           'STS-DEVICE-0007');
+    }
+    return out;
+  }
+
+  // The device a report names: by `id`, by a key `thumbprint` (optionally
+  // `keyKind`), or by its `certificate`'s SubjectPublicKeyInfo. Null for
+  // none.
+  private deviceNamedBy(report: Json): Json {
+    const { log, devices } = this.deps;
+    log.debug("Entering DevicesAdmin.deviceNamedBy().");
+    let found: Json = null;
+    if (report.id) {
+      found = devices.byId(String(report.id));
+    } else if (report.thumbprint) {
+      const kind = String(report.keyKind || '').trim();
+      found = devices.byKeyThumbprint(String(report.thumbprint).trim(),
+        devices.KEY_KINDS.indexOf(kind) >= 0 ? kind : undefined);
+    } else if (report.certificate) {
+      try {
+        found = devices.byKeyThumbprint(stsCrypto.certificateSpkiThumbprint(
+          String(report.certificate).trim()), 'x509');
+      } catch (e) {
+        log.debug("Caught in DevicesAdmin.deviceNamedBy(): " +
+                  ((e && e.message) || e));
+        found = null;
+      }
+    }
+    log.debug("Leaving DevicesAdmin.deviceNamedBy(). " + !!found);
+    return found;
+  }
+
   // The one key a console form or an API body names: kind, value, label —
   // and NOTHING about proof or attestation (header).
   private keySpecOf(b: Json): Json {
@@ -306,7 +426,8 @@ class DevicesAdmin {
     if (ACTIONS.indexOf(action) < 0) {
       log.debug("Leaving DevicesAdmin.action(). Unknown.");
       return this.refuse('STS-DEVICE-0013', 'Unknown action "' + action +
-        '". The five are: ' + devices.sentence(ACTIONS) + '.');
+        '". The ' + helpers.numberWord(ACTIONS.length) + ' are: ' +
+        devices.sentence(ACTIONS) + '.');
     }
     const id = String(b.id || b.device || '').trim();
     if (action !== 'create' && !id) {
@@ -334,18 +455,44 @@ class DevicesAdmin {
       result = devices.remove(id, undefined, who);
     } else if (action === 'add-key') {
       result = devices.addKey(id, this.keySpecOf(b), who);
-    } else {
+    } else if (action === 'remove-key') {
       result = devices.removeKey(id, b.key || b.keyId, who);
+    } else if (action === 'set-compliance') {
+      // AN ADMINISTRATOR'S VOUCH (#164 phase 3): compliant, not-compliant,
+      // or back to unknown. Recorded `source: admin`.
+      result = devices.setCompliance(id, String(b.status || b.compliance ||
+                                               '').trim(), 'admin', who,
+                                     String(b.reason || '').slice(0, 500));
+    } else {
+      // COMPROMISED, OR RESTORED (#164 phase 4): `devices.setStatus()` does
+      // what a compromise causes — its header argues it.
+      result = devices.setStatus(id, String(b.status || '').trim(), who,
+                                 String(b.reason || '').slice(0, 500),
+                                 { initiatingEntity: 'admin' });
     }
     if (!result.ok) {
       log.debug("Leaving DevicesAdmin.action(). Refused.");
       return result;
     }
     log.debug("Leaving DevicesAdmin.action(). " + action);
-    return { ok: true, message: result.message,
+    const message = result.message ||
+      (action === 'set-compliance' ? 'Device ' + id + ' is ' + result.status +
+        (result.changed ? ' (was ' + result.previous + ')' : ' (unchanged)') +
+        '.'
+        : action === 'set-status' ? 'Device ' + id + ' is ' + result.status +
+          (result.status === 'compromised' && result.previous !== 'compromised'
+            ? ': ' + result.sessionsEnded + ' sign-on session(s) it ' +
+              'authenticated were ended, ' + result.certificatesRevoked +
+              ' certificate(s) revoked' + (result.secretRevoked
+                ? ' and its Native SSO secret revoked' : '')
+            : '') + '.' : '');
+    return { ok: true, message: message,
              id: result.device ? result.device.id : (result.removed || id),
              device: result.device ? this.row(result.device) : undefined,
-             key: result.key ? result.key.id : undefined };
+             key: result.key ? result.key.id : undefined,
+             previous: result.previous, status: result.status,
+             sessionsEnded: result.sessionsEnded,
+             certificatesRevoked: result.certificatesRevoked };
   }
 
   // -------------------------------------------------------------------------
@@ -400,7 +547,40 @@ class DevicesAdmin {
       attestationFormats: devices.ATTESTATION_FORMATS.slice(0),
       complianceStates: devices.COMPLIANCE_STATES.slice(0),
       complianceSources: devices.COMPLIANCE_SOURCES.slice(0),
-      mdmFeed: { built: false },
+      // The four doors that set compliance (#164 phase 3).
+      mdmFeed: {
+        built: true,
+        path: 'POST /admin-api/device-compliance',
+        scope: 'device:compliance',
+        role: 'DEVICE_COMPLIANCE',
+        maxReports: Number(config.value('devices.complianceFeedMaxReports')),
+        identifiedBy: ['id', 'thumbprint (with keyKind)', 'certificate'],
+        source: 'mdm'
+      },
+      testControl: {
+        path: 'POST ' + TEST_CONTROL,
+        open: mode.opensTestControls(),
+        predicate: 'opensTestControls',
+        source: 'test-control'
+      },
+      receivedCaep: {
+        built: false,
+        source: 'caep',
+        arrives: 'with #153, the Shared Signals receiver'
+      },
+      // What a compliance change, a risk level and a compromise send (#164
+      // phase 4): the events and their subject.
+      signals: {
+        caep: ['device-compliance-change', 'risk-level-change (principal ' +
+               'DEVICE)', 'credential-change (x509, fido2-platform, ' +
+               'fido2-roaming, ' + devices.DEVICE_KEY_CREDENTIAL_TYPE + ', ' +
+               devices.DEVICE_SECRET_CREDENTIAL_TYPE + ')',
+               'the device member on session-established, session-presented ' +
+               'and session-revoked'],
+        risc: ['credential-compromise', 'sessions-revoked'],
+        subject: 'complex: device (iss_sub — this realm\'s issuer and the ' +
+                 'device id) and user (the owner, where a person)'
+      },
       // Where the recognised device is recorded (#164 phase 2).
       recordedAt: {
         signIn: 'the authentication event\'s registeredDevice ' +
@@ -608,6 +788,12 @@ class DevicesAdmin {
       '</small></td></tr>' +
       '<tr><th>Status</th><td>' + esc(d.status) + '<br><small>' +
       change(d.statusChange) + '</small></td></tr>' +
+      '<tr><th>Risk level</th><td>' + esc(d.riskLevel) + (d.riskChange
+        ? '<br><small>' + esc(d.riskChange.level || 'unassessed') +
+          ' (was ' + esc(d.riskChange.previous || 'unassessed') + ') at ' +
+          esc(d.riskChange.at) + ' by ' + esc(d.riskChange.source) +
+          (d.riskChange.reason ? ': ' + esc(d.riskChange.reason) : '') +
+          '</small>' : '') + '</td></tr>' +
       '<tr><th>Native SSO</th><td>' + (d.nativeSso ? (d.sessionLive
         ? 'a secret, bound to a <strong>live</strong> sign-on session'
         : 'a secret whose sign-on session has ended') : 'no secret') +
@@ -650,8 +836,48 @@ class DevicesAdmin {
         '</th><th></th></tr></thead><tbody>' + keyRows + '</tbody></table>'
         : admin.note('None.'));
     const v = { platforms: this.deps.devices.PLATFORMS };
+    const compliance = '<h2>Compliance</h2>' + admin.note('An ' +
+        'administrator\'s vouch, recorded with source <code>admin</code>. ' +
+        'A change a receiver can be told — CAEP knows compliant and ' +
+        'not-compliant, and unknown is sent as not-compliant — goes out as ' +
+        'CAEP device-compliance-change.') +
+      '<form method="post" action="' + LIST + '">' +
+      hidden('action', 'set-compliance') + hidden('id', d.id) +
+      '<div class="formrow"><label for="dev-c-status">Compliance</label>' +
+      '<select id="dev-c-status" name="status">' +
+      this.options(this.deps.devices.COMPLIANCE_STATES, d.compliance, null) +
+      '</select><label for="dev-c-reason">Reason</label><input type="text" ' +
+      'id="dev-c-reason" name="reason" size="40" maxlength="500"></div>' +
+      '<div class="formrow"><button type="submit">Set compliance</button>' +
+      '</div></form>';
+    const status = '<h2>Compromise</h2>' + (d.status === 'compromised'
+      ? admin.note('This device is marked <strong>compromised</strong>. ' +
+          'Restoring it puts back the risk level the compromise raised; ' +
+          'nothing revoked comes back — a certificate is re-issued and a ' +
+          'Native SSO secret re-minted at the next sign-in.') +
+        '<form method="post" action="' + LIST + '">' +
+        hidden('action', 'set-status') + hidden('id', d.id) +
+        hidden('status', 'active') + '<div class="formrow"><label ' +
+        'for="dev-s-reason">Reason</label><input type="text" ' +
+        'id="dev-s-reason" name="reason" size="40" maxlength="500">' +
+        '<button type="submit">Restore to active</button></div></form>'
+      : admin.note('Marking it compromised ends every sign-on session one ' +
+          'of its keys authenticated, revokes its Native SSO secret and ' +
+          'every certificate this service\'s EST or SCEP Issuing CA issued ' +
+          'it (keyCompromise), raises its risk level to HIGH, and — for a ' +
+          'person\'s device — sends RISC credential-compromise and ' +
+          'sessions-revoked. It stays in the register, recognised and ' +
+          'saying so.') +
+        '<form method="post" action="' + LIST + '">' +
+        hidden('action', 'set-status') + hidden('id', d.id) +
+        hidden('status', 'compromised') + '<div class="formrow"><label ' +
+        'for="dev-s-reason">Reason</label><input type="text" ' +
+        'id="dev-s-reason" name="reason" size="40" maxlength="500">' +
+        '<button type="submit" class="danger">Mark compromised</button>' +
+        '</div></form>');
     const forms = canWrite
-      ? '<h2>Add a key</h2>' + admin.note('Public material only; recorded ' +
+      ? compliance + status +
+        '<h2>Add a key</h2>' + admin.note('Public material only; recorded ' +
           'as proven by nobody and self-asserted.') +
         '<form method="post" action="' + LIST + '">' +
         hidden('action', 'add-key') + hidden('id', d.id) +
@@ -693,7 +919,11 @@ class DevicesAdmin {
         'value="' + esc(d.applicationNames.filter(Boolean).join(', ')) +
         '"></div><div class="formrow"><button type="submit">Save</button>' +
         '</div></form>' +
-        '<h2>Remove</h2><form method="post" action="' + LIST + '">' +
+        '<h2>Remove</h2>' + admin.note('Removing it revokes the ' +
+          'certificates this service issued it (cessationOfOperation, or ' +
+          'keyCompromise when it is compromised) and ends the sign-on ' +
+          'sessions it authenticated.') +
+        '<form method="post" action="' + LIST + '">' +
         hidden('action', 'remove') + hidden('id', d.id) +
         '<button type="submit" class="danger">Remove this device</button>' +
         '</form>'
@@ -772,11 +1002,39 @@ class DevicesAdmin {
         'A compromised device is still recognised, and says so.') +
       '<h2>Compliance</h2>' +
       admin.note('A device is <code>compliant</code>, ' +
-        '<code>not-compliant</code> or <code>unknown</code> (CAEP\'s ' +
-        'vocabulary); every change records its previous value and who set ' +
-        'it — ' + esc(json.complianceSources.join(', ')) + '. ' +
-        'The doors that set it, and the MDM feed, are not built yet: ' +
-        'every device here is unknown.') +
+        '<code>not-compliant</code> or <code>unknown</code> (where it ' +
+        'starts); every change records its previous value and who set it ' +
+        '— ' + esc(json.complianceSources.join(', ')) + '.') +
+      '<table class="grid"><thead><tr><th>Door</th><th>State</th>' +
+      '<th>How</th></tr></thead><tbody>' +
+      '<tr><td>An administrator</td><td>' + state(true) + '</td><td>' +
+      'Set compliance on a device\'s page under <a href="' + LIST + '">' +
+      'Devices</a>, or <code>POST /admin-api/devices/set-compliance</code> ' +
+      '(Admin Write). Source <code>admin</code>.</td></tr>' +
+      '<tr><td>An MDM or posture feed</td><td>' + state(true) + '</td><td>' +
+      '<code>' + esc(json.mdmFeed.path) + '</code> with an access token ' +
+      'carrying <code>' + esc(json.mdmFeed.scope) + '</code> — a PROTECTED ' +
+      'scope, issued only to a client that declares it, and the only ' +
+      'scope that operation takes: the feed needs no admin scope and gets ' +
+      'none. Up to ' + esc(String(json.mdmFeed.maxReports)) + ' reports, ' +
+      'each naming its device by ' + esc(json.mdmFeed.identifiedBy.join(', ')) +
+      '. Source <code>mdm</code>, the client as actor.</td></tr>' +
+      '<tr><td>The test control</td><td>' + (json.testControl.open
+        ? '<span class="state-valid">open (development)</span>'
+        : '<span class="state-none">refused (product)</span>') +
+      '</td><td><code>' + esc(json.testControl.path) + '</code>, no ' +
+      'credential, development only (<code>mode.opensTestControls()</code>). ' +
+      'Source <code>test-control</code>.</td></tr>' +
+      '<tr><td>A received CAEP device-compliance-change</td><td>' +
+      state(false) + '</td><td>Arrives with #153, the Shared Signals ' +
+      'receiver. Source <code>caep</code>.</td></tr></tbody></table>' +
+      '<h2>What goes out over Shared Signals</h2>' +
+      admin.note('CAEP: ' + esc(json.signals.caep.join('; ')) + '. RISC, ' +
+        'for a person\'s device compromised or removed: ' +
+        esc(json.signals.risc.join(' and ')) + '. The subject is ' +
+        esc(json.signals.subject) + '. A compliance change goes out only ' +
+        'when what a receiver can be told moved: CAEP knows compliant and ' +
+        'not-compliant, and unknown is sent as not-compliant.') +
       '<h2>Settings</h2>' + admin.configFormsFor(REGISTRATION);
   }
 
@@ -795,6 +1053,7 @@ class DevicesAdmin {
         }).join('') + '</tbody></table>';
     };
     const t = json.timeline;
+    const sources: string[] = this.deps.devices.COMPLIANCE_SOURCES;
     log.debug("Leaving DevicesAdmin.monitorHtml().");
     return '<div class="tiles">' + admin.tile(String(c.total), 'devices') +
       admin.tile(String(c.keys), 'keys') +
@@ -805,12 +1064,16 @@ class DevicesAdmin {
       admin.note('What this realm\'s register holds, counted now, and what ' +
         'happened to it: every registration, removal, and eviction at a ' +
         'person\'s <code>devices.maxPerPerson</code>, kept up to ' +
-        '<code>devices.eventsKept</code>' + (t.since ? ' (the oldest is ' +
+        '<code>devices.eventsKept</code>, and every compliance change by ' +
+        'who made it — admin, mdm, test-control, caep' + (t.since
+          ? ' (the oldest is ' +
         'from ' + esc(t.since) + ')' : '') + '. A device removed by an ' +
         '<code>ldapdelete</code> on the socket is not an event here — the ' +
         'register never sees it.', 'What this page is') +
       table('By owner', c.byOwnerKind) +
       table('By compliance', c.byCompliance) +
+      table('By risk level', c.byRiskLevel || {}) +
+      table('Compliance changes kept, by source', t.totals.compliance || {}) +
       table('By attestation', c.byAttestation) +
       table('By key', c.byKeyKind) +
       table('By enrolment', c.byEnrolment) +
@@ -828,10 +1091,17 @@ class DevicesAdmin {
       table('Attestations refused', json.activity.attestationRefusals) +
       '<h2>The last ' + esc(String(t.days)) + ' days</h2>' +
       '<table class="grid"><thead><tr><th>Day (UTC)</th><th>Registered' +
-      '</th><th>Removed</th><th>Evicted</th></tr></thead><tbody>' +
+      '</th><th>Removed</th><th>Evicted</th>' +
+      sources.map(function (src: string): string {
+        return '<th>Compliance: ' + esc(src) + '</th>';
+      }).join('') + '</tr></thead><tbody>' +
       t.rows.slice(0).reverse().map(function (r: Json): string {
         return '<tr><td>' + esc(r.day) + '</td><td>' + r.created +
-          '</td><td>' + r.removed + '</td><td>' + r.evicted + '</td></tr>';
+          '</td><td>' + r.removed + '</td><td>' + r.evicted + '</td>' +
+          sources.map(function (src: string): string {
+            return '<td>' + esc(String((r.compliance || {})[src] || 0)) +
+              '</td>';
+          }).join('') + '</tr>';
       }).join('') + '</tbody></table>';
   }
 
@@ -889,6 +1159,32 @@ class DevicesAdmin {
       admin.respondToAction(req, res, self.backTo(body, result), result);
       log.debug('Leaving POST ' + LIST + '.');
     });
+    // THE COMPLIANCE TEST CONTROL (#164 decision 9): development answers
+    // anybody, as every test control there does; product refuses it, and
+    // the MDM feed under `device:compliance` is the door that remains.
+    app.post(TEST_CONTROL, function (req: Req, res: Res): void {
+      log.debug('Entering POST ' + TEST_CONTROL + '.');
+      res.set('Cache-Control', 'no-store');
+      if (!mode.opensTestControls()) {
+        log.warn('devices: POST ' + TEST_CONTROL + ' was refused — product ' +
+                 'mode does not open test controls.');
+        errorCodes.mark(res, 'STS-DEVICE-0035');
+        res.status(403).json({ ok: false, errors: [
+          'POST ' + TEST_CONTROL + ' is a test control and this realm is ' +
+          'in product mode, where test controls are closed. Report ' +
+          'compliance through POST /admin-api/device-compliance with an ' +
+          'access token carrying device:compliance, or set it on the ' +
+          'device\'s page under /admin/devices.'] });
+        log.debug('Leaving POST ' + TEST_CONTROL + '. Product.');
+        return;
+      }
+      const result = self.mdmFeed(parseBody(req), '', 'test-control');
+      if (!result.ok) {
+        errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-DEVICE-0007');
+      }
+      res.status(result.ok ? 200 : 400).json(result);
+      log.debug('Leaving POST ' + TEST_CONTROL + '.');
+    });
     app.get(REGISTRATION, function (req: Req, res: Res): void {
       log.debug('Entering GET ' + REGISTRATION + '.');
       const json = self.registrationView(req);
@@ -924,10 +1220,12 @@ export = {
   REGISTRATION: REGISTRATION,
   MONITOR: MONITOR,
   ACTIONS: ACTIONS,
+  TEST_CONTROL: TEST_CONTROL,
   // For `mgmt-api/admin_api.ts` (rule 7).
   actorOf: slot.forward('actorOf'),
   listView: slot.forward('listView'),
   action: slot.forward('action'),
+  mdmFeed: slot.forward('mdmFeed'),
   registrationView: slot.forward('registrationView'),
   monitorView: slot.forward('monitorView')
 };

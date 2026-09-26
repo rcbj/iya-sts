@@ -42,15 +42,17 @@ The vocabularies run over that pipe:
 
 | Vocabulary | Events | About | Emitted on its own when |
 |---|---|---|---|
-| **CAEP** | 8 | a session | someone signs in, uses single sign-on, signs out, a session expires, a person re-authenticates at a different `acr`, any credential of a person changes, a directory change moves a claim of somebody holding live tokens |
-| **RISC** | 14 | an account | a person is deleted, disabled or enabled; a mail address or telephone number changes, or is given to an account after another released it; an administrator resets a password (optionally marking it compromised) or issues a reset link; recovery codes are cleared or confirmed; the account holder opts out or back in on `/portal/signals` |
+| **CAEP** | 8 | a session | someone signs in, uses single sign-on, signs out, a session expires, a person re-authenticates at a different `acr`, any credential of a person changes, a directory change moves a claim of somebody holding live tokens, a registered device's compliance, risk level or credentials change |
+| **RISC** | 14 | an account | a person is deleted, disabled or enabled; a mail address or telephone number changes, or is given to an account after another released it; an administrator resets a password (optionally marking it compromised) or issues a reset link; recovery codes are cleared or confirmed; the account holder opts out or back in on `/portal/signals`; a person's registered device is compromised or removed |
 
-The remaining events describe things this service does not observe:
-- CAEP's device compliance: no device reports to it (#164). Risk level has
-  had a source since #62: a person's risk level changing.
-- RISC's deprecated `sessions-revoked`.
-
-You emit those by hand from the console or the management API.
+Since #164 every CAEP and RISC event type has an act here that sends it: a
+registered device's compliance changing (`device-compliance-change`), its risk
+level changing (`risk-level-change`, principal `DEVICE`), its keys and Native
+SSO secret changing (`credential-change`), and a person's device compromised or
+removed (RISC `credential-compromise` and the deprecated `sessions-revoked`,
+with the device beside the person in the subject). [Devices](devices.md) lists
+each. You can still emit any of them by hand from the console or the
+management API.
 [CAEP events](caep-events.md) covers what triggers each CAEP event.
 
 **RISC opt-out (section 2.8) is the account holder's choice.** On

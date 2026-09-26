@@ -4345,15 +4345,23 @@ class Credentials {
   }
 
   // THE DEVICE REGISTER (#130), for `common/devices.ts`: the directory's
-  // six hooks, each answering nothing (an empty list, false, '', null) where
-  // no directory is loaded in this process.
+  // seven hooks, each answering nothing (an empty list, false, '', null)
+  // where no directory is loaded in this process — and `hasHook`, which says
+  // whether the loaded directory offers one (#164 phase 3: the index).
   deviceStore(operation: string, args: any[]): any {
     const { log } = this.deps;
     const directory = this.directory;
     log.debug('Entering Credentials.deviceStore(). ' + operation);
+    if (operation === 'hasHook') {
+      const offered = !!directory &&
+        typeof directory[String((args || [])[0])] === 'function';
+      log.debug('Leaving Credentials.deviceStore(). hasHook ' + offered);
+      return offered;
+    }
     const empty = operation === 'listDeviceEntries' ? [] :
       (operation === 'personDnOf' || operation === 'applicationDnOf') ? '' :
-      operation === 'ownerOf' ? null : false;
+      (operation === 'ownerOf' || operation === 'deviceEntryByIndex')
+        ? null : false;
     if (!directory || typeof directory[operation] !== 'function') {
       log.debug('Leaving Credentials.deviceStore(). No store.');
       return empty;

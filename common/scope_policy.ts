@@ -22,8 +22,10 @@
 //   * THIS SERVICE'S OWN PROTECTED SCOPES — `admin:read` and `admin:write`
 //     (/admin-api), the SCIM pair (`scim.scopeRead`, `scim.scopeWrite`), the
 //     Shared Signals pair (`ssf.authScopeRead`, `ssf.authScopeWrite`), the
-//     embedded debugger's permission and Grant Management's two (#142). Issued ONLY to a client whose
-//     `oauthAllowedScope` lists them, IN BOTH MODES: the resource servers
+//     embedded debugger's permission, Grant Management's two (#142) and
+//     the device compliance feed's `device:compliance` (#164). Issued ONLY
+//     to a client whose `oauthAllowedScope` lists them, IN BOTH MODES: the
+//     resource servers
 //     behind them are this service's own, development already gates them, and
 //     a gate any client can mint a key for is not one. Each of those resource
 //     servers asks `declares()` again on every call, so removing a value cuts
@@ -89,6 +91,13 @@ const ADMIN_SCOPES = Object.freeze(['admin:read', 'admin:write']);
 const GRANT_MANAGEMENT_SCOPES = Object.freeze(['grant_management_query',
                                                'grant_management_revoke']);
 
+// THE MDM FEED'S (#164 phase 3): the one scope `/admin-api`'s device
+// compliance operation takes instead of `admin:write`, so a posture feed
+// holds nothing else. Protected like the rest — a client must declare it, in
+// both modes, and the API asks again on every call. `common/roles.js`'s
+// DEVICE_COMPLIANCE is read off it.
+const DEVICE_COMPLIANCE_SCOPE = 'device:compliance';
+
 // `debugger/debugger_access.ts`'s PERMISSION_ID. See the header.
 const DEBUGGER_PERMISSION = 'urn:sts:debugger-api:debugger';
 
@@ -125,6 +134,7 @@ class ScopePolicy {
   static readonly OIDC_SCOPES = OIDC_SCOPES;
   static readonly ADMIN_SCOPES = ADMIN_SCOPES;
   static readonly DEBUGGER_PERMISSION = DEBUGGER_PERMISSION;
+  static readonly DEVICE_COMPLIANCE_SCOPE = DEVICE_COMPLIANCE_SCOPE;
   static readonly PROTECTED_CODE = PROTECTED_CODE;
   static readonly UNDECLARED_CODE = UNDECLARED_CODE;
   static readonly NARROWED_CODE = NARROWED_CODE;
@@ -175,7 +185,8 @@ class ScopePolicy {
      String(config.value('scim.scopeWrite') || 'scim:write'),
      String(config.value('ssf.authScopeRead') || 'ssf:read'),
      String(config.value('ssf.authScopeWrite') || 'ssf:write'),
-     DEBUGGER_PERMISSION].concat(GRANT_MANAGEMENT_SCOPES)
+     DEBUGGER_PERMISSION, DEVICE_COMPLIANCE_SCOPE]
+      .concat(GRANT_MANAGEMENT_SCOPES)
       .forEach(function (one) {
       if (names.indexOf(one) < 0) {
         names.push(one);
@@ -436,6 +447,7 @@ export = {
   OIDC_SCOPES: OIDC_SCOPES,
   ADMIN_SCOPES: ADMIN_SCOPES,
   DEBUGGER_PERMISSION: DEBUGGER_PERMISSION,
+  DEVICE_COMPLIANCE_SCOPE: DEVICE_COMPLIANCE_SCOPE,
   PROTECTED_CODE: PROTECTED_CODE,
   UNDECLARED_CODE: UNDECLARED_CODE,
   NARROWED_CODE: NARROWED_CODE,

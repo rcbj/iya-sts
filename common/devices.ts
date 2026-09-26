@@ -36,6 +36,11 @@
 //   stsDeviceStatus             `compromised`; ABSENT is `active` (phase 4's
 //                               RISC credential-compromise)
 //   stsDeviceStatusChange       JSON: the last change, the same shape
+//   stsDeviceRiskLevel          LOW, MEDIUM or HIGH (CAEP's three); ABSENT
+//                               is unassessed (phase 4 stores it, phase 5's
+//                               risk scoring sets it through setRiskLevel())
+//   stsDeviceRiskChange         JSON: the last change — level, previous, at,
+//                               source, actor, reason
 //   stsDevicePlatform           ios, ipados, android, macos, windows, linux,
 //                               chromeos or other — a closed list, because
 //                               phase 6's policy will compare it
@@ -128,6 +133,44 @@
 // by an `ldapdelete` on the socket is not one of them — this file never sees
 // it — and the page says so.
 //
+// **WHAT AN ACT HERE CAUSES (#164 phases 3 and 4, 2026-09-26).** This file
+// is the FUNNEL for every change to a device — the console, `/admin-api`,
+// the MDM feed, the portal, EST and SCEP, Native SSO — so what a change owes
+// the rest of the service is sent from here, where no door can miss it (the
+// #145 rule: send at the funnel where one exists):
+//
+//   * Shared Signals, through `ssf/account_signals.ts` (a library that finds
+//     a loaded `ssf/ssf.ts` in `require.cache`, so nothing here waits on a
+//     receiver or requires SSF): CAEP `device-compliance-change` when
+//     compliance actually moves, `risk-level-change` (principal DEVICE) when
+//     the risk level does, `credential-change` for every device key and
+//     Native SSO secret created, re-issued, revoked or deleted, and RISC
+//     `credential-compromise` and `sessions-revoked` when a person's device
+//     is compromised or removed. `ssf/CLAUDE.md` argues each event's shape
+//     and subject; `docs/devices.md` lists them.
+//   * **A COMPROMISED DEVICE LOSES EVERYTHING IT WAS TRUSTED WITH**: every
+//     sign-on session one of its keys authenticated is ended (each a CAEP
+//     session-revoked and its back-channel Logout Tokens, through
+//     `authn.endSessionById()`), its Native SSO secret is revoked, and every
+//     certificate this service's EST or SCEP Issuing CA issued it is revoked
+//     for keyCompromise (`cert_enrollment.revokeDeviceCertificates()`), so
+//     the CRL and OCSP say so. **A REMOVED device** loses the same sessions
+//     and its certificates for cessationOfOperation (keyCompromise when it
+//     was compromised). The device's own record keeps its keys: they belong
+//     to the hardware, and a restored device is still that hardware.
+//   * `authn` is found in `require.cache` rather than required, for the
+//     reason `account_signals.ts` finds SSF that way — `authn` requires
+//     `device_recognition`, which requires this file — and the enrolment
+//     core is required lazily at the moment of use for the same cycle.
+//
+// **THE REGISTER IS LOOKED UP BY INDEX, NOT BY WALK** (the performance fix
+// phase 2 owed). `byId()`, `byKeyThumbprint()` and `bySecret()` ask the
+// directory's `deviceEntryByIndex()` for the ONE entry carrying `cn`, the
+// derived `stsDeviceKeyThumbprint` or `stsDeviceSecretHash`, and parse only
+// that entry. `ldap_server.js` argues why the index is safe across processes
+// and nodes: it holds nothing the directory does not, and is validated
+// against the directory on every hit.
+//
 // A LIBRARY (rule 3): it registers nothing. The directory is reached through
 // `credentials.deviceStore()`, the hooks `ldap_server.js` passes in, as every
 // other per-person store in `common/` is.
@@ -143,6 +186,11 @@ import realms = require('./realms');
 import errorCodes = require('./error_codes');
 import audit = require('./audit');
 import cacheRegistry = require('./cache_registry');
+// What a change says over Shared Signals (#164 phase 4). A library that
+// requires only the logger and `common/crypto`, and finds SSF in
+// `require.cache` at the moment an event is due: the require moves nothing
+// and closes no cycle — `cert_enrollment.ts` requires it the same way.
+import accountSignals = require('../ssf/account_signals');
 
 type Json = any;
 
@@ -173,6 +221,34 @@ const STATUSES = ['active', 'compromised'];
 const PLATFORMS = ['ios', 'ipados', 'android', 'macos', 'windows', 'linux',
                    'chromeos', 'other'];
 const EVENT_KINDS = ['created', 'removed', 'evicted'];
+// CAEP's risk-level vocabulary (section 3.8.1): a device's level is one of
+// the three, or absent (never assessed).
+const RISK_LEVELS = ['LOW', 'MEDIUM', 'HIGH'];
+// Who set a device's risk level: phase 5's risk scoring, a compromise, an
+// administrator.
+const RISK_SOURCES = ['risk', 'compromise', 'admin'];
+// Where a compliance source's act comes from, in CAEP section 2's
+// `initiating_entity` words: an administrator is `admin`; an MDM or posture
+// feed is "a system or platform assertion" (`system`), and so is
+// development's test control, which stands in for one; a received CAEP event
+// (#153) is the transmitter's system asserting it.
+const COMPLIANCE_INITIATORS: Record<string, string> = {
+  admin: 'admin', mdm: 'system', 'test-control': 'system', caep: 'system'
+};
+// The credential types a device credential goes out as in CAEP's
+// credential-change and RISC's credential-compromise (CAEP section 3.3.1:
+// "one of the following strings, or any other credential type supported
+// mutually by the Transmitter and the Receiver"). A certificate is `x509`
+// and a linked WebAuthn credential `fido2-platform` or `fido2-roaming` by
+// its recorded attachment — both registered values. A device's JWK key and
+// its Native SSO secret fit NO registered value — a JWK proven by a JWS is
+// not an app authenticator, and a bearer secret is not a password a person
+// chose — so each is a URN in this service's own namespace, the approach
+// #236 suggested, which a receiver that does not know it still reads as "a
+// credential changed" (the member is an open enumeration).
+const DEVICE_KEY_CREDENTIAL_TYPE = 'urn:iya:sts:credential-type:device-key';
+const DEVICE_SECRET_CREDENTIAL_TYPE =
+  'urn:iya:sts:credential-type:device-secret';
 // JWK members that make a key PRIVATE (RFC 7518 section 6, RFC 8037, and
 // the ML-DSA JOSE draft's `priv` and `seed`): a device key here is public.
 const PRIVATE_JWK_MEMBERS = ['d', 'p', 'q', 'dp', 'dq', 'qi', 'oth', 'k',
@@ -207,6 +283,33 @@ interface Change {
   reason: string;
 }
 
+interface RiskChange {
+  level: string;
+  previous: string;
+  at: string;
+  source: string;
+  actor: string;
+  reason: string;
+  // The level before a COMPROMISE raised it, so restoring the device can put
+  // it back (`setStatus()`).
+  beforeCompromise?: string;
+}
+
+// What a door says about who acted, for CAEP's `initiating_entity` and the
+// sessions a removal ends. Every member optional.
+interface ActOptions {
+  initiatingEntity?: string;
+  via?: string;
+  // Nothing is signalled or ended: a device `cert_enrollment.ts` created for
+  // an issuance the authority then refused, removed again in the same act.
+  quiet?: boolean;
+  // A certificate re-issued over the key the device already holds (EST
+  // simplereenroll): the old key's removal and the new one's addition are
+  // ONE credential-change `update`, and the old certificate is revoked as
+  // superseded.
+  renewal?: boolean;
+}
+
 interface Enrolment {
   method: string;
   at: string;
@@ -226,6 +329,8 @@ interface Device {
   complianceChange: Change | null;
   status: string;
   statusChange: Change | null;
+  riskLevel: string;
+  riskChange: RiskChange | null;
   platform: string;
   model: string;
   os: string;
@@ -244,6 +349,12 @@ interface DevicesDeps {
   errorCodes: typeof errorCodes;
   audit: typeof audit;
   now: () => number;
+  // What a change says over Shared Signals (header).
+  signals: typeof accountSignals;
+  // `authn/authn` as it is loaded in this process, or null (header).
+  findAuthn: () => Json;
+  // `common/cert_enrollment`, required at the moment of use (header).
+  loadEnrollment: () => Json;
 }
 
 // ---------------------------------------------------------------------------
@@ -297,6 +408,11 @@ class Devices {
   static readonly STATUSES = STATUSES;
   static readonly PLATFORMS = PLATFORMS;
   static readonly EVENT_KINDS = EVENT_KINDS;
+  static readonly RISK_LEVELS = RISK_LEVELS;
+  static readonly RISK_SOURCES = RISK_SOURCES;
+  static readonly DEVICE_KEY_CREDENTIAL_TYPE = DEVICE_KEY_CREDENTIAL_TYPE;
+  static readonly DEVICE_SECRET_CREDENTIAL_TYPE =
+    DEVICE_SECRET_CREDENTIAL_TYPE;
 
   constructor(private readonly deps: DevicesDeps) {
     deps.log.debug("Entering Devices.constructor().");
@@ -308,7 +424,30 @@ class Devices {
     helpers.log.debug("Leaving Devices.defaultDeps().");
     return { log: helpers.log, config: config, credentials: credentials,
              stsCrypto: stsCrypto, errorCodes: errorCodes, audit: audit,
-             now: Date.now };
+             now: Date.now, signals: accountSignals,
+             findAuthn: Devices.loadedAuthn,
+             loadEnrollment: function (): Json {
+               return require('./cert_enrollment');
+             } };
+  }
+
+  // `authn/authn` as it is loaded in THIS process, found in `require.cache`,
+  // or null — never required (header).
+  static loadedAuthn(): Json {
+    helpers.log.debug("Entering Devices.loadedAuthn().");
+    let id = '';
+    try {
+      id = require.resolve('../authn/authn');
+    } catch (e) {
+      helpers.log.debug("Caught in Devices.loadedAuthn(): " +
+                        ((e && e.message) || e));
+      helpers.log.debug("Leaving Devices.loadedAuthn(). Not resolvable.");
+      return null;
+    }
+    const cached = require.cache[id];
+    helpers.log.debug("Leaving Devices.loadedAuthn(). " +
+                      (cached ? 'Loaded.' : 'Not loaded.'));
+    return cached && cached.exports ? cached.exports : null;
   }
 
   // The SHA-256 a secret is kept as. A device_secret is 256 random bits, so
@@ -393,6 +532,9 @@ class Devices {
       status: one('stsdevicestatus') === 'compromised' ? 'compromised'
                                                        : 'active',
       statusChange: Devices.parsed(one('stsdevicestatuschange')),
+      riskLevel: RISK_LEVELS.indexOf(one('stsdevicerisklevel')) >= 0
+        ? one('stsdevicerisklevel') : '',
+      riskChange: Devices.parsed(one('stsdeviceriskchange')),
       platform: one('stsdeviceplatform'),
       model: one('stsdevicemodel'),
       os: one('stsdeviceos'),
@@ -468,6 +610,12 @@ class Devices {
     if (device.statusChange) {
       attributes.stsDeviceStatusChange = [JSON.stringify(device.statusChange)];
     }
+    if (device.riskLevel) {
+      attributes.stsDeviceRiskLevel = [device.riskLevel];
+    }
+    if (device.riskChange) {
+      attributes.stsDeviceRiskChange = [JSON.stringify(device.riskChange)];
+    }
     const written = !!this.store('writeDeviceEntry', device.id, attributes);
     log.debug("Leaving Devices.write(). " + written);
     return written;
@@ -478,18 +626,19 @@ class Devices {
   // insert (cache_registry.makeRoom()), never a sweep (root CLAUDE.md,
   // "Anything periodic is a scheduler job": a bound cannot wait for a timer).
   // -------------------------------------------------------------------------
-  private noteEvent(kind: string, device: Device, reason?: string): void {
+  private noteEvent(kind: string, device: Device, reason?: string,
+                    extra?: Json): void {
     const { log, config } = this.deps;
     log.debug("Entering Devices.noteEvent(). " + kind);
     cacheRegistry.makeRoom(events, Number(config.value('devices.eventsKept')),
                            { name: 'devices.events',
                              counter: eventsCounter,
                              setting: 'devices.eventsKept' });
-    events.set(nodeCrypto.randomUUID(), {
+    events.set(nodeCrypto.randomUUID(), Object.assign({
       at: this.deps.now(), kind: kind, device: device.id,
       ownerKind: device.ownerKind, method: device.enrolment.method,
       reason: String(reason || '')
-    });
+    }, extra || {}));
     log.debug("Leaving Devices.noteEvent().");
   }
 
@@ -509,7 +658,10 @@ class Devices {
   }
 
   // The events of the last `days` UTC days, one row per day oldest first,
-  // and the totals over every event this realm still holds.
+  // and the totals over every event this realm still holds. A COMPLIANCE
+  // change (#164 phase 3) is counted by its SOURCE — admin, mdm,
+  // test-control, caep — in each row's `compliance` and in the totals', which
+  // is what "compliance changes over time by source" reads.
   timeline(days?: number): Json {
     const { log } = this.deps;
     log.debug("Entering Devices.timeline().");
@@ -519,27 +671,49 @@ class Devices {
     const byDay: Record<string, Json> = {};
     for (let d = today - span + 1; d <= today; d += 1) {
       const day = new Date(d * 86400000).toISOString().slice(0, 10);
-      const row: Json = { day: day, created: 0, removed: 0, evicted: 0 };
+      const row: Json = { day: day, created: 0, removed: 0, evicted: 0,
+                          compliance: Devices.zeroSources() };
       rows.push(row);
       byDay[day] = row;
     }
-    const totals: Json = { created: 0, removed: 0, evicted: 0 };
+    const totals: Json = { created: 0, removed: 0, evicted: 0,
+                           compliance: Devices.zeroSources() };
     let since = '';
     this.events().forEach(function (e: Json) {
-      if (EVENT_KINDS.indexOf(e.kind) < 0) {
+      const compliance = e.kind === 'compliance' &&
+                         COMPLIANCE_SOURCES.indexOf(String(e.source)) >= 0;
+      if (EVENT_KINDS.indexOf(e.kind) < 0 && !compliance) {
         return;
       }
-      totals[e.kind] += 1;
       if (!since) {
         since = new Date(Number(e.at)).toISOString();
       }
       const day = new Date(Number(e.at)).toISOString().slice(0, 10);
+      if (compliance) {
+        totals.compliance[e.source] += 1;
+        if (byDay[day]) {
+          byDay[day].compliance[e.source] += 1;
+        }
+        return;
+      }
+      totals[e.kind] += 1;
       if (byDay[day]) {
         byDay[day][e.kind] += 1;
       }
     });
     log.debug("Leaving Devices.timeline().");
     return { days: span, rows: rows, totals: totals, since: since };
+  }
+
+  // One counter per compliance source, at zero.
+  static zeroSources(): Json {
+    helpers.log.debug("Entering Devices.zeroSources().");
+    const out: Json = {};
+    COMPLIANCE_SOURCES.forEach(function (source) {
+      out[source] = 0;
+    });
+    helpers.log.debug("Leaving Devices.zeroSources().");
+    return out;
   }
 
   // Every device in the realm.
@@ -695,30 +869,63 @@ class Devices {
     return out;
   }
 
+  // ONE DEVICE BY AN INDEXED ATTRIBUTE (header): the directory's
+  // `deviceEntryByIndex()`, parsed — or null. A directory too old to offer
+  // the hook (an in-process test's stand-in) answers from the walk it
+  // replaced, so the answer never depends on which one ran.
+  private byIndex(attribute: string, value: string,
+                  test: (one: Device) => boolean): Device | null {
+    const { log, credentials } = this.deps;
+    log.debug("Entering Devices.byIndex(). " + attribute);
+    if (!value) {
+      log.debug("Leaving Devices.byIndex(). Nothing asked.");
+      return null;
+    }
+    const indexed = typeof credentials.deviceStore === 'function' &&
+      credentials.deviceStore('hasHook', ['deviceEntryByIndex']);
+    if (!indexed) {
+      const walked = this.all().filter(test)[0] || null;
+      log.debug("Leaving Devices.byIndex(). Walked: " + !!walked);
+      return walked;
+    }
+    const entry = this.store('deviceEntryByIndex', attribute, value);
+    const found = entry ? Devices.fromEntry(entry) : null;
+    log.debug("Leaving Devices.byIndex(). " + !!found);
+    return found && test(found) ? found : null;
+  }
+
   byId(id: unknown): Device | null {
     const { log } = this.deps;
     log.debug("Entering Devices.byId().");
     const wanted = String(id || '');
-    const found = wanted ? this.all().filter(function (one) {
+    const found = this.byIndex('cn', wanted, function (one) {
       return one.id === wanted;
-    })[0] || null : null;
+    });
     log.debug("Leaving Devices.byId(). " + !!found);
     return found;
   }
 
   // The device a key thumbprint belongs to, or null — what phase 2's
-  // recognition asks. `kind` narrows it where the caller knows it.
+  // recognition asks. `kind` narrows it where the caller knows it; without
+  // it each kind's index value is asked in turn.
   byKeyThumbprint(thumbprint: unknown, kind?: unknown): Device | null {
     const { log } = this.deps;
     log.debug("Entering Devices.byKeyThumbprint().");
     const wanted = String(thumbprint || '');
     const wantedKind = String(kind || '');
-    const found = wanted ? this.all().filter(function (one) {
-      return one.keys.some(function (k) {
-        return k.thumbprint === wanted &&
-               (!wantedKind || k.kind === wantedKind);
+    const kinds = wantedKind ? [wantedKind] : KEY_KINDS;
+    let found: Device | null = null;
+    for (const one of kinds) {
+      found = this.byIndex('stsDeviceKeyThumbprint', wanted ? one + ':' +
+                           wanted : '', function (d) {
+        return d.keys.some(function (k) {
+          return k.thumbprint === wanted && k.kind === one;
+        });
       });
-    })[0] || null : null;
+      if (found) {
+        break;
+      }
+    }
     log.debug("Leaving Devices.byKeyThumbprint(). " + !!found);
     return found;
   }
@@ -773,11 +980,14 @@ class Devices {
       log.debug("Leaving Devices.bySecret(). None given.");
       return null;
     }
+    // Looked up by the HASH, which is what the entry holds: the index is a
+    // Map keyed by it, so no secret is compared in the lookup, and the one
+    // entry found is compared in constant time as before.
     const hash = Devices.hashOf(text);
-    const found = this.all().filter(function (one) {
+    const found = this.byIndex('stsDeviceSecretHash', hash, function (one) {
       return !!one.secretHash &&
              stsCrypto.constantTimeEquals(one.secretHash, hash);
-    })[0] || null;
+    });
     log.debug("Leaving Devices.bySecret(). " + !!found);
     return found;
   }
@@ -845,6 +1055,303 @@ class Devices {
     log.debug("Leaving Devices.recordAudit().");
   }
 
+  // =========================================================================
+  // WHAT A CHANGE SAYS AND CAUSES (header, "WHAT AN ACT HERE CAUSES").
+  // =========================================================================
+
+  // CAEP section 2's four words; anything else is the fallback.
+  private static entityOf(opts: ActOptions | undefined,
+                          fallback: string): string {
+    helpers.log.debug("Entering Devices.entityOf().");
+    const asked = String((opts && opts.initiatingEntity) || '');
+    helpers.log.debug("Leaving Devices.entityOf().");
+    return ['admin', 'user', 'policy', 'system'].indexOf(asked) >= 0
+      ? asked : fallback;
+  }
+
+  // The owner's username where the owner is a PERSON, else '' — an
+  // application has no CAEP user subject and no RISC account here.
+  private personOf(device: Device): string {
+    const { log } = this.deps;
+    log.debug("Entering Devices.personOf().");
+    const owner = device.ownerKind === 'person' ? this.ownerOf(device.owner)
+                                                : null;
+    log.debug("Leaving Devices.personOf().");
+    return owner && owner.kind === 'person' ? String(owner.name || '') : '';
+  }
+
+  // One call to `ssf/account_signals.ts`, fired and forgotten: it never
+  // throws and never rejects by contract, and this is belt and braces so a
+  // defect there cannot undo a change already written here.
+  private signal(method: string, notice: Json): void {
+    const { log, signals, errorCodes } = this.deps;
+    log.debug("Entering Devices.signal(). " + method);
+    try {
+      const emit = (signals as Json)[method];
+      const answer = typeof emit === 'function' ? emit(notice) : null;
+      if (answer && typeof answer.catch === 'function') {
+        answer.catch(function (e: Json): void {
+          log.debug("Caught in a callback in Devices.signal(): " +
+                    ((e && e.message) || e));
+        });
+      }
+    } catch (e) {
+      log.warn(errorCodes.tag('STS-DEVICE-0030') + 'devices: the ' + method +
+               ' signal for device ' + String(notice.deviceId || '') +
+               ' could not be sent: ' + ((e && e.message) || e));
+    }
+    log.debug("Leaving Devices.signal().");
+  }
+
+  // The members every device signal carries: the device, and its owner.
+  private deviceNotice(device: Device, extra: Json): Json {
+    this.deps.log.debug("Entering Devices.deviceNotice().");
+    this.deps.log.debug("Leaving Devices.deviceNotice().");
+    return Object.assign({ deviceId: device.id, username: this.personOf(device),
+                           ownerKind: device.ownerKind,
+                           deviceLabel: device.label }, extra);
+  }
+
+  // A key's CAEP credential-change members: its type and what identifies it.
+  static credentialOf(key: DeviceKey): Json {
+    helpers.log.debug("Entering Devices.credentialOf(). " + key.kind);
+    const m = key.material || {};
+    const out: Json = { credentialType: DEVICE_KEY_CREDENTIAL_TYPE,
+                        friendlyName: key.label || key.kind + ' key' };
+    if (key.kind === 'x509') {
+      out.credentialType = 'x509';
+      out.x509Issuer = String(m.issuer || '');
+      out.x509Serial = String(m.serial || '');
+    } else if (key.kind === 'webauthn') {
+      out.credentialType = accountSignals.keyCredentialType({
+        attachment: String(m.attachment || '') });
+      out.fido2Aaguid = /^0{8}-0{4}-0{4}-0{4}-0{12}$/.test(String(m.aaguid))
+        ? '' : String(m.aaguid || '');
+    }
+    helpers.log.debug("Leaving Devices.credentialOf().");
+    return out;
+  }
+
+  // CAEP credential-change about one of a device's credentials — a key
+  // (`key`) or, with none, its Native SSO secret.
+  private credentialChanged(device: Device, changeType: string,
+                            key: DeviceKey | null, opts: ActOptions | undefined,
+                            fallback: string, why: string): void {
+    const { log } = this.deps;
+    log.debug("Entering Devices.credentialChanged(). " + changeType);
+    const cred: Json = key ? Devices.credentialOf(key)
+      : { credentialType: DEVICE_SECRET_CREDENTIAL_TYPE,
+          friendlyName: 'Native SSO device_secret' };
+    this.signal('deviceEvent', this.deviceNotice(device, {
+      type: 'credential-change', act: 'credential',
+      values: { credential_type: cred.credentialType,
+                change_type: changeType,
+                friendly_name: String(cred.friendlyName || ''),
+                x509_issuer: String(cred.x509Issuer || ''),
+                x509_serial: String(cred.x509Serial || ''),
+                fido2_aaguid: String(cred.fido2Aaguid || '') },
+      initiatingEntity: Devices.entityOf(opts, fallback),
+      via: String((opts && opts.via) || ''),
+      reasonAdmin: why,
+      reasonUser: 'A credential of your device "' + device.label + '" ' +
+                  (changeType === 'create' ? 'was added'
+                    : changeType === 'update' ? 'was renewed'
+                      : changeType === 'revoke' ? 'was revoked'
+                        : 'was removed') + '.' }));
+    log.debug("Leaving Devices.credentialChanged().");
+  }
+
+  // EVERY SIGN-ON SESSION ONE OF THIS DEVICE'S KEYS AUTHENTICATED, ENDED:
+  // those whose authentication events name the device as `registeredDevice`
+  // (`authn.authenticationEvent()`). Each goes through `dropSession()`, so
+  // it is an audit row, a CAEP session-revoked (with the device in its
+  // subject) and its relying parties' back-channel Logout Tokens. `via`
+  // decides `admin` against `user` there. Answers how many ended.
+  private endSessionsFrom(device: Device, via: string): number {
+    const { log, findAuthn, errorCodes } = this.deps;
+    log.debug("Entering Devices.endSessionsFrom(). " + device.id);
+    const authn = findAuthn();
+    if (!authn || typeof authn.sessionsMatching !== 'function') {
+      log.debug("Leaving Devices.endSessionsFrom(). No sessions here.");
+      return 0;
+    }
+    let ended = 0;
+    try {
+      const ids = authn.sessionsMatching(function (session: Json): boolean {
+        return Array.isArray(session && session.events) &&
+          session.events.some(function (e: Json): boolean {
+            return !!(e && e.registeredDevice &&
+                      e.registeredDevice.id === device.id);
+          });
+      }).map(function (session: Json): string {
+        return String(session.id || '');
+      }).filter(Boolean);
+      ids.forEach(function (id: string): void {
+        if (authn.endSessionById(id, via)) {
+          ended += 1;
+        }
+      });
+    } catch (e) {
+      log.error(errorCodes.tag('STS-DEVICE-0031') + 'devices: the sessions ' +
+                'device ' + device.id + ' authenticated could not all be ' +
+                'ended: ' + ((e && e.message) || e));
+    }
+    log.info('devices: ' + ended + ' sign-on session(s) device ' +
+             device.id + ' authenticated were ended (' + via + ').');
+    log.debug("Leaving Devices.endSessionsFrom(). " + ended);
+    return ended;
+  }
+
+  // EVERY CERTIFICATE THIS SERVICE ISSUED THE DEVICE, REVOKED for `reason`
+  // (an RFC 5280 reason) by the Issuing CA that issued it —
+  // `cert_enrollment.revokeDeviceCertificates()`, the enrolment core, which
+  // owns what EST and SCEP issue. Answers what was revoked.
+  private revokeCertificates(device: Device, reason: string,
+                             actor: string, keys?: DeviceKey[]): Json[] {
+    const { log, loadEnrollment, errorCodes } = this.deps;
+    log.debug("Entering Devices.revokeCertificates(). " + reason);
+    let out: Json[] = [];
+    try {
+      out = loadEnrollment().revokeDeviceCertificates(
+        { id: device.id, keys: keys || device.keys }, reason, actor) || [];
+    } catch (e) {
+      log.error(errorCodes.tag('STS-DEVICE-0032') + 'devices: the ' +
+                'certificates of device ' + device.id + ' could not be ' +
+                'revoked (' + reason + '): ' + ((e && e.message) || e));
+      out = [];
+    }
+    log.debug("Leaving Devices.revokeCertificates(). " + out.length);
+    return out;
+  }
+
+  // WHAT A REMOVAL (or an eviction) CAUSES, after the entry is gone: its
+  // certificates revoked, the sessions it authenticated ended, a CAEP
+  // credential-change `delete` for each key and its secret, and — for a
+  // person's device — RISC sessions-revoked naming the person and the
+  // device. `ended` is what a compromise already ended, so it is not asked
+  // twice.
+  private afterRemoval(device: Device, opts: ActOptions | undefined,
+                       fallback: string, actor: string, why: string): Json {
+    const { log } = this.deps;
+    log.debug("Entering Devices.afterRemoval(). " + device.id);
+    const entity = Devices.entityOf(opts, fallback);
+    const revoked = this.revokeCertificates(device,
+      device.status === 'compromised' ? 'keyCompromise'
+                                      : 'cessationOfOperation', actor);
+    const ended = this.endSessionsFrom(device, entity === 'admin'
+      ? 'an administrator removed device ' + device.id
+      : (entity === 'user' ? 'the owner removed device ' + device.id
+                           : 'device ' + device.id + ' was removed'));
+    device.keys.forEach((key) => {
+      this.credentialChanged(device, 'delete', key, opts, fallback, why);
+    });
+    if (device.secretHash) {
+      this.credentialChanged(device, 'delete', null, opts, fallback, why);
+    }
+    this.sessionsRevoked(device, entity, why);
+    log.debug("Leaving Devices.afterRemoval().");
+    return { revoked: revoked.length, sessionsEnded: ended };
+  }
+
+  // RISC sessions-revoked for a PERSON's device: every session of theirs ON
+  // THIS DEVICE — the complex subject's `device` member is what makes the
+  // deprecated event's "all the sessions for the account" true of what was
+  // done (ssf/CLAUDE.md argues it).
+  private sessionsRevoked(device: Device, entity: string, why: string): void {
+    const { log } = this.deps;
+    log.debug("Entering Devices.sessionsRevoked().");
+    const username = this.personOf(device);
+    if (username) {
+      this.signal('sessionsRevoked', this.deviceNotice(device, {
+        initiatingEntity: entity, reasonAdmin: why,
+        reasonUser: 'Your sessions on the device "' + device.label +
+                    '" were ended.' }));
+    }
+    log.debug("Leaving Devices.sessionsRevoked(). " + (username || 'none'));
+  }
+
+  // =========================================================================
+  // THE RISK LEVEL (#164 decision 4, phase 4) — what phase 5's risk scoring
+  // calls with its assessment of a device, and what a compromise raises.
+  //
+  //   setRiskLevel(id, level, reason, options?)
+  //     level    LOW | MEDIUM | HIGH (CAEP section 3.8.1), or '' to forget
+  //              the assessment (sends nothing: CAEP has no "unknown" level)
+  //     reason   CAEP's risk_reason — the signal that moved it
+  //     options  { source: risk (default) | compromise | admin, actor,
+  //                initiatingEntity (system by default) }
+  //
+  // It answers `{ ok, device, previous, level, changed }` or a refusal, and
+  // sends CAEP risk-level-change with principal DEVICE when the level MOVED
+  // — `previous_level` the stored one where there was one, omitted where
+  // there was none ("the Receiver MUST assume that the previous risk level
+  // is unknown").
+  // =========================================================================
+  setRiskLevel(id: unknown, level: unknown, reason?: unknown,
+               options?: Json): Json {
+    const { log } = this.deps;
+    log.debug("Entering Devices.setRiskLevel().");
+    const o = options || {};
+    const wanted = String(level || '').toUpperCase();
+    const source = String(o.source || 'risk');
+    if ((wanted && RISK_LEVELS.indexOf(wanted) < 0) ||
+        RISK_SOURCES.indexOf(source) < 0) {
+      log.debug("Leaving Devices.setRiskLevel(). Vocabulary.");
+      return this.refuse('STS-DEVICE-0033', 'A device\'s risk level is one ' +
+        'of ' + Devices.sentence(RISK_LEVELS) + ' (or empty, to forget ' +
+        'it), set by one of ' + Devices.sentence(RISK_SOURCES) + '.');
+    }
+    const device = this.byId(id);
+    if (!device) {
+      log.debug("Leaving Devices.setRiskLevel(). No device.");
+      return this.refuse('STS-DEVICE-0007', 'There is no device "' +
+                         String(id || '') + '" in this realm.');
+    }
+    const previous = device.riskLevel;
+    const changed = previous !== wanted;
+    if (changed) {
+      device.riskLevel = wanted;
+      device.riskChange = { level: wanted, previous: previous,
+        at: this.nowIso(), source: source, actor: String(o.actor || ''),
+        reason: String(reason || '').slice(0, 500) };
+      if (o.beforeCompromise !== undefined) {
+        device.riskChange.beforeCompromise = String(o.beforeCompromise);
+      }
+      if (!this.write(device)) {
+        log.debug("Leaving Devices.setRiskLevel(). Not stored.");
+        return this.refuse('STS-DEVICE-0009', 'The directory did not store ' +
+                           'the change.');
+      }
+      this.recordAudit('device.risk', String(o.actor || source), device,
+                       'device ' + device.id + '\'s risk level is ' +
+                       (wanted || 'unassessed') + ' (was ' +
+                       (previous || 'unassessed') + ', by ' + source + ')',
+                       { previous: previous, level: wanted, source: source });
+    }
+    if (changed && wanted) {
+      const values: Json = { principal: 'DEVICE', current_level: wanted };
+      if (previous) {
+        values.previous_level = previous;
+      }
+      if (reason) {
+        values.risk_reason = String(reason).slice(0, 500);
+      }
+      this.signal('deviceEvent', this.deviceNotice(device, {
+        type: 'risk-level-change', act: 'risk', values: values,
+        initiatingEntity: Devices.entityOf(o, source === 'admin' ? 'admin'
+                                                                 : 'system'),
+        reasonAdmin: 'Device ' + device.id + '\'s risk level went from ' +
+                     (previous || 'unassessed') + ' to ' + wanted +
+                     (reason ? ' (' + String(reason) + ')' : '') + '.',
+        reasonUser: 'The risk this service sees in your device "' +
+                    device.label + '" changed.' }));
+    }
+    log.debug("Leaving Devices.setRiskLevel(). " + (changed ? 'Changed.'
+                                                           : 'Unchanged.'));
+    return { ok: true, device: device, previous: previous, level: wanted,
+             changed: changed };
+  }
+
   // -------------------------------------------------------------------------
   // THE FIRST APP'S GRANT (Native SSO section 3.3). `spec` is { username,
   // clientId, sessionId, presented, label, isLive(sessionId) }. Returns
@@ -896,6 +1403,11 @@ class Devices {
         this.recordAudit('device.evict', String(spec.username || ''), victim,
                          'device ' + victim.id + ' removed at ' +
                          'devices.maxPerPerson to make room for a new one');
+        // An eviction is a removal a POLICY made (#164 phase 4).
+        this.afterRemoval(victim, { initiatingEntity: 'policy' }, 'policy',
+                          String(spec.username || ''), 'Device ' + victim.id +
+                          ' was removed at devices.maxPerPerson to make room ' +
+                          'for a new one.');
       }
       log.info('devices: ' + spec.username + ' holds ' + held.length +
                ' devices (devices.maxPerPerson); ' + victim.id +
@@ -914,6 +1426,11 @@ class Devices {
       return { ok: false, error: 'the directory did not store the device' };
     }
     this.noteEvent('created', device);
+    this.credentialChanged(device, 'create', null,
+                           { initiatingEntity: 'user' }, 'user',
+                           'A Native SSO device_secret was issued for new ' +
+                           'device ' + device.id + ' to ' +
+                           String(spec.clientId || 'a client') + '.');
     log.debug("Leaving Devices.issueForSession(). New " + device.id);
     return { ok: true, secret: secret, device: device, reused: false };
   }
@@ -927,7 +1444,8 @@ class Devices {
       ownerKind: ownerKind, label: label, applications: [], keys: [],
       attestation: 'self-asserted', compliance: 'unknown',
       complianceChange: null, status: 'active', statusChange: null,
-      platform: '', model: '', os: '', enrolment: enrolment,
+      riskLevel: '', riskChange: null, platform: '', model: '', os: '',
+      enrolment: enrolment,
       secretHash: '', session: '', lastUsed: enrolment.at,
       created: enrolment.at
     };
@@ -945,7 +1463,7 @@ class Devices {
 
   // RFC 7009 for a device_secret (#130): the secret stops being accepted;
   // the device stays. True when there was one to revoke.
-  revokeSecret(secret: unknown): boolean {
+  revokeSecret(secret: unknown, options?: ActOptions): boolean {
     const { log } = this.deps;
     log.debug("Entering Devices.revokeSecret().");
     const device = this.bySecret(secret);
@@ -956,6 +1474,11 @@ class Devices {
     device.secretHash = '';
     device.session = '';
     const written = this.write(device);
+    if (written) {
+      this.credentialChanged(device, 'revoke', null, options, 'user',
+                             'The Native SSO device_secret of device ' +
+                             device.id + ' was revoked (RFC 7009).');
+    }
     log.debug("Leaving Devices.revokeSecret(). " + written);
     return written;
   }
@@ -1272,7 +1795,7 @@ class Devices {
   // `spec` is { label, ownerKind, owner, platform, model, os, applications,
   // keys: [keySpec], method }. Answers { ok, device } or a refusal.
   // -------------------------------------------------------------------------
-  create(spec: Json, actor?: unknown): Json {
+  create(spec: Json, actor?: unknown, options?: ActOptions): Json {
     const { log, config } = this.deps;
     log.debug("Entering Devices.create().");
     const s = spec || {};
@@ -1343,6 +1866,14 @@ class Devices {
     this.recordAudit('device.create', who, device, 'device ' + device.id +
                      ' registered (' + method + ') for ' + device.owner,
                      { method: method, keys: device.keys.length });
+    if (!(options && options.quiet)) {
+      device.keys.forEach((key) => {
+        this.credentialChanged(device, 'create', key, options,
+                               method === 'portal' ? 'user' : 'admin',
+                               'Device ' + device.id + ' was registered (' +
+                               method + ') holding this key.');
+      });
+    }
     log.debug("Leaving Devices.create(). " + device.id);
     return { ok: true, device: this.byId(device.id) || device,
              message: 'Device ' + device.id + ' is registered.' };
@@ -1376,6 +1907,14 @@ class Devices {
         if (full) {
           log.debug("Leaving Devices.update(). Full.");
           return full;
+        }
+        // The secret the OLD owner's session held is revoked, and said to
+        // that owner's receivers before the device changes hands.
+        if (device.secretHash) {
+          this.credentialChanged(Object.assign({}, device), 'revoke', null,
+            { initiatingEntity: 'admin' }, 'admin', 'Device ' + device.id +
+            ' was given to another owner, and its Native SSO device_secret ' +
+            'went with the old owner\'s session.');
         }
         device.owner = owner.dn;
         device.ownerKind = owner.kind;
@@ -1421,8 +1960,14 @@ class Devices {
                 'held' : '') + '.' };
   }
 
-  // Removes a device — the person's own, where `username` is given.
-  remove(id: unknown, username?: unknown, actor?: unknown): Json {
+  // Removes a device — the person's own, where `username` is given — and
+  // everything that follows from it (`afterRemoval()`): its certificates
+  // revoked, the sessions it authenticated ended, its credentials' CAEP
+  // credential-change and, for a person's device, RISC sessions-revoked.
+  // `options.quiet` removes it and nothing else (a device `cert_enrollment`
+  // created for an issuance that then failed).
+  remove(id: unknown, username?: unknown, actor?: unknown,
+         options?: ActOptions): Json {
     const { log } = this.deps;
     log.debug("Entering Devices.remove(). id=" + id);
     const device = this.byId(id);
@@ -1442,13 +1987,28 @@ class Devices {
     this.noteEvent('removed', device);
     this.recordAudit('device.delete', String(actor || username || ''), device,
                      'device ' + device.id + ' removed');
+    const after = options && options.quiet ? null
+      : this.afterRemoval(device, options,
+                          username !== undefined ? 'user' : 'admin',
+                          String(actor || username || ''),
+                          'Device ' + device.id + ' was removed from the ' +
+                          'register.');
     log.debug("Leaving Devices.remove().");
     return { ok: true, removed: device.id,
-             message: 'Device ' + device.id + ' is removed.' };
+             certificatesRevoked: after ? after.revoked : 0,
+             sessionsEnded: after ? after.sessionsEnded : 0,
+             message: 'Device ' + device.id + ' is removed' +
+               (after && (after.revoked || after.sessionsEnded)
+                 ? ': ' + after.sessionsEnded + ' sign-on session(s) it ' +
+                   'authenticated were ended and ' + after.revoked +
+                   ' certificate(s) issued to it were revoked' : '') + '.' };
   }
 
-  // Adds one key to a device.
-  addKey(id: unknown, spec: Json, actor?: unknown): Json {
+  // Adds one key to a device. `options.renewal` says the key replaces one
+  // `removeKey()` just took off for a certificate re-issue, which is a
+  // credential-change `update` rather than a `create`.
+  addKey(id: unknown, spec: Json, actor?: unknown,
+         options?: ActOptions): Json {
     const { log, config } = this.deps;
     log.debug("Entering Devices.addKey().");
     const device = this.byId(id);
@@ -1487,13 +2047,25 @@ class Devices {
                      device.id, { key: prepared.key.id,
                                   thumbprint: prepared.key.thumbprint,
                                   proof: prepared.key.proof });
+    const renewal = !!(options && options.renewal);
+    this.credentialChanged(device, renewal ? 'update' : 'create',
+                           prepared.key, options, 'admin',
+                           'A ' + prepared.key.kind + ' key was ' +
+                           (renewal ? 're-issued for' : 'added to') +
+                           ' device ' + device.id + ' (' +
+                           prepared.key.proof + ').');
     log.debug("Leaving Devices.addKey().");
     return { ok: true, key: prepared.key, device: device,
              message: 'The ' + prepared.key.kind + ' key is added.' };
   }
 
-  // Removes one key from a device, by its id or its thumbprint.
-  removeKey(id: unknown, keyId: unknown, actor?: unknown): Json {
+  // Removes one key from a device, by its id or its thumbprint. A
+  // certificate this service issued for the key is revoked with it —
+  // `superseded` for a re-issue (`options.renewal`, which also sends no
+  // signal: `addKey()` sends the one `update`), cessationOfOperation
+  // otherwise.
+  removeKey(id: unknown, keyId: unknown, actor?: unknown,
+            options?: ActOptions): Json {
     const { log } = this.deps;
     log.debug("Entering Devices.removeKey().");
     const device = this.byId(id);
@@ -1522,16 +2094,42 @@ class Devices {
     this.recordAudit('device.key-remove', String(actor || ''), device,
                      'a ' + key.kind + ' key was removed from device ' +
                      device.id, { key: key.id, thumbprint: key.thumbprint });
+    const renewal = !!(options && options.renewal);
+    this.revokeCertificates(device, renewal ? 'superseded'
+      : (device.status === 'compromised' ? 'keyCompromise'
+                                         : 'cessationOfOperation'),
+      String(actor || ''), [key]);
+    if (!renewal) {
+      this.credentialChanged(device, 'delete', key, options, 'admin',
+                             'A ' + key.kind + ' key was removed from ' +
+                             'device ' + device.id + '.');
+    }
     log.debug("Leaving Devices.removeKey().");
     return { ok: true, device: device, removed: key.id,
              message: 'The ' + key.kind + ' key is removed.' };
   }
 
   // -------------------------------------------------------------------------
-  // COMPLIANCE (decision 2; phase 3 adds the doors — the console, the MDM
-  // feed under its protected scope, development's test control and a
-  // received CAEP event). The register records the change and its previous
-  // value, which is what CAEP's device-compliance-change carries (phase 4).
+  // COMPLIANCE (decision 2, phase 3). The doors that call this: the console
+  // and `/admin-api` (`admin`), the MDM feed under `device:compliance`
+  // (`mdm`), development's test control (`test-control`); a received CAEP
+  // event (`caep`) arrives with #153. The register records the change and
+  // its previous value, and a change counts in Monitoring → Devices by its
+  // source.
+  //
+  // **WHAT GOES OUT IS CAEP's `device-compliance-change`, WHEN THE STATUS A
+  // RECEIVER CAN BE TOLD ACTUALLY MOVED (phase 4).** CAEP section 3.5.1 makes
+  // `previous_status` and `current_status` REQUIRED and allows exactly two
+  // values, `compliant` and `not-compliant` — there is no `unknown` on the
+  // wire. So `unknown` is sent as what it means to a relying party enforcing
+  // compliance, `not-compliant`: a device nobody has vouched for is not one
+  // anybody may treat as compliant, which is also what phase 6's policy will
+  // read. Hence unknown → compliant goes out as not-compliant → compliant,
+  // compliant → unknown (an administrator withdrawing a vouch) as compliant →
+  // not-compliant, and unknown ↔ not-compliant sends NOTHING — a receiver
+  // told not-compliant then not-compliant would read a change that did not
+  // happen. `initiating_entity` is the source's (COMPLIANCE_INITIATORS);
+  // `reason_admin` is the reason given, or a sentence naming the source.
   // -------------------------------------------------------------------------
   setCompliance(id: unknown, status: unknown, source: unknown,
                 actor?: unknown, reason?: unknown): Json {
@@ -1553,10 +2151,11 @@ class Devices {
                          String(id || '') + '" in this realm.');
     }
     const previous = device.compliance;
+    const why = String(reason || '').slice(0, 500);
     device.compliance = wanted;
     device.complianceChange = { status: wanted, previous: previous,
       at: this.nowIso(), source: from, actor: String(actor || ''),
-      reason: String(reason || '').slice(0, 500) };
+      reason: why };
     if (!this.write(device)) {
       log.debug("Leaving Devices.setCompliance(). Not stored.");
       return this.refuse('STS-DEVICE-0009', 'The directory did not store ' +
@@ -1566,15 +2165,66 @@ class Devices {
                      'device ' + device.id + ' is ' + wanted + ' (was ' +
                      previous + ', by ' + from + ')',
                      { previous: previous, status: wanted, source: from });
+    const changed = previous !== wanted;
+    if (changed) {
+      this.noteEvent('compliance', device, why, { source: from,
+                     previous: previous, status: wanted });
+    }
+    const wire = function (state: string): string {
+      log.debug("Entering wire().");
+      log.debug("Leaving wire().");
+      return state === 'compliant' ? 'compliant' : 'not-compliant';
+    };
+    const signalled = wire(previous) !== wire(wanted);
+    if (signalled) {
+      this.signal('deviceEvent', this.deviceNotice(device, {
+        type: 'device-compliance-change', act: 'compliance',
+        values: { previous_status: wire(previous),
+                  current_status: wire(wanted) },
+        initiatingEntity: COMPLIANCE_INITIATORS[from],
+        reasonAdmin: why || ('Device ' + device.id + ' was reported ' +
+                             wanted + ' by ' + (from === 'mdm'
+                               ? 'the MDM feed' : from === 'test-control'
+                                 ? 'the development test control'
+                                 : from === 'caep' ? 'a received CAEP event'
+                                                   : 'an administrator') +
+                             '.'),
+        reasonUser: wire(wanted) === 'compliant'
+          ? 'Your device "' + device.label + '" meets this service\'s ' +
+            'requirements.'
+          : 'Your device "' + device.label + '" no longer meets this ' +
+            'service\'s requirements.' }));
+    }
     log.debug("Leaving Devices.setCompliance().");
     return { ok: true, device: device, previous: previous, status: wanted,
-             changed: previous !== wanted };
+             changed: changed, signalled: signalled };
   }
 
-  // The device's status (phase 4: a compromised device is what RISC's
-  // credential-compromise reports on its owner).
+  // -------------------------------------------------------------------------
+  // THE DEVICE'S STATUS (decision 4, phase 4). `options` is ActOptions.
+  //
+  // **MARKING IT COMPROMISED IS THE STRONGEST ACT ON A DEVICE**, and what it
+  // does is argued in the header: its Native SSO secret revoked (in the same
+  // write), every certificate this service issued it revoked for
+  // keyCompromise, every sign-on session one of its keys authenticated
+  // ended, its risk level raised to HIGH (CAEP risk-level-change, principal
+  // DEVICE: CAEP section 3.8 names exactly this — "Device's risk has
+  // changed"), and for a person's device RISC credential-compromise for each
+  // kind of credential it held and sessions-revoked, naming the person AND
+  // the device. The device stays in the register, recognised and saying
+  // `compromised` (`device_recognition.ts`), because the requests it makes
+  // afterwards are the ones somebody needs to see.
+  //
+  // **RESTORING IT TO ACTIVE UNDOES ONLY THE RISK LEVEL**, and only when the
+  // compromise set it: back to what it was, which goes out as a
+  // risk-level-change, or — where it had never been assessed — forgotten
+  // silently, because CAEP has no level for "unassessed" and inventing LOW
+  // would tell receivers something nobody assessed. Nothing revoked comes
+  // back: a revoked certificate is re-issued, a secret re-minted at the next
+  // sign-in.
+  // -------------------------------------------------------------------------
   setStatus(id: unknown, status: unknown, actor?: unknown,
-            reason?: unknown): Json {
+            reason?: unknown, options?: ActOptions): Json {
     const { log } = this.deps;
     log.debug("Entering Devices.setStatus().");
     const wanted = String(status || '');
@@ -1590,10 +2240,16 @@ class Devices {
                          String(id || '') + '" in this realm.');
     }
     const previous = device.status;
+    const why = String(reason || '').slice(0, 500);
+    const compromising = wanted === 'compromised' && previous !== 'compromised';
+    const hadSecret = !!device.secretHash;
     device.status = wanted;
     device.statusChange = { status: wanted, previous: previous,
-      at: this.nowIso(), actor: String(actor || ''),
-      reason: String(reason || '').slice(0, 500) };
+      at: this.nowIso(), actor: String(actor || ''), reason: why };
+    if (compromising) {
+      device.secretHash = '';
+      device.session = '';
+    }
     if (!this.write(device)) {
       log.debug("Leaving Devices.setStatus(). Not stored.");
       return this.refuse('STS-DEVICE-0009', 'The directory did not store ' +
@@ -1602,8 +2258,72 @@ class Devices {
     this.recordAudit('device.update', String(actor || ''), device,
                      'device ' + device.id + ' is ' + wanted + ' (was ' +
                      previous + ')', { previous: previous, status: wanted });
+    let after: Json = null;
+    if (compromising) {
+      after = this.compromised(device, hadSecret, String(actor || ''), why,
+                               options);
+    } else if (wanted === 'active' && previous === 'compromised' &&
+               device.riskChange && device.riskChange.source === 'compromise') {
+      this.setRiskLevel(device.id, device.riskChange.beforeCompromise || '',
+                        'the device was restored to active',
+                        { source: 'compromise', actor: String(actor || ''),
+                          initiatingEntity: Devices.entityOf(options,
+                                                             'admin') });
+    }
     log.debug("Leaving Devices.setStatus().");
-    return { ok: true, device: device, previous: previous, status: wanted };
+    return Object.assign({ ok: true, device: this.byId(device.id) || device,
+                           previous: previous, status: wanted },
+                         after || {});
+  }
+
+  // What a compromise causes, after the write (setStatus()'s header).
+  private compromised(device: Device, hadSecret: boolean, actor: string,
+                      why: string, options?: ActOptions): Json {
+    const { log } = this.deps;
+    log.debug("Entering Devices.compromised(). " + device.id);
+    const entity = Devices.entityOf(options, 'admin');
+    const reasonAdmin = 'Device ' + device.id + ' was marked compromised' +
+                        (why ? ': ' + why : '') + '.';
+    if (hadSecret) {
+      this.credentialChanged(device, 'revoke', null, options, 'admin',
+                             reasonAdmin);
+    }
+    const revoked = this.revokeCertificates(device, 'keyCompromise', actor);
+    const ended = this.endSessionsFrom(device, entity === 'admin'
+      ? 'an administrator marked device ' + device.id + ' compromised'
+      : 'device ' + device.id + ' was marked compromised');
+    this.setRiskLevel(device.id, 'HIGH', 'DEVICE_COMPROMISED',
+                      { source: 'compromise', actor: actor,
+                        initiatingEntity: entity,
+                        beforeCompromise: device.riskLevel });
+    const username = this.personOf(device);
+    if (username) {
+      const types: string[] = [];
+      device.keys.forEach(function (key) {
+        const type = Devices.credentialOf(key).credentialType;
+        if (types.indexOf(type) < 0) {
+          types.push(type);
+        }
+      });
+      if (hadSecret) {
+        types.push(DEVICE_SECRET_CREDENTIAL_TYPE);
+      }
+      types.forEach((type) => {
+        this.signal('credentialCompromised', this.deviceNotice(device, {
+          credentialType: type, initiatingEntity: entity,
+          reasonAdmin: reasonAdmin,
+          reasonUser: 'A credential held by your device "' + device.label +
+                      '" is no longer trusted.' }));
+      });
+      this.sessionsRevoked(device, entity, reasonAdmin);
+    }
+    log.warn('devices: device ' + device.id + ' was marked COMPROMISED by ' +
+             (actor || 'an administrator') + '; ' + ended + ' session(s) ' +
+             'ended, ' + revoked.length + ' certificate(s) revoked' +
+             (hadSecret ? ', its Native SSO secret revoked' : '') + '.');
+    log.debug("Leaving Devices.compromised().");
+    return { sessionsEnded: ended, certificatesRevoked: revoked.length,
+             secretRevoked: hadSecret };
   }
 
   // -------------------------------------------------------------------------
@@ -1630,6 +2350,7 @@ class Devices {
       byKeyKind: zero(KEY_KIND_FILTERS),
       byEnrolment: zero(ENROLMENT_METHODS),
       byStatus: zero(STATUSES),
+      byRiskLevel: zero(RISK_LEVELS.concat(['unassessed'])),
       // Keys by what verified them (#164 phase 2): the attestation format
       // of each key, `none` for an unattested one.
       byKeyAttestationFormat: {},
@@ -1646,6 +2367,7 @@ class Devices {
       bump(out.byCompliance, d.compliance);
       bump(out.byAttestation, d.attestation);
       bump(out.byStatus, d.status);
+      bump(out.byRiskLevel, d.riskLevel || 'unassessed');
       bump(out.byEnrolment, d.enrolment.method);
       out.keys += d.keys.length;
       d.keys.forEach(function (k) {
@@ -1693,6 +2415,8 @@ class Devices {
       complianceChange: device.complianceChange,
       status: device.status,
       statusChange: device.statusChange,
+      riskLevel: device.riskLevel || 'unassessed',
+      riskChange: device.riskChange,
       platform: device.platform, model: device.model, os: device.os,
       enrolment: Object.assign({}, device.enrolment),
       nativeSso: !!device.secretHash,
@@ -1744,6 +2468,12 @@ class Devices {
         what: 'compromised; absent is active.' },
       { name: 'stsDeviceStatusChange', kind: 'single',
         what: 'JSON: the last status change.' },
+      { name: 'stsDeviceRiskLevel', kind: 'single',
+        what: 'LOW, MEDIUM or HIGH (CAEP\'s risk levels); absent is ' +
+              'unassessed. Set by risk scoring and by a compromise.' },
+      { name: 'stsDeviceRiskChange', kind: 'single',
+        what: 'JSON: the last risk level change — level, previous, at, ' +
+              'source (risk, compromise, admin), actor, reason.' },
       { name: 'stsDevicePlatform', kind: 'single',
         what: 'ios, ipados, android, macos, windows, linux, chromeos or ' +
               'other.' },
@@ -1797,6 +2527,11 @@ export = {
   STATUSES: STATUSES,
   PLATFORMS: PLATFORMS,
   EVENT_KINDS: EVENT_KINDS,
+  RISK_LEVELS: RISK_LEVELS,
+  RISK_SOURCES: RISK_SOURCES,
+  DEVICE_KEY_CREDENTIAL_TYPE: DEVICE_KEY_CREDENTIAL_TYPE,
+  DEVICE_SECRET_CREDENTIAL_TYPE: DEVICE_SECRET_CREDENTIAL_TYPE,
+  credentialOf: Devices.credentialOf,
   all: slot.forward('all'),
   list: slot.forward('list'),
   page: slot.forward('page'),
@@ -1818,6 +2553,9 @@ export = {
   removeKey: slot.forward('removeKey'),
   setCompliance: slot.forward('setCompliance'),
   setStatus: slot.forward('setStatus'),
+  // THE RISK LEVEL PHASE 5 SETS (#164): setRiskLevel(id, level, reason,
+  // { source, actor, initiatingEntity }).
+  setRiskLevel: slot.forward('setRiskLevel'),
   counts: slot.forward('counts'),
   events: slot.forward('events'),
   timeline: slot.forward('timeline')

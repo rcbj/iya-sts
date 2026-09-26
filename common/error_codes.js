@@ -13395,6 +13395,35 @@ const CODES = [
       'token request threw; nothing was recorded and nothing refused ' +
       '(#164 phase 2).',
     spec: 'none — logged' },
+  { code: 'STS-DEVICE-0030',
+    summary: 'A Shared Signals event about a device (a compliance, risk or ' +
+      'credential change, a compromise or a removal) threw on its way to ' +
+      'ssf/account_signals.ts; the change stands and nothing was sent ' +
+      '(#164 phase 4).',
+    spec: 'none — logged' },
+  { code: 'STS-DEVICE-0031',
+    summary: 'The sign-on sessions a compromised or removed device ' +
+      'authenticated could not all be ended (#164 phase 4).',
+    spec: 'none — logged; the device\'s change stands' },
+  { code: 'STS-DEVICE-0032',
+    summary: 'A certificate this service issued a compromised or removed ' +
+      'device could not be revoked by its Issuing CA (#164 phase 4).',
+    spec: 'none — logged and audited; the device\'s change stands' },
+  { code: 'STS-DEVICE-0033',
+    summary: 'A device risk level outside LOW, MEDIUM and HIGH (CAEP ' +
+      'section 3.8.1), or a source outside risk, compromise and admin, was ' +
+      'refused (#164 phase 4).',
+    spec: 'none — the caller\'s refusal' },
+  { code: 'STS-DEVICE-0034',
+    summary: 'A device compliance feed request carried no report or more ' +
+      'than devices.complianceFeedMaxReports, and was refused whole (#164 ' +
+      'phase 3).',
+    spec: 'HTTP 400' },
+  { code: 'STS-DEVICE-0035',
+    summary: 'The compliance test control, POST /devices/test/compliance, ' +
+      'was refused because the realm is in product mode, where test ' +
+      'controls are closed (#164 phase 3).',
+    spec: 'HTTP 403' },
   // ===== XACML =============================================================
   { code: 'STS-XACML-0001',
     summary: 'A request reached an XACML endpoint while the family is ' +

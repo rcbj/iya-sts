@@ -634,10 +634,12 @@ const SPECS: Spec[] = [
               'reason_admin / reason_user AS LANGUAGE MAPS rather than ' +
               'strings, which is the commonest mistake in the profile and ' +
               'the one with no symptom. Every event carries SSF\'s COMPLEX ' +
-              'subject naming the person AND the session, because the person ' +
-              'is not revoked and one session of theirs is, and an event ' +
-              'that arrives without a subject is refused rather than sent. ' +
-              'SIX OF THE EIGHT FIRE ON THEIR OWN, and caep.autoEmit turns ' +
+              'subject naming the person AND the session — and the ' +
+              'registered DEVICE the session was authenticated from, where ' +
+              'one was recognised (#164) — because the person is not ' +
+              'revoked and one session of theirs is, and an event that ' +
+              'arrives without a subject is refused rather than sent. ALL ' +
+              'EIGHT FIRE ON THEIR OWN, and caep.autoEmit turns ' +
               'them off: a sign-in, a single sign-on and a sign-out, the ' +
               'first two carrying fp_ua as a fingerprint of the User-Agent; ' +
               'assurance-level-change when a re-authentication moves acr; ' +
@@ -646,11 +648,17 @@ const SPECS: Spec[] = [
               'fido2-roaming with their AAGUID, authenticator apps, x509 ' +
               'certificates with issuer and serial, wallet credentials); ' +
               'and token-claims-change when a directory write moves a claim ' +
-              'of somebody holding live tokens or assertions (#145). NOT ' +
-              'covered: device-compliance-change and risk-level-change have ' +
-              'no source here (#164 and #62), so they are emitted by hand ' +
-              'from /admin/caep or POST /admin-api/caep/emit; a received ' +
-              'event is not acted on (#153, #117); and the CAEP ' +
+              'of somebody holding live tokens or assertions (#145); ' +
+              'risk-level-change when risk scoring moves a person\'s level ' +
+              '(#62) or a registered device\'s (principal DEVICE, #164 — a ' +
+              'compromise raises it to HIGH); device-compliance-change when ' +
+              'an administrator, the MDM feed or the development test ' +
+              'control moves a device\'s compliance (#164), unknown sent as ' +
+              'not-compliant because the event knows only two values; and ' +
+              'credential-change for a device\'s keys and its Native SSO ' +
+              'secret, the device beside its owner in the subject. NOT ' +
+              'covered: a received event is not acted on (#153, #117); and ' +
+              'the CAEP ' +
               'Interoperability Profile is a draft and nothing here claims ' +
               'it.' },
 
@@ -677,8 +685,8 @@ const SPECS: Spec[] = [
               'value, which is the reverse of every other event in all three ' +
               'vocabularies; a subject in another format is SENT with a ' +
               'warning rather than refused, because it is perfectly ' +
-              'deliverable and merely wrong. THIRTEEN OF THE FOURTEEN FIRE ' +
-              'ON THEIR OWN (#146), and risc.autoEmit turns them off: from ' +
+              'deliverable and merely wrong. ALL FOURTEEN FIRE ON THEIR OWN ' +
+              '(#146, #164), and risc.autoEmit turns them off: from ' +
               'the DIRECTORY, a person deleted, disabled (with the reason an ' +
               'administrator gave, and none when none was given) or enabled, ' +
               'an identifier moving, and an identifier RECYCLED — given to ' +
@@ -687,7 +695,14 @@ const SPECS: Spec[] = [
               'credential change, recovery-activated for a reset link, ' +
               'credential-compromise for a reset marked as caused by one, ' +
               'and recovery information changed (as from a person confirming ' +
-              'new recovery codes); and from the ACCOUNT HOLDER on ' +
+              'new recovery codes); from the DEVICE REGISTER (#164), ' +
+              'credential-compromise for each credential a person\'s ' +
+              'device held when it is marked compromised, and the ' +
+              'deprecated sessions-revoked when it is compromised or ' +
+              'removed — both with a complex subject naming the account AND ' +
+              'the device, which is what makes "every session of the ' +
+              'account" true of what was ended; and from the ACCOUNT HOLDER ' +
+              'on ' +
               '/portal/signals, the section 2.8 opt-out moves, ' +
               'opt-out-effective following after risc.optOutDelayHours ' +
               'from a scheduler job. Section ' +
@@ -699,9 +714,8 @@ const SPECS: Spec[] = [
               'Google compatibility note is reproducible at ' +
               'risc.googleSubjectType, in development mode only (#181). ' +
               'NOT covered: no detector finds a ' +
-              'compromised credential by itself (#62); the deprecated ' +
-              'sessions-revoked is emitted only by hand from /admin/risc or ' +
-              'POST /admin-api/risc/emit; and a received event is not acted ' +
+              'compromised credential by itself (#62); and a received event ' +
+              'is not acted ' +
               'on (#153, #117). recovery-activated is sent both when an ' +
               'administrator issues a reset link and when a person asks for ' +
               'one at /portal/forgot-password (#63).' },
@@ -5134,11 +5148,12 @@ const ENDPOINTS: EndpointEntry[] = [
           'its permitted values and what it is for — plus the four claims ' +
           'CAEP gives them all, of which reason_admin and reason_user are ' +
           'LANGUAGE MAPS rather than strings. Its ONE control is the form ' +
-          'that emits an event by hand, and it exists because FIVE OF THE ' +
-          'EIGHT describe things nothing here does: no device reports ' +
-          'compliance to this service and no risk engine talks to it. The ' +
-          'other three fire on their own when a session starts, is presented ' +
-          'or ends, which makes this THE ONLY PAGE IN THIS CONSOLE THAT ' +
+          'that emits an event by hand, about a session and with any ' +
+          'payload, which is what a receiver under test needs beside the ' +
+          'automatic emissions. All eight also fire on their own (the ' +
+          'eighth, device-compliance-change, since #164) — a session ' +
+          'starting, presented or ending among them — which makes this THE ' +
+          'ONLY PAGE IN THIS CONSOLE THAT ' +
           'CONFIGURES THIS SERVICE TO ACT WITHOUT BEING ASKED — ' +
           'caep.autoEmit, and turning it off restores the behaviour every ' +
           'other family here has. The caep.* settings post back to it. ' +
@@ -6398,7 +6413,8 @@ const ENDPOINTS: EndpointEntry[] = [
   { path: '/admin/devices', group: 'Admin',
     name: 'The device register',
     specs: ['rfc4519', 'oidc-native-sso'],
-    effect: 'registers, edits or removes a device, or adds or removes a key',
+    effect: 'registers, edits or removes a device, adds or removes a key, ' +
+            'sets its compliance, or marks it compromised or restores it',
     what: 'NON-SPEC (#164, #218). Filed under Directory. Every device in ' +
           'the realm (ou=devices), each owned by one person or one ' +
           'application: its keys (a certificate, a JWK, a linked WebAuthn ' +
@@ -6406,23 +6422,31 @@ const ENDPOINTS: EndpointEntry[] = [
           'compliance, Native SSO state and last use — paged, and filtered ' +
           'by owner kind, compliance, attestation, key kind and a search. ' +
           '?device= is one device with every edit. POST: create, update, ' +
-          'remove, add-key, remove-key, Admin Write. Add ?format=json.' },
+          'remove, add-key, remove-key, set-compliance (CAEP ' +
+          'device-compliance-change) and set-status (compromised: its ' +
+          'sessions ended, its secret and certificates revoked, RISC ' +
+          'credential-compromise and sessions-revoked), Admin Write. Add ' +
+          '?format=json.' },
   { path: '/admin/device-registration', group: 'Admin',
     name: 'How a device is registered and recognised',
     specs: ['oidc-native-sso'],
     what: 'NON-SPEC (#164, #218). Filed under Protocols. Each enrolment ' +
           'method (Native SSO, an administrator, the portal, EST, SCEP) and ' +
           'whether it is built, each kind of key a device is recognised by, ' +
-          'what attestation and compliance mean here, and the Devices ' +
-          'settings. Add ?format=json.' },
+          'what attestation and compliance mean here, the four doors that ' +
+          'set compliance (an administrator, the MDM feed, the development ' +
+          'test control, and a received CAEP event with #153), what goes ' +
+          'out over Shared Signals, and the Devices settings. Add ' +
+          '?format=json.' },
   { path: '/admin/devices/monitor', group: 'Admin',
     name: 'The device register, counted',
     specs: [],
     what: 'NON-SPEC (#164, #218). Filed under Monitoring. Devices by owner ' +
           'kind, compliance, attestation, key kind and enrolment; Native ' +
           'SSO devices bound to a live session against ended ones; and ' +
-          'registrations, removals and evictions at a person\'s bound, day ' +
-          'by day (?days=). Add ?format=json.' },
+          'registrations, removals and evictions at a person\'s bound, and ' +
+          'compliance changes by source (admin, mdm, test-control, caep), ' +
+          'day by day (?days=); devices by risk level. Add ?format=json.' },
   { path: '/admin/mail/outbox', group: 'Admin',
     name: 'What this service sent, and the dead letters',
     specs: [],
@@ -7698,10 +7722,23 @@ const ENDPOINTS: EndpointEntry[] = [
           'and status; ?device= is one device, found or not.' },
   { path: '/admin-api/devices/:action', group: 'Management API',
     name: 'Device register actions', specs: ['openapi'],
-    effect: 'registers, edits or removes a device, or adds or removes a key',
-    what: 'NON-SPEC (#164, #218). create, update, remove, add-key and ' +
-          'remove-key: the console\'s five forms. A key is recorded as ' +
-          'proven by nobody and self-asserted.' },
+    effect: 'registers, edits or removes a device, adds or removes a key, ' +
+            'sets its compliance, or marks it compromised or restores it',
+    what: 'NON-SPEC (#164, #218). create, update, remove, add-key, ' +
+          'remove-key, set-compliance and set-status: the console\'s seven ' +
+          'forms. A key is recorded as proven by nobody and self-asserted.' },
+  { path: '/admin-api/device-compliance', group: 'Management API',
+    name: 'The device compliance feed (MDM / posture)',
+    specs: ['caep', 'openapi'],
+    effect: 'sets the compliance of one device or a batch',
+    what: 'NON-SPEC (#164 decision 2). An MDM or posture feed reports ' +
+          'device compliance — one report or up to ' +
+          'devices.complianceFeedMaxReports, each naming its device by id, ' +
+          'key thumbprint or certificate — with an access token carrying ' +
+          'the PROTECTED device:compliance scope (#110: issued only to a ' +
+          'client that declares it, in both modes) and no admin scope; ' +
+          'an admin:write token is refused. Source mdm, the client as ' +
+          'actor; a change sends CAEP device-compliance-change.' },
   { path: '/admin-api/device-registration', group: 'Management API',
     name: 'Device registration', specs: ['openapi'],
     what: 'NON-SPEC (#218). GET /admin/device-registration over JSON: the ' +
@@ -9904,6 +9941,18 @@ const ENDPOINTS: EndpointEntry[] = [
           'code presented a second time is refused rather than answered with ' +
           'the tokens it already bought, and those tokens are revoked ' +
           '(section 4.5, and RFC 6749 section 10.5 for the revocation).' },
+  { path: '/devices/test/compliance', group: 'Shared Signals',
+    name: 'Device compliance test control (not a spec endpoint)',
+    specs: ['caep'],
+    effect: 'sets a device\'s compliance, with no credential',
+    what: 'NON-SPEC (#164 decision 9), for tests: the MDM feed\'s body — a ' +
+          'report naming a device by id, thumbprint or certificate, or ' +
+          'reports: [...] — WITHOUT the device:compliance scope, recorded ' +
+          'with source test-control, so a client under test can drive the ' +
+          'CAEP device-compliance-change it reacts to. PRODUCT MODE REFUSES ' +
+          'IT with 403 (mode.opensTestControls(), STS-DEVICE-0035): there ' +
+          'the feed at /admin-api/device-compliance, under its scope, is ' +
+          'the door.' },
   { path: '/dpop/nonce-mode', group: 'OAuth 2.0 / OIDC',
     name: 'DPoP nonce switch (not a spec endpoint)', specs: [],
     what: 'NON-SPEC, for tests and for trying the handshake by hand: turns ' +

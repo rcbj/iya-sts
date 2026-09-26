@@ -166,13 +166,11 @@ interface CaepRegisterDeps {
 }
 
 // The acts this service can actually OBSERVE, and their event types — three
-// at first, six now (the fourth to sixth are marked below). Written as short
-// names because that is what `caep.autoEmitTypes` holds — a setting whose
-// values were 60-character URIs would be a setting nobody could type. The
-// other two CAEP events are things nothing here observes: no device reports
-// compliance to this service (#164 will) and no risk engine talks to it
-// (#62), so they are emitted by hand and a row naming one of them is dropped
-// with a warning rather than producing an event nothing can cause.
+// at first, eight now (the fourth to eighth are marked below), which is
+// every one of CAEP's eight. Written as short names because that is what
+// `caep.autoEmitTypes` holds — a setting whose values were 60-character URIs
+// would be a setting nobody could type. A row naming anything else is
+// dropped with a warning rather than producing an event nothing can cause.
 const AUTO_ACTS: Record<string, string> = {
   established: 'session-established',
   presented: 'session-presented',
@@ -204,7 +202,16 @@ const AUTO_ACTS: Record<string, string> = {
   // the `risk-response` policy permitted announcing it. Its subject names the
   // PERSON (`principal` USER): the standing moved, not one session. `ssf.ts`'s
   // `riskAutoEmit()` sends it.
-  risk: 'risk-level-change'
+  risk: 'risk-level-change',
+  // THE EIGHTH (#164 phase 4, 2026-09-26): a registered device's compliance
+  // CHANGED — set by an administrator, the MDM feed under
+  // `device:compliance`, or development's test control (a received CAEP
+  // event joins them with #153). `common/devices.ts`'s `setCompliance()` is
+  // the funnel and `ssf.ts`'s `emitDeviceEvent()` sends it; the same act
+  // name is not needed for the device's `risk-level-change` (act `risk`) or
+  // its keys' `credential-change` (act `credential`), which ride the acts
+  // above.
+  compliance: 'device-compliance-change'
 };
 
 // THE SCALE THIS SERVICE'S OWN LEVELS ARE ON, and it is deliberately not
@@ -452,8 +459,14 @@ class CaepRegister {
       user: { format: 'iss_sub', iss: String(row.iss || ''),
         sub: String(row.sub || '') },
       session: { format: 'opaque', id: String(row.sessionId || '') },
+      // THE REGISTERED DEVICE THAT AUTHENTICATED THE SESSION (#164 phase 4),
+      // named as the device register's own events name it — `iss_sub`, the
+      // realm's issuer and the device's id (`ssf.ts`'s deviceSubjectOf()
+      // argues the format) — so a receiver that added the device to its
+      // stream is sent the session events of that device too.
       device: row.deviceId
-        ? { format: 'opaque', id: String(row.deviceId) } : null,
+        ? { format: 'iss_sub', iss: String(row.iss || ''),
+            sub: String(row.deviceId) } : null,
       tenant: row.tenant ? { format: 'opaque', id: String(row.tenant) } : null
     });
     log.debug("Leaving CaepRegister.subjectFor(). " +
@@ -881,6 +894,17 @@ class CaepRegister {
     }
     if (asked.issuer && !row.iss) {
       row.iss = String(asked.issuer);
+    }
+    // THE DEVICE THE SESSION'S LATEST AUTHENTICATION CAME FROM (#164 phase
+    // 4): `registeredDevice` on its newest event (`authn.registeredDeviceOf()`
+    // reads the same). Read on every act, so a session a later
+    // re-authentication proved from a registered device names it from then
+    // on; one that never did carries no `device` member.
+    const sessionEvents = Array.isArray(session.events) ? session.events : [];
+    const latest = sessionEvents.length
+      ? sessionEvents[sessionEvents.length - 1] : null;
+    if (latest && latest.registeredDevice && latest.registeredDevice.id) {
+      row.deviceId = String(latest.registeredDevice.id);
     }
     row.updatedAt = iso();
     // A RE-AUTHENTICATION MOVES WHAT THE ROW SAYS THE SESSION IS, whether or

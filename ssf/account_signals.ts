@@ -65,9 +65,11 @@ interface Delivery {
 interface SsfEmitters {
   emitCredentialChange?(notice: object): Delivery | Promise<Delivery>;
   emitRiscAccountAct?(notice: object): Delivery | Promise<Delivery>;
+  emitDeviceEvent?(notice: object): Delivery | Promise<Delivery>;
 }
 
-type EmitterName = 'emitCredentialChange' | 'emitRiscAccountAct';
+type EmitterName = 'emitCredentialChange' | 'emitRiscAccountAct' |
+                   'emitDeviceEvent';
 
 interface AccountSignalsDeps {
   log: { debug(m: string): void; warn(m: string): void };
@@ -276,6 +278,37 @@ class AccountSignals {
                         Object.assign({}, notice || {}));
   }
 
+  // ---------------------------------------------------------------------
+  // A DEVICE'S EVENTS (#164 phase 4), from `common/devices.ts`, the
+  // register's funnel: CAEP `device-compliance-change`, `risk-level-change`
+  // with principal DEVICE and `credential-change` for a device key or its
+  // Native SSO secret. `notice` is { type, act, deviceId, username (the
+  // owner, where a person), values, initiatingEntity, reasonAdmin,
+  // reasonUser }; `ssf.ts`'s `emitDeviceEvent()` builds the complex subject
+  // and holds it to `caep.autoEmitTypes`. No mail notice: a device's owner
+  // is told by the portal, and a compliance feed must not become mail.
+  // ---------------------------------------------------------------------
+  deviceEvent(notice?: Record<string, any>): Promise<Delivery> {
+    const { log } = this.deps;
+    log.debug('Entering AccountSignals.deviceEvent().');
+    const asked = notice || {};
+    log.debug('Leaving AccountSignals.deviceEvent().');
+    return this.deliver('a CAEP ' + String(asked.type || 'device event') +
+                        ' about a device', 'emitDeviceEvent', asked);
+  }
+
+  // RISC sessions-revoked (#164 phase 4): every session of a person ON ONE
+  // DEVICE was ended — the device compromised or removed. `notice` carries
+  // `deviceId`, which puts the device beside the person in the subject.
+  sessionsRevoked(notice?: Record<string, any>): Promise<Delivery> {
+    const { log } = this.deps;
+    log.debug('Entering AccountSignals.sessionsRevoked().');
+    log.debug('Leaving AccountSignals.sessionsRevoked().');
+    return this.deliver('a RISC sessions-revoked', 'emitRiscAccountAct',
+                        Object.assign({}, notice || {},
+                                      { act: 'sessionsRevoked' }));
+  }
+
   // RISC recovery-information-changed: somebody's recovery codes were
   // cleared.
   recoveryInformationChanged(notice?: object): Promise<Delivery> {
@@ -317,6 +350,8 @@ export = {
   recoveryActivated: slot.forward('recoveryActivated'),
   credentialCompromised: slot.forward('credentialCompromised'),
   optOutMoved: slot.forward('optOutMoved'),
+  deviceEvent: slot.forward('deviceEvent'),
+  sessionsRevoked: slot.forward('sessionsRevoked'),
   KEY_CREDENTIAL_TYPE: AccountSignals.KEY_CREDENTIAL_TYPE,
   keyCredentialType: AccountSignals.keyCredentialType,
   TOTP_CREDENTIAL_TYPE: AccountSignals.TOTP_CREDENTIAL_TYPE

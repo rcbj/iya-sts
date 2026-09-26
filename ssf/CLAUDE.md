@@ -1234,9 +1234,10 @@ the half a reader cannot discover from a protocol trace.
   for a directory change to a claim somebody's live tokens carry (#145) and a
   modified GNAP grant, and `risk-level-change` (#62 P4) when a person's risk
   level changes and the `risk-response` policy permits announcing it
-  (`riskAutoEmit()`); `device-compliance-change` describes a thing nothing here
-  does — no device reports compliance to this service (#164) — so it is still
-  emitted only when asked for.
+  (`riskAutoEmit()`), and — since #164 — the device register sends
+  `device-compliance-change`, a device's `risk-level-change` and its
+  credentials' `credential-change` (*A DEVICE'S EVENTS*, below). Every one of
+  CAEP's eight now has an act here.
 * **It does not retry a failed push unless `ssf.pushRetries` says to.** See
   above.
 * **It is not a receiver of anybody else's transmitter** (#153). It discovers
@@ -1477,15 +1478,12 @@ the default for an event emitted BY HAND. `change_direction` comes from
 and this event cannot disagree about which way is up. `authn/CLAUDE.md`, *What
 an authenticated identity is here*, carries the design and the probe.
 
-What remains — token claims change (except for a modified GNAP grant,
-`gnap/gnap_signals.ts`), device compliance change, risk level change, and
-credential changes other than an administrator's — has **no act here that
-could cause it**. No device reports compliance to this service and no risk
-engine talks to it, so an automatic emission of one would be this service
-inventing a fact. They are emitted by hand from `/admin/caep` or
-`POST /admin-api/caep/emit`, and a row in `caep.autoEmitTypes` naming one is
-dropped rather than honoured: honouring it would leave a setting that reads as
-configured and does nothing.
+*(Superseded, in stages: this paragraph said token claims, device compliance,
+risk level and most credential changes had no act here. #145 gave the first
+and last one, #62 the risk level, and #164 device compliance — so every CAEP
+type now fires on its own, and `/admin/caep`'s hand emission is for an event
+on demand. A row in `caep.autoEmitTypes` naming something that is not one of
+`AUTO_ACTS` is still dropped with a warning rather than honoured.)*
 
 **THE FIRST PRESENTATION OF A NEW SESSION IS NOT REPORTED**, and without that
 rule the feature would be noise. Every sign-in here ends with the browser
@@ -1817,8 +1815,9 @@ it by default.
 fingerprint, as CAEP defines the member, and not the header.
 
 **Not here:**
-* `device-compliance-change` has no source (#164).
-* Acting on a RECEIVED event is #153 and #117.
+* Acting on a RECEIVED event is #153 and #117 — including a received
+  `device-compliance-change`, which is the fourth compliance source #164
+  leaves to #153.
 
 ## A RENAMED ACCOUNT KEEPS ITS RISC ROW (2026-09-14)
 
@@ -1838,3 +1837,51 @@ hold a second factor is refused their own password with the one `STS-SSF-0009`
 `/admin-api` (`admin`) — is a `credential-change` (`password`, `create` or
 `revoke`, the app password's name as `friendly_name`) through
 `account_signals.ts`.
+
+## A DEVICE'S EVENTS (#164 phases 3 and 4, 2026-09-26)
+
+`common/devices.ts` is the device register's FUNNEL — the console, `/admin-api`,
+the MDM feed, the portal, EST and SCEP and Native SSO all change a device
+through it — so it is where a device's events are sent, through
+`account_signals.ts`'s `deviceEvent()` and `sessionsRevoked()` (the same
+`require.cache` arrangement) to `ssf.ts`'s `emitDeviceEvent()` and
+`emitRiscAccountAct()`:
+
+| Act | Event | Notes |
+|---|---|---|
+| compliance changes | CAEP `device-compliance-change` (act `compliance`, the eighth `AUTO_ACTS` row) | CAEP section 3.5.1 has TWO values, so `unknown` is sent as `not-compliant` and an event goes out only when the sent value moves |
+| risk level changes | CAEP `risk-level-change`, `principal` `DEVICE` (act `risk`) | `devices.setRiskLevel()`, which #164 phase 5 calls; a compromise raises it to `HIGH`; `previous_level` only where there was one |
+| a key added, re-issued, removed; a Native SSO secret issued, revoked | CAEP `credential-change` (act `credential`) | `x509`, `fido2-platform`/`fido2-roaming`, and two URNs of our own for a JWK key and a device_secret (#236) |
+| a person's device compromised | RISC `credential-compromise` per kind of credential it held, and `sessions-revoked` | complex subject: the account AND the device |
+| a person's device removed | RISC `sessions-revoked` | the same subject |
+
+**THE DEVICE IS NAMED `iss_sub`**: this realm's issuer and the device's id,
+the form CAEP section 3.5.2's own example uses. The id is unique only within
+the realm that assigned it, which is exactly what an issuer-scoped identifier
+says; `opaque` would say nothing about whose it is, and the
+`urn:sts:device:<id>` a device certificate carries names no issuer either.
+`caep.subjectFor()` names the session events' device the same way (it was
+`opaque` and never filled until #164), from the `registeredDevice` on the
+session's latest authentication event, so a receiver that added the device
+gets its session events too.
+
+**RISC'S SUBJECT IS COMPLEX FOR THESE TWO AND NO OTHER**, and `risc.ts`'s
+subject section still holds: a complex subject on `account-disabled` would
+mean nothing. On `sessions-revoked` the device member is what makes the
+deprecated event TRUE — "all the sessions for the account" becomes every
+session of the account on that device, which is what was ended; each ended
+session also sends CAEP `session-revoked`, which RISC 1.0 section 2.11 points
+at, and `risc.autoEmitTypes` can drop the RISC one. `accountIdOf()` reads a
+complex subject's `user` member so the register still counts the event.
+
+**STREAM SUBJECTS MATCH BY SSF 1.0 SECTION 8.1.3.1** (`complexSubjectsMatch()`
+in `ssf_streams.ts`): a complex subject a receiver ADDED matches an event's
+complex subject when every member both define is identical — and, a condition
+the section's letter omits and all its examples meet, at least one member is
+defined by both. Without it `{ device }` would match every session event of
+every person, none of which names a device.
+
+**What a compromise and a removal CAUSE** — sessions ended, certificates
+revoked, the secret revoked — is `devices.ts`'s header; this directory only
+reports it.
+

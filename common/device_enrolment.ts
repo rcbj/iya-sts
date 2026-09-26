@@ -357,13 +357,14 @@ class DeviceEnrolment {
       const mine = devices.listFor(username).some(function (d: Json) {
         return d.id === String(s.deviceId);
       });
-      result = mine ? devices.addKey(String(s.deviceId), keySpec, username)
+      result = mine ? devices.addKey(String(s.deviceId), keySpec, username,
+                                     { initiatingEntity: 'user' })
         : this.refuse('STS-DEVICE-0007', 'No device "' +
                       String(s.deviceId).slice(0, 64) + '" is yours.');
     } else {
       result = devices.create(Object.assign({ owner: username,
         ownerKind: 'person', method: 'portal', keys: [keySpec] },
-        this.described(s)), username);
+        this.described(s)), username, { initiatingEntity: 'user' });
     }
     if (result.ok) {
       deviceRecognition.noteEnrolment('portal', String(level ||

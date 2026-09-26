@@ -1288,10 +1288,9 @@ const SECTIONS = [
                'configures this service to act without being asked</strong>: ' +
                'with <code>caep.autoEmit</code> on, a sign-in, a single ' +
                'sign-on and a sign-out each send an event to whoever agreed ' +
-               'to be told. Five of the eight describe things nothing here ' +
-               'does &mdash; no device reports compliance to this service ' +
-               'and no risk engine talks to it &mdash; so this page carries ' +
-               'the form that emits one by hand.' },
+               'to be told. All eight fire on their own (device ' +
+               'compliance since #164), and this page also carries the form ' +
+               'that emits one by hand, on demand.' },
 
       // AND RISC BESIDE IT, for the reason CAEP is beside Shared Signals
       // rather than inside it: they are two specifications answering two
@@ -37881,10 +37880,10 @@ class AdminConsole {
 
         (json.installed
           ? '<h2>Emit one by hand</h2>' +
-            self.note('Five of the eight describe things nothing here does ' +
-            '&mdash; no device reports compliance to this service and no ' +
-            'risk engine talks to it &mdash; so this form is the only way ' +
-            'they are ever produced. The subject is composed from the ' +
+            self.note('Every one of the eight is also sent on its own when ' +
+            'the act it describes happens here (a device\'s compliance ' +
+            'since #164); this form sends one on demand, with the payload ' +
+            'you choose. The subject is composed from the ' +
             'session you pick: SSF\'s <strong>complex</strong> subject, ' +
             'naming the person AND the session, because the person is not ' +
             'revoked and one session of theirs is. Leave the payload empty ' +

@@ -2126,6 +2126,10 @@ const OWN_NAMES = [
   'stsDeviceAttestation', 'stsDeviceCompliance', 'stsDeviceComplianceChange',
   'stsDeviceStatus', 'stsDeviceStatusChange', 'stsDevicePlatform',
   'stsDeviceModel', 'stsDeviceOs', 'stsDeviceEnrolment',
+  // AND ITS RISK LEVEL (#164 phase 4): LOW, MEDIUM or HIGH, and the last
+  // change of it — what CAEP's risk-level-change with principal DEVICE
+  // reports, set by phase 5's risk scoring and by a compromise.
+  'stsDeviceRiskLevel', 'stsDeviceRiskChange',
 
   // AND A PERSON'S CIBA USER CODE (#131, 2026-09-23): a secret they set on
   // /portal/ciba that a backchannel authentication request must carry when
@@ -9027,6 +9031,8 @@ function writeDeviceEntry(id, attributes) {
   log.debug('Entering writeDeviceEntry(). id=' + id);
   const dn = deviceDn(id);
   const existing = getEntry(dn);
+  // Read BEFORE the write, for usernameIndexIsCurrent()'s reason.
+  const indexWasCurrent = deviceIndexIsCurrent();
   if (!existing && totalEntries() >= maxEntries()) {
     log.warn(errorCodes.tag('STS-LDAP-0007') +
              'ldap: not creating ' + dn + '; the directory holds its ' +
@@ -9040,6 +9046,7 @@ function writeDeviceEntry(id, attributes) {
   stored.createdAt = created;
   stored.attributes.createtimestamp = [created];
   stored.attributes.modifytimestamp = [generalizedTime()];
+  noteDeviceIndexWrite(stored, indexWasCurrent);
   log.debug('Leaving writeDeviceEntry(). ' + (existing ? 'Replaced.' :
                                                          'Created.'));
   return true;
@@ -9056,6 +9063,146 @@ function deleteDeviceEntry(id) {
   touchDirectory();
   log.debug('Leaving deleteDeviceEntry().');
   return true;
+}
+
+// ---------------------------------------------------------------------------
+// ONE DEVICE BY AN INDEXED ATTRIBUTE (#164 phase 3, 2026-09-26), and why it is
+// the entryUUID index's bargain rather than the username index's.
+//
+// Recognition asks "which device holds this key" on EVERY token request that
+// carries a DPoP proof, a client certificate or a Native SSO device_secret,
+// and until this it was answered by `listDeviceEntries()` — a copy of every
+// device entry — and a JSON parse of every key on every one of them: O(n) in
+// the register, on the hot path. Three attributes are looked up by value and
+// each names ONE device: `cn` (the id), `stsDeviceKeyThumbprint`
+// (`<kind>:<thumbprint>`, which `common/devices.ts` derives on every write so
+// that this lookup could exist) and `stsDeviceSecretHash`.
+//
+// **A HIT IS VALIDATED AGAINST THE STORE AND A MISS REBUILDS ONCE PER CHANGE
+// UNDER `ou=devices`.** The index maps a value to an entry's key; a hit is
+// believed only while that entry is still in the store and still carries the
+// value, so a write nobody hooked can cost a rebuild and never a wrong
+// answer. A miss — the common case, a DPoP key no device holds — rebuilds
+// only when `subtreeVersion(devicesDn())` has moved, the clock
+// `entriesUnder()` already trusts, so a miss is a Map lookup until something
+// is written under the container.
+//
+// **IT IS SAFE ACROSS PROCESSES AND NODES BECAUSE IT HOLDS NOTHING OF ITS
+// OWN.** The root CLAUDE.md's rule is that a store is shared by coordination
+// and a per-process cache must be keyed by something that replicates. This is
+// keyed by, and checked against, the directory entries themselves — which is
+// what the change log replicates into every process — and by the subtree
+// clock every replicated write moves. A device written on another node is
+// either found through a rebuild or found by the validated hit; it is never
+// answered from a copy this process made.
+// ---------------------------------------------------------------------------
+const DEVICE_INDEXED = ['cn', 'stsdevicekeythumbprint', 'stsdevicesecrethash'];
+
+const deviceIndexes = realms.keyed(function () {
+  return { index: null, version: -1, container: '', builds: 0 };
+});
+
+const deviceIndexCount = cacheRegistry.counter('ldap.device-index');
+
+// Whether this realm's device index is current right now. Read BEFORE a
+// write: afterwards the subtree clock has moved and cannot say.
+function deviceIndexIsCurrent() {
+  log.debug('Entering deviceIndexIsCurrent().');
+  const cache = deviceIndexes();
+  log.debug('Leaving deviceIndexIsCurrent().');
+  return !!cache.index && cache.version === subtreeVersion(devicesDn()) &&
+         cache.container === normalizeDn(devicesDn());
+}
+
+// THE REGISTER'S OWN WRITES KEEP THE INDEX IN STEP (the username index's
+// half of the bargain, for the load that needs it). Every recognition moves a
+// device's last use — at most once per devices.lastUsedResolutionSeconds —
+// and each such write moves the subtree clock; without this, the next MISS
+// (a DPoP key no device holds, the common case) would rebuild the index from
+// a fresh walk of the realm, once per write. So a write through
+// `writeDeviceEntry()` onto a CURRENT index adds the entry's values and
+// declares the index current again. A value the write took away is left in
+// the map and fails the hit's validation, which is all it can cost. A write
+// by any other path — the socket, a replicated change from another node —
+// is not seen here, leaves the clock ahead, and the next miss rebuilds.
+function noteDeviceIndexWrite(stored, wasCurrent) {
+  log.debug('Entering noteDeviceIndexWrite().');
+  const cache = deviceIndexes();
+  if (!wasCurrent || !cache.index) {
+    log.debug('Leaving noteDeviceIndexWrite(). Left to be rebuilt.');
+    return;
+  }
+  const key = normalizeDn(stored.dn);
+  DEVICE_INDEXED.forEach(function (name) {
+    (stored.attributes[name] || []).forEach(function (value) {
+      cache.index.set(name + '\u0000' + String(value), key);
+    });
+  });
+  cache.version = subtreeVersion(devicesDn());
+  log.debug('Leaving noteDeviceIndexWrite(). ' + cache.index.size + '.');
+}
+
+// The map, rebuilt from the container listing.
+function buildDeviceIndex(container) {
+  log.debug('Entering buildDeviceIndex().');
+  const index = new Map();
+  entriesUnder(container).forEach(function (stored) {
+    const key = normalizeDn(stored.dn);
+    DEVICE_INDEXED.forEach(function (name) {
+      (stored.attributes[name] || []).forEach(function (value) {
+        const slot = name + '\u0000' + String(value);
+        if (!index.has(slot)) {
+          index.set(slot, key);
+        }
+      });
+    });
+  });
+  log.debug('Leaving buildDeviceIndex(). ' + index.size + ' value(s).');
+  return index;
+}
+
+function deviceEntryByIndex(attribute, value) {
+  log.debug('Entering deviceEntryByIndex(). ' + attribute);
+  const name = String(attribute || '').toLowerCase();
+  const wanted = String(value === undefined || value === null ? '' : value);
+  if (DEVICE_INDEXED.indexOf(name) < 0 || !wanted) {
+    log.debug('Leaving deviceEntryByIndex(). Not an indexed lookup.');
+    return null;
+  }
+  const container = devicesDn();
+  const cache = deviceIndexes();
+  const slot = name + '\u0000' + wanted;
+  // A HOT PATH: once or twice per recognition, so no Entering/Leaving pair.
+  const lookup = function () {
+    const key = cache.index ? cache.index.get(slot) : null;
+    const stored = key ? entries.get(key) : null;
+    return stored && (stored.attributes[name] || []).some(function (one) {
+      return String(one) === wanted;
+    }) ? stored : null;
+  };
+  let found = lookup();
+  const version = subtreeVersion(container);
+  if (!found && (cache.version !== version ||
+                 cache.container !== normalizeDn(container))) {
+    deviceIndexCount.miss();
+    cache.index = buildDeviceIndex(container);
+    cache.version = version;
+    cache.container = normalizeDn(container);
+    cache.builds += 1;
+    found = lookup();
+  } else {
+    deviceIndexCount.hit();
+  }
+  if (!found) {
+    log.debug('Leaving deviceEntryByIndex(). None.');
+    return null;
+  }
+  const attributes = {};
+  Object.keys(found.attributes).forEach(function (one) {
+    attributes[one] = found.attributes[one].slice(0);
+  });
+  log.debug('Leaving deviceEntryByIndex(). ' + found.dn);
+  return { dn: found.dn, attributes: attributes };
 }
 
 // THE OPENID FEDERATION REGISTER (#132): every entry under ou=oidfed,
@@ -9288,6 +9435,9 @@ if (typeof credentials.setDirectory === 'function') {
     listDeviceEntries: listDeviceEntries,
     writeDeviceEntry: writeDeviceEntry,
     deleteDeviceEntry: deleteDeviceEntry,
+    // One device by its id, a key thumbprint or its secret's hash (#164
+    // phase 3), without copying the register.
+    deviceEntryByIndex: deviceEntryByIndex,
     // The OpenID Federation register (#132), checked where it is used.
     listOidfedEntries: listOidfedEntries,
     writeOidfedEntry: writeOidfedEntry,
@@ -18321,6 +18471,40 @@ function describeDirectoryCaches() {
                    validUntil: null,
                    valid: cache.version === directoryVersion,
                    basis: 'directory version' });
+      });
+      return out;
+    }
+  });
+  cacheRegistry.register({
+    name: 'ldap.device-index',
+    title: 'Directory device index',
+    description: 'Each device entry\'s id, key thumbprints and Native SSO ' +
+      'secret hash, to its entry under ou=devices, so recognising a device ' +
+      'at the token endpoint does not copy the register (#164).',
+    owner: 'ldap/ldap_server.js',
+    scope: 'realm',
+    maxEntries: oneIndexPerRealm,
+    bound: indexBound,
+    settings: ['ldap.maxEntries'],
+    lifetime: function () {
+      return 'Until something is written under ou=devices and a lookup ' +
+        'misses; a hit on a current entry does not wait for a rebuild. One ' +
+        'index per realm.';
+    },
+    entries: function () {
+      const out = [];
+      deviceIndexes.existing().forEach(function (cache, id) {
+        if (!cache.index) {
+          return;
+        }
+        out.push({ realm: id,
+                   key: cache.index.size + ' value(s), built ' + cache.builds +
+                     ' time(s)',
+                   validUntil: null,
+                   valid: inRealmById(id, function () {
+                     return cache.version === subtreeVersion(devicesDn());
+                   }),
+                   basis: 'ou=devices version' });
       });
       return out;
     }

@@ -2093,7 +2093,9 @@ class CertEnrollment {
     });
     if (!issued.ok) {
       if (created) {
-        devices.remove(device.id, undefined, actor);
+        // The device this request made, gone again with nothing issued to
+        // it: not a removal anybody is told about.
+        devices.remove(device.id, undefined, actor, { quiet: true });
       }
       log.debug("Leaving CertEnrollment.issueForDevice(). The authority " +
                 "refused.");
@@ -2105,14 +2107,22 @@ class CertEnrollment {
     const renewed = holder ? (holder.keys || []).filter(function (k) {
       return k.kind === 'x509' && k.thumbprint === thumbprint;
     })[0] : null;
+    // WHO ACTED, for CAEP's initiating_entity on the credential-change the
+    // register sends (#164 phase 4): an administrator, a person (`user`), or
+    // an application's own workload (`system`).
+    const initiatingEntity = admin ? 'admin'
+      : (asked.principal && asked.principal.kind === 'application')
+        ? 'system' : 'user';
     if (renewed) {
-      devices.removeKey(device.id, renewed.id, actor);
+      devices.removeKey(device.id, renewed.id, actor,
+                        { renewal: true, initiatingEntity: initiatingEntity });
     }
     const added = devices.addKey(device.id, {
       kind: 'x509', certificate: issued.certificatePem, proof: family,
       label: FAMILY_LABELS[family] + ' certificate ' +
              self.normalSerial(issued.serialHex),
-      attestation: attested.attestation }, actor);
+      attestation: attested.attestation }, actor,
+      { renewal: !!renewed, initiatingEntity: initiatingEntity });
     if (!added.ok) {
       log.error(errorCodes.tag('STS-DEVICE-0009') + 'cert_enrollment: a ' +
                 'device certificate (serial ' + issued.serialHex + ') was ' +
@@ -2258,6 +2268,68 @@ class CertEnrollment {
     }
     log.debug("Leaving CertEnrollment.findEnrolled(). Not found.");
     return null;
+  }
+
+  // -------------------------------------------------------------------------
+  // A DEVICE'S CERTIFICATES, REVOKED (#164 phase 4): every x509 key on the
+  // device whose certificate THIS service's EST or SCEP Issuing CA issued —
+  // `proof` `est` or `scep`, the family whose authority signed it — revoked
+  // by that authority for `reason` (an RFC 5280 reason: keyCompromise for a
+  // compromised device, cessationOfOperation for one removed, superseded for
+  // a re-issue). A certificate an administrator typed in (`proof` `admin`)
+  // was issued by somebody else and is not this service's to revoke. The
+  // device profile's certificate is kept on the device entry's key rather
+  // than on a person's entry, so this — not `revokeEnrolled()`, which finds
+  // a certificate by the entry holding it — is the door; it is synchronous
+  // because the revocation register is. Answers one row per certificate:
+  // `{ serialHex, family, ok, already, why }`.
+  // -------------------------------------------------------------------------
+  revokeDeviceCertificates(device, reason, by?) {
+    const { log, audit, realms, loadRevocation } = this.deps;
+    const self = this;
+    log.debug("Entering CertEnrollment.revokeDeviceCertificates().");
+    const keys = ((device && device.keys) || []).filter(function (key) {
+      return key && key.kind === 'x509' && FAMILIES.indexOf(key.proof) >= 0 &&
+             key.proof !== 'acme' && key.material && key.material.serial;
+    });
+    if (!keys.length) {
+      log.debug("Leaving CertEnrollment.revokeDeviceCertificates(). None.");
+      return [];
+    }
+    const revocation = loadRevocation();
+    const out = keys.map(function (key) {
+      const serialHex = self.normalSerial(key.material.serial);
+      const done = revocation.revoke(realms.currentId(), key.proof, {
+        serialHex: serialHex, reason: reason || 'unspecified',
+        subject: String(key.material.subject || ''),
+        note: 'issued over ' + FAMILY_LABELS[key.proof] + ' to ' +
+              DEVICE_URN_PREFIX + String(device.id) +
+              (by ? '; revoked by ' + by : '')
+      });
+      const ok = !!done && done.ok !== false;
+      audit.record({
+        category: 'protocol', action: 'enrollment.revoke',
+        protocol: FAMILY_LABELS[key.proof],
+        outcome: ok ? 'success' : 'failure',
+        errorCode: ok ? undefined : 'STS-DEVICE-0032',
+        actor: String(by || ''),
+        target: DEVICE_URN_PREFIX + String(device.id),
+        summary: (ok ? 'a' : 'could not revoke a') + ' device certificate ' +
+                 (ok ? 'was revoked' : '') + ' (' + (reason || 'unspecified') +
+                 ')',
+        detail: { serialHex: serialHex, family: key.proof,
+                  already: !!(done && done.already) }
+      });
+      return { serialHex: serialHex, family: key.proof, ok: ok,
+               already: !!(done && done.already),
+               why: String((done && (done.why ||
+                                     ((done.errors || [])[0]))) || '') };
+    });
+    log.debug("Leaving CertEnrollment.revokeDeviceCertificates(). " +
+              out.length);
+    return out.filter(function (row) {
+      return row.ok;
+    });
   }
 
   async revokeEnrolled(serialHex, reason, by?, options?) {
@@ -3505,6 +3577,7 @@ export = {
   enrolledOf: slot.forward('enrolledOf'),
   findEnrolled: slot.forward('findEnrolled'),
   revokeEnrolled: slot.forward('revokeEnrolled'),
+  revokeDeviceCertificates: slot.forward('revokeDeviceCertificates'),
   serverKeyOf: slot.forward('serverKeyOf'),
   createEab: slot.forward('createEab'),
   findEab: slot.forward('findEab'),

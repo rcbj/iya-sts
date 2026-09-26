@@ -4293,9 +4293,22 @@ const SETTINGS = [
     label: 'Device events kept for monitoring',
     env: 'STS_DEVICES_EVENTS_KEPT', type: 'int', dflt: 5000,
     min: 100, max: 100000, runtime: true,
-    description: 'How many device creations, removals and evictions this ' +
-                 'realm keeps for Monitoring → Devices. The oldest is ' +
-                 'dropped when a new one is recorded past it.' },
+    description: 'How many device creations, removals, evictions and ' +
+                 'compliance changes this realm keeps for Monitoring → ' +
+                 'Devices. The oldest is dropped when a new one is ' +
+                 'recorded past it.' },
+
+  // #164 PHASE 3 (2026-09-26): the MDM / posture feed.
+  // `admin-ui/devices_admin.ts`'s `mdmFeed()` argues it.
+  { key: 'devices.complianceFeedMaxReports', group: 'Devices',
+    label: 'Compliance reports per feed request',
+    env: 'STS_DEVICES_COMPLIANCE_FEED_MAX_REPORTS', type: 'int', dflt: 500,
+    min: 1, max: 10000, runtime: true,
+    description: 'The most device reports one POST ' +
+                 '/admin-api/device-compliance (the MDM or posture feed, ' +
+                 'under the device:compliance scope) may carry. A larger ' +
+                 'batch is refused whole (STS-DEVICE-0034) rather than ' +
+                 'applied in part, so a feed knows to split it.' },
 
   // #164 PHASE 2 (2026-09-26): enrolment and recognition.
   // `common/device_enrolment.ts` and `common/device_attestation.ts` argue
@@ -10405,13 +10418,14 @@ const SETTINGS = [
     env: 'STS_CAEP_AUTO_EMIT_TYPES', type: 'csv',
     dflt: 'session-established,session-presented,session-revoked,' +
           'credential-change,assurance-level-change,token-claims-change,' +
-          'risk-level-change',
+          'risk-level-change,device-compliance-change',
     runtime: true,
     description: 'The SHORT NAMES of the CAEP events this service emits by ' +
-                 'itself, out of the seven acts it can actually observe — ' +
+                 'itself, out of the eight acts it can actually observe — ' +
                  'the seventh, since #62 P4, a person\'s RISK LEVEL ' +
                  'changing, which emits risk-level-change where the ' +
-                 'risk-response policy permits announcing it: a ' +
+                 'risk-response policy permits announcing it (and, since ' +
+                 '#164, a registered DEVICE\'s, with principal DEVICE): a ' +
                  'session starting, a session being presented, a session ' +
                  'ending, a person re-authenticating on a session they ' +
                  'already hold with a different acr (a step-up or ' +
@@ -10426,12 +10440,14 @@ const SETTINGS = [
                  'write that moves a claim of a person who holds live ' +
                  'tokens or assertions (an attribute the claim catalogue ' +
                  'maps, or a group joined, left or renamed), which emits ' +
-                 'token-claims-change. The eighth is a thing nothing here ' +
-                 'does — no device reports compliance to this service ' +
-                 '(#164) — so device-compliance-change is emitted BY HAND ' +
-                 'from /admin/caep or POST /admin-api/caep/emit, and a row ' +
-                 'naming it here is dropped with a warning rather than ' +
-                 'producing an event nothing can cause.' },
+                 'token-claims-change. The eighth, since #164 (2026-09-26), ' +
+                 'is a registered device\'s COMPLIANCE changing — set by ' +
+                 'an administrator, the MDM feed or development\'s test ' +
+                 'control — which emits device-compliance-change; a ' +
+                 'device\'s keys and Native SSO secret also emit ' +
+                 'credential-change. A row naming anything else is dropped ' +
+                 'with a warning rather than producing an event nothing ' +
+                 'here can cause.' },
 
   { key: 'caep.eventsSupported', group: 'CAEP',
     label: 'CAEP event types offered', env: 'STS_CAEP_EVENTS_SUPPORTED',
@@ -11042,11 +11058,11 @@ const SETTINGS = [
           'account-credential-change-required,' +
           'recovery-information-changed,recovery-activated,' +
           'credential-compromise,opt-out-initiated,opt-out-cancelled,' +
-          'opt-out-effective,opt-in',
+          'opt-out-effective,opt-in,sessions-revoked',
     runtime: true,
     description: 'The SHORT NAMES of the RISC events this service emits by ' +
-                 'itself, out of the thirteen acts it can observe (every ' +
-                 'one since 2026-09-22, #146). In its own directory: an ' +
+                 'itself, out of the fourteen acts it can observe (every ' +
+                 'one since 2026-09-26, #164). In its own directory: an ' +
                  'account purged, disabled (with the reason an ' +
                  'administrator gave, and none when none was given) or ' +
                  'enabled, an identifier changed, and an identifier ' +
@@ -11061,9 +11077,15 @@ const SETTINGS = [
                  'new ones on the portal). From the account holder on ' +
                  '/portal/signals: opt-out-initiated, opt-out-cancelled and ' +
                  'opt-in, and opt-out-effective when risc.optOutDelayHours ' +
-                 'has passed. Only the deprecated sessions-revoked is never ' +
-                 'caused here; a row naming it is dropped with a warning ' +
-                 'rather than producing an event nothing can cause.' },
+                 'has passed. From the device register (#164): a person\'s ' +
+                 'device marked compromised emits credential-compromise ' +
+                 'for each credential it held, and a device compromised or ' +
+                 'removed emits the deprecated sessions-revoked — with the ' +
+                 'DEVICE beside the person in a complex subject, which is ' +
+                 'what makes "every session of the account" true of every ' +
+                 'session on that device. Each ended session also sends ' +
+                 'CAEP session-revoked, the event RISC 1.0 section 2.11 ' +
+                 'points at; drop sessions-revoked here to send only that.' },
 
   { key: 'risc.recycleWindowDays', group: 'RISC',
     label: 'Recycled identifier window (days)',

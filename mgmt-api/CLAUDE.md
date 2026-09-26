@@ -1790,3 +1790,33 @@ pages; and `GET /admin-api/ldap/devices` is the ninth directory page, through
 `directoryPageJson('devices')`. A body's `proof` or `attestation` is never
 read: a key added through the API is `admin`-proven and `self-asserted`, as
 it is on the console.
+
+## `POST /admin-api/device-compliance` — THE ONE OPERATION THAT IS NOT AN ADMINISTRATOR'S (#164, 2026-09-26)
+
+rcbj's decision 2 on #164: an MDM or posture feed sets device compliance
+"through its own `/admin-api` operation under a protected scope". So the gate
+makes exactly one exception to "a read needs `admin:read`, anything else
+`admin:write`": `isDeviceComplianceFeed()` — a POST to
+`DEVICE_COMPLIANCE_PATH` — needs **`device:compliance`**, which the policy
+reads as the built-in role **DEVICE_COMPLIANCE** (`common/roles.js`), and
+NOTHING ELSE on this API accepts that scope. Three things follow, and each is
+deliberate:
+
+* **The feed holds nothing else.** Its token cannot read the directory or
+  change anything but a device's compliance, which is the whole reason it is
+  a scope and a role of its own rather than `admin:write`.
+* **An `admin:write` token is refused here.** The feed records `source: mdm`
+  with the calling client as the actor; an administrator's token posting to it
+  would make a feed's report indistinguishable from an administrator's vouch,
+  and an administrator already has `POST /admin-api/devices/set-compliance`.
+* **It is a protected scope under #110** (`common/scope_policy.ts`): issued
+  only to a client whose `oauthAllowedScope` declares it, in both modes, and
+  `declaredAdminScopes()` holds it to the same re-check on every call as the
+  admin pair. The gate leaves the verified client id on `res.locals.apiClientId`
+  for the handler.
+
+`admin_api_spec.ts`'s `scopeForMethod()` states the same exception, and
+`tests/admin_api_document_security.js` compares the two and reads the
+exception out of the gate's source. `admin-ui/devices_admin.ts`'s `mdmFeed()`
+is the handler, shared with development's test control at
+`/devices/test/compliance` (`mode.opensTestControls()`).

@@ -2868,9 +2868,146 @@ class AdminApi {
               examples: [{ id: 'no-such-device', key: 'k-none' }],
               additionalProperties: false
             },
-            responseDescription: 'Whether the key was removed.' }
+            responseDescription: 'Whether the key was removed.' },
+          { action: 'set-compliance', operationId: 'setDeviceCompliance',
+            summary: 'Set a device\'s compliance, as an administrator',
+            description: '`status` is `compliant`, `not-compliant` or ' +
+                         '`unknown` (withdrawing a vouch), with an optional ' +
+                         '`reason`. Recorded with source `admin`. When what ' +
+                         'a receiver can be told moved — CAEP knows ' +
+                         'compliant and not-compliant, and unknown is sent ' +
+                         'as not-compliant — a CAEP device-compliance-change ' +
+                         'goes out, its subject the device and its owner. ' +
+                         'An MDM feed reports through POST ' +
+                         '/admin-api/device-compliance instead, under its ' +
+                         'own scope. Refused for an unknown device ' +
+                         '(STS-DEVICE-0007) or status (STS-DEVICE-0011).',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                id: { type: 'string', description: 'The device id.' },
+                status: { type: 'string',
+                          enum: ['compliant', 'not-compliant', 'unknown'] },
+                reason: { type: 'string', maxLength: 500 }
+              },
+              required: ['id', 'status'],
+              examples: [{ id: 'no-such-device', status: 'compliant',
+                           reason: 'Disk encryption confirmed' }],
+              additionalProperties: false
+            },
+            responseDescription: 'The device, its `previous` and new ' +
+                                 '`status`.' },
+          { action: 'set-status', operationId: 'setDeviceStatus',
+            summary: 'Mark a device compromised, or restore it',
+            description: '`status` `compromised`: every sign-on session one ' +
+                         'of its keys authenticated is ended, its Native ' +
+                         'SSO secret revoked, every certificate this ' +
+                         'service\'s EST or SCEP Issuing CA issued it ' +
+                         'revoked for keyCompromise, its risk level raised ' +
+                         'to HIGH (CAEP risk-level-change, principal ' +
+                         'DEVICE), and for a person\'s device RISC ' +
+                         'credential-compromise and sessions-revoked are ' +
+                         'sent naming the person and the device. `active` ' +
+                         'restores it and puts back the risk level the ' +
+                         'compromise raised; nothing revoked comes back. ' +
+                         'Answers `sessionsEnded` and ' +
+                         '`certificatesRevoked`.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                id: { type: 'string', description: 'The device id.' },
+                status: { type: 'string', enum: ['active', 'compromised'] },
+                reason: { type: 'string', maxLength: 500 }
+              },
+              required: ['id', 'status'],
+              examples: [{ id: 'no-such-device', status: 'compromised',
+                           reason: 'Reported stolen' }],
+              additionalProperties: false
+            },
+            responseDescription: 'The device, and what the compromise ' +
+                                 'ended and revoked.' }
         ]
       },
+
+      // ---------------------------------------------------------------------
+      // THE MDM / POSTURE FEED (#164 decision 2, phase 3). Not an
+      // administrator's operation: its token carries `device:compliance`,
+      // a protected scope (#110) issued only to a client that declares it,
+      // and the gate takes that scope — and only that — here
+      // (`isDeviceComplianceFeed()`), so a feed holds nothing else.
+      // ---------------------------------------------------------------------
+      { method: 'POST', path: BASE + DEVICE_COMPLIANCE_PATH, tag: 'Devices',
+        operationId: 'reportDeviceCompliance',
+        summary: 'Report device compliance (an MDM or posture feed)',
+        description: 'One report, or `reports` — up to ' +
+                     'devices.complianceFeedMaxReports of them. Each names ' +
+                     'its device by `id`, by a key `thumbprint` (SHA-256, ' +
+                     'base64url: the SubjectPublicKeyInfo\'s for a ' +
+                     'certificate, RFC 7638 for a JWK; optional `keyKind` ' +
+                     '`x509`, `jwk` or `webauthn`), or by its ' +
+                     '`certificate` (PEM), and says `status` — ' +
+                     '`compliant` or `not-compliant` — and an optional ' +
+                     '`reason`. It sets COMPLIANCE ONLY. Each is recorded ' +
+                     'with source `mdm` and the client as its actor, and a ' +
+                     'change a receiver can be told sends CAEP ' +
+                     'device-compliance-change (`initiating_entity` ' +
+                     '`system`). Every report is answered in `results`, in ' +
+                     'order; one naming no device is refused on its own ' +
+                     '(STS-DEVICE-0007) and the rest still apply. **The ' +
+                     'access token must carry `device:compliance`**, which ' +
+                     'the token endpoint issues only to a client whose ' +
+                     'oauthAllowedScope declares it, in both modes; an ' +
+                     '`admin:write` token is refused here, so a feed\'s ' +
+                     'reports are always a feed\'s.',
+        mirrors: 'POST /admin/devices',
+        parameters: [],
+        requestBodyRequired: true,
+        requestBody: {
+          type: 'object',
+          properties: {
+            id: { type: 'string' },
+            thumbprint: { type: 'string' },
+            keyKind: { type: 'string', enum: ['x509', 'jwk', 'webauthn'] },
+            certificate: { type: 'string' },
+            status: { type: 'string', enum: ['compliant', 'not-compliant'] },
+            reason: { type: 'string', maxLength: 500 },
+            reports: { type: 'array', items: { type: 'object',
+              properties: {
+                id: { type: 'string' },
+                thumbprint: { type: 'string' },
+                keyKind: { type: 'string',
+                           enum: ['x509', 'jwk', 'webauthn'] },
+                certificate: { type: 'string' },
+                status: { type: 'string',
+                          enum: ['compliant', 'not-compliant'] },
+                reason: { type: 'string', maxLength: 500 } },
+              additionalProperties: false } }
+          },
+          examples: [{ reports: [{ id: 'no-such-device',
+                                   status: 'compliant' }] }],
+          additionalProperties: false
+        },
+        responseDescription: '`applied`, `refused` and `results` — per ' +
+                             'report its `index`, `id`, `ok`, `previous`, ' +
+                             '`status`, `changed` and `signalled`, or its ' +
+                             '`errors`.',
+        responseSchema: { type: 'object',
+          description: '`ok`, `applied`, `refused`, `results`, `message`.' },
+        handler: function (req, res) {
+          log.debug("Entering the management API device compliance feed.");
+          // The feed's client, which the gate verified and left on the
+          // response; '' where the gate is off.
+          const result = devicesAdmin.mdmFeed(parseBody(req),
+            String(res.locals.apiClientId || ''), 'mdm');
+          if (!result.ok) {
+            errorCodes.mark(res, errorCodes.codeOf(result) ||
+                                 'STS-DEVICE-0007');
+          }
+          self.sendJson(res, result.ok ? 200 : 400, result);
+          log.debug("Leaving the management API device compliance feed.");
+        } },
 
       { method: 'GET', path: BASE + '/devices/monitor', tag: 'Devices',
         operationId: 'getDevicesMonitor',
@@ -13366,15 +13503,12 @@ class AdminApi {
                          'person AND the session, because the person is not ' +
                          'revoked and one session of theirs is — and ' +
                          'transmits it on every stream that both delivers ' +
-                         'the type and covers that subject.\n\nFIVE OF THE ' +
-                         'EIGHT ARE ONLY EVER PRODUCED THIS WAY. No device ' +
-                         'reports compliance to this service and no risk ' +
-                         'engine talks to it, so `credential-change`, ' +
-                         '`assurance-level-change`, ' +
-                         '`device-compliance-change`, `risk-level-change` ' +
-                         'and `token-claims-change` have no act here that ' +
-                         'could cause them. The other three fire on their ' +
-                         'own when `caep.autoEmit` is on.\n\nA TYPE NO ' +
+                         'the type and covers that subject.\n\nEVERY ONE ' +
+                         'OF THE EIGHT ALSO FIRES ON ITS OWN when ' +
+                         '`caep.autoEmit` is on — `device-compliance-change` ' +
+                         'since #164, from the device register — so this ' +
+                         'is for an event on demand, about a session and ' +
+                         'with a payload you chose.\n\nA TYPE NO ' +
                          'STREAM TAKES IS NOT AN ERROR. The session\'s ' +
                          'state is still updated and the reply says ' +
                          'nothing was sent, because "the event happened and ' +
@@ -18347,6 +18481,17 @@ class AdminApi {
     return accepted;
   }
 
+  // Whether this request is the MDM feed (#164 phase 3), `POST
+  // /admin-api/device-compliance` — `req.path` is below BASE inside the gate.
+  isDeviceComplianceFeed(req) {
+    const { log } = this.deps;
+    log.debug("Entering AdminApi.isDeviceComplianceFeed().");
+    const path = String(req.path || '').replace(/\/+$/, '');
+    log.debug("Leaving AdminApi.isDeviceComplianceFeed().");
+    return req.method === 'POST' && (path === DEVICE_COMPLIANCE_PATH ||
+                                     path === BASE + DEVICE_COMPLIANCE_PATH);
+  }
+
   // The operation a request is, as the CONSOLE path it mirrors and the action
   // it names: `/admin-api/pki/build-root` is a POST of `build-root` to
   // `/admin/pki`, `/admin-api/config/set-many` one of `set-many` to
@@ -18396,9 +18541,12 @@ class AdminApi {
     const { log, realms, scopePolicy } = this.deps;
     log.debug("Entering AdminApi.declaredAdminScopes().");
     const clientId = String(claims.client_id || '');
+    // The device compliance feed's scope (#164) is held to the same rule.
+    const held = scopePolicy.ADMIN_SCOPES
+      .concat([scopePolicy.DEVICE_COMPLIANCE_SCOPE]);
     const undeclared = realms.run(realms.get(tokenRealm), function () {
       return scopes.filter(function (one) {
-        return scopePolicy.ADMIN_SCOPES.indexOf(one) >= 0 &&
+        return held.indexOf(one) >= 0 &&
                !scopePolicy.declares(clientId, one);
       });
     });
@@ -18483,19 +18631,25 @@ class AdminApi {
     log.debug("Entering AdminApi.registerGate().");
     app.use(BASE, function (req, res, next) {
       if (config.value('adminApi.authRequired')) {
-        const scopesWanted =
-          req.method === 'GET' ? 'admin:read' : 'admin:write';
+        // THE ONE OPERATION THAT IS NOT AN ADMINISTRATOR'S (#164 phase 3):
+        // the MDM feed takes `device:compliance` and its role, and nothing
+        // else here takes that scope — see DevicesAdmin.mdmFeed().
+        const mdmFeed = self.isDeviceComplianceFeed(req);
+        const scopesWanted = mdmFeed ? 'device:compliance'
+          : (req.method === 'GET' ? 'admin:read' : 'admin:write');
         const presentation = self.presentedTokenOf(req);
         const presented = presentation.token;
         if (!presented) {
-          errorCodes.mark(res, 'STS-API-0001');
           res.set('WWW-Authenticate',
                   'Bearer realm="' + BASE +
-                  '", scope="admin:read admin:write"');
+                  '", scope="' + (mdmFeed ? scopesWanted
+                                          : 'admin:read admin:write') + '"');
+          errorCodes.mark(res, 'STS-API-0001');
           return self.sendJson(res, 401, { error: 'unauthorized', errors: [
             'This API requires an OAuth 2.0 access token. Ask ' +
             '/oauth2/token for one with `grant_type=client_credentials`, ' +
-            '`scope=admin:read admin:write` and `resource=' +
+            '`scope=' + (mdmFeed ? scopesWanted : 'admin:read admin:write') +
+            '` and `resource=' +
             self.wantedAudience(req) +
             '`, then send it as `Authorization: Bearer`. ' +
             'adminApi.authRequired turns this off.'] });
@@ -18744,8 +18898,7 @@ class AdminApi {
         // does not need is dropped and the call goes on.
         const declared = self.declaredAdminScopes(claims, tokenRealm, carried);
         const scopes = declared.kept;
-        const neededScope = req.method === 'GET' ? 'admin:read' :
-          'admin:write';
+        const neededScope = scopesWanted;
         if (declared.undeclared.indexOf(neededScope) >= 0) {
           errorCodes.mark(res, 'STS-API-0123');
           return self.sendJson(res, 403, { error: 'forbidden', errors: [
@@ -18753,10 +18906,11 @@ class AdminApi {
             'client it was issued to, ' +
             JSON.stringify(claims.client_id || null) + ', does not declare ' +
             'it: a token is honoured here only while its client\'s ' +
-            'oauthAllowedScope lists the admin scope it uses. The seeded ' +
-            'sts-management-api declares both. Declare it on the ' +
-            'application (POST /admin-api/applications/add) or use that ' +
-            'client.'] });
+            'oauthAllowedScope lists the scope it uses. ' + (mdmFeed
+              ? 'Declare device:compliance on the MDM feed\'s application.'
+              : 'The seeded sts-management-api declares both admin ' +
+                'scopes. Declare it on the application (POST ' +
+                '/admin-api/applications/add) or use that client.')] });
         }
         if (tokenRealm !== realms.DEFAULT_ID) {
           const realmRefusal = self.realmTokenRefusal(claims, req);
@@ -18785,7 +18939,8 @@ class AdminApi {
           // encoding "a read needs ADMIN_READ and a write needs ADMIN_WRITE" in
           // XACML. Nothing in this file decides the outcome; it decides the
           // question.
-          requiredRoles: [req.method === 'GET' ? 'ADMIN_READ' : 'ADMIN_WRITE'],
+          requiredRoles: [mdmFeed ? 'DEVICE_COMPLIANCE'
+            : (req.method === 'GET' ? 'ADMIN_READ' : 'ADMIN_WRITE')],
           subject: { name: who, authenticated: true, roles: held,
                      sessionId: null },
           context: { method: req.method, path: req.originalUrl || req.url }
@@ -18799,12 +18954,18 @@ class AdminApi {
             'The access policy refused this request. ' + policy.why +
             ' This token carries the scope(s) ' +
             (scopes.length ? scopes.join(', ') : '(none)') + ', which is the ' +
-            'role(s) ' + (held.length ? held.join(', ') : '(none)') + '. A ' +
-            (req.method === 'GET' ? 'read needs admin:read (ADMIN_READ)'
-                                  : 'write needs admin:write (ADMIN_WRITE)') +
+            'role(s) ' + (held.length ? held.join(', ') : '(none)') + '. ' +
+            (mdmFeed ? 'The device compliance feed needs device:compliance ' +
+                       '(DEVICE_COMPLIANCE), and only that'
+              : 'A ' + (req.method === 'GET'
+                ? 'read needs admin:read (ADMIN_READ)'
+                : 'write needs admin:write (ADMIN_WRITE)')) +
             '. The document is on /admin/xacml and xacml.enforceAccess turns ' +
             'the layer off.'] });
         }
+        // WHO CALLED, for an operation that records its caller (#164: the
+        // MDM feed's reports name the feed's client).
+        res.locals.apiClientId = String(claims.client_id || '');
         return next();
       }
       if (!mode.gatesManagementApi()) {
@@ -19033,6 +19194,9 @@ const APP_VERSION = version.load();
 const VERSION = APP_VERSION.version;
 
 const BASE = '/admin-api';
+// The device compliance feed's path below BASE (#164 phase 3): the one
+// operation whose token carries device:compliance rather than an admin scope.
+const DEVICE_COMPLIANCE_PATH = '/device-compliance';
 // THE ACCESS GATE, armed by `xacml/xacml_access_pep.ts` at 23c. A LEAF
 // (rule 3): with no decider installed `check()` answers "allowed", so a
 // process without the XACML family behaves exactly as this file did before.

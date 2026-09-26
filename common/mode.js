@@ -2133,7 +2133,9 @@ const REQUIREMENTS = [
   { id: 'test-controls',
     what: 'Test controls are open',
     development: 'POST /tls/trust and /tls/trust/clear, POST ' +
-                 '/dpop/nonce-mode, the passwords on ' +
+                 '/dpop/nonce-mode, POST /devices/test/compliance (a ' +
+                 'device\'s compliance, without the device:compliance ' +
+                 'scope, #164), the passwords on ' +
                  '/krb5/principals, signing another person out with ' +
                  '?username=, open dynamic client registration, the SAML ' +
                  '1.1 attribute authority and HOBA key registration all ' +
@@ -2155,7 +2157,7 @@ const REQUIREMENTS = [
              'statements to trust.',
     where: 'tls/tls_server.js, oauth-oidc/oauth2.ts, kerberos/krb5_kdc.js, ' +
            'logout/logout.ts, saml/saml11_sso.ts, scim/scim_auth.ts, ' +
-           'admin-core/admin_actions.ts' },
+           'admin-core/admin_actions.ts, admin-ui/devices_admin.ts' },
   { id: 'directory-writes',
     what: 'A write to the directory over LDAP is authorized',
     development: 'Any connection may add, modify, rename or delete any entry ' +

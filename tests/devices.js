@@ -30,7 +30,8 @@
 //   8. counts and the timeline: by owner kind, compliance, attestation, key
 //      kind and enrolment; created, removed and evicted events per day;
 //   9. the console's action door refuses an unknown action in the sentence
-//      the parity jobs read, and never forwards a proof or an attestation.
+//      the parity jobs read (seven since #164 phase 3 added set-compliance
+//      and set-status), and never forwards a proof or an attestation.
 // ===========================================================================
 
 delete process.env.CONFIG_FILE;
@@ -78,7 +79,11 @@ function publicJwk() {
 
 function body(t) {
   log.debug("Entering body().");
-  const STAMP = String(process.pid);
+  // The pid AND a random suffix: a search for the bare pid (`q: STAMP`) —
+  // "17" in a container — also matched any other file's device whose random
+  // id or thumbprint happened to contain it, and failed 7a by chance.
+  const STAMP = String(process.pid) + 'x' +
+                nodeCrypto.randomBytes(3).toString('hex');
   const ALICE = 'dev-alice-' + STAMP;
   const BOB = 'dev-bob-' + STAMP;
   const HOST = 'dev-host-' + STAMP;
@@ -357,9 +362,10 @@ function body(t) {
   const devicesAdmin = require('../admin-ui/devices_admin');
   const unknown = devicesAdmin.action({ action: 'frobnicate' }, 'a', 'b');
   t.check(code(unknown) === 'STS-DEVICE-0013' &&
-          unknown.errors[0] === 'Unknown action "frobnicate". The five ' +
-            'are: create, update, remove, add-key and remove-key.',
-          '9a. an unknown action is refused naming the five',
+          unknown.errors[0] === 'Unknown action "frobnicate". The seven ' +
+            'are: create, update, remove, add-key, remove-key, ' +
+            'set-compliance and set-status.',
+          '9a. an unknown action is refused naming the seven',
           JSON.stringify(unknown));
   const claimed = devicesAdmin.action({ action: 'add-key',
     id: laptop.device.id, kind: 'jwk', value: publicJwk().pub,

@@ -2395,7 +2395,10 @@ class AdminActions {
     if (action === 'remove-device') {
       const { devices } = this.deps;
       const id = String(body.id || '').trim();
-      const gone = devices.remove(id, who);
+      // The person's own device, removed BY AN ADMINISTRATOR: the owner
+      // check is `who`'s, and CAEP's initiating_entity is `admin` (#164).
+      const gone = devices.remove(id, who, undefined,
+                                  { initiatingEntity: 'admin' });
       audited('admin.device.removed',
               (gone.ok ? 'removed' : 'could not remove') + ' device ' + id +
               ' of ' + who,

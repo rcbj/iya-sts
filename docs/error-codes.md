@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3519** of them, in **39** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3525** of them, in **39** subsystems.
 
 ## Where a code appears
 
@@ -79,7 +79,7 @@ is an ordinary outcome.
 * [Risk scoring (`STS-RISK`)](#sts-risk) — 38
 * [Mail (`STS-MAIL`)](#sts-mail) — 39
 * [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 282
-* [Device register (`STS-DEVICE`)](#sts-device) — 29
+* [Device register (`STS-DEVICE`)](#sts-device) — 35
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 74
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 32
 * [Admin console (`STS-ADMIN`)](#sts-admin) — 198
@@ -3288,6 +3288,12 @@ Raised from: common/devices.ts, admin-ui/devices_admin.ts.
 | `STS-DEVICE-0027` | A shipped device attestation trust anchor (common/pki_device_anchors.json) did not match its pinned SHA-256 and was not used (#164 phase 2). | none — logged; the anchor set is smaller |
 | `STS-DEVICE-0028` | A device enrolment challenge could not be proved unspent because the claim store could not be asked, so it was refused (#164 phase 2). | HTTP 503 (JSON) or the page with the sentence |
 | `STS-DEVICE-0029` | Recognising the registered device behind a sign-in or a token request threw; nothing was recorded and nothing refused (#164 phase 2). | none — logged |
+| `STS-DEVICE-0030` | A Shared Signals event about a device (a compliance, risk or credential change, a compromise or a removal) threw on its way to ssf/account_signals.ts; the change stands and nothing was sent (#164 phase 4). | none — logged |
+| `STS-DEVICE-0031` | The sign-on sessions a compromised or removed device authenticated could not all be ended (#164 phase 4). | none — logged; the device's change stands |
+| `STS-DEVICE-0032` | A certificate this service issued a compromised or removed device could not be revoked by its Issuing CA (#164 phase 4). | none — logged and audited; the device's change stands |
+| `STS-DEVICE-0033` | A device risk level outside LOW, MEDIUM and HIGH (CAEP section 3.8.1), or a source outside risk, compromise and admin, was refused (#164 phase 4). | none — the caller's refusal |
+| `STS-DEVICE-0034` | A device compliance feed request carried no report or more than devices.complianceFeedMaxReports, and was refused whole (#164 phase 3). | HTTP 400 |
+| `STS-DEVICE-0035` | The compliance test control, POST /devices/test/compliance, was refused because the realm is in product mode, where test controls are closed (#164 phase 3). | HTTP 403 |
 
 ## STS-XACML
 

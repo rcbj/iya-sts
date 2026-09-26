@@ -72,7 +72,7 @@ const SINGLE = ['userpassword', 'pwdhistory', 'pwdchangedtime',
                 // A device's records of its last compliance and status
                 // change, and its enrolment (#164): each one JSON value.
                 'stsdevicecompliancechange', 'stsdevicestatuschange',
-                'stsdeviceenrolment',
+                'stsdeviceenrolment', 'stsdeviceriskchange',
                 // The OpenID Federation register (#132): a record and a key
                 // table are each one JSON value, written whole.
                 'stsoidfedkind', 'stsoidfedentityid', 'stsoidfeddata',
