@@ -4795,12 +4795,12 @@ function signerGroupsForAsync(keys) {
       keys.signerGroups = made;
       // Shared, written down and certified under the rules
       // pqKeysForAsync() gives at length, and only by the winner.
+      // JOINED to the held set rather than published as this process's
+      // whole view of it — see keystore.joinSignerGroups() for the failure
+      // that made the difference.
       let took;
       if (keys.realm !== undefined) {
-        took = keystore.publishShared(keys.realm, keys);
-        if (took !== false) {
-          keystore.remember(keys.realm, keys);
-        }
+        took = keystore.joinSignerGroups(keys.realm, keys);
       }
       if (took !== false) {
         certifySignerGroupsLater(keys.realm, made);

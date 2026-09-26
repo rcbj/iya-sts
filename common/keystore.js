@@ -1461,7 +1461,56 @@ function signerGroupsHeldFor(realmId) {
   }) : null;
 }
 
-// The raw blob a realm is held under, for request_pool.js's enrichment test.
+// ---------------------------------------------------------------------------
+// JOIN THE SIGNER GROUPS TO A REALM'S SET — shared and stored (#68).
+//
+// `publishShared()` treats an offer as an ENRICHMENT only when it is the same
+// set, at the same generation, carrying at least every member the held copy
+// carries. A request worker's own view of a set can lag the held one — in
+// product mode `signing.rotate` mints `next` generations just after a realm
+// is created, and siblings add members — and then its whole-set offer is
+// refused and the groups it just made stay in that worker alone: the
+// single-node run of tests/vendored/sts_signer_groups.js served a JWKS with
+// none of them for three minutes. So what is offered here is the HELD blob
+// plus the groups, to the sibling channel and to the store alike; nothing
+// else about the set is this process's to assert. First generator still
+// wins: a held copy that already carries groups answers false, and the
+// caller certifies nothing.
+// ---------------------------------------------------------------------------
+function joinSignerGroups(realmId, keys) {
+  log.debug("Entering joinSignerGroups(). realm=" + realmId);
+  const id = String(realmId || '');
+  const rows = serialiseSignerGroups(keys && keys.signerGroups);
+  if (!rows) {
+    log.debug("Leaving joinSignerGroups(). Nothing to join.");
+    return false;
+  }
+  const held = shared.get(id);
+  let took;
+  if (!held) {
+    took = publishShared(id, keys);
+  } else if ((held.signerGroups || []).length) {
+    took = false;
+  } else {
+    const candidate = Object.assign({}, held, { signerGroups: rows });
+    shared.set(id, candidate);
+    if (publisher) {
+      publisher(id, candidate);
+    }
+    took = true;
+  }
+  if (took !== false && persists() && store && kek) {
+    const base = storedFor(id);
+    if (!(base && (base.signerGroups || []).length)) {
+      hold(id, base ? Object.assign({}, base, { signerGroups: rows })
+                    : serialise(keys), 'signer groups joined');
+    }
+  }
+  log.debug("Leaving joinSignerGroups(). took=" + took);
+  return took;
+}
+
+// The raw blob a realm is held under, for request_pool.js's enrichment test.// The raw blob a realm is held under, for request_pool.js's enrichment test.
 // `sharedFor()` deserialises; this is the stored form, which is what has to be
 // compared and rebroadcast.
 function sharedBlobFor(realmId) {
@@ -3171,6 +3220,7 @@ module.exports = {
   xmlKeyHeldFor: xmlKeyHeldFor,
   bbsKeyHeldFor: bbsKeyHeldFor,
   signerGroupsHeldFor: signerGroupsHeldFor,
+  joinSignerGroups: joinSignerGroups,
   serialiseSignerGroups: serialiseSignerGroups,
   deserialiseSignerGroups: deserialiseSignerGroups,
   reset: reset,

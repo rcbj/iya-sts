@@ -5662,6 +5662,21 @@ async function certifySignerGroups(realmId, members) {
   const signerGroups = require('./signer_groups');
   const id = realmIdOf(realmId);
   const list = Array.isArray(members) ? members : [];
+  // THE BRANCH FIRST. Group keys are made on a realm's first group signature,
+  // which can come before its branch exists — a realm created at runtime and
+  // switched at once — and a certification refused for want of an Issuing CA
+  // is not retried by anything unless a later certifyKeySet() happens to run
+  // after the keys arrived. `ensureScope()` builds it once, cluster-wide, or
+  // answers at once when it is there.
+  const before = rawRowFor(id);
+  if (list.length && (!before || !before.issuing)) {
+    try {
+      await ensureScope(id);
+    } catch (e) {
+      log.debug('Caught in certifySignerGroups(): ' + ((e && e.message) || e));
+      // The per-certificate refusals below say what is missing.
+    }
+  }
   const bySlot = {};
   list.forEach(function (one) {
     bySlot[one.slot] = one;

@@ -188,15 +188,27 @@ async function main() {
   // signature — this token — and signs with the per-algorithm keys until
   // they exist and are certified (the service says so once).
   await realmToken();
+  let lastSeen = "nothing yet";
   const keys = await until("the JOSE groups' 28 keys, certified, in the " +
-                           "JWKS", async function () {
+                           "JWKS (last seen: see the log)", async function () {
     const all = await jwks();
     const grouped = groupKeysOf(all);
     const certified = grouped.filter(function (k) {
       return !!k.x5c;
     });
+    const seen = grouped.length + " group key(s), " + certified.length +
+                 " with x5c: " + certified.map(function (k) {
+                   return k.kid;
+                 }).join(",");
+    if (seen !== lastSeen) {
+      lastSeen = seen;
+      log.info("  … the JWKS has " + seen);
+    }
     // 4 JOSE groups x (3 classical + SLH-DSA) carry x5c once certified.
-    return grouped.length === 28 && certified.length === 16 ? all : null;
+    // AT LEAST: in product mode `signing.rotate` mints each group pair's
+    // `next` generation soon after the realm is made, and those are
+    // published ahead of promotion too (bare, as every standby key is).
+    return grouped.length >= 28 && certified.length >= 16 ? all : null;
   });
 
   // --- 1. an access token signs with the TOKENS group's key -----------------
@@ -230,10 +242,14 @@ async function main() {
   const grouped = groupKeysOf(keys);
   check("a classical group key's x5c[0] holds THAT key, and is a HYBRID " +
         "certificate (subjectAltPublicKeyInfo present)", function () {
-    grouped.filter(function (k) {
-      return k.kty === "RSA" || k.kty === "EC";
-    }).forEach(function (k) {
-      assert.ok(k.x5c && k.x5c.length, k.kid + " has no x5c");
+    const classical = grouped.filter(function (k) {
+      return (k.kty === "RSA" || k.kty === "EC") && k.x5c;
+    });
+    // The CURRENT keys carry their certificate; a `next` one is published
+    // bare, as every standby key is.
+    assert.ok(classical.length >= 12, classical.length + " classical group " +
+              "key(s) with x5c, 12 expected (3 in each of 4 groups)");
+    classical.forEach(function (k) {
       const der = Buffer.from(k.x5c[0], "base64");
       const certKey = new nodeCrypto.X509Certificate(der).publicKey
         .export({ format: "jwk" });
@@ -249,7 +265,8 @@ async function main() {
     const mldsa = grouped.filter(function (k) {
       return /^ML-DSA-/.test(String(k.alg));
     });
-    assert.strictEqual(mldsa.length, 12, "3 ML-DSA keys in each of 4 groups");
+    assert.ok(mldsa.length >= 12, mldsa.length + " ML-DSA group key(s), " +
+              "at least 3 in each of 4 groups expected");
     mldsa.forEach(function (k) {
       assert.ok(!k.x5c, k.kid + " carries x5c");
     });
