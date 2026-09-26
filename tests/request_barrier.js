@@ -744,8 +744,11 @@ async function checkHeaderNamesKeepTheirSpelling(t) {
   t.check(/\r\nContent-Transfer-Encoding: base64/.test(head) &&
           /\r\nX-Mixed-Case: kept/.test(head),
           'and so does every other header the worker sent', head);
-  t.equal((head.match(/\r\nSet-Cookie: /g) || []).length, 2,
-          'the two Set-Cookie headers are still two');
+  // The worker's two, each a header of its own (the pool's pin may follow
+  // them — this path has no affinity of its own).
+  t.check(/\r\nSet-Cookie: a=1; Path=\//.test(head) &&
+          /\r\nSet-Cookie: b=2; Path=\//.test(head),
+          'the worker\'s two Set-Cookie headers are still two headers', head);
   t.check(!/\r\ncontent-type:/.test(head),
           'no header goes out in the lower case of answer.headers\' keys',
           head);
