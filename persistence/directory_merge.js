@@ -88,6 +88,7 @@ const MULTI = ['member', 'uniquemember', 'memberof', 'objectclass',
                // value never changes once written, so two nodes adding
                // different keys at once must both survive.
                'stsdevicekey', 'stsdevicekeythumbprint',
+               'stsdevicecredentialid',
                // A subordinate's OpenID Federation event history (#137):
                // appended by whichever node records an event, so two
                // appends at once must both survive.

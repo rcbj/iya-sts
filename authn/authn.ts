@@ -400,6 +400,11 @@ const sessions = realms.map({ persist: 'authn.sessions', tombstone: true,
 // authn id -> { returnTo, details, ... }
 const pending = realms.map({ persist: 'authn.pending', retain: 'age' });
 
+// ONE DEVICE RECOGNITION PER REQUEST AND CREDENTIAL (#164 phase 5): see
+// `registeredDeviceFor()`. Keyed WEAKLY by the request object, so it lives
+// exactly as long as the request and needs no sweep.
+const recognitionMemo = new WeakMap<object, Map<string, any>>();
+
 // WebAuthn, IN EITHER OF ITS TWO ROLES. The verifier is ./webauthn — written
 // from the specification and sharing no code with the debugger's own decoder,
 // which is what makes tests/webauthn_cross_impl.js over there a real check
@@ -2878,7 +2883,7 @@ class Authn {
   // plain-HTTP port has no ClientHello — and an empty field is the truth
   // rather than a gap. See `eventContext()`.
   // ---------------------------------------------------------------------------
-  private authenticationEvent(amr, acr, via, extra) {
+  private authenticationEvent(amr, acr, via, extra, username?) {
     const { log, nowSec } = this.deps;
     log.debug("Entering Authn.authenticationEvent().");
     const detail = extra || {};
@@ -2901,7 +2906,7 @@ class Authn {
       authority: authority,
       evidence: detail.key ? String(detail.key) : '',
       context: this.eventContext(detail),
-      registeredDevice: this.registeredDeviceFor(detail)
+      registeredDevice: this.registeredDeviceFor(detail, username)
     };
   }
 
@@ -2918,17 +2923,40 @@ class Authn {
   // A recogniser that throws records nothing and refuses nothing: a sign-in
   // is not the place a device register's defect should show.
   // ---------------------------------------------------------------------------
-  private registeredDeviceFor(detail) {
+  //
+  // `username` (#164 phase 5) is who is signing in, which sets the fact's
+  // `ownerMatches`. ONE RECOGNITION PER REQUEST AND CREDENTIAL: a door that
+  // assesses the sign-in's risk before the session exists (`assessSignIn()`)
+  // asks here, and the session's event asks again a moment later for the
+  // same request — the answer is remembered on the request, so the device's
+  // last use moves once and Monitoring → Devices counts one recognition.
+  // ---------------------------------------------------------------------------
+  private registeredDeviceFor(detail, username?) {
     const { log, audit, deviceRecognition } = this.deps;
     log.debug("Entering Authn.registeredDeviceFor().");
     const given = detail.credential || {};
+    const request = detail.request || audit.currentRequest();
+    const credentialId = given.kind === 'webauthn' ? String(given.id || '')
+                                                   : '';
+    const memoKey = credentialId + '\u0000' + String(username || '');
+    const memo = request && typeof request === 'object'
+      ? recognitionMemo.get(request) : null;
+    if (memo && memo.has(memoKey)) {
+      log.debug("Leaving Authn.registeredDeviceFor(). Already recognised.");
+      return memo.get(memoKey);
+    }
     let fact = null;
     try {
       fact = deviceRecognition.recognize({
-        request: detail.request || audit.currentRequest(),
-        webauthnCredentialId: given.kind === 'webauthn' ? String(given.id ||
-                                                                  '') : '',
+        request: request,
+        webauthnCredentialId: credentialId,
+        subject: username === undefined ? undefined : String(username),
         clientId: detail.application || undefined });
+      if (request && typeof request === 'object') {
+        const held = memo || new Map();
+        held.set(memoKey, fact);
+        recognitionMemo.set(request, held);
+      }
     } catch (e) {
       log.error(this.deps.errorCodes.tag('STS-DEVICE-0029') + 'authn: ' +
                 'recognising the device behind a sign-in threw: ' +
@@ -3133,7 +3161,7 @@ class Authn {
       authTime: session.authTime || 0,
       via: session.via || ''
     };
-    const event = this.authenticationEvent(amr, acr, via, extra);
+    const event = this.authenticationEvent(amr, acr, via, extra, username);
     // A row persisted before events existed has none. It is given one standing
     // for the authentication it recorded, so the list is never missing its
     // beginning.
@@ -3295,6 +3323,7 @@ class Authn {
         sessionId: session.id, door: String(via || event.via || ''),
         clientId: String(detail.application || ''),
         context: event.context || {},
+        registeredDevice: event.registeredDevice || null,
         userAgent: String(headers['user-agent'] || '') });
     } catch (e) {
       log.debug("Caught in Authn.assessRisk(): " + ((e && e.message) || e));
@@ -3431,6 +3460,11 @@ class Authn {
       username: String(session.user.username || ''), sessionId: session.id,
       door: 'a live session whose ' + moved.join(' and ') + ' changed',
       clientId: '', context: now, phase: 'session',
+      // What THIS request proves about a registered device (#164 phase 5):
+      // a client certificate on its connection, or nothing — a replayed
+      // cookie proves no device, which is what the device signals then say.
+      registeredDevice: this.registeredDeviceFor({ request: req },
+        String(session.user.username || '')),
       userAgent: String(headers['user-agent'] || '') })
       .then(function (assessment: any): void {
         if (assessment) {
@@ -3574,6 +3608,10 @@ class Authn {
       username: String(username), sessionId: '',
       door: String(via || ''), clientId: String(d.application || ''),
       context: this.eventContext(d),
+      // THE REGISTERED DEVICE, recognised NOW (#164 phase 5) — before the
+      // session and its event exist, because the risk engine scores it; the
+      // event asks again for the same request and gets this same answer.
+      registeredDevice: this.registeredDeviceFor(d, String(username)),
       userAgent: String(headers['user-agent'] || '') });
     log.debug("Leaving Authn.assessSignIn(). " +
               (assessment ? assessment.level : 'Not assessed.'));
@@ -4015,7 +4053,8 @@ class Authn {
     // credential-fingerprint branch above gives about the creation instant.
     // ---------------------------------------------------------------------
     const sessionId = arrived ? arrived.id : randomId(24);
-    const firstEvent = this.authenticationEvent(amr, acr, via, extra);
+    const firstEvent = this.authenticationEvent(amr, acr, via, extra,
+                                                username);
     const authenticatedNow = extra.authenticated !== false;
     // ---------------------------------------------------------------------
     // THE AUTHENTICATION IS RECORDED BEFORE THE SESSION IS BUILT (2026-09-14),

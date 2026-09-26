@@ -2126,6 +2126,10 @@ const OWN_NAMES = [
   'stsDeviceAttestation', 'stsDeviceCompliance', 'stsDeviceComplianceChange',
   'stsDeviceStatus', 'stsDeviceStatusChange', 'stsDevicePlatform',
   'stsDeviceModel', 'stsDeviceOs', 'stsDeviceEnrolment',
+  // AND EACH LINKED WEBAUTHN CREDENTIAL'S ID (#164 phase 6), derived from
+  // stsDeviceKey like the thumbprints, so a sign-in finds its device by
+  // index.
+  'stsDeviceCredentialId',
   // AND ITS RISK LEVEL (#164 phase 4): LOW, MEDIUM or HIGH, and the last
   // change of it — what CAEP's risk-level-change with principal DEVICE
   // reports, set by phase 5's risk scoring and by a compromise.
@@ -9096,7 +9100,18 @@ function deleteDeviceEntry(id) {
 // either found through a rebuild or found by the validated hit; it is never
 // answered from a copy this process made.
 // ---------------------------------------------------------------------------
-const DEVICE_INDEXED = ['cn', 'stsdevicekeythumbprint', 'stsdevicesecrethash'];
+//
+// **PHASE 6 ADDED TWO** (2026-09-26): `stsDeviceCredentialId` (a linked
+// WebAuthn credential's id, which names one device as a thumbprint does) and
+// `owner`, which does NOT name one device — a person owns several — so the
+// index keeps the first entry found per owner and answers "is there one",
+// which is all `devices.holdsAny()` asks. That is also why a hit that FAILS
+// its validation now rebuilds: for a one-to-one value a stale hit can only
+// mean the value is gone, but for `owner` it may be one device that moved to
+// another owner while a sibling still names the first, and answering "none"
+// there would be a wrong answer rather than a slow one.
+const DEVICE_INDEXED = ['cn', 'stsdevicekeythumbprint', 'stsdevicesecrethash',
+                        'stsdevicecredentialid', 'owner'];
 
 const deviceIndexes = realms.keyed(function () {
   return { index: null, version: -1, container: '', builds: 0 };
@@ -9182,7 +9197,9 @@ function deviceEntryByIndex(attribute, value) {
   };
   let found = lookup();
   const version = subtreeVersion(container);
-  if (!found && (cache.version !== version ||
+  // A value the index maps to an entry that no longer carries it: stale.
+  const stale = !found && !!cache.index && cache.index.has(slot);
+  if (!found && (stale || cache.version !== version ||
                  cache.container !== normalizeDn(container))) {
     deviceIndexCount.miss();
     cache.index = buildDeviceIndex(container);

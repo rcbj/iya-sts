@@ -4391,6 +4391,20 @@ const SETTINGS = [
                  'directory write on every token request. 0 writes it on ' +
                  'every recognition.' },
 
+  // #164 PHASE 5 (2026-09-26): risk scoring. `risk/risk_engine.ts`'s
+  // SIGNALS argue the scope of `unregistered-device`.
+  { key: 'devices.expectRegistered', group: 'Devices',
+    label: 'Expect every person to sign in from a registered device',
+    env: 'STS_DEVICES_EXPECT_REGISTERED', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'On, risk scoring\'s unregistered-device signal (x2) ' +
+                 'fires for ANY person whose sign-in no registered device ' +
+                 'of theirs proved. Off — the default — it fires only for ' +
+                 'a person who has registered a device, so a realm with ' +
+                 'no devices is not scored as though every sign-in were ' +
+                 'suspect. It waits for risk.minimumHistory, as ' +
+                 'new-device does. Per realm, like every setting.' },
+
   // OPENID CONNECT CIBA (#131). `oauth-oidc/ciba.ts` argues them.
   { key: 'oauth2.ciba', group: 'OAuth 2.0 / OIDC',
     label: 'CIBA (backchannel authentication)',

@@ -13424,6 +13424,12 @@ const CODES = [
       'was refused because the realm is in product mode, where test ' +
       'controls are closed (#164 phase 3).',
     spec: 'HTTP 403' },
+  { code: 'STS-DEVICE-0036',
+    summary: 'Risk scoring could not set the risk level of the registered ' +
+      'device that proved a sign-in: the device register refused or did ' +
+      'not store it (#164 phase 5). The sign-in stands and the device ' +
+      'keeps the level it had.',
+    spec: 'none — logged as a warning' },
   // ===== XACML =============================================================
   { code: 'STS-XACML-0001',
     summary: 'A request reached an XACML endpoint while the family is ' +

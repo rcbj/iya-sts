@@ -411,7 +411,8 @@ var config = {
     appleAppAttestAppIds: "",                           // Apple App Attest app identifiers
     appleAppAttestAllowDevelopment: false,              // Apple App Attest: accept the development environment
     tpmTrustAnchors: "",                                // TPM attestation roots (PEM)
-    lastUsedResolutionSeconds: 60                       // Last-used resolution (seconds)
+    lastUsedResolutionSeconds: 60,                      // Last-used resolution (seconds)
+    expectRegistered: false                             // Expect every person to sign in from a registered device
   },
 
   // --- PKI -------------------------------------------------------------

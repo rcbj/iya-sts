@@ -167,9 +167,16 @@
 // phase 2 owed). `byId()`, `byKeyThumbprint()` and `bySecret()` ask the
 // directory's `deviceEntryByIndex()` for the ONE entry carrying `cn`, the
 // derived `stsDeviceKeyThumbprint` or `stsDeviceSecretHash`, and parse only
-// that entry. `ldap_server.js` argues why the index is safe across processes
-// and nodes: it holds nothing the directory does not, and is validated
-// against the directory on every hit.
+// that entry. Phase 6 added the two it had left walking: `byCredentialId()`
+// (a WebAuthn sign-in's, by the derived `stsDeviceCredentialId`) and
+// `holdsAny()` (risk scoring's "does this person own a device", by `owner`,
+// which several entries share — so the index answers ONE of them, which is
+// all that question needs). `listForOwner()` still walks: it wants every
+// device of an owner, the index keeps one entry per value, and its callers
+// are pages and a Native SSO grant, not a per-request path.
+// `ldap_server.js` argues why the index is safe across processes and nodes:
+// it holds nothing the directory does not, and is validated against the
+// directory on every hit.
 //
 // A LIBRARY (rule 3): it registers nothing. The directory is reached through
 // `credentials.deviceStore()`, the hooks `ldap_server.js` passes in, as every
@@ -596,6 +603,18 @@ class Devices {
       attributes.stsDeviceKeyThumbprint = device.keys.map(function (k) {
         return k.kind + ':' + k.thumbprint;
       });
+      // A LINKED WEBAUTHN CREDENTIAL'S ID, derived as the thumbprint is
+      // (#164 phase 6): what a sign-in's assertion names its credential by,
+      // so `byCredentialId()` is an index lookup rather than a walk.
+      const credentialIds = device.keys.filter(function (k) {
+        return k.kind === 'webauthn' && k.material &&
+               !!k.material.credentialId;
+      }).map(function (k) {
+        return String(k.material.credentialId);
+      });
+      if (credentialIds.length) {
+        attributes.stsDeviceCredentialId = credentialIds;
+      }
     }
     if (device.compliance && device.compliance !== 'unknown') {
       attributes.stsDeviceCompliance = [device.compliance];
@@ -937,14 +956,38 @@ class Devices {
     const { log } = this.deps;
     log.debug("Entering Devices.byCredentialId().");
     const wanted = String(credentialId || '');
-    const found = wanted ? this.all().filter(function (one) {
-      return one.keys.some(function (k) {
-        return k.kind === 'webauthn' && k.material &&
-               String(k.material.credentialId || '') === wanted;
+    // BY INDEX since phase 6 (it was the one lookup phase 3 left walking,
+    // and it is asked at every WebAuthn sign-in): the derived
+    // `stsDeviceCredentialId`, validated against the keys it came from.
+    const found = this.byIndex('stsDeviceCredentialId', wanted,
+      function (one) {
+        return one.keys.some(function (k) {
+          return k.kind === 'webauthn' && k.material &&
+                 String(k.material.credentialId || '') === wanted;
+        });
       });
-    })[0] || null : null;
     log.debug("Leaving Devices.byCredentialId(). " + !!found);
     return found;
+  }
+
+  // -------------------------------------------------------------------------
+  // WHETHER A PERSON OWNS ANY DEVICE AT ALL (#164 phase 5) — what risk
+  // scoring's `unregistered-device` signal asks at every sign-in, so it is
+  // the owner index's ONE entry rather than `listFor()`'s walk: the question
+  // is "at least one", and the index answers it with the first device that
+  // still names this owner. A compromised device counts — the person still
+  // registered one, and a sign-in from elsewhere is still not from it.
+  // -------------------------------------------------------------------------
+  holdsAny(username: unknown): boolean {
+    const { log } = this.deps;
+    log.debug("Entering Devices.holdsAny().");
+    const ownerDn = String(this.store('personDnOf', String(username || '')) ||
+                           '');
+    const found = ownerDn ? this.byIndex('owner', ownerDn, function (one) {
+      return Devices.sameDn(one.owner, ownerDn);
+    }) : null;
+    log.debug("Leaving Devices.holdsAny(). " + !!found);
+    return !!found;
   }
 
   // A RECOGNISED device (phase 2): its last use moves, and the application
@@ -1306,6 +1349,16 @@ class Devices {
       log.debug("Leaving Devices.setRiskLevel(). No device.");
       return this.refuse('STS-DEVICE-0007', 'There is no device "' +
                          String(id || '') + '" in this realm.');
+    }
+    // RISK SCORING NEVER MOVES A COMPROMISED DEVICE (#164 phase 5): the
+    // compromise raised it to HIGH and only a restore puts the level back
+    // (`setStatus()`). An assessment of a sign-in the device took part in
+    // is evidence about that sign-in; it cannot say the device is no longer
+    // compromised.
+    if (source === 'risk' && device.status === 'compromised') {
+      log.debug("Leaving Devices.setRiskLevel(). Compromised: held.");
+      return { ok: true, device: device, previous: device.riskLevel,
+               level: device.riskLevel, changed: false, held: true };
     }
     const previous = device.riskLevel;
     const changed = previous !== wanted;
@@ -2456,6 +2509,10 @@ class Devices {
       { name: 'stsDeviceKeyThumbprint', kind: 'multi',
         what: '<kind>:<thumbprint> per key, derived from stsDeviceKey on ' +
               'every write so an LDAP filter can find a device by its key.' },
+      { name: 'stsDeviceCredentialId', kind: 'multi',
+        what: 'The credential id of each linked WebAuthn key, derived from ' +
+              'stsDeviceKey on every write so a sign-in finds its device ' +
+              'by index.' },
       { name: 'stsDeviceAttestation', kind: 'single',
         what: 'attested when any key\'s attestation was verified, else ' +
               'self-asserted. Derived on every write.' },
@@ -2540,6 +2597,7 @@ export = {
   byId: slot.forward('byId'),
   bySecret: slot.forward('bySecret'),
   byCredentialId: slot.forward('byCredentialId'),
+  holdsAny: slot.forward('holdsAny'),
   noteRecognized: slot.forward('noteRecognized'),
   byKeyThumbprint: slot.forward('byKeyThumbprint'),
   ownerOf: slot.forward('ownerOf'),

@@ -233,6 +233,7 @@ class DeviceRecognition {
       keyAttestation: first.key && first.key.attestation
         ? String(first.key.attestation.level) : '',
       compliance: first.device.compliance,
+      riskLevel: first.device.riskLevel || '',
       chainVerified: first.via === 'x509' ? !!first.chainVerified : undefined,
       at: new Date(this.deps.now()).toISOString()
     };
@@ -248,6 +249,69 @@ class DeviceRecognition {
                                                        : '') + '.');
     log.debug("Leaving DeviceRecognition.recognize(). " + fact.id);
     return fact;
+  }
+
+  // =========================================================================
+  // A RECORDED FACT, BROUGHT UP TO DATE (#164 phase 6). A session's event
+  // recorded the device as it stood at the sign-in; an issuance an hour
+  // later is decided on the device as it stands NOW — an MDM that has since
+  // reported it not-compliant, an administrator who marked it compromised —
+  // because compliance is exactly the fact that moves under a live session.
+  // So the register is asked again by id (an index lookup) and the four
+  // things that can move are overlaid; the evidence (`via`, the key) is the
+  // sign-in's and stays. Null for a device since removed: a device no
+  // longer registered is not a registered device. A fact with no id, or no
+  // fact, is answered as given.
+  // =========================================================================
+  current(fact: Json): Json {
+    const { log, devices } = this.deps;
+    log.debug("Entering DeviceRecognition.current().");
+    if (!fact || !fact.id) {
+      log.debug("Leaving DeviceRecognition.current(). Nothing to refresh.");
+      return fact || null;
+    }
+    const device = devices.byId(fact.id);
+    if (!device) {
+      log.debug("Leaving DeviceRecognition.current(). Removed since.");
+      return null;
+    }
+    const out = Object.assign({}, fact, {
+      status: device.status, compliance: device.compliance,
+      attestation: device.attestation, riskLevel: device.riskLevel || ''
+    });
+    // GIVEN TO SOMEBODY ELSE SINCE: the owner's name is looked up again,
+    // and the sign-in's `ownerMatches` no longer speaks for it.
+    if (String(device.owner || '').toLowerCase() !==
+        String(fact.owner || '').toLowerCase()) {
+      const owner = devices.ownerOf(device.owner) || {};
+      out.owner = device.owner;
+      out.ownerKind = device.ownerKind;
+      out.ownerName = String(owner.name || '');
+      delete out.ownerMatches;
+    }
+    log.debug("Leaving DeviceRecognition.current().");
+    return out;
+  }
+
+  // -------------------------------------------------------------------------
+  // WHETHER A FACT'S DEVICE BELONGS TO THE PARTY AN ISSUANCE IS ABOUT —
+  // `subject` is `{ kind: user | application, name }`, the issuance gate's
+  // shape. A person's own device, or an application's own device for that
+  // application — by the owner's kind and name, which recognition names
+  // and `current()` looks up again for a device given away since.
+  // -------------------------------------------------------------------------
+  static ownedBy(fact: Json, subject: Json): boolean {
+    helpers.log.debug("Entering DeviceRecognition.ownedBy().");
+    const who = subject || {};
+    if (!fact || !who.name) {
+      helpers.log.debug("Leaving DeviceRecognition.ownedBy(). No.");
+      return false;
+    }
+    const kind = who.kind === 'application' ? 'application' : 'person';
+    const owned = fact.ownerKind === kind &&
+      String(fact.ownerName || '') === String(who.name);
+    helpers.log.debug("Leaving DeviceRecognition.ownedBy(). " + owned);
+    return owned;
   }
 
   // An enrolment through `method` whose key was `level` in `format`.
@@ -313,6 +377,8 @@ export = {
   instanceOrigin: (): string => slot.origin(),
   VIAS: VIAS,
   recognize: slot.forward('recognize'),
+  current: slot.forward('current'),
+  ownedBy: DeviceRecognition.ownedBy,
   noteEnrolment: slot.forward('noteEnrolment'),
   noteAttestationRefused: slot.forward('noteAttestationRefused'),
   activity: slot.forward('activity')
