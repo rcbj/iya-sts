@@ -46,6 +46,7 @@ the label is a certificate profile. The unlabelled path issues the realm's
 | `email` | a person with a `mail` attribute |
 | `timestamping` | — |
 | `smartcard-logon` | a person with `userPrincipalName` or `mail` |
+| `device` | a DEVICE entry: the one the request's `urn:sts:device:<id>` names (its owner, or an administrator), or a new one owned by the requester; a TPM key attestation in product. See [Devices](devices.md) |
 
 **Never issued over EST** (403): `root-ca`, `intermediate-ca`, `issuing-ca`,
 `ocsp-responder` and `kdc`. Each makes its holder an authority over everybody

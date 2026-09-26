@@ -92,6 +92,16 @@ when registered).
   construction (the gate required Admin Write for the POST); the API principal
   is `admin-api` (the token gate required `admin:write`).
 
+## The `device` label (#164 phase 2, 2026-09-26)
+
+`/.well-known/est/device/simpleenroll` issues the `device` profile — a
+certificate to a DEVICE entry, decided by `core.issueForDevice()`
+(`common/CLAUDE.md`, 3ag's *The `device` profile*): the request's
+`id-aa-attestation` values reach the core as `attestations`, the answer's
+`target` is the device (`urn:sts:device:<id>`). The label check accepts it
+beside the nine; `/simplereenroll` and `/serverkeygen` under it are refused
+by the core (`STS-DEVICE-0025`). `tests/vendored/sts_devices.js` drives it.
+
 ## A second-factor person's Basic password (2026-09-22, #101)
 
 `common/cert_enrollment.ts`'s three verifications (`authenticatePerson()` and

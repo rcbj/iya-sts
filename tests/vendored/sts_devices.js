@@ -21,11 +21,28 @@
 //      directory holds them — the Native SSO hash never among them.
 //   6. Removal, counted as an event.
 //
+// AND #164 PHASE 2 (2026-09-26): ENROLMENT AND RECOGNITION.
+//
+//   7. The person's portal JSON doors: a challenge, a device-key-proof+jwt
+//      over it registering a device (portal, self-asserted in development),
+//      the challenge refused a second time, a body that is not JSON refused,
+//      and the page offering both ways.
+//   8. EST's device profile: /.well-known/est/device/simpleenroll issues a
+//      certificate to a NEW device owned by the person, naming only
+//      urn:sts:device:<id>, kept on the device as an x509 key.
+//   9. Recognition at the token endpoint: a DPoP proof by a registered jwk
+//      key and the EST device certificate over mutual TLS (RFC 8705) are
+//      each counted as a recognition by that key on Monitoring → Devices.
+//  10. Product mode on this realm refuses an unattested key proof
+//      (STS-DEVICE-0024).
+//
 // OWNED HERE (local: true): this repository's register and management API.
 // ---------------------------------------------------------------------------
 
 const assert = require("assert");
 const crypto = require("crypto");
+const path = require("path");
+const est = require("./est_client.js");
 const { Command, Option } = require("commander");
 const names = require("./random_username.js");
 const registry = require("./sts_applications.js");
@@ -60,6 +77,9 @@ const OWNER = names.usernameFor("dev-owner");
 const PASSWORD = "Dev-owner-" + crypto.randomBytes(9).toString("base64url") +
                  "-Aa1!";
 const HOST = "dev-host-" + STAMP.toLowerCase().replace(/[^a-z0-9-]/g, "");
+const R = "/realm/" + REALM;
+const REPO = process.env.MOCK_STS_DIR || path.join(__dirname, "..", "..");
+const x509 = require(path.join(REPO, "common", "vendored", "x509.js"));
 
 let checks = 0;
 function check(what, fn) {
@@ -137,6 +157,134 @@ function thumbprint(jwk) {
     JSON.stringify(jwk.y) + "}";
   log.debug("Leaving thumbprint().");
   return crypto.createHash("sha256").update(canonical).digest("base64url");
+}
+
+// ---------------------------------------------------------------------------
+// #164 PHASE 2: A BROWSER FOR THE PORTAL, A KEY PROOF AND A DPoP PROOF.
+// ---------------------------------------------------------------------------
+function browser() {
+  log.debug("Entering browser().");
+  const jar = {};
+  const self = {
+    async go(method, where, body, type) {
+      log.debug("Entering go(). " + method + " " + where);
+      const headers = {};
+      const cookie = Object.keys(jar).map(function (k) {
+        return k + "=" + jar[k];
+      }).join("; ");
+      if (cookie) {
+        headers.cookie = cookie;
+      }
+      if (body !== undefined) {
+        headers["Content-Type"] = type || "application/x-www-form-urlencoded";
+      }
+      const url = /^https?:\/\//i.test(where) ? where : root + where;
+      const r = await fetch(url, { method: method, redirect: "manual",
+                                   headers: headers, body: body });
+      (r.headers.getSetCookie ? r.headers.getSetCookie() : [])
+        .forEach(function (one) {
+          const pair = String(one).split(";")[0];
+          const at = pair.indexOf("=");
+          if (at <= 0) {
+            return;
+          }
+          const value = pair.slice(at + 1);
+          if (value === "") {
+            delete jar[pair.slice(0, at)];
+          } else {
+            jar[pair.slice(0, at)] = value;
+          }
+        });
+      const text = await r.text();
+      let json = null;
+      try {
+        json = JSON.parse(text);
+      } catch (e) {
+        log.debug("Caught in go(): " + ((e && e.message) || e));
+        json = null;
+      }
+      log.debug("Leaving go(). status=" + r.status);
+      return { status: r.status, location: r.headers.get("location") || "",
+               text: text, json: json };
+    }
+  };
+  log.debug("Leaving browser().");
+  return self;
+}
+
+function form(o) {
+  log.debug("Entering form().");
+  log.debug("Leaving form().");
+  return new URLSearchParams(o).toString();
+}
+
+function hiddenFields(html) {
+  log.debug("Entering hiddenFields().");
+  const out = {};
+  (String(html).match(/<input type="hidden"[^>]*>/g) || [])
+    .forEach(function (tag) {
+      const name = /name="([^"]+)"/.exec(tag);
+      const value = /value="([^"]*)"/.exec(tag);
+      if (name) {
+        out[name[1]] = value ? value[1].replace(/&amp;/g, "&") : "";
+      }
+    });
+  log.debug("Leaving hiddenFields().");
+  return out;
+}
+
+// Signs in to this realm's portal through its code flow, landing on `where`.
+async function portalSignIn(who, where) {
+  log.debug("Entering portalSignIn(). " + who);
+  const b = browser();
+  let r = await b.go("GET", where);
+  for (let hop = 0; hop < 12 && r.status !== 200; hop++) {
+    assert.ok(r.status === 302 || r.status === 303,
+      "signing in to " + where + " stopped at " + r.status + " " +
+      r.text.slice(0, 300));
+    r = await b.go("GET", r.location);
+    if (r.status === 200 && /name="authn_id"/.test(r.text)) {
+      const fields = hiddenFields(r.text);
+      fields.username = who;
+      fields.password = PASSWORD;
+      fields.action = "login";
+      r = await b.go("POST", R + "/authn/login", form(fields));
+    }
+  }
+  assert.strictEqual(r.status, 200, "the signed-in page: " + r.status + " " +
+                     r.text.slice(0, 300));
+  log.debug("Leaving portalSignIn().");
+  return { browser: b, page: r };
+}
+
+// A compact ES256 JWS, built by hand.
+function es256(header, payload, privateKey) {
+  log.debug("Entering es256().");
+  const input = Buffer.from(JSON.stringify(header)).toString("base64url") +
+    "." + Buffer.from(JSON.stringify(payload)).toString("base64url");
+  const sig = crypto.sign("sha256", Buffer.from(input), {
+    key: privateKey, dsaEncoding: "ieee-p1363" });
+  log.debug("Leaving es256().");
+  return input + "." + sig.toString("base64url");
+}
+
+function keyProof(pair, challenge, audience) {
+  log.debug("Entering keyProof().");
+  log.debug("Leaving keyProof().");
+  return es256({ alg: "ES256", typ: "device-key-proof+jwt",
+                 jwk: pair.publicKey.export({ format: "jwk" }) },
+               { nonce: challenge, aud: audience,
+                 iat: Math.floor(Date.now() / 1000) }, pair.privateKey);
+}
+
+function dpopProof(pair, url) {
+  log.debug("Entering dpopProof().");
+  log.debug("Leaving dpopProof().");
+  return es256({ alg: "ES256", typ: "dpop+jwt",
+                 jwk: pair.publicKey.export({ format: "jwk" }) },
+               { jti: crypto.randomBytes(12).toString("base64url"),
+                 htm: "POST", htu: url,
+                 iat: Math.floor(Date.now() / 1000) }, pair.privateKey);
 }
 
 async function test() {
@@ -281,8 +429,17 @@ async function test() {
       return m.method + ":" + m.built;
     });
     assert.deepStrictEqual(methods, ["native-sso:true", "admin:true",
-                                     "portal:false", "est:false",
-                                     "scep:false"]);
+                                     "portal:true", "est:true",
+                                     "scep:true"]);
+    assert.ok(registration.recognition.every(function (r) {
+      return r.built;
+    }), JSON.stringify(registration.recognition));
+    assert.strictEqual(registration.unattestedKeys.accepted, true);
+    assert.ok(registration.trustAnchors.some(function (a) {
+      return a.kind === "android-key-attestation" && a.source === "shipped" &&
+             a.shipped.length >= 1;
+    }), JSON.stringify(registration.trustAnchors).slice(0, 400));
+    assert.strictEqual(registration.challenges.store, "devices.challenges");
     const keys = JSON.stringify(registration.settings);
     assert.ok(keys.indexOf("devices.maxPerPerson") >= 0, keys.slice(0, 300));
     assert.ok(keys.indexOf("oauth2.maxDevicesPerPerson") < 0);
@@ -314,7 +471,142 @@ async function test() {
     assert.strictEqual(counted.counts.byOwnerKind.application, 0);
   });
 
-  assert.ok(checks >= 12, "only " + checks + " checks ran");
+
+  log.info("=== 7. the portal's JSON doors: a key proof ===");
+  const signed = await portalSignIn(OWNER, R + "/portal/devices");
+  const b = signed.browser;
+  check("the page offers a key proof and a linked security key", function () {
+    assert.ok(/Register a device by proving its key/.test(signed.page.text),
+              signed.page.text.slice(0, 300));
+    assert.ok(/Link a security key built into a device/
+      .test(signed.page.text));
+  });
+  const notJson = await b.go("POST", R + "/portal/devices/challenge",
+                             form({ purpose: "key" }));
+  const issued = await b.go("POST", R + "/portal/devices/challenge",
+                            JSON.stringify({ purpose: "key" }),
+                            "application/json");
+  check("a challenge, bound to the portal session; a form body refused",
+        function () {
+    assert.strictEqual(notJson.status, 415, notJson.text.slice(0, 200));
+    assert.strictEqual(issued.status, 200, issued.text.slice(0, 300));
+    assert.strictEqual(issued.json.typ, "device-key-proof+jwt");
+    assert.ok(/\/portal\/devices$/.test(issued.json.audience),
+              issued.json.audience);
+  });
+  const phone = crypto.generateKeyPairSync("ec", { namedCurve: "P-256" });
+  const proved = await b.go("POST", R + "/portal/devices/proof",
+    JSON.stringify({ challenge: issued.json.challenge,
+                     proof: keyProof(phone, issued.json.challenge,
+                                     issued.json.audience),
+                     label: "Owner phone", platform: "android" }),
+    "application/json");
+  const replayed = await b.go("POST", R + "/portal/devices/proof",
+    JSON.stringify({ challenge: issued.json.challenge,
+                     proof: keyProof(phone, issued.json.challenge,
+                                     issued.json.audience) }),
+    "application/json");
+  check("the proof registers a device, portal-enrolled and self-asserted; " +
+        "the challenge is answered once", function () {
+    assert.strictEqual(proved.status, 201, proved.text.slice(0, 400));
+    const d = proved.json.device;
+    assert.strictEqual(d.enrolment.method, "portal");
+    assert.strictEqual(d.label, "Owner phone");
+    assert.strictEqual(d.keys[0].kind, "jwk");
+    assert.strictEqual(d.keys[0].proof, "jwk-proof");
+    assert.strictEqual(d.keys[0].attestation.level, "self-asserted");
+    assert.strictEqual(d.keys[0].thumbprint,
+                       thumbprint(phone.publicKey.export({ format: "jwk" })));
+    assert.strictEqual(replayed.status, 400, replayed.text.slice(0, 200));
+  });
+
+  log.info("=== 8. EST: the device profile ===");
+  const deviceKey = crypto.generateKeyPairSync("ec", { namedCurve: "P-256" });
+  const csr = await x509.certificationRequest({ subject: "CN=a device",
+    publicKeyPem: deviceKey.publicKey.export({ type: "spki", format: "pem" }),
+    privateKeyPem: deviceKey.privateKey.export({ type: "pkcs8",
+                                                 format: "pem" }),
+    subjectAltName: [] });
+  const enrolled = await est.send({ method: "POST",
+    url: base + "/.well-known/est/device/simpleenroll",
+    body: est.requestBody(Buffer.from(csr.der)),
+    headers: { "Content-Type": "application/pkcs10" },
+    basic: [OWNER, PASSWORD] });
+  assert.strictEqual(enrolled.status, 200, "EST device enrolment answered " +
+                     enrolled.status + " " + String(enrolled.body)
+                       .slice(0, 300));
+  const certificate = new crypto.X509Certificate(est.parseCertsOnly(
+    est.base64Body(enrolled.body)).certificates[0]);
+  const deviceId = String(certificate.subjectAltName)
+    .replace(/^URI:urn:sts:device:/, "");
+  const estDevice = await read("/devices?device=" + deviceId);
+  check("a certificate naming only urn:sts:device:<id>, issued to a NEW " +
+        "device the person owns, kept on it as an x509 key", function () {
+    assert.ok(/^URI:urn:sts:device:[0-9a-f-]{36}$/
+      .test(certificate.subjectAltName), certificate.subjectAltName);
+    assert.strictEqual(estDevice.found, true);
+    assert.strictEqual(estDevice.device.ownerName, OWNER);
+    assert.strictEqual(estDevice.device.enrolment.method, "est");
+    assert.strictEqual(estDevice.device.keys[0].kind, "x509");
+    assert.strictEqual(estDevice.device.keys[0].proof, "est");
+  });
+
+  log.info("=== 9. recognition at the token endpoint ===");
+  const token = base + "/oauth2/token";
+  const dpopKey = crypto.generateKeyPairSync("ec", { namedCurve: "P-256" });
+  await ok(api + "/devices/create", { owner: HOST, ownerKind: "application",
+    label: "DPoP device", keyKind: "jwk",
+    key: dpopKey.publicKey.export({ format: "jwk" }) },
+    "registered a device holding the DPoP key");
+  const before = (await read("/devices/monitor")).activity.recognitions;
+  const bound = await fetch(token, { method: "POST", headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+      DPoP: dpopProof(dpopKey, token) },
+    body: form({ grant_type: "client_credentials", client_id: HOST }) });
+  const boundText = await bound.text();
+  const mutual = await est.send({ method: "POST", url: token,
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: form({ grant_type: "client_credentials", client_id: HOST }),
+    key: deviceKey.privateKey.export({ type: "pkcs8", format: "pem" }),
+    cert: certificate.toString() });
+  const afterCount = (await read("/devices/monitor")).activity.recognitions;
+  check("a DPoP proof by a registered key, and the EST device certificate " +
+        "over mutual TLS, each recognise their device", function () {
+    assert.strictEqual(bound.status, 200, boundText.slice(0, 300));
+    assert.strictEqual(mutual.status, 200, String(mutual.body)
+      .slice(0, 300));
+    assert.ok(afterCount.jwk > before.jwk, JSON.stringify([before,
+                                                           afterCount]));
+    assert.ok(afterCount.x509 > before.x509, JSON.stringify([before,
+                                                             afterCount]));
+  });
+
+  log.info("=== 10. product mode refuses an unattested key ===");
+  await ok(api + "/config/set", { key: "global.mode", value: "product" },
+           "put this realm in product mode");
+  let productRefusal = null;
+  try {
+    const again = await b.go("POST", R + "/portal/devices/challenge",
+                             JSON.stringify({}), "application/json");
+    productRefusal = again.status === 200
+      ? await b.go("POST", R + "/portal/devices/proof",
+          JSON.stringify({ challenge: again.json.challenge,
+            proof: keyProof(crypto.generateKeyPairSync("ec",
+              { namedCurve: "P-256" }), again.json.challenge,
+                            again.json.audience) }), "application/json")
+      : again;
+  } finally {
+    await ok(api + "/config/reset", { key: "global.mode" },
+             "put this realm back in development mode");
+  }
+  check("product refuses a key proof with no attestation", function () {
+    assert.strictEqual(productRefusal.status, 400,
+                       productRefusal.text.slice(0, 300));
+    assert.ok(/attestation/.test(productRefusal.json.error_description),
+              productRefusal.text.slice(0, 300));
+  });
+
+  assert.ok(checks >= 18, "only " + checks + " checks ran");
   log.info(checks + " check(s) passed.");
   log.info("Test completed successfully.");
   log.debug("Leaving test().");
@@ -323,7 +615,9 @@ async function test() {
 new Command()
   .description("The device register (#164, #218) through the management " +
     "API: person- and application-owned devices, keys, the lists, the " +
-    "bounds, the monitoring counts and the directory's view.")
+    "bounds, the monitoring counts and the directory's view; and #164 " +
+    "phase 2's enrolment (the portal's key proof, EST's device profile) " +
+    "and recognition at the token endpoint (DPoP, mutual TLS).")
   .addOption(new Option("-u, --url <url>", "base url (unused: this test " +
                                            "needs no browser)"))
   .parse(process.argv);

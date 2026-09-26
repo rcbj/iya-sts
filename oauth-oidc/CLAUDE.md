@@ -3721,6 +3721,18 @@ directory entries (`common/devices.ts`, `ldap/CLAUDE.md`).
 
 `tests/native_sso.js` and `tests/vendored/sts_native_sso.js` (local) hold it.
 
+**The registered device as a fact on the issuance (#164 phase 2,
+2026-09-26).** `recognizedDeviceFor(opts)` asks `common/device_recognition.ts`
+which device the request came from — the DPoP proof's `jkt`, the RFC 8705
+client certificate on the connection, or a Native SSO secret (the one the
+exchange presents, the one the first app's code grant presented, or the one
+it was just given) — only when there is such evidence, and puts the fact on
+`opts.registered_device`: in `issue()` BEFORE `checkIssuance()`, so the
+policy phase 6 writes decides on it, and in `tokenSet()` for a door that
+mints without `issue()`. It reaches `accessToken()` and `idToken()` there and
+changes nothing they emit yet; `ownerMatches` says whether the device is the
+token subject's. A recogniser that throws records null (`STS-DEVICE-0029`).
+
 ## 3bc. OPENID CONNECT CIBA CORE 1.0 (2026-09-23, #131)
 
 rcbj's answers: the person approves on a PORTAL page (`/portal/ciba`) —

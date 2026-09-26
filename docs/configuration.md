@@ -1415,7 +1415,7 @@ Enrollment over Secure Transport (RFC 7030), drawn on `/admin/est`. Every row is
 | Appconfig key | Environment variable | Default | Change while running? | What it does |
 |---|---|---|---|---|
 | `est.enabled` | `STS_EST_ENABLED` | `true` | yes | Off makes every /.well-known/est endpoint answer 503 in this realm. |
-| `est.allowedProfiles` | `STS_EST_ALLOWED_PROFILES` | `tls-server,tls-client,tls-server-client,digital-signature,key-encipherment,code-signing,email,timestamping,smartcard-logon` | yes | The /admin/pki profiles an EST label may name (/.well-known/est/<profile>/…). |
+| `est.allowedProfiles` | `STS_EST_ALLOWED_PROFILES` | `tls-server,tls-client,tls-server-client,digital-signature,key-encipherment,code-signing,email,timestamping,smartcard-logon,device` | yes | The /admin/pki profiles an EST label may name (/.well-known/est/<profile>/…), and `device` — a certificate issued to a DEVICE entry (#164). The five CA, OCSP and KDC profiles are never issued over an enrollment protocol. |
 | `est.defaultProfile` | `STS_EST_DEFAULT_PROFILE` | `tls-client` | yes | What /.well-known/est/simpleenroll issues, with no label. |
 | `est.certificateLifetimeDays` | `STS_EST_CERTIFICATE_LIFETIME_DAYS` | `365` | yes | The validity of an EST certificate, shortened to the EST Issuing CA's own notAfter. |
 | `est.maxRequestBytes` | `STS_EST_MAX_REQUEST_BYTES` | `65536` | yes | A PKCS#10 body larger than this is refused (HTTP 413) before it is decoded. |
@@ -1432,7 +1432,7 @@ The Simple Certificate Enrolment Protocol (RFC 8894), drawn on `/admin/scep`. Ev
 | Appconfig key | Environment variable | Default | Change while running? | What it does |
 |---|---|---|---|---|
 | `scep.enabled` | `STS_SCEP_ENABLED` | `true` | yes | Off makes every /enroll/scep request answer 503 in this realm. |
-| `scep.allowedProfiles` | `STS_SCEP_ALLOWED_PROFILES` | `tls-server,tls-client,tls-server-client,digital-signature,key-encipherment,code-signing,email,timestamping,smartcard-logon` | yes | The /admin/pki profiles a challenge password may be issued for. |
+| `scep.allowedProfiles` | `STS_SCEP_ALLOWED_PROFILES` | `tls-server,tls-client,tls-server-client,digital-signature,key-encipherment,code-signing,email,timestamping,smartcard-logon,device` | yes | The /admin/pki profiles a challenge password may be issued for, and `device` — a certificate issued to a DEVICE entry (#164). The five CA, OCSP and KDC profiles are never issued over an enrollment protocol. |
 | `scep.defaultProfile` | `STS_SCEP_DEFAULT_PROFILE` | `tls-client` | yes | The profile preselected when a challenge password is made. |
 | `scep.certificateLifetimeDays` | `STS_SCEP_CERTIFICATE_LIFETIME_DAYS` | `365` | yes | The validity of a SCEP certificate, shortened to the SCEP Issuing CA's own notAfter. |
 | `scep.maxRequestBytes` | `STS_SCEP_MAX_REQUEST_BYTES` | `262144` | yes | A pkiMessage larger than this — POSTed, or base64 in the GET binding's message parameter — is refused before it is decoded. |
@@ -2327,6 +2327,15 @@ owned by a person or by an application, and the keys each is recognised by.
 | `devices.maxPerApplication` | `STS_DEVICES_MAX_PER_APPLICATION` | `1000` | yes | How many device entries one application entry owns — a workload or server host registering the machines it runs on. A registration at the bound is refused (STS-DEVICE-0003); nothing is replaced to make room. |
 | `devices.maxKeysPerDevice` | `STS_DEVICES_MAX_KEYS_PER_DEVICE` | `10` | yes | How many keys (a certificate, a JWK or DPoP key, a linked WebAuthn credential) one device holds. The Native SSO secret is not counted. A key past it is refused (STS-DEVICE-0006). |
 | `devices.eventsKept` | `STS_DEVICES_EVENTS_KEPT` | `5000` | yes | How many device creations, removals and evictions this realm keeps for Monitoring → Devices. The oldest is dropped when a new one is recorded past it. |
+| `devices.challengeTtlSeconds` | `STS_DEVICES_CHALLENGE_TTL_SECONDS` | `300` | yes | How long a challenge /portal/devices issues for a key proof, an Android Key Attestation or an Apple App Attest statement may be answered. It is answered once, by the session it was issued to. |
+| `devices.maxChallenges` | `STS_DEVICES_MAX_CHALLENGES` | `10000` | yes | How many unanswered enrolment challenges this realm holds. One session holds at most one per purpose; past this the oldest is dropped when a new one is issued. |
+| `devices.androidAttestationTrustAnchors` | `STS_DEVICES_ANDROID_ATTESTATION_TRUST_ANCHORS` | *(empty)* | yes | The roots an Android Key Attestation chain must end at, as a PEM bundle. Empty — the default — uses Google's two published hardware attestation roots, shipped in common/pki_device_anchors.json and pinned there by SHA-256. Set, it REPLACES them. |
+| `devices.androidMinimumSecurityLevel` | `STS_DEVICES_ANDROID_MINIMUM_SECURITY_LEVEL` | `trusted-environment` | yes | The KeyMint security level an attested Android key must have: a TEE (`trusted-environment`) or a separate secure element (`strongbox`). A SOFTWARE key is never attested, whatever this says. |
+| `devices.appleAppAttestTrustAnchors` | `STS_DEVICES_APPLE_APP_ATTEST_TRUST_ANCHORS` | *(empty)* | yes | The root an App Attest certificate chain must end at, as a PEM bundle. Empty — the default — uses the Apple App Attestation Root CA, shipped in common/pki_device_anchors.json and pinned by SHA-256. Set, it REPLACES it. |
+| `devices.appleAppAttestAppIds` | `STS_DEVICES_APPLE_APP_ATTEST_APP_IDS` | *(empty)* | yes | The apps whose App Attest keys this realm registers, as TEAMID.bundle.id, comma-separated: the authenticator data's RP ID hash must be the SHA-256 of one. Empty — the default — accepts no App Attest statement at all. |
+| `devices.appleAppAttestAllowDevelopment` | `STS_DEVICES_APPLE_APP_ATTEST_ALLOW_DEVELOPMENT` | `false` | yes | Accept a key attested in App Attest's DEVELOPMENT environment (AAGUID `appattestdevelop`), which Apple issues to builds signed for development. Off: only the production environment (`appattest`). |
+| `devices.tpmTrustAnchors` | `STS_DEVICES_TPM_TRUST_ANCHORS` | *(empty)* | yes | The roots a TPM Attestation Key certificate must chain to — a TPM manufacturer's EK or AK CA, or the enterprise CA that certified the AK — as a PEM bundle. Nothing is shipped: there are dozens of manufacturers and an operator knows which it buys. Empty verifies no TPM key attestation, so EST and SCEP device keys are self-asserted (and refused in product). |
+| `devices.lastUsedResolutionSeconds` | `STS_DEVICES_LAST_USED_RESOLUTION_SECONDS` | `60` | yes | A recognised device's last-used time is written to the directory at most this often, so a busy device is not a directory write on every token request. 0 writes it on every recognition. |
 
 ### Mail
 

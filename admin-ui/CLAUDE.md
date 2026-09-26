@@ -6364,12 +6364,19 @@ rule, because the register answers three questions:
   `/admin/users` page stays and links each device here.
 - **Protocols → Device registration** (`/admin/device-registration`) — *how
   does a device arrive*: each enrolment method and recognition kind with
-  whether THIS build has it (a door not built is drawn as not built; the
-  ticket says when it lands), attestation and compliance in a paragraph
-  each, and the `Devices` settings group (`SETTING_HOMES`). Its endpoint row
-  is `/oauth2/token`, `/oauth2/revoke` and `/portal/devices`.
+  whether THIS build has it (all built since #164 phase 2), the attestation
+  paragraph with whether THIS realm registers an unattested key, the
+  attestation trust anchors per statement (the shipped Google and Apple
+  roots by subject, expiry and SHA-256 pin — never a certificate's text),
+  the enrolment challenge store, where a recognised device is recorded,
+  compliance, and the `Devices` settings group (`SETTING_HOMES`). Its
+  endpoint row is `/oauth2/token`, `/oauth2/revoke`, `/portal/devices` and
+  its two JSON doors, EST's labelled `simpleenroll` and `/enroll/scep`.
 - **Monitoring → Devices** (`/admin/devices/monitor`) — *what happened*: the
-  counts, and the day-by-day registrations, removals and evictions.
+  counts (keys by attestation format among them), the day-by-day
+  registrations, removals and evictions, and — `activity`, counted by THIS
+  process and said to be — recognitions by key, enrolments by a device or
+  its owner by method, and attestation outcomes and refusals.
 
 **The console never forwards a proof or an attestation from a form**:
 `keySpecOf()` builds a key from kind, value and label, and the register

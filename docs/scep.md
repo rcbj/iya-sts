@@ -95,6 +95,7 @@ certificate it already produced, without using up another challenge.
 | `email` | a person with `mail` (the rfc822Name) |
 | `timestamping` | nothing beyond the entry |
 | `smartcard-logon` | a person with `userPrincipalName` or `mail` (the UPN otherName) |
+| `device` | a DEVICE entry: the one the request's `urn:sts:device:<id>` names (its owner, or an administrator), or a new one owned by the requester; a TPM key attestation in product. See [Devices](devices.md) |
 
 `scep.allowedProfiles` narrows the nine per realm. **Never issued over any
 enrollment protocol**: `root-ca`, `intermediate-ca`, `issuing-ca`,

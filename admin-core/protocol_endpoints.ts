@@ -303,7 +303,11 @@ class ProtocolEndpoints {
       // revocation of a device_secret, and the owner's own list. Phase 2's
       // EST, SCEP and portal enrolment add theirs here.
       '/admin/device-registration': ['/oauth2/token', '/oauth2/revoke',
-                                     '/portal/devices'].map(route),
+                                     '/portal/devices',
+                                     '/portal/devices/challenge',
+                                     '/portal/devices/proof',
+                                     '/.well-known/est/:label/simpleenroll',
+                                     '/enroll/scep'].map(route),
       '/admin/kerberos': [this.socket('kdc'), this.socket('krb5-service'),
                           this.route('/KdcProxy'),
                           this.route('/krb5/principals'),
