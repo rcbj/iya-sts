@@ -206,11 +206,18 @@ function scratch(prefix) {
 // ---------------------------------------------------------------------------
 // RUN A CLIENT.
 //
-// spawnSync with a bound (a client waiting on a prompt must not hold the
-// job to the runner's watchdog), stdin given when asked, and the command
+// A child process with a bound (a client waiting on a prompt must not hold
+// the job to the runner's watchdog), stdin given when asked, and the command
 // logged with every value in `secrets` masked. Answers the exit status and
 // both streams joined, which is what each job reads — estclient exits 0 on
 // every failure, so its jobs read what it printed and wrote.
+//
+// **ASYNCHRONOUS, NOT spawnSync, AND THAT IS A FIX.** The first version
+// blocked the event loop for the whole of a client's run; the service
+// closed the job's idle keep-alive connection meanwhile (its keep-alive
+// timeout is seconds), node never processed the close, and the job's next
+// fetch() went out on the dead socket: `fetch failed … other side closed`
+// straight after every slow certbot command.
 // ---------------------------------------------------------------------------
 function run(command, args, options) {
   log.debug("Entering run(). command=" + command);
@@ -224,20 +231,53 @@ function run(command, args, options) {
     return out;
   };
   log.info("  $ " + mask(command + " " + args.join(" ")));
-  const r = childProcess.spawnSync(command, args, {
-    cwd: opts.cwd, input: opts.input || "",
-    env: Object.assign({}, process.env, opts.env || {}),
-    timeout: opts.timeoutMs || 120000, encoding: "utf8",
-    maxBuffer: 16 * 1024 * 1024 });
-  const output = String(r.stdout || "") + String(r.stderr || "");
-  if (r.error) {
-    log.info("    (the process could not be run: " + r.error.message + ")");
-  }
-  log.debug("    output: " + mask(output));
-  log.debug("Leaving run(). status=" + r.status);
-  return { status: r.status, stdout: String(r.stdout || ""),
-           stderr: String(r.stderr || ""), output: output,
-           error: r.error || null, shown: mask(output).slice(-3000) };
+  log.debug("Leaving run(). Started.");
+  return new Promise(function (resolve) {
+    let stdout = "";
+    let stderr = "";
+    let failed = null;
+    let timer = null;
+    const child = childProcess.spawn(command, args, {
+      cwd: opts.cwd,
+      env: Object.assign({}, process.env, opts.env || {}) });
+    const finish = function (status) {
+      clearTimeout(timer);
+      const output = stdout + stderr;
+      if (failed) {
+        log.info("    (the process could not be run: " + failed.message +
+                 ")");
+      }
+      log.debug("    exit " + status + ", output: " + mask(output));
+      resolve({ status: status, stdout: stdout, stderr: stderr,
+                output: output, error: failed,
+                shown: mask(output).slice(-3000) });
+    };
+    timer = setTimeout(function () {
+      failed = new Error("still running after " +
+                         (opts.timeoutMs || 120000) + " ms; killed");
+      child.kill("SIGKILL");
+    }, opts.timeoutMs || 120000);
+    child.stdout.on("data", function (d) {
+      stdout += d;
+    });
+    child.stderr.on("data", function (d) {
+      stderr += d;
+    });
+    child.on("error", function (e) {
+      log.debug("Caught in run(): " + ((e && e.message) || e));
+      // A binary that is not there: answered as a failed run, which is
+      // what every caller asserts against.
+      failed = e;
+    });
+    child.on("close", function (code) {
+      finish(code === null ? -1 : code);
+    });
+    child.stdin.on("error", function (e) {
+      log.debug("Caught in run() writing stdin: " + ((e && e.message) || e));
+      // A client that exits before reading its input closes the pipe.
+    });
+    child.stdin.end(opts.input || "");
+  });
 }
 
 // The lines of a client's output or log that are warnings or errors, less
@@ -308,7 +348,7 @@ async function crlSerials(realm, ca) {
 // tool an operator of these clients makes them with. `subject` is an
 // openssl -subj string; `sans` an -addext value or empty; `challenge` the
 // challengePassword attribute or empty.
-function opensslRequest(dir, name, spec) {
+async function opensslRequest(dir, name, spec) {
   log.debug("Entering opensslRequest(). name=" + name);
   const keyFile = path.join(dir, name + ".key");
   const csrFile = path.join(dir, name + ".csr");
@@ -329,7 +369,7 @@ function opensslRequest(dir, name, spec) {
   if (spec.sans) {
     args.push("-addext", "subjectAltName=" + spec.sans);
   }
-  const r = run("openssl", args, { secrets: [spec.challenge] });
+  const r = await run("openssl", args, { secrets: [spec.challenge] });
   assert.strictEqual(r.status, 0, "openssl req failed: " + r.shown);
   log.debug("Leaving opensslRequest().");
   return { key: keyFile, csr: csrFile };

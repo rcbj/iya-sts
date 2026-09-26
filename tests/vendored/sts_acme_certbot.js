@@ -85,11 +85,11 @@ var runs = 0;
 // One certbot command, with the three directories certbot writes to and a
 // fresh log directory per command, so the log read after it is that
 // command's alone.
-function certbot(args, secrets) {
+async function certbot(args, secrets) {
   log.debug("Entering certbot().");
   runs += 1;
   const logs = path.join(work, "logs-" + runs);
-  const r = K.run("certbot", args.concat([
+  const r = await K.run("certbot", args.concat([
     "--server", directory, "--non-interactive",
     "--config-dir", path.join(work, "config"),
     "--work-dir", path.join(work, "work"),
@@ -172,7 +172,7 @@ async function test() {
   log.debug("Entering test().");
   log.info("Driving " + K.base + " with certbot in the trust realm \"" +
            REALM + "\".");
-  const version = K.run("certbot", ["--version"]);
+  const version = await K.run("certbot", ["--version"]);
   log.info("certbot: " + version.output.trim());
 
   // -------------------------------------------------------------------------
@@ -196,22 +196,22 @@ async function test() {
 
   // -------------------------------------------------------------------------
   log.info("=== 1. registration ===");
-  const bare = certbot(register);
+  const bare = await certbot(register);
   C.check("a registration with no External Account Binding is refused",
           function () {
     assert.notStrictEqual(bare.status, 0, bare.shown);
-    assert.ok(/external account|externalAccountRequired/i.test(bare.output),
-              bare.shown);
+    assert.ok(/error:externalAccountRequired/.test(bare.log) ||
+              /external account/i.test(bare.output), bare.shown);
   });
-  const wrong = certbot(register.concat([
+  const wrong = await certbot(register.concat([
     "--eab-kid", eab.kid,
     "--eab-hmac-key", Buffer.alloc(32, 7).toString("base64url")]));
   C.check("a binding MACed with the wrong key is refused unauthorized",
           function () {
     assert.notStrictEqual(wrong.status, 0, wrong.shown);
-    assert.ok(/unauthorized/i.test(wrong.output), wrong.shown);
+    assert.ok(/error:unauthorized/.test(wrong.log), wrong.shown);
   });
-  const reg = certbot(register.concat(["--eab-kid", eab.kid,
+  const reg = await certbot(register.concat(["--eab-kid", eab.kid,
                                        "--eab-hmac-key", eab.hmacKey]),
                       [eab.hmacKey]);
   C.check("certbot registers with the administrator's EAB key", function () {
@@ -230,7 +230,7 @@ async function test() {
     assert.ok(account.contact.indexOf("mailto:" + ALICE + "@example.test") >=
               0, JSON.stringify(account.contact));
   });
-  const shown = certbot(["show_account"]);
+  const shown = await certbot(["show_account"]);
   C.check("show_account prints the account's URL", function () {
     succeeded(shown, "certbot show_account");
     assert.ok(shown.output.indexOf(account.id) >= 0 ||
@@ -240,7 +240,7 @@ async function test() {
   // -------------------------------------------------------------------------
   log.info("=== 2. issuance ===");
   const auth = ["--standalone", "--http-01-port", "18888"];
-  const plain = certbot(["certonly", "--cert-name", "plain"].concat(auth,
+  const plain = await certbot(["certonly", "--cert-name", "plain"].concat(auth,
                         ["-d", WWW, "-d", APIHOST]));
   C.check("certonly with no profile is issued acme.defaultProfile " +
           "(tls-client) for both hosts, with no challenge performed",
@@ -249,7 +249,7 @@ async function test() {
     assertIssued(lineage("plain"), [WWW, APIHOST], [EKU.clientAuth],
                  "no profile");
   });
-  const server = certbot(["certonly", "--cert-name", "server",
+  const server = await certbot(["certonly", "--cert-name", "server",
                           "--required-profile", "tls-server"].concat(auth,
                          ["-d", WWW]));
   C.check("--required-profile tls-server is issued a serverAuth " +
@@ -257,7 +257,7 @@ async function test() {
     succeeded(server, "certbot certonly --required-profile");
     assertIssued(lineage("server"), [WWW], [EKU.serverAuth], "tls-server");
   });
-  const both = certbot(["certonly", "--cert-name", "both",
+  const both = await certbot(["certonly", "--cert-name", "both",
                         "--preferred-profile", "tls-server-client"]
                        .concat(auth, ["-d", APIHOST]));
   C.check("--preferred-profile tls-server-client is issued both EKUs",
@@ -266,7 +266,7 @@ async function test() {
     assertIssued(lineage("both"), [APIHOST],
                  [EKU.serverAuth, EKU.clientAuth], "tls-server-client");
   });
-  const rootCa = certbot(["certonly", "--cert-name", "rootca",
+  const rootCa = await certbot(["certonly", "--cert-name", "rootca",
                           "--required-profile", "root-ca"].concat(auth,
                          ["-d", WWW]));
   C.check("--required-profile root-ca is refused: the server does not " +
@@ -275,7 +275,7 @@ async function test() {
     assert.ok(/profile/i.test(rootCa.output), rootCa.shown);
     assert.ok(!fs.existsSync(path.join(work, "config", "live", "rootca")));
   });
-  const stranger = certbot(["certonly", "--cert-name", "stranger"].concat(
+  const stranger = await certbot(["certonly", "--cert-name", "stranger"].concat(
     auth, ["-d", "nobody-" + STAMP + ".example.org"]));
   C.check("a host nobody registered on the entry is refused " +
           "rejectedIdentifier", function () {
@@ -287,8 +287,9 @@ async function test() {
   // -------------------------------------------------------------------------
   log.info("=== 3. renewal ===");
   const before = lineage("server").leaf;
-  const forced = certbot(["renew", "--cert-name", "server",
-                          "--force-renewal"]);
+  const forced = await certbot(["renew", "--cert-name", "server",
+                          "--force-renewal",
+                          "--no-random-sleep-on-renew"]);
   const after = lineage("server");
   C.check("renew --force-renewal reissues the same names under the same " +
           "profile (every renewal failed rejectedIdentifier before #207)",
@@ -297,7 +298,8 @@ async function test() {
     assert.notStrictEqual(K.serialOf(after.leaf), K.serialOf(before));
     assertIssued(after, [WWW], [EKU.serverAuth], "renewed");
   });
-  const notDue = certbot(["renew", "--cert-name", "plain"]);
+  const notDue = await certbot(["renew", "--cert-name", "plain",
+                                "--no-random-sleep-on-renew"]);
   C.check("a plain renew renews nothing that is not due", function () {
     succeeded(notDue, "certbot renew");
     assert.ok(/not (yet )?due for renewal/i.test(notDue.output),
@@ -308,7 +310,7 @@ async function test() {
 
   // -------------------------------------------------------------------------
   log.info("=== 4. revocation ===");
-  const revoked = certbot(["revoke", "--cert-path",
+  const revoked = await certbot(["revoke", "--cert-path",
                            path.join(after.dir, "cert.pem"),
                            "--reason", "keycompromise",
                            "--no-delete-after-revoke"]);
@@ -323,7 +325,7 @@ async function test() {
 
   // -------------------------------------------------------------------------
   log.info("=== 5. the account: update and deactivate ===");
-  const updated = certbot(["update_account", "-m",
+  const updated = await certbot(["update_account", "-m",
                            "renamed-" + ALICE + "@example.test"]);
   const view2 = await K.send(K.realmApi(REALM) + "/acme?per=100");
   const account2 = ((view2.body.accounts || {}).rows || []).filter(
@@ -336,7 +338,7 @@ async function test() {
                                        "@example.test") >= 0,
               JSON.stringify(account2.contact));
   });
-  const gone = certbot(["unregister"]);
+  const gone = await certbot(["unregister"]);
   const view3 = await K.send(K.realmApi(REALM) + "/acme?per=100");
   const account3 = ((view3.body.accounts || {}).rows || []).filter(
     function (one) {
@@ -346,12 +348,12 @@ async function test() {
     succeeded(gone, "certbot unregister");
     assert.strictEqual(account3.status, "deactivated");
   });
-  const again = certbot(register.concat(["--eab-kid", eab.kid,
+  const again = await certbot(register.concat(["--eab-kid", eab.kid,
                                          "--eab-hmac-key", eab.hmacKey]),
                         [eab.hmacKey]);
   C.check("the spent EAB key cannot bind a new account", function () {
     assert.notStrictEqual(again.status, 0, again.shown);
-    assert.ok(/unauthorized/i.test(again.output), again.shown);
+    assert.ok(/error:unauthorized/.test(again.log), again.shown);
   });
 
   assert.ok(C.count >= 15,
@@ -373,6 +375,7 @@ program
   .parse(process.argv);
 
 test().catch(function (e) {
-  log.error(e.stack || e.message);
+  log.error((e.stack || e.message) +
+            (e.cause ? "\ncaused by: " + (e.cause.stack || e.cause) : ""));
   process.exit(1);
 });

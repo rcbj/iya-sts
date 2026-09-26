@@ -76,11 +76,11 @@ var work = "";
 var directory = "";
 var bundle = null;
 
-function lego(args, options) {
+async function lego(args, options) {
   log.debug("Entering lego().");
   const opts = options || {};
-  const r = K.run("lego", ["--log.level", "debug", "--log.format", "text"]
-    .concat(args, ["--server", directory, "--path", work,
+  const r = await K.run("lego", ["--log.level", "debug", "--log.format", "text"]
+    .concat(args, ["--server", directory, "--path", opts.path || work,
                    "--account-id", BOB]), {
     env: { LEGO_CA_CERTIFICATES: bundle.file },
     input: opts.input, secrets: opts.secrets, timeoutMs: 180000 });
@@ -167,7 +167,7 @@ async function test() {
   log.debug("Entering test().");
   log.info("Driving " + K.base + " with lego in the trust realm \"" +
            REALM + "\".");
-  log.info("lego: " + K.run("lego", ["--version"]).output.trim());
+  log.info("lego: " + (await K.run("lego", ["--version"])).output.trim());
 
   // -------------------------------------------------------------------------
   log.info("=== 0. a realm, its CA, a person with two host names ===");
@@ -189,25 +189,32 @@ async function test() {
 
   // -------------------------------------------------------------------------
   log.info("=== 1. registration ===");
-  const bare = lego(["accounts", "register", "--accept-tos", "-m", MAIL]);
+  // In a directory of its own: lego keeps the account key a refused
+  // registration generated, and on the next `register` in the same
+  // directory it asks for the account BY that key (onlyReturnExisting)
+  // instead of registering — answered accountDoesNotExist, correctly.
+  const bare = await lego(["accounts", "register", "--accept-tos", "-m", MAIL],
+                          { path: K.scratch("lego-refused") });
   C.check("a registration with no External Account Binding is refused",
           function () {
     assert.notStrictEqual(bare.status, 0, bare.shown);
     assert.ok(/externalAccountRequired|external account/i.test(bare.output),
               bare.shown);
   });
-  const reg = lego(["accounts", "register", "--accept-tos", "-m", MAIL,
+  const reg = await lego(["accounts", "register", "--accept-tos", "-m", MAIL,
                     "--eab", "--eab.kid", eab.kid, "--eab.hmac", eab.hmacKey],
                    { secrets: [eab.hmacKey] });
   const account = await accountRow();
   C.check("lego registers with the administrator's EAB key, and the account " +
           "is bound to the person", function () {
-    succeeded(reg, "lego accounts register");
+    // lego's own advice to back up the account key, at WARN on every
+    // registration: about the client's directory, not the server.
+    succeeded(reg, "lego accounts register", [/HEADS UP/]);
     assert.ok(account, "no account bound to " + BOB);
     assert.strictEqual(account.status, "valid");
     assert.strictEqual(account.eabKid, eab.kid);
   });
-  const listed = K.run("lego", ["accounts", "list", "--json",
+  const listed = await K.run("lego", ["accounts", "list", "--json",
                                 "--path", work]);
   C.check("accounts list shows the account", function () {
     assert.strictEqual(listed.status, 0, listed.shown);
@@ -217,7 +224,7 @@ async function test() {
 
   // -------------------------------------------------------------------------
   log.info("=== 2. issuance ===");
-  const first = lego(["run", "-m", MAIL, "--profile", "tls-server",
+  const first = await lego(["run", "-m", MAIL, "--profile", "tls-server",
                       "-c", "web", "-d", WWW, "-d", APIHOST,
                       "--no-random-sleep"].concat(solver));
   const web = stored("web");
@@ -227,14 +234,14 @@ async function test() {
     assert.ok(/already valid|skip/i.test(first.output), first.shown);
     assertIssued(web, [WWW, APIHOST], [EKU.serverAuth], "tls-server");
   });
-  const plain = lego(["run", "-m", MAIL, "-c", "plain", "-d", WWW,
+  const plain = await lego(["run", "-m", MAIL, "-c", "plain", "-d", WWW,
                       "--no-random-sleep"].concat(solver));
   C.check("run with no profile is issued acme.defaultProfile (tls-client)",
           function () {
     succeeded(plain, "lego run (no profile)");
     assertIssued(stored("plain"), [WWW], [EKU.clientAuth], "default");
   });
-  const notAfter = lego(["run", "-m", MAIL, "-c", "notafter", "-d", WWW,
+  const notAfter = await lego(["run", "-m", MAIL, "-c", "notafter", "-d", WWW,
                          "--not-after",
                          new Date(Date.now() + 86400000).toISOString()
                            .replace(/\.\d+Z$/, "Z"),
@@ -244,7 +251,7 @@ async function test() {
     assert.notStrictEqual(notAfter.status, 0, notAfter.shown);
     assert.ok(/notAfter|malformed/i.test(notAfter.output), notAfter.shown);
   });
-  const badProfile = lego(["run", "-m", MAIL, "-c", "rootca", "-d", WWW,
+  const badProfile = await lego(["run", "-m", MAIL, "-c", "rootca", "-d", WWW,
                            "--profile", "root-ca", "--no-random-sleep"]
                           .concat(solver));
   C.check("a profile the server does not offer is refused", function () {
@@ -252,7 +259,7 @@ async function test() {
     assert.ok(/invalidProfile|profile/i.test(badProfile.output),
               badProfile.shown);
   });
-  const stranger = lego(["run", "-m", MAIL, "-c", "stranger",
+  const stranger = await lego(["run", "-m", MAIL, "-c", "stranger",
                          "-d", "nobody-" + STAMP + ".example.org",
                          "--no-random-sleep"].concat(solver));
   C.check("a host nobody registered is refused rejectedIdentifier",
@@ -263,7 +270,7 @@ async function test() {
 
   // -------------------------------------------------------------------------
   log.info("=== 3. renewal information and renewal ===");
-  const notDue = lego(["run", "-m", MAIL, "-c", "web", "-d", WWW,
+  const notDue = await lego(["run", "-m", MAIL, "-c", "web", "-d", WWW,
                        "-d", APIHOST, "--profile", "tls-server",
                        "--no-random-sleep"].concat(solver));
   C.check("a second run consults renewalInfo (RFC 9773) and renews nothing",
@@ -272,7 +279,7 @@ async function test() {
     assert.strictEqual(K.serialOf(stored("web").leaf), K.serialOf(web.leaf));
     assert.ok(/renewal|renewalInfo|ARI/i.test(notDue.output), notDue.shown);
   });
-  const forced = lego(["run", "-m", MAIL, "-c", "web", "-d", WWW,
+  const forced = await lego(["run", "-m", MAIL, "-c", "web", "-d", WWW,
                        "-d", APIHOST, "--profile", "tls-server",
                        "--renew-force", "--no-random-sleep"].concat(solver));
   const renewed = stored("web");
@@ -285,7 +292,7 @@ async function test() {
 
   // -------------------------------------------------------------------------
   log.info("=== 4. key rollover ===");
-  const rolled = lego(["accounts", "keyrollover", "-m", MAIL,
+  const rolled = await lego(["accounts", "keyrollover", "-m", MAIL,
                        "--key-type", "RSA2048"], { input: "y\n" });
   const account2 = await accountRow();
   C.check("accounts keyrollover changes the key the server holds",
@@ -294,7 +301,7 @@ async function test() {
     assert.strictEqual(account2.id, account.id);
     assert.notStrictEqual(account2.thumbprint, account.thumbprint);
   });
-  const afterRoll = lego(["run", "-m", MAIL, "-c", "rolled", "-d", APIHOST,
+  const afterRoll = await lego(["run", "-m", MAIL, "-c", "rolled", "-d", APIHOST,
                           "--key-type", "RSA2048", "--no-random-sleep"]
                          .concat(solver));
   C.check("the account orders under its new key", function () {
@@ -304,7 +311,7 @@ async function test() {
 
   // -------------------------------------------------------------------------
   log.info("=== 5. revocation ===");
-  const revoked = lego(["certificates", "revoke", "-m", MAIL, "-c", "web",
+  const revoked = await lego(["certificates", "revoke", "-m", MAIL, "-c", "web",
                         "--reason", "4", "--keep"]);
   const crl = await K.crlSerials(REALM, "acme");
   C.check("certificates revoke --reason 4 puts the serial on the ACME CRL",
@@ -333,6 +340,7 @@ program
   .parse(process.argv);
 
 test().catch(function (e) {
-  log.error(e.stack || e.message);
+  log.error((e.stack || e.message) +
+            (e.cause ? "\ncaused by: " + (e.cause.stack || e.cause) : ""));
   process.exit(1);
 });
