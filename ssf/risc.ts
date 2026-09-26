@@ -1701,6 +1701,14 @@ class RiscRegister {
     const { log } = this.deps;
     log.debug("Entering RiscRegister.identifierMoves().");
     const out: Array<{ from: string; to: string; format: string }> = [];
+    // AN ENTRY THAT IS NOT THERE — a create's before, a delete's after — has
+    // no identifiers to have lost or gained: `activeIn()`'s rule. A delete
+    // is `account-purged`, which releases everything itself.
+    if (!Object.keys(before || {}).length ||
+        !Object.keys(after || {}).length) {
+      log.debug("Leaving RiscRegister.identifierMoves(). No entry.");
+      return out;
+    }
     IDENTIFIER_KINDS.forEach((kind) => {
       const was = this.valuesOf(before, kind.names);
       const now = this.valuesOf(after, kind.names);

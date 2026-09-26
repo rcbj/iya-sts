@@ -226,16 +226,20 @@ function run(t) {
     { mail: ['alice@example.com'] },
     { pwdaccountlockedtime: ['000001010000Z'],
       mail: ['alice.roe@example.com'] }));
-  t.equal(both.length, 2,
+  t.equal(both.length, 3,
           'a PUT that disables an account AND changes its mail address is ' +
-          'TWO RISC events about one write. An observer that answered with ' +
-          'the first would drop the second silently, and in a protocol with ' +
-          'no missing-event error that is a transmitter lying by omission');
+          'THREE RISC events about one write. An observer that answered ' +
+          'with the first would drop the others silently, and in a protocol ' +
+          'with no missing-event error that is a transmitter lying by ' +
+          'omission');
   const kinds = both.map(function (one) {
     return one.uri.slice(P.length);
   }).sort().join(',');
-  t.equal(kinds, 'account-disabled,identifier-changed',
-          'and they are the two RISC has words for');
+  t.equal(kinds, 'account-disabled,identifier-changed,' +
+                 'recovery-information-changed',
+          'and they are the three RISC has words for: the address is also ' +
+          'the one account recovery mails, so its change is ' +
+          'recovery-information-changed as well (#235)');
 
   const idEvent = both.filter(function (one) {
     return one.uri === P + 'identifier-changed';

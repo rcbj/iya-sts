@@ -255,11 +255,19 @@ function childMain() {
            return { u: one.username, before: one.before.stsmailverified,
                     after: one.after.stsmailverified };
          })));
-    const row = risc.get('rir-b6');
-    note(!!row && (row.notes || []).join(' ')
-      .indexOf('Recovery information changed') >= 0,
-         'B6. and the register records recovery-information-changed for it',
-         JSON.stringify(row && row.notes));
+    // Delivered on a promise (the console's and portal's own receivers take
+    // RISC), and the register follows on the way back: so asked a moment
+    // later.
+    setTimeout(function () {
+      const row = risc.get('rir-b6');
+      note(!!row && (row.notes || []).join(' ')
+        .indexOf('Recovery information changed') >= 0,
+           'B6. and the register records recovery-information-changed for it',
+           JSON.stringify(row && row.notes));
+      require('fs').writeFileSync(OUT, JSON.stringify(findings));
+      process.exit(0);
+    }, 1500);
+    return;
   } catch (e) {
     note(false, 'the test itself threw', e && e.stack);
   }
