@@ -52,6 +52,100 @@
 # COPY below is what a context missing the suite says instead of failing later
 # inside node.
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# THE FIVE CERTIFICATE ENROLLMENT CLIENTS (#207-#211, 2026-09-26), BUILT IN
+# STAGES OF THEIR OWN AND COPIED INTO THE RUNNER BELOW.
+#
+# The ACME, EST and SCEP servers were only ever driven by this suite's own
+# clients (tests/vendored/acme_client.js, est_client.js, scep_client.js),
+# second readings of the RFCs written here. These are the real ones, each
+# the client an operator of that protocol actually runs, each at ONE pinned
+# version and each checked before it is built:
+#
+#   certbot 5.8.0        EFF, Apache-2.0. pip, every package hash-pinned in
+#                        tests/tools/certbot-requirements.txt; installed in
+#                        the runner itself (it is Python, not one binary).
+#   lego v5.5.2          go-acme, MIT. `go install`, verified against the Go
+#                        checksum database (sum.golang.org) — GOFLAGS leaves
+#                        GONOSUMDB and GOFLAGS=-insecure unset on purpose.
+#   scepclient v2.3.0    micromdm/scep, MIT. The same.
+#   estclient a464ba8    cisco/libest, BSD-3-Clause. The head of `main`
+#                        (2022-09-22; there is no later release). It does NOT
+#                        build against OpenSSL 3 — FIPS_mode() is gone — so it
+#                        is linked statically against OpenSSL 1.1.1w, the last
+#                        1.1.1 release, whose tarball is sha256-checked too.
+#                        `--disable-safec` (safeclib is not packaged);
+#                        `--with-uriparser-dir` because without uriparser it
+#                        ignores `--path-seg`, the EST label; and
+#                        `--allow-multiple-definition` because its example
+#                        client and its library both define
+#                        ossl_dump_ssl_errors().
+#   sscep cb3e539        certnanny, BSD-style. The head of `master`
+#                        (2024-08-14): v0.10.0 (2021) cannot GetCert or GetCRL
+#                        from a CA with a separate RA, fixed upstream in
+#                        354acb8 after the tag. Built against the base's
+#                        OpenSSL 3.
+#
+# NOTHING OF THEIRS IS VENDORED: each is fetched from its publisher at build
+# time, each archive is held to a sha256 here, and a GitHub archive of a
+# commit is byte-stable. Their licences are copied beside the binaries, into
+# /opt/enroll-clients/licenses, since the image redistributes them.
+# STAGES rather than layers of the runner so that the compilers, OpenSSL 1.1
+# and the Go toolchain stay out of it; the legacy builder (no BuildKit here)
+# builds every stage every time the cache misses, and each is cached like
+# any other layer. tests/CLAUDE.md, *THE CERTIFICATE ENROLLMENT CLIENTS*,
+# argues why here rather than a compose profile.
+# ---------------------------------------------------------------------------
+FROM golang:1.26.8-bookworm AS enroll-go
+ENV CGO_ENABLED=0 GOFLAGS=-trimpath GOTOOLCHAIN=local
+RUN go install github.com/go-acme/lego/v5@v5.5.2 \
+ && go install github.com/micromdm/scep/v2/cmd/scepclient@v2.3.0 \
+ && mkdir -p /out/licenses \
+ && cp /go/bin/lego /go/bin/scepclient /out/ \
+ && cp /go/pkg/mod/github.com/go-acme/lego/v5@v5.5.2/LICENSE \
+       /out/licenses/lego.LICENSE \
+ && cp /go/pkg/mod/github.com/micromdm/scep/v2@v2.3.0/LICENSE \
+       /out/licenses/micromdm-scep.LICENSE \
+ && /out/lego --version
+
+FROM ubuntu:latest AS enroll-c
+RUN apt-get update \
+    && DEBIAN_FRONTEND=noninteractive apt-get -y install --no-install-recommends \
+        ca-certificates curl gcc make perl autoconf automake libtool \
+        pkg-config libc6-dev liburiparser-dev libssl-dev \
+    && rm -rf /var/lib/apt/lists/*
+WORKDIR /build
+ENV OPENSSL_SHA256=cf3098950cb4d853ad95c0841f1f9c6d3dc102dccfcacd521d93925208b76ac8
+ENV LIBEST_COMMIT=a464ba8a66717419ba71d289ef82c7b2315b2006
+ENV LIBEST_SHA256=2e5c46610f6a3c12c1916c8a84de77421a88c9722e776e862a716f4a48220f2a
+ENV SSCEP_COMMIT=cb3e539818fdab46bf3812f44730d0999d3cc9b3
+ENV SSCEP_SHA256=98eeb34e1bba453f6457d1f716a8694f15e1b4bd353bbd54ad6e0a3125099026
+RUN curl -fsSL --retry 5 --retry-all-errors -o openssl.tgz \
+        https://www.openssl.org/source/openssl-1.1.1w.tar.gz \
+ && echo "${OPENSSL_SHA256}  openssl.tgz" | sha256sum -c - \
+ && tar xzf openssl.tgz && cd openssl-1.1.1w \
+ && ./config --prefix=/opt/openssl11 no-shared no-tests \
+ && make -j"$(nproc)" >/dev/null && make install_sw >/dev/null
+RUN curl -fsSL --retry 5 --retry-all-errors -o libest.tgz \
+        https://github.com/cisco/libest/archive/${LIBEST_COMMIT}.tar.gz \
+ && echo "${LIBEST_SHA256}  libest.tgz" | sha256sum -c - \
+ && tar xzf libest.tgz && cd libest-${LIBEST_COMMIT} \
+ && ./configure --prefix=/opt/libest --with-ssl-dir=/opt/openssl11 \
+      --disable-safec --with-uriparser-dir=/usr --enable-static \
+      --disable-shared LDFLAGS="-Wl,--allow-multiple-definition" \
+      LIBS="-ldl -lpthread" >/dev/null \
+ && make -j"$(nproc)" >/dev/null && make install >/dev/null \
+ && mkdir -p /out/licenses && cp /opt/libest/bin/estclient /out/ \
+ && cp LICENSE /out/licenses/libest.LICENSE
+RUN curl -fsSL --retry 5 --retry-all-errors -o sscep.tgz \
+        https://github.com/certnanny/sscep/archive/${SSCEP_COMMIT}.tar.gz \
+ && echo "${SSCEP_SHA256}  sscep.tgz" | sha256sum -c - \
+ && tar xzf sscep.tgz && cd sscep-${SSCEP_COMMIT} \
+ && (./bootstrap.sh || autoreconf -fi) >/dev/null \
+ && ./configure --prefix=/opt/sscep >/dev/null \
+ && make -j"$(nproc)" >/dev/null && cp sscep /out/ \
+ && cp COPYING /out/licenses/sscep.COPYING
+
 FROM ubuntu:latest
 
 # replace shell with bash so we can source files (the nvm install below needs it)
@@ -186,6 +280,27 @@ RUN apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get -y install --no-install-recommends \
         krb5-user \
     && rm -rf /var/lib/apt/lists/*
+# THE CERTIFICATE ENROLLMENT CLIENTS (#207-#211), from the two stages at the
+# top of this file, and certbot, which is Python and is installed here into
+# a venv of its own from the hash-pinned list. liburiparser1 is estclient's
+# one shared library beyond libc; sscep links the base's OpenSSL 3, which
+# ca-certificates already brought in, and the `openssl` command the jobs
+# make their keys and requests with at run time.
+RUN apt-get update \
+    && DEBIAN_FRONTEND=noninteractive apt-get -y install --no-install-recommends \
+        python3 python3-venv liburiparser1 openssl \
+    && rm -rf /var/lib/apt/lists/*
+COPY --from=enroll-go /out/ /opt/enroll-clients/
+COPY --from=enroll-c /out/ /opt/enroll-clients/
+COPY tests/tools/certbot-requirements.txt /opt/enroll-clients/certbot-requirements.txt
+RUN python3 -m venv /opt/certbot \
+ && /opt/certbot/bin/pip install --no-cache-dir --require-hashes --no-deps \
+      -r /opt/enroll-clients/certbot-requirements.txt \
+ && ln -s /opt/certbot/bin/certbot /usr/local/bin/certbot \
+ && for b in lego scepclient estclient sscep; do \
+      ln -s /opt/enroll-clients/$b /usr/local/bin/$b; done \
+ && certbot --version && lego --version && (sscep 2>&1 | head -2) \
+ && ldd /opt/enroll-clients/estclient
 # THE PUBLISHED XML SCHEMAS AND A VALIDATOR FOR THEM (#188, 2026-09-24):
 # libxml2's `xmllint`, and every OASIS and W3C schema
 # tests/vendored/sts_xml_schema_validation.js validates this service's SAML,

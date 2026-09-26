@@ -2447,8 +2447,8 @@ const CODES = [
     spec: 'OCSPResponse unauthorized(6), HTTP 200' },
   { code: 'STS-PKI-0134',
     summary: 'A request reached the plain-HTTP revocation listener for a ' +
-      'path outside /pki/. That socket serves the revocation endpoints and ' +
-      'nothing else.',
+      'path outside /pki/ and /enroll/scep. That socket serves the ' +
+      'revocation endpoints, SCEP and /healthcheck, and nothing else.',
     spec: 'HTTP 404 text/plain' },
   { code: 'STS-PKI-0140',
     summary: 'A certificate upload named no application, or the registration ' +
@@ -3166,7 +3166,8 @@ const CODES = [
     summary: 'The SCEP RA certificate could not be issued or its replacement could not be recorded.',
     spec: 'HTTP 503 text/plain, or the console/API refusal' },
   { code: 'STS-SCEP-0007',
-    summary: 'A PKIOperation POST did not carry Content-Type application/x-pki-message.',
+    summary: 'A PKIOperation POST carried a Content-Type other than ' +
+      'application/x-pki-message, application/octet-stream or none.',
     spec: 'HTTP 415 text/plain' },
   { code: 'STS-SCEP-0008',
     summary: 'A pkiMessage was larger than scep.maxRequestBytes.',
@@ -3229,7 +3230,9 @@ const CODES = [
     summary: 'A SCEP certificate request carries a key that is not RSA; SCEP encrypts its reply with RSA key transport.',
     spec: 'CertRep FAILURE badAlg' },
   { code: 'STS-SCEP-0034',
-    summary: 'A PKCSReq was signed by a certificate whose key is not the key in the PKCS#10 request (RFC 8894 section 2.3).',
+    summary: 'A PKCSReq was signed by a certificate whose key is not the ' +
+      'key in the PKCS#10 request, and which this realm did not issue (RFC ' +
+      '8894 section 2.3; one this realm issued makes it a renewal).',
     spec: 'CertRep FAILURE badMessageCheck' },
   { code: 'STS-SCEP-0035',
     summary: 'A PKCSReq carried no challengePassword attribute.',

@@ -1437,6 +1437,15 @@ to REFUSE them well:
 
 Every ordinary request is proxied exactly as before.
 
+**A RELAYED HEADER KEEPS THE WORKER'S SPELLING (2026-09-26, #209).** The
+front process set the worker's headers back by `answer.headers`' lower-case
+keys, so a dispatched answer said `content-type:` where a process answering
+by itself says `Content-Type:`. Legal — field names are case-insensitive (RFC
+9110 section 5.1) — and still a difference the dispatched path must not make:
+libest's estclient compares names byte for byte and failed every EST request
+in `single-node` and in no other mode. The spelling is read from
+`rawHeaders`; `tests/request_barrier.js` section 11 holds it on the wire.
+
 ### A SECOND POOL FOR THE CONSOLE AND THE PORTAL (2026-09-13)
 
 `workers.surfaceCount` workers kept for this service's OWN two hosted
@@ -7953,6 +7962,18 @@ from its record would erase them; the three secret ones are `WITHHELD_FIELDS`,
 and all six secret names are in `ldap_server.js`'s `SECRET_ATTRIBUTES`. A
 person's subject DN is added to `x509subject`, which every certificate-to-entry
 lookup here already reads.
+
+**A CERTIFICATE THAT NAMES A HOST HAS THE HOST AS ITS CN AND THE ENTRY AS ITS
+UID (2026-09-24, #207).** `subjectFor()`: the first dNSName (else iPAddress) is
+the common name and the entry's identifier goes in `UID`; a certificate that
+names no host keeps `CN=<entry>`. certbot and lego read a certificate's names
+back as its CN plus its dNSNames, so with `CN=alice` on a certificate for
+`www.alice.test` every renewal asked for `alice` as a host and was refused
+`rejectedIdentifier` — and the CA/Browser Forum's Baseline Requirements 7.1.4.3
+say the same thing. The UID is what keeps the subject DN naming exactly ONE
+entry, since a host may be registered on two and `ldap_server.js`'s
+`locateEntry()` turns a person's subject DN back into an entry.
+`tests/vendored/sts_acme_certbot.js` and `sts_acme_lego.js` renew through it.
 
 **CERTIFICATE AUTHENTICATION CHECKS THREE THINGS AND THE THIRD IS THE
 MAPPING**: `pki.verifyLeaf()` in this realm (another realm's certificate does not

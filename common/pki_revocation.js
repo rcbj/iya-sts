@@ -462,6 +462,15 @@ function httpBase() {
          publishedPort('pki.distributionPort', 'global.port');
 }
 
+// The plain-HTTP base in the AMBIENT realm (#210): what `httpBase()` names,
+// with the realm's path prefix. SCEP is answered on that listener too, and
+// the console, the API and the portal each hand a device this address.
+function httpBaseInRealm() {
+  log.debug("Entering httpBaseInRealm().");
+  log.debug("Leaving httpBaseInRealm().");
+  return httpBase() + realms.currentPrefix();
+}
+
 // A published port, or the listener's own where none was named. `port` is 0
 // for "not set" and 0 is never a port anybody can dial, so it is the one value
 // the fallback may treat as absent — the `0 || n` rule in the root CLAUDE.md is
@@ -673,6 +682,7 @@ module.exports = {
   scopeSegment: scopeSegment,
   scopeFromSegment: scopeFromSegment,
   httpBase: httpBase,
+  httpBaseInRealm: httpBaseInRealm,
   setDirectory: setDirectory,
   currentDirectory: currentDirectory,
   restoreDirectory: restoreDirectory,

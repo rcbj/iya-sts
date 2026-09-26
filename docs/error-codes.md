@@ -615,7 +615,7 @@ Raised from: common/pki.js, common/pki_authoring.ts, common/pki_revocation.js, c
 | `STS-PKI-0131` | The OCSP responder address of a certificate authority this service does not hold was fetched with a GET carrying no request. | HTTP 404 text/plain |
 | `STS-PKI-0132` | An OCSP request carried a nonce of 0 octets or more than 32, which RFC 8954 section 2.1 requires a responder to reject. | OCSPResponse malformedRequest(1), HTTP 200 |
 | `STS-PKI-0133` | An OCSP request named no certificate the responder's authority issued — every CertID's issuer name and key hashes belong to somebody else — so the responder is not authoritative for any of it (RFC 6960 section 2.3, RFC 5019 section 2.2.3). | OCSPResponse unauthorized(6), HTTP 200 |
-| `STS-PKI-0134` | A request reached the plain-HTTP revocation listener for a path outside /pki/. That socket serves the revocation endpoints and nothing else. | HTTP 404 text/plain |
+| `STS-PKI-0134` | A request reached the plain-HTTP revocation listener for a path outside /pki/ and /enroll/scep. That socket serves the revocation endpoints, SCEP and /healthcheck, and nothing else. | HTTP 404 text/plain |
 | `STS-PKI-0140` | A certificate upload named no application, or the registration it produced could not be written. | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
 | `STS-PKI-0141` | A certificate upload carried a PRIVATE KEY block. Nothing was stored; the application keeps its own key. | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
 | `STS-PKI-0142` | A certificate upload carried no PEM certificate, or a PEM block that is not a certificate. | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
@@ -852,7 +852,7 @@ Raised from: scep/.
 | `STS-SCEP-0004` | GetNextCACert was asked for; this server does not pre-announce a CA rollover. | HTTP 501 text/plain |
 | `STS-SCEP-0005` | GetCACert or PKIOperation was asked of a realm with no certificate authority, so there is no SCEP Issuing CA or RA certificate. | HTTP 503 text/plain |
 | `STS-SCEP-0006` | The SCEP RA certificate could not be issued or its replacement could not be recorded. | HTTP 503 text/plain, or the console/API refusal |
-| `STS-SCEP-0007` | A PKIOperation POST did not carry Content-Type application/x-pki-message. | HTTP 415 text/plain |
+| `STS-SCEP-0007` | A PKIOperation POST carried a Content-Type other than application/x-pki-message, application/octet-stream or none. | HTTP 415 text/plain |
 | `STS-SCEP-0008` | A pkiMessage was larger than scep.maxRequestBytes. | HTTP 413 text/plain |
 | `STS-SCEP-0009` | A GET PKIOperation carried no message parameter, or one that is not strict base64. | HTTP 400 text/plain |
 | `STS-SCEP-0010` | A pkiMessage is not one complete CMS ContentInfo carrying a well-formed SignedData. | HTTP 400 text/plain (no CertRep can be built) |
@@ -873,7 +873,7 @@ Raised from: scep/.
 | `STS-SCEP-0031` | A pkiMessage carried a messageType this server does not answer. | CertRep FAILURE badRequest |
 | `STS-SCEP-0032` | A PKCSReq or RenewalReq envelope did not hold a PKCS#10 request, or a CertPoll, GetCert or GetCRL envelope did not hold its structure. | CertRep FAILURE badRequest |
 | `STS-SCEP-0033` | A SCEP certificate request carries a key that is not RSA; SCEP encrypts its reply with RSA key transport. | CertRep FAILURE badAlg |
-| `STS-SCEP-0034` | A PKCSReq was signed by a certificate whose key is not the key in the PKCS#10 request (RFC 8894 section 2.3). | CertRep FAILURE badMessageCheck |
+| `STS-SCEP-0034` | A PKCSReq was signed by a certificate whose key is not the key in the PKCS#10 request, and which this realm did not issue (RFC 8894 section 2.3; one this realm issued makes it a renewal). | CertRep FAILURE badMessageCheck |
 | `STS-SCEP-0035` | A PKCSReq carried no challengePassword attribute. | CertRep FAILURE badRequest |
 | `STS-SCEP-0036` | The profile named in the /enroll/scep URL is not the profile the challenge or the renewed certificate is for. | CertRep FAILURE badRequest |
 | `STS-SCEP-0037` | A transactionID that already completed was sent again with a different request. | CertRep FAILURE badRequest |
