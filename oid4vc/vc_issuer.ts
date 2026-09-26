@@ -2623,7 +2623,8 @@ class VcIssuer {
         log.info(errorCodes.tag('STS-CORE-0121') + 'oid4vci: a credential ' +
                  'request was refused. ' + retiring.why);
         errorCodes.mark(res, 'STS-CORE-0121');
-        log.debug("Leaving the OID4VCI credential endpoint. The realm is being removed.");
+        log.debug("Leaving the OID4VCI credential endpoint. " +
+                  "The realm is being removed.");
         return vciError(res, 400, 'credential_request_denied', retiring.why);
       }
       const presented = this.presentedIssuerToken(req, res,
@@ -2946,10 +2947,11 @@ class VcIssuer {
       // OpenID4VCI section 8.3.1.2's credential_request_denied.
       const retiring = realms.retiringRefusal();
       if (retiring) {
-        log.info(errorCodes.tag('STS-CORE-0121') + 'oid4vci: a deferred credential ' +
-                 'request was refused. ' + retiring.why);
+        log.info(errorCodes.tag('STS-CORE-0121') + 'oid4vci: a deferred ' +
+                 'credential request was refused. ' + retiring.why);
         errorCodes.mark(res, 'STS-CORE-0121');
-        log.debug("Leaving the OID4VCI deferred credential endpoint. The realm is being removed.");
+        log.debug("Leaving the OID4VCI deferred credential endpoint. " +
+                  "The realm is being removed.");
         return vciError(res, 400, 'credential_request_denied', retiring.why);
       }
       if (!this.presentedIssuerToken(req, res,
