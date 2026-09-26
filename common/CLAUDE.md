@@ -5794,9 +5794,30 @@ an edit. The key is ALSO an encryption key, because the SAML metadata
 publishes `STS.xml.certB64` for encryption. That is why
 `ownRsaDecryptionKeys()` and `ownRsaCertificates('xml')` hold it whenever it
 exists, first while the realm signs with it and after the per-algorithm key
-otherwise. Still to come: ECDSA and ML-DSA XML signatures (4b, which needs an
-injected signer in `crypto.signXml()`), and rotation units for the groups
-(2b).
+otherwise. **Phase 2b, rotation:** there is one unit per group CERTIFICATE, named
+`<ca>:<group>/<slot>` (`signingUnitsOf()`), because a new key in either half
+of a hybrid certificate is a new certificate. Its standby rows stay one per
+kid, so a pair's `next` is TWO rows sharing the unit, with `kind: 'group'` and
+a `memberKind` that chooses the keystore encoding (`standbyIsRaw()`). What
+changed:
+
+* `mintStandbyKey()` returns the primary key with its partner, and
+  `standbyEntriesOf()` spreads the two.
+* `promoteGenerations()` swaps both into `signerGroups` by slot and retires
+  both.
+* `certifyStandbyGroupEntry()` issues the `next` hybrid certificate over the
+  pair, in the primary key's generation slot.
+* `groupVerifiersFor()` includes live group generations, which is what keeps
+  a token signed before a rotation verifying. `tests/signer_groups.js` J found
+  it missing.
+* `/crypto/metadata` names each certificate's `alternativeKey`.
+* The `credentials` group rotates on the credential interval with the
+  credential grace.
+* Retirement and the emergency drop were already by unit and by kid, and
+  needed nothing.
+
+Still to come: ECDSA and ML-DSA XML signatures (4b, which needs an injected
+signer in `crypto.signXml()`).
 
 ### A LEAF IS ISSUED FOR A PROFILE, AND THE TWO PROFILES' KEY PAIRS ARE TWO (2026-09-11)
 

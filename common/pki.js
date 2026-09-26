@@ -5857,6 +5857,22 @@ async function certifyStandbyKeys(realmId, keys, nodeCryptoModule) {
     if (one.kind === 'bbs') {
       continue;
     }
+    // A signer-group pair's `next` or retired generation (#68): ONE hybrid
+    // certificate over both halves, issued for the primary key; the
+    // partnered ML-DSA key has none of its own.
+    if (one.kind === 'group') {
+      if (one.memberKind === 'pq' && one.pairedSlot) {
+        continue;
+      }
+      const groupDone = await certifyStandbyGroupEntry(id, one, standby,
+                                                       nodeC);
+      if (groupDone === true) {
+        certified += 1;
+      } else if (groupDone) {
+        failed.push(groupDone);
+      }
+      continue;
+    }
     let publicPem = '';
     try {
       publicPem = one.kind === 'pq'
@@ -5901,6 +5917,67 @@ async function certifyStandbyKeys(realmId, keys, nodeCryptoModule) {
   }
   log.debug('Leaving certifyStandbyKeys(). ' + certified + ' certified.');
   return { certified: certified, failed: failed };
+}
+
+// One signer-group standby entry's certificate (#68): the primary key in
+// subjectPublicKeyInfo and, for a pair, the partner of the SAME generation
+// (same unit, same role) in subjectAltPublicKeyInfo, in the entry's own
+// generation slot. Resolves true when issued, null when already current, or
+// a failure sentence.
+async function certifyStandbyGroupEntry(id, one, standby, nodeC) {
+  log.debug('Entering certifyStandbyGroupEntry(). ' + one.unit + '@' +
+            one.kid);
+  const signerGroups = require('./signer_groups');
+  let publicPem = '';
+  let altPem = null;
+  try {
+    publicPem = one.memberKind === 'pq'
+      ? pqSubjectPublicKeyPem(one.alg, one.publicJwk)
+      : String(nodeC.createPublicKey({ key: one.publicJwk, format: 'jwk' })
+                 .export({ type: 'spki', format: 'pem' }));
+    if (one.pairedSlot) {
+      const partner = standby.filter(function (other) {
+        return other.unit === one.unit && other.role === one.role &&
+               other.slot === one.pairedSlot;
+      })[0];
+      if (!partner) {
+        log.debug('Leaving certifyStandbyGroupEntry(). No partner.');
+        return one.unit + '@' + one.kid + ': its ' + one.role + ' partner ' +
+               one.pairedSlot + ' is missing';
+      }
+      altPem = pqSubjectPublicKeyPem(partner.alg, partner.publicJwk);
+    }
+  } catch (e) {
+    log.debug('Leaving certifyStandbyGroupEntry(). ' + e.message);
+    return one.unit + '@' + one.kid + ': ' + e.message;
+  }
+  const row = rawRowFor(id) || {};
+  const held = certificateFor(id, one.useCase, one.slot, one.kid);
+  const issuingNow = ((row.issuing && row.issuing[one.useCase]) || {})
+    .certificatePem;
+  if (held && held.kid === one.kid &&
+      held.subjectKeyFingerprint === thumbprintOf(publicPem) &&
+      (held.altPublicKeyPem || null) === altPem &&
+      (held.chainPem || [])[0] === issuingNow && scopeChainsToRoot(id)) {
+    log.debug('Leaving certifyStandbyGroupEntry(). Already current.');
+    return null;
+  }
+  const pairSpec = signerGroups.PAIRS.filter(function (pair) {
+    return signerGroups.slotOf(one.group, pair.slot) === one.slot;
+  })[0] || { keyAlg: '' };
+  const done = await certify(id, one.useCase, {
+    slot: one.slot, alg: one.alg, kid: one.kid, generationSlot: true,
+    keyAlg: one.memberKind === 'pq'
+      ? PQ_JOSE_IN_X509[one.alg].id.toLowerCase() : pairSpec.keyAlg,
+    label: one.slot + ' signing key' + (altPem ? ' (hybrid)' : '') + ', ' +
+           one.role + ' generation',
+    commonName: one.slot + (altPem ? ' (hybrid)' : ''),
+    publicKeyPem: publicPem, altPublicKeyPem: altPem,
+    keyUsage: ['digitalSignature', 'nonRepudiation']
+  });
+  log.debug('Leaving certifyStandbyGroupEntry(). ok=' + done.ok);
+  return done.ok ? true
+    : one.unit + '@' + one.kid + ': ' + done.errors.join(' ');
 }
 
 async function certifyKeySet(realmId, keys, nodeCryptoModule) {

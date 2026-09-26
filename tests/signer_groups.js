@@ -431,7 +431,126 @@ async function whichKeySigns(t, m) {
   t.check(defaultXml.kid && !/^sts-g-/.test(defaultXml.kid) &&
           defaultXml.certPem !== xmlCert.certificatePem,
           'while the default realm\'s STS.xml is still its per-algorithm key');
+
+  await rotation(t, m, inRealm, kidOf);
   log.debug("Leaving whichKeySigns().");
+}
+
+// ---------------------------------------------------------------------------
+// J. A HYBRID PAIR ROTATES AS ONE UNIT (phase 2b).
+// ---------------------------------------------------------------------------
+async function rotation(t, m, inRealm, kidOf) {
+  log.debug("Entering rotation().");
+  const keystore = require('../common/keystore');
+  const UNIT = 'jose:tokens/RS256';
+  t.log.info('=== J. a hybrid pair rotates as ONE unit ===');
+  const units = m.helpers.signingUnitsOf(m.helpers.stsKeysFor.of(REALM))
+    .filter(function (row) {
+      return row.kind === 'group';
+    });
+  t.equal(units.length, 20,
+          'one rotation unit per group CERTIFICATE (5 groups x 4), not per ' +
+          'key: a new key in either half is a new certificate');
+  const before = m.helpers.stsKeysFor.of(REALM).signerGroups;
+  const kidAt = function (members, slot) {
+    log.debug("Entering kidAt().");
+    log.debug("Leaving kidAt().");
+    return (members.filter(function (one) {
+      return one.slot === slot;
+    })[0] || { publicJwk: {} }).publicJwk.kid;
+  };
+  const oldRsa = kidAt(before, 'tokens/RS256');
+  const oldPq = kidAt(before, 'tokens/ML-DSA-65');
+  const oldToken = inRealm(function () {
+    return m.helpers.signJwt({ sub: 'before-rotation', iss: 'x', aud: 'y' },
+                             null, { certificateHeader: 'access-token' });
+  });
+  const minted = await m.helpers.ensureNextGenerations(REALM,
+                                                       { units: [UNIT] });
+  t.check(minted.ok && minted.minted.indexOf(UNIT) >= 0,
+          'a next generation is minted for the unit', JSON.stringify(minted));
+  const next = m.helpers.standbyOf(m.helpers.stsKeysFor.of(REALM), UNIT)
+    .filter(function (one) {
+      return one.role === 'next';
+    });
+  t.equal(next.map(function (one) { return one.slot; }).sort().join(','),
+          'tokens/ML-DSA-65,tokens/RS256',
+          'and it is TWO keys — the RSA-3072 key and its ML-DSA-65 partner');
+  const nextRsa = next.filter(function (one) {
+    return one.slot === 'tokens/RS256';
+  })[0];
+  const nextPq = next.filter(function (one) {
+    return one.slot === 'tokens/ML-DSA-65';
+  })[0];
+  const nextCertified = await waitFor(function () {
+    const held = m.pki.certificateFor(REALM, 'jose', 'tokens/RS256',
+                                      nextRsa.kid);
+    return !!(held && held.kid === nextRsa.kid && held.altPublicKeyPem);
+  }, 30000);
+  const nextCert = m.pki.certificateFor(REALM, 'jose', 'tokens/RS256',
+                                        nextRsa.kid);
+  t.check(nextCertified && nextCert.altPublicKeyPem.replace(/\s/g, '') ===
+            m.pki.pqSubjectPublicKeyPem(nextPq.alg, nextPq.publicJwk)
+              .replace(/\s/g, ''),
+          'the next generation has its OWN hybrid certificate, over the next ' +
+          'RSA key with the next ML-DSA key beside it — published before it ' +
+          'signs');
+  const blob = keystore.serialise(m.helpers.stsKeysFor.of(REALM));
+  const rows = blob.generations.standby.filter(function (one) {
+    return one.unit === UNIT;
+  });
+  t.check(rows.length === 2 && rows.every(function (one) {
+            return one.memberKind === 'pq'
+              ? typeof one.privateKey === 'string' && !one.privateKeyPem
+              : /BEGIN PRIVATE KEY/.test(one.privateKeyPem);
+          }),
+          'both standby halves are written down, each in its kind\'s ' +
+          'encoding');
+
+  const promoted = await m.helpers.promoteGenerations(REALM,
+    { units: [UNIT], graceMs: 3600000 });
+  t.check(promoted.ok && promoted.rotated.length === 1,
+          'the unit is promoted', JSON.stringify(promoted));
+  const after = m.helpers.stsKeysFor.of(REALM).signerGroups;
+  t.check(kidAt(after, 'tokens/RS256') === nextRsa.kid &&
+          kidAt(after, 'tokens/ML-DSA-65') === nextPq.kid,
+          'BOTH halves are now the next generation\'s');
+  const retired = m.helpers.standbyOf(m.helpers.stsKeysFor.of(REALM), UNIT)
+    .filter(function (one) {
+      return one.role === 'retired';
+    }).map(function (one) {
+      return one.kid;
+    });
+  t.check(retired.indexOf(oldRsa) >= 0 && retired.indexOf(oldPq) >= 0,
+          'and BOTH old halves are retired together, verifying through ' +
+          'their grace');
+  const newToken = inRealm(function () {
+    return m.helpers.signJwt({ sub: 'after-rotation', iss: 'x', aud: 'y' },
+                             null, { certificateHeader: 'access-token' });
+  });
+  t.equal(kidOf(newToken), nextRsa.kid,
+          'a token signed now uses the promoted key');
+  const stillVerifies = inRealm(function () {
+    return m.helpers.verifyOwnJws(oldToken, { ignoreExpiration: true });
+  });
+  t.equal(stillVerifies && stillVerifies.sub, 'before-rotation',
+          'and a token signed BEFORE the rotation still verifies');
+  const others = m.helpers.stsKeysFor.of(REALM).signerGroups
+    .filter(function (one) {
+      return one.group !== 'tokens' || (one.slot !== 'tokens/RS256' &&
+                                        one.slot !== 'tokens/ML-DSA-65');
+    }).map(function (one) {
+      return one.publicJwk.kid;
+    });
+  const othersBefore = before.filter(function (one) {
+    return one.group !== 'tokens' || (one.slot !== 'tokens/RS256' &&
+                                      one.slot !== 'tokens/ML-DSA-65');
+  }).map(function (one) {
+    return one.publicJwk.kid;
+  });
+  t.equal(others.join(','), othersBefore.join(','),
+          'and no other group key moved');
+  log.debug("Leaving rotation().");
 }
 
 module.exports = {

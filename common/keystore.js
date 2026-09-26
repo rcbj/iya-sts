@@ -661,7 +661,16 @@ function deserialiseXmlKey(blob, nodeCryptoModule) {
 const STANDBY_META = ['unit', 'role', 'alg', 'crv', 'kid', 'kind', 'useCase',
                       'slot', 'createdAt', 'retiredAt', 'retiredUntil',
                       'reason', 'publicJwk', 'certPem', 'certB64',
-                      'publicKeyB64'];
+                      'publicKeyB64', 'group', 'memberKind', 'pairedSlot'];
+
+// Does a standby row's private half travel as raw bytes (base64) — a
+// post-quantum or BBS key, or a signer-group member that is one (#68)?
+function standbyIsRaw(row) {
+  log.debug("Entering standbyIsRaw().");
+  log.debug("Leaving standbyIsRaw().");
+  return row.kind === 'pq' || row.kind === 'bbs' ||
+         (row.kind === 'group' && row.memberKind === 'pq');
+}
 
 function serialiseGenerations(held) {
   log.debug("Entering serialiseGenerations().");
@@ -679,7 +688,7 @@ function serialiseGenerations(held) {
           row[k] = one[k];
         }
       });
-      if (one.kind === 'pq' || one.kind === 'bbs') {
+      if (standbyIsRaw(one)) {
         row.privateKey = Buffer.from(one.privateKey).toString('base64');
       } else if (one.kind === 'rsa') {
         row.privateKeyPem = one.privateKeyPem;
@@ -712,7 +721,7 @@ function deserialiseStandbyEntry(row, nodeCryptoModule) {
       one[k] = row[k];
     }
   });
-  if (row.kind === 'pq' || row.kind === 'bbs') {
+  if (standbyIsRaw(row)) {
     one.privateKey = Buffer.isBuffer(row.privateKey) ? row.privateKey
       : Buffer.from(String(row.privateKey), 'base64');
   } else {

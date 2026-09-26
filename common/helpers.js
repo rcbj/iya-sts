@@ -1159,7 +1159,10 @@ function xmlKeyView(realmId, stored, privateOf) {
 const STANDBY_PUBLIC = ['unit', 'role', 'alg', 'crv', 'kid', 'kind', 'useCase',
                         'slot', 'createdAt', 'retiredAt', 'retiredUntil',
                         'reason', 'publicJwk', 'certPem', 'certB64',
-                        'publicKeyB64'];
+                        'publicKeyB64',
+                        // A signer-group key's (#68): its group, the kind of
+                        // key it is, and the slot of its hybrid partner.
+                        'group', 'memberKind', 'pairedSlot'];
 
 function generationsView(realmId, stored, privateOf) {
   log.debug("Entering generationsView(). realm=" + realmId);
@@ -2598,6 +2601,21 @@ function signingUnitsOf(keys) {
     out.push({ unit: BBS_UNIT, useCase: 'bbs', slot: 'BBS', alg: 'BBS',
                kind: 'bbs', kid: bbsKidOf(keys.bbsKey.publicKey) });
   }
+  // THE SIGNER GROUPS (2026-09-26, #68): one unit per CERTIFICATE — a
+  // classical key with its ML-DSA partner, or SLH-DSA alone — because a new
+  // key in either half of a hybrid certificate is a new certificate, so the
+  // two halves can only rotate together. The row names the certificate's
+  // primary key; `pairedSlot` names the partner rotated with it.
+  groupMembersOf(keys).filter(function (one) {
+    return !(one.kind === 'pq' && one.pairedSlot);
+  }).forEach(function (one) {
+    const grp = signerGroups.group(one.group);
+    const ca = grp ? grp.pkiUseCase : 'jose';
+    out.push({ unit: ca + ':' + one.slot, useCase: ca, slot: one.slot,
+               alg: one.alg, kind: 'group', memberKind: one.kind,
+               group: one.group, pairedSlot: one.pairedSlot || null,
+               kid: one.publicJwk.kid });
+  });
   log.debug("Leaving signingUnitsOf(). " + out.length + " unit(s).");
   return out;
 }
@@ -2797,12 +2815,26 @@ function groupVerifiersFor(alg) {
     log.debug("Leaving groupVerifiersFor(). None.");
     return [];
   }
-  const out = groupMembersOf(stsKeysFor()).filter(function (one) {
-    if (one.group === 'xml') {
+  const keys = stsKeysFor();
+  const now = Date.now();
+  const matches = function (group, memberKind, memberAlg) {
+    log.debug("Entering matches().");
+    log.debug("Leaving matches().");
+    if (group === 'xml') {
       return false;
     }
-    return spec.family === 'rsa' ? one.kind === 'rsa' : one.alg === alg;
-  });
+    return spec.family === 'rsa' ? memberKind === 'rsa' : memberAlg === alg;
+  };
+  const out = groupMembersOf(keys).filter(function (one) {
+    return matches(one.group, one.kind, one.alg);
+  }).concat(
+    // AND EVERY LIVE GENERATION OF A GROUP KEY — `next`, and retired within
+    // its grace (phase 2b) — so a token signed before a rotation still
+    // verifies, as a per-algorithm key's does through ownCandidatesFor().
+    standbyOf(keys).filter(function (one) {
+      return one.kind === 'group' && standbyLive(one, now) &&
+             matches(one.group, one.memberKind, one.alg);
+    }));
   log.debug("Leaving groupVerifiersFor(). " + out.length + ".");
   return out;
 }
@@ -3101,7 +3133,8 @@ function allVerificationKeys() {
   const out = allSigningKeys().concat(standbyOf(keys).filter(function (one) {
     // The JWK-shaped generations only: a BBS key (#49 P5) has no JWK and is
     // looked up through bbsGenerations().
-    return (one.kind === 'curve' || one.kind === 'pq') &&
+    return (one.kind === 'curve' || one.kind === 'pq' ||
+            (one.kind === 'group' && one.group !== 'xml')) &&
            standbyLive(one, now);
   }).map(function (one) {
     return { alg: one.alg, publicJwk: one.publicJwk, role: one.role };
@@ -3117,7 +3150,8 @@ function allVerificationKeysAsync() {
   return allSigningKeysAsync().then(function (current) {
     const now = Date.now();
     return current.concat(standbyOf(keys).filter(function (one) {
-      return (one.kind === 'curve' || one.kind === 'pq') &&
+      return (one.kind === 'curve' || one.kind === 'pq' ||
+              (one.kind === 'group' && one.group !== 'xml')) &&
              standbyLive(one, now);
     }).map(function (one) {
       return { alg: one.alg, publicJwk: one.publicJwk, role: one.role };
@@ -3253,6 +3287,47 @@ async function mintStandbyKey(unitRow, role) {
                                  privateKey: entry.privateKey,
                                  publicJwk: entry.publicJwk });
   }
+  if (unitRow.kind === 'group') {
+    // A SIGNER-GROUP UNIT (#68): its primary key and, for a hybrid pair, the
+    // ML-DSA partner — minted by the recipes the group was made with, and
+    // returned as ONE entry carrying the other as `partner`, which
+    // standbyEntriesOf() spreads into two standby rows sharing the unit.
+    const pairSpec = signerGroups.PAIRS.filter(function (one) {
+      return signerGroups.slotOf(unitRow.group, one.slot) === unitRow.slot;
+    })[0];
+    if (!pairSpec) {
+      log.debug("Leaving mintStandbyKey(). No pair for " + unitRow.slot);
+      throw new Error('no signer-group recipe for ' + unitRow.unit);
+    }
+    let primary;
+    if (pairSpec.kind === 'rsa') {
+      primary = classicalGroupMember(unitRow.group, pairSpec,
+        await generateRsaPairAsync(3072, false));
+    } else if (pairSpec.kind === 'curve') {
+      primary = classicalGroupMember(unitRow.group, pairSpec,
+        await generateCurvePairAsync(CURVE_KEY_SPECS.filter(function (spec) {
+          return spec.alg === pairSpec.slot && !spec.curve;
+        })[0]));
+    } else {
+      primary = pqGroupMember(unitRow.group, pairSpec.slot, pairSpec.slot,
+        null, await pqJose.generateAsync(pairSpec.slot));
+    }
+    const asEntry = function (member) {
+      return Object.assign({}, base, {
+        alg: member.alg, slot: member.slot, kind: 'group',
+        memberKind: member.kind, group: member.group,
+        pairedSlot: member.pairedSlot || null, kid: member.publicJwk.kid,
+        privateKey: member.privateKey, publicJwk: member.publicJwk });
+    };
+    const entry = asEntry(primary);
+    if (pairSpec.pq) {
+      entry.partner = asEntry(pqGroupMember(unitRow.group, pairSpec.pq.slot,
+        pairSpec.pq.alg, unitRow.slot,
+        await pqJose.generateAsync(pairSpec.pq.alg)));
+    }
+    log.debug("Leaving mintStandbyKey(). Group " + entry.kid);
+    return entry;
+  }
   if (unitRow.kind === 'bbs') {
     const pair = await bbs2023.generateKeyPair();
     const kid = bbsKidOf(pair.publicKey);
@@ -3384,6 +3459,17 @@ function replaceGeneration(realmId, next, why) {
 
 // The units of a realm, filtered by `units` (unit names, or a use case
 // alone — `jose` means every JOSE unit) when given.
+// A minted entry as the standby rows it becomes: itself, and a signer-group
+// pair's partner beside it (#68), each without the `partner` link.
+function standbyEntriesOf(entry) {
+  log.debug("Entering standbyEntriesOf().");
+  const partner = entry && entry.partner;
+  const own = Object.assign({}, entry);
+  delete own.partner;
+  log.debug("Leaving standbyEntriesOf().");
+  return partner ? [own, partner] : [own];
+}
+
 function unitsWanted(keys, units) {
   log.debug("Entering unitsWanted().");
   const all = signingUnitsOf(keys);
@@ -3425,7 +3511,10 @@ async function ensureNextGenerations(realmId, options) {
   }
   const current = stsKeysFor.of(id);
   const copy = plainCopyOf(current);
-  copy.generations.standby = copy.generations.standby.concat(made);
+  made.forEach(function (one) {
+    copy.generations.standby = copy.generations.standby
+      .concat(standbyEntriesOf(one));
+  });
   const answer = replaceGeneration(id, copy, 'a next key minted for ' +
     made.map(function (one) {
       return one.unit;
@@ -3481,10 +3570,22 @@ async function promoteGenerations(realmId, options) {
       return want.unit === row.unit;
     });
   }).forEach(function (row) {
-    const nextEntry = fresh[row.unit] || standby.filter(function (one) {
-      return one.unit === row.unit && one.role === 'next';
+    const minted = fresh[row.unit] ? standbyEntriesOf(fresh[row.unit]) : [];
+    const nextEntry = minted[0] || standby.filter(function (one) {
+      return one.unit === row.unit && one.role === 'next' &&
+             (row.kind !== 'group' || one.slot === row.slot);
     })[0];
     if (!nextEntry) {
+      return;
+    }
+    // A signer-group pair's partner rotates WITH it (#68).
+    const partnerNext = row.kind === 'group' && row.pairedSlot
+      ? (minted[1] || standby.filter(function (one) {
+          return one.unit === row.unit && one.role === 'next' &&
+                 one.slot === row.pairedSlot;
+        })[0])
+      : null;
+    if (row.kind === 'group' && row.pairedSlot && !partnerNext) {
       return;
     }
     if (o.emergency) {
@@ -3529,6 +3630,41 @@ async function promoteGenerations(realmId, options) {
       copy.xmlKey = { privateKeyPem: nextEntry.privateKeyPem,
                       selfSignedCertPem: nextEntry.certPem,
                       selfSignedCertB64: nextEntry.certB64 };
+    } else if (row.kind === 'group') {
+      // THE SIGNER GROUPS (#68): both halves of the certificate swapped at
+      // once, by slot, and the old ones retired together.
+      const members = copy.signerGroups;
+      const swap = function (slot, next, retiring) {
+        log.debug("Entering swap(). slot=" + slot);
+        const at = members.findIndex(function (one) {
+          return one.slot === slot;
+        });
+        const old = members[at];
+        Object.assign(retiring, { privateKey: old.privateKey,
+                                  publicJwk: old.publicJwk,
+                                  memberKind: old.kind, group: old.group,
+                                  pairedSlot: old.pairedSlot || null,
+                                  alg: old.alg, slot: old.slot,
+                                  kid: old.publicJwk.kid });
+        members[at] = { group: next.group, slot: next.slot, alg: next.alg,
+                        kind: next.memberKind,
+                        pairedSlot: next.pairedSlot || null,
+                        privateKey: next.privateKey,
+                        publicJwk: next.publicJwk };
+        log.debug("Leaving swap().");
+      };
+      swap(row.slot, nextEntry, retiredFrom);
+      if (partnerNext) {
+        const retiredPartner = Object.assign({}, retiredFrom);
+        swap(row.pairedSlot, partnerNext, retiredPartner);
+        if (o.emergency) {
+          dropped.push({ unit: row.unit, kid: retiredPartner.kid,
+                         role: 'current', useCase: row.useCase,
+                         slot: row.pairedSlot });
+        } else {
+          standby.push(retiredPartner);
+        }
+      }
     } else if (row.kind === 'bbs') {
       Object.assign(retiredFrom, {
         privateKey: Buffer.from(copy.bbsKey.secretKey),
