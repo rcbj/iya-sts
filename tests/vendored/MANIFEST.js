@@ -291,6 +291,22 @@ const JOBS = [
   // The portal's /portal/certificates page: a person's own enrollment
   // credentials and certificates, driven with two signed-in browsers.
   { file: 'sts_portal_certificates.js',  browser: false, local: true },
+  // THE REAL CLIENTS (#207-#211, 2026-09-26): certbot and lego against
+  // ACME, libest's estclient against EST, sscep and micromdm's scepclient
+  // against SCEP — each at the version tests/Dockerfile pins, driven as an
+  // operator would run it, in a throwaway realm (estclient: the default
+  // realm, which is all an EST client can name). tests/CLAUDE.md, *THE
+  // CERTIFICATE ENROLLMENT CLIENTS*.
+  { file: 'sts_acme_certbot.js',         browser: false, local: true,
+    timeoutMs: 900000 },
+  { file: 'sts_acme_lego.js',            browser: false, local: true,
+    timeoutMs: 900000 },
+  { file: 'sts_est_libest.js',           browser: false, local: true,
+    timeoutMs: 600000 },
+  { file: 'sts_scep_sscep.js',           browser: false, local: true,
+    timeoutMs: 600000 },
+  { file: 'sts_scep_micromdm.js',        browser: false, local: true,
+    timeoutMs: 600000 },
   // ssfAllowedEvents (2026-09-12): an application entry limiting which Shared
   // Signals event types a stream it owns is sent. `local: true` because the
   // attribute is this repository's own and the assertion spans an /admin-api
@@ -976,6 +992,11 @@ const LOCAL_HELPERS = [
   // self-signed signer and the envelope, forge.asn1 and node's crypto for the
   // SignedData and the CertRep. Nothing from scep/ or cert_enrollment.js.
   'scep_client.js',
+  // What the five real-client enrollment jobs share (#207-#211): the
+  // management API, a trust bundle FILE for a client that is not node, a
+  // bounded runner that masks secrets, the portal sign-in under a realm, a
+  // CRL reader and `openssl req` at run time. Nothing from the service.
+  'enroll_clients_kit.js',
   // A registered OAuth client and a PKCE pair, for the jobs that start an
   // authorization request: product mode refuses an unknown client_id and a
   // public client without PKCE (2026-09-18).
