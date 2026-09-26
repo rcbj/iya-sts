@@ -481,7 +481,10 @@ async function test() {
       "application/scim+json" }, scimAuth),
     body: JSON.stringify({ schemas:
       ["urn:ietf:params:scim:api:messages:2.0:PatchOp"],
-      Operations: [{ op: "add", path: "emails",
+      // `replace`, not `add`: development may have given the entry an
+      // invented address, never verified, and an added second value would
+      // leave that one first — the address `email` and `email_verified` read.
+      Operations: [{ op: "replace", path: "emails",
                      value: [{ value: ALICE + "@caep238.test",
                                primary: true }] }] }) });
   check("the PATCH is applied", function () {
