@@ -885,7 +885,8 @@ copies, the `node-ldapjs` submodule and the non-`local` copies in
 
 **The fork is `rcbj/node-ldapjs` and it is ours to change (2026-09-18)** —
 the first change is the `routeAnonymousBinds` server option
-(`ldap/CLAUDE.md`, the bind refusals). A change goes in THE FORK, never as a
+(`ldap/CLAUDE.md`, the bind refusals), the second `encodeErrorMessage`, which
+sends a refusal's text as its diagnosticMessage (#261). A change goes in THE FORK, never as a
 patch from this repository into the library: an option whose default is
 upstream's behaviour, a test in the fork's own `test/` (tap), a line in its
 `docs/`, a commit pushed to `rcbj/node-ldapjs`, and the submodule pin bumped

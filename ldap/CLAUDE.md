@@ -2461,6 +2461,31 @@ tool forces a change; setting it (not already TRUE) now sends RISC
 `account-credential-change-required`, as the console's reset does
 (`notePasswordChangeRequired()`). `ssf/CLAUDE.md` has the whole #237 table.
 
+## A REFUSAL'S TEXT REACHES THE CLIENT (#261, 2026-09-26)
+
+**Every refusal here is written for the client** — `credentialWriteRefusal()`
+names the door, a lockout says when to retry — and until this date none of it
+arrived: node-ldapjs put an error's message in `res.errorMessage`, which
+`@ldapjs/messages`' `LdapResult` reads only as a constructor option, so every
+result was ENCODED with an empty diagnosticMessage (RFC 4511 section 4.1.9)
+and a client saw 53 and nothing else. **The fix is the fork's second change**:
+an `encodeErrorMessage` server option, off by default (upstream's behaviour),
+that copies `errorMessage` into `diagnosticMessage` when the response is ended.
+Both servers are created with it and each is asked whether it took
+(`STS-LDAP-0112`, as `routeAnonymousBinds` is). The fork's client carries what
+arrived as the error's own `diagnosticMessage` property; its `message` is
+unchanged.
+
+**WHAT THE OPTION DOES NOT SEND** is a message that describes this service
+rather than the request: with it on, an uncaught exception in a handler is
+answered `internal error`, and `ldapErrorNamed()` answers a worker's
+unrebuildable error the same way (the original wording stays on the log and
+the `STS-LDAP-0023` audit row). Whoever writes a refusal is writing to the
+client now — the operator's version is `ldapRefusal()`'s summary.
+`tests/ldap_diagnostic_message.js` holds the control, the option and the two
+`createServer()` calls; `tests/vendored/sts_credential_signals.js` asserts over
+LDAPS that the 53 names `/portal/mfa` and `/portal/keys`.
+
 ## HOW A CONNECTION BINDS AND WHAT IT MAY READ, IN PRODUCT MODE (2026-09-12)
 
 **node-ldapjs decides nothing about security**, and that is the fact to start
