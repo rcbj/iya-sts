@@ -5019,12 +5019,18 @@ const SETTINGS = [
     enumValues: ['ml-dsa-87', 'ml-dsa-65', 'ml-dsa-44',
                  'slh-dsa-sha2-256s', 'slh-dsa-sha2-192s',
                  'slh-dsa-sha2-128s', 'none'],
-    dflt: 'ml-dsa-87', runtime: true,
-    description: 'The post-quantum key every certificate authority this ' +
-                 'service builds carries BESIDE its classical one, in the ' +
+    dflt: 'none', runtime: true,
+    description: 'The post-quantum key a certificate authority this service ' +
+                 'builds carries BESIDE its classical one, in the ' +
                  'non-critical subjectAltPublicKeyInfo, altSignatureAlgorithm ' +
                  'and altSignatureValue extensions of ITU-T X.509 (2019) ' +
-                 'clause 9.8 — a hybrid certificate. Each authority signs ' +
+                 'clause 9.8 — a hybrid certificate. **OFF (`none`) BY ' +
+                 'DEFAULT** (rcbj, 2026-09-26): a hybrid certificate is too ' +
+                 'large or too unfamiliar for a number of products — libest ' +
+                 'refuses any enroll response over 4 KB, which every hybrid ' +
+                 'leaf is — so the default is the original hierarchy, every ' +
+                 'use case and every signature its own classical key pair. ' +
+                 'Set a value and each authority built afterwards signs ' +
                  'every certificate it issues twice: classically in the ' +
                  'ordinary fields, which every validator reads, and with this ' +
                  'key over the preTBSCertificate, which a hybrid-aware ' +
@@ -5033,15 +5039,14 @@ const SETTINGS = [
                  'valid alternative signature to verify here (STS-PKI-0201, ' +
                  'STS-PKI-0202), so the classical signature alone is never a ' +
                  'way past it. ML-DSA-87 (FIPS 204, category 5) is the ' +
-                 'default because an authority outlives the keys it ' +
-                 'certifies. The value is read at the NEXT build of a tier; ' +
-                 'a hierarchy keeps what it was built with. SLH-DSA (FIPS ' +
-                 '205) is offered for a hash-based anchor and costs SECONDS ' +
-                 'per signature, i.e. per certificate issued. WARNING: ' +
-                 '`none` builds classical-only authorities, whose ' +
-                 'certificates a quantum-capable attacker can forge; it ' +
-                 'exists for a client that cannot parse a large certificate, ' +
-                 'and nothing else.' },
+                 'recommended value, because an authority outlives the keys ' +
+                 'it certifies. The value is read at the NEXT build of a ' +
+                 'tier; a hierarchy keeps what it was built with. SLH-DSA ' +
+                 '(FIPS 205) is offered for a hash-based anchor and costs ' +
+                 'SECONDS per signature, i.e. per certificate issued. ' +
+                 'WARNING: with `none` the authorities are classical only, ' +
+                 'and their certificates are forgeable by a ' +
+                 'quantum-capable attacker.' },
   { key: 'pki.organisation', group: 'PKI',
     label: 'Default organisation name (O=)',
     env: 'STS_PKI_ORGANISATION', type: 'string', dflt: 'sts',
