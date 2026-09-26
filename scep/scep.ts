@@ -519,13 +519,29 @@ class Scep {
                          'request signed with a different key.',
                          cms.FAIL_INFO.badCertId);
     }
+    // A DIFFERENT REQUEST UNDER A COMPLETED transactionID IS A NEW
+    // TRANSACTION, NOT A REFUSAL (#249, #250). certmonger and jscep both
+    // derive the transactionID from the requester's PUBLIC KEY — the
+    // convention of the drafts RFC 8894 replaced — so every request for the
+    // same key carries the same one: a certmonger `getcert resubmit`, a
+    // jscep renewal that keeps its key. Until 2026-09-26 that was refused
+    // STS-SCEP-0037 for as long as the first result was held (a day), and
+    // certmonger, which cannot read a FAILURE CertRep (scep/CLAUDE.md),
+    // retried it until then. Nothing is given away by answering it instead:
+    // the stored result is only ever handed back for the SAME request, and a
+    // new one is authorized from scratch below — a single-use challenge, or
+    // a signer certificate this realm issued — and replaces the stored
+    // result when it succeeds. RFC 8894 section 3.2.1.1 puts the uniqueness
+    // on the client and says nothing of what a CA does when it is not kept.
+    // STS-SCEP-0037 is retired.
     if (held.csrSha256 !== read.csrSha256) {
-      log.debug("Leaving Scep.replayed(). A different request.");
-      return this.failed('STS-SCEP-0037',
-                         'That transactionID already completed ' +
-                         'for a different certificate ' +
-                         'request. A new request needs ' +
-                         'a new transactionID.', cms.FAIL_INFO.badRequest);
+      log.info("scep: transactionID " +
+               String(message.transactionID).slice(0, 80) +
+               " completed earlier for another request signed with the same " +
+               "key; this request is handled as a new transaction.");
+      log.debug("Leaving Scep.replayed(). A new request under a completed " +
+                "transactionID.");
+      return null;
     }
     log.debug("Leaving Scep.replayed(). The stored result.");
     return { ok: true, replay: true, certificatePem: held.certificatePem,

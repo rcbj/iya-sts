@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3575** of them, in **38** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3574** of them, in **38** subsystems.
 
 ## Where a code appears
 
@@ -888,7 +888,7 @@ Raised from: scep/.
 | `STS-SCEP-0034` | A PKCSReq was signed by a certificate whose key is not the key in the PKCS#10 request, and which this realm did not issue (RFC 8894 section 2.3; one this realm issued makes it a renewal). | CertRep FAILURE badMessageCheck |
 | `STS-SCEP-0035` | A PKCSReq carried no challengePassword attribute. | CertRep FAILURE badRequest |
 | `STS-SCEP-0036` | The profile named in the /enroll/scep URL is not the profile the challenge or the renewed certificate is for. | CertRep FAILURE badRequest |
-| `STS-SCEP-0037` | A transactionID that already completed was sent again with a different request. | CertRep FAILURE badRequest |
+| `STS-SCEP-0037` *(retired)* | A transactionID that already completed was sent again with a different request. Retired 2026-09-26 (#249, #250): such a request is a new transaction, authorized afresh. | CertRep FAILURE badRequest |
 | `STS-SCEP-0038` | A CertPoll (GetCertInitial) named a transactionID this realm holds no result for. | CertRep FAILURE badCertId |
 | `STS-SCEP-0039` | A CertPoll or a retried request for a completed transaction was signed with a different key from the request that completed it. | CertRep FAILURE badCertId |
 | `STS-SCEP-0040` | A RenewalReq, GetCert or GetCRL was not signed by a certificate this realm issued to an entry that still holds it. | CertRep FAILURE badMessageCheck |
