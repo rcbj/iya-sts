@@ -776,6 +776,33 @@ class XacmlEditor {
     }
     const node = located.node;
 
+    // -----------------------------------------------------------------------
+    // AN EFFECT IS ONE OF TWO WORDS, AND A THIRD IS REFUSED (#86).
+    //
+    // `add-rule` and the four `add-*-obligation`/`-advice` actions made
+    // anything but exactly `Deny` a PERMIT, and `edit-rule`/`edit-obligation`
+    // ignored anything but the two — so `deny`, `DENY` or a typo wrote a rule
+    // that PERMITS, and said "Rule added." The management API and the console
+    // now refuse such a value before it arrives here (the operation's enum),
+    // and this is the same rule at the model, for any other caller: absent or
+    // empty keeps the default, and a value that is neither word is refused by
+    // name. XACML 3.0 section 5.9 (EffectType) defines exactly these two.
+    // -----------------------------------------------------------------------
+    const effects = [model.EFFECT.PERMIT, model.EFFECT.DENY];
+    const effectFields = ['effect', 'on'];
+    for (let i = 0; i < effectFields.length; i++) {
+      const asked = given[effectFields[i]];
+      if (asked !== undefined && asked !== null && asked !== '' &&
+          effects.indexOf(asked) < 0) {
+        log.debug('Leaving XacmlEditor.applyEdit(). "' + effectFields[i] +
+                  '" is not an Effect.');
+        return { ok: false,
+                 why: '"' + effectFields[i] + '" is "' + String(asked) +
+                      '", which is not an XACML Effect. It is Permit or ' +
+                      'Deny, spelt exactly so.' };
+      }
+    }
+
     if (action === 'remove') {
       if (!located.parent || located.key === null) {
         log.debug('Leaving XacmlEditor.applyEdit(). Nothing to remove from.');

@@ -1752,6 +1752,23 @@ strips the prefix before the router sees the URL, which is why no route
 registration in this service carries a realm and no protocol module was edited.
 **Nothing may be registered above it.**
 
+**THE PREFIX IS ONE OF TWO WAYS A PATH NAMES A REALM (2026-09-26, #251).** The
+other is EST's label position: `/.well-known/est/<realm>/…` enters `<realm>`
+and is rewritten to `/.well-known/est/…`, because an RFC 7030 client is given a
+host, a port and at most one label and can put nothing in front of a
+well-known URI (libest's estclient refuses even a second segment). It is
+decided in the SAME place — `matchPath()` falls through to `matchEstLabel()`
+when the path does not open with the prefix — so the same middleware enters
+it, a request worker derives it by the same rule from the same `originalUrl`,
+and `unknownRealmPath()` catches up on it the same way. A realm may not be
+called by an EST label's name (`validateId()`, `STS-CORE-0107`; the names come
+from the data leaf `enrollment_profiles.ts`, which realms.js may require and
+`cert_enrollment.ts` could not be), and a realm that already was is never
+read there: the label reading wins. `est/CLAUDE.md` argues the collision rule
+and the "named once" refusal. **A third way needs the argument made again**,
+not this one copied: this one exists because a specification puts its paths
+at the root and the clients cannot be told otherwise.
+
 `AsyncLocalStorage` is the right primitive rather than a convenient one. A
 request here is a chain of awaits and callbacks — an LDAP search, an RSA
 signature, a gRPC call — and a module-level `currentRealm` variable would be
@@ -5880,13 +5897,22 @@ NOT: RFC 7518 pins ES256 to P-256, ES384 to P-384 and ES512 to P-521, so a P-256
 key under a SHA-512 chain is still ES256, and naming it ES512 would produce
 assertions nothing can verify. `tests/pki.js` asserts both readings.
 
-### 3w, CONTINUED: EVERY AUTHORITY IS HYBRID (2026-09-26, #68 phase 1)
+### 3w, CONTINUED: HYBRID AUTHORITIES, OFF BY DEFAULT (2026-09-26, #68 phase 1)
+
+**OFF BY DEFAULT, THE SAME DAY IT LANDED (rcbj).** `pki.alternativeKeyAlgorithm`
+defaults to `none`: the hierarchy is the original one, every use case and
+every signature its own classical key pair, because a hybrid certificate
+breaks too many other products — Cisco libest refuses any enroll response over
+4 KB (`EST_MAX_CLIENT_CERT_LEN`), which every hybrid leaf is, and
+`sts_est_libest` found it. Everything below is what the setting does when it
+is set; `tests/pki_hybrid.js` sets it for itself.
+
 
 **rcbj's D4 on #68 was "whole chain hybrid"**: the approach is #1 of his
 article *X.509 Certificates With More Than One Signature*, ITU-T X.509 (2019)
-clause 9.8's alternative public key and alternative signature. So every tier
-`issueCaTier()` builds holds a SECOND key pair: `pki.alternativeKeyAlgorithm`,
-ML-DSA-87 by default. Its public half goes in `subjectAltPublicKeyInfo`, and
+clause 9.8's alternative public key and alternative signature. So, with the
+setting on, every tier `issueCaTier()` builds holds a SECOND key pair:
+`pki.alternativeKeyAlgorithm` (ML-DSA-87 recommended). Its public half goes in `subjectAltPublicKeyInfo`, and
 it is kept on the tier as `altKeyAlg` / `altPrivateKeyPem` / `altPublicKeyPem`,
 sealed with the rest of the row, since `keystore.js` seals the chain as one
 blob. **Every certificate a tier issues carries an alternative signature**,
@@ -8335,6 +8361,19 @@ entry, since a host may be registered on two and `ldap_server.js`'s
 `locateEntry()` turns a person's subject DN back into an entry.
 `tests/vendored/sts_acme_certbot.js` and `sts_acme_lego.js` renew through it.
 
+**A REQUEST THAT NAMES NO PROFILE AND ONLY HOSTS IS A `tls-server` REQUEST
+(2026-09-26, #252, rcbj's decision on #207).** `profileForIdentifiers(family,
+types)`: every identifier `dns` or `ip` → `tls-server` when the family's
+`allowedProfiles` holds it; anything else — an `email`, a
+`permanent-identifier`, or a MIX of those with host names — → the family's
+`defaultProfile`. A mixed request names an entry as well as a host and did not
+say which the certificate is for, so it is not guessed; a realm that disallows
+`tls-server` keeps its default, so the choice never reaches past the allowed
+list; a NAMED profile is never passed through this. Only ACME knows its
+identifiers before choosing (EST's label and SCEP's realm choose before a CSR
+is read), so ACME is the one caller — but the rule is the profiles', so it is
+here. `acme/CLAUDE.md` has how the new-order reads it.
+
 **CERTIFICATE AUTHENTICATION CHECKS THREE THINGS AND THE THIRD IS THE
 MAPPING**: `pki.verifyLeaf()` in this realm (another realm's certificate does not
 pass through this Intermediate), `clientAuth`, and a urn:sts: SAN naming an entry
@@ -9113,3 +9152,19 @@ meets NO risk step-up (`risk_engine.satisfiedBy()`'s `kinds`, D1).
 `tests/email_factor.js` drives it end to end in process;
 `tests/vendored/sts_email_factor.js` over HTTP into Mailpit.
 
+
+## `closed_sets.ts`: THE CLOSED SETS AN ADMINISTRATOR'S INPUT IS HELD TO (#86, 2026-09-26)
+
+A LEAF (rule 3) requiring only `bunyan`. It holds no set of its own — every
+set is an `enum` in `/admin-api`'s OpenAPI document — and gives the three
+doors what they need to hold that one declaration: `collect()` (every enum a
+request schema declares outside `anyOf`/`oneOf`, following `$ref`), the
+console register `mgmt-api/admin_api.ts` fills at wire time and
+`admin-ui/admin.ts`'s gate reads, `checkQuery()`, `formValues()` (every value
+of a repeated form field, which `helpers.parseBody()` cannot give) and
+`sentence()`, the one refusal all three give. **A register in a leaf that both
+modules require in the ordinary direction, like `cache_registry.js` — not a
+slot**: neither module calls the other, so rule 3e's test is never reached.
+Its three rules (an empty form or query value is absent, case is exact, an
+enum inside an alternative is ajv's) are argued in its header; the design is
+`mgmt-api/CLAUDE.md`'s *Every closed set is held, at every door*.

@@ -435,6 +435,14 @@ carries `common/credentials.js`. It requires `helpers`, `instance_slot`,
 there with credentials — and `risk/risk_datasets` and
 `common/revocation_status.js` only lazily, inside a registration.
 
+**AND OWED AGAIN AS OF 2026-09-26: `common/enrollment_profiles.js`** (#251),
+compiled from its `.ts`. `common/realms.js` requires it at load — it holds the
+EST label names a realm may not take and that `matchPath()` must not read as a
+realm — and realms.js is in the closure through `krb5_principals.js`, so the
+commit that bumps the `sts/` pin across it needs `COPY
+sts/common/enrollment_profiles.js ./sts/common/`. It is data and requires
+nothing, so it is one line and no more.
+
 `MOCK_STS_DIR=/path/to/iya-sts` still points those tests at a working copy,
 unchanged; below it there is now a sibling-checkout candidate that resolves and
 says loudly that the run reflects an unpushed working copy.

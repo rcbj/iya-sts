@@ -15624,6 +15624,40 @@ function setAccountObserver(fn) {
             (accountObserver ? 'Installed.' : 'Cleared.'));
 }
 
+// MORE THAN ONE LISTENER (#151): OpenID Provider Commands sends `suspend`,
+// `reactivate`, `delete` and `maintain` on the same events Shared Signals
+// reads, and neither owns the other. The slot above stays SSF's; each
+// further listener is added here, told after it, and held to the same rule —
+// it never throws into a write.
+const accountListeners = [];
+
+function addAccountObserver(fn) {
+  log.debug('Entering addAccountObserver().');
+  if (typeof fn === 'function' && accountListeners.indexOf(fn) < 0) {
+    accountListeners.push(fn);
+  }
+  log.debug('Leaving addAccountObserver(). ' + accountListeners.length +
+            ' listener(s).');
+}
+
+// Every observer, the slot first; one that throws is logged and the write
+// stands.
+function tellAccountObservers(event) {
+  log.debug('Entering tellAccountObservers(). ' + event.kind);
+  const all = (accountObserver ? [accountObserver] : [])
+    .concat(accountListeners);
+  all.forEach(function (fn) {
+    try {
+      fn(event);
+    } catch (e) {
+      log.error(errorCodes.tag('STS-LDAP-0032') +
+                'ldap: an account observer threw on a ' + event.kind +
+                ' change and the write stands: ' + ((e && e.message) || e));
+    }
+  });
+  log.debug('Leaving tellAccountObservers().');
+}
+
 // A snapshot of one entry's attributes, deep enough to survive the write that
 // follows. A shallow copy would hand the observer the SAME arrays the modify
 // handler is about to rewrite in place, so every "before" would equal its
@@ -15806,20 +15840,14 @@ function noteAccountChange(kind, dn, before, after, options) {
                ((e && e.message) || e));
     }
   }
-  if (!accountObserver) {
+  if (!accountObserver && !accountListeners.length) {
     log.debug('Leaving noteAccountChange(). Nobody is observing.');
     return;
   }
-  try {
-    accountObserver({ kind: String(kind), dn: String(dn),
-      username: canonicalUsernameOfDn(dn), realm: realmFor(dn).id,
-      before: before || {}, after: after || {},
-      reason: String((options && options.riscReason) || '') });
-  } catch (e) {
-    log.error(errorCodes.tag('STS-LDAP-0032') +
-              'ldap: the account observer threw and the write stands: ' +
-              e.message);
-  }
+  tellAccountObservers({ kind: String(kind), dn: String(dn),
+    username: canonicalUsernameOfDn(dn), realm: realmFor(dn).id,
+    before: before || {}, after: after || {},
+    reason: String((options && options.riscReason) || '') });
   log.debug('Leaving noteAccountChange().');
 }
 
@@ -15853,7 +15881,7 @@ function memberDnsOf(attributes) {
 
 function noteMembershipChange(groupDn, before, after, options) {
   log.debug('Entering noteMembershipChange(). ' + groupDn);
-  if (!accountObserver) {
+  if (!accountObserver && !accountListeners.length) {
     log.debug('Leaving noteMembershipChange(). Nobody is observing.');
     return;
   }
@@ -15878,15 +15906,9 @@ function noteMembershipChange(groupDn, before, after, options) {
       // A dangling member, or a group nested in a group: nobody's claims.
       return;
     }
-    try {
-      accountObserver({ kind: 'membership', dn: String(stored.dn),
-        username: usernameOfEntry(stored), realm: realmFor(stored.dn).id,
-        group: String(groupDn) });
-    } catch (e) {
-      log.error(errorCodes.tag('STS-LDAP-0032') +
-                'ldap: the account observer threw on a membership change ' +
-                'and the write stands: ' + ((e && e.message) || e));
-    }
+    tellAccountObservers({ kind: 'membership', dn: String(stored.dn),
+      username: usernameOfEntry(stored), realm: realmFor(stored.dn).id,
+      group: String(groupDn) });
   });
   log.debug('Leaving noteMembershipChange(). ' + Object.keys(seen).length +
             ' member(s) affected.');
@@ -18340,6 +18362,7 @@ module.exports = {
   // time. See setAccountObserver()'s header: this is the only direction that
   // works, and it is on the STORE rather than on any one door because the
   // same act reaches this directory over SCIM, over LDAP and from the console.
+  addAccountObserver: addAccountObserver,
   setAccountObserver: setAccountObserver,
   // The DN-syntax rule, shared with createUser() above so that the three doors
   // that create something named cannot disagree about what a name may be.

@@ -661,10 +661,22 @@ async function theReadsAgreeWithTheConsole(session) {
     "the list has no other way to know it has finished. Got page " +
     clamped.page + " of " + clamped.pages);
 
-  const contradiction = await get("/tokens?family=kerberos&kind=id_token");
+  // `ticket` is the Kerberos family's id and `id_token` a JWT kind: both
+  // legal, from different families. This read `family=kerberos` until #86,
+  // which is not a family at all — a filter value outside its declared set
+  // is refused now, by name, so the probe names a real one and the refusal
+  // is asserted beside it.
+  const contradiction = await get("/tokens?family=ticket&kind=id_token");
   assert.strictEqual(contradiction.matched, 0,
     "family and kind are ANDed, so a kind from another family should match " +
     "nothing; got " + contradiction.matched);
+  const unknownFamily = await common.httpJson(api + "/tokens?family=kerberos");
+  const unknownSaid = ((unknownFamily.body && unknownFamily.body.errors) ||
+                       []).join(" ");
+  assert.ok(unknownFamily.status === 400 &&
+            /"family" is "kerberos", which is not one of/.test(unknownSaid),
+    "a family that is not one of the four is refused by name (#86); got " +
+    unknownFamily.status + " " + String(unknownFamily.raw).slice(0, 200));
 
   const nobody = await get("/users?user=" + encodeURIComponent(
     "nobody-has-ever-signed-in-as-this"));

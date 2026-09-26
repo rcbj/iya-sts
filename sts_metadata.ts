@@ -2280,6 +2280,30 @@ const SPECS: Spec[] = [
               'verified_claims (Identity Assurance section 6), and the ' +
               'Claims Provider role (this service\'s signed UserInfo serves ' +
               'another aggregator, which is the draft\'s CP side).' },
+  { id: 'oidc-provider-commands', name: 'OpenID Provider Commands 1.0 ' +
+                                        '(draft 02)',
+    where: 'OpenID Foundation',
+    url: 'https://openid.net/specs/openid-provider-commands-1_0.html',
+    coverage: 'full (#151), as the OpenID Provider, where ' +
+              'oauth2.providerCommands is on (off by default): ' +
+              'command_endpoint registered (DCR, console, API; https, no ' +
+              'fragment); Command Tokens typed command+jwt and signed like ' +
+              'the client\'s ID Token, at most two minutes, with the ' +
+              'section 5 claims per command (sub only in account commands, ' +
+              'metadata only in metadata, authentication_provider only in ' +
+              'migrate, never nonce; tenant is the realm id; aud_sub sent ' +
+              'and learned); all ten account commands and their _async ' +
+              'variants on the shared durable outbound queue with the ' +
+              'section 3 answers and errors read; metadata recording what ' +
+              'each relying party supports; the five streaming tenant ' +
+              'commands read as Server-Sent Events and resumed with ' +
+              'Last-Event-ID; the callback endpoint for async results and ' +
+              'metadata and audit_tenant requests; an account-state register ' +
+              'per relying party; automatic suspend, reactivate, delete, ' +
+              'maintain and invalidate on directory changes and global ' +
+              'sign-outs, only to a relying party that listed the command. ' +
+              'A mock relying party answers every command in development. ' +
+              'MISSING: acting as the relying party for another OP.' },
   { id: 'oidc-enterprise', name: 'OpenID Connect Enterprise Extensions 1.0 ' +
                                  '(draft 01)',
     where: 'OpenID Foundation',
@@ -5214,6 +5238,12 @@ const ENDPOINTS: EndpointEntry[] = [
           'is the pipe and CAEP and RISC are the vocabularies, and CAEP — ' +
           'which DOES generate events by itself, at /admin/caep — is the one ' +
           'place in this service that does. Add ?format=json.' },
+  { path: '/admin/deliveries', group: 'Admin', name: 'Outbound deliveries',
+    specs: ['oidc-bclogout', 'oidc-ciba', 'oidc-provider-commands'],
+    what: 'NON-SPEC PAGE (#151), under Monitoring: every Back-Channel ' +
+          'Logout Token, CIBA ping and push and OpenID Provider Command on ' +
+          'the shared outbound queue, by kind, with each dead letter\'s ' +
+          'code and a Retry.' },
   { path: '/admin/ssf/dead-letters', group: 'Admin', name: 'Dead letters',
     specs: ['ssf', 'rfc8417', 'rfc8935'],
     what: 'NON-SPEC PAGE (2026-09-14), under Monitoring → Shared Signals: ' +
@@ -7898,6 +7928,18 @@ const ENDPOINTS: EndpointEntry[] = [
           'Token in the reply carries a credential — a SET is signed and its ' +
           '`aud` is the stream, which is the whole of what makes it safe to ' +
           'publish here.' },
+  { path: '/admin-api/deliveries', group: 'Management API',
+    name: 'Outbound deliveries',
+    specs: ['openapi', 'oidc-bclogout', 'oidc-ciba',
+            'oidc-provider-commands'],
+    what: 'GET /admin/deliveries over JSON (#151): each kind\'s counts and ' +
+          'rows, narrowed by ?state=, ?kind= and ?q=.' },
+  { path: '/admin-api/deliveries/:action', group: 'Management API',
+    name: 'Retry an outbound delivery',
+    specs: ['openapi', 'oidc-bclogout', 'oidc-ciba',
+            'oidc-provider-commands'],
+    what: 'retry: a dead letter of any kind sent again as a new generation ' +
+          '(#151).' },
   { path: '/admin-api/ssf/dead-letters', group: 'Management API',
     name: 'Dead letters', specs: ['openapi', 'ssf', 'rfc8935'],
     what: 'GET /admin/ssf/dead-letters over JSON: this realm\'s dead-letter ' +
@@ -10242,6 +10284,34 @@ const ENDPOINTS: EndpointEntry[] = [
     name: 'Revoke a grant', specs: ['oauth-grant-management'],
     what: 'revoke-grant: what a client\'s DELETE does, done by an ' +
           'administrator.' },
+  { path: '/admin/commands', group: 'OAuth 2.0 / OIDC',
+    name: 'The OpenID Provider Commands console page',
+    specs: ['oidc-provider-commands'],
+    what: 'Each client\'s command_endpoint and what it supports, sending an ' +
+          'account or tenant command, the account-state register, the ' +
+          'tenant runs and the command deliveries with Retry (#151).' },
+  { path: '/admin-api/commands', group: 'OAuth 2.0 / OIDC',
+    name: 'The OpenID Provider Commands console page over JSON',
+    specs: ['oidc-provider-commands', 'openapi'],
+    what: 'GET /admin/commands\' report (#151).' },
+  { path: '/admin-api/commands/:action', group: 'OAuth 2.0 / OIDC',
+    name: 'Send a command, or retry one',
+    specs: ['oidc-provider-commands', 'openapi'],
+    what: 'send-account, send-tenant and retry-delivery: the console\'s ' +
+          'three acts (#151).' },
+  { path: '/oauth2/commands/callback', group: 'OAuth 2.0 / OIDC',
+    name: 'OpenID Provider Commands callback endpoint',
+    specs: ['oidc-provider-commands', 'rfc6750'],
+    what: 'Where a relying party POSTs an _async command\'s result or asks ' +
+          'for a fresh metadata or audit_tenant, Bearer the callback_token ' +
+          'the command carried (#151). 204, or RFC 6750\'s errors.' },
+  { path: '/oauth2/commands/mock-rp', group: 'OAuth 2.0 / OIDC',
+    name: 'Mock relying party command endpoint (not a spec endpoint)',
+    specs: ['oidc-provider-commands'],
+    what: 'NON-SPEC, development only (#151): a relying party\'s ' +
+          'command_endpoint that checks a Command Token as section 9 asks ' +
+          'and answers every account and tenant command, streams included; ' +
+          'GET shows what it holds. 404 in product mode.' },
   { path: '/admin/claim-providers', group: 'OAuth 2.0 / OIDC',
     name: 'The Claims Providers console page',
     specs: ['oidc-claims-aggregation'],
@@ -10744,7 +10814,10 @@ const ENDPOINTS: EndpointEntry[] = [
   { path: '/.well-known/est/:label/cacerts', group: 'EST',
     name: 'CA certificates (labelled)', specs: ['rfc7030', 'rfc8951'],
     what: 'The same as /cacerts. The label is a certificate profile id; an ' +
-          'unknown one is 404 and a refused or disallowed one 403.' },
+          'unknown one is 404 and a refused or disallowed one 403. A label ' +
+          'that names a trust realm enters that realm instead (#251), ' +
+          'before this route is matched: /.well-known/est/<realm>/cacerts, ' +
+          'and /.well-known/est/<realm>/<profile>/cacerts inside it.' },
   { path: '/.well-known/est/:label/simpleenroll', group: 'EST',
     name: 'Simple enrollment (labelled)',
     specs: ['rfc7030', 'rfc8951', 'rfc5967'],
@@ -10773,9 +10846,10 @@ const ENDPOINTS: EndpointEntry[] = [
     what: 'Answers 501 under a label as it does without one.' },
   { path: '/admin/est', group: 'EST', name: 'The EST console page',
     specs: ['rfc7030'],
-    what: 'Protocols > EST: the endpoints and the labelled URL of every ' +
-          'profile, the EST Issuing CA, the profiles and the five never ' +
-          'issued, the credentials EST accepts, issuing with a ' +
+    what: 'Protocols > EST: the endpoints (and in a realm other than the ' +
+          'default, their label-form URLs, #251) and the labelled URL of ' +
+          'every profile, the EST Issuing CA, the profiles and the five ' +
+          'never issued, the credentials EST accepts, issuing with a ' +
           'server-generated key, certificate host names, the enrolled ' +
           'certificates with a Revoke on each, and every est.* setting.' },
   { path: '/admin/est/monitor', group: 'EST', name: 'EST enrollments',
@@ -11002,7 +11076,8 @@ const PROTOCOLS: Protocol[] = [
     specs: ['rfc6749', 'oidc', 'rfc8414', 'rfc9700', 'oauth21',
             'oauth-attestation', 'oidc-session', 'oidc-ida-claims', 'oidc-ida', 'oidc-native-sso',
             'oidc-ciba', 'fapi-ciba', 'oauth-grant-management',
-            'oidc-claims-aggregation', 'oidc-enterprise', 'oidc-ephemeral'],
+            'oidc-claims-aggregation', 'oidc-enterprise', 'oidc-ephemeral',
+            'oidc-provider-commands'],
     what: 'A mock authorization server and OpenID Provider: all five grants, ' +
           'PKCE, DPoP, introspection, revocation, dynamic registration, ' +
           'UserInfo and RP-initiated logout, with as many named ' +
