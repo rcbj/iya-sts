@@ -120,10 +120,14 @@ const samlAssertionGrant = require('./saml_assertion_grant');
 // reading the registration door in `common/applications.js` also asks. A leaf.
 const certificateSubject = require('../common/certificate_subject');
 // OAUTH 2.0 ATTESTATION-BASED CLIENT AUTHENTICATION (#229): the two methods
-// whose credential rides in HTTP header fields rather than in the body. A
-// library that requires only `common/` modules, so the require closes no
-// cycle; it must never require this file back.
-const clientAttestation = require('./client_attestation');
+// whose credential rides in HTTP header fields rather than in the body.
+// `client_attestation.ts` is required LAZILY, in `verify()`: this file is
+// loaded before the composition root runs (`common/cors.js` reaches it through
+// `oauth2_bcp.js`, from `app.js`), and a converted module required that early
+// builds an instance of its own, which the root then cannot install (#50,
+// R2). The two names are spelt here for the same reason.
+const ATTESTATION_METHODS = ['attest_jwt_client_auth',
+                             'attest_jwt_client_auth_dpop'];
 
 // RFC 7523 section 2.2. One value, spelt once, because a client that sends the
 // wrong one is told which is expected rather than being told its assertion is
@@ -168,7 +172,7 @@ const SYMMETRIC_METHODS = ['client_secret_basic', 'client_secret_post',
 const ASYMMETRIC_METHODS = ['private_key_jwt', 'saml2_bearer',
                             'tls_client_auth',
                             'self_signed_tls_client_auth'].concat(
-                              clientAttestation.METHODS);
+                              ATTESTATION_METHODS);
 const METHODS = ['none'].concat(SYMMETRIC_METHODS, ASYMMETRIC_METHODS);
 
 // Which of them RFC 9700 section 2.5 is asking for. Read by the caller that
@@ -1279,7 +1283,8 @@ async function verify(opts) {
   // whole of sections 4 to 7 and answers once per request, for
   // `verifiedOnce()`'s reason. `info.issuer` is the audience a PoP must name.
   // -------------------------------------------------------------------------
-  if (clientAttestation.isMethod(method)) {
+  if (ATTESTATION_METHODS.indexOf(method) >= 0) {
+    const clientAttestation = require('./client_attestation');
     const checked = await clientAttestation.verifyRequest(info.request, {
       method: method, clientId: info.clientId, issuer: info.issuer
     });
