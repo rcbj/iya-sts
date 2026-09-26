@@ -195,6 +195,26 @@ function spelt(path) {
   }).join(".");
 }
 
+// A refusal naming the field and every value, in either of the two wordings
+// a closed set is refused in: `common/closed_sets.ts`'s, which every door
+// that validates against the document uses, and `config.js`'s TYPES check,
+// which the two narrow doors whose body is a set of SETTINGS
+// (`/saml-assertions`, `/token-lifetimes`) give — they own their body, so a
+// setting's own rule is what refuses it there.
+const SETTING_SENTENCE = /must be one of .+, got "/;
+
+function refusalNames(said, field, values) {
+  log.debug("Entering refusalNames().");
+  const ours = SENTENCE.test(said) && said.indexOf('"' + field + '"') >= 0 &&
+               namesEvery(said, values);
+  const setting = SETTING_SENTENCE.test(said) && said.indexOf(field) >= 0 &&
+                  values.every(function (v) {
+                    return said.indexOf(String(v)) >= 0;
+                  });
+  log.debug("Leaving refusalNames().");
+  return ours || setting;
+}
+
 function namesEvery(text, values) {
   log.debug("Entering namesEvery().");
   log.debug("Leaving namesEvery().");
@@ -278,9 +298,7 @@ async function theBodies(doc) {
       check(where + " refuses a value outside its set", function () {
         assert.strictEqual(bad.status, 400, where + ": " +
                            bad.text.slice(0, 400));
-        assert.ok(SENTENCE.test(said) &&
-                  said.indexOf('"' + spelt(f.path) + '"') >= 0 &&
-                  namesEvery(said, f.values),
+        assert.ok(refusalNames(said, spelt(f.path), f.values),
                   where + ": the refusal should name the field and all " +
                   f.values.length + " values; it said " + said);
       });
@@ -299,8 +317,9 @@ async function theBodies(doc) {
                            good.text.slice(0, 400));
         assert.ok(goodSaid.indexOf('"' + EXTRA + '"') >= 0, where + ": " +
                   goodSaid);
-        assert.ok(!SENTENCE.test(goodSaid), where + ": a value from the set " +
-                  "was refused as outside it: " + goodSaid);
+        assert.ok(!SENTENCE.test(goodSaid) &&
+                  !SETTING_SENTENCE.test(goodSaid), where + ": a value from " +
+                  "the set was refused as outside it: " + goodSaid);
       });
       positives += 1;
     }

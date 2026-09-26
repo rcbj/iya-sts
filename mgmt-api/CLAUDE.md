@@ -1825,13 +1825,17 @@ but exactly `Deny` was written as **Permit**. So:
   — and three retyped lists had gone stale when the audit read them: the
   application `kind` filter (8 of 11), `revoke-kind` (no
   `gnap_access_token`), federation `add-value` (no `fedSubjectGroup` or
-  `fedSubjectDomain`, which the console's own form posts). **Two are written
-  out** because their owner cannot be loaded at 19 — EST's and SCEP's nine
-  enrollment profiles (`common/cert_enrollment.ts`) and CAEP's four
+  `fedSubjectDomain`, which the console's own form posts). **One is written
+  out** because its owner cannot be loaded at 19 — CAEP's four
   `initiating_entity` values (`ssf/ssf_events.js`) — and `tests/closed_sets.js`
-  holds each equal to its owner.
+  holds it equal to its owner.
 
-**What is deliberately NOT an enum**, each with its reason: a claim-set or
+**What is deliberately NOT an enum**, each with its reason: EST's and SCEP's
+`profile` (a closed set, and the ONE case the suite found where the handler's
+refusal is the better one — `checkProfile()` tells a caller who asked for
+`root-ca` that a Root CA is a trust anchor, and the validator runs first, so
+an enum would replace that with a list; `sts_scep_enrollment.js` asserts the
+sentence); a claim-set or
 credential-claim `attributes[]` (LDAP attribute names, which RFC 4512 makes
 case-insensitive, and the handler refuses an unknown one by name); the
 verifier's `format` (the handler turns a form-decoded space back into `+`);

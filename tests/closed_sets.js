@@ -25,7 +25,8 @@
 //      Then the console register that module filled at wire time: every
 //      control in it refuses a value outside each of its fields, and the
 //      register is not empty (a mirrors parse that broke would leave it so,
-//      and the console door would pass everything).
+//      and the console door would pass everything). And the one list
+//      written out by hand is held equal to its owner.
 //
 // B RUNS IN A CHILD, because loading the management API loads most of the
 // service and a stack loaded into the runner is shared with every file
@@ -247,12 +248,6 @@ function childMain() {
     const tie = function (what, written, owner) {
       report.ties.push({ what: what, written: written, owner: owner });
     };
-    tie('est_api ENROLLMENT_PROFILES = cert_enrollment PROFILE_IDS',
-        require(ROOT_DIR + '/est/est_api').EstApi.ENROLLMENT_PROFILES,
-        require(ROOT_DIR + '/common/cert_enrollment').PROFILE_IDS);
-    tie('scep_api ENROLLMENT_PROFILES = cert_enrollment PROFILE_IDS',
-        require(ROOT_DIR + '/scep/scep_api').ScepApi.ENROLLMENT_PROFILES,
-        report.ties[0].owner);
     const caepRow = require(ROOT_DIR + '/ssf/ssf_events').CAEP_COMMON_MEMBERS
       .filter(function (m) {
         return m.name === 'initiating_entity';

@@ -45,12 +45,12 @@ const { log, parseBody } = helpers;
 import errorCodes = require('../common/error_codes');
 import InstanceSlot = require('../common/instance_slot');
 
-// THE NINE ENROLLMENT PROFILES (#86), written out for `est/est_api.ts`'s
-// reason: `common/cert_enrollment.ts`'s PROFILE_IDS is not loaded at 19.
-// `tests/closed_sets.js` holds the two equal.
-const ENROLLMENT_PROFILES = ['tls-server', 'tls-client', 'tls-server-client',
-  'digital-signature', 'key-encipherment', 'code-signing', 'email',
-  'timestamping', 'smartcard-logon'];
+// THE PROFILE IS DELIBERATELY NOT AN ENUM (#86). It is a closed set, and
+// the handler (`common/cert_enrollment.ts`'s checkProfile()) holds it — and
+// says WHY for the five it refuses on purpose: `root-ca` is a trust anchor,
+// and a caller who asked for one needs that sentence, not "not one of the 9
+// values". The validator runs first, so an enum here would replace it; this
+// is the one case #86 found where the handler's refusal is the better one.
 
 const BASE = '/admin-api';
 
@@ -67,9 +67,6 @@ interface ScepApiDeps {
 }
 
 class ScepApi {
-  // The profiles, for `tests/closed_sets.js`.
-  static readonly ENROLLMENT_PROFILES = ENROLLMENT_PROFILES;
-
   constructor(private readonly deps: ScepApiDeps) {
     deps.log.debug("Entering ScepApi.constructor().");
     deps.log.debug("Leaving ScepApi.constructor().");
@@ -256,7 +253,6 @@ class ScepApi {
               type: 'object',
               properties: Object.assign({}, ENTRY_PROPERTIES, {
                 profile: { type: 'string', maxLength: 64,
-                           enum: ENROLLMENT_PROFILES,
                            description:
                              'One of the nine enrollment profiles.' },
                 lifetimeS: { type: 'integer', minimum: 60, maximum: 2592000,

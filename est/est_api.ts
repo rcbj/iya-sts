@@ -48,13 +48,12 @@ import InstanceSlot = require('../common/instance_slot');
 // a leaf that requires nothing of this service.
 import keyMaterial = require('../common/vendored/key_material');
 
-// THE NINE ENROLLMENT PROFILES (#86), written out because the list's owner,
-// `common/cert_enrollment.ts`'s PROFILE_IDS, is a module this one must not
-// load at 19 — it requires half the service, and this table is built when
-// the management API is wired. `tests/closed_sets.js` holds the two equal.
-const ENROLLMENT_PROFILES = ['tls-server', 'tls-client', 'tls-server-client',
-  'digital-signature', 'key-encipherment', 'code-signing', 'email',
-  'timestamping', 'smartcard-logon'];
+// THE PROFILE IS DELIBERATELY NOT AN ENUM (#86). It is a closed set, and
+// the handler (`common/cert_enrollment.ts`'s checkProfile()) holds it — and
+// says WHY for the five it refuses on purpose: `root-ca` is a trust anchor,
+// and a caller who asked for one needs that sentence, not "not one of the 9
+// values". The validator runs first, so an enum here would replace it; this
+// is the one case #86 found where the handler's refusal is the better one.
 
 const BASE = '/admin-api';
 
@@ -115,9 +114,6 @@ class EstApi {
        .send(JSON.stringify(reply, null, 2));
     log.debug("Leaving EstApi.sendJson().");
   }
-
-  // The profiles, for `tests/closed_sets.js`.
-  static readonly ENROLLMENT_PROFILES = ENROLLMENT_PROFILES;
 
   kindProperty() {
     const { log } = this.deps;
@@ -241,7 +237,7 @@ class EstApi {
                 identifier: { type: 'string', minLength: 1, maxLength: 256,
                               description: 'The username or application ' +
                                            'identifier.' },
-                profile: { type: 'string', enum: ENROLLMENT_PROFILES,
+                profile: { type: 'string',
                            description: 'One of the nine profiles; ' +
                                         '`est.defaultProfile` when omitted.' },
                 keyAlg: { type: 'string', enum: keyMaterial.keyAlgIds(),
