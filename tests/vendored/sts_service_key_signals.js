@@ -282,13 +282,38 @@ async function test() {
     });
 
   log.info("=== d. an ordinary krbtgt rotation that keeps nothing ===");
+  // In development the first rotation replaces the password-derived key;
+  // in product a realm has no stored krbtgt until its first key is made,
+  // and a FIRST key replaces nothing, so it is not announced — the
+  // rotation after it is the one that keeps nothing.
+  const invalidated = function (set) {
+    log.debug("Entering invalidated().");
+    const ev = own(set, "kerberos-tickets-invalidated");
+    log.debug("Leaving invalidated().");
+    return !!ev && ev.reason === "nothing-retained";
+  };
+  const krbtgt = async function () {
+    log.debug("Entering krbtgt().");
+    const r = await send(realmApi + "/kerberos/principals");
+    log.debug("Leaving krbtgt().");
+    return (r.body && r.body.krbtgt) || {};
+  };
+  const kvnoBefore = (await krbtgt()).kvno;
   await ok(realmApi + "/kerberos/principals/rotate-krbtgt", {},
            "queued an ordinary krbtgt rotation");
+  for (let i = 0; i < 240 && (await krbtgt()).kvno === kvnoBefore; i++) {
+    await new Promise(function (r) { setTimeout(r, 500); });
+  }
   found = await waitFor(token, streamId, "kerberos-tickets-invalidated",
-    function (set) {
-      const ev = own(set, "kerberos-tickets-invalidated");
-      return !!ev && ev.reason === "nothing-retained";
-    }, 480);
+                        invalidated, 8);
+  if (!found.hit) {
+    log.info("the first rotation made the realm's first stored key; " +
+             "rotating again");
+    await ok(realmApi + "/kerberos/principals/rotate-krbtgt", {},
+             "queued a second ordinary krbtgt rotation");
+    found = await waitFor(token, streamId, "kerberos-tickets-invalidated",
+                          invalidated, 480);
+  }
   check("WITH NO VERSION KEPT, AN ORDINARY ROTATION ENDS EVERY TGT AND SAYS " +
         "SO: kerberos-tickets-invalidated, reason nothing-retained, naming " +
         "the realm's Kerberos realm", function () {
