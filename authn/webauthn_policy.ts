@@ -502,10 +502,28 @@ class WebauthnPolicy {
   // edits this attribute in the developer tools changes what their own browser
   // is asked for and nothing about what this service will accept.
   // ---------------------------------------------------------------------------
-  creationOptions(rpId) {
+  // `kind` (2026-09-26) is what the PERSON chose on `/portal/keys`: a
+  // `platform` authenticator built into the device, or a `roaming` one they
+  // carry — the two `authenticatorKinds()` offers. It narrows the request
+  // only while `webauthn.authenticatorAttachment` is `any`; a setting that
+  // names one wins, because it is the realm's filter and the choice is only a
+  // preference inside it. A `platform` ceremony also asks for a discoverable
+  // credential — `preferred` unless the setting says `required` — because a
+  // key kept on the device IS a passkey, and `discouraged` is what made Chrome
+  // and Edge offer a security key or a phone and never the device itself.
+  // `webauthn.residentKey`'s reason (the few slots a ROAMING authenticator
+  // has) does not reach an authenticator built in. No `kind`, and the sign-in
+  // screen's ceremony, is the request as it always was.
+  creationOptions(rpId, kind?) {
     const { log } = this.deps;
     log.debug('Entering WebauthnPolicy.creationOptions(). rpId=' + rpId);
     const live = this.settings();
+    const asked = live.authenticatorAttachment === 'any'
+      ? { platform: 'platform', roaming: 'cross-platform' }[String(kind || '')]
+      : '';
+    const residentKey = asked === 'platform' &&
+                        live.residentKey !== 'required'
+      ? 'preferred' : live.residentKey;
     // A POLICY THAT NEEDS A STATEMENT ASKS FOR ONE (#105). `none` and
     // `indirect` let the browser strip or anonymise the statement, and a
     // realm that requires a trusted one would then refuse every enrolment
@@ -521,12 +539,12 @@ class WebauthnPolicy {
       timeout: live.timeoutMs,
       authenticatorSelection: <AuthenticatorSelection>{
         userVerification: live.userVerification,
-        residentKey: live.residentKey,
+        residentKey: residentKey,
         // WebAuthn Level 3 keeps `requireResidentKey` for Level 1 clients and
         // says it MUST be true exactly when `residentKey` is `required`. Sent
         // rather than omitted, because the browsers that still read it are the
         // ones that would otherwise ignore the modern member entirely.
-        requireResidentKey: live.residentKey === 'required'
+        requireResidentKey: residentKey === 'required'
       },
       credProps: live.credProps
     };
@@ -536,9 +554,27 @@ class WebauthnPolicy {
     if (live.authenticatorAttachment !== 'any') {
       out.authenticatorSelection.authenticatorAttachment =
           live.authenticatorAttachment;
+    } else if (asked) {
+      out.authenticatorSelection.authenticatorAttachment = asked;
     }
     log.debug('Leaving WebauthnPolicy.creationOptions(). attestation=' +
               out.attestation);
+    return out;
+  }
+
+  // WHICH KINDS OF AUTHENTICATOR A PERSON MAY CHOOSE BETWEEN when enrolling
+  // on `/portal/keys` (2026-09-26): both while
+  // `webauthn.authenticatorAttachment` is `any`, and only the one it names
+  // otherwise — so the page offers no choice the ceremony would ignore.
+  authenticatorKinds() {
+    const { log } = this.deps;
+    log.debug('Entering WebauthnPolicy.authenticatorKinds().');
+    const attachment = this.settings().authenticatorAttachment;
+    const out = attachment === 'platform' ? ['platform']
+      : (attachment === 'cross-platform' ? ['roaming']
+                                         : ['platform', 'roaming']);
+    log.debug('Leaving WebauthnPolicy.authenticatorKinds(). ' +
+              out.join(','));
     return out;
   }
 
@@ -665,6 +701,7 @@ export = {
   algorithmsOffered: slot.forward('algorithmsOffered'),
   algorithmIds: slot.forward('algorithmIds'),
   creationOptions: slot.forward('creationOptions'),
+  authenticatorKinds: slot.forward('authenticatorKinds'),
   requestOptions: slot.forward('requestOptions'),
   requireUserVerification: slot.forward('requireUserVerification'),
   attestationSettings: slot.forward('attestationSettings'),

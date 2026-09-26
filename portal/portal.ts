@@ -677,6 +677,7 @@ const REMOVE_KEY_FORM = vz.object({
 const ENROL_KEY_FORM = vz.object({
   action: vt.opt(vt.oneOf(['begin', 'finish', 'cancel'])),
   role: vt.opt(vt.oneOf(['primary', 'mfa'])),
+  kind: vt.opt(vt.oneOf(['platform', 'roaming'])),
   label: vz.string().max(60).optional(),
   enrolment_id: vt.opt(vt.base64url),
   credential: vz.string().max(validation.CAP.TEXT).optional(),
@@ -2378,11 +2379,13 @@ class Portal {
         : 'You have no security keys enrolled.') + '</p>' +
       (keys.length
         ? '<table class="grid"><tr><th>Key</th><th>Role</th>' +
-          '<th>Authenticator</th><th>Enrolled</th><th></th></tr>' +
+          '<th>Kind</th><th>Authenticator</th><th>Enrolled</th><th></th>' +
+          '</tr>' +
           keys.map(function (one) {
             return '<tr><td>' +
               self.esc(one.label || 'security key') + '</td>' +
               '<td>' + self.esc(one.role) + '</td>' +
+              '<td>' + self.esc(credentials.keyKind(one).text) + '</td>' +
               '<td>' + self.attestationText(one.attestation) + '</td>' +
               '<td>' +
               self.esc(new Date(one.enrolledAt || 0).toISOString()
@@ -2393,6 +2396,18 @@ class Portal {
               self.esc(one.credentialId) + '">' +
               '<button class="danger">Remove</button></form></td></tr>';
           }).join('') + '</table>'
+        : '') +
+      // WHICH KEYS CAN IDENTIFY A DEVICE (2026-09-26): `/portal/devices`
+      // links only a key built into one, and until this the Kind column and
+      // this note were missing, so nothing here said which that was.
+      (keys.some(function (one) {
+        return !credentials.keyKind(one).linkable;
+      })
+        ? '<p class="note">A <strong>roaming</strong> key signs you in on ' +
+          'any device but cannot be linked to one on <a href="' + BASE +
+          '/devices">Devices</a>. To link a phone or computer, add a key ' +
+          'here <strong>on that device</strong> and choose <em>Built into ' +
+          'this device</em>.</p>'
         : '') +
       '<p class="note">A security key is either your ONLY credential (you ' +
       'sign in with the key and no password) or a SECOND factor beside a ' +
@@ -2469,6 +2484,43 @@ class Portal {
   // page here does: with the script blocked, pressing it posts a form that
   // answers *your browser did not run the ceremony* rather than doing nothing.
   // ===========================================================================
+  // WHERE THE KEY LIVES (2026-09-26). The person chooses the authenticator
+  // built into this device — a passkey, which `/portal/devices` can link to
+  // the device — or a security key they carry. Until then the page asked for
+  // "a security key" and the browser chose, and Chrome and Edge, told a
+  // discoverable credential was discouraged, offered a USB key or a phone
+  // and never the device itself, so nothing could ever be linked. Only the
+  // kinds `webauthn.authenticatorAttachment` allows are drawn
+  // (`authenticatorKinds()`), and with one allowed there is no choice to
+  // draw: the ceremony asks for that one either way.
+  private kindChoice(kinds) {
+    const self = this;
+    const { log } = this.deps;
+    log.debug('Entering Portal.kindChoice().');
+    if (!kinds || kinds.length < 2) {
+      log.debug('Leaving Portal.kindChoice(). One kind; nothing to choose.');
+      return '';
+    }
+    const rows = {
+      platform: ['Built into this device',
+                 'Touch ID, Face ID, Windows Hello or the phone\'s screen ' +
+                 'lock, saved as a passkey on this device. Choose this to ' +
+                 'link the device on Devices.'],
+      roaming: ['A security key I carry',
+                'A USB, NFC or Bluetooth key, or a phone you hold up to a ' +
+                'QR code. It signs you in anywhere and is linked to no ' +
+                'device.']
+    };
+    log.debug('Leaving Portal.kindChoice().');
+    return '<p class="sub"><strong>Where does this key live?</strong></p>' +
+      kinds.map(function (kind, i) {
+        return '<label class="chk"><input type="radio" name="kind" ' +
+          'value="' + self.esc(kind) + '"' + (i === 0 ? ' checked' : '') +
+          '> ' + self.esc(rows[kind][0]) + ' <span class="sub">' +
+          self.esc(rows[kind][1]) + '</span></label>';
+      }).join('');
+  }
+
   private enrolBlock(session, mechanisms, base) {
     const self = this;
     const { authn, credentials, log, webauthnPolicy, websecurity } = this.deps;
@@ -2506,8 +2558,14 @@ class Portal {
       // REQUEST arrived on.
       const rpId = authn.rpIdOf(base);
       log.debug('Leaving Portal.enrolBlock(). A ceremony is armed.');
-      return '<h2>Touch your security key</h2>' +
-        '<p class="note">Your browser is about to ask for a security key. ' +
+      const builtIn = pending.kind === 'platform';
+      return '<h2>' + (builtIn ? 'Use this device\'s authenticator'
+                               : 'Touch your security key') + '</h2>' +
+        '<p class="note">' + (builtIn
+          ? 'Your browser is about to ask for the authenticator built into ' +
+            'this device — Touch ID, Face ID, Windows Hello or the ' +
+            'screen lock — and save a passkey on it. '
+          : 'Your browser is about to ask for a security key. ') +
         '<strong>Use a DIFFERENT one from any already on your ' +
         'account</strong> &mdash; the point of a backup is that it is not in ' +
         'the same place as the original. An authenticator that is already ' +
@@ -2518,7 +2576,8 @@ class Portal {
         ' data-allow=""' +
         ' data-exclude="' + self.esc(pending.exclude.join(',')) + '"' +
         ' data-options="' +
-        self.esc(JSON.stringify(webauthnPolicy.creationOptions(rpId))) +
+        self.esc(JSON.stringify(webauthnPolicy.creationOptions(rpId,
+          pending.kind))) +
         '"' +
         ' data-mode="create"></div>' +
         '<button id="wa-go" type="button">Register this security key</button>' +
@@ -2540,6 +2599,8 @@ class Portal {
         self.esc(pending.role === 'primary'
           ? 'your only credential (no password)' : 'a second factor') +
         '</strong>' +
+        (pending.kind ? ', ' + self.esc(pending.kind === 'platform'
+          ? 'built into this device' : 'a security key you carry') : '') +
         (pending.label ? ', labelled ' + self.esc(pending.label) : '') +
         '.</p>' +
         '<script src="' + authn.WEBAUTHN_SCRIPT_PATH + '"></script>';
@@ -2581,6 +2642,7 @@ class Portal {
       '<label for="key-label">Name it (optional)</label>' +
       '<input type="text" id="key-label" name="label" maxlength="60" ' +
       'placeholder="the one on my keyring">' +
+      self.kindChoice(webauthnPolicy.authenticatorKinds()) +
       roles.map(function (row) {
         return '<label class="chk"><input type="radio" name="role" value="' +
           self.esc(row[0]) + '"' +
@@ -5956,7 +6018,8 @@ class Portal {
         // touched their key. `beginKeyEnrolment()` makes every one of those
         // checks.
         const begun = credentials.beginKeyEnrolment(username, {
-          role: String(body.role || 'mfa'), label: String(body.label || '')
+          role: String(body.role || 'mfa'), label: String(body.label || ''),
+          kind: String(body.kind || '')
         });
         if (!begun.ok) {
           log.debug('Leaving POST ' + BASE + '/keys. Refused to start.');
@@ -5969,7 +6032,8 @@ class Portal {
           category: 'authentication', action: 'portal.key.started',
           actor: username, outcome: 'success',
           summary: username + ' started enrolling a security key',
-          detail: { role: begun.role, excluded: begun.exclude.length,
+          detail: { role: begun.role, kind: begun.kind || 'any',
+                    excluded: begun.exclude.length,
                     address: websecurity.addressOf(req) }
         });
         log.debug('Leaving POST ' + BASE + '/keys. Challenge minted and held.');

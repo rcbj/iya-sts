@@ -280,26 +280,60 @@ class PortalDevicesPage {
       '<button class="secondary" type="submit">Cancel</button></form>';
   }
 
+  // The person's keys that cannot be linked, each named with the reason —
+  // or nothing when there are none.
+  private passedOver(enrolled: Json[]): string {
+    const { esc } = this.ctx;
+    const { credentials } = this.deps;
+    this.ctx.log.debug("Entering PortalDevicesPage.passedOver().");
+    const roaming = enrolled.filter(function (k: Json) {
+      return !credentials.keyKind(k).linkable;
+    });
+    if (!roaming.length) {
+      this.ctx.log.debug("Leaving PortalDevicesPage.passedOver(). None.");
+      return '';
+    }
+    this.ctx.log.debug("Leaving PortalDevicesPage.passedOver().");
+    return '<p class="note" id="devices-roaming">' +
+      (roaming.length === 1 ? 'This key is' : 'These keys are') +
+      ' not offered: ' + roaming.map(function (k: Json) {
+        return '<strong>' + esc(credentials.keyKind(k).name) + '</strong>';
+      }).join(', ') + '. ' + (roaming.length === 1 ? 'It is a' : 'Each is a') +
+      ' roaming key — carried between devices (USB, NFC, Bluetooth or ' +
+      'another phone) — so it cannot say which device you are on. It still ' +
+      'signs you in.</p>';
+  }
+
   // THE WEBAUTHN LINK block, step one: which credential, and which device.
   private linkBlock(session: Json, held: Json[]): string {
     const { esc, websecurity } = this.ctx;
     const { credentials } = this.deps;
     this.ctx.log.debug("Entering PortalDevicesPage.linkBlock().");
     const who = String(session.user.username);
-    const keys = (credentials.keysOf(who) || []).filter(function (k: Json) {
-      return String(k.attachment || '') !== 'cross-platform';
+    const enrolled = credentials.keysOf(who) || [];
+    const keys = enrolled.filter(function (k: Json) {
+      return credentials.keyKind(k).linkable;
     });
+    // THE KEYS PASSED OVER ARE NAMED (2026-09-26). A person whose only key
+    // was a YubiKey saw this card without a form and could not tell which
+    // key had been refused or why; `passedOver()` says both, with the model
+    // the attestation named, and what to do instead.
+    const roaming = this.passedOver(enrolled);
     if (!keys.length) {
       this.ctx.log.debug("Leaving PortalDevicesPage.linkBlock(). None.");
       return '<h2>Link a security key built into a device</h2>' +
-        '<p class="note">You have no security key built into a device ' +
-        '(a platform authenticator) to link. Enrol one on <a href="' +
-        esc(this.ctx.BASE + '/keys') + '">Security keys</a> first; a ' +
-        'roaming key is carried between devices and identifies none of ' +
-        'them.</p>';
+        '<p class="note">' + (enrolled.length
+          ? 'None of your security keys can be linked to a device.'
+          : 'You have no security keys enrolled.') + '</p>' + roaming +
+        '<p class="note">To link this device, open <a href="' +
+        esc(this.ctx.BASE + '/keys') + '">Security keys</a> <strong>on ' +
+        'this device</strong>, add a key and choose <em>Built into this ' +
+        'device</em> — Touch ID, Face ID, Windows Hello or the phone\'s ' +
+        'screen lock. Then come back here, on the same device, and link ' +
+        'it. Or register the device by proving its key, above.</p>';
     }
     this.ctx.log.debug("Leaving PortalDevicesPage.linkBlock(). Form.");
-    return '<h2>Link a security key built into a device</h2>' +
+    return '<h2>Link a security key built into a device</h2>' + roaming +
       '<p class="sub">You will be asked to use the key once more, on the ' +
       'device it is built into. A key whose attestation this service ' +
       'verified and trusted when you enrolled it is recorded attested.</p>' +

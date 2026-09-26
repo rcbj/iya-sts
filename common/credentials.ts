@@ -293,6 +293,47 @@ class Credentials {
       hex.slice(12, 16) + '-' + hex.slice(16, 20) + '-' + hex.slice(20);
   }
 
+  // WHAT KIND OF AUTHENTICATOR ONE STORED KEY IS, IN A PERSON'S WORDS
+  // (2026-09-26). `/portal/keys` draws it beside each key and
+  // `/portal/devices` says with it why a key cannot be linked to a device.
+  // Until then neither page said so: every key enrolled on the portal is
+  // labelled "security key", and a person holding only a YubiKey found the
+  // link form missing with nothing naming the key it had passed over.
+  //
+  // `kind` is `platform`, `roaming` or `unreported`, from the attachment the
+  // browser reported at enrolment (WebAuthn Level 3 section 5.1); a key
+  // enrolled before 2026-09-10, or on a browser that does not say, is
+  // `unreported`. `linkable` is `/portal/devices`' rule: only a ROAMING key
+  // is refused, because it is carried between devices and identifies none —
+  // `device_enrolment.ts`'s `beginLink()` asks this rather than repeating
+  // the test. `name` is the label, with the model the FIDO metadata named
+  // where the attestation chained to it, so a "security key" is findable.
+  static keyKind(key: any): { kind: string; linkable: boolean;
+                              text: string; name: string } {
+    helpers.log.debug("Entering Credentials.keyKind().");
+    const k = key || {};
+    const att = k.attestation || {};
+    const label = String(k.label || 'security key');
+    const name = att.model && att.trusted
+      ? label + ' (' + String(att.model) + ')'
+      : label;
+    const attachment = String(k.attachment || '');
+    if (attachment === 'platform') {
+      helpers.log.debug("Leaving Credentials.keyKind(). Platform.");
+      return { kind: 'platform', linkable: true, name: name,
+               text: 'built into a device' };
+    }
+    if (attachment === 'cross-platform') {
+      helpers.log.debug("Leaving Credentials.keyKind(). Roaming.");
+      return { kind: 'roaming', linkable: false, name: name,
+               text: 'roaming — carried between devices (USB, NFC, ' +
+                     'Bluetooth or another phone)' };
+    }
+    helpers.log.debug("Leaving Credentials.keyKind(). Unreported.");
+    return { kind: 'unreported', linkable: true, name: name,
+             text: 'not reported by your browser' };
+  }
+
   constructor(private readonly deps: CredentialsDeps) {
     deps.log.debug("Entering Credentials.constructor().");
     deps.log.debug("Leaving Credentials.constructor().");
@@ -5161,6 +5202,14 @@ class Credentials {
                         'Remove one first.'] });
     }
     this.sweepPendingKeys();
+    // WHICH KIND OF AUTHENTICATOR WAS ASKED FOR (2026-09-26): `platform` or
+    // `roaming`, from `/portal/keys`' choice, carried like the role so the
+    // armed ceremony asks for what was chosen. A kind the policy does not
+    // offer is dropped rather than refused — `webauthn.authenticatorAttachment`
+    // decides the ceremony either way (`creationOptions()`), so it is a
+    // preference and never a way round the setting.
+    const kind = webauthnPolicy.authenticatorKinds()
+      .indexOf(String(options.kind || '')) >= 0 ? String(options.kind) : '';
     const record = {
       // `require('crypto')` inline, which is what `issueActivation()` below
       // also does: the module-level `crypto` here is this service's OWN
@@ -5169,6 +5218,7 @@ class Credentials {
       username: name,
       challenge: nodeCrypto().randomBytes(32).toString('base64url'),
       role: role,
+      kind: kind,
       label: String(options.label || '').trim(),
       // EVERY key they hold and not only the ones of this role: the point is
       // *this authenticator is already registered here*, which is a fact about
@@ -5178,12 +5228,13 @@ class Credentials {
     };
     pendingKeys.set(name.toLowerCase(), record);
     log.info('credentials: ' + name + ' started enrolling a "' + role +
-             '" security key. ' + record.exclude.length +
+             '" security key' + (kind ? ' (' + kind + ')' : '') + '. ' +
+             record.exclude.length +
              ' authenticator(s) already enrolled are excluded.');
     log.debug('Leaving Credentials.beginKeyEnrolment(). Challenge minted ' +
               'and held.');
     return { ok: true, enrolmentId: record.id, challenge: record.challenge,
-             role: role, exclude: record.exclude.slice(),
+             role: role, kind: kind, exclude: record.exclude.slice(),
              expiresAt: new Date(record.expires).toISOString() };
   }
 
@@ -6499,6 +6550,7 @@ export = {
   activationPending: slot.forward('activationPending'),
   WEBAUTHN_ATTRIBUTE: Credentials.WEBAUTHN_ATTRIBUTE,
   ROLES: Credentials.ROLES,
+  keyKind: Credentials.keyKind,
   keysOf: slot.forward('keysOf'),
   addKey: slot.forward('addKey'),
   removeKey: slot.forward('removeKey'),

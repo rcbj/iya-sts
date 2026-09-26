@@ -514,9 +514,30 @@ async function checkWebauthn(t) {
     'mfa');
   t.check(stored && stored.ok !== false, 'precondition: the credential is ' +
           'enrolled', JSON.stringify(stored));
-  t.equal(code(enrolment.beginLink({ username: ALICE, sessionId: 'sw-' + RUN,
-    credentialId: roaming.id.toString('base64url') })), 'STS-DEVICE-0022',
+  const refusedRoaming = enrolment.beginLink({ username: ALICE,
+    sessionId: 'sw-' + RUN, credentialId: roaming.id.toString('base64url') });
+  t.equal(code(refusedRoaming), 'STS-DEVICE-0022',
           '5a. a roaming key is refused: it identifies no device');
+  t.check(/"on my keyring" is a roaming authenticator/
+    .test(String(refusedRoaming.error)),
+          '5a-ii. the refusal names the key it refused',
+          JSON.stringify(refusedRoaming));
+  // What `/portal/keys` and `/portal/devices` draw (2026-09-26): the kind of
+  // each key, and a trusted attestation's model in its name.
+  const kinds = [
+    credentials.keyKind({ attachment: 'platform' }),
+    credentials.keyKind({ attachment: 'cross-platform', label: 'security key',
+      attestation: { trusted: true, model: 'Security Key NFC by Yubico' } }),
+    credentials.keyKind({ attachment: 'cross-platform',
+      attestation: { trusted: false, model: 'Unvouched' } }),
+    credentials.keyKind({})];
+  t.check(kinds[0].kind === 'platform' && kinds[0].linkable &&
+          kinds[1].kind === 'roaming' && !kinds[1].linkable &&
+          kinds[1].name === 'security key (Security Key NFC by Yubico)' &&
+          kinds[2].name === 'security key' &&
+          kinds[3].kind === 'unreported' && kinds[3].linkable,
+          '5a-iii. keyKind(): platform and unreported linkable, roaming not, ' +
+          'the model named only when trusted', JSON.stringify(kinds));
   t.equal(code(enrolment.beginLink({ username: BOB, sessionId: 'sw-' + RUN,
     credentialId: credentialId })), 'STS-DEVICE-0022',
           '5b. another person\'s credential is refused');

@@ -195,6 +195,55 @@ function run(t) {
       'and a real preference IS sent');
   });
 
+  // THE PERSON'S CHOICE ON /portal/keys (2026-09-26): which kind of
+  // authenticator the enrolment asks for, narrowing the request only while
+  // the realm's setting leaves the choice open.
+  withSetting('webauthn.authenticatorAttachment', 'any', function () {
+    withSetting('webauthn.residentKey', 'discouraged', function () {
+      const built = policy.creationOptions('localhost', 'platform')
+        .authenticatorSelection;
+      const carried = policy.creationOptions('localhost', 'roaming')
+        .authenticatorSelection;
+      const neither = policy.creationOptions('localhost', 'bogus')
+        .authenticatorSelection;
+      t.check(built.authenticatorAttachment === 'platform' &&
+              built.residentKey === 'preferred' &&
+              built.requireResidentKey === false,
+        'a key BUILT INTO THIS DEVICE asks for the platform authenticator ' +
+        'and a discoverable credential (preferred), because "discouraged" ' +
+        'is what sends Chrome and Edge to a USB key and never the device',
+        JSON.stringify(built));
+      t.check(carried.authenticatorAttachment === 'cross-platform' &&
+              carried.residentKey === 'discouraged',
+        'a key THEY CARRY asks for a roaming authenticator and keeps the ' +
+        'setting\'s resident-key answer — its slot argument is about them',
+        JSON.stringify(carried));
+      t.check(!Object.prototype.hasOwnProperty
+                .call(neither, 'authenticatorAttachment') &&
+              neither.residentKey === 'discouraged',
+        'an unknown kind is the request as it always was',
+        JSON.stringify(neither));
+      t.check(JSON.stringify(policy.authenticatorKinds()) ===
+              '["platform","roaming"]',
+        'both kinds are offered while the setting is any',
+        JSON.stringify(policy.authenticatorKinds()));
+    });
+    withSetting('webauthn.residentKey', 'required', function () {
+      t.check(policy.creationOptions('localhost', 'platform')
+                .authenticatorSelection.residentKey === 'required',
+        'a setting of REQUIRED is never loosened to preferred');
+    });
+  });
+  withSetting('webauthn.authenticatorAttachment', 'cross-platform',
+              function () {
+    t.check(policy.creationOptions('localhost', 'platform')
+              .authenticatorSelection.authenticatorAttachment ===
+              'cross-platform' &&
+            JSON.stringify(policy.authenticatorKinds()) === '["roaming"]',
+      'a setting that names one wins over the person\'s choice, and the page ' +
+      'is offered only that one');
+  });
+
   withSetting('webauthn.residentKey', 'required', function () {
     const sel = policy.creationOptions('localhost').authenticatorSelection;
     t.check(sel.residentKey === 'required' && sel.requireResidentKey === true,

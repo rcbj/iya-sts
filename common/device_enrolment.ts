@@ -438,9 +438,10 @@ class DeviceEnrolment {
       return this.refuse('STS-DEVICE-0022', 'That is not a security key ' +
                          'you enrolled.');
     }
-    if (String(key.attachment || '') === 'cross-platform') {
+    const kind = credentials.keyKind(key);
+    if (!kind.linkable) {
       log.debug("Leaving DeviceEnrolment.beginLink(). Roaming.");
-      return this.refuse('STS-DEVICE-0022', 'That security key is a ' +
+      return this.refuse('STS-DEVICE-0022', '"' + kind.name + '" is a ' +
         'roaming authenticator (cross-platform): it is carried between ' +
         'devices and identifies none of them. Link a key built into this ' +
         'device (a platform authenticator).');

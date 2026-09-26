@@ -1304,6 +1304,27 @@ is; `common/device_enrolment.ts` holds everything that is not a page.
   refused: it identifies no device. It is attested when its REGISTRATION
   attestation (#105) verified and was trusted.
 
+**THE PAGES SAY WHICH KEYS CAN BE LINKED (2026-09-26).** A person holding only
+a YubiKey found the link card with no form and nothing naming the key it had
+passed over, and `/portal/keys` labels every key "security key" and did not say
+which were roaming. Both pages now ask `credentials.keyKind()` — one answer for
+the Kind column on `/portal/keys`, the note under it, the link card's list of
+keys not offered (named with the model a trusted attestation gave) and
+`beginLink()`'s refusal.
+
+**AND `/portal/keys` ASKS WHERE THE KEY LIVES (2026-09-26).** The page asked for
+"a security key" and let the browser choose, and with `webauthn.residentKey` at
+`discouraged` Chrome and Edge offered a USB key or a phone and never the
+device's own authenticator — so nothing a person enrolled could be linked. The
+form now offers *Built into this device* (a platform authenticator and a
+discoverable credential, `preferred` unless the setting says `required`) and *A
+security key I carry* (cross-platform), carried on the pending enrolment as
+`kind` and handed to `webauthnPolicy.creationOptions(rpId, kind)`. Only the
+kinds `webauthn.authenticatorAttachment` allows are drawn
+(`authenticatorKinds()`); a setting naming one wins over the choice. The kind is
+a REQUEST to the browser like every other ceremony option and nothing checks
+what came back — the recorded attachment is what Devices reads.
+
 **THE LINK STEP IS A SCRIPTED PAGE, AND ITS OWN ROW IN THE ROOT TABLE.** A
 fresh assertion is `navigator.credentials.get()` and no markup makes it, which
 is `/portal/keys`' argument and `/authn/webauthn`'s, made again here from
