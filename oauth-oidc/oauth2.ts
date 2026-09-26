@@ -2804,7 +2804,13 @@ class OAuth2Server {
                          's_hash', 'amr',
                          'acr', 'sid',
                          // Enterprise Extensions (#148), section 2.
-                         'session_expiry', 'tenant', 'aud_sub'].concat(
+                         'session_expiry', 'tenant', 'aud_sub',
+                         // #164 phase 6: this service's private claim, the
+                         // registered device the authentication came from
+                         // — present only where one of the subject's own
+                         // was recognised, and never to an ephemeral
+                         // client.
+                         'device_id'].concat(
                            USERINFO_SCOPE_CLAIMS.profile,
                            USERINFO_SCOPE_CLAIMS.email,
                            USERINFO_SCOPE_CLAIMS.address,
@@ -3569,6 +3575,15 @@ class OAuth2Server {
       if (opts.acr) payload.acr = opts.acr;
     }
     if (opts.act) payload.act = opts.act;
+    // THE REGISTERED DEVICE (#164 decision 8, phase 6): a private claim — RFC
+    // 9068 section 2.2 lets an access token carry claims beyond its own, and
+    // a resource server that does not know it ignores it. See
+    // deviceIdClaimFor(). The binding is `cnf`, below, which names the key
+    // itself where the device's key IS the token's binding key (a DPoP
+    // `jkt` is its RFC 7638 thumbprint, a certificate its `x5t#S256`); no
+    // second confirmation is added.
+    const deviceId = self.deviceIdClaimFor(opts);
+    if (deviceId) payload.device_id = deviceId;
     // RFC 8693 SECTION 4.4's `may_act` (#108, 2026-09-23): the ONE party this
     // person has named, on their own entry (`stsMayAct`), as authorized to act
     // for them — from their explicit choice and never derived from an
@@ -3859,6 +3874,57 @@ class OAuth2Server {
   }
 
   // -------------------------------------------------------------------------
+  // THE PRIVATE `device_id` CLAIM (#164 decision 8, phase 6): the registered
+  // device this issuance came from, WHEN IT IS THE TOKEN SUBJECT'S OWN, or
+  // '' for none.
+  //
+  //   * WHICH DEVICE: the one the token request proved (`registered_device`
+  //     — a DPoP key, a client certificate, a Native SSO secret), else the
+  //     one the session's sign-in recognised (the authorization code, the
+  //     implicit and hybrid responses, a refresh on a session) — the tokens
+  //     are issued on that authentication. Brought up to date against the
+  //     register, so a device removed since names nothing.
+  //   * WHOSE: the subject's own — a person's device for that person, an
+  //     application's for a `client_credentials` token about it. Somebody
+  //     else's device is a fact the policy can use (`device-owner-matches`)
+  //     and not something to state about this subject in their token.
+  //   * THE VALUE: the register's UUID for a public client — the `sub` of
+  //     the `iss_sub` subject SSF names the device by, scoped by the same
+  //     issuer as the token's `iss` — and, by `pairwise_subjects.ts`'s
+  //     `deviceIdFor()`, a sector-derived id for a pairwise client and none
+  //     for an ephemeral one, because a device id correlates exactly as a
+  //     `sub` does.
+  // -------------------------------------------------------------------------
+  deviceIdClaimFor(opts: Json): string {
+    const { log, deviceRecognition, pairwiseSubjects, authn } = this.deps;
+    log.debug("Entering OAuth2Server.deviceIdClaimFor().");
+    let fact: Json = opts.registered_device || null;
+    if (!fact && opts.session_id) {
+      const held = authn.sessionById(String(opts.session_id));
+      fact = held ? authn.registeredDeviceOf(held) : null;
+    }
+    if (fact) {
+      try {
+        fact = deviceRecognition.current(fact);
+      } catch (e) {
+        log.debug("Caught in OAuth2Server.deviceIdClaimFor(): " +
+                  ((e && e.message) || e));
+        // The register could not be asked: the fact as it was recorded.
+      }
+    }
+    const subject = this.issuanceSubjectOf(opts);
+    if (!fact || !deviceRecognition.ownedBy(fact, subject)) {
+      log.debug("Leaving OAuth2Server.deviceIdClaimFor(). None of theirs.");
+      return '';
+    }
+    const told = pairwiseSubjects.deviceIdFor(opts.client_id, fact.id,
+                                              fact.ownerKind === 'person');
+    log.debug("Leaving OAuth2Server.deviceIdClaimFor(). " +
+              (told ? 'Stated.' : 'Withheld for this client.'));
+    return told;
+  }
+
+  // -------------------------------------------------------------------------
   // `offline_access`, AS OIDC CORE SECTION 11 ALLOWS IT (#118, 2026-09-22).
   //
   // "The Authorization Server MUST ignore the offline_access request unless
@@ -4115,6 +4181,14 @@ class OAuth2Server {
     if (opts.device_secret) {
       payload.ds_hash = self.halfHash(opts.device_secret, idAlg);
     }
+    // THE REGISTERED DEVICE (#164 decision 8, phase 6) — deviceIdClaimFor().
+    // In the ID Token as a fact of the AUTHENTICATION, beside `acr`, `amr`
+    // and `sid`, which is where OIDC Core section 2 puts what a relying
+    // party learns about how the End-User authenticated.
+    const deviceId = self.deviceIdClaimFor(opts);
+    if (deviceId) {
+      payload.device_id = deviceId;
+    }
     if (opts.access_token) {
       payload.at_hash = self.halfHash(opts.access_token, idAlg);
     }
@@ -4353,7 +4427,12 @@ class OAuth2Server {
         // on one. A refresh and a token exchange both are, and the roles claim
         // in either is what the issuance policy's second arm reads.
         claims: opts.presentedClaims || null
-      }, held ? { session: held } : {}));
+      }, held ? { session: held } : {},
+      // THE REGISTERED DEVICE THE TOKEN REQUEST PROVED (#164 phase 6) —
+      // its DPoP key, its client certificate, its Native SSO secret —
+      // where it proved one; otherwise the gate reads the device the
+      // session's sign-in recognised, for the policy's device rules.
+      opts.registered_device ? { device: opts.registered_device } : {}));
       if (!answer.allowed) {
         log.debug("Leaving OAuth2Server.checkIssuance(). Refused: " + kinds[i]);
         throw new IssuanceRefused(log, answer, kinds[i]);
@@ -14720,6 +14799,10 @@ class OAuth2Server {
       // token has no authentication behind it, for RFC 9068 section 2.2.1's
       // reason.
       acr: claims.acr, auth_time: claims.auth_time,
+      // #164 phase 6: the registered device the token was issued from, as
+      // the token itself states it — so a resource server that introspects
+      // learns what one reading the JWT does.
+      device_id: claims.device_id,
       exp: claims.exp, iat: claims.iat, nbf: claims.nbf,
       sub: claims.sub, aud: claims.aud, iss: claims.iss, jti: claims.jti
     }));

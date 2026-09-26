@@ -588,6 +588,30 @@ class DevicesAdmin {
         tokenEndpoint: 'the issuance request\'s registered_device, ' +
                        'before the issuance gate'
       },
+      // WHAT DECIDES ON A DEVICE (#164 phases 5 and 6): risk scoring's
+      // signals, the issuance policy's two rules and this realm's switches
+      // for them, the acr and the claim. The rules themselves are the
+      // issuance policy's (`xacml/xacml_templates.ts`); this says what this
+      // realm has switched on.
+      decisions: {
+        riskSignals: ['compromised-device', 'non-compliant-device',
+                      'unregistered-device', 'compliant-attested-device',
+                      'compliant-device'],
+        expectRegistered: config.value('devices.expectRegistered') === true,
+        refuseCompromised: config.value('devices.refuseCompromised') !==
+                           false,
+        requireCompliantDevice:
+          config.value('devices.requireCompliantDevice') === true,
+        compliantDeviceAttested:
+          config.value('devices.compliantDeviceAttested') === true,
+        policy: 'role-issuance: device-compromised and device-required, ' +
+                'reading urn:sts:xacml:device-* and ' +
+                'urn:sts:xacml:device-requirement',
+        acr: 'urn:sts:acr:compliant-device',
+        claim: 'device_id — the register\'s id for a public client, ' +
+               'sector-derived for a pairwise one, none for an ephemeral ' +
+               'one; in the ID Token, the access token and introspection'
+      },
       // Decision 9: whether this realm registers an unattested key.
       unattestedKeys: {
         accepted: mode.acceptsUnattestedDeviceKeys(),
@@ -1035,6 +1059,23 @@ class DevicesAdmin {
         esc(json.signals.subject) + '. A compliance change goes out only ' +
         'when what a receiver can be told moved: CAEP knows compliant and ' +
         'not-compliant, and unknown is sent as not-compliant.') +
+      '<h2>What decides on a device</h2>' +
+      admin.note('Risk scoring: the signals ' +
+        esc(json.decisions.riskSignals.join(', ')) + ' — the last two ' +
+        'lower the score; unregistered-device fires ' +
+        (json.decisions.expectRegistered ? 'for anybody here ' +
+          '(devices.expectRegistered)' : 'only for a person who registered ' +
+          'a device') + '. The issuance policy (' +
+        esc(json.decisions.policy) + '): a compromised device is ' +
+        (json.decisions.refuseCompromised ? '<strong>refused</strong>'
+                                          : 'only a risk signal') +
+        '; a compliant registered device is ' +
+        (json.decisions.requireCompliantDevice
+          ? '<strong>required</strong>' + (json.decisions
+              .compliantDeviceAttested ? ', and attested' : '')
+          : 'not required (off by default)') + '. The acr <code>' +
+        esc(json.decisions.acr) + '</code>, and the claim ' +
+        esc(json.decisions.claim) + '.') +
       '<h2>Settings</h2>' + admin.configFormsFor(REGISTRATION);
   }
 

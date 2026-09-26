@@ -52,6 +52,20 @@
 //      arrive naming the account and the device, and CAEP risk-level-change
 //      to HIGH.
 //
+// AND #164 PHASES 5 AND 6 (2026-09-26): RISK, POLICY, ACR AND CLAIMS.
+//
+//  14. A client_credentials token bound by DPoP to the application's own
+//      device key carries device_id, and its one cnf.jkt is that key's
+//      thumbprint; an unbound one carries none; introspection repeats it;
+//      discovery lists device_id and urn:sts:acr:compliant-device.
+//  15. devices.requireCompliantDevice on in the realm: the same request
+//      from a not-compliant device is refused, from a compliant one issued.
+//  16. acr_values=urn:sts:acr:compliant-device on a session with no device:
+//      one sign-in again, then unmet_authentication_requirements.
+//  17. A device owner signing in with none of their devices is assessed
+//      unregistered-device, and Monitoring → Risk lists the five device
+//      signals.
+//
 // OWNED HERE (local: true): this repository's register and management API.
 // ---------------------------------------------------------------------------
 
@@ -570,8 +584,8 @@ async function test() {
   log.info("=== 9. recognition at the token endpoint ===");
   const token = base + "/oauth2/token";
   const dpopKey = crypto.generateKeyPairSync("ec", { namedCurve: "P-256" });
-  await ok(api + "/devices/create", { owner: HOST, ownerKind: "application",
-    label: "DPoP device", keyKind: "jwk",
+  const dpopDevice = await ok(api + "/devices/create", { owner: HOST,
+    ownerKind: "application", label: "DPoP device", keyKind: "jwk",
     key: dpopKey.publicKey.export({ format: "jwk" }) },
     "registered a device holding the DPoP key");
   const before = (await read("/devices/monitor")).activity.recognitions;
@@ -872,7 +886,192 @@ async function test() {
     assert.strictEqual(afterCompromise.device.riskLevel, "HIGH");
   });
 
-  assert.ok(checks >= 27, "only " + checks + " checks ran");
+  log.info("=== 14. device_id and cnf in the tokens (phase 6) ===");
+  const dpopJkt = thumbprint(dpopKey.publicKey.export({ format: "jwk" }));
+  const boundAgain = await fetch(token, { method: "POST", headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+      DPoP: dpopProof(dpopKey, token) },
+    body: form({ grant_type: "client_credentials", client_id: HOST }) });
+  const boundJson = await boundAgain.json();
+  const boundClaims = boundJson.access_token
+    ? JSON.parse(Buffer.from(String(boundJson.access_token).split(".")[1],
+                             "base64url").toString("utf8")) : {};
+  check("a token bound by DPoP to the application's own device key names " +
+        "the device (device_id), and its one cnf names the same key by its " +
+        "thumbprint", function () {
+    assert.strictEqual(boundAgain.status, 200, JSON.stringify(boundJson));
+    assert.strictEqual(boundClaims.device_id, dpopDevice.device.id,
+                       JSON.stringify(boundClaims));
+    assert.deepStrictEqual(boundClaims.cnf, { jkt: dpopJkt });
+    assert.strictEqual(boundJson.token_type, "DPoP");
+  });
+  const unbound = await fetch(token, { method: "POST", headers: {
+      "Content-Type": "application/x-www-form-urlencoded" },
+    body: form({ grant_type: "client_credentials", client_id: HOST }) });
+  const unboundJson = await unbound.json();
+  const unboundClaims = unboundJson.access_token
+    ? JSON.parse(Buffer.from(String(unboundJson.access_token).split(".")[1],
+                             "base64url").toString("utf8")) : {};
+  const introspected = await fetch(base + "/oauth2/introspect", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: form({ token: boundJson.access_token, client_id: MDM,
+                 client_secret: SECRET }) });
+  const introspection = await introspected.json();
+  const discovery = await hop("GET", base +
+                              "/.well-known/openid-configuration");
+  check("no device, no device_id; introspection repeats it; discovery " +
+        "lists device_id and the compliant-device acr", function () {
+    assert.strictEqual(unbound.status, 200, JSON.stringify(unboundJson));
+    assert.strictEqual(unboundClaims.device_id, undefined);
+    assert.strictEqual(introspected.status, 200,
+                       JSON.stringify(introspection));
+    assert.strictEqual(introspection.active, true);
+    assert.strictEqual(introspection.device_id, dpopDevice.device.id);
+    assert.ok(discovery.json.claims_supported.indexOf("device_id") >= 0);
+    assert.ok(discovery.json.acr_values_supported
+      .indexOf("urn:sts:acr:compliant-device") >= 0,
+              JSON.stringify(discovery.json.acr_values_supported));
+  });
+
+  log.info("=== 15. the compliant-device rule, on in this realm ===");
+  await ok(api + "/config/set", { key: "devices.requireCompliantDevice",
+                                  value: true },
+           "required a compliant registered device in this realm");
+  let refusedBound = null;
+  let issuedBound = null;
+  let issuedJson = null;
+  try {
+    await ok(api + "/devices/set-compliance", { id: dpopDevice.device.id,
+      status: "not-compliant", reason: "sts_devices rule check" },
+      "reported the DPoP device not compliant");
+    refusedBound = await fetch(token, { method: "POST", headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        DPoP: dpopProof(dpopKey, token) },
+      body: form({ grant_type: "client_credentials", client_id: HOST }) });
+    await refusedBound.text();
+    await ok(api + "/devices/set-compliance", { id: dpopDevice.device.id,
+      status: "compliant", reason: "sts_devices rule check" },
+      "reported the DPoP device compliant");
+    issuedBound = await fetch(token, { method: "POST", headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        DPoP: dpopProof(dpopKey, token) },
+      body: form({ grant_type: "client_credentials", client_id: HOST }) });
+    issuedJson = await issuedBound.json();
+  } finally {
+    await ok(api + "/config/reset", { key: "devices.requireCompliantDevice" },
+             "put devices.requireCompliantDevice back");
+  }
+  check("with devices.requireCompliantDevice on, a token from a " +
+        "not-compliant device is refused and one from a compliant device " +
+        "issued", function () {
+    assert.ok(refusedBound.status >= 400, "refused: " + refusedBound.status);
+    assert.strictEqual(issuedBound.status, 200, JSON.stringify(issuedJson));
+  });
+
+  log.info("=== 16. acr_values=urn:sts:acr:compliant-device ===");
+  const ACR = "dev-acr-" + STAMP.toLowerCase().replace(/[^a-z0-9-]/g, "");
+  const REDIRECT = "https://" + ACR + ".example/cb";
+  await ok(api + "/applications/create", {
+    identifier: ACR, kind: "oauth2-client", name: ACR,
+    protocols: ["oauth2", "oidc"],
+    fields: { oauthClientId: [ACR], oauthClientSecret: SECRET,
+              oauthRedirectUri: [REDIRECT],
+              oauthTokenEndpointAuthMethod: "client_secret_post" } },
+    "registered a relying party for the acr check");
+  const authorizePath = function (extra) {
+    log.debug("Entering authorizePath().");
+    const verifier = crypto.randomBytes(32).toString("base64url");
+    log.debug("Leaving authorizePath().");
+    return R + "/oauth2/authorize?" + form(Object.assign({
+      response_type: "code", client_id: ACR, redirect_uri: REDIRECT,
+      scope: "openid", state: "st-" + STAMP,
+      nonce: "n-" + crypto.randomBytes(4).toString("hex"),
+      code_challenge: crypto.createHash("sha256").update(verifier)
+        .digest("base64url"),
+      code_challenge_method: "S256" }, extra || {}));
+  };
+  const signInAt = async function (rb, location) {
+    log.debug("Entering signInAt().");
+    const page = await rb.go("GET", location);
+    assert.strictEqual(page.status, 200, "the sign-in screen: " +
+                       page.status + " " + page.text.slice(0, 300));
+    const fields = hiddenFields(page.text);
+    fields.username = OWNER;
+    fields.password = PASSWORD;
+    fields.action = "login";
+    const posted = await rb.go("POST", R + "/authn/login", form(fields));
+    log.debug("Leaving signInAt(). " + posted.status);
+    return posted.location;
+  };
+  // A first sign-in makes a session (what the browser lands on next — a
+  // consent screen or a code — is not this section's business); the second
+  // request is answered from that session.
+  const rp = browser();
+  let hopped = await rp.go("GET", authorizePath());
+  const firstBack = await signInAt(rp, hopped.location);
+  hopped = await rp.go("GET", authorizePath({
+    acr_values: "urn:sts:acr:compliant-device" }));
+  const sentBack = /\/authn\/login\?authn=/.test(hopped.location);
+  const back = sentBack ? await signInAt(rp, hopped.location) : "";
+  hopped = back ? await rp.go("GET", back) : hopped;
+  const answered = hopped.location.indexOf(REDIRECT) === 0
+    ? new URL(hopped.location).searchParams : null;
+  check("a session with no compliant device is sent to sign in again, and " +
+        "then refused unmet_authentication_requirements", function () {
+    assert.ok(firstBack, "the first sign-in returned to the request");
+    assert.ok(sentBack, "sent to sign in again: " + hopped.location);
+    assert.ok(/[?&]step_up_honoured=1(&|$)/.test(back), back);
+    assert.ok(answered, hopped.status + " " + hopped.location);
+    assert.strictEqual(answered.get("error"),
+                       "unmet_authentication_requirements", hopped.location);
+    assert.strictEqual(answered.get("code"), null);
+  });
+
+  log.info("=== 17. a risk assessment shows the device signal ===");
+  await ok(api + "/config/set", { key: "risk.minimumHistory", value: 1 },
+           "scored this realm's people from their second sign-in");
+  await ok(api + "/config/set", { key: "risk.signalFactors",
+                                  value: "unregistered-device=1" },
+           "kept unregistered-device from moving a score here");
+  let riskView = null;
+  try {
+    await portalSignIn(OWNER, R + "/portal/devices");
+    await portalSignIn(OWNER, R + "/portal/devices");
+    await new Promise(function (resolve) {
+      setTimeout(resolve, 500);
+    });
+    riskView = await read("/risk");
+  } finally {
+    await ok(api + "/config/reset", { key: "risk.minimumHistory" },
+             "put risk.minimumHistory back");
+    await ok(api + "/config/reset", { key: "risk.signalFactors" },
+             "put risk.signalFactors back");
+  }
+  check("an owner of registered devices signing in with none of them is " +
+        "assessed unregistered-device, and the page lists the five device " +
+        "signals", function () {
+    const rows = (riskView.assessments && riskView.assessments.rows) || [];
+    assert.ok(rows.some(function (a) {
+      return (a.signals || []).some(function (x) {
+        return x.signal === "unregistered-device";
+      });
+    }), JSON.stringify(rows.map(function (a) {
+      return (a.signals || []).map(function (x) {
+        return x.signal;
+      });
+    })));
+    const listed = (riskView.signals || []).map(function (x) {
+      return x.signal;
+    });
+    ["compromised-device", "non-compliant-device", "unregistered-device",
+     "compliant-attested-device", "compliant-device"]
+      .forEach(function (one) {
+        assert.ok(listed.indexOf(one) >= 0, one + ": " + listed.join(","));
+      });
+  });
+
+  assert.ok(checks >= 32, "only " + checks + " checks ran");
   log.info(checks + " check(s) passed.");
   log.info("Test completed successfully.");
   log.debug("Leaving test().");
@@ -885,7 +1084,9 @@ new Command()
     "phase 2's enrolment (the portal's key proof, EST's device profile) " +
     "and recognition at the token endpoint (DPoP, mutual TLS); and phases " +
     "3 and 4: the MDM feed under device:compliance, the test control, and " +
-    "the CAEP and RISC events a compliance change and a compromise send.")
+    "the CAEP and RISC events a compliance change and a compromise send; " +
+    "and phases 5 and 6: device_id and cnf, the compliant-device rule, " +
+    "the compliant-device acr and the device risk signals.")
   .addOption(new Option("-u, --url <url>", "base url (unused: this test " +
                                            "needs no browser)"))
   .parse(process.argv);

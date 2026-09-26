@@ -17,7 +17,8 @@
 // person looks finished and can be worth nothing — what matters is that a
 // session which does NOT meet a request is not an answer to it.
 //
-//   a. discovery — `acr_values_supported` is ["0","1","mfa"] in both
+//   a. discovery — `acr_values_supported` is ["0","1","mfa"] and the
+//      compliant-device class (#164) in both
 //      documents of the realm;
 //   b. a client and a resource application through `/admin-api`, the
 //      resource declaring `oauthStepUpAcrValues=mfa` and
@@ -617,10 +618,12 @@ async function discovery() {
                      "/.well-known/openid-configuration"]) {
     const r = await send(base + R + doc);
     check(doc + " in the realm publishes acr_values_supported 0, 1, mfa — " +
-          "ordered weakest first, and no RFC 8176 method name among them",
+          "ordered weakest first, then the compliant-device class (#164), " +
+          "and no RFC 8176 method name among them",
           function () {
       assert.strictEqual(r.status, 200, r.raw.slice(0, 200));
-      assert.deepStrictEqual(r.body.acr_values_supported, ["0", "1", "mfa"],
+      assert.deepStrictEqual(r.body.acr_values_supported,
+        ["0", "1", "mfa", "urn:sts:acr:compliant-device"],
         JSON.stringify(r.body.acr_values_supported));
       assert.ok(String(r.body.issuer || "").indexOf(R) >= 0,
         "the document is the realm's own: " + r.body.issuer);
@@ -1136,7 +1139,8 @@ async function theMonitor() {
     assert.strictEqual(section.events.length, 8,
                        JSON.stringify(section.events));
     assert.strictEqual(section.clientsParam, "stepUpClientsPage");
-    assert.deepStrictEqual(section.acrValuesSupported, ["0", "1", "mfa"]);
+    assert.deepStrictEqual(section.acrValuesSupported,
+      ["0", "1", "mfa", "urn:sts:acr:compliant-device"]);
     assert.deepStrictEqual(section.ownResourceRequirement,
                            { acr_values: null, max_age: null });
   });

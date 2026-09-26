@@ -2968,6 +2968,57 @@ class Authn {
     return fact;
   }
 
+  // -------------------------------------------------------------------------
+  // THE DEVICE ALONE, PUT TO THE ISSUANCE POLICY (#164 phase 6) for a door
+  // that asked the rest before its credential was complete (`gated`). Asked
+  // only where a device rule could refuse — the realm requires a compliant
+  // device, or this one is compromised and the realm refuses one — so every
+  // other gated sign-in costs nothing new. The role question is waived and
+  // no risk facts are sent: both were asked already, and only a Deny about
+  // the device refuses. True when it refused, with `refusedWith` and
+  // `refusedWhy` on the caller's `detail`, as every refusal here writes.
+  // -------------------------------------------------------------------------
+  private refusedOnDevice(detail, username, via): boolean {
+    const { log, gate, audit } = this.deps;
+    log.debug("Entering Authn.refusedOnDevice().");
+    const requirement = gate.deviceRequirementOf();
+    const fact = this.registeredDeviceFor(detail, username);
+    const matters = requirement.indexOf('compliant') >= 0 ||
+      (!!fact && fact.status === 'compromised' &&
+       requirement.indexOf('not-compromised') >= 0);
+    if (!matters) {
+      log.debug("Leaving Authn.refusedOnDevice(). No device rule applies.");
+      return false;
+    }
+    const answer = gate.check({
+      application: String(detail.application || ''),
+      kind: gate.ISSUANCE.SESSION,
+      subject: { kind: 'user', name: username,
+                 authenticated: detail.authenticated !== false },
+      claims: null, risk: null, rolesWaived: true, device: fact });
+    if (answer.allowed || !answer.device) {
+      log.debug("Leaving Authn.refusedOnDevice(). Allowed.");
+      return false;
+    }
+    const code = answer.device.refusal === 'compromised' ? 'STS-DEVICE-0038'
+                                                         : 'STS-DEVICE-0037';
+    audit.audit({
+      action: 'session.refuse', actor: username, errorCode: code,
+      protocol: via || 'OAuth 2.0 / OIDC', channel: 'http', target: '',
+      summary: 'a session for ' + username + ' was refused on its device ' +
+               'at the ' + (via || 'sign-in') + ' door',
+      detail: { why: answer.why, application: String(detail.application ||
+                                                     ''),
+                device: fact ? String(fact.id) : '',
+                policy: answer.policy || '' } });
+    detail.refusedWith = code;
+    detail.refusedWhy = answer.why;
+    log.info('authn: a session for "' + username + '" was REFUSED on its ' +
+             'device (' + answer.device.refusal + ').');
+    log.debug("Leaving Authn.refusedOnDevice(). Refused.");
+    return true;
+  }
+
   // The registered device the session's LATEST authentication event
   // recognised, or null (#164 phase 2). What a later phase reads.
   registeredDeviceOf(session) {
@@ -3894,7 +3945,17 @@ class Authn {
           : { amr: (amr || []).map(String), acr: String(acr || ''),
               kinds: extra.credential && extra.credential.kind
                 ? [String(extra.credential.kind)] : [] }
-      }, extra.risk !== undefined && riskEngine
+      }, extra.key
+        // A KEYED API CALLER (SCIM, SPIRE, the management API) is asked no
+        // device question here (#164 phase 6): its credential is presented
+        // per request, and the device rules decide the TOKEN that
+        // credential was issued with, at the token endpoint.
+        ? { deviceDeferred: true }
+        // THE REGISTERED DEVICE THIS SIGN-IN PROVED (#164 phase 6) — the
+        // same recognition the event below records — for the policy's two
+        // device rules.
+        : { device: this.registeredDeviceFor(extra, username) },
+      extra.risk !== undefined && riskEngine
         ? { risk: riskEngine.factsOf(risk, amr, acr,
                                      extra.credential &&
                                      extra.credential.kind
@@ -3948,12 +4009,24 @@ class Authn {
                     application: String(extra.application || ''),
                     policy: sessionAnswer.policy || '' }
         });
-        extra.refusedWith = 'STS-AUTHN-0010';
+        extra.refusedWith = sessionAnswer.device
+          ? (sessionAnswer.device.refusal === 'compromised'
+            ? 'STS-DEVICE-0038' : 'STS-DEVICE-0037')
+          : 'STS-AUTHN-0010';
         extra.refusedWhy = sessionAnswer.why;
         log.debug("Leaving Authn.startSession(). The issuance policy refused " +
                   "it.");
         return null;
       }
+    } else if (!extra.key && this.refusedOnDevice(extra, username, via)) {
+      // THE DEVICE QUESTION A GATED DOOR COULD NOT ASK (#164 phase 6). The
+      // sign-in screen asks the policy BEFORE its credential is complete —
+      // ahead of a WebAuthn ceremony that may be the very key naming the
+      // device — so it leaves the device out (`deviceDeferred`), and the
+      // question is asked here, of the credential the session actually
+      // stands on, about the device alone.
+      log.debug("Leaving Authn.startSession(). Refused on the device.");
+      return null;
     }
 
     // -------------------------------------------------------------------------
@@ -5882,7 +5955,9 @@ class Authn {
         kind: gate.ISSUANCE.SESSION,
         subject: { kind: 'user', name: username, authenticated: true },
         claims: null,
-        risk: engine.factsOf(risk, outcome.amr || ['pop'], outcome.acr || '1')
+        risk: engine.factsOf(risk, outcome.amr || ['pop'], outcome.acr || '1'),
+        // The session's start asks about the device (#164 phase 6).
+        deviceDeferred: true
       });
       if (!riskAnswer.allowed && riskAnswer.risk &&
           !riskAnswer.risk.observed) {
@@ -5914,8 +5989,10 @@ class Authn {
       kind: gate.ISSUANCE.SESSION,
       subject: { kind: 'user', name: username, authenticated: true },
       claims: null,
-      // The roles alone: the risk was asked above.
-      risk: null
+      // The roles alone: the risk was asked above, and the session's start
+      // asks about the device (#164 phase 6).
+      risk: null,
+      deviceDeferred: true
     });
     if (!roleAnswer.allowed) {
       log.debug("Leaving Authn.beginSecondFactorAfterWallet(). Refused.");
@@ -7024,7 +7101,12 @@ class Authn {
       application: String(record.application || ''),
       kind: gate.ISSUANCE.SESSION,
       subject: { kind: 'user', name: username, authenticated: true },
-      claims: null
+      claims: null,
+      // NOT THE DEVICE, YET (#164 phase 6): the key that may name it — a
+      // passwordless or second-factor WebAuthn ceremony — has not been
+      // presented. The session's start asks about it (`refusedOnDevice()`
+      // for the password-only path, the policy for the rest).
+      deviceDeferred: true
     }, riskEngine ? { risk: riskEngine.factsOf(risk,
       passwordless ? ['hwk'] : ['pwd'], '1') } : {}));
     let riskDecision = 'permit';
@@ -8914,7 +8996,9 @@ class Authn {
           kind: gate.ISSUANCE.SESSION,
           subject: { kind: 'user', name: ANONYMOUS_USERNAME,
                      authenticated: false },
-          claims: null
+          claims: null,
+          // Asked at the session's start (#164 phase 6).
+          deviceDeferred: true
         });
         if (!anonRoleAnswer.allowed) {
           log.info('authn: the issuance policy refused an unauthenticated ' +

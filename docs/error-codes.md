@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3526** of them, in **39** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3528** of them, in **39** subsystems.
 
 ## Where a code appears
 
@@ -79,7 +79,7 @@ is an ordinary outcome.
 * [Risk scoring (`STS-RISK`)](#sts-risk) — 38
 * [Mail (`STS-MAIL`)](#sts-mail) — 39
 * [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 282
-* [Device register (`STS-DEVICE`)](#sts-device) — 36
+* [Device register (`STS-DEVICE`)](#sts-device) — 38
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 74
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 32
 * [Admin console (`STS-ADMIN`)](#sts-admin) — 198
@@ -3295,6 +3295,8 @@ Raised from: common/devices.ts, admin-ui/devices_admin.ts.
 | `STS-DEVICE-0034` | A device compliance feed request carried no report or more than devices.complianceFeedMaxReports, and was refused whole (#164 phase 3). | HTTP 400 |
 | `STS-DEVICE-0035` | The compliance test control, POST /devices/test/compliance, was refused because the realm is in product mode, where test controls are closed (#164 phase 3). | HTTP 403 |
 | `STS-DEVICE-0036` | Risk scoring could not set the risk level of the registered device that proved a sign-in: the device register refused or did not store it (#164 phase 5). The sign-in stands and the device keeps the level it had. | none — logged as a warning |
+| `STS-DEVICE-0037` | An issuance was refused by the issuance policy's device-required rule: the realm requires a compliant registered device (devices.requireCompliantDevice) and this did not come from the subject's own (or an application's) compliant, uncompromised device — attested too where devices.compliantDeviceAttested says so (#164 phase 6). | the issuance site's own refusal — access_denied, a SOAP fault, a SAML status — whose description says a compliant registered device is required |
+| `STS-DEVICE-0038` | An issuance was refused by the issuance policy's device-compromised rule: it came from a registered device marked compromised, and the realm refuses one (devices.refuseCompromised, on by default) (#164 phase 6). | the issuance site's own refusal, saying only that authentication failed |
 
 ## STS-XACML
 

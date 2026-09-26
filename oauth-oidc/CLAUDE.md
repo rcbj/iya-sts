@@ -4089,6 +4089,73 @@ SSF events naming it for that client, nothing relaxed in development.
 
 Tests: `tests/vendored/sts_ephemeral_subjects.js`.
 
+## 3bk. THE REGISTERED DEVICE IN TOKENS: `device_id`, `urn:sts:acr:compliant-device` AND THE ISSUANCE POLICY (2026-09-26, #164 phase 6)
+
+rcbj's decisions 3 and 8. `common/CLAUDE.md` covers where the device fact
+comes from; this section covers what this directory does with it.
+
+* **`device_id`** is a private claim in the ID Token, the access token and
+  the introspection answer, from `deviceIdClaimFor()`.
+  * **Which device:** the one the token request proved
+    (`opts.registered_device`: DPoP `jkt`, client certificate, Native SSO
+    secret), else the one the session's sign-in recognised.
+  * **Up to date:** it is read again from the register
+    (`device_recognition.current()`).
+  * **Whose:** only the TOKEN SUBJECT'S OWN device: a person's, or an
+    application's for its own `client_credentials` token. Somebody else's
+    device is a policy fact, never a statement in this subject's token.
+* **Its value is the subject rule's** (`pairwise_subjects.ts`'s
+  `deviceIdFor()`), because a device id correlates exactly as a `sub` does:
+  * **public:** the register's UUID, the `sub` of the `iss_sub` subject SSF
+    names the device by, scoped by the same issuer as the token's `iss`;
+  * **pairwise:** HMAC over realm, sector and id under the pairwise secret
+    with a label of its own. A client with no sector gets nothing, rather
+    than being refused.
+  * **ephemeral:** nothing, since a stable device id would link every
+    authentication made on that device.
+  * **an application's device:** its UUID to everyone, because section 8's
+    concern is End-Users.
+
+  SSF follows the same rule: `ssf.ts`'s `subjectForReceiver()` rewrites
+  the complex subject's `device` for a pairwise stream owner, and drops it
+  for an ephemeral one.
+* **What the specifications allow.**
+  * RFC 9068 section 2.2 permits claims beyond its own, and a resource
+    server ignores one it does not know.
+  * FAPI 1.0 and 2.0 constrain what is signed and how, not extra claims.
+  * It is in `claims_supported`, which lists what the protocol itself
+    puts in an ID Token, as `tenant` and `session_expiry` are.
+  * #176's note about listed claims no attribute answers does not apply:
+    this one is answered whenever a device is recognised, and a claims
+    request for it otherwise gets section 5.5's absence.
+* **Not in UserInfo.** It describes the AUTHENTICATION, as `acr`, `amr`
+  and `sid` do, and UserInfo returns claims about the End-User. A resource
+  server calling UserInfo already holds an access token that states it.
+* **`cnf` is unchanged, and it already names the device key when that key
+  is the binding key.** A DPoP `jkt` is the device JWK's RFC 7638
+  thumbprint, and a certificate's `x5t#S256` is the certificate the device
+  was recognised by. No second confirmation is added.
+  `tests/vendored/sts_devices.js` 14 holds `device_id` and `cnf.jkt` to
+  the same key.
+* **`urn:sts:acr:compliant-device`** is in `step_up.ts`
+  (`COMPLIANT_DEVICE`, `compliantDeviceOf()`) and in
+  `acr_values_supported` after the ladder.
+  * **What meets it:** an authentication (at least `1`) whose latest event
+    recognised the person's own device, compliant and not compromised, and
+    attested where `devices.compliantDeviceAttested` says so. The device is
+    read as it stands now.
+  * **It is NOT a rung.** It says where the authentication came from, not
+    how many factors it had, so it neither meets nor is met by `mfa`.
+  * **The sign-in screen cannot produce it.** It is not "producible", so a
+    request for it forces no factor: the person signs in once more,
+    possibly from the device. A return that still does not meet it is
+    `unmet_authentication_requirements`.
+  * **A token that met it carries it as `acr`** (section 5). A resource
+    server asking for it again is therefore answered by the token itself.
+* **`checkIssuance()` passes `opts.registered_device` to the gate** where
+  the token request proved a device. Otherwise the gate reads the session's
+  device. `xacml/CLAUDE.md` covers the two device rules.
+
 ## OPENID CONNECT CORE, READ AGAINST THE CODE (2026-09-22, #118)
 
 The review on #45 found Core bugs that no test had asked about. What changed, and

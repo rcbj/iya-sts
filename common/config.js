@@ -4405,6 +4405,48 @@ const SETTINGS = [
                  'suspect. It waits for risk.minimumHistory, as ' +
                  'new-device does. Per realm, like every setting.' },
 
+  // #164 PHASE 6 (2026-09-26): the issuance policy's two device rules and
+  // the compliant-device acr. The settings SWITCH the rules — they go into
+  // every issuance request as `urn:sts:xacml:device-requirement` — and the
+  // built-in `role-issuance` policy states them (`xacml/xacml_templates.ts`).
+  { key: 'devices.requireCompliantDevice', group: 'Devices',
+    label: 'Require a compliant registered device',
+    env: 'STS_DEVICES_REQUIRE_COMPLIANT_DEVICE', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'OFF BY DEFAULT IN BOTH MODES (#164 decision 3). On, the ' +
+                 'issuance policy refuses every token, assertion, ticket ' +
+                 'and session that did not come from the subject\'s own ' +
+                 '(or an application\'s) registered device, recognised by ' +
+                 'one of its keys, COMPLIANT and not compromised ' +
+                 '(STS-DEVICE-0037). The console and the portal — where a ' +
+                 'person registers a device — are exempt in the built-in ' +
+                 'policy. A door with no device evidence (a Kerberos ' +
+                 'ticket, a password grant without DPoP) is refused. Per ' +
+                 'realm, like every setting.' },
+  { key: 'devices.compliantDeviceAttested', group: 'Devices',
+    label: 'A compliant device must also be attested',
+    env: 'STS_DEVICES_COMPLIANT_DEVICE_ATTESTED', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'On, a device counts as a compliant registered device — ' +
+                 'for devices.requireCompliantDevice and for the ' +
+                 'urn:sts:acr:compliant-device acr — only when it is also ' +
+                 'ATTESTED: a verifier checked a statement about its key\'s ' +
+                 'hardware (WebAuthn against FIDO MDS3, TPM, Android Key ' +
+                 'Attestation, Apple App Attest). Off, a self-asserted ' +
+                 'device counts once it is compliant.' },
+  { key: 'devices.refuseCompromised', group: 'Devices',
+    label: 'Refuse a compromised device',
+    env: 'STS_DEVICES_REFUSE_COMPROMISED', type: 'bool', dflt: true,
+    runtime: true,
+    description: 'ON BY DEFAULT. The issuance policy refuses anything asked ' +
+                 'for from a registered device marked compromised ' +
+                 '(STS-DEVICE-0038), for every application: a compromise ' +
+                 'ends the device\'s sessions and revokes its certificates ' +
+                 'and secret, but its JWK and WebAuthn keys still prove the ' +
+                 'device, so a DPoP-bound token request from it is still ' +
+                 'possible. Off, a compromised device is only a risk signal ' +
+                 '(compromised-device, x50).' },
+
   // OPENID CONNECT CIBA (#131). `oauth-oidc/ciba.ts` argues them.
   { key: 'oauth2.ciba', group: 'OAuth 2.0 / OIDC',
     label: 'CIBA (backchannel authentication)',

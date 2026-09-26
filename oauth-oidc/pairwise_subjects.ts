@@ -69,6 +69,9 @@ interface PairwiseDeps {
 // The label that keeps this derivation apart from every other one made under
 // a shared secret (see `deriveSharedCredential()`).
 const LABEL = 'oidc-pairwise-sub';
+// The pairwise DEVICE identifier's own label (#164 phase 6): a device id
+// derived under the subject's label could collide with a person's `sub`.
+const DEVICE_LABEL = 'oidc-pairwise-device-id';
 const PURGE_JOB = 'oauth2.ephemeral-subjects-purge';
 
 // EPHEMERAL SUBJECTS (#149, the Ephemeral Subject Identifier draft), PER
@@ -183,6 +186,58 @@ class PairwiseSubjects {
       local);
     log.debug("Leaving PairwiseSubjects.subjectFor(). pairwise for " +
               sector + ".");
+    return derived;
+  }
+
+  // -------------------------------------------------------------------------
+  // THE `device_id` A CLIENT IS TOLD (#164 decision 8, phase 6), by the
+  // same rule as its `sub`, because a device id is a correlation handle
+  // exactly as a subject is: two pairwise clients handed the register's
+  // UUID for one person's phone could join their records on it, which is
+  // what OIDC Core section 8 has the provider prevent.
+  //
+  //   public     the register's id — the `sub` of the `iss_sub` subject SSF
+  //              names the device by, scoped by the same issuer as the
+  //              token's `iss`.
+  //   pairwise   HMAC over the realm, the client's SECTOR and the id, under
+  //              the pairwise secret and a label of its own: stable for the
+  //              sector, different for every other one. A client with no
+  //              sector is told nothing ('' — omit), rather than refused as
+  //              its `sub` is: the claim is an extra, the token is not.
+  //   ephemeral  '' — omit. The Ephemeral Subject Identifier exists so that
+  //              a client cannot link one authentication to the next, and a
+  //              stable device id would link every one made on that device.
+  //
+  // A device OWNED BY AN APPLICATION is not an End-User's, and section 8's
+  // concern is End-Users: its id goes to every client as it is (`person`
+  // false).
+  // -------------------------------------------------------------------------
+  deviceIdFor(clientId: Json, deviceId: Json, person?: boolean): string {
+    const { log, stsCrypto, realms, applications, clusterSecrets } = this.deps;
+    log.debug("Entering PairwiseSubjects.deviceIdFor(). client=" + clientId);
+    const id = String(deviceId || '');
+    if (!id || !clientId || person === false) {
+      log.debug("Leaving PairwiseSubjects.deviceIdFor(). As it is.");
+      return id;
+    }
+    const cfg = applications.clientConfigOf(String(clientId));
+    if (cfg.subject_type === 'ephemeral') {
+      log.debug("Leaving PairwiseSubjects.deviceIdFor(). ephemeral: none.");
+      return '';
+    }
+    if (cfg.subject_type !== 'pairwise') {
+      log.debug("Leaving PairwiseSubjects.deviceIdFor(). public.");
+      return id;
+    }
+    const sector = this.sectorOf(cfg);
+    if (!sector) {
+      log.debug("Leaving PairwiseSubjects.deviceIdFor(). No sector: none.");
+      return '';
+    }
+    const derived = stsCrypto.deriveSharedCredential(
+      clusterSecrets.text('oidc-pairwise'), DEVICE_LABEL, realms.currentId(),
+      sector, id);
+    log.debug("Leaving PairwiseSubjects.deviceIdFor(). pairwise.");
     return derived;
   }
 
@@ -371,6 +426,7 @@ export = {
   SUBJECT_TYPES: PairwiseSubjects.SUBJECT_TYPES,
   sectorOf: slot.forward('sectorOf'),
   subjectFor: slot.forward('subjectFor'),
+  deviceIdFor: slot.forward('deviceIdFor'),
   localFor: slot.forward('localFor'),
   purge: slot.forward('purge'),
   PURGE_JOB: PURGE_JOB,

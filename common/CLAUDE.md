@@ -8246,6 +8246,54 @@ each argued there:
   and attestation outcomes are counted per realm in THIS process.
 * **The `device` enrollment profile** is `cert_enrollment.ts`'s (3ag, below).
 
+### Phases 5 and 6 (2026-09-26): risk, policy, acr and claims — rule 3bk
+
+**Each phase reads the recognition fact; none decides in this directory.**
+
+* **Risk scoring** (`risk/CLAUDE.md`, *The registered device*). The
+  signals, the device feature and the device's own level are covered there.
+  What this directory owes it is below.
+  * `devices.holdsAny(username)`: "does this person own any device", which
+    the owner index answers.
+  * `setRiskLevel()` refuses to move a COMPROMISED device for source
+    `risk`. The compromise raised it to HIGH, and only a restore puts it
+    back.
+* **The issuance policy** (`xacml/CLAUDE.md`, 3v's device facts). The
+  pieces in this directory:
+  * **`issuance_gate.js` finds the device.** It uses the caller's
+    `device`, or else the device the session's latest event recognised.
+  * **The gate brings it up to date** through
+    `device_recognition.current()`, which reads the device again by id
+    (an index lookup). Compliance is exactly what an MDM moves under a
+    live session, and a device removed since is no device.
+  * **The realm's requirement** comes from `deviceRequirementOf()`, built
+    from three settings: `devices.refuseCompromised` (ON),
+    `devices.requireCompliantDevice` (OFF in both modes, decision 3) and
+    `devices.compliantDeviceAttested`.
+  * **The gate asks the policy past its two shortcuts** only where a
+    device rule could refuse.
+  * **`deviceDeferred`** is how a caller asking before its credential is
+    complete (the sign-in screen, ahead of WebAuthn) leaves the device
+    question to the session's start. `authn.ts`'s `refusedOnDevice()`
+    asks that question, about the device alone, for a gated door.
+* **Ownership** is `DeviceRecognition.ownedBy(fact, subject)`:
+  * a person's device belongs to that person;
+  * an application's device belongs to that application, as the subject
+    of a `client_credentials` grant.
+
+  `current()` looks up the owner's name again for a device given away
+  since.
+* **The acr and the claim** are covered in `oauth-oidc/CLAUDE.md` 3bk. Both
+  read the same fact through `current()`.
+* **Performance: every per-request lookup is indexed.**
+  * `byCredentialId()` (every WebAuthn sign-in) reads the derived
+    `stsDeviceCredentialId`.
+  * `holdsAny()` reads `owner`. Several entries share one owner, so the
+    index keeps one entry per value, and a stale hit now REBUILDS rather
+    than answering "none" (`ldap/ldap_server.js`).
+  * `listForOwner()` still walks. It wants every device an owner has, and
+    its callers are pages and a Native SSO grant.
+
 ## Several nodes: second factors, links, enrollment credentials and the bootstrap (2026-09-14, #46)
 
 Issue #46 sections 2 and 8. Every value here was spent by reading an entry (or

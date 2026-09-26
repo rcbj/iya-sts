@@ -13430,6 +13430,23 @@ const CODES = [
       'not store it (#164 phase 5). The sign-in stands and the device ' +
       'keeps the level it had.',
     spec: 'none — logged as a warning' },
+  { code: 'STS-DEVICE-0037',
+    summary: 'An issuance was refused by the issuance policy\'s ' +
+      'device-required rule: the realm requires a compliant registered ' +
+      'device (devices.requireCompliantDevice) and this did not come from ' +
+      'the subject\'s own (or an application\'s) compliant, uncompromised ' +
+      'device — attested too where devices.compliantDeviceAttested says ' +
+      'so (#164 phase 6).',
+    spec: 'the issuance site\'s own refusal — access_denied, a SOAP fault, ' +
+      'a SAML status — whose description says a compliant registered ' +
+      'device is required' },
+  { code: 'STS-DEVICE-0038',
+    summary: 'An issuance was refused by the issuance policy\'s ' +
+      'device-compromised rule: it came from a registered device marked ' +
+      'compromised, and the realm refuses one (devices.refuseCompromised, ' +
+      'on by default) (#164 phase 6).',
+    spec: 'the issuance site\'s own refusal, saying only that ' +
+      'authentication failed' },
   // ===== XACML =============================================================
   { code: 'STS-XACML-0001',
     summary: 'A request reached an XACML endpoint while the family is ' +

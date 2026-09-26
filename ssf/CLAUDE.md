@@ -1885,3 +1885,20 @@ every person, none of which names a device.
 revoked, the secret revoked — is `devices.ts`'s header; this directory only
 reports it.
 
+**A PAIRWISE OR EPHEMERAL STREAM OWNER IS TOLD THE DEVICE AS ITS TOKENS ARE
+(#164 phase 6).** `subjectForReceiver()` has rewritten the `user` member to
+the owner client's `sub` since #149. It now rewrites a person's `device` the
+same way, through `pairwise_subjects.deviceIdFor()`:
+* a pairwise client is told the sector-derived id its tokens' `device_id`
+  carries;
+* an ephemeral client is told no device, and the member is dropped;
+* a public client is told the register's id.
+
+An application's device has no `user` member and is sent as it is: pairwise
+subjects protect End-Users. `oauth-oidc/CLAUDE.md` 3bk argues the claim.
+
+**RISK SCORING SETS A DEVICE'S LEVEL** (#164 phase 5): after a sign-in the
+person's own device proved, the device takes that sign-in's level, so the
+`risk-level-change` with principal `DEVICE` above now fires on risk as well
+as on a compromise (`risk/CLAUDE.md`, *The registered device*).
+

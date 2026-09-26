@@ -555,6 +555,8 @@ class SharedSignals {
   // subject itself or a complex subject's `user` — is rewritten to that
   // client's `sub` for the session the event names (rcbj's answer on #149).
   // A public client, and a stream no client owns, get the event unchanged.
+  // The `device` member of a complex subject follows the same rule (#164
+  // phase 6) — `pairwise_subjects.ts`'s `deviceIdFor()`.
   subjectForReceiver(record: Json, subject: Json): Json {
     const { log } = this.deps;
     log.debug('Entering SharedSignals.subjectForReceiver().');
@@ -572,8 +574,23 @@ class SharedSignals {
     const session = copy.format === 'complex' && copy.session
       ? String(copy.session.id || '') : '';
     try {
-      user.sub = require('../oauth-oidc/pairwise_subjects')
-        .subjectFor(owner, String(user.sub), session);
+      const pairwise = require('../oauth-oidc/pairwise_subjects');
+      user.sub = pairwise.subjectFor(owner, String(user.sub), session);
+      // THE PERSON'S DEVICE BY THE SAME RULE (#164 phase 6): the `device_id`
+      // this client's tokens carry — the register's id for a public client,
+      // a sector-derived one for a pairwise client, and NONE for an
+      // ephemeral one, whose events then name the person alone. A device
+      // beside a `user` is a person's; an application's device has no user
+      // member and never reaches here.
+      if (copy.format === 'complex' && copy.device && copy.device.sub) {
+        const told = pairwise.deviceIdFor(owner, String(copy.device.sub),
+                                          true);
+        if (told) {
+          copy.device.sub = told;
+        } else {
+          delete copy.device;
+        }
+      }
     } catch (e: any) {
       // A pairwise client with no sector: the event goes with the subject
       // it was built with, and the log says why.
@@ -4996,6 +5013,9 @@ export = {
   metadata: slot.forward('metadata'),
   description: slot.forward('description'),
   transmit: slot.forward('transmit'),
+  // The subject as a stream owner's client knows the person (#149) and,
+  // since #164 phase 6, their device — for `tests/device_policy.js`.
+  subjectForReceiver: slot.forward('subjectForReceiver'),
   // #144: every status change in section 8.1.5's order, the held-SET drain,
   // and the stream-maintenance job's body.
   changeStatus: slot.forward('changeStatus'),
