@@ -40,6 +40,7 @@ const { EventEmitter } = require('events');
 const forge = require('node-forge');
 
 const config = require('../common/config');
+const realms = require('../common/realms');
 const errorCodes = require('../common/error_codes');
 const pqJose = require('../common/pq_jose');
 const attestation = require('../oauth-oidc/client_attestation');
@@ -698,8 +699,23 @@ async function wiring(t, world) {
   log.debug("Leaving wiring().");
 }
 
+// A REALM OF THIS FILE'S OWN, for `used_assertions.js`'s reason: the PoPs
+// and challenges spent here are rows in the realm's used-assertion history,
+// and `run.js` runs every file in one process, so rows left in the default
+// realm would count against another file's cap. The record carries
+// `overrides` because `config.value()` reads them off the ambient record.
+const REALM = { id: 'ca-probe-' + Date.now().toString(36), overrides: {} };
+
 async function run(t) {
   log.debug("Entering run().");
+  log.debug("Leaving run(). Into the file's own realm.");
+  return realms.run(REALM, function () {
+    return runInRealm(t);
+  });
+}
+
+async function runInRealm(t) {
+  log.debug("Entering runInRealm().");
   const world = { pki: pki(), attester: ecKey(), instance: ecKey() };
   try {
     await trust(t, world);
@@ -715,7 +731,7 @@ async function run(t) {
       config.clearOverride(key);
     });
   }
-  log.debug("Leaving run().");
+  log.debug("Leaving runInRealm().");
 }
 
 module.exports = {
