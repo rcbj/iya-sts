@@ -645,7 +645,9 @@ after delivery, so without the claim a second run of the job would send
 `opt-out-effective` twice (seen).
 
 **Not here:**
-- `credential-compromise` has no detector (#62).
+- ~~`credential-compromise` has no detector (#62).~~ Since #62 risk scoring's
+  reaction sends one, and since #231 (2026-09-26) five detectors do: see
+  *Detected compromises, and the last credentials* below.
 - ~~A person cannot start recovery themselves until there is a mail channel
   (#63).~~ Since #63 (2026-09-22) a person starts it at
   `/portal/forgot-password`, and `recovery-activated` is sent with the person
@@ -1880,6 +1882,69 @@ its header. The points a reader of this directory needs:
 * **CAEP device-compliance-change** goes to `devices.setCompliance()` when
   the device register offers it (#164). The device is found by the subject's
   `sub` or a key thumbprint.
+
+## DETECTED COMPROMISES, AND THE LAST CREDENTIALS (#231, #236, #237, 2026-09-26)
+
+**Every row goes through `account_signals.ts`**, so `caep.autoEmitTypes`,
+`risc.autoEmitTypes`, the opt-out gate and each stream's own types and
+subjects hold as for every other act.
+
+**RISC `credential-compromise` from what the service DETECTS (#231):**
+
+| Detector | `credential_type` | Also | Where |
+|---|---|---|---|
+| a password found in a breach at the sign-in screen (`risk.breachCheckAtSignIn`) | `password` | `account-credential-change-required`; once per demand — nothing more while `pwdReset` stands | `authn/authn.ts` |
+| a security key whose signature counter went backwards, every other check passing | `keyCredentialType()` | the person's risk standing HIGH, `authenticator-compromised` (`RiskEngine.noteAuthenticatorCompromise()`) | `credentials.noteKeyCloned()`, from `spendAssertion()` and from the ceremony doors (`authn.ts`, `device_enrolment.ts`) when `clonedKeyVerdict()` says the counter was the one failed check |
+| a leaf certificate revoked for RFC 5280 `keyCompromise` | `x509` | the CAEP revoke it always sent | `tls_client_certificates.revoke()`, `cert_enrollment.revokeEnrolled()`, `/admin/pki`'s `revoke-certificate` (a CA's own revocation is #244's) |
+| the emailed factor turned off at its failure limit | `urn:iya:sts:credential-type:email-otp` | CAEP `delete` by `system`; `mailed: true`, because the factor already mails the person | `mail_factor.noteFailure()` |
+
+**A replayed one-time code is NOT a SET** (rcbj's decision): a person who
+pressed submit twice looks exactly like a replay. It is a risk signal,
+`totp-replay` (`risk/CLAUDE.md`). And where the `risk-response` policy is
+installed and enforced, a cloned key's HIGH standing fires its own
+`risk-credential-compromise` reaction as well, so a receiver may be told
+twice about one key; the direct event is kept so that it does not depend on
+the policy.
+
+**CAEP `credential-change` for the credentials no registered value fits
+(#236).** CAEP 1.0 section 3.3.1's list is open ("or any other credential
+type supported mutually"), and RISC 2.7 takes the same values, so these are
+URNs in this service's namespace, following `devices.ts`'s precedent. Each
+is sent from the one function that writes the credential (#145's rule):
+
+| Credential | `credential_type` | Funnel | `change_type` |
+|---|---|---|---|
+| the emailed second factor (#64) | `urn:iya:sts:credential-type:email-otp` | `mail_factor.optIn()`, `clear()` | create; update (code to link); delete |
+| a SIOPv2 self-issued subject (#129) | `urn:iya:sts:credential-type:self-issued-key` | `siop.enrol()`, `remove()` | create; delete |
+| an ACME EAB key | `urn:iya:sts:credential-type:acme-eab-key` | `cert_enrollment.createEab()`, `deleteEab()` | create; delete |
+| a SCEP challenge password | `password`, `friendly_name` naming it | `createScepChallenge()`, `deleteScepChallenge()` | create; delete |
+| a HOBA key | `urn:iya:sts:credential-type:hoba-key` | `scim_auth.registerHobaKey()` | create; update (the same kid) |
+| a person's Kerberos keys | `urn:iya:sts:credential-type:kerberos-key` | `krb5_person_keys` `derive()`, `clearPersonKeys()`, `dropPreviousPersonKeys()` | create (first key); update (a new password's kvno); revoke (previous versions dropped); delete (cleared) |
+| a device's JWK key, a Native SSO secret (#164) | `...:device-key`, `...:device-secret` | `devices.ts` | above |
+
+A SCEP challenge IS a password; the friendly name keeps it apart from the
+account's own, for a receiver and for the person's "password changed" mail
+(which is sent only for an unnamed `password`). Binding an EAB key and
+redeeming a challenge send nothing: the certificate each produces is
+already `x509`. Only a person's credential is sent. **#86's closed sets name
+no credential type** (`CREDENTIAL_TYPES` is an `openenum`: an unknown value
+is a warning, never a refusal), so nothing there changed.
+
+**AND THE DOORS THAT CHANGED A REGISTERED TYPE SILENTLY (#237):**
+- an LDAP write of a credential attribute is REFUSED, in both modes and for
+  an administrator too (STS-LDAP-0111, `ldap/CLAUDE.md`) — the doors that own
+  those attributes check and signal, and a raw write did neither;
+- an LDAP delete of `userPassword` is `password` `revoke`, and a pre-hashed
+  value kept in development is `create` or `update`;
+- `pwdReset` set over LDAP is RISC `account-credential-change-required`;
+- the CIBA user code is `pin` — create, update, delete (`ciba.setUserCode()`);
+- a bootstrap administrator's password, at startup and when a realm is
+  created, is `password` `create` by `system`
+  (`credentials.noteBootstrapPassword()`); a realm that young has no stream,
+  so it goes nowhere until one exists.
+
+`tests/credential_signals.js` holds every row in process;
+`tests/vendored/sts_credential_signals.js` the ones a wire can reach.
 
 ## A RENAMED ACCOUNT KEEPS ITS RISC ROW (2026-09-14)
 

@@ -2416,6 +2416,42 @@ the person without usable keys until they signed in somewhere else.
 read *search and compare are unauthorized in both modes* until the same day.
 `tests/directory_write_authorization.js` holds the rule in process.
 
+## A CREDENTIAL IS NOT WRITTEN OVER THE SOCKET, IN EITHER MODE (#237, 2026-09-26)
+
+**An add or modify naming a credential attribute is refused, for every bind,
+administrator included, in development too** — `credentialWriteRefusal()`,
+called beside `operationalWriteRefusal()` in both handlers, answering
+`unwillingToPerform` (53) and recorded `STS-LDAP-0111`, with the door that
+owns the attribute NAMED in the message. The list is
+`CREDENTIAL_ATTRIBUTE_DOORS` (exact names: a security key, an authenticator
+app, recovery codes, app passwords, a HOBA key, a self-issued subject, the
+emailed factor and its failure count, Kerberos keys, a CIBA user code, the
+EAB keys and SCEP challenges of both kinds of entry, an enrolled certificate
+and its server-generated key, a device's secret, key and credential id) and
+`CREDENTIAL_ATTRIBUTE_PREFIXES` (`stsAssertion*`, `stsSamlAssertion*`, a
+person's signing key pair and everything recorded about it).
+
+**WHY REFUSE AND NOT SIGNAL.** Until this date the modify loop applied any
+attribute and only `userPassword` reached `notePasswordWritten()`, so an
+`ldapmodify` of `stsTotpCredential` by an Admin Write bind changed a person's
+credential with no CAEP `credential-change` — and past every check the door
+that owns it makes (an attestation, a hash, a proof of the key, one kid per
+account). Signalling each attribute by its type here was the alternative;
+refusing is smaller and closes the second hole too, which is rcbj's standing
+rule (most secure by default). **In development as well**, because the point
+is where a credential is WRITTEN, not who is trusted to bind; a directory moved
+between instances carries these through the persistence store, never through
+the socket. **`userPassword` is not on the list**: the socket is one of its
+doors, it meets the password policy in `passwordWriteRefusal()`, and it is
+signalled — and since #237 a DELETE of it is `password` `revoke` and a
+pre-hashed value development keeps is `create` or `update`, both of which the
+early return in `passwordWriteRefusal()` used to hide.
+
+**`pwdReset` stays writable by an administrator**, which is how a directory
+tool forces a change; setting it (not already TRUE) now sends RISC
+`account-credential-change-required`, as the console's reset does
+(`notePasswordChangeRequired()`). `ssf/CLAUDE.md` has the whole #237 table.
+
 ## HOW A CONNECTION BINDS AND WHAT IT MAY READ, IN PRODUCT MODE (2026-09-12)
 
 **node-ldapjs decides nothing about security**, and that is the fact to start
