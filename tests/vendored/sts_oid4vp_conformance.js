@@ -15,9 +15,12 @@
 // Verifier uses for one, `oid4vc/vc_verifier.ts`), by direct_post and by
 // direct_post.jwt. The Verifier's own signed-request prefixes are
 // pre-registered, decentralized_identifier, verifier_attestation and
-// openid_federation; the plan's signed variants use x509_san_dns and
-// x509_hash, which this Verifier does not implement — NOT RUN until #230
-// adds those two prefixes.
+// openid_federation, and since #230 x509_san_dns and x509_hash — the two
+// the plan's signed variants use, run here by direct_post and
+// direct_post.jwt with the request object passed by reference
+// (`request_uri_signed`). For those the job reads the realm's Verifier
+// certificate (`/oid4vp/verifier-certificate`) and hands the suite its
+// trust anchor, and for x509_san_dns the bare DNS name as client_id.
 //
 // A module waits for the Verifier to send the End-User to the wallet. This
 // job is that End-User: it asks the realm's start page for a request — the
@@ -69,6 +72,32 @@ const PLANS = [
     responseMode: "direct_post.jwt",
     variant: { vp_profile: "plain_vp", credential_format: "sd_jwt_vc",
                client_id_prefix: "redirect_uri", request_method: "url_query",
+               response_mode: "direct_post.jwt" } },
+  // #230: the X.509 Client Identifier Prefixes, a signed request by
+  // reference.
+  { key: "vp-san-dns", name: "oid4vp-1final-verifier-test-plan",
+    responseMode: "direct_post", prefix: "x509_san_dns",
+    variant: { vp_profile: "plain_vp", credential_format: "sd_jwt_vc",
+               client_id_prefix: "x509_san_dns",
+               request_method: "request_uri_signed",
+               response_mode: "direct_post" } },
+  { key: "vp-san-dns-jwt", name: "oid4vp-1final-verifier-test-plan",
+    responseMode: "direct_post.jwt", prefix: "x509_san_dns",
+    variant: { vp_profile: "plain_vp", credential_format: "sd_jwt_vc",
+               client_id_prefix: "x509_san_dns",
+               request_method: "request_uri_signed",
+               response_mode: "direct_post.jwt" } },
+  { key: "vp-hash", name: "oid4vp-1final-verifier-test-plan",
+    responseMode: "direct_post", prefix: "x509_hash",
+    variant: { vp_profile: "plain_vp", credential_format: "sd_jwt_vc",
+               client_id_prefix: "x509_hash",
+               request_method: "request_uri_signed",
+               response_mode: "direct_post" } },
+  { key: "vp-hash-jwt", name: "oid4vp-1final-verifier-test-plan",
+    responseMode: "direct_post.jwt", prefix: "x509_hash",
+    variant: { vp_profile: "plain_vp", credential_format: "sd_jwt_vc",
+               client_id_prefix: "x509_hash",
+               request_method: "request_uri_signed",
                response_mode: "direct_post.jwt" } }
 ];
 
@@ -114,10 +143,25 @@ async function prepare(plan) {
     // still need theirs).
     ["oid4vp.requireStatusReference", "own-only"],
     ["federation.outboundCaFile", oidf.suiteCaFile()]]);
+  let client = { client_id: "redirect_uri:" + realm.base + "/oid4vp/response" };
+  if (plan.prefix) {
+    // #230: the Verifier's own certificate, and the anchor the suite checks
+    // the request object's x5c against; x509_san_dns names the Verifier by
+    // its bare DNS name (the suite adds the prefix), x509_hash by nothing
+    // the suite needs told.
+    const cert = await oidf.send(realm.base + "/oid4vp/verifier-certificate");
+    assert.strictEqual(cert.status, 200, "the Verifier certificate: " +
+                       cert.raw.slice(0, 300));
+    client = { request_object_trust_anchor_pem:
+                 cert.body.x509_san_dns.trust_anchor_pem };
+    if (plan.prefix === "x509_san_dns") {
+      client.client_id = cert.body.x509_san_dns.dns_name;
+    }
+  }
   const configuration = {
     alias: alias,
     description: "iya-sts " + plan.name + " " + STAMP,
-    client: { client_id: "redirect_uri:" + realm.base + "/oid4vp/response" },
+    client: client,
     credential: { signing_jwk: key.jwk },
     browser: [{
       match: "https://*/test/a/*/verification-evidence",
@@ -148,8 +192,10 @@ function userFor(plan, prepared) {
     }
     started[id] = true;
     const r = await oidf.send(prepared.realm.base + "/oid4vp/start?" +
-      new URLSearchParams({ mode: "same-device", format: "dc+sd-jwt",
-                            response_mode: plan.responseMode }).toString());
+      new URLSearchParams(Object.assign(
+        { mode: "same-device", format: "dc+sd-jwt",
+          response_mode: plan.responseMode },
+        plan.prefix ? { client_id_prefix: plan.prefix } : {})).toString());
     const to = r.headers.get("location") || "";
     assert.ok(to.indexOf(oidf.SUITE) === 0, "the start page sent nobody to " +
               "the suite: " + r.status + " " + r.raw.slice(0, 300));
