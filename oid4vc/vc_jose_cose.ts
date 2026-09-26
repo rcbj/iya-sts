@@ -153,6 +153,8 @@ class VcJoseCose {
     const { log, stsCrypto } = this.deps;
     log.debug("Entering VcJoseCose.secureJwt(). " + kind);
     const alg = this.algFor(signer.publicJwk);
+    // certificate-header: none — the key is named by its did:key kid, which
+    // is what a VC-JOSE-COSE verifier resolves; a chain would name another.
     const token = await stsCrypto.signJwsAsync(document, signer.privateKey, {
       algorithm: alg,
       header: { alg: alg, kid: signer.kid, typ: MEDIA[kind].jwt,
@@ -260,6 +262,8 @@ class VcJoseCose {
     }
     payload._sd_alg = 'sha-256';
     const alg = this.algFor(signer.publicJwk);
+    // certificate-header: none — the key is named by its did:key kid, which
+    // is what a VC-JOSE-COSE verifier resolves; a chain would name another.
     const jwt = await stsCrypto.signJwsAsync(payload, signer.privateKey, {
       algorithm: alg,
       header: { alg: alg, kid: signer.kid, typ: MEDIA[kind].sdjwt,
