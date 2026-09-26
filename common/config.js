@@ -8124,7 +8124,8 @@ const SETTINGS = [
     label: 'Client Identifier prefix of a signed request',
     env: 'OID4VP_CLIENT_ID_PREFIX', type: 'enum',
     enumValues: ['pre-registered', 'decentralized_identifier',
-                 'verifier_attestation', 'openid_federation'],
+                 'verifier_attestation', 'openid_federation',
+                 'x509_san_dns', 'x509_hash'],
     dflt: 'pre-registered', runtime: true,
     description: 'How a wallet is to authenticate a SIGNED request ' +
                  '(OpenID4VP section 5.9). pre-registered: oid4vp.clientId, which the ' +
@@ -8137,7 +8138,43 @@ const SETTINGS = [
                  'realm. ' +
                  'openid_federation: this realm\'s entity identifier, whose ' +
                  'Entity Configuration is at /.well-known/openid-federation. ' +
+                 'x509_san_dns: oid4vp.x509DnsName, a dNSName of the ' +
+                 'Verifier\'s certificate, whose chain the request carries ' +
+                 'in x5c. x509_hash: the SHA-256 of that certificate. Both ' +
+                 'sign with oid4vp.x509SigningAlgorithm; ' +
+                 '/oid4vp/verifier-certificate shows the certificate and ' +
+                 'both Client Identifiers. /oid4vp/start?client_id_prefix= ' +
+                 'chooses per request. ' +
                  'An unsigned request always uses redirect_uri.' },
+
+  { key: 'oid4vp.x509DnsName', group: 'OID4VP',
+    label: 'DNS name of the x509_san_dns Client Identifier',
+    env: 'OID4VP_X509_DNS_NAME', type: 'string', dflt: '', runtime: true,
+    description: 'The DNS name the Verifier\'s certificate carries in its ' +
+                 'subjectAltName and the x509_san_dns Client Identifier ' +
+                 'names (OpenID4VP 1.0 section 5.9.3). It MUST be the host ' +
+                 'of the Response URI, which a wallet that does not ' +
+                 'otherwise trust the Verifier checks, so a request whose ' +
+                 'Response URI is on another host is refused. EMPTY, the ' +
+                 'default: the host of global.publicBaseUrl where that is ' +
+                 'pinned, otherwise — in development only — the host the ' +
+                 'request arrived at. Product mode never certifies a Host ' +
+                 'header: whoever sent one would choose where a signed, ' +
+                 'trusted request sends presentations.' },
+
+  { key: 'oid4vp.x509SigningAlgorithm', group: 'OID4VP',
+    label: 'Signing algorithm of an x509 Client Identifier request',
+    env: 'OID4VP_X509_SIGNING_ALGORITHM', type: 'enum',
+    enumValues: ['ES256', 'ES384', 'ES512', 'PS256', 'RS256', 'EdDSA'],
+    dflt: 'ES256', runtime: true,
+    description: 'The JWS algorithm a Request Object with the x509_san_dns ' +
+                 'or x509_hash Client Identifier is signed with, and so the ' +
+                 'realm key the Verifier\'s certificate is issued over. ' +
+                 'ES256 by default, which OpenID4VC HAIP requires a wallet ' +
+                 'to accept. A post-quantum algorithm is not offered yet: ' +
+                 'the Request Object is signed on the request path, and ' +
+                 'this realm\'s post-quantum keys sign in the worker pool ' +
+                 '(oid4vc/CLAUDE.md, the x509 prefixes).' },
 
   { key: 'oid4vp.verifierAttestation', group: 'OID4VP',
     label: 'Verifier Attestation JWT',

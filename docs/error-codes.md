@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3575** of them, in **38** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3581** of them, in **38** subsystems.
 
 ## Where a code appears
 
@@ -57,7 +57,7 @@ is an ordinary outcome.
 * [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 28
 * [Scheduler (`STS-SCHED`)](#sts-sched) — 16
 * [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 79
-* [Certificate authority (`STS-PKI`)](#sts-pki) — 189
+* [Certificate authority (`STS-PKI`)](#sts-pki) — 191
 * [Certificate enrollment core (`STS-ENROLL`)](#sts-enroll) — 51
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 72
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 26
@@ -74,7 +74,7 @@ is an ordinary outcome.
 * [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 77
 * [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 144
 * [TLS and client certificates (`STS-TLS`)](#sts-tls) — 34
-* [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 104
+* [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 108
 * [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 104
 * [Risk scoring (`STS-RISK`)](#sts-risk) — 40
 * [Mail (`STS-MAIL`)](#sts-mail) — 39
@@ -673,6 +673,8 @@ Raised from: common/pki.js, common/pki_authoring.ts, common/pki_revocation.js, c
 | `STS-PKI-0200` | A certificate authority build named an alternative key algorithm (pki.alternativeKeyAlgorithm, or altKeyAlg on the form) that is not a pure post-quantum signature algorithm this service generates, nor "none" (#68). | console: the page's error list; /admin-api: HTTP 400 { ok: false, errors } |
 | `STS-PKI-0201` | A certificate carries an ITU-T X.509 clause 9.8 alternative signature that does not verify under its issuer's alternative key (any path: this realm's own, an uploaded chain, a registered root), or — on a path to this realm's own hierarchy — cannot be checked (#68). | the verifier's refusal: whatever the certificate was presented for is refused as an untrusted certificate |
 | `STS-PKI-0202` | A certificate on a path to this realm's own hierarchy carries no alternative signature although its issuer holds an alternative (post-quantum) key — a hybrid path presented as classical, the downgrade #68 refuses. | the verifier's refusal: whatever the certificate was presented for is refused as an untrusted certificate |
+| `STS-PKI-0204` | The OpenID4VP Verifier's certificate was refused its name or its key: a DNS name a certificate cannot carry, a wildcard (the certificate names one host), or no signing key (#230). | the Verifier's refusal: STS-VC-0112, HTTP 500 at /oid4vp/start |
+| `STS-PKI-0205` | A realm already holds the most OpenID4VP Verifier certificates it keeps (one per DNS name, sixteen), so none was issued for another name — set oid4vp.x509DnsName or pin global.publicBaseUrl (#230). | the Verifier's refusal: STS-VC-0112, HTTP 500 at /oid4vp/start |
 
 ## STS-ENROLL
 
@@ -2830,6 +2832,10 @@ Raised from: oid4vc/.
 | `STS-VC-0107` | A VC-API status change named a credential this realm issued no status for, a status type or purpose it does not publish, or tried to clear a revocation (#197). | HTTP 404 / 400 {errors} |
 | `STS-VC-0108` | A VC-API request body was not a JSON object, or carried a polluting key or more depth or members than any document this service accepts (validation.checkDocument, #194). | HTTP 400 {errors} |
 | `STS-VC-0109` | A DID the VC-API resolver was asked for could not be resolved, or a DID URL dereferenced: not a DID (invalidDid, invalidDidUrl), a method it does not support, a representation it does not produce, or a did:web other than this realm's own, which it does not fetch (notFound) (#199). | HTTP 400 / 404 / 501 with the resolution result's error |
+| `STS-VC-0110` | A Request Object with the x509_san_dns Client Identifier was asked for in product mode with no DNS name to certify: neither oid4vp.x509DnsName nor global.publicBaseUrl names one, and the Host a request arrived with is not certified there — whoever sent it would choose the host a signed, trusted request sends presentations to (#230). | HTTP 500 text/plain at /oid4vp/start; the sign-in door's 500 page; 409 JSON at /oid4vp/verifier-certificate |
+| `STS-VC-0111` | The x509_san_dns name is not the host of the Response URI, or that host is an IP address: OpenID4VP 1.0 section 5.9.3 has a wallet that does not otherwise trust the Client Identifier require the response_uri's FQDN to be it, so such a request would be refused by every such wallet (#230). | HTTP 500 text/plain at /oid4vp/start; 409 JSON at /oid4vp/verifier-certificate |
+| `STS-VC-0112` | The OpenID4VP Verifier's certificate could not be issued, or was not in place over the key the Request Object is signed with when it was built, so no x509_san_dns or x509_hash request was made (#230). | HTTP 500 text/plain at /oid4vp/start; 409 JSON at /oid4vp/verifier-certificate |
+| `STS-VC-0113` | oid4vp.x509SigningAlgorithm names an algorithm this realm holds no signing key for, so no x509_san_dns or x509_hash request can be signed (#230). | HTTP 500 text/plain at /oid4vp/start; 409 JSON at /oid4vp/verifier-certificate |
 
 ## STS-SSF
 

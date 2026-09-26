@@ -2785,6 +2785,17 @@ const CODES = [
       'downgrade #68 refuses.',
     spec: 'the verifier\'s refusal: whatever the certificate was presented ' +
       'for is refused as an untrusted certificate' },
+  { code: 'STS-PKI-0204',
+    summary: 'The OpenID4VP Verifier\'s certificate was refused its name or ' +
+      'its key: a DNS name a certificate cannot carry, a wildcard (the ' +
+      'certificate names one host), or no signing key (#230).',
+    spec: 'the Verifier\'s refusal: STS-VC-0112, HTTP 500 at /oid4vp/start' },
+  { code: 'STS-PKI-0205',
+    summary: 'A realm already holds the most OpenID4VP Verifier ' +
+      'certificates it keeps (one per DNS name, sixteen), so none was ' +
+      'issued for another name — set oid4vp.x509DnsName or pin ' +
+      'global.publicBaseUrl (#230).',
+    spec: 'the Verifier\'s refusal: STS-VC-0112, HTTP 500 at /oid4vp/start' },
   { code: 'STS-ENROLL-0001',
     summary: 'A certificate request named a profile that is not one of the nine issued over an enrollment protocol.',
     spec: 'the protocol\'s refusal: ACME malformed / badCSR, EST HTTP 400, SCEP failInfo badRequest' },
@@ -11591,6 +11602,36 @@ const CODES = [
       'or a did:web other than this realm\'s own, which it does not fetch ' +
       '(notFound) (#199).',
     spec: 'HTTP 400 / 404 / 501 with the resolution result\'s error' },
+  { code: 'STS-VC-0110',
+    summary: 'A Request Object with the x509_san_dns Client Identifier was ' +
+      'asked for in product mode with no DNS name to certify: neither ' +
+      'oid4vp.x509DnsName nor global.publicBaseUrl names one, and the ' +
+      'Host a request arrived with is not certified there — whoever sent ' +
+      'it would choose the host a signed, trusted request sends ' +
+      'presentations to (#230).',
+    spec: 'HTTP 500 text/plain at /oid4vp/start; the sign-in door\'s 500 ' +
+      'page; 409 JSON at /oid4vp/verifier-certificate' },
+  { code: 'STS-VC-0111',
+    summary: 'The x509_san_dns name is not the host of the Response URI, or ' +
+      'that host is an IP address: OpenID4VP 1.0 section 5.9.3 has a ' +
+      'wallet that does not otherwise trust the Client Identifier require ' +
+      'the response_uri\'s FQDN to be it, so such a request would be ' +
+      'refused by every such wallet (#230).',
+    spec: 'HTTP 500 text/plain at /oid4vp/start; 409 JSON at ' +
+      '/oid4vp/verifier-certificate' },
+  { code: 'STS-VC-0112',
+    summary: 'The OpenID4VP Verifier\'s certificate could not be issued, or ' +
+      'was not in place over the key the Request Object is signed with ' +
+      'when it was built, so no x509_san_dns or x509_hash request was ' +
+      'made (#230).',
+    spec: 'HTTP 500 text/plain at /oid4vp/start; 409 JSON at ' +
+      '/oid4vp/verifier-certificate' },
+  { code: 'STS-VC-0113',
+    summary: 'oid4vp.x509SigningAlgorithm names an algorithm this realm ' +
+      'holds no signing key for, so no x509_san_dns or x509_hash request ' +
+      'can be signed (#230).',
+    spec: 'HTTP 500 text/plain at /oid4vp/start; 409 JSON at ' +
+      '/oid4vp/verifier-certificate' },
   { code: 'STS-SSF-0001',
     summary: 'A Shared Signals endpoint was called while the family is ' +
       'turned off (ssf.enabled).',
