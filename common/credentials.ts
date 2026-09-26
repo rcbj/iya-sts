@@ -1662,6 +1662,10 @@ class Credentials {
       log.debug('Leaving Credentials.bootstrap(). The write failed.');
       return { ran: false, why: (written.errors || []).join(' ') };
     }
+    // A PASSWORD CREATED, TOLD AS CAEP `credential-change` (#237) where the
+    // realm has a stream that takes it. A realm with no streams — a fresh
+    // deployment, the usual case — sends nothing, and says so at debug.
+    this.noteBootstrapPassword(username, 'at startup');
     // TWO ANNOUNCEMENTS, AND THE DIFFERENCE IS THE ONE THING THAT MATTERS: a
     // generated password is printed because nothing else holds it, and a
     // supplied one is NOT, because the operator already has it and printing
@@ -2225,6 +2229,33 @@ class Credentials {
       log.debug("Leaving Credentials.noteKeyUsed().");
       return false;
     }
+  }
+
+  // ---------------------------------------------------------------------------
+  // A BOOTSTRAP ADMINISTRATOR'S PASSWORD (#237, 2026-09-26): the startup
+  // bootstrap above, and a new realm's first administrator
+  // (`admin_actions.ts`). Both set a password the service chose or was
+  // given, and neither passed through a door that signals, so each is a CAEP
+  // `credential-change` `create` initiated by `system` — delivered, like
+  // every other, only to a stream that takes the type and covers the person.
+  // Lazily required, never allowed to undo the write.
+  // ---------------------------------------------------------------------------
+  noteBootstrapPassword(username, when) {
+    const { log } = this.deps;
+    log.debug('Entering Credentials.noteBootstrapPassword().');
+    try {
+      require('../ssf/account_signals').credentialChanged({
+        username: String(username || ''), credentialType: 'password',
+        changeType: 'create', initiatingEntity: 'system', via: 'bootstrap',
+        reasonAdmin: 'The bootstrap administrator ' + username + ' was ' +
+                     'given a password ' + String(when || '') + '.',
+        reasonUser: 'A password was set for your account.' });
+    } catch (e) {
+      log.debug('Caught in Credentials.noteBootstrapPassword(): ' +
+                ((e && e.message) || e));
+      // No Shared Signals facade in this process; the password is set.
+    }
+    log.debug('Leaving Credentials.noteBootstrapPassword().');
   }
 
   // ---------------------------------------------------------------------------
@@ -6621,6 +6652,7 @@ export = {
   addKeyClaimed: slot.forward('addKeyClaimed'),
   noteKeyUsed: slot.forward('noteKeyUsed'),
   noteKeyCloned: slot.forward('noteKeyCloned'),
+  noteBootstrapPassword: slot.forward('noteBootstrapPassword'),
   mechanismsFor: slot.forward('mechanismsFor'),
   secondFactorDemand: slot.forward('secondFactorDemand'),
   bootstrap: slot.forward('bootstrap'),

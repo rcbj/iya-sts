@@ -312,6 +312,33 @@ async function keytabChild() {
   out.both = brief(await reset({ username: 'ktowner', password: PW2,
                                  random: true }));
   out.weak = brief(await reset({ username: 'ktowner', password: 'abc' }));
+  // A TYPED PASSWORD ON THE PWNED PASSWORDS LIST (#237's side finding): the
+  // range API is stubbed to list one made-up password, the screen is on,
+  // and the reset must refuse it with the breach code and change nothing.
+  if (product) {
+    const config = require(R + '/common/config');
+    const stsCrypto = require(R + '/common/crypto');
+    const fedHttp = require(R + '/federation/federation_http');
+    const BREACHED = 'Keytab-Breached-Passw0rd!-7';
+    const bad = stsCrypto.pwnedPasswordDigest(BREACHED);
+    const original = fedHttp.fetchPublished;
+    fedHttp.fetchPublished = function (url) {
+      const lines = ['0000000000000000000000000000000000A:3'];
+      if (String(url).slice(-5) === bad.slice(0, 5)) {
+        lines.push(bad.slice(5) + ':42');
+      }
+      return Promise.resolve({ ok: true, status: 200,
+                               body: Buffer.from(lines.join('\r\n')) });
+    };
+    config.setOverride('risk.breachCheck', 'on');
+    try {
+      out.breached = brief(await reset({ username: 'ktowner',
+                                         password: BREACHED }));
+    } finally {
+      fedHttp.fetchPublished = original;
+      config.clearOverride('risk.breachCheck');
+    }
+  }
   out.nobodyReset = brief(await reset({ username: 'ktnobody',
                                         password: PW2 }));
   await personKeys.idle();
@@ -525,6 +552,11 @@ function productAssertions(t, r) {
   t.check(!r.weak.ok && !!r.weak.codeOf && !r.weak.keytab,
           'a password the policy refuses is refused, with its own code',
           JSON.stringify(r.weak));
+  t.check(!!r.breached && !r.breached.ok &&
+          r.breached.codeOf === 'STS-AUTHN-0222' && !r.breached.keytab,
+          'a typed password on the Pwned Passwords list is refused with the ' +
+          'breach code (STS-AUTHN-0222) — the screen\'s verdict reaches ' +
+          'setPassword() (#237 side finding)', JSON.stringify(r.breached));
   t.check(!r.nobodyReset.ok && r.nobodyReset.codeOf === 'STS-KRB-0130',
           'a reset for nobody is refused by the register',
           JSON.stringify(r.nobodyReset));

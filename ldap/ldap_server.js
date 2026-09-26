@@ -8416,6 +8416,107 @@ function operationalWriteRefusal(req, operation, dn, types) {
     dn);
 }
 
+// ---------------------------------------------------------------------------
+// A CREDENTIAL IS NOT WRITTEN OVER THE SOCKET (#237, 2026-09-26), IN EITHER
+// MODE AND BY NOBODY — ADMINISTRATOR INCLUDED.
+//
+// Every one of these attributes has a door that owns it: it checks what is
+// written (a key's attestation, a secret's hash, a subject's proof, the
+// one-kid-one-account rule), and it tells the person's receivers over CAEP
+// `credential-change` (#145, #236) — or RISC's recovery-information-changed
+// for recovery codes. An `ldapmodify` by an Admin Write bind did neither: the
+// modify loop applies any attribute, and only `userPassword` reached
+// `notePasswordWritten()`. So a raw write was a credential changed past the
+// store's own checks and silently. The choice was to signal each attribute by
+// its type here, or refuse the write and name the door that already does
+// both; refusing is the smaller thing and the more secure one, because it
+// also stops the write from getting past the checks (rcbj's decision on
+// #237). **`userPassword` IS NOT HERE**: the socket is one of its doors, and
+// it meets the password policy in `passwordWriteRefusal()` and is signalled.
+//
+// Matched by exact lower-cased name, or by the two prefixes that name a
+// person's RFC 7523 / RFC 7522 signing key pair and everything recorded
+// about it. Answered unwillingToPerform (53) — the server CAN, and will not,
+// and says where to go instead — and recorded as STS-LDAP-0111.
+// ---------------------------------------------------------------------------
+const CREDENTIAL_ATTRIBUTE_DOORS = {
+  stswebauthncredential: '/portal/keys, the sign-in ' +
+    'screen, or /admin/users (remove)',
+  ststotpcredential: '/portal/mfa, or /admin/users (clear)',
+  stsbackupcodes: '/portal/mfa, or /admin/users (clear)',
+  stsapppassword: '/portal/app-passwords, or /admin/users',
+  hobapublickey: 'the SCIM HOBA registration (/scim/v2 with Hobareg)',
+  stsselfissuedsubject: '/portal/self-issued, or /admin/users',
+  stsmailfactor: '/portal/mfa, or /admin/users',
+  stsmailfactorfailures: 'the emailed factor\'s own sign-in step',
+  stskrb5keys: 'a verified sign-in, or the Kerberos keys controls on ' +
+    '/admin/users',
+  stskrb5keyinfo: 'a verified sign-in, or the Kerberos keys controls on ' +
+    '/admin/users',
+  stscibausercode: '/portal/ciba',
+  stsacmeeabkey: '/portal/certificates, or the ACME console page',
+  appacmeeabkey: 'the ACME console page',
+  stsscepchallenge: '/portal/certificates, or the SCEP console page',
+  appscepchallenge: 'the SCEP console page',
+  stsenrolledcertificate: 'an enrollment protocol (ACME, EST, SCEP), or ' +
+    'its revoke on the portal or the console',
+  stsenrolledprivatekey: 'EST /serverkeygen',
+  appenrolledprivatekey: 'EST /serverkeygen',
+  stsdevicesecrethash: 'Native SSO, or /admin/devices',
+  stsdevicekey: '/portal/devices, or /admin/devices',
+  stsdevicecredentialid: '/portal/devices, or /admin/devices'
+};
+const CREDENTIAL_ATTRIBUTE_PREFIXES = {
+  stsassertion: '/portal/signing-key, or the signing key controls on ' +
+    '/admin/users',
+  stssamlassertion: '/portal/signing-key, or the signing key controls on ' +
+    '/admin/users'
+};
+
+// The door for a credential attribute, or '' for one that is not.
+function credentialAttributeDoor(type) {
+  log.debug("Entering credentialAttributeDoor().");
+  const name = String(type || '').toLowerCase();
+  if (Object.prototype.hasOwnProperty.call(CREDENTIAL_ATTRIBUTE_DOORS,
+                                           name)) {
+    log.debug("Leaving credentialAttributeDoor(). Named.");
+    return CREDENTIAL_ATTRIBUTE_DOORS[name];
+  }
+  const prefix = Object.keys(CREDENTIAL_ATTRIBUTE_PREFIXES)
+    .filter(function (one) {
+      return name.indexOf(one) === 0;
+    })[0];
+  log.debug("Leaving credentialAttributeDoor().");
+  return prefix ? CREDENTIAL_ATTRIBUTE_PREFIXES[prefix] : '';
+}
+
+// An add or modify writing a credential attribute. `types` is the
+// lower-cased attribute names the operation writes.
+function credentialWriteRefusal(req, operation, dn, types) {
+  log.debug('Entering credentialWriteRefusal(). ' + operation + ' ' + dn);
+  const named = (types || []).filter(function (type, index, all) {
+    return credentialAttributeDoor(type) !== '' &&
+           all.indexOf(type) === index;
+  });
+  if (!named.length) {
+    log.debug('Leaving credentialWriteRefusal(). None named.');
+    return null;
+  }
+  const doors = named.map(function (type) {
+    return type + ': ' + credentialAttributeDoor(type);
+  });
+  log.info('ldap: refusing a ' + operation + ' of ' + dn + ' that writes ' +
+           'the credential attribute(s) ' + named.join(', ') + '.');
+  log.debug('Leaving credentialWriteRefusal(). Refused.');
+  return ldapRefusal(req, 'STS-LDAP-0111', 'a ' + operation + ' of ' + dn +
+    ' named the credential attribute(s) ' + named.join(', ') + ', which ' +
+    'are written only through their own doors',
+    new ldap.UnwillingToPerformError(
+      named.join(', ') + ' is a credential and is not written over LDAP; ' +
+      'use ' + doors.join('; ')),
+    dn);
+}
+
 // What `websecurity` counts a bind against: the connection's address, which is
 // on the real socket and on the dispatched stub alike (`operationRequest()`
 // carries it). An empty address would put every dispatched bind in one bucket,
@@ -11422,15 +11523,48 @@ function notePasswordWritten(req, dn, username, changeType) {
       username: String(username || ''), credentialType: 'password',
       changeType: changeType, initiatingEntity: self ? 'user' : 'admin',
       via: ldapChannelOf(req),
-      reasonAdmin: 'A password was ' + (changeType === 'create' ? 'set' :
-                   'changed') + ' for ' + username + ' over LDAP.',
-      reasonUser: 'Your password was ' + (changeType === 'create' ? 'set' :
-                  'changed') + '.' });
+      reasonAdmin: 'A password was ' + (changeType === 'create' ? 'set'
+        : changeType === 'revoke' ? 'removed' : 'changed') + ' for ' +
+        username + ' over LDAP.',
+      reasonUser: 'Your password was ' + (changeType === 'create' ? 'set'
+        : changeType === 'revoke' ? 'removed' : 'changed') + '.' });
   } catch (e) {
     log.debug('Caught in notePasswordWritten(): ' + ((e && e.message) || e));
     // The write stands whether or not a receiver is told.
   }
   log.debug('Leaving notePasswordWritten().');
+}
+
+// The first value of an attribute, whatever case its name was stored in,
+// or undefined when the entry does not hold it.
+function firstValueOf(attributes, lower) {
+  log.debug("Entering firstValueOf(). " + lower);
+  const attrs = attributes || {};
+  const key = Object.keys(attrs).filter(function (name) {
+    return name.toLowerCase() === lower;
+  })[0];
+  const values = key ? (attrs[key] || []) : [];
+  log.debug("Leaving firstValueOf().");
+  return values.length ? String(values[0]) : undefined;
+}
+
+// RISC account-credential-change-required for a `pwdReset` an LDAP write set
+// (#237), through the same funnel and the same lazy require as
+// `notePasswordWritten()`.
+function notePasswordChangeRequired(req, dn, username) {
+  log.debug('Entering notePasswordChangeRequired(). ' + dn);
+  try {
+    require('../ssf/account_signals').credentialChangeRequired({
+      username: String(username || ''), via: ldapChannelOf(req),
+      reasonAdmin: (boundDnOf(req) || 'An LDAP client') + ' set pwdReset ' +
+                   'on ' + username + ' over LDAP: the password must be ' +
+                   'changed at the next sign-in.' });
+  } catch (e) {
+    log.debug('Caught in notePasswordChangeRequired(): ' +
+              ((e && e.message) || e));
+    // The write stands whether or not a receiver is told.
+  }
+  log.debug('Leaving notePasswordChangeRequired().');
 }
 
 function boundDnOf(req) {
@@ -12571,6 +12705,14 @@ function ldapAddNow(req, res, next) {
     log.debug('Leaving the LDAP add handler. An operational attribute.');
     return next(addOperationalRefusal);
   }
+  const addCredentialRefusal = credentialWriteRefusal(req, 'add', dn,
+    (req.attributes || []).map(function (attr) {
+      return String(attr.type || '').toLowerCase();
+    }));
+  if (addCredentialRefusal) {
+    log.debug('Leaving the LDAP add handler. A credential attribute.');
+    return next(addCredentialRefusal);
+  }
   // Every realm's context, not baseDn(): THIS IS THE SOCKET, and the socket
   // has no realm. An
   // LDAP client operating on `dc=acme,dc=example,dc=com` arrives with no
@@ -12697,6 +12839,12 @@ function ldapAddNow(req, res, next) {
   if (addedPassword.password) {
     credentials.passwordWritten(addedPassword.name, addedPassword.password);
     notePasswordWritten(req, addedEntry.dn, addedPassword.name, 'create');
+  } else if (isPersonEntry(addedEntry) &&
+             firstValueOf(addedEntry.attributes, 'userpassword') !==
+               undefined) {
+    // A pre-hashed value kept as given (development only; #237).
+    notePasswordWritten(req, addedEntry.dn, usernameOfEntry(addedEntry),
+                        'create');
   }
   if (isPersonEntry(addedEntry)) {
     // Who wrote the address (#64): see ldapMailSource().
@@ -12887,6 +13035,14 @@ function ldapModifyNow(req, res, next) {
     log.debug('Leaving the LDAP modify handler. An operational attribute.');
     return next(modifyOperationalRefusal);
   }
+  const modifyCredentialRefusal = credentialWriteRefusal(req, 'modify', dn,
+    req.changes.map(function (change) {
+      return String(change.modification.type || '').toLowerCase();
+    }));
+  if (modifyCredentialRefusal) {
+    log.debug('Leaving the LDAP modify handler. A credential attribute.');
+    return next(modifyCredentialRefusal);
+  }
   const stored = getEntry(dn);
   if (!stored) {
     log.debug('Leaving the LDAP modify handler. There is no such entry.');
@@ -13014,10 +13170,37 @@ function ldapModifyNow(req, res, next) {
   stored.attributes = working;
   touchDirectory();
   stored.modifiedAt = working.modifytimestamp[0];
+  const passwordBefore = firstValueOf(beforeModify, 'userpassword');
+  const passwordAfter = firstValueOf(stored.attributes, 'userpassword');
   if (modifiedPassword.password) {
     credentials.passwordWritten(modifiedPassword.name,
                                 modifiedPassword.password);
-    notePasswordWritten(req, stored.dn, modifiedPassword.name, 'update');
+    notePasswordWritten(req, stored.dn, modifiedPassword.name,
+                        passwordBefore === undefined ? 'create' : 'update');
+  } else if (isPersonEntry(stored) && passwordBefore !== undefined &&
+             passwordAfter === undefined) {
+    // THE PASSWORD TAKEN AWAY (#237): `passwordWriteRefusal()` returns early
+    // when no value remains, so nothing above saw it. Revoked, in CAEP's
+    // words — the person can no longer sign in with it.
+    notePasswordWritten(req, stored.dn, usernameOfEntry(stored), 'revoke');
+  } else if (isPersonEntry(stored) && passwordAfter !== undefined &&
+             passwordAfter !== passwordBefore) {
+    // A PRE-HASHED VALUE KEPT AS GIVEN (development only; product refuses
+    // it, STS-LDAP-0011): not hashed here, so not announced above, and
+    // still a password changed (#237).
+    notePasswordWritten(req, stored.dn, usernameOfEntry(stored),
+                        passwordBefore === undefined ? 'create' : 'update');
+  }
+  // `pwdReset` SET BY A WRITE OF THE SOCKET (#237). An administrator's
+  // `ldapmodify` of it forces the person to change their password at the
+  // next sign-in exactly as the console's reset does, and that door sends
+  // RISC `account-credential-change-required`; this one now does too.
+  if (isPersonEntry(stored) &&
+      String(firstValueOf(beforeModify, 'pwdreset') || '').toUpperCase() !==
+        'TRUE' &&
+      String(firstValueOf(stored.attributes, 'pwdreset') || '')
+        .toUpperCase() === 'TRUE') {
+    notePasswordChangeRequired(req, stored.dn, usernameOfEntry(stored));
   }
   if (isPersonEntry(stored)) {
     // Who wrote the address (#64): an administrator's is verified, a

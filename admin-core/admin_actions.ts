@@ -5207,6 +5207,12 @@ class AdminActions {
           if (set.ok) {
             credentials.setPasswordResetRequired(seeded.username, true);
             password = generated;
+            // CAEP `credential-change` (#237): a realm this young has no
+            // stream yet, so this is sent nowhere today — and it is sent
+            // through the same funnel as the startup bootstrap, so a stream
+            // made before the next one is told.
+            credentials.noteBootstrapPassword(seeded.username,
+              'when the "' + result.realm.id + '" realm was created');
           } else {
             log.error(errorCodes.tag('STS-ADMIN-0789') + 'admin: the "' +
                       result.realm.id + '" realm\'s bootstrap administrator ' +
