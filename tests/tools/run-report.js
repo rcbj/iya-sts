@@ -152,6 +152,13 @@
 //                          instrumentation is what makes a job slow and
 //                          the launcher is what knows a run is instrumented.
 //   --quiet                do not echo each job's output as it runs
+//   --unit-concurrency=<n> how many in-process files run at once (default
+//                          STS_TEST_UNIT_CONCURRENCY, else a quarter of the
+//                          CPUs, 1 to 6). They run BESIDE the protocol half;
+//                          see THE SCHEDULE below main().
+//   --serial               every job one at a time, in order, as this runner
+//                          did until 2026-09-26: no unit pool, no protocol
+//                          lanes, and the unit half before the protocol half
 //   --help
 //
 // ---------------------------------------------------------------------------
@@ -237,7 +244,10 @@ function parseArgs(argv) {
   const opts = { only: [], list: false, protocol: 'on', parent: '',
                  reportDir: path.join(TESTS_DIR, 'report'),
                  timeoutMs: 300000, quiet: false, help: false,
-                 browser: true,
+                 browser: true, serial: false,
+                 unitConcurrency:
+                   Number(process.env.STS_TEST_UNIT_CONCURRENCY) ||
+                   Math.max(1, Math.min(6, Math.floor(os.cpus().length / 4))),
                  // The environment is the FALLBACK and the option is the
                  // answer, which is the same precedence every other setting
                  // in this repository has.
@@ -252,6 +262,11 @@ function parseArgs(argv) {
       opts.quiet = true;
     } else if (a === '--no-browser') {
       opts.browser = false;
+    } else if (a === '--serial') {
+      opts.serial = true;
+    } else if (a.indexOf('--unit-concurrency=') === 0) {
+      opts.unitConcurrency = Math.max(1,
+        Number(a.slice('--unit-concurrency='.length)) || 1);
     } else if (a === '--protocol') {
       opts.protocol = 'on';
     } else if (a === '--no-protocol') {
@@ -415,14 +430,18 @@ function vendoredJobs(options) {
                 timeoutMs: Number(entry.timeoutMs) || 0,
                 // Keeps its connections under STS_TEST_FRESH_CONNECTIONS —
                 // see where the preload is decided, below.
-                reuseConnections: !!entry.reuseConnections });
+                reuseConnections: !!entry.reuseConnections,
+                // Which protocol jobs run at the same time — see WHICH JOBS
+                // RUN AT THE SAME TIME in MANIFEST.js, and runScheduled().
+                lane: String(entry.lane || 'main'),
+                exclusive: !!entry.exclusive });
   });
   const browserJobs = jobs.filter(function (j) { return j.browser; });
   if (browserJobs.length) {
     log.info(browserJobs.length + ' of these need a BROWSER (' +
              browserJobs.map(function (j) { return j.name; }).join(', ') +
-             '). They are run ONE AT A TIME like every other job here — this ' +
-             'runner is serial — and they are the slowest jobs in the run. ' +
+             '). They are in the `main` lane, so no two of them run at once ' +
+             '— and they are among the slowest jobs in the run. ' +
              '--no-browser leaves them out.');
   }
   if (skippedBrowserJobs.length) {
@@ -614,13 +633,23 @@ function runJob(job, opts) {
       stdio: ['ignore', 'pipe', 'pipe']
     });
     let buffered = '';
+    // WHOLE LINES ONLY ON THE CONSOLE, because several jobs write to it at
+    // once since 2026-09-26: a chunk ending mid-line, followed by another
+    // job's chunk, would splice two JSON records into one line nobody can
+    // parse. Each job's own log file gets its bytes exactly as they came.
+    let echoed = '';
     const assertions = [];
     function onData(chunk) {
       log.debug("Entering onData().");
       const text = chunk.toString();
       stream.write(text);
       if (!opts.quiet) {
-        process.stdout.write(text);
+        echoed += text;
+        const cut = echoed.lastIndexOf('\n');
+        if (cut >= 0) {
+          process.stdout.write(echoed.slice(0, cut + 1));
+          echoed = echoed.slice(cut + 1);
+        }
       }
       buffered += text;
       // Whole lines only: a bunyan record split across two reads is not JSON
@@ -687,6 +716,9 @@ function runJob(job, opts) {
     child.on('close', function (code, signal) {
       if (timer) {
         clearTimeout(timer);
+      }
+      if (echoed && !opts.quiet) {
+        process.stdout.write(echoed + '\n');
       }
       if (buffered) {
         const a = assertionOf(buffered);
@@ -1442,6 +1474,133 @@ const UNIT_WATCHDOG_MS = {
   wycheproof: 600000
 };
 
+// ---------------------------------------------------------------------------
+// THE SCHEDULE (2026-09-26). This runner ran every job one at a time until
+// then, and a mode took 4650s: 1170s of in-process files, 3475s of protocol
+// jobs, 1840s of that the three directory bulk loads. Three things now run
+// at once, and each is the smallest claim that holds:
+//
+//   THE UNIT HALF IS A POOL, BESIDE THE PROTOCOL HALF. An in-process file is
+//   a process of its own that touches no service: it binds ephemeral ports,
+//   writes under mkdtemp, and reads no state another file writes. So
+//   `--unit-concurrency` of them run at once, the longest first, while the
+//   protocol jobs run. `UNIT_ALONE` names the files whose assertions are
+//   about TIMING — an event loop that ticked, a proxy under load — and those
+//   run after the pool, one at a time, so no other unit file competes.
+//
+//   THE PROTOCOL HALF IS LANES. Every job is in lane `main` unless
+//   MANIFEST.js names another; the lanes run side by side and each runs its
+//   jobs in the manifest's order. `main` keeps the ordering every job was
+//   written against, and every browser job, so no two browsers run at once.
+//
+//   AN EXCLUSIVE JOB IS A BARRIER. MANIFEST.js marks the jobs that change
+//   what every other job depends on — `revoke-all`, `build-root` — and the
+//   lanes drain before one starts and resume after it ends.
+//
+// The results come back in the list's order whatever order they finished in,
+// so the report reads as it always did. `--serial` is the old behaviour.
+// ---------------------------------------------------------------------------
+const UNIT_ALONE = new Set([
+  'worker_pool', 'request_barrier', 'request_proxy_replay',
+  'request_worker_replacement', 'key_residency'
+]);
+
+async function runScheduled(jobs, runOne, opts) {
+  log.debug('Entering runScheduled().');
+  const results = new Array(jobs.length);
+  const indexed = jobs.map(function (job, i) {
+    return { job: job, n: i + 1 };
+  });
+  async function one(item) {
+    log.debug('Entering one(). ' + item.job.name);
+    results[item.n - 1] = await runOne(item.job, item.n);
+    log.debug('Leaving one().');
+  }
+  async function inOrder(items) {
+    log.debug('Entering inOrder(). ' + items.length + ' job(s).');
+    for (const item of items) {
+      await one(item);
+    }
+    log.debug('Leaving inOrder().');
+  }
+  if (opts.serial) {
+    await inOrder(indexed);
+    log.debug('Leaving runScheduled(). Serial.');
+    return results;
+  }
+
+  async function unitHalf() {
+    log.debug('Entering unitHalf().');
+    const units = indexed.filter(function (i) {
+      return i.job.suite === 'unit';
+    });
+    const alone = units.filter(function (i) {
+      return UNIT_ALONE.has(i.job.name);
+    });
+    // The longest first, so the pool is not left waiting on one of them at
+    // the end; the rest in their own order.
+    const pooled = units.filter(function (i) {
+      return !UNIT_ALONE.has(i.job.name);
+    }).sort(function (a, b) {
+      return (Number(b.job.timeoutMs) || 0) - (Number(a.job.timeoutMs) || 0);
+    });
+    let next = 0;
+    async function worker() {
+      log.debug('Entering worker().');
+      while (next < pooled.length) {
+        const item = pooled[next++];
+        await one(item);
+      }
+      log.debug('Leaving worker().');
+    }
+    const workers = [];
+    for (let w = 0; w < Math.min(opts.unitConcurrency, pooled.length); w++) {
+      workers.push(worker());
+    }
+    await Promise.all(workers);
+    await inOrder(alone);
+    log.debug('Leaving unitHalf().');
+  }
+
+  async function protocolHalf() {
+    log.debug('Entering protocolHalf().');
+    const protocol = indexed.filter(function (i) {
+      return i.job.suite !== 'unit';
+    });
+    let segment = [];
+    async function runSegment() {
+      log.debug('Entering runSegment(). ' + segment.length + ' job(s).');
+      const lanes = new Map();
+      segment.forEach(function (item) {
+        const lane = item.job.lane || 'main';
+        if (!lanes.has(lane)) {
+          lanes.set(lane, []);
+        }
+        lanes.get(lane).push(item);
+      });
+      await Promise.all(Array.from(lanes.values()).map(inOrder));
+      segment = [];
+      log.debug('Leaving runSegment().');
+    }
+    for (const item of protocol) {
+      if (item.job.exclusive) {
+        await runSegment();
+        log.info('[' + item.n + '/' + jobs.length + '] ' + item.job.name +
+                 ' runs ALONE: the lanes have drained and wait for it.');
+        await one(item);
+      } else {
+        segment.push(item);
+      }
+    }
+    await runSegment();
+    log.debug('Leaving protocolHalf().');
+  }
+
+  await Promise.all([unitHalf(), protocolHalf()]);
+  log.debug('Leaving runScheduled().');
+  return results;
+}
+
 async function main() {
   log.debug('Entering main().');
   const opts = parseArgs(process.argv.slice(2));
@@ -1679,13 +1838,32 @@ async function main() {
   }
   // ---- run them ---------------------------------------------------------
   const started = Date.now();
-  const results = [];
-  let n = 0;
-  for (const job of jobs) {
-    n++;
-    const logName = String(n).padStart(2, '0') + '-' + slug(job.name) + '.log';
+  // The log names are fixed by the job's place in the list BEFORE anything
+  // runs, since jobs no longer finish in that order.
+  jobs.forEach(function (job, i) {
+    const logName = String(i + 1).padStart(2, '0') + '-' + slug(job.name) +
+                    '.log';
     job.logFile = path.join(logsDir, logName);
     job.logName = logName;
+  });
+  // The trust bundle and the run's /admin-api token are ONE file and ONE
+  // variable shared by every job, so refreshing them is done by one job at a
+  // time: two refreshes interleaved could hand a child a bundle half written.
+  let refreshing = Promise.resolve();
+  function serially(work) {
+    log.debug('Entering serially().');
+    const next = refreshing.then(work, work);
+    refreshing = next.catch(function (e) {
+      log.debug('Caught in serially(): ' + ((e && e.message) || e));
+    });
+    log.debug('Leaving serially().');
+    return next;
+  }
+  // ONE JOB, FROM THE DECISION WHETHER IT RUNS TO ITS RESULT. It was the body
+  // of a `for` loop until 2026-09-26; runScheduled() decides when each is
+  // called. A job that is not run answers its result without spawning.
+  async function runOne(job, n) {
+    log.debug('Entering runOne(). ' + job.name);
     // A JOB THAT COULD NOT BE RUN IS A FAILURE, NOT A SKIP, and this used to
     // be the other way round. The throwaway service failing to start left
     // thirteen jobs marked `skipped`, which the summary counts as passing —
@@ -1713,11 +1891,11 @@ async function main() {
                   'impersonates a PEP and nothing evaluates what it pulled.';
       log.warn('[' + n + '/' + jobs.length + '] SKIPPING ' + job.name + ' — ' +
                why);
-      results.push(Object.assign({}, job, {
+      log.debug('Leaving runOne(). Not run.');
+      return Object.assign({}, job, {
         status: 'skipped', ms: 0, code: null, assertions: [],
         failures: [], why: why
-      }));
-      continue;
+      });
     }
     if (job.conformance && !process.env.CONFORMANCE_SUITE_URL) {
       // A DELIBERATE EXCLUSION, as the docker one above is (#176): the
@@ -1734,11 +1912,11 @@ async function main() {
                   'sts_fapi2_message_signing, sts_fapi_ciba).';
       log.warn('[' + n + '/' + jobs.length + '] SKIPPING ' + job.name + ' — ' +
                why);
-      results.push(Object.assign({}, job, {
+      log.debug('Leaving runOne(). Not run.');
+      return Object.assign({}, job, {
         status: 'skipped', ms: 0, code: null, assertions: [],
         failures: [], why: why
-      }));
-      continue;
+      });
     }
     if (job.samlPeer && !process.env[SAML_PEER_URLS[job.samlPeer]]) {
       // A DELIBERATE EXCLUSION, as the conformance one above is
@@ -1755,20 +1933,20 @@ async function main() {
                   'local SAML jobs and tests/saml_interop_findings.js.';
       log.warn('[' + n + '/' + jobs.length + '] SKIPPING ' + job.name + ' — ' +
                why);
-      results.push(Object.assign({}, job, {
+      log.debug('Leaving runOne(). Not run.');
+      return Object.assign({}, job, {
         status: 'skipped', ms: 0, code: null, assertions: [],
         failures: [], why: why
-      }));
-      continue;
+      });
     }
     if (job.suite === 'protocol' && !instance) {
       const why = protocolWhy || 'no service to drive';
-      results.push(Object.assign({}, job, {
+      log.debug('Leaving runOne(). Not run.');
+      return Object.assign({}, job, {
         status: 'failed', ms: 0, code: null, assertions: [],
         failures: ['did not run: ' + why],
         why: why
-      }));
-      continue;
+      });
     }
     if (job.suite === 'unit') {
       job.cwd = REPO_ROOT;
@@ -1815,14 +1993,18 @@ async function main() {
       // the job then runs and fails on the certificate, which is a worse
       // message than this one but is not a worse outcome than not running.
       // -------------------------------------------------------------------
-      if (trusted.tls) {
-        const fresh = await refreshTrust(instance.url, trusted);
-        if (fresh) {
-          trusted = fresh;
+      await serially(async function refreshForJob() {
+        log.debug('Entering refreshForJob().');
+        if (trusted.tls) {
+          const fresh = await refreshTrust(instance.url, trusted);
+          if (fresh) {
+            trusted = fresh;
+          }
         }
-      }
-      await refreshAdminApiToken(instance,
-        Math.max(opts.timeoutMs, Number(job.timeoutMs) || 0));
+        await refreshAdminApiToken(instance,
+          Math.max(opts.timeoutMs, Number(job.timeoutMs) || 0));
+        log.debug('Leaving refreshForJob().');
+      });
       job.cwd = job.dir;
       job.cmd = [process.execPath, path.join(job.dir, job.file)];
       job.env = Object.assign({}, process.env, {
@@ -2024,15 +2206,17 @@ async function main() {
       delete job.env.NODE_V8_COVERAGE;
     }
     log.info('[' + n + '/' + jobs.length + '] ' + job.suite + ' — ' + job.name);
-    /* eslint-disable no-await-in-loop */
     const result = await runJob(job, opts);
-    /* eslint-enable no-await-in-loop */
-    results.push(result);
+    // The name is on the result line because, with jobs running side by
+    // side, the line above it is often another job's.
     log.info('    ' + (result.status === 'passed' ? 'passed' : 'FAILED') +
              ' in ' + result.ms + 'ms' +
              (result.assertions.length ? ', ' + result.assertions.length +
-              ' assertion(s)' : ''));
+              ' assertion(s)' : '') + ' — ' + job.name);
+    log.debug('Leaving runOne(). ' + job.name);
+    return result;
   }
+  const results = await runScheduled(jobs, runOne, opts);
   const wallMs = Date.now() - started;
 
   // The service goes down BEFORE the coverage is rendered, because under
@@ -2076,6 +2260,10 @@ async function main() {
     host: os.hostname(),
     node: process.version,
     wallMs: wallMs,
+    // How the jobs were scheduled, so a wall time read later is read
+    // against what ran at once (see THE SCHEDULE above main()).
+    schedule: opts.serial ? { serial: true }
+      : { serial: false, unitConcurrency: opts.unitConcurrency },
     tree: describeTree(REPO_ROOT),
     // The protocol jobs are VENDORED COPIES in tests/vendored/ since
     // 2026-08-28, so they are at this tree's commit like everything else and

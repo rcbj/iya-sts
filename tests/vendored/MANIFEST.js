@@ -201,6 +201,30 @@ const CLIENT_SOURCE_DIR = path.join('client', 'src');
 // overwrite them. THE EDITING RULE IS THEREFORE INVERTED FOR EVERY `local`
 // JOB — they are changed HERE, and only here.
 // ---------------------------------------------------------------------------
+// WHICH JOBS RUN AT THE SAME TIME (2026-09-26). `tools/run-report.js` runs
+// the protocol jobs in LANES: every job is in lane `main` unless it names
+// another, the lanes run side by side, and a lane runs its jobs one at a
+// time in this file's order. Two keys decide it:
+//
+//   lane: '<name>'     the lane this job runs in. `bulk` holds the three
+//                      directory bulk loads — half the protocol half's time,
+//                      in their own realm-less names, touching nothing the
+//                      other jobs read — so they run beside everything else.
+//                      They stay one lane among themselves because each
+//                      raises `ldap.maxEntries` to what it is about to add,
+//                      and two raising at once can lower each other's.
+//   exclusive: true    nothing else in the protocol half runs while this job
+//                      does: every lane drains first, and none starts again
+//                      until it ends. For a job that changes what EVERY other
+//                      job depends on — `revoke-all` (which revokes each
+//                      job's own /admin-api token) and `build-root` (which
+//                      replaces the listener certificate a job's truststore
+//                      was pinned to when it started).
+//
+// A new job that does either of those owes `exclusive: true`; a new job that
+// is long, self-contained and in no way order-dependent may be given a lane.
+// `run-report.js --serial` runs everything one at a time, as before.
+// ---------------------------------------------------------------------------
 const JOBS = [
   // FIRST, AND ABOUT THE STACK RATHER THAN THE SERVICE (2026-09-14, #46): that
   // the `cluster` mode's jobs really reach both nodes — both kinds of client,
@@ -208,7 +232,8 @@ const JOBS = [
   // one. A mode that is not what it says would otherwise be reported green by
   // every job after it. Its header argues why it is local and why it is first.
   { file: 'sts_cluster_alternation.js',  browser: false, local: true },
-  { file: 'admin_api.js',                browser: false, local: true },
+  { file: 'admin_api.js',                browser: false, local: true,
+    exclusive: true },
   { file: 'ldp_vc_issuance.js',          browser: false },
   { file: 'ldp_vc_refresh.js',           browser: false },
   { file: 'oauth2_sts_endpoints.js',     browser: false },
@@ -220,12 +245,13 @@ const JOBS = [
   // reasons: one goes red when an operation drifts from its document,
   // the other when the surface stops refusing.
   { file: 'sts_admin_api_auth.js',       browser: false, local: true },
-  { file: 'sts_admin_api_operations.js', browser: false, local: true },
+  { file: 'sts_admin_api_operations.js', browser: false, local: true,
+    exclusive: true },
   // AN HOUR (2026-09-19): it walks every console page in a real browser, and
   // against a three-node cluster across the internet (run-suite.sh testidp)
   // that took longer than the 20-minute default, killed while still passing.
   { file: 'sts_admin_console.js',        browser: true,  local: true,
-    timeoutMs: 3600000 },
+    timeoutMs: 3600000, exclusive: true },
   // A TRUST REALM'S OWN ADMINISTRATORS (2026-09-14, #32): the realm chooser,
   // a realm administrator confined to their realm in the console and through
   // a realm's own management API token, and the service administrator over
@@ -1069,13 +1095,13 @@ const JOBS = [
   // rather than reporting green having driven nothing.
   { file: 'sts_directory_bulk_load_scim.js', browser: false, local: true,
     timeoutMs: 1800000,
-    reuseConnections: true },
+    reuseConnections: true, lane: 'bulk' },
   { file: 'sts_directory_bulk_load_ldap.js', browser: false, local: true,
     timeoutMs: 1800000,
-    reuseConnections: true },
+    reuseConnections: true, lane: 'bulk' },
   { file: 'sts_directory_bulk_load_api.js',  browser: false, local: true,
     timeoutMs: 1800000,
-    reuseConnections: true },
+    reuseConnections: true, lane: 'bulk' },
   // FIFTY THOUSAND OVER LDAP, and LAST — it leaves the directory an order of
   // magnitude larger than the three above found it, so every job that walks a
   // page or reads a register has run before it. It drives

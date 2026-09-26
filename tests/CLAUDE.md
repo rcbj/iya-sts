@@ -619,6 +619,33 @@ the list would be exactly the "second place to forget" this directory was
 designed not to have. `readdirSync` is not recursive and `/\.js$/` does not
 match a directory, so a subdirectory costs the discovery rule nothing.
 
+**JOBS RUN SIDE BY SIDE SINCE 2026-09-26** (`runScheduled()` in
+`tools/run-report.js`; `--serial` is the old one-at-a-time run). A mode took
+~4650s, 1170s of it in-process files and 1840s the three bulk loads, run one
+after another. Now:
+
+* **The in-process files are a pool BESIDE the protocol half** —
+  `--unit-concurrency` (`STS_TEST_UNIT_CONCURRENCY`; default a quarter of the
+  CPUs, 1–6) at once, longest first. A unit file touches no service, so it
+  cannot collide with a protocol job. `UNIT_ALONE` names the ones whose
+  assertions are about TIMING (`worker_pool`, `request_barrier`,
+  `request_proxy_replay`, `request_worker_replacement`, `key_residency`); they
+  run after the pool, one at a time. A file that flakes only under the pool
+  goes on that list, with the reason.
+* **The protocol jobs run in LANES**, named in `MANIFEST.js` (`lane:`,
+  default `main`); lanes run side by side, each serial in manifest order. The
+  three bulk loads are lane `bulk`. `main` keeps every browser job, so no two
+  browsers ever run at once.
+* **An `exclusive: true` job is a barrier**: the lanes drain before it and
+  wait for it. `admin_api`, `sts_admin_api_operations` and
+  `sts_admin_console` are exclusive because they `revoke-all` (every job's own
+  /admin-api token) or `build-root` (the listener certificate every running
+  job's truststore was pinned to). **A new job doing either owes the flag.**
+* The trust bundle and the run's token are refreshed one job at a time
+  (`serially()`), echoed output is written whole lines only, and the report is
+  in list order however the jobs finished. `summary.json`'s `meta.schedule`
+  records what ran at once.
+
 Three things about the report runner are decisions rather than mechanics:
 
 * **It runs each test file in a PROCESS OF ITS OWN**, where `npm test` runs
