@@ -7,8 +7,8 @@ Dockerfile removes this directory from the image.
 | Path | Lifetime | What it is | Applied by |
 |---|---|---|---|
 | `bootstrap-state.sh` | once | the S3 state bucket `mock-sts-terraform-state-<account>` — not Terraform, because it holds Terraform's state | an administrator |
-| `foundation/` | long-lived | the deployer IAM user, the role it assumes, the permissions boundary, the KMS key, the ECR repository, the container log group, the test report bucket `mock-sts-test-reports-<account>` | an administrator |
-| `environment/` | per run | VPC, NLB (443, 389, 636, the plain-HTTP CRL/OCSP port on 80, and TCP 88 for the KDC — the same in every environment since 2026-09-21), and with `public_hostname` a public ACM certificate and a CNAME (`dns.tf`), RDS primary + replica, secrets, ECS cluster, task and execution roles, three services | the deployer role |
+| `foundation/` | long-lived | the deployer IAM user, the role it assumes, the two permissions boundaries (the workload one, and the ECS infrastructure role's since #214), the KMS key, the ECR repository, the container log group, the test report bucket `mock-sts-test-reports-<account>` | an administrator |
+| `environment/` | per run | VPC, NLB (443, 389, 636, the plain-HTTP CRL/OCSP port on 80, and TCP 88 for the KDC — the same in every environment since 2026-09-21), and with `public_hostname` a public ACM certificate and a CNAME (`dns.tf`), RDS primary + replica, secrets, ECS cluster, task and execution roles, the ECS infrastructure role, three services — each task with an EBS volume for risk dataset uploads (#214) | the deployer role |
 | `spiffe-realm/` | per realm | one trust realm's two SPIFFE ports (Workload API, SPIRE Server API) on an existing environment's NLB: two listeners, two target groups with the nodes registered BY ADDRESS, and the security-group rules — state at `environment/<env>/spiffe-realm/<realm>.tfstate` (*A realm's SPIFFE ports*, below) | the deployer role |
 | `environment/envs/<env>.tfvars` | per environment | what a named environment sets differently; `entrypoint.sh` passes it when it exists. `dev` and `ci` have none | the deployer role |
 | `schema-init/` | per image | a `postgres:18` image that applies `postgres/schema.sql` as the RDS master user | built by CI |
@@ -259,6 +259,78 @@ environment that no longer exists.
 
 **Logs outlive the environment**: the log group is in `foundation/`, streams
 are `<environment>-<node>/<container>/<task-id>`, retention 14 days.
+
+**A RISK DATASET UPLOAD LANDS ON AN EBS VOLUME OF THE TASK'S OWN (#214,
+2026-09-26).** #215 gave the console and `/admin-api` an upload that streams
+the file to `risk.uploadDirectory`, expands it line by line into PostgreSQL
+and deletes it; the compose stacks mount a volume there. Here each node task
+gets an Amazon EBS volume through ECS's EBS integration for Fargate: the task
+definition declares `risk-uploads` with `configure_at_launch`, and each
+service's `volume_configuration { managed_ebs_volume }` makes it gp3,
+encrypted with the project KMS key, `risk_upload_volume_gib` (10) with
+`_throughput` (125) and `_iops` (3000) — gp3's free baseline. It is mounted
+read-write in `mock-sts` at `/usr/src/sts/data/risk-uploads` and named to the
+service as `STS_RISK_UPLOAD_DIRECTORY`, both from `locals.tf`. ECS creates it
+as the task starts and deletes it as the task stops, so it is temporary space
+and holds no state — which is what the upload needs: a file is deleted when
+its import ends however it ends, and a task that dies mid-import is covered by
+the `risk.stalled-imports` job (`risk/CLAUDE.md`). **The size is five times
+`risk.uploadMaxBytes` (2 GiB)**: the largest file allowed, room for two uploads
+to the same node at once, and the filesystem's overhead; the largest dataset
+documented, DB-IP Lite's city file, is a few hundred megabytes compressed, and
+nothing expanded is ever written. Raising `risk.uploadMaxBytes` through
+`extra_environment` without the volume turns large uploads into
+`STS-RISK-0029` refusals, which is the failure and not a silent one. `testidp`
+takes the defaults; no `envs/*.tfvars` differs.
+
+The two alternatives, and why each was refused:
+
+* **Raising `ephemeral_storage` (up to 200 GiB).** Simpler — no role, no
+  volume configuration — but that storage is SHARED with the container image
+  layers and everything else the task writes, so a large upload competes with
+  the image for the same space and a full disk is a node that cannot start its
+  next write rather than an upload refused; it is encrypted by Fargate with an
+  AWS-owned key rather than the project's; and its size cannot be given to the
+  upload alone. **`ephemeral_storage` stays at the default (20 GiB)**, and the
+  upload never uses it.
+* **EFS.** Persistent and shared across nodes, and this needs neither: an
+  upload is imported by the node that received it, into the shared database,
+  and the file is deleted when that ends. A shared file system would add a
+  mount target per AZ, a security-group pair, an access point and a monthly
+  bill for a property nothing reads, and a file left on it by a crashed node
+  would outlive the node — the opposite of what the cleanup job assumes.
+
+**THE VOLUME TAKES A THIRD ROLE, AND A SECOND BOUNDARY.** ECS creates,
+attaches and deletes the volume with an **infrastructure role**,
+`mock-sts-env-<env>-ecs-infra` (`environment/iam.tf`), assumed by
+`ecs.amazonaws.com` — the scheduler, not a task. Its policy is AWS's managed
+`AmazonECSInfrastructureRolePolicyForVolumes` narrowed to this environment:
+`CreateVolume`/`CreateTags` only with `AmazonECSManaged = true` and an
+`AmazonECSCreated` task ARN in THIS environment's cluster, attach/detach/delete
+only of volumes carrying those tags, no snapshot statement, and the project key
+only through EC2 (`kms:ViaService`), for an EBS encryption context, the grant
+only for an AWS resource. Its ceiling is **`mock-sts-ecs-infrastructure-
+boundary`** (`foundation/iam_deployer.tf`), NOT the workload boundary: widening
+the workload boundary would have let any task role be given EC2 volume and key
+calls no container needs. The deployer may create a role of that one name only
+with that boundary, pass it only to `ecs.amazonaws.com`, and is DENIED passing
+it to anything else — so it can never become a task's role.
+**`foundation/` must be re-applied by an administrator before the first
+environment apply with the volume**: until then the boundary lookup in
+`environment/locals.tf` fails on plan, naming the policy.
+
+**UNTESTED ON AWS WHEN WRITTEN.** By rcbj's instruction it was written and
+checked statically only (`terraform fmt -check`, `init -backend=false`,
+`validate` in both roots); the first `--target=aws-ephemeral` run is its test.
+Three things to look at first if it fails: an AccessDenied naming an EC2 or
+KMS action on the volume (the `AmazonECSCreated` condition assumes ECS writes
+the task's ARN, `task/<cluster>/<id>`, into that tag, as the managed policy
+does; and the KMS `EncryptionContextKeys` condition assumes EBS's `aws:ebs:id`
+context); a deployer AccessDenied on `iam:PassRole` (foundation not
+re-applied); and **every node replaced on the first apply**, which is expected
+— a new task definition revision in `dev` and `ci` too, because the volume is
+unconditional: the upload job runs against every environment the suite is
+pointed at.
 
 ## A deployment beside the tests: `testidp` (2026-09-16)
 

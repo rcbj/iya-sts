@@ -13,6 +13,11 @@ output "workload_boundary_arn" {
   value       = aws_iam_policy.workload_boundary.arn
 }
 
+output "ecs_infrastructure_boundary_arn" {
+  description = "The permissions boundary an environment's ECS infrastructure role (upload volumes, #214) must carry."
+  value       = aws_iam_policy.ecs_infrastructure_boundary.arn
+}
+
 output "kms_key_arn" {
   description = "The project key: secrets, RDS storage and backups, container logs."
   value       = aws_kms_key.main.arn

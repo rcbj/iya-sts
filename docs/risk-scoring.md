@@ -450,7 +450,8 @@ the file is stored, such as terms nobody has accepted, is the answer itself.
 
 The upload is written to `risk.uploadDirectory` while it is imported, and
 deleted when the import ends. Every stack this repository ships mounts a
-volume there. Give it room for the largest file you will upload, as
+volume there; on AWS it is an encrypted EBS volume per node, created and
+deleted with the node's task ([A cluster in AWS](aws-cluster.md#where-a-risk-dataset-upload-goes)). Give it room for the largest file you will upload, as
 compressed. Several limits apply:
 
 | Setting | Default | What it refuses |
