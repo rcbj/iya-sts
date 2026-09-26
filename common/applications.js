@@ -9590,7 +9590,7 @@ function announceScopeRemoval(identifier, record, attribute, value) {
       if (defined && defined.baseUri) {
         removed = defined.name;
         match = function (token) {
-          return token.setId === 'access_token' &&
+          return token.claimSet === 'access_token' &&
                  token.client_id === identifier &&
                  audiences(token, defined.baseUri) && has(token.scope, removed);
         };
@@ -9601,7 +9601,7 @@ function announceScopeRemoval(identifier, record, attribute, value) {
       removed = parsePermissionValue(value).name;
       if (base && removed) {
         match = function (token) {
-          return token.setId === 'access_token' &&
+          return token.claimSet === 'access_token' &&
                  audiences(token, base) && has(token.scope, removed);
         };
       }
@@ -9610,7 +9610,7 @@ function announceScopeRemoval(identifier, record, attribute, value) {
       if (judged.kept.indexOf(value) < 0) {
         removed = value;
         match = function (token) {
-          return token.setId === 'access_token' &&
+          return token.claimSet === 'access_token' &&
                  token.client_id === identifier && has(token.scope, removed);
         };
       }

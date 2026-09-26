@@ -2535,7 +2535,7 @@ function announceReleaseChange(id, before, after) {
                    .indexOf(application) >= 0;
         },
         names: function (bearer) {
-          const candidates = new Set(stats.claimNamesFor(bearer.setId,
+          const candidates = new Set(stats.claimNamesFor(bearer.claimSet,
                                                          bearer.username));
           (was || new Set()).forEach(function (name) {
             candidates.add(name);

@@ -3410,45 +3410,45 @@ function liveClaimBearers(match) {
   };
   const nowMs = Date.now();
   const newest = new Map();
-  const keep = function (username, sub, record, setId, at) {
+  const keep = function (username, sub, record, fromSet, at) {
     const held = newest.get(username);
     if (!held || at > held.at) {
       newest.set(username, { username: username, sub: sub, record: record,
-                             setId: setId, at: at });
+                             claimSet: fromSet, at: at });
     }
   };
   tokens.forEach(function (record) {
-    const setId = SET_OF_KIND[record.kind];
-    if (!setId || !record.username) {
+    const fromSet = SET_OF_KIND[record.kind];
+    if (!fromSet || !record.username) {
       return;
     }
     const state = tokenStateOf(record, nowMs);
     if (state !== 'valid' && state !== 'no expiry stated') {
       return;
     }
-    if (!accept(Object.assign({ setId: setId }, record))) {
+    if (!accept(Object.assign({}, record, { claimSet: fromSet }))) {
       return;
     }
-    keep(String(record.username), String(record.sub || ''), record, setId,
+    keep(String(record.username), String(record.sub || ''), record, fromSet,
          Number(record.iat || 0) * 1000);
   });
   allArtifacts().forEach(function (one) {
-    const setId = SET_OF_KIND[one.kind];
-    if (!setId || !one.subject) {
+    const fromSet = SET_OF_KIND[one.kind];
+    if (!fromSet || !one.subject) {
       return;
     }
     const state = artifactStateOf(withRevocation(one), nowMs);
     if (state === 'revoked' || state === 'expired') {
       return;
     }
-    const shaped = { setId: setId, kind: one.kind,
+    const shaped = { claimSet: fromSet, kind: one.kind,
                      username: String(one.subject),
                      audience: String(one.audience || ''),
                      client_id: String(one.audience || ''), scope: '' };
     if (!accept(shaped)) {
       return;
     }
-    keep(String(one.subject), '', shaped, setId,
+    keep(String(one.subject), '', shaped, fromSet,
          Number(one.issuedAt || 0));
   });
   const out = Array.from(newest.values());
@@ -3544,14 +3544,14 @@ function announceClaimsReshaped(change) {
       reasonUser: 'How information about you is put into tokens changed, ' +
                   'and tokens already issued to you carry the old form.',
       match: function (token) {
-        return sets.indexOf(token.setId) >= 0 &&
+        return sets.indexOf(token.claimSet) >= 0 &&
                (typeof asked.match !== 'function' || asked.match(token));
       },
       claimsFor: function (bearer) {
         const names = typeof asked.names === 'function'
           ? asked.names(bearer) : asked.names;
         return names && names.length
-          ? claimValuesFor(bearer.setId, bearer.record, names) : null;
+          ? claimValuesFor(bearer.claimSet, bearer.record, names) : null;
       } });
   } catch (e) {
     log.warn('admin: a token-claims-change for "' + String(asked.why || '') +
