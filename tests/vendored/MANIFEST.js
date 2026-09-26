@@ -396,6 +396,14 @@ const JOBS = [
   // scheduler job. `local: true`: this repository's own transmitter and
   // portal, in a throwaway realm.
   { file: 'sts_risc_acts.js',            browser: false, local: true },
+  // RISC, THE HOLDER'S CHOICE, SETS AND RECOVERY (#233, #234, #235,
+  // 2026-09-26): a register reset and clear keep a pending and an effective
+  // opt-out; every value of mail, telephoneNumber and mobile compared as a
+  // set over SCIM (a second address, a mobile, a removal, its recycling);
+  // a first and a changed address, an activation link for somebody who
+  // exists and a recovery code spent at sign-in. `local: true`: this
+  // repository's own transmitter, portal and sign-in, in a throwaway realm.
+  { file: 'sts_risc_register_recovery.js', browser: false, local: true },
   // THE SCHEDULER (#49, 2026-09-22): Monitoring → Scheduler and GET
   // /admin-api/scheduler agree, Run now runs once on the leader, a realm's
   // token is confined, and in the `cluster` mode both nodes name one leader
