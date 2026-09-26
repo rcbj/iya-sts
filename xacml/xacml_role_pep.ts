@@ -589,7 +589,12 @@ class XacmlRolePep {
       return o && o.id === RISK.ALARM_OBLIGATION;
     });
     const facts = asked.risk as RiskFacts;
-    if (!alarmed || dryRun || !facts || !facts.enforced) {
+    // ONCE PER SIGN-IN: the session's decision. Every code and token issued
+    // on that session carries the same facts and is permitted by the same
+    // rule, and six warnings for one sign-in is how an alarm stops being
+    // read.
+    const onSession = asked.kind === this.deps.gate.ISSUANCE.SESSION;
+    if (!alarmed || dryRun || !facts || !facts.enforced || !onSession) {
       log.debug("Leaving XacmlRolePep.raiseAlarm(). No alarm.");
       return;
     }

@@ -40,7 +40,9 @@
 //      person holds, and a person holding none is PERMITTED with the alarm
 //      (STS-RISK-0038). Any other application is refused as before. And
 //      the whole sign-in over HTTP: /admin, a password at HIGH, the code,
-//      the console's callback.
+//      the console's callback — and a crossing into HIGH there ends what
+//      the person held BEFORE, never the session it just permitted, with
+//      one alarm per sign-in.
 //   J. `risk.listsMatchSpecialPurpose` OFF sets a list aside for a
 //      loopback address — the one #226 put everybody behind a bridge on —
 //      and the assessment says which lists were set aside.
@@ -539,6 +541,76 @@ function childMain() {
          ivyAsked.status + ' ' + ivyDone.status + ' ' +
          String(ivyDone.headers.location || '') + ' ' +
          String(ivyDone.text || '').slice(0, 160));
+
+    // CROSSING INTO HIGH AT THE CONSOLE ENDS WHAT WAS HELD BEFORE, NOT THE
+    // SIGN-IN ITSELF (#226, what the `admin` user hit): a person with no
+    // second factor and a session elsewhere signs in to the console, goes
+    // from nothing to HIGH, is permitted with the alarm — and the
+    // risk-response reaction, taken a moment later, used to end that very
+    // session with the rest, so the console's code was gone before the
+    // callback redeemed it.
+    ldap.createUser('rd-jay', { invent: false });
+    config.setOverride('risk.listsMatchSpecialPurpose', false);
+    const jayEarlier = browser(port, CHROME);
+    await follow(jayEarlier, await signIn(jayEarlier, 'rd-jay'));
+    const earlierIds = authn.sessionsOf('rd-jay').map(function (one) {
+      return String(one.id || one);
+    });
+    config.setOverride('risk.listsMatchSpecialPurpose', true);
+    const jayAlarmsBefore = audit.list().filter(function (row) {
+      return row.action === 'xacml.issuance.alarm' && row.actor === 'rd-jay';
+    }).length;
+    const jay = browser(port, CHROME);
+    let jayAt = await jay.go('GET', '/admin');
+    for (let i = 0; i < 4 && jayAt.status >= 300 && jayAt.status < 400 &&
+         !/\/authn\/login\?/.test(String(jayAt.headers.location || ''));
+         i++) {
+      jayAt = await jay.go('GET', pathOf(jayAt.headers.location));
+    }
+    const jayScreen = pathOf(jayAt.headers.location);
+    const jayPage = await jay.go('GET', jayScreen);
+    let jayDone = await jay.go('POST', jayScreen.split('?')[0], {
+      form: Object.assign(hiddenFields(jayPage.text), {
+        username: 'rd-jay', password: 'anything', action: 'login' }) });
+    for (let i = 0; i < 4 && jayDone.status >= 300 && jayDone.status < 400 &&
+         !/\/admin\/callback\?/.test(String(jayDone.headers.location || ''));
+         i++) {
+      jayDone = await jay.go('GET', pathOf(jayDone.headers.location));
+    }
+    // The reactions run after the assessment is answered; give them time.
+    await new Promise(function (r) { setTimeout(r, 1500); });
+    const jayNow = authn.sessionsOf('rd-jay').map(function (one) {
+      return String(one.id || one);
+    });
+    const jayStanding = riskEngine.standingOf('default', 'rd-jay');
+    const jayAlarms = audit.list().filter(function (row) {
+      return row.action === 'xacml.issuance.alarm' && row.actor === 'rd-jay';
+    }).length - jayAlarmsBefore;
+    note(earlierIds.length === 1 && jayStanding &&
+         jayStanding.level === 'HIGH' &&
+         /\/admin\/callback\?.*code=/.test(String(jayDone.headers.location ||
+                                                  '')) &&
+         jayNow.length === 1 && jayNow[0] !== earlierIds[0],
+         'I7. crossing into HIGH at the console ends the session held ' +
+         'BEFORE the sign-in and not the one the sign-in was just permitted',
+         JSON.stringify({ earlier: earlierIds, now: jayNow,
+           level: jayStanding && jayStanding.level,
+           at: String(jayDone.headers.location || '').slice(0, 80) }));
+    // A token issued on that session — what the console's back channel asks
+    // for next — is permitted by the same rule and raises no second alarm.
+    const jayToken = gate.check({
+      application: CONSOLE, kind: gate.ISSUANCE.ACCESS_TOKEN,
+      subject: { kind: 'user', name: 'rd-jay', authenticated: true },
+      claims: null,
+      risk: { level: 'HIGH', score: 20, signals: ['operator-deny'],
+              satisfied: [], enforced: true, assessmentId: 'rd-i8' } });
+    const jayAlarmsAfter = audit.list().filter(function (row) {
+      return row.action === 'xacml.issuance.alarm' && row.actor === 'rd-jay';
+    }).length - jayAlarmsBefore;
+    note(jayAlarms === 1 && jayToken.allowed && jayAlarmsAfter === 1,
+         'I8. the alarm is raised once for the sign-in, not for every code ' +
+         'and token issued on its session',
+         jayAlarms + ' then ' + jayAlarmsAfter + ' ' + jayToken.allowed);
 
     // --- J. lists set aside for a special-purpose address (#226) ---------
     config.setOverride('risk.listsMatchSpecialPurpose', false);
