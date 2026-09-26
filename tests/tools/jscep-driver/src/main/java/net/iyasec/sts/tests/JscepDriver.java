@@ -35,7 +35,8 @@
  *   nextca                                GetNextCACert through Client
  *   enroll   --csr= --key= [--identity= --identity-key=]
  *            [--cipher=AES|AES_128|AES_192|AES_256|DESede|DES]
- *            [--sig=SHA256withRSA|SHA512withRSA|SHA1withRSA] --out=
+ *            [--sig=SHA256withRSA|SHA512withRSA|SHA1withRSA]
+ *            [--recipient=CERT.pem] --out=
  *   poll     --csr= --key=                CertPoll for the request's
  *                                         transaction (jscep's own id)
  *   getcert  --identity= --key= --serial=HEX --out=
@@ -323,7 +324,8 @@ public final class JscepDriver {
             identityKey = requestKey;
         }
         EnrollmentResponse r;
-        if (opts.containsKey("cipher") || opts.containsKey("sig")) {
+        if (opts.containsKey("cipher") || opts.containsKey("sig")
+            || opts.containsKey("recipient")) {
             r = enrollWith(client, identity, identityKey, csr);
         } else {
             r = client.enrol(identity, identityKey, csr);
@@ -347,8 +349,12 @@ public final class JscepDriver {
                                        caps.getStrongestSignatureAlgorithm());
         out.put("cipher", cipher);
         out.put("signature", sig);
+        // --recipient: envelope to a certificate other than the RA this
+        // server named (another realm's RA, for the job's wrong-CA refusal).
+        X509Certificate recipient = opts.containsKey("recipient")
+            ? readCertificate(opts.get("recipient")) : certs.getRecipient();
         PkcsPkiEnvelopeEncoder envelope =
-            new PkcsPkiEnvelopeEncoder(certs.getRecipient(), cipher);
+            new PkcsPkiEnvelopeEncoder(recipient, cipher);
         PkiMessageEncoder encoder =
             new PkiMessageEncoder(key, identity, envelope, sig);
         PkiMessageDecoder decoder = new PkiMessageDecoder(certs.getSigner(),

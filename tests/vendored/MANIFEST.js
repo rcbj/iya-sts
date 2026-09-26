@@ -308,6 +308,12 @@ const JOBS = [
     timeoutMs: 600000 },
   { file: 'sts_scep_micromdm.js',        browser: false, local: true,
     timeoutMs: 600000 },
+  // And two more SCEP clients (#249, #250): certmonger's daemon and
+  // scep-submit, and jscep through tests/tools/jscep-driver.
+  { file: 'sts_scep_certmonger.js',      browser: false, local: true,
+    timeoutMs: 600000 },
+  { file: 'sts_scep_jscep.js',           browser: false, local: true,
+    timeoutMs: 600000 },
   // ssfAllowedEvents (2026-09-12): an application entry limiting which Shared
   // Signals event types a stream it owns is sent. `local: true` because the
   // attribute is this repository's own and the assertion spans an /admin-api
