@@ -23,9 +23,14 @@
 
 const assert = require("assert");
 const crypto = require("crypto");
+const fs = require("fs");
+const path = require("path");
+const tls = require("tls");
 const { Command, Option } = require("commander");
 const names = require("./random_username.js");
 const registry = require("./sts_applications.js");
+const facts = require("./service_facts.js");
+const testCa = require("./outbound_test_ca.js");
 
 var appconfig;
 let appconfigProblem = null;
@@ -257,8 +262,78 @@ function locked(report, username) {
   });
 }
 
+// BOTH REALMS MUST TRUST THIS SERVICE, because each dials the other's own
+// address, whose certificate is issued under a Root made at start that the
+// service's outbound client does not know. As sts_claims_aggregation.js does:
+// the Root is read off the handshake, published in the directory shared with
+// the service (a file of this job's own), and named as each realm's
+// federation.outboundCaFile and A's ssf.pushCaFile, which product honours
+// (#171). With no shared directory a development service is told to skip
+// verification in the two realms alone; product refuses that (#104), and the
+// job says why.
+async function trustThisService(product) {
+  log.debug("Entering trustThisService().");
+  const where = testCa.caLocation();
+  if (where) {
+    const target = new URL(root);
+    const rootPem = await new Promise(function (resolve, reject) {
+      const socket = tls.connect({ host: target.hostname,
+        port: Number(target.port || 443), servername: target.hostname,
+        rejectUnauthorized: false }, function () {
+          let cert = socket.getPeerCertificate(true);
+          while (cert && cert.issuerCertificate &&
+                 cert.issuerCertificate !== cert &&
+                 cert.issuerCertificate.fingerprint256 !==
+                   cert.fingerprint256) {
+            cert = cert.issuerCertificate;
+          }
+          socket.end();
+          resolve("-----BEGIN CERTIFICATE-----\n" +
+            cert.raw.toString("base64").match(/.{1,64}/g).join("\n") +
+            "\n-----END CERTIFICATE-----\n");
+        });
+      socket.on("error", reject);
+    });
+    const name = "ssf-foreign-receiver-root-" + TAG + ".crt";
+    const served = path.join(path.dirname(where.serviceFile), name);
+    fs.mkdirSync(where.dir, { recursive: true });
+    fs.writeFileSync(path.join(where.dir, name), rootPem, { mode: 0o644 });
+    for (const api of [apiA, apiB]) {
+      await ok(api + "/config/set", { key: "federation.outboundCaFile",
+        value: served }, "named this service's Root as the outbound CA");
+    }
+    await ok(apiA + "/config/set", { key: "ssf.pushCaFile", value: served },
+             "named this service's Root as A's push CA");
+    log.debug("Leaving trustThisService(). CA file.");
+    return;
+  }
+  assert.ok(!product, testCa.skipReason());
+  for (const api of [apiA, apiB]) {
+    await ok(api + "/config/set", {
+      key: "federation.outboundSkipTlsVerification", value: true },
+      "trusted this run's certificate");
+  }
+  await ok(apiA + "/config/set", { key: "ssf.pushSkipTlsVerification",
+    value: true }, "let A's push trust this run's certificate");
+  log.debug("Leaving trustThisService(). Verification skipped.");
+}
+
 async function test() {
   log.debug("Entering test().");
+  // PRODUCT NEVER DIALS AN ADDRESS INSIDE ITS OWN NETWORK
+  // (`mode.dialsInternalAddresses()`, federation_http.ts), and every part of
+  // this job is realm B reading realm A's configuration and A pushing to B on
+  // this one service's own address. So the job runs in development and says
+  // why it does not in product, as sts_ciba.js's section 6 does.
+  const product = await facts.isProduct(root + "/admin-api");
+  if (product) {
+    log.info("[skip] product mode will not dial this service's own " +
+             "address, which is internal; the foreign receiver runs in " +
+             "development.");
+    log.info("Test completed successfully.");
+    log.debug("Leaving test(). Product.");
+    return;
+  }
   log.info("=== 0. realm A (the transmitter) and realm B (the receiver) ===");
   for (const id of [REALM_A, REALM_B]) {
     await ok(root + "/admin-api/realms/create", { id: id,
@@ -266,15 +341,9 @@ async function test() {
       "created realm " + id);
   }
   // Each dials the other's own address, whose certificate is this run's.
-  for (const api of [apiA, apiB]) {
-    await ok(api + "/config/set", {
-      key: "federation.outboundSkipTlsVerification", value: true },
-      "trusted this run's certificate");
-  }
+  await trustThisService(product);
   await ok(apiA + "/config/set", { key: "ssf.pushDelivery", value: true },
            "let A push");
-  await ok(apiA + "/config/set", { key: "ssf.pushSkipTlsVerification",
-    value: true }, "let A's push trust this run's certificate");
   // A's address, pinned, as a deployed transmitter's is: a SET it builds
   // with no request in hand (an emitted event) otherwise names its subject
   // under the listener's address and its token under the request's, and
