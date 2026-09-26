@@ -202,7 +202,9 @@ async function test() {
               bare.shown);
   });
   const reg = await lego(["accounts", "register", "--accept-tos", "-m", MAIL,
-                    "--eab", "--eab.kid", eab.kid, "--eab.hmac", eab.hmacKey],
+                    "--eab", "--eab.kid", eab.kid,
+                    // One argument: a base64url key may begin with `-`.
+                    "--eab.hmac=" + eab.hmacKey],
                    { secrets: [eab.hmacKey] });
   const account = await accountRow();
   C.check("lego registers with the administrator's EAB key, and the account " +

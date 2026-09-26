@@ -203,16 +203,19 @@ async function test() {
     assert.ok(/error:externalAccountRequired/.test(bare.log) ||
               /external account/i.test(bare.output), bare.shown);
   });
+  // `--eab-hmac-key=<key>` in ONE argument, here and below: a base64url
+  // key may begin with `-`, which certbot's argparse then reads as an
+  // option ("expected one argument") — one run in a few.
   const wrong = await certbot(register.concat([
     "--eab-kid", eab.kid,
-    "--eab-hmac-key", Buffer.alloc(32, 7).toString("base64url")]));
+    "--eab-hmac-key=" + Buffer.alloc(32, 7).toString("base64url")]));
   C.check("a binding MACed with the wrong key is refused unauthorized",
           function () {
     assert.notStrictEqual(wrong.status, 0, wrong.shown);
     assert.ok(/error:unauthorized/.test(wrong.log), wrong.shown);
   });
   const reg = await certbot(register.concat(["--eab-kid", eab.kid,
-                                       "--eab-hmac-key", eab.hmacKey]),
+                                       "--eab-hmac-key=" + eab.hmacKey]),
                       [eab.hmacKey]);
   C.check("certbot registers with the administrator's EAB key", function () {
     succeeded(reg, "certbot register");
@@ -349,7 +352,7 @@ async function test() {
     assert.strictEqual(account3.status, "deactivated");
   });
   const again = await certbot(register.concat(["--eab-kid", eab.kid,
-                                         "--eab-hmac-key", eab.hmacKey]),
+                                         "--eab-hmac-key=" + eab.hmacKey]),
                         [eab.hmacKey]);
   C.check("the spent EAB key cannot bind a new account", function () {
     assert.notStrictEqual(again.status, 0, again.shown);
