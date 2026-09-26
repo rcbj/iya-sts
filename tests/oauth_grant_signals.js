@@ -75,10 +75,15 @@ function harness(acts) {
   return { instance: instance, sent: sent, installed: installed };
 }
 
+// A distinct jti per token, from a counter: no test draws on Math.random()
+// (`tests/random_values.js`).
+let minted = 0;
+
 function token(kind, extra) {
   log.debug("Entering token().");
+  minted += 1;
   log.debug("Leaving token().");
-  return Object.assign({ jti: 'j-' + Math.random().toString(36).slice(2),
+  return Object.assign({ jti: 'ogs-j-' + minted,
     kind: kind, username: 'alice', sub: 'urn:uuid:alice',
     client_id: 'webapp', grantId: 'fam-1', grantRefresh: true }, extra || {});
 }
@@ -224,6 +229,11 @@ function sectionB(t) {
   t.equal(stats.revoke('ogs-r2', 'door three'), true,
           'a throwing observer cannot fail the revocation');
   t.equal(stats.isRevoked('ogs-r2'), true, 'which stands');
+  // Undo this section's revocations: the suite shares one process, and
+  // `tests/realm_isolation.js` counts the default realm's revoked jtis.
+  ['ogs-r1', 'ogs-a1', 'ogs-r2'].forEach(function (jti) {
+    stats.restore(jti);
+  });
   // Put the module's own observer back, for whatever runs next in this
   // process.
   stats.setRevocationObserver(function (record, via, how) {
