@@ -311,8 +311,8 @@ async function run(t) {
         const found = roleKeys(row[1], role);
         const last = found[found.length - 1] || {};
         t.check(last.b64 === a.b64 && last.use === 'signing',
-                row[0] + ' ' + role + ': the listener certificate is its LAST ' +
-                'KeyDescriptor, use="signing"',
+                row[0] + ' ' + role + ': the listener certificate is its ' +
+                'LAST KeyDescriptor, use="signing"',
                 JSON.stringify(found.map(function (k) {
                   return k.use + ':' + k.b64.slice(0, 16);
                 })));
