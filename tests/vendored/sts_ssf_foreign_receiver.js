@@ -273,6 +273,12 @@ async function test() {
   }
   await ok(apiA + "/config/set", { key: "ssf.pushDelivery", value: true },
            "let A push");
+  // A's address, pinned, as a deployed transmitter's is: a SET it builds
+  // with no request in hand (an emitted event) otherwise names its subject
+  // under the listener's address and its token under the request's, and
+  // B rightly maps a subject only under the issuer it federates with.
+  await ok(apiA + "/config/set", { key: "global.publicBaseUrl",
+    value: root }, "pinned A's address");
   await ok(apiB + "/config/set", { key: "ssf.actOnSignalsInDevelopment",
     value: true }, "let B act in development");
   await ok(apiA + "/applications/create", { identifier: CLIENT,
