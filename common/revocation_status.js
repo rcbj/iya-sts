@@ -500,8 +500,19 @@ function selfSigned(cert) {
 // else: a tier that is replaced has a different PEM and a fresh entry, and the
 // bound only decides how often a parse is repeated.
 // ---------------------------------------------------------------------------
+//
+// **THE BOUND IS 8192 AND WAS 256 UNTIL 2026-09-26, WHICH THRASHED.** Every
+// realm holds a dozen authorities, so a service with a few dozen realms holds
+// more than 256 CA certificates — and a memo emptied whenever it is full was
+// emptied on nearly every walk: 125,000 hits against 1.55 million misses on a
+// suite run, and every client-certificate request re-parsing ~2,000
+// certificates with the event loop stopped for seconds.
 const parsed = new Map();
-const PARSE_MEMO_ENTRIES = 256;
+const PARSE_MEMO_ENTRIES = 8192;
+// The pkijs reading of a certificate, beside the X509Certificate it was read
+// from. Keyed on the OBJECT, so it lives exactly as long as the parsed tier
+// (or the presented chain) that holds it, and needs no bound of its own.
+const pkijsParsed = new WeakMap();
 // Registry counters (#74), assigned by `registerCaches()` at the foot of this
 // file; the no-op stands in until then.
 const NO_COUNT = { hit: function () {}, miss: function () {} };
@@ -850,9 +861,15 @@ function pkijsOf(cert) {
     log.debug("Leaving pkijsOf().");
     return null;
   }
+  if (pkijsParsed.has(cert)) {
+    log.debug("Leaving pkijsOf(). Already read.");
+    return pkijsParsed.get(cert);
+  }
   try {
+    const read = pkijs.Certificate.fromBER(arrayBufferOf(cert.raw));
+    pkijsParsed.set(cert, read);
     log.debug("Leaving pkijsOf().");
-    return pkijs.Certificate.fromBER(arrayBufferOf(cert.raw));
+    return read;
   } catch (e) {
     // A certificate OpenSSL read and pkijs could not. Answered as absent, and
     // every caller reports what it therefore could not look at.
@@ -4980,8 +4997,8 @@ function registerCaches() {
     maxEntries: function () {
       return PARSE_MEMO_ENTRIES;
     },
-    bound: 'Enforced: 256 parses; when full the whole memo is emptied and ' +
-      'rebuilt as it is used.',
+    bound: 'Enforced: ' + PARSE_MEMO_ENTRIES + ' parses; when full the ' +
+      'whole memo is emptied and rebuilt as it is used.',
     lifetime: function () {
       return 'No expiry: keyed by content. When full the whole memo is ' +
         'emptied at once.';

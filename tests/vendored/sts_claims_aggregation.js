@@ -282,8 +282,13 @@ async function rpTokens(browser, client) {
     .digest("base64url");
   const q = new URLSearchParams({
     response_type: "code", client_id: client.client_id,
-    redirect_uri: RP_REDIRECT, scope: "openid", state: "s-" + TAG,
-    nonce: "n-" + TAG, code_challenge: challenge,
+    redirect_uri: RP_REDIRECT, scope: "openid", state: "s-" + TAG + "-" +
+      crypto.randomBytes(6).toString("hex"),
+    // A fresh state and nonce per request: in RFC 9700 mode (which
+    // product mode implies) a value reused after its code was redeemed is
+    // refused, STS-OAUTH-0125.
+    nonce: "n-" + TAG + "-" + crypto.randomBytes(6).toString("hex"),
+    code_challenge: challenge,
     code_challenge_method: "S256",
     claims: JSON.stringify({
       id_token: { credit_score: null, email: null },

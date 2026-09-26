@@ -229,8 +229,13 @@ function authorizeUrl(client, extra) {
   const verifier = crypto.randomBytes(32).toString("base64url");
   const q = new URLSearchParams(Object.assign({
     response_type: "code", client_id: client.client_id,
-    redirect_uri: RP_REDIRECT, scope: "openid", state: "s-" + TAG,
-    nonce: "n-" + TAG, code_challenge: crypto.createHash("sha256")
+    redirect_uri: RP_REDIRECT, scope: "openid", state: "s-" + TAG + "-" +
+      crypto.randomBytes(6).toString("hex"),
+    // A fresh state and nonce per request: in RFC 9700 mode (which
+    // product mode implies) a value reused after its code was redeemed is
+    // refused, STS-OAUTH-0125.
+    nonce: "n-" + TAG + "-" + crypto.randomBytes(6).toString("hex"),
+    code_challenge: crypto.createHash("sha256")
       .update(verifier).digest("base64url"),
     code_challenge_method: "S256" }, extra || {}));
   log.debug("Leaving authorizeUrl().");

@@ -25,6 +25,11 @@ const crypto = require("crypto");
 const { Command, Option } = require("commander");
 const names = require("./random_username.js");
 const registry = require("./sts_applications.js");
+const fs = require("fs");
+const path = require("path");
+const tls = require("tls");
+const facts = require("./service_facts.js");
+const testCa = require("./outbound_test_ca.js");
 
 var appconfig;
 let appconfigProblem = null;
@@ -239,6 +244,51 @@ function accountOf(report, clientId) {
   })[0];
 }
 
+// THE REALM MUST TRUST THIS SERVICE, whose certificate is issued under a Root
+// made at start that its own outbound client does not know. The Root is read
+// off the handshake, written to the directory shared with the service (a file
+// of this job's own) and named as the realm's federation.outboundCaFile, which
+// product honours. With no shared directory a development service is told to
+// skip verification in this realm alone; product refuses that, and the job
+// says why.
+async function trustThisService(product) {
+  log.debug("Entering trustThisService().");
+  const where = testCa.caLocation();
+  if (where) {
+    const target = new URL(root);
+    const rootPem = await new Promise(function (resolve, reject) {
+      const socket = tls.connect({ host: target.hostname,
+        port: Number(target.port || 443), servername: target.hostname,
+        rejectUnauthorized: false }, function () {
+          let cert = socket.getPeerCertificate(true);
+          while (cert && cert.issuerCertificate &&
+                 cert.issuerCertificate !== cert &&
+                 cert.issuerCertificate.fingerprint256 !==
+                   cert.fingerprint256) {
+            cert = cert.issuerCertificate;
+          }
+          socket.end();
+          resolve("-----BEGIN CERTIFICATE-----\n" +
+            cert.raw.toString("base64").match(/.{1,64}/g).join("\n") +
+            "\n-----END CERTIFICATE-----\n");
+        });
+      socket.on("error", reject);
+    });
+    const name = "provider-commands-root-" + TAG + ".crt";
+    fs.mkdirSync(where.dir, { recursive: true });
+    fs.writeFileSync(path.join(where.dir, name), rootPem, { mode: 0o644 });
+    await ok(api + "/config/set", { key: "federation.outboundCaFile",
+      value: path.join(path.dirname(where.serviceFile), name) },
+      "named this service's Root as the realm's outbound CA");
+    log.debug("Leaving trustThisService(). CA file.");
+    return;
+  }
+  assert.ok(!product, testCa.skipReason());
+  await ok(api + "/config/set", { key: "federation.outboundSkipTlsVerification",
+    value: true }, "let the realm reach its own mock relying party");
+  log.debug("Leaving trustThisService(). Verification skipped.");
+}
+
 async function test() {
   log.debug("Entering test().");
   log.info("=== 0. a throwaway realm " + REALM + " ===");
@@ -252,9 +302,10 @@ async function test() {
   await ok(api + "/config/set", { key: "oauth2.commandBackoffMs",
                                   value: 200 }, "shortened the backoff");
   // The mock relying party is this service, dialled at its own address,
-  // whose certificate is this run's own: sts_ciba.js's arrangement.
-  await ok(api + "/config/set", { key: "federation.outboundSkipTlsVerification",
-    value: true }, "let the realm reach its own mock relying party");
+  // whose certificate is this run's own. Product mode refuses to skip that
+  // verification (#171), so the service's Root is named as the realm's
+  // outbound CA instead: sts_claims_aggregation.js's arrangement.
+  await trustThisService(await facts.isProduct(root + "/admin-api"));
   await registry.ensurePerson(base, PERSON, PASSWORD);
 
   log.info("=== 1. registration ===");
