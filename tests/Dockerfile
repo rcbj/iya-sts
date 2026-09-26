@@ -169,6 +169,19 @@ RUN curl -fsSL --retry 5 --retry-all-errors -o sscep.tgz \
 # provenance. The golang image is Debian, whose glibc is older than
 # ubuntu:latest's, so the binary (cgo, for a store only its built-in server
 # uses) runs in the runner unchanged.
+# THE W3C VERIFIABLE CREDENTIALS AND DID TEST SUITES (#194-#199), each
+# fetched at a pinned commit, checked by sha256 and installed from its own
+# lockfile by tests/vc-suites/fetch-suites.sh (which argues the pins and why
+# the suites' `pretest` is not run). A stage of their own, on the same node
+# as the runner, because the install needs git (two lockfile dependencies
+# are GitHub commits) and the runner has none; the runner copies only
+# /opt/vc-suites. Several carry test PRIVATE keys, which is why they are
+# fetched here and never committed. tests/CLAUDE.md, *The W3C VC and DID
+# suites*, is the provenance.
+FROM node:24.16.0-bookworm AS vc-suites
+COPY tests/vc-suites/fetch-suites.sh /usr/src/fetch-suites.sh
+RUN /usr/src/fetch-suites.sh /opt/vc-suites
+
 FROM golang:1.26 AS scim2-test-suite
 COPY tests/scim-conformance/build-test-suite.sh /usr/src/build-test-suite.sh
 RUN /usr/src/build-test-suite.sh /opt/scim2-test-suite
@@ -413,6 +426,13 @@ ENV STS_W3C_XMLSEC_DIR=/usr/src/corpora/w3c-xmlsec
 # below cannot replace it with a host copy. tests/CLAUDE.md, *The external
 # test vectors*, is the provenance.
 COPY --from=corpora /usr/src/sts/tests/vectors /usr/src/sts/tests/vectors
+
+# The W3C VC and DID suites (#194-#199), from their stage above. Here, just
+# above the source copy, rather than beside the other harnesses: this layer
+# changes only when fetch-suites.sh does, and every layer above it stays the
+# one other checkouts' builds of this file already cached.
+COPY --from=vc-suites /opt/vc-suites /opt/vc-suites
+ENV STS_VC_SUITES_DIR=/opt/vc-suites
 
 # The repository. The root .dockerignore decides what is in it — see the header
 # — and the guard is what a context missing the suite says instead of failing

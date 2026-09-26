@@ -11342,6 +11342,60 @@ const CODES = [
       'already enrolled for somebody, or the person holds the most they may ' +
       '(#129).',
     spec: 'HTTP 400 page' },
+  { code: 'STS-VC-0100',
+    summary: 'A VC-API test endpoint (/vc-api/*, the Bitstring Status ' +
+      'List publish hook) was called in a realm whose test controls are ' +
+      'closed — a product realm — and answered as though it did not exist ' +
+      '(#194).',
+    spec: 'HTTP 404' },
+  { code: 'STS-VC-0101',
+    summary: 'A VC-API test endpoint was presented an access token it ' +
+      'refused: not issued by this realm, not an access token, revoked, ' +
+      'without the vc-api:issue / vc-api:verify scope it needs, or issued ' +
+      'to a client that no longer declares that scope (#194).',
+    spec: 'HTTP 401 / 403 with WWW-Authenticate' },
+  { code: 'STS-VC-0102',
+    summary: 'The VC-API issuer refused a credential that does not conform ' +
+      'to the VC Data Model (a MUST of VCDM 2.0 or 1.1 broken), or that ' +
+      'names an issuer other than the key it is asked to sign with (#194).',
+    spec: 'HTTP 400 {errors}' },
+  { code: 'STS-VC-0103',
+    summary: 'The VC-API issuer refused a credential JSON-LD safe mode ' +
+      'rejects — a context this service does not hold (it fetches none), ' +
+      'an undefined term, a redefined protected term, a relative IRI — or ' +
+      'one its cryptosuite could not sign (#194-#196).',
+    spec: 'HTTP 400 {errors}' },
+  { code: 'STS-VC-0104',
+    summary: 'A VC-API issue request named an issuer (a securing mechanism ' +
+      'and key) this service does not offer (#194).',
+    spec: 'HTTP 404 {errors}' },
+  { code: 'STS-VC-0105',
+    summary: 'A VC-API request failed inside this service rather than on ' +
+      'its input (#194).',
+    spec: 'HTTP 500 {errors}' },
+  { code: 'STS-VC-0106',
+    summary: 'The VC-API verifier refused a credential or presentation: ' +
+      'the data model, JSON-LD safe mode, a proof (the key, the purpose, ' +
+      'the challenge or domain, the signature, the issuer), or a status ' +
+      'list entry (#194-#198).',
+    spec: 'HTTP 400 {verified: false, errors}' },
+  { code: 'STS-VC-0107',
+    summary: 'A VC-API status change named a credential this realm issued ' +
+      'no status for, a status type or purpose it does not publish, or ' +
+      'tried to clear a revocation (#197).',
+    spec: 'HTTP 404 / 400 {errors}' },
+  { code: 'STS-VC-0108',
+    summary: 'A VC-API request body was not a JSON object, or carried a ' +
+      'polluting key or more depth or members than any document this ' +
+      'service accepts (validation.checkDocument, #194).',
+    spec: 'HTTP 400 {errors}' },
+  { code: 'STS-VC-0109',
+    summary: 'A DID the VC-API resolver was asked for could not be resolved, ' +
+      'or a DID URL dereferenced: not a DID (invalidDid, invalidDidUrl), a ' +
+      'method it does not support, a representation it does not produce, ' +
+      'or a did:web other than this realm\'s own, which it does not fetch ' +
+      '(notFound) (#199).',
+    spec: 'HTTP 400 / 404 / 501 with the resolution result\'s error' },
   { code: 'STS-SSF-0001',
     summary: 'A Shared Signals endpoint was called while the family is ' +
       'turned off (ssf.enabled).',
