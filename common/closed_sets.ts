@@ -221,6 +221,20 @@ class ClosedSets {
               " field(s) held.");
   }
 
+  // Whether any control on `page` is registered under an action of its own.
+  static hasActions(page: string): boolean {
+    log.debug("Entering ClosedSets.hasActions(). " + page);
+    let found = false;
+    ClosedSets.consoleFields.forEach(function (fields, key) {
+      const cut = key.indexOf('\u0000');
+      if (key.slice(0, cut) === page && key.slice(cut + 1) !== '') {
+        found = true;
+      }
+    });
+    log.debug("Leaving ClosedSets.hasActions(). " + found);
+    return found;
+  }
+
   // What a console POST to `page` with `action` is held to (for the tests and
   // the gate).
   static forConsole(page: string, action: string): ClosedField[] {
@@ -277,7 +291,10 @@ class ClosedSets {
   static checkForm(page: string, action: string, body: any): ClosedCheck {
     log.debug("Entering ClosedSets.checkForm(). " + page + " " + action);
     let fields = ClosedSets.forConsole(page, action);
-    if (!fields.length && action) {
+    if (!fields.length && action && !ClosedSets.hasActions(page)) {
+      // Only a page whose one operation takes no action falls back to its
+      // `''` row: on a page with actions of its own, one action's fields are
+      // never applied to another's.
       fields = ClosedSets.forConsole(page, '');
     }
     for (let i = 0; i < fields.length; i++) {

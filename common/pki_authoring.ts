@@ -997,6 +997,48 @@ class PkiAuthoring {
   // ---------------------------------------------------------------------------
   // WHICH ALGORITHMS AN APPROACH ALLOWS.
   // ---------------------------------------------------------------------------
+  // ---------------------------------------------------------------------------
+  // THE PANE'S CLOSED FIELDS, REFUSED OUTSIDE THEIR SETS (#86).
+  //
+  // Five of the pane's fields take one of a fixed list, and two of them
+  // quietly became something else when they held another value: an unknown
+  // `pki_profile` was applied as the DEFAULT profile, and an unknown
+  // `pki_pq_mode` narrowed the menus as `any`. The other three were refused,
+  // but only by the step that happened to read them. The form's POST names no
+  // `action` of its own (the pressed button does), so the console gate's
+  // closed-set register has nothing to hold it to — this is the check, for
+  // the console and `/admin-api` alike, and it runs before any pane action.
+  // Empty is the field's default, as it always was.
+  // ---------------------------------------------------------------------------
+  closedFieldProblem(draft: Draft): Outcome | null {
+    const self = this;
+    const { log, x509, keyMaterial, errorCodes } = this.deps;
+    log.debug("Entering PkiAuthoring.closedFieldProblem().");
+    const sets: Array<[string, string[]]> = [
+      ['pki_profile', x509.profileIds()],
+      ['pki_pq_mode', PQ_MODE_IDS.slice()],
+      ['pki_key_alg', keyMaterial.keyAlgIds()],
+      ['pki_alt_key_alg', keyMaterial.keyAlgIds()],
+      ['pki_ks_format', keyMaterial.keystoreFormats()]
+    ];
+    for (let i = 0; i < sets.length; i++) {
+      const name = sets[i][0];
+      const values = sets[i][1];
+      const value = self.textOf(draft, name);
+      if (value !== '' && values.indexOf(value) < 0) {
+        log.debug("Leaving PkiAuthoring.closedFieldProblem(). " + name + ".");
+        return errorCodes.mark({ ok: false, draft: draft,
+                 errors: ['"' + name + '" is "' + value + '", which is not ' +
+                          'one of the ' + values.length + ' values it ' +
+                          'accepts: ' + values.map(function (v) {
+                            return '"' + v + '"';
+                          }).join(', ') + '.'] }, 'STS-PKI-0194');
+      }
+    }
+    log.debug("Leaving PkiAuthoring.closedFieldProblem(). None.");
+    return null;
+  }
+
   pqModes() {
     const { log } = this.deps;
     log.debug("Entering PkiAuthoring.pqModes().");
@@ -2030,6 +2072,7 @@ export = {
   draftFrom: slot.forward('draftFrom'),
   defaultDraft: slot.forward('defaultDraft'),
   applyProfile: slot.forward('applyProfile'),
+  closedFieldProblem: slot.forward('closedFieldProblem'),
   profiles: slot.forward('profiles'),
   profileFor: slot.forward('profileFor'),
   defaultProfileId: slot.forward('defaultProfileId'),

@@ -44,6 +44,17 @@ import helpers = require('../common/helpers');
 const { log, parseBody } = helpers;
 import errorCodes = require('../common/error_codes');
 import InstanceSlot = require('../common/instance_slot');
+// The key algorithm ids an enrollment may name (#86): the vendored registry,
+// a leaf that requires nothing of this service.
+import keyMaterial = require('../common/vendored/key_material');
+
+// THE NINE ENROLLMENT PROFILES (#86), written out because the list's owner,
+// `common/cert_enrollment.ts`'s PROFILE_IDS, is a module this one must not
+// load at 19 — it requires half the service, and this table is built when
+// the management API is wired. `tests/closed_sets.js` holds the two equal.
+const ENROLLMENT_PROFILES = ['tls-server', 'tls-client', 'tls-server-client',
+  'digital-signature', 'key-encipherment', 'code-signing', 'email',
+  'timestamping', 'smartcard-logon'];
 
 const BASE = '/admin-api';
 
@@ -104,6 +115,9 @@ class EstApi {
        .send(JSON.stringify(reply, null, 2));
     log.debug("Leaving EstApi.sendJson().");
   }
+
+  // The profiles, for `tests/closed_sets.js`.
+  static readonly ENROLLMENT_PROFILES = ENROLLMENT_PROFILES;
 
   kindProperty() {
     const { log } = this.deps;
@@ -227,10 +241,10 @@ class EstApi {
                 identifier: { type: 'string', minLength: 1, maxLength: 256,
                               description: 'The username or application ' +
                                            'identifier.' },
-                profile: { type: 'string',
+                profile: { type: 'string', enum: ENROLLMENT_PROFILES,
                            description: 'One of the nine profiles; ' +
                                         '`est.defaultProfile` when omitted.' },
-                keyAlg: { type: 'string',
+                keyAlg: { type: 'string', enum: keyMaterial.keyAlgIds(),
                           description: 'A key algorithm id from GET ' +
                                        '/admin-api/est `keyAlgorithms`; ' +
                                        'ec-p256 when omitted.' }

@@ -108,6 +108,10 @@ function unitRules(t) {
                                 { kind: 'b' }).ok,
           'a control with no action of its own is held by the page\'s row',
           '');
+  closedSets.registerConsole(P, '', [{ path: ['other'], values: ['o'] }]);
+  t.check(closedSets.checkForm(P, 'unregistered', { other: 'x' }).ok,
+          'on a page with actions, one action\'s fields are never applied ' +
+          'to another\'s (the page\'s \'\' row is not a fallback there)', '');
 
   const req = { headers: { 'content-type':
                            'application/x-www-form-urlencoded' },
@@ -146,7 +150,7 @@ function childMain() {
   const ROOT_DIR = process.env.CS_ROOT;
   const OUT = process.env.CS_OUT;
   const OUTSIDE = '__not-a-value-86__';
-  const report = { error: null, body: [], console: [] };
+  const report = { error: null, body: [], console: [], ties: [] };
   const done = function () {
     fs.writeFileSync(OUT, JSON.stringify(report));
     process.exit(0);
@@ -237,6 +241,52 @@ function childMain() {
                              status: got.status, body: got.body });
         }
       }
+    }
+    // THE TWO SETS WRITTEN OUT BY HAND, held to the constant each mirrors.
+    const tie = function (what, written, owner) {
+      report.ties.push({ what: what, written: written, owner: owner });
+    };
+    tie('est_api ENROLLMENT_PROFILES = cert_enrollment PROFILE_IDS',
+        require(ROOT_DIR + '/est/est_api').EstApi.ENROLLMENT_PROFILES,
+        require(ROOT_DIR + '/common/cert_enrollment').PROFILE_IDS);
+    tie('scep_api ENROLLMENT_PROFILES = cert_enrollment PROFILE_IDS',
+        require(ROOT_DIR + '/scep/scep_api').ScepApi.ENROLLMENT_PROFILES,
+        report.ties[0].owner);
+    const caepRow = require(ROOT_DIR + '/ssf/ssf_events').CAEP_COMMON_MEMBERS
+      .filter(function (m) {
+        return m.name === 'initiating_entity';
+      })[0] || {};
+    const emit = api.ROUTES.filter(function (e) {
+      return (e.actions || []).some(function (a) {
+        return a.operationId === 'emitCaepEvent';
+      });
+    })[0];
+    const emitAction = emit && emit.actions.filter(function (a) {
+      return a.operationId === 'emitCaepEvent';
+    })[0];
+    tie('emitCaepEvent initiating_entity = ssf_events CAEP_COMMON_MEMBERS',
+        emitAction && emitAction.requestBody.properties.initiating_entity.enum,
+        caepRow.values);
+    // AND NO CONTROL IS HELD TO TWO DIFFERENT SETS: two routes mirroring one
+    // console page and action with different enums would leave the register
+    // holding whichever registered first.
+    const seen = {};
+    for (const entry of api.ROUTES) {
+      (entry.actions || []).forEach(function (a) {
+        const m = String(a.mirrors || entry.mirrors || '');
+        const pages = m.match(/POST \/admin\S*/g) || [];
+        closedSets.collect(a.requestBody, spec.SCHEMAS).forEach(function (f) {
+          pages.forEach(function (pg) {
+            const k = pg.replace(/,$/, '') + ' ' + a.action + ' ' + f.path[0];
+            const v = JSON.stringify(f.values);
+            if (seen[k] && seen[k] !== v) {
+              report.ties.push({ what: 'one set for ' + k,
+                                 written: seen[k], owner: v });
+            }
+            seen[k] = v;
+          });
+        });
+      });
     }
     closedSets.consoleRegister().forEach(function (row) {
       if (/probe86/.test(row.page)) {
@@ -332,6 +382,10 @@ function wrapperAndRegister(t) {
   t.check(report.body.length >= MINIMUM_BODY_ENUMS,
           report.body.length + ' body enums reached through the wrapper ' +
           '(floor ' + MINIMUM_BODY_ENUMS + ')', '');
+  t.log.info('=== B. the sets written out by hand ===');
+  report.ties.forEach(function (row) {
+    t.equal(JSON.stringify(row.written), JSON.stringify(row.owner), row.what);
+  });
   t.log.info('=== B. every console control in the register ===');
   const controls = {};
   report.console.forEach(function (row) {

@@ -2684,6 +2684,11 @@ const CODES = [
       'the live one.',
     spec: 'none — logged. The key still signs; its certificate chains to ' +
       'an authority nothing publishes until the slot is certified again' },
+  { code: 'STS-PKI-0194',
+    summary: 'A Certificate & Key Configuration pane field that takes a ' +
+      'closed set (pki_profile, pki_pq_mode, pki_key_alg, pki_alt_key_alg, ' +
+      'pki_ks_format) held a value outside it (#86).',
+    spec: 'HTTP 400 page or { ok: false, errors }' },
   // ===== ENROLL ============================================================
   { code: 'STS-ENROLL-0001',
     summary: 'A certificate request named a profile that is not one of the nine issued over an enrollment protocol.',
@@ -8173,6 +8178,11 @@ const CODES = [
       'its Entity Identifier, no https endpoints, no automatic ' +
       'registration, or no keys (#134).',
     spec: 'HTTP 502 page' },
+  { code: 'STS-FED-0150',
+    summary: 'A federation relationship field that takes a closed set of ' +
+      'values (fedAuthnMechanism, fedBinding, fedResponseType, or any row ' +
+      'with an enum) was set to a value outside it (#86).',
+    spec: 'HTTP 400 (console and API)' },
   // ===== OIDFED ============================================================
   { code: 'STS-OIDFED-0001',
     summary: 'A metadata_policy is not the three levels of JSON objects ' +
