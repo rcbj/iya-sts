@@ -15,7 +15,7 @@
 #                about forty private keys this repository will not carry even
 #                in an image (the job makes every key it needs at run time)
 #   tlslite-ng/  the upstream `tlslite/` package, LICENSE and COMMIT
-#   venv/        a virtual environment with requirements.txt's three packages
+#   venv/        a virtual environment with requirements.txt's packages
 #
 # THE PINS ARE COMMITS. tlsfuzzer tags no releases; tlslite-ng's commit is
 # the one its v0.9.0b2 tag names, which is the version tlsfuzzer's own
@@ -24,7 +24,7 @@
 #
 # WHY NOT THE #253 CORPORA IMAGE: that image exists because a corpus was
 # hundreds of paced fetches from hosts that rate-limit (w3.org answered 429
-# for an hour). This is two tarballs from GitHub and three wheels from PyPI,
+# for an hour). This is two tarballs from GitHub and four wheels from PyPI,
 # fetched in a layer that only rebuilds when this script or requirements.txt
 # changes; and it is GPL and LGPL code, which is better run from upstream
 # than republished in a registry of ours.

@@ -268,6 +268,13 @@ function truststoreOpenToAnybody() {
 // suites first whatever a client lists. An empty `tls.ciphers` still means
 // `tls.DEFAULT_CIPHERS`.
 //
+// AND THE GROUPS AND SIGNATURE ALGORITHMS SINCE #212 (2026-09-26):
+// `tls.groups` (node's ecdhCurve) and `tls.signatureAlgorithms` (sigalgs).
+// tlsfuzzer found node's defaults offering one of OpenSSL's three post-quantum
+// hybrid groups and both finite-field ones, and advertising DSA and SHA-224 in
+// every TLS 1.2 CertificateRequest; each row in common/config.js says what
+// its default is instead and why.
+//
 // **A CIPHER LIST THAT MATCHES NOTHING STOPS THE SERVICE HERE**, at require
 // time, naming the setting. Found any later it is a TypeError out of
 // `https.createServer()` in `server.js`, or — worse, through
@@ -285,6 +292,17 @@ function protocolOptions() {
   if (ciphers) {
     options.ciphers = ciphers;
   }
+  // THE GROUPS AND THE SIGNATURE ALGORITHMS (#212, 2026-09-26) — see their
+  // rows in common/config.js. Empty leaves node's own: 'auto' for the
+  // groups, and OpenSSL's list for the signature algorithms.
+  const groups = String(config.value('tls.groups') || '').trim();
+  if (groups) {
+    options.ecdhCurve = groups;
+  }
+  const sigalgs = String(config.value('tls.signatureAlgorithms') || '').trim();
+  if (sigalgs) {
+    options.sigalgs = sigalgs;
+  }
   log.debug("Leaving protocolOptions().");
   return options;
 }
@@ -295,11 +313,14 @@ function protocolOptions() {
     tls.createSecureContext(protocolOptions());
   } catch (e) {
     log.fatal(errorCodes.tag('STS-TLS-0001') + 'tls: NOT STARTING. ' +
-              'tls.minVersion / tls.ciphers (STS_TLS_MIN_VERSION / ' +
-              'STS_TLS_CIPHERS) cannot build a TLS ' +
-              'context: ' + e.message + '. An OpenSSL cipher list names ' +
-              'suites such as ECDHE-RSA-AES256-GCM-SHA384, and an empty one ' +
-              'means node\'s default.');
+              'tls.minVersion / tls.ciphers / tls.groups / ' +
+              'tls.signatureAlgorithms (STS_TLS_MIN_VERSION / ' +
+              'STS_TLS_CIPHERS / STS_TLS_GROUPS / STS_TLS_SIGALGS) cannot ' +
+              'build a TLS context: ' + e.message + '. An OpenSSL cipher ' +
+              'list names suites such as ECDHE-RSA-AES256-GCM-SHA384, a ' +
+              'groups list names groups such as X25519MLKEM768:P-256, a ' +
+              'signature list schemes such as rsa_pss_rsae_sha256, and an ' +
+              'empty one means node\'s default.');
     process.exit(1);
   }
   log.debug("Leaving checkProtocolOptions().");
@@ -1437,12 +1458,13 @@ function secureContextOptions() {
     }),
     ca: anchors.map(function (anchor) { return anchor.pem; })
       .concat(issuedClientCertificateAnchor()),
-    // The protocol floor and cipher list — see protocolOptions(). In here so
-    // that a truststore change, which re-applies this whole object, cannot
-    // quietly reset a listener to node's defaults.
-    minVersion: protocolOptions().minVersion,
-    ciphers: protocolOptions().ciphers,
-    honorCipherOrder: true
+    // The protocol floor, the cipher list, the groups and the signature
+    // algorithms — see protocolOptions(). In here so that a truststore
+    // change, which re-applies this whole object, cannot quietly reset a
+    // listener to node's defaults. All of it since #212: the groups and
+    // signature algorithms were added to protocolOptions() alone, and a
+    // listener would have lost them at its first re-application.
+    ...protocolOptions()
   };
 }
 
@@ -3457,9 +3479,13 @@ function description(req) {
       anchorsFile: anchorsFileReport.file || null,
       anchorsFromFile: anchorsFileReport.loaded
     },
-    // `tls.minVersion` and `tls.ciphers`, as every TLS socket applies them.
+    // `tls.minVersion`, `tls.ciphers`, `tls.groups` and
+    // `tls.signatureAlgorithms`, as every TLS socket applies them.
     protocol: { minVersion: protocolOptions().minVersion,
-                ciphers: protocolOptions().ciphers || '(node default)' },
+                ciphers: protocolOptions().ciphers || '(node default)',
+                groups: protocolOptions().ecdhCurve || '(node default)',
+                signatureAlgorithms: protocolOptions().sigalgs ||
+                  '(node default)' },
     // WHAT A PRESENTED CERTIFICATE IS HELD TO BEYOND ITS CHAIN (2026-09-12):
     // the policy in force, how it was decided, where it is and is not
     // consulted, and the one sentence every surface repeats. The verdict for
@@ -4203,7 +4229,8 @@ module.exports = {
   // listeners from the same answer applyAnchors() re-applies to them, rather
   // than assembling a second one that can drift.
   clientTruststoreOptions: secureContextOptions,
-  // `tls.minVersion` / `tls.ciphers` for a TLS listener this module does not
+  // `tls.minVersion` / `tls.ciphers` / `tls.groups` /
+  // `tls.signatureAlgorithms` for a TLS listener this module does not
   // create — LDAPS, which ldapjs builds, and the main port at creation.
   protocolOptions: protocolOptions,
   trustAnchorsFileLoaded: function () {

@@ -815,6 +815,10 @@ class DebuggerServer {
                                          tlsServer.clientTruststoreOptions(),
                                          { requestCert: true,
                                            rejectUnauthorized: false }), app)
+      // `clientTruststoreOptions()` carries `tls_server.js`'s
+      // protocolOptions() — the floor, the ciphers, the groups and the
+      // signature algorithms — so this listener is held to the main port's
+      // policy from its first handshake (#212's tlsfuzzer run drives it).
       : http.createServer(app);
     if (useHttps) {
       // REGISTERED so that a certificate this service replaces at runtime —

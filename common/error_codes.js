@@ -10952,8 +10952,8 @@ const CODES = [
     spec: 'UNAUTHENTICATED / PERMISSION_DENIED, as for any unverified caller' },
   // ===== TLS ===============================================================
   { code: 'STS-TLS-0001',
-    summary: 'The service did not start: tls.minVersion or tls.ciphers ' +
-      'cannot build a TLS context.',
+    summary: 'The service did not start: tls.minVersion, tls.ciphers, ' +
+      'tls.groups or tls.signatureAlgorithms cannot build a TLS context.',
     spec: '' },
   { code: 'STS-TLS-0002',
     summary: 'The service did not start: tls.certificateFile and tls.keyFile ' +

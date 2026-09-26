@@ -2681,7 +2681,7 @@ Raised from: tls/.
 
 | Code | What failed | Client sees |
 |---|---|---|
-| `STS-TLS-0001` | The service did not start: tls.minVersion or tls.ciphers cannot build a TLS context. | — |
+| `STS-TLS-0001` | The service did not start: tls.minVersion, tls.ciphers, tls.groups or tls.signatureAlgorithms cannot build a TLS context. | — |
 | `STS-TLS-0002` | The service did not start: tls.certificateFile and tls.keyFile must be set together and only one was. | — |
 | `STS-TLS-0003` | The service did not start: the certificate or key named by tls.certificateFile / tls.keyFile could not be read. | — |
 | `STS-TLS-0004` | The service did not start: tls.certificateFile is not a PEM certificate. | — |

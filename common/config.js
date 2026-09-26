@@ -7718,6 +7718,66 @@ const SETTINGS = [
                  'the service at startup naming this setting, rather than ' +
                  'leaving listeners that complete no handshake.' },
 
+  // THE KEY-EXCHANGE GROUPS, POST-QUANTUM FIRST (#212, 2026-09-26). tlsfuzzer
+  // found node's 'auto' — OpenSSL 3.5's own list — offering X25519MLKEM768
+  // and neither of the other two hybrid groups OpenSSL implements
+  // (SecP256r1MLKEM768, SecP384r1MLKEM1024), and the two finite-field groups
+  // an order of magnitude slower than any curve. The default is OpenSSL's own
+  // TUPLE syntax, and the tuples are the point: within one, the client's key
+  // share is taken as it comes; across them the server asks (HelloRetryRequest)
+  // for a share in an earlier tuple the client said it supports — so a client
+  // that can do ML-KEM and guessed X25519 is moved to the hybrid. Empty is
+  // node's 'auto'. Restart-only for tls.ciphers's reason.
+  { key: 'tls.groups', group: 'TLS', label: 'TLS key-exchange groups',
+    env: 'STS_TLS_GROUPS', type: 'string',
+    dflt: 'X25519MLKEM768:SecP256r1MLKEM768:SecP384r1MLKEM1024 / ' +
+          'X25519:P-256 / X448:P-384:P-521',
+    runtime: false,
+    restartReason: 'the TLS contexts are built when the listeners are created',
+    description: 'The (EC)DHE groups the main port, LDAPS and the debugger\'s ' +
+                 'listener accept, as an OpenSSL groups list (node\'s ' +
+                 'ecdhCurve). The default puts the three post-quantum hybrid ' +
+                 'groups in a first tuple, then X25519 and P-256, then X448, ' +
+                 'P-384 and P-521; a "/" separates tuples, and a client that ' +
+                 'supports a group in an earlier tuple than the key share it ' +
+                 'sent is asked for one there. The finite-field groups ' +
+                 '(ffdhe2048 and up) are left out on purpose. Empty means ' +
+                 'node\'s own default, which offers only X25519MLKEM768 of ' +
+                 'the hybrids and includes ffdhe2048 and ffdhe3072. A list ' +
+                 'that builds no TLS context stops the service at startup.' },
+
+  // THE SIGNATURE ALGORITHMS (#212, 2026-09-26). OpenSSL's default list —
+  // what node uses when `sigalgs` is not given — advertised DSA with four
+  // hashes and the two SHA-224 schemes in every TLS 1.2 CertificateRequest,
+  // and with them a dss_sign certificate type, so a client could answer the
+  // main port's request with a DSA certificate (FIPS 186-5 withdrew DSA for
+  // signing). The default is OpenSSL's TLS 1.3 list with those six removed:
+  // ML-DSA first, ECDSA and EdDSA, RSA-PSS, and PKCS #1 v1.5 with SHA-2 for
+  // TLS 1.2 and certificate chains. It is what this service signs with and
+  // what it asks a client certificate to be signed with.
+  { key: 'tls.signatureAlgorithms', group: 'TLS',
+    label: 'TLS signature algorithms',
+    env: 'STS_TLS_SIGALGS', type: 'string',
+    dflt: 'mldsa65:mldsa87:mldsa44:ecdsa_secp256r1_sha256:' +
+          'ecdsa_secp384r1_sha384:ecdsa_secp521r1_sha512:ed25519:ed448:' +
+          'ecdsa_brainpoolP256r1tls13_sha256:' +
+          'ecdsa_brainpoolP384r1tls13_sha384:' +
+          'ecdsa_brainpoolP512r1tls13_sha512:rsa_pss_pss_sha256:' +
+          'rsa_pss_pss_sha384:rsa_pss_pss_sha512:rsa_pss_rsae_sha256:' +
+          'rsa_pss_rsae_sha384:rsa_pss_rsae_sha512:rsa_pkcs1_sha256:' +
+          'rsa_pkcs1_sha384:rsa_pkcs1_sha512',
+    runtime: false,
+    restartReason: 'the TLS contexts are built when the listeners are created',
+    description: 'The signature schemes the main port, LDAPS and the ' +
+                 'debugger\'s listener sign with and accept from a client ' +
+                 'certificate, as an OpenSSL list (node\'s sigalgs) — also ' +
+                 'what a CertificateRequest advertises. The default is ' +
+                 'OpenSSL\'s own list without DSA and without SHA-224: ' +
+                 'ML-DSA, ECDSA, EdDSA, RSA-PSS, and RSA PKCS #1 v1.5 with ' +
+                 'SHA-256 or longer. Empty means OpenSSL\'s default, which ' +
+                 'offers DSA and SHA-224 in TLS 1.2. A list that builds no ' +
+                 'TLS context stops the service at startup.' },
+
   { key: 'tls.trustAnchorsFile', group: 'TLS',
     label: 'Client certificate trust anchors file',
     env: 'STS_TLS_TRUST_ANCHORS_FILE', type: 'string', dflt: '',

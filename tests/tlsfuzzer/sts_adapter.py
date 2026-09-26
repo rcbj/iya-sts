@@ -24,7 +24,8 @@
 #   "GET / HTTP/1.0" and wait for an answer. The directory closes the
 #   connection on a request it cannot parse, so every probe that needs the
 #   server to answer application data would fail on a question of protocol
-#   above TLS. A complete HTTP request a script sends is replaced by an LDAP
+#   above TLS. A complete HTTP request a script sends (ending in a blank
+#   line, CRLF or bare LF — scripts use both) is replaced by an LDAP
 #   BindRequest (RFC 4511 section 4.2) of THE SAME LENGTH — the name is padded
 #   to fit — which the directory answers with one BindResponse in every mode
 #   (success, or 48 where product mode refuses the bind). Record sizes and
@@ -222,7 +223,8 @@ def main():
 
         def adg_init(self, payload, *args, **kwargs):
             data = bytes(payload)
-            if data.startswith(b'GET ') and data.endswith(b'\r\n\r\n'):
+            if data.startswith(b'GET ') and data.endswith(b'\n\n') or \
+                    data.startswith(b'GET ') and data.endswith(b'\r\n\r\n'):
                 bind = ldap_bind(len(data))
                 if bind is not None:
                     payload = bytearray(bind)
@@ -234,8 +236,9 @@ def main():
 
 
 def aead_substitutes(suite):
-    """The TLS 1.2 suites a script offers by default, each mapped to the
-    ECDHE-RSA AES-GCM suite of the same key size this service offers."""
+    """The TLS 1.2 suites scripts offer by default — CBC or GCM, with RSA,
+    DHE or ECDHE-ECDSA key exchange — each mapped to the ECDHE-RSA AES-GCM
+    suite of the same key size this service offers."""
     small = suite.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256
     large = suite.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384
     swap = {}
@@ -244,7 +247,9 @@ def aead_substitutes(suite):
                              ('AES_128_CBC_SHA256', small),
                              ('AES_256_CBC_SHA', large),
                              ('AES_256_CBC_SHA256', large),
-                             ('AES_256_CBC_SHA384', large)):
+                             ('AES_256_CBC_SHA384', large),
+                             ('AES_128_GCM_SHA256', small),
+                             ('AES_256_GCM_SHA384', large)):
             name = 'TLS_' + kex + '_WITH_' + bulk
             if hasattr(suite, name):
                 swap[getattr(suite, name)] = target
