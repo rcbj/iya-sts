@@ -1131,10 +1131,11 @@ things in this module's policy, all fixed here.
        then issuers from the listener's anchors, and a self-issued top
        pointing at itself.
 
-  The SPIFFE gRPC listeners belong to grpc-js (`getAuthContext()` calls
-  `getPeerCertificate()`), so they get only the first defence:
-  `SpiffeGrpc.READABLE_SIGALGS`. The brainpool-issuer route is still open
-  there. It is recorded on #212, because grpc-js owns that socket.
+  The SPIFFE gRPC listeners belong to grpc-js, so they get only the first
+  defence, `SpiffeGrpc.READABLE_SIGALGS`. That is the whole of what they
+  need: grpc-js calls `getPeerCertificate()` for `getAuthContext()` WITHOUT
+  `detailed`, which converts the leaf alone, and nothing in `spiffe/` walks
+  the chain.
   `tests/tls_protocol_policy.js` C runs the crash and the guard in child
   processes: the leaf, the issuer, and a chain read whole. When node fixes
   the crash, that file says so, and the guard should be revisited. It has
