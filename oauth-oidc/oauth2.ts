@@ -1810,7 +1810,9 @@ class OAuth2Server {
       scopes_supported: ['openid', 'profile', 'email', 'address', 'phone',
                          'offline_access',
                          // Native SSO section 5 (#130).
-                         'device_sso'].concat(
+                         'device_sso',
+                         // OpenID Connect Key Binding (#150).
+                         'bound_key'].concat(
         config.value('scim.enabled') !== false
           ? [String(config.value('scim.scopeRead') || 'scim:read'),
              String(config.value('scim.scopeWrite') || 'scim:write')]
@@ -1844,8 +1846,8 @@ class OAuth2Server {
       authorization_encryption_alg_values_supported: jarm.ENCRYPTION_ALGS,
       authorization_encryption_enc_values_supported: jarm.ENCRYPTION_ENCS,
       // Only what the token endpoint below actually implements — the metadata
-      // should not promise a grant this server would refuse. (No device_code:
-      // there is no device authorization endpoint to start that flow.)
+      // should not promise a grant this server would refuse. The device_code
+      // grant (#150) is added below only where its endpoint is on.
       grant_types_supported: ['authorization_code', 'implicit', 'refresh_token',
                               'client_credentials',
                               'password',
@@ -1870,7 +1872,10 @@ class OAuth2Server {
         // OpenID Connect CIBA (#131), conditional for the same reason: only
         // where oauth2.ciba is on in the realm.
         .concat(this.deps.ciba.enabled()
-          ? ['urn:openid:params:grant-type:ciba'] : []),
+          ? ['urn:openid:params:grant-type:ciba'] : [])
+        // RFC 8628 section 3.4 (#150), where oauth2.deviceAuthorization is on.
+        .concat(deviceAuthorization.enabled()
+          ? [deviceAuthorization.GRANT_TYPE] : []),
       // RFC 7521 section 4.1 and OpenID Connect Core section 9's spelling of
       // the same thing: what a client_assertion_type may say. It is published
       // for the GRANT as well as for client authentication, because the one
@@ -2043,6 +2048,12 @@ class OAuth2Server {
     // presence the whole of how a client learns it may push.
     if (!config.value('oauth2.pushedAuthorizationRequests')) {
       delete metadata.pushed_authorization_request_endpoint;
+    }
+    // RFC 8628 section 4 (#150): the device authorization endpoint, for the
+    // same reason — only where it is on.
+    if (deviceAuthorization.enabled()) {
+      (metadata as Json).device_authorization_endpoint = at +
+        '/oauth2/device_authorization';
     }
     // RFC 8705 SECTION 5 (#139, FAPI 1.0 Advanced item 6): where the main port
     // asks for a client certificate, every endpoint that reads one is its own
@@ -3783,7 +3794,15 @@ class OAuth2Server {
       // against the register — a grant revoked, or merged or replaced since,
       // refuses it on every node.
       grant_id: opts.grant_id ? String(opts.grant_id) : undefined,
-      grant_gen: opts.grant_id ? Number(opts.grant_gen) || 1 : undefined
+      grant_gen: opts.grant_id ? Number(opts.grant_gen) || 1 : undefined,
+      // OPENID CONNECT KEY BINDING (#150), inside the JWE: the thumbprint of
+      // the key a bound ID Token names, carried through every refresh, and
+      // held against the refresh request's DPoP proof. Separate from `cnf`,
+      // because RFC 9449 section 5 leaves a confidential client's refresh
+      // token unbound (#176), and a bound ID Token must stay with ONE key.
+      kb_jkt: opts.kb_jkt ? String(opts.kb_jkt) :
+        (this.deps.hasScope(opts.scope, 'bound_key') && opts.dpopJwk
+          ? this.deps.stsCrypto.jwkThumbprint(opts.dpopJwk) : undefined)
     };
     if (opts.request) {
       payload.cnf = mtls.confirmationFor(opts.request, payload.cnf);
@@ -4109,6 +4128,14 @@ class OAuth2Server {
       payload.session_expiry = Math.floor(Number(held.expires) / 1000);
     }
     payload.tenant = String(realms.current().id);
+    // OPENID CONNECT KEY BINDING SECTION 4 (#150): with `bound_key` granted
+    // and a DPoP key proved, the ID Token names that key in `cnf.jwk`, and
+    // its JOSE header says so (`typ: dpop+id_token`, below).
+    const boundKey = String(opts.scope || '').split(/\s+/)
+      .indexOf('bound_key') >= 0 && opts.dpopJwk ? opts.dpopJwk : null;
+    if (boundKey) {
+      payload.cnf = { jwk: boundKey };
+    }
     const audSub = this.audSubFor(user.username, opts.client_id);
     if (audSub) {
       payload.aud_sub = audSub;
@@ -4219,6 +4246,10 @@ class OAuth2Server {
         ID_TOKEN_SIGNING_ALGS.join(', ') +
         ' (see id_token_signing_alg_values_supported).');
     }
+    // Key Binding section 4: a bound ID Token says so in its JOSE header,
+    // so it can never be mistaken for an ordinary one.
+    const boundTyp = payloadWithCustom.cnf ? { typ: 'dpop+id_token' }
+      : undefined;
     const token = OWN_SYNC_SIGNING.test(idAlg)
       // The default keeps going through signJwt(), which is what records the
       // token in the admin console's count — see the note on that function —
@@ -4229,13 +4260,15 @@ class OAuth2Server {
       ? signJwt(payloadWithCustom,
                 Object.assign({}, self.issuanceContext(opts),
                               { kind: 'id_token' }),
-                { certificateHeader: 'id-token', algorithm: idAlg })
+                { certificateHeader: 'id-token', algorithm: idAlg,
+                  header: boundTyp })
       // `session` is the pool's routing hint — this person's `sub`, so that one
       // session's signatures queue behind each other rather than across the
       // pool.
       : await signJwtAsAsync(payloadWithCustom, idAlg, registered.client_secret,
                              { session: opts.user && opts.user.sub,
-                               certificateHeader: 'id-token' });
+                               certificateHeader: 'id-token',
+                               header: boundTyp });
     // OIDC Core section 10.2 (2026-09-17): SIGNED, THEN ENCRYPTED, when the
     // client registered `id_token_encrypted_response_alg` — a Nested JWT with
     // `cty: "JWT"`. The signature above is unchanged by it (any algorithm of
@@ -5030,6 +5063,42 @@ class OAuth2Server {
     log.debug("Leaving OAuth2Server.boundKeyProofRefusal().");
     return null;
   }
+  // OPENID CONNECT KEY BINDING SECTION 7 (#150): a bound ID Token — one whose
+  // `cnf.jwk` names a key — is presented back to this service only with a
+  // DPoP proof from that key; without it the binding would be decoration and
+  // the token a bearer credential again. `dpopJkt` is the thumbprint of the
+  // proof this request carried, already verified. Null when it holds, or when
+  // the token is not bound. Asked where an ID Token is a CREDENTIAL — the
+  // token exchange grant, Native SSO's included — and not where it is a hint
+  // (`id_token_hint`), which names a person who is then asked in person.
+  boundIdTokenRefusal(claims: Json, dpopJkt: string): Json {
+    const { log, stsCrypto } = this.deps;
+    log.debug("Entering OAuth2Server.boundIdTokenRefusal().");
+    const jwk = claims && claims.cnf && claims.cnf.jwk;
+    if (!jwk || typeof jwk !== 'object') {
+      log.debug("Leaving OAuth2Server.boundIdTokenRefusal(). Not bound.");
+      return null;
+    }
+    let bound = '';
+    try {
+      bound = stsCrypto.jwkThumbprint(jwk);
+    } catch (e) {
+      log.debug("Caught in OAuth2Server.boundIdTokenRefusal(): " +
+                ((e && e.message) || e));
+      bound = '';
+    }
+    if (!bound || !dpopJkt || bound !== dpopJkt) {
+      log.debug("Leaving OAuth2Server.boundIdTokenRefusal(). No proof.");
+      return { code: 'STS-OAUTH-0707', error: 'invalid_dpop_proof',
+               description: 'The ID Token presented is bound to a key ' +
+                 '(cnf.jwk, OpenID Connect Key Binding), so it must be ' +
+                 'presented with a DPoP proof from that key' +
+                 (dpopJkt ? '; this proof is from ' + dpopJkt : '') + '.' };
+    }
+    log.debug("Leaving OAuth2Server.boundIdTokenRefusal().");
+    return null;
+  }
+
 
   // The Claims Provider library (#147), loaded when first asked: it reads
   // the directory and the outbound policy, which load around this module.
@@ -5574,8 +5643,9 @@ class OAuth2Server {
     // All six, including the two this service issues no claims for: `address`
     // and `phone` are still OpenID Connect's words and must not become an
     // audience because nothing here answers them.
+    // And Key Binding's `bound_key` (#150).
     const names = ['openid', 'profile', 'email', 'address', 'phone',
-                   'offline_access'];
+                   'offline_access', 'bound_key'];
     // RFC 7644 section 2, by way of scim_auth.js. Their names are settings,
     // which is why they are read and not written — see the note above.
     names.push(String(config.value('scim.scopeRead') || 'scim:read'));
@@ -6058,6 +6128,11 @@ class OAuth2Server {
       return refuse('STS-OAUTH-0631', 'invalid_request', 'the subject_token ' +
                     'is not an ID Token this authorization server issued ' +
                     'and still stands by.');
+    }
+    const keyBound = self.boundIdTokenRefusal(claims, ctx.dpopJkt);
+    if (keyBound) {
+      log.debug("Leaving OAuth2Server.nativeSsoExchange(). Key Binding.");
+      return refuse(keyBound.code, keyBound.error, keyBound.description);
     }
     const secret = String(body.actor_token);
     const device = devices.bySecret(secret);
@@ -7936,6 +8011,29 @@ class OAuth2Server {
         String(q.response_type) + '": a response returning a token or an ID ' +
         'Token MUST NOT use the query encoding (OAuth 2.0 Multiple Response ' +
         'Type Encoding Practices section 2.1). Use fragment or form_post.');
+    }
+
+    // OPENID CONNECT KEY BINDING section 3 (#150): `bound_key` asks for an
+    // ID Token bound to the client's DPoP key, which the authorization
+    // request must name up front (`dpop_jkt`), and which only the code flow
+    // can carry — a front-channel ID Token has no proof to bind to.
+    if (String(q.scope || '').split(/\s+/).indexOf('bound_key') >= 0) {
+      if (!q.dpop_jkt) {
+        log.debug("Leaving OAuth2Server.vetAuthorizationRequest(). bound_key " +
+                  "without dpop_jkt.");
+        return redirectable('STS-OAUTH-0704', 'invalid_request',
+          'The bound_key scope requires dpop_jkt on the authorization ' +
+          'request: the ID Token is bound to that DPoP key (OpenID Connect ' +
+          'Key Binding section 3).');
+      }
+      if (types.join(' ') !== 'code') {
+        log.debug("Leaving OAuth2Server.vetAuthorizationRequest(). bound_key " +
+                  "outside the code flow.");
+        return redirectable('STS-OAUTH-0705', 'invalid_request',
+          'The bound_key scope is honoured with response_type=code only: an ' +
+          'ID Token from the authorization endpoint carries no DPoP proof to ' +
+          'bind it to (OpenID Connect Key Binding section 3).');
+      }
     }
 
     // JARM section 2.3.1 (#139, #143): `query.jwt` carries no token in clear.
@@ -11767,6 +11865,16 @@ class OAuth2Server {
         log.debug("The authorization code's dpop_jkt matches the proof. jkt=" +
                   dpopJkt);
       }
+      // OpenID Connect Key Binding section 2 (#150): c_s256 over this code.
+      const codeProof = self.boundKeyProofRefusal(record.scope, code,
+                                                  dpopProof);
+      if (codeProof) {
+        log.debug("Leaving the token endpoint. Key Binding.");
+        errorCodes.mark(res, codeProof.code);
+        log.debug("Leaving OAuth2Server.tokenGrant().");
+        return self.oauthError(res, 400, codeProof.error,
+                               codeProof.description);
+      }
       // RFC 8707 section 2.2: the Token Request may name a resource, and it may
       // only be one the authorization request already asked for. Widening here
       // would let a client award itself an audience the End-User never
@@ -11839,6 +11947,8 @@ class OAuth2Server {
       clusterClaims.releaseUnlessSucceeded(res, codeClaim.handle);
       const issued = await issue({
         jkt: dpopJkt,
+        // The DPoP key a bound ID Token names (Key Binding section 4).
+        dpopJwk: dpopProof ? dpopProof.jwk : null,
         // One value where there is one, an array where the client asked for the
         // "small set" section 2.3 allows. `aud` takes either, and a
         // single-element array is a shape some libraries read differently from
@@ -12236,6 +12346,20 @@ class OAuth2Server {
             ', but the proof was signed by ' + dpopJkt + '.');
         }
       }
+      // OPENID CONNECT KEY BINDING (#150): a grant whose ID Token is bound to
+      // a key is refreshed only with a proof from that key, whether or not
+      // RFC 9449 bound the refresh token itself — a confidential client's is
+      // not (#176), and letting it rotate would rebind the ID Token.
+      if (claims.kb_jkt && dpopJkt !== claims.kb_jkt) {
+        log.debug("Leaving the token endpoint. Key Binding: the refresh " +
+                  "proof is not from the bound key.");
+        errorCodes.mark(res, 'STS-OAUTH-0706');
+        log.debug("Leaving OAuth2Server.tokenGrant().");
+        return self.oauthError(res, 400, 'invalid_dpop_proof',
+          'This grant\'s ID Token is bound to DPoP key ' + claims.kb_jkt +
+          ' (bound_key), so a refresh must carry a DPoP proof from that key' +
+          (dpopJkt ? ', and this one is from ' + dpopJkt : '') + '.');
+      }
       // RFC 8705 section 3.1, the same rule for the other constraint: a refresh
       // token bound to a client certificate may only be redeemed on a
       // connection made with it. Without this the long-lived half of a
@@ -12419,6 +12543,10 @@ class OAuth2Server {
         // happens to have signed this request would let a stolen bound token be
         // laundered into one bound to the thief's key.
         jkt: boundTo || dpopJkt,
+        // Key Binding (#150): the renewed ID Token is bound to the same key,
+        // which the check above held the proof to.
+        dpopJwk: dpopProof ? dpopProof.jwk : null,
+        kb_jkt: claims.kb_jkt || undefined,
         user: refreshedUser, client_id: claims.client_id,
         scope: body.scope ? String(body.scope) : claims.scope,
         // What the PRESENTED refresh token carried, for the refresh token this
@@ -13356,6 +13484,15 @@ class OAuth2Server {
         log.debug("Leaving OAuth2Server.tokenGrant(). The subject_token is " +
                   "not its declared type.");
         return self.oauthError(res, 400, 'invalid_request', subjectMismatch);
+      }
+      // Key Binding section 7 (#150), whether or not it verified: a token
+      // that names a key is held to it.
+      const subjectBound = self.boundIdTokenRefusal(subject, dpopJkt);
+      if (subjectBound) {
+        errorCodes.mark(res, subjectBound.code);
+        log.debug("Leaving OAuth2Server.tokenGrant(). Key Binding.");
+        return self.oauthError(res, 400, subjectBound.error,
+                               subjectBound.description);
       }
       if (subjectVerified && subject.jti && stats.isRevoked(subject.jti)) {
         log.info('oauth2: a token exchange by "' + client.client_id +
@@ -17495,6 +17632,9 @@ export = {
   // CIBA (#131): a push's tokens, for `ciba.ts`.
   cibaPushTokens: slot.forward('cibaPushTokens'),
   ownTokenKind: slot.forward('ownTokenKind'),
+  // Key Binding's two checks (#150), for tests/device_key_binding.js.
+  boundKeyProofRefusal: slot.forward('boundKeyProofRefusal'),
+  boundIdTokenRefusal: slot.forward('boundIdTokenRefusal'),
   exchangeTypeProblem: slot.forward('exchangeTypeProblem'),
   requestedClaimNames: slot.forward('requestedClaimNames'),
   CLAIMS_REQUEST_MEMBERS: CLAIMS_REQUEST_MEMBERS,

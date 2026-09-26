@@ -6988,6 +6988,85 @@ const CODES = [
       'section 3.2, #148); a realm is chosen by the path, never by a ' +
       'parameter.',
     spec: 'redirect {error: invalid_request}' },
+  { code: 'STS-OAUTH-0689',
+    summary: 'The device authorization grant or endpoint was used ' +
+      'in a realm where oauth2.deviceAuthorization is off (RFC 8628, #150).',
+    spec: 'HTTP 404 {error: invalid_request} at the endpoint; {error: ' +
+      'unsupported_grant_type} at the token endpoint' },
+  { code: 'STS-OAUTH-0690',
+    summary: 'A device authorization request was malformed (RFC ' +
+      '8628 section 3.1, #150).',
+    spec: 'HTTP 400 {error: invalid_request}' },
+  { code: 'STS-OAUTH-0691',
+    summary: 'A device authorization request\'s client did not ' +
+      'authenticate as it registered to (RFC 8628 section 3.1, #150).',
+    spec: 'HTTP 401 {error: invalid_client}' },
+  { code: 'STS-OAUTH-0692',
+    summary: 'A client that did not register the device_code grant ' +
+      'asked the device authorization endpoint for codes (#150).',
+    spec: 'HTTP 400 {error: unauthorized_client}' },
+  { code: 'STS-OAUTH-0693',
+    summary: 'The DPoP proof on a device authorization request did ' +
+      'not verify (RFC 9449, OpenID Connect Key Binding, #150).',
+    spec: 'HTTP 400 {error: invalid_dpop_proof}' },
+  { code: 'STS-OAUTH-0694',
+    summary: 'The device authorization endpoint failed ' +
+      'unexpectedly (#150).',
+    spec: 'HTTP 500 {error: server_error}' },
+  { code: 'STS-OAUTH-0695',
+    summary: 'A device_code grant named no device authorization of ' +
+      'this client (RFC 8628 section 3.5, #150).',
+    spec: 'HTTP 400 {error: invalid_grant}' },
+  { code: 'STS-OAUTH-0696',
+    summary: 'A device polled before the person answered (RFC 8628 ' +
+      'section 3.5, #150). Expected, not a fault.',
+    spec: 'HTTP 400 {error: authorization_pending}' },
+  { code: 'STS-OAUTH-0697',
+    summary: 'A device polled sooner than its interval, which ' +
+      'grows by five seconds (RFC 8628 section 3.5, #150).',
+    spec: 'HTTP 400 {error: slow_down}' },
+  { code: 'STS-OAUTH-0698',
+    summary: 'A device code expired before the person answered ' +
+      '(RFC 8628 section 3.5, #150).',
+    spec: 'HTTP 400 {error: expired_token}' },
+  { code: 'STS-OAUTH-0699',
+    summary: 'The person denied a device\'s sign-in on ' +
+      '/portal/device (RFC 8628 section 3.5, #150).',
+    spec: 'HTTP 400 {error: access_denied}' },
+  { code: 'STS-OAUTH-0700',
+    summary: 'A device code whose tokens were already issued was ' +
+      'presented again (#150).',
+    spec: 'HTTP 400 {error: invalid_grant}' },
+  { code: 'STS-OAUTH-0701',
+    summary: 'A device code bound to a DPoP key was redeemed ' +
+      'without a proof from that key (#150).',
+    spec: 'HTTP 400 {error: invalid_dpop_proof}' },
+  { code: 'STS-OAUTH-0702',
+    summary: 'A grant holding bound_key was redeemed without a ' +
+      'DPoP proof (OpenID Connect Key Binding, #150).',
+    spec: 'HTTP 400 {error: invalid_dpop_proof}' },
+  { code: 'STS-OAUTH-0703',
+    summary: 'A grant holding bound_key was redeemed with a DPoP ' +
+      'proof whose c_s256 is not the hash of the code (OpenID Connect Key ' +
+      'Binding, #150).',
+    spec: 'HTTP 400 {error: invalid_dpop_proof}' },
+  { code: 'STS-OAUTH-0704',
+    summary: 'An authorization request asked for bound_key without ' +
+      'dpop_jkt (OpenID Connect Key Binding, #150).',
+    spec: 'redirect {error: invalid_request}' },
+  { code: 'STS-OAUTH-0705',
+    summary: 'An authorization request asked for bound_key outside ' +
+      'response_type=code (OpenID Connect Key Binding, #150).',
+    spec: 'redirect {error: invalid_request}' },
+  { code: 'STS-OAUTH-0706',
+    summary: 'A refresh of a grant whose ID Token is key-bound ' +
+      'carried no proof from that key (OpenID Connect Key Binding, #150).',
+    spec: 'HTTP 400 {error: invalid_dpop_proof}' },
+  { code: 'STS-OAUTH-0707',
+    summary: 'A key-bound ID Token was presented at token exchange ' +
+      'without a DPoP proof from the key its cnf names (OpenID Connect Key ' +
+      'Binding section 7, #150).',
+    spec: 'HTTP 400 {error: invalid_dpop_proof}' },
   { code: 'STS-SAML-0001',
     summary: 'A SAML 2.0 sign-in resumed with a held-request id that is ' +
       'unknown or has expired (saml2.requestTtlMin), so there is no ' +
@@ -15214,6 +15293,19 @@ const CODES = [
     summary: 'An unlink on /portal/claim-sources named a Claims Provider ' +
       'the person has no link to (#147).',
     spec: 'none (a portal page, HTTP 400)' },
+  { code: 'STS-PORTAL-0095',
+    summary: 'A user code typed or approved on /portal/device ' +
+      'matched no waiting device (#150).',
+    spec: 'none (a portal page, HTTP 404 or 400)' },
+  { code: 'STS-PORTAL-0096',
+    summary: 'A sign-on session typed too many user codes that ' +
+      'matched nothing on /portal/device and is refused for ten minutes ' +
+      '(RFC 8628 section 5.1, #150).',
+    spec: 'none (a portal page, HTTP 429)' },
+  { code: 'STS-PORTAL-0097',
+    summary: 'Answering a device sign-in on /portal/device failed ' +
+      'unexpectedly (#150).',
+    spec: 'none (a portal page, HTTP 500)' },
   { code: 'STS-LOGOUT-0001',
     summary: 'A sign-out named somebody other than the caller while naming ' +
       'another person is closed (logout.anyUser off, or product ' +

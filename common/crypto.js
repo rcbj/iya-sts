@@ -2457,8 +2457,9 @@ const JWS_ALGS = {
 // are absent from DPoP: RFC 7638 defines a JWK Thumbprint for RSA, EC, OKP and
 // oct and not for AKP, so a DPoP proof signed with one could not be bound to
 // anything. See oauth-oidc/dpop.ts. (RFC 9964 has since defined the
-// AKP members and `THUMBPRINT_MEMBERS` carries them, 2026-09-13; DPoP still
-// refuses these algorithms by name.)
+// AKP members and `THUMBPRINT_MEMBERS` carries them, 2026-09-13; since #150
+// DPoP takes the three JOSE-registered ML-DSA algorithms and refuses the
+// rest by name.)
 pqJose.PQ_ALGS.forEach(function (alg) {
   JWS_ALGS[alg] = { family: 'pq', hash: null, kty: 'AKP', alg: alg,
                     ownSigner: true };
