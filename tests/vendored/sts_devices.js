@@ -36,6 +36,22 @@
 //  10. Product mode on this realm refuses an unattested key proof
 //      (STS-DEVICE-0024).
 //
+// AND #164 PHASES 3 AND 4 (2026-09-26): COMPLIANCE, THE MDM FEED, CAEP AND
+// RISC.
+//
+//  11. The MDM feed: device:compliance is issued only to a client that
+//      declares it; POST /admin-api/device-compliance applies a batch by key
+//      thumbprint and by certificate and refuses an unknown device alone;
+//      the job's own admin:write token is refused there; and CAEP
+//      device-compliance-change arrives on a POLL stream (every SET drained
+//      is pooled, because a poll acknowledges what it reads), its subject
+//      the device and its owner.
+//  12. The test control: it answers in development and product refuses it.
+//  13. A device marked compromised: its EST certificate appears on the
+//      realm's EST CRL, RISC credential-compromise and sessions-revoked
+//      arrive naming the account and the device, and CAEP risk-level-change
+//      to HIGH.
+//
 // OWNED HERE (local: true): this repository's register and management API.
 // ---------------------------------------------------------------------------
 
@@ -393,11 +409,11 @@ async function test() {
     label: "one too many" }, "a person at devices.maxPerPerson");
   await ok(api + "/config/reset", { key: "devices.maxPerPerson" },
            "put devices.maxPerPerson back");
-  check("an unknown action names the five; an unknown owner; a person at " +
+  check("an unknown action names the seven; an unknown owner; a person at " +
         "the bound — and nothing was evicted", function () {
-    assert.strictEqual(unknown, 'Unknown action "no-such-action". The five ' +
-                       "are: create, update, remove, add-key and " +
-                       "remove-key.");
+    assert.strictEqual(unknown, 'Unknown action "no-such-action". The ' +
+                       "seven are: create, update, remove, add-key, " +
+                       "remove-key, set-compliance and set-status.");
     assert.ok(/There is no person/.test(nobody), nobody);
     assert.ok(/devices\.maxPerPerson/.test(full), full);
   });
@@ -606,7 +622,257 @@ async function test() {
               productRefusal.text.slice(0, 300));
   });
 
-  assert.ok(checks >= 18, "only " + checks + " checks ran");
+  log.info("=== 11. the MDM feed, under device:compliance ===");
+  const SECRET = "dev-feed-" + crypto.randomBytes(9).toString("base64url");
+  const RX = "dev-rx-" + STAMP.toLowerCase().replace(/[^a-z0-9-]/g, "");
+  const MDM = "dev-mdm-" + STAMP.toLowerCase().replace(/[^a-z0-9-]/g, "");
+  const NOT_MDM = "dev-notmdm-" + STAMP.toLowerCase()
+    .replace(/[^a-z0-9-]/g, "");
+  const client = function (identifier, protocols, scopes) {
+    log.debug("Entering client().");
+    log.debug("Leaving client().");
+    return { identifier: identifier, kind: "oauth2-client", name: identifier,
+             protocols: protocols,
+             fields: { oauthClientId: [identifier],
+                       oauthAllowedScope: scopes,
+                       oauthClientSecret: SECRET,
+                       oauthTokenEndpointAuthMethod: "client_secret_post" } };
+  };
+  await ok(api + "/applications/create",
+           client(RX, ["oauth2", "ssf"], ["ssf:read", "ssf:write"]),
+           "registered a Shared Signals receiver");
+  await ok(api + "/applications/create",
+           client(MDM, ["oauth2"], ["device:compliance"]),
+           "registered an MDM feed that declares device:compliance");
+  await ok(api + "/applications/create",
+           client(NOT_MDM, ["oauth2"], ["openid"]),
+           "registered a client that does not declare it");
+  const tokenOf = async function (identifier, scope, resource) {
+    log.debug("Entering tokenOf(). " + identifier);
+    const r = await fetch(base + "/oauth2/token", { method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: form(Object.assign({ grant_type: "client_credentials",
+        client_id: identifier, client_secret: SECRET, scope: scope },
+        resource ? { resource: resource } : {})) });
+    const json = await r.json();
+    log.debug("Leaving tokenOf(). " + r.status);
+    return { status: r.status, json: json };
+  };
+  const rxToken = (await tokenOf(RX, "ssf:read ssf:write")).json.access_token;
+  assert.ok(rxToken, "a Shared Signals token for the receiver");
+  const ssf = async function (method, where, body) {
+    log.debug("Entering ssf(). " + where);
+    const r = await fetch(base + where, { method: method,
+      headers: { "Content-Type": "application/json",
+                 Authorization: "Bearer " + rxToken },
+      body: body === undefined ? undefined : JSON.stringify(body) });
+    const text = await r.text();
+    let json = null;
+    try {
+      json = JSON.parse(text);
+    } catch (e) {
+      log.debug("Caught in ssf(): " + ((e && e.message) || e));
+      json = null;
+    }
+    log.debug("Leaving ssf(). " + r.status);
+    return { status: r.status, json: json, text: text };
+  };
+  const CAEP = "https://schemas.openid.net/secevent/caep/event-type/";
+  const RISC = "https://schemas.openid.net/secevent/risc/event-type/";
+  const made = await ssf("POST", "/ssf/stream", {
+    delivery: { method: "urn:ietf:rfc:8936" },
+    events_requested: [CAEP + "device-compliance-change",
+                       CAEP + "risk-level-change", CAEP + "credential-change",
+                       RISC + "credential-compromise",
+                       RISC + "sessions-revoked"] });
+  assert.ok(made.status === 200 || made.status === 201,
+            "a poll stream: " + made.status + " " + made.text.slice(0, 300));
+  const streamId = made.json.stream_id;
+  // A poll ACKs what it reads, so every SET drained is POOLED here and each
+  // check reads the pool rather than one poll's answer.
+  const pool = [];
+  const drain = async function () {
+    log.debug("Entering drain().");
+    await new Promise(function (resolve) {
+      setTimeout(resolve, 400);
+    });
+    for (let round = 0; round < 10; round += 1) {
+      const r = await ssf("POST", "/ssf/poll", { stream_id: streamId,
+        returnImmediately: true, maxEvents: 100 });
+      assert.strictEqual(r.status, 200, "poll: " + r.text.slice(0, 300));
+      const sets = r.json.sets || {};
+      const jtis = Object.keys(sets);
+      jtis.forEach(function (jti) {
+        pool.push(JSON.parse(Buffer.from(sets[jti].split(".")[1],
+                                         "base64url").toString("utf8")));
+      });
+      if (jtis.length) {
+        await ssf("POST", "/ssf/poll", { stream_id: streamId, ack: jtis,
+                                         returnImmediately: true,
+                                         maxEvents: 0 });
+      }
+      if (!r.json.moreAvailable) {
+        break;
+      }
+    }
+    log.debug("Leaving drain(). " + pool.length);
+    return pool;
+  };
+  const about = function (uri, deviceId) {
+    log.debug("Entering about().");
+    log.debug("Leaving about().");
+    return pool.filter(function (set) {
+      return set.events && set.events[uri] && set.sub_id &&
+             set.sub_id.device && set.sub_id.device.sub === deviceId;
+    });
+  };
+  const notDeclared = await tokenOf(NOT_MDM, "device:compliance", api);
+  const feedGrant = await tokenOf(MDM, "device:compliance", api);
+  check("device:compliance is issued only to a client that declares it",
+        function () {
+    assert.strictEqual(notDeclared.status, 400,
+                       JSON.stringify(notDeclared.json));
+    assert.strictEqual(notDeclared.json.error, "invalid_scope");
+    assert.strictEqual(feedGrant.status, 200, JSON.stringify(feedGrant.json));
+    assert.strictEqual(feedGrant.json.scope, "device:compliance");
+  });
+  const feed = async function (token, payload) {
+    log.debug("Entering feed().");
+    const headers = { "Content-Type": "application/json" };
+    if (token) {
+      headers.Authorization = "Bearer " + token;
+    }
+    const r = await fetch(api + "/device-compliance", { method: "POST",
+      headers: headers, body: JSON.stringify(payload) });
+    const text = await r.text();
+    let json = null;
+    try {
+      json = JSON.parse(text);
+    } catch (e) {
+      log.debug("Caught in feed(): " + ((e && e.message) || e));
+      json = null;
+    }
+    log.debug("Leaving feed(). " + r.status);
+    return { status: r.status, json: json, text: text };
+  };
+  // The job's own admin token (attached by the launcher's preload) carries
+  // admin:write and NOT device:compliance.
+  const asAdmin = await hop("POST", api + "/device-compliance", {
+    id: laptop.device.id, status: "compliant" });
+  await drain();
+  const reported = await feed(feedGrant.json.access_token, { reports: [
+    { thumbprint: thumbprint(key.pub), keyKind: "jwk", status: "compliant",
+      reason: "sts_devices MDM feed" },
+    { certificate: certificate.toString(), status: "not-compliant" },
+    { id: "no-such-device", status: "compliant" }] });
+  await drain();
+  const feedSets = about(CAEP + "device-compliance-change", laptop.device.id);
+  check("the feed applies a batch by key thumbprint and by certificate, " +
+        "refuses an unknown device alone, and an admin:write token is " +
+        "refused there", function () {
+    assert.strictEqual(asAdmin.status, 403, asAdmin.text.slice(0, 300));
+    assert.strictEqual(reported.status, 200, reported.text.slice(0, 400));
+    assert.strictEqual(reported.json.applied, 2);
+    assert.strictEqual(reported.json.refused, 1);
+    assert.strictEqual(reported.json.results[0].id, laptop.device.id);
+    assert.strictEqual(reported.json.results[1].id, deviceId);
+  });
+  check("device-compliance-change arrives on the poll stream: the device " +
+        "and its owner as a complex subject, initiated by a system",
+        function () {
+    assert.strictEqual(feedSets.length, 1, JSON.stringify(pool)
+      .slice(0, 600));
+    const e = feedSets[0].events[CAEP + "device-compliance-change"];
+    assert.strictEqual(e.previous_status, "not-compliant");
+    assert.strictEqual(e.current_status, "compliant");
+    assert.strictEqual(e.initiating_entity, "system");
+    assert.strictEqual(e.reason_admin.en, "sts_devices MDM feed");
+    assert.strictEqual(feedSets[0].sub_id.format, "complex");
+    assert.strictEqual(feedSets[0].sub_id.device.format, "iss_sub");
+    assert.ok(feedSets[0].sub_id.user, JSON.stringify(feedSets[0].sub_id));
+  });
+  const shown = await read("/devices?device=" + laptop.device.id);
+  check("recorded with source mdm and the feed's client as the actor",
+        function () {
+    assert.strictEqual(shown.device.compliance, "compliant");
+    assert.strictEqual(shown.device.complianceChange.source, "mdm");
+    assert.strictEqual(shown.device.complianceChange.actor, MDM);
+  });
+
+  log.info("=== 12. the test control ===");
+  const control = await hop("POST", base + "/devices/test/compliance", {
+    id: laptop.device.id, status: "not-compliant" });
+  check("development's test control sets compliance with no credential",
+        function () {
+    assert.strictEqual(control.status, 200, control.text.slice(0, 300));
+    assert.strictEqual(control.json.applied, 1);
+  });
+  await ok(api + "/config/set", { key: "global.mode", value: "product" },
+           "put this realm in product mode");
+  let productControl = null;
+  try {
+    productControl = await hop("POST", base + "/devices/test/compliance", {
+      id: laptop.device.id, status: "compliant" });
+  } finally {
+    await ok(api + "/config/reset", { key: "global.mode" },
+             "put this realm back in development mode");
+  }
+  check("product refuses the test control", function () {
+    assert.strictEqual(productControl.status, 403,
+                       productControl.text.slice(0, 300));
+  });
+
+  log.info("=== 13. a compromised device ===");
+  const serial = estDevice.device.keys[0].material.serial;
+  const crlOf = async function () {
+    log.debug("Entering crlOf().");
+    const r = await est.send({ method: "GET",
+                               url: base + "/pki/crl/" + REALM + "/est" });
+    assert.strictEqual(r.status, 200, "the EST CRL: " + r.status);
+    log.debug("Leaving crlOf().");
+    return est.crlSerials(r.body).map(function (s) {
+      return String(s).toLowerCase().replace(/^0+/, "");
+    });
+  };
+  const crlBefore = await crlOf();
+  const compromised = await ok(api + "/devices/set-status", {
+    id: deviceId, status: "compromised", reason: "reported stolen" },
+    "marked the EST device compromised");
+  await drain();
+  const crlAfter = await crlOf();
+  const bare = String(serial).toLowerCase().replace(/^0+/, "");
+  check("its EST certificate is on the CRL now, and was not before",
+        function () {
+    assert.strictEqual(compromised.certificatesRevoked, 1,
+                       JSON.stringify(compromised));
+    assert.ok(crlBefore.indexOf(bare) < 0, crlBefore.join(","));
+    assert.ok(crlAfter.indexOf(bare) >= 0, crlAfter.join(","));
+  });
+  const compromise = about(RISC + "credential-compromise", deviceId);
+  const plural = about(RISC + "sessions-revoked", deviceId);
+  const risky = about(CAEP + "risk-level-change", deviceId);
+  check("RISC credential-compromise (x509) and sessions-revoked, naming the " +
+        "account and the device, and CAEP risk-level-change to HIGH",
+        function () {
+    assert.strictEqual(compromise.length, 1, JSON.stringify(pool)
+      .slice(0, 600));
+    assert.strictEqual(compromise[0].events[RISC + "credential-compromise"]
+      .credential_type, "x509");
+    assert.ok(compromise[0].sub_id.user, JSON.stringify(compromise[0]));
+    assert.strictEqual(plural.length, 1);
+    assert.strictEqual(risky.length, 1);
+    const r = risky[0].events[CAEP + "risk-level-change"];
+    assert.strictEqual(r.principal, "DEVICE");
+    assert.strictEqual(r.current_level, "HIGH");
+  });
+  const afterCompromise = await read("/devices?device=" + deviceId);
+  check("it stays in the register, marked compromised, risk HIGH",
+        function () {
+    assert.strictEqual(afterCompromise.device.status, "compromised");
+    assert.strictEqual(afterCompromise.device.riskLevel, "HIGH");
+  });
+
+  assert.ok(checks >= 27, "only " + checks + " checks ran");
   log.info(checks + " check(s) passed.");
   log.info("Test completed successfully.");
   log.debug("Leaving test().");
@@ -617,7 +883,9 @@ new Command()
     "API: person- and application-owned devices, keys, the lists, the " +
     "bounds, the monitoring counts and the directory's view; and #164 " +
     "phase 2's enrolment (the portal's key proof, EST's device profile) " +
-    "and recognition at the token endpoint (DPoP, mutual TLS).")
+    "and recognition at the token endpoint (DPoP, mutual TLS); and phases " +
+    "3 and 4: the MDM feed under device:compliance, the test control, and " +
+    "the CAEP and RISC events a compliance change and a compromise send.")
   .addOption(new Option("-u, --url <url>", "base url (unused: this test " +
                                            "needs no browser)"))
   .parse(process.argv);

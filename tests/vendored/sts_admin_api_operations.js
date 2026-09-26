@@ -814,9 +814,15 @@ function documentedActions(doc) {
 //                    local issuer certificate`. Driven LAST now, in
 //                    theRootIsReplacedLast(), whose read-back trusts the new
 //                    anchor explicitly.
+//   * `device-compliance` (2026-09-26, #164) — the MDM feed takes the
+//                    `device:compliance` scope and NOTHING ELSE on this API
+//                    does; this run's token carries admin:write and is
+//                    refused there with 403 by design, so a replay would only
+//                    ever measure that. Exercised in `sts_devices.js`, with a
+//                    feed client that declares the scope.
 const REPLAY_HELD_BACK = [/^\/realms\//, /^\/rbac\//, /^\/spiffe\/rotate$/,
                           /^\/tls\/trust\//, /^\/kerberos\/principals\//,
-                          /^\/pki\/build-root$/];
+                          /^\/pki\/build-root$/, /^\/device-compliance$/];
 
 async function everyDocumentedExampleIsAccepted(doc) {
   log.debug("Entering everyDocumentedExampleIsAccepted().");
@@ -5027,7 +5033,13 @@ const NOT_DRIVEN_HERE = {
     ".js drives it in a throwaway realm, with a TGT across it",
   "POST /kerberos/principals/rotate-krbtgt-invalidate":
     "sts_kerberos_krbtgt_rotation.js drives it in a throwaway realm; it ends " +
-    "every TGT of the realm it runs in"
+    "every TGT of the realm it runs in",
+  // THE DEVICE COMPLIANCE FEED (#164). Its token carries device:compliance
+  // and no admin scope, so this run's admin:write token is refused there by
+  // design; `sts_devices.js` drives it with a feed client that declares the
+  // scope and reads the CAEP event it sends off a poll stream.
+  "POST /device-compliance": "sts_devices.js drives it with an MDM client " +
+    "holding the device:compliance scope, and checks the event it sends"
 };
 
 function everyDocumentedOperationWasDriven(doc) {
