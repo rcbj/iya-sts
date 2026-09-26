@@ -1410,6 +1410,7 @@ async function recoveryCodeReset(t) {
     const m = makeMail({ transports: transports });
     const issued = [];
     const spent = [];
+    const shrank = [];
     const creds = {
       accountDisabled: function () {
         return false;
@@ -1446,6 +1447,9 @@ async function recoveryCodeReset(t) {
         accountSignals: function () {
           return { recoveryActivated: function () {
             return undefined;
+          },
+          recoveryInformationChanged: function (n) {
+            shrank.push(n && n.username);
           } };
         }
       }));
@@ -1501,6 +1505,10 @@ async function recoveryCodeReset(t) {
             '15e. all three right: the link is mailed and the code is SPENT ' +
             '— the same code a second time is wrong',
             JSON.stringify([right.outcome, again.outcome]));
+    t.check(shrank.join(',') === 'ria',
+            '15f. the spent code is RISC recovery-information-changed ' +
+            '(#235): the set shrank — once, for the one code spent, and ' +
+            'never for a wrong one', JSON.stringify(shrank));
   });
   log.debug('Leaving recoveryCodeReset().');
 }

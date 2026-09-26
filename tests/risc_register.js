@@ -226,16 +226,20 @@ function run(t) {
     { mail: ['alice@example.com'] },
     { pwdaccountlockedtime: ['000001010000Z'],
       mail: ['alice.roe@example.com'] }));
-  t.equal(both.length, 2,
+  t.equal(both.length, 3,
           'a PUT that disables an account AND changes its mail address is ' +
-          'TWO RISC events about one write. An observer that answered with ' +
-          'the first would drop the second silently, and in a protocol with ' +
-          'no missing-event error that is a transmitter lying by omission');
+          'THREE RISC events about one write. An observer that answered ' +
+          'with the first would drop the others silently, and in a protocol ' +
+          'with no missing-event error that is a transmitter lying by ' +
+          'omission');
   const kinds = both.map(function (one) {
     return one.uri.slice(P.length);
   }).sort().join(',');
-  t.equal(kinds, 'account-disabled,identifier-changed',
-          'and they are the two RISC has words for');
+  t.equal(kinds, 'account-disabled,identifier-changed,' +
+                 'recovery-information-changed',
+          'and they are the three RISC has words for: the address is also ' +
+          'the one account recovery mails, so its change is ' +
+          'recovery-information-changed as well (#235)');
 
   const idEvent = both.filter(function (one) {
     return one.uri === P + 'identifier-changed';
@@ -477,15 +481,60 @@ function run(t) {
   const reset = risc.get('frank');
   t.equal(reset.total, 0, 'the counters are zero');
   t.equal(reset.lifecycle, 'active', 'the lifecycle is back to the start');
-  t.equal(reset.optOut, 'opt-in', 'and so is the opt-out state');
+  t.equal(reset.optOut, 'opt-in', 'an opted-in row stays opted in');
   t.check(!!reset,
           'THE ROW SURVIVES. A delete would take it off the page, which ' +
           'reads as the account having gone — and that is what ' +
           'account-purged MEANS, so faking it here would be the one ' +
           'confusion this page cannot afford');
 
+  // -----------------------------------------------------------------------
+  t.log.info('N. reset and clear NEVER move the holder\'s opt state (#233)');
+  // -----------------------------------------------------------------------
+  // RISC section 2.8 makes opting out the account holder's choice. Until #233
+  // a reset put every row back to opt-in and a clear dropped it, SILENTLY: a
+  // receiver told opt-out-initiated or opt-out-effective was never told
+  // anything else, and a pending opt-out never became effective.
+  const pending = risc.rowFor('gina', { iss: 'https://sts.example.com' });
+  risc.applyToState(pending, P + 'opt-out-initiated', {});
+  pending.optOutInitiatedAt = new Date(Date.now() - 3 * 86400000)
+    .toISOString();
+  const out = risc.rowFor('hal', { iss: 'https://sts.example.com' });
+  risc.applyToState(out, P + 'opt-out-initiated', {});
+  risc.applyToState(out, P + 'opt-out-effective', {});
+  transmitted(out, P + 'opt-out-effective', {});
+  t.check(risc.get('hal').total > 0, 'hal has events on the row');
+  risc.reset('hal');
+  t.equal(risc.get('hal').total, 0, 'a reset zeroes the counters');
+  t.equal(risc.get('hal').optOut, 'opt-out',
+          'AND KEEPS THE OPT-OUT: it is the holder\'s choice, not the ' +
+          'register\'s record, and nothing was sent to say it moved');
+  risc.reset('gina');
+  t.equal(risc.get('gina').optOut, 'opt-out-initiated',
+          'a pending opt-out survives a reset');
+  t.check(!!risc.get('gina').optOutInitiatedAt,
+          'with the time it began, which the job reads');
+
   const gone = risc.clear();
   t.check(gone > 0, 'clearing drops every row, and says how many');
+  t.equal(risc.list().map(function (row) {
+    return row.accountId;
+  }).sort().join(','), 'gina,hal',
+          'EXCEPT the rows whose holder chose to opt out, re-created blank ' +
+          'with that choice kept');
+  t.equal(risc.get('hal').optOut, 'opt-out', 'hal is still opted out');
+  t.equal(risc.get('hal').total, 0, 'and nothing else of the row is kept');
+  t.equal(risc.gate(risc.get('hal'), P + 'account-disabled').send, false,
+          'so the gate still suppresses what the holder opted out of');
+  config.setOverride('risc.optOutDelayHours', '24');
+  t.equal(risc.optOutsDue().join(','), 'gina',
+          'AND THE PENDING OPT-OUT BECOMES EFFECTIVE ON SCHEDULE: the ' +
+          'risc.opt-out-effective job still finds it after a clear');
+  config.clearOverride('risc.optOutDelayHours');
+  risc.applyToState(risc.get('gina'), P + 'opt-out-effective', {});
+  risc.applyToState(risc.get('gina'), P + 'opt-in', {});
+  risc.applyToState(risc.get('hal'), P + 'opt-in', {});
+  t.equal(risc.clear(), 2, 'once both opt back in, a clear drops them');
   t.equal(risc.list().length, 0, 'the register is empty');
   log.debug("Leaving run().");
 }

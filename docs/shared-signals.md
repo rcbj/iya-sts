@@ -43,7 +43,7 @@ The vocabularies run over that pipe:
 | Vocabulary | Events | About | Emitted on its own when |
 |---|---|---|---|
 | **CAEP** | 8 | a session | someone signs in, uses single sign-on, signs out, a session expires, a person re-authenticates at a different `acr`, any credential of a person changes, a directory change moves a claim of somebody holding live tokens, a registered device's compliance, risk level or credentials change |
-| **RISC** | 14 | an account | a person is deleted, disabled or enabled; a mail address or telephone number changes, or is given to an account after another released it; an administrator resets a password (optionally marking it compromised) or issues a reset link; recovery codes are cleared or confirmed; the account holder opts out or back in on `/portal/signals`; a person's registered device is compromised or removed |
+| **RISC** | 14 | an account | a person is deleted, disabled or enabled; any mail address or telephone number changes or is removed, or is given to an account after another released it; the recovery address is added, changed, removed or verified; an administrator resets a password (optionally marking it compromised) or issues a reset or activation link; recovery codes are cleared, confirmed or used; the account holder opts out or back in on `/portal/signals`; a person's registered device is compromised or removed |
 
 Since #164 every CAEP and RISC event type has an act here that sends it: a
 registered device's compliance changing (`device-compliance-change`), its risk
@@ -62,6 +62,19 @@ everything; and after `risc.optOutDelayHours` a scheduler job sends
 `opt-out-effective`, after which only opt-out events are sent about them.
 They can cancel during the wait, or opt back in afterwards. The wait stops
 somebody who has just taken an account over from silencing it at once.
+**Only the holder moves it**: an administrator's Reset or Clear on the RISC
+register keeps the account's opt state, and a pending opt-out still becomes
+effective on schedule.
+
+**Every value of `mail`, `telephoneNumber` and `mobile` counts.** A second
+address changing, or a `mobile` beside a `telephoneNumber`, is an
+`identifier-changed`; an address removed is one with no `new-value`, and it
+can then be `identifier-recycled` to another account. **The recovery
+address** is the first `mail` value, which `/portal/forgot-password` mails:
+its addition, change, removal or verification is
+`recovery-information-changed` (a change is `identifier-changed` as well).
+A recovery code used is `recovery-information-changed`, and at sign-in
+`recovery-activated` too.
 
 **`account-disabled` carries a `reason` only when an administrator gives one**
 (`hijacking` or `bulk-account`, on the console's disable form or as

@@ -160,6 +160,9 @@ interface RiscAct {
   act: string;
   values?: Record<string, any>;
   subject?: Record<string, any>;
+  // The administrative sentence for an act `observe()` read off a write, where
+  // the notice carries none (#235: WHY recovery information changed).
+  note?: string;
 }
 
 // What `observe()` and `observeAct()` answer, one per event due.
@@ -301,6 +304,12 @@ const LIFECYCLE_STATES = ['active', 'disabled', 'purged'];
 const LOCK_ATTRIBUTE = 'pwdaccountlockedtime';
 const EMAIL_ATTRIBUTES = ['mail'];
 const PHONE_ATTRIBUTES = ['telephonenumber', 'mobile'];
+// The two kinds of identifier RISC's identifier events name, each with the
+// attributes whose values are that kind (#234).
+const IDENTIFIER_KINDS = [
+  { format: 'email', names: EMAIL_ATTRIBUTES },
+  { format: 'phone_number', names: PHONE_ATTRIBUTES }
+];
 
 // accountId -> row. Insertion-ordered, which is what makes "the oldest goes"
 // one `keys().next()` rather than a sort by a timestamp two rows can share.
@@ -1050,21 +1059,11 @@ class RiscRegister {
       }
       // WHICH identifier is the subject's format (#146): every change was
       // filed as the email until then, so a changed phone number overwrote
-      // the address the row knew.
-      const old = phoneSubject ? row.phone : row.email;
-      if (old && row.formerIdentifiers.indexOf(old) < 0) {
-        row.formerIdentifiers.push(old);
-      }
-      this.releaseIdentifier(row, old,
-                             phoneSubject ? 'phone_number' : 'email');
+      // the address the row knew. WHICH VALUE is the subject's (#234).
+      const old = this.moveIdentifier(row, subject, now);
       row.identifierChanges.unshift({ at: iso(), from: old, to: now });
       row.identifierChanges =
         row.identifierChanges.slice(0, this.historyPerAccount());
-      if (now && phoneSubject) {
-        row.phone = now;
-      } else if (now) {
-        row.email = now;
-      }
     } else if (short === 'identifier-recycled') {
       warnings.push('THIS IDENTIFIER NOW BELONGS TO SOMEBODY ELSE. A ' +
                     'receiver keyed on an email address rather than on an ' +
@@ -1258,8 +1257,10 @@ class RiscRegister {
         iss: String(asked.issuer || ''),
         dn: String(asked.dn || ''),
         realm: String(asked.realm || ''),
-        email: this.firstOf(deleted ? before : after, EMAIL_ATTRIBUTES),
-        phone: this.firstOf(deleted ? before : after, PHONE_ATTRIBUTES)
+        email: this.valuesOf(deleted ? before : after,
+                             EMAIL_ATTRIBUTES)[0] || '',
+        phone: this.valuesOf(deleted ? before : after,
+                             PHONE_ATTRIBUTES)[0] || ''
       });
       register.set(accountId, row);
       this.trim();
@@ -1286,28 +1287,43 @@ class RiscRegister {
     // and looked exactly like a service where nobody had been deleted.
     const acts = deleted ? [{ act: 'purged', values: {} }]
       : this.actsFor(before, after, asked).concat(
-          this.recycledActs(accountId, before, after));
+          this.recycledActs(accountId, before, after),
+          this.recoveryChannelActs(kind, before, after));
     // RELEASED WHEN THE DIRECTORY SAYS SO (#146), not when an event about it
     // has been delivered: the next write can take the address before a push
     // to somebody's endpoint has come back, and the register must already
     // know the address is free. The state updates after delivery refresh the
     // same entries.
+    //
+    // EVERY VALUE (#234): a purged entry releases each address and number it
+    // held, and a write releases each one that LEFT the entry — a removal as
+    // much as a replacement.
     if (deleted) {
-      this.releaseIdentifier(row, this.firstOf(before, EMAIL_ATTRIBUTES) ||
-                             row.email, 'email');
-      this.releaseIdentifier(row, this.firstOf(before, PHONE_ATTRIBUTES) ||
-                             row.phone, 'phone_number');
+      const held = this.valuesOf(before, EMAIL_ATTRIBUTES);
+      this.releaseIdentifier(row, held.length ? '' : row.email, 'email');
+      held.forEach((one) => {
+        this.releaseIdentifier(row, one, 'email');
+      });
+      const phones = this.valuesOf(before, PHONE_ATTRIBUTES);
+      this.releaseIdentifier(row, phones.length ? '' : row.phone,
+                             'phone_number');
+      phones.forEach((one) => {
+        this.releaseIdentifier(row, one, 'phone_number');
+      });
     } else {
       this.identifierMoves(before, after).forEach((move) => {
         this.releaseIdentifier(row, move.from, move.format);
       });
     }
     if (!acts.length) {
+      this.followEntry(row, deleted, after);
       this.touch(row);
       log.debug("Leaving RiscRegister.observe(). Nothing RISC has a word for.");
       return [];
     }
     const due = this.dueForActs(row, acts, asked);
+    // AFTER the subjects are composed, which name the row as it was.
+    this.followEntry(row, deleted, after);
     // ONE REPORT FOR EVERYTHING ABOVE — the seed's `iss` and `dn`, the notes
     // and the suppressed count — rather than one per branch, which would be the
     // branch somebody adds next forgetting it.
@@ -1375,7 +1391,7 @@ class RiscRegister {
                                               device: asked.deviceSubject })
         : plain;
       const payload = this.buildPayload(uri, act.values || {}, {
-        reasonAdmin: this.reasonFor(act, asked),
+        reasonAdmin: act.note || this.reasonFor(act, asked),
         reasonUser: this.reasonForUser(act)
       });
       audit.audit({ action: 'risc.event.auto', category: 'signals',
@@ -1497,23 +1513,14 @@ class RiscRegister {
       row.lifecycle = 'disabled';
     } else if (act.act === 'enabled') {
       row.lifecycle = 'active';
-    } else if (act.act === 'identifier' && act.values &&
-               act.values['new-value']) {
+    } else if (act.act === 'identifier') {
       // WHICH identifier moved is in the act's subject: an email or a phone
       // number. Until #146 every move was filed as the email, so a changed
-      // phone number overwrote the address the row knew.
-      const phone = !!(act.subject &&
-        (act.subject.format || act.subject.subject_type) === 'phone_number');
-      const old = phone ? row.phone : row.email;
-      if (old && row.formerIdentifiers.indexOf(old) < 0) {
-        row.formerIdentifiers.push(old);
-      }
-      release(old, phone ? 'phone_number' : 'email');
-      if (phone) {
-        row.phone = String(act.values['new-value']);
-      } else {
-        row.email = String(act.values['new-value']);
-      }
+      // phone number overwrote the address the row knew. And WHICH VALUE is
+      // the subject's too (#234): an entry holds several, and the one that
+      // moved need not be the row's first.
+      this.moveIdentifier(row, act.subject,
+                          String((act.values || {})['new-value'] || ''));
     } else if (act.act === 'recycled') {
       row.notes.push('An identifier this account now holds was recycled ' +
                      'from another account.');
@@ -1576,9 +1583,12 @@ class RiscRegister {
     // AN IDENTIFIER MOVED. The event's subject names the OLD value, so it is
     // built here where both are in hand rather than by subjectFor(), which only
     // ever sees the row.
+    // A REMOVED value (#234) has no `new-value`: RISC section 2.5 makes the
+    // member optional, and the subject — the old value — is what a receiver
+    // must stop trusting.
     this.identifierMoves(before, after).forEach((move) => {
       out.push({ act: 'identifier',
-        values: { 'new-value': move.to },
+        values: move.to ? { 'new-value': move.to } : {},
         subject: move.format === 'email'
           ? { format: 'email', email: move.from }
           : { format: 'phone_number', phone_number: move.from } });
@@ -1607,24 +1617,6 @@ class RiscRegister {
     return out;
   }
 
-  private firstOf(attributes: Record<string, any> | undefined,
-                  names: string[]): string {
-    const { log } = this.deps;
-    log.debug("Entering RiscRegister.firstOf().");
-    let found = '';
-    names.forEach((name) => {
-      if (found) {
-        return;
-      }
-      const values = (attributes || {})[name];
-      if (Array.isArray(values) && values.length) {
-        found = String(values[0]);
-      }
-    });
-    log.debug("Leaving RiscRegister.firstOf(). " + (found || '(none)'));
-    return found;
-  }
-
   // ---------------------------------------------------------------------------
   // IDENTIFIER-RECYCLED (#146, RISC section 2.6): an address or number this
   // write GAVE to an account — a create, or a contact change — that another
@@ -1645,15 +1637,18 @@ class RiscRegister {
       return [];
     }
     const since = Date.now() - days * 86400000;
+    // EVERY VALUE THAT ARRIVED (#234), not the first: a second `mail` or a
+    // `mobile` beside a `telephoneNumber` is as much the account's as the
+    // first one.
     const taken: Array<{ value: string; format: string }> = [];
-    const mail = this.firstOf(after, EMAIL_ATTRIBUTES);
-    if (mail && mail !== this.firstOf(before, EMAIL_ATTRIBUTES)) {
-      taken.push({ value: mail, format: 'email' });
-    }
-    const phone = this.firstOf(after, PHONE_ATTRIBUTES);
-    if (phone && phone !== this.firstOf(before, PHONE_ATTRIBUTES)) {
-      taken.push({ value: phone, format: 'phone_number' });
-    }
+    IDENTIFIER_KINDS.forEach((kind) => {
+      const was = this.valuesOf(before, kind.names);
+      this.valuesOf(after, kind.names).forEach((value) => {
+        if (!this.holds(was, value, kind.format)) {
+          taken.push({ value: value, format: kind.format });
+        }
+      });
+    });
     const out: RiscAct[] = [];
     taken.forEach((one) => {
       let released = false;
@@ -1662,7 +1657,7 @@ class RiscRegister {
           return;
         }
         released = (held.releasedIdentifiers || []).some((gone) => {
-          return gone.value === one.value &&
+          return this.sameIdentifier(gone.value, one.value, one.format) &&
                  new Date(gone.at).getTime() >= since;
         });
       });
@@ -1677,12 +1672,28 @@ class RiscRegister {
     return out;
   }
 
-  // Every address or number that moved, as {from, to, format}. An identifier
-  // that was ADDED where there was none is not a change and produces nothing:
-  // `identifier-changed`'s subject has to carry the OLD value, and there is
-  // none, so the event could not be composed. A provider that wanted to
-  // announce the addition would send recovery-information-changed, which is
-  // what that event is for.
+  // Every address or number that LEFT the entry, as {from, to, format}, with
+  // `to` the value that replaced it or '' for a removal (#234).
+  //
+  // **EVERY VALUE, COMPARED AS A SET.** Until #234 this read the first
+  // `mail` and the first of `telephoneNumber` then `mobile`, and needed both
+  // an old and a new one, so: clearing an address was no change and was
+  // never released (and so never recycled — the case RISC section 2.6 is
+  // for); changing `mobile` beside a `telephoneNumber`, or a second `mail`,
+  // could not be seen at all. Now each format's values — `mail`, and
+  // `telephoneNumber` with `mobile` — are two sets, before and after: a
+  // value in the first and not the second LEFT, a value in the second and
+  // not the first ARRIVED. A value moving between `telephoneNumber` and
+  // `mobile` is neither, because the number is the identifier and the
+  // attribute is not.
+  //
+  // PAIRED, so a replacement is one change carrying its `new-value`: first
+  // within one attribute (a `mobile` replaced by a `mobile`), then across
+  // the format, in order. A value that left with nothing to pair is a
+  // removal. A value that ARRIVED with nothing to pair produces nothing
+  // here: `identifier-changed`'s subject has to carry the OLD value and
+  // there is none — `recycledActs()` still checks it, and a new RECOVERY
+  // address is `recoveryChannelActs()`'s recovery-information-changed.
   private identifierMoves(before?: Record<string, any>,
                           after?: Record<string, any>): Array<{
     from: string; to: string; format: string;
@@ -1690,19 +1701,212 @@ class RiscRegister {
     const { log } = this.deps;
     log.debug("Entering RiscRegister.identifierMoves().");
     const out: Array<{ from: string; to: string; format: string }> = [];
-    const wasMail = this.firstOf(before, EMAIL_ATTRIBUTES);
-    const nowMail = this.firstOf(after, EMAIL_ATTRIBUTES);
-    if (wasMail && nowMail && wasMail !== nowMail) {
-      out.push({ from: wasMail, to: nowMail, format: 'email' });
+    // AN ENTRY THAT IS NOT THERE — a create's before, a delete's after — has
+    // no identifiers to have lost or gained: `activeIn()`'s rule. A delete
+    // is `account-purged`, which releases everything itself.
+    if (!Object.keys(before || {}).length ||
+        !Object.keys(after || {}).length) {
+      log.debug("Leaving RiscRegister.identifierMoves(). No entry.");
+      return out;
     }
-    const wasPhone = this.firstOf(before, PHONE_ATTRIBUTES);
-    const nowPhone = this.firstOf(after, PHONE_ATTRIBUTES);
-    if (wasPhone && nowPhone && wasPhone !== nowPhone) {
-      out.push({ from: wasPhone, to: nowPhone, format: 'phone_number' });
-    }
+    IDENTIFIER_KINDS.forEach((kind) => {
+      const was = this.valuesOf(before, kind.names);
+      const now = this.valuesOf(after, kind.names);
+      const leftOver: string[] = [];
+      const arrivedOver: string[] = [];
+      const seenLeft: string[] = [];
+      const seenArrived: string[] = [];
+      kind.names.forEach((name) => {
+        const left = this.valuesOf(before, [name]).filter((value) => {
+          return !this.holds(now, value, kind.format) &&
+                 !this.holds(seenLeft, value, kind.format);
+        });
+        const arrived = this.valuesOf(after, [name]).filter((value) => {
+          return !this.holds(was, value, kind.format) &&
+                 !this.holds(seenArrived, value, kind.format);
+        });
+        left.forEach((value) => {
+          seenLeft.push(value);
+        });
+        arrived.forEach((value) => {
+          seenArrived.push(value);
+        });
+        while (left.length && arrived.length) {
+          out.push({ from: String(left.shift()), to: String(arrived.shift()),
+                     format: kind.format });
+        }
+        left.forEach((value) => {
+          leftOver.push(value);
+        });
+        arrived.forEach((value) => {
+          arrivedOver.push(value);
+        });
+      });
+      leftOver.forEach((from) => {
+        out.push({ from: from, to: arrivedOver.length
+                     ? String(arrivedOver.shift()) : '',
+                   format: kind.format });
+      });
+    });
     log.debug("Leaving RiscRegister.identifierMoves(). " + out.length +
               ' move(s).');
     return out;
+  }
+
+  // Every value of `names`, trimmed, empty ones dropped, each once, in order.
+  private valuesOf(attributes: Record<string, any> | undefined,
+                   names: string[]): string[] {
+    const { log } = this.deps;
+    log.debug("Entering RiscRegister.valuesOf().");
+    const out: string[] = [];
+    names.forEach((name) => {
+      const values = (attributes || {})[name];
+      (Array.isArray(values) ? values : []).forEach((value) => {
+        const one = String(value === null || value === undefined ? ''
+                                                                 : value)
+          .trim();
+        if (one && out.indexOf(one) < 0) {
+          out.push(one);
+        }
+      });
+    });
+    log.debug("Leaving RiscRegister.valuesOf(). " + out.length + '.');
+    return out;
+  }
+
+  // Two identifiers are the same one: an address compared without regard to
+  // case — `mail_uses.ts` and the directory's change notice compare it so,
+  // and `Alice@` against `alice@` is one mailbox — a number exactly.
+  private sameIdentifier(a: string, b: string, format: string): boolean {
+    const { log } = this.deps;
+    log.debug("Entering RiscRegister.sameIdentifier().");
+    const same = format === 'email'
+      ? String(a || '').toLowerCase() === String(b || '').toLowerCase()
+      : String(a || '') === String(b || '');
+    log.debug("Leaving RiscRegister.sameIdentifier(). " + same);
+    return same;
+  }
+
+  private holds(list: string[], value: string, format: string): boolean {
+    const { log } = this.deps;
+    log.debug("Entering RiscRegister.holds().");
+    const found = list.some((one) => {
+      return this.sameIdentifier(one, value, format);
+    });
+    log.debug("Leaving RiscRegister.holds(). " + found);
+    return found;
+  }
+
+  // An identifier-changed applied to the row (#234): the OLD value is the
+  // subject's — the row's own only when the subject names none, which is a
+  // hand emission composed from the row — and it is remembered and released.
+  // The row's address or number follows only when the value that moved WAS
+  // the row's, so a second `mail` changing does not overwrite the first.
+  // Answers the old value.
+  private moveIdentifier(row: RiscRow, subject: Record<string, any> |
+                         null | undefined, now: string): string {
+    const { log } = this.deps;
+    log.debug("Entering RiscRegister.moveIdentifier().");
+    const phone = !!(subject &&
+      (subject.format || subject.subject_type) === 'phone_number');
+    const format = phone ? 'phone_number' : 'email';
+    const named = String((subject && (phone ? subject.phone_number
+                                            : subject.email)) || '');
+    const current = phone ? row.phone : row.email;
+    const old = named || current;
+    if (old && row.formerIdentifiers.indexOf(old) < 0) {
+      row.formerIdentifiers.push(old);
+    }
+    this.releaseIdentifier(row, old, format);
+    if (!current || (old && this.sameIdentifier(old, current, format))) {
+      if (phone) {
+        row.phone = now;
+      } else {
+        row.email = now;
+      }
+    }
+    log.debug("Leaving RiscRegister.moveIdentifier().");
+    return old;
+  }
+
+  // THE ROW'S ADDRESS AND NUMBER ARE THE ENTRY'S FIRST ONES (#234), taken
+  // from the write itself once the events about it are composed. The
+  // identifier events above move them too, but only for the value each
+  // names; a write that removed the first of two addresses leaves the second
+  // as the one the account is known by, and only the entry says so.
+  private followEntry(row: RiscRow, deleted: boolean,
+                      after?: Record<string, any>): void {
+    const { log } = this.deps;
+    log.debug("Entering RiscRegister.followEntry().");
+    if (!deleted && after && Object.keys(after).length) {
+      row.email = this.valuesOf(after, EMAIL_ATTRIBUTES)[0] || '';
+      row.phone = this.valuesOf(after, PHONE_ATTRIBUTES)[0] || '';
+    }
+    log.debug("Leaving RiscRegister.followEntry().");
+  }
+
+  // ---------------------------------------------------------------------------
+  // RECOVERY-INFORMATION-CHANGED FROM THE DIRECTORY (#235, RISC section
+  // 2.10: "For example a recovery email address was added or removed").
+  //
+  // THE RECOVERY CHANNEL HERE IS THE ENTRY'S FIRST `mail` AND WHETHER IT IS
+  // VERIFIED: `/portal/forgot-password` mails a reset link to that address,
+  // and asks for `stsMailVerified` to name it (`common/mail.ts`
+  // `recipient()`, `mail.resetRequiresVerifiedAddress`). So the pair moving
+  // is recovery information changing:
+  //   * a first address added, or the last one removed;
+  //   * the address changed — which is also `identifier-changed`, sent
+  //     first, because the one act changed both (rcbj's decision on #235);
+  //   * the address verified, or no longer verified.
+  // An entry CREATED with an address is none of these: nothing about the
+  // account's recovery CHANGED, and RISC has no event for an account
+  // appearing (see AUTO_ACTS). A delete is `account-purged`. One act at most
+  // per write, however many of the three happened in it.
+  //
+  // It is read off the write, on the store, so every door that changes the
+  // address or its verification — the portal's link, an administrator's
+  // set-mail, SCIM, an `ldapmodify` — is heard, as every other directory
+  // act here is. `ldap_server.js`'s `writePersonFlag()` hands a write of
+  // `stsMailVerified` to the observer for this (#235).
+  // ---------------------------------------------------------------------------
+  private recoveryChannelActs(kind: string, before?: Record<string, any>,
+                              after?: Record<string, any>): RiscAct[] {
+    const { log } = this.deps;
+    log.debug("Entering RiscRegister.recoveryChannelActs().");
+    if (kind !== 'updated' || !before || !Object.keys(before).length ||
+        !after || !Object.keys(after).length) {
+      log.debug("Leaving RiscRegister.recoveryChannelActs(). Not an update.");
+      return [];
+    }
+    const was = this.recoveryChannelOf(before);
+    const now = this.recoveryChannelOf(after);
+    if (was.address === now.address && was.verified === now.verified) {
+      log.debug("Leaving RiscRegister.recoveryChannelActs(). Unchanged.");
+      return [];
+    }
+    const note = !was.address
+      ? 'A recovery email address was added.'
+      : (!now.address ? 'The recovery email address was removed.'
+        : (was.address !== now.address
+          ? 'The recovery email address was changed.'
+          : (now.verified ? 'The recovery email address was verified.'
+                          : 'The recovery email address is no longer ' +
+                            'verified.')));
+    log.debug("Leaving RiscRegister.recoveryChannelActs(). " + note);
+    return [{ act: 'recoveryChanged', values: {}, note: note }];
+  }
+
+  private recoveryChannelOf(attributes: Record<string, any>): {
+    address: string; verified: boolean;
+  } {
+    const { log } = this.deps;
+    log.debug("Entering RiscRegister.recoveryChannelOf().");
+    const address = (this.valuesOf(attributes, EMAIL_ATTRIBUTES)[0] || '')
+      .toLowerCase();
+    const proved = (this.valuesOf(attributes, ['stsmailverified'])[0] || '')
+      .toLowerCase();
+    log.debug("Leaving RiscRegister.recoveryChannelOf().");
+    return { address: address, verified: !!address && proved === address };
   }
 
   // The administrative sentence, for a person reading a log at the far end. It
@@ -1731,7 +1935,7 @@ class RiscRegister {
              'An administrator reset the password of ' + where + '.';
     } else if (act.act === 'recoveryChanged') {
       text = String((notice || {}).reasonAdmin || '') ||
-             'The recovery codes of ' + where + ' were cleared.';
+             'The recovery information of ' + where + ' changed.';
     } else if (act.act === 'recycled') {
       text = 'An identifier another account released was given to ' + where +
              '.';
@@ -1765,7 +1969,7 @@ class RiscRegister {
           : (act.act === 'credentialChangeRequired'
             ? 'Your password was reset and must be changed.'
             : (act.act === 'recoveryChanged'
-              ? 'Your recovery codes were cleared.'
+              ? 'Your account recovery information changed.'
               : (act.act === 'recycled'
                 ? 'A contact detail you were given used to belong to ' +
                   'another account.'
@@ -1846,6 +2050,18 @@ class RiscRegister {
   // being thrown away is what RISC has said about it — and a delete would take
   // the row off the page, which reads as the account having gone, which is
   // exactly what `account-purged` means and must not be faked.
+  //
+  // **IT NEVER MOVES THE HOLDER'S OPT STATE (#233).** RISC section 2.8 makes
+  // opting out the account holder's choice, and until #233 a reset put every
+  // row back to `opt-in` without sending anything: a receiver told
+  // `opt-out-initiated` or `opt-out-effective` went on believing the account
+  // was opted out while this transmitter behaved as if it had opted in, and a
+  // pending opt-out never became effective. The other way to mend that —
+  // sending `opt-out-cancelled` or `opt-in` from here — would be an
+  // administrator making the holder's choice for them, which section 2.8 does
+  // not give anybody. So `optOut` and `optOutInitiatedAt` are kept as they
+  // are, and the `risc.opt-out-effective` job still finds a pending opt-out
+  // when its delay has passed.
   reset(accountId: unknown): RiscRow | null {
     const { log, iso, audit } = this.deps;
     log.debug("Entering RiscRegister.reset(). " + accountId);
@@ -1855,7 +2071,6 @@ class RiscRegister {
       return null;
     }
     row.lifecycle = 'active';
-    row.optOut = 'opt-in';
     row.credentialStanding = '';
     row.credentialChangeRequired = false;
     row.recoveryActivated = false;
@@ -1866,25 +2081,63 @@ class RiscRegister {
     row.suppressed = 0;
     row.events = [];
     row.streams = [];
-    row.notes = ['Reset from the console; the directory entry is untouched.'];
+    row.notes = ['Reset from the console; the directory entry is untouched.' +
+                 (row.optOut !== 'opt-in'
+                   ? ' The holder\'s ' + row.optOut + ' choice was kept.'
+                   : '')];
     row.updatedAt = iso();
     this.touch(row);
     audit.audit({ action: 'risc.account.reset', category: 'signals',
       protocol: 'RISC', channel: 'http', target: row.accountId,
-      summary: 'The RISC state of account ' + row.accountId + ' was reset' });
+      summary: 'The RISC state of account ' + row.accountId + ' was reset',
+      detail: { optOutKept: row.optOut } });
     log.debug("Leaving RiscRegister.reset(). Done.");
     return row;
   }
 
+  // Drop every row — AND RE-CREATE, blank, each one whose holder had chosen
+  // anything but the default `opt-in` (#233), keeping that choice and when
+  // an opt-out began. `reset()`'s argument: the register forgets what was
+  // SAID, and never the one thing in it that the account holder decided.
+  // A dropped opted-out row would read as `opt-in` on its next event, and a
+  // dropped pending opt-out would never become effective. The count answered
+  // is of rows dropped outright; the kept ones are said in the audit row.
   clear(): number {
     const { log, audit } = this.deps;
     log.debug("Entering RiscRegister.clear().");
-    const gone = register.size;
+    const kept: RiscRow[] = [];
+    register.forEach((row) => {
+      if (row && row.optOut && row.optOut !== 'opt-in') {
+        const fresh = this.blankRow({
+          accountId: row.accountId, sub: row.sub, username: row.username,
+          iss: row.iss, dn: row.dn, realm: row.realm, email: row.email,
+          phone: row.phone
+        });
+        if (row.subject) {
+          fresh.subject = row.subject;
+        }
+        fresh.optOut = row.optOut;
+        fresh.optOutInitiatedAt = String(row.optOutInitiatedAt || '');
+        fresh.notes = ['Cleared from the console; the holder\'s ' +
+                       row.optOut + ' choice was kept.'];
+        kept.push(fresh);
+      }
+    });
+    const gone = register.size - kept.length;
     register.clear();
+    kept.forEach((row) => {
+      register.set(row.accountId, row);
+    });
     audit.audit({ action: 'risc.account.clear', category: 'signals',
       protocol: 'RISC', channel: 'http', target: 'risc',
-      summary: gone + ' RISC account row(s) were dropped' });
-    log.debug("Leaving RiscRegister.clear(). " + gone + ' dropped.');
+      summary: gone + ' RISC account row(s) were dropped' +
+               (kept.length ? '; ' + kept.length + ' opted-out row(s) kept ' +
+                              'their holder\'s choice' : ''),
+      detail: { kept: kept.map((row) => {
+        return row.accountId;
+      }) } });
+    log.debug("Leaving RiscRegister.clear(). " + gone + ' dropped, ' +
+              kept.length + ' kept.');
     return gone;
   }
 

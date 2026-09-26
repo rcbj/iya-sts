@@ -39223,7 +39223,9 @@ class AdminConsole {
         '<div class="formrow"><button class="secondary">Reset</button></div>' +
         '</form>' +
         self.note('It forgets what has been SAID about this account and puts ' +
-        'its state back to where it started. <strong>The directory entry is ' +
+        'its state back to where it started &mdash; except the holder\'s ' +
+        'opt-out choice, which is theirs (RISC section 2.8) and is kept. ' +
+        '<strong>The directory entry is ' +
         'untouched</strong> &mdash; nobody is enabled, disabled or restored, ' +
         'and a control on a monitoring page that did any of those would be a ' +
         'monitoring page with a weapon on it.') +
