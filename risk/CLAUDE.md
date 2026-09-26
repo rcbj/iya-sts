@@ -869,7 +869,43 @@ only**, and **OFF in every test run**: `tests/run.js` and
 
 At sign-in (`risk.breachCheckAtSignIn`), a verified password that is
 breached sets `pwdReset`, and the existing change step asks for a new one,
-saying why.
+saying why. **Since #231 it also sends RISC `credential-compromise`
+(`password`) and `account-credential-change-required`**, once per demand —
+not again while `pwdReset` still stands (`ssf/CLAUDE.md`).
+
+**#237's side finding — "`resetPersonKeytab` ignores the screen's result" —
+is not a defect**: like every door, it awaits `screen()` for the verdict
+`preparePassword()` then reads, so a listed password is refused
+STS-AUTHN-0222 before anything changes. `tests/kerberos_person_keytab.js`
+now shows it with the API stubbed.
+
+## TWO SIGNALS FROM OUTSIDE A SIGN-IN'S OWN EVIDENCE (#231, 2026-09-26)
+
+* **A CLONED SECURITY KEY is `authenticator-compromised`.** A key whose
+  signature counter went backwards, every other check passing (WebAuthn
+  Level 3 section 6.1.1), is refused where it always was; since #231
+  `credentials.noteKeyCloned()` also calls
+  `RiskEngine.noteAuthenticatorCompromise()`, which does what
+  `feedback()`'s "this wasn't me" does — the standing to HIGH at once, the
+  change answered by the `risk-response` policy — with the signal the FIDO
+  metadata already used for a compromised model. A standing that cannot be
+  recorded is STS-RISK-0044; the RISC event is sent regardless. Where the
+  policy is installed and enforced, its `risk-credential-compromise`
+  reaction then tells receivers a second time about the same key; the
+  direct event is kept so that it does not depend on the policy.
+* **A REPLAYED ONE-TIME CODE is `totp-replay` (×2)**, rcbj's decision on
+  #231: RFC 6238 section 5.2 refuses it (STS-AUTHN-0106), and it says too
+  little to be a Security Event Token — a person who pressed submit twice
+  looks exactly like one replaying an observed code. `credentials.ts`
+  records it in the FAILURES register under its own door
+  (`risk_failures.TOTP_REPLAY_DOOR`, 'a replayed one-time code', code
+  STS-AUTHN-0106), which already keeps a row per person and network,
+  sealed where it can be and purged by its job; the engine counts rows
+  under that door within the hour as `totp-replay` at the next assessment
+  and at the `risk.rescore` job, and **leaves them out of
+  `account-failures` and `network-failures`** (`excludeDoor`, in memory
+  and in the postgres query alike), because the code was RIGHT. Monitoring
+  → Risk's failures list shows the rows under that door name.
 
 ## THE REQUIRE ORDER, AND THE TRAP IT HIT
 

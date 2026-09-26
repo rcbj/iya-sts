@@ -2604,6 +2604,9 @@ class ScimAuth {
     const existingName = Object.keys(attributes).filter((name) => {
       return name.toLowerCase() === ScimAuth.HOBA_ATTRIBUTE.toLowerCase();
     })[0] || ScimAuth.HOBA_ATTRIBUTE;
+    const replacing = (attributes[existingName] || []).some((value) => {
+      return String(value).indexOf(kid + ' ') === 0;
+    });
     const values = (attributes[existingName] || []).filter((value) => {
       // A second registration under one key id REPLACES rather than
       // accumulating. The alternative is an entry that grows a value per
@@ -2630,6 +2633,29 @@ class ScimAuth {
                ? 'Nothing was checked about who registered it — see GET /scim.'
                : 'It was registered by ' + (signedInAs || username) + ', ' +
                    'signed in.'));
+    // CAEP `credential-change` (#236, 2026-09-26): this function is the only
+    // writer of `hobaPublicKey` (an LDAP write of it is refused, #237), so
+    // the event is sent here. The type is this service's own URN — an RFC
+    // 7486 key is none of CAEP 1.0 section 3.3.1's values — and a second
+    // registration under a kid is an `update`, as it replaces the value.
+    // Required LAZILY: SSF's facade is reached when the event is due.
+    try {
+      const signals = require('../ssf/account_signals');
+      signals.credentialChanged({ username: username,
+        credentialType: signals.HOBA_KEY_CREDENTIAL_TYPE,
+        changeType: replacing ? 'update' : 'create',
+        initiatingEntity: 'user', friendlyName: 'HOBA key ' + kid,
+        via: 'SCIM HOBA registration',
+        reasonAdmin: 'A HOBA public key (' + kid + ') was ' +
+                     (replacing ? 'replaced' : 'registered') + ' for ' +
+                     username + '.',
+        reasonUser: 'A HOBA key was ' + (replacing ? 'replaced' : 'added') +
+                    ' on your account.' });
+    } catch (e) {
+      log.debug("Caught in ScimAuth.registerHobaKey(): " +
+                ((e && e.message) || e));
+      // No Shared Signals facade in this process; the key is registered.
+    }
     log.debug("Leaving ScimAuth.registerHobaKey(). kid=" + kid);
     return {
       ok: true, status: 201,

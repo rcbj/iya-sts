@@ -443,6 +443,15 @@ commit that bumps the `sts/` pin across it needs `COPY
 sts/common/enrollment_profiles.js ./sts/common/`. It is data and requires
 nothing, so it is one line and no more.
 
+**AND NOT OWED FOR #236 (2026-09-26), ON PURPOSE.** `krb5_person_keys.ts`
+sends CAEP `credential-change` (`urn:iya:sts:credential-type:kerberos-key`)
+when a person's keys are first derived (create), derived from a new password
+(update), their previous versions dropped (revoke) or cleared (delete) —
+`ssf/CLAUDE.md` has the table. It reaches `ssf/account_signals.ts` with a
+LAZY `require()` inside a `try`, at the moment an event is due, so nothing is
+added to what those three modules load, and a copy without the file sends
+nothing and says so at debug.
+
 `MOCK_STS_DIR=/path/to/iya-sts` still points those tests at a working copy,
 unchanged; below it there is now a sibling-checkout candidate that resolves and
 says loudly that the run reflects an unpushed working copy.

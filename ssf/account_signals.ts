@@ -112,6 +112,40 @@ class AccountSignals {
   static readonly PLATFORM_KEY_CREDENTIAL_TYPE = 'fido2-platform';
   // An authenticator app, in the same vocabulary: CAEP's `app`.
   static readonly TOTP_CREDENTIAL_TYPE = 'app';
+  // -------------------------------------------------------------------------
+  // THE PERSON-HELD CREDENTIALS CAEP 1.0 SECTION 3.3.1 HAS NO VALUE FOR
+  // (#236, 2026-09-26). The member is "one of the following strings, or any
+  // other credential type supported mutually by the Transmitter and the
+  // Receiver", so a value of this service's own is allowed, and a receiver
+  // that does not know it still learns that A credential of the person's
+  // changed. Each is a URN in this service's namespace — the precedent
+  // `common/devices.ts` set for a device key and a Native SSO secret — and
+  // is used only where no registered value is honest:
+  //
+  //   * the emailed second factor (#64): a code or link sent to an address,
+  //     which is neither `phone-sms` nor `app`;
+  //   * a SIOPv2 self-issued subject (#129): a KEY the person proved, not a
+  //     `verifiable-credential`;
+  //   * an ACME External Account Binding key: a MAC key, not a `password`;
+  //   * a HOBA public key registered for SCIM (RFC 7486);
+  //   * a person's Kerberos long-term keys, derived from a password but held
+  //     and replaced on their own.
+  //
+  // A SCEP challenge password is NOT here: it is literally a password, and
+  // goes out as the registered `password` with its name as `friendly_name`.
+  // RISC's `credential-compromise` takes the same values (RISC 1.0 section
+  // 2.7 defines `credential_type` by reference to CAEP's).
+  // -------------------------------------------------------------------------
+  static readonly EMAIL_OTP_CREDENTIAL_TYPE =
+    'urn:iya:sts:credential-type:email-otp';
+  static readonly SELF_ISSUED_KEY_CREDENTIAL_TYPE =
+    'urn:iya:sts:credential-type:self-issued-key';
+  static readonly ACME_EAB_KEY_CREDENTIAL_TYPE =
+    'urn:iya:sts:credential-type:acme-eab-key';
+  static readonly HOBA_KEY_CREDENTIAL_TYPE =
+    'urn:iya:sts:credential-type:hoba-key';
+  static readonly KERBEROS_KEY_CREDENTIAL_TYPE =
+    'urn:iya:sts:credential-type:kerberos-key';
 
   constructor(private readonly deps: AccountSignalsDeps) {
     deps.log.debug('Entering AccountSignals.constructor().');
@@ -264,14 +298,21 @@ class AccountSignals {
   }
 
   // RISC credential-compromise (#146): an administrator said a reset was
-  // BECAUSE the credential was compromised. `credentialType` is section 2.7's
-  // required `credential_type`.
+  // BECAUSE the credential was compromised — and, since #231, a detector
+  // found it (a breached password at sign-in, a security key's counter going
+  // backwards, a certificate revoked for keyCompromise, the emailed factor
+  // turned off at its failure limit). `credentialType` is section 2.7's
+  // required `credential_type`. `mailed: true` says the door has already
+  // told the person in words of its own, so the generic notice is not sent
+  // a second time.
   credentialCompromised(notice?: Record<string, any>):
       Promise<Delivery> {
     const { log } = this.deps;
     log.debug('Entering AccountSignals.credentialCompromised().');
     const asked = notice || {};
-    this.mailNotice('credentialCompromised', asked);
+    if (!asked.mailed) {
+      this.mailNotice('credentialCompromised', asked);
+    }
     log.debug('Leaving AccountSignals.credentialCompromised().');
     return this.deliver('a RISC credential-compromise', 'emitRiscAccountAct',
       Object.assign({}, asked, { act: 'credentialCompromise',
@@ -408,5 +449,11 @@ export = {
   assuranceChanged: slot.forward('assuranceChanged'),
   KEY_CREDENTIAL_TYPE: AccountSignals.KEY_CREDENTIAL_TYPE,
   keyCredentialType: AccountSignals.keyCredentialType,
-  TOTP_CREDENTIAL_TYPE: AccountSignals.TOTP_CREDENTIAL_TYPE
+  TOTP_CREDENTIAL_TYPE: AccountSignals.TOTP_CREDENTIAL_TYPE,
+  EMAIL_OTP_CREDENTIAL_TYPE: AccountSignals.EMAIL_OTP_CREDENTIAL_TYPE,
+  SELF_ISSUED_KEY_CREDENTIAL_TYPE:
+    AccountSignals.SELF_ISSUED_KEY_CREDENTIAL_TYPE,
+  ACME_EAB_KEY_CREDENTIAL_TYPE: AccountSignals.ACME_EAB_KEY_CREDENTIAL_TYPE,
+  HOBA_KEY_CREDENTIAL_TYPE: AccountSignals.HOBA_KEY_CREDENTIAL_TYPE,
+  KERBEROS_KEY_CREDENTIAL_TYPE: AccountSignals.KERBEROS_KEY_CREDENTIAL_TYPE
 };

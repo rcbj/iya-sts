@@ -228,8 +228,32 @@ class Ciba {
       log.debug("Leaving Ciba.setUserCode(). Wrong length.");
       return { ok: false, error: 'a user code is 4 to 64 characters.' };
     }
-    const written = credentials.writeCibaUserCode(String(username || ''),
+    const name = String(username || '');
+    const had = !!credentials.readCibaUserCode(name);
+    const written = credentials.writeCibaUserCode(name,
       text ? stsCrypto.hashSecret(text) : '');
+    // CAEP `credential-change` (#237): the user code is a secret the person
+    // chose and a client must present — a `pin` in CAEP 1.0 section 3.3.1's
+    // words. This is the only writer (an LDAP write of it is refused), so
+    // it is sent here: create, update, or delete when cleared. Clearing a
+    // code nobody held changes nothing and sends nothing.
+    const change = text ? (had ? 'update' : 'create') : (had ? 'delete' : '');
+    if (written && change) {
+      try {
+        require('../ssf/account_signals').credentialChanged({
+          username: name, credentialType: 'pin', changeType: change,
+          initiatingEntity: 'user', friendlyName: 'CIBA user code',
+          via: 'portal',
+          reasonAdmin: name + ' ' + (change === 'create' ? 'set'
+            : change === 'update' ? 'changed' : 'cleared') + ' their CIBA ' +
+            'user code.',
+          reasonUser: 'Your CIBA user code was ' + (change === 'create'
+            ? 'set.' : change === 'update' ? 'changed.' : 'cleared.') });
+      } catch (e) {
+        log.debug("Caught in Ciba.setUserCode(): " + ((e && e.message) || e));
+        // No Shared Signals facade in this process; the code is written.
+      }
+    }
     log.debug("Leaving Ciba.setUserCode(). " + written);
     return written ? { ok: true, set: !!text } :
       { ok: false, error: 'the directory did not store it.' };

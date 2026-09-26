@@ -43,7 +43,7 @@ The vocabularies run over that pipe:
 | Vocabulary | Events | About | Emitted on its own when |
 |---|---|---|---|
 | **CAEP** | 8 | a session | someone signs in, uses single sign-on, signs out, a session expires, a person re-authenticates at a different `acr`, any credential of a person changes, a directory change moves a claim of somebody holding live tokens, a registered device's compliance, risk level or credentials change |
-| **RISC** | 14 | an account | a person is deleted, disabled or enabled; any mail address or telephone number changes or is removed, or is given to an account after another released it; the recovery address is added, changed, removed or verified; an administrator resets a password (optionally marking it compromised) or issues a reset or activation link; recovery codes are cleared, confirmed or used; the account holder opts out or back in on `/portal/signals`; a person's registered device is compromised or removed |
+| **RISC** | 14 | an account | a person is deleted, disabled or enabled; any mail address or telephone number changes or is removed, or is given to an account after another released it; the recovery address is added, changed, removed or verified; an administrator resets a password (optionally marking it compromised) or issues a reset or activation link, or sets `pwdReset` over LDAP; recovery codes are cleared, confirmed or used; the account holder opts out or back in on `/portal/signals`; a person's registered device is compromised or removed; this service detects a compromised credential (below) |
 
 Since #164 every CAEP and RISC event type has an act here that sends it: a
 registered device's compliance changing (`device-compliance-change`), its risk
@@ -54,6 +54,48 @@ with the device beside the person in the subject). [Devices](devices.md) lists
 each. You can still emit any of them by hand from the console or the
 management API.
 [CAEP events](caep-events.md) covers what triggers each CAEP event.
+
+**A compromised credential this service detects is RISC
+`credential-compromise`**
+([#231](https://github.com/rcbj/iya-sts/issues/231)):
+
+| What is detected | `credential_type` | Also sent |
+|---|---|---|
+| a password that signs in and appears in a data breach (`risk.breachCheckAtSignIn`) | `password` | `account-credential-change-required`, once until the password is changed |
+| a security key whose signature counter went backwards (a clone) | `fido2-roaming` or `fido2-platform` | nothing more; the person's risk standing goes to HIGH |
+| a certificate revoked with the reason `keyCompromise` (the portal, an enrollment protocol's revoke, `/admin/pki`) | `x509` | the CAEP `credential-change` revoke |
+| the emailed second factor turned off after too many wrong codes | `urn:iya:sts:credential-type:email-otp` | the CAEP `credential-change` delete |
+
+A one-time code presented twice is **not** an event: someone pressing submit
+twice looks exactly like a replay. It is a risk-scoring signal instead
+(`totp-replay`, see [Risk scoring](risk-scoring.md)).
+
+**Credentials with no CAEP type use this service's own URNs**
+([#236](https://github.com/rcbj/iya-sts/issues/236)). CAEP 1.0 section 3.3.1
+allows any credential type the two parties agree on, and a receiver that does
+not know one still learns that a credential of the person changed:
+
+| Credential | `credential_type` |
+|---|---|
+| the emailed second factor | `urn:iya:sts:credential-type:email-otp` |
+| a SIOPv2 self-issued subject key | `urn:iya:sts:credential-type:self-issued-key` |
+| an ACME External Account Binding key | `urn:iya:sts:credential-type:acme-eab-key` |
+| a HOBA key | `urn:iya:sts:credential-type:hoba-key` |
+| a person's Kerberos keys | `urn:iya:sts:credential-type:kerberos-key` |
+| a device key, a Native SSO device secret | `urn:iya:sts:credential-type:device-key`, `urn:iya:sts:credential-type:device-secret` |
+
+A SCEP challenge password is sent as `password`, with `friendly_name` naming
+it. A CIBA user code is `pin`.
+
+**A credential cannot be written over LDAP**
+([#237](https://github.com/rcbj/iya-sts/issues/237)). An add or modify of a
+security key, an authenticator app, recovery codes, an app password, a
+signing key pair, a HOBA key, a self-issued subject, the emailed factor,
+Kerberos keys, a CIBA user code, an enrollment credential or a device secret
+is refused with `unwillingToPerform` (53), for every bind in both modes, and
+the refusal names the page or endpoint to use instead. Those doors check
+what they store and send the events above. `userPassword` is still written
+over LDAP; deleting it sends `credential-change` `revoke`.
 
 **RISC opt-out (section 2.8) is the account holder's choice.** On
 `/portal/signals` a person can stop sharing security events about their

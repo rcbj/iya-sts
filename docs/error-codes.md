@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3692** of them, in **39** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3694** of them, in **39** subsystems.
 
 ## Where a code appears
 
@@ -70,13 +70,13 @@ is an ordinary outcome.
 * [Federation (`STS-FED`)](#sts-fed) — 134
 * [OpenID Federation (`STS-OIDFED`)](#sts-oidfed) — 67
 * [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 169
-* [LDAP directory (`STS-LDAP`)](#sts-ldap) — 84
+* [LDAP directory (`STS-LDAP`)](#sts-ldap) — 85
 * [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 77
 * [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 144
 * [TLS and client certificates (`STS-TLS`)](#sts-tls) — 35
 * [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 110
 * [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 114
-* [Risk scoring (`STS-RISK`)](#sts-risk) — 43
+* [Risk scoring (`STS-RISK`)](#sts-risk) — 44
 * [Mail (`STS-MAIL`)](#sts-mail) — 39
 * [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 282
 * [Device register (`STS-DEVICE`)](#sts-device) — 38
@@ -2493,6 +2493,7 @@ Raised from: ldap/.
 | `STS-LDAP-0108` | A person's attribute edit (#228) removed a value the attribute does not hold. | HTTP 400 (API) or a 303 with error= |
 | `STS-LDAP-0109` | A person's attribute edit (#228) would have left cn or sn, which RFC 4519 3.12 requires of every person, with no value. | HTTP 400 (API) or a 303 with error= |
 | `STS-LDAP-0110` | A person's attribute edit (#228) was refused by the directory: the entry was gone or not a person's when the write reached it. | HTTP 400 (API) or a 303 with error= |
+| `STS-LDAP-0111` | An LDAP add or modify named a credential attribute (a security key, an authenticator app, recovery codes, an app password, a signing key pair, a HOBA key, a self-issued subject, the emailed factor, Kerberos keys, a CIBA user code, an enrolment credential or a device secret). Credentials are written only through the doors that check them and send CAEP credential-change (#237), in every mode and for every bind, administrator included; the refusal names the door. | RFC 4511 section 4.1.9 unwillingToPerform (53) |
 
 ## STS-SCIM
 
@@ -3070,6 +3071,7 @@ Raised from: risk/, admin-ui/risk_admin.ts.
 | `STS-RISK-0041` | Monitoring → Geolocation (/admin/geolocation or GET /admin-api/geolocation, #255) could not be drawn or answered: the store's count of the realm's assessments by place failed, or the country outlines (admin-ui/natural_earth/countries.json) could not be read. The reason follows on the log line. | HTTP 500 |
 | `STS-RISK-0042` | Monitoring → Geolocation was asked for something it does not draw (#255): a window other than live, 24h, 7d or 30d, a continent that is not one of the seven slugs, a country that is not an ISO 3166-1 alpha-2 code on the map, or a country together with a continent it is not in. | HTTP 400 |
 | `STS-RISK-0043` | A FIDO MDS3 BLOB was LOADED although its signature or signing chain does not verify, because the administrator who uploaded it ticked the signature override. Its contents are unauthenticated and its chain's revocation was not checked; the version is recorded with verification "overridden" and the reason. Replace it with a BLOB that verifies as soon as FIDO publishes one. | loaded; recorded on the audit row and logged as a warning |
+| `STS-RISK-0044` | A security key found cloned (its signature counter went backwards) could not be recorded on the person's risk standing (#231). The assertion was refused and RISC credential-compromise was still sent; only the standing, and the risk-response policy's reaction to it, are missing. | WebAuthn Level 3 section 6.1.1 |
 
 ## STS-MAIL
 
