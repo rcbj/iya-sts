@@ -83,7 +83,8 @@ const app = require('./common/app');
 // below; `realms` for the id of the realm it warms. Both modules are already
 // loaded by this line — app.js requires realms, and helpers is this line —
 // so neither adds a require to the order.
-const { log, PORT, HOST, warmPqKeys } = require('./common/helpers');
+const { log, PORT, HOST, warmPqKeys,
+        warmSignerGroups } = require('./common/helpers');
 const realms = require('./common/realms');
 const config = require('./common/config');
 // A LIBRARY, rule 3's shape: it registers no route and its position in the
@@ -245,6 +246,13 @@ function announce() {
   // made on first use if this does not finish — the slow path is the one
   // that existed before, which is a fallback rather than a fault.
   warmPqKeys(realms.DEFAULT_ID);
+  // THE SIGNER GROUPS (#68), for every realm whose `keys.signerModel` is
+  // `hybrid-groups` — `warmSignerGroups()` reads it in each realm and returns
+  // at once for the rest. Not awaited, for warmPqKeys()'s reason. A realm
+  // switched to the model LATER makes its keys on its first group signature.
+  realms.list().forEach(function (realm) {
+    warmSignerGroups(realm.id);
+  });
   // THE VERSION FIRST, before the endpoint tour below, because it is the one
   // line in this banner that answers a question about the PROCESS rather than
   // about a URL — and it is the line somebody scrolls a container's log back

@@ -58,6 +58,8 @@ interface DocumentSettingsDeps {
   mode: { valueInForce(key: string): unknown };
   log: { debug(message: string): void; warn(message: string): void };
   xmlEscape(value: unknown): string;
+  // The one decision of which algorithm (and key) signs XML (#68).
+  xmlSignatureChoice(): { name: string };
 }
 
 // The URIs, taken from the vendored engine's own names where it has them so
@@ -65,13 +67,26 @@ interface DocumentSettingsDeps {
 // documents is signed with is this realm's RSA key, and the vendored enveloped
 // signer's digest table (`sigAlgSpec()`) is the RSA family.
 const XMLDSIG_MORE = 'http://www.w3.org/2001/04/xmldsig-more#';
+// THE W3C xmldsig-more DRAFT's post-quantum identifiers (#68 phase 4b) — the
+// vendored registry's, so there is one spelling. A DRAFT, which is why none
+// of them is ever the default.
+const XMLDSIG_MORE_2026 = 'http://www.w3.org/2026/08/xmldsig-more#';
 
 class DocumentSettings {
   static readonly SIGNATURE_ALGORITHMS: Record<string, string> = {
     'rsa-sha256': stsCrypto.SIG_RSA_SHA256,
     'rsa-sha384': XMLDSIG_MORE + 'rsa-sha384',
     'rsa-sha512': XMLDSIG_MORE + 'rsa-sha512',
-    'rsa-sha1': 'http://www.w3.org/2000/09/xmldsig#rsa-sha1'
+    'rsa-sha1': 'http://www.w3.org/2000/09/xmldsig#rsa-sha1',
+    // THE SIGNER GROUPS' XML ALGORITHMS (#68): a hybrid-groups realm's XML
+    // group signs these with keys of its own; anywhere else
+    // helpers.xmlSignatureChoice() answers rsa-sha256 instead.
+    'ecdsa-sha256': XMLDSIG_MORE + 'ecdsa-sha256',
+    'ecdsa-sha384': XMLDSIG_MORE + 'ecdsa-sha384',
+    'ml-dsa-44': XMLDSIG_MORE_2026 + 'ml-dsa-44',
+    'ml-dsa-65': XMLDSIG_MORE_2026 + 'ml-dsa-65',
+    'ml-dsa-87': XMLDSIG_MORE_2026 + 'ml-dsa-87',
+    'slh-dsa-sha2-128s': XMLDSIG_MORE_2026 + 'slh-dsa-sha2-128s'
   };
 
   // EXCLUSIVE ONLY, and `saml.canonicalizationAlgorithm`'s description says
@@ -96,7 +111,8 @@ class DocumentSettings {
       config: config,
       mode: mode,
       log: helpers.log,
-      xmlEscape: helpers.xmlEscape
+      xmlEscape: helpers.xmlEscape,
+      xmlSignatureChoice: helpers.xmlSignatureChoice
     };
   }
 
@@ -110,12 +126,13 @@ class DocumentSettings {
   // a product realm with it still stored signs with the default RSA-SHA256
   // and says so once (`mode.valueInForce()`, STS-CORE-0106).
   signatureOptions(): SignatureOptions {
-    const { log, config, mode } = this.deps;
+    const { log, config, xmlSignatureChoice } = this.deps;
     const SIGNATURE_ALGORITHMS = DocumentSettings.SIGNATURE_ALGORITHMS;
     const CANONICALIZATIONS = DocumentSettings.CANONICALIZATIONS;
     log.debug("Entering DocumentSettings.signatureOptions().");
-    const sigName = String(mode.valueInForce('saml.signatureAlgorithm') ||
-                           'rsa-sha256');
+    // `mode.valueInForce('saml.signatureAlgorithm')` (#181), with the signer
+    // groups' fallback (#68) — the SAME answer `STS.xmlSigner` gives its key.
+    const sigName = String(xmlSignatureChoice().name || 'rsa-sha256');
     const c14nName = String(config.value('saml.canonicalizationAlgorithm') ||
                             'exclusive');
     let sigAlg = SIGNATURE_ALGORITHMS[sigName];

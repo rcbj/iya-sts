@@ -5880,6 +5880,166 @@ NOT: RFC 7518 pins ES256 to P-256, ES384 to P-384 and ES512 to P-521, so a P-256
 key under a SHA-512 chain is still ES256, and naming it ES512 would produce
 assertions nothing can verify. `tests/pki.js` asserts both readings.
 
+### 3w, CONTINUED: EVERY AUTHORITY IS HYBRID (2026-09-26, #68 phase 1)
+
+**rcbj's D4 on #68 was "whole chain hybrid"**: the approach is #1 of his
+article *X.509 Certificates With More Than One Signature*, ITU-T X.509 (2019)
+clause 9.8's alternative public key and alternative signature. So every tier
+`issueCaTier()` builds holds a SECOND key pair: `pki.alternativeKeyAlgorithm`,
+ML-DSA-87 by default. Its public half goes in `subjectAltPublicKeyInfo`, and
+it is kept on the tier as `altKeyAlg` / `altPrivateKeyPem` / `altPublicKeyPem`,
+sealed with the rest of the row, since `keystore.js` seals the chain as one
+blob. **Every certificate a tier issues carries an alternative signature**,
+made with the tier's alternative key through `alternativeSignatureBy(ca)`.
+That is ONE helper spread into every `x509.issueCertificate()` call here: the
+tier, the application or person key pair, `certify()` and `issueUnder()`. A new
+issuing door that skips it produces a certificate `verifyLeaf()` refuses, so
+it is found at once.
+
+Five decisions are in the code and worth knowing before changing it:
+
+* **The alternative signature is the ISSUER's**, as the classical one is. A
+  tier under a classical or imported parent carries its alternative key and
+  NO alternative signature, which clause 9.8 allows. `altSignatureAlg` on the
+  record says which it got.
+* **`verifyLeaf()` requires it; `verifyPathToAnchors()` does not.** This is
+  `alternativeProblem()`'s `required` flag. In this service's own hierarchy
+  every authority holding an alternative key signs everything with it, so a
+  missing (`STS-PKI-0202`) or uncheckable (`STS-PKI-0201`) alternative
+  signature cannot be legitimate. Accepting it would turn "RSA + ML-DSA" into
+  "RSA OR ML-DSA", the downgrade the article warns about. A FOREIGN hybrid CA
+  may issue classical leaves, so there only a wrong signature is refused.
+* **`x509.verifyChain()` never folds the two verdicts together**, and that is
+  deliberate in the vendored file: no published profile says what a PKIX
+  validator does when they disagree
+  (draft-truskovsky-lamps-pq-hybrid-x509 expired). The verdict is
+  `alternativeProblem()`'s, one place, beside `authorityProblem()` and
+  `signerProblem()`.
+* **Only a pure ML-DSA or SLH-DSA key is offered** (`alternativeKeyAlgs()`).
+  A composite would put three algorithms in one certificate, a KEM cannot
+  sign, and a classical alternative adds nothing. A bad value is refused at
+  the build (`STS-PKI-0200`) before anything is made.
+* **A hierarchy keeps what it was built with.** A reissue keeps the tier's own
+  `altKeyAlg`, null included; a top-up takes the row's. `undefined`, meaning
+  a tier or row from before the field existed, reads the setting.
+
+The size is the cost: about 7 KB per CA certificate and 4.6 KB per leaf with
+ML-DSA-87. `docs/pki.md` says what that does to a TLS handshake and to an
+`x5c` header. CRLs and OCSP responses are still classical, an open question on
+#68. `tests/pki_hybrid.js` holds all of it, including OpenSSL verifying the
+classical chain untouched.
+
+### 3w, CONTINUED: SIGNER GROUPS, COLLAPSED BY ALGORITHM (2026-09-26, #68 phase 2a)
+
+`keys.signerModel = hybrid-groups` gives a realm a second family of signing
+keys beside the per-algorithm ones. `common/signer_groups.js` is the table:
+five groups (rcbj's D2), and in each an RSA-3072, a P-256 and a P-384 key
+paired with ML-DSA-65, -44 and -87, plus SLH-DSA-SHA2-128s alone (D3). That
+is 35 key pairs per realm. Each key pair is its own; the HYBRID CERTIFICATE is
+what the pair shares.
+
+**Why it is a new member, `signerGroups`, and not more `extraKeys`/`pqKeys`**:
+the algorithms are the SAME as the per-algorithm keys', and four things key on
+the algorithm. `certificateSlotOf()` would give `ES256:P-256` twice.
+`signingKeyFromList()` takes the first key with an `alg`. `privateMaterialFor()`
+maps are keyed by kid. And the units in `signingUnitsOf()` would collide. So
+slots are `<group>/<slot>` (the slash is the test, `isGroupSlot()`), kids are
+`sts-g-<group>-<slot>-<hash>`, and the member travels by itself. That means:
+
+* `serialise`/`deserialise`/`privateMaterialFor().groups` handle it.
+* `enriches` and `KEY_SET_MEMBERS` count it, with `LIST_MEMBERS` for the two
+  arrays.
+* It has a `signerGroupsHeldFor()` reader.
+* `plainKeySet`/`lazyKeySet` (a getter per private half, and a setter for the
+  backfill), and `plainCopyOf`, carry it.
+
+**Made like the post-quantum keys** (`signerGroupsForAsync()`): lazily, off
+the loop, first writer wins, shared, remembered and certified by the winner.
+It is warmed by `server.js` only for a realm in the model, and made on first
+use in a realm switched later. **No new recipe**: RSA through
+`generateRsaPairAsync(3072)`, the curves through `generateKeyPair`, ML-DSA and
+SLH-DSA through `pq_jose.generateAsync()`.
+
+**Certified by `pki.certifySignerGroups()`**: one certificate per classical
+key, carrying its ML-DSA partner in `subjectAltPublicKeyInfo` through
+`certify()`'s new `altPublicKeyPem`, which is stored on the record so that
+both renewal paths re-issue it hybrid. The SLH-DSA key gets a plain
+certificate. A partnered ML-DSA key has NO certificate of its own, because
+its certificate is its partner's. `certifyKeySet()` certifies a restored
+set's groups.
+
+**Phase 3: which signature uses them.** `groupSignerFor(useCase, alg)` is
+the one answer. The use case is the certificate-header id that every JOSE
+signing call already passes, so a signature finds its group from what it says
+about itself. `signJwt`, `signingKeyFor(Async)` (and through them `signJwtAs`,
+`signJwtAsAsync`, `signPublishedDocument`) and `vc_status.signerAsync()` all
+ask it first. It answers null outside a `hybrid-groups` realm, for a use with
+no group, for an algorithm outside the set (D6), and while a realm's keys are
+still being made. That last case falls back and is said once, because a
+signature never waits for key generation. `signJwt()` never takes the
+post-quantum branch, which is `ownSignerFor()`'s old rule.
+
+Verification finds group keys whatever the model is NOW, so a realm switched
+back still verifies what it issued. That covers `ownCandidatesFor()`,
+`allVerificationKeys(Async)` and `publicJwkOfKid()`. The XML group is
+excluded from every JOSE list. The JWKS appends the JOSE groups last
+(`groupPublishedJwks()`), so `keys[0]` stays the RSA key: a classical key with
+its hybrid certificate in `x5c`, and a partnered ML-DSA key BARE (D5, RFC 7517
+section 4.7). A token signed with that ML-DSA key gets no `x5c` header either,
+because `headerFor()`'s key check finds that the partner's certificate holds
+another key. **Phase 4a, XML:** in a hybrid-groups realm the `STS.xml` proxy answers
+`groupXmlKeyView()`, which is the XML group's RSA-3072 key with its hybrid
+certificate. It does so only once that key is certified, because an XML
+signature travels with its certificate. So all ten XML signers move without
+an edit. The key is ALSO an encryption key, because the SAML metadata
+publishes `STS.xml.certB64` for encryption. That is why
+`ownRsaDecryptionKeys()` and `ownRsaCertificates('xml')` hold it whenever it
+exists, first while the realm signs with it and after the per-algorithm key
+otherwise. **Phase 2b, rotation:** there is one unit per group CERTIFICATE, named
+`<ca>:<group>/<slot>` (`signingUnitsOf()`), because a new key in either half
+of a hybrid certificate is a new certificate. Its standby rows stay one per
+kid, so a pair's `next` is TWO rows sharing the unit, with `kind: 'group'` and
+a `memberKind` that chooses the keystore encoding (`standbyIsRaw()`). What
+changed:
+
+* `mintStandbyKey()` returns the primary key with its partner, and
+  `standbyEntriesOf()` spreads the two.
+* `promoteGenerations()` swaps both into `signerGroups` by slot and retires
+  both.
+* `certifyStandbyGroupEntry()` issues the `next` hybrid certificate over the
+  pair, in the primary key's generation slot.
+* `groupVerifiersFor()` includes live group generations, which is what keeps
+  a token signed before a rotation verifying. `tests/signer_groups.js` J found
+  it missing.
+* `/crypto/metadata` names each certificate's `alternativeKey`.
+* The `credentials` group rotates on the credential interval with the
+  credential grace.
+* Retirement and the emergency drop were already by unit and by kid, and
+  needed nothing.
+
+**Phase 4b, ECDSA and post-quantum XML.** `helpers.xmlSignatureChoice()` is
+ONE decision. Both `document_settings.signatureOptions()` (the URI) and
+`STS.xmlSigner` (the key) read it, so the two cannot disagree. It falls back
+to rsa-sha256 in a realm without the group key.
+
+`STS.xml` stays RSA, because the metadata publishes it for ENCRYPTION too.
+The eight XML signers and both query-string signers take `STS.xmlSigner`.
+`crypto.signXml()` keeps RSA byte for byte, and adds two paths:
+
+* **Post-quantum** goes through `signEnveloped()` with an injected
+  `pq_jose.sign`, since the vendored file holds the identifiers.
+* **ECDSA** goes through the vendored GENERAL engine with node's `ieee-p1363`
+  r||s (rcbj's D8). `signEnveloped()`'s classical branch is RSA-only forge,
+  and the vendored file is not edited here.
+
+`crypto.signQueryString()` gains the same two branches in our own code. The
+XML group's ML-DSA keys get plain certificates of their own (D7), because
+KeyInfo must hold the signing key.
+
+`ownXmlSigningCertificates()` is for verification and `use="signing"`
+KeyDescriptors only. `ownRsaCertificates()` stays RSA, which is what its name
+says.
+
 ### A LEAF IS ISSUED FOR A PROFILE, AND THE TWO PROFILES' KEY PAIRS ARE TWO (2026-09-11)
 
 `issueSigningKeyPair()` takes a `purpose`: `jwt` for RFC 7523 and `saml` for RFC

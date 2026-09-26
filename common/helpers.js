@@ -77,6 +77,7 @@ const stsCrypto = require('./crypto');
 // service starts.
 const keystore = require('./keystore');
 const pqJose = require('./pq_jose');
+const signerGroups = require('./signer_groups');
 // TRUST REALMS. Two things in this file are per realm and both are here rather
 // than in twenty modules for the same reason: this is where every one of them
 // already looks. `baseUrlOf()` is how eighty call sites build a URL, and `STS`
@@ -834,6 +835,12 @@ function plainKeySet(realmId, stored) {
   if (stored.bbsKey) {
     set.bbsKey = stored.bbsKey;
   }
+  // AND THE SIGNER GROUPS (2026-09-26, #68), already parsed, for the same
+  // reason: dropped here, this process would make groups of its own and
+  // publish keys its siblings do not sign with.
+  if ((stored.signerGroups || []).length) {
+    set.signerGroups = stored.signerGroups;
+  }
   set.generations = generationsView(realmId, stored.generations, null);
   log.debug("Leaving plainKeySet(). kid=" + set.kid);
   return set;
@@ -1152,7 +1159,10 @@ function xmlKeyView(realmId, stored, privateOf) {
 const STANDBY_PUBLIC = ['unit', 'role', 'alg', 'crv', 'kid', 'kind', 'useCase',
                         'slot', 'createdAt', 'retiredAt', 'retiredUntil',
                         'reason', 'publicJwk', 'certPem', 'certB64',
-                        'publicKeyB64'];
+                        'publicKeyB64',
+                        // A signer-group key's (#68): its group, the kind of
+                        // key it is, and the slot of its hybrid partner.
+                        'group', 'memberKind', 'pairedSlot'];
 
 function generationsView(realmId, stored, privateOf) {
   log.debug("Entering generationsView(). realm=" + realmId);
@@ -1649,6 +1659,66 @@ function lazyKeySet(realmId, stored) {
     set: function (made) {
       log.debug("Entering set().");
       bbsGenerated = made || null;
+      log.debug("Leaving set().");
+    }
+  });
+  // THE SIGNER GROUPS (2026-09-26, #68): each member's public half resident,
+  // its private half through the keystore's door by kid — the `extraKeys`
+  // arrangement above — and a setter for signerGroupsForAsync()'s backfill,
+  // the `bbsKey` arrangement.
+  // The members built from public rows — the stored blob's at construction,
+  // or, when it had none, the keystore's (store or sibling) the first time a
+  // read finds them there. A request worker whose set was built BEFORE
+  // another process made the groups must still see them: the single-node
+  // run of tests/vendored/sts_signer_groups.js found the JWKS it served
+  // without them for good when this was read once, at construction.
+  const groupsFrom = function (rows) {
+    log.debug("Entering groupsFrom().");
+    log.debug("Leaving groupsFrom().");
+    return rows.map(function (one) {
+      const kid = one.publicJwk && one.publicJwk.kid;
+      const entry = { group: one.group, slot: one.slot, alg: one.alg,
+                      kind: one.kind, pairedSlot: one.pairedSlot || null,
+                      publicJwk: one.publicJwk };
+      Object.defineProperty(entry, 'privateKey', {
+        enumerable: true, configurable: true,
+        get: function () {
+          log.debug("Entering a signer group key's private door.");
+          const held = keystore.privateMaterialFor(realmId);
+          if (!held || !held.groups || !held.groups.has(kid)) {
+            throw new Error('the "' + realmId + '" realm\'s ' + one.slot +
+              ' signing key is held encrypted and could not be ' +
+              'decrypted; see the keystore errors above.');
+          }
+          log.debug("Leaving a signer group key's private door.");
+          return held.groups.get(kid);
+        }
+      });
+      return entry;
+    });
+  };
+  let groupsStored = (stored.signerGroups || []).length
+    ? groupsFrom(stored.signerGroups) : null;
+  let groupsGenerated = null;
+  Object.defineProperty(set, 'signerGroups', {
+    enumerable: true, configurable: true,
+    get: function () {
+      log.debug("Entering get().");
+      // Only a realm in the model asks the keystore: every other realm's
+      // reads — the JWKS, every self-verification — stay free.
+      if (!groupsGenerated && !groupsStored &&
+          realms.run(realms.get(realmId), function () {
+            return signerGroups.hybridGroupsOn();
+          })) {
+        const rows = keystore.signerGroupsHeldFor(realmId);
+        groupsStored = rows ? groupsFrom(rows) : null;
+      }
+      log.debug("Leaving get().");
+      return groupsGenerated || groupsStored || undefined;
+    },
+    set: function (made) {
+      log.debug("Entering set().");
+      groupsGenerated = made || null;
       log.debug("Leaving set().");
     }
   });
@@ -2338,6 +2408,159 @@ function xmlKeyFor(keySet) {
   return keys.xmlKey;
 }
 
+// ---------------------------------------------------------------------------
+// THE XML GROUP'S RSA KEY, SHAPED LIKE `xmlKeyFor()`'s VIEW (2026-09-26, #68
+// phase 4a). In a `hybrid-groups` realm `STS.xml` answers this instead of the
+// per-algorithm XML key, so every XML signer here — SAML 2.0 and 1.1,
+// WS-Federation, WS-Trust, federation, the signed metadata — signs with the
+// XML group's RSA-3072 key and carries its HYBRID certificate in KeyInfo,
+// without one of them being edited. Null until the key exists AND is
+// certified: an XML signature travels with its certificate, and a
+// self-signed one would be a key no relying party was ever given.
+//
+// It is a SIGNING view. The same key also DECRYPTS what a partner encrypted
+// to the certificate the SAML metadata publishes, which is why
+// `ownRsaDecryptionKeys()` and `ownRsaCertificates('xml')` hold it too —
+// whatever the model is now, so switching back strands nothing.
+// ---------------------------------------------------------------------------
+function groupXmlMember(keys, slot) {
+  log.debug("Entering groupXmlMember().");
+  const wanted = slot || signerGroups.slotOf('xml', 'RS256');
+  const found = groupMembersOf(keys).filter(function (one) {
+    return one.slot === wanted;
+  })[0] || null;
+  log.debug("Leaving groupXmlMember(). " + (found ? 'Held.' : 'None.'));
+  return found;
+}
+
+function groupXmlCertificate(keys, member) {
+  log.debug("Entering groupXmlCertificate().");
+  let held = null;
+  try {
+    held = require('./pki').publishedCertificateFor(keys.realm, 'xml',
+                                                    member.slot,
+                                                    member.publicJwk.kid);
+  } catch (e) {
+    log.debug("Caught in groupXmlCertificate(): " + ((e && e.message) || e));
+    held = null;
+  }
+  log.debug("Leaving groupXmlCertificate().");
+  return held;
+}
+
+function groupXmlKeyView(keys) {
+  log.debug("Entering groupXmlKeyView().");
+  if (!signerGroups.hybridGroupsOn()) {
+    log.debug("Leaving groupXmlKeyView(). Per-algorithm realm.");
+    return null;
+  }
+  const member = groupXmlMember(keys);
+  if (!member) {
+    // Made in the background like the JOSE groups; until then the
+    // per-algorithm XML key signs (groupSignerFor() says so once).
+    groupSignerFor('access-token', 'RS256', false);
+    log.debug("Leaving groupXmlKeyView(). Not made yet.");
+    return null;
+  }
+  const view = xmlViewOf(keys, member);
+  log.debug("Leaving groupXmlKeyView(). " + (view ? view.kid : 'Not ' +
+            'certified yet.'));
+  return view;
+}
+
+// An XML group member as the view an XML signer reads — `xmlKeyView()`'s
+// shape, plus `alg` and `kind` — or null until its certificate exists (an
+// XML signature travels with its certificate). A post-quantum member has no
+// PEM: `privateKey` is the raw bytes `pq_jose.js` signs with, and
+// `crypto.signXml()` takes it (#68 phase 4b).
+function xmlViewOf(keys, member) {
+  log.debug("Entering xmlViewOf().");
+  const held = groupXmlCertificate(keys, member);
+  if (!held) {
+    log.debug("Leaving xmlViewOf(). Not certified yet.");
+    return null;
+  }
+  const view = {
+    kid: member.publicJwk.kid, group: 'xml', alg: member.alg,
+    kind: member.kind,
+    certPem: held.certificatePem,
+    certB64: stsCrypto.stripPem(held.certificatePem),
+    certChainPem: held.chainPem.slice(),
+    selfSignedCertPem: held.certificatePem,
+    selfSignedCertB64: stsCrypto.stripPem(held.certificatePem)
+  };
+  Object.defineProperty(view, 'privateKey', {
+    enumerable: true, configurable: true,
+    get: function () {
+      log.debug("Entering get().");
+      log.debug("Leaving get().");
+      return member.privateKey;
+    }
+  });
+  Object.defineProperty(view, 'privateKeyPem', {
+    enumerable: true, configurable: true,
+    get: function () {
+      log.debug("Entering get().");
+      log.debug("Leaving get().");
+      return member.kind === 'pq' ? undefined
+        : member.privateKey.export({ type: 'pkcs8', format: 'pem' });
+    }
+  });
+  log.debug("Leaving xmlViewOf(). kid=" + view.kid);
+  return view;
+}
+
+// ---------------------------------------------------------------------------
+// WHICH ALGORITHM AND WHICH KEY SIGN XML — ONE DECISION (#68 phase 4b).
+//
+// `saml/document_settings.ts` turns the answer's `name` into a
+// SignatureMethod URI, and `STS.xmlSigner` hands every XML signer the
+// answer's key: both read THIS, so the URI and the key can never disagree.
+// The RSA family signs as it always has (the XML group's RSA-3072 key in a
+// hybrid-groups realm, the per-algorithm XML key otherwise). ECDSA, ML-DSA and
+// SLH-DSA sign with the XML group's own key — and fall back to rsa-sha256,
+// said once, in a realm without that key or before it is certified: a
+// signature under the wrong key is refused by every verifier, a signature
+// under the default algorithm by none.
+// ---------------------------------------------------------------------------
+const xmlFallbackSaid = new Set();
+
+function xmlSignatureChoice() {
+  log.debug("Entering xmlSignatureChoice().");
+  const keys = stsKeysFor();
+  const asked = String(mode.valueInForce('saml.signatureAlgorithm') ||
+                       'rsa-sha256');
+  const rsaView = function () {
+    log.debug("Entering rsaView().");
+    log.debug("Leaving rsaView().");
+    return groupXmlKeyView(keys) || xmlKeyFor(keys);
+  };
+  if (signerGroups.isRsaXmlAlgorithm(asked)) {
+    log.debug("Leaving xmlSignatureChoice(). " + asked + ".");
+    return { name: asked, view: rsaView() };
+  }
+  const member = signerGroups.hybridGroupsOn()
+    ? groupXmlMember(keys, signerGroups.xmlSlotFor(asked)) : null;
+  const view = member ? xmlViewOf(keys, member) : null;
+  if (!view) {
+    const said = keys.realm + '|' + asked;
+    if (!xmlFallbackSaid.has(said)) {
+      xmlFallbackSaid.add(said);
+      log.warn(errorCodes.tag('STS-CORE-0028') + 'helpers: ' +
+               'saml.signatureAlgorithm is "' + asked + '" in the "' +
+               keys.realm + '" realm, which ' +
+               (signerGroups.hybridGroupsOn()
+                 ? 'has no certified XML group key for it yet'
+                 : 'is not in the hybrid-groups signer model, so has no ' +
+                   'key for it') + '; XML is signed with rsa-sha256 instead.');
+    }
+    log.debug("Leaving xmlSignatureChoice(). Fell back to rsa-sha256.");
+    return { name: 'rsa-sha256', view: rsaView(), fellBack: true };
+  }
+  log.debug("Leaving xmlSignatureChoice(). " + asked + ".");
+  return { name: asked, view: view };
+}
+
 // FORGET THE BUILT KEY SETS so the factory runs again, which is as close to a
 // restart as one process can get. `realms.keyed()` exposes its map as
 // `existing()`, which is the seam that makes this a clear rather than a
@@ -2365,7 +2588,18 @@ const STS = /** @type {any} */ (new Proxy({}, {
     // on a set written before it existed. Every XML signer and verifier here
     // reads it; everything else on `STS` is the JOSE key, as it always was.
     if (prop === 'xml') {
-      return xmlKeyFor(stsKeysFor());
+      // The XML group's key in a hybrid-groups realm (#68), else the
+      // per-algorithm XML key.
+      const current = stsKeysFor();
+      return groupXmlKeyView(current) || xmlKeyFor(current);
+    }
+    // `STS.xmlSigner` (#68 phase 4b): the key for the CONFIGURED XML
+    // signature algorithm — xmlSignatureChoice()'s. `STS.xml` stays the RSA
+    // key, because the SAML metadata publishes its certificate for
+    // ENCRYPTION too, and an ECDSA or ML-DSA key cannot receive an encrypted
+    // assertion.
+    if (prop === 'xmlSigner') {
+      return xmlSignatureChoice().view;
     }
     return stsKeysFor()[prop];
   },
@@ -2461,6 +2695,21 @@ function signingUnitsOf(keys) {
     out.push({ unit: BBS_UNIT, useCase: 'bbs', slot: 'BBS', alg: 'BBS',
                kind: 'bbs', kid: bbsKidOf(keys.bbsKey.publicKey) });
   }
+  // THE SIGNER GROUPS (2026-09-26, #68): one unit per CERTIFICATE — a
+  // classical key with its ML-DSA partner, or SLH-DSA alone — because a new
+  // key in either half of a hybrid certificate is a new certificate, so the
+  // two halves can only rotate together. The row names the certificate's
+  // primary key; `pairedSlot` names the partner rotated with it.
+  groupMembersOf(keys).filter(function (one) {
+    return !(one.kind === 'pq' && one.pairedSlot);
+  }).forEach(function (one) {
+    const grp = signerGroups.group(one.group);
+    const ca = grp ? grp.pkiUseCase : 'jose';
+    out.push({ unit: ca + ':' + one.slot, useCase: ca, slot: one.slot,
+               alg: one.alg, kind: 'group', memberKind: one.kind,
+               group: one.group, pairedSlot: one.pairedSlot || null,
+               kid: one.publicJwk.kid });
+  });
   log.debug("Leaving signingUnitsOf(). " + out.length + " unit(s).");
   return out;
 }
@@ -2502,8 +2751,23 @@ function ownRsaCertificates(useCaseId, keySet) {
   const keys = keySet || stsKeysFor();
   const out = [];
   if (useCaseId === 'xml') {
+    // The XML group's key FIRST where the realm signs with it (#68), and in
+    // the list whenever it exists, so the SAML metadata publishes both and a
+    // realm switched back still verifies what it signed.
+    const member = groupXmlMember(keys);
+    const groupCert = member ? groupXmlCertificate(keys, member) : null;
+    const groupRow = groupCert
+      ? { kid: member.publicJwk.kid, certPem: groupCert.certificatePem,
+          role: 'current', chainPem: groupCert.chainPem.slice() }
+      : null;
+    if (groupRow && signerGroups.hybridGroupsOn()) {
+      out.push(groupRow);
+    }
     const xml = xmlKeyFor(keys);
     out.push({ kid: xml.kid, certPem: xml.certPem, role: 'current' });
+    if (groupRow && !signerGroups.hybridGroupsOn()) {
+      out.push(groupRow);
+    }
   } else {
     out.push({ kid: keys.kid, certPem: keys.certPem, role: 'current' });
   }
@@ -2528,6 +2792,70 @@ function ownRsaCertificates(useCaseId, keySet) {
   });
   log.debug("Leaving ownRsaCertificates(). " + out.length + " candidate(s).");
   return out;
+}
+
+// ---------------------------------------------------------------------------
+// EVERY CERTIFICATE AN XML SIGNATURE OF THIS REALM MAY BE MADE UNDER (#68
+// phase 4b): the RSA ones `ownRsaCertificates('xml')` lists, and the XML
+// signer group's ECDSA and post-quantum certificates (ML-DSA's own, D7) —
+// current and every live generation — with the CONFIGURED signer's first. For
+// verifying this realm's own XML and for the metadata's `use="signing"`
+// KeyDescriptors ONLY: `ownRsaCertificates()` stays RSA because the same
+// metadata publishes an ENCRYPTION key, which an ECDSA or ML-DSA key is not.
+// ---------------------------------------------------------------------------
+function ownXmlSigningCertificates(keySet) {
+  log.debug("Entering ownXmlSigningCertificates().");
+  const keys = keySet || stsKeysFor();
+  const out = ownRsaCertificates('xml', keys);
+  const seen = new Set(out.map(function (one) {
+    return String(one.kid);
+  }));
+  let pki = null;
+  try {
+    pki = require('./pki');
+  } catch (e) {
+    log.debug("Caught in ownXmlSigningCertificates(): " +
+              ((e && e.message) || e));
+    pki = null;
+  }
+  if (!pki) {
+    log.debug("Leaving ownXmlSigningCertificates(). RSA only.");
+    return out;
+  }
+  const now = Date.now();
+  const candidates = groupMembersOf(keys).filter(function (one) {
+    return one.group === 'xml';
+  }).map(function (one) {
+    return { kid: one.publicJwk.kid, slot: one.slot, role: 'current' };
+  }).concat(standbyOf(keys).filter(function (one) {
+    return one.kind === 'group' && one.group === 'xml' &&
+           standbyLive(one, now);
+  }).map(function (one) {
+    return { kid: one.kid, slot: one.slot, role: one.role };
+  }));
+  const extra = [];
+  candidates.forEach(function (one) {
+    if (seen.has(one.kid)) {
+      return;
+    }
+    const held = pki.publishedCertificateFor(keys.realm, 'xml', one.slot,
+                                             one.kid);
+    if (held) {
+      seen.add(one.kid);
+      extra.push({ kid: one.kid, certPem: held.certificatePem,
+                   role: one.role, chainPem: held.chainPem.slice() });
+    }
+  });
+  const choice = xmlSignatureChoice();
+  const first = extra.filter(function (one) {
+    return choice.view && one.kid === choice.view.kid;
+  });
+  const rest = extra.filter(function (one) {
+    return !(choice.view && one.kid === choice.view.kid);
+  });
+  log.debug("Leaving ownXmlSigningCertificates(). " +
+            (out.length + extra.length) + ".");
+  return first.concat(out, rest);
 }
 
 function peekJoseHeader(token) {
@@ -2560,6 +2888,113 @@ function candidatesForKid(candidates, headerKid) {
   }
   log.debug("Leaving candidatesForKid(). Every candidate.");
   return candidates;
+}
+
+// ---------------------------------------------------------------------------
+// WHICH SIGNER-GROUP KEY SIGNS THIS (2026-09-26, #68 phase 3).
+//
+// In a realm whose `keys.signerModel` is `hybrid-groups`, a signature made
+// for a JOSE use case (`common/jose_certificate_header.js`'s ids — the name
+// every signing call already passes as `certificateHeader`) signs with its
+// GROUP's key for the algorithm: the RSA-3072 key for every RS* and PS*, the
+// P-256 key for ES256, the P-384 key for ES384, and the group's own ML-DSA or
+// SLH-DSA key for those. Anything else answers null, and the caller signs
+// with the per-algorithm key exactly as before — rcbj's D6, the fallback for
+// an algorithm outside the set (ES512, ES256K, EdDSA, the composites).
+//
+// **A GROUP WHOSE KEYS DO NOT EXIST YET** (a realm switched to the model since
+// the service started) starts making them and answers null for now, said once
+// per realm: signing never waits on key generation, and the per-algorithm key
+// it falls back to is the one every verifier already holds.
+//
+// `allowPq` is false for the synchronous `signJwt()`, which has never signed
+// a post-quantum algorithm (`ownSignerFor()` refuses them).
+// ---------------------------------------------------------------------------
+const groupsPendingSaid = new Set();
+
+function groupMembersOf(keys) {
+  log.debug("Entering groupMembersOf().");
+  log.debug("Leaving groupMembersOf().");
+  return (keys && keys.signerGroups) || [];
+}
+
+function groupSignerFor(useCaseId, alg, allowPq) {
+  log.debug("Entering groupSignerFor(). use=" + useCaseId + ", alg=" + alg);
+  const spec = stsCrypto.JWS_ALGS[alg];
+  const grp = useCaseId ? signerGroups.groupForUseCase(useCaseId) : null;
+  if (!spec || spec.family === 'hmac' || !grp ||
+      !signerGroups.hybridGroupsOn() ||
+      (spec.family === 'pq' && !allowPq)) {
+    log.debug("Leaving groupSignerFor(). Not a group signature.");
+    return null;
+  }
+  const keys = stsKeysFor();
+  const members = groupMembersOf(keys);
+  if (!members.length) {
+    if (!groupsPendingSaid.has(keys.realm)) {
+      groupsPendingSaid.add(keys.realm);
+      log.warn(errorCodes.tag('STS-CORE-0028') + 'helpers: the "' +
+               keys.realm + '" realm is in the hybrid-groups signer model ' +
+               'and its group keys are still being made, so its group ' +
+               'signatures use the per-algorithm keys until they exist.');
+    }
+    signerGroupsForAsync(keys).catch(function (err) {
+      log.warn(errorCodes.tag('STS-CORE-0028') + 'helpers: the "' +
+               keys.realm + '" realm\'s signer-group keys could not be ' +
+               'made: ' + err.message);
+    });
+    log.debug("Leaving groupSignerFor(). Not made yet.");
+    return null;
+  }
+  const wantedSlot = spec.family === 'rsa'
+    ? signerGroups.slotOf(grp.id, 'RS256')
+    : (spec.family === 'pq' ? null : signerGroups.slotOf(grp.id, alg));
+  const found = members.filter(function (one) {
+    return one.group === grp.id &&
+           (wantedSlot ? one.slot === wantedSlot : one.alg === alg);
+  })[0];
+  if (!found) {
+    log.debug("Leaving groupSignerFor(). Outside the set: " + alg + ".");
+    return null;
+  }
+  log.debug("Leaving groupSignerFor(). " + found.slot + ".");
+  return { key: found.privateKey, kid: found.publicJwk.kid,
+           slot: found.slot, group: grp.id };
+}
+
+// The group members that can VERIFY a token of `alg`, whatever the model is
+// NOW: keys a realm made stay verifiable after it is switched back, so a
+// token issued under the groups does not stop verifying. The XML group is
+// not a JOSE signer and is not here.
+function groupVerifiersFor(alg) {
+  log.debug("Entering groupVerifiersFor(). alg=" + alg);
+  const spec = stsCrypto.JWS_ALGS[alg];
+  if (!spec || spec.family === 'hmac') {
+    log.debug("Leaving groupVerifiersFor(). None.");
+    return [];
+  }
+  const keys = stsKeysFor();
+  const now = Date.now();
+  const matches = function (group, memberKind, memberAlg) {
+    log.debug("Entering matches().");
+    log.debug("Leaving matches().");
+    if (group === 'xml') {
+      return false;
+    }
+    return spec.family === 'rsa' ? memberKind === 'rsa' : memberAlg === alg;
+  };
+  const out = groupMembersOf(keys).filter(function (one) {
+    return matches(one.group, one.kind, one.alg);
+  }).concat(
+    // AND EVERY LIVE GENERATION OF A GROUP KEY — `next`, and retired within
+    // its grace (phase 2b) — so a token signed before a rotation still
+    // verifies, as a per-algorithm key's does through ownCandidatesFor().
+    standbyOf(keys).filter(function (one) {
+      return one.kind === 'group' && standbyLive(one, now) &&
+             matches(one.group, one.memberKind, one.alg);
+    }));
+  log.debug("Leaving groupVerifiersFor(). " + out.length + ".");
+  return out;
 }
 
 // ---------------------------------------------------------------------------
@@ -2615,9 +3050,17 @@ function ownCandidatesFor(alg) {
     log.debug("Leaving ownCandidatesFor(). None for this family.");
     return [];
   }
+  // THE SIGNER GROUPS' KEYS OF THIS FAMILY (#68), after the per-algorithm
+  // ones, so a token a group key signed verifies here — found by its kid.
+  const groupCandidates = groupVerifiersFor(alg).map(function (one) {
+    return { kid: one.publicJwk.kid, role: 'current',
+             certPem: crypto.createPublicKey({ key: one.publicJwk,
+                                               format: 'jwk' })
+               .export({ type: 'spki', format: 'pem' }) };
+  });
   if (spec.family === 'rsa') {
     log.debug("Leaving ownCandidatesFor(). The RSA certificates.");
-    return ownRsaCertificates('jose');
+    return ownRsaCertificates('jose').concat(groupCandidates);
   }
   const keys = stsKeysFor();
   const now = Date.now();
@@ -2632,6 +3075,9 @@ function ownCandidatesFor(alg) {
     }).forEach(function (sb) {
       out.push({ kid: sb.kid, certPem: sb.certPem, role: sb.role });
     });
+  });
+  groupCandidates.forEach(function (one) {
+    out.push(one);
   });
   log.debug("Leaving ownCandidatesFor(). " + out.length + ".");
   return out;
@@ -2724,7 +3170,9 @@ function verifyOwnCompactJws(token, opts) {
 // ---------------------------------------------------------------------------
 function verifyOwnXml(xml, opts) {
   log.debug("Entering verifyOwnXml().");
-  const candidates = ownRsaCertificates('xml');
+  // Every XML signing certificate, the signer groups' ECDSA and
+  // post-quantum ones included (#68).
+  const candidates = ownXmlSigningCertificates();
   let first = null;
   for (let i = 0; i < candidates.length; i++) {
     const answer = stsCrypto.verifyXmlSignature(xml, Object.assign({}, opts,
@@ -2765,6 +3213,24 @@ function ownRsaDecryptionKeys(firstUseCase, keySet) {
   ];
   if (firstUseCase === 'jose') {
     currents.reverse();
+  }
+  // THE XML GROUP'S RSA KEY (#68): the SAML metadata of a hybrid-groups realm
+  // publishes its certificate for encryption, so it opens what a partner
+  // encrypted to it — first where the realm signs with it.
+  const groupMember = groupXmlMember(keys);
+  if (groupMember) {
+    const groupRow = { useCase: 'xml', kid: groupMember.publicJwk.kid,
+                       get: function () {
+                         return { privateKey: groupMember.privateKey,
+                                  privateKeyPem: groupMember.privateKey
+                                    .export({ type: 'pkcs8',
+                                              format: 'pem' }) };
+                       } };
+    if (signerGroups.hybridGroupsOn() && firstUseCase !== 'jose') {
+      currents.unshift(groupRow);
+    } else {
+      currents.push(groupRow);
+    }
   }
   const now = Date.now();
   const standby = standbyOf(keys).filter(function (one) {
@@ -2827,11 +3293,12 @@ function allVerificationKeys() {
   const out = allSigningKeys().concat(standbyOf(keys).filter(function (one) {
     // The JWK-shaped generations only: a BBS key (#49 P5) has no JWK and is
     // looked up through bbsGenerations().
-    return (one.kind === 'curve' || one.kind === 'pq') &&
+    return (one.kind === 'curve' || one.kind === 'pq' ||
+            (one.kind === 'group' && one.group !== 'xml')) &&
            standbyLive(one, now);
   }).map(function (one) {
     return { alg: one.alg, publicJwk: one.publicJwk, role: one.role };
-  }));
+  })).concat(groupJwkEntries(keys));
   log.debug("Leaving allVerificationKeys(). " + out.length + " key(s).");
   return out;
 }
@@ -2843,12 +3310,68 @@ function allVerificationKeysAsync() {
   return allSigningKeysAsync().then(function (current) {
     const now = Date.now();
     return current.concat(standbyOf(keys).filter(function (one) {
-      return (one.kind === 'curve' || one.kind === 'pq') &&
+      return (one.kind === 'curve' || one.kind === 'pq' ||
+              (one.kind === 'group' && one.group !== 'xml')) &&
              standbyLive(one, now);
     }).map(function (one) {
       return { alg: one.alg, publicJwk: one.publicJwk, role: one.role };
-    }));
+    })).concat(groupJwkEntries(keys));
   });
+}
+
+// THE JOSE SIGNER GROUPS' KEYS AS PUBLISHED JWKS (#68, rcbj's D5). A
+// classical key carries its hybrid certificate and chain in `x5c` — the key
+// in that certificate's subjectPublicKeyInfo IS this key, so RFC 7517
+// section 4.7 holds. An ML-DSA key certified as its partner's alternative key
+// is published BARE: the first certificate would hold a different key. The
+// SLH-DSA key has a certificate of its own and carries it. A key not yet
+// certified is published bare, as every key here was before it had one.
+function groupPublishedJwks(keys) {
+  log.debug("Entering groupPublishedJwks().");
+  let pki = null;
+  try {
+    pki = require('./pki');
+  } catch (e) {
+    log.debug("Caught in groupPublishedJwks(): " + ((e && e.message) || e));
+    pki = null;
+  }
+  const b64 = function (pem) {
+    log.debug("Entering b64().");
+    log.debug("Leaving b64().");
+    return String(pem).replace(/-----[^-]+-----/g, '').replace(/\s+/g, '');
+  };
+  const out = groupMembersOf(keys).filter(function (one) {
+    return one.group !== 'xml';
+  }).map(function (one) {
+    const jwk = Object.assign({}, one.publicJwk);
+    if (!pki || (one.kind === 'pq' && one.pairedSlot)) {
+      return jwk;
+    }
+    const grp = signerGroups.group(one.group);
+    const held = pki.publishedCertificateFor(keys.realm,
+      grp ? grp.pkiUseCase : 'jose', one.slot, one.publicJwk.kid);
+    if (held && held.certificatePem) {
+      jwk.x5c = [b64(held.certificatePem)].concat(
+        (held.chainPem || []).map(b64));
+    }
+    return jwk;
+  });
+  log.debug("Leaving groupPublishedJwks(). " + out.length + ".");
+  return out;
+}
+
+// The JOSE signer groups' keys as `{ alg, publicJwk, role }` rows (#68) —
+// every group but XML, in whatever model the realm is in now, for the reason
+// groupVerifiersFor() gives.
+function groupJwkEntries(keys) {
+  log.debug("Entering groupJwkEntries().");
+  const out = groupMembersOf(keys).filter(function (one) {
+    return one.group !== 'xml';
+  }).map(function (one) {
+    return { alg: one.alg, publicJwk: one.publicJwk, role: 'current' };
+  });
+  log.debug("Leaving groupJwkEntries(). " + out.length + ".");
+  return out;
 }
 
 // ---------------------------------------------------------------------------
@@ -2923,6 +3446,47 @@ async function mintStandbyKey(unitRow, role) {
     return Object.assign(base, { kid: entry.publicJwk.kid,
                                  privateKey: entry.privateKey,
                                  publicJwk: entry.publicJwk });
+  }
+  if (unitRow.kind === 'group') {
+    // A SIGNER-GROUP UNIT (#68): its primary key and, for a hybrid pair, the
+    // ML-DSA partner — minted by the recipes the group was made with, and
+    // returned as ONE entry carrying the other as `partner`, which
+    // standbyEntriesOf() spreads into two standby rows sharing the unit.
+    const pairSpec = signerGroups.PAIRS.filter(function (one) {
+      return signerGroups.slotOf(unitRow.group, one.slot) === unitRow.slot;
+    })[0];
+    if (!pairSpec) {
+      log.debug("Leaving mintStandbyKey(). No pair for " + unitRow.slot);
+      throw new Error('no signer-group recipe for ' + unitRow.unit);
+    }
+    let primary;
+    if (pairSpec.kind === 'rsa') {
+      primary = classicalGroupMember(unitRow.group, pairSpec,
+        await generateRsaPairAsync(3072, false));
+    } else if (pairSpec.kind === 'curve') {
+      primary = classicalGroupMember(unitRow.group, pairSpec,
+        await generateCurvePairAsync(CURVE_KEY_SPECS.filter(function (spec) {
+          return spec.alg === pairSpec.slot && !spec.curve;
+        })[0]));
+    } else {
+      primary = pqGroupMember(unitRow.group, pairSpec.slot, pairSpec.slot,
+        null, await pqJose.generateAsync(pairSpec.slot));
+    }
+    const asEntry = function (member) {
+      return Object.assign({}, base, {
+        alg: member.alg, slot: member.slot, kind: 'group',
+        memberKind: member.kind, group: member.group,
+        pairedSlot: member.pairedSlot || null, kid: member.publicJwk.kid,
+        privateKey: member.privateKey, publicJwk: member.publicJwk });
+    };
+    const entry = asEntry(primary);
+    if (pairSpec.pq) {
+      entry.partner = asEntry(pqGroupMember(unitRow.group, pairSpec.pq.slot,
+        pairSpec.pq.alg, unitRow.slot,
+        await pqJose.generateAsync(pairSpec.pq.alg)));
+    }
+    log.debug("Leaving mintStandbyKey(). Group " + entry.kid);
+    return entry;
   }
   if (unitRow.kind === 'bbs') {
     const pair = await bbs2023.generateKeyPair();
@@ -3008,6 +3572,13 @@ function plainCopyOf(keys, overrides) {
     } : null,
     bbsKey: keys.bbsKey ? { secretKey: keys.bbsKey.secretKey,
                             publicKey: keys.bbsKey.publicKey } : null,
+    // The signer groups (#68), each member copied with its private half read
+    // once, as `extraKeys` above is.
+    signerGroups: (keys.signerGroups || []).map(function (one) {
+      return { group: one.group, slot: one.slot, alg: one.alg,
+               kind: one.kind, pairedSlot: one.pairedSlot || null,
+               privateKey: one.privateKey, publicJwk: one.publicJwk };
+    }),
     generations: {
       generation: Number(keys.generations && keys.generations.generation) || 0,
       rotated: Object.assign({}, (keys.generations &&
@@ -3048,6 +3619,17 @@ function replaceGeneration(realmId, next, why) {
 
 // The units of a realm, filtered by `units` (unit names, or a use case
 // alone — `jose` means every JOSE unit) when given.
+// A minted entry as the standby rows it becomes: itself, and a signer-group
+// pair's partner beside it (#68), each without the `partner` link.
+function standbyEntriesOf(entry) {
+  log.debug("Entering standbyEntriesOf().");
+  const partner = entry && entry.partner;
+  const own = Object.assign({}, entry);
+  delete own.partner;
+  log.debug("Leaving standbyEntriesOf().");
+  return partner ? [own, partner] : [own];
+}
+
 function unitsWanted(keys, units) {
   log.debug("Entering unitsWanted().");
   const all = signingUnitsOf(keys);
@@ -3089,7 +3671,10 @@ async function ensureNextGenerations(realmId, options) {
   }
   const current = stsKeysFor.of(id);
   const copy = plainCopyOf(current);
-  copy.generations.standby = copy.generations.standby.concat(made);
+  made.forEach(function (one) {
+    copy.generations.standby = copy.generations.standby
+      .concat(standbyEntriesOf(one));
+  });
   const answer = replaceGeneration(id, copy, 'a next key minted for ' +
     made.map(function (one) {
       return one.unit;
@@ -3145,10 +3730,22 @@ async function promoteGenerations(realmId, options) {
       return want.unit === row.unit;
     });
   }).forEach(function (row) {
-    const nextEntry = fresh[row.unit] || standby.filter(function (one) {
-      return one.unit === row.unit && one.role === 'next';
+    const minted = fresh[row.unit] ? standbyEntriesOf(fresh[row.unit]) : [];
+    const nextEntry = minted[0] || standby.filter(function (one) {
+      return one.unit === row.unit && one.role === 'next' &&
+             (row.kind !== 'group' || one.slot === row.slot);
     })[0];
     if (!nextEntry) {
+      return;
+    }
+    // A signer-group pair's partner rotates WITH it (#68).
+    const partnerNext = row.kind === 'group' && row.pairedSlot
+      ? (minted[1] || standby.filter(function (one) {
+          return one.unit === row.unit && one.role === 'next' &&
+                 one.slot === row.pairedSlot;
+        })[0])
+      : null;
+    if (row.kind === 'group' && row.pairedSlot && !partnerNext) {
       return;
     }
     if (o.emergency) {
@@ -3193,6 +3790,41 @@ async function promoteGenerations(realmId, options) {
       copy.xmlKey = { privateKeyPem: nextEntry.privateKeyPem,
                       selfSignedCertPem: nextEntry.certPem,
                       selfSignedCertB64: nextEntry.certB64 };
+    } else if (row.kind === 'group') {
+      // THE SIGNER GROUPS (#68): both halves of the certificate swapped at
+      // once, by slot, and the old ones retired together.
+      const members = copy.signerGroups;
+      const swap = function (slot, next, retiring) {
+        log.debug("Entering swap(). slot=" + slot);
+        const at = members.findIndex(function (one) {
+          return one.slot === slot;
+        });
+        const old = members[at];
+        Object.assign(retiring, { privateKey: old.privateKey,
+                                  publicJwk: old.publicJwk,
+                                  memberKind: old.kind, group: old.group,
+                                  pairedSlot: old.pairedSlot || null,
+                                  alg: old.alg, slot: old.slot,
+                                  kid: old.publicJwk.kid });
+        members[at] = { group: next.group, slot: next.slot, alg: next.alg,
+                        kind: next.memberKind,
+                        pairedSlot: next.pairedSlot || null,
+                        privateKey: next.privateKey,
+                        publicJwk: next.publicJwk };
+        log.debug("Leaving swap().");
+      };
+      swap(row.slot, nextEntry, retiredFrom);
+      if (partnerNext) {
+        const retiredPartner = Object.assign({}, retiredFrom);
+        swap(row.pairedSlot, partnerNext, retiredPartner);
+        if (o.emergency) {
+          dropped.push({ unit: row.unit, kid: retiredPartner.kid,
+                         role: 'current', useCase: row.useCase,
+                         slot: row.pairedSlot });
+        } else {
+          standby.push(retiredPartner);
+        }
+      }
     } else if (row.kind === 'bbs') {
       Object.assign(retiredFrom, {
         privateKey: Buffer.from(copy.bbsKey.secretKey),
@@ -4005,6 +4637,221 @@ function pqKeysForAsync(keys) {
 // watcher, outside any request, so there is no ambient realm to read. See
 // realms.js's keyed().
 // ---------------------------------------------------------------------------
+// ===========================================================================
+// THE SIGNER GROUPS' KEYS (2026-09-26, #68) — `common/signer_groups.js` says
+// what they are and why. Made LAZILY and OFF THE EVENT LOOP, exactly as the
+// post-quantum keys above are and under the same four rules, because they are
+// the same kind of material arriving at the same moment: after the set exists.
+//
+//   * FIRST WRITER WINS on `keys.signerGroups`, and one generation at a time
+//     per process (`keys.signerGroupsPromise`).
+//   * SHARED with every other process (`keystore.publishShared()`, whose
+//     `enriches()` counts this member since the same change) and WRITTEN DOWN
+//     (`keystore.remember()`) — only by the process whose set is the realm's.
+//   * CERTIFIED by that process alone, each classical key WITH its ML-DSA
+//     partner in one hybrid certificate (`pki.certifySignerGroups()`).
+//   * NOT generated for a realm in the default model: `hybridGroupsOn()` is
+//     read by the caller, and a realm that never asks holds none.
+//
+// **NO NEW RECIPE** (rcbj's rule of 2026-09-21): RSA through
+// generateRsaPairAsync(), the curves through generateCurvePairAsync() over
+// CURVE_KEY_SPECS' own rows, ML-DSA and SLH-DSA through
+// `pq_jose.generateAsync()` — the worker pool, which is what keeps an
+// SLH-DSA key generation from stopping this service answering.
+//
+// The `kid` is `sts-g-<group>-<slot>-<hash of the public key>`: from the key's
+// own material, like every kid here, and unable to collide with a
+// per-algorithm key's (`sts-es256-…`, `sts-ml-dsa-65-…`), whose names the
+// `privateMaterialFor()` maps are keyed by.
+// ===========================================================================
+
+function groupKidOf(groupId, slot, material) {
+  log.debug("Entering groupKidOf().");
+  log.debug("Leaving groupKidOf().");
+  return 'sts-g-' + groupId + '-' + String(slot).toLowerCase() + '-' +
+         forge.md.sha256.create().update(material).digest().toHex()
+           .slice(0, 8);
+}
+
+// One classical member: `{ group, slot, alg, kind, pairedSlot, privateKey,
+// publicJwk }`, the shape `keystore.serialiseSignerGroups()` reads.
+function classicalGroupMember(groupId, pair, keyPair) {
+  log.debug("Entering classicalGroupMember(). " + groupId + '/' + pair.slot);
+  const jwk = keyPair.publicKey.export({ format: 'jwk' });
+  const material = JSON.stringify([jwk.kty, jwk.n || '', jwk.e || '',
+                                   jwk.crv || '', jwk.x || '', jwk.y || '']);
+  const alg = pair.jwsAlgs[0];
+  log.debug("Leaving classicalGroupMember().");
+  return {
+    group: groupId, slot: signerGroups.slotOf(groupId, pair.slot), alg: alg,
+    kind: pair.kind,
+    pairedSlot: pair.pq ? signerGroups.slotOf(groupId, pair.pq.slot) : null,
+    privateKey: keyPair.privateKey,
+    publicJwk: Object.assign({ use: 'sig', alg: alg }, jwk,
+      { kid: groupKidOf(groupId, pair.slot, material) })
+  };
+}
+
+// One post-quantum member, from `pq_jose.generateAsync()`'s raw pair.
+function pqGroupMember(groupId, slot, alg, pairedSlot, raw) {
+  log.debug("Entering pqGroupMember(). " + groupId + '/' + slot);
+  const kid = groupKidOf(groupId, slot,
+                         Buffer.from(raw.pub).toString('base64'));
+  log.debug("Leaving pqGroupMember().");
+  return {
+    group: groupId, slot: signerGroups.slotOf(groupId, slot), alg: alg,
+    kind: 'pq', pairedSlot: pairedSlot, privateKey: raw.priv,
+    publicJwk: pqJose.akpPublicJwk(alg, raw.pub, kid)
+  };
+}
+
+// Every member of every group, generated concurrently.
+function makeSignerGroupsAsync() {
+  log.debug("Entering makeSignerGroupsAsync().");
+  const jobs = [];
+  signerGroups.GROUPS.forEach(function (grp) {
+    signerGroups.PAIRS.forEach(function (pair) {
+      if (pair.kind === 'rsa') {
+        jobs.push(generateRsaPairAsync(3072, false).then(function (made) {
+          return classicalGroupMember(grp.id, pair, made);
+        }));
+      } else if (pair.kind === 'curve') {
+        // CURVE_KEY_SPECS' own row for the algorithm, through the one
+        // asynchronous curve generator a standby key is minted by.
+        const curveSpec = CURVE_KEY_SPECS.filter(function (spec) {
+          return spec.alg === pair.slot && !spec.curve;
+        })[0];
+        jobs.push(generateCurvePairAsync(curveSpec)
+          .then(function (made) {
+            return classicalGroupMember(grp.id, pair, made);
+          }));
+      } else {
+        jobs.push(pqJose.generateAsync(pair.slot).then(function (raw) {
+          return pqGroupMember(grp.id, pair.slot, pair.slot, null, raw);
+        }));
+      }
+      if (pair.pq) {
+        const pq = pair.pq;
+        jobs.push(pqJose.generateAsync(pq.alg).then(function (raw) {
+          return pqGroupMember(grp.id, pq.slot, pq.alg,
+                               signerGroups.slotOf(grp.id, pair.slot), raw);
+        }));
+      }
+    });
+  });
+  log.debug("Leaving makeSignerGroupsAsync(). " + jobs.length + " key(s).");
+  return Promise.all(jobs);
+}
+
+// Hand the public halves to `pki.certifySignerGroups()` on the next turn —
+// `certifyPqLater()`'s shape, and its reason: certification is asynchronous
+// and never a precondition for signing.
+function certifySignerGroupsLater(realmId, members) {
+  log.debug("Entering certifySignerGroupsLater().");
+  const publicHalves = (members || []).map(function (one) {
+    return { group: one.group, slot: one.slot, alg: one.alg, kind: one.kind,
+             pairedSlot: one.pairedSlot || null, publicJwk: one.publicJwk };
+  });
+  setImmediate(function () {
+    let pki = null;
+    try {
+      pki = require('./pki');
+    } catch (e) {
+      log.debug("Caught in a callback in certifySignerGroupsLater(): " +
+                ((e && e.message) || e));
+      // No certificate authority in this process: the keys still sign.
+      return;
+    }
+    Promise.resolve(pki.certifySignerGroups(realmId, publicHalves))
+      .then(function (done) {
+        if (done && !done.ok && (done.errors || []).length) {
+          log.debug('The "' + realmId + '" realm\'s signer groups were ' +
+                    'not certified: ' + done.errors.join(' '));
+        }
+      }).catch(function (e) {
+        log.error(errorCodes.tag('STS-CORE-0024') +
+                  'The "' + realmId + '" realm\'s signer-group keys could ' +
+                  'not be certified: ' + e.message + '. They still SIGN — ' +
+                  'what they lack is a certificate chaining to this ' +
+                  'service\'s Root.');
+      });
+  });
+  log.debug("Leaving certifySignerGroupsLater().");
+}
+
+function signerGroupsForAsync(keys) {
+  log.debug("Entering signerGroupsForAsync().");
+  if ((keys.signerGroups || []).length) {
+    log.debug("Leaving signerGroupsForAsync(). Already made.");
+    return Promise.resolve(keys.signerGroups);
+  }
+  if (keys.signerGroupsPromise) {
+    log.debug("Leaving signerGroupsForAsync(). One is already in flight.");
+    return keys.signerGroupsPromise;
+  }
+  const started = Date.now();
+  keys.signerGroupsPromise = makeSignerGroupsAsync().then(function (made) {
+    if (!(keys.signerGroups || []).length) {
+      keys.signerGroups = made;
+      // Shared, written down and certified under the rules
+      // pqKeysForAsync() gives at length, and only by the winner.
+      // JOINED to the held set rather than published as this process's
+      // whole view of it — see keystore.joinSignerGroups() for the failure
+      // that made the difference.
+      let took;
+      if (keys.realm !== undefined) {
+        took = keystore.joinSignerGroups(keys.realm, keys);
+      }
+      if (took !== false) {
+        certifySignerGroupsLater(keys.realm, made);
+      }
+      log.info('The signer-group keys were generated for the "' +
+               keys.realm + '" realm: ' + made.length + ' key(s) in ' +
+               signerGroups.GROUPS.length + ' group(s), in ' +
+               (Date.now() - started) + 'ms (keys.signerModel=' +
+               signerGroups.HYBRID_MODEL + ').');
+    }
+    return keys.signerGroups;
+  }).catch(function (err) {
+    keys.signerGroupsPromise = null;
+    throw err;
+  });
+  log.debug("Leaving signerGroupsForAsync(). Generating.");
+  return keys.signerGroupsPromise;
+}
+
+// Make a realm's signer-group keys ahead of the first signature — only when
+// the realm is in the `hybrid-groups` model, read IN that realm. Never
+// rejects: a failure is named, and a group signature falls back to the
+// per-algorithm key until the keys exist (see groupSignerFor()).
+function warmSignerGroups(realmId) {
+  log.debug("Entering warmSignerGroups(). realm=" + realmId);
+  const realm = realms.get(realmId);
+  const on = realms.run(realm, function () {
+    return signerGroups.hybridGroupsOn();
+  });
+  if (!on) {
+    log.debug("Leaving warmSignerGroups(). The realm is per-algorithm.");
+    return Promise.resolve(null);
+  }
+  let keys;
+  try {
+    keys = stsKeysFor.of(realmId);
+  } catch (e) {
+    log.debug("Caught in warmSignerGroups(): " + ((e && e.message) || e));
+    log.debug("Leaving warmSignerGroups(). No keys for that realm.");
+    return Promise.resolve(null);
+  }
+  log.debug("Leaving warmSignerGroups(). Generating.");
+  return signerGroupsForAsync(keys).catch(function (err) {
+    log.warn(errorCodes.tag('STS-CORE-0028') +
+             'helpers: the signer-group keys for the "' + realmId +
+             '" realm could not be generated (' + err.message + '); its ' +
+             'group signatures use the per-algorithm keys until they are.');
+    return null;
+  });
+}
+
 function warmPqKeys(realmId) {
   log.debug("Entering warmPqKeys(). realm=" + realmId);
   let keys;
@@ -4210,14 +5057,23 @@ function certificateHeaderFor(useCaseId, alg, kid) {
     };
   } else {
     const entry = (keys.extraKeys || []).concat(keys.pqKeys || [])
+      .concat(groupMembersOf(keys))
       .filter(function (one) {
         return one && one.publicJwk && one.publicJwk.kid === kid;
       })[0];
     if (entry) {
       const publicJwk = entry.publicJwk;
       const entryAlg = entry.alg;
+      // A signer-group key (#68) is filed under its group slot; a
+      // partnered ML-DSA key's certificate is its partner's, whose
+      // subjectPublicKeyInfo is NOT this key — so `headerFor()`'s key check
+      // names no certificate for it, which is D5 in a header (RFC 7515
+      // section 4.1.6: the first certificate MUST hold the signing key).
       signer = {
-        realm: keys.realm, slot: certificateSlotOf(entry), kid: kid,
+        realm: keys.realm,
+        slot: entry.slot && signerGroups.isGroupSlot(entry.slot)
+          ? entry.slot : certificateSlotOf(entry),
+        kid: kid,
         spkiPem: function () {
           log.debug("Entering spkiPem().");
           if (publicJwk.kty === 'AKP') {
@@ -4278,7 +5134,7 @@ function publicJwkOfKid(kid) {
                  .export({ format: 'jwk' });
   }
   const entry = (keys.extraKeys || []).concat(keys.pqKeys || [])
-    .concat(standbyOf(keys))
+    .concat(standbyOf(keys)).concat(groupMembersOf(keys))
     .filter(function (one) {
       return one && one.publicJwk && one.publicJwk.kid === kid;
     })[0];
@@ -4328,8 +5184,14 @@ function kidNamesKey(headerKid, internalKid) {
 // function has no way to know and no business holding. A caller wanting an
 // HS\* signature passes the secret itself.
 // ---------------------------------------------------------------------------
-function signingKeyFor(alg) {
+function signingKeyFor(alg, useCaseId) {
   log.debug("Entering signingKeyFor(). alg=" + alg);
+  // A signer-group key first, for a use case in a hybrid-groups realm (#68).
+  const grouped = groupSignerFor(useCaseId, alg, true);
+  if (grouped) {
+    log.debug("Leaving signingKeyFor(). The " + grouped.slot + " key.");
+    return grouped;
+  }
   const direct = signingKeyWithoutList(alg);
   if (direct) {
     log.debug("Leaving signingKeyFor(). No list needed.");
@@ -4340,11 +5202,13 @@ function signingKeyFor(alg) {
 }
 
 // The same key, with the post-quantum half of the list generated in the pool.
-function signingKeyForAsync(alg) {
+function signingKeyForAsync(alg, useCaseId) {
   log.debug("Entering signingKeyForAsync(). alg=" + alg);
   let direct;
   try {
-    direct = signingKeyWithoutList(alg);
+    // A signer-group key first (#68) — see signingKeyFor().
+    direct = groupSignerFor(useCaseId, alg, true) ||
+             signingKeyWithoutList(alg);
   } catch (e) {
     log.debug("Leaving signingKeyForAsync(). Refused.");
     return Promise.reject(e);
@@ -4394,7 +5258,7 @@ function signJwtAs(payload, alg, secret, opts) {
     return stsCrypto.signJws(payload, secret,
                              { algorithm: alg, header: options.header });
   }
-  const signer = signingKeyFor(alg);
+  const signer = signingKeyFor(alg, options.certificateHeader);
   log.debug("Leaving signJwtAs(). " + alg + ".");
   return stsCrypto.signJws(payload, signer.key,
                            { algorithm: alg,
@@ -4434,14 +5298,15 @@ function signJwtAsAsync(payload, alg, secret, opts) {
     }
   }
   log.debug("Leaving signJwtAsAsync(). " + alg + ".");
-  return signingKeyForAsync(alg).then(function (signer) {
-    return stsCrypto.signJwsAsync(payload, signer.key,
-      { algorithm: alg, keyid: publishedKidFor(signer.kid),
-        session: options.session,
-        header: withCertificateHeader(options.header,
-                                      options.certificateHeader, alg,
-                                      signer.kid) });
-  });
+  return signingKeyForAsync(alg, options.certificateHeader)
+    .then(function (signer) {
+      return stsCrypto.signJwsAsync(payload, signer.key,
+        { algorithm: alg, keyid: publishedKidFor(signer.kid),
+          session: options.session,
+          header: withCertificateHeader(options.header,
+                                        options.certificateHeader, alg,
+                                        signer.kid) });
+    });
 }
 
 // --- token minting ----------------------------------------------------------
@@ -4476,7 +5341,10 @@ function signJwtAsAsync(payload, alg, secret, opts) {
 function signJwt(payload, context, opts) {
   log.debug("Entering signJwt(). typ=" + (payload.typ || '(none)'));
   const alg = String((opts && opts.algorithm) || 'RS256');
-  const signer = ownSignerFor(alg);
+  // The use case's signer-group key where the realm is in that model (#68),
+  // else the per-algorithm key.
+  const signer = groupSignerFor(opts && opts.certificateHeader, alg, false) ||
+                 ownSignerFor(alg);
   const certificateHeaderMembers = withCertificateHeader(
     (opts && opts.header) || undefined,
     opts && opts.certificateHeader, alg, signer.kid);
@@ -4986,6 +5854,17 @@ module.exports = {
   publishedKidFor: publishedKidFor,
   kidNamesKey: kidNamesKey,
   warmPqKeys: warmPqKeys,
+  warmSignerGroups: warmSignerGroups,
+  signerGroupsForAsync: signerGroupsForAsync,
+  groupSignerFor: groupSignerFor,
+  groupJwkEntries: groupJwkEntries,
+  groupPublishedJwks: groupPublishedJwks,
+  xmlSignatureChoice: xmlSignatureChoice,
+  ownXmlSigningCertificates: ownXmlSigningCertificates,
+  // For tests/signer_groups.js (#68): a token's header, and the public JWK
+  // of one of this realm's keys by kid. Neither is a private key.
+  peekJoseHeader: peekJoseHeader,
+  publicJwkOfKid: publicJwkOfKid,
   prepareKeySet: prepareKeySet,
   prepareKeySets: prepareKeySets,
   log: log,

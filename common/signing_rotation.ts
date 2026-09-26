@@ -267,8 +267,10 @@ class SigningRotation {
     const tokens = Number(config.value('signing.rotationIntervalDays')) *
                    DAY_MS;
     // The BBS key signs ldp_vc credentials and nothing else (#49 P5): the
-    // credential interval, never shared with a token signer.
-    if (unit === 'bbs:BBS') {
+    // credential interval, never shared with a token signer. So does the
+    // CREDENTIALS signer group's every unit (#68), which signs credentials,
+    // status lists and nothing a token uses — that is what a group is.
+    if (unit === 'bbs:BBS' || this.isCredentialGroupUnit(unit)) {
       const bbsEvery = Number(config.value(
         'signing.credentialRotationIntervalDays')) * DAY_MS;
       log.debug("Leaving SigningRotation.intervalMs(). " + bbsEvery +
@@ -292,6 +294,15 @@ class SigningRotation {
     return answer;
   }
 
+  // Is this one of the credentials signer group's units (#68)? `jose:` then
+  // the group's slot prefix — `common/signer_groups.js` names the group.
+  private isCredentialGroupUnit(unit: string): boolean {
+    const { log } = this.deps;
+    log.debug("Entering SigningRotation.isCredentialGroupUnit(). " + unit);
+    log.debug("Leaving SigningRotation.isCredentialGroupUnit().");
+    return String(unit || '').indexOf('jose:credentials/') === 0;
+  }
+
   // How long a key goes on verifying after it is retired.
   graceMs(unit: string, keys?: Json): number {
     const { log, config } = this.deps;
@@ -299,7 +310,8 @@ class SigningRotation {
     const setting = Number(config.value('signing.retiredKeyGraceDays')) *
                     DAY_MS;
     let derived = this.longest(TOKEN_LIFETIMES);
-    if (unit === this.credentialUnit(keys) || unit === 'bbs:BBS') {
+    if (unit === this.credentialUnit(keys) || unit === 'bbs:BBS' ||
+        this.isCredentialGroupUnit(unit)) {
       derived = Math.max(derived, this.longest(CREDENTIAL_LIFETIMES));
     }
     const answer = Math.max(setting, derived + SKEW_MS);
