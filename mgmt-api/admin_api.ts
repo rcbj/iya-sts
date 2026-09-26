@@ -2070,24 +2070,45 @@ class AdminApi {
                      'and any `stale` ones left out); and a page of the ' +
                      'realm\'s refused passwords in `failures` — a subject ' +
                      'or a name\'s digest, the door, the network prefix, the ' +
-                     'ASN and the code, never an address.',
+                     'ASN and the code, never an address. A page of the ' +
+                     'realm\'s assessed sign-ins in `assessments` ' +
+                     '(`{ total, rows }`, the last 7 days, newest first) and ' +
+                     'of its people by current standing in `subjects`, ' +
+                     'each with its `assessmentsPaging` / `subjectsPaging`. ' +
+                     'Every row naming a person\'s `subject` also carries ' +
+                     'their `username` (\'\' when the directory no longer ' +
+                     'holds them).',
         mirrors: 'GET /admin/risk',
         parameters: [
-          { name: 'realm', in: 'query', required: false,
-            schema: { type: 'string' },
-            description: 'The realm whose failures and operator lists are ' +
-                         'shown; the default realm when absent.' },
           { name: 'address', in: 'query', required: false,
             schema: { type: 'string' },
             description: 'An IPv4 or IPv6 address to look up.' },
           { name: 'offset', in: 'query', required: false,
             schema: { type: 'integer', minimum: 0 },
-            description: 'Where the page of failures starts.' }
-        ],
-        responseDescription: 'The datasets, the lookup and the failures.',
+            description: 'Where the page of failures starts.' },
+          { name: 'level', in: 'query', required: false,
+            schema: { type: 'string' },
+            description: 'Only the assessments at this level.' },
+          { name: 'subject', in: 'query', required: false,
+            schema: { type: 'string' },
+            description: 'Only this person\'s assessments.' }
+        ].concat(this.pagingParameters().filter(function (one) {
+          return one.name === 'per';
+        })).concat(this.detailPagingParameters([
+          { name: 'assessments',
+            description: 'The sign-ins assessed in the last 7 days, newest ' +
+                         'first, ' + adminViews.DEFAULT_PER_PAGE + ' by ' +
+                         'default.' },
+          { name: 'subjects',
+            description: 'The realm\'s people by current standing, highest ' +
+                         'score first, twenty-five by default.' }
+        ])),
+        responseDescription: 'The datasets, the lookup, the failures, the ' +
+                             'assessments and the standings.',
         responseSchema: { type: 'object',
           description: '`store`, `datasets`, `formats`, `lookup`, ' +
-                       '`failures`.' },
+                       '`failures`, `assessments`, `assessmentsPaging`, ' +
+                       '`subjects`, `subjectsPaging`.' },
         handler: function (req, res) {
           log.debug("Entering the management API risk endpoint.");
           const realmOnly = riskAdmin.realmOnly(req);
@@ -2125,10 +2146,6 @@ class AdminApi {
                      'the breached-password screening.',
         mirrors: 'GET /admin/risk-scoring',
         parameters: [
-          { name: 'realm', in: 'query', required: false,
-            schema: { type: 'string' },
-            description: 'The realm counted; the default realm when ' +
-                         'absent.' },
           { name: 'window', in: 'query', required: false,
             schema: { type: 'string', enum: ['1h', '24h', '7d', '30d'] },
             description: 'How far back the assessments are counted; 24h ' +
