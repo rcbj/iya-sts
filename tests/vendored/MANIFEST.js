@@ -837,6 +837,11 @@ const JOBS = [
   // resumed tenant stream and a retried delivery, against the mock relying
   // party. `local: true`.
   { file: 'sts_provider_commands.js',    browser: false, local: true },
+  // SSF AS THE RECEIVER OF A FOREIGN TRANSMITTER (#153, 2026-09-26): one
+  // realm's transmitter as the "foreign" one, another realm receiving by
+  // poll and push, verifying and acting through a federation link.
+  // `local: true`.
+  { file: 'sts_ssf_foreign_receiver.js', browser: false, local: true },
   // THE OPENID FOUNDATION'S CONFORMANCE SUITE (#176, 2026-09-24): FAPI 2.0
   // Security Profile and Message Signing, FAPI 1.0 Advanced and FAPI-CIBA,
   // each plan a throwaway realm, every module run, and a FAILED module a

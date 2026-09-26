@@ -1123,6 +1123,17 @@ const TEMPLATES: TemplateRow[] = [
         B.apply(F1 + 'string-one-and-only', [
           B.designator(env, SIGNAL_ATTRIBUTE.SURFACE, TYPE.STRING)])]);
       const rules: any[] = [];
+      if (endOn.length) {
+        rules.push(rule('end-sessions', 'End the receiving surface\'s own ' +
+          'sessions for the person on ' + endOn.join(', ') + '.',
+          [endSessions, anyIn(SIGNAL_ATTRIBUTE.EVENT, endOn)]));
+      }
+      if (riskLevels.length) {
+        rules.push(rule('end-sessions-on-risk', 'End them on a ' +
+          'risk-level-change to ' + riskLevels.join(', ') + '.',
+          [endSessions, anyIn(SIGNAL_ATTRIBUTE.EVENT, ['risk-level-change']),
+           anyIn(SIGNAL_ATTRIBUTE.LEVEL, riskLevels)]));
+      }
       if (foreignEnd.length) {
         rules.push(rule('foreign-end-sessions', 'From a foreign ' +
           'transmitter, end the person\'s sessions here on ' +
@@ -1141,17 +1152,6 @@ const TEMPLATES: TemplateRow[] = [
           'enable it again on ' + foreignEnable.join(', ') + '.',
           [actionIs(SIGNAL_RESPONSE.ENABLE_ACCOUNT), fromForeign,
            anyIn(SIGNAL_ATTRIBUTE.EVENT, foreignEnable)]));
-      }
-      if (endOn.length) {
-        rules.push(rule('end-sessions', 'End the receiving surface\'s own ' +
-          'sessions for the person on ' + endOn.join(', ') + '.',
-          [endSessions, anyIn(SIGNAL_ATTRIBUTE.EVENT, endOn)]));
-      }
-      if (riskLevels.length) {
-        rules.push(rule('end-sessions-on-risk', 'End them on a ' +
-          'risk-level-change to ' + riskLevels.join(', ') + '.',
-          [endSessions, anyIn(SIGNAL_ATTRIBUTE.EVENT, ['risk-level-change']),
-           anyIn(SIGNAL_ATTRIBUTE.LEVEL, riskLevels)]));
       }
       log.debug('Leaving buildSignalResponse(). ' + rules.length +
                 ' rule(s).');
