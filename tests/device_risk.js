@@ -379,8 +379,20 @@ function childMain() {
       try {
         const RiskAdmin = riskAdmin.RiskAdmin;
         const inst = new RiskAdmin(RiskAdmin.defaultDeps());
-        html = inst.assessmentsHtml({ assessments: view.assessments,
-                                      subjects: [] });
+        // The page draws its two pagers off `riskView()`'s raw paging (the
+        // Risk page's paging, which reached develop beside #164), so the
+        // view handed in carries them as `riskView()` does.
+        const adminViews = require(ROOT + '/admin-core/admin_views');
+        const drawn = { assessments: view.assessments, subjects: [],
+                        signals: view.signals };
+        Object.defineProperty(drawn, 'assessmentsPagingRaw', {
+          value: adminViews.pagingOf({}, view.assessments.total,
+                                     { name: 'assessments',
+                                       noun: 'assessments' }) });
+        Object.defineProperty(drawn, 'subjectsPagingRaw', {
+          value: adminViews.pagingOf({}, 0, { name: 'subjects',
+                                              noun: 'people' }) });
+        html = inst.assessmentsHtml({ query: {} }, drawn);
       } catch (e) {
         html = 'threw: ' + (e && e.message);
       }
