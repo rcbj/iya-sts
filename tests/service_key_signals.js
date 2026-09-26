@@ -19,7 +19,12 @@
 //   D. SPIFFE: a JWT authority rotation is announced, the bundle changed.
 //   E. THE LISTENER: the first certificate a process takes over its
 //      self-signed bootstrap is NOT announced; one it replaces after a
-//      rebuilt branch IS, to every realm (`*`).
+//      rebuilt branch IS, to every realm (`*`). And (#264) what the service
+//      last announced is recorded, a start whose certificate differs from it
+//      is announced from `listen()` as `restarted`, and a self-signed,
+//      supplied or handed-in certificate is never recorded. The restart
+//      itself, across two processes and a store, is
+//      `tests/listener_certificate_restart.js`.
 //   F. A STREAM DELETED from the console, and one deleted for inactivity
 //      (`ssf.inactivityAction: delete`), is sent `stream-updated` with status
 //      `disabled` and a reason BEFORE it is removed.
@@ -245,6 +250,81 @@ function childMain() {
          'E1. the listener\'s first certificate over its bootstrap is not ' +
          'announced; the one that replaces it after a rebuilt branch is, to ' +
          'every realm', j([atStart, tlsNotices]));
+
+    // --- E2-E6. what the service last announced, across a restart (#264) ----
+    const fp = function (pem) {
+      return String(new (require('crypto').X509Certificate)(pem)
+        .fingerprint256).toUpperCase();
+    };
+    const nowFp = fp(tls.serverCertificate().certPem);
+    const heldNow = tls.lastAnnouncedListenerCertificates();
+    note(heldNow.rsa &&
+         String(heldNow.rsa.fingerprint256).toUpperCase() === nowFp,
+         'E2. a re-issued listener certificate is RECORDED as the one the ' +
+         'service last announced, so the next start compares with it',
+         j([heldNow, nowFp]));
+    // A previous life of the service announced another certificate: plant
+    // it through the comparison itself, as a start would have written it.
+    tls.listenerChangesSinceAnnounced([{ algorithm: 'rsa', selfSigned: false,
+                                         fingerprint256: 'AA:BB' }]);
+    keyNotices.length = 0;
+    tls.listen();
+    await pause(50);
+    const restartNotices = keyNotices.filter(function (n) {
+      return n.kind === 'tls';
+    });
+    note(restartNotices.length === 1 && restartNotices[0].realm === '*' &&
+         restartNotices[0].reason === 'restarted' &&
+         restartNotices[0].rotated.some(function (r) {
+           return String(r).toUpperCase() === 'RSA AA:BB -> ' + nowFp;
+         }) &&
+         String(tls.lastAnnouncedListenerCertificates().rsa.fingerprint256)
+           .toUpperCase() === nowFp,
+         'E3. A START THAT PRESENTS A CERTIFICATE OTHER THAN THE ONE LAST ' +
+         'ANNOUNCED IS ANNOUNCED once the port is bound (listen()), to every ' +
+         'realm, reason "restarted", from the recorded fingerprint — and ' +
+         'the record moves to the new one', j(restartNotices));
+    keyNotices.length = 0;
+    tls.listen();
+    await pause(50);
+    note(keyNotices.filter(function (n) {
+      return n.kind === 'tls';
+    }).length === 0,
+         'E4. a start presenting the certificate last announced announces ' +
+         'nothing', j(keyNotices));
+    const skipped = tls.listenerChangesSinceAnnounced([
+      { algorithm: 'sks-self', fingerprint256: 'S1' },
+      { algorithm: 'sks-self2', selfSigned: true, fingerprint256: 'S2' },
+      { algorithm: 'supplied', selfSigned: false, fingerprint256: 'S3' },
+      { algorithm: 'sks-handed', selfSigned: false, handedIn: true,
+        fingerprint256: 'S4' }]);
+    const heldAfter = tls.lastAnnouncedListenerCertificates();
+    note(skipped.length === 0 && !heldAfter['sks-self'] &&
+         !heldAfter['sks-self2'] && !heldAfter.supplied &&
+         !heldAfter['sks-handed'],
+         'E5. a self-signed bootstrap, a supplied and a handed-in ' +
+         'certificate are never recorded and never announced',
+         j([skipped, heldAfter]));
+    const first = tls.listenerChangesSinceAnnounced([
+      { algorithm: 'sks-new', selfSigned: false, fingerprint256: 'N1' }]);
+    note(first.length === 0 &&
+         (tls.lastAnnouncedListenerCertificates()['sks-new'] || {})
+           .fingerprint256 === 'N1',
+         'E6. a unit with nothing recorded (a first start, or a store that ' +
+         'keeps nothing across a restart) is recorded and NOT announced',
+         j(first));
+    const tlsRow = events.EVENT_BY_URI[events.TLS_CERTIFICATE_CHANGED];
+    const fedRow = events.EVENT_BY_URI[events.FEDERATION_KEY_ROTATED];
+    const restartedPayload = tlsRow.generate({ realm: 'r',
+                                               rotated: 'rsa a -> b',
+                                               reason: 'restarted' });
+    note(restartedPayload.reason === 'restarted' &&
+         events.validateEvent(events.TLS_CERTIFICATE_CHANGED,
+                              restartedPayload).ok &&
+         fedRow.generate({ reason: 'restarted' }).reason === 'requested',
+         'E7. "restarted" is a reason of tls-certificate-changed ONLY: it ' +
+         'validates there, and another key event reads it as "requested"',
+         j(restartedPayload));
 
     // --- F. a deleted stream is told first --------------------------------------
     const gone = streams.createStream({ delivery: { method: poll },
