@@ -1407,6 +1407,15 @@ class ProtocolStack {
                'SsfTransmitters');
     this.register(app, require('../ssf/ssf_transmitters'),
                   'ssf/ssf_transmitters');
+    // 23b-vi. AN OAUTH GRANT REVOKED IS A CAEP `session-revoked` (#239): a
+    // library that fills `common/admin_stats.js`'s `setRevocationObserver()`
+    // slot when built and registers no route. Beside `ssf/ssf`, which it
+    // delivers through — lazily, so the order is for a reader, and a
+    // revocation before this line (none happens at load) is simply not
+    // reported.
+    this.build('oauth-oidc/oauth_grant_signals',
+               require('../oauth-oidc/oauth_grant_signals'),
+               'OAuthGrantSignals');
     // 23b-ii. SIGNING KEY ROTATION (#42, 2026-09-22): a library that registers
     // its two scheduler jobs when built and no route. After `ssf/ssf`, whose
     // signingKeyRotated() it calls (lazily, so the order is for a reader).

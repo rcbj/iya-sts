@@ -728,6 +728,12 @@ const TRUSTSTORE_ACTIONS = ['add', 'remove'];
 const SPIFFE_ENTRY_ACTIONS = ['create', 'update', 'delete'];
 
 const SPIFFE_AGENT_ACTIONS = ['ban', 'unban', 'delete'];
+// WHAT EVERY TOKEN REVOCATION ON `/admin/tokens` AND `/admin-api/tokens`
+// STATES (#239): an administrator's act, which CAEP's `session-revoked` about
+// the grant it ends reports as `initiating_entity: admin`
+// (`oauth-oidc/oauth_grant_signals.ts`).
+const ADMIN_ACT = Object.freeze({ initiatingEntity: 'admin' });
+
 const SPIFFE_BROKER_ACTIONS = ['set', 'remove'];
 
 // The console names a field the way the record does and the EDITABLE table
@@ -1092,7 +1098,8 @@ class AdminActions {
                               : 'The token with jti ' + found.jti + ' was ' +
                                   'not revoked, so nothing changed.' };
       }
-      const first = stats.revoke(found.jti, 'the admin console');
+      // CAEP's initiating_entity for every revocation on this page (#239).
+      const first = stats.revoke(found.jti, 'the admin console', ADMIN_ACT);
       log.debug("Leaving AdminActions.tokenAction(). Revoked.");
       return { ok: true, jti: found.jti,
                message: (first ? 'Revoked ' :
@@ -1255,7 +1262,8 @@ class AdminActions {
           moved = action === 'restore-set'
             ? stats.restore(member.jti)
             : stats.revoke(member.jti,
-                           'the admin console (the whole set ' + setKey + ')');
+                           'the admin console (the whole set ' + setKey + ')',
+                           ADMIN_ACT);
         }
         if (moved) changed += 1;
       });
@@ -1307,7 +1315,8 @@ class AdminActions {
       }
       const count =
           stats.revokeWhere(function (record) { return record.kind === kind; },
-                                      'the admin console (every ' + kind + ')');
+                                      'the admin console (every ' + kind + ')',
+                            ADMIN_ACT);
       log.debug("Leaving AdminActions.tokenAction(). Revoked " + count +
                 " by kind.");
       return { ok: true, revoked: count,
@@ -1323,7 +1332,7 @@ class AdminActions {
       }
       const count = stats.revokeWhere(function (record) {
         return record.sub === subject || record.username === subject;
-      }, 'the admin console (everything for ' + subject + ')');
+      }, 'the admin console (everything for ' + subject + ')', ADMIN_ACT);
       log.debug("Leaving AdminActions.tokenAction(). Revoked " + count +
                 " for a subject.");
       return { ok: true, revoked: count,
@@ -1347,7 +1356,8 @@ class AdminActions {
       }
       const count = stats.revokeWhere(function (record) {
         return stats.holderKeyOf(record.username, record.sub) === key;
-      }, 'the admin console (everything for the user ' + key + ')');
+      }, 'the admin console (everything for the user ' + key + ')',
+      ADMIN_ACT);
       log.debug("Leaving AdminActions.tokenAction(). Revoked " + count +
                 " for a user.");
       return { ok: true, revoked: count, user: key,
@@ -1358,7 +1368,7 @@ class AdminActions {
 
     if (action === 'revoke-all') {
       const count = stats.revokeWhere(function () { return true; }, 'the ' +
-          'admin console (everything)');
+          'admin console (everything)', ADMIN_ACT);
       log.debug("Leaving AdminActions.tokenAction(). Revoked everything: " +
                 count + ".");
       return { ok: true, revoked: count,
@@ -1417,6 +1427,7 @@ class AdminActions {
     }
     const result = logoutReader.terminate(key, [selected], {
       actor: (opts && opts.actor) || '',
+      initiatingEntity: 'admin',
       by: (opts && opts.by) || 'the sessions page',
       channel: 'http'
     });
@@ -1516,7 +1527,7 @@ class AdminActions {
 
     if (action === 'global') {
       const result = logoutReader.terminate(key, [], {
-        actor: user, channel: 'console',
+        actor: user, channel: 'console', initiatingEntity: 'admin',
         by: 'the admin console at /admin/logout'
       });
       this.mailSessionsEnded(user, result.terminated.length,
@@ -1552,7 +1563,7 @@ class AdminActions {
                                           'out of everything by accident.'] });
       }
       const result = logoutReader.terminate(key, selection, {
-        actor: user, channel: 'console',
+        actor: user, channel: 'console', initiatingEntity: 'admin',
         by: 'the admin console at /admin/logout'
       });
       this.mailSessionsEnded(user, result.terminated.length,
@@ -1902,7 +1913,7 @@ class AdminActions {
                         'session was ended.' };
     }
     const result = logoutReader.terminate(stats.identityKeyOf(who), [], {
-      actor: ctx.actor || who, channel: ctx.via,
+      actor: ctx.actor || who, channel: ctx.via, initiatingEntity: 'admin',
       by: why + ' (' + (ctx.via === 'api' ? '/admin-api/users'
                                            : 'the admin console') + ')'
     });

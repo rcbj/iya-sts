@@ -3590,7 +3590,16 @@ class OAuth2Server {
              // was issued alone, which is true of every one of them, and the
              // console draws it as a set of one.
              setId: (opts && opts.set_id) || '',
-             grant: (opts && opts.grant) || '' };
+             grant: (opts && opts.grant) || '',
+             // THE OAUTH GRANT, for CAEP (#239): what a revocation of this
+             // token ends is reported by the grant it belongs to — the Grant
+             // Management grant a client was handed, else the refresh-token
+             // family `tokenSet()` computed before minting either half, else
+             // the one response. `grantRefresh` says the grant holds a
+             // refresh token. `oauth-oidc/oauth_grant_signals.ts` reads both.
+             grantId: String((opts && (opts.grant_id || opts.grant_family ||
+                                       opts.set_id)) || ''),
+             grantRefresh: !!(opts && opts.grant_family) };
   }
 
   accessToken(base: Json, opts: Json): Json {
@@ -3771,7 +3780,9 @@ class OAuth2Server {
     // why RFC 9700 mode's family bookkeeping needs no per-grant call site to
     // forget. The same reasoning keeps signJwt() the one place a token is
     // counted.
-    const refreshJti = randomId(16);
+    // Minted by `tokenSet()` where it had to name the family before the
+    // access token beside this one was signed (#239); here otherwise.
+    const refreshJti = String(opts.refresh_jti || '') || randomId(16);
     const payload = {
       // username travels with the refresh token, so refreshing keeps describing
       // the person who actually signed in.
@@ -3892,7 +3903,8 @@ class OAuth2Server {
     // #102 (2026-09-22), where it was only while rotation was required: RFC
     // 7009's revocation of a refresh token takes the whole grant, and a chain
     // that does not rotate is still one grant.
-    const familyId = bcp.familyForIssuance(refreshJti, opts.parent_refresh_jti,
+    const familyId = String(opts.grant_family || '') ||
+                     bcp.familyForIssuance(refreshJti, opts.parent_refresh_jti,
                                            opts.parent_refresh_family);
     payload[bcp.FAMILY_CLAIM] = familyId;
     // SIGNED, THEN ENCRYPTED (2026-09-12): the JWS is what `signJwt()` records
@@ -4716,7 +4728,20 @@ class OAuth2Server {
       throw new AccessTokenRefused(log, plan.refusal);
     }
     const derived = !explicit.length && plan.derived.length > 0;
+    // THE GRANT BOTH HALVES BELONG TO, NAMED BEFORE EITHER IS SIGNED (#239):
+    // the refresh token's jti and its family are chosen here rather than
+    // inside refreshToken(), so the access token minted first records the
+    // same grant — which is what lets revoking the grant be reported once, as
+    // the grant (`oauth_grant_signals.ts`), whichever of its tokens a door
+    // names.
+    const refreshJti = opts.withRefresh !== false ? randomId(16) : '';
+    const grantFamily = refreshJti
+      ? bcp.familyForIssuance(refreshJti, opts.parent_refresh_jti,
+                              opts.parent_refresh_family)
+      : '';
     const issuing = Object.assign({}, opts, {
+      refresh_jti: refreshJti || undefined,
+      grant_family: grantFamily || undefined,
       scope: plan.scope,
       audience: self.audienceClaim(plan.audiences),
       // Onto the refresh token as well, for the reason the RFC 8707 call sites
@@ -6394,6 +6419,13 @@ class OAuth2Server {
     exchanged.issued_token_type =
       'urn:ietf:params:oauth:token-type:access_token';
     devices.noteUse(device, client.client_id);
+    // SINGLE SIGN-ON ACROSS APPS, AND CAEP's `session-presented` (#240): the
+    // sign-on session the first app's ID Token names was presented and
+    // honoured for a SECOND client, with no new authentication — exactly
+    // what the event means. After the issue, so a refused exchange (the
+    // issuance policy, a narrowed scope) reports nothing it did not honour.
+    const session = held;
+    authn.notePresented(session, 'OpenID Connect Native SSO', ctx.req);
     log.info('oauth2: Native SSO — "' + client.client_id + '" was issued ' +
              'tokens for ' + owner + ' on device ' + device.id + ', from ' +
              'the ID Token "' + firstClient + '" holds.');
@@ -10547,8 +10579,12 @@ class OAuth2Server {
     });
     if (!replay.ok) {
       (replay.revoke || []).forEach(function (jti) {
+        // A POLICY's act and a security event (#239): the grant is reported
+        // ended by `policy`, with the risk it was replayed under.
         stats.revoke(jti, 'RFC 9700 section 4.5: an authorization code was ' +
-                          'presented twice');
+                          'presented twice',
+                     { initiatingEntity: 'policy',
+                       replay: 'authorization-code-replay' });
       });
       log.debug("Leaving OAuth2Server.replayOrRefuseRedemption(). RFC 9700 " +
                 "mode refused the " +
@@ -12518,7 +12554,9 @@ class OAuth2Server {
         (refreshCheck.revoke || []).forEach(function (jti) {
           stats.revoke(jti,
                        'RFC 9700 section 2.2.2: a replayed refresh token ' +
-                       'revoked its family');
+                       'revoked its family',
+                       { initiatingEntity: 'policy',
+                         replay: 'refresh-token-replay' });
         });
         // AND BY ID (#46): a child minted on another node in the same instant
         // is in no list here, and is refused at its first use instead.
@@ -12546,8 +12584,10 @@ class OAuth2Server {
       const grantProblem = self.deps.grantManagement.refreshRefusal(
         claims.grant_id, claims.grant_gen, claims.client_id);
       if (grantProblem) {
+        // SUPERSEDED for CAEP (#239): a revoked grant was reported when it
+        // was revoked, and a merged or replaced one did not end.
         stats.revoke(String(claims.jti || ''), 'its grant is ' +
-                     'revoked or superseded');
+                     'revoked or superseded', { superseded: true });
         log.debug("Leaving the token endpoint. Grant Management refused the " +
                   "refresh.");
         errorCodes.mark(res, grantProblem.code);
@@ -12580,7 +12620,7 @@ class OAuth2Server {
                                                  : 'is not recorded');
         const family = bcp.familyOfRefresh(claims);
         bcp.grantMembersOf(family, claims.jti).forEach(function (jti) {
-          stats.revoke(jti, withdrawnVia);
+          stats.revoke(jti, withdrawnVia, { initiatingEntity: 'policy' });
         });
         if (family) {
           await bcp.revokeFamily(family, String(claims.client_id || ''));
@@ -12812,7 +12852,9 @@ class OAuth2Server {
         (spent.revoke || []).forEach(function (jti) {
           stats.revoke(jti,
                        'RFC 9700 section 2.2.2: a replayed refresh token ' +
-                       'revoked its family');
+                       'revoked its family',
+                       { initiatingEntity: 'policy',
+                         replay: 'refresh-token-replay' });
         });
         if (spent.errorCode === 'STS-OAUTH-0516' && spent.family) {
           await bcp.revokeFamily(spent.family, spent.clientId);
@@ -12927,7 +12969,9 @@ class OAuth2Server {
       // says it is for.
       if (bcp.rotationRequired()) {
         bcp.noteRefreshRotated(claims.jti);
-        stats.revoke(claims.jti, 'RFC 9700 section 2.2.2: rotated on use');
+        // Superseded, not ended: its successor carries the grant on (#239).
+        stats.revoke(claims.jti, 'RFC 9700 section 2.2.2: rotated on use',
+                     { superseded: true });
       }
       log.debug("Leaving OAuth2Server.tokenGrant().");
       return respond(refreshed);
@@ -13606,6 +13650,9 @@ class OAuth2Server {
         scope: cibaPlan ? cibaPlan.scope : record.scope,
         auth_time: record.approval.authTime,
         amr: record.approval.amr, acr: record.approval.acr || undefined,
+        // THE SIGN-ON SESSION THE PERSON APPROVED ON (#239), so its end
+        // revokes these tokens' refresh token as it does every grant's.
+        session_id: record.approval.sessionId || undefined,
         grant: 'ciba',
         grant_id: cibaPlan ? cibaPlan.id : undefined,
         grant_gen: cibaPlan ? cibaPlan.gen : undefined
@@ -16280,6 +16327,8 @@ class OAuth2Server {
       scope: plan ? plan.scope : record.scope,
       auth_time: record.approval.authTime, amr: record.approval.amr,
       acr: record.approval.acr || undefined, grant: 'ciba',
+      // The approving sign-on session, as the poll's issue passes it (#239).
+      session_id: record.approval.sessionId || undefined,
       ciba_auth_req_id: record.id,
       grant_id: plan ? plan.id : undefined,
       grant_gen: plan ? plan.gen : undefined
@@ -16489,8 +16538,12 @@ class OAuth2Server {
     }
 
     const via = 'the RFC 7009 revocation endpoint';
+    // THE CLIENT, ACTING FOR THE PERSON WHO GRANTED IT (#239): CAEP's `user`.
+    // RFC 7009 section 1's case is a client whose user signed out or
+    // uninstalled it, and no administrator or policy was involved.
+    const how = { initiatingEntity: 'user' };
     const revoked: string[] = [];
-    if (claims.jti && stats.revoke(claims.jti, via)) {
+    if (claims.jti && stats.revoke(claims.jti, via, how)) {
       revoked.push(String(claims.jti));
     }
     if (kind === 'refresh') {
@@ -16500,7 +16553,8 @@ class OAuth2Server {
       // first use.
       const family = bcp.familyOfRefresh(claims);
       bcp.grantMembersOf(family, claims.jti).forEach(function (jti: string) {
-        if (stats.revoke(jti, via + ', with the refresh token of its grant')) {
+        if (stats.revoke(jti, via + ', with the refresh token of its grant',
+                         how)) {
           revoked.push(jti);
         }
       });

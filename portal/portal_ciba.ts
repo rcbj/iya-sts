@@ -261,17 +261,41 @@ class PortalCibaPage {
     }
     const answered = await ciba.answerAndNotify(body.id, who, approve, {
       acr: signOn.acr || '', amr: signOn.amr || [],
-      authTime: signOn.authTime });
+      authTime: signOn.authTime,
+      // The tokens are issued ON this session (#239), so its end revokes
+      // their refresh token as a sign-out does every grant's.
+      sessionId: signOn.id || '' });
     if (!answered.ok) {
       ctx.errorCodes.mark(res, 'STS-PORTAL-0089');
       log.debug('Leaving POST ' + PATH + '. Refused.');
       return ctx.send(res, 400, this.page(session, null, answered.why));
+    }
+    if (approve && signOn.id) {
+      this.notePresented(signOn, req);
     }
     log.debug('Leaving POST ' + PATH + '. Answered.');
     res.status(303).set('Location', PATH + '?done=' + encodeURIComponent(
       approve ? 'Approved: the application is signing you in.' :
                 'Denied.')).end();
     return undefined;
+  }
+
+  // -------------------------------------------------------------------------
+  // AN APPROVAL IS SINGLE SIGN-ON, AND CAEP's `session-presented` (#240).
+  //
+  // The client that asked at `/oauth2/bc-authorize` is issued tokens on the
+  // strength of the sign-on session this browser holds — its `acr`, `amr` and
+  // `auth_time` are what the approval proves, and the person authenticates
+  // nowhere new. That is an existing session presented and honoured for a
+  // client it was not made for, which is what the event means. A DENIAL
+  // honours nothing and reports nothing.
+  // -------------------------------------------------------------------------
+  private notePresented(session: Json, req: Req): void {
+    const { log } = this.ctx;
+    const { authn } = this.deps;
+    log.debug("Entering PortalCibaPage.notePresented().");
+    authn.notePresented(session, 'OpenID Connect CIBA', req);
+    log.debug("Leaving PortalCibaPage.notePresented().");
   }
 
   registerRoutes(app: PortalContext['app']): void {
