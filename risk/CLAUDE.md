@@ -412,6 +412,22 @@ decisions of 2026-09-26:**
   and it is rcbj's call that a bricked cluster is worse than an alarmed
   permit. `operator-deny` went from ×50 to ×20 the same day.
 
+**Two more found on rcbj's stack the same day.** (1) The six second-factor
+finishers in `authn.ts` handed `startSession()` no application, so after a
+step-up the policy was asked about `""` and the console's rules never
+matched — see the comment at the gate call in `startSession()`. (2) A
+sign-in that CROSSES into HIGH triggers `risk-end-sessions`, taken a moment
+after the assessment is answered — after the door has started the session
+the policy just permitted on that same risk. It ended that session: the
+`admin` user's alarm-permitted console sign-in lost its authorization code
+150 ms later. So `noteChange()` now takes, for a sign-in (`phase` user), the
+ids of what the person holds IN THE SAME TICK as the assessment
+(`account_state.heldBy()` → `logout.heldIds()`), and the reaction ends only
+those; nothing held means nothing ended (an empty selection is a GLOBAL
+logout to `terminate()`). A session re-assessment or the rescore job still
+ends everything. The alarm is raised on the SESSION decision only, once per
+sign-in, not on every code and token issued on it.
+
 **UNKNOWN NEVER DENIES.** No assessment puts no attribute in the request, and
 every risk rule is then inapplicable: the datasets' rule carried into the
 decision.

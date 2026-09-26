@@ -1114,10 +1114,31 @@ class RiskEngine {
       return;
     }
     const risk = RiskEngine.riskOf(assessment);
+    // WHAT THE PERSON HELD BEFORE THIS SIGN-IN (#226), taken NOW — in the
+    // same tick as the assessment, before the door that asked for it starts
+    // a session. The reactions run afterwards, and ending "everything" then
+    // ended the session this sign-in had just been PERMITTED, by the
+    // issuance policy, on this very risk: the console's alarm-permitted
+    // sign-in was thrown out 150 ms after it was let in. A sign-in's
+    // reaction ends what was held before it; a session re-assessment
+    // (`phase` session or rescore) has no new session to spare and ends all.
+    let heldBefore: string[] | null = null;
+    if (assessment.phase === 'user') {
+      try {
+        heldBefore = this.deps.lazy('../common/account_state')
+          .heldBy(username);
+      } catch (e) {
+        log.debug("Caught in RiskEngine.noteChange(): " +
+                  ((e && e.message) || e));
+        // Cannot say what was held: the reaction ends everything, as it did.
+        heldBefore = null;
+      }
+    }
     this.respond({ realm: realm, subject: subject, username: username,
                    level: level, previousLevel: was,
                    score: risk ? risk.score : null,
                    signals: risk ? risk.signals : [],
+                   heldBefore: heldBefore,
                    assessmentId: String(assessment.id || '') })
       .catch(function (e: Json): void {
         log.debug("Caught in RiskEngine.noteChange(): " +
@@ -1235,8 +1256,19 @@ class RiskEngine {
         sub: change.subject, previous: change.previousLevel,
         current: change.level, reason: reason });
     } else if (reaction === 'risk-end-sessions') {
+      // A sign-in's reaction ends only what was held BEFORE it (#226; see
+      // noteChange()), and nothing when nothing was — an empty selection
+      // is a GLOBAL logout to `terminate()`, which would end exactly the
+      // session this is sparing.
+      const before = Array.isArray(change.heldBefore)
+        ? change.heldBefore : null;
+      if (before && !before.length) {
+        log.debug("Leaving RiskEngine.take(). Nothing was held before.");
+        return;
+      }
       const ended = lazy('../common/account_state').endEverything(
         change.username, { actor: 'risk scoring', channel: 'internal',
+          selection: before || undefined,
           by: 'the person\'s risk went to ' + change.level +
               (reason ? ' (' + reason + ')' : '') });
       if (ended && ended.ended === false) {
