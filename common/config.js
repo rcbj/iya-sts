@@ -8066,8 +8066,9 @@ const SETTINGS = [
           'X25519:P-256 / X448:P-384:P-521',
     runtime: false,
     restartReason: 'the TLS contexts are built when the listeners are created',
-    description: 'The (EC)DHE groups the main port, LDAPS and the debugger\'s ' +
-                 'listener accept, as an OpenSSL groups list (node\'s ' +
+    description: 'The (EC)DHE groups the main port, LDAPS and the ' +
+                 'debugger\'s listener accept, as an OpenSSL groups list ' +
+                 '(node\'s ' +
                  'ecdhCurve). The default puts the three post-quantum hybrid ' +
                  'groups in a first tuple, then X25519 and P-256, then X448, ' +
                  'P-384 and P-521; a "/" separates tuples, and a client that ' +

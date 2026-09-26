@@ -239,7 +239,11 @@ const GROUPS = "x25519mlkem768,secp256r1mlkem768,secp384r1mlkem1024," +
 const OLD = /Protocol \(3, [012]\)|TLSv1\.[01]|SSLv3|SSL3\.0|\(3, [012]\)/;
 const REFUSED_OLD = ["protocol_version", "handshake_failure"];
 
+// One exception: the probe (a name, or a pattern for a family of names),
+// the text its failure must carry (one string or several), and its reason.
 function ex(probe, alert, key, extra) {
+  log.debug("Entering ex(). " + key);
+  log.debug("Leaving ex().");
   return Object.assign({ probe: probe, alert: alert }, WHY[key],
                        extra || {});
 }
@@ -768,6 +772,8 @@ function summarise(out) {
   // Each name is printed quoted, 'like this' (or "like this" when it has
   // an apostrophe of its own).
   const unquote = function (l) {
+    log.debug("Entering unquote().");
+    log.debug("Leaving unquote().");
     return l.trim().replace(/^'(.*)'$/, "$1").replace(/^"(.*)"$/, "$1");
   };
   counts.failed = failed

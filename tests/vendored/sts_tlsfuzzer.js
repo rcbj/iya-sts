@@ -165,6 +165,8 @@ async function test() {
   const made = await clientCertificates();
   const concurrency = Number(process.env.STS_TLSFUZZER_CONCURRENCY || 4);
   const report = function (r) {
+    log.debug("Entering report(). " + r.script);
+    log.debug("Leaving report().");
     if (r.ok) {
       log.info("  " + fuzzer.line(r));
     } else {

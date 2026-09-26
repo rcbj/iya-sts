@@ -236,6 +236,8 @@ async function run(t) {
     const guardedPort = await new Promise(function (resolve) {
       const started = Date.now();
       (function wait() {
+        log.debug("Entering wait().");
+        log.debug("Leaving wait().");
         const m = /PORT (\d+)/.exec(childOut);
         if (m || childExit || Date.now() - started > 60000) {
           resolve(m ? Number(m[1]) : 0);
