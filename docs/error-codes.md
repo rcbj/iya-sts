@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3461** of them, in **38** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3462** of them, in **38** subsystems.
 
 ## Where a code appears
 
@@ -63,7 +63,7 @@ is an ordinary outcome.
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 25
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 47
 * [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 248
-* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 567
+* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 568
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 84
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 21
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 16
@@ -1724,6 +1724,7 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0685` | A person's Claims Provider tokens could not be read or sealed (#147). | portal refusal (HTTP 500), or logged |
 | `STS-OAUTH-0686` | An administrator's Claims Provider act was refused: an invalid or duplicate provider, an unknown action, or a link that does not exist (#147). | console / /admin-api refusal (HTTP 400) |
 | `STS-OAUTH-0687` | Registering a Claims Provider by discovery failed: its discovery document could not be fetched or does not name its issuer (#147). | console / /admin-api refusal (HTTP 400) |
+| `STS-OAUTH-0688` | An authorization request named a `tenant` other than the trust realm it was sent to (OpenID Connect Enterprise Extensions section 3.2, #148); a realm is chosen by the path, never by a parameter. | redirect {error: invalid_request} |
 
 ## STS-SAML
 

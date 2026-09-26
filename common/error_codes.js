@@ -6972,6 +6972,12 @@ const CODES = [
       'discovery document could not be fetched or does not name its issuer ' +
       '(#147).',
     spec: 'console / /admin-api refusal (HTTP 400)' },
+  { code: 'STS-OAUTH-0688',
+    summary: 'An authorization request named a `tenant` other than the ' +
+      'trust realm it was sent to (OpenID Connect Enterprise Extensions ' +
+      'section 3.2, #148); a realm is chosen by the path, never by a ' +
+      'parameter.',
+    spec: 'redirect {error: invalid_request}' },
   { code: 'STS-SAML-0001',
     summary: 'A SAML 2.0 sign-in resumed with a held-request id that is ' +
       'unknown or has expired (saml2.requestTtlMin), so there is no ' +
