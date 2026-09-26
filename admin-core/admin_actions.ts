@@ -352,7 +352,10 @@ const USERS_ACTIONS = ['create', 'set-password', 'issue-activation',
                        // Devices (#130, 2026-09-23).
                        'remove-device',
                        // CIBA's test control (#131, 2026-09-23).
-                       'answer-ciba-request'];
+                       'answer-ciba-request',
+                       // One attribute of their entry (#228, 2026-09-26).
+                       'set-attribute', 'add-attribute',
+                       'remove-attribute'];
 
 // ---------------------------------------------------------------------------
 // WHAT AN ADMINISTRATOR DOES TO SOMEBODY'S CREDENTIALS FROM THEIR PAGE
