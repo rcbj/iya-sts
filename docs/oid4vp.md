@@ -39,6 +39,7 @@ The bar door's endpoints:
 | `GET /oid4vp/verifier` | the Verifier's page, where a presentation starts |
 | `GET /oid4vp/start` | builds an Authorization Request and sends the browser to the wallet (same device) or draws a QR code (`mode=cross-device`) |
 | `GET /oid4vp/request/{id}` | the signed Request Object, fetched by reference (`request_uri`) |
+| `GET /oid4vp/verifier-certificate` | the Verifier's `x509_san_dns` and `x509_hash` Client Identifiers, its certificate chain and the trust anchor (see *The x509 prefixes*) |
 | `POST /oid4vp/response` | the Response URI (`response_mode` `direct_post`, or `direct_post.jwt` when the start page is given `?response_mode=direct_post.jwt`: the request then carries an ephemeral ECDH-ES key in `client_metadata.jwks` and the wallet posts one encrypted `response`), where the `vp_token` arrives and is verified. The request's `client_metadata` carries only what OpenID4VP 1.0 section 5.1 lists (`vp_formats_supported`, and `jwks` with `encrypted_response_enc_values_supported` for an encrypted response) |
 | `GET /oid4vp/result/{state}` | non-standard: the verdict, so a wallet page or a test can read it |
 | `GET /oid4vp/done` | the Verifier's closing page |
@@ -328,7 +329,9 @@ is assumed.
 ### How a signed request names its Verifier
 
 `oid4vp.clientIdPrefix` chooses the Client Identifier of a signed request
-(OpenID4VP section 5.9). An unsigned request always uses `redirect_uri:`.
+(OpenID4VP section 5.9); `/oid4vp/start?client_id_prefix=<value>` chooses it
+for one request, and makes that request signed. An unsigned request always
+uses `redirect_uri:`.
 
 | Value | Client Identifier | How the wallet finds the key |
 |---|---|---|
@@ -336,6 +339,39 @@ is assumed.
 | `decentralized_identifier` | `decentralized_identifier:` + the realm's `did:web` | the `kid` is a DID URL into the realm's DID document |
 | `verifier_attestation` | `verifier_attestation:` + the attestation's `sub` | the Verifier Attestation JWT in the request's `jwt` header, whose `cnf` is the signing key. `oid4vp.verifierAttestation` holds one an attestation issuer signed; empty, this realm attests itself, which only a wallet that already trusts this realm accepts |
 | `openid_federation` | `openid_federation:` + the realm's Entity Identifier (its issuer) | the realm's Entity Configuration at `/.well-known/openid-federation`, which carries the `openid_credential_verifier` metadata and the realm's place in the federation — see [OpenID Federation](oidfed.md) |
+| `x509_san_dns` | `x509_san_dns:` + a DNS name — `oid4vp.x509DnsName`, else the host of `global.publicBaseUrl`, else (development only) the host the request arrived at | the `x5c` header: the Verifier's certificate, whose subjectAltName carries that name, and its chain to the service Root |
+| `x509_hash` | `x509_hash:` + the base64url SHA-256 of that certificate's DER | the same `x5c` header |
+
+#### The x509 prefixes
+
+The Verifier has a certificate of its own for them (OpenID4VP 1.0 section
+5.9.3), issued from the realm's JOSE Issuing CA over the realm key for
+`oid4vp.x509SigningAlgorithm` (ES256 by default). It is issued the first
+time a request needs it, renewed a day before it expires, and replaced when
+the realm's key rotates. A request under either prefix is signed with that
+key and carries the chain in `x5c`: the certificate, the Issuing CA and the
+Intermediate. The service Root is not included, because it is the anchor a
+wallet is configured with.
+
+* **The DNS name must be the Response URI's host.** Section 5.9.3 has a
+  wallet that does not otherwise trust the Verifier check that the
+  Response URI's host is the Client Identifier's name. A configured name
+  that is not refuses the request, and an IP address cannot be a DNS name.
+* **In product mode the name is never taken from a request.** Without
+  `oid4vp.x509DnsName` or a pinned `global.publicBaseUrl`, an `x509_san_dns`
+  request is refused. Otherwise whoever sent the `Host` header could choose
+  where a signed, trusted request sends presentations.
+* **`x509_hash` needs no name.** Where no name can be certified, it signs
+  under a certificate with no subjectAltName.
+* **`GET /oid4vp/verifier-certificate`** answers what a wallet is configured
+  with: both Client Identifiers, each with the certificate, the `x5c` and the
+  trust anchor (`trust_anchor_pem`).
+* **When the certificate changes, `x509_hash` changes.** That happens on
+  renewal, key rotation, or when `oid4vp.x509SigningAlgorithm` changes. A
+  wallet configured with the hash must then be given the new one.
+* **Not offered: a post-quantum signing algorithm.** The Request Object is
+  signed on the request path, and this realm's post-quantum keys sign in
+  the worker pool.
 
 ### Not implemented
 
@@ -349,6 +385,7 @@ is assumed.
 | | Development | Product |
 |---|---|---|
 | The `wallet` parameter on the bar door's start page | Any URL | Only `oid4vp.walletUrl` or one in `oid4vp.allowedWalletUrls`; anything else is an open redirect and refused |
+| The `x509_san_dns` name, when neither `oid4vp.x509DnsName` nor `global.publicBaseUrl` names one | The host the request arrived at, one certificate per host, sixteen at most per realm | Refused |
 | The password offered as a second factor after a wallet | Not checked, like every password in development | Verified |
 | Which credentials can sign in | Only those in the register, so only ones issued on a token this realm verified | The same; and since `/issuer/offer` needs a sign-in in product, the token belongs to someone who already signed in |
 
@@ -383,7 +420,9 @@ check are the same in both modes. See
 | `oid4vp.signInDcApiResponseMode` | `OID4VP_SIGN_IN_DC_API_RESPONSE_MODE` | `dc_api.jwt` | yes | Whether a Digital Credentials API answer is encrypted (`dc_api.jwt`) or in the clear (`dc_api`). |
 | `oid4vp.signInSelfIssued` | `OID4VP_SIGN_IN_SELF_ISSUED` | `false` | yes | Offer *Sign in with a self-issued ID* (SIOPv2) and the enrolment on `/portal/self-issued`. |
 | `oid4vp.siopIdTokenMaxAgeS` | `OID4VP_SIOP_ID_TOKEN_MAX_AGE_S` | `300` | yes | How old a self-issued ID Token's `iat` may be. |
-| `oid4vp.clientIdPrefix` | `OID4VP_CLIENT_ID_PREFIX` | `pre-registered` | yes | How a signed request names this Verifier: `pre-registered`, `decentralized_identifier`, `verifier_attestation` or `openid_federation`. |
+| `oid4vp.clientIdPrefix` | `OID4VP_CLIENT_ID_PREFIX` | `pre-registered` | yes | How a signed request names this Verifier: `pre-registered`, `decentralized_identifier`, `verifier_attestation`, `openid_federation`, `x509_san_dns` or `x509_hash`. |
+| `oid4vp.x509DnsName` | `OID4VP_X509_DNS_NAME` | *(empty)* | yes | The DNS name of the `x509_san_dns` Client Identifier. It must be the Response URI's host. Empty: the host of `global.publicBaseUrl`, else (development only) the request's host. |
+| `oid4vp.x509SigningAlgorithm` | `OID4VP_X509_SIGNING_ALGORITHM` | `ES256` | yes | The algorithm an `x509_san_dns` or `x509_hash` request is signed with: `ES256`, `ES384`, `ES512`, `PS256`, `RS256` or `EdDSA`. |
 | `oid4vp.verifierAttestation` | `OID4VP_VERIFIER_ATTESTATION` | *(empty)* | yes | A Verifier Attestation JWT for the `verifier_attestation` prefix. **Warning:** empty, this realm attests itself. |
 | `oid4vp.signInRegisterMaxEntries` | `OID4VP_SIGN_IN_REGISTER_MAX_ENTRIES` | `100000` | yes | Rows the sign-in register keeps per realm; past it the oldest is dropped, which fails closed. |
 

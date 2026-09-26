@@ -188,6 +188,7 @@ interface RiscRegisterDeps {
   };
   subjects: {
     describeSubject(subject: unknown): string;
+    complexSubject(members: Record<string, any>): Record<string, any>;
     subjectForUser(name: string, format: string, iss: string,
                    facts?: Record<string, any>): Record<string, any>;
   };
@@ -238,7 +239,18 @@ const AUTO_ACTS: Record<string, string> = {
   optOutInitiated: 'opt-out-initiated',
   optOutCancelled: 'opt-out-cancelled',
   optOutEffective: 'opt-out-effective',
-  optIn: 'opt-in'
+  optIn: 'opt-in',
+  // THE FOURTEENTH (#164 phase 4, 2026-09-26): every session of a person ON
+  // ONE DEVICE was ended — the device was compromised or removed (rcbj's
+  // decision 4 on #164). RISC 1.0 section 2.11 deprecates the event in
+  // favour of CAEP's session-revoked, and each session that ended DID send
+  // that; this one is sent as well because the owner decided it, and it is
+  // made TRUE by its subject: "all the sessions for the account identified
+  // by the subject" with a complex subject naming the account AND the device
+  // is every session of that account on that device — which is exactly
+  // what was ended. Without the device member it would claim every session
+  // everywhere, and that is not what happened.
+  sessionsRevoked: 'sessions-revoked'
 };
 
 // The acts that ARE section 2.8's opt-out moves, and the state each leaves.
@@ -571,6 +583,14 @@ class RiscRegister {
     if (!body) {
       log.debug("Leaving RiscRegister.accountIdOf(). Not an object.");
       return '';
+    }
+    // A complex subject (#164 phase 4: a device's act) names the account in
+    // its `user` member.
+    if (body.format === 'complex') {
+      const found = body.user ? this.accountIdOf(body.user) : '';
+      log.debug("Leaving RiscRegister.accountIdOf(). Complex: " +
+                (found || '(none)'));
+      return found;
     }
     const format = String(body.format || body.subject_type || '');
     let candidate = '';
@@ -1339,8 +1359,21 @@ class RiscRegister {
       // OLD address, and applying the act first would name the new one — an
       // event that is well-formed, delivers, and tells the receiver that an
       // address it has never heard of has become the one it already holds.
-      const subject = act.act === 'identifier' || act.act === 'recycled'
+      const plain = act.act === 'identifier' || act.act === 'recycled'
         ? this.googleSubjectType(act.subject) : this.subjectFor(row, uri);
+      // A DEVICE'S ACT (#164 phase 4) — its compromise or removal — names
+      // the device beside the account in SSF section 3.3's complex subject.
+      // The subject section below argues why RISC's subject is otherwise
+      // PLAIN: a complex one would say "this account was disabled, on this
+      // device", which means nothing. These two are the exceptions that
+      // argument allows, because for them the device DOES narrow the
+      // sentence: sessions-revoked is every session of the account ON THAT
+      // DEVICE, and credential-compromise is the credential THAT DEVICE held.
+      const subject = asked.deviceSubject && plain &&
+        (act.act === 'sessionsRevoked' || act.act === 'credentialCompromise')
+        ? this.deps.subjects.complexSubject({ user: plain,
+                                              device: asked.deviceSubject })
+        : plain;
       const payload = this.buildPayload(uri, act.values || {}, {
         reasonAdmin: this.reasonFor(act, asked),
         reasonUser: this.reasonForUser(act)
@@ -1496,6 +1529,9 @@ class RiscRegister {
       row.credentialChangeRequired = true;
     } else if (act.act === 'recoveryChanged') {
       row.notes.push('Recovery information changed.');
+      row.notes = row.notes.slice(-5);
+    } else if (act.act === 'sessionsRevoked') {
+      row.notes.push('Every session on one device was ended.');
       row.notes = row.notes.slice(-5);
     }
     row.updatedAt = iso();
@@ -1705,6 +1741,9 @@ class RiscRegister {
     } else if (act.act === 'credentialCompromise') {
       text = String((notice || {}).reasonAdmin || '') ||
              'A credential of ' + where + ' was compromised.';
+    } else if (act.act === 'sessionsRevoked') {
+      text = String((notice || {}).reasonAdmin || '') ||
+             'Every session of ' + where + ' on one device was ended.';
     } else if (OPT_OUT_ACTS[act.act]) {
       text = String((notice || {}).reasonAdmin || '') ||
              'The account holder of ' + where + ' changed their RISC ' +
@@ -1734,9 +1773,12 @@ class RiscRegister {
                   ? 'Recovery of your account was started.'
                   : (act.act === 'credentialCompromise'
                     ? 'A credential of yours was compromised.'
-                    : (OPT_OUT_ACTS[act.act]
-                      ? 'Your security-event sharing choice changed.'
-                      : 'One of your contact details was changed.'))))))));
+                    : (act.act === 'sessionsRevoked'
+                      ? 'Your sessions on one of your devices were ended.'
+                      : (OPT_OUT_ACTS[act.act]
+                        ? 'Your security-event sharing choice changed.'
+                        : 'One of your contact details was ' +
+                          'changed.')))))))));
     log.debug("Leaving RiscRegister.reasonForUser().");
     return text;
   }

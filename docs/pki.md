@@ -150,11 +150,19 @@ has no certificate to issue, and the OpenID4VCI request-encryption key, which
 only decrypts and is trusted because a wallet read it from the issuer's own
 metadata.
 
-### Every authority is hybrid: a second, post-quantum key and signature
+### Hybrid authorities: a second, post-quantum key and signature (off by default)
 
-Every certificate authority here holds an **alternative key** beside its
-classical one: an ML-DSA-87 key by default (`pki.alternativeKeyAlgorithm`).
-That covers the Root, every Intermediate and every Issuing CA. It is carried in
+**Off by default.** `pki.alternativeKeyAlgorithm` is `none`, so every
+authority is classical and every use case and every signature has its own
+key pair, as before #68. A hybrid certificate is larger and less familiar than
+many products accept: Cisco libest, for one, refuses any enroll response over
+4 KB, and every hybrid leaf is larger. Turn it on for a realm whose relying
+parties can take it.
+
+Set to a post-quantum algorithm (ML-DSA-87 is the recommended value), a
+certificate authority holds an **alternative key** beside its classical one.
+That covers the Root, every Intermediate and every Issuing CA built after the
+setting changes. It is carried in
 the three non-critical extensions of ITU-T X.509 (2019) clause 9.8:
 `subjectAltPublicKeyInfo`, `altSignatureAlgorithm` and `altSignatureValue`.
 Every certificate an authority issues is then **signed twice**. The classical
@@ -186,10 +194,9 @@ signature algorithm, or `none`. A hierarchy keeps what it was built with. The
 page shows each tier's alternative key under its classical algorithm, with the
 algorithm its own alternative signature was made with.
 
-> **Warning.** `none` builds a **classical-only** authority. A quantum-capable
-> attacker who recovers its RSA or EC key can mint certificates this service
-> accepts. It exists for a client that cannot take a larger certificate, and
-> for nothing else.
+> **Warning.** `none`, the default, builds a **classical-only** authority. A
+> quantum-capable attacker who recovers its RSA or EC key can mint
+> certificates this service accepts.
 
 **What it costs is size.** An ML-DSA-87 public key is 2,592 bytes and a
 signature 4,627, so each CA certificate grows by about 7 KB and each leaf by

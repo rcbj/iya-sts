@@ -319,11 +319,13 @@ as well — `credential-change` when any credential of a person changes,
 `assurance-level-change` when a re-authentication moves a session's `acr`, and
 `token-claims-change` when a directory change moves a claim somebody's live
 tokens carry, or a GNAP grant is modified (see the table at the top) — and a
-fourth, `risk-level-change`, when a person's risk level changes (#62). **No
-device reports compliance to this service**, so `device-compliance-change` is
-by hand only. That is a feature rather than a gap: they are exactly the events a
-receiver is hardest to test against, because in a real deployment they arrive
-from systems you do not control.
+fourth, `risk-level-change`, when a person's risk level changes (#62) or a
+registered device's (#164). **The fifth, `device-compliance-change`, is sent
+since #164** whenever a device's compliance moves — set by an administrator,
+the MDM feed or development's test control ([Devices](devices.md)). Emitting
+by hand is still worth having: these are exactly the events a receiver is
+hardest to test against, because in a real deployment they arrive from systems
+you do not control.
 
 Two doors, one function behind them, so a form and a script produce the same
 bytes:

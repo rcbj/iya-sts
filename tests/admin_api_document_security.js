@@ -155,9 +155,14 @@ async function run(t) {
 
   // -----------------------------------------------------------------------
   t.log.info('=== every operation states the scope the GATE would want ===');
+  // THE ONE EXCEPTION (#164 phase 3): the MDM feed takes device:compliance,
+  // as the gate's isDeviceComplianceFeed() says — asserted below from the
+  // source as well.
   const disagreed = guardedOps.filter(function (row) {
-    const wanted = row.method.toUpperCase() === 'GET' ? 'admin:read'
-                                                      : 'admin:write';
+    const feed = row.method.toUpperCase() === 'POST' &&
+                 row.path === '/admin-api/device-compliance';
+    const wanted = feed ? 'device:compliance'
+      : (row.method.toUpperCase() === 'GET' ? 'admin:read' : 'admin:write');
     const security = row.operation.security;
     if (!Array.isArray(security) || !security.length) { return true; }
     const named = (security[0] || {}).oauth2 || [];
@@ -243,6 +248,13 @@ async function run(t) {
           .test(apiSource),
           'the gate still decides the scope by the method, which is the rule ' +
           'this file compares the document against');
+  t.check(/mdmFeed \? 'device:compliance'/.test(apiSource) &&
+          /DEVICE_COMPLIANCE_PATH = '\/device-compliance'/.test(apiSource) &&
+          guardedOps.some(function (row) {
+            return row.path === '/admin-api/device-compliance';
+          }),
+          'and makes its one exception, the MDM feed at ' +
+          '/admin-api/device-compliance, which the document describes');
 
   // EVERY CALL SITE. Three today; the point is that a fourth cannot assemble
   // its own idea of what the API requires.

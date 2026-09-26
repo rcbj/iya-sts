@@ -344,7 +344,6 @@ var config = {
     maxSignedMetadataEntries: 64,                // signed_metadata cache entries
     basicAuthRealm: "sts",                       // Token endpoint Basic realm
     maxAuthorizationServerProfiles: 200,         // Named authorization servers (per realm)
-    maxDevicesPerPerson: 20,                     // Devices one person may hold
     deviceAuthorization: false,                  // Device authorization grant (RFC 8628)
     deviceCodeLifetimeS: 600,                    // Device code lifetime (seconds)
     deviceCodeIntervalS: 5,                      // Device code polling interval (seconds)
@@ -356,6 +355,27 @@ var config = {
     cibaNotifyTimeoutMs: 5000,                   // CIBA notification timeout (ms)
     cibaNotifyAttempts: 5,                       // CIBA notification attempts
     cibaNotifyBackoffMs: 2000,                   // CIBA notification backoff (ms)
+    providerCommands: false,                     // OpenID Provider Commands
+    commandAutomatic: true,                      // Automatic provider commands
+    commandTokenTtlS: 120,                       // Command Token lifetime (s)
+    commandAttempts: 5,                          // Command attempts
+    commandTimeoutMs: 10000,                     // Command timeout (ms)
+    commandBackoffMs: 2000,                      // Command backoff (ms)
+    commandLeaseMs: 60000,                       // Command attempt lease (ms)
+    commandRetentionS: 86400,                    // Command retention (s)
+    commandMaxRows: 5000,                        // Command rows kept
+    commandConcurrency: 8,                       // Commands in flight
+    commandSummaryS: 60,                         // Command summary interval (s)
+    commandSweepS: 15,                           // Command sweep interval (s)
+    commandCallbackTtlS: 86400,                  // Command callback token lifetime (s)
+    commandStreamIdleMs: 30000,                  // Tenant command stream idle timeout (ms)
+    commandStreamResumes: 3,                     // Tenant command stream resumptions
+    commandStreamMaxEvents: 1000000,             // Tenant command stream event cap
+    commandMetadataMaxGroups: 200,               // Groups in a metadata command
+    cibaNotifyRetentionS: 3600,                  // CIBA notification retention (s)
+    cibaNotifyMaxRows: 2000,                     // CIBA notification rows kept
+    cibaNotifyConcurrency: 8,                    // CIBA notifications in flight
+    cibaNotifySummaryS: 60,                      // CIBA notification summary interval (s)
     cibaSweepS: 30,                              // CIBA sweep interval (s)
     maxRequestedClaims: 64,                      // Claims one claims request may name
     idaTrustFrameworks: "urn:sts:local",         // Identity Assurance trust frameworks
@@ -411,6 +431,28 @@ var config = {
     backchannelLogoutSummaryS: 60                // Back-channel logout summary interval (seconds)
   },
 
+  // --- Devices ---------------------------------------------------------
+  devices: {
+    maxPerPerson: 20,                                   // Devices one person may hold
+    maxPerApplication: 1000,                            // Devices one application may own
+    maxKeysPerDevice: 10,                               // Keys one device may hold
+    eventsKept: 5000,                                   // Device events kept for monitoring
+    complianceFeedMaxReports: 500,                      // Compliance reports per feed request
+    challengeTtlSeconds: 300,                           // Enrolment challenge lifetime (seconds)
+    maxChallenges: 10000,                               // Enrolment challenges held
+    androidAttestationTrustAnchors: "",                 // Android Key Attestation roots (PEM)
+    androidMinimumSecurityLevel: "trusted-environment", // Android Key Attestation: least security level
+    appleAppAttestTrustAnchors: "",                     // Apple App Attest root (PEM)
+    appleAppAttestAppIds: "",                           // Apple App Attest app identifiers
+    appleAppAttestAllowDevelopment: false,              // Apple App Attest: accept the development environment
+    tpmTrustAnchors: "",                                // TPM attestation roots (PEM)
+    lastUsedResolutionSeconds: 60,                      // Last-used resolution (seconds)
+    expectRegistered: false,                            // Expect every person to sign in from a registered device
+    requireCompliantDevice: false,                      // Require a compliant registered device
+    compliantDeviceAttested: false,                     // A compliant device must also be attested
+    refuseCompromised: true                             // Refuse a compromised device
+  },
+
   // --- PKI -------------------------------------------------------------
   pki: {
     crlLifetimeMinutes: 60,                     // How long a CRL claims to be fresh
@@ -423,7 +465,7 @@ var config = {
     autoBuild: true,                            // Build the certificate authority at startup; restart to apply
     keyAlgorithm: "rsa-2048",                   // Default CA key algorithm
     signatureAlgorithm: "",                     // Default CA signature algorithm
-    alternativeKeyAlgorithm: "ml-dsa-87",       // CA alternative (post-quantum) key algorithm
+    alternativeKeyAlgorithm: "none",            // CA alternative (post-quantum) key algorithm
     organisation: "sts",                        // Default organisation name (O=)
     personSelfService: true,                    // Let a person issue their own signing key pair
     leafLifetimeDays: 365,                      // Default lifetime of an issued key pair (days)
@@ -470,29 +512,29 @@ var config = {
 
   // --- EST -------------------------------------------------------------
   est: {
-    enabled: true,                                                                                                                                 // Run the EST server
-    allowedProfiles: "tls-server,tls-client,tls-server-client,digital-signature,key-encipherment,code-signing,email,timestamping,smartcard-logon", // Certificate profiles EST may issue
-    defaultProfile: "tls-client",                                                                                                                  // Profile at the unlabelled path
-    certificateLifetimeDays: 365,                                                                                                                  // Certificate lifetime (days)
-    maxRequestBytes: 65536,                                                                                                                        // Largest request body (bytes)
-    attemptsPerIdentity: 10,                                                                                                                       // Failed requests per identity a window
-    attemptsPerAddress: 60,                                                                                                                        // Failed requests per address a window
-    basicAuthentication: true,                                                                                                                     // Accept HTTP Basic
-    certificateAuthentication: true,                                                                                                               // Accept a TLS client certificate
-    serverKeyGeneration: true                                                                                                                      // Offer /serverkeygen
+    enabled: true,                                                                                                                                        // Run the EST server
+    allowedProfiles: "tls-server,tls-client,tls-server-client,digital-signature,key-encipherment,code-signing,email,timestamping,smartcard-logon,device", // Certificate profiles EST may issue
+    defaultProfile: "tls-client",                                                                                                                         // Profile at the unlabelled path
+    certificateLifetimeDays: 365,                                                                                                                         // Certificate lifetime (days)
+    maxRequestBytes: 65536,                                                                                                                               // Largest request body (bytes)
+    attemptsPerIdentity: 10,                                                                                                                              // Failed requests per identity a window
+    attemptsPerAddress: 60,                                                                                                                               // Failed requests per address a window
+    basicAuthentication: true,                                                                                                                            // Accept HTTP Basic
+    certificateAuthentication: true,                                                                                                                      // Accept a TLS client certificate
+    serverKeyGeneration: true                                                                                                                             // Offer /serverkeygen
   },
 
   // --- SCEP ------------------------------------------------------------
   scep: {
-    enabled: true,                                                                                                                                 // Run the SCEP server
-    allowedProfiles: "tls-server,tls-client,tls-server-client,digital-signature,key-encipherment,code-signing,email,timestamping,smartcard-logon", // Certificate profiles SCEP may issue
-    defaultProfile: "tls-client",                                                                                                                  // Profile a new challenge defaults to
-    certificateLifetimeDays: 365,                                                                                                                  // Certificate lifetime (days)
-    maxRequestBytes: 262144,                                                                                                                       // Largest PKIOperation message (bytes)
-    attemptsPerIdentity: 10,                                                                                                                       // Failed requests per challenge a window
-    attemptsPerAddress: 60,                                                                                                                        // Failed requests per address a window
-    challengeLifetimeS: 3600,                                                                                                                      // Challenge password lifetime (seconds)
-    raKeyAlgorithm: "rsa-2048"                                                                                                                     // RA certificate key algorithm
+    enabled: true,                                                                                                                                        // Run the SCEP server
+    allowedProfiles: "tls-server,tls-client,tls-server-client,digital-signature,key-encipherment,code-signing,email,timestamping,smartcard-logon,device", // Certificate profiles SCEP may issue
+    defaultProfile: "tls-client",                                                                                                                         // Profile a new challenge defaults to
+    certificateLifetimeDays: 365,                                                                                                                         // Certificate lifetime (days)
+    maxRequestBytes: 262144,                                                                                                                              // Largest PKIOperation message (bytes)
+    attemptsPerIdentity: 10,                                                                                                                              // Failed requests per challenge a window
+    attemptsPerAddress: 60,                                                                                                                               // Failed requests per address a window
+    challengeLifetimeS: 3600,                                                                                                                             // Challenge password lifetime (seconds)
+    raKeyAlgorithm: "rsa-2048"                                                                                                                            // RA certificate key algorithm
   },
 
   // --- Management API --------------------------------------------------
@@ -680,6 +722,8 @@ var config = {
     signInSelfIssued: false,                           // Sign in with a self-issued ID (SIOPv2)
     siopIdTokenMaxAgeS: 300,                           // Self-issued ID Token max age (s)
     clientIdPrefix: "pre-registered",                  // Client Identifier prefix of a signed request
+    x509DnsName: "",                                   // DNS name of the x509_san_dns Client Identifier
+    x509SigningAlgorithm: "ES256",                     // Signing algorithm of an x509 Client Identifier request
     verifierAttestation: "",                           // Verifier Attestation JWT
     claims: "given_name,family_name",                  // Requested claims
     presentationRequestTtlS: 600,                      // Presentation request lifetime (s)
@@ -858,6 +902,12 @@ var config = {
     receiveAudiences: "",                                                                                                                                 // Audiences POST /ssf/receive answers to
     receiveIssuers: "",                                                                                                                                   // Issuers POST /ssf/receive accepts
     receiveRequireSignature: false,                                                                                                                       // Refuse a SET whose signature does not verify
+    foreignPollS: 30,                                                                                                                                     // Foreign transmitter poll interval (s)
+    foreignPollMaxEvents: 50,                                                                                                                             // Events asked per foreign poll
+    foreignPollMaxRounds: 5,                                                                                                                              // Foreign poll rounds
+    foreignMaxTransmitters: 20,                                                                                                                           // Foreign transmitters per realm
+    foreignInboxMax: 500,                                                                                                                                 // Foreign SETs kept
+    foreignTimeoutMs: 10000,                                                                                                                              // Foreign transmitter timeout (ms)
     actOnSignalsInDevelopment: false,                                                                                                                     // The console and portal act on received signals in development
     legacySubClaim: false,                                                                                                                                // Also emit the deprecated `sub` claim (development only)
     breakSetSignature: false                                                                                                                              // Sign every SET badly (development only)
@@ -867,7 +917,7 @@ var config = {
   caep: {
     enabled: true,                                                                                                                                                                    // CAEP enabled
     autoEmit: true,                                                                                                                                                                   // Emit events when something really happens
-    autoEmitTypes: "session-established,session-presented,session-revoked,credential-change,assurance-level-change,token-claims-change,risk-level-change",                            // Which acts emit automatically
+    autoEmitTypes: "session-established,session-presented,session-revoked,credential-change,assurance-level-change,token-claims-change,risk-level-change,device-compliance-change",   // Which acts emit automatically
     eventsSupported: "session-revoked,session-established,session-presented,token-claims-change,credential-change,assurance-level-change,device-compliance-change,risk-level-change", // CAEP event types offered
     assuranceNamespace: "NIST-AAL",                                                                                                                                                   // Assurance namespace
     defaultRiskLevel: "MEDIUM",                                                                                                                                                       // Default risk level
@@ -915,6 +965,7 @@ var config = {
     mediumScorePercent: 100,                               // MEDIUM from (percent of a score of 1)
     highScorePercent: 1000,                                // HIGH from (percent of a score of 1)
     minimumHistory: 5,                                     // Earlier sign-ins before a person is scored
+    geoMinimumCount: 3,                                    // Fewest people a place is numbered with on the map
     listsMatchSpecialPurpose: true,                        // Lists match private and reserved addresses
     accountFailureThreshold: 5,                            // Refused passwords for one person that are a signal
     networkFailureThreshold: 20,                           // Refused passwords from one network that are a signal
@@ -929,7 +980,7 @@ var config = {
   risc: {
     enabled: true,                                                                                                                                                                                                                                                                                    // RISC enabled
     autoEmit: true,                                                                                                                                                                                                                                                                                   // Emit events when the directory really changes
-    autoEmitTypes: "account-purged,account-disabled,account-enabled,identifier-changed,identifier-recycled,account-credential-change-required,recovery-information-changed,recovery-activated,credential-compromise,opt-out-initiated,opt-out-cancelled,opt-out-effective,opt-in",                    // Which acts emit automatically
+    autoEmitTypes: "account-purged,account-disabled,account-enabled,identifier-changed,identifier-recycled,account-credential-change-required,recovery-information-changed,recovery-activated,credential-compromise,opt-out-initiated,opt-out-cancelled,opt-out-effective,opt-in,sessions-revoked",   // Which acts emit automatically
     recycleWindowDays: 365,                                                                                                                                                                                                                                                                           // Recycled identifier window (days)
     optOutDelayHours: 24,                                                                                                                                                                                                                                                                             // Opt-out takes effect after (hours)
     eventsSupported: "account-credential-change-required,account-purged,account-disabled,account-enabled,identifier-changed,identifier-recycled,credential-compromise,opt-in,opt-out-initiated,opt-out-cancelled,opt-out-effective,recovery-activated,recovery-information-changed,sessions-revoked", // RISC event types offered

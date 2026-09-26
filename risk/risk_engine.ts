@@ -25,7 +25,13 @@
 //   4. THE EVALUATORS: the signals the model does not see, each a factor on
 //      the score (SIGNALS below) — an address on a Tor, reputation or
 //      operator list, an automated client, a TLS stack this person has never
-//      used, recent refused passwords for this person or from this network.
+//      used, recent refused passwords for this person or from this network,
+//      and (#164 phase 5) what the device register says about the device
+//      that proved the sign-in — compromised, not compliant, missing for a
+//      person who registered one, or theirs and compliant, which LOWERS the
+//      score. The person's own registered device is then the `device`
+//      history feature, and after the sign-in it takes the sign-in's level
+//      (`setDeviceLevel()`).
 //   5. A LEVEL: LOW, MEDIUM or HIGH — CAEP's own words — by
 //      `risk.mediumScorePercent` and `risk.highScorePercent`; UNSCORED for a
 //      first sign-in with nothing else to say.
@@ -103,8 +109,71 @@ const SIGNALS: Record<string, Json> = {
     what: 'the person reported a sign-in as not theirs' },
   'authenticator-compromised': { factor: 50,
     what: 'the security key\'s model is reported revoked or compromised in ' +
-          'the FIDO metadata' }
+          'the FIDO metadata' },
+  // -------------------------------------------------------------------------
+  // THE REGISTERED DEVICE (#164 decision 4, phase 5, 2026-09-26): what the
+  // device register says about the device that proved this sign-in —
+  // recognised by one of its keys (`common/device_recognition.ts`) and
+  // recorded on the authentication event before the engine is asked.
+  //
+  //   * `compromised-device` (×50, HIGH on its own, as
+  //     `authenticator-compromised` is): the device is marked compromised. A
+  //     compromise ends every session the device authenticated and revokes
+  //     its certificates and secret, but its JWK and WebAuthn keys still
+  //     prove the device — they belong to the hardware — so a sign-in from
+  //     it is still possible, and is exactly the one to refuse.
+  //   * `non-compliant-device` (×3, the refused-password weight): an MDM, a
+  //     posture feed or an administrator says the device does not meet the
+  //     organisation's policy. Evidence, so it applies however new the
+  //     person is.
+  //   * `unregistered-device` (×2, `new-device`'s weight): NO device of this
+  //     person's was recognised — none at all, or one owned by somebody
+  //     else. SCOPED so it does not fire on everybody in a realm that has
+  //     no devices: only for a person who has REGISTERED one (`devices.
+  //     holdsAny()`, an index lookup), or in a realm that says it expects
+  //     every person to (`devices.expectRegistered`). A person who never
+  //     registered a device signing in from a browser is the ordinary case,
+  //     and a signal that fired on every ordinary case would only move
+  //     every score by the same factor, which is calibration noise and not
+  //     evidence. And it waits for `risk.minimumHistory`, as `new-device`
+  //     does: it is an ABSENCE, and an absence says nothing about somebody
+  //     the model cannot score yet — without that, a device owner's second
+  //     sign-in from a laptop would be MEDIUM on this alone and asked for a
+  //     second factor.
+  //   * `compliant-attested-device` (×0.5) and `compliant-device` (×0.8):
+  //     the person's OWN device, compliant, not compromised — attested (a
+  //     verifier checked a statement about the key's hardware) or
+  //     self-asserted. LOWERING factors, as `operator-allow` (×0.2) already
+  //     is: the model is a likelihood ratio and the evaluators multiply it,
+  //     so a factor below 1 is evidence FOR the sign-in with no new
+  //     machinery. The self-asserted one lowers less, because what vouches
+  //     for it is only the enrolment that proved the key. Neither ever
+  //     makes a sign-in scored on its own (see `LOWERING_ONLY`), and
+  //     neither is weighed against a compromise: a compromised device is
+  //     never "compliant" here, whatever its compliance says.
+  // -------------------------------------------------------------------------
+  'compromised-device': { factor: 50,
+    what: 'the registered device that proved the sign-in is marked ' +
+          'compromised' },
+  'non-compliant-device': { factor: 3,
+    what: 'the registered device that proved the sign-in is not compliant' },
+  'unregistered-device': { factor: 2,
+    what: 'no registered device of this person\'s was recognised, and they ' +
+          'have registered one (or the realm expects every person to)' },
+  'compliant-attested-device': { factor: 0.5,
+    what: 'the person\'s own registered device, compliant and attested' },
+  'compliant-device': { factor: 0.8,
+    what: 'the person\'s own registered device, compliant and ' +
+          'self-asserted' }
 };
+
+// THE SIGNALS THAT ONLY LOWER A SCORE and do not, alone, make an UNSCORED
+// sign-in scored (#164 phase 5). A first sign-in with nothing else to say is
+// UNSCORED so that nothing is decided on no evidence; "it came from the
+// person's compliant device" is evidence FOR it, and a level of LOW
+// manufactured from that alone would be the first standing the risk-response
+// policy announces for every new device owner.
+const LOWERING_ONLY = ['compliant-attested-device', 'compliant-device'];
 
 // How many refused passwords in the last hour make a signal of each kind:
 // `risk.accountFailureThreshold` (5) and `risk.networkFailureThreshold`
@@ -427,9 +496,125 @@ class RiskEngine {
       // compares a later request with. A browser updating itself mid-session
       // changes the User-Agent and its fingerprint; it does not change what
       // the person is signing in with.
-      device: RiskEngine.familyOf({ browser: assessment.uaFamily,
-                                    os: assessment.uaOs })
+      device: Object.assign(RiskEngine.familyOf({
+        browser: assessment.uaFamily, os: assessment.uaOs }),
+        // The person's own registered device, where one proved the sign-in
+        // (#164 phase 5) — by its register id, which is what the history
+        // counted it under.
+        modelled && modelled.device && modelled.device.own
+          ? { registered: String(modelled.device.id) } : {})
     };
+  }
+
+  // Whether `fact` (a recognition, or null) is `username`'s OWN device: a
+  // person's, by name — `ownerMatches` where recognition computed it.
+  static ownDevice(fact: Json, username: string): boolean {
+    log.debug("Entering RiskEngine.ownDevice().");
+    const own = !!fact && !!username && (fact.ownerMatches === true ||
+      (fact.ownerMatches === undefined && fact.ownerKind === 'person' &&
+       String(fact.ownerName || '') === username));
+    log.debug("Leaving RiskEngine.ownDevice(). " + own);
+    return own;
+  }
+
+  // What an assessment records of the registered device, or null.
+  static deviceOnAssessment(fact: Json, own: boolean): Json {
+    log.debug("Entering RiskEngine.deviceOnAssessment().");
+    if (!fact) {
+      log.debug("Leaving RiskEngine.deviceOnAssessment(). None.");
+      return null;
+    }
+    log.debug("Leaving RiskEngine.deviceOnAssessment().");
+    return { id: String(fact.id || ''), via: String(fact.via || ''),
+             own: !!own, compliance: String(fact.compliance || 'unknown'),
+             attestation: String(fact.attestation || ''),
+             status: String(fact.status || 'active') };
+  }
+
+  // -------------------------------------------------------------------------
+  // WHETHER A MISSING DEVICE IS A SIGNAL for this person (#164 phase 5;
+  // `unregistered-device` above): the realm expects everybody to sign in
+  // from a registered device (`devices.expectRegistered`), or this person
+  // registered one. Never throws: a register that cannot answer expects
+  // nothing, and the signal does not fire.
+  // -------------------------------------------------------------------------
+  private expectsDevice(username: string): boolean {
+    const { log, config, lazy } = this.deps;
+    log.debug("Entering RiskEngine.expectsDevice().");
+    if (config.value('devices.expectRegistered') === true) {
+      log.debug("Leaving RiskEngine.expectsDevice(). The realm expects one.");
+      return true;
+    }
+    let holds = false;
+    try {
+      holds = !!username && !!lazy('../common/devices').holdsAny(username);
+    } catch (e) {
+      log.debug("Caught in RiskEngine.expectsDevice(): " +
+                ((e && e.message) || e));
+      // No register in this process (a test of this file): nothing is
+      // expected of anybody.
+      holds = false;
+    }
+    log.debug("Leaving RiskEngine.expectsDevice(). " + holds);
+    return holds;
+  }
+
+  // -------------------------------------------------------------------------
+  // THE DEVICE'S OWN RISK LEVEL (#164 decision 4, phase 5): after a sign-in
+  // the person's own registered device proved, the device takes THE LEVEL
+  // OF THAT SIGN-IN — LOW, MEDIUM or HIGH, the engine's own mapping of the
+  // score — through `devices.setRiskLevel()`, which sends CAEP
+  // risk-level-change with principal DEVICE only when the level MOVED.
+  //
+  // WHY THE SAME LEVEL, AND NOT A SCORE OF ITS OWN. The model is one
+  // likelihood ratio over the whole context — address, network, browser,
+  // TLS client — and the evaluators multiply it; nothing in it says which
+  // part of a score is "the device's", and dividing the credential signals
+  // back out would be a second model nobody calibrated. What the device
+  // took part in is this sign-in, and the most recent sign-in it proved is
+  // the best evidence there is about what is happening on it — which is
+  // what a CAEP receiver reading a DEVICE principal wants to know. So:
+  //
+  //   * UNSCORED sets nothing: there was nothing to say about the sign-in,
+  //     so there is nothing to say about the device.
+  //   * A COMPROMISED device keeps its HIGH: `setRiskLevel()` holds a
+  //     compromised device for source `risk`, and only a restore moves it.
+  //   * Only a sign-in (`phase` user) sets it — not a live session's
+  //     re-assessment, whose request proved no device.
+  //   * Somebody else's device is not moved by this person's sign-in: its
+  //     level is its owner's story.
+  //
+  // Never throws, and never fails the sign-in: a register that cannot store
+  // the level is logged (STS-DEVICE-0036).
+  // -------------------------------------------------------------------------
+  private setDeviceLevel(fact: Json, assessment: Json): void {
+    const { log, lazy } = this.deps;
+    log.debug("Entering RiskEngine.setDeviceLevel().");
+    const level = String(assessment.level || '');
+    if (!fact || !fact.id || ['LOW', 'MEDIUM', 'HIGH'].indexOf(level) < 0) {
+      log.debug("Leaving RiskEngine.setDeviceLevel(). Nothing to set.");
+      return;
+    }
+    const reason = (assessment.signals || []).filter(function (s: Json) {
+      return s && s.signal && s.signal !== 'model';
+    }).map(function (s: Json): string {
+      return String(s.signal);
+    }).join(', ') || 'the sign-in it proved scored ' + level;
+    try {
+      const done = lazy('../common/devices').setRiskLevel(String(fact.id),
+        level, reason, { source: 'risk', actor: 'risk scoring' });
+      if (!done || !done.ok) {
+        log.warn(errorCodes.tag('STS-DEVICE-0036') + 'risk: device ' +
+                 fact.id + '\'s risk level was not set to ' + level + ': ' +
+                 String((done && done.error) || 'no answer') + '.');
+      }
+    } catch (e) {
+      log.debug("Caught in RiskEngine.setDeviceLevel(): " +
+                ((e && e.message) || e));
+      // No register in this process (a test of this file), or it threw:
+      // the sign-in stands and the device keeps the level it had.
+    }
+    log.debug("Leaving RiskEngine.setDeviceLevel(). " + level);
   }
 
   // A device's browser and OS without their versions: `Chrome 140` is
@@ -812,8 +997,9 @@ class RiskEngine {
   // -------------------------------------------------------------------------
   // assess(input) — see the header. `input`: { realm, subject, sessionId,
   // door, clientId, context (the authentication event's), userAgent (the raw
-  // header, read here and dropped) }. Answers the assessment, or null when
-  // it could not be made; never rejects.
+  // header, read here and dropped), registeredDevice (the event's
+  // recognised device, #164 phase 5, or null) }. Answers the assessment, or
+  // null when it could not be made; never rejects.
   // -------------------------------------------------------------------------
   async assess(input: Json): Promise<Json | null> {
     const { log, config } = this.deps;
@@ -902,11 +1088,44 @@ class RiskEngine {
           String(authenticator.model.description || credential.aaguid) +
           ' (' + String(authenticator.model.latestStatus || '') + ')');
     }
-    if (context.device && enough) {
+    // THE REGISTERED DEVICE (#164 phase 5; SIGNALS above). `own` is the
+    // person's own device, which is what the lowering factors and the
+    // device feature read; a device owned by somebody else is evidence about
+    // the device and nothing about this person's.
+    const registered = input.registeredDevice || null;
+    const username = String(input.username || '');
+    const own = RiskEngine.ownDevice(registered, username);
+    const compromised = !!registered && registered.status === 'compromised';
+    if (compromised) {
+      add('compromised-device', String(registered.id));
+    } else if (registered && registered.compliance === 'not-compliant') {
+      add('non-compliant-device', String(registered.id));
+    }
+    if (!own && enough && this.expectsDevice(username)) {
+      add('unregistered-device', registered
+        ? 'another owner\'s device ' + String(registered.id)
+        : 'none recognised');
+    }
+    if (own && !compromised && registered.compliance === 'compliant') {
+      add(registered.attestation === 'attested' ? 'compliant-attested-device'
+                                                : 'compliant-device',
+          String(registered.id));
+    }
+    // THE DEVICE FEATURE: the person's own registered device where one
+    // proved the sign-in — its register id, which no browser update or
+    // cleared fingerprint changes — and the browser fingerprint (#62 P6)
+    // otherwise. A registered device of the person's own is NEVER a
+    // `new-device`: its key was proven to be theirs at enrolment, which is
+    // stronger than any history, so the first sign-in from a phone they
+    // just registered is not doubted for being the first. The history still
+    // records it under its id.
+    const deviceFeature = own ? 'registered:' + String(registered.id)
+                              : String(context.device || '');
+    if (!own && context.device && enough) {
       const seenDevice = await store.featureCounts(realm, subject,
-        [{ feature: 'device', value: String(context.device) }], sealing);
+        [{ feature: 'device', value: deviceFeature }], sealing);
       if (!seenDevice.length) {
-        add('new-device', String(context.device).slice(0, 12));
+        add('new-device', deviceFeature.slice(0, 12));
       }
     }
     // THE TLS STACK, not the raw JA4: a resumed session adds two extensions,
@@ -949,7 +1168,10 @@ class RiskEngine {
     if (capped) {
       score = capped.score;
     }
-    const level = modelled.score === null && !signals.length ? 'UNSCORED'
+    const evidence = signals.filter(function (s: Json): boolean {
+      return LOWERING_ONLY.indexOf(s.signal) < 0;
+    });
+    const level = modelled.score === null && !evidence.length ? 'UNSCORED'
       : this.levelOf(score);
     const assessment: Json = {
       realm: realm, id: randomId(), at: at,
@@ -1000,7 +1222,13 @@ class RiskEngine {
                     return !!SIGNALS[l.category] && lists.indexOf(l) < 0;
                   }).map(function (l: Json): string {
                     return l.category;
-                  }) }].concat(signals),
+                  }),
+                  // THE REGISTERED DEVICE BEHIND THE SIGN-IN (#164 phase
+                  // 5), on the model's row because that row is a JSON
+                  // value in every store — what Monitoring → Risk draws
+                  // beside the browser. Never a key, never a thumbprint.
+                  device: RiskEngine.deviceOnAssessment(registered, own)
+                }].concat(signals),
       score: score, level: level, decision: 'observe'
     };
     await store.recordAssessment(assessment, sealing);
@@ -1041,8 +1269,8 @@ class RiskEngine {
     if (context.tlsStack || context.ja4) {
       move(subject, 'ja4', String(context.tlsStack || context.ja4));
     }
-    if (context.device) {
-      move(subject, 'device', String(context.device));
+    if (deviceFeature) {
+      move(subject, 'device', deviceFeature);
     }
     if (credential.fingerprint || credential.kind) {
       move(subject, 'credential', String(credential.kind || '') + ':' +
@@ -1079,6 +1307,9 @@ class RiskEngine {
                       RiskEngine.riskOf(assessment));
     this.noteChange(realm, subject, String(input.username || ''),
                     before ? String(before.level || '') : '', assessment);
+    if (own && counting) {
+      this.setDeviceLevel(registered, assessment);
+    }
     log.info('risk: ' + subject + ' at ' + assessment.door + ' scored ' +
              (modelled.score === null ? 'nothing (' + modelled.why + ')'
                                       : score.toPrecision(3)) + ' — ' +
@@ -1735,6 +1966,41 @@ class RiskEngine {
   }
 
   // -------------------------------------------------------------------------
+  // WHERE A REALM'S PEOPLE ARE (#255), for Monitoring → Geolocation: the
+  // store's `geography()` over `windowMs`, or — `live` — over the realm's
+  // live sessions, each at its latest assessment. A live session is one
+  // `authn.sessionsForRisk()` answers: person-held, not ended, and carrying
+  // a risk, which every assessed sign-in's session does; the one answer to
+  // "who is signed in" stays `authn`'s. `continents` is the page's
+  // code-to-continent table. `database` says which store counted.
+  // -------------------------------------------------------------------------
+  async geography(realm: string, opts: Json): Promise<Json> {
+    const { log, store, now, lazy } = this.deps;
+    log.debug("Entering RiskEngine.geography().");
+    const o = opts || {};
+    const sealing = this.sealing();
+    let sessionIds: string[] | null = null;
+    let since = now() - Math.max(3600000, Number(o.windowMs) || 86400000);
+    if (o.live) {
+      since = 0;
+      sessionIds = lazy('../authn/authn').sessionsForRisk()
+        .filter(function (row: Json): boolean {
+          return String((row.realm && row.realm.id) || '') === realm;
+        }).map(function (row: Json): string {
+          return String((row.session && row.session.id) || row.id);
+        });
+    }
+    const counted = await store.geography(realm, {
+      since: since, sessionIds: sessionIds,
+      continents: o.continents || {} }, sealing);
+    log.debug("Leaving RiskEngine.geography().");
+    return { realm: realm, live: !!o.live, since: since,
+             liveSessions: sessionIds ? sessionIds.length : null,
+             database: store.failuresInDatabase(sealing),
+             rows: counted.rows || [] };
+  }
+
+  // -------------------------------------------------------------------------
   // THE SCORING SYSTEM, MEASURED (#62): what Monitoring → Risk Scoring draws
   // and `GET /admin-api/risk/metrics` returns. Two kinds of number, and the
   // answer keeps them apart: `assessments` and `standings` are counted in
@@ -1922,6 +2188,7 @@ export = {
   respond: slot.forward('respond'),
   feedback: slot.forward('feedback'),
   metrics: slot.forward('metrics'),
+  geography: slot.forward('geography'),
   factors: slot.forward('factors'),
   calibrate: RiskEngine.calibrate,
   standingFor: slot.forward('standingFor'),

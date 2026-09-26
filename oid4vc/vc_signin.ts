@@ -1171,10 +1171,16 @@ class VcSignin {
   private failed(res: any, e: any): void {
     const { log, errorCodes, xmlEscape } = this.deps;
     log.debug("Entering VcSignin.failed().");
-    log.error(errorCodes.tag('STS-VC-0067') + 'oid4vp-signin: unhandled ' +
-              'failure: ' + ((e && (e.stack || e.message)) || e));
+    // A refusal that carries its own code (the Verifier's, #230: an x509
+    // Client Identifier with no certificate or name) keeps it; anything
+    // else is the unhandled failure this was written for.
+    const code = e && typeof e.code === 'string' &&
+                 /^STS-[A-Z]+-\d{4}$/.test(e.code) ? e.code : 'STS-VC-0067';
+    log.error(errorCodes.tag(code) + 'oid4vp-signin: ' +
+              (code === 'STS-VC-0067' ? 'unhandled failure: ' : '') +
+              ((e && (e.stack || e.message)) || e));
     if (!res.headersSent) {
-      errorCodes.mark(res, 'STS-VC-0067');
+      errorCodes.mark(res, code);
       this.page(res, 500, 'Failed', '<h1>500</h1><div class="err">' +
                 xmlEscape((e && e.message) || String(e)) + '</div>');
     }
@@ -1186,9 +1192,13 @@ class VcSignin {
     const { log, authn, contentSecurityPolicy } = this.deps;
     const self = this;
     log.debug("Entering VcSignin.registerRoutes().");
-    app.get(authn.WALLET_PATH, function (req, res) {
+    app.get(authn.WALLET_PATH, async function (req, res) {
       log.debug('Entering GET ' + authn.WALLET_PATH + '.');
       try {
+        // An x509 Client Identifier (#230) signs under the Verifier's
+        // certificate, which is issued here, before handleStart()'s
+        // synchronous build reads it; nothing for any other prefix.
+        await self.deps.verifier.prepareSignedClientId(req);
         self.handleStart(req, res);
       } catch (e) {
         log.debug("Caught in VcSignin.registerRoutes(): " +

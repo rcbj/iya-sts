@@ -181,6 +181,15 @@ contract:
   with `eventsDropped` counting what went. `sessionStartedAt()` is when a
   session BEGAN, now that `authTime` is its latest authentication; the
   `/logout` inventory and `/admin/sessions` rows read it.
+* **the registered device behind an event (#164 phase 2, 2026-09-26).**
+  Every event carries `registeredDevice`: `common/device_recognition.ts`'s
+  fact (`{ id, via, keyId, status, attestation, compliance, … }`) for the
+  device a linked WebAuthn credential or the connection's client
+  certificate names, or null. It is NOT `context.device`, which is the
+  browser fingerprint (#62 P6). `registeredDeviceOf(session)` answers the
+  latest event's. It decides nothing — compliance, risk, policy, CAEP and
+  token claims (#164 phases 3–6) read it — and a recogniser that throws
+  records null (`STS-DEVICE-0029`) rather than failing a sign-in.
 * **appending on re-authentication.** `startSession()` recognises the same
   `sub` on a live, chosen, authenticated sign-on session behind the cookie and
   hands off to `reauthenticateSession()`, whose header lists what it does and,

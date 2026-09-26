@@ -360,10 +360,19 @@ class AdminApiSpec {
   // enough to parse. Being explicit here is the difference between a
   // five-second fix and reading a middleware.
   // ===========================================================================
-  scopeForMethod(method) {
+  //
+  // **ONE OPERATION IS THE EXCEPTION, AND THE GATE SAYS SO THE SAME WAY**
+  // (#164 phase 3): `POST /admin-api/device-compliance`, the MDM feed, takes
+  // `device:compliance` and not `admin:write` — `admin_api.ts`'s
+  // `isDeviceComplianceFeed()` — so a posture feed holds nothing else.
+  scopeForMethod(method, path?) {
     const { log } = this.deps;
     log.debug("Entering AdminApiSpec.scopeForMethod().");
     log.debug("Leaving AdminApiSpec.scopeForMethod().");
+    if (String(method).toUpperCase() === 'POST' &&
+        String(path || '') === '/admin-api/device-compliance') {
+      return 'device:compliance';
+    }
     return String(method).toUpperCase() === 'GET' ? 'admin:read' :
            'admin:write';
   }
@@ -388,7 +397,12 @@ class AdminApiSpec {
             scopes: {
               'admin:read': 'Read anything this API exposes (every GET).',
               'admin:write': 'Change anything this API can change ' +
-                             '(every other method).'
+                             '(every other method).',
+              'device:compliance': 'Report device compliance through POST ' +
+                                   '/admin-api/device-compliance, and ' +
+                                   'nothing else — the scope an MDM or ' +
+                                   'posture feed holds (#164). Issued only ' +
+                                   'to a client that declares it.'
             }
           }
         }
@@ -412,11 +426,12 @@ class AdminApiSpec {
   // a LIST of requirement objects as "any one of these will do". The bearer
   // entry carries an empty array because scopes are meaningless outside oauth2
   // — naming them there would be a document that validators reject.
-  securityFor(method) {
+  securityFor(method, path?) {
     const { log } = this.deps;
     log.debug("Entering AdminApiSpec.securityFor().");
     log.debug("Leaving AdminApiSpec.securityFor().");
-    return [{ oauth2: [this.scopeForMethod(method)] }, { bearerAuth: [] }];
+    return [{ oauth2: [this.scopeForMethod(method, path)] },
+            { bearerAuth: [] }];
   }
 
   // One operation, as OpenAPI wants it. `entry` is a row of admin_api.ts's
@@ -557,7 +572,8 @@ class AdminApiSpec {
         paths[entry.path] = paths[entry.path] || {};
         paths[entry.path][method] = self.operationOf(entry, null);
         if (authRequired) {
-          paths[entry.path][method].security = self.securityFor(method);
+          paths[entry.path][method].security = self.securityFor(method,
+                                                                 entry.path);
         }
         return;
       }
@@ -566,7 +582,7 @@ class AdminApiSpec {
         paths[path] = paths[path] || {};
         paths[path][method] = self.operationOf(entry, action);
         if (authRequired) {
-          paths[path][method].security = self.securityFor(method);
+          paths[path][method].security = self.securityFor(method, path);
         }
       });
     });
@@ -643,6 +659,12 @@ const CONFIG_SETTING = openObject(
             description: 'How a value posted for it is coerced and checked.' },
     enumValues: { type: 'array', items: { type: 'string' },
                   description: 'Present on `enum` settings only.' },
+    // #86: a `csv` row whose entries come from a closed set says which, so a
+    // client can draw the choices rather than learn them from a refusal.
+    csvValues: { type: 'array', items: { type: 'string' },
+                 description: 'Present on a `csv` setting whose entries ' +
+                              'must each be one of these; absent on an ' +
+                              'open list.' },
     // Present on an `int` setting whose row narrows it, and absent everywhere
     // else — the same way `enumValues` is present on an enum and nowhere else.
     // They are DOCUMENTED rather than left implicit because a client rendering
@@ -4081,9 +4103,10 @@ const SCHEMAS = {
       },
       autoEmitActs: {
         type: 'array',
-        description: 'Which of the three observable acts emit on their own. ' +
-                     'The other five event types describe things nothing ' +
-                     'here does, so they are only ever emitted by hand.',
+        description: 'Which of the acts this service observes emit on ' +
+                     'their own — every one of CAEP\'s eight event types ' +
+                     'has one since #164 made device compliance an act ' +
+                     'here — as caep.autoEmitTypes names them.',
         items: { type: 'string' }
       },
       omitEventTimestamp: {

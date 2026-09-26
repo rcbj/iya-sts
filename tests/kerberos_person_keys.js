@@ -384,7 +384,8 @@ async function productChild() {
     const target = sname || ['krbtgt', principals.REALM];
     const bytes = msgs.encKdcReq({
       msgType: msgs.MSG_TYPE.AS_REQ, padata: padata,
-      reqBody: { kdcOptions: [], cname: { type: 1, name: [name] },
+      reqBody: { kdcOptions: [msgs.KDC_OPTION.RENEWABLE],
+                 cname: { type: 1, name: [name] },
                  realm: principals.REALM,
                  sname: { type: target[0] === 'krbtgt' ? 2 : 3, name: target },
                  till: new Date(Date.now() + 3600000), nonce: 777, etypes: [
@@ -415,12 +416,22 @@ async function productChild() {
   // key-usage-6 checksum over the request body's own bytes. The ticket may be a
   // TGT or a ticket sealed under any principal's long-term key — which is what
   // makes the KDC choose that principal's key by the ticket's kvno.
+  //
+  // A TICKET THAT IS NOT A TGT IS PRESENTED AS A RENEWAL OF ITSELF (#204):
+  // since then the KDC refuses any other use of it (KRB_AP_ERR_NOT_US), and
+  // a renewal still makes the KDC open the ticket under the key its kvno
+  // names — which is what these checks are about. So the tickets asReq()
+  // gets are renewable, and `sname` is then the ticket's own server.
   let tgsCounter = 0;
-  async function tgsReq(earlier, clientName, sname) {
+  async function tgsReq(earlier, clientName, asked) {
     tgsCounter += 1;
     const sessionKey = earlier.enc.key;
     const profile = kcrypto.etypeById(sessionKey.etype);
-    const reqBody = { kdcOptions: [], realm: principals.REALM,
+    const own = earlier.rep.ticket.sname.name;
+    const isTgt = own.length === 2 && own[0] === 'krbtgt';
+    const sname = isTgt ? asked : own;
+    const reqBody = { kdcOptions: isTgt ? [] : [msgs.KDC_OPTION.RENEW],
+                      realm: principals.REALM,
                       sname: { type: sname[0] === 'krbtgt' ? 2 :
                                      (sname.length > 1 ? 3 : 1),
                                name: sname },

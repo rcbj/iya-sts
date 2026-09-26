@@ -1040,6 +1040,5 @@ These are true in a product deployment today, and are tracked as issues:
   Since #173 the KDC refuses a password alone to anybody who holds or must hold
   a second factor, and takes an authenticator app's code through FAST and OTP
   pre-authentication; the security-key equivalent, PKINIT, is
-  [#179](https://github.com/rcbj/iya-sts/issues/179). FAST in the TGS exchange
-  (implicit armor) is not implemented either: a TGS-REQ that carries it is
-  answered unarmored, which MIT's client accepts.
+  [#179](https://github.com/rcbj/iya-sts/issues/179). (FAST in the TGS
+  exchange, which this list also named, is implemented since #204.)

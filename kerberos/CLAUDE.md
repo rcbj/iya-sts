@@ -757,9 +757,10 @@ fixtures AND the ambient realm opens test controls** — both, because a develop
 inside a product process must not publish the process's passwords. They are replaced by
 a sentence rather than omitted. `notImplementedYet` said PAC, cross-realm referrals,
 S4U2Self and S4U2Proxy for as long as all four had been implemented; since #173 it
-names FAST in the TGS exchange, PKINIT (#179), kpasswd, user-to-user, SID filtering
+named FAST in the TGS exchange, PKINIT (#179), kpasswd, user-to-user, SID filtering
 and krbtgt key rotation, and `implemented` gained FAST in the AS exchange, OTP and
-the indicator.
+the indicator; since #204 FAST in the TGS exchange, hide-client-names, user-to-user
+and RFC 6806's negotiation are `implemented` too.
 
 **Two bugs wrong in every mode, fixed unconditionally.** Every listener here bound the
 literal `'0.0.0.0'` rather than `global.host` (the UDP socket is `udp6` for an IPv6
@@ -1226,12 +1227,10 @@ at a full stack WILL see is one more entry, PA-FX-FAST (136), in every
 factor it takes, the indicator — which `GET /admin-api/kerberos` carries as
 `status` (rule 7).
 
-**NOT BUILT**: FAST in the TGS exchange (MIT puts implicit armor in every TGS-REQ;
-this KDC answers it unarmored, which MIT accepts — `kvno` after `kinit -T` is
-asserted), anonymous PKINIT armor, PKINIT itself (#179 — so a person whose only
-second factor is a security key cannot get a ticket in product), hide-client-names
-(refused as an unknown critical option), RFC 6113 authentication sets, OTP PIN
-change and hashed OTP values.
+**NOT BUILT**: anonymous PKINIT armor, PKINIT itself (#179 — so a person whose
+only second factor is a security key cannot get a ticket in product), RFC 6113
+authentication sets, OTP PIN change and hashed OTP values. (FAST in the TGS exchange
+and hide-client-names were on this list until #204 — see the section at the foot.)
 
 **TESTS.** `tests/kerberos_fast_otp.js` (in process: the vectors, the codec's DER
 by hand, `factorsFor()`, and in a product child the refusal decision for all four
@@ -1399,3 +1398,100 @@ console and the API agreeing). Untested: two nodes of a cluster racing the first
 one), and a node reading a krbtgt rotated on another before replication lands (the KDC
 catches up with the cluster before an AS-REQ or TGS-REQ in active-active mode, as for a
 sign-out).
+
+## WHAT SAMBA'S RAW KERBEROS TESTS AND HEIMDAL'S CLIENT FOUND (#204, #205, 2026-09-26)
+
+`tests/vendored/sts_kerberos_samba.js` runs every module of Samba's
+`python/samba/tests/krb5` against a development realm's KDC, and
+`tests/vendored/sts_kerberos_heimdal.js` drives Heimdal's client tools through the
+`sts_kerberos_*` scenarios (tests/CLAUDE.md, *The Kerberos interoperability
+harnesses*). **Every fix is in `krb5_kdc.js`, `krb5_principals.js` or
+`krb5_fast.ts`; no vendored file changed and no require was added**, so the parent
+project's COPY set is what it was. What they found, and where each lives:
+
+* **THE SALT HINTS FOLLOW THE REQUEST** (`etypeInfo2For(principal, requested)`,
+  `saltHints()`). ETYPE-INFO2 in `KDC_ERR_PREAUTH_REQUIRED` and PREAUTH_FAILED
+  listed every enctype the principal holds, in the KDC's order, and every client
+  takes the FIRST entry — so one that asked for rc4-hmac alone, or aes128 first,
+  derived an aes256 key the KDC then refused against the enctype it had negotiated:
+  KDC_ERR_PREAUTH_FAILED for a right password. The entries are now the request's
+  own enctypes in its order. RFC 4120 section 5.2.7.5 also forbids PA-PW-SALT beside
+  a newer enctype (it was in every reply) and section 3.1.3 wants PA-ETYPE-INFO with
+  ETYPE-INFO2 for a client that listed none (it was never sent). "Newer" is a LIST of
+  what is (`NEWER_ETYPES`), because Samba sends an unregistered number beside RC4 on
+  purpose and that number was not "first specified" at any time.
+* **THE AS-REP SAYS WHICH KEY SEALED IT**: one PA-ETYPE-INFO2 entry and the client
+  key's kvno in the enc-part's EncryptedData (5.2.9: kvno is present under
+  long-lasting keys) — outside FAST and OTP, whose reply keys are not long-term.
+  rc4-hmac's reply gets no hint, as AD sends none.
+* **THREE ENCTYPES, NOT ONE.** The request's etype list chooses the reply key and the
+  session key; the TICKET is sealed with the service's strongest key
+  (`supportedEtypes(service)[0]`) and the PAC's KDC signature made with the
+  krbtgt's. One `etype` did all three, so a client listing rc4-hmac first got a TGT
+  sealed under the krbtgt's RC4 key — an offline target chosen by whoever asked.
+* **RFC 6806 SECTION 11** (`encPaRepData()`, `withEncPaRep()`): `enc-pa-rep` on
+  every issued ticket, and PA-REQ-ENC-PA-REP's checksum over the request AS
+  RECEIVED (`REQUEST_BYTES`, hung on the request by `handleMessage()` because the
+  codec keeps no copy; the OUTER message under FAST) in the encrypted-pa-data, with
+  an empty PA-FX-FAST. MIT's and Heimdal's clients reject a reply whose flag is set
+  and checksum absent, so the two halves are one change. The TGS-REP carries it too
+  ("any generated KDC reply"), where Windows does not — a documented exception.
+* **FAST IN THE TGS EXCHANGE** (`Krb5Fast.openTgsRequest()`, `handleTgsReq()` over
+  `answerTgsReq()`): implicit armor, KRB-FX-CF2 of the PA-TGS-REQ Authenticator's
+  subkey and the TGT's session key; an explicit armor field opened as in the AS
+  exchange (Windows and Heimdal accept it); the req-checksum over the PA-TGS-REQ's
+  AP-REQ; the armored request's body and padata replacing the outer ones AFTER the
+  PA-TGS-REQ verified against the outer body; a strengthened reply key and a
+  KrbFastFinished, which section 5.4.3 makes a MUST in a TGS reply; errors after
+  the armor opened armored. **The request is ROUTED by its ticket** (`fastTgsRealm()`)
+  — the outer body may name anything, and Samba sends "TEST". `openAsRequest()` was
+  split into `armorFromApReq()` and `openFastReq()` for it. New refusal
+  `STS-KRB-0165`.
+* **HIDE-CLIENT-NAMES** (`hidesClientNames()`, `outerClient()`): the anonymous
+  principal in the outer reply and error, the real client in the KrbFastFinished.
+  It was refused as an unknown critical option, which section 5.4.2 allows — and
+  **Heimdal sets it on every FAST TGS-REQ**, so the moment the TGS exchange gained
+  FAST a Heimdal client could get no service ticket at all. Heimdal's `kgetcred`
+  found it; the refusal would have been invisible to every MIT-only test.
+* **A TGS-REQ MUST PRESENT A TGT** (`STS-KRB-0166`, KRB_AP_ERR_NOT_US) unless it
+  RENEWs or VALIDATEs the ticket it presents. The KDC opened any ticket with the key
+  of the service it named and issued from it, so a service that had ever received
+  somebody's ticket — and so held its session key — could buy tickets to anything
+  as them.
+* **AD-fx-fast-armor (71) and AD-fx-fast-used (72)** in a TGS-REQ's ticket or
+  Authenticator (`authorizationTypes()` looks inside AD-IF-RELEVANT): the first is
+  refused (`STS-KRB-0167`), the second without FAST is KRB_AP_ERR_MODIFIED
+  (`STS-KRB-0168`), RFC 6113 sections 5.4.1.1 and 5.4.2.
+* **USER-TO-USER** (`userToUserKey()`, `STS-KRB-0169`): ENC-TKT-IN-SKEY seals the
+  ticket with the additional TGT's session key, no kvno, for that TGT's own client.
+  It was ignored and the ticket sealed with the named principal's long-term key.
+* **PAC_ATTRIBUTES_INFO AND PAC_REQUESTOR IN TGTs ONLY** (`buildPacFor()`,
+  `pacForTarget()`, which trims a carried PAC through the codec's own
+  `assemblePac()` before `resignPac()`).
+
+**What stays different, each a documented exception with its reason** in the
+job's `EXCEPTIONS` and on #204: MIT's halves of `compatability_tests`; AD's
+sAMAccountName resolution (`krbtgt` as a single-component sname); AD's PAC
+hardening (a PAC in every TGT, a PAC-less TGT refused); [MS-SFU]'s HMAC-MD5 as the
+only PA-FOR-USER checksum; Windows' fixed "Microsoft" FX cookie and its
+AS-only PA-REQ-ENC-PA-REP; this KDC's KDC_ERR_PREAUTH_FAILED for armor that is
+not a TGT; and a non-ASCII principal name, which the VENDORED codec decodes as
+Latin-1 and encodes as UTF-8 — the fix is the parent's
+(rcbj/id-proto-debugger#308). Heimdal has no RFC 6560 OTP client and no MS-KKDCP
+transport, so those two halves of #205 are recorded rather than driven.
+
+**The in-process half** is `tests/kerberos_samba_findings.js` (the salt hints, the
+AS-REP's hint and kvno, the ticket under the krbtgt's strongest key with
+`enc-pa-rep`, NOT_US, the TGT-only PAC buffers), mutation-checked against the
+filter, the ticket enctype and the NOT_US refusal each removed — all caught.
+`kerberos_fast_otp.js` holds hide-client-names (outer anonymous, inner the client)
+and `kerberos_person_keys.js` presents its non-TGT tickets as renewals of
+themselves. FAST in the TGS exchange, user-to-user and RFC 6806's checksum are held
+by Samba's tests over TCP, which have no in-process client here.
+
+**What these harnesses cannot reach**: Samba's tests that create or read their
+accounts in Active Directory (SamDB, DRSUAPI, LSA, SAMR, NETLOGON), and those that
+need a computer, server or managed-service account — a sAMAccountName and SPNs
+sharing ONE key, which this KDC keys apart. They are thousands of tests (the etype
+permutations, as_canonicalization, claims, PKINIT, RODC, authentication policies),
+skipped by the driver naming what each needed; the job logs the count per reason.

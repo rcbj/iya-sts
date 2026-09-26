@@ -146,6 +146,13 @@ interface IssuanceQuestion {
   denyOnly?: boolean;
   delegation?: { intermediary: string; subject: string; target: string;
                  mode: string; protocol: string } | null;
+  // THE REGISTERED DEVICE (#164 phase 6): the recognition fact, brought up
+  // to date by the gate, or null for none; and what the realm requires of
+  // one (`issuance_gate.deviceRequirementOf()`). A question with no
+  // requirement array — a delegation, a caller that went round the gate —
+  // carries no device attribute, and every device rule is inapplicable.
+  device?: any;
+  deviceRequirement?: string[];
 }
 
 // The risk facts, as the gate hands them on.
@@ -170,6 +177,9 @@ interface IssuanceAnswer {
   // The risk rule that denied (#62 P3): `refuse`, or `step-up` with the
   // factor to ask for. `observed` when development let it through.
   risk?: { action: string; factor: string; observed: boolean } | null;
+  // The device rule that denied (#164 phase 6): `compromised` or
+  // `not-compliant`.
+  device?: { refusal: string } | null;
 }
 
 // Which document decides: `policy` when one does, `why` when none can.
@@ -203,7 +213,8 @@ interface XacmlRolePepDeps {
   // built without it sends none — and a policy then reads "holds nothing".
   heldFactors?: (username: string) => string[];
   templates: { build(id: string, answers: any, options: any): any;
-               ISSUANCE_ATTRIBUTE: Record<string, string> };
+               ISSUANCE_ATTRIBUTE: Record<string, string>;
+               DEVICE_ATTRIBUTE?: Record<string, string> };
 }
 
 const ATTRIBUTE = templates.ISSUANCE_ATTRIBUTE;
@@ -217,6 +228,8 @@ const DELEGATION_ATTRIBUTE = {
   PROTOCOL: 'urn:sts:xacml:delegation-protocol'
 };
 const RISK = templates.RISK_ATTRIBUTE;
+// #164 phase 6: the registered device an issuance came from.
+const DEVICE = templates.DEVICE_ATTRIBUTE;
 // #64: the authentication a session stands on.
 const AUTHN = templates.AUTHN_ATTRIBUTE;
 
@@ -481,7 +494,8 @@ class XacmlRolePep {
         { category: model.CATEGORY.ENVIRONMENT, id: null, content: null,
           attributes: this.riskAttributes(asked.risk,
                                           String(asked.subject.name || ''))
-            .concat(this.authenticationAttributes(asked.authentication)) }
+            .concat(this.authenticationAttributes(asked.authentication))
+            .concat(this.deviceAttributes(asked)) }
       ]
     };
     log.debug('Leaving XacmlRolePep.buildRequest().');
@@ -541,6 +555,75 @@ class XacmlRolePep {
     }
     log.debug("Leaving XacmlRolePep.authenticationAttributes().");
     return out;
+  }
+
+  // -------------------------------------------------------------------------
+  // THE REGISTERED DEVICE AS ENVIRONMENT ATTRIBUTES (#164 decision 3, phase
+  // 6) — `xacml_templates.ts`'s DEVICE_ATTRIBUTE. Sent only where the gate
+  // asked the device question (a requirement array, however empty); then
+  // `recognized` always, the requirement bag always, and the rest only for a
+  // device in hand. Whether it is the subject's OWN is decided here, from
+  // the subject the gate names: a person's device for that person, an
+  // application's for that application (a `client_credentials` grant's
+  // subject is the client).
+  // -------------------------------------------------------------------------
+  private deviceAttributes(asked: IssuanceQuestion): any[] {
+    const { log, model } = this.deps;
+    log.debug("Entering XacmlRolePep.deviceAttributes().");
+    if (!Array.isArray(asked.deviceRequirement)) {
+      log.debug("Leaving XacmlRolePep.deviceAttributes(). Not asked.");
+      return [];
+    }
+    const fact = asked.device || null;
+    const out = [
+      this.attribute(DEVICE.REQUIREMENT, asked.deviceRequirement),
+      this.attribute(DEVICE.RECOGNIZED, [!!fact], model.TYPE.BOOLEAN)
+    ];
+    if (fact) {
+      const subject = asked.subject || {};
+      const ownerKind = subject.kind === 'application' ? 'application'
+                                                       : 'person';
+      const owned = fact.ownerKind === ownerKind && !!subject.name &&
+        String(fact.ownerName || '') === String(subject.name);
+      out.push(
+        this.attribute(DEVICE.ID, [String(fact.id || '')]),
+        this.attribute(DEVICE.VIA, [String(fact.via || '')]),
+        this.attribute(DEVICE.OWNER_MATCHES, [owned], model.TYPE.BOOLEAN),
+        this.attribute(DEVICE.OWNER_KIND, [String(fact.ownerKind || '')]),
+        this.attribute(DEVICE.COMPLIANCE,
+                       [String(fact.compliance || 'unknown')]),
+        this.attribute(DEVICE.ATTESTATION,
+                       [String(fact.attestation || 'self-asserted')]),
+        this.attribute(DEVICE.STATUS, [String(fact.status || 'active')]));
+      if (fact.riskLevel) {
+        out.push(this.attribute(DEVICE.RISK_LEVEL, [String(fact.riskLevel)]));
+      }
+    }
+    log.debug("Leaving XacmlRolePep.deviceAttributes(). " +
+              (fact ? String(fact.id) : 'No device.'));
+    return out;
+  }
+
+  // The device obligation on a Deny, read: which rule refused, or null when
+  // the Deny is not about the device. `not-compliant` when the obligation
+  // names nothing this PEP knows: a device Deny is a refusal either way.
+  private deviceObligationOf(answer: any): string | null {
+    const { log } = this.deps;
+    log.debug("Entering XacmlRolePep.deviceObligationOf().");
+    const found = (answer && answer.obligations || []).filter(function (o) {
+      return o && o.id === DEVICE.OBLIGATION;
+    })[0];
+    if (!found) {
+      log.debug("Leaving XacmlRolePep.deviceObligationOf(). None.");
+      return null;
+    }
+    const hit = (found.assignments || []).filter(function (a) {
+      return a.attributeId === DEVICE.REFUSAL;
+    })[0];
+    const said = hit ? String(hit.lexical !== undefined ? hit.lexical
+                                                        : hit.value) : '';
+    log.debug("Leaving XacmlRolePep.deviceObligationOf(). " + said);
+    return said === 'compromised' ? 'compromised' : 'not-compliant';
   }
 
   // The risk obligation on a Deny, read: `{ action, factor }`, or null when
@@ -723,6 +806,56 @@ class XacmlRolePep {
       // to honour it.
       resolver: pip.resolverFor(request)
     });
+
+    // -----------------------------------------------------------------------
+    // A DENY ABOUT THE REGISTERED DEVICE (#164 phase 6) — the policy's
+    // device obligation says so. Asked FIRST, because it is final: a risk
+    // Deny may only ask for a step-up, and a device refused after one would
+    // be one refusal made in two steps. Enforced in BOTH modes and even
+    // where the role question was waived — the two rules it comes from are
+    // a compromise and a realm's explicit requirement, neither of which is
+    // about roles or is anything development should observe instead. The
+    // client is told what every failed authentication is told; which rule
+    // refused, and the device, are on the audit row.
+    // -----------------------------------------------------------------------
+    const deviceDeny = answer.decision === model.DECISION.DENY
+      ? this.deviceObligationOf(answer) : null;
+    if (deviceDeny) {
+      const fact = asked.device || null;
+      const code = deviceDeny === 'compromised' ? 'STS-DEVICE-0038'
+                                                : 'STS-DEVICE-0037';
+      const deviceWhy = deviceDeny === 'compromised'
+        ? 'The registered device ' + String(fact && fact.id || '') +
+          ' this came from is marked compromised, and the realm refuses one.'
+        : 'The realm requires a compliant registered device of the ' +
+          'subject\'s own' + ((asked.deviceRequirement || [])
+            .indexOf('attested') >= 0 ? ', attested,' : '') + ' and this ' +
+          (fact ? 'came from device ' + String(fact.id) + ' (' +
+                  String(fact.compliance || 'unknown') + ', ' +
+                  String(fact.attestation || '') + ')'
+                : 'came from no registered device') + '.';
+      if (!dryRun) {
+        audit.audit({
+          action: 'xacml.issuance.refused', errorCode: code,
+          actor: subject.name || '', protocol: 'XACML',
+          detail: 'Deny on the device for ' + (asked.kind || 'an issuance') +
+                  ' to "' + String(asked.application || '') + '": ' +
+                  deviceWhy
+        });
+      }
+      log.info('xacml: ' + (dryRun ? 'a dry run would have REFUSED '
+                                   : 'REFUSED ') +
+               (asked.kind || 'an issuance') + ' for "' +
+               String(asked.application || '') + '" to "' +
+               (subject.name || 'nobody') + '" on the device — ' + deviceWhy);
+      const refusal = this.refused(deviceDeny === 'compromised'
+        ? 'Authentication failed.'
+        : 'A compliant registered device is required.', answer.decision,
+        held, required, answer);
+      refusal.device = { refusal: deviceDeny };
+      log.debug('Leaving XacmlRolePep.decideNow(). Deny on the device.');
+      return refusal;
+    }
 
     // -----------------------------------------------------------------------
     // A DENY ABOUT RISK (#62 P3) — the policy's risk obligation says so. In

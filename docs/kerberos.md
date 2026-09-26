@@ -395,13 +395,44 @@ ticket"). Since #169:
   quantum-exposed part of Kerberos is PKINIT's public-key key agreement, which
   this service does not implement (#179).
 
+### What Samba's and Heimdal's clients found (#204, #205)
+
+Samba's raw Kerberos tests (`python/samba/tests/krb5`) and Heimdal's client
+tools now run against this KDC in the suite (`sts_kerberos_samba.js`,
+`sts_kerberos_heimdal.js`), and what they found is fixed:
+
+* **The salt hints follow the request.** ETYPE-INFO2 in
+  `KDC_ERR_PREAUTH_REQUIRED` lists the enctypes the AS-REQ asked for, in its
+  order, so its first entry is the one the KDC negotiated; PA-ETYPE-INFO is
+  sent beside it, and PA-PW-SALT, only to a client that listed no AES enctype
+  (RFC 4120 sections 3.1.3 and 5.2.7.5). A client asking for rc4-hmac alone,
+  or aes128 first, used to be told to use aes256 and was refused.
+* **The AS-REP says which key sealed it:** one PA-ETYPE-INFO2 entry and the
+  key's version number in the enc-part, outside FAST.
+* **The ticket is sealed with the service's strongest key**, whatever enctype
+  the client listed first; the request's list chooses the session key and the
+  reply key. A client listing rc4-hmac first used to get a TGT sealed under the
+  krbtgt's RC4 key.
+* **RFC 6806 section 11:** every ticket carries `enc-pa-rep`, and a request
+  that sends PA-REQ-ENC-PA-REP gets its checksum back in the encrypted reply.
+* **FAST in the TGS exchange** (RFC 6113): implicit armor from the
+  PA-TGS-REQ's subkey and TGT, explicit armor accepted, `hide-client-names`
+  honoured in both exchanges (Heimdal sets it on every TGS-REQ).
+* **A TGS-REQ must present a TGT**, unless it renews or validates the ticket
+  it presents (`KRB_AP_ERR_NOT_US`): a service holding somebody's service
+  ticket could otherwise buy tickets to anything as them.
+* **User-to-user** (`ENC-TKT-IN-SKEY`) is honoured, and RFC 6113's
+  AD-fx-fast-armor and AD-fx-fast-used are enforced.
+* `PAC_ATTRIBUTES_INFO` and `PAC_REQUESTOR` go into TGTs only, as Active
+  Directory does.
+
+What stays different from Active Directory, and why, is listed with each
+exception in `tests/vendored/sts_kerberos_samba.js` and on #204.
+
 ### Not implemented
 
-PKINIT (#179), FAST in the TGS exchange (a TGS-REQ carrying implicit armor is
-answered unarmored, which MIT's client accepts), anonymous PKINIT armor, the
-FAST hide-client-names option (refused as an unknown critical option), OTP
-PIN change and hashed OTP values, kpasswd, user-to-user, request signatures,
-SID filtering (see [the PAC](#the-pac) below), claims and device info in the
+PKINIT (#179), anonymous PKINIT armor, OTP PIN change and hashed OTP
+values, kpasswd, request signatures, SID filtering (see [the PAC](#the-pac) below), claims and device info in the
 PAC, and rotation of an inter-realm trust key. DES is decoded and never
 produced: Windows Server 2025 removed it and it is not coming back. The **AP
 exchange** is not missing from the KDC — it belongs to a service rather than to

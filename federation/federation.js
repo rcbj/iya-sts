@@ -875,14 +875,14 @@ const SCHEMA = {
             'OAuth 2.0 one, because what an OAuth 2.0 authorization server ' +
             'will give you is entirely local to it.' },
     { name: 'fedResponseType', kind: 'single', role: 'service-provider',
-      from: 'this register',
+      from: 'this register', enum: ['code', 'id_token'],
       what: 'code (the default) or id_token. `id_token` with form_post is ' +
             'the shape that needs NO back channel and therefore no token ' +
             'endpoint, no client secret and no outbound request — which is ' +
             'the only way to federate with an OIDC partner from a deployment ' +
             'that has no egress at all.' },
     { name: 'fedBinding', kind: 'single', role: 'service-provider',
-      from: 'this register',
+      from: 'this register', enum: ['HTTP-Redirect', 'HTTP-POST'],
       what: 'Which binding the outbound SAML AuthnRequest goes on: ' +
             'HTTP-Redirect (the default, and what every identity provider ' +
             'supports) or HTTP-POST. It says nothing about the response, ' +
@@ -992,6 +992,16 @@ const SCHEMA = {
             'else is true, a valid link included (STS-FED-0093). Turning it ' +
             'on makes this partner\'s signing key a key to the console for ' +
             'every administrator linked to it.' },
+    // --- A PARTNER'S SHARED SIGNALS (#153) ----------------------------------
+    { name: 'fedSignalEmailMatch', kind: 'single',
+      role: 'service-provider', from: 'this register',
+      what: 'LET THIS PARTNER\'S SHARED SIGNALS NAME A PERSON BY MAIL. OFF ' +
+            'by default: a Security Event Token from a transmitter with ' +
+            'this partner\'s issuer names a person by `iss_sub`, through ' +
+            'the person\'s federationLink. On, an `email` subject matches ' +
+            'the one person with that mail address as well — an address ' +
+            'is not an identifier (OpenID Connect Core section 5.7), so ' +
+            'only for a partner whose addresses this realm trusts.' },
     // --- A PARTNER'S SIGN-OUT (#167) ---------------------------------------
     // federation/federation_slo.ts is what reads these, in both directions:
     // the partner telling this service a session ended, and this service
@@ -1268,6 +1278,7 @@ const EDITABLE = {
   fedSubjectPolicy: 'set',
   fedSubjectPattern: 'set',
   fedMayAssertAdministrators: 'set',
+  fedSignalEmailMatch: 'set',
   fedAllowUnsolicited: 'set',
   fedEncryptionKeyType: 'set',
   fedKeyManagementAlgorithm: 'set',
@@ -1609,6 +1620,15 @@ function peopleLinkedBy(value) {
   log.debug("Leaving peopleLinkedBy().");
   return directoryHas('peopleByFederationLink')
     ? directory.peopleByFederationLink(String(value || '')) : [];
+}
+
+// Every person with this mail address (#153), for a foreign transmitter's
+// `email` subject where the relationship allows it.
+function peopleByMail(address) {
+  log.debug("Entering peopleByMail().");
+  log.debug("Leaving peopleByMail().");
+  return directoryHas('peopleByMail')
+    ? directory.peopleByMail(String(address || '')) : [];
 }
 
 function linkedThrough(fedId) {
@@ -2586,6 +2606,7 @@ function create(spec) {
     // two above are.
     record.fedSubjectPolicy = DEFAULT_SUBJECT_POLICY;
     record.fedMayAssertAdministrators = boolText(false);
+    record.fedSignalEmailMatch = boolText(false);
     record.fedSignRequest = boolText(false);
     // A PARTNER'S SIGN-OUT (#167): honoured, and signed — the most secure
     // default, and the one a partner that follows its specification meets.
@@ -2799,6 +2820,25 @@ function update(id, change) {
     log.debug("Leaving update().");
     return { ok: false, errors: [refusal.message] };
   }
+  // A FIELD WITH A CLOSED SET HOLDS ONE OF ITS VALUES (#86). The rows that
+  // carry an `enum` and no refusal of their own above — `fedAuthnMechanism`,
+  // `fedBinding` and `fedResponseType` — stored whatever was sent, and the
+  // readers then guessed: anything but `HTTP-POST` was the Redirect binding,
+  // anything but `code` was id_token, and an unknown mechanism was merely
+  // "not ready". Empty still clears the field, as it does for every row.
+  if (Array.isArray(row.enum) && value !== '' &&
+      row.enum.indexOf(value) < 0) {
+    log.debug('Leaving update(). Not one of the field\'s values.');
+    actionRefused('STS-FED-0150', id, '"' + value + '" is not one of ' +
+                                      field + '\'s values');
+    log.debug("Leaving update().");
+    return { ok: false,
+             errors: ['"' + field + '" is "' + value + '", which is not one ' +
+                      'of the ' + row.enum.length + ' values it accepts: ' +
+                      row.enum.map(function (v) {
+                        return '"' + v + '"';
+                      }).join(', ') + '.'] };
+  }
   const before = row.kind === 'multi' ? (record[field] || []).slice() :
                  record[field];
   if (row.editable === 'multi') {
@@ -2854,6 +2894,7 @@ function update(id, change) {
   if (row.name === 'fedEnabled' || row.name === 'fedAutocreateUsers' ||
       row.name === 'fedUpdateUserAttributes' ||
       row.name === 'fedMayAssertAdministrators' ||
+      row.name === 'fedSignalEmailMatch' ||
       row.name === 'fedSignRequest' || row.name === 'fedAllowUnsolicited' ||
       row.name === 'fedAllowUnencrypted') {
     record[field] = boolText(boolOf(record[field], false));
@@ -3384,6 +3425,7 @@ module.exports = {
   // The people a partner's subjects are linked to (#109); see their header.
   federatedPerson: federatedPerson,
   peopleLinkedBy: peopleLinkedBy,
+  peopleByMail: peopleByMail,
   linkedThrough: linkedThrough,
   plannedPersonDn: plannedPersonDn,
   writeFederationLink: writeFederationLink,

@@ -1425,6 +1425,23 @@ async function refreshAdminApiToken(instance, jobTimeoutMs) {
   log.debug('Leaving refreshAdminApiToken().');
 }
 
+// THE IN-PROCESS FILES THAT WALK A WHOLE EXTERNAL CORPUS RAISE THEIR OWN
+// WATCHDOG (2026-09-26). A protocol job raises it with `timeoutMs` in
+// MANIFEST.js; an in-process file has no manifest row, so the few that need
+// more than the default are named here. x509_limbo drives 9802 cases through
+// six validators and was killed at 300 s in a full run on a loaded machine
+// (its first driver alone took 78 s) while every case agreed; the other three
+// are the same kind of file. Its signer pass alone was measured at 6-17 min
+// on a machine running other sessions' stacks, so it has 25. A raise only
+// ever lengthens: the larger of this and --timeout wins, exactly as for a
+// protocol job.
+const UNIT_WATCHDOG_MS = {
+  x509_limbo: 1500000,
+  nist_pkits: 600000,
+  acvp_pqc: 600000,
+  wycheproof: 600000
+};
+
 async function main() {
   log.debug('Entering main().');
   const opts = parseArgs(process.argv.slice(2));
@@ -1443,8 +1460,9 @@ async function main() {
   const jobs = [];
   if (wantUnit) {
     testFiles(opts.only).forEach(function (file) {
-      jobs.push({ suite: 'unit', name: file.replace(/\.js$/, ''), file: file,
-                  dir: TESTS_DIR });
+      const name = file.replace(/\.js$/, '');
+      jobs.push({ suite: 'unit', name: name, file: file, dir: TESTS_DIR,
+                  timeoutMs: UNIT_WATCHDOG_MS[name] || 0 });
     });
   }
   // THE PROTOCOL JOBS ARE VENDORED HERE SINCE 2026-08-28 and are no longer

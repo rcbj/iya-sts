@@ -573,9 +573,19 @@ const SPECS: Spec[] = [
               'does), HTTP Basic and GNAP — ' +
               'published in authorization_schemes. Failed pushes are retried ' +
               'ssf.pushRetries times (0 by default, deliberately) and then ' +
-              'dead-lettered, and streams are persisted in product mode. NOT ' +
-              'covered: this service as a RECEIVER of a foreign transmitter ' +
-              '(#153), and nothing is verified about a subject, so a stream ' +
+              'dead-lettered, and streams are persisted in product mode. ' +
+              'AND THE RECEIVER HALF (#153): a realm registers a foreign ' +
+              'transmitter by its issuer (the section 7 document, which must ' +
+              'name it, and its jwks_uri), creates, reads, updates and ' +
+              'deletes its stream there, sets its status, adds and removes ' +
+              'subjects and asks for verification, receives by poll (RFC ' +
+              '8936, a scheduler job acknowledging what it received) or ' +
+              'push (RFC 8935, the authorization header it gave), verifies ' +
+              'each SET (signature against the transmitter\'s keys, typ, ' +
+              'iss, aud, a jti once), and acts on it through the ' +
+              'signal-response policy for a person a federation ' +
+              'relationship links. NOT covered: nothing is verified about ' +
+              'a subject this transmitter\'s own streams name, so a stream ' +
               'may name somebody who has never been here.' },
   { id: 'rfc8417', name: 'RFC 8417 — Security Event Token (SET)',
     where: 'IETF',
@@ -634,10 +644,12 @@ const SPECS: Spec[] = [
               'reason_admin / reason_user AS LANGUAGE MAPS rather than ' +
               'strings, which is the commonest mistake in the profile and ' +
               'the one with no symptom. Every event carries SSF\'s COMPLEX ' +
-              'subject naming the person AND the session, because the person ' +
-              'is not revoked and one session of theirs is, and an event ' +
-              'that arrives without a subject is refused rather than sent. ' +
-              'SIX OF THE EIGHT FIRE ON THEIR OWN, and caep.autoEmit turns ' +
+              'subject naming the person AND the session — and the ' +
+              'registered DEVICE the session was authenticated from, where ' +
+              'one was recognised (#164) — because the person is not ' +
+              'revoked and one session of theirs is, and an event that ' +
+              'arrives without a subject is refused rather than sent. ALL ' +
+              'EIGHT FIRE ON THEIR OWN, and caep.autoEmit turns ' +
               'them off: a sign-in, a single sign-on and a sign-out, the ' +
               'first two carrying fp_ua as a fingerprint of the User-Agent; ' +
               'assurance-level-change when a re-authentication moves acr; ' +
@@ -646,11 +658,17 @@ const SPECS: Spec[] = [
               'fido2-roaming with their AAGUID, authenticator apps, x509 ' +
               'certificates with issuer and serial, wallet credentials); ' +
               'and token-claims-change when a directory write moves a claim ' +
-              'of somebody holding live tokens or assertions (#145). NOT ' +
-              'covered: device-compliance-change and risk-level-change have ' +
-              'no source here (#164 and #62), so they are emitted by hand ' +
-              'from /admin/caep or POST /admin-api/caep/emit; a received ' +
-              'event is not acted on (#153, #117); and the CAEP ' +
+              'of somebody holding live tokens or assertions (#145); ' +
+              'risk-level-change when risk scoring moves a person\'s level ' +
+              '(#62) or a registered device\'s (principal DEVICE, #164 — a ' +
+              'compromise raises it to HIGH); device-compliance-change when ' +
+              'an administrator, the MDM feed or the development test ' +
+              'control moves a device\'s compliance (#164), unknown sent as ' +
+              'not-compliant because the event knows only two values; and ' +
+              'credential-change for a device\'s keys and its Native SSO ' +
+              'secret, the device beside its owner in the subject. NOT ' +
+              'covered: a received event is not acted on (#153, #117); and ' +
+              'the CAEP ' +
               'Interoperability Profile is a draft and nothing here claims ' +
               'it.' },
 
@@ -677,8 +695,8 @@ const SPECS: Spec[] = [
               'value, which is the reverse of every other event in all three ' +
               'vocabularies; a subject in another format is SENT with a ' +
               'warning rather than refused, because it is perfectly ' +
-              'deliverable and merely wrong. THIRTEEN OF THE FOURTEEN FIRE ' +
-              'ON THEIR OWN (#146), and risc.autoEmit turns them off: from ' +
+              'deliverable and merely wrong. ALL FOURTEEN FIRE ON THEIR OWN ' +
+              '(#146, #164), and risc.autoEmit turns them off: from ' +
               'the DIRECTORY, a person deleted, disabled (with the reason an ' +
               'administrator gave, and none when none was given) or enabled, ' +
               'an identifier moving, and an identifier RECYCLED — given to ' +
@@ -687,7 +705,14 @@ const SPECS: Spec[] = [
               'credential change, recovery-activated for a reset link, ' +
               'credential-compromise for a reset marked as caused by one, ' +
               'and recovery information changed (as from a person confirming ' +
-              'new recovery codes); and from the ACCOUNT HOLDER on ' +
+              'new recovery codes); from the DEVICE REGISTER (#164), ' +
+              'credential-compromise for each credential a person\'s ' +
+              'device held when it is marked compromised, and the ' +
+              'deprecated sessions-revoked when it is compromised or ' +
+              'removed — both with a complex subject naming the account AND ' +
+              'the device, which is what makes "every session of the ' +
+              'account" true of what was ended; and from the ACCOUNT HOLDER ' +
+              'on ' +
               '/portal/signals, the section 2.8 opt-out moves, ' +
               'opt-out-effective following after risc.optOutDelayHours ' +
               'from a scheduler job. Section ' +
@@ -699,9 +724,8 @@ const SPECS: Spec[] = [
               'Google compatibility note is reproducible at ' +
               'risc.googleSubjectType, in development mode only (#181). ' +
               'NOT covered: no detector finds a ' +
-              'compromised credential by itself (#62); the deprecated ' +
-              'sessions-revoked is emitted only by hand from /admin/risc or ' +
-              'POST /admin-api/risc/emit; and a received event is not acted ' +
+              'compromised credential by itself (#62); and a received event ' +
+              'is not acted ' +
               'on (#153, #117). recovery-activated is sent both when an ' +
               'administrator issues a reset link and when a person asks for ' +
               'one at /portal/forgot-password (#63).' },
@@ -2280,6 +2304,30 @@ const SPECS: Spec[] = [
               'verified_claims (Identity Assurance section 6), and the ' +
               'Claims Provider role (this service\'s signed UserInfo serves ' +
               'another aggregator, which is the draft\'s CP side).' },
+  { id: 'oidc-provider-commands', name: 'OpenID Provider Commands 1.0 ' +
+                                        '(draft 02)',
+    where: 'OpenID Foundation',
+    url: 'https://openid.net/specs/openid-provider-commands-1_0.html',
+    coverage: 'full (#151), as the OpenID Provider, where ' +
+              'oauth2.providerCommands is on (off by default): ' +
+              'command_endpoint registered (DCR, console, API; https, no ' +
+              'fragment); Command Tokens typed command+jwt and signed like ' +
+              'the client\'s ID Token, at most two minutes, with the ' +
+              'section 5 claims per command (sub only in account commands, ' +
+              'metadata only in metadata, authentication_provider only in ' +
+              'migrate, never nonce; tenant is the realm id; aud_sub sent ' +
+              'and learned); all ten account commands and their _async ' +
+              'variants on the shared durable outbound queue with the ' +
+              'section 3 answers and errors read; metadata recording what ' +
+              'each relying party supports; the five streaming tenant ' +
+              'commands read as Server-Sent Events and resumed with ' +
+              'Last-Event-ID; the callback endpoint for async results and ' +
+              'metadata and audit_tenant requests; an account-state register ' +
+              'per relying party; automatic suspend, reactivate, delete, ' +
+              'maintain and invalidate on directory changes and global ' +
+              'sign-outs, only to a relying party that listed the command. ' +
+              'A mock relying party answers every command in development. ' +
+              'MISSING: acting as the relying party for another OP.' },
   { id: 'oidc-enterprise', name: 'OpenID Connect Enterprise Extensions 1.0 ' +
                                  '(draft 01)',
     where: 'OpenID Foundation',
@@ -2674,9 +2722,14 @@ const SPECS: Spec[] = [
               'decentralized_identifier (the realm\'s did:web, a DID URL ' +
               'kid), verifier_attestation (a Verifier Attestation JWT in the ' +
               '`jwt` header, configured or self-attested), or ' +
-              'openid_federation (the realm\'s Entity Configuration); an ' +
-              'unsigned one uses redirect_uri. x509_san_dns, x509_hash and ' +
-              'origin are not offered.' },
+              'openid_federation (the realm\'s Entity Configuration), and ' +
+              'since #230 x509_san_dns and x509_hash (section 5.9.3: the ' +
+              'Verifier\'s own certificate from the realm\'s JOSE Issuing ' +
+              'CA in x5c, a dNSName that is the Response URI\'s host, or ' +
+              'the leaf\'s SHA-256), chosen per realm or per request; an ' +
+              'unsigned one uses redirect_uri. The origin prefix is not ' +
+              'offered (it is the Digital Credentials API\'s own, set by ' +
+              'the browser).' },
   { id: 'siopv2', name: 'Self-Issued OpenID Provider v2',
     where: 'OpenID Foundation',
     url: 'https://openid.net/specs/openid-connect-self-issued-v2-1_0.html',
@@ -3185,6 +3238,15 @@ const ENDPOINTS: EndpointEntry[] = [
           'attribute names are this service\'s own inventions: no registered ' +
           'LDAP schema has a SPIFFE ID or a selector on it. Add ' +
           '?format=json.' },
+  { path: '/admin/ldap/devices', group: 'LDAP',
+    name: 'The device register, and its schema',
+    specs: ['rfc4511', 'rfc4512', 'rfc4519'],
+    what: 'ou=devices entry by entry (#164, #218): every attribute of every ' +
+          'device, and the SCHEMA common/devices.ts publishes — a key, the ' +
+          'last compliance and status change and the enrolment are one JSON ' +
+          'value each, and a client reading an entry over 389 has nowhere ' +
+          'else to learn what they mean. stsDeviceSecretHash is withheld, ' +
+          'as from every LDAP read. Add ?format=json.' },
   { path: '/admin/ldap/federations', group: 'LDAP',
     name: 'The federation register, and its schema',
     specs: ['rfc4511', 'rfc4512', 'rfc4519'],
@@ -4096,6 +4158,15 @@ const ENDPOINTS: EndpointEntry[] = [
           '(min_verification_interval) is not enforced unless ' +
           'ssf.verificationRateLimit is on, which is what makes the 429 ' +
           'reachable.' },
+  { path: '/ssf/transmitters/:id/push', group: 'Shared Signals',
+    name: 'Push endpoint for a foreign transmitter (RFC 8935)',
+    specs: ['ssf', 'rfc8935', 'rfc8417'],
+    what: 'Where a foreign transmitter this realm registered pushes a ' +
+          'Security Event Token (#153): the Authorization header this realm ' +
+          'gave it when the stream was created, then the SET, verified ' +
+          'against the transmitter\'s keys and acted on as the ' +
+          'signal-response policy permits. 202, or 400 with {err, ' +
+          'description}.' },
   { path: '/ssf/poll', group: 'Shared Signals',
     name: 'Poll delivery (RFC 8936)',
     specs: ['rfc8936', 'rfc8417'],
@@ -5214,6 +5285,19 @@ const ENDPOINTS: EndpointEntry[] = [
           'is the pipe and CAEP and RISC are the vocabularies, and CAEP — ' +
           'which DOES generate events by itself, at /admin/caep — is the one ' +
           'place in this service that does. Add ?format=json.' },
+  { path: '/admin/deliveries', group: 'Admin', name: 'Outbound deliveries',
+    specs: ['oidc-bclogout', 'oidc-ciba', 'oidc-provider-commands'],
+    what: 'NON-SPEC PAGE (#151), under Monitoring: every Back-Channel ' +
+          'Logout Token, CIBA ping and push and OpenID Provider Command on ' +
+          'the shared outbound queue, by kind, with each dead letter\'s ' +
+          'code and a Retry.' },
+  { path: '/admin/ssf/transmitters', group: 'Admin',
+    name: 'Foreign SSF transmitters',
+    specs: ['ssf', 'rfc8935', 'rfc8936'],
+    what: 'The transmitters this realm receives Shared Signals from (#153): ' +
+          'register one by its issuer, its stream there and every stream ' +
+          'act, what arrived, whether it verified, the person it named and ' +
+          'what it led to.' },
   { path: '/admin/ssf/dead-letters', group: 'Admin', name: 'Dead letters',
     specs: ['ssf', 'rfc8417', 'rfc8935'],
     what: 'NON-SPEC PAGE (2026-09-14), under Monitoring → Shared Signals: ' +
@@ -5237,11 +5321,12 @@ const ENDPOINTS: EndpointEntry[] = [
           'its permitted values and what it is for — plus the four claims ' +
           'CAEP gives them all, of which reason_admin and reason_user are ' +
           'LANGUAGE MAPS rather than strings. Its ONE control is the form ' +
-          'that emits an event by hand, and it exists because FIVE OF THE ' +
-          'EIGHT describe things nothing here does: no device reports ' +
-          'compliance to this service and no risk engine talks to it. The ' +
-          'other three fire on their own when a session starts, is presented ' +
-          'or ends, which makes this THE ONLY PAGE IN THIS CONSOLE THAT ' +
+          'that emits an event by hand, about a session and with any ' +
+          'payload, which is what a receiver under test needs beside the ' +
+          'automatic emissions. All eight also fire on their own (the ' +
+          'eighth, device-compliance-change, since #164) — a session ' +
+          'starting, presented or ending among them — which makes this THE ' +
+          'ONLY PAGE IN THIS CONSOLE THAT ' +
           'CONFIGURES THIS SERVICE TO ACT WITHOUT BEING ASKED — ' +
           'caep.autoEmit, and turning it off restores the behaviour every ' +
           'other family here has. The caep.* settings post back to it. ' +
@@ -5740,12 +5825,34 @@ const ENDPOINTS: EndpointEntry[] = [
           'act (section 5.4).' },
   { path: '/portal/devices', group: 'User portal',
     name: 'Your devices — ou=devices, and Native SSO',
-    specs: ['oidc-native-sso'],
-    effect: 'lists the signed-in person\'s devices and removes one',
-    what: 'NON-SPEC page (#130). The device entries the person owns, the ' +
-          'applications that used each, and whether its Native SSO secret ' +
-          'is live; removing one takes the secret with it. The identity is ' +
-          'the session\'s; the form names only the device.' },
+    specs: ['oidc-native-sso', 'webauthn'],
+    effect: 'lists the signed-in person\'s devices and removes one; ' +
+            'registers one by a key proof over a challenge (a JWS, an ' +
+            'Android Key Attestation, an Apple App Attest statement) or by ' +
+            'linking a WebAuthn platform credential with a fresh assertion',
+    what: 'NON-SPEC page (#130, #164 phase 2). The device entries the ' +
+          'person owns, their keys and attestation, the applications that ' +
+          'used each, and whether its Native SSO secret is live. The ' +
+          'identity is the session\'s; the forms name only the device or ' +
+          'the credential. The link step runs /authn/webauthn.js.' },
+  { path: '/portal/devices/challenge', group: 'User portal',
+    name: 'Device enrolment challenge (JSON)',
+    specs: [],
+    effect: 'issues a challenge bound to the portal session, for a device ' +
+            'app to sign or attest',
+    what: 'NON-SPEC (#164 phase 2). application/json only. Answers ' +
+          '{ challenge, audience, typ, expires_at, proof_endpoint }; one ' +
+          'per session, answered once, devices.challengeTtlSeconds.' },
+  { path: '/portal/devices/proof', group: 'User portal',
+    name: 'Device key proof (JSON)',
+    specs: [],
+    effect: 'registers the signed-in person\'s device by a JWS over the ' +
+            'challenge, or an Apple App Attest statement',
+    what: 'NON-SPEC (#164 phase 2). application/json only. A ' +
+          'device-key-proof+jwt JWS (an Android Key Attestation in x5c) ' +
+          'or { app_attest: { key_id, attestation } }; 201 with the ' +
+          'device, or 400 with the reason. Product refuses a key with no ' +
+          'attestation that chained to a trusted root.' },
   { path: '/portal/self-issued', group: 'User portal',
     name: 'Your self-issued IDs — the SIOPv2 keys that sign you in',
     specs: ['siopv2'],
@@ -6459,6 +6566,16 @@ const ENDPOINTS: EndpointEntry[] = [
           'what people said; and this process\'s time to assess, reactions ' +
           'and live-session re-checks. Add ?format=json, or GET ' +
           '/admin-api/risk/metrics.' },
+  { path: '/admin/geolocation', group: 'Admin',
+    name: 'Geolocation',
+    specs: [],
+    what: 'NON-SPEC (#255). Where the realm\'s people signed in from, on a ' +
+          'server-drawn map (Natural Earth outlines, Equal Earth ' +
+          'projection, no script): the world shaded by country, then ' +
+          '?continent=, then ?country= with its cities; ?window=live (the ' +
+          'default), 24h, 7d or 30d. A place with fewer people than ' +
+          'risk.geoMinimumCount is shaded but not numbered. Add ' +
+          '?format=json, or GET /admin-api/geolocation.' },
   { path: '/admin/vc-status', group: 'Admin',
     name: 'Credential status',
     specs: ['token-status-list', 'bitstring-status-list'],
@@ -6484,6 +6601,43 @@ const ENDPOINTS: EndpointEntry[] = [
           'image or a script is refused), and the Mail settings. POST: ' +
           'test, save-template, reset-template, Admin Write. Add ' +
           '?format=json.' },
+  { path: '/admin/devices', group: 'Admin',
+    name: 'The device register',
+    specs: ['rfc4519', 'oidc-native-sso'],
+    effect: 'registers, edits or removes a device, adds or removes a key, ' +
+            'sets its compliance, or marks it compromised or restores it',
+    what: 'NON-SPEC (#164, #218). Filed under Directory. Every device in ' +
+          'the realm (ou=devices), each owned by one person or one ' +
+          'application: its keys (a certificate, a JWK, a linked WebAuthn ' +
+          'credential) and their thumbprints, attested or self-asserted, ' +
+          'compliance, Native SSO state and last use — paged, and filtered ' +
+          'by owner kind, compliance, attestation, key kind and a search. ' +
+          '?device= is one device with every edit. POST: create, update, ' +
+          'remove, add-key, remove-key, set-compliance (CAEP ' +
+          'device-compliance-change) and set-status (compromised: its ' +
+          'sessions ended, its secret and certificates revoked, RISC ' +
+          'credential-compromise and sessions-revoked), Admin Write. Add ' +
+          '?format=json.' },
+  { path: '/admin/device-registration', group: 'Admin',
+    name: 'How a device is registered and recognised',
+    specs: ['oidc-native-sso'],
+    what: 'NON-SPEC (#164, #218). Filed under Protocols. Each enrolment ' +
+          'method (Native SSO, an administrator, the portal, EST, SCEP) and ' +
+          'whether it is built, each kind of key a device is recognised by, ' +
+          'what attestation and compliance mean here, the four doors that ' +
+          'set compliance (an administrator, the MDM feed, the development ' +
+          'test control, and a received CAEP event with #153), what goes ' +
+          'out over Shared Signals, and the Devices settings. Add ' +
+          '?format=json.' },
+  { path: '/admin/devices/monitor', group: 'Admin',
+    name: 'The device register, counted',
+    specs: [],
+    what: 'NON-SPEC (#164, #218). Filed under Monitoring. Devices by owner ' +
+          'kind, compliance, attestation, key kind and enrolment; Native ' +
+          'SSO devices bound to a live session against ended ones; and ' +
+          'registrations, removals and evictions at a person\'s bound, and ' +
+          'compliance changes by source (admin, mdm, test-control, caep), ' +
+          'day by day (?days=); devices by risk level. Add ?format=json.' },
   { path: '/admin/mail/outbox', group: 'Admin',
     name: 'What this service sent, and the dead letters',
     specs: [],
@@ -7331,6 +7485,9 @@ const ENDPOINTS: EndpointEntry[] = [
   { path: '/admin-api/risk/metrics', group: 'Management API',
     name: 'Risk scoring metrics', specs: ['openapi'],
     what: 'NON-SPEC (#62). GET /admin/risk-scoring over JSON.' },
+  { path: '/admin-api/geolocation', group: 'Management API',
+    name: 'Geolocation', specs: ['openapi'],
+    what: 'NON-SPEC (#255). GET /admin/geolocation over JSON.' },
   { path: '/admin-api/risk/upload', group: 'Management API',
     name: 'Risk dataset upload', specs: ['openapi'],
     what: 'NON-SPEC (#215). POST /admin/risk/upload for a machine: the body ' +
@@ -7751,6 +7908,41 @@ const ENDPOINTS: EndpointEntry[] = [
           'Native SSO secret and whether that secret\'s session is live. ' +
           'POST /admin-api/users/remove-device removes one. Mirrors the ' +
           'Devices block on the person\'s /admin/users page.' },
+  { path: '/admin-api/devices', group: 'Management API',
+    name: 'The device register', specs: ['oidc-native-sso', 'openapi'],
+    what: 'NON-SPEC (#164, #218). GET /admin/devices over JSON: every ' +
+          'device in the realm, paged (devicesPaging) and filtered by q, ' +
+          'ownerKind, owner, application, compliance, attestation, keyKind ' +
+          'and status; ?device= is one device, found or not.' },
+  { path: '/admin-api/devices/:action', group: 'Management API',
+    name: 'Device register actions', specs: ['openapi'],
+    effect: 'registers, edits or removes a device, adds or removes a key, ' +
+            'sets its compliance, or marks it compromised or restores it',
+    what: 'NON-SPEC (#164, #218). create, update, remove, add-key, ' +
+          'remove-key, set-compliance and set-status: the console\'s seven ' +
+          'forms. A key is recorded as proven by nobody and self-asserted.' },
+  { path: '/admin-api/device-compliance', group: 'Management API',
+    name: 'The device compliance feed (MDM / posture)',
+    specs: ['caep', 'openapi'],
+    effect: 'sets the compliance of one device or a batch',
+    what: 'NON-SPEC (#164 decision 2). An MDM or posture feed reports ' +
+          'device compliance — one report or up to ' +
+          'devices.complianceFeedMaxReports, each naming its device by id, ' +
+          'key thumbprint or certificate — with an access token carrying ' +
+          'the PROTECTED device:compliance scope (#110: issued only to a ' +
+          'client that declares it, in both modes) and no admin scope; ' +
+          'an admin:write token is refused. Source mdm, the client as ' +
+          'actor; a change sends CAEP device-compliance-change.' },
+  { path: '/admin-api/device-registration', group: 'Management API',
+    name: 'Device registration', specs: ['openapi'],
+    what: 'NON-SPEC (#218). GET /admin/device-registration over JSON: the ' +
+          'enrolment methods and which are built, the recognition kinds, ' +
+          'the vocabularies and the Devices settings.' },
+  { path: '/admin-api/devices/monitor', group: 'Management API',
+    name: 'The device register, counted', specs: ['openapi'],
+    what: 'NON-SPEC (#218). GET /admin/devices/monitor over JSON: the ' +
+          'counts and the day-by-day timeline of registrations, removals ' +
+          'and evictions (?days=).' },
   { path: '/admin-api/users/self-issued-subjects', group: 'Management API',
     name: 'One person\'s self-issued (SIOPv2) subjects', specs: ['siopv2'],
     what: 'NON-SPEC (#129). The DIDs and JWK thumbprints enrolled for a ' +
@@ -7890,6 +8082,15 @@ const ENDPOINTS: EndpointEntry[] = [
           'null where nothing has been called, because an average over no ' +
           'samples is absent and a 100% success rate on nothing is the most ' +
           'misleading figure this reply could carry.' },
+  { path: '/admin-api/ssf/transmitters', group: 'Management API',
+    name: 'Foreign SSF transmitters', specs: ['openapi', 'ssf'],
+    what: 'GET /admin/ssf/transmitters over JSON (#153).' },
+  { path: '/admin-api/ssf/transmitters/:action', group: 'Management API',
+    name: 'Register a foreign transmitter, or act on its stream',
+    specs: ['openapi', 'ssf'],
+    what: 'add, create-stream, read-stream, update-stream, delete-stream, ' +
+          'set-status, add-subject, remove-subject, verify, poll-now and ' +
+          'remove: the console\'s acts (#153).' },
   { path: '/admin-api/ssf', group: 'Management API', name: 'Shared Signals',
     specs: ['openapi', 'ssf', 'rfc8417'],
     what: 'GET /admin/ssf over JSON: the streams, their subjects, their ' +
@@ -7898,6 +8099,18 @@ const ENDPOINTS: EndpointEntry[] = [
           'Token in the reply carries a credential — a SET is signed and its ' +
           '`aud` is the stream, which is the whole of what makes it safe to ' +
           'publish here.' },
+  { path: '/admin-api/deliveries', group: 'Management API',
+    name: 'Outbound deliveries',
+    specs: ['openapi', 'oidc-bclogout', 'oidc-ciba',
+            'oidc-provider-commands'],
+    what: 'GET /admin/deliveries over JSON (#151): each kind\'s counts and ' +
+          'rows, narrowed by ?state=, ?kind= and ?q=.' },
+  { path: '/admin-api/deliveries/:action', group: 'Management API',
+    name: 'Retry an outbound delivery',
+    specs: ['openapi', 'oidc-bclogout', 'oidc-ciba',
+            'oidc-provider-commands'],
+    what: 'retry: a dead letter of any kind sent again as a new generation ' +
+          '(#151).' },
   { path: '/admin-api/ssf/dead-letters', group: 'Management API',
     name: 'Dead letters', specs: ['openapi', 'ssf', 'rfc8935'],
     what: 'GET /admin/ssf/dead-letters over JSON: this realm\'s dead-letter ' +
@@ -8499,6 +8712,13 @@ const ENDPOINTS: EndpointEntry[] = [
           'xacmlPolicyDocument reaches the entry directly, and nothing ' +
           'caches these entries. Read-only; the repository is edited through ' +
           '/admin-api/xacml.' },
+  { path: '/admin-api/ldap/devices', group: 'Management API',
+    name: 'The device register as the directory holds it',
+    specs: ['rfc4511', 'rfc4512', 'rfc4519', 'openapi'],
+    what: 'GET /admin/ldap/devices over JSON (#218): every ou=devices entry ' +
+          'with every attribute but the withheld Native SSO hash, paged and ' +
+          'searched, and the schema. Read-only; the register is edited ' +
+          'through /admin-api/devices.' },
   { path: '/admin-api/ldap/peps', group: 'Management API',
     name: 'The registered remote PEPs as the directory holds them',
     specs: ['rfc4511', 'rfc4512', 'xacml30', 'openapi'],
@@ -9939,6 +10159,18 @@ const ENDPOINTS: EndpointEntry[] = [
           'code presented a second time is refused rather than answered with ' +
           'the tokens it already bought, and those tokens are revoked ' +
           '(section 4.5, and RFC 6749 section 10.5 for the revocation).' },
+  { path: '/devices/test/compliance', group: 'Shared Signals',
+    name: 'Device compliance test control (not a spec endpoint)',
+    specs: ['caep'],
+    effect: 'sets a device\'s compliance, with no credential',
+    what: 'NON-SPEC (#164 decision 9), for tests: the MDM feed\'s body — a ' +
+          'report naming a device by id, thumbprint or certificate, or ' +
+          'reports: [...] — WITHOUT the device:compliance scope, recorded ' +
+          'with source test-control, so a client under test can drive the ' +
+          'CAEP device-compliance-change it reacts to. PRODUCT MODE REFUSES ' +
+          'IT with 403 (mode.opensTestControls(), STS-DEVICE-0035): there ' +
+          'the feed at /admin-api/device-compliance, under its scope, is ' +
+          'the door.' },
   { path: '/dpop/nonce-mode', group: 'OAuth 2.0 / OIDC',
     name: 'DPoP nonce switch (not a spec endpoint)', specs: [],
     what: 'NON-SPEC, for tests and for trying the handshake by hand: turns ' +
@@ -10242,6 +10474,34 @@ const ENDPOINTS: EndpointEntry[] = [
     name: 'Revoke a grant', specs: ['oauth-grant-management'],
     what: 'revoke-grant: what a client\'s DELETE does, done by an ' +
           'administrator.' },
+  { path: '/admin/commands', group: 'OAuth 2.0 / OIDC',
+    name: 'The OpenID Provider Commands console page',
+    specs: ['oidc-provider-commands'],
+    what: 'Each client\'s command_endpoint and what it supports, sending an ' +
+          'account or tenant command, the account-state register, the ' +
+          'tenant runs and the command deliveries with Retry (#151).' },
+  { path: '/admin-api/commands', group: 'OAuth 2.0 / OIDC',
+    name: 'The OpenID Provider Commands console page over JSON',
+    specs: ['oidc-provider-commands', 'openapi'],
+    what: 'GET /admin/commands\' report (#151).' },
+  { path: '/admin-api/commands/:action', group: 'OAuth 2.0 / OIDC',
+    name: 'Send a command, or retry one',
+    specs: ['oidc-provider-commands', 'openapi'],
+    what: 'send-account, send-tenant and retry-delivery: the console\'s ' +
+          'three acts (#151).' },
+  { path: '/oauth2/commands/callback', group: 'OAuth 2.0 / OIDC',
+    name: 'OpenID Provider Commands callback endpoint',
+    specs: ['oidc-provider-commands', 'rfc6750'],
+    what: 'Where a relying party POSTs an _async command\'s result or asks ' +
+          'for a fresh metadata or audit_tenant, Bearer the callback_token ' +
+          'the command carried (#151). 204, or RFC 6750\'s errors.' },
+  { path: '/oauth2/commands/mock-rp', group: 'OAuth 2.0 / OIDC',
+    name: 'Mock relying party command endpoint (not a spec endpoint)',
+    specs: ['oidc-provider-commands'],
+    what: 'NON-SPEC, development only (#151): a relying party\'s ' +
+          'command_endpoint that checks a Command Token as section 9 asks ' +
+          'and answers every account and tenant command, streams included; ' +
+          'GET shows what it holds. 404 in product mode.' },
   { path: '/admin/claim-providers', group: 'OAuth 2.0 / OIDC',
     name: 'The Claims Providers console page',
     specs: ['oidc-claims-aggregation'],
@@ -10549,7 +10809,22 @@ const ENDPOINTS: EndpointEntry[] = [
                                'to the wallet',
     what: 'response_type=vp_token with a DCQL query, a fresh nonce and ' +
           'response_mode=direct_post, passed by value or by reference, with ' +
-          'a QR screen for cross-device.' },
+          'a QR screen for cross-device. `client_id_prefix` names the ' +
+          'Client Identifier Prefix of THIS request (section 5.9) and makes ' +
+          'it signed; an x509 prefix certifies the Verifier first (#230).' },
+  { path: '/oid4vp/verifier-certificate', group: 'VC Presentation (OID4VP)',
+    name: 'The Verifier\'s x509 identity',
+    specs: ['oid4vp', 'rfc5280'],
+    what: 'JSON: the x509_san_dns and x509_hash Client Identifiers this ' +
+          'realm\'s Verifier signs under (OpenID4VP 1.0 section 5.9.3), ' +
+          'each with its certificate, the x5c the Request Object carries ' +
+          'and the trust anchor a wallet is configured with — what a ' +
+          'wallet or a conformance suite needs before it will accept one ' +
+          '(#230). Asking certifies the Verifier as a request would. ' +
+          'no-store. The x509_san_dns half is null, with the refusal, ' +
+          'where no name can be certified (product mode with neither ' +
+          'oid4vp.x509DnsName nor global.publicBaseUrl); 409 when neither ' +
+          'half can answer.' },
   { path: '/oid4vp/request/:id', group: 'VC Presentation (OID4VP)',
     name: 'Request ' +
       'Object',
@@ -11006,7 +11281,8 @@ const PROTOCOLS: Protocol[] = [
     specs: ['rfc6749', 'oidc', 'rfc8414', 'rfc9700', 'oauth21',
             'oauth-attestation', 'oidc-session', 'oidc-ida-claims', 'oidc-ida', 'oidc-native-sso',
             'oidc-ciba', 'fapi-ciba', 'oauth-grant-management',
-            'oidc-claims-aggregation', 'oidc-enterprise', 'oidc-ephemeral'],
+            'oidc-claims-aggregation', 'oidc-enterprise', 'oidc-ephemeral',
+            'oidc-provider-commands'],
     what: 'A mock authorization server and OpenID Provider: all five grants, ' +
           'PKCE, DPoP, introspection, revocation, dynamic registration, ' +
           'UserInfo and RP-initiated logout, with as many named ' +

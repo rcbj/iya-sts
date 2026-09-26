@@ -409,6 +409,21 @@ const JOBS = [
   // missing token, the wrong body type. `local: true`: this repository's own
   // /admin and /admin-api.
   { file: 'sts_admin_risk_upload.js',    browser: false, local: true },
+  // MONITORING → GEOLOCATION (#255, 2026-09-26): the live window counting
+  // this job's own sign-in, every window and level in its shape with every
+  // count at or over risk.geoMinimumCount or held back, the four refusals,
+  // and the page — the map inline with no script, the zoom trail, the
+  // outlines credited, ?format=json the API's answer. Loads no dataset.
+  // `local: true`: this repository's own /admin and /admin-api.
+  { file: 'sts_admin_geolocation.js',    browser: false, local: true },
+  // EVERY CLOSED SET AN ADMINISTRATOR CAN TYPE INTO (#86, 2026-09-26): each
+  // enum the OpenAPI document declares — request bodies, query parameters —
+  // refused outside its set with the one sentence, and accepted from it
+  // without the operation running; each console control a set is registered
+  // for refused as a real form; each runtime enum setting refused through
+  // both doors. Discovered from the document, never listed. `local: true`:
+  // this repository's own /admin and /admin-api.
+  { file: 'sts_admin_closed_sets.js',    browser: false, local: true },
   // SIGNING KEY ROTATION OVER HTTP (#42/#48, 2026-09-22): the refusals, a
   // rotation keeping the retired key verifying, the /admin/keys Rotate form,
   // and an emergency after which an earlier token is refused — in a
@@ -749,6 +764,20 @@ const JOBS = [
   // on the kvno — in both modes. `local: true`: this repository's KDC,
   // scheduler and API.
   { file: 'sts_kerberos_krbtgt_rotation.js', browser: false, local: true },
+  // SAMBA'S RAW KERBEROS KDC TESTS (#204, 2026-09-26): python/samba/tests/
+  // krb5 from a pinned Samba built into the tests image (GPL-3.0, never
+  // vendored), every module run unchanged by tests/kerberos-interop/
+  // samba_krb5_driver.py against a throwaway development realm's KDC on TCP
+  // 88 — the AD-only tests skipped by reason, every failure fixed or a
+  // documented exception. `local: true`: this repository's KDC.
+  { file: 'sts_kerberos_samba.js',       browser: false, local: true,
+    timeoutMs: 900000 },
+  // HEIMDAL'S CLIENT TOOLS BESIDE MIT'S (#205, 2026-09-26): kinit, klist,
+  // kgetcred, kvno, ktutil, gss-token and a Heimdal-GSSAPI curl, built into
+  // the tests image from a pinned commit — AS and TGS per realm (FAST-armored
+  // by Heimdal, hide-client-names), keytabs, FAST, RC4 by mode and SPNEGO at
+  // /authn/spnego, in both modes. `local: true`: this repository's KDC.
+  { file: 'sts_kerberos_heimdal.js',     browser: false, local: true },
   // Both gRPC surfaces over the network. Since #166 (2026-09-23) also the
   // Workload API's TCP port in product: refused where the network is not
   // declared to authenticate source addresses, and entries selecting this
@@ -766,11 +795,24 @@ const JOBS = [
   // self-issued sign-in and its refusals, and the Verifier's form_post.
   // `local: true`: this repository's own door.
   { file: 'sts_siop.js',                 browser: false, local: true },
+  // THE x509_san_dns AND x509_hash CLIENT IDENTIFIERS (#230, 2026-09-26):
+  // each prefix's Request Object checked as a wallet checks it — the x5c
+  // chain to the service Root, the signature, the dNSName or the hash — a
+  // mismatch refused, the realm's own setting, and the Verifier refusing a
+  // name that is not the Response URI's host. `local: true`: this
+  // repository's Verifier.
+  { file: 'sts_oid4vp_x509.js',          browser: false, local: true },
   // OPENID CONNECT NATIVE SSO AND THE DEVICE REGISTER (#130, 2026-09-23):
   // the device secret and its ou=devices entry, the section 4 exchange and
   // its refusals, RFC 8693's token types, a session ending, revocation.
   // `local: true`: this repository's authorization server and API.
   { file: 'sts_native_sso.js',           browser: false, local: true },
+  // THE DEVICE REGISTER (#164 phase 1, #218, 2026-09-26): a person's and an
+  // application's device registered through /admin-api, the lists and their
+  // filters and paging, keys added and refused, the bound, Monitoring →
+  // Devices, Device registration and /admin/ldap/devices. `local: true`:
+  // this repository's register and API.
+  { file: 'sts_devices.js',              browser: false, local: true },
   // OPENID CONNECT CIBA (#131, 2026-09-23): the endpoint's refusals, poll
   // with an approval on /portal/ciba, deny, the user code, and ping and
   // push in development. `local: true`: this repository's own endpoint.
@@ -824,6 +866,16 @@ const JOBS = [
   // flow end to end through /portal/device, c_s256, a bound ID Token, its
   // refresh and section 7, and an ML-DSA-44 DPoP key. `local: true`.
   { file: 'sts_device_key_binding.js',   browser: false, local: true },
+  // OPENID PROVIDER COMMANDS (#151, 2026-09-26): registration, metadata,
+  // account commands, the callback, automatic suspend and reactivate, a
+  // resumed tenant stream and a retried delivery, against the mock relying
+  // party. `local: true`.
+  { file: 'sts_provider_commands.js',    browser: false, local: true },
+  // SSF AS THE RECEIVER OF A FOREIGN TRANSMITTER (#153, 2026-09-26): one
+  // realm's transmitter as the "foreign" one, another realm receiving by
+  // poll and push, verifying and acting through a federation link.
+  // `local: true`.
+  { file: 'sts_ssf_foreign_receiver.js', browser: false, local: true },
   // THE OPENID FOUNDATION'S CONFORMANCE SUITE (#176, 2026-09-24): FAPI 2.0
   // Security Profile and Message Signing, FAPI 1.0 Advanced and FAPI-CIBA,
   // each plan a throwaway realm, every module run, and a FAILED module a

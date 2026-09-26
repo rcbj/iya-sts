@@ -189,6 +189,10 @@ import audit = require('../common/audit');
 // The client's JA4 TLS fingerprint, for the authentication event (#62 P0). A
 // LIBRARY (rule 3) with library requires only.
 import clientHello = require('../tls/client_hello');
+// WHICH REGISTERED DEVICE PROVED AN AUTHENTICATION (#164 phase 2): a
+// library over the device register that registers nothing and requires
+// nothing of this module's (`common/device_recognition.ts`).
+import deviceRecognition = require('../common/device_recognition');
 // ONE END PER SESSION IN THE CLUSTER (2026-09-14, #46 section 6). A library:
 // it requires `persistence.js` lazily and registers nothing. See
 // sessionEndOnce() below.
@@ -395,6 +399,11 @@ const sessions = realms.map({ persist: 'authn.sessions', tombstone: true,
 // this behaves as the plain Map it replaced. See common/realms.js.
 // authn id -> { returnTo, details, ... }
 const pending = realms.map({ persist: 'authn.pending', retain: 'age' });
+
+// ONE DEVICE RECOGNITION PER REQUEST AND CREDENTIAL (#164 phase 5): see
+// `registeredDeviceFor()`. Keyed WEAKLY by the request object, so it lives
+// exactly as long as the request and needs no sweep.
+const recognitionMemo = new WeakMap<object, Map<string, any>>();
 
 // WebAuthn, IN EITHER OF ITS TWO ROLES. The verifier is ./webauthn — written
 // from the specification and sharing no code with the debugger's own decoder,
@@ -1047,6 +1056,7 @@ type SessionRow = Record<string, any>;
 interface AuthnDeps {
   accountSignals: typeof accountSignals;
   clientHello: typeof clientHello;
+  deviceRecognition: typeof deviceRecognition;
   crypto: typeof crypto;
   stsCrypto: typeof stsCrypto;
   realms: typeof realms;
@@ -1096,6 +1106,7 @@ class Authn {
     return {
       accountSignals: accountSignals,
       clientHello: clientHello,
+      deviceRecognition: deviceRecognition,
       crypto: crypto,
       stsCrypto: stsCrypto,
       realms: realms,
@@ -2872,7 +2883,7 @@ class Authn {
   // plain-HTTP port has no ClientHello — and an empty field is the truth
   // rather than a gap. See `eventContext()`.
   // ---------------------------------------------------------------------------
-  private authenticationEvent(amr, acr, via, extra) {
+  private authenticationEvent(amr, acr, via, extra, username?) {
     const { log, nowSec } = this.deps;
     log.debug("Entering Authn.authenticationEvent().");
     const detail = extra || {};
@@ -2894,8 +2905,130 @@ class Authn {
       authenticated: detail.authenticated !== false,
       authority: authority,
       evidence: detail.key ? String(detail.key) : '',
-      context: this.eventContext(detail)
+      context: this.eventContext(detail),
+      registeredDevice: this.registeredDeviceFor(detail, username)
     };
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE REGISTERED DEVICE THAT PROVED THIS AUTHENTICATION (#164 decision 1,
+  // phase 2, 2026-09-26), or null: a linked WebAuthn credential that
+  // answered, or the client certificate on this connection, recognised by
+  // `common/device_recognition.ts`, which argues what counts. It is recorded
+  // on the EVENT, beside `context`, as `registeredDevice` — `context.device`
+  // is the browser fingerprint (#62 P6), a different thing — so every event
+  // of a session says which device proved it, and later phases (compliance,
+  // risk, policy, CAEP, token claims) read it from the session through
+  // `registeredDeviceOf()`. A compromised device is recognised and says so.
+  // A recogniser that throws records nothing and refuses nothing: a sign-in
+  // is not the place a device register's defect should show.
+  // ---------------------------------------------------------------------------
+  //
+  // `username` (#164 phase 5) is who is signing in, which sets the fact's
+  // `ownerMatches`. ONE RECOGNITION PER REQUEST AND CREDENTIAL: a door that
+  // assesses the sign-in's risk before the session exists (`assessSignIn()`)
+  // asks here, and the session's event asks again a moment later for the
+  // same request — the answer is remembered on the request, so the device's
+  // last use moves once and Monitoring → Devices counts one recognition.
+  // ---------------------------------------------------------------------------
+  private registeredDeviceFor(detail, username?) {
+    const { log, audit, deviceRecognition } = this.deps;
+    log.debug("Entering Authn.registeredDeviceFor().");
+    const given = detail.credential || {};
+    const request = detail.request || audit.currentRequest();
+    const credentialId = given.kind === 'webauthn' ? String(given.id || '')
+                                                   : '';
+    const memoKey = credentialId + '\u0000' + String(username || '');
+    const memo = request && typeof request === 'object'
+      ? recognitionMemo.get(request) : null;
+    if (memo && memo.has(memoKey)) {
+      log.debug("Leaving Authn.registeredDeviceFor(). Already recognised.");
+      return memo.get(memoKey);
+    }
+    let fact = null;
+    try {
+      fact = deviceRecognition.recognize({
+        request: request,
+        webauthnCredentialId: credentialId,
+        subject: username === undefined ? undefined : String(username),
+        clientId: detail.application || undefined });
+      if (request && typeof request === 'object') {
+        const held = memo || new Map();
+        held.set(memoKey, fact);
+        recognitionMemo.set(request, held);
+      }
+    } catch (e) {
+      log.error(this.deps.errorCodes.tag('STS-DEVICE-0029') + 'authn: ' +
+                'recognising the device behind a sign-in threw: ' +
+                ((e && e.stack) || e));
+      fact = null;
+    }
+    log.debug("Leaving Authn.registeredDeviceFor(). " +
+              (fact ? fact.id : 'none'));
+    return fact;
+  }
+
+  // -------------------------------------------------------------------------
+  // THE DEVICE ALONE, PUT TO THE ISSUANCE POLICY (#164 phase 6) for a door
+  // that asked the rest before its credential was complete (`gated`). Asked
+  // only where a device rule could refuse — the realm requires a compliant
+  // device, or this one is compromised and the realm refuses one — so every
+  // other gated sign-in costs nothing new. The role question is waived and
+  // no risk facts are sent: both were asked already, and only a Deny about
+  // the device refuses. True when it refused, with `refusedWith` and
+  // `refusedWhy` on the caller's `detail`, as every refusal here writes.
+  // -------------------------------------------------------------------------
+  private refusedOnDevice(detail, username, via): boolean {
+    const { log, gate, audit } = this.deps;
+    log.debug("Entering Authn.refusedOnDevice().");
+    const requirement = gate.deviceRequirementOf();
+    const fact = this.registeredDeviceFor(detail, username);
+    const matters = requirement.indexOf('compliant') >= 0 ||
+      (!!fact && fact.status === 'compromised' &&
+       requirement.indexOf('not-compromised') >= 0);
+    if (!matters) {
+      log.debug("Leaving Authn.refusedOnDevice(). No device rule applies.");
+      return false;
+    }
+    const answer = gate.check({
+      application: String(detail.application || ''),
+      kind: gate.ISSUANCE.SESSION,
+      subject: { kind: 'user', name: username,
+                 authenticated: detail.authenticated !== false },
+      claims: null, risk: null, rolesWaived: true, device: fact });
+    if (answer.allowed || !answer.device) {
+      log.debug("Leaving Authn.refusedOnDevice(). Allowed.");
+      return false;
+    }
+    const code = answer.device.refusal === 'compromised' ? 'STS-DEVICE-0038'
+                                                         : 'STS-DEVICE-0037';
+    audit.audit({
+      action: 'session.refuse', actor: username, errorCode: code,
+      protocol: via || 'OAuth 2.0 / OIDC', channel: 'http', target: '',
+      summary: 'a session for ' + username + ' was refused on its device ' +
+               'at the ' + (via || 'sign-in') + ' door',
+      detail: { why: answer.why, application: String(detail.application ||
+                                                     ''),
+                device: fact ? String(fact.id) : '',
+                policy: answer.policy || '' } });
+    detail.refusedWith = code;
+    detail.refusedWhy = answer.why;
+    log.info('authn: a session for "' + username + '" was REFUSED on its ' +
+             'device (' + answer.device.refusal + ').');
+    log.debug("Leaving Authn.refusedOnDevice(). Refused.");
+    return true;
+  }
+
+  // The registered device the session's LATEST authentication event
+  // recognised, or null (#164 phase 2). What a later phase reads.
+  registeredDeviceOf(session) {
+    const { log } = this.deps;
+    log.debug("Entering Authn.registeredDeviceOf().");
+    const events = session && Array.isArray(session.events)
+      ? session.events : [];
+    const last = events.length ? events[events.length - 1] : null;
+    log.debug("Leaving Authn.registeredDeviceOf().");
+    return (last && last.registeredDevice) || null;
   }
 
   // ---------------------------------------------------------------------------
@@ -3079,7 +3212,7 @@ class Authn {
       authTime: session.authTime || 0,
       via: session.via || ''
     };
-    const event = this.authenticationEvent(amr, acr, via, extra);
+    const event = this.authenticationEvent(amr, acr, via, extra, username);
     // A row persisted before events existed has none. It is given one standing
     // for the authentication it recorded, so the list is never missing its
     // beginning.
@@ -3241,6 +3374,7 @@ class Authn {
         sessionId: session.id, door: String(via || event.via || ''),
         clientId: String(detail.application || ''),
         context: event.context || {},
+        registeredDevice: event.registeredDevice || null,
         userAgent: String(headers['user-agent'] || '') });
     } catch (e) {
       log.debug("Caught in Authn.assessRisk(): " + ((e && e.message) || e));
@@ -3377,6 +3511,11 @@ class Authn {
       username: String(session.user.username || ''), sessionId: session.id,
       door: 'a live session whose ' + moved.join(' and ') + ' changed',
       clientId: '', context: now, phase: 'session',
+      // What THIS request proves about a registered device (#164 phase 5):
+      // a client certificate on its connection, or nothing — a replayed
+      // cookie proves no device, which is what the device signals then say.
+      registeredDevice: this.registeredDeviceFor({ request: req },
+        String(session.user.username || '')),
       userAgent: String(headers['user-agent'] || '') })
       .then(function (assessment: any): void {
         if (assessment) {
@@ -3520,6 +3659,10 @@ class Authn {
       username: String(username), sessionId: '',
       door: String(via || ''), clientId: String(d.application || ''),
       context: this.eventContext(d),
+      // THE REGISTERED DEVICE, recognised NOW (#164 phase 5) — before the
+      // session and its event exist, because the risk engine scores it; the
+      // event asks again for the same request and gets this same answer.
+      registeredDevice: this.registeredDeviceFor(d, String(username)),
       userAgent: String(headers['user-agent'] || '') });
     log.debug("Leaving Authn.assessSignIn(). " +
               (assessment ? assessment.level : 'Not assessed.'));
@@ -3802,7 +3945,17 @@ class Authn {
           : { amr: (amr || []).map(String), acr: String(acr || ''),
               kinds: extra.credential && extra.credential.kind
                 ? [String(extra.credential.kind)] : [] }
-      }, extra.risk !== undefined && riskEngine
+      }, extra.key
+        // A KEYED API CALLER (SCIM, SPIRE, the management API) is asked no
+        // device question here (#164 phase 6): its credential is presented
+        // per request, and the device rules decide the TOKEN that
+        // credential was issued with, at the token endpoint.
+        ? { deviceDeferred: true }
+        // THE REGISTERED DEVICE THIS SIGN-IN PROVED (#164 phase 6) — the
+        // same recognition the event below records — for the policy's two
+        // device rules.
+        : { device: this.registeredDeviceFor(extra, username) },
+      extra.risk !== undefined && riskEngine
         ? { risk: riskEngine.factsOf(risk, amr, acr,
                                      extra.credential &&
                                      extra.credential.kind
@@ -3856,12 +4009,24 @@ class Authn {
                     application: String(extra.application || ''),
                     policy: sessionAnswer.policy || '' }
         });
-        extra.refusedWith = 'STS-AUTHN-0010';
+        extra.refusedWith = sessionAnswer.device
+          ? (sessionAnswer.device.refusal === 'compromised'
+            ? 'STS-DEVICE-0038' : 'STS-DEVICE-0037')
+          : 'STS-AUTHN-0010';
         extra.refusedWhy = sessionAnswer.why;
         log.debug("Leaving Authn.startSession(). The issuance policy refused " +
                   "it.");
         return null;
       }
+    } else if (!extra.key && this.refusedOnDevice(extra, username, via)) {
+      // THE DEVICE QUESTION A GATED DOOR COULD NOT ASK (#164 phase 6). The
+      // sign-in screen asks the policy BEFORE its credential is complete —
+      // ahead of a WebAuthn ceremony that may be the very key naming the
+      // device — so it leaves the device out (`deviceDeferred`), and the
+      // question is asked here, of the credential the session actually
+      // stands on, about the device alone.
+      log.debug("Leaving Authn.startSession(). Refused on the device.");
+      return null;
     }
 
     // -------------------------------------------------------------------------
@@ -3961,7 +4126,8 @@ class Authn {
     // credential-fingerprint branch above gives about the creation instant.
     // ---------------------------------------------------------------------
     const sessionId = arrived ? arrived.id : randomId(24);
-    const firstEvent = this.authenticationEvent(amr, acr, via, extra);
+    const firstEvent = this.authenticationEvent(amr, acr, via, extra,
+                                                username);
     const authenticatedNow = extra.authenticated !== false;
     // ---------------------------------------------------------------------
     // THE AUTHENTICATION IS RECORDED BEFORE THE SESSION IS BUILT (2026-09-14),
@@ -5789,7 +5955,9 @@ class Authn {
         kind: gate.ISSUANCE.SESSION,
         subject: { kind: 'user', name: username, authenticated: true },
         claims: null,
-        risk: engine.factsOf(risk, outcome.amr || ['pop'], outcome.acr || '1')
+        risk: engine.factsOf(risk, outcome.amr || ['pop'], outcome.acr || '1'),
+        // The session's start asks about the device (#164 phase 6).
+        deviceDeferred: true
       });
       if (!riskAnswer.allowed && riskAnswer.risk &&
           !riskAnswer.risk.observed) {
@@ -5821,8 +5989,10 @@ class Authn {
       kind: gate.ISSUANCE.SESSION,
       subject: { kind: 'user', name: username, authenticated: true },
       claims: null,
-      // The roles alone: the risk was asked above.
-      risk: null
+      // The roles alone: the risk was asked above, and the session's start
+      // asks about the device (#164 phase 6).
+      risk: null,
+      deviceDeferred: true
     });
     if (!roleAnswer.allowed) {
       log.debug("Leaving Authn.beginSecondFactorAfterWallet(). Refused.");
@@ -6931,7 +7101,12 @@ class Authn {
       application: String(record.application || ''),
       kind: gate.ISSUANCE.SESSION,
       subject: { kind: 'user', name: username, authenticated: true },
-      claims: null
+      claims: null,
+      // NOT THE DEVICE, YET (#164 phase 6): the key that may name it — a
+      // passwordless or second-factor WebAuthn ceremony — has not been
+      // presented. The session's start asks about it (`refusedOnDevice()`
+      // for the password-only path, the policy for the rest).
+      deviceDeferred: true
     }, riskEngine ? { risk: riskEngine.factsOf(risk,
       passwordless ? ['hwk'] : ['pwd'], '1') } : {}));
     let riskDecision = 'permit';
@@ -8908,7 +9083,9 @@ class Authn {
           kind: gate.ISSUANCE.SESSION,
           subject: { kind: 'user', name: ANONYMOUS_USERNAME,
                      authenticated: false },
-          claims: null
+          claims: null,
+          // Asked at the session's start (#164 phase 6).
+          deviceDeferred: true
         });
         if (!anonRoleAnswer.allowed) {
           log.info('authn: the issuance policy refused an unauthenticated ' +
@@ -10633,6 +10810,7 @@ export = {
   // itself would be a second place to get the handle check wrong.
   sessionStartedAt: slot.forward('sessionStartedAt'),
   signOnFactsFor: slot.forward('signOnFactsFor'),
+  registeredDeviceOf: slot.forward('registeredDeviceOf'),
   cookieSession: slot.forward('cookieSession'),
   MAX_SESSION_EVENTS: MAX_SESSION_EVENTS,
   startArrivalSession: slot.forward('startArrivalSession'),

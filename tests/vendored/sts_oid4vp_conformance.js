@@ -103,7 +103,7 @@ const PLANS = [
 
 const EXPECTED = {};
 // Conditions whose WARNING this service keeps, and why — the same sentences
-// as `oauth-oidc/CLAUDE.md` 3bl.
+// as `oauth-oidc/CLAUDE.md` 3bp.
 const KNOWN_WARNINGS = {
   WarnOnUnusableJwksKeys: "the realm's JWKS carries post-quantum keys " +
     "(kty AKP) the suite cannot parse; rcbj (2026-09-24): PQC support " +

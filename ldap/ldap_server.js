@@ -338,6 +338,12 @@ const consent = require('../common/consent');
 // and requires nothing here, so this require can neither move a route nor close
 // a cycle; what crosses is the two functions the slot below installs.
 const credentials = require('../common/credentials');
+// The device register (#164), for `/admin/ldap/devices`: its schema and what
+// its entries mean. A library built before this module and loaded by it
+// already through `credentials`' neighbours — a cache hit, which moves no
+// route and closes no cycle (it reaches the directory only through the
+// `credentials.deviceStore()` hooks this file installs).
+const devices = require('../common/devices');
 // THE PASSWORD POLICY REGISTER (2026-09-12). `ou=passwordPolicies` is its
 // store the way `ou=roles` is the role register's, and for `roles.js`'s reason
 // it is a LEAF — requiring `helpers.js`, `mode.js` and an npm package — so this
@@ -2111,6 +2117,23 @@ const OWN_NAMES = [
   // `common/devices.ts` keeps them.
   'stsDevice', 'stsDeviceApplication', 'stsDeviceSecretHash',
   'stsDeviceSession', 'stsDeviceLastUsed',
+  // AND THE REST OF WHAT A DEVICE IS (#164, 2026-09-26): its owner's kind (a
+  // person or an application), its keys (one JSON value each, public
+  // material only) and their thumbprint index, its attestation level,
+  // compliance and status with the last change of each, three descriptive
+  // labels and how it was enrolled. `common/devices.ts` argues the layout.
+  'stsDeviceOwnerKind', 'stsDeviceKey', 'stsDeviceKeyThumbprint',
+  'stsDeviceAttestation', 'stsDeviceCompliance', 'stsDeviceComplianceChange',
+  'stsDeviceStatus', 'stsDeviceStatusChange', 'stsDevicePlatform',
+  'stsDeviceModel', 'stsDeviceOs', 'stsDeviceEnrolment',
+  // AND EACH LINKED WEBAUTHN CREDENTIAL'S ID (#164 phase 6), derived from
+  // stsDeviceKey like the thumbprints, so a sign-in finds its device by
+  // index.
+  'stsDeviceCredentialId',
+  // AND ITS RISK LEVEL (#164 phase 4): LOW, MEDIUM or HIGH, and the last
+  // change of it — what CAEP's risk-level-change with principal DEVICE
+  // reports, set by phase 5's risk scoring and by a compromise.
+  'stsDeviceRiskLevel', 'stsDeviceRiskChange',
 
   // AND A PERSON'S CIBA USER CODE (#131, 2026-09-23): a secret they set on
   // /portal/ciba that a backchannel authentication request must carry when
@@ -3034,11 +3057,12 @@ function seed() {
   putEntry(devicesDn(), {
     objectClass: ['top', 'organizationalUnit'],
     ou: 'devices',
-    description: 'Devices: the phones and computers a person\'s applications ' +
-      'run on, each an RFC 4519 device whose owner is the person and whose ' +
-      'stsDeviceApplication values are the applications that have used it. ' +
-      'OpenID Connect Native SSO keeps its device_secret here, hashed ' +
-      '(common/devices.ts).'
+    description: 'Devices: the phones, computers and hosts this realm ' +
+      'knows, each an RFC 4519 device whose one owner is a person or an ' +
+      'application, whose stsDeviceApplication values are the applications ' +
+      'that have used it and whose stsDeviceKey values are the keys it is ' +
+      'recognised by. OpenID Connect Native SSO keeps its device_secret ' +
+      'here, hashed (common/devices.ts).'
   }, { origin: 'seed' });
   putEntry(oidfedDn(), {
     objectClass: ['top', 'organizationalUnit'],
@@ -9011,6 +9035,8 @@ function writeDeviceEntry(id, attributes) {
   log.debug('Entering writeDeviceEntry(). id=' + id);
   const dn = deviceDn(id);
   const existing = getEntry(dn);
+  // Read BEFORE the write, for usernameIndexIsCurrent()'s reason.
+  const indexWasCurrent = deviceIndexIsCurrent();
   if (!existing && totalEntries() >= maxEntries()) {
     log.warn(errorCodes.tag('STS-LDAP-0007') +
              'ldap: not creating ' + dn + '; the directory holds its ' +
@@ -9024,6 +9050,7 @@ function writeDeviceEntry(id, attributes) {
   stored.createdAt = created;
   stored.attributes.createtimestamp = [created];
   stored.attributes.modifytimestamp = [generalizedTime()];
+  noteDeviceIndexWrite(stored, indexWasCurrent);
   log.debug('Leaving writeDeviceEntry(). ' + (existing ? 'Replaced.' :
                                                          'Created.'));
   return true;
@@ -9040,6 +9067,159 @@ function deleteDeviceEntry(id) {
   touchDirectory();
   log.debug('Leaving deleteDeviceEntry().');
   return true;
+}
+
+// ---------------------------------------------------------------------------
+// ONE DEVICE BY AN INDEXED ATTRIBUTE (#164 phase 3, 2026-09-26), and why it is
+// the entryUUID index's bargain rather than the username index's.
+//
+// Recognition asks "which device holds this key" on EVERY token request that
+// carries a DPoP proof, a client certificate or a Native SSO device_secret,
+// and until this it was answered by `listDeviceEntries()` — a copy of every
+// device entry — and a JSON parse of every key on every one of them: O(n) in
+// the register, on the hot path. Three attributes are looked up by value and
+// each names ONE device: `cn` (the id), `stsDeviceKeyThumbprint`
+// (`<kind>:<thumbprint>`, which `common/devices.ts` derives on every write so
+// that this lookup could exist) and `stsDeviceSecretHash`.
+//
+// **A HIT IS VALIDATED AGAINST THE STORE AND A MISS REBUILDS ONCE PER CHANGE
+// UNDER `ou=devices`.** The index maps a value to an entry's key; a hit is
+// believed only while that entry is still in the store and still carries the
+// value, so a write nobody hooked can cost a rebuild and never a wrong
+// answer. A miss — the common case, a DPoP key no device holds — rebuilds
+// only when `subtreeVersion(devicesDn())` has moved, the clock
+// `entriesUnder()` already trusts, so a miss is a Map lookup until something
+// is written under the container.
+//
+// **IT IS SAFE ACROSS PROCESSES AND NODES BECAUSE IT HOLDS NOTHING OF ITS
+// OWN.** The root CLAUDE.md's rule is that a store is shared by coordination
+// and a per-process cache must be keyed by something that replicates. This is
+// keyed by, and checked against, the directory entries themselves — which is
+// what the change log replicates into every process — and by the subtree
+// clock every replicated write moves. A device written on another node is
+// either found through a rebuild or found by the validated hit; it is never
+// answered from a copy this process made.
+// ---------------------------------------------------------------------------
+//
+// **PHASE 6 ADDED TWO** (2026-09-26): `stsDeviceCredentialId` (a linked
+// WebAuthn credential's id, which names one device as a thumbprint does) and
+// `owner`, which does NOT name one device — a person owns several — so the
+// index keeps the first entry found per owner and answers "is there one",
+// which is all `devices.holdsAny()` asks. That is also why a hit that FAILS
+// its validation now rebuilds: for a one-to-one value a stale hit can only
+// mean the value is gone, but for `owner` it may be one device that moved to
+// another owner while a sibling still names the first, and answering "none"
+// there would be a wrong answer rather than a slow one.
+const DEVICE_INDEXED = ['cn', 'stsdevicekeythumbprint', 'stsdevicesecrethash',
+                        'stsdevicecredentialid', 'owner'];
+
+const deviceIndexes = realms.keyed(function () {
+  return { index: null, version: -1, container: '', builds: 0 };
+});
+
+const deviceIndexCount = cacheRegistry.counter('ldap.device-index');
+
+// Whether this realm's device index is current right now. Read BEFORE a
+// write: afterwards the subtree clock has moved and cannot say.
+function deviceIndexIsCurrent() {
+  log.debug('Entering deviceIndexIsCurrent().');
+  const cache = deviceIndexes();
+  log.debug('Leaving deviceIndexIsCurrent().');
+  return !!cache.index && cache.version === subtreeVersion(devicesDn()) &&
+         cache.container === normalizeDn(devicesDn());
+}
+
+// THE REGISTER'S OWN WRITES KEEP THE INDEX IN STEP (the username index's
+// half of the bargain, for the load that needs it). Every recognition moves a
+// device's last use — at most once per devices.lastUsedResolutionSeconds —
+// and each such write moves the subtree clock; without this, the next MISS
+// (a DPoP key no device holds, the common case) would rebuild the index from
+// a fresh walk of the realm, once per write. So a write through
+// `writeDeviceEntry()` onto a CURRENT index adds the entry's values and
+// declares the index current again. A value the write took away is left in
+// the map and fails the hit's validation, which is all it can cost. A write
+// by any other path — the socket, a replicated change from another node —
+// is not seen here, leaves the clock ahead, and the next miss rebuilds.
+function noteDeviceIndexWrite(stored, wasCurrent) {
+  log.debug('Entering noteDeviceIndexWrite().');
+  const cache = deviceIndexes();
+  if (!wasCurrent || !cache.index) {
+    log.debug('Leaving noteDeviceIndexWrite(). Left to be rebuilt.');
+    return;
+  }
+  const key = normalizeDn(stored.dn);
+  DEVICE_INDEXED.forEach(function (name) {
+    (stored.attributes[name] || []).forEach(function (value) {
+      cache.index.set(name + '\u0000' + String(value), key);
+    });
+  });
+  cache.version = subtreeVersion(devicesDn());
+  log.debug('Leaving noteDeviceIndexWrite(). ' + cache.index.size + '.');
+}
+
+// The map, rebuilt from the container listing.
+function buildDeviceIndex(container) {
+  log.debug('Entering buildDeviceIndex().');
+  const index = new Map();
+  entriesUnder(container).forEach(function (stored) {
+    const key = normalizeDn(stored.dn);
+    DEVICE_INDEXED.forEach(function (name) {
+      (stored.attributes[name] || []).forEach(function (value) {
+        const slot = name + '\u0000' + String(value);
+        if (!index.has(slot)) {
+          index.set(slot, key);
+        }
+      });
+    });
+  });
+  log.debug('Leaving buildDeviceIndex(). ' + index.size + ' value(s).');
+  return index;
+}
+
+function deviceEntryByIndex(attribute, value) {
+  log.debug('Entering deviceEntryByIndex(). ' + attribute);
+  const name = String(attribute || '').toLowerCase();
+  const wanted = String(value === undefined || value === null ? '' : value);
+  if (DEVICE_INDEXED.indexOf(name) < 0 || !wanted) {
+    log.debug('Leaving deviceEntryByIndex(). Not an indexed lookup.');
+    return null;
+  }
+  const container = devicesDn();
+  const cache = deviceIndexes();
+  const slot = name + '\u0000' + wanted;
+  // A HOT PATH: once or twice per recognition, so no Entering/Leaving pair.
+  const lookup = function () {
+    const key = cache.index ? cache.index.get(slot) : null;
+    const stored = key ? entries.get(key) : null;
+    return stored && (stored.attributes[name] || []).some(function (one) {
+      return String(one) === wanted;
+    }) ? stored : null;
+  };
+  let found = lookup();
+  const version = subtreeVersion(container);
+  // A value the index maps to an entry that no longer carries it: stale.
+  const stale = !found && !!cache.index && cache.index.has(slot);
+  if (!found && (stale || cache.version !== version ||
+                 cache.container !== normalizeDn(container))) {
+    deviceIndexCount.miss();
+    cache.index = buildDeviceIndex(container);
+    cache.version = version;
+    cache.container = normalizeDn(container);
+    cache.builds += 1;
+    found = lookup();
+  } else {
+    deviceIndexCount.hit();
+  }
+  if (!found) {
+    log.debug('Leaving deviceEntryByIndex(). None.');
+    return null;
+  }
+  const attributes = {};
+  Object.keys(found.attributes).forEach(function (one) {
+    attributes[one] = found.attributes[one].slice(0);
+  });
+  log.debug('Leaving deviceEntryByIndex(). ' + found.dn);
+  return { dn: found.dn, attributes: attributes };
 }
 
 // THE OPENID FEDERATION REGISTER (#132): every entry under ou=oidfed,
@@ -9108,6 +9288,33 @@ function personDnOf(username) {
   const stored = existingUserEntry(String(username || ''));
   log.debug('Leaving personDnOf().');
   return stored ? stored.dn : '';
+}
+
+// WHO OWNS A DN (#164): { kind: 'person' | 'application', name, dn } for a
+// person (its uid) or an application entry (its appIdentifier), and null for
+// anything else — a device's `owner` must name one of the two, and a page
+// names the owner rather than printing a DN.
+function ownerOf(dn) {
+  log.debug('Entering ownerOf().');
+  const stored = getEntry(String(dn || ''));
+  if (!stored) {
+    log.debug('Leaving ownerOf(). No entry.');
+    return null;
+  }
+  if (isPersonEntry(stored)) {
+    log.debug('Leaving ownerOf(). A person.');
+    return { kind: 'person', dn: stored.dn,
+             name: String((stored.attributes.uid || [])[0] || '') };
+  }
+  if (isUnder(stored.dn, applicationsDn()) &&
+      normalizeDn(stored.dn) !== normalizeDn(applicationsDn())) {
+    log.debug('Leaving ownerOf(). An application.');
+    return { kind: 'application', dn: stored.dn,
+             name: String((stored.attributes.appidentifier || [])[0] ||
+                          (stored.attributes.cn || [])[0] || '') };
+  }
+  log.debug('Leaving ownerOf(). Neither.');
+  return null;
 }
 
 function applicationDnOf(clientId) {
@@ -9245,6 +9452,9 @@ if (typeof credentials.setDirectory === 'function') {
     listDeviceEntries: listDeviceEntries,
     writeDeviceEntry: writeDeviceEntry,
     deleteDeviceEntry: deleteDeviceEntry,
+    // One device by its id, a key thumbprint or its secret's hash (#164
+    // phase 3), without copying the register.
+    deviceEntryByIndex: deviceEntryByIndex,
     // The OpenID Federation register (#132), checked where it is used.
     listOidfedEntries: listOidfedEntries,
     writeOidfedEntry: writeOidfedEntry,
@@ -9262,6 +9472,7 @@ if (typeof credentials.setDirectory === 'function') {
     claimSourceTokenHolders: claimSourceTokenHolders,
     personDnOf: personDnOf,
     applicationDnOf: applicationDnOf,
+    ownerOf: ownerOf,
     writeSelfIssuedSubjects: writeSelfIssuedSubjects,
     selfIssuedSubjectOwner: selfIssuedSubjectOwner,
     writeIdaVerifications: writeIdaVerifications,
@@ -15113,6 +15324,30 @@ function peopleByFederationLink(value) {
   return out;
 }
 
+// Every person whose `mail` is this address, compared case-insensitively
+// (#153): a foreign transmitter's `email` subject, matched only where the
+// relationship allows it (`fedSignalEmailMatch`). More than one answer is
+// ambiguous, and the caller refuses it.
+function peopleByMail(address) {
+  log.debug('Entering peopleByMail().');
+  const wanted = String(address || '').trim().toLowerCase();
+  const out = [];
+  if (!wanted) {
+    log.debug('Leaving peopleByMail(). No address.');
+    return out;
+  }
+  eachEntryInRealm(function (stored) {
+    const mails = (stored.attributes.mail || []).map(function (one) {
+      return String(one).toLowerCase();
+    });
+    if (mails.indexOf(wanted) >= 0 && isPersonEntry(stored)) {
+      out.push({ username: usernameOfEntry(stored), dn: stored.dn });
+    }
+  });
+  log.debug('Leaving peopleByMail(). ' + out.length);
+  return out;
+}
+
 // Every link made through one relationship, for the relationship's page.
 function federationLinksThrough(fedId) {
   log.debug('Entering federationLinksThrough(). ' + fedId);
@@ -15219,6 +15454,7 @@ federation.setDirectory({
   // The people a partner's subjects are linked to (#109). See above.
   federationPerson: federationPerson,
   peopleByFederationLink: peopleByFederationLink,
+  peopleByMail: peopleByMail,
   federationLinksThrough: federationLinksThrough,
   plannedPersonDn: plannedPersonDn,
   writeFederationLink: writeFederationLink
@@ -15624,6 +15860,40 @@ function setAccountObserver(fn) {
             (accountObserver ? 'Installed.' : 'Cleared.'));
 }
 
+// MORE THAN ONE LISTENER (#151): OpenID Provider Commands sends `suspend`,
+// `reactivate`, `delete` and `maintain` on the same events Shared Signals
+// reads, and neither owns the other. The slot above stays SSF's; each
+// further listener is added here, told after it, and held to the same rule —
+// it never throws into a write.
+const accountListeners = [];
+
+function addAccountObserver(fn) {
+  log.debug('Entering addAccountObserver().');
+  if (typeof fn === 'function' && accountListeners.indexOf(fn) < 0) {
+    accountListeners.push(fn);
+  }
+  log.debug('Leaving addAccountObserver(). ' + accountListeners.length +
+            ' listener(s).');
+}
+
+// Every observer, the slot first; one that throws is logged and the write
+// stands.
+function tellAccountObservers(event) {
+  log.debug('Entering tellAccountObservers(). ' + event.kind);
+  const all = (accountObserver ? [accountObserver] : [])
+    .concat(accountListeners);
+  all.forEach(function (fn) {
+    try {
+      fn(event);
+    } catch (e) {
+      log.error(errorCodes.tag('STS-LDAP-0032') +
+                'ldap: an account observer threw on a ' + event.kind +
+                ' change and the write stands: ' + ((e && e.message) || e));
+    }
+  });
+  log.debug('Leaving tellAccountObservers().');
+}
+
 // A snapshot of one entry's attributes, deep enough to survive the write that
 // follows. A shallow copy would hand the observer the SAME arrays the modify
 // handler is about to rewrite in place, so every "before" would equal its
@@ -15806,20 +16076,14 @@ function noteAccountChange(kind, dn, before, after, options) {
                ((e && e.message) || e));
     }
   }
-  if (!accountObserver) {
+  if (!accountObserver && !accountListeners.length) {
     log.debug('Leaving noteAccountChange(). Nobody is observing.');
     return;
   }
-  try {
-    accountObserver({ kind: String(kind), dn: String(dn),
-      username: canonicalUsernameOfDn(dn), realm: realmFor(dn).id,
-      before: before || {}, after: after || {},
-      reason: String((options && options.riscReason) || '') });
-  } catch (e) {
-    log.error(errorCodes.tag('STS-LDAP-0032') +
-              'ldap: the account observer threw and the write stands: ' +
-              e.message);
-  }
+  tellAccountObservers({ kind: String(kind), dn: String(dn),
+    username: canonicalUsernameOfDn(dn), realm: realmFor(dn).id,
+    before: before || {}, after: after || {},
+    reason: String((options && options.riscReason) || '') });
   log.debug('Leaving noteAccountChange().');
 }
 
@@ -15853,7 +16117,7 @@ function memberDnsOf(attributes) {
 
 function noteMembershipChange(groupDn, before, after, options) {
   log.debug('Entering noteMembershipChange(). ' + groupDn);
-  if (!accountObserver) {
+  if (!accountObserver && !accountListeners.length) {
     log.debug('Leaving noteMembershipChange(). Nobody is observing.');
     return;
   }
@@ -15878,15 +16142,9 @@ function noteMembershipChange(groupDn, before, after, options) {
       // A dangling member, or a group nested in a group: nobody's claims.
       return;
     }
-    try {
-      accountObserver({ kind: 'membership', dn: String(stored.dn),
-        username: usernameOfEntry(stored), realm: realmFor(stored.dn).id,
-        group: String(groupDn) });
-    } catch (e) {
-      log.error(errorCodes.tag('STS-LDAP-0032') +
-                'ldap: the account observer threw on a membership change ' +
-                'and the write stands: ' + ((e && e.message) || e));
-    }
+    tellAccountObservers({ kind: 'membership', dn: String(stored.dn),
+      username: usernameOfEntry(stored), realm: realmFor(stored.dn).id,
+      group: String(groupDn) });
   });
   log.debug('Leaving noteMembershipChange(). ' + Object.keys(seen).length +
             ' member(s) affected.');
@@ -17250,6 +17508,154 @@ app.get('/admin/ldap/federations', function (req, res) {
 });
 
 // ---------------------------------------------------------------------------
+// GET /admin/ldap/devices — THE DEVICE REGISTER AS THE DIRECTORY HOLDS IT
+// (#164, #218, 2026-09-26).
+//
+// The ninth container page, and the twin of Directory → Devices
+// (`admin-ui/devices_admin.ts`) the way `/admin/ldap/applications` is the
+// twin of Applications: that page is the register as the console works with
+// it — the filters, the detail, the edits — and this one is `ou=devices`
+// entry by entry, every attribute, and the SCHEMA `common/devices.ts`
+// publishes. The schema is why the page exists: every `stsDevice*` name is
+// this service's invention, several hold one JSON value each, and a client
+// reading an entry over 389 has nowhere else to learn what they mean.
+//
+// ONE VALUE IS WITHHELD: `stsDeviceSecretHash`, which is in
+// SECRET_ATTRIBUTES and withheld from every LDAP read. Every other value is
+// shown as the directory holds it — a key's JSON is public material.
+// ---------------------------------------------------------------------------
+function ldapDevicesView(req) {
+  log.debug('Entering ldapDevicesView().');
+  const all = listDeviceEntries();
+  const wantedText = String(req.query.q || '').trim();
+  const needle = wantedText.toLowerCase();
+  const filtered = all.filter(function (entry) {
+    if (!needle) {
+      return true;
+    }
+    if (String(entry.dn).toLowerCase().indexOf(needle) >= 0) {
+      return true;
+    }
+    return Object.keys(entry.attributes).some(function (name) {
+      return !isSecretAttribute(name) &&
+        entry.attributes[name].some(function (value) {
+          return String(value).toLowerCase().indexOf(needle) >= 0;
+        });
+    });
+  }).sort(function (a, b) {
+    return String(a.dn).localeCompare(String(b.dn));
+  });
+  const paged = directoryPaging(req, filtered, 'devices');
+  const paging = paged.paging;
+  const filterParams = { q: wantedText || '', per: perOf(req, paging) };
+  const nav = admin.pageNavPair('/admin/ldap/devices', filterParams, paging);
+  const shownAttributes = function (entry) {
+    const out = {};
+    Object.keys(entry.attributes).sort().forEach(function (name) {
+      out[canonicalName(name)] = isSecretAttribute(name)
+        ? ['(withheld: a verifier, as from every LDAP read)']
+        : entry.attributes[name].slice(0);
+    });
+    return out;
+  };
+  const shown = paged.shown.map(function (entry) {
+    return { dn: entry.dn, attributes: shownAttributes(entry) };
+  });
+  const payload = {
+    baseDn: baseDn(),
+    container: devicesDn(),
+    count: all.length,
+    matched: filtered.length,
+    shown: shown.length,
+    filter: { q: wantedText || null },
+    page: paging.page, pages: paging.pages, perPage: paging.perPage,
+    firstRow: paging.firstRow, lastRow: paging.lastRow,
+    sourceOfTruth: 'These entries ARE the device register: nothing caches ' +
+      'them, so an ldapmodify of stsDeviceCompliance is the device\'s ' +
+      'compliance on the next read. stsDeviceSecretHash is withheld.',
+    schema: devices.SCHEMA,
+    entries: shown
+  };
+  const rows = shown.map(function (entry) {
+    const a = entry.attributes;
+    const attrs = Object.keys(a).map(function (name) {
+      return '<div><code>' + xmlEscape(name) + '</code>: ' +
+        admin.clippedValues(a[name]) + '</div>';
+    }).join('');
+    const id = String((a.cn || [])[0] || '');
+    return '<tr><td><a href="/admin/devices?device=' +
+      encodeURIComponent(id) + '">' + admin.clipped(id, 40) + '</a>' +
+      '<div class="sub">' + admin.clipped(entry.dn, 40) + '</div></td>' +
+      '<td>' + xmlEscape(String((a.stsDeviceOwnerKind || ['person'])[0])) +
+      '<div class="sub">' + admin.clipped(String((a.owner || [''])[0]), 40) +
+      '</div></td><td class="attrs">' + attrs + '</td></tr>';
+  }).join('');
+  const classRows = devices.SCHEMA.objectClasses.map(function (one) {
+    return '<tr><td><code>' + xmlEscape(one.name) + '</code></td><td>' +
+      xmlEscape(one.where) + (one.standard ? '' : ' <strong>(invented ' +
+                                                  'here)</strong>') +
+      '</td><td>' + xmlEscape(one.what) + '</td></tr>';
+  }).join('');
+  const attrRows = devices.SCHEMA.attributes.map(function (row) {
+    return '<tr><td><code>' + xmlEscape(row.name) + '</code>' +
+      (row.sensitive ? ' <strong>(withheld)</strong>' : '') + '</td><td>' +
+      xmlEscape(row.kind) + '</td><td>' + xmlEscape(row.what) + '</td></tr>';
+  }).join('');
+  const inner = '<p class="sub">' + all.length + ' under <code>' +
+    xmlEscape(devicesDn()) + '</code>: every device this realm knows, each ' +
+    'owned by one person or one application. The same register ' +
+    '<a href="/admin/devices">Devices</a> lists and edits.</p>' +
+    '<div class="tiles">' + admin.tile(all.length, 'Device entries') +
+    '</div>' +
+    admin.note('These entries ARE the register: nothing caches them, so an ' +
+    '<code>ldapmodify</code> here is what the next read sees. One value is ' +
+    'withheld on this page as from every LDAP read: ' +
+    '<code>stsDeviceSecretHash</code>, the verifier of a Native SSO ' +
+    'device_secret. A key\'s JSON is public material and is shown whole.') +
+    '<form method="get" action="/admin/ldap/devices"><div class="formrow">' +
+    '<label for="q">Device</label><input type="text" id="q" name="q" ' +
+    'value="' + xmlEscape(wantedText) + '" size="30" placeholder="an id, a ' +
+    'DN, an owner or any value">' +
+    '<label for="per">Show</label><select id="per" name="per">' +
+    admin.perPageOptions(paging.perPage) + '</select>' +
+    '<button type="submit">Filter</button>' +
+    (wantedText ? ' <a href="/admin/ldap/devices">clear</a>' : '') +
+    '</div></form>' + nav.head +
+    '<table><tr><th>Device</th><th>Owner</th><th>Every attribute</th></tr>' +
+    (rows || '<tr><td colspan="3">' + (wantedText
+      ? 'No device matches. The filter above may be hiding some.'
+      : 'None yet. A Native SSO sign-in makes one, and an administrator ' +
+        'can register one on <a href="/admin/devices">Devices</a>.') +
+      '</td></tr>') + '</table>' + nav.foot +
+    '<h2>The object classes</h2>' +
+    '<table><tr><th>Class</th><th>Where from</th><th>What it brings</th></tr>' +
+    classRows + '</table>' +
+    '<h2>The attributes</h2>' +
+    admin.note('<code>multi</code> holds several values; <code>single</code> ' +
+    'one. Several hold ONE JSON VALUE each: a key, the last compliance and ' +
+    'status change, and the enrolment. <code>common/devices.ts</code> ' +
+    'argues the layout.') +
+    '<table><tr><th>Attribute</th><th>Values</th><th>What it is</th></tr>' +
+    attrRows + '</table>' +
+    '<p class="sub"><a href="/admin/ldap/devices?format=json">This page as ' +
+    'JSON</a> &middot; <a href="/admin/devices">the register in the ' +
+    'console</a> &middot; <a href="/admin/ldap/directory">every entry in ' +
+    'the directory</a> &middot; <a href="/admin/ldap/service">what this ' +
+    'directory is</a></p>';
+  log.debug('Leaving ldapDevicesView(). ' + shown.length + ' row(s) of ' +
+            filtered.length + ' matched.');
+  return { title: 'Device entries', inner: inner, json: payload };
+}
+
+app.get('/admin/ldap/devices', function (req, res) {
+  log.debug('Entering GET /admin/ldap/devices.');
+  const view = ldapDevicesView(req);
+  admin.respond(req, res, view.json, view.title, '/admin/ldap/devices',
+                view.inner);
+  log.debug('Leaving GET /admin/ldap/devices.');
+});
+
+// ---------------------------------------------------------------------------
 // GET /admin/ldap/roles — the role register as the directory sees it.
 //
 // The fourth container page, and the three above it establish the shape: a
@@ -17841,12 +18247,13 @@ if (typeof admin.setDirectoryPages === 'function') {
     spiffe: ldapSpiffeView,
     roles: ldapRolesView,
     policies: ldapPoliciesView,
-    peps: ldapPepsView
+    peps: ldapPepsView,
+    devices: ldapDevicesView
   });
 } else {
   log.warn('ldap: this copy of admin-ui/admin.ts offers no ' +
            'setDirectoryPages() slot, so /admin-api will not mirror the ' +
-           'eight directory pages. The pages themselves are unaffected.');
+           'nine directory pages. The pages themselves are unaffected.');
 }
 
 function listen() {
@@ -18175,6 +18582,40 @@ function describeDirectoryCaches() {
     }
   });
   cacheRegistry.register({
+    name: 'ldap.device-index',
+    title: 'Directory device index',
+    description: 'Each device entry\'s id, key thumbprints and Native SSO ' +
+      'secret hash, to its entry under ou=devices, so recognising a device ' +
+      'at the token endpoint does not copy the register (#164).',
+    owner: 'ldap/ldap_server.js',
+    scope: 'realm',
+    maxEntries: oneIndexPerRealm,
+    bound: indexBound,
+    settings: ['ldap.maxEntries'],
+    lifetime: function () {
+      return 'Until something is written under ou=devices and a lookup ' +
+        'misses; a hit on a current entry does not wait for a rebuild. One ' +
+        'index per realm.';
+    },
+    entries: function () {
+      const out = [];
+      deviceIndexes.existing().forEach(function (cache, id) {
+        if (!cache.index) {
+          return;
+        }
+        out.push({ realm: id,
+                   key: cache.index.size + ' value(s), built ' + cache.builds +
+                     ' time(s)',
+                   validUntil: null,
+                   valid: inRealmById(id, function () {
+                     return cache.version === subtreeVersion(devicesDn());
+                   }),
+                   basis: 'ou=devices version' });
+      });
+      return out;
+    }
+  });
+  cacheRegistry.register({
     name: 'ldap.subtree-listings',
     title: 'Directory container listings',
     description: 'The entries under a container (applications, ' +
@@ -18340,6 +18781,7 @@ module.exports = {
   // time. See setAccountObserver()'s header: this is the only direction that
   // works, and it is on the STORE rather than on any one door because the
   // same act reaches this directory over SCIM, over LDAP and from the console.
+  addAccountObserver: addAccountObserver,
   setAccountObserver: setAccountObserver,
   // The DN-syntax rule, shared with createUser() above so that the three doors
   // that create something named cannot disagree about what a name may be.

@@ -555,6 +555,8 @@ class SharedSignals {
   // subject itself or a complex subject's `user` — is rewritten to that
   // client's `sub` for the session the event names (rcbj's answer on #149).
   // A public client, and a stream no client owns, get the event unchanged.
+  // The `device` member of a complex subject follows the same rule (#164
+  // phase 6) — `pairwise_subjects.ts`'s `deviceIdFor()`.
   subjectForReceiver(record: Json, subject: Json): Json {
     const { log } = this.deps;
     log.debug('Entering SharedSignals.subjectForReceiver().');
@@ -572,8 +574,23 @@ class SharedSignals {
     const session = copy.format === 'complex' && copy.session
       ? String(copy.session.id || '') : '';
     try {
-      user.sub = require('../oauth-oidc/pairwise_subjects')
-        .subjectFor(owner, String(user.sub), session);
+      const pairwise = require('../oauth-oidc/pairwise_subjects');
+      user.sub = pairwise.subjectFor(owner, String(user.sub), session);
+      // THE PERSON'S DEVICE BY THE SAME RULE (#164 phase 6): the `device_id`
+      // this client's tokens carry — the register's id for a public client,
+      // a sector-derived one for a pairwise client, and NONE for an
+      // ephemeral one, whose events then name the person alone. A device
+      // beside a `user` is a person's; an application's device has no user
+      // member and never reaches here.
+      if (copy.format === 'complex' && copy.device && copy.device.sub) {
+        const told = pairwise.deviceIdFor(owner, String(copy.device.sub),
+                                          true);
+        if (told) {
+          copy.device.sub = told;
+        } else {
+          delete copy.device;
+        }
+      }
     } catch (e: any) {
       // A pairwise client with no sector: the event goes with the subject
       // it was built with, and the log says why.
@@ -3711,12 +3728,11 @@ class SharedSignals {
     return report;
   }
 
-  // Emit one CAEP event BY HAND. Two of the eight describe things nothing here
-  // does — no device reports compliance to this service and no risk engine
-  // talks to it — so this is the only way they are ever produced, and it is why
-  // the action exists rather than the page being read-only. (Five are emitted
-  // automatically — `caep.autoEmitTypes` — and `token-claims-change` only by
-  // GNAP, `gnap/gnap_signals.ts`.)
+  // Emit one CAEP event BY HAND, about a session this register tracks. Every
+  // one of the eight is also emitted automatically now — the last two by
+  // risk scoring (#62) and the device register (#164) — so this form exists
+  // for what an automatic emission cannot give a receiver under test: any
+  // type, any payload, on demand, about a session it chose.
   private caepEmit(asked: Json): Promise<Json> {
     const { log, audit, subjects, events, caep, streams } = this.deps;
     log.debug('Entering SharedSignals.caepEmit().');
@@ -4177,8 +4193,14 @@ class SharedSignals {
     }
     let due;
     try {
-      due = risc.observeAct(Object.assign({}, notice || {},
-                                          { issuer: this.issuerFor(null) }));
+      // A DEVICE'S ACT (#164 phase 4) names the device beside the account:
+      // `deviceSubject` is built here, where the issuer is known.
+      const asked = notice || {};
+      due = risc.observeAct(Object.assign({}, asked,
+        { issuer: this.issuerFor(null) },
+        asked.deviceId
+          ? { deviceSubject: this.deviceSubjectOf(String(asked.deviceId)) }
+          : {}));
     } catch (e) {
       log.debug('Caught in SharedSignals.emitRiscAccountAct(): ' +
                 ((e && e.message) || e));
@@ -4312,6 +4334,73 @@ class SharedSignals {
                 'about ' + username + ' could not be delivered: ' + e.message);
       return { sent: 0, streams: candidates.length, why: e.message };
     });
+  }
+
+  // ---------------------------------------------------------------------------
+  // A DEVICE'S CAEP EVENTS (#164 phase 4, 2026-09-26), from the device
+  // register's funnel through `ssf/account_signals.ts`: `device-compliance-
+  // change` (act `compliance`), `risk-level-change` with principal DEVICE
+  // (act `risk`) and `credential-change` about a device key or its Native
+  // SSO secret (act `credential`). Each is held to `caep.autoEmitTypes`
+  // through its act, and delivered by `emitProtocolEvent()` like GNAP's.
+  //
+  // **THE SUBJECT IS SSF 1.0 SECTION 3.3's COMPLEX SUBJECT, `device` AND —
+  // WHERE THE OWNER IS A PERSON — `user`.** "All members within a Complex
+  // Subject MUST represent attributes of the same Subject Principal"
+  // (section 3.3.1): the device, and the person it belongs to. The device is
+  // named as CAEP section 3.5.2's own example names one, `iss_sub` with the
+  // device's id as `sub` and this realm's issuer as `iss` — RFC 9493 section
+  // 3.2.3's issuer-scoped identifier, which is what the register's UUID is:
+  // unique only within the realm that assigned it. Not `opaque` (the bare
+  // UUID says nothing about whose it is, and two realms may hold the same
+  // one), and not the `uri` `urn:sts:device:<id>` a device certificate's SAN
+  // carries (that URN names no issuer either — it is scoped by the CA that
+  // signed the certificate, which the SET does not carry). The session
+  // events carry the same `device` member (`caep.subjectFor()`), so a
+  // receiver that added the device to its stream sees both.
+  //
+  // An application's device has no `user`: an application has no CAEP user
+  // subject here (#145), and the device alone is still one principal.
+  // ---------------------------------------------------------------------------
+  deviceSubjectOf(deviceId: string): Json {
+    const { log } = this.deps;
+    log.debug('Entering SharedSignals.deviceSubjectOf().');
+    log.debug('Leaving SharedSignals.deviceSubjectOf().');
+    return { format: 'iss_sub', iss: this.issuerFor(null),
+             sub: String(deviceId) };
+  }
+
+  emitDeviceEvent(asked?: Json): Promise<EmitResult> {
+    const { log, caep, subjects } = this.deps;
+    const { subjectForName } = this.deps.helpers;
+    log.debug('Entering SharedSignals.emitDeviceEvent().');
+    const o = asked || {};
+    const deviceId = String(o.deviceId || '');
+    if (!this.enabled() || !deviceId) {
+      log.debug('Leaving SharedSignals.emitDeviceEvent(). SSF is off or ' +
+                'no device is named.');
+      return Promise.resolve({ sent: 0, streams: 0 });
+    }
+    if (caep.autoEmitActs().indexOf(String(o.act || '')) < 0) {
+      log.info('caep: a ' + String(o.type || 'device event') + ' about ' +
+               'device ' + deviceId + ' was NOT emitted: caep.enabled, ' +
+               'caep.autoEmit or caep.autoEmitTypes excludes it.');
+      log.debug('Leaving SharedSignals.emitDeviceEvent(). Not an emitted ' +
+                'act.');
+      return Promise.resolve({ sent: 0, streams: 0, why: 'not emitted' });
+    }
+    const username = String(o.username || '');
+    const subject = subjects.complexSubject({
+      user: username ? { format: 'iss_sub', iss: this.issuerFor(null),
+                         sub: subjectForName(username) || username } : null,
+      device: this.deviceSubjectOf(deviceId) });
+    log.debug('Leaving SharedSignals.emitDeviceEvent().');
+    return this.emitProtocolEvent({
+      req: null, protocol: 'Device register', type: String(o.type || ''),
+      subject: subject, values: o.values || {},
+      initiatingEntity: String(o.initiatingEntity || 'system'),
+      reasonAdmin: String(o.reasonAdmin || ''),
+      reasonUser: String(o.reasonUser || '') });
   }
 
   // ---------------------------------------------------------------------------
@@ -4935,6 +5024,9 @@ export = {
   metadata: slot.forward('metadata'),
   description: slot.forward('description'),
   transmit: slot.forward('transmit'),
+  // The subject as a stream owner's client knows the person (#149) and,
+  // since #164 phase 6, their device — for `tests/device_policy.js`.
+  subjectForReceiver: slot.forward('subjectForReceiver'),
   // #144: every status change in section 8.1.5's order, the held-SET drain,
   // and the stream-maintenance job's body.
   changeStatus: slot.forward('changeStatus'),
@@ -4957,6 +5049,8 @@ export = {
   // through `ssf/account_signals.ts`.
   emitRiscAccountAct: slot.forward('emitRiscAccountAct'),
   emitCredentialChange: slot.forward('emitCredentialChange'),
+  // A device's CAEP events (#164 phase 4), through account_signals.ts.
+  emitDeviceEvent: slot.forward('emitDeviceEvent'),
   // A person's risk level changed (#62 P4): `risk/risk_engine.ts` sends it.
   riskAutoEmit: slot.forward('riskAutoEmit'),
   riscReport: slot.forward('riscReport'),

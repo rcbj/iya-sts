@@ -3729,6 +3729,18 @@ directory entries (`common/devices.ts`, `ldap/CLAUDE.md`).
 
 `tests/native_sso.js` and `tests/vendored/sts_native_sso.js` (local) hold it.
 
+**The registered device as a fact on the issuance (#164 phase 2,
+2026-09-26).** `recognizedDeviceFor(opts)` asks `common/device_recognition.ts`
+which device the request came from — the DPoP proof's `jkt`, the RFC 8705
+client certificate on the connection, or a Native SSO secret (the one the
+exchange presents, the one the first app's code grant presented, or the one
+it was just given) — only when there is such evidence, and puts the fact on
+`opts.registered_device`: in `issue()` BEFORE `checkIssuance()`, so the
+policy phase 6 writes decides on it, and in `tokenSet()` for a door that
+mints without `issue()`. It reaches `accessToken()` and `idToken()` there and
+changes nothing they emit yet; `ownerMatches` says whether the device is the
+token subject's. A recogniser that throws records null (`STS-DEVICE-0029`).
+
 ## 3bc. OPENID CONNECT CIBA CORE 1.0 (2026-09-23, #131)
 
 rcbj's answers: the person approves on a PORTAL page (`/portal/ciba`) —
@@ -4133,7 +4145,88 @@ presented.
 
 Tests: `tests/vendored/sts_device_key_binding.js`.
 
-## 3bl. WHAT THE REST OF THE CONFORMANCE SUITE FOUND (2026-09-24, #187)
+## 3bl. OPENID PROVIDER COMMANDS, AND ONE OUTBOUND QUEUE (2026-09-26, #151)
+
+rcbj's answers were every recommendation:
+
+- one shared delivery library;
+- automatic commands on the existing events, only where the relying party
+  supports them;
+- a Server-Sent Events reader;
+- `tenant` as the realm id and `aud_sub` from #148;
+- a mock relying-party command receiver.
+
+* **`outbound_delivery.ts` is the durable outbound queue** that
+  `backchannel_logout.ts` built for itself (3aq), lifted out without changing
+  a rule:
+  * a persisted, tombstoned row merged by (generation, attempt, fence);
+  * a claimed attempt whose claim time is the fence;
+  * retries only for a timeout, a connection failure, 5xx, 408 and 429;
+  * dead letters retried by hand as a new generation;
+  * retention and a row cap;
+  * one summary line per realm;
+  * one sweep job per kind.
+
+  Each KIND declares its own store (the realm rule: a store is per realm at
+  its declaration) and supplies `prepare()`, and optionally `judge()`,
+  `onFinish()` and `onRetry()`. There are three kinds:
+  * back-channel logout, unchanged;
+  * CIBA ping and push, which gains the fence, the merge, retention, an audit
+    row, a retry by hand and four settings (`oauth2.cibaNotify*`);
+  * Provider Commands.
+
+  `kindReport()` and `kindRetry()` are Monitoring → Outbound deliveries
+  (`/admin/deliveries`) and `/admin-api/deliveries`.
+* **`federation_http`** gains two things:
+  * `keepBody` on a delivery, for a command's answer;
+  * `streamEvents()`, the one Server-Sent Events reader. It uses the same
+    policy as `deliver()`, an IDLE timeout, byte and event caps, and
+    `Last-Event-ID`.
+
+  `oauthCommandEndpoint` joins `SENDABLE`.
+* **`provider_commands.ts`**:
+  * Command Tokens are `typ: command+jwt`, signed like the client's ID Token,
+    and live at most 120 s. They carry section 5's claims per command, and
+    never `nonce`.
+  * Account commands and `metadata` are deliveries of the queue. `judge()`
+    reads the answer: 200 or 204 with `{ sub, account_state }`, 202 for
+    `_async`, and each section 3 error as its own dead letter.
+  * The five streaming tenant commands are RUNS, read by `streamEvents()` and
+    resumed with Last-Event-ID up to `oauth2.commandStreamResumes`.
+  * The register `oauth2.commandAccounts` records what each relying party
+    SAID, keyed by the `sub` that client knows (pairwise aware).
+  * An ephemeral-subject client (#149) is sent no account command.
+* **The issuer** comes from the request that started a command, and is
+  remembered per realm. An automatic command uses a pinned `oauth2.issuer` or
+  `global.publicBaseUrl`, else the remembered issuer, else it is a dead letter
+  (0735).
+* **Automatic commands** (`oauth2.commandAutomatic`):
+  * `ldap_server.js` gained `addAccountObserver()` beside SSF's slot. A lock
+    set sends `suspend`, a lock cleared `reactivate`, a delete `delete`, and
+    any other change to the person or their groups `maintain`.
+  * `logout.terminate()` sends `invalidate` on a global sign-out.
+  * A disable passes `providerCommand: false`, because `suspend` already
+    invalidates.
+  * A command is sent only to a relying party whose learned
+    `commands_supported` lists it, and where the person has an account there:
+    by the register, or by a token issued to that client.
+* **The callback**, `/oauth2/commands/callback`:
+  * Bearer a `callback_token`, stored hashed.
+  * It takes an `_async` result, or a relying party's
+    `command_requested: metadata | audit_tenant`.
+  * It answers RFC 6750's errors.
+* **The mock relying party**, `/oauth2/commands/mock-rp` (development only):
+  * It checks a Command Token as section 9 asks.
+  * It keeps section 6's state machine per account, and invents an `aud_sub`
+    for the provider to learn.
+  * It streams tenant commands.
+  * It answers `_async` through the callback IN PROCESS.
+  * The registered URL's query carries the knobs `fail`, `drop` and `audsub`.
+
+Tests: `tests/provider_commands.js` and
+`tests/vendored/sts_provider_commands.js`.
+
+## 3bp. WHAT THE REST OF THE CONFORMANCE SUITE FOUND (2026-09-24, #187)
 
 #176's four FAPI plans were one job; #187 runs every other plan of the suite
 that applies — OpenID Connect (the certification profiles, `oidcc-test-plan`
@@ -4284,10 +4377,9 @@ failure in its driver):
   and then schema-validates the UserInfo `verified_claims` the same
   omission removes — the suite contradicting itself.
 
-**Not run, each until the service has what the plan needs**: the HAIP
-issuer plan, whose every wallet authenticates with
-`attest_jwt_client_auth` (#229), and the OpenID4VP verifier plan's
-`x509_san_dns` and `x509_hash` variants (#230).
+**Once not run, now run (2026-09-26)**: the HAIP issuer plan, whose every
+wallet authenticates with `attest_jwt_client_auth` (#229, 3bm), and the
+OpenID4VP verifier plan's `x509_san_dns` and `x509_hash` variants (#230).
 
 ## 3bm. OAUTH 2.0 ATTESTATION-BASED CLIENT AUTHENTICATION (2026-09-26, #229)
 
@@ -4367,6 +4459,73 @@ changing anything near it needs to know.
 
 Codes `STS-OAUTH-0720`..`0751`. Tests: `tests/client_attestation.js` (in
 process) and `tests/vendored/sts_client_attestation.js` (over HTTP).
+
+## 3bo. THE REGISTERED DEVICE IN TOKENS: `device_id`, `urn:sts:acr:compliant-device` AND THE ISSUANCE POLICY (2026-09-26, #164 phase 6)
+
+rcbj's decisions 3 and 8. `common/CLAUDE.md` covers where the device fact
+comes from; this section covers what this directory does with it.
+
+* **`device_id`** is a private claim in the ID Token, the access token and
+  the introspection answer, from `deviceIdClaimFor()`.
+  * **Which device:** the one the token request proved
+    (`opts.registered_device`: DPoP `jkt`, client certificate, Native SSO
+    secret), else the one the session's sign-in recognised.
+  * **Up to date:** it is read again from the register
+    (`device_recognition.current()`).
+  * **Whose:** only the TOKEN SUBJECT'S OWN device: a person's, or an
+    application's for its own `client_credentials` token. Somebody else's
+    device is a policy fact, never a statement in this subject's token.
+* **Its value is the subject rule's** (`pairwise_subjects.ts`'s
+  `deviceIdFor()`), because a device id correlates exactly as a `sub` does:
+  * **public:** the register's UUID, the `sub` of the `iss_sub` subject SSF
+    names the device by, scoped by the same issuer as the token's `iss`;
+  * **pairwise:** HMAC over realm, sector and id under the pairwise secret
+    with a label of its own. A client with no sector gets nothing, rather
+    than being refused.
+  * **ephemeral:** nothing, since a stable device id would link every
+    authentication made on that device.
+  * **an application's device:** its UUID to everyone, because section 8's
+    concern is End-Users.
+
+  SSF follows the same rule: `ssf.ts`'s `subjectForReceiver()` rewrites
+  the complex subject's `device` for a pairwise stream owner, and drops it
+  for an ephemeral one.
+* **What the specifications allow.**
+  * RFC 9068 section 2.2 permits claims beyond its own, and a resource
+    server ignores one it does not know.
+  * FAPI 1.0 and 2.0 constrain what is signed and how, not extra claims.
+  * It is in `claims_supported`, which lists what the protocol itself
+    puts in an ID Token, as `tenant` and `session_expiry` are.
+  * #176's note about listed claims no attribute answers does not apply:
+    this one is answered whenever a device is recognised, and a claims
+    request for it otherwise gets section 5.5's absence.
+* **Not in UserInfo.** It describes the AUTHENTICATION, as `acr`, `amr`
+  and `sid` do, and UserInfo returns claims about the End-User. A resource
+  server calling UserInfo already holds an access token that states it.
+* **`cnf` is unchanged, and it already names the device key when that key
+  is the binding key.** A DPoP `jkt` is the device JWK's RFC 7638
+  thumbprint, and a certificate's `x5t#S256` is the certificate the device
+  was recognised by. No second confirmation is added.
+  `tests/vendored/sts_devices.js` 14 holds `device_id` and `cnf.jkt` to
+  the same key.
+* **`urn:sts:acr:compliant-device`** is in `step_up.ts`
+  (`COMPLIANT_DEVICE`, `compliantDeviceOf()`) and in
+  `acr_values_supported` after the ladder.
+  * **What meets it:** an authentication (at least `1`) whose latest event
+    recognised the person's own device, compliant and not compromised, and
+    attested where `devices.compliantDeviceAttested` says so. The device is
+    read as it stands now.
+  * **It is NOT a rung.** It says where the authentication came from, not
+    how many factors it had, so it neither meets nor is met by `mfa`.
+  * **The sign-in screen cannot produce it.** It is not "producible", so a
+    request for it forces no factor: the person signs in once more,
+    possibly from the device. A return that still does not meet it is
+    `unmet_authentication_requirements`.
+  * **A token that met it carries it as `acr`** (section 5). A resource
+    server asking for it again is therefore answered by the token itself.
+* **`checkIssuance()` passes `opts.registered_device` to the gate** where
+  the token request proved a device. Otherwise the gate reads the session's
+  device. `xacml/CLAUDE.md` covers the two device rules.
 
 ## OPENID CONNECT CORE, READ AGAINST THE CODE (2026-09-22, #118)
 

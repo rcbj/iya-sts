@@ -188,7 +188,10 @@ const SENDABLE = ['oauthBackchannelLogoutUri',
   // OpenID Connect CIBA's ping and push (#131): the client's registered
   // `backchannel_client_notification_endpoint`, sent the ping body or the
   // token response, with its own `client_notification_token` as the Bearer.
-  'oauthBackchannelClientNotificationEndpoint'];
+  'oauthBackchannelClientNotificationEndpoint',
+  // OpenID Provider Commands (#151): the client's registered
+  // `command_endpoint`, sent a Command Token.
+  'oauthCommandEndpoint'];
 
 // ---------------------------------------------------------------------------
 // WHICH ADDRESSES ARE INTERNAL. Moved from
@@ -242,6 +245,16 @@ interface DeliveryResult {
   why: string;
   url: string;
   cacheControl: string;
+  // Only where the caller asked for it (`keepBody`, #151): the answer's body
+  // as text, capped at `federation.maxBodyBytes`, and its Content-Type.
+  body?: string;
+  contentType?: string;
+}
+
+// A delivery's options: its timeout, and whether the answer's body is kept.
+interface DeliverOptions {
+  timeoutMs?: number;
+  keepBody?: boolean;
 }
 
 // What `fetchJson()` answers. It never rejects.
@@ -560,7 +573,7 @@ class FederationHttp {
   // whole result. It NEVER rejects.
   // -------------------------------------------------------------------------
   deliverForm(record: any, attribute: string, form: Record<string, string>,
-              options?: { timeoutMs?: number }): Promise<DeliveryResult> {
+              options?: DeliverOptions): Promise<DeliveryResult> {
     this.deps.log.debug("Entering FederationHttp.deliverForm().");
     this.deps.log.debug("Leaving FederationHttp.deliverForm().");
     return this.deliver(record, attribute,
@@ -575,7 +588,7 @@ class FederationHttp {
   // connection pinned, no redirect, the cap.
   deliverJson(record: any, attribute: string, payload: any,
               headers: Record<string, string>,
-              options?: { timeoutMs?: number }): Promise<DeliveryResult> {
+              options?: DeliverOptions): Promise<DeliveryResult> {
     this.deps.log.debug("Entering FederationHttp.deliverJson().");
     this.deps.log.debug("Leaving FederationHttp.deliverJson().");
     return this.deliver(record, attribute, 'application/json',
@@ -584,7 +597,7 @@ class FederationHttp {
 
   private deliver(record: any, attribute: string, contentType: string,
                   body: string, extraHeaders: Record<string, string>,
-                  options?: { timeoutMs?: number }): Promise<DeliveryResult> {
+                  options?: DeliverOptions): Promise<DeliveryResult> {
     const { log, errorCodes } = this.deps;
     const self = this;
     const opts = options || {};
@@ -695,8 +708,15 @@ class FederationHttp {
               return;
             }
             let bytes = 0;
+            // KEPT ONLY WHEN ASKED (#151): an OpenID Provider Command's answer
+            // is a JSON body the command's outcome is read from. Everything
+            // else here still discards what comes back.
+            const kept: Buffer[] = [];
             response.on('data', function (chunk) {
               bytes += chunk.length;
+              if (opts.keepBody && bytes <= cap) {
+                kept.push(chunk);
+              }
               if (bytes > cap) {
                 // Drained to the cap and no further: the body is discarded
                 // anyway, and a relying party that answers forever is this
@@ -707,9 +727,16 @@ class FederationHttp {
             const finish = function () {
               log.debug("Entering finish().");
               const ok = status >= 200 && status < 300;
-              done({ ok: ok, status: status, kind: ok ? '' : 'status',
+              const extra: any = {};
+              if (opts.keepBody) {
+                extra.body = Buffer.concat(kept).toString('utf8');
+                extra.contentType = String(response.headers['content-type'] ||
+                                           '');
+              }
+              done(Object.assign({ ok: ok, status: status,
+                     kind: ok ? '' : 'status',
                      cacheControl: cacheControl,
-                     why: ok ? '' : 'it answered ' + status });
+                     why: ok ? '' : 'it answered ' + status }, extra));
               log.debug("Leaving finish().");
             };
             response.on('end', finish);
@@ -734,6 +761,278 @@ class FederationHttp {
         });
         request.on('error', function (e) {
           log.debug("Caught in a request callback in deliver(): " +
+                    ((e && e.message) || e));
+          done({ ok: false, status: 0, kind: 'network',
+                 why: 'the request failed: ' +
+                      (e.code ? e.code + ' — ' : '') + e.message });
+        });
+        request.write(body);
+        request.end();
+      });
+    });
+  }
+
+  // -------------------------------------------------------------------------
+  // A STREAMING DELIVERY (#151): OpenID Provider Commands' tenant commands
+  // POST a Command Token and read the answer as SERVER-SENT EVENTS (WHATWG
+  // HTML section 9.2) — an `account-state` event per account, then
+  // `command-complete`. The only streaming reader in this service, and it is
+  // `deliver()` in every respect but the body: the attribute list, the kill
+  // switch, the transport policy, the internal-address refusal with the
+  // connection pinned, no redirect.
+  //
+  //   form       the form body (`command_token`)
+  //   options    { idleMs, maxBytes, maxEvents, lastEventId, onEvent }
+  //
+  // `onEvent({ id, event, data })` is called for each event as it arrives.
+  // The timeout is an IDLE timeout — a stream of a million accounts is not
+  // slow, a stream that stops is — and `maxBytes` / `maxEvents` bound what
+  // one stream may cost. An answer that is not `text/event-stream` is read
+  // whole (capped) and handed back as `body`, which is how an error answer
+  // and a JSON one arrive. `lastEventId` is sent as `Last-Event-ID`, the
+  // stream's own resumption. It NEVER rejects: `{ ok, status, kind, why,
+  // url, events, lastEventId, ended, body, contentType }` — `ended` true
+  // when the peer closed the stream itself.
+  // -------------------------------------------------------------------------
+  streamEvents(record: any, attribute: string, form: Record<string, string>,
+               options?: any): Promise<any> {
+    const { log } = this.deps;
+    const self = this;
+    const opts = options || {};
+    const id = (record && (record.id || record.fedId)) || '?';
+    log.debug("Entering FederationHttp.streamEvents(). id=" + id);
+    const refused = function (kind: string, why: string,
+                              raw?: string): Promise<any> {
+      log.debug("Entering refused(). " + kind);
+      log.debug("Leaving refused().");
+      return Promise.resolve({ ok: false, status: 0, kind: kind, why: why,
+                               url: raw || '', events: 0, lastEventId: '',
+                               ended: false });
+    };
+    if (SENDABLE.indexOf(String(attribute)) === -1) {
+      log.debug("Leaving FederationHttp.streamEvents(). Not sendable.");
+      return refused('attribute', 'this service will not send to a URL ' +
+                     'from "' + attribute + '"');
+    }
+    if (!this.outboundAllowed()) {
+      log.debug("Leaving FederationHttp.streamEvents(). Outbound is off.");
+      return refused('outbound-off', 'federation.outbound is off, so this ' +
+                     'service makes no outbound request at all');
+    }
+    const raw = String((record && record[attribute]) || '');
+    const problem = this.urlVerdict(raw);
+    if (problem.why) {
+      log.debug("Leaving FederationHttp.streamEvents(). " + problem.why);
+      return refused('url', attribute + ' cannot be dialled: ' + problem.why,
+                     raw);
+    }
+    const target = new URL(raw);
+    const secure = target.protocol === 'https:';
+    const policy = this.tlsFor(target.origin);
+    if (secure && !policy.ok) {
+      log.debug("Leaving FederationHttp.streamEvents(). " + policy.why);
+      return refused('ca-file', policy.why, raw);
+    }
+    const idleMs = Number(opts.idleMs) > 0 ? Number(opts.idleMs)
+                                           : this.timeoutMs();
+    const maxBytes = Number(opts.maxBytes) > 0 ? Number(opts.maxBytes)
+                                               : 64 * 1024 * 1024;
+    const maxEvents = Number(opts.maxEvents) > 0 ? Number(opts.maxEvents)
+                                                 : 1000000;
+    const cap = this.maxBodyBytes();
+    const onEvent = typeof opts.onEvent === 'function' ? opts.onEvent
+                                                       : function () {};
+    const body = new URLSearchParams(form).toString();
+    const transport = secure ? this.deps.https : this.deps.http;
+    log.debug("Leaving FederationHttp.streamEvents(). Vetting the host.");
+    return this.vetHost(target.hostname).then(function (vetted) {
+      if (!vetted.ok) {
+        return { ok: false, status: 0, kind: vetted.kind || 'internal',
+                 why: vetted.why || '', url: raw, events: 0,
+                 lastEventId: '', ended: false };
+      }
+      return new Promise<any>(function (resolve) {
+        let settled = false;
+        let events = 0;
+        let lastEventId = String(opts.lastEventId || '');
+        const done = function (result: any) {
+          log.debug("Entering done().");
+          if (!settled) {
+            settled = true;
+            resolve(Object.assign({ url: raw, why: '', kind: '',
+                                    events: events,
+                                    lastEventId: lastEventId,
+                                    ended: false }, result));
+          }
+          log.debug("Leaving done().");
+        };
+        const headers: any = {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'Content-Length': Buffer.byteLength(body),
+          'Accept': 'text/event-stream',
+          'Cache-Control': 'no-cache',
+          'Connection': 'keep-alive',
+          'User-Agent': self.deps.userAgent
+        };
+        if (opts.lastEventId) {
+          headers['Last-Event-ID'] = String(opts.lastEventId);
+        }
+        const requestOptions: any = {
+          protocol: target.protocol, hostname: target.hostname,
+          port: target.port || (secure ? 443 : 80),
+          path: target.pathname + target.search, method: 'POST',
+          headers: headers, rejectUnauthorized: secure
+        };
+        if (secure) {
+          self.applyTls(requestOptions, policy);
+        }
+        if (vetted.address) {
+          requestOptions.servername = target.hostname;
+          requestOptions.lookup = self.pinnedLookup(vetted);
+        }
+        let request = null;
+        try {
+          request = transport.request(requestOptions, function (response) {
+            const status = response.statusCode || 0;
+            const contentType = String(response.headers['content-type'] ||
+                                       '');
+            if (status >= 300 && status < 400) {
+              response.destroy();
+              done({ ok: false, status: status, kind: 'redirect',
+                     why: 'it answered ' + status + ' with a redirect, ' +
+                          'which is not followed' });
+              return;
+            }
+            const streaming = status === 200 &&
+              /^text\/event-stream/i.test(contentType);
+            if (!streaming) {
+              // Read whole and capped: an error answer, or a JSON one.
+              const kept: Buffer[] = [];
+              let size = 0;
+              response.on('data', function (chunk) {
+                size += chunk.length;
+                if (size <= cap) {
+                  kept.push(chunk);
+                } else {
+                  response.destroy();
+                }
+              });
+              const finish = function () {
+                log.debug("Entering finish().");
+                const ok = status >= 200 && status < 300;
+                done({ ok: ok, status: status, kind: ok ? '' : 'status',
+                       contentType: contentType,
+                       body: Buffer.concat(kept).toString('utf8'),
+                       why: ok ? '' : 'it answered ' + status });
+                log.debug("Leaving finish().");
+              };
+              response.on('end', finish);
+              response.on('close', finish);
+              response.on('error', function (e) {
+                log.debug("Caught in a callback in streamEvents(): " +
+                          ((e && e.message) || e));
+                finish();
+              });
+              return;
+            }
+            // THE EVENT STREAM, parsed as it arrives: lines split on CR, LF
+            // or CRLF; `event`, `data` (joined by LF), `id`; a blank line
+            // dispatches; a line starting ':' is a comment.
+            let buffered = '';
+            let bytes = 0;
+            let eventName = '';
+            let data: string[] = [];
+            let eventId = '';
+            const dispatch = function () {
+              if (!data.length && !eventName) {
+                return;
+              }
+              if (eventId) {
+                lastEventId = eventId;
+              }
+              events++;
+              try {
+                onEvent({ id: eventId || lastEventId,
+                          event: eventName || 'message',
+                          data: data.join('\n') });
+              } catch (e) {
+                log.debug("Caught in dispatch(): " + ((e && e.message) || e));
+              }
+              eventName = '';
+              data = [];
+              eventId = '';
+            };
+            const line = function (text: string) {
+              if (text === '') {
+                dispatch();
+                return;
+              }
+              if (text.charAt(0) === ':') {
+                return;
+              }
+              const colon = text.indexOf(':');
+              const field = colon < 0 ? text : text.slice(0, colon);
+              let value = colon < 0 ? '' : text.slice(colon + 1);
+              if (value.charAt(0) === ' ') {
+                value = value.slice(1);
+              }
+              if (field === 'event') {
+                eventName = value;
+              } else if (field === 'data') {
+                data.push(value);
+              } else if (field === 'id' && value.indexOf('\u0000') < 0) {
+                eventId = value;
+              }
+            };
+            response.setEncoding('utf8');
+            response.on('data', function (chunk: string) {
+              bytes += Buffer.byteLength(chunk);
+              if (bytes > maxBytes || events >= maxEvents) {
+                response.destroy();
+                done({ ok: false, status: status, kind: 'too-large',
+                       why: 'the stream passed ' +
+                            (bytes > maxBytes ? maxBytes + ' bytes'
+                                              : maxEvents + ' events') });
+                return;
+              }
+              buffered += chunk;
+              const parts = buffered.split(/\r\n|\r|\n/);
+              buffered = parts.pop() || '';
+              parts.forEach(line);
+            });
+            response.on('end', function () {
+              if (buffered) {
+                line(buffered);
+              }
+              dispatch();
+              done({ ok: true, status: status, ended: true,
+                     contentType: contentType });
+            });
+            response.on('close', function () {
+              done({ ok: false, status: status, kind: 'network',
+                     why: 'the stream closed before it ended' });
+            });
+            response.on('error', function (e) {
+              log.debug("Caught in a callback in streamEvents(): " +
+                        ((e && e.message) || e));
+              done({ ok: false, status: status, kind: 'network',
+                     why: 'the stream failed: ' + ((e && e.message) || e) });
+            });
+          });
+        } catch (e) {
+          log.debug("Caught in FederationHttp.streamEvents(): " +
+                    ((e && e.message) || e));
+          done({ ok: false, status: 0, kind: 'build',
+                 why: 'the request could not be built: ' + e.message });
+          return;
+        }
+        request.setTimeout(idleMs, function () {
+          request.destroy();
+          done({ ok: false, status: 0, kind: 'timeout',
+                 why: 'the stream was idle for ' + idleMs + 'ms' });
+        });
+        request.on('error', function (e) {
+          log.debug("Caught in a request callback in streamEvents(): " +
                     ((e && e.message) || e));
           done({ ok: false, status: 0, kind: 'network',
                  why: 'the request failed: ' +
@@ -772,9 +1071,21 @@ class FederationHttp {
   // It sends nothing but `Accept`. It NEVER rejects: `{ ok, status, body,
   // contentType, kind, why, url }`.
   // -------------------------------------------------------------------------
+  // A DISCOVERED ENDPOINT, WITH A BODY (#153): a foreign SSF transmitter's
+  // stream management, status, subject, verification and poll endpoints are
+  // named in the configuration document fetched from the issuer an
+  // administrator registered — the same kind of URL as the document itself,
+  // held to the same bounds, and so the same function with `method`,
+  // `headers` (the transmitter's access token) and `body` (JSON, sent as
+  // `contentType`). Every rule above still applies: the internal-address
+  // refusal in product mode, the pinned connection, no redirect, the cap.
   fetchPublished(raw: string, options?: { accept?: string;
                                           timeoutMs?: number;
-                                          maxBytes?: number }):
+                                          maxBytes?: number;
+                                          method?: string;
+                                          headers?: Record<string, string>;
+                                          body?: string;
+                                          contentType?: string }):
       Promise<{ ok: boolean; status: number; body: Buffer;
                 contentType: string; kind: string; why: string;
                 url: string }> {
@@ -842,13 +1153,19 @@ class FederationHttp {
           hostname: target.hostname,
           port: target.port || (secure ? 443 : 80),
           path: target.pathname + target.search,
-          method: 'GET',
-          headers: {
+          method: String(opts.method || 'GET').toUpperCase(),
+          headers: Object.assign({}, opts.headers || {}, {
             'Accept': String(opts.accept || '*/*'),
             'User-Agent': self.deps.userAgent
-          },
+          }),
           rejectUnauthorized: secure
         };
+        if (opts.body !== undefined) {
+          requestOptions.headers['Content-Type'] =
+            String(opts.contentType || 'application/json');
+          requestOptions.headers['Content-Length'] =
+            Buffer.byteLength(String(opts.body));
+        }
         if (secure) {
           self.applyTls(requestOptions, policy);
         }
@@ -915,6 +1232,9 @@ class FederationHttp {
                  why: 'the request failed: ' +
                       (e.code ? e.code + ' — ' : '') + e.message });
         });
+        if (opts.body !== undefined) {
+          request.write(String(opts.body));
+        }
         request.end();
       });
     });
@@ -1560,6 +1880,7 @@ export = {
   pinnedLookup: slot.forward('pinnedLookup'),
   deliverForm: slot.forward('deliverForm'),
   deliverJson: slot.forward('deliverJson'),
+  streamEvents: slot.forward('streamEvents'),
   fetchPublished: slot.forward('fetchPublished'),
   requestConfigured: slot.forward('requestConfigured'),
   fetchHttpChallenge: slot.forward('fetchHttpChallenge'),

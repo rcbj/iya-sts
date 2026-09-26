@@ -134,7 +134,7 @@ const PLANS = [
   // an authorization server implementing response signing "shall support,
   // require use of" JARM, and this one implements it — so the plan's
   // `plain_response` variant, which tests one that does not, is refused at
-  // PAR by design (#187, oauth-oidc/CLAUDE.md 3bl).
+  // PAR by design (#187, oauth-oidc/CLAUDE.md 3bp).
   { key: "fapi2ms-mtls", name: "fapi2-message-signing-final-test-plan",
     fapi: "2-message-signing", mtls: true,
     variant: { fapi_profile: "plain_fapi", authorization_request_type:

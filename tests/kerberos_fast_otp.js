@@ -466,6 +466,9 @@ async function productChild() {
       })[0];
       const e = msgs.readKrbError(fxError.value);
       return { ok: false, armored: true, outerCode: outer.errorCode,
+               outerCname: outer.cname ? outer.cname.name.join('/') : null,
+               outerCrealm: outer.crealm || null,
+               innerCname: e.cname ? e.cname.name.join('/') : null,
                code: e.errorCode, eText: e.eText, nonceOk: response.nonce ===
                                                            nonce,
                innerEData: !!e.eData,
@@ -553,7 +556,9 @@ async function productChild() {
   // --- 4a. the refusal decision, over PA-ENC-TIMESTAMP ---
   const brief = function (r) {
     return { ok: r.ok, code: r.code, eText: r.eText, flags: r.flags,
-             offered: r.offered, armored: r.armored, outerCode: r.outerCode };
+             offered: r.offered, armored: r.armored, outerCode: r.outerCode,
+             outerCname: r.outerCname, outerCrealm: r.outerCrealm,
+             innerCname: r.innerCname };
   };
   out.bareOtp = brief(await asReq('kfotp', PW, { bare: true }));
   out.pwOtp = brief(await asReq('kfotp', PW));
@@ -605,9 +610,12 @@ async function productChild() {
                                    } }));
   out.fastWrongPw = brief(await fastReq('kfotp',
                                         encChallenge('kfotp', PW + 'x')));
-  out.fastCritical = brief(await fastReq('kfnone', async function () {
+  out.fastHidden = brief(await fastReq('kfnone', async function () {
     return [];
   }, { fastOptions: [1] }));
+  out.fastCritical = brief(await fastReq('kfnone', async function () {
+    return [];
+  }, { fastOptions: [5] }));
   out.fastBadChecksum = brief(await fastReq('kfnone', async function () {
     return [];
   }, { otherBody: true }));
@@ -921,8 +929,19 @@ function fastArmor(t, r) {
           'the SAME encrypted-challenge ciphertext again is ' +
           'KRB_AP_ERR_REPEAT ' +
           '(RFC 6113 section 5.4.6)', JSON.stringify(r.sameEc));
+  // hide-client-names is IMPLEMENTED since #205 (Heimdal sets it on every
+  // TGS-REQ): the outer error names the anonymous principal, the inner one
+  // the client. A critical option this KDC lacks is still refused.
+  t.check(!r.fastHidden.ok && r.fastHidden.armored &&
+          r.fastHidden.code === 25 &&
+          r.fastHidden.outerCname === 'WELLKNOWN/ANONYMOUS' &&
+          r.fastHidden.outerCrealm === 'WELLKNOWN:ANONYMOUS' &&
+          r.fastHidden.innerCname === 'kfnone',
+          'hide-client-names (bit 1) is honoured: the outer KRB-ERROR names ' +
+          'the anonymous principal and the armored one the client',
+          JSON.stringify(r.fastHidden));
   t.check(!r.fastCritical.ok && r.fastCritical.code === 93,
-          'a critical FAST option (hide-client-names) is ' +
+          'a critical FAST option this KDC does not implement (bit 5) is ' +
           'KDC_ERR_UNKNOWN_CRITICAL_FAST_OPTIONS',
           JSON.stringify(r.fastCritical));
   t.check(!r.fastBadChecksum.ok && r.fastBadChecksum.code === 41 &&

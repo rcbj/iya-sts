@@ -159,6 +159,16 @@ result.
 A PKCSReq must be signed by a certificate over **the CSR's own key** (RFC 8894
 section 2.3; `STS-SCEP-0034`).
 
+## The `device` profile (#164 phase 2, 2026-09-26)
+
+A challenge password created for the `device` profile (the console, the API
+or `/portal/certificates`) makes a PKCSReq issue a certificate to a DEVICE
+entry through `core.issueForDevice()` (`common/CLAUDE.md`, 3ag's *The
+`device` profile*); the request's `id-aa-attestation` values reach the core
+as `attestations`. A RenewalReq is refused for it (`STS-DEVICE-0025`): the
+renewed certificate is on no person or application entry. The console lists
+it as a tenth profile row.
+
 ## Several nodes: the challenge and the transaction (2026-09-14, #46)
 
 * **A challenge password is claimed** between the peek that proves it right and

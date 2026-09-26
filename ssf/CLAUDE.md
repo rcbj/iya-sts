@@ -526,9 +526,9 @@ signed SET through `accept()`: development observes; the person's own
 console session is ended, once; somebody else's event, an unverified SET
 and an unpermitted event end nothing; and a disabled policy ends nothing.
 
-**Not built: acting on a FOREIGN transmitter's events.** That needs #153
-(this service as a receiver of somebody else's stream), and the same rule
-will bind it.
+**A FOREIGN transmitter's events are acted on since #153** (see *THIS REALM
+AS A RECEIVER*, below), under the same rule: nothing acts unless the SET
+verified, and what it does is the same policy's decision.
 
 ---
 
@@ -651,7 +651,8 @@ after delivery, so without the claim a second run of the job would send
   `/portal/forgot-password`, and `recovery-activated` is sent with the person
   as the initiating entity (`common/mail_uses.ts`).
 - The deprecated `sessions-revoked` is by hand only.
-- A received event is not acted on (#153, #117).
+- A received event is acted on only by the console's and portal's own
+  receivers (#62), and by a realm receiving a foreign transmitter (#153).
 
 ---
 
@@ -1234,14 +1235,15 @@ the half a reader cannot discover from a protocol trace.
   for a directory change to a claim somebody's live tokens carry (#145) and a
   modified GNAP grant, and `risk-level-change` (#62 P4) when a person's risk
   level changes and the `risk-response` policy permits announcing it
-  (`riskAutoEmit()`); `device-compliance-change` describes a thing nothing here
-  does — no device reports compliance to this service (#164) — so it is still
-  emitted only when asked for.
+  (`riskAutoEmit()`), and — since #164 — the device register sends
+  `device-compliance-change`, a device's `risk-level-change` and its
+  credentials' `credential-change` (*A DEVICE'S EVENTS*, below). Every one of
+  CAEP's eight now has an act here.
 * **It does not retry a failed push unless `ssf.pushRetries` says to.** See
   above.
-* **It is not a receiver of anybody else's transmitter** (#153). It discovers
-  no foreign transmitter, creates no stream there, polls none, and fetches no
-  foreign `jwks_uri`, so a SET another party signed never verifies here.
+* ~~It is not a receiver of anybody else's transmitter~~ — **reversed
+  2026-09-26 (#153)**: a realm registers a foreign transmitter by its issuer
+  and receives from it; see *THIS REALM AS A RECEIVER*, below.
 * **It verifies nothing about a subject.** A stream may name somebody who has
   never been here, which is what a receiver's "I do not know this subject" path
   needs.
@@ -1477,15 +1479,12 @@ the default for an event emitted BY HAND. `change_direction` comes from
 and this event cannot disagree about which way is up. `authn/CLAUDE.md`, *What
 an authenticated identity is here*, carries the design and the probe.
 
-What remains — token claims change (except for a modified GNAP grant,
-`gnap/gnap_signals.ts`), device compliance change, risk level change, and
-credential changes other than an administrator's — has **no act here that
-could cause it**. No device reports compliance to this service and no risk
-engine talks to it, so an automatic emission of one would be this service
-inventing a fact. They are emitted by hand from `/admin/caep` or
-`POST /admin-api/caep/emit`, and a row in `caep.autoEmitTypes` naming one is
-dropped rather than honoured: honouring it would leave a setting that reads as
-configured and does nothing.
+*(Superseded, in stages: this paragraph said token claims, device compliance,
+risk level and most credential changes had no act here. #145 gave the first
+and last one, #62 the risk level, and #164 device compliance — so every CAEP
+type now fires on its own, and `/admin/caep`'s hand emission is for an event
+on demand. A row in `caep.autoEmitTypes` naming something that is not one of
+`AUTO_ACTS` is still dropped with a warning rather than honoured.)*
 
 **THE FIRST PRESENTATION OF A NEW SESSION IS NOT REPORTED**, and without that
 rule the feature would be noise. Every sign-in here ends with the browser
@@ -1817,8 +1816,70 @@ it by default.
 fingerprint, as CAEP defines the member, and not the header.
 
 **Not here:**
-* `device-compliance-change` has no source (#164).
-* Acting on a RECEIVED event is #153 and #117.
+* `device-compliance-change` is emitted by the device register (#164)
+  whenever a device's compliance changes.
+* Acting on a RECEIVED event: the console's and portal's receivers (#62)
+  and foreign transmitters (#153), a received `device-compliance-change`
+  included (below).
+
+## THIS REALM AS A RECEIVER OF A FOREIGN TRANSMITTER (2026-09-26, #153)
+
+rcbj's answers were every recommendation: only a transmitter an
+administrator registers; both poll and push; act on session-revoked,
+credential-change and account disabled or enabled; map subjects through a
+federation relationship. `ssf/ssf_transmitters.ts` carries the argument in
+its header. The points a reader of this directory needs:
+
+* **Registration is by ISSUER.** The configuration document is fetched from
+  `/.well-known/ssf-configuration` inserted before the issuer's path (section
+  7), and it must name that issuer, a `jwks_uri` and a
+  `configuration_endpoint`. Every address dialled afterwards comes from that
+  document: stream management, status, subjects, verification and the poll
+  endpoint the stream names. They go through
+  `federation_http.fetchPublished()`, which gained `method`, `headers` and
+  `body` for them. Its bounds are unchanged: internal addresses refused in
+  product mode, the connection pinned, no redirect, a cap. It is the fifteenth
+  row of root CLAUDE.md's "Dial a URL a CALLER supplied" index. It reverses
+  this file's *no create stream on the console* rule for this direction only:
+  there the address would be one a console user typed for us to deliver to,
+  and here it is the transmitter's own.
+* **This realm authenticates to the transmitter** by client credentials at
+  an administrator-named token endpoint (token cached per process, short),
+  or by a pasted bearer. Secrets live in the persisted register, sealed at
+  rest like every minted row, and no page or answer shows them.
+* **Push** is `POST /ssf/transmitters/{id}/push`. The Authorization header
+  this realm gave the transmitter at stream creation is kept as its digest
+  and compared in constant time. **Poll** is the `ssf.foreign-poll` cluster
+  job, per realm. What was received is acknowledged (`ack`) or refused
+  (`setErrs`) on the next request, with one more request after the last
+  round to acknowledge it.
+* **Verification** is done here, not by `ssf_events.verifySet()`, which only
+  knows this realm's keys. The signature is checked against the
+  transmitter's `jwks_uri`, reusing `oauth-oidc/client_jwks.js`'s cache, with
+  the kid named or else each key and the asymmetric algorithms named. Then
+  `typ` must be secevent+jwt, `iss` the transmitter's, and `aud` the
+  stream's. A `jti` is accepted once, and the inbox that holds it is also the
+  history. In product an unverified SET is refused (`invalid_key`). In
+  development it is recorded and acted on in no way.
+* **Reactions** come from the `signal-response` policy, asked with the
+  surface `foreign:<id>`, and there are three new actions:
+  * `signal-end-person-sessions`: a global sign-out of the person here;
+  * `signal-disable-account` (`account_state.setDisabled`, which re-emits
+    RISC to this realm's own receivers);
+  * `signal-enable-account`, only for a lock this transmitter's own event put
+    there (`ssf.foreignLocks`).
+
+  The template's foreign rules require that surface prefix, so the console's
+  and portal's receivers never match them. Development only records what it
+  would do, unless `ssf.actOnSignalsInDevelopment` is on.
+* **Subjects.** An `iss_sub` with the relationship's `fedPeer` is the ONE
+  person whose `federationLink` holds it. An `email` subject is matched only
+  where the relationship sets `fedSignalEmailMatch`, which is off by default:
+  an address is not an identifier. Anything else names nobody, and the SET is
+  recorded. A `complex` subject's `user` member is what is mapped.
+* **CAEP device-compliance-change** goes to `devices.setCompliance()` when
+  the device register offers it (#164). The device is found by the subject's
+  `sub` or a key thumbprint.
 
 ## A RENAMED ACCOUNT KEEPS ITS RISC ROW (2026-09-14)
 
@@ -1838,3 +1899,68 @@ hold a second factor is refused their own password with the one `STS-SSF-0009`
 `/admin-api` (`admin`) — is a `credential-change` (`password`, `create` or
 `revoke`, the app password's name as `friendly_name`) through
 `account_signals.ts`.
+
+## A DEVICE'S EVENTS (#164 phases 3 and 4, 2026-09-26)
+
+`common/devices.ts` is the device register's FUNNEL — the console, `/admin-api`,
+the MDM feed, the portal, EST and SCEP and Native SSO all change a device
+through it — so it is where a device's events are sent, through
+`account_signals.ts`'s `deviceEvent()` and `sessionsRevoked()` (the same
+`require.cache` arrangement) to `ssf.ts`'s `emitDeviceEvent()` and
+`emitRiscAccountAct()`:
+
+| Act | Event | Notes |
+|---|---|---|
+| compliance changes | CAEP `device-compliance-change` (act `compliance`, the eighth `AUTO_ACTS` row) | CAEP section 3.5.1 has TWO values, so `unknown` is sent as `not-compliant` and an event goes out only when the sent value moves |
+| risk level changes | CAEP `risk-level-change`, `principal` `DEVICE` (act `risk`) | `devices.setRiskLevel()`, which #164 phase 5 calls; a compromise raises it to `HIGH`; `previous_level` only where there was one |
+| a key added, re-issued, removed; a Native SSO secret issued, revoked | CAEP `credential-change` (act `credential`) | `x509`, `fido2-platform`/`fido2-roaming`, and two URNs of our own for a JWK key and a device_secret (#236) |
+| a person's device compromised | RISC `credential-compromise` per kind of credential it held, and `sessions-revoked` | complex subject: the account AND the device |
+| a person's device removed | RISC `sessions-revoked` | the same subject |
+
+**THE DEVICE IS NAMED `iss_sub`**: this realm's issuer and the device's id,
+the form CAEP section 3.5.2's own example uses. The id is unique only within
+the realm that assigned it, which is exactly what an issuer-scoped identifier
+says; `opaque` would say nothing about whose it is, and the
+`urn:sts:device:<id>` a device certificate carries names no issuer either.
+`caep.subjectFor()` names the session events' device the same way (it was
+`opaque` and never filled until #164), from the `registeredDevice` on the
+session's latest authentication event, so a receiver that added the device
+gets its session events too.
+
+**RISC'S SUBJECT IS COMPLEX FOR THESE TWO AND NO OTHER**, and `risc.ts`'s
+subject section still holds: a complex subject on `account-disabled` would
+mean nothing. On `sessions-revoked` the device member is what makes the
+deprecated event TRUE — "all the sessions for the account" becomes every
+session of the account on that device, which is what was ended; each ended
+session also sends CAEP `session-revoked`, which RISC 1.0 section 2.11 points
+at, and `risc.autoEmitTypes` can drop the RISC one. `accountIdOf()` reads a
+complex subject's `user` member so the register still counts the event.
+
+**STREAM SUBJECTS MATCH BY SSF 1.0 SECTION 8.1.3.1** (`complexSubjectsMatch()`
+in `ssf_streams.ts`): a complex subject a receiver ADDED matches an event's
+complex subject when every member both define is identical — and, a condition
+the section's letter omits and all its examples meet, at least one member is
+defined by both. Without it `{ device }` would match every session event of
+every person, none of which names a device.
+
+**What a compromise and a removal CAUSE** — sessions ended, certificates
+revoked, the secret revoked — is `devices.ts`'s header; this directory only
+reports it.
+
+**A PAIRWISE OR EPHEMERAL STREAM OWNER IS TOLD THE DEVICE AS ITS TOKENS ARE
+(#164 phase 6).** `subjectForReceiver()` has rewritten the `user` member to
+the owner client's `sub` since #149. It now rewrites a person's `device` the
+same way, through `pairwise_subjects.deviceIdFor()`:
+* a pairwise client is told the sector-derived id its tokens' `device_id`
+  carries;
+* an ephemeral client is told no device, and the member is dropped;
+* a public client is told the register's id.
+
+An application's device has no `user` member and is sent as it is: pairwise
+subjects protect End-Users. `oauth-oidc/CLAUDE.md` 3bo argues the claim.
+
+**RISK SCORING SETS A DEVICE'S LEVEL** (#164 phase 5): after a sign-in the
+person's own device proved, the device takes that sign-in's level, so the
+`risk-level-change` with principal `DEVICE` above now fires on risk as well
+as on a compromise (`risk/CLAUDE.md`, *The registered device*).
+

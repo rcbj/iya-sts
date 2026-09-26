@@ -1349,6 +1349,28 @@ class SsfStreams {
     });
   }
 
+  // SSF 1.0 section 8.1.3.1 for two complex subjects: every member both
+  // define is identical, and at least one is defined by both
+  // (streamCoversSubject() argues the second condition).
+  complexSubjectsMatch(added?, sent?) {
+    const { log, subjects } = this.deps;
+    log.debug("Entering SsfStreams.complexSubjectsMatch().");
+    if (!subjects.isComplex(added) || !subjects.isComplex(sent)) {
+      log.debug("Leaving SsfStreams.complexSubjectsMatch(). Not both " +
+                "complex.");
+      return false;
+    }
+    const shared = subjects.complexMembers(added).filter((name) => {
+      return sent[name] !== undefined && sent[name] !== null;
+    });
+    const match = shared.length > 0 && shared.every((name) => {
+      return subjects.subjectKey(added[name]) ===
+             subjects.subjectKey(sent[name]);
+    });
+    log.debug("Leaving SsfStreams.complexSubjectsMatch(). " + match);
+    return match;
+  }
+
   streamCoversSubject(record?, subject?) {
     const { log, config, subjects } = this.deps;
     log.debug("Entering SsfStreams.streamCoversSubject().");
@@ -1401,9 +1423,33 @@ class SsfStreams {
             return one.key === memberKey;
           });
         });
+        // -----------------------------------------------------------------
+        // AND A COMPLEX SUBJECT A RECEIVER ADDED IS MATCHED BY SSF 1.0
+        // SECTION 8.1.3.1 (#164 phase 4, 2026-09-26). "For Complex
+        // Subjects, two subjects match if, for all fields in the Complex
+        // Subject (i.e. user, group, device, etc.), at least one of the
+        // following statements is true: Subject 1's field is not defined;
+        // Subject 2's field is not defined; Subject 1's field is identical
+        // to Subject 2's field." So a receiver that added `{ device }` is
+        // sent every event whose subject names that device — its compliance,
+        // risk and credential changes, and the session events of sessions it
+        // authenticated — and one that added `{ user, device }` is sent an
+        // event naming only the user (the section's second example).
+        //
+        // **ONE MEMBER IN COMMON IS REQUIRED AS WELL**, which the letter of
+        // the rule does not say: read literally, `{ tenant: A }` "matches"
+        // `{ user: X }` because neither defines the other's field, and a
+        // receiver that added one device would be sent every session event
+        // of every person in the realm. Every example the section gives
+        // shares a member, and a subscription to a subject that delivers
+        // events about nobody in it is not one.
+        // -----------------------------------------------------------------
+        const bySection = !viaMember && record.subjects.some((one) => {
+          return this.complexSubjectsMatch(one.subject, subject);
+        });
         log.debug("Leaving SsfStreams.streamCoversSubject(). By member: " +
-                  viaMember);
-        return viaMember;
+                  viaMember + ", by section 8.1.3.1: " + bySection);
+        return viaMember || bySection;
       }
       log.debug("Leaving SsfStreams.streamCoversSubject(). false");
       return false;
@@ -2239,6 +2285,7 @@ export = {
   addSubject: slot.forward('addSubject'),
   removeSubject: slot.forward('removeSubject'),
   streamCoversSubject: slot.forward('streamCoversSubject'),
+  complexSubjectsMatch: slot.forward('complexSubjectsMatch'),
   audiencesFor: slot.forward('audiencesFor'),
   isInternal: slot.forward('isInternal'),
   ownedBy: slot.forward('ownedBy'),

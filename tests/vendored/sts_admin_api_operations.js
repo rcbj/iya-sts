@@ -814,9 +814,15 @@ function documentedActions(doc) {
 //                    local issuer certificate`. Driven LAST now, in
 //                    theRootIsReplacedLast(), whose read-back trusts the new
 //                    anchor explicitly.
+//   * `device-compliance` (2026-09-26, #164) — the MDM feed takes the
+//                    `device:compliance` scope and NOTHING ELSE on this API
+//                    does; this run's token carries admin:write and is
+//                    refused there with 403 by design, so a replay would only
+//                    ever measure that. Exercised in `sts_devices.js`, with a
+//                    feed client that declares the scope.
 const REPLAY_HELD_BACK = [/^\/realms\//, /^\/rbac\//, /^\/spiffe\/rotate$/,
                           /^\/tls\/trust\//, /^\/kerberos\/principals\//,
-                          /^\/pki\/build-root$/];
+                          /^\/pki\/build-root$/, /^\/device-compliance$/];
 
 async function everyDocumentedExampleIsAccepted(doc) {
   log.debug("Entering everyDocumentedExampleIsAccepted().");
@@ -1114,29 +1120,32 @@ async function theApplicationsRegistryRoundTrips() {
     "and it should name THIS realm's container, since that is where a create " +
     "made through this prefix lands; it named " + form.body.container);
 
-  // The kinds refusal counts its own list, and the two halves of that sentence
-  // are edited independently — a ninth kind added to the table with the word
-  // "eight" left beside it is a sentence that is wrong about the thing it
-  // exists to explain.
+  // The kinds refusal names the set it holds `kind` to, and says how many
+  // there are. Since #86 it is the management API's closed-set sentence —
+  // the operation's `enum`, which is `applications.KIND_IDS` — rather than
+  // the registry's own, so the count is computed rather than written by
+  // hand; what is still asserted is the thing that matters to a caller: the
+  // kinds it names ARE the kinds GET /applications/new publishes, one table
+  // read through two doors, and the count it gives is the count it lists.
   const badKind = await refused("/applications/create",
     { identifier: "kind-probe-" + REALM, kind: "no-such-kind" },
-    /is not one of the kinds/, "an unknown kind");
+    /which is not one of the \d+ values? it accepts/, "an unknown kind");
   const kindSentence = (badKind.errors || []).join(" ")
-      .match(/The\s+(\S+)\s+are:\s*([^.]+)\./);
+      .match(/"kind" is "no-such-kind", which is not one of the (\d+) values? it accepts: ([^.]+)\./);
   assert.ok(kindSentence,
     "the unknown-kind refusal should name the kinds it knows; it said " +
     (badKind.errors || []).join(" "));
-  const kindsNamed = splitList(kindSentence[2]);
+  const kindsNamed = (kindSentence[2].match(/"[^"]+"/g) || [])
+    .map(function (q) {
+      return q.slice(1, -1);
+    });
   assert.deepStrictEqual(kindsNamed.slice().sort(), kinds.slice().sort(),
     "the kinds the refusal names must be the kinds GET /applications/new " +
     "publishes — they are one table read through two doors.");
-  assert.strictEqual(kindsNamed.length, wordToNumber(kindSentence[1]),
+  assert.strictEqual(kindsNamed.length, Number(kindSentence[1]),
     "the unknown-kind refusal says there are " + kindSentence[1] + " kinds " +
     "and then lists " + kindsNamed.length + " of them: " +
-    kindsNamed.join(", ") + ". The count is written into the sentence by " +
-    "hand and the list is generated from the table, so they part company the " +
-    "day a kind is added — which is the day the sentence is most likely to " +
-    "be read.");
+    kindsNamed.join(", ") + ".");
 
   const identifier = "app-" + names.usernameFor("stsapi-app");
   const created = await ok("/applications/create", {
@@ -5028,6 +5037,12 @@ const NOT_DRIVEN_HERE = {
   "POST /kerberos/principals/rotate-krbtgt-invalidate":
     "sts_kerberos_krbtgt_rotation.js drives it in a throwaway realm; it ends " +
     "every TGT of the realm it runs in",
+  // THE DEVICE COMPLIANCE FEED (#164). Its token carries device:compliance
+  // and no admin scope, so this run's admin:write token is refused there by
+  // design; `sts_devices.js` drives it with a feed client that declares the
+  // scope and reads the CAEP event it sends off a poll stream.
+  "POST /device-compliance": "sts_devices.js drives it with an MDM client " +
+    "holding the device:compliance scope, and checks the event it sends",
   // A RISK DATASET UPLOAD (#215). Driven by `sts_admin_risk_upload.js`: the
   // body is the dataset FILE itself, streamed and never parsed as JSON, so
   // this file's example-replaying walk has no shape to send it in, and what

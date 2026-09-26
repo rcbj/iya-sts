@@ -69,6 +69,10 @@ const SINGLE = ['userpassword', 'pwdhistory', 'pwdchangedtime',
                 'stsapppassword', 'stsidaverification',
                 'stsselfissuedsubject', 'stsdevicesecrethash',
                 'stsdevicesession', 'stscibausercode',
+                // A device's records of its last compliance and status
+                // change, and its enrolment (#164): each one JSON value.
+                'stsdevicecompliancechange', 'stsdevicestatuschange',
+                'stsdeviceenrolment', 'stsdeviceriskchange',
                 // The OpenID Federation register (#132): a record and a key
                 // table are each one JSON value, written whole.
                 'stsoidfedkind', 'stsoidfedentityid', 'stsoidfeddata',
@@ -80,6 +84,11 @@ const MULTI = ['member', 'uniquemember', 'memberof', 'objectclass',
                'x509subject', 'didsubject', 'spiffesubject', 'authnmethod',
                'federationattribute', 'federationissuer',
                'federationrelationship', 'federationlink',
+               // A device's keys and their thumbprint index (#164): a key's
+               // value never changes once written, so two nodes adding
+               // different keys at once must both survive.
+               'stsdevicekey', 'stsdevicekeythumbprint',
+               'stsdevicecredentialid',
                // A subordinate's OpenID Federation event history (#137):
                // appended by whichever node records an event, so two
                // appends at once must both survive.

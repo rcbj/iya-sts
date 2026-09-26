@@ -213,6 +213,54 @@ const AUTHN_ATTRIBUTE = {
   OBLIGATION: 'urn:sts:xacml:obligation:authentication'
 };
 
+// ---------------------------------------------------------------------------
+// THE REGISTERED DEVICE AN ISSUANCE CAME FROM (#164 decision 3, phase 6,
+// 2026-09-26), as environment attributes — facts from the device register
+// (`common/device_recognition.ts`'s recognition, brought up to date), put in
+// every issuance request the gate asks by `xacml_role_pep.ts`, and the
+// REQUIREMENT the realm's settings switch on. The facts are about the
+// circumstances of this request, not the subject's standing attributes, so
+// they sit with risk's. With no device recognised only RECOGNIZED is sent
+// (false), so a rule can ask for a device and a rule about one is
+// inapplicable.
+// ---------------------------------------------------------------------------
+const DEVICE_ATTRIBUTE = {
+  // A BOOLEAN: a registered device was recognised by one of its keys.
+  RECOGNIZED: 'urn:sts:xacml:device-recognized',
+  // The register's id for it (a UUID).
+  ID: 'urn:sts:xacml:device-id',
+  // HOW it was recognised: `x509`, `webauthn`, `jwk` or `native-sso` — the
+  // kind of key that proved it.
+  VIA: 'urn:sts:xacml:device-via',
+  // A BOOLEAN: the device is the SUBJECT's own — a person's device for that
+  // person, an application's for that application.
+  OWNER_MATCHES: 'urn:sts:xacml:device-owner-matches',
+  // `person` or `application`: who owns it, whoever the subject is.
+  OWNER_KIND: 'urn:sts:xacml:device-owner-kind',
+  // `compliant`, `not-compliant` or `unknown` (CAEP's words; absent in the
+  // register is `unknown`).
+  COMPLIANCE: 'urn:sts:xacml:device-compliance',
+  // `attested` or `self-asserted` (#164 decision 7).
+  ATTESTATION: 'urn:sts:xacml:device-attestation',
+  // `active` or `compromised`.
+  STATUS: 'urn:sts:xacml:device-status',
+  // LOW, MEDIUM or HIGH — the device's own level (#164 phase 5), absent
+  // while it is unassessed.
+  RISK_LEVEL: 'urn:sts:xacml:device-risk-level',
+  // A BAG: what this realm's settings require — `not-compromised`
+  // (`devices.refuseCompromised`), `compliant`
+  // (`devices.requireCompliantDevice`) and `attested` beside it
+  // (`devices.compliantDeviceAttested`). The settings switch the rules; the
+  // rules say what they mean.
+  REQUIREMENT: 'urn:sts:xacml:device-requirement',
+  // The obligation every device rule carries, so the PEP can tell a Deny
+  // about the DEVICE from one about roles — it refuses even where the role
+  // question was waived, in both modes — and its one assignment, which
+  // rule refused (`compromised` or `not-compliant`).
+  OBLIGATION: 'urn:sts:xacml:obligation:device',
+  REFUSAL: 'urn:sts:xacml:device-refusal'
+};
+
 const RISK_ATTRIBUTE = {
   // LOW, MEDIUM, HIGH or UNSCORED — CAEP's own words, plus the one for a
   // first sign-in with nothing to compare it to.
@@ -290,7 +338,9 @@ const SIGNAL_ATTRIBUTE = {
   // `caep`, `risc` or `ssf`: the namespace the event's URI is in.
   FAMILY: 'urn:sts:xacml:signal-family',
   // Which of this service's surfaces received it: `admin-console` or
-  // `user-portal` (`ssf/ssf_receivers.ts`'s SURFACES).
+  // `user-portal` (`ssf/ssf_receivers.ts`'s SURFACES) — or, since #153,
+  // `foreign:<id>`, a FOREIGN transmitter this realm registered
+  // (`ssf/ssf_transmitters.ts`).
   SURFACE: 'urn:sts:xacml:signal-surface',
   // A risk or assurance event's `current_level`, where it carries one.
   LEVEL: 'urn:sts:xacml:signal-current-level'
@@ -303,7 +353,17 @@ const SIGNAL_RESPONSE = {
   // the console's or the portal's relying-party sessions. Never the
   // provider's — a receiver acts on what it holds, and what the provider
   // holds is the transmitter's to end.
-  END_SESSIONS: 'signal-end-sessions'
+  END_SESSIONS: 'signal-end-sessions',
+  // FROM A FOREIGN TRANSMITTER (#153): this realm is the provider the person
+  // signs in to, and the event is another identity service's statement
+  // about the same person (mapped through a federation relationship). End
+  // the person's sessions HERE — every one, as a global sign-out does.
+  END_PERSON_SESSIONS: 'signal-end-person-sessions',
+  // Disable the person's account here (the administrative lock), and enable
+  // it again — the latter only for a lock that transmitter's own
+  // account-disabled put there, which the receiver checks, not the policy.
+  DISABLE_ACCOUNT: 'signal-disable-account',
+  ENABLE_ACCOUNT: 'signal-enable-account'
 };
 
 // ---------------------------------------------------------------------------
@@ -508,6 +568,29 @@ const TEMPLATES: TemplateRow[] = [
               '3.1.3.1 does not count email as an authenticator; this is ' +
               'the policy an operator writes when an application must not ' +
               'rest on one.' },
+      { name: 'decideDevices',
+        label: 'Decide on the registered device (#164)',
+        dflt: 'yes', type: 'string',
+        help: 'yes or no. When yes, two Deny rules read the registered ' +
+              'device an issuance came from, each switched by a setting ' +
+              'the request carries: a COMPROMISED device is refused while ' +
+              'devices.refuseCompromised is on (the default), and — only ' +
+              'while devices.requireCompliantDevice is on, OFF by default ' +
+              'in both modes — anything but the subject\'s own (or an ' +
+              'application\'s) compliant, uncompromised device, attested ' +
+              'too where devices.compliantDeviceAttested says so. No builds ' +
+              'the policy with no device rule at all.' },
+      { name: 'deviceExempt',
+        label: 'Applications the compliant-device rule never refuses',
+        dflt: 'sts-admin-console, sts-user-portal', type: 'string',
+        help: 'Application handles, comma separated, that ' +
+              'devices.requireCompliantDevice does not apply to. The ' +
+              'console, because a console nobody can reach is a service ' +
+              'nobody can repair (#226\'s lesson); the portal, because ' +
+              'it is where a person REGISTERS a device, and a rule that ' +
+              'refused them there would leave nobody able to meet it. A ' +
+              'compromised device is refused everywhere, these included. ' +
+              '`none` exempts nothing.' },
       { name: 'keySignals',
         label: 'Signals that demand a SECURITY KEY at MEDIUM',
         dflt: 'automated-client, new-tls-stack', type: 'string',
@@ -525,6 +608,12 @@ const TEMPLATES: TemplateRow[] = [
       const permitEmpty = B.yes(given.permitWhenNothingRequired, true);
       const decideRisk = B.yes(given.decideRisk, true);
       const refuseEmail = B.yes(given.refuseEmailFactor, false);
+      const decideDevices = B.yes(given.decideDevices, true);
+      const deviceExempt = B.listOf(given.deviceExempt === undefined
+        ? 'sts-admin-console, sts-user-portal' : given.deviceExempt)
+        .filter(function (one: string): boolean {
+          return one.toLowerCase() !== 'none';
+        });
       const keySignals = B.listOf(given.keySignals);
       const neverLockOut = B.listOf(given.neverLockOut === undefined
         ? 'sts-admin-console' : given.neverLockOut)
@@ -742,8 +831,120 @@ const TEMPLATES: TemplateRow[] = [
         });
       }
 
+      // -------------------------------------------------------------------
+      // THE REGISTERED DEVICE (#164 decision 3, phase 6). Two Deny rules,
+      // each APPLICABLE ONLY WHILE THE REQUEST'S REQUIREMENT BAG NAMES IT —
+      // the realm's settings, which the PEP puts there — so switching one
+      // is a setting per realm and never an edit to this document, and an
+      // operator's own document can still say something else entirely. Each
+      // carries the device obligation, which the PEP enforces in both modes
+      // and even where the role question was waived: a device refusal is
+      // not about roles, and it is not observe-only as risk is in
+      // development, because both rules are somebody's explicit choice.
+      //
+      //   * A COMPROMISED DEVICE, refused while `not-compromised` is
+      //     required (`devices.refuseCompromised`, ON BY DEFAULT). A
+      //     compromise ends the device's sessions and revokes its
+      //     certificates and secret, but its JWK and WebAuthn keys still
+      //     prove it — they belong to the hardware — so a token request
+      //     bound to one is still possible, and is the one to refuse. Every
+      //     application, the exempt ones included.
+      //   * NOT THE SUBJECT'S COMPLIANT DEVICE, refused while `compliant` is
+      //     required (`devices.requireCompliantDevice`, OFF by default in
+      //     both modes — rcbj's decision 3): no device, somebody else's, one
+      //     not known to be compliant, one compromised, or — where
+      //     `attested` is required too — one only self-asserted. An
+      //     APPLICATION's device satisfies it for a person as well: a kiosk
+      //     or a managed host is the organisation's own, which is what the
+      //     rule is for; another PERSON's device is not. `deviceExempt`
+      //     applications are never refused by it.
+      // -------------------------------------------------------------------
+      const deviceIs = function (attribute: string, value: string): any {
+        log.debug("Entering deviceIs().");
+        log.debug("Leaving deviceIs().");
+        return B.apply(F1 + 'string-is-in', [B.value(TYPE.STRING, value),
+          B.designator(env, attribute, TYPE.STRING)]);
+      };
+      const deviceTrue = function (attribute: string): any {
+        log.debug("Entering deviceTrue().");
+        log.debug("Leaving deviceTrue().");
+        return B.apply(F3 + 'any-of', [
+          { kind: 'function', functionId: F1 + 'boolean-equal' },
+          B.value(TYPE.BOOLEAN, 'true'),
+          B.designator(env, attribute, TYPE.BOOLEAN)]);
+      };
+      const deviceObligation = function (refusal: string): any {
+        log.debug("Entering deviceObligation().");
+        log.debug("Leaving deviceObligation().");
+        return [{ id: DEVICE_ATTRIBUTE.OBLIGATION, on: model.EFFECT.DENY,
+                  assignments: [{ attributeId: DEVICE_ATTRIBUTE.REFUSAL,
+                    category: null, issuer: null,
+                    expression: B.value(TYPE.STRING, refusal) }] }];
+      };
+      const exemptApp = deviceExempt.length
+        ? B.apply(F3 + 'any-of-any', [
+          { kind: 'function', functionId: F1 + 'string-equal' },
+          B.designator(model.CATEGORY.RESOURCE, model.ATTRIBUTE.RESOURCE_ID,
+                       TYPE.STRING),
+          B.apply(F1 + 'string-bag', deviceExempt.map(function (one) {
+            return B.value(TYPE.STRING, one);
+          }))])
+        : null;
+      // FIRST IN THE DOCUMENT: under ordered-deny-overrides the first Deny
+      // is the one whose obligation the PEP reads, and a device refusal is
+      // final where a risk Deny may only ask for a step-up — asking for a
+      // security key and then refusing the device anyway would be one
+      // refusal made in two steps.
+      const deviceRules: any[] = [];
+      if (decideDevices) {
+        deviceRules.push({
+          id: options.idBase + ':rule:device-compromised',
+          effect: model.EFFECT.DENY,
+          description: 'Refuse an issuance from a registered device marked ' +
+                       'COMPROMISED, while the realm refuses one ' +
+                       '(devices.refuseCompromised).',
+          target: null,
+          condition: B.apply(F1 + 'and', [
+            deviceIs(DEVICE_ATTRIBUTE.REQUIREMENT, 'not-compromised'),
+            deviceIs(DEVICE_ATTRIBUTE.STATUS, 'compromised')]),
+          obligations: deviceObligation('compromised'), advice: []
+        });
+        const compliantDevice = B.apply(F1 + 'and', [
+          deviceTrue(DEVICE_ATTRIBUTE.RECOGNIZED),
+          B.apply(F1 + 'or', [deviceTrue(DEVICE_ATTRIBUTE.OWNER_MATCHES),
+                              deviceIs(DEVICE_ATTRIBUTE.OWNER_KIND,
+                                       'application')]),
+          deviceIs(DEVICE_ATTRIBUTE.COMPLIANCE, 'compliant'),
+          not(deviceIs(DEVICE_ATTRIBUTE.STATUS, 'compromised')),
+          B.apply(F1 + 'or', [
+            not(deviceIs(DEVICE_ATTRIBUTE.REQUIREMENT, 'attested')),
+            deviceIs(DEVICE_ATTRIBUTE.ATTESTATION, 'attested')])]);
+        const required = [
+          deviceIs(DEVICE_ATTRIBUTE.REQUIREMENT, 'compliant'),
+          not(compliantDevice)];
+        if (exemptApp) {
+          required.push(not(exemptApp));
+        }
+        deviceRules.push({
+          id: options.idBase + ':rule:device-required',
+          effect: model.EFFECT.DENY,
+          description: 'While the realm requires a compliant registered ' +
+                       'device (devices.requireCompliantDevice), refuse an ' +
+                       'issuance that did not come from the subject\'s own ' +
+                       '(or an application\'s) compliant, uncompromised ' +
+                       'device — attested as well where ' +
+                       'devices.compliantDeviceAttested says so' +
+                       (exemptApp ? ' — except for ' +
+                         deviceExempt.join(', ') : '') + '.',
+          target: null,
+          condition: B.apply(F1 + 'and', required),
+          obligations: deviceObligation('not-compliant'), advice: []
+        });
+      }
+
       log.debug('Leaving buildRoleIssuance(). ' + arms.length + ' arm(s), ' +
-                riskRules.length + ' risk rule(s).');
+                riskRules.length + ' risk rule(s), ' + deviceRules.length +
+                ' device rule(s).');
       return {
         kind: 'Policy',
         id: options.idBase,
@@ -781,8 +982,17 @@ const TEMPLATES: TemplateRow[] = [
                               'permitted with an alarm when they hold none ' +
                               '(#226).'
                             : '')
-                        : '') ,
-        combiningAlgId: decideRisk || refuseEmail
+                        : '') +
+                     (decideDevices
+                        ? ' AND ON THE REGISTERED DEVICE (#164): a ' +
+                          'compromised device is refused while the realm ' +
+                          'refuses one, and — while it requires one — ' +
+                          'anything but the subject\'s own compliant ' +
+                          'device' + (deviceExempt.length
+                            ? ' (never for ' + deviceExempt.join(', ') + ')'
+                            : '') + '.'
+                        : ''),
+        combiningAlgId: decideRisk || refuseEmail || decideDevices
           ? model.RULE_ALG.ORDERED_DENY_OVERRIDES
           : model.RULE_ALG.DENY_UNLESS_PERMIT,
         // NO TARGET, and that is deliberate rather than an omission: this
@@ -793,7 +1003,8 @@ const TEMPLATES: TemplateRow[] = [
         // explain.
         target: null,
         variables: {},
-        rules: riskRules.concat(decideRisk && protectedApp ? [{
+        rules: deviceRules.concat(riskRules).concat(decideRisk &&
+                                                     protectedApp ? [{
           // THE ALARM (#226): a protected application, an elevated risk, and
           // no factor to ask for. The role rule still decides — this rule
           // permits exactly what it permits, and adds the obligation that
@@ -1027,7 +1238,26 @@ const TEMPLATES: TemplateRow[] = [
         label: 'risk-level-change levels that end them',
         dflt: 'HIGH', type: 'string',
         help: 'Comma separated current_level values of CAEP ' +
-              'risk-level-change. Empty builds no such rule.' }
+              'risk-level-change. Empty builds no such rule.' },
+      // FOREIGN TRANSMITTERS (#153): events another identity service sent
+      // about a person this realm maps through a federation relationship.
+      { name: 'foreignEndSessionEvents',
+        label: 'Foreign events that end the person\'s sessions here',
+        dflt: 'session-revoked, credential-change, sessions-revoked, ' +
+              'credential-compromise, account-purged',
+        type: 'string',
+        help: 'Comma separated short names, from a foreign transmitter ' +
+              'only. Empty builds no such rule.' },
+      { name: 'foreignDisableEvents',
+        label: 'Foreign events that disable the account here',
+        dflt: 'account-disabled', type: 'string',
+        help: 'Comma separated short names. Empty: a foreign transmitter ' +
+              'never disables anybody here.' },
+      { name: 'foreignEnableEvents',
+        label: 'Foreign events that enable it again',
+        dflt: 'account-enabled', type: 'string',
+        help: 'Comma separated short names. An account is enabled only if ' +
+              'the same transmitter\'s event disabled it.' }
     ],
     build: function (answers, options) {
       log.debug('Entering buildSignalResponse().');
@@ -1040,6 +1270,14 @@ const TEMPLATES: TemplateRow[] = [
       const riskLevels = B.listOf(given.endSessionsOnRiskLevels ===
                                   undefined ? 'HIGH'
                                             : given.endSessionsOnRiskLevels);
+      const foreignEnd = B.listOf(given.foreignEndSessionEvents === undefined
+        ? 'session-revoked, credential-change, sessions-revoked, ' +
+          'credential-compromise, account-purged'
+        : given.foreignEndSessionEvents);
+      const foreignDisable = B.listOf(given.foreignDisableEvents ===
+        undefined ? 'account-disabled' : given.foreignDisableEvents);
+      const foreignEnable = B.listOf(given.foreignEnableEvents === undefined
+        ? 'account-enabled' : given.foreignEnableEvents);
       const env = model.CATEGORY.ENVIRONMENT;
       const bagOf = function (values: string[]): any {
         log.debug("Entering bagOf().");
@@ -1069,6 +1307,20 @@ const TEMPLATES: TemplateRow[] = [
                  condition: B.apply(F1 + 'and', conjuncts),
                  obligations: [], advice: [] };
       };
+      const actionIs = function (action: string): any {
+        log.debug("Entering actionIs().");
+        log.debug("Leaving actionIs().");
+        return B.apply(F1 + 'string-is-in', [
+          B.value(TYPE.STRING, action),
+          B.designator(model.CATEGORY.ACTION, model.ATTRIBUTE.ACTION_ID,
+                       TYPE.STRING)]);
+      };
+      // A foreign transmitter's surface is `foreign:<id>`; this service's
+      // own receivers never match, so their rules and these never mix.
+      const fromForeign = B.apply(F3 + 'string-starts-with', [
+        B.value(TYPE.STRING, 'foreign:'),
+        B.apply(F1 + 'string-one-and-only', [
+          B.designator(env, SIGNAL_ATTRIBUTE.SURFACE, TYPE.STRING)])]);
       const rules: any[] = [];
       if (endOn.length) {
         rules.push(rule('end-sessions', 'End the receiving surface\'s own ' +
@@ -1080,6 +1332,25 @@ const TEMPLATES: TemplateRow[] = [
           'risk-level-change to ' + riskLevels.join(', ') + '.',
           [endSessions, anyIn(SIGNAL_ATTRIBUTE.EVENT, ['risk-level-change']),
            anyIn(SIGNAL_ATTRIBUTE.LEVEL, riskLevels)]));
+      }
+      if (foreignEnd.length) {
+        rules.push(rule('foreign-end-sessions', 'From a foreign ' +
+          'transmitter, end the person\'s sessions here on ' +
+          foreignEnd.join(', ') + '.',
+          [actionIs(SIGNAL_RESPONSE.END_PERSON_SESSIONS), fromForeign,
+           anyIn(SIGNAL_ATTRIBUTE.EVENT, foreignEnd)]));
+      }
+      if (foreignDisable.length) {
+        rules.push(rule('foreign-disable', 'From a foreign transmitter, ' +
+          'disable the account on ' + foreignDisable.join(', ') + '.',
+          [actionIs(SIGNAL_RESPONSE.DISABLE_ACCOUNT), fromForeign,
+           anyIn(SIGNAL_ATTRIBUTE.EVENT, foreignDisable)]));
+      }
+      if (foreignEnable.length) {
+        rules.push(rule('foreign-enable', 'From a foreign transmitter, ' +
+          'enable it again on ' + foreignEnable.join(', ') + '.',
+          [actionIs(SIGNAL_RESPONSE.ENABLE_ACCOUNT), fromForeign,
+           anyIn(SIGNAL_ATTRIBUTE.EVENT, foreignEnable)]));
       }
       log.debug('Leaving buildSignalResponse(). ' + rules.length +
                 ' rule(s).');
@@ -1676,6 +1947,7 @@ class XacmlTemplates {
   static readonly ISSUANCE_ATTRIBUTE = ISSUANCE_ATTRIBUTE;
   static readonly RISK_ATTRIBUTE = RISK_ATTRIBUTE;
   static readonly AUTHN_ATTRIBUTE = AUTHN_ATTRIBUTE;
+  static readonly DEVICE_ATTRIBUTE = DEVICE_ATTRIBUTE;
   static readonly RISK_RESPONSE = RISK_RESPONSE;
   static readonly SIGNAL_ATTRIBUTE = SIGNAL_ATTRIBUTE;
   static readonly SIGNAL_RESPONSE = SIGNAL_RESPONSE;
@@ -1792,6 +2064,7 @@ export = {
   ISSUANCE_ATTRIBUTE: XacmlTemplates.ISSUANCE_ATTRIBUTE,
   RISK_ATTRIBUTE: XacmlTemplates.RISK_ATTRIBUTE,
   AUTHN_ATTRIBUTE: XacmlTemplates.AUTHN_ATTRIBUTE,
+  DEVICE_ATTRIBUTE: XacmlTemplates.DEVICE_ATTRIBUTE,
   RISK_RESPONSE: XacmlTemplates.RISK_RESPONSE,
   SIGNAL_ATTRIBUTE: XacmlTemplates.SIGNAL_ATTRIBUTE,
   SIGNAL_RESPONSE: XacmlTemplates.SIGNAL_RESPONSE,
