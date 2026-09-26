@@ -273,6 +273,8 @@ async function test() {
   }
   await ok(apiA + "/config/set", { key: "ssf.pushDelivery", value: true },
            "let A push");
+  await ok(apiA + "/config/set", { key: "ssf.pushSkipTlsVerification",
+    value: true }, "let A's push trust this run's certificate");
   // A's address, pinned, as a deployed transmitter's is: a SET it builds
   // with no request in hand (an emitted event) otherwise names its subject
   // under the listener's address and its token under the request's, and
