@@ -779,6 +779,7 @@ var config = {
     bulkMaxOperations: 100,      // Bulk operation limit
     bulkMaxPayloadSize: 1048576, // Bulk payload limit
     authDiscovery: false,        // Authenticate discovery too
+    inventOnCreate: true,        // Fill a provisioned person in (development mode)
     authRealm: "SCIM",           // Authentication realm
     scopeRead: "scim:read",      // OAuth scope to read
     scopeWrite: "scim:write",    // OAuth scope to write

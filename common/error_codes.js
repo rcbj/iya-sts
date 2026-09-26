@@ -7532,6 +7532,14 @@ const CODES = [
       'mode named a subject no live session here gave the asking relying ' +
       'party (by the NameIdentifier it was issued). #189.',
     spec: 'SOAP samlp:Response with status samlp:Requester (HTTP 200)' },
+  { code: 'STS-SAML-0097',
+    summary: 'The TLS certificate the SAML back channel presents (this ' +
+      'process\'s main-port leaves, or another cluster node\'s off its ' +
+      'membership row) could not be read while a SAML 2.0 or SAML 1.1 ' +
+      'metadata document was built, so the document went out without that ' +
+      'KeyDescriptor and a service provider authenticating the back channel ' +
+      'from metadata will refuse the node it names none for. #248.',
+    spec: 'none — the metadata is served (HTTP 200) without the key' },
   // ===== WSTRUST ===========================================================
   { code: 'STS-WSTRUST-0001',
     summary: 'The RequestSecurityToken body is not well-formed XML (or is ' +
@@ -10001,6 +10009,20 @@ const CODES = [
       'the client it was issued to no longer declares that scope in its ' +
       'oauthAllowedScope.',
     spec: 'HTTP 403 insufficient_scope (SCIM Error)' },
+  { code: 'STS-SCIM-0080',
+    summary: 'A request named a path under /scim/v2 that is no SCIM ' +
+      'endpoint; it is answered in the SCIM Error schema rather than by ' +
+      'express as an HTML page (#206).',
+    spec: 'HTTP 404 (SCIM Error, RFC 7644 section 3.12)' },
+  { code: 'STS-SCIM-0081',
+    summary: 'A PUT, PATCH or DELETE carried an If-Match other than *, and ' +
+      'this service keeps no entity-tags, so no version can match it ' +
+      '(RFC 9110 section 13.1.1); nothing was changed (#206).',
+    spec: 'HTTP 412 (SCIM Error, RFC 7644 sections 3.12 and 3.14)' },
+  { code: 'STS-SCIM-0082',
+    summary: 'A filter ordered (gt, ge, lt, le) a boolean or binary ' +
+      'attribute, which RFC 7644 section 3.4.2.2 refuses (#206).',
+    spec: 'HTTP 400 invalidFilter (SCIM Error)' },
   // ===== SPIFFE ============================================================
   { code: 'STS-SPIFFE-0001',
     summary: 'A SPIFFE gRPC handler failed with something that was not a ' +

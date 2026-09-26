@@ -352,6 +352,53 @@ let listenError = null;
 // `serverCertificateExtensions()`.
 // ---------------------------------------------------------------------------
 // ---------------------------------------------------------------------------
+// EVERY LEAF THE MAIN PORT PRESENTS, AS THIS PROCESS KNOWS THEM (#248).
+//
+// The SAML identity provider's metadata publishes the certificate its back
+// channel presents (`saml/listener_keys.ts`), so a service provider can
+// authenticate artifact resolution and the attribute query from metadata
+// alone. That needs the LEAVES, every one — with `tls.certificateAlgorithms`
+// naming two, OpenSSL presents whichever matches what the client offered —
+// and it needs them to be the SOCKET's, which is a different answer in a
+// request worker: a worker was handed the front process's first leaf, and
+// every other entry of SERVER_CERTIFICATES there is a certificate that
+// worker made for itself and nothing presents. So a handed-in process
+// answers the first leaf and the others the front process handed with it
+// (the fork's environment, then every re-issue's bundle), and a process that
+// owns the socket answers what it built. Public material only: no key.
+// ---------------------------------------------------------------------------
+let adoptedExtraCertPems = null;
+
+function handedExtraCertPems() {
+  log.debug("Entering handedExtraCertPems().");
+  if (adoptedExtraCertPems) {
+    log.debug("Leaving handedExtraCertPems(). Adopted.");
+    return adoptedExtraCertPems.slice(0);
+  }
+  const text = process.env.STS_TLS_SERVER_EXTRA_CERTS_PEM || '';
+  const found = String(text).match(
+      /-----BEGIN CERTIFICATE-----[\s\S]*?-----END CERTIFICATE-----/g) || [];
+  log.debug("Leaving handedExtraCertPems(). " + found.length + ".");
+  return found.map(function (one) {
+    return one + '\n';
+  });
+}
+
+function presentedCertificatePems() {
+  log.debug("Entering presentedCertificatePems().");
+  if (SERVER_CERTIFICATE.handedIn) {
+    log.debug("Leaving presentedCertificatePems(). Handed in.");
+    return [SERVER_CERTIFICATE.certPem].concat(handedExtraCertPems());
+  }
+  log.debug("Leaving presentedCertificatePems().");
+  return SERVER_CERTIFICATES.map(function (one) {
+    return one.certPem;
+  }).filter(function (pem) {
+    return !!pem;
+  });
+}
+
+// ---------------------------------------------------------------------------
 // A CERTIFICATE HANDED IN, RATHER THAN ONE MADE HERE (2026-09-07).
 //
 // This certificate is self-signed and generated PER START, which is right for a
@@ -1919,7 +1966,11 @@ function serverCertificateBundle() {
   return {
     certPem: SERVER_CERTIFICATE.certPem,
     chainPem: (SERVER_CERTIFICATE.chainPem || []).slice(0),
-    anchorPem: trustAnchorPems()[0] || ''
+    anchorPem: trustAnchorPems()[0] || '',
+    // THE OTHER LEAVES THE SOCKET PRESENTS (#248): an ML-DSA certificate
+    // beside the RSA one. Public, like the rest of this bundle; see
+    // presentedCertificatePems().
+    extraCertPems: presentedCertificatePems().slice(1)
   };
 }
 
@@ -1933,6 +1984,9 @@ function adoptServerCertificate(bundle) {
   SERVER_CERTIFICATE.chainPem = (bundle.chainPem || []).slice(0);
   SERVER_CERTIFICATE.handedAnchorPem = bundle.anchorPem || '';
   SERVER_CERTIFICATE.handedIn = true;
+  if (Array.isArray(bundle.extraCertPems)) {
+    adoptedExtraCertPems = bundle.extraCertPems.slice(0);
+  }
   SERVER_CERTIFICATE.selfSigned = !(bundle.chainPem || []).length;
   SERVER_CERTIFICATE.fingerprint256 = fingerprintOf(bundle.certPem);
   try {
@@ -4126,6 +4180,8 @@ module.exports = {
   // private (2026-09-13). `serverCertificate()` above answers the FIRST, which
   // is what every existing caller means; an ML-DSA certificate beside it is a
   // leaf of the same TLS Issuing CA now, and this is where that is visible.
+  // Every leaf the main port presents, as the socket presents it (#248).
+  presentedCertificatePems: presentedCertificatePems,
   serverCertificateChains: function () {
     log.debug("Entering serverCertificateChains().");
     log.debug("Leaving serverCertificateChains().");

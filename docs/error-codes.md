@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3505** of them, in **38** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3509** of them, in **38** subsystems.
 
 ## Where a code appears
 
@@ -64,14 +64,14 @@ is an ordinary outcome.
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 47
 * [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 249
 * [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 568
-* [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 96
+* [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 97
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 21
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 16
 * [Federation (`STS-FED`)](#sts-fed) — 134
 * [OpenID Federation (`STS-OIDFED`)](#sts-oidfed) — 66
 * [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 164
 * [LDAP directory (`STS-LDAP`)](#sts-ldap) — 84
-* [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 74
+* [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 77
 * [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 144
 * [TLS and client certificates (`STS-TLS`)](#sts-tls) — 33
 * [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 94
@@ -1842,6 +1842,7 @@ Raised from: saml/.
 | `STS-SAML-0094` | A SAML 2.0 AttributeQuery named a subject no live session here gave the asking service provider (by the NameID it was issued), or that session has ended. #189. | SOAP samlp:Response, Requester / UnknownPrincipal (HTTP 200) |
 | `STS-SAML-0095` | The SAML 2.0 attribute authority received no <samlp:AttributeQuery>, or one naming no Issuer. #189. | SOAP samlp:Response, Requester (HTTP 200) |
 | `STS-SAML-0096` | A SAML 1.1 AttributeQuery or AuthenticationQuery in product mode named a subject no live session here gave the asking relying party (by the NameIdentifier it was issued). #189. | SOAP samlp:Response with status samlp:Requester (HTTP 200) |
+| `STS-SAML-0097` | The TLS certificate the SAML back channel presents (this process's main-port leaves, or another cluster node's off its membership row) could not be read while a SAML 2.0 or SAML 1.1 metadata document was built, so the document went out without that KeyDescriptor and a service provider authenticating the back channel from metadata will refuse the node it names none for. #248. | none — the metadata is served (HTTP 200) without the key |
 
 ## STS-WSTRUST
 
@@ -2464,6 +2465,9 @@ Raised from: scim/.
 | `STS-SCIM-0077` | A HOBA credential was refused because the same key id, challenge and nonce had already been accepted by another process of this service (a replay). | RFC 7486 section 6; HTTP 401 with a fresh challenge |
 | `STS-SCIM-0078` | A Digest or HOBA credential could not be proved unspent because the store that records spent credentials could not be asked; it was refused (fail closed). | HTTP 500 (SCIM Error) |
 | `STS-SCIM-0079` | An access token carried the SCIM scope an operation needs, and the client it was issued to no longer declares that scope in its oauthAllowedScope. | HTTP 403 insufficient_scope (SCIM Error) |
+| `STS-SCIM-0080` | A request named a path under /scim/v2 that is no SCIM endpoint; it is answered in the SCIM Error schema rather than by express as an HTML page (#206). | HTTP 404 (SCIM Error, RFC 7644 section 3.12) |
+| `STS-SCIM-0081` | A PUT, PATCH or DELETE carried an If-Match other than *, and this service keeps no entity-tags, so no version can match it (RFC 9110 section 13.1.1); nothing was changed (#206). | HTTP 412 (SCIM Error, RFC 7644 sections 3.12 and 3.14) |
+| `STS-SCIM-0082` | A filter ordered (gt, ge, lt, le) a boolean or binary attribute, which RFC 7644 section 3.4.2.2 refuses (#206). | HTTP 400 invalidFilter (SCIM Error) |
 
 ## STS-SPIFFE
 
