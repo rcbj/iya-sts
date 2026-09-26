@@ -61,6 +61,18 @@ var config = {
     // GET /oauth2/rfc9700 lists what it does and does not enforce.
     rfc9700: false,
 
+    // RFC 6749 section 4.1.2: a code used twice is refused in every mode
+    // since #187, and this is the opt-in that restores the old development
+    // courtesy (an identical repeat answered with the same tokens). ON HERE
+    // ONLY because the parent project's vendored `oauth2_sts_endpoints.js`
+    // still asserts that courtesy in development mode; remove it once that
+    // job asserts the refusal (rcbj/id-proto-debugger#306). The OpenID
+    // conformance jobs switch it off in their own realms, so they test the
+    // default. env/test.js carries the same line, for the same job:
+    // ./run-tests.sh gives the service that file unless a debug level asks
+    // for this one.
+    codeReplayIdempotent: true,
+
     // OAuth 2.1 (draft-ietf-oauth-v2-1-16). OFF, for the reason above; it
     // turns RFC 9700 mode on as well, and additionally refuses a client that
     // has not registered its own redirect URI. GET /oauth2/oauth21 lists it.

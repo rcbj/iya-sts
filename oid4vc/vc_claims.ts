@@ -1097,6 +1097,31 @@ class VcClaims {
   // claims in its authorization_details (OID4VCI section 5.1.1). Absent means
   // all of them, which is what every other caller wants and what an
   // authorization carrying no `claims` member means.
+  // OIDC Core 5.1's `updated_at` (#187): the time the person's entry last
+  // changed, from the directory's own `modifyTimestamp` — the one claim of
+  // the `profile` scope that is a fact the directory keeps rather than a
+  // value somebody typed. Seconds since the epoch, or null when there is no
+  // entry or no stamp. The conformance suite's oidcc-scope-profile reported
+  // it missing.
+  updatedAtOf(name: unknown): number | null {
+    const { log } = this.deps;
+    log.debug("Entering VcClaims.updatedAtOf().");
+    const attributes = this.directoryAttributes(name);
+    const stamp = attributes && [].concat(attributes.modifytimestamp ||
+                                          attributes.createtimestamp ||
+                                          [])[0];
+    const m = /^(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})/.exec(
+      String(stamp || ''));
+    if (!m) {
+      log.debug("Leaving VcClaims.updatedAtOf(). No stamp.");
+      return null;
+    }
+    const at = Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]),
+                        Number(m[4]), Number(m[5]), Number(m[6]));
+    log.debug("Leaving VcClaims.updatedAtOf().");
+    return Math.floor(at / 1000);
+  }
+
   subjectClaimsFor(name: unknown, tokenClaims?: any, rows?: CatalogueRow[]) {
     const { log } = this.deps;
     log.debug("Entering VcClaims.subjectClaimsFor(). name=" + name +
@@ -1351,6 +1376,7 @@ export = {
   setDirectory: slot.forward('setDirectory'),
   populateDirectory: slot.forward('populateDirectory'),
   subjectClaimsFor: slot.forward('subjectClaimsFor'),
+  updatedAtOf: slot.forward('updatedAtOf'),
   metadataClaims: slot.forward('metadataClaims'),
   ldpMetadataClaims: slot.forward('ldpMetadataClaims'),
   advertisedClaims: slot.forward('advertisedClaims'),

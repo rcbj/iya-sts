@@ -8029,6 +8029,20 @@ function federationExpired(fields) {
          !(at > Math.floor(Date.now() / 1000));
 }
 
+// How a client was registered through an OpenID Federation — 'automatic',
+// 'explicit' — or '' for any other client or one whose registration ended
+// (#187: a request object from an automatically registered relying party is
+// held to OpenID Federation 1.1 section 12.1.1.1 on every request).
+function federationRegistrationTypeOf(clientId) {
+  log.debug("Entering federationRegistrationTypeOf().");
+  const loaded = load(clientId);
+  const fields = (loaded.known && loaded.record && loaded.record.fields) || {};
+  const out = fields.appFederationRegistration && !federationExpired(fields)
+    ? String(fields.appFederationRegistration) : '';
+  log.debug("Leaving federationRegistrationTypeOf(). " + (out || 'none'));
+  return out;
+}
+
 // Every application registered through an OpenID Federation, for the job
 // that removes the ones past their expiry and for the console.
 function federatedRegistrations() {
@@ -12024,6 +12038,7 @@ module.exports = {
   // OpenID Federation registrations (#134).
   federatedRegistrations: federatedRegistrations,
   federationExpired: federationExpired,
+  federationRegistrationTypeOf: federationRegistrationTypeOf,
   get: get,
   settingFor: settingFor,
   largestSetting: largestSetting,

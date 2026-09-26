@@ -77,6 +77,7 @@
 // ---------------------------------------------------------------------------
 
 const nodeCrypto = require('crypto');
+const zlib = require('zlib');
 const forge = require('node-forge');
 // FORGE'S GENERATOR IS NODE'S (#65, section 13). forge keeps a Fortuna DRBG
 // of its own and draws from it INSIDE the library — the blinding of every
@@ -3851,7 +3852,21 @@ function openJweContent(enc, cek, iv, aad, ciphertext, tag) {
 // truncated to length would agree with a matching bug at the far end and with
 // nothing else.
 // ---------------------------------------------------------------------------
-function concatKdf(z, keyBytes, algId) {
+// PartyUInfo and PartyVInfo (RFC 7518 section 4.6.2) are the header's
+// `apu` and `apv`, base64url-DECODED, each with its length — and empty only
+// when the header has none. They were always written as empty, so a JWE from
+// a sender that sets them (an OpenID4VP wallet puts the nonce in `apv`)
+// derived a different key here and failed its tag: the OpenID conformance
+// suite's direct_post.jwt modules found it (#187).
+function partyInfo(header, name) {
+  log.debug('Entering partyInfo(). ' + name);
+  const value = header && header[name];
+  log.debug('Leaving partyInfo().');
+  return typeof value === 'string' && value
+    ? Buffer.from(value, 'base64url') : Buffer.alloc(0);
+}
+
+function concatKdf(z, keyBytes, algId, header) {
   log.debug('Entering concatKdf(). algId=' + algId);
   const u32 = function (n) {
     log.debug("Entering u32().");
@@ -3861,7 +3876,10 @@ function concatKdf(z, keyBytes, algId) {
     return b;
   };
   const alg = Buffer.from(algId, 'utf8');
-  const otherInfo = Buffer.concat([u32(alg.length), alg, u32(0), u32(0),
+  const apu = partyInfo(header, 'apu');
+  const apv = partyInfo(header, 'apv');
+  const otherInfo = Buffer.concat([u32(alg.length), alg, u32(apu.length), apu,
+                                   u32(apv.length), apv,
                                    u32(keyBytes * 8)]);
   const rounds = Math.ceil(keyBytes / 32);
   const blocks = [];
@@ -4085,10 +4103,10 @@ function wrapCek(alg, recipientJwk, cek, header) {
     // The AlgorithmID is the content encryption `enc`, and the key data length
     // is the WHOLE CEK — both halves, for a CBC-HMAC enc.
     log.debug('Leaving wrapCek(). ECDH-ES direct.');
-    return { cek: concatKdf(z, cek.length, header.enc),
+    return { cek: concatKdf(z, cek.length, header.enc, header),
              encryptedKey: Buffer.alloc(0) };
   }
-  const kek = concatKdf(z, ECDH_KW_BYTES[alg], alg);
+  const kek = concatKdf(z, ECDH_KW_BYTES[alg], alg, header);
   log.debug('Leaving wrapCek(). ' + alg + '.');
   return { cek: cek, encryptedKey: aesKeyWrap(kek, cek) };
 }
@@ -4114,6 +4132,21 @@ function encryptJweCompact(plaintext, opts) {
   if (options.cty) {
     header.cty = options.cty;
   }
+  // RFC 7516 section 4.1.3's `zip`, DEF alone (RFC 7518 section 7.3: raw
+  // DEFLATE, RFC 1951), applied to the plaintext BEFORE it is sealed (#187:
+  // OpenID4VCI section 8.2's Credential Response compression, which a wallet
+  // asks for from `zip_values_supported`). Anything else is refused by name.
+  let body = Buffer.from(plaintext, 'utf8');
+  if (options.zip !== undefined && options.zip !== null &&
+      options.zip !== '') {
+    if (options.zip !== 'DEF') {
+      log.debug('Leaving encryptJweCompact(). Unsupported zip.');
+      throw new Error('encryptJweCompact: unsupported zip "' + options.zip +
+                      '"; this service compresses with DEF only.');
+    }
+    header.zip = 'DEF';
+    body = zlib.deflateRawSync(body);
+  }
   if (options.jwk && options.jwk.kid) {
     header.kid = options.jwk.kid;
   }
@@ -4133,7 +4166,7 @@ function encryptJweCompact(plaintext, opts) {
   const headerB64 = b64u(Buffer.from(JSON.stringify(header), 'utf8'));
 
   const sealed = sealContent(spec, wrapped.cek, iv,
-      Buffer.from(headerB64, 'ascii'), Buffer.from(plaintext, 'utf8'));
+      Buffer.from(headerB64, 'ascii'), body);
 
   const compact = [headerB64, b64u(wrapped.encryptedKey), b64u(iv),
                    b64u(sealed.ciphertext), b64u(sealed.tag)].join('.');
@@ -4250,11 +4283,11 @@ function unwrapCek(header, encryptedKey, options, spec) {
         '"' + header.enc + '" is not one this ' +
         'service knows.');
     }
-    const out = concatKdf(z, spec.cekBytes, header.enc);
+    const out = concatKdf(z, spec.cekBytes, header.enc, header);
     log.debug('Leaving unwrapCek(). ECDH-ES direct.');
     return out;
   }
-  const kek = concatKdf(z, ECDH_KW_BYTES[alg], alg);
+  const kek = concatKdf(z, ECDH_KW_BYTES[alg], alg, header);
   const out = aesKeyUnwrap(kek, encryptedKey);
   log.debug('Leaving unwrapCek(). ' + alg + '.');
   return out;

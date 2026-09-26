@@ -2186,8 +2186,18 @@ class SsfStreams {
         // caller for that reason.
         delivery.authorization_header = record.delivery.authorization_header;
       }
+    } else if (settings.pollEndpoint) {
+      // RFC 8936's poll endpoint is PER STREAM, and this transmitter serves
+      // every stream at one path, so the URL it hands the receiver names the
+      // stream in its query (#187). It was the bare path, which the OpenID
+      // conformance suite's poll modules then POSTed to exactly as given —
+      // and were refused for not saying which stream, by an error message
+      // claiming this member said so.
+      delivery.endpoint_url = settings.pollEndpoint +
+        (settings.pollEndpoint.indexOf('?') >= 0 ? '&' : '?') +
+        'stream_id=' + encodeURIComponent(record.stream_id);
     } else {
-      delivery.endpoint_url = settings.pollEndpoint || '';
+      delivery.endpoint_url = '';
     }
     const out: Record<string, any> = {
       stream_id: record.stream_id,

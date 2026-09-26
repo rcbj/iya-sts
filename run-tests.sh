@@ -186,6 +186,8 @@ STS_LB_CONTAINER_NAME="${STS_LB_CONTAINER_NAME:-sts-docker-tests-lb}"
 STS_CONFORMANCE_MONGO_CONTAINER_NAME="${STS_CONFORMANCE_MONGO_CONTAINER_NAME:-sts-docker-tests-conformance-mongo}"
 STS_CONFORMANCE_SERVER_CONTAINER_NAME="${STS_CONFORMANCE_SERVER_CONTAINER_NAME:-sts-docker-tests-conformance-server}"
 STS_CONFORMANCE_NGINX_CONTAINER_NAME="${STS_CONFORMANCE_NGINX_CONTAINER_NAME:-sts-docker-tests-conformance-nginx}"
+# And the one that mints the suite's listener certificate (#187).
+STS_CONFORMANCE_TLS_CONTAINER_NAME="${STS_CONFORMANCE_TLS_CONTAINER_NAME:-sts-docker-tests-conformance-tls}"
 # The four SAML interoperability peers (#189-#192), named for the same reason.
 STS_SAML_SHIB_CONTAINER_NAME="${STS_SAML_SHIB_CONTAINER_NAME:-sts-docker-tests-saml-shib}"
 STS_SAML_SSP_CONTAINER_NAME="${STS_SAML_SSP_CONTAINER_NAME:-sts-docker-tests-saml-ssp}"
@@ -261,11 +263,13 @@ STS_TEARDOWN_TIMEOUT="${STS_TEARDOWN_TIMEOUT:-300}"
 # THE OPENID FOUNDATION'S CONFORMANCE SUITE (#176, 2026-09-24).
 #
 # rcbj's decision on #142: "a job in ./run-tests.sh that fails when a module
-# fails". The job is tests/vendored/sts_fapi_conformance.js; the suite is
-# three containers in docker-compose-run-tests.yml behind the `conformance`
-# compose profile — its server (a JVM), its MongoDB and its nginx — started
-# only in the modes named here, and the job is SKIPPED, with the reason, in
-# every other one.
+# fails". The jobs are tests/vendored/sts_fapi_conformance.js and, since #187,
+# five more — OpenID Connect, Shared Signals, OpenID Federation, OpenID4VCI
+# and OpenID4VP (tests/CLAUDE.md, *The other plans*); the suite is four
+# containers in docker-compose-run-tests.yml behind the `conformance` compose
+# profile — its server (a JVM), its MongoDB, its nginx and the one-shot that
+# mints the nginx a certificate — started only in the modes named here, and
+# the jobs are SKIPPED, with the reason, in every other one.
 #
 #   STS_TEST_CONFORMANCE_MODES   a comma list of modes, in modes.sh's
 #                                spelling (default `memory`); empty runs the
@@ -276,12 +280,14 @@ STS_TEARDOWN_TIMEOUT="${STS_TEARDOWN_TIMEOUT:-300}"
 #                                persisting mode would check the same rules
 #                                over again for sixteen more minutes.
 #   STS_CONFORMANCE_TIMEOUT      seconds ADDED to such a mode's bound (default
-#                                1800). The four plans took about sixteen
-#                                minutes together on 2026-09-24, and the JVM a
-#                                minute to start.
+#                                10800). #176's four plans took about sixteen
+#                                minutes; with #187's the six jobs took about
+#                                two hours and a quarter on 2026-09-24 (the
+#                                OpenID Connect job alone about ninety
+#                                minutes), and the JVM a minute to start.
 # ---------------------------------------------------------------------------
 STS_TEST_CONFORMANCE_MODES="${STS_TEST_CONFORMANCE_MODES-memory}"
-STS_CONFORMANCE_TIMEOUT="${STS_CONFORMANCE_TIMEOUT:-1800}"
+STS_CONFORMANCE_TIMEOUT="${STS_CONFORMANCE_TIMEOUT:-10800}"
 
 # ---------------------------------------------------------------------------
 # THE SAML INTEROPERABILITY PEERS (#189-#192, 2026-09-24).
@@ -797,11 +803,13 @@ COMPOSE_ENV=(
   "STS_CONFORMANCE_MONGO_CONTAINER_NAME=${STS_CONFORMANCE_MONGO_CONTAINER_NAME}"
   "STS_CONFORMANCE_SERVER_CONTAINER_NAME=${STS_CONFORMANCE_SERVER_CONTAINER_NAME}"
   "STS_CONFORMANCE_NGINX_CONTAINER_NAME=${STS_CONFORMANCE_NGINX_CONTAINER_NAME}"
+  "STS_CONFORMANCE_TLS_CONTAINER_NAME=${STS_CONFORMANCE_TLS_CONTAINER_NAME}"
   # The conformance suite's three, pinned above the service's extra
   # addresses (`.11` to `.13`), which docker's allocator cannot see.
   "CONFORMANCE_MONGO_ADDRESS=${STS_NETWORK_PREFIX}.40"
   "CONFORMANCE_SERVER_ADDRESS=${STS_NETWORK_PREFIX}.41"
   "CONFORMANCE_NGINX_ADDRESS=${STS_NETWORK_PREFIX}.42"
+  "CONFORMANCE_TLS_ADDRESS=${STS_NETWORK_PREFIX}.47"
   "STS_SAML_SHIB_CONTAINER_NAME=${STS_SAML_SHIB_CONTAINER_NAME}"
   "STS_SAML_SSP_CONTAINER_NAME=${STS_SAML_SSP_CONTAINER_NAME}"
   "STS_SAML_PYSAML2_CONTAINER_NAME=${STS_SAML_PYSAML2_CONTAINER_NAME}"
@@ -1729,7 +1737,8 @@ do
     )
     UP_NO_ATTACH+=(--no-attach conformance-mongo
                    --no-attach conformance-server
-                   --no-attach conformance-nginx)
+                   --no-attach conformance-nginx
+                   --no-attach conformance-tls)
     STS_MODE_TIMEOUT=$(( STS_MODE_TIMEOUT + STS_CONFORMANCE_TIMEOUT ))
     echo " The OpenID conformance suite runs in this mode (#176); its bound" \
          "is ${STS_MODE_TIMEOUT}s."

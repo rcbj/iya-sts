@@ -816,24 +816,26 @@ const REQUIREMENTS = [
           'example and this service has no password to change.' },
 
   { id: 'refresh-client-binding', section: '2.2.2', level: 'MUST',
-    appliesTo: 'authorization server', enforced: 'yes',
+    appliesTo: 'authorization server', enforced: 'always',
     title: 'A refresh token may only be used by the client it was issued to',
     note: 'RFC 6749 section 6 makes client_id REQUIRED on a refresh request ' +
           'from a public client and requires the authorization server to ' +
-          'check it. This service read the client_id off the TOKEN and never ' +
-          'compared it with the one presenting it, so any client could ' +
-          'redeem any refresh token it got hold of.' },
+          'check it. A token presented by a client other than the one it ' +
+          'was issued to is refused in EVERY mode since #187 (the OpenID ' +
+          'conformance suite redeemed one across clients in development); ' +
+          'a refresh naming no client at all is refused only in this mode, ' +
+          'where every client identifies itself.' },
 
   // --- section 2.3 — access token privilege restriction --------------------
   { id: 'scope-not-widened', section: '2.3', level: 'MUST',
-    appliesTo: 'authorization server', enforced: 'yes',
+    appliesTo: 'authorization server', enforced: 'always',
     title: 'A refresh must not grant a scope that was never authorized',
     note: 'RFC 6749 section 6: the requested scope must not include any ' +
-          'scope the original grant did not carry. Without the mode this ' +
-          'server took the scope off the refresh REQUEST verbatim, so a ' +
-          'client could ask for `openid admin` on a token granted `openid` ' +
-          'and be given it — privilege escalation by typing, which is the ' +
-          'opposite of section 2.3\'s "restricted to the minimum required".' },
+          'scope the original grant did not carry. Until #187 this server ' +
+          'took the scope off the refresh REQUEST verbatim outside the ' +
+          'mode, so a client could ask for `openid admin` on a token ' +
+          'granted `openid` and be given it — privilege escalation by ' +
+          'typing. It is RFC 6749\'s own rule and holds in every mode.' },
 
   { id: 'audience-restricted', section: '2.3', level: 'SHOULD',
     appliesTo: 'authorization server', enforced: 'always',
@@ -1319,7 +1321,7 @@ const REQUIREMENTS = [
 
   // --- section 4.5 — authorization code injection and replay ---------------
   { id: 'code-single-use', section: '4.5', level: 'MUST',
-    appliesTo: 'authorization server', enforced: 'yes',
+    appliesTo: 'authorization server', enforced: 'always',
     title: 'An authorization code is single use, and is invalidated by its ' +
            'first use',
     note: 'The code is deleted where it is redeemed, and always was. What ' +
@@ -1330,9 +1332,12 @@ const REQUIREMENTS = [
           'the jti, so nothing is minted twice — because "your code_verifier ' +
           'does not match" turning into "already-used code" on the next ' +
           'attempt is the wrong answer at exactly the moment somebody is ' +
-          'acting on the right one. RFC 6749 section 4.1.2 says a real ' +
-          'server refuses that, so in this mode it does, and the refusal ' +
-          'says how long ago the code was redeemed and by which client.' },
+          'acting on the right one. RFC 6749 section 4.1.2 says a server ' +
+          'MUST refuse that, so since #187 it is refused in EVERY mode and ' +
+          'what the code bought is revoked; the relaxation survives only ' +
+          'as `oauth2.codeReplayIdempotent` (off, and ignored in this ' +
+          'mode). The refusal says how long ago the code was redeemed and ' +
+          'by which client.' },
 
   { id: 'code-replay-revokes', section: '4.5', level: 'SHOULD',
     appliesTo: 'authorization server', enforced: 'yes',
@@ -3296,6 +3301,60 @@ function scopeSet(scope) {
   return String(scope || '').split(/\s+/).filter(Boolean);
 }
 
+// ---------------------------------------------------------------------------
+// RFC 6749 SECTION 6'S TWO MUSTS, IN EVERY MODE (#187, 2026-09-24). The
+// OpenID Foundation's conformance suite (oidcc-refresh-token) redeemed the
+// second client's refresh token as the first client and was given tokens:
+// the client binding and the scope check lived behind RFC 9700 mode, as if
+// they were that BCP's refinements. They are RFC 6749's own — "ensure that
+// the refresh token was issued to the authenticated client" and "the
+// requested scope MUST NOT include any scope not originally granted" — so a
+// refresh token presented by a client NAMED on the request that is not the
+// one it was issued to, or asking for more than its grant, is refused in
+// every mode. A request naming no client at all is still refused only in
+// the mode (STS-OAUTH-0140): outside it there is no client identity to
+// compare, and development accepts unauthenticated clients by design.
+// ---------------------------------------------------------------------------
+function coreRefreshRefusal(claims, body, presentedClient) {
+  log.debug("Entering coreRefreshRefusal().");
+  if (presentedClient && claims.client_id &&
+      claims.client_id !== presentedClient) {
+    log.debug("Leaving coreRefreshRefusal(). A different client is " +
+              "presenting it.");
+    return { ok: false, errorCode: 'STS-OAUTH-0141', error: 'invalid_grant',
+             requirement: 'refresh-client-binding',
+             description: 'RFC 6749 section 6: this refresh token was ' +
+                          'issued to client "' +
+                          claims.client_id + '" and is being presented by "' +
+                          presentedClient +
+                          '". A refresh token may only be used by the client ' +
+                          'it belongs to.' };
+  }
+  if (body.scope !== undefined && body.scope !== null &&
+      String(body.scope) !== '') {
+    const granted = scopeSet(claims.scope);
+    const asked = scopeSet(body.scope);
+    const extra = asked.filter(function (one) {
+      return granted.indexOf(one) < 0;
+    });
+    if (extra.length) {
+      log.debug("Leaving coreRefreshRefusal(). The requested scope is " +
+                "wider than the grant.");
+      return { ok: false, errorCode: 'STS-OAUTH-0142', error: 'invalid_scope',
+               requirement: 'scope-not-widened',
+               description: 'RFC 6749 section 6: a refresh must not request ' +
+                            'a scope the original grant did not carry ' +
+                            '(and RFC 9700 section 2.3 restricts a token\'s ' +
+                            'privileges to the minimum). This grant carries ' +
+                            '"' + (claims.scope || '') + '" ' +
+                            'and the request asks additionally ' +
+                            'for: ' + extra.join(', ') + '.' };
+    }
+  }
+  log.debug("Leaving coreRefreshRefusal(). Nothing refused.");
+  return { ok: true };
+}
+
 // THIS FUNCTION ANSWERS TWO DIFFERENT QUESTIONS SINCE #34 (2026-09-15), and
 // they are switched by different things:
 //
@@ -3312,13 +3371,17 @@ function scopeSet(scope) {
 // be two orders for a caller to get right.
 function checkRefreshRequest(opts) {
   log.debug("Entering checkRefreshRequest().");
-  if (!enabled() && !senderConstraints.rotationRequired()) {
-    log.debug("Leaving checkRefreshRequest(). Neither mode nor rotation.");
-    return { ok: true };
-  }
   const claims = opts.claims || {};
   const body = opts.body || {};
   const presentedClient = String(opts.clientId || '');
+  if (!enabled() && !senderConstraints.rotationRequired()) {
+    // RFC 6749 section 6's two MUSTs still hold with neither on (#187).
+    const core = coreRefreshRefusal(claims, body, presentedClient);
+    log.debug("Leaving checkRefreshRequest(). Neither mode nor rotation; " +
+              (core.ok ? "RFC 6749 section 6 is met." : "RFC 6749 section " +
+                                                        "6 refused it."));
+    return core;
+  }
   const known = refreshTokens.get(String(claims.jti || ''));
 
   // Replay first, because it is the most specific thing that can be true of a
@@ -3356,8 +3419,10 @@ function checkRefreshRequest(opts) {
   // does not acquire an idle timeout, a client binding it never had, or a
   // scope check, none of which the operator asked for by asking for rotation.
   if (!enabled()) {
-    log.debug("Leaving checkRefreshRequest(). Rotation only.");
-    return { ok: true };
+    const core = coreRefreshRefusal(claims, body, presentedClient);
+    log.debug("Leaving checkRefreshRequest(). Rotation only" +
+              (core.ok ? "." : "; RFC 6749 section 6 refused it."));
+    return core;
   }
 
   // RFC 9700 section 2.2.2's lifetime paragraph: a refresh token SHOULD expire
@@ -3411,42 +3476,10 @@ function checkRefreshRequest(opts) {
                           'the refresh token is being used by the client it ' +
                           'was issued to.' };
   }
-  if (claims.client_id && claims.client_id !== presentedClient) {
-    log.debug("Leaving checkRefreshRequest(). A different client is " +
-              "presenting it.");
-    return { ok: false, errorCode: 'STS-OAUTH-0141', error: 'invalid_grant',
-             requirement: 'refresh-client-binding',
-             description: 'RFC 9700 section 2.2.2: this refresh token was ' +
-                          'issued to client "' +
-                          claims.client_id + '" and is being presented by "' +
-                          presentedClient +
-                          '". A refresh token may only be used by the client ' +
-                          'it belongs to.' };
-  }
-
-  // Section 2.3, by way of RFC 6749 section 6: a refresh may narrow the scope
-  // and must never widen it.
-  if (body.scope !== undefined && body.scope !== null &&
-      String(body.scope) !== '') {
-    const granted = scopeSet(claims.scope);
-    const asked = scopeSet(body.scope);
-    const extra = asked.filter(function (one) {
-      return granted.indexOf(one) < 0;
-    });
-    if (extra.length) {
-      log.debug("Leaving checkRefreshRequest(). The requested scope is wider " +
-                "than the grant.");
-      return { ok: false, errorCode: 'STS-OAUTH-0142', error: 'invalid_scope',
-               requirement: 'scope-not-widened',
-               description: 'RFC 9700 section 2.3: an access token\'s ' +
-                            'privileges must be restricted to the minimum ' +
-                            'required, and RFC 6749 section 6 says a refresh ' +
-                            'must not request a scope the original grant did ' +
-                            'not carry. This grant carries ' +
-                            '"' + (claims.scope || '') + '" ' +
-                            'and the request asks additionally ' +
-                            'for: ' + extra.join(', ') + '.' };
-    }
+  const core = coreRefreshRefusal(claims, body, presentedClient);
+  if (!core.ok) {
+    log.debug("Leaving checkRefreshRequest(). RFC 6749 section 6.");
+    return core;
   }
 
   log.debug("Leaving checkRefreshRequest(). Nothing refused.");
@@ -3557,14 +3590,19 @@ function noteTokenBinding(opts) {
 // ---------------------------------------------------------------------------
 function checkCodeReplay(opts) {
   log.debug("Entering checkCodeReplay().");
-  if (!enabled()) {
-    log.debug("Leaving checkCodeReplay(). RFC 9700 mode is off; the " +
-              "relaxation stands.");
+  // RFC 6749 section 4.1.2's MUST, in every mode since #187: the relaxation
+  // that answered an identical repeat with the same tokens is now an opt-in
+  // (`oauth2.codeReplayIdempotent`, off by default, never in this mode), for
+  // the parent project's development-mode job that still asserts it.
+  if (!enabled() && config.value('oauth2.codeReplayIdempotent')) {
+    log.debug("Leaving checkCodeReplay(). RFC 9700 mode is off and " +
+              "oauth2.codeReplayIdempotent is on; the relaxation stands.");
     return { ok: true };
   }
   const info = opts || {};
   const jtis = (info.issuedJtis || []).filter(Boolean);
-  log.warn('RFC 9700 section 4.5: authorization code presented a second time ' +
+  log.warn('RFC 6749 section 4.1.2, RFC 9700 section 4.5: authorization ' +
+           'code presented a second time ' +
            'by client "' +
            (info.clientId || '(none)') + '", ' + (info.secondsAgo || 0) + ' ' +
            'second(s) after it was redeemed. Refusing it, and revoking ' +
@@ -3575,8 +3613,8 @@ function checkCodeReplay(opts) {
   return {
     ok: false, errorCode: 'STS-OAUTH-0143', error: 'invalid_grant',
     requirement: 'code-single-use', revoke: jtis,
-    description: 'RFC 9700 section 4.5: an authorization code is single use. ' +
-                 'This one was ' +
+    description: 'RFC 6749 section 4.1.2 and RFC 9700 section 4.5: an ' +
+                 'authorization code is single use. This one was ' +
                  'redeemed ' + (info.secondsAgo || 0) + ' second(s) ago by ' +
                                                         'client "' +
                  (info.clientId || '(none)') + '". A code presented twice ' +

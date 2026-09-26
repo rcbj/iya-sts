@@ -156,7 +156,9 @@ is one a conforming client must reject. The inserted form behaves like its
   with no scope gets no scope; it is not given `openid`.
 * **The implicit flow** (`id_token`, `id_token token`) requires a `nonce` and
   refuses an `http` redirect URI that is not a loopback address, in every mode
-  (OpenID Connect Core section 3.2.2.1).
+  (OpenID Connect Core section 3.2.2.1). The hybrid `code id_token` and
+  `code id_token token` require a `nonce` too (section 3.3.2.1); `code token`
+  does not.
 * **`id_token_hint`** is verified as an ID Token this authorization server
   issued to the client, with any of its signing algorithms; an expired one is
   still a valid hint, and an encrypted one is refused. If the person signed in
@@ -197,11 +199,14 @@ and puts the bare permission name in `scope`. **A token for an API is for that
 API alone.** The OpenID Connect scopes are left off it, so a client that wants
 UserInfo asks for a separate token.
 
-**A redeemed code is replayed, not refused, outside the compliance modes.** An
-identical repeat of the token request, made while the code would still have been
-valid, gets the same token set back. A different request is refused, and the
-refusal names the field that differs. RFC 9700 mode refuses the repeat and
-revokes what the code bought.
+**A redeemed code is refused if it is presented again, in every mode**, and
+what it bought is revoked (RFC 6749 sections 4.1.2 and 10.5). The refusal says
+when the code was redeemed and by which client, or names the field that differs.
+The old development courtesy — an identical repeat answered with the same token
+set — is still there as `oauth2.codeReplayIdempotent`, off by default and
+ignored in RFC 9700, OAuth 2.1 and FAPI mode. **It is weaker than the
+specification**; turn it on only for a client under test that cannot yet cope
+with the refusal.
 
 RFC 6749 makes a code single use and section 10.5 says a second presentation
 SHOULD invalidate what the first issued. A bare *already-used* refusal is
@@ -211,12 +216,13 @@ client retrying after a bad `code_verifier`, and names none of them. So:
 * **Nothing before redemption consumes the code.** A wrong `redirect_uri`, PKCE
   verifier or `dpop_jkt` binding is refused and the code stays redeemable, so
   the corrected request gets tokens rather than a complaint about reuse.
-* **A redeemed code is idempotent for the rest of its own lifetime**
-  (`oauth2.authorizationCodeTtlS`, five minutes). An identical repeat — same
-  client, `redirect_uri`, PKCE verifier and DPoP key — gets the **same** token
-  set, down to the `jti`. Nothing is minted twice, and a warning is logged
-  each time saying a real authorization server would refuse. This is the one
-  departure from the RFC.
+* **With `oauth2.codeReplayIdempotent` on, a redeemed code is idempotent for
+  the rest of its own lifetime** (`oauth2.authorizationCodeTtlS`, five
+  minutes). An identical repeat — same client, `redirect_uri`, PKCE verifier
+  and DPoP key — gets the **same** token set, down to the `jti`. Nothing is
+  minted twice, and a warning is logged each time saying a real authorization
+  server would refuse. It departs from the RFC, which is why it is off by
+  default.
 * **The refusals say what happened.** A code presented with anything different
   is refused naming the field that differed, when the code was redeemed and by
   which client. A code this service has no record of gets its own message:
@@ -723,7 +729,10 @@ It is answered from the **identity verifications recorded for the person**:
 
 `value`, `values` and `time.max_age` on the verification and its evidence
 **choose** which record answers; an element no record satisfies is left out
-entirely, and only the members you asked for are returned. A claim is released
+entirely, and only the members you asked for are returned. `value` and
+`values` on a claim inside `verified_claims` are enforced too (section
+5.7.4): a claim that does not match is left out, and an element left with no
+claim is left out whole. On ordinary claims they are still only reported. A claim is released
 as verified only **while the directory still holds the value that was
 verified** — change the entry and the claim drops out of `verified_claims`
 (the ordinary claim carries the new value). A malformed request —
@@ -1568,7 +1577,10 @@ from a script.
     a page with a real button and no script.
   * `post_logout_redirect_uri` is followed only if the client registered it
     exactly, in every mode. Development still follows one for a client that
-    registered none. `state` is returned with it.
+    registered none. `state` is returned with it. A request that names no
+    client at all (neither `id_token_hint` nor `client_id`) is never
+    redirected, in any mode: section 2 says the OP must not redirect unless
+    something confirms the address.
 * **[Front-Channel Logout 1.0](https://openid.net/specs/openid-connect-frontchannel-1_0.html)**:
   every sign-out page renders a hidden iframe per registered
   `frontchannel_logout_uri`, with a visible link beside each one.

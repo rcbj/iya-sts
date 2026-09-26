@@ -34,7 +34,19 @@ which is an extension: see *The issuer named by a DID* below.
 
 The `claims` each configuration advertises are built from the same selection
 the credentials are built from (`/admin/vc`), so the metadata cannot describe a
-credential this issuer no longer mints.
+credential this issuer no longer mints. As OpenID4VCI 1.0 section 12.2.4 has
+it, a configuration's `display` and `claims` sit inside its
+`credential_metadata` object, not at the top of the configuration.
+
+A realm's issuer is `https://host/realm/<id>`, and its metadata is at the
+path-inserted form section 12.2.2 gives,
+`/.well-known/openid-credential-issuer/realm/<id>` (and likewise
+`/.well-known/jwt-vc-issuer/realm/<id>`); the document at that path is the
+realm's own, whose `credential_issuer` is exactly that identifier.
+
+An issued credential's `nbf` is rounded down to the hour and its `exp` up to
+the hour, so the credentials of one batch do not share a precise issuance
+instant that would let verifiers link them (RFC 9901 section 10.1).
 
 ### Five credential configurations, three formats
 
@@ -56,7 +68,10 @@ the composites are allowed and are signed in the worker pool). `ldp_vc` is
 signed with the realm's BBS key, which is published at `/bbs/keys/{kid}` and in
 the DID document, and which rotates like any other signing key. A credential
 names the certificate chain of its signing key in `x5u` or `x5c`, as
-`oid4vci.credentialCertificateHeader` says.
+`oid4vci.credentialCertificateHeader` says. The `x5c` of a credential and of
+a Status List Token stops short of the service Root, the trust anchor, which
+HAIP 1.0 sections 6.1 and 6.1.1 forbid there; a HAIP deployment sets the
+header to `x5c`, because HAIP's verifier holds only the anchor.
 
 ### What a credential says
 
@@ -101,6 +116,10 @@ means the whole configured set.
 * `POST /oid4vci/credential` takes the access token as a Bearer or DPoP token
   and a `credential_configuration_id` or a granted `credential_identifier`.
   A batch of up to `oid4vci.batchSize` proofs returns that many credentials.
+  The errors are section 8.3.1.2's: `unknown_credential_configuration`,
+  `unknown_credential_identifier`, `invalid_proof`, and `invalid_nonce` for a
+  proof whose `c_nonce` this issuer does not hold (the wallet fetches a new
+  one).
 * **Proofs** (section 8.2.1, Appendix F): the `jwt` proof type
   (`openid4vci-proof+jwt`, every asymmetric algorithm this service signs with,
   post-quantum included) and the `attestation` proof type. A `c_nonce` is spent
@@ -114,8 +133,12 @@ means the whole configured set.
   [OpenID4VP](oid4vp.md#what-the-session-says)).
 * **Encryption.** A request may be a JWE to the realm's own RSA-OAEP-256 key
   (`credential_request_encryption`), and a wallet may ask for an encrypted
-  response (`credential_response_encryption`). The `enc` values offered are
-  A128GCM and A256GCM. Either direction can be made mandatory.
+  response (`credential_response_encryption`): RSA-OAEP-256 to an RSA key,
+  ECDH-ES to an EC key on P-256, P-384 or P-521 (#187), compressed with
+  `zip` DEF first when the wallet asks (`zip_values_supported`). The `enc`
+  values offered are A128GCM and A256GCM. Either direction can be made
+  mandatory. A request is never decompressed, so the request side
+  advertises no `zip`.
 * **Deferred issuance.** A credential request on the access token from a
   deferred offer is answered with a `transaction_id` instead of a credential.
   `POST /oid4vci/deferred_credential` answers `issuance_pending` until
@@ -234,8 +257,6 @@ unverifiable, not invalid: it is somebody else's conforming document.
 ### Not implemented
 
 * No historical status lists: `?time=` on the status list endpoint answers 501.
-* ECDH-ES response encryption. RSA-OAEP-256 is the only key transport, and it
-  is not a setting.
 * A key attestation or trusted issuer **certificate** with a post-quantum key,
   because such certificates cannot be read here.
 
@@ -263,7 +284,6 @@ in, in either mode. See [What is not checked](what-is-not-checked.md).
 | `oid4vci.authorizationServer` | `OID4VCI_AUTHORIZATION_SERVER` | *(empty)* | yes | A separate authorization server to advertise; empty means this service. |
 | `oid4vci.offerUsername` | `OID4VCI_OFFER_USERNAME` | `diploma.student` | yes | Whose credential the issuer-initiated offer pages build (development). |
 | `oid4vci.offerTtlS` | `OID4VCI_OFFER_TTL_S` | `600` | yes | How long an offer, its `issuer_state`, its pre-authorized code and a `notification_id` stay usable. |
-| `oid4vci.preAuthorizedPollIntervalS` | `OID4VCI_PRE_AUTHORIZED_POLL_INTERVAL_S` | `5` | yes | The `interval` a pre-authorized code grant in an offer names. |
 | `oid4vci.txCodeLength` | `OID4VCI_TX_CODE_LENGTH` | `5` | yes | Digits in the Transaction Code. |
 | `oid4vci.txCodeMaxAttempts` | `OID4VCI_TX_CODE_MAX_ATTEMPTS` | `5` | yes | In product mode, how many wrong Transaction Codes a pre-authorized code survives. |
 | `oid4vci.batchSize` | `OID4VCI_BATCH_SIZE` | `4` | yes | How many proofs, and so credentials, one request may carry. |

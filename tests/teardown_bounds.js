@@ -195,8 +195,20 @@ function checkTheLauncherIsBounded(t) {
   const noAttach = runnerUp.indexOf('"${UP_NO_ATTACH[@]}"') >= 0
     ? ((launcher.match(/\n\s*UP_NO_ATTACH=\(([^)]*)\)/) || ['', ''])[1])
     : runnerUp;
+  // A one-shot service under a compose PROFILE (#187's `conformance-tls`)
+  // exists only in the modes that activate the profile, so it is named in
+  // the `UP_NO_ATTACH+=(...)` those modes add rather than in every mode's
+  // list — `--no-attach` of a service the project does not have is an
+  // error, not a no-op.
+  const profiled = composeFile.split(/\n(?=  [a-z][a-z0-9-]*:\n)/)
+    .filter(function (block) { return /\n    profiles: /.test(block); })
+    .map(function (block) { return block.match(/^\s*([a-z][a-z0-9-]*):/)[1]; });
+  const added = (launcher.match(/\n\s*UP_NO_ATTACH\+=\(([^)]*)\)/g) || [])
+    .join(' ');
   t.check(oneShots.length >= 2 && oneShots.every(function (name) {
-    return noAttach.indexOf('--no-attach ' + name) >= 0;
+    return noAttach.indexOf('--no-attach ' + name) >= 0 ||
+      (profiled.indexOf(name) >= 0 &&
+       added.indexOf('--no-attach ' + name) >= 0);
   }),
           'the mode\'s `up` does not attach the one-shot services (' +
           oneShots.join(', ') + ')',
@@ -338,8 +350,15 @@ function checkTheJobTimeoutIsAboveOurs(t) {
   const peersBound = Number(
     (/STS_SAML_PEERS_TIMEOUT="\$\{STS_SAML_PEERS_TIMEOUT:-(\d+)\}"/
       .exec(launcher) || [])[1]) || 0;
-  const modeBound = Math.max(sharedBound + conformanceBound + peersBound,
-                             singleNodeBound + peersBound);
+  // Unless the `tests` job empties STS_TEST_CONFORMANCE_MODES (#187): the
+  // plans are the `conformance` job's then, whose arithmetic is below.
+  const testsJob = workflow.slice(workflow.indexOf('\n  tests:'),
+                                  workflow.indexOf('\n  coverage:'));
+  const testsRunConformance =
+    !/STS_TEST_CONFORMANCE_MODES:\s*""/.test(testsJob);
+  const modeBound = Math.max(
+    sharedBound + (testsRunConformance ? conformanceBound : 0) + peersBound,
+    singleNodeBound + peersBound);
   const teardownBound = Number(
     /STS_TEARDOWN_TIMEOUT="\$\{STS_TEARDOWN_TIMEOUT:-(\d+)\}"/
       .exec(launcher)[1]);
@@ -357,10 +376,9 @@ function checkTheJobTimeoutIsAboveOurs(t) {
           'the budget below is per mode, so a fourth mode changes it and ' +
           'this file must not be the place that goes stale');
 
-  // The `tests` job, which is the one that runs this launcher. The coverage
-  // job runs ./run-coverage.sh, has a number of its own and is not this.
-  const testsJob = workflow.slice(workflow.indexOf('\n  tests:'),
-                                  workflow.indexOf('\n  coverage:'));
+  // The `tests` job (sliced above), which is the one that runs this
+  // launcher. The coverage job runs ./run-coverage.sh, has a number of its
+  // own and is not this.
   const jobMinutes = Number(/timeout-minutes:\s*(\d+)/.exec(testsJob)[1]);
 
   // One wedged mode is the case worth surviving: the run reaches its bound,
@@ -381,6 +399,40 @@ function checkTheJobTimeoutIsAboveOurs(t) {
             jobMinutes + 'm)',
           'without a number here a stuck job holds a runner for six hours, ' +
           'which is what the workflow header says this setting is for');
+
+  // THE `conformance` JOB (#187) runs the same launcher for ONE mode with
+  // the suite's plans in it: its number sits above that mode's bound plus
+  // a teardown for the mode and one for the stack before it, and under the
+  // six hours GitHub gives any job. Its absence is a failure only while the
+  // `tests` job leaves the plans out, since then nothing else runs them.
+  const conformanceAt = workflow.indexOf('\n  conformance:');
+  t.check(testsRunConformance || conformanceAt !== -1,
+          'the conformance plans run in some job',
+          'the `tests` job empties STS_TEST_CONFORMANCE_MODES, so without a ' +
+          '`conformance` job CI would run none of the OpenID Foundation plans');
+  if (conformanceAt !== -1) {
+    const conformanceJob = workflow.slice(
+      conformanceAt, workflow.indexOf('\n  cluster:', conformanceAt));
+    const conformanceMinutes = Number(
+      (/timeout-minutes:\s*(\d+)/.exec(conformanceJob) || [])[1]);
+    // The SAML peers' bound too, unless the job empties their modes.
+    const conformancePeers =
+      /STS_TEST_SAML_PEERS_MODES:\s*""/.test(conformanceJob) ? 0 : peersBound;
+    const conformanceWorst = sharedBound + conformanceBound +
+      conformancePeers + teardownBound * 2;
+    t.check(/--modes=memory\b/.test(conformanceJob) &&
+            /--only=conformance\b/.test(conformanceJob),
+            'the `conformance` job runs the memory mode\'s conformance jobs',
+            'the launcher runs the suite only in the modes ' +
+            'STS_TEST_CONFORMANCE_MODES names, `memory` by default');
+    t.check(conformanceMinutes * 60 > conformanceWorst &&
+            conformanceMinutes <= 360,
+            'the `conformance` job timeout (' + conformanceMinutes +
+              'm) is above its mode\'s bound plus two teardowns (' +
+              Math.ceil(conformanceWorst / 60) + 'm) and within six hours',
+            'the launcher\'s bound must be the one that fires, and GitHub ' +
+            'cancels any job at six hours whatever it says');
+  }
 
   // THE `cluster` JOB (2026-09-15) runs the same launcher for ONE mode, so the
   // same arithmetic holds with a count of one: its bound plus a teardown for

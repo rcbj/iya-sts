@@ -40,7 +40,7 @@ The bar door's endpoints:
 | `GET /oid4vp/start` | builds an Authorization Request and sends the browser to the wallet (same device) or draws a QR code (`mode=cross-device`) |
 | `GET /oid4vp/request/{id}` | the signed Request Object, fetched by reference (`request_uri`) |
 | `GET /oid4vp/verifier-certificate` | the Verifier's `x509_san_dns` and `x509_hash` Client Identifiers, its certificate chain and the trust anchor (see *The x509 prefixes*) |
-| `POST /oid4vp/response` | the Response URI (`response_mode` `direct_post`), where the `vp_token` arrives and is verified |
+| `POST /oid4vp/response` | the Response URI (`response_mode` `direct_post`, or `direct_post.jwt` when the start page is given `?response_mode=direct_post.jwt`: the request then carries an ephemeral ECDH-ES key in `client_metadata.jwks` and the wallet posts one encrypted `response`), where the `vp_token` arrives and is verified. The request's `client_metadata` carries only what OpenID4VP 1.0 section 5.1 lists (`vp_formats_supported`, and `jwks` with `encrypted_response_enc_values_supported` for an encrypted response) |
 | `GET /oid4vp/result/{state}` | non-standard: the verdict, so a wallet page or a test can read it |
 | `GET /oid4vp/done` | the Verifier's closing page |
 

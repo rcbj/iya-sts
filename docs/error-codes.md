@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3686** of them, in **39** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3692** of them, in **39** subsystems.
 
 ## Where a code appears
 
@@ -63,18 +63,18 @@ is an ordinary outcome.
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 26
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 47
 * [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 249
-* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 662
+* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 665
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 97
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 21
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 16
 * [Federation (`STS-FED`)](#sts-fed) — 134
-* [OpenID Federation (`STS-OIDFED`)](#sts-oidfed) — 66
+* [OpenID Federation (`STS-OIDFED`)](#sts-oidfed) — 67
 * [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 169
 * [LDAP directory (`STS-LDAP`)](#sts-ldap) — 84
 * [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 77
 * [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 144
 * [TLS and client certificates (`STS-TLS`)](#sts-tls) — 35
-* [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 108
+* [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 110
 * [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 114
 * [Risk scoring (`STS-RISK`)](#sts-risk) — 43
 * [Mail (`STS-MAIL`)](#sts-mail) — 39
@@ -1317,9 +1317,9 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0138` | In RFC 9700 mode, an already-redeemed refresh token was presented again; its whole family was revoked (section 2.2.2). | invalid_grant (HTTP 400) |
 | `STS-OAUTH-0139` | In RFC 9700 mode, a refresh token's grant had been idle longer than oauth2.refreshIdleSeconds. | invalid_grant (HTTP 400) |
 | `STS-OAUTH-0140` | In RFC 9700 mode, a refresh request carried no client_id. | invalid_request (HTTP 400) |
-| `STS-OAUTH-0141` | In RFC 9700 mode, a refresh token was presented by a client other than the one it was issued to. | invalid_grant (HTTP 400) |
-| `STS-OAUTH-0142` | In RFC 9700 mode, a refresh request asked for scope the original grant did not carry. | invalid_scope (HTTP 400) |
-| `STS-OAUTH-0143` | In RFC 9700 mode, an authorization code was presented a second time; the tokens it bought were revoked (section 4.5). | invalid_grant (HTTP 400) |
+| `STS-OAUTH-0141` | A refresh token was presented by a client other than the one it was issued to (RFC 6749 section 6; every mode since #187). | invalid_grant (HTTP 400) |
+| `STS-OAUTH-0142` | A refresh request asked for scope the original grant did not carry (RFC 6749 section 6; every mode since #187). | invalid_scope (HTTP 400) |
+| `STS-OAUTH-0143` | An authorization code was presented a second time; the tokens it bought were revoked (RFC 6749 section 4.1.2, RFC 9700 section 4.5; every mode since #187 unless oauth2.codeReplayIdempotent). | invalid_grant (HTTP 400) |
 | `STS-OAUTH-0144` | In RFC 9700 mode, an authorization request named no client_id; it is answered rather than redirected (section 4.11.2). | invalid_request (HTTP 400, not redirected) |
 | `STS-OAUTH-0145` | In RFC 9700 mode, a code_verifier arrived for an authorization code issued without a code_challenge (PKCE downgrade, section 4.8.2). | invalid_grant (HTTP 400) |
 | `STS-OAUTH-0146` | In RFC 9700 mode, an authorization code was redeemed by a client other than the one it was issued to. | invalid_grant (HTTP 400) |
@@ -1618,7 +1618,7 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0559` | A client authenticated with an expired client_secret and was accepted, because the service is in development mode. | none — logged; the request is answered |
 | `STS-OAUTH-0560` | An authorization request asked for an ID Token without the openid scope (OIDC Core section 3.1.2.1). | redirect: error=invalid_scope |
 | `STS-OAUTH-0561` | An authorization request combined prompt=none with another prompt value (OIDC Core section 3.1.2.1). | redirect: error=invalid_request |
-| `STS-OAUTH-0562` | An implicit-flow authorization request carried no nonce, which OIDC Core section 3.2.2.1 makes REQUIRED — in every mode. | redirect: error=invalid_request |
+| `STS-OAUTH-0562` | An authorization request whose response_type returns an ID Token from the authorization endpoint (implicit, or hybrid code id_token [token]) carried no nonce, which OIDC Core sections 3.2.2.1 and 3.3.2.1 make REQUIRED — in every mode (hybrid since #187). | redirect: error=invalid_request |
 | `STS-OAUTH-0563` | An implicit-flow authorization request named an http redirect_uri that is not a loopback address (OIDC Core section 3.2.2.1). | HTTP 400 {error: invalid_request} |
 | `STS-OAUTH-0564` | An authorization request sent with POST was not application/x-www-form-urlencoded (OIDC Core section 3.1.2.1). | HTTP 400 {error: invalid_request} |
 | `STS-OAUTH-0565` | The authorization endpoint failed while reading an id_token_hint. | HTTP 500 {error: server_error} |
@@ -1839,6 +1839,9 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0780` | A call to /oauth2/commands/callback was malformed: an async result not naming the command's sub and an account_state, or a command_requested other than metadata or audit_tenant (#151). | HTTP 400 {error: invalid_request} |
 | `STS-OAUTH-0781` | An automatic OpenID Provider Command could not be queued after a directory change or a sign-out; the change stands (#151). | none (a log line) |
 | `STS-OAUTH-0782` | The mock relying party's command endpoint refused a command — the development test control answering as a relying party would (#151). | HTTP 400, 401, 409 or 404 {error} |
+| `STS-OAUTH-0783` | Under FAPI 1.0 Advanced, an authorization request asked for response_type code with a response mode that is not JARM (Part 2 section 5.2.2 item 2, #187). | invalid_request |
+| `STS-OAUTH-0784` | Under FAPI 1.0 Advanced, an authorization request (its signed request object) named no scope; RFC 6749 section 3.3's refusal rather than a default (#187). | invalid_request |
+| `STS-OAUTH-0785` | An RP-Initiated Logout request carried a post_logout_redirect_uri with neither an id_token_hint nor a client_id, so it was not followed (section 2: nothing confirms the address, #187). | none (the sign-out page says so; no redirect) |
 
 ## STS-SAML
 
@@ -2218,6 +2221,7 @@ Raised from: oidfed/.
 | `STS-OIDFED-0064` | A Subordinate Events request named an entity that is not, and never was, a subordinate of this realm (#137). | not_found (HTTP 404) |
 | `STS-OIDFED-0065` | A subordinate's event could not be written to the realm's register; the act that caused it stands (#137). | — |
 | `STS-OIDFED-0066` | An Entity Collection crawl failed, or its result could not be kept in the realm's register (#136). | — |
+| `STS-OIDFED-0067` | A request object from a relying party registered automatically through an OpenID Federation failed section 12.1.1.1: aud not this OP alone, iss or client_id not the RP, a sub, or no jti or exp (#187). | invalid_request_object (HTTP 400) |
 
 ## STS-KRB
 
@@ -2790,16 +2794,16 @@ Raised from: oid4vc/.
 | `STS-VC-0007` | A plain Credential or Deferred Credential Request body is not JSON. | invalid_request (HTTP 400) |
 | `STS-VC-0008` | An encrypted (application/jwt) Credential or Deferred Credential Request could not be decrypted or its plaintext is not JSON. | invalid_encryption_parameters (HTTP 400) |
 | `STS-VC-0009` | A Credential Request sent both credential_identifier and credential_configuration_id. | invalid_credential_request (HTTP 400) |
-| `STS-VC-0010` | A Credential Request used credential_identifier although the token response granted no credential_identifiers. | invalid_credential_request (HTTP 400) |
-| `STS-VC-0011` | A Credential Request named a credential_identifier the token response did not grant. | invalid_credential_request (HTTP 400) |
+| `STS-VC-0010` | A Credential Request used credential_identifier although the token response granted no credential_identifiers. | unknown_credential_identifier (HTTP 400; invalid_credential_request until #187) |
+| `STS-VC-0011` | A Credential Request named a credential_identifier the token response did not grant. | unknown_credential_identifier (HTTP 400; invalid_credential_request until #187) |
 | `STS-VC-0012` | A Credential Request used credential_configuration_id although the token response granted credential_identifiers. | invalid_credential_request (HTTP 400) |
-| `STS-VC-0013` | A Credential Request named a credential_configuration_id this issuer does not offer. | unsupported_credential_type (HTTP 400) |
+| `STS-VC-0013` | A Credential Request named a credential_configuration_id this issuer does not offer. | unknown_credential_configuration (HTTP 400; unsupported_credential_type until #187) |
 | `STS-VC-0014` | A Credential Request named no credential at all (neither credential_identifier nor credential_configuration_id). | invalid_credential_request (HTTP 400) |
 | `STS-VC-0015` | A Credential Request carried no credential_response_encryption while the issuer requires an encrypted response. | invalid_encryption_parameters (HTTP 400) |
 | `STS-VC-0016` | A Credential Request's credential_response_encryption parameters are unusable (key, alg, enc or zip). | invalid_encryption_parameters (HTTP 400) |
 | `STS-VC-0017` | A Credential Request carried no JWT proof of possession. | invalid_proof (HTTP 400) |
 | `STS-VC-0018` | A Credential Request carried more proofs than the issuer's batch size allows. | invalid_credential_request (HTTP 400) |
-| `STS-VC-0019` | A proof of possession in a Credential Request was refused (malformed, wrong typ, alg, audience, iat, nonce, or signature). | invalid_proof (HTTP 400) |
+| `STS-VC-0019` | A proof of possession in a Credential Request was refused (malformed, wrong typ, alg, audience, iat, nonce, or signature). | invalid_proof, or invalid_nonce for a c_nonce this issuer does not hold (HTTP 400, #187) |
 | `STS-VC-0020` | A Deferred Credential Request named a transaction_id this issuer never issued, has expired, or was already redeemed. | invalid_transaction_id (HTTP 400) |
 | `STS-VC-0021` | A Notification Request body is not JSON. | invalid_notification_request (HTTP 400) |
 | `STS-VC-0022` | A Notification Request named a notification_id this issuer never issued or that has expired. | invalid_notification_id (HTTP 400) |
@@ -2830,7 +2834,7 @@ Raised from: oid4vc/.
 | `STS-VC-0047` | The embedded directory threw while being read for a person's credential claims; the credential is built without directory values. | — |
 | `STS-VC-0048` | Populating the embedded directory for the current credential claim set threw. | — |
 | `STS-VC-0049` | A pre-authorized code this process still held was already redeemed by another process against the same store (the cluster claim, #46). | invalid_grant (HTTP 400) |
-| `STS-VC-0050` | A c_nonce every proof verified against was already spent by another process against the same store (the cluster claim, #46). | invalid_proof (HTTP 400) |
+| `STS-VC-0050` | A c_nonce every proof verified against was already spent by another process against the same store (the cluster claim, #46). | invalid_nonce (HTTP 400, #187) |
 | `STS-VC-0051` | The cluster claim store could not be asked about an OpenID4VCI single-use value — a pre-authorized code, a c_nonce or a Transaction Code attempt — so the request was refused rather than accepted unproven. | invalid_grant or invalid_proof (HTTP 400) |
 | `STS-VC-0052` | A wallet sign-in was refused because oid4vp.signIn is off. | HTTP 403 page |
 | `STS-VC-0053` | A wallet sign-in named no pending authentication — never started, expired, or already used — so there was nothing to sign in to. | HTTP 400 page |
@@ -2875,6 +2879,8 @@ Raised from: oid4vc/.
 | `STS-VC-0092` | oid4vp.verifierAttestation cannot be used — unreadable, not typ verifier-attestation+jwt, no sub, expired, or its cnf is not this realm's request-signing key — so no signed request with the verifier_attestation prefix was built (#129). | HTTP 500 |
 | `STS-VC-0093` | A SIOPv2 enrolment was started or collected by a browser holding no sign-on session, or for a person other than the one now signed in; or a self-issued ID was asked for as a second factor, which it is not offered as (#129). | HTTP 403 / 400 page |
 | `STS-VC-0094` | A key proved by a SIOPv2 enrolment was not enrolled: it is already enrolled for somebody, or the person holds the most they may (#129). | HTTP 400 page |
+| `STS-VC-0095` | A credential issuer's well-known document was asked for at an inserted path no issuer here has (OpenID4VCI 1.0 section 12.2.2, #187). | HTTP 404 {error: not_found} |
+| `STS-VC-0096` | A presentation to the Verifier's Response URI was not in the response mode its request asked for, or its direct_post.jwt response named no outstanding request's key or could not be opened (OpenID4VP 1.0 section 8.3.1, #187). | invalid_request (HTTP 400) |
 | `STS-VC-0100` | A VC-API test endpoint (/vc-api/*, the Bitstring Status List publish hook) was called in a realm whose test controls are closed — a product realm — and answered as though it did not exist (#194). | HTTP 404 |
 | `STS-VC-0101` | A VC-API test endpoint was presented an access token it refused: not issued by this realm, not an access token, revoked, without the vc-api:issue / vc-api:verify scope it needs, or issued to a client that no longer declares that scope (#194). | HTTP 401 / 403 with WWW-Authenticate |
 | `STS-VC-0102` | The VC-API issuer refused a credential that does not conform to the VC Data Model (a MUST of VCDM 2.0 or 1.1 broken), or that names an issuer other than the key it is asked to sign with (#194). | HTTP 400 {errors} |

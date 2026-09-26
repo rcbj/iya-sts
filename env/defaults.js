@@ -330,6 +330,7 @@ var config = {
     registeredSecretBytes: 48,                   // Dynamically registered secret random bytes
     authorizationCodeTtlS: 300,                  // Authorization code lifetime (s)
     redeemedCodeCacheSize: 10000,                // Redeemed authorization codes remembered (per realm)
+    codeReplayIdempotent: false,                 // Answer a repeated code redemption with the same tokens
     maxPendingTransactions: 500,                 // RFC 9700: remembered transactions (per realm)
     maxRefreshTokenFamilies: 2000,               // RFC 9700: remembered refresh tokens (per realm)
     signedMetadataAlgorithm: "RS256",            // Algorithm signed_metadata is signed with
@@ -400,6 +401,7 @@ var config = {
     requestObjectJtiRetentionS: 3600,            // How long a request object's jti is kept without exp (s)
     clientJwksCacheS: 300,                       // Client jwks_uri cache (s)
     clientJwksRefetchS: 30,                      // Client jwks_uri refetch interval (s)
+    requestUriFragmentCheck: true,               // Check a request_uri's SHA-256 fragment against its content
     requestUriCacheS: 0,                         // request_uri content cache (s)
     requestObjectEncryptionKeyBits: 2048,        // Request object encryption: RSA key size (bits)
     requestObjectEncryptionCurve: "P-256",       // Request object encryption: EC curve
@@ -690,7 +692,6 @@ var config = {
     txCodeLength: 5,                                       // Transaction Code length (digits)
     txCodeMaxAttempts: 5,                                  // Wrong Transaction Codes before the code is spent (product)
     offerTtlS: 600,                                        // Credential Offer lifetime (s)
-    preAuthorizedPollIntervalS: 5,                         // Pre-authorized grant: interval (s)
     walletIssuancePath: "/vc-issuance-1.html",             // Wallet issuance page
     allowedWalletUrls: "",                                 // Other wallet URLs an offer link may name (product)
     requestEncryptionKeyBits: 2048,                        // Request encryption key size (bits)

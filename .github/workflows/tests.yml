@@ -18,6 +18,10 @@
 #             measures as a child process in there, because V8 writes coverage
 #             from inside the process being measured and a service container
 #             next door can never be under the report.
+#   conformance  STS_TEST_CONFORMANCE_MODES=memory ./run-tests.sh
+#             --modes=memory --only=conformance — the OpenID Foundation
+#             conformance suite's plans (#176, #187), which the `tests` job
+#             leaves out because they take over two hours.
 #   cluster   ./run-tests.sh --modes=cluster — the third mode of
 #             tests/tools/modes.sh, which the `tests` job does not name: two
 #             production nodes (product mode, request workers) active-active
@@ -149,7 +153,14 @@ jobs:
       # `memory` and `single-node`, NAMED rather than bare (2026-09-21): a
       # bare ./run-tests.sh runs `cluster` too, which is the `cluster` job's
       # below, and all three in one job would outrun its 120 minutes.
+      #
+      # STS_TEST_CONFORMANCE_MODES EMPTY (#187): the OpenID conformance
+      # suite's jobs take about two hours and a quarter on their own, which
+      # is the `conformance` job's below; here they are reported SKIPPED
+      # with the reason, as they are in every mode that does not run them.
       - name: Run the containerized test suite
+        env:
+          STS_TEST_CONFORMANCE_MODES: ""
         run: ./run-tests.sh --modes=memory,single-node
 
       # The tests container writes tests/report as root through a bind mount;
@@ -275,6 +286,65 @@ jobs:
         with:
           name: coverage-test-report
           path: tests/report/latest
+          if-no-files-found: warn
+          retention-days: 30
+
+  # ---------------------------------------------------------------------------
+  # THE OPENID FOUNDATION'S CONFORMANCE SUITE (#176, #187). The six jobs
+  # marked `conformance: true` in tests/vendored/MANIFEST.js — FAPI, OpenID
+  # Connect with its logout plans and Identity Assurance, Shared Signals,
+  # OpenID Federation, OpenID4VCI and OpenID4VP — against the suite's own
+  # three containers under the `conformance` compose profile, in the
+  # `memory` mode (the launcher's STS_TEST_CONFORMANCE_MODES default, argued
+  # in its header). `--only=conformance` names them by substring.
+  #
+  # A JOB OF ITS OWN because of the time: the plans took about two hours and
+  # a quarter on 2026-09-24, so the launcher grows such a mode's bound by
+  # STS_CONFORMANCE_TIMEOUT (180m) and no ceiling the `tests` job may have
+  # fits it. The same argument as that job's number: above the mode's bound
+  # (50m + 180m) and two teardowns (5m each), so the launcher's bound is the
+  # one that fires, and under GitHub's own six hours
+  # (tests/teardown_bounds.js asserts both).
+  # ---------------------------------------------------------------------------
+  conformance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 270
+    steps:
+      # See the tests job: recursive, for the nested node-ldapjs submodule.
+      - name: Check out
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Show docker and compose versions
+        run: |
+          docker --version
+          docker compose version
+
+      - name: Run the OpenID conformance suite's plans
+        # The SAML interoperability peers (#189-#192) are the tests job's;
+        # the launcher would start them in `memory` by default, for jobs
+        # `--only=conformance` does not run.
+        env:
+          STS_TEST_CONFORMANCE_MODES: memory
+          STS_TEST_SAML_PEERS_MODES: ""
+        run: ./run-tests.sh --modes=memory --only=conformance --no-browser
+
+      # See the tests job: the runner writes tests/report as root.
+      - name: Normalize report permissions
+        if: always()
+        run: sudo chown -R "$(id -u):$(id -g)" tests/report || true
+
+      # Each job's log names the suite's plan ids and every module's result;
+      # pep-credential/ is excluded for the tests job's reason.
+      - name: Upload the conformance report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: conformance-test-report
+          path: |
+            tests/report
+            !tests/report/pep-credential
           if-no-files-found: warn
           retention-days: 30
 

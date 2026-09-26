@@ -8581,8 +8581,14 @@ rcbj's answers, and where each lives:
 * **`value`/`values` are ENFORCED on the verification and its evidence**, with
   `max_age` on `time`; an element nothing satisfies is OMITTED, never answered
   with a weaker one; only the members asked for are returned
-  (`matches()`/`project()`). On the claims inside `verified_claims` they are
-  reported and not enforced, as on every ordinary claim.
+  (`matches()`/`project()`). **On the claims inside `verified_claims` too
+  since #187** (section 5.7.4: a claim that does not fulfil them is omitted,
+  and an element left with none is omitted whole); they were reported and not
+  enforced, as on ordinary claims, until the conformance suite's
+  ekyc-server-one-claim-with-random-value-omitted found one released.
+  **rcbj's decision, 2026-09-26, refining #127's answer 5**: enforced on the
+  claims inside `verified_claims` too, as IDA 5.7.4 requires. Ordinary
+  claims keep OIDC Core's rule.
 * **Development invents one** — `demoRecord()`, trust framework
   `urn:sts:demo`, for a person with no record, under
   `mode.inventsClaimValues()` and listed on `/admin/mode`. It is never

@@ -297,11 +297,17 @@ so must `admin-ui/admin.ts`.
    That is Microsoft Entra ID's arrangement, which this feature already copies,
    and the same now holds for RFC 8707's `resource`, which never had the append.
 
-   **THE REPLAY RELAXATION IS THE ONE THING THE TWO MODES ANSWER DIFFERENTLY
-   ABOUT A CODE.** `redeemedCodes` in `oauth2.ts` answers an IDENTICAL repeat
-   with the tokens it already bought, for the reason written where it is
-   declared. RFC 9700 section 4.5 says a real server refuses that, so
-   `checkCodeReplay()` does — and revokes the access, refresh and ID Tokens that
+   **THE REPLAY RELAXATION IS AN OPT-IN SINCE #187 (2026-09-24), AND THE
+   MODE IGNORES IT.** `redeemedCodes` in `oauth2.ts` answered an IDENTICAL
+   repeat with the tokens it already bought outside the mode, for the reason
+   written where it is declared; the OpenID conformance suite's
+   oidcc-codereuse called that what it is — RFC 6749 section 4.1.2's MUST
+   broken — so `checkCodeReplay()` now refuses in every mode unless
+   `oauth2.codeReplayIdempotent` is on (off by default, a documented weaker
+   option, on in `env/test.js` and `env/docker-tests.js` only for the
+   parent's vendored `oauth2_sts_endpoints.js`), and RFC 9700 mode refuses
+   whatever it says.
+   It revokes the access, refresh and ID Tokens that
    code bought (RFC 6749 section 10.5), through `stats.revoke()` called by
    `oauth2.ts`, never by this module. It sits BELOW the two refusals that are
    more specific — a repeat that differs, and a code whose lifetime ran out —
@@ -1555,7 +1561,8 @@ so must `admin-ui/admin.ts`.
    `request_parameter_supported`/`request_uri_parameter_supported` false 0342 /
    0343 — a PAR URN is exempt from 0343, RFC 9126 section 5 — no `client_id`
    0344); for a reference, registered 0345, still a usable address 0346, the
-   fetch 0347 and media type 0348, the fragment digest 0349; decryption (plain
+   fetch 0347 and media type 0348, the fragment digest 0349 (while
+   `oauth2.requestUriFragmentCheck` is on, #187); decryption (plain
    where encryption is registered and the registered pair 0350, the profile's
    lists 0351, the key or secret 0352, the unwrap 0353, not a nested JWS 0354);
    the JWS (header 0355, `typ` 0356/0368, unsigned refused 0357 — BEFORE the
@@ -3604,7 +3611,7 @@ otherwise. The capability rows `oauth.codes-once`, `oauth.refresh-rotation` and
 
 | Value | Scope | Where it is spent | The loser |
 |---|---|---|---|
-| authorization code | `oauth.code` | `tokenGrant()`, below every check and above the mint; bound to the response | waits (≤5s, catching up through `cluster_barrier.syncShared()`) for the winner's `redeemedCodes` record, then goes down `replayOrRefuseRedemption()` — the same token set outside RFC 9700 mode, refusal and revocation inside it; no record in time is `STS-OAUTH-0512` |
+| authorization code | `oauth.code` | `tokenGrant()`, below every check and above the mint; bound to the response | waits (≤5s, catching up through `cluster_barrier.syncShared()`) for the winner's `redeemedCodes` record, then goes down `replayOrRefuseRedemption()` — refusal and revocation (the same token set only with `oauth2.codeReplayIdempotent` on outside RFC 9700 mode, #187); no record in time is `STS-OAUTH-0512` |
 | PAR `request_uri` | `oauth.par` | `issueAuthorizationResponse()`, where `par.spend()` was; bound to the response | `invalid_request_uri` 400, `STS-OAUTH-0514` |
 | rotated refresh token (RFC 9700 / 2.1 mode) | `oauth.refresh` | `bcp.spendRefreshToken()`, just before the mint; bound to the response | a replay: family revoked by id and by the members known, `STS-OAUTH-0516` |
 | a revoked family | `oauth.refresh-family-revoked` | `bcp.revokeFamily()`, on every replay (local or claimed) | any member presented later, including one no node listed, `STS-OAUTH-0517` |
@@ -4218,6 +4225,184 @@ rcbj's answers were every recommendation:
 
 Tests: `tests/provider_commands.js` and
 `tests/vendored/sts_provider_commands.js`.
+
+## 3bp. WHAT THE REST OF THE CONFORMANCE SUITE FOUND (2026-09-24, #187)
+
+#176's four FAPI plans were one job; #187 runs every other plan of the suite
+that applies — OpenID Connect (the certification profiles, `oidcc-test-plan`
+per client authentication and response mode, the four logout plans,
+Identity Assurance), the FAPI variant matrix, Shared Signals, OpenID
+Federation, OpenID4VCI and OpenID4VP — as five more jobs and a longer FAPI
+table (`tests/CLAUDE.md`, *The other plans*). Each finding was a departure
+from a specification and is fixed in EVERY mode unless the row says
+otherwise; each carries its regression check.
+
+**OAuth 2.0 and OpenID Connect** (`tests/oidcc_conformance_findings.js`,
+`tests/vendored/sts_oidc_core.js`):
+* **RFC 6749 section 6's client binding and scope check** lived behind RFC
+  9700 mode (`oauth2_bcp.js`), as if they were that BCP's refinements; the
+  suite's oidcc-refresh-token redeemed client 2's refresh token as client 1
+  and was given tokens. `coreRefreshRefusal()` now refuses a DIFFERENT
+  client's token (STS-OAUTH-0141) and a widened scope (0142) in every mode;
+  a refresh naming NO client stays the mode's refusal (0140), since outside
+  it there is nobody to compare.
+* **RFC 6749 section 4.1.2's single-use code.** An identical repeat was
+  answered with the same tokens outside the mode (the courtesy argued at 3a
+  above). It is refused and what the code bought revoked in every mode
+  (STS-OAUTH-0143); the courtesy survives as `oauth2.codeReplayIdempotent`,
+  off by default, a documented weaker option, on in `env/test.js` and
+  `env/docker-tests.js` ONLY because the parent's vendored
+  `oauth2_sts_endpoints.js` still asserts it in development — the parent
+  owes that job's update
+  (rcbj/id-proto-debugger#306, with `vc_did.js`'s for OpenID4VCI's
+  `credential_metadata`), after which the appconfig line goes.
+* **The hybrid flow's nonce.** OIDC Core 3.3.2.1 makes `nonce` REQUIRED for
+  `code id_token` and `code id_token token` — this file said the hybrid flow
+  kept it optional. STS-OAUTH-0562 now covers every response type that
+  returns an ID Token from the authorization endpoint.
+* **UserInfo's `updated_at`** is the entry's `modifyTimestamp`, and
+  **`phone_number_verified`** is `false` beside a `phone_number` (nothing
+  here verifies a telephone number, and Core 5.1 says "otherwise, false").
+* **A `request_uri` is fetched through the federation outbound policy's TLS**
+  (`federation.outboundCaFile`), so a host a private CA certifies can be
+  verified; it used node's store alone.
+* **Identity Assurance 1.0 section 5.7.4**: `value`/`values` on a claim
+  INSIDE `verified_claims` were reported and not enforced; a claim that does
+  not fulfil them is now omitted, and an element left with none omitted
+  whole (`common/identity_assurance.ts`, `tests/identity_assurance.js` 3g–3i).
+  rcbj's decision (2026-09-26), refining #127's answer 5, which had
+  enforced them on the verification only; ordinary claims keep OIDC Core
+  5.5.1's rule.
+* **RP-Initiated Logout 1.0 section 2**: a `post_logout_redirect_uri`
+  with neither an `id_token_hint` nor a `client_id` was followed in
+  development (#118's acceptance of an unregistered address). Nothing
+  confirms such an address, which is the section's MUST NOT, so it is not
+  followed in any mode (STS-OAUTH-0785). A NAMED client that registered
+  none still has development's leniency.
+* **The OP iframe (Session Management, #121)** hashes with a SHA-256 of its
+  own where Web Crypto is missing or its digest rejects — the suite's
+  browser, HtmlUnit, has a `crypto.subtle` that rejects — so it answered
+  `error` where it should have answered `unchanged`.
+* **`oauth2.requestUriFragmentCheck`** (on by default): Core 6.2 gives the
+  fragment as a cache-version signal and asks no OP to verify it; this OP
+  verifies a SHA-256-shaped fragment as an integrity check, which the
+  suite's request_uri modules (a fragment hashed from random bytes, the
+  suite's own FIXME) cannot pass. The OpenID Connect realms turn it off;
+  the default stays the stricter reading. rcbj's call whether to keep it.
+
+**FAPI** (`tests/fapi_advanced_units.js`): under 1.0 Advanced, `code`
+without JARM is `invalid_request` (the MODE is wrong, STS-OAUTH-0783, which
+RFC 9126 section 2.3 answers at PAR), and a request naming no scope is
+refused rather than given a default (STS-OAUTH-0784; RFC 6749 3.3 permits
+either, and a signed request object carrying none is usually a client that
+put scope outside it). Message Signing KEEPS JARM: section 5.4.1 has an AS
+implementing response signing "require use of" it, so the plan's
+`plain_response` variant is not run.
+
+**Shared Signals** (`tests/vendored/sts_ssf_conformance.js`): a poll
+stream's `delivery.endpoint_url` names its stream (`?stream_id=`); Add
+Subject answers an empty 200 (8.1.3.2; remove stays 204);
+`critical_subject_members` is omitted rather than `[]`.
+
+**OpenID Federation** (`tests/oidcc_conformance_findings.js` section 4):
+section 12.1.1.1's request object claims are asked of EVERY request object
+from an automatically registered RP (STS-OIDFED-0067), not only the one
+that registered it.
+
+**OpenID4VCI**: the path-inserted `/.well-known/openid-credential-issuer`
+and `/.well-known/jwt-vc-issuer` answer the realm whose issuer has that path
+(they answered the default realm's, STS-VC-0095); `display` and `claims` sit
+in `credential_metadata` (12.2.4); `invalid_nonce`,
+`unknown_credential_configuration` and `unknown_credential_identifier` are
+the final text's error codes (8.3.1.2); `nbf` and `exp` are rounded to the
+hour (RFC 9901 10.1, batch unlinkability), and the signing-key grace grew
+by the hour that rounding can add.
+
+**HAIP (#229 in, 2026-09-26)**: the `x5c` of a credential, a Status List
+Token and a signed OpenID4VP request leaves the trust anchor out (HAIP 1.0
+sections 5, 6.1, 6.1.1), through `withoutAnchor` on those rows of
+`common/jose_certificate_header.js` (`tests/jose_certificate_header.js`
+C13b); every other token's chain still runs to the Root.
+
+**OpenID4VCI response encryption** (HAIP's plan): the issuer encrypted a
+Credential Response with RSA-OAEP-256 only and refused the EC P-256 key the
+suite sends; it now takes ECDH-ES to an EC key on P-256, P-384 or P-521 and
+advertises both, and honours section 8.2's `zip` DEF (raw DEFLATE before
+encryption, advertised in `zip_values_supported`), which the plan's second
+happy flow asks for (`oid4vc/vc_issuer.ts`, `common/crypto.js`
+encryptJweCompact(), `tests/oidcc_conformance_findings.js` section 6).
+
+**OpenID4VP**: the Verifier speaks `direct_post.jwt` (8.3.1, an ephemeral
+ECDH-ES key per transaction named by the JWE kid, STS-VC-0096), and its
+requests' `client_metadata` carries only section 5.1's parameters.
+
+**What stays, and why** (each a known warning or a condition-keyed known
+failure in its driver):
+* `WarnOnUnusableJwksKeys`, and FAILURE conditions that check an algorithm
+  list against the suite's JWS table (`ValidateRequestAuthenticationSigning
+  AlgValuesSupported`, `VCIValidateProofSigningAlgValuesSupported`,
+  `VP1FinalValidateVpFormatsSupportedInClientMetadata`, `ValidateServerJWKs`,
+  and `VerifyNewJwksHasNewSigningKey`, which hands every key of the rotated
+  JWKS to nimbus's parser and so fails `oidcc-server-rotate-keys` on an AKP
+  key before comparing the rest):
+  post-quantum keys and algorithms (SLH-DSA, composite ML-DSA) the suite does
+  not know. rcbj on #176: PQC support over a clean run.
+* `VerifyStatusListTokenSignatureUsingEmbeddedJwk`: outside HAIP the suite
+  resolves a status list token's key only from a header `jwk`; this realm's
+  names it by `kid` and `x5u`, which draft-ietf-oauth-status-list allows.
+* The OpenID Federation Leaf's `ValidateAbsenceOfAuthorityHints`: the suite
+  decides "is this the Trust Anchor" by string prefix, and a realm's URL
+  begins with its Trust Anchor's.
+* SSF: this service's own two event types in `events_supported`, and CAEP
+  events about a session using a complex subject (the suite accepts it,
+  openid/sharedsignals#351).
+* `VCIValidateFormatOfCredentialConfigurationsInMetadata`: the ldp_vc
+  configurations, a format the suite does not test.
+* 3bg's open items stand: `claims_supported` names five `profile` claims no
+  attribute answers (`middle_name`, `profile`, `picture`, `gender`,
+  `zoneinfo`), which is also why `VerifyScopesReturnedInUserInfoClaims`
+  warns — rcbj's call, map them or stop listing them.
+
+* `EnsureIdTokenDoesNotContainNonRequestedClaims`, for `session_expiry` and
+  `tenant` ONLY: Enterprise Extensions 1.0 lets an ID Token carry them and
+  rcbj's answer on #148 puts them in every one. The driver matches the
+  suite's message, so any other unrequested claim is still a finding.
+* **Session Management's `oidcc-session-management-rp-initiated-logout`**:
+  the suite's browser, HtmlUnit 4.17, checks `frame-ancestors` against the
+  FRAMED document's own origin (it hands `Policy.allowsFrameAncestor()` its
+  two origins the wrong way round), so it refuses to load the OP iframe
+  framed from the suite's origin, which this OP lists. Shown by driving
+  HtmlUnit directly: refused as served; with the OP's own origin added to
+  the header it loads, runs `check_session.js` and answers. Listing that
+  origin here would mean taking it from the request (the suite reaches the
+  OP as `sts:8081`), so the module is argued, and the iframe is held by
+  `tests/session_management.js` and `tests/vendored/sts_session_management.js`.
+  The job's browser entry for the suite's `session_verify` page stays, so
+  the module runs once HtmlUnit is fixed.
+* `ekyc-server-one-claim-with-random-value-omitted` /
+  `ValidateVerifiedClaimsResponseAgainstSchema`: the module requires
+  `verified_claims` to be absent from the ID Token (which passes, 5.7.4)
+  and then schema-validates the UserInfo `verified_claims` the same
+  omission removes — the suite contradicting itself.
+
+* HAIP's `fapi2-security-profile-final-refresh-token`: the suite redeems
+  the refresh token again with the attestation PoP it already spent, never
+  harvesting the fresh `OAuth-Client-Attestation-Challenge` nor retrying on
+  `use_attestation_challenge`; challenges are single use here (#229).
+* HAIP's `fapi2-security-profile-final-attempt-reuse-authorization-code-
+  after-one-second` warns in a development realm: the code's tokens are
+  revoked, but development does not verify an access token at the
+  OpenID4VCI endpoints (the root CLAUDE.md's non-goal; product does).
+* OpenID4VP's Request Object payload carried a `typ` claim beside the
+  header's (for the token registry's label); OpenID4VP defines no such
+  parameter and the suite reported it, so the payload claim is gone and
+  the registry is told the kind out of band (`tests/oid4vp_x509_client_id.js`
+  1b2).
+
+**Once not run, now run (2026-09-26)**: the HAIP issuer plan, whose every
+wallet authenticates with `attest_jwt_client_auth` (#229, 3bm), and the
+OpenID4VP verifier plan's `x509_san_dns` and `x509_hash` variants (#230).
+
 ## 3bm. OAUTH 2.0 ATTESTATION-BASED CLIENT AUTHENTICATION (2026-09-26, #229)
 
 **draft-ietf-oauth-attestation-based-client-auth-11** (3 September 2026, the

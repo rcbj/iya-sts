@@ -286,6 +286,12 @@ const notificationIds = realms.map({ persist: 'vc_issuer.notificationIds' });
 // advertising an algorithm this then refuses would make the metadata a lie.
 // ---------------------------------------------------------------------------
 const VCI_ENC_ALG = 'RSA-OAEP-256';
+// And ECDH-ES to an EC key (#187): the algorithm HAIP 1.0 asks for
+// wherever it names one (section 5, OpenID4VP) and the one the OpenID
+// conformance suite's HAIP issuer plan sends a P-256 key for. RSA-OAEP-256
+// stays for an RSA key; each is taken only with the key type it fits.
+const VCI_ENC_ALGS = [VCI_ENC_ALG, 'ECDH-ES'];
+const VCI_ENC_CURVES = ['P-256', 'P-384', 'P-521'];
 
 // The implemented list, kept under its old name. What is ADVERTISED and
 // ACCEPTED is `responseEncValues()` — `oid4vci.responseEncryptionEncValues`
@@ -565,8 +571,11 @@ class VcIssuer {
       // as well, which nothing implemented — metadata that overstates is worse
       // than metadata that says little.
       credential_response_encryption: {
-        alg_values_supported: [VCI_ENC_ALG],
+        alg_values_supported: VCI_ENC_ALGS.slice(),
         enc_values_supported: this.responseEncValues(),
+        // DEFLATE before encryption (section 8.2's `zip`, #187). Requests
+        // are not decompressed — credential_request_encryption says none.
+        zip_values_supported: ['DEF'],
         encryption_required:
           config.value('oid4vci.responseEncryptionRequired') === true
       },
@@ -713,6 +722,23 @@ class VcIssuer {
       const entry = meta.credential_configurations_supported[id];
       if (entry) {
         entry.issuer_identifier = issuerDidFor(id, req) || base;
+        // OPENID4VCI 1.0 SECTION 12.2.4 (#187): a configuration's `display`
+        // and `claims` are members of its `credential_metadata` object in
+        // the final specification, where the drafts had them at the top of
+        // the configuration; the OpenID conformance suite's metadata schema
+        // flagged them there. Built above at the top level (the DID
+        // variants copy their sibling, display name and all) and moved here,
+        // once, for every configuration.
+        const moved: Record<string, any> = {};
+        ['display', 'claims'].forEach(function (name) {
+          if (entry[name] !== undefined) {
+            moved[name] = entry[name];
+            delete entry[name];
+          }
+        });
+        if (Object.keys(moved).length) {
+          entry.credential_metadata = moved;
+        }
       }
     });
 
@@ -732,6 +758,90 @@ class VcIssuer {
   // a copy of it. That module is required LAZILY, inside the handler
   // (`VcIssuer.loadOauth2()`): it requires this module's siblings
   // for their stores, and a top-level require back would be a cycle (rule 2).
+  // -------------------------------------------------------------------------
+  // THE PATH-INSERTED FORM, ANSWERED FOR THE ISSUER WHOSE PATH IT IS (#187).
+  // OpenID4VCI 1.0 section 12.2.2 (and draft-ietf-oauth-sd-jwt-vc's
+  // jwt-vc-issuer the same way) puts an issuer's document at the well-known
+  // path INSERTED between host and path — so a realm's issuer,
+  // `https://host/realm/acme`, is discovered at
+  // `/.well-known/openid-credential-issuer/realm/acme`. That path answered the
+  // DEFAULT realm's document, whose `credential_issuer` then failed section
+  // 12.2.3's byte-for-byte comparison in the OpenID conformance suite. The
+  // realm is found as SSF finds it (`ssf/ssf.ts`, the inserted-path form): by
+  // asking each for its issuer and comparing paths, so an operator's own
+  // issuer URL is honoured too. A path no issuer here has is a 404.
+  // -------------------------------------------------------------------------
+  private inInsertedPathRealm(req: any, res: any, wellKnown: string,
+                              issuerOf: (r: any) => string,
+                              send: () => void): void {
+    const { log, errorCodes } = this.deps;
+    log.debug("Entering VcIssuer.inInsertedPathRealm(). " + wellKnown);
+    const asked = '/' + String((req.params || {})[0] || '')
+      .replace(/^\/+|\/+$/g, '');
+    const pathOf = function (issuer: string): string {
+      log.debug("Entering pathOf().");
+      let path = '';
+      try {
+        path = new URL(issuer).pathname;
+      } catch (e) {
+        log.debug("Caught in pathOf(): " + ((e && e.message) || e));
+        // Not a URL; it matches nothing.
+        path = '';
+      }
+      log.debug("Leaving pathOf().");
+      return path.replace(/\/+$/, '');
+    };
+    const found = realms.list().filter(function (realm: any): boolean {
+      return realms.run(realm, function (): boolean {
+        return pathOf(issuerOf(req)) === asked;
+      });
+    })[0];
+    if (!found) {
+      errorCodes.mark(res, 'STS-VC-0095');
+      res.status(404).type('application/json')
+         .set('Cache-Control', 'no-store')
+         .send(JSON.stringify({ error: 'not_found', error_description:
+           'No credential issuer here has an identifier whose path is "' +
+           asked + '". Its document is at ' + wellKnown + ' followed by ' +
+           'that path (OpenID4VCI 1.0 section 12.2.2); a realm\'s is ' +
+           wellKnown + '/realm/<id>.' }));
+      log.debug("Leaving VcIssuer.inInsertedPathRealm(). No such issuer.");
+      return;
+    }
+    realms.run(found, send);
+    log.debug("Leaving VcIssuer.inInsertedPathRealm().");
+  }
+
+  // -------------------------------------------------------------------------
+  // A CREDENTIAL'S TIME CLAIMS, ROUNDED TO THE HOUR (#187). RFC 9901 section
+  // 10.1: a precise issuance instant in `nbf` and in an `exp` derived from
+  // it lets verifiers correlate the credentials of one batch — every one was
+  // issued in the same second — and so link a holder's presentations. `nbf`
+  // goes down to the hour and `exp` up to one, so a credential is never
+  // valid before it was issued nor for less than its lifetime. The OpenID
+  // conformance suite's batch-issuance module failed the precise values.
+  // -------------------------------------------------------------------------
+  unlinkableTimes(nowSec: number): { nbf: number; exp: number } {
+    const { log } = this.deps;
+    log.debug("Entering VcIssuer.unlinkableTimes().");
+    const hour = 3600;
+    const nbf = Math.floor(nowSec / hour) * hour;
+    const exp = Math.ceil((nowSec + this.credentialLifetimeSeconds()) /
+                          hour) * hour;
+    log.debug("Leaving VcIssuer.unlinkableTimes().");
+    return { nbf: nbf, exp: exp };
+  }
+
+  // An Error the credential endpoint answers with `invalid_nonce` rather
+  // than `invalid_proof` (OpenID4VCI 1.0 section 8.3.1.2, #187).
+  static nonceError(message: string): Error {
+    helpers.log.debug("Entering VcIssuer.nonceError().");
+    const e: any = new Error(message);
+    e.vciError = 'invalid_nonce';
+    helpers.log.debug("Leaving VcIssuer.nonceError().");
+    return e;
+  }
+
   private sendVciMetadata(req, res) {
     const { log, logArtifact, errorCodes, loadOauth2 } = this.deps;
     log.debug("Entering VcIssuer.sendVciMetadata().");
@@ -962,8 +1072,9 @@ class VcIssuer {
       // nonce is the c_nonce (Appendix F.3).
       const expires = vciNonces.get(claims.nonce);
       if (!expires || expires < Date.now()) {
-        throw new Error('the key attestation\'s nonce is not a c_nonce this ' +
-                        'issuer handed out (or it was already used).');
+        throw VcIssuer.nonceError('the key attestation\'s nonce is not a ' +
+                                  'c_nonce this issuer handed out (or it ' +
+                                  'was already used).');
       }
     }
     const levels = function (v: unknown): string[] {
@@ -1043,8 +1154,8 @@ class VcIssuer {
       vciNoncesCount.miss();
     }
     if (!expires) {
-      throw new Error('the proof nonce is not one this issuer ' +
-                      'handed out (or was already used).');
+      throw VcIssuer.nonceError('the proof nonce is not one this issuer ' +
+                                'handed out (or was already used).');
     }
 
     // The c_nonce belongs to the REQUEST, not to a single proof: a batch
@@ -1055,7 +1166,7 @@ class VcIssuer {
     // uncovered.
     if (expires < Date.now()) {
       vciNonces.delete(claims.nonce);
-      throw new Error('the proof nonce has expired.');
+      throw VcIssuer.nonceError('the proof nonce has expired.');
     }
 
     // Delegated to the one verifier in common/crypto.js, with the algorithm
@@ -1148,10 +1259,14 @@ class VcIssuer {
                                .sort();
 
     const signer = await this.credentialSignerAsync();
+    const times = this.unlinkableTimes(now);
     const payload: Record<string, any> = {
       iss: issuerId,
-      nbf: now,
-      exp: now + this.credentialLifetimeSeconds(),
+      // `iat` too, rounded with the rest: the signer adds a precise one only
+      // where the payload carries none (#187, RFC 9901 section 10.1).
+      iat: times.nbf,
+      nbf: times.nbf,
+      exp: times.exp,
       vct: VCI_VCT,
       sub: subjectClaims.sub || 'urn:uuid:' + crypto.randomUUID(),
       cnf: { jwk: holderJwk },
@@ -1173,8 +1288,8 @@ class VcIssuer {
                   }),
                   decoyDigest: decoy });
 
-    // iat is added by the signer (jsonwebtoken drops a payload iat when it is
-    // told not to timestamp, so it is left to do it).
+    // iat is set above, rounded like nbf (#187); the signer adds one only to
+    // a payload that has none.
     // `oid4vci.credentialCertificateHeader` decides the `x5c` / `x5u` — and
     // SD-JWT VC section 3.5 names `x5c` as one of the ways a verifier may find
     // the issuer's key, which is the case this setting exists for.
@@ -1229,8 +1344,9 @@ class VcIssuer {
     logArtifact('jwt_vc_json credential', 'the claims it will assert',
                 { subjectClaims: subjectClaims, holderJwk: holderJwk,
                   credentialIssuer: credentialIssuer });
-    const now = Math.floor(Date.now() / 1000);
-    const exp = now + this.credentialLifetimeSeconds();
+    const rounded = this.unlinkableTimes(Math.floor(Date.now() / 1000));
+    const now = rounded.nbf;
+    const exp = rounded.exp;
     const signer = await this.credentialSignerAsync();
     const subjectId = subjectClaims.sub || ('urn:uuid:' + crypto.randomUUID());
 
@@ -1262,6 +1378,7 @@ class VcIssuer {
     const payload: Record<string, any> = {
       iss: issuerId,
       sub: subjectId,
+      iat: now,
       nbf: now,
       exp: exp,
       jti: 'urn:uuid:' + crypto.randomUUID(),
@@ -2287,22 +2404,27 @@ class VcIssuer {
     }
   }
 
-  private encryptionProblem(encryption) {
+  encryptionProblem(encryption) {
     const { log } = this.deps;
     log.debug("Entering VcIssuer.encryptionProblem().");
     const jwk = encryption.jwk;
-    if (!jwk || jwk.kty !== 'RSA' || !jwk.n || !jwk.e) {
+    const rsa = !!jwk && jwk.kty === 'RSA' && !!jwk.n && !!jwk.e;
+    const ec = !!jwk && jwk.kty === 'EC' && !!jwk.x && !!jwk.y &&
+               VCI_ENC_CURVES.indexOf(jwk.crv) >= 0;
+    if (!rsa && !ec) {
       log.debug("Leaving VcIssuer.encryptionProblem(). The key is unusable.");
-      return 'credential_response_encryption.jwk must be an RSA public key; ' +
-             'this issuer encrypts with ' +
-             VCI_ENC_ALG + '.';
+      return 'credential_response_encryption.jwk must be an RSA public key ' +
+             '(for ' + VCI_ENC_ALG + ') or an EC public key on ' +
+             VCI_ENC_CURVES.join(', ') + ' (for ECDH-ES).';
     }
-    const alg = jwk.alg || encryption.alg || VCI_ENC_ALG;
-    if (alg !== VCI_ENC_ALG) {
+    const alg = jwk.alg || encryption.alg ||
+                (rsa ? VCI_ENC_ALG : 'ECDH-ES');
+    if (alg !== (rsa ? VCI_ENC_ALG : 'ECDH-ES')) {
       log.debug("Leaving VcIssuer.encryptionProblem(). Unsupported alg " +
                 alg);
-      return 'This issuer supports alg ' + VCI_ENC_ALG + ' only; "' + alg +
-             '" was requested.';
+      return 'This issuer encrypts to ' + (rsa ? 'an RSA' : 'an EC') +
+             ' key with ' + (rsa ? VCI_ENC_ALG : 'ECDH-ES') + ' only; "' +
+             alg + '" was requested.';
     }
     if (!encryption.enc) {
       log.debug("Leaving VcIssuer.encryptionProblem(). No enc.");
@@ -2316,19 +2438,22 @@ class VcIssuer {
              this.responseEncValues().join(' or ') + '; "' + encryption.enc +
              '" was requested.';
     }
-    if (encryption.zip) {
-      log.debug("Leaving VcIssuer.encryptionProblem(). zip requested.");
-      return 'This issuer does not compress responses, so zip cannot be used.';
+    if (encryption.zip !== undefined && encryption.zip !== 'DEF') {
+      log.debug("Leaving VcIssuer.encryptionProblem(). Unsupported zip.");
+      return 'This issuer compresses responses with zip DEF only; "' +
+             encryption.zip + '" was requested.';
     }
     log.debug("Leaving VcIssuer.encryptionProblem(). The parameters are " +
               "usable.");
     return "";
   }
 
-  // A JWE in compact serialization: RSA-OAEP-256 for the content key, AES-GCM
-  // for the content. Written out by hand rather than with a JOSE library,
-  // because having the steps visible is the point of a mock.
-  private encryptToJwe(plaintext, encryption) {
+  // A JWE in compact serialization: RSA-OAEP-256 (to an RSA key) or ECDH-ES
+  // (to an EC key, #187) for the content key, AES-GCM for the content, and
+  // DEF before it when the wallet asked (#187). Written out by hand rather
+  // than with a JOSE library, because having the steps visible is the point
+  // of a mock.
+  encryptToJwe(plaintext, encryption) {
     const { log, stsCrypto } = this.deps;
     log.debug("Entering VcIssuer.encryptToJwe(). enc=" + encryption.enc);
     // Still written out by hand rather than with a JOSE library — see
@@ -2337,7 +2462,10 @@ class VcIssuer {
     // endpoint's business; the CEK, the wrap, the AAD and the tag are not.
     const compact = stsCrypto.encryptJweCompact(plaintext, {
       jwk: encryption.jwk,
-      enc: encryption.enc
+      enc: encryption.enc,
+      alg: encryption.jwk && encryption.jwk.kty === 'EC' ? 'ECDH-ES' :
+        VCI_ENC_ALG,
+      zip: encryption.zip === 'DEF' ? 'DEF' : undefined
     });
     log.debug("Leaving VcIssuer.encryptToJwe(). " + compact.length +
               " characters.");
@@ -2382,14 +2510,20 @@ class VcIssuer {
     app.get('/.well-known/openid-credential-issuer',
             this.sendVciMetadata.bind(this));
 
-    app.get('/.well-known/openid-credential-issuer/*',
-            this.sendVciMetadata.bind(this));
+    app.get('/.well-known/openid-credential-issuer/*', (req, res) => {
+      this.inInsertedPathRealm(req, res, '/.well-known/openid-credential-' +
+        'issuer', (r: any): string => this.vciMetadata(r).credential_issuer,
+        () => this.sendVciMetadata(req, res));
+    });
 
     app.get('/.well-known/jwt-vc-issuer',
             this.sendJwtVcIssuerMetadata.bind(this));
 
-    app.get('/.well-known/jwt-vc-issuer/*',
-            this.sendJwtVcIssuerMetadata.bind(this));
+    app.get('/.well-known/jwt-vc-issuer/*', (req, res) => {
+      this.inInsertedPathRealm(req, res, '/.well-known/jwt-vc-issuer',
+        (r: any): string => this.deps.baseUrlOf(r),
+        () => this.sendJwtVcIssuerMetadata(req, res));
+    });
 
     // --- Nonce Endpoint ------------------------------------------------------
     app.post('/oid4vci/nonce', (req, res) => {
@@ -2513,15 +2647,18 @@ class VcIssuer {
       }
       if (identifier) {
         if (!granted.length) {
+          // No identifier was granted, so this one is unknown: section
+          // 8.3.1.2's unknown_credential_identifier (#187).
           errorCodes.mark(res, 'STS-VC-0010');
-          return vciError(res, 400, 'invalid_credential_request',
+          return vciError(res, 400, 'unknown_credential_identifier',
             'credential_identifier may only be used when the token ' +
             'response granted credential_identifiers (this authorization ' +
             'used a scope, so send credential_configuration_id instead).');
         }
         if (granted.indexOf(identifier) === -1) {
           errorCodes.mark(res, 'STS-VC-0011');
-          return vciError(res, 400, 'invalid_credential_request',
+          // OpenID4VCI 1.0 section 8.3.1.2's name for it (#187).
+          return vciError(res, 400, 'unknown_credential_identifier',
             'credential_identifier "' + identifier + '" was not granted by ' +
             'the token response. Granted: ' +
             granted.join(', '));
@@ -2536,7 +2673,9 @@ class VcIssuer {
         }
         if (!VCI_CONFIGS[configId]) {
           errorCodes.mark(res, 'STS-VC-0013');
-          return vciError(res, 400, 'unsupported_credential_type',
+          // OpenID4VCI 1.0 section 8.3.1.2's name for it; the drafts'
+          // unsupported_credential_type is gone from the final text (#187).
+          return vciError(res, 400, 'unknown_credential_configuration',
             'This issuer offers credential_configuration_id ' +
             vciConfigIds().map((id) => {
               return '"' + id + '"';
@@ -2657,8 +2796,13 @@ class VcIssuer {
                   ((e && e.message) || e));
         log.error(errorCodes.tag('STS-VC-0019') +
                   'the proof of possession was refused: ' + e.message);
+        // A proof whose c_nonce is not one this issuer holds is
+        // invalid_nonce, which tells the wallet to fetch a new one
+        // (OpenID4VCI 1.0 section 8.3.1.2); anything else about it is
+        // invalid_proof (#187).
         errorCodes.mark(res, 'STS-VC-0019');
-        return vciError(res, 400, 'invalid_proof', e.message);
+        return vciError(res, 400, (e && e.vciError) || 'invalid_proof',
+                        e.message);
       }
       // Every proof in this request quoted the same c_nonce, and it is single
       // use: spend it now that they have all been accepted, so replaying the
@@ -2671,7 +2815,8 @@ class VcIssuer {
                   "refused at its spend.");
         // STS-VC-0050 (spent elsewhere) or STS-VC-0051 (the store).
         errorCodes.mark(res, nonceSpent.errorCode);
-        return vciError(res, 400, 'invalid_proof', nonceSpent.description);
+        return vciError(res, 400, nonceSpent.errorCode === 'STS-VC-0050'
+          ? 'invalid_nonce' : 'invalid_proof', nonceSpent.description);
       }
       // AN ldp_vc IS BOUND TO A KEY ITS HOLDER CAN PROVE AT PRESENTATION, and
       // the only proof that format has is a Data Integrity one: a key no
@@ -3054,5 +3199,9 @@ export = {
     slot.forward('credentialRequestEncryptionMetadata'),
   decryptJweRequest: slot.forward('decryptJweRequest'),
   readPossiblyEncryptedRequest: slot.forward('readPossiblyEncryptedRequest'),
+  // The Credential Response's encryption, for tests/oidcc_conformance_findings
+  // (#187's ECDH-ES).
+  encryptionProblem: slot.forward('encryptionProblem'),
+  encryptToJwe: slot.forward('encryptToJwe'),
   lastCredentialRequest: slot.forward('lastCredentialRequest')
 };

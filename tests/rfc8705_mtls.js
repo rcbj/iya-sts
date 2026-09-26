@@ -673,14 +673,18 @@ function childMain() {
          '3i3. its refresh on a NEW certificate succeeds, and the new access ' +
          'token is bound to the new certificate (sections 6.3 and 7.1)',
          JSON.stringify(r.json).slice(0, 300));
-    r = await raises('STS-OAUTH-0092', '/oauth2/token', function () {
+    // Refused before its certificate is looked at since #187: RFC 6749
+    // section 6 binds a refresh token to the client it was issued to in
+    // every mode (STS-OAUTH-0141), so another client never reaches the
+    // section 7.1 comparison — which would refuse it as well.
+    r = await raises('STS-OAUTH-0141', '/oauth2/token', function () {
       return token({ grant_type: 'refresh_token', client_id: 'mtls-other',
                      refresh_token: implRefresh }, otherIssued.tls);
     });
-    note(r.status === 400 && r.coded,
-         '3i4. another certificate client presenting that refresh token ' +
-         'still meets its binding — the indirect binding is the token\'s ' +
-         'own client\'s only', JSON.stringify(r.json));
+    note(refused(r, 400, 'invalid_grant') && r.coded,
+         '3i4. another certificate client presenting that refresh token is ' +
+         'refused — the token is its own client\'s only (RFC 6749 section ' +
+         '6, STS-OAUTH-0141)', JSON.stringify(r.json));
 
     // --- j. RFC 7591 registration --------------------------------------------
     const register = function (metadata) {

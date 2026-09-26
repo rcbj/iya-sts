@@ -638,7 +638,14 @@ const authzCodes = realms.map({ persist: 'oauth2.authzCodes', retain: 'age',
 // about which one happened, which is the wrong trade for a service whose whole
 // job is to show what occurred.
 //
-// So redemption here is IDEMPOTENT for as long as the code would have been
+// **SINCE #187 (2026-09-24) THE COURTESY BELOW IS AN OPT-IN,
+// `oauth2.codeReplayIdempotent`, OFF BY DEFAULT.** The OpenID conformance
+// suite's oidcc-codereuse named it for what it is — section 4.1.2's MUST
+// broken — so a repeat is now refused and what the code bought revoked in
+// every mode (`bcp.checkCodeReplay()`), and the record below is kept for the
+// refusal's sentences. With the setting on, outside RFC 9700 mode:
+//
+// Redemption here is IDEMPOTENT for as long as the code would have been
 // valid anyway: the token set a code was redeemed for is kept for the rest of
 // that code's own five-minute lifetime, and a repeat of the SAME request —
 // same client, same redirect_uri, same PKCE verifier, same DPoP key — is
@@ -4104,6 +4111,25 @@ class OAuth2Server {
                   'directory threw while being read for ' + user.username +
                   '\'s scope claims and they are omitted: ' + e.message);
       }
+    }
+    // Two claims no catalogue row holds, because each is a fact rather than
+    // an attribute (#187; the conformance suite's oidcc-scope-profile and
+    // oidcc-scope-phone reported both missing):
+    //   * `updated_at`, the entry's own modifyTimestamp;
+    //   * `phone_number_verified` beside a `phone_number` — false, because
+    //     nothing here verifies a telephone number, and Core 5.1 says the
+    //     claim is false "otherwise" rather than absent.
+    if (wanted.indexOf('updated_at') >= 0 && out.updated_at === undefined &&
+        user && user.username) {
+      const at = this.deps.vcClaims.updatedAtOf(user.username);
+      if (typeof at === 'number') {
+        out.updated_at = at;
+      }
+    }
+    if (wanted.indexOf('phone_number_verified') >= 0 &&
+        out.phone_number !== undefined &&
+        out.phone_number_verified === undefined) {
+      out.phone_number_verified = false;
     }
     log.debug("Leaving OAuth2Server.scopeClaimsOf(). " +
               Object.keys(out).length + " claim(s).");
@@ -8315,9 +8341,14 @@ class OAuth2Server {
     //   * THE IMPLICIT FLOW (response_type `id_token` or `id_token token`):
     //     section 3.2.2.1 makes `nonce` REQUIRED and forbids an http
     //     redirect_uri unless it is a native client's loopback. Both were RFC
-    //     9700 mode's alone; they are Core's in every mode now. The hybrid flow
-    //     keeps nonce optional, as section 3.3.2.1 does, and RFC 9700 mode
-    //     still requires it for any id_token.
+    //     9700 mode's alone; they are Core's in every mode now.
+    //   * THE HYBRID FLOW NEEDS nonce TOO when an ID Token comes back from the
+    //     authorization endpoint (#187): section 3.3.2.1 makes it "REQUIRED if
+    //     the Response Type of the request is code id_token or code id_token
+    //     token and OPTIONAL when the Response Type of the request is code
+    //     token". This comment said the hybrid flow kept it optional until
+    //     the OpenID conformance suite's hybrid plan sent code id_token with
+    //     no nonce and was answered.
     // -----------------------------------------------------------------------
     const idTokenAsked = types.indexOf('id_token') >= 0;
     if (idTokenAsked && !hasScope(q.scope, 'openid')) {
@@ -8339,14 +8370,16 @@ class OAuth2Server {
         'prompt the others ask for.');
     }
     const implicit = idTokenAsked && types.indexOf('code') < 0;
-    if (implicit && !q.nonce) {
-      log.debug("Leaving OAuth2Server.vetAuthorizationRequest(). The " +
-                "implicit " +
-                "flow with no nonce.");
+    if (idTokenAsked && !q.nonce) {
+      log.debug("Leaving OAuth2Server.vetAuthorizationRequest(). An ID " +
+                "Token from the authorization endpoint with no nonce.");
       return redirectable('STS-OAUTH-0562', 'invalid_request',
-        'response_type "' + q.response_type + '" is the implicit flow, and ' +
-        'OIDC Core section 3.2.2.1 makes nonce REQUIRED for it — it is what ' +
-        'the client checks the ID Token against to detect a replay.');
+        'response_type "' + q.response_type + '" returns an ID Token from ' +
+        'the authorization endpoint, and OIDC Core makes nonce REQUIRED for ' +
+        'it (section ' + (implicit ? '3.2.2.1, the implicit flow'
+                                   : '3.3.2.1, the hybrid flow') +
+        ') — it is what the client checks the ID Token against to detect a ' +
+        'replay.');
     }
     if (implicit) {
       let parsedRedirect: Json = null;
@@ -9467,7 +9500,27 @@ class OAuth2Server {
     let returnTo = '';
     let refusedNote = '';
     const target = q.post_logout_redirect_uri;
-    if (target && self.logoutTargetConsidered(target)) {
+    // A REQUEST THAT NAMES NO CLIENT IS NOT RETURNED ANYWHERE, in every mode
+    // (#187). RP-Initiated Logout 1.0 section 2: without an id_token_hint
+    // the OP "MUST NOT perform post-logout redirection unless the OP has
+    // other means of confirming the legitimacy of the post-logout
+    // redirection target". A `client_id` is such a means — the address is
+    // then held to that client's registration (below) — but with neither,
+    // nothing ties the address to anybody, and development's acceptance of
+    // an unregistered address (#118's rule) does not reach this far. The
+    // conformance suite's oidcc-rp-initiated-logout-no-id-token-hint found
+    // it followed.
+    const namesNoClient = !q.id_token_hint && !String(q.client_id || '');
+    if (target && namesNoClient && self.logoutTargetConsidered(target)) {
+      errorCodes.mark(res, 'STS-OAUTH-0785');
+      log.info('oauth2: a post_logout_redirect_uri was not followed ' +
+               '(STS-OAUTH-0785): the request named no client.');
+      refusedNote = '<p class="sub">You were not returned to <code>' +
+        xmlEscape(String(target)) + '</code>: RP-Initiated Logout 1.0 ' +
+        'section 2 — a sign-out that carries neither an id_token_hint nor ' +
+        'a client_id is not redirected, because nothing confirms the ' +
+        'address belongs to the application that sent you here.</p>';
+    } else if (target && self.logoutTargetConsidered(target)) {
       const check = bcp.checkPostLogoutRedirectUri({ target: String(target),
                                                      client: client });
       if (check.ok) {
@@ -10452,13 +10505,14 @@ class OAuth2Server {
         'bought are no longer replayed here. Start a new authorization ' +
         'request; the refresh token from the first redemption is still good.');
     }
-    // RFC 9700 mode: no relaxation. The repeat is refused and everything the
-    // code bought is revoked (section 4.5, and RFC 6749 section 10.5 for the
-    // revocation). Checked HERE rather than above the two refusals before it,
-    // because those two are more specific — a request that DIFFERS from the one
+    // No relaxation unless `oauth2.codeReplayIdempotent` is on outside RFC
+    // 9700 mode (#187): the repeat is refused and everything the code bought
+    // is revoked (RFC 6749 sections 4.1.2 and 10.5, RFC 9700 section 4.5).
+    // Checked HERE rather than above the two refusals before it, because
+    // those two are more specific — a request that DIFFERS from the one
     // the code was redeemed with, and a code whose own lifetime has run out,
     // are both worth their own sentence, and both are already refusals in
-    // either mode. This is the one case the two modes answer differently.
+    // either mode. This is the one case the setting changes.
     //
     // The jtis come off the token set that was issued: `jwt.decode` rather than
     // `jwt.verify`, because these are this service's own tokens read back out

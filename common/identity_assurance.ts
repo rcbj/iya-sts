@@ -47,12 +47,18 @@
 // longer says, and releasing the new one would be asserting a verification
 // nobody made. The ordinary claim still carries the new value.
 //
-// **`value` AND `values` ARE ENFORCED ON THE VERIFICATION, AND ONLY THERE**
-// (rcbj, #127). They are how a relying party says "only under eIDAS" or "only
-// a document check", and answering such a request with another framework is
-// the failure section 6 names. On the claims inside `verified_claims`, as on
-// every ordinary claim, they are reported and not enforced
-// (`oauth2.ts`'s `requestedClaimsOf()` header argues that rule).
+// **`value` AND `values` ARE ENFORCED ON EVERYTHING INSIDE
+// `verified_claims`** (rcbj, #127: "as IDA requires"). On the verification
+// they are how a relying party says "only under eIDAS" or "only a document
+// check", and answering such a request with another framework is the
+// failure section 6 names. On the CLAIMS inside `verified_claims` they were
+// reported and not enforced, as on every ordinary claim, until #187: section
+// 5.7.4 has the OP omit a claim whose data does not fulfil `value`, `values`
+// or `max_age`, and the conformance suite's
+// ekyc-server-one-claim-with-random-value-omitted found one released — rcbj's
+// decision (2026-09-26), refining #127's answer 5. An
+// element left with no claim is omitted whole. ORDINARY claims keep the
+// OIDC Core rule (`oauth2.ts`'s `requestedClaimsOf()` header argues it).
 //
 // **DEVELOPMENT INVENTS ONE, UNDER A FRAMEWORK THAT SAYS SO.** Where
 // `mode.inventsClaimValues()` and the person has no record, the answer is a
@@ -1189,6 +1195,7 @@ class IdentityAssurance {
         }
         const claims: Json = {};
         const stale: string[] = [];
+        const unmet: string[] = [];
         asked.forEach(function (one) {
           if (record.claims[one] === undefined) {
             return;
@@ -1196,6 +1203,12 @@ class IdentityAssurance {
           if (IdentityAssurance.canonical(record.claims[one]) !==
               IdentityAssurance.canonical(current[one])) {
             stale.push(one);
+            return;
+          }
+          // Section 5.7.4: a claim whose data does not fulfil the request's
+          // `value`, `values` or `max_age` is omitted (#187).
+          if (!self.matches(element.claims[one], record.claims[one])) {
+            unmet.push(one);
             return;
           }
           const value = self.project(element.claims[one], record.claims[one]);
@@ -1209,6 +1222,13 @@ class IdentityAssurance {
                       record.id + ' and ' +
                       (stale.length > 1 ? 'are' : 'is') + ' not released ' +
                       'as verified');
+        }
+        if (unmet.length) {
+          report.push('element ' + index + ': ' + unmet.join(', ') +
+                      ' in verification ' + record.id + ' ' +
+                      (unmet.length > 1 ? 'do' : 'does') + ' not fulfil ' +
+                      'the value, values or max_age asked for; omitted ' +
+                      '(Identity Assurance section 5.7.4)');
         }
         if (Object.keys(claims).length) {
           chosen = record;

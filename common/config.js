@@ -4420,6 +4420,21 @@ const SETTINGS = [
                  'was removed when it was redeemed, so a replay of a ' +
                  'forgotten one is still refused as an unknown code.' },
 
+  { key: 'oauth2.codeReplayIdempotent', group: 'OAuth 2.0 / OIDC',
+    label: 'Answer a repeated code redemption with the same tokens',
+    env: 'STS_OAUTH2_CODE_REPLAY_IDEMPOTENT', type: 'bool', dflt: false,
+    runtime: true,
+    description: '**WEAKER THAN THE SPECIFICATION — leave it off.** With it ' +
+                 'on, an IDENTICAL repeat of a Token Request for a code ' +
+                 'already redeemed is answered with the tokens it already ' +
+                 'got, for the rest of the code\'s own lifetime. RFC 6749 ' +
+                 'section 4.1.2 says a code used twice MUST be refused, and ' +
+                 'off (the default) it is — and everything the first ' +
+                 'redemption bought is revoked (section 10.5). RFC 9700, ' +
+                 'OAuth 2.1 and FAPI mode ignore it. It exists for the ' +
+                 'parent project\'s development-mode job that still ' +
+                 'asserts the old courtesy (#187).' },
+
   { key: 'oauth2.maxPendingTransactions', group: 'OAuth 2.0 / OIDC',
     label: 'RFC 9700: remembered transactions (per realm)',
     env: 'STS_OAUTH2_MAX_PENDING_TRANSACTIONS', type: 'int', dflt: 500,
@@ -6197,6 +6212,22 @@ const SETTINGS = [
                  'an unknown kid may force, so a client that rotated its ' +
                  'keys is picked up quickly and a stream of invented kids ' +
                  'cannot make this service fetch on every request.' },
+
+  { key: 'oauth2.requestUriFragmentCheck', group: 'OAuth 2.0 / OIDC',
+    label: 'Check a request_uri\'s SHA-256 fragment against its content',
+    env: 'STS_OAUTH2_REQUEST_URI_FRAGMENT_CHECK', type: 'bool', dflt: true,
+    runtime: true,
+    description: 'OpenID Connect Core section 6.2 gives a request_uri\'s ' +
+                 'fragment as the base64url SHA-256 of its content, a signal ' +
+                 'that a cached copy is out of date. ON (the default) treats ' +
+                 'a fragment of that shape as an integrity check too, and ' +
+                 'refuses content that does not hash to it (STS-OAUTH-0349). ' +
+                 'The section does not require an OP to verify it, and the ' +
+                 'OpenID conformance suite\'s request_uri modules send a ' +
+                 'fragment hashed from random bytes (its content is not ' +
+                 'known when it makes the URI), so its OpenID Connect realms ' +
+                 'turn this off (#187). Off, the fragment only names a ' +
+                 'version of the content for oauth2.requestUriCacheS.' },
 
   { key: 'oauth2.requestUriCacheS', group: 'OAuth 2.0 / OIDC',
     label: 'request_uri content cache (s)',
@@ -8440,13 +8471,6 @@ const SETTINGS = [
     description: 'How long a Credential Offer, its issuer_state, its ' +
                  'pre-authorized code and a notification_id stay usable.' },
 
-  { key: 'oid4vci.preAuthorizedPollIntervalS', group: 'OID4VCI',
-    label: 'Pre-authorized grant: interval (s)',
-    env: 'OID4VCI_PRE_AUTHORIZED_POLL_INTERVAL_S', type: 'int', dflt: 5,
-    min: 1, max: 3600, runtime: true,
-    description: 'The `interval` a pre-authorized_code grant in an offer ' +
-                 'names — the seconds a wallet waits between token requests.' },
-
   { key: 'oid4vci.walletIssuancePath', group: 'OID4VCI',
     label: 'Wallet issuance page',
     env: 'OID4VCI_WALLET_ISSUANCE_PATH', type: 'string',
@@ -8549,7 +8573,9 @@ const SETTINGS = [
     'one of the ways a verifier may find an issuer\'s key, so a wallet or ' +
     'verifier that never fetches this issuer\'s metadata can still check ' +
     'the signature against a trust anchor. ldp_vc is not a JWS and is not ' +
-    'affected.'),
+    'affected. The x5c here (and on a Status List Token) leaves the trust ' +
+    'anchor, the service Root, off the end, as HAIP 1.0 section 6.1.1 ' +
+    'requires; HAIP also requires x5c, so a HAIP realm sets x5c.'),
 
   certificateHeaderSetting('oid4vci.signedMetadataCertificateHeader',
     'OID4VCI', 'OID4VCI_SIGNED_METADATA_CERTIFICATE_HEADER',

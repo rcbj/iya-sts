@@ -5118,16 +5118,18 @@ const CODES = [
     summary: 'In RFC 9700 mode, a refresh request carried no client_id.',
     spec: 'invalid_request (HTTP 400)' },
   { code: 'STS-OAUTH-0141',
-    summary: 'In RFC 9700 mode, a refresh token was presented by a client ' +
-      'other than the one it was issued to.',
+    summary: 'A refresh token was presented by a client other than the one ' +
+      'it was issued to (RFC 6749 section 6; every mode since #187).',
     spec: 'invalid_grant (HTTP 400)' },
   { code: 'STS-OAUTH-0142',
-    summary: 'In RFC 9700 mode, a refresh request asked for scope the ' +
-      'original grant did not carry.',
+    summary: 'A refresh request asked for scope the original grant did ' +
+      'not carry (RFC 6749 section 6; every mode since #187).',
     spec: 'invalid_scope (HTTP 400)' },
   { code: 'STS-OAUTH-0143',
-    summary: 'In RFC 9700 mode, an authorization code was presented a second ' +
-      'time; the tokens it bought were revoked (section 4.5).',
+    summary: 'An authorization code was presented a second time; the ' +
+      'tokens it bought were revoked (RFC 6749 section 4.1.2, RFC 9700 ' +
+      'section 4.5; every mode since #187 unless ' +
+      'oauth2.codeReplayIdempotent).',
     spec: 'invalid_grant (HTTP 400)' },
   { code: 'STS-OAUTH-0144',
     summary: 'In RFC 9700 mode, an authorization request named no client_id; ' +
@@ -6516,8 +6518,10 @@ const CODES = [
       'prompt value (OIDC Core section 3.1.2.1).',
     spec: 'redirect: error=invalid_request' },
   { code: 'STS-OAUTH-0562',
-    summary: 'An implicit-flow authorization request carried no nonce, which ' +
-      'OIDC Core section 3.2.2.1 makes REQUIRED — in every mode.',
+    summary: 'An authorization request whose response_type returns an ID Token ' +
+      'from the authorization endpoint (implicit, or hybrid code id_token ' +
+      '[token]) carried no nonce, which OIDC Core sections 3.2.2.1 and ' +
+      '3.3.2.1 make REQUIRED — in every mode (hybrid since #187).',
     spec: 'redirect: error=invalid_request' },
   { code: 'STS-OAUTH-0563',
     summary: 'An implicit-flow authorization request named an http ' +
@@ -7557,6 +7561,22 @@ const CODES = [
       'command — the development test control answering as a relying party ' +
       'would (#151).',
     spec: 'HTTP 400, 401, 409 or 404 {error}' },
+  { code: 'STS-OAUTH-0783',
+    summary: 'Under FAPI 1.0 Advanced, an authorization request asked for ' +
+      'response_type code with a response mode that is not JARM (Part 2 ' +
+      'section 5.2.2 item 2, #187).',
+    spec: 'invalid_request' },
+  { code: 'STS-OAUTH-0784',
+    summary: 'Under FAPI 1.0 Advanced, an authorization request (its ' +
+      'signed request object) named no scope; RFC 6749 section 3.3\'s ' +
+      'refusal rather than a default (#187).',
+    spec: 'invalid_request' },
+  { code: 'STS-OAUTH-0785',
+    summary: 'An RP-Initiated Logout request carried a ' +
+      'post_logout_redirect_uri with neither an id_token_hint nor a ' +
+      'client_id, so it was not followed (section 2: nothing confirms the ' +
+      'address, #187).',
+    spec: 'none (the sign-out page says so; no redirect)' },
   { code: 'STS-SAML-0001',
     summary: 'A SAML 2.0 sign-in resumed with a held-request id that is ' +
       'unknown or has expired (saml2.requestTtlMin), so there is no ' +
@@ -9127,6 +9147,12 @@ const CODES = [
     summary: 'An Entity Collection crawl failed, or its result could not be ' +
       'kept in the realm\'s register (#136).',
     spec: '' },
+  { code: 'STS-OIDFED-0067',
+    summary: 'A request object from a relying party registered ' +
+      'automatically through an OpenID Federation failed section ' +
+      '12.1.1.1: aud not this OP alone, iss or client_id not the RP, a sub, ' +
+      'or no jti or exp (#187).',
+    spec: 'invalid_request_object (HTTP 400)' },
 
   // ===== KRB ===============================================================
   { code: 'STS-KRB-0001',
@@ -11409,11 +11435,13 @@ const CODES = [
   { code: 'STS-VC-0010',
     summary: 'A Credential Request used credential_identifier although the ' +
       'token response granted no credential_identifiers.',
-    spec: 'invalid_credential_request (HTTP 400)' },
+    spec: 'unknown_credential_identifier (HTTP 400; ' +
+      'invalid_credential_request until #187)' },
   { code: 'STS-VC-0011',
     summary: 'A Credential Request named a credential_identifier the token ' +
       'response did not grant.',
-    spec: 'invalid_credential_request (HTTP 400)' },
+    spec: 'unknown_credential_identifier (HTTP 400; ' +
+      'invalid_credential_request until #187)' },
   { code: 'STS-VC-0012',
     summary: 'A Credential Request used credential_configuration_id although ' +
       'the token response granted credential_identifiers.',
@@ -11421,7 +11449,8 @@ const CODES = [
   { code: 'STS-VC-0013',
     summary: 'A Credential Request named a credential_configuration_id this ' +
       'issuer does not offer.',
-    spec: 'unsupported_credential_type (HTTP 400)' },
+    spec: 'unknown_credential_configuration (HTTP 400; ' +
+      'unsupported_credential_type until #187)' },
   { code: 'STS-VC-0014',
     summary: 'A Credential Request named no credential at all (neither ' +
       'credential_identifier nor credential_configuration_id).',
@@ -11445,7 +11474,8 @@ const CODES = [
     summary: 'A proof of possession in a Credential Request was refused ' +
       '(malformed, wrong typ, alg, audience, iat, nonce, or ' +
       'signature).',
-    spec: 'invalid_proof (HTTP 400)' },
+    spec: 'invalid_proof, or invalid_nonce for a c_nonce this issuer ' +
+      'does not hold (HTTP 400, #187)' },
   { code: 'STS-VC-0020',
     summary: 'A Deferred Credential Request named a transaction_id this ' +
       'issuer never issued, has expired, or was already redeemed.',
@@ -11574,7 +11604,7 @@ const CODES = [
   { code: 'STS-VC-0050',
     summary: 'A c_nonce every proof verified against was already spent by ' +
       'another process against the same store (the cluster claim, #46).',
-    spec: 'invalid_proof (HTTP 400)' },
+    spec: 'invalid_nonce (HTTP 400, #187)' },
   { code: 'STS-VC-0051',
     summary: 'The cluster claim store could not be asked about an OpenID4VCI ' +
       'single-use value — a pre-authorized code, a c_nonce or a Transaction ' +
@@ -11788,6 +11818,17 @@ const CODES = [
       'already enrolled for somebody, or the person holds the most they may ' +
       '(#129).',
     spec: 'HTTP 400 page' },
+  { code: 'STS-VC-0095',
+    summary: 'A credential issuer\'s well-known document was asked for at ' +
+      'an inserted path no issuer here has (OpenID4VCI 1.0 section ' +
+      '12.2.2, #187).',
+    spec: 'HTTP 404 {error: not_found}' },
+  { code: 'STS-VC-0096',
+    summary: 'A presentation to the Verifier\'s Response URI was not in the ' +
+      'response mode its request asked for, or its direct_post.jwt ' +
+      'response named no outstanding request\'s key or could not be ' +
+      'opened (OpenID4VP 1.0 section 8.3.1, #187).',
+    spec: 'invalid_request (HTTP 400)' },
   { code: 'STS-VC-0100',
     summary: 'A VC-API test endpoint (/vc-api/*, the Bitstring Status ' +
       'List publish hook) was called in a realm whose test controls are ' +
