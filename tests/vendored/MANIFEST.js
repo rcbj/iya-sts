@@ -396,6 +396,14 @@ const JOBS = [
   // scheduler job. `local: true`: this repository's own transmitter and
   // portal, in a throwaway realm.
   { file: 'sts_risc_acts.js',            browser: false, local: true },
+  // CREDENTIAL SIGNALS FROM THE DOORS #231, #236 AND #237 CLOSED
+  // (2026-09-26): an EAB key, a SCEP challenge and a self-issued subject
+  // made and removed; a key pair revoked for keyCompromise (RISC
+  // credential-compromise x509); and over LDAPS a credential attribute
+  // refused (53) for an administrator, a userPassword delete (revoke) and
+  // pwdReset (account-credential-change-required). `local: true`: this
+  // repository's own transmitter and directory, in a throwaway product realm.
+  { file: 'sts_credential_signals.js',   browser: false, local: true },
   // THE SCHEDULER (#49, 2026-09-22): Monitoring → Scheduler and GET
   // /admin-api/scheduler agree, Run now runs once on the leader, a realm's
   // token is confined, and in the `cluster` mode both nodes name one leader
