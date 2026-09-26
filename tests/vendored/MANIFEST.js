@@ -319,6 +319,13 @@ const JOBS = [
   // true`: this repository's realms, directory and authorization server.
   // The realms are left standing and a kept stack reuses them.
   { file: 'sts_realm_overlapping_domains.js', browser: false, local: true },
+  // TWO REALMS, TWO UNRELATED DOMAINS (#87, 2026-09-26): an application, a
+  // person and a group in each at exactly the DN expected, each person signed
+  // in by the authorization code flow, the whole of each realm's tree under
+  // its own base with every DN-valued attribute pointing inside it, and
+  // neither realm knowing the other's objects. `local: true`: this
+  // repository's realms, directory and authorization server.
+  { file: 'sts_two_realm_domains.js',    browser: false, local: true },
   // RFC 7009 TOKEN REVOCATION (#102, 2026-09-22): client authentication by
   // mode, another client's token refused invalid_grant, the token types, an
   // unknown hint, and a refresh token taking its grant with it. `local:
