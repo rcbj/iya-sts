@@ -50,7 +50,8 @@ function selfSigned(dir, name, keyArgs) {
   const key = path.join(dir, name + '.key');
   const cert = path.join(dir, name + '.crt');
   const r = childProcess.spawnSync('openssl', ['req', '-x509', '-nodes',
-    '-days', '1', '-subj', '/CN=' + name, '-keyout', key, '-out', cert]
+    '-days', '1', '-subj', '/CN=' + name, '-keyout', key, '-out', cert,
+    '-addext', 'basicConstraints=critical,CA:true']
     .concat(keyArgs), { encoding: 'utf8', timeout: 60000 });
   if (r.status !== 0) {
     throw new Error('openssl req for ' + name + ': ' + (r.stderr || r.error));
@@ -58,6 +59,33 @@ function selfSigned(dir, name, keyArgs) {
   log.debug("Leaving selfSigned().");
   return { key: fs.readFileSync(key, 'utf8'), cert: fs.readFileSync(cert,
     'utf8'), keyFile: key, certFile: cert };
+}
+
+// A certificate issued by `ca` (a selfSigned() result) with `openssl x509
+// -req`; the certificate PEM is followed by the CA's, as a client sends it.
+function issuedBy(dir, name, keyArgs, ca) {
+  log.debug("Entering issuedBy(). " + name);
+  const key = path.join(dir, name + '.key');
+  const csr = path.join(dir, name + '.csr');
+  const cert = path.join(dir, name + '.crt');
+  const steps = [
+    ['req', '-new', '-nodes', '-subj', '/CN=' + name, '-keyout', key,
+     '-out', csr].concat(keyArgs),
+    ['x509', '-req', '-in', csr, '-CA', ca.certFile, '-CAkey', ca.keyFile,
+     '-set_serial', '0x' + crypto.randomBytes(8).toString('hex'),
+     '-days', '1', '-out', cert]
+  ];
+  steps.forEach(function (args) {
+    const r = childProcess.spawnSync('openssl', args,
+                                     { encoding: 'utf8', timeout: 60000 });
+    if (r.status !== 0) {
+      throw new Error('openssl ' + args[0] + ' for ' + name + ': ' +
+                      (r.stderr || r.error));
+    }
+  });
+  log.debug("Leaving issuedBy().");
+  return { key: fs.readFileSync(key, 'utf8'),
+           cert: fs.readFileSync(cert, 'utf8') + ca.cert };
 }
 
 // A handshake from a node client with the options given; resolves with
@@ -212,8 +240,10 @@ async function run(t) {
       "const s=tls.createServer({key:fs.readFileSync(process.argv[1])," +
       "cert:fs.readFileSync(process.argv[2]),requestCert:true," +
       "rejectUnauthorized:false},function(c){" +
-      "const p=c.getPeerCertificate();" +
-      "console.log('READ '+(p&&p.subject?p.subject.CN:'none'));" +
+      "const p=c.getPeerCertificate(true);" +
+      "console.log('READ '+(p&&p.subject?p.subject.CN:'none')+' '+" +
+      "(p&&p.issuerCertificate&&p.issuerCertificate.subject?" +
+      "p.issuerCertificate.subject.CN:'no-issuer'));" +
       "c.on('error',function(){});c.end('ok\\n');});" +
       "g.refuseUnreadableCertificatesOn(s,'the policy test');" +
       "s.listen(0,'127.0.0.1',function(){console.log('PORT '+" +
@@ -267,17 +297,47 @@ async function run(t) {
       t.check(childOut.indexOf('READ tlsfuzzer') < 0 &&
               childOut.indexOf('READ brainpool') < 0,
               'and nothing read it', childOut.slice(-400));
-      const read = await handshake(guardedPort, {
-        key: p256.key, cert: p256.cert, minVersion: 'TLSv1.3' });
-      if (read.socket) {
-        await new Promise(function (resolve) {
-          read.socket.on('data', function () {});
-          read.socket.on('close', resolve);
-          setTimeout(resolve, 3000);
-        });
-      }
+      const settle = async function (attempt) {
+        log.debug("Entering settle().");
+        log.debug("Leaving settle().");
+        if (attempt.socket) {
+          await new Promise(function (resolve) {
+            attempt.socket.on('data', function () {});
+            attempt.socket.on('close', resolve);
+            setTimeout(resolve, 3000);
+          });
+        }
+      };
+      // A P-256 leaf whose ISSUER is on a brainpool curve: node's walk of
+      // the chain (getPeerCertificate(true)) crashes on the issuer, and
+      // no signature list can refuse it in the handshake.
+      const bpCa = selfSigned(scratch, 'bp-ca', ['-newkey', 'ec', '-pkeyopt',
+        'ec_paramgen_curve:brainpoolP256r1']);
+      const underBp = issuedBy(scratch, 'under-bp', ['-newkey', 'ec',
+        '-pkeyopt', 'ec_paramgen_curve:P-256'], bpCa);
+      await settle(await handshake(guardedPort, {
+        key: underBp.key, cert: underBp.cert, minVersion: 'TLSv1.3' }));
+      t.check(childExit === null && childOut.indexOf('READ under-bp') < 0,
+              'a P-256 leaf presented with a brainpool issuer is closed ' +
+              'too, and the server lives', JSON.stringify(childExit) + ' ' +
+              childOut.slice(-400));
+      await settle(await handshake(guardedPort, {
+        key: p256.key, cert: p256.cert, minVersion: 'TLSv1.3' }));
       t.check(/READ p256/.test(childOut), 'a P-256 client certificate is ' +
               'read as before', childOut.slice(-400));
+      // AND THE CHAIN SURVIVES THE GUARD: reading it the safe way costs
+      // node's own getPeerCertificate(true) its issuerCertificate, so the
+      // guard serves every reader from its one reading — here, a leaf and
+      // the P-256 CA it came with.
+      const pCa = selfSigned(scratch, 'p256-ca', ['-newkey', 'ec', '-pkeyopt',
+        'ec_paramgen_curve:P-256']);
+      const underP = issuedBy(scratch, 'under-p256', ['-newkey', 'ec',
+        '-pkeyopt', 'ec_paramgen_curve:P-256'], pCa);
+      await settle(await handshake(guardedPort, {
+        key: underP.key, cert: underP.cert, minVersion: 'TLSv1.3' }));
+      t.check(/READ under-p256 p256-ca/.test(childOut), 'and a chain is ' +
+              'still read whole: getPeerCertificate(true) links the leaf ' +
+              'to the issuer it was sent with', childOut.slice(-400));
     }
     serverChild.kill('SIGKILL');
 

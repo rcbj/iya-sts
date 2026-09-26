@@ -2075,8 +2075,8 @@ function adoptServerCertificate(bundle) {
 const externalServers = [];
 
 // ---------------------------------------------------------------------------
-// A CLIENT CERTIFICATE NODE CANNOT READ IS REFUSED BEFORE ANYTHING READS IT
-// (#212, 2026-09-26).
+// A CLIENT CERTIFICATE NODE CANNOT READ IS REFUSED, AND EVERY READER IS SERVED
+// FROM ONE SAFE READING (#212, 2026-09-26).
 //
 // tlsfuzzer's test-tls13-ecdsa-brainpool-in-certificate-verify took the
 // whole process down: exit 139, SIGSEGV. Node 24.16.0 (OpenSSL 3.5.6)
@@ -2084,21 +2084,33 @@ const externalServers = [];
 // with no NIST name — brainpoolP256r1/384r1/512r1, secp256k1 — into the
 // object `getPeerCertificate()` returns (`X509Certificate#toLegacyObject()`
 // crashes the same way, standalone; the X509Certificate accessors do not).
-// The main port and the debugger ASK every connection for a certificate and
-// read it on every request, and OpenSSL's default signature list lets a TLS
-// 1.3 client sign its CertificateVerify with a brainpool key, so any client
-// with such a certificate could stop the service.
+// It crashes for such a certificate ANYWHERE in the chain `getPeerCertificate
+// (true)` walks — a P-256 leaf presented with a brainpool issuer is enough —
+// and the revocation check and the path rules walk it for every connection
+// that presents a certificate. The main port and the debugger ask every
+// connection for one.
 //
-// Two defences, and this is the second. The first is
-// `tls.signatureAlgorithms`, whose default no longer offers the three
-// brainpool TLS 1.3 schemes, so such a handshake fails inside OpenSSL
-// (TLS 1.2 already refuses the curve: "wrong curve"). This one holds however
-// that setting is changed: prepended to `secureConnection`, so it runs before
-// every reader, it walks the peer chain through `getPeerX509Certificate()`
-// (safe) and, for a certificate on such a curve, replaces the socket's
-// `getPeerCertificate` with node's own answer for "no certificate" — so no
-// listener after it on this emit, and no request, converts it — and closes
-// the connection. `STS-TLS-0035`.
+// THE ONE SAFE WAY TO LOOK IS `getPeerX509Certificate()`, AND IT HAS A PRICE
+// OF ITS OWN: once it has been called, a later `getPeerCertificate(true)` on
+// the same socket has no `issuerCertificate` at all (measured on 24.16.0 —
+// the revocation_status suite caught it the first time this guard used it).
+// So this guard reads the chain ONCE, that way, prepended to
+// `secureConnection` so it runs before every other reader, and then:
+//
+//   * a certificate on a curve node cannot read, anywhere in the chain:
+//     `getPeerCertificate` answers node's own "no certificate" ({}), the
+//     connection is closed, `STS-TLS-0035`;
+//   * otherwise `getPeerCertificate(detailed)` is REPLACED on the socket by
+//     the same objects node would have built — each certificate's own
+//     `toLegacyObject()`, which is the same C++ conversion — linked by
+//     `issuerCertificate` exactly as node links them: the chain the client
+//     sent, then issuers found among this listener's trust anchors
+//     (node completes from the context's store), and a self-issued top
+//     pointing at itself.
+//
+// The first defence is `tls.signatureAlgorithms`, whose default offers no
+// brainpool scheme, so a brainpool LEAF fails inside OpenSSL (TLS 1.2 already
+// refuses the curve: "wrong curve"). Only this one covers the chain.
 // ---------------------------------------------------------------------------
 const NODE_READABLE_CURVES = new Set([
   'prime192v1', 'secp224r1', 'prime256v1', 'secp384r1', 'secp521r1',
@@ -2106,44 +2118,162 @@ const NODE_READABLE_CURVES = new Set([
   'sect283r1', 'sect409k1', 'sect409r1', 'sect571k1', 'sect571r1'
 ]);
 
+// Why node cannot convert this certificate, or ''.
+function unreadableKey(cert) {
+  log.debug("Entering unreadableKey().");
+  const key = cert.publicKey;
+  if (key.asymmetricKeyType !== 'ec') {
+    log.debug("Leaving unreadableKey(). Not EC.");
+    return '';
+  }
+  const curve = String((key.asymmetricKeyDetails || {}).namedCurve || '');
+  log.debug("Leaving unreadableKey(). " + curve);
+  return NODE_READABLE_CURVES.has(curve) ? ''
+    : 'an EC key on ' + (curve || 'an unnamed curve');
+}
+
+// The trust anchors a listener's context holds, parsed once per PEM.
+const parsedAnchors = new Map();
+function anchorCertificates() {
+  log.debug("Entering anchorCertificates().");
+  const out = [];
+  (secureContextOptions().ca || []).forEach(function (pem) {
+    const text = String(pem);
+    if (!parsedAnchors.has(text)) {
+      let parsed = null;
+      try {
+        parsed = new crypto.X509Certificate(text);
+      } catch (e) {
+        log.debug("Caught in anchorCertificates(): " +
+                  ((e && e.message) || e));
+        // An anchor node cannot parse completes no chain; it is skipped.
+        parsed = null;
+      }
+      parsedAnchors.set(text, parsed);
+    }
+    if (parsedAnchors.get(text)) {
+      out.push(parsedAnchors.get(text));
+    }
+  });
+  log.debug("Leaving anchorCertificates(). " + out.length);
+  return out;
+}
+
+// The peer's chain as X509Certificate objects, leaf first: what the client
+// sent, then issuers from the anchors, stopping at a self-issued top.
+// `selfIssuedTop` says whether the last one issued itself.
+function peerChainOf(leaf) {
+  log.debug("Entering peerChainOf().");
+  const chain = [leaf];
+  const seen = new Set([leaf.fingerprint256]);
+  let next = leaf.issuerCertificate;
+  while (next && chain.length < 16 && !seen.has(next.fingerprint256)) {
+    chain.push(next);
+    seen.add(next.fingerprint256);
+    next = next.issuerCertificate;
+  }
+  let top = chain[chain.length - 1];
+  let selfIssuedTop = top.checkIssued(top);
+  const anchors = selfIssuedTop ? [] : anchorCertificates();
+  while (!selfIssuedTop && chain.length < 16) {
+    const issuer = anchors.find(function (one) {
+      return !seen.has(one.fingerprint256) && top.checkIssued(one);
+    });
+    if (!issuer) {
+      break;
+    }
+    chain.push(issuer);
+    seen.add(issuer.fingerprint256);
+    top = issuer;
+    selfIssuedTop = top.checkIssued(top);
+  }
+  log.debug("Leaving peerChainOf(). " + chain.length);
+  return { chain: chain, selfIssuedTop: selfIssuedTop };
+}
+
+// `getPeerCertificate(detailed)` as node answers it, from the chain above.
+function legacyPeerCertificate(read, detailed) {
+  log.debug("Entering legacyPeerCertificate().");
+  if (!detailed) {
+    log.debug("Leaving legacyPeerCertificate(). Leaf.");
+    return read.chain[0].toLegacyObject();
+  }
+  const objects = read.chain.map(function (one) {
+    return one.toLegacyObject();
+  });
+  objects.forEach(function (object, i) {
+    if (i + 1 < objects.length) {
+      object.issuerCertificate = objects[i + 1];
+    }
+  });
+  if (read.selfIssuedTop) {
+    objects[objects.length - 1].issuerCertificate =
+      objects[objects.length - 1];
+  }
+  log.debug("Leaving legacyPeerCertificate(). " + objects.length);
+  return objects[0];
+}
+
 // The first certificate of the peer's chain node cannot convert, described,
-// or '' when there is none (or no certificate at all).
+// or '' — and the chain, for the replacement reader.
+function readPeerChain(socket) {
+  log.debug("Entering readPeerChain().");
+  const leaf = typeof socket.getPeerX509Certificate === 'function'
+    ? socket.getPeerX509Certificate() : undefined;
+  if (!leaf) {
+    log.debug("Leaving readPeerChain(). No certificate.");
+    return null;
+  }
+  const read = peerChainOf(leaf);
+  read.problem = '';
+  read.chain.some(function (cert, depth) {
+    const why = unreadableKey(cert);
+    if (why) {
+      read.problem = (depth ? 'the certificate at depth ' + depth
+                            : 'the leaf') + ' (' +
+        cert.subject.replace(/\n/g, ', ') + ') has ' + why;
+    }
+    return !!why;
+  });
+  log.debug("Leaving readPeerChain(). " + (read.problem || 'readable'));
+  return read;
+}
+
+// Kept for callers that only want the verdict.
 function unreadablePeerCertificate(socket) {
   log.debug("Entering unreadablePeerCertificate().");
-  let cert = typeof socket.getPeerX509Certificate === 'function'
-    ? socket.getPeerX509Certificate() : undefined;
-  const seen = new Set();
-  for (let depth = 0; cert && depth < 16 && !seen.has(cert.fingerprint256);
-       depth += 1) {
-    seen.add(cert.fingerprint256);
-    const key = cert.publicKey;
-    const curve = key.asymmetricKeyType === 'ec'
-      ? String((key.asymmetricKeyDetails || {}).namedCurve || '') : '';
-    if (key.asymmetricKeyType === 'ec' && !NODE_READABLE_CURVES.has(curve)) {
-      log.debug("Leaving unreadablePeerCertificate(). " + curve);
-      return (depth ? 'the certificate at depth ' + depth : 'the leaf') +
-        ' (' + cert.subject.replace(/\n/g, ', ') + ') has an EC key on ' +
-        (curve || 'an unnamed curve');
-    }
-    cert = cert.issuerCertificate;
-  }
-  log.debug("Leaving unreadablePeerCertificate(). None.");
-  return '';
+  const read = readPeerChain(socket);
+  log.debug("Leaving unreadablePeerCertificate().");
+  return read ? read.problem : '';
 }
 
 function refuseUnreadableCertificatesOn(server, label) {
   log.debug('Entering refuseUnreadableCertificatesOn(). label=' + label);
   server.prependListener('secureConnection', function (socket) {
-    let problem = '';
+    let read = null;
     try {
-      problem = unreadablePeerCertificate(socket);
+      read = readPeerChain(socket);
     } catch (e) {
       // A chain X509Certificate itself cannot walk is not one this guard
-      // can judge; the handshake has already accepted it, as before.
+      // can judge; the socket is left exactly as node made it.
       log.debug("Caught in refuseUnreadableCertificatesOn(): " +
                 ((e && e.message) || e));
+      read = null;
     }
-    if (!problem) {
+    if (!read) {
+      return;
+    }
+    if (!read.problem) {
+      const memo = {};
+      socket.getPeerCertificate = function (detailed) {
+        log.debug("Entering getPeerCertificate() (read once).");
+        const key = detailed ? 'detailed' : 'leaf';
+        if (!memo[key]) {
+          memo[key] = legacyPeerCertificate(read, !!detailed);
+        }
+        log.debug("Leaving getPeerCertificate() (read once).");
+        return memo[key];
+      };
       return;
     }
     socket.getPeerCertificate = function () {
@@ -2153,13 +2283,13 @@ function refuseUnreadableCertificatesOn(server, label) {
     };
     log.warn(errorCodes.tag('STS-TLS-0035') + 'tls: closed a connection on ' +
              label + ' from ' + (socket.remoteAddress || 'an unknown ' +
-             'address') + ': ' + problem + ', which node cannot read ' +
+             'address') + ': ' + read.problem + ', which node cannot read ' +
              'without crashing the process (#212). Only NIST curves are ' +
              'read here.');
     audit.failure('STS-TLS-0035', {
       protocol: 'TLS', channel: 'tls', target: label,
       summary: 'a client certificate on a curve node cannot read was ' +
-               'refused: ' + problem,
+               'refused: ' + read.problem,
       outcome: 'refused'
     });
     socket.destroy();
