@@ -389,6 +389,13 @@ const JOBS = [
   // SCIM change and a group joined — only for a person holding live tokens.
   // `local: true`: this repository's own transmitter, in a throwaway realm.
   { file: 'sts_caep_credential_changes.js', browser: false, local: true },
+  // CAEP FROM THE DOORS THAT ARE NOT A DIRECTORY ATTRIBUTE (#238, #243):
+  // token-claims-change for a role given, a group a role names, a
+  // verification recorded (verified_claims), an address SCIM wrote
+  // (email_verified) and a custom claim added (the fan-out), and
+  // assurance-level-change in NIST-IAL. `local: true`: this repository's own
+  // transmitter, in a throwaway realm.
+  { file: 'sts_caep_claims_doors.js', browser: false, local: true },
   // RISC ON ITS OWN (#146, 2026-09-22): a reset link marked compromised
   // (account-credential-change-required, recovery-activated,
   // credential-compromise), a disable's reason, an address recycled, and the
