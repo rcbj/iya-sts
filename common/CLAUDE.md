@@ -4578,9 +4578,9 @@ container: `EVERYBODY`, `ALL_AUTHENTICATED_USERS`,
 `ALL_UNAUTHENTICATED_USERS`, `ALL_APPLICATIONS`,
 `ALL_AUTHENTICATED_APPLICATIONS`, `ALL_UNAUTHENTICATED_APPLICATIONS`.
 
-**THERE ARE TEN NOW.** `ADMIN_READ` and `ADMIN_WRITE` (2026-09-09) are read off
-the scopes of an access token for `/admin-api`; `roles.js` argues them at their
-rows. **The other two are a different shape again.** The six above
+**THERE ARE ELEVEN NOW.** `ADMIN_READ` and `ADMIN_WRITE` (2026-09-09) are read off
+the scopes of an access token for `/admin-api`, and `DEVICE_COMPLIANCE` (#164)
+off `device:compliance`; `roles.js` argues them at their rows. **The other two are a different shape again.** The six above
 read `kind` and `authenticated` and touch no store. `REMOTE_PEPS` (2026-09-06)
 and `XACML_USER` (beside it) are held by whoever is in one named GROUP —
 `roles.remotePepGroup` and `roles.xacmlUserGroup` — which makes them hybrids,

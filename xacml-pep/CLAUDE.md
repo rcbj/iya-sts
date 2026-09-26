@@ -329,6 +329,12 @@ configured PDP URL. A nudge that could tell this PEP what the policy now is, or
 where to fetch it, would be an unauthenticated caller supplying policy — and the
 whole reason a nudge is affordable on the PDP's side is that it carries nothing.
 
+**`GET /` says which pull last changed the holding** (2026-09-26):
+`holding.lastChangeCause` is `start`, `poll`, `nudge` or `heartbeat`, set only
+by a pull that loaded a change. It is how the suite tells a nudge that worked
+from a poll that raced it. It measured a latency until the suite began running
+jobs side by side, and a busy PDP made a working nudge look like a poll.
+
 **`/healthcheck` does not ask whether the policy is current.** A PEP holding a
 stale copy is working, and a healthcheck that failed on staleness would turn a
 PDP outage into a container restart loop — an outage of its own.

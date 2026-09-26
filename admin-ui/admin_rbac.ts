@@ -893,10 +893,29 @@ class AdminRbac {
   // somebody who has never authenticated is a value naming an entry that is not
   // there yet, and it is still a grant — treating it as empty would mean
   // granting a role to a future colleague quietly leaving the door open.
+  //
+  // THE GROUPS' OWN MEMBER LISTS ARE ASKED FIRST (2026-09-26). The full roster
+  // also walks every entry in the realm for one naming the group in its own
+  // `memberOf` (claimedMembersOf()), and `credentials.mfaRequirementFor()`
+  // asks this once PER PERSON — so `/admin-api/users` over 5,750 people spent
+  // four seconds of a stopped event loop on a question the group entry had
+  // already answered. A listed member settles it; the walk is only needed when
+  // no role group lists anybody, and then the answer is the same as before.
   rosterEmpty() {
     const { log } = this.deps;
     const self = this;
     log.debug("Entering AdminRbac.rosterEmpty().");
+    if (directory) {
+      const listed = ROLES.some(function (role) {
+        const entry = directory.readGroupEntry(self.dnForRole(role));
+        return !!(entry && entry.members && entry.members.length);
+      });
+      if (listed) {
+        log.debug("Leaving AdminRbac.rosterEmpty(). A role group lists a " +
+                  "member.");
+        return false;
+      }
+    }
     log.debug("Leaving AdminRbac.rosterEmpty().");
     return self.roster().reduce(function (n, row) {
       return n + row.memberCount;

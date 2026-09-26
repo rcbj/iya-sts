@@ -102,6 +102,13 @@ let held = {
   lastPullAt: '',
   lastPullOk: false,
   lastPullWhy: 'No pull has been attempted yet.',
+  // WHAT MADE THE PULL THAT LAST CHANGED THE HOLDING HAPPEN (2026-09-26):
+  // `start`, `poll`, `nudge` or `heartbeat`. It is the one way to tell from
+  // outside that a nudge — rather than the poll it races — delivered a change,
+  // which `tests/vendored/sts_xacml_remote_pep.js` used to infer from a
+  // latency, and a latency stops meaning that the moment the PDP is busy.
+  lastChangeCause: '',
+  lastChangeAt: '',
   refused: []
 };
 
@@ -129,6 +136,8 @@ function state() {
       lastPullAt: held.lastPullAt,
       lastPullOk: held.lastPullOk,
       lastPullWhy: held.lastPullWhy,
+      lastChangeCause: held.lastChangeCause,
+      lastChangeAt: held.lastChangeAt,
       refused: held.refused.slice(0)
     },
     registration: Object.assign({}, registration),
@@ -378,7 +387,9 @@ async function registerIfNeeded(options) {
 // ---------------------------------------------------------------------------
 // PULL. The one thing that has to work.
 // ---------------------------------------------------------------------------
-async function pull(options) {
+// `cause` names what asked for this pull — `start`, `poll`, `nudge` or
+// `heartbeat` — and is recorded only by a pull that LOADS a change.
+async function pull(options, cause) {
   log.debug('Entering pull().');
   const since = held.syncToken
     ? '?since=' + encodeURIComponent(held.syncToken) +
@@ -472,6 +483,8 @@ async function pull(options) {
     policyCount: said.policies.length,
     lastPullAt: new Date().toISOString(),
     lastPullOk: true,
+    lastChangeCause: String(cause || 'unnamed'),
+    lastChangeAt: new Date().toISOString(),
     lastPullWhy: root
       ? 'Pulled ' + said.policies.length + ' policy(ies).'
       : 'Pulled ' + said.policies.length + ' policy(ies) and NONE IS THE ' +
