@@ -409,6 +409,7 @@ var config = {
     autoBuild: true,                            // Build the certificate authority at startup; restart to apply
     keyAlgorithm: "rsa-2048",                   // Default CA key algorithm
     signatureAlgorithm: "",                     // Default CA signature algorithm
+    alternativeKeyAlgorithm: "ml-dsa-87",       // CA alternative (post-quantum) key algorithm
     organisation: "sts",                        // Default organisation name (O=)
     personSelfService: true,                    // Let a person issue their own signing key pair
     leafLifetimeDays: 365,                      // Default lifetime of an issued key pair (days)

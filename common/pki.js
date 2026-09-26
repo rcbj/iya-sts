@@ -1788,6 +1788,7 @@ function describeChain(chain) {
     createdAt: chain.createdAt,
     keyAlg: chain.keyAlg,
     signatureAlg: chain.signatureAlg,
+    altKeyAlg: chain.altKeyAlg || null,
     organisation: chain.organisation,
     country: chain.country,
     issuedCount: chain.issuedCount || 0,
@@ -1804,6 +1805,9 @@ function describeChain(chain) {
         notAfter: one.notAfter,
         keyAlg: one.keyAlg,
         signatureAlg: one.signatureAlg,
+        // The hybrid half (#68), as describeTier() reports it.
+        altKeyAlg: one.altKeyAlg || null,
+        altSignatureAlg: one.altSignatureAlg || null,
         thumbprint: one.thumbprint,
         // The certificate is PUBLIC and is the thing a relying party needs, so
         // it goes out whole. The private key is not here at all.
