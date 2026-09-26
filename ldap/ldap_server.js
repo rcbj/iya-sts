@@ -3510,6 +3510,50 @@ realms.onCreate(function (id) {
 // keeping the rule, it would be leaking a tree nobody can reach — every path to
 // it, HTTP and LDAP alike, named a realm that is gone.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// AND BEFORE IT GOES, EVERYBODY IN IT IS PURGED ALOUD (#232, 2026-09-26).
+//
+// The purge below drops the realm's directory whole, and that is right; what
+// was wrong is that nobody heard. `noteAccountChange()` never ran, so a RISC
+// receiver holding an account in the realm was never sent `account-purged`.
+// `realms.retire()` — the administrator's removal — calls this first, in the
+// realm, while every entry is still there to be read: each PERSON is handed
+// to the account observers exactly as a delete of that one entry would be,
+// `deleted:<name>` with its attributes as they were. `consequences: false`,
+// because the sessions have already been ended by `authn`'s hook, which runs
+// before this one, and ending what a person held a second time would be a
+// second sign-out of every one of them. The anonymous principal is nobody's
+// account and is not purged aloud.
+// ---------------------------------------------------------------------------
+realms.onRetire({
+  name: 'ldap',
+  announce: function (id) {
+    log.debug('Entering the realm directory retirement. id=' + id);
+    const people = [];
+    eachEntryInRealm(function (stored) {
+      if (stored && isPersonEntry(stored)) {
+        people.push(stored);
+      }
+    });
+    let told = 0;
+    people.forEach(function (stored) {
+      const name = usernameOfEntry(stored);
+      if (!name || name === 'anonymous') {
+        return;
+      }
+      noteAccountChange('deleted:' + name, stored.dn,
+                        attributeSnapshot(stored), {},
+                        { consequences: false,
+                          door: 'the trust realm "' + id + '" was removed' });
+      told += 1;
+    });
+    log.info('ldap: the "' + id + '" realm is being removed; ' + told +
+             ' person(s) in its directory were reported purged to the ' +
+             'account observers (RISC account-purged) before it goes.');
+    log.debug('Leaving the realm directory retirement. ' + told + '.');
+  }
+});
+
 realms.onRemove(function (id) {
   log.debug('Entering the realm directory purge. id=' + id);
   // **THIS NO LONGER DELETES ANYTHING, AND THE HANDLER IS KEPT ANYWAY.** It
@@ -12994,7 +13038,7 @@ server.del('', function (req, res, next) {
   touchDirectory();
   if (deletedPerson) {
     noteAccountChange('deleted:' + deletedName, stored.dn, deletedAttributes,
-                      {});
+                      {}, { door: 'an LDAP delete' });
   } else if (deletedGroup) {
     noteMembershipChange(stored.dn, deletedAttributes, {});
   } else if (isRoleEntry(stored)) {
@@ -16244,10 +16288,32 @@ function noteAccountChange(kind, dn, before, after, options) {
                 'with it: ' + ((e && e.message) || e));
     }
   }
+  // A PERSON DELETED ENDS WHAT THEY HOLD (#241, 2026-09-26), exactly as a
+  // disable does and through the same file — every sign-on session with its
+  // CAEP session-revoked (`admin`) and back-channel Logout Tokens, every
+  // token, every connection — after this write has returned. This comment
+  // used to say a deleted entry "takes its sessions with it by other means";
+  // there were none, and a person deleted over SCIM or LDAP kept single
+  // sign-on until their session ran out. `consequences: false` is a caller
+  // that has ended everything itself: a realm being removed.
+  if (String(kind).indexOf('deleted:') === 0 &&
+      !(options && options.consequences === false)) {
+    try {
+      require('../common/account_state').directoryDeleted({
+        username: String(kind).slice('deleted:'.length),
+        realm: realmFor(dn).id,
+        door: String((options && options.door) || 'a directory delete') });
+    } catch (e) {
+      log.error(errorCodes.tag('STS-LDAP-0120') + 'ldap: ' + dn + ' was ' +
+                'deleted and what the person held could not be ended with ' +
+                'it: ' + ((e && e.message) || e));
+    }
+  }
   // A FEDERATION LINK THAT WENT (#109, 2026-09-22) ends the sessions that
   // partner signed the person in to — `federation/federation_links.ts`'s act,
   // lazily required for account_state's reason, after this write returns. A
-  // DELETED entry takes its sessions with it by other means.
+  // DELETED entry is not asked here: the block above ends every session they
+  // held, whichever partner made it.
   const linksBefore = (before && before.federationlink) || [];
   const linksAfter = (after && after.federationlink) || [];
   const unlinked = linksBefore.filter(function (value) {
@@ -16693,7 +16759,8 @@ function deletePerson(dn) {
   // AFTER the entry is gone, so a RISC account-purged reports a purge that
   // actually happened; and with the name carried, because
   // canonicalUsernameOfDn() can no longer read an entry that is not there.
-  noteAccountChange('deleted:' + goneName, stored.dn, goneAttributes, {});
+  noteAccountChange('deleted:' + goneName, stored.dn, goneAttributes, {},
+                    { door: 'a SCIM DELETE' });
   log.debug('Leaving deletePerson(). ' + entries.size + ' entry/entries left.');
   return { ok: true, dn: stored.dn, dangling: membershipsNaming(stored.dn) };
 }

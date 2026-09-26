@@ -1704,6 +1704,23 @@ handed nine modules it did not ask for.
 `tests/account_disable.js` drives every door above that a single process can
 reach, with a control before each.
 
+**A DELETED PERSON ENDS THE SAME WAY (#241, 2026-09-26).** SCIM's `DELETE`
+and an LDAP delete reach the directory's `noteAccountChange()` with a
+`deleted:` kind, which hands the delete to `directoryDeleted()` here: every
+live thing the person held AT THE DELETE — read synchronously through
+`heldBy()`, #226's arrangement — is ended after the write has been answered,
+through the same `logout.terminate()`, with `initiating_entity: admin`. Until
+#241 the directory skipped a delete on the belief that a deleted entry "takes
+its sessions with it by other means", and nothing did: `sessionOf()` asked only
+whether the account was disabled, a missing entry read as not disabled, and a
+deleted person kept single sign-on until their session ran out. **Reading
+what they held at the delete** is what keeps a person made again under the same
+name before the deferred step runs from losing the session they have.
+**`authn.sessionOf()` is the catch-up**: a session whose `urn:uuid:` subject
+names no entry is ended through `dropSession()` the next time it is presented,
+which is how a delete made on another node ends the sessions this node holds.
+`tests/account_delete.js` holds all three.
+
 ## `realms.js`: several logical copies of this service, in one process
 
 A **trust realm** is a whole mock identity service — its own configuration, its
@@ -2168,6 +2185,36 @@ subtree is recoverable, and a create that failed half way is not.
 
 **One caller.** Adding a second is the same test `keyed()` fails: it has to be
 something a request cannot build on demand.
+
+### `retire()` and `onRetire()`: a realm is removed ALOUD (#232, 2026-09-26)
+
+`remove()` purges every store in registration order and told nobody: no RISC
+`account-purged` for the people in the realm, no CAEP `session-revoked` or
+back-channel Logout Token for a live session, no `stream-updated` to a
+receiver whose stream vanished. A purge cannot do it — the directory's runs
+early, and an event sent from a purge goes into a delivery queue the next
+purge empties. So **`retire(id)` is the administrator's door**
+(`admin_actions.realmsAction('remove')`, which answers a PROMISE for that one
+action, resolved by the console and the API) and runs two phases of
+`onRetire()` hooks in the realm BEFORE `remove()`:
+
+| Phase | Hook | What |
+|---|---|---|
+| announce (sync) | `authn` (8) | `endEverySessionIn()`, `initiating_entity: admin` |
+| announce (sync) | `ldap_server` (21) | `noteAccountChange('deleted:<name>', …, { consequences: false })` for every person — RISC `account-purged`, nothing ended twice |
+| deliver (async) | `authn` | waits for `pendingEndReports()` and the realm's outbound deliveries (`outbound_delivery.kindReport()`) to leave `pending` |
+| deliver (async) | `ssf` (23b) | waits for the realm's SETs in flight (`transmit()` counts them), counts what is still queued, then `changeStatus(…, 'disabled')` on every stream |
+
+Hooks run in REGISTRATION order, which is the require order, which is why
+the sessions end before the people are purged and the streams close last.
+**The deliver phase is bounded** by `realms.removalDeliveryTimeoutS` (10 s,
+read in the realm the removal is made from): a hook still running at the
+deadline, a hook that threw and anything reported on `ctx.undelivered` is
+one `STS-CORE-0120` line, and the realm goes anyway. **Only the node that
+received the act retires**: a replicated removal (`persistence.js`) and every
+test and restore path call `remove()` alone — the sessions are a shared
+store, so they were ended for the cluster, and the SETs were sent once.
+`tests/realm_removal_signals.js` holds it over a real push receiver.
 
 ### `onChange()`: a realm row changed, and it is an EVENT rather than a slot
 

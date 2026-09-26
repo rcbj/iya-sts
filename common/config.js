@@ -3276,6 +3276,22 @@ const SETTINGS = [
                  'cannot turn an existing realm into a shadow over the ' +
                  'console or the authorization server.' },
 
+  // Read in the realm a removal is made FROM, never the one being removed —
+  // which is gone by the time anybody could ask it again (#232).
+  { key: 'realms.removalDeliveryTimeoutS', group: 'Trust realms',
+    label: 'Realm removal: delivery wait (seconds)',
+    env: 'STS_REALMS_REMOVAL_DELIVERY_TIMEOUT_S', type: 'int', dflt: 10,
+    min: 0, max: 300, runtime: true,
+    description: 'How long removing a trust realm waits for what it owes ' +
+                 'to be delivered before its stores are purged: the CAEP ' +
+                 'session-revoked and back-channel Logout Tokens of every ' +
+                 'session it ends, RISC account-purged for every person in ' +
+                 'it, and SSF stream-updated (disabled) to every stream. ' +
+                 'Whatever has not been delivered when it runs out is ' +
+                 'logged (STS-CORE-0120) and goes with the realm. 0 still ' +
+                 'sends everything and does not wait. A poll receiver can ' +
+                 'collect only while the wait lasts.' },
+
   // --- OAuth 2.0 / OpenID Connect -----------------------------------------
   { key: 'oauth2.issuer', group: 'OAuth 2.0 / OIDC', label: 'Issuer identifier',
     env: 'STS_OAUTH2_ISSUER', type: 'string', dflt: '', runtime: true,

@@ -2689,6 +2689,20 @@ is what this directory does with it.
   read naively is "the lock was cleared"; the transition is ignored for a
   `deleted:` kind, and `ssf/risc.ts`'s reading of the same attribute answers
   `null` rather than `true` for an entry that is not there.
+* **A DELETE ENDS WHAT THE PERSON HELD (#241, 2026-09-26).** A `deleted:`
+  kind — `deletePerson()` (SCIM's `DELETE`) and the LDAP delete handler, each
+  naming its door — is handed to `account_state.directoryDeleted()`, lazily,
+  as a lock is: every session, token and connection the person held at the
+  delete is ended after the write has been answered (`STS-LDAP-0120` if the
+  hand-off throws). This file said a deleted entry "takes its sessions with it
+  by other means" until then, and nothing did. `consequences: false` skips it
+  for a caller that has ended everything itself — a realm being removed.
+* **A REALM BEING REMOVED PURGES ITS PEOPLE ALOUD (#232).** The realm
+  directory's `realms.onRetire()` announce hook hands every person entry to
+  the account observers as a `deleted:` kind, with its attributes as they
+  were and `consequences: false`, before the store is dropped whole — so a
+  RISC receiver hears `account-purged` for each. The anonymous principal is
+  nobody's account and is skipped.
 * **The KDC reads it through `readPerson()`** — the Kerberos key source's
   hook, which now reports `disabled` — so an AS-REQ is refused before a
   development-mode KDC would create the principal.

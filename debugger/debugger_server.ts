@@ -1215,10 +1215,11 @@ class DebuggerServer {
       const parent = String(session.derivedFrom || '');
       const username = session.user.username;
       oidcRp.endSessionFor(req, res, SURFACE,
-                           'the Sign out button on the protocol debugger');
+                           'the Sign out button on the protocol debugger',
+                           'user');
       const signOnEnded = parent
         ? !!authn.endSessionById(parent, 'the Sign out button on the ' +
-                                         'protocol debugger')
+                                         'protocol debugger', 'user')
         : false;
       if (signOnEnded) {
         authn.clearSessionCookie(res);

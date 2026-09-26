@@ -632,6 +632,16 @@ sends `reauthenticated` (2026-09-14, the CAEP `assurance-level-change` source �
 see *WHAT AN AUTHENTICATED IDENTITY IS HERE*), and `startSession()` sends
 `presented` when a keyed API caller's credential touches its existing session.
 
+**`notifySession()` says nothing about an arrival session (#242,
+2026-09-26)** — the `chosen: false` tracking row a cookie-less visitor gets at
+a front door. It is never `established`, so its expiry, the sweep and a realm's
+every-session end must not be the first thing a receiver hears of it; the
+filter is in `notifySession()` because every notice passes there, for
+`sessionOf()`'s reason about funnels. **And `revoked` carries the
+`initiatingEntity` its caller STATED** — `dropSession(id, via, cookie, req,
+entity)`, never read out of `via` (`ssf/CLAUDE.md`, *`initiating_entity` IS NOT
+ALWAYS `admin` OR `user`*).
+
 `revoked` fires **after** the session is out of the store and **before** the
 audit row, which is the only order that works: the observer needs the session
 as it *was* in order to name the subject, and emitting while the session was
@@ -1239,6 +1249,16 @@ refresh; `cluster/CLAUDE.md`, *The scheduler*). What moved and what did not:
   claim stays too, because a lazy lookup, a sign-out and the job can still
   meet on one session. So does its fail-OPEN reporting (a notice that must not
   be lost).
+* **A claim that REJECTS is asked again (#242, 2026-09-26).** It used to be
+  logged and the end report lost. `sessionEndOnce()` asks up to three times,
+  250 ms and then 500 ms apart (a retry inside one operation, not a timer the
+  scheduler rule covers), treats a claim that throws before it has a promise
+  the same way, and after the third reports the end anyway with
+  `STS-AUTHN-0192` — the fail-open reason above. A report that throws once the
+  claim is won is logged (`STS-AUTHN-0291`) and never retried, because a
+  second try could tell a receiver twice. `pendingEndReports()` counts the
+  ends waiting on a claim, for a realm's removal to wait on (#232).
+  `tests/cluster_signout_signals.js` 3e–3g.
 * **The first-session arming decision became:** the scheduler starts only from
   `server.js`, after the state is restored, so the processes that decision
   protected — in-process Kerberos jobs, `npm test`, `generate_defaults.js` —
@@ -2083,6 +2103,13 @@ owns the two places it decides a SESSION.
   once; this is the second half, for a session that act could not reach (a lock
   written by an `ldapmodify` on a node whose copy of the session it did not
   hold).
+* **`sessionOf()` ends a session whose person was DELETED** (#241,
+  2026-09-26), through `dropSession()`, for a session a delete could not reach
+  at once — above all one made on another node. It asks the SUBJECT
+  (`sessionAccountGone()`: a `urn:uuid:` that names no entry), not the name, so
+  a person made again under the same name does not keep the deleted one's
+  session. A session with no such subject (keyed callers, the anonymous
+  principal, a process with no directory) is never "gone".
 * **The screens answer "Authentication failed"**, the same sentence a wrong
   password gets, for the account-enumeration reason `credentials.verify()`'s
   callers give — and `finishPasswordSignIn()` asks BEFORE any ceremony, so a

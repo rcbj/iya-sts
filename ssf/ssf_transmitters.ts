@@ -1103,7 +1103,9 @@ class SsfTransmitters {
       if (reaction === RESPONSE.END_PERSON_SESSIONS) {
         const logout = this.deps.logout();
         const ended = logout ? logout.terminate(username, [], {
-          actor: actor, channel: 'internal', by: by }) : null;
+          actor: actor, channel: 'internal', by: by,
+          // The signal-response policy decided it (#242).
+          initiatingEntity: 'policy' }) : null;
         log.debug("Leaving SsfTransmitters.react(). Ended.");
         return { event: event, reaction: reaction, done: true,
                  ended: ((ended && ended.terminated) || []).length };

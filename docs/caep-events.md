@@ -79,11 +79,19 @@ and the two other things this service also calls a session — is
 
 **A session that isn't in the register can't be the subject of anything.** The
 register is capped at `caep.maxSessionsTracked` (default 200) and drops the
-oldest. In practice only a **browser sign-on session** ever creates a row — a
-row can also be created by an event naming a session nothing here has held, and
-it is marked as such — so there is nothing to emit about an LDAP bind, a
-Kerberos ticket or a WS-Trust exchange; see *What never produces one* at the
-foot of this page.
+oldest. A row is created by a **session this service starts** — a browser
+sign-on, and also a WS-Trust exchange, a SCIM client and a SPIRE Server API
+caller, each of which is a session here (see *Sessions that are not a browser's*
+at the foot of this page) — or by an event naming a session nothing here has
+held, which is marked as such. There is nothing to emit about an LDAP bind or
+a Kerberos ticket; see *What never produces one*.
+
+**A session nobody signed in to is never announced.** A browser that arrives
+at a protocol's front door with no cookie is given an anonymous tracking
+session (it is how the flow is followed on `/admin/sessions`), and nobody has
+chosen it: it gets no `session-established`, and so its expiry or removal
+sends no `session-revoked` either. When the person signs in, the same row
+becomes their session and is announced from then on.
 
 ## The subject: why it names two things
 
@@ -151,6 +159,9 @@ by construction rather than by six call sites remembering to do it. The callers:
 | A Kerberos ticket spent at `/authn/spnego` — integrated authentication, no screen | `Kerberos v5 (SPNEGO)` |
 | A wallet's presentation, collected at `/authn/wallet/wait` by the browser that started the sign-in | `OpenID4VP (a wallet)` |
 | A federated assertion accepted at `/federation/acs/{id}` — the person signed in at a *foreign* identity provider | `Federation (SAML 2.0)`, and the same for the other four federation protocols |
+| A WS-Trust exchange that signs somebody in | `WS-Trust` and the operation |
+| The first call of a SCIM client, whatever scheme it authenticated with (each call after it is a `session-presented`) | `SCIM` |
+| The first call of a SPIRE Server API caller, keyed by its SPIFFE ID (the same) | `SPIRE Server API` |
 
 A re-authentication is a *new* session and therefore a new
 `session-established`: `prompt=login` at the authorization endpoint, SAML 2.0's
@@ -184,7 +195,9 @@ honoured without a new authentication — which is single sign-on.**
 
 Unlike the other two automatic events, this one has **no funnel**. A
 presentation is something each endpoint decides it is doing, so it fires from
-exactly four call sites, one per browser SSO profile:
+exactly four call sites, one per browser SSO profile — and from
+`authn.startSession()` when a SCIM client or a SPIRE Server API caller
+presents its credential again (*Sessions that are not a browser's*, below):
 
 | Protocol | Activity | `via` |
 |---|---|---|
@@ -251,17 +264,32 @@ through it:
 |---|---|---|
 | `GET /oauth2/logout` — OpenID Connect RP-Initiated Logout | `user` | ended at *the sign-out endpoint for this browser* |
 | `GET\|POST /wsfed?wa=wsignout1.0` — WS-Federation 1.2 section 13.2.4 | `user` | the same |
-| `GET\|POST /saml2/slo` — SAML 2.0 Single Logout | `user` | the same |
+| `GET\|POST /saml2/slo` — SAML 2.0 Single Logout, from the browser or a service provider's back channel | `user` | the same, or *saml2-slo* and the service provider |
 | `GET\|POST /logout` — the protocol-independent sign-out | `user` | ended at *the /logout endpoint* |
+| the **Sign out** button on `/admin`, `/portal` or the protocol debugger — the person signing themselves out, and the sign-on session behind it | `user` | *the Sign out button on the admin console* (or the portal, or the debugger) |
+| a federation partner's own sign-out reaching this service | `user` | *the federation partner …* |
 | `/admin/logout` — an operator signing somebody else out | **`admin`** | ended at *the admin console at /admin/logout* |
 | `/admin/sessions` — the Revoke button on a row | **`admin`** | ended at *the /admin/sessions page* |
 | `POST /admin-api/logout/{global,end}` | **`admin`** | ended at *the admin console at /admin/logout* — it calls the same function that page does |
 | `POST /admin-api/sessions/revoke` | **`admin`** | ended at *the management API at /admin-api/sessions* |
+| an account **disabled** on `/admin/users`, `/admin-api/users/disable`, SCIM `active: false` or an `ldapmodify` of the lock | **`admin`** | *the account was disabled by an administrator …* |
+| a person **deleted** — SCIM `DELETE` or an LDAP delete ([#241](https://github.com/rcbj/iya-sts/issues/241)) | **`admin`** | *the deletion of the account (…)* |
+| a trust realm **removed** — every session in it ([#232](https://github.com/rcbj/iya-sts/issues/232)) | **`admin`** | *the removal of the trust realm "…"* |
+| a federation link removed from a person, or a registered device removed or marked compromised by an administrator | **`admin`** | the act, in words |
+| an **emergency key rotation** — every session of the realm | **`admin`** when an administrator requested it, **`system`** otherwise | *an emergency key rotation* |
+| **risk scoring** ending or disabling a person, and a received SET's signal-response rule | **`policy`** | *the person's risk went to …* |
+| the relying-party session a surface could not renew | **`system`** | *a token renewal that did not complete* |
 | **the session lifetime running out** | **`policy`** | *the session lifetime ran out* |
 
-`initiating_entity` is derived from the phrase the door calls itself by, which
-is also the sentence that reaches `reason_admin` — so the two can never
-disagree about who ended a session.
+`initiating_entity` is **stated by the door that ends the session** — it is
+not read out of the sentence in `reason_admin`. Until
+[#242](https://github.com/rcbj/iya-sts/issues/242) it was: the phrase was
+searched for `admin` or `console`, which made the console's own Sign out button
+an administrator ending the session of a person who signed themselves out, and
+an emergency rotation and the risk engine the person. A session ended by a
+door that says nothing is reported as `system` and logged (`STS-AUTHN-0290`).
+A session derived from another — the console's or the portal's own session —
+ends with its parent's entity.
 
 The last row is the one worth knowing about. An expiry used to be silent: the
 session was deleted with no event, and only *lazily* — when it was next looked
@@ -604,14 +632,37 @@ there was one, and puts the signals that moved it in `risk_reason`
 
 ---
 
+## Sessions that are not a browser's
+
+Every artifact this service issues is a projection of a session
+(`authn/CLAUDE.md`, *What an authenticated identity is here*), so three
+families that are not a browser start one, through the same
+`authn.startSession()`, and **are** the subject of the session events:
+
+- a **WS-Trust** exchange that signs somebody in starts a session per request
+  (`session-established`), which ends by the sign-out doors above or by
+  expiry (`session-revoked`);
+- a **SCIM** client, whichever of RFC 7644 section 2's schemes it
+  authenticated with, starts one session keyed by the scheme and the
+  principal: `session-established` at its first call, `session-presented` at
+  every call after it, and `session-revoked` when the session expires or is
+  ended;
+- a **SPIRE Server API** caller, keyed by its SPIFFE ID, the same way.
+
+**Where the session has no person as its subject** — a SPIFFE workload, or an
+application's own credential rather than a person's — the event's `user`
+names whatever the directory filed that caller under. What a non-human
+subject should be, and whether such a session should be announced at all, is
+[#221](https://github.com/rcbj/iya-sts/issues/221)'s question (service
+accounts), which is open.
+
 ## What never produces a CAEP event
 
-Only a **browser sign-on session** creates a row in the register, so nothing
-below is ever the subject of a *session* event. That is not an omission — none
-of them is a session in CAEP's sense. The person-level events are different:
-an LDAP password write, a SCIM change to a claim, and an OpenID4VCI issuance do
-send `credential-change` or `token-claims-change` about the PERSON, as the
-sections above say.
+Nothing below is ever the subject of a *session* event. That is not an
+omission — none of them is a session in CAEP's sense. The person-level events
+are different: an LDAP password write, a SCIM change to a claim, and an
+OpenID4VCI issuance do send `credential-change` or `token-claims-change` about
+the PERSON, as the sections above say.
 
 None of these is the subject of a session event:
 
@@ -619,8 +670,10 @@ None of these is the subject of a session event:
   expiring;
 - an **LDAP** bind or unbind, though the connection *is* a session in RFC 4511's
   sense (`/admin/sessions` lists it as one);
-- **WS-Trust**, **SCIM**, **SPIFFE**, **OpenID4VCI** and **OpenID4VP** requests
-  — a presentation at the Verifier's own pages included. A wallet sign-in at
+- a browser that arrived at a front door and never signed in (its anonymous
+  tracking session is never announced, above);
+- **SPIFFE**'s Workload API, **OpenID4VCI** and **OpenID4VP** requests — a
+  presentation at the Verifier's own pages included. A wallet sign-in at
   `/authn/wallet` is the exception, because it ends in a browser sign-on
   session like any other door;
 - the **token, refresh, introspection, revocation and UserInfo** endpoints —

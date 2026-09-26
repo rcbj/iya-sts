@@ -519,7 +519,9 @@ class FederationSlo {
     const issuer = base ? this.deps.issuerOf(base) : '';
     const results = sessions.map(function (session) {
       return logout.endPartnerSession(session, {
-        by: by, issuer: issuer, channel: browser ? 'http' : 'back-channel' });
+        by: by, issuer: issuer, channel: browser ? 'http' : 'back-channel',
+        // The person signed out at the partner (#242).
+        initiatingEntity: 'user' });
     });
     const fan = browser ? logout.fanOutOf(results) : { html: '', policy: {} };
     audit.audit({

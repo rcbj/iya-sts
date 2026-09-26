@@ -4686,7 +4686,7 @@ class Saml2Sso {
       const back = this.sessionNamedBy(spEntityId, sessionIndex, nameId);
       if (back.session) {
         session = this.deps.authn.endSessionById(
-          back.session.id, 'saml2-slo ' + spEntityId);
+          back.session.id, 'saml2-slo ' + spEntityId, 'user');
         log.info('saml2: the back-channel LogoutRequest from "' +
                  spEntityId + '" ended the session it named (' +
                  sessionIndex + ').');

@@ -1530,6 +1530,8 @@ class RiskEngine {
       const ended = lazy('../common/account_state').endEverything(
         change.username, { actor: 'risk scoring', channel: 'internal',
           selection: before || undefined,
+          // A policy decided it (#242): the risk-response rule.
+          initiatingEntity: 'policy',
           by: 'the person\'s risk went to ' + change.level +
               (reason ? ' (' + reason + ')' : '') });
       if (ended && ended.ended === false) {

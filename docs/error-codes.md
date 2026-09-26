@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3696** of them, in **39** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3700** of them, in **39** subsystems.
 
 ## Where a code appears
 
@@ -51,7 +51,7 @@ is an ordinary outcome.
 
 * [HTTP front door (`STS-HTTP`)](#sts-http) — 18
 * [PROXY protocol (`STS-PROXY`)](#sts-proxy) — 9
-* [Service core (`STS-CORE`)](#sts-core) — 62
+* [Service core (`STS-CORE`)](#sts-core) — 63
 * [Worker pools (`STS-WORKER`)](#sts-worker) — 43
 * [Persistence and coordination (`STS-STORE`)](#sts-store) — 62
 * [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 28
@@ -62,7 +62,7 @@ is an ordinary outcome.
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 72
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 26
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 47
-* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 249
+* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 251
 * [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 665
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 97
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 21
@@ -70,7 +70,7 @@ is an ordinary outcome.
 * [Federation (`STS-FED`)](#sts-fed) — 134
 * [OpenID Federation (`STS-OIDFED`)](#sts-oidfed) — 67
 * [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 169
-* [LDAP directory (`STS-LDAP`)](#sts-ldap) — 85
+* [LDAP directory (`STS-LDAP`)](#sts-ldap) — 86
 * [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 77
 * [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 144
 * [TLS and client certificates (`STS-TLS`)](#sts-tls) — 35
@@ -204,6 +204,7 @@ Raised from: server.js, common/protocol_stack.ts, common/config.js, common/confi
 | `STS-CORE-0106` | A development-only setting — one of those STS-CORE-0103 lists, or an application attribute overriding one (#181) — is stored in a realm that is in product mode, and is ignored: its default is in force. Logged once per process and setting or attribute (#104). | none — a warning in the log |
 | `STS-CORE-0107` | A trust realm id is an EST label (a certificate profile). /.well-known/est/<realm>/ and /.well-known/est/<label>/ share one path position (#251), so a realm may not be called by a label's name. | the caller's refusal (errors on a console or /admin-api reply) |
 | `STS-CORE-0108` | The service did not start: a value in the environment, the appconfig file or env/defaults.js fails the check a console or API write of it would (a value outside an enum or a list's csvValues, a number out of bounds, a malformed boolean) — #86. | — |
+| `STS-CORE-0120` | A trust realm was removed (#232) before everything it owed had been delivered within realms.removalDeliveryTimeoutS — session ends still waiting on their claim, back-channel Logout Tokens or SSF events (session-revoked, account-purged, stream-updated) not yet delivered, or a retirement hook that failed. The realm is removed anyway. | none — logged; the removal succeeds |
 
 ## STS-WORKER
 
@@ -1093,7 +1094,7 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0189` | A hosted surface's token renewal was in flight on another node (its claim was held) and its renewed tokens had not reached this node within the wait; this request went on without renewing. | none — logged only |
 | `STS-AUTHN-0190` | A hosted surface could not renew a session's tokens because the claim store could not be asked; the request went on without renewing, rather than risk a second redemption of the refresh token. | none — logged only |
 | `STS-AUTHN-0191` | A sign-out ended a session whose end another process had already reported, so no second event or success row was written. | none — audit row only; the sign-out is answered as usual |
-| `STS-AUTHN-0192` | Whether another process had already reported a session's end could not be asked, so it was reported here and a receiver may be told twice. | none — logged |
+| `STS-AUTHN-0192` | Whether another process had already reported a session's end could not be asked — the claim answered that the store could not say, or rejected three times (#242) — so it was reported here and a receiver may be told twice. | none — logged |
 | `STS-AUTHN-0193` | A security key registration was refused because the same credential id was being (or had just been) registered by another request or node. | WebAuthn Level 3 section 7.1 step 26 (a credential id already registered is refused) |
 | `STS-AUTHN-0194` | A security key registration was refused because the store that decides whether its credential id is already registered elsewhere could not be asked. | none — fail closed |
 | `STS-AUTHN-0195` | A recovery-code set written before 2026-09-11 (codes, not hashes) could not be sealed under the key-encryption key when it was rewritten, so the change was not stored. | none — the spend that asked is refused (STS-AUTHN-0093) |
@@ -1169,6 +1170,8 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0268` | A session was refused: this realm's authentication policy does not accept the mechanism the door named as a first factor (a certificate, a Kerberos ticket, a federation partner, a wallet, a passkey, a password or an emailed code or link) (#64). | the door's own refusal page |
 | `STS-AUTHN-0269` | A session was refused: this realm's authentication policy does not accept the mechanism that answered as a second factor (a password or wallet after another factor, or an emailed code or link) (#64). | the door's own refusal page |
 | `STS-AUTHN-0270` | Ignore was posted on a second-factor set-up step that was REQUIRED rather than offered (#246): only an administrator the authentication policy OFFERS a second factor may decline it. | HTTP 400, the set-up page again |
+| `STS-AUTHN-0290` | A session was ended by a caller that did not say who initiated it (#242): CAEP session-revoked says `system`, and the caller should state admin, user, policy or system. | none — logged; the session is ended |
+| `STS-AUTHN-0291` | Reporting a session's end (its audit row, CAEP session-revoked and back-channel Logout Tokens) threw after the claim that decides who reports it was won (#242); it is not tried again, because a second try could tell a receiver twice. | none — logged |
 
 ## STS-OAUTH
 
@@ -2495,6 +2498,7 @@ Raised from: ldap/.
 | `STS-LDAP-0109` | A person's attribute edit (#228) would have left cn or sn, which RFC 4519 3.12 requires of every person, with no value. | HTTP 400 (API) or a 303 with error= |
 | `STS-LDAP-0110` | A person's attribute edit (#228) was refused by the directory: the entry was gone or not a person's when the write reached it. | HTTP 400 (API) or a 303 with error= |
 | `STS-LDAP-0111` | An LDAP add or modify named a credential attribute (a security key, an authenticator app, recovery codes, an app password, a signing key pair, a HOBA key, a self-issued subject, the emailed factor, Kerberos keys, a CIBA user code, an enrolment credential or a device secret). Credentials are written only through the doors that check them and send CAEP credential-change (#237), in every mode and for every bind, administrator included; the refusal names the door. | RFC 4511 section 4.1.9 unwillingToPerform (53) |
+| `STS-LDAP-0120` | A person was deleted from the directory (#241) and handing the delete to account_state.ts failed, so what they held may not have been ended at once. authn.sessionOf() still ends a session whose person has no entry the next time it is presented. | none — logged; the delete stands |
 
 ## STS-SCIM
 

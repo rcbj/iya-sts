@@ -728,6 +728,18 @@ const SESSION_SWEEP_SETTING = 'authn.sessionSweepS';
 // ---------------------------------------------------------------------------
 const SESSION_END_CLAIM_TTL_MS = 60 * 60 * 1000;
 
+// A claim that REJECTS (rather than answering) is asked again this many times
+// in all, the pause growing by this much each time (#242). See
+// sessionEndOnce().
+const SESSION_END_CLAIM_ATTEMPTS = 3;
+const SESSION_END_CLAIM_RETRY_MS = 250;
+
+// Session ends waiting on that claim in this process (#232).
+let endReportsPending = 0;
+
+// CAEP section 2's four words for who ended a session (#242, initiatorOf()).
+const INITIATING_ENTITIES = ['admin', 'user', 'policy', 'system'];
+
 // How many events a session keeps. A `max_age=0` client re-authenticates on
 // every request and a list that grew without bound would be a persisted row
 // that grew without bound. The FIRST event is always kept — it is how the
@@ -1588,8 +1600,23 @@ class Authn {
     // CAEP, the back-channel Logout Tokens) are the ones a sign-out has.
     if (this.sessionAccountDisabled(session)) {
       this.dropSession(id, 'the account was disabled by an administrator',
-                       false, req);
+                       false, req, 'admin');
       log.debug("Leaving Authn.sessionOf(). The account is disabled; the " +
+                "session was ended.");
+      return null;
+    }
+    // A SESSION WHOSE PERSON WAS DELETED IS OVER (#241, 2026-09-26). Deleting
+    // a person ends every session at once, the way disabling does (the
+    // directory hands the delete to `common/account_state.ts`); this is the
+    // catch-up half, for a session that act could not reach — above all a
+    // delete made on ANOTHER node, which reaches this one as a replicated
+    // entry going away and nothing else. Until #241 a missing entry read as
+    // "not disabled", so a deleted person's browser went on signing in to
+    // every relying party until the session ran out.
+    if (this.sessionAccountGone(session)) {
+      this.dropSession(id, 'the deletion of the account', false, req,
+                       'admin');
+      log.debug("Leaving Authn.sessionOf(). The account was deleted; the " +
                 "session was ended.");
       return null;
     }
@@ -1614,6 +1641,31 @@ class Authn {
                                              session.user.username);
     log.debug("Leaving Authn.sessionAccountDisabled(). " + disabled);
     return disabled;
+  }
+
+  // Whether a signed-in session's person has no directory entry any more
+  // (#241). Asked of the SUBJECT, `urn:uuid:<entryUUID>`, and not of the name:
+  // a person deleted and made again under the same name is a new entry with a
+  // new subject, and the old session is still the deleted one's. A session
+  // with no such subject — the anonymous principal before it is chosen, a
+  // keyed API caller, a process with no directory to ask — is never "gone".
+  sessionAccountGone(session) {
+    const { log, helpers } = this.deps;
+    log.debug("Entering Authn.sessionAccountGone().");
+    if (!session || !session.user || session.authenticated === false ||
+        session.chosen === false || session.credentialKey) {
+      log.debug("Leaving Authn.sessionAccountGone(). Not a person's.");
+      return false;
+    }
+    const sub = String(session.user.sub || '');
+    if (!/^urn:uuid:/i.test(sub) || !helpers.hasSubjectResolver()) {
+      log.debug("Leaving Authn.sessionAccountGone(). No subject to ask " +
+                "about.");
+      return false;
+    }
+    const gone = helpers.nameForSubject(sub) === '';
+    log.debug("Leaving Authn.sessionAccountGone(). " + gone);
+    return gone;
   }
 
   // ---------------------------------------------------------------------------
@@ -1977,11 +2029,11 @@ class Authn {
           (realmId && realmId !== realms.currentId())) {
         realms.run(realms.get(ownRealm), function () {
           self.dropSession(id, 'the sign-on session it came from ended', true,
-                           req);
+                           req, 'system');
         });
       } else {
         this.dropSession(id, 'the sign-on session it came from ended', true,
-                         req);
+                         req, 'system');
       }
       log.debug("Leaving Authn.relyingPartySessionOf(). Its parent is gone.");
       return null;
@@ -2502,6 +2554,21 @@ class Authn {
       log.debug("Leaving Authn.notifySession(). Nobody is listening.");
       return;
     }
+    // AN ARRIVAL SESSION IS NOBODY'S AND IS NEVER ANNOUNCED (#242,
+    // 2026-09-26). `startArrivalSession()` mints one for every cookie-less
+    // visitor at a front door and tells nobody, so its END was the first thing
+    // a receiver ever heard of it: a `session-revoked` about a session that
+    // never had a `session-established`, for every visitor who did not sign
+    // in, on every stream covering everybody. Filtered HERE, the one place
+    // every notice passes, for `sessionOf()`'s reason: the expiry, the sweep,
+    // a realm's every-session end and a sign-out are four callers that would
+    // otherwise each have to remember. Once somebody signs in the row is
+    // replaced with `chosen: true` and is announced from then on.
+    if (session.chosen === false) {
+      log.debug("Leaving Authn.notifySession(). An arrival session nobody " +
+                "signed in to; nothing is said about it.");
+      return;
+    }
     try {
       sessionObserver(Object.assign({ kind: kind, session: session },
                                     extra || {}));
@@ -2513,6 +2580,47 @@ class Authn {
                 'was ignored: ' + e.message);
     }
     log.debug("Leaving Authn.notifySession(). " + kind);
+  }
+
+  // ---------------------------------------------------------------------------
+  // WHO ENDED A SESSION, AS THE CALLER SAYS IT (#242, 2026-09-26).
+  //
+  // CAEP section 2's `initiating_entity` was GUESSED: `reportSignOut()` tested
+  // the door's own sentence for `admin` or `console`. So the console's own
+  // Sign out button ("the Sign out button on the admin console") said an
+  // ADMINISTRATOR had ended the session of a person who signed themselves
+  // out, and so did every child it cascaded to; an emergency key rotation and
+  // the risk engine ending everything said the PERSON had. Each caller knows
+  // which it is, so each says it — `admin`, `user`, `policy` or `system` — and
+  // this only checks the word. A caller that says nothing is a defect worth
+  // seeing, and is reported as `system` (nobody in particular) with a
+  // warning, never guessed from the sentence.
+  // ---------------------------------------------------------------------------
+  private initiatorOf(asked, via) {
+    const { log, errorCodes } = this.deps;
+    log.debug("Entering Authn.initiatorOf().");
+    const word = String(asked || '');
+    if (INITIATING_ENTITIES.indexOf(word) >= 0) {
+      log.debug("Leaving Authn.initiatorOf(). " + word);
+      return word;
+    }
+    log.warn(errorCodes.tag('STS-AUTHN-0290') + 'authn: a session was ended ' +
+             '(' + String(via || 'no door named') + ') without saying who ' +
+             'initiated it' + (word ? ' ("' + word + '" is not one of ' +
+             INITIATING_ENTITIES.join(', ') + ')' : '') + '; CAEP ' +
+             'session-revoked says "system".');
+    log.debug("Leaving Authn.initiatorOf(). system");
+    return 'system';
+  }
+
+  // How many session ends are waiting on the cluster claim that decides who
+  // reports them (#232): a realm being removed waits for none to be left
+  // before its stores are purged.
+  pendingEndReports() {
+    const { log } = this.deps;
+    log.debug("Entering Authn.pendingEndReports().");
+    log.debug("Leaving Authn.pendingEndReports(). " + endReportsPending);
+    return endReportsPending;
   }
 
   private sessionEndOnce(id, emit, onLost?) {
@@ -2531,32 +2639,91 @@ class Authn {
                 "inline.");
       return;
     }
-    clusterClaims.claim({ scope: 'authn.session-end', value: String(id),
-                          ttlMs: SESSION_END_CLAIM_TTL_MS })
-      .then(function (answer) {
-        if (answer.ok) {
-          emit();
-          return;
-        }
-        if (answer.reason === 'store') {
-          log.warn(errorCodes.tag('STS-AUTHN-0192') + 'authn: whether ' +
-                   'another process already reported the end of session ' + id +
-                   ' could not be asked (' + (answer.why || '') + '); it is ' +
-                   'reported here, and a receiver may be told twice.');
-          emit();
-          return;
-        }
-        log.debug('sessionEndOnce(): the end of session ' + id + ' was ' +
-                  'already reported by another process.');
-        if (typeof onLost === 'function') {
-          onLost();
-        }
-      }).catch(function (e) {
-        log.error(errorCodes.tag('STS-AUTHN-0192') + 'authn: reporting the ' +
-                  'end of session ' + id + ' failed: ' +
+    // A CLAIM THAT CANNOT BE ASKED IS ASKED AGAIN, AND THEN THE END IS
+    // REPORTED ANYWAY (#242, 2026-09-26). A rejected claim — the store
+    // unreachable for a moment, a driver error — used to be logged and the
+    // report dropped: a receiver told the session was established was told
+    // nothing when it ended. It is tried SESSION_END_CLAIM_ATTEMPTS times with
+    // a growing pause (a retry inside one operation, which the scheduler rule
+    // does not cover), and after the last the report is made here, as the
+    // `store` answer already does: told twice is the side to err on, never
+    // told the one that is not. The report itself runs outside the claim's
+    // chain, so a report that throws is never mistaken for a claim to retry.
+    const self = this;
+    endReportsPending += 1;
+    let settled = false;
+    const finish = function (answer) {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      endReportsPending = Math.max(0, endReportsPending - 1);
+      if (answer.ok) {
+        self.reportEnd(id, emit);
+        return;
+      }
+      if (answer.reason === 'store') {
+        log.warn(errorCodes.tag('STS-AUTHN-0192') + 'authn: whether ' +
+                 'another process already reported the end of session ' + id +
+                 ' could not be asked (' + (answer.why || '') + '); it is ' +
+                 'reported here, and a receiver may be told twice.');
+        self.reportEnd(id, emit);
+        return;
+      }
+      log.debug('sessionEndOnce(): the end of session ' + id + ' was ' +
+                'already reported by another process.');
+      if (typeof onLost === 'function') {
+        onLost();
+      }
+    };
+    const attempt = function (n) {
+      const failed = function (e) {
+        log.debug("Caught in Authn.sessionEndOnce(): " +
                   ((e && e.message) || e));
-      });
+        if (n + 1 < SESSION_END_CLAIM_ATTEMPTS) {
+          setTimeout(function () {
+            attempt(n + 1);
+          }, SESSION_END_CLAIM_RETRY_MS * (n + 1));
+          return;
+        }
+        finish({ ok: false, reason: 'store',
+                 why: 'the claim failed ' + SESSION_END_CLAIM_ATTEMPTS +
+                      ' times: ' + ((e && e.message) || e) });
+      };
+      let asked = null;
+      try {
+        asked = clusterClaims.claim({ scope: 'authn.session-end',
+                                      value: String(id),
+                                      ttlMs: SESSION_END_CLAIM_TTL_MS });
+      } catch (e) {
+        // A claim that throws before it has a promise to reject is the same
+        // failure, and must not take the sign-out down with it.
+        failed(e);
+        return;
+      }
+      Promise.resolve(asked).then(function (answer) {
+        finish(answer || { ok: false, reason: 'store',
+                           why: 'the claim answered nothing' });
+      }, failed);
+    };
+    attempt(0);
     log.debug("Leaving Authn.sessionEndOnce(). Claiming.");
+  }
+
+  // The report of one session's end, which the claim above lets out. A throw
+  // is a defect in the report and is logged, never retried: the claim has
+  // been spent, and trying again would be telling a receiver twice.
+  private reportEnd(id, emit) {
+    const { log, errorCodes } = this.deps;
+    log.debug("Entering Authn.reportEnd(). id=" + id);
+    try {
+      emit();
+    } catch (e) {
+      log.error(errorCodes.tag('STS-AUTHN-0291') + 'authn: reporting the ' +
+                'end of session ' + id + ' failed: ' +
+                ((e && e.message) || e));
+    }
+    log.debug("Leaving Authn.reportEnd().");
   }
 
   // ONE PLACE A SESSION ENDS BY RUNNING OUT, called by the two lazy lookups and
@@ -3590,7 +3757,7 @@ class Authn {
   // ---------------------------------------------------------------------------
   endRelyingPartySessions(surfaceId: string, fromRealm: string,
                           about: (user: any, session?: any) => boolean,
-                          via: string): number {
+                          via: string, initiatingEntity: string): number {
     const { log, realms } = this.deps;
     const self = this;
     log.debug("Entering Authn.endRelyingPartySessions(). " + surfaceId);
@@ -3608,7 +3775,7 @@ class Authn {
     }
     doomed.forEach(function (id: string): void {
       realms.run(realms.get(partition), function () {
-        self.dropSession(id, via, false);
+        self.dropSession(id, via, false, null, initiatingEntity);
       });
     });
     log.debug("Leaving Authn.endRelyingPartySessions(). " + doomed.length +
@@ -3883,7 +4050,7 @@ class Authn {
                  'sign-in is a privilege change and the old session must not ' +
                  'outlive it.');
         this.dropSession(previous, 'replaced by a new sign-in', true,
-                         extra.request);
+                         extra.request, 'user');
       }
     }
     // -------------------------------------------------------------------------
@@ -4426,10 +4593,12 @@ class Authn {
   // WAS, not merely that it is gone, because the lists of relying parties and
   // service providers a federated sign-out has to fan out to live on the object
   // being discarded.
-  private dropSession(id, via, cookiePresented, req?) {
+  private dropSession(id, via, cookiePresented, req?, initiatingEntity?) {
     const { realms, log, stats, bcp } = this.deps;
     const self = this;
     log.debug("Entering Authn.dropSession(). id=" + (id || '(none)'));
+    // WHO ENDED IT, SAID BY THE CALLER (#242). See initiatorOf().
+    const entity = this.initiatorOf(initiatingEntity, via);
     const session = id ? sessions.get(id) : null;
     if (id) sessions.delete(id);
     // -------------------------------------------------------------------------
@@ -4473,9 +4642,11 @@ class Authn {
                  'the sign-on session it was derived from (' + id + ').');
         const endChild = function () {
           log.debug("Entering endChild().");
+          // The child ends for the parent's reason and by the parent's
+          // hand, so it says the parent's initiating entity.
           self.dropSession(child.id,
                            'the sign-on session it was derived from ended (' +
-                           (via || 'unknown door') + ')', false, req);
+                           (via || 'unknown door') + ')', false, req, entity);
           log.debug("Leaving endChild().");
         };
         if (child.realm && child.realm !== realms.currentId()) {
@@ -4582,13 +4753,13 @@ class Authn {
       const planned = this.planBackchannel(session, via || 'a sign-out',
                                            'sign-out');
       this.sessionEndOnce(session.id, function () {
-        self.reportSignOut(session, id, via, cookiePresented, req);
+        self.reportSignOut(session, id, via, cookiePresented, req, entity);
         self.dispatchBackchannel(planned);
       }, function () {
         self.reportSignOutAlreadyEnded(session, via, cookiePresented);
       });
     } else {
-      this.reportSignOut(null, id, via, cookiePresented, req);
+      this.reportSignOut(null, id, via, cookiePresented, req, entity);
     }
     log.debug("Leaving Authn.dropSession(). " +
               (session ? 'Dropped the session for ' + session.user.username +
@@ -4601,11 +4772,14 @@ class Authn {
   // The event and the audit row for a sign-out — what sessionEndOnce() lets out
   // once for the cluster. Split from dropSession() for that reason only; the
   // order inside is dropSession()'s own, argued there.
-  private reportSignOut(session, id, via, cookiePresented, req) {
+  private reportSignOut(session, id, via, cookiePresented, req, entity) {
     const { log, audit } = this.deps;
     log.debug("Entering Authn.reportSignOut().");
     this.notifySession('revoked', session, { via: via || 'a sign-out endpoint',
-      byAdmin: /admin|console/i.test(String(via || '')),
+      // STATED BY THE CALLER (#242), never read out of `via`: see
+      // initiatorOf(). `byAdmin` is kept for an observer that reads it.
+      initiatingEntity: entity,
+      byAdmin: entity === 'admin',
       // THE REQUEST, WHERE THERE IS ONE, AND IT IS NOT A CONVENIENCE. The
       // observer builds a subject naming the person by ISSUER and subject, and
       // this service's issuer is derived from the request — a sign-out reached
@@ -4727,10 +4901,11 @@ class Authn {
   // ended is usually not the one the caller is holding, and clearing the cookie
   // of a browser that is signed in as somebody else would sign the operator out
   // instead of the person they asked about.
-  endSessionById(id, via) {
+  endSessionById(id, via, initiatingEntity?) {
     const { log } = this.deps;
     log.debug("Entering Authn.endSessionById(). id=" + id);
-    const session = this.dropSession(String(id || ''), via, false);
+    const session = this.dropSession(String(id || ''), via, false, null,
+                                     initiatingEntity);
     log.debug("Leaving Authn.endSessionById(). " + (session ? 'Ended.' :
                                                     'There was ' +
         'no such session.'));
@@ -4742,7 +4917,7 @@ class Authn {
   // CAEP session-revoked and the back-channel Logout Tokens of its relying
   // parties. Collected first and ended afterwards, for the sweep's reason.
   // Answers who was signed out, so the caller can tell RISC about accounts.
-  endEverySessionIn(realmId, via) {
+  endEverySessionIn(realmId, via, initiatingEntity?) {
     const { log, realms } = this.deps;
     const self = this;
     log.debug("Entering Authn.endEverySessionIn(). realm=" + realmId);
@@ -4753,20 +4928,95 @@ class Authn {
     if (store) {
       store.forEach(function (session, id) {
         if (session) {
+          // A row nobody signed in to (an arrival session, the anonymous
+          // principal) is ended too, and answers no account: a caller that
+          // tells RISC about the accounts must not tell it about `anonymous`
+          // (#242).
+          const somebody = session.chosen !== false &&
+                           session.authenticated !== false;
           ids.push({ id: id,
-                     username: String((session.user &&
-                                       session.user.username) || '') });
+                     username: somebody
+                       ? String((session.user && session.user.username) ||
+                                '')
+                       : '' });
         }
       });
     }
     const ended = realms.run(realm, function () {
       return ids.filter(function (one) {
-        return !!self.dropSession(one.id, via, false);
+        return !!self.dropSession(one.id, via, false, null,
+                                  initiatingEntity);
       });
     });
     log.debug("Leaving Authn.endEverySessionIn(). " + ended.length +
               " ended.");
     return ended;
+  }
+
+  // ---------------------------------------------------------------------------
+  // A TRUST REALM BEING REMOVED (#232): its sessions end through the ordinary
+  // path before its stores are purged, so each is a `session.end` audit row, a
+  // CAEP session-revoked (`initiating_entity` as the removal says — `admin`)
+  // and its relying parties' back-channel Logout Tokens. Until #232 the
+  // partition was dropped whole and nobody was told. `realms.retire()` calls
+  // this in the realm, in its announce phase.
+  // ---------------------------------------------------------------------------
+  retireRealmSessions(realmId, ctx) {
+    const { log } = this.deps;
+    log.debug("Entering Authn.retireRealmSessions(). realm=" + realmId);
+    const c = ctx || {};
+    const ended = this.endEverySessionIn(realmId,
+      String(c.via || 'the removal of the trust realm'),
+      String(c.initiatingEntity || 'admin'));
+    log.info('authn: the "' + realmId + '" realm is being removed; ' +
+             ended.length + ' session(s) in it were ended first.');
+    log.debug("Leaving Authn.retireRealmSessions(). " + ended.length);
+    return ended.length;
+  }
+
+  // ...and its deliver phase: wait, until `ctx.deadline`, for every session
+  // end to have won its cluster claim (`pendingEndReports()`) and for the
+  // realm's outbound deliveries — the Logout Tokens above, and anything else
+  // queued in `oauth-oidc/outbound_delivery.ts`'s kinds — to leave `pending`.
+  // What is still pending is reported on `ctx.undelivered`. Never rejects.
+  async settleRealmEnds(realmId, ctx) {
+    const { log } = this.deps;
+    log.debug("Entering Authn.settleRealmEnds(). realm=" + realmId);
+    const c = ctx || {};
+    const deadline = Number(c.deadline) || 0;
+    const self = this;
+    const pendingOutbound = function () {
+      let total = 0;
+      try {
+        const report = require('../oauth-oidc/outbound_delivery')
+          .kindReport({ limit: 1 });
+        (report.kinds || []).forEach(function (kind) {
+          total += Number((kind.counts || {}).pending) || 0;
+        });
+      } catch (e) {
+        log.debug("Caught in Authn.settleRealmEnds(): " +
+                  ((e && e.message) || e));
+        total = 0;
+      }
+      return total;
+    };
+    let outbound = pendingOutbound();
+    while (Date.now() < deadline &&
+           (self.pendingEndReports() > 0 || outbound > 0)) {
+      await new Promise(function (resolve) {
+        setTimeout(resolve, 50);
+      });
+      outbound = pendingOutbound();
+    }
+    if (Array.isArray(c.undelivered)) {
+      c.undelivered.push({ what: 'session end(s) still waiting on their ' +
+                                 'claim',
+                           count: self.pendingEndReports() });
+      c.undelivered.push({ what: 'outbound delivery(ies) (back-channel ' +
+                                 'Logout Tokens, CIBA, provider commands)',
+                           count: outbound });
+    }
+    log.debug("Leaving Authn.settleRealmEnds(). " + outbound + " pending.");
   }
 
   // Clear the session cookie on this response, whatever the session it named.
@@ -4837,7 +5087,7 @@ class Authn {
     const presented = !!this.cookiesOf(req)[SESSION_COOKIE];
     const session = this.dropSession(id,
                                      'the sign-out endpoint for this browser',
-                                     presented, req);
+                                     presented, req, 'user');
     this.clearSessionCookie(res);
     log.debug("Leaving Authn.endSession(). " +
               (session ? 'Dropped the session for ' + session.user.username +
@@ -10785,6 +11035,20 @@ scheduler.register({
   }
 });
 
+// A realm's removal ends its sessions first and waits for what that sends
+// (#232; `realms.retire()`). Registered here, at 8 in the require order, so it
+// runs before the directory's and Shared Signals' hooks: the sessions end
+// before the people are purged and the streams are closed.
+realms.onRetire({
+  name: 'authn',
+  announce: function (id: string, ctx: any): void {
+    slot.get().retireRealmSessions(id, ctx);
+  },
+  deliver: function (id: string, ctx: any): Promise<void> {
+    return slot.get().settleRealmEnds(id, ctx);
+  }
+});
+
 // ---------------------------------------------------------------------------
 // What the rest of this service uses.
 //
@@ -10909,6 +11173,7 @@ export = {
   sessionById: slot.forward('sessionById'),
   endSessionById: slot.forward('endSessionById'),
   endEverySessionIn: slot.forward('endEverySessionIn'),
+  pendingEndReports: slot.forward('pendingEndReports'),
   clearSessionCookie: slot.forward('clearSessionCookie'),
   beginAuthentication: slot.forward('beginAuthentication'),
   // THE SIGN-IN SCREEN'S STYLESHEET, for oauth-oidc/consent_screen.ts. A

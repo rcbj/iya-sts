@@ -806,6 +806,14 @@ const CODES = [
       'write of it would (a value outside an enum or a list\'s csvValues, ' +
       'a number out of bounds, a malformed boolean) — #86.',
     spec: '' },
+  { code: 'STS-CORE-0120',
+    summary: 'A trust realm was removed (#232) before everything it owed ' +
+      'had been delivered within realms.removalDeliveryTimeoutS — session ' +
+      'ends still waiting on their claim, back-channel Logout Tokens or ' +
+      'SSF events (session-revoked, account-purged, stream-updated) not ' +
+      'yet delivered, or a retirement hook that failed. The realm is ' +
+      'removed anyway.',
+    spec: 'none — logged; the removal succeeds' },
   { code: 'STS-WORKER-0001',
     summary: 'The IPC channel to a post-quantum worker process failed, so a ' +
       'job sent to it may not arrive or its answer may not come back.',
@@ -4170,8 +4178,9 @@ const CODES = [
     spec: 'none — audit row only; the sign-out is answered as usual' },
   { code: 'STS-AUTHN-0192',
     summary: 'Whether another process had already reported a session\'s end ' +
-      'could not be asked, so it was reported here and a receiver may be ' +
-      'told twice.',
+      'could not be asked — the claim answered that the store could not ' +
+      'say, or rejected three times (#242) — so it was reported here and a ' +
+      'receiver may be told twice.',
     spec: 'none — logged' },
   { code: 'STS-AUTHN-0193',
     summary: 'A security key registration was refused because the same ' +
@@ -4549,6 +4558,17 @@ const CODES = [
       'REQUIRED rather than offered (#246): only an administrator the ' +
       'authentication policy OFFERS a second factor may decline it.',
     spec: 'HTTP 400, the set-up page again' },
+  { code: 'STS-AUTHN-0290',
+    summary: 'A session was ended by a caller that did not say who ' +
+      'initiated it (#242): CAEP session-revoked says `system`, and the ' +
+      'caller should state admin, user, policy or system.',
+    spec: 'none — logged; the session is ended' },
+  { code: 'STS-AUTHN-0291',
+    summary: 'Reporting a session\'s end (its audit row, CAEP ' +
+      'session-revoked and back-channel Logout Tokens) threw after the ' +
+      'claim that decides who reports it was won (#242); it is not tried ' +
+      'again, because a second try could tell a receiver twice.',
+    spec: 'none — logged' },
   { code: 'STS-OAUTH-0001',
     summary: 'A JWT client assertion could not be read as a JWT (its header ' +
       'is not base64url JSON).',
@@ -10269,6 +10289,12 @@ const CODES = [
       '(#237), in every mode and for every bind, administrator included; ' +
       'the refusal names the door.',
     spec: 'RFC 4511 section 4.1.9 unwillingToPerform (53)' },
+  { code: 'STS-LDAP-0120',
+    summary: 'A person was deleted from the directory (#241) and handing ' +
+      'the delete to account_state.ts failed, so what they held may not ' +
+      'have been ended at once. authn.sessionOf() still ends a session ' +
+      'whose person has no entry the next time it is presented.',
+    spec: 'none — logged; the delete stands' },
   // ===== SCIM ==============================================================
   { code: 'STS-SCIM-0001',
     summary: 'A SCIM endpoint (or HOBA key registration) was called while ' +

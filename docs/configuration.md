@@ -1324,8 +1324,9 @@ Four things about these settings do not fit in a cell and have cost real time:
 |---|---|---|---|---|
 | `realms.enabled` | `STS_REALMS_ENABLED` | `true` | yes | Whether the realms defined on `/admin/realms` answer on their path prefixes. Turning it OFF leaves every definition in place and stops the paths working, which is what to reach for when a realm is answering something it should not: nothing has to be deleted to find out whether a realm is the reason for something. It has no effect at all until at least one realm is defined. |
 | `realms.pathSegment` | `STS_REALMS_PATH_SEGMENT` | `realm` | yes | The segment in front of a realm id, so that the realm `acme` is at `/realm/acme/oauth2/token`. Set it to the empty string for the bare `/acme/oauth2/token` shape. A realm may never be named after the first segment of a path this service already serves, WHATEVER this is set to, precisely so that clearing it cannot turn an existing realm into a shadow over the console or the authorization server. |
+| `realms.removalDeliveryTimeoutS` | `STS_REALMS_REMOVAL_DELIVERY_TIMEOUT_S` | `10` | yes | How long removing a trust realm waits for what it owes to be delivered — the session-revoked and back-channel Logout Tokens of its sessions, RISC account-purged for its people, SSF stream-updated (disabled) to its streams — before its stores are purged. What is not delivered by then is logged (`STS-CORE-0120`) and goes with the realm. `0` sends everything and does not wait. |
 
-**Neither of these two can be set ON a realm.** A realm that could switch realms
+**Neither of the first two can be set ON a realm.** A realm that could switch realms
 off would be doing it from inside the request that found it, and a realm that
 could move its own prefix would change the prefix already used to find it. They
 are refused at both ends.

@@ -76,6 +76,10 @@ const ALLOWED = {
     'not periodic: a bounded wait (30 s) inside one re-key for the realm\'s ' +
     'certificate branch to arrive under a new Root — a delay inside one ' +
     'operation, which the directive leaves where it is' },
+  'authn/authn.ts|attempt|timeout': { permanent:
+    'not periodic: a session-end claim that rejected is asked again, at ' +
+    'most three times inside one sign-out (#242) — a retry within one ' +
+    'operation' },
   'debugger/debugger_api_process.ts|fork|timeout': { permanent:
     'not periodic: the api child\'s start-up timeout; its restart is a ' +
     'retry with back-off within supervising one child' }
