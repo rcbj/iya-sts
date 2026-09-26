@@ -849,8 +849,10 @@ class RequestWorker {
     });
     this.server = server;
     // Every connection is from the front process on this machine, over a
-    // socket in a directory only it and this worker know. Keep-alive is what
-    // makes the proxy hop cheap, so it is left on and the timeout is generous.
+    // socket in a directory only it and this worker know. The front process
+    // asks for `Connection: close` on every request (#77, request_pool.js's
+    // proxy()), so a connection carries one request; the keep-alive timeout
+    // is kept generous for a caller that does not.
     server.keepAliveTimeout = 65000;
     server.headersTimeout = 70000;
 

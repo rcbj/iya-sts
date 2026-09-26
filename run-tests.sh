@@ -100,6 +100,11 @@
 #                                             # conformance suite's FAPI plans
 #                                             # (#176; default `memory`, empty
 #                                             # for none); see below
+#   STS_TEST_SAML_PEERS_MODES=memory ./run-tests.sh
+#                                             # the modes that bring up the four
+#                                             # SAML interoperability peers
+#                                             # (#189-#192; default memory and
+#                                             # single-node, empty for none)
 #
 # ---------------------------------------------------------------------------
 # WHAT THIS RUN LEAVES BEHIND TO BE READ AFTERWARDS.
@@ -177,6 +182,11 @@ STS_LB_CONTAINER_NAME="${STS_LB_CONTAINER_NAME:-sts-docker-tests-lb}"
 STS_CONFORMANCE_MONGO_CONTAINER_NAME="${STS_CONFORMANCE_MONGO_CONTAINER_NAME:-sts-docker-tests-conformance-mongo}"
 STS_CONFORMANCE_SERVER_CONTAINER_NAME="${STS_CONFORMANCE_SERVER_CONTAINER_NAME:-sts-docker-tests-conformance-server}"
 STS_CONFORMANCE_NGINX_CONTAINER_NAME="${STS_CONFORMANCE_NGINX_CONTAINER_NAME:-sts-docker-tests-conformance-nginx}"
+# The four SAML interoperability peers (#189-#192), named for the same reason.
+STS_SAML_SHIB_CONTAINER_NAME="${STS_SAML_SHIB_CONTAINER_NAME:-sts-docker-tests-saml-shib}"
+STS_SAML_SSP_CONTAINER_NAME="${STS_SAML_SSP_CONTAINER_NAME:-sts-docker-tests-saml-ssp}"
+STS_SAML_PYSAML2_CONTAINER_NAME="${STS_SAML_PYSAML2_CONTAINER_NAME:-sts-docker-tests-saml-pysaml2}"
+STS_SAML_KEYCLOAK_CONTAINER_NAME="${STS_SAML_KEYCLOAK_CONTAINER_NAME:-sts-docker-tests-saml-keycloak}"
 # ---------------------------------------------------------------------------
 # AND THE IMAGE TAGS, WHEN A PROJECT IS NAMED (2026-09-14). A tag is
 # machine-wide like a container name: this launcher builds once and then
@@ -190,6 +200,10 @@ then
   STS_IMAGE="${STS_IMAGE:-rcbj/sts:${COMPOSE_PROJECT}}"
   XACML_PEP_IMAGE="${XACML_PEP_IMAGE:-rcbj/xacml-pep:${COMPOSE_PROJECT}}"
   STS_TESTS_IMAGE="${STS_TESTS_IMAGE:-rcbj/mock-sts-tests:${COMPOSE_PROJECT}}"
+  SAML_SHIB_IMAGE="${SAML_SHIB_IMAGE:-rcbj/sts-saml-shibboleth:${COMPOSE_PROJECT}}"
+  SAML_SSP_IMAGE="${SAML_SSP_IMAGE:-rcbj/sts-saml-simplesamlphp:${COMPOSE_PROJECT}}"
+  SAML_PYSAML2_IMAGE="${SAML_PYSAML2_IMAGE:-rcbj/sts-saml-pysaml2:${COMPOSE_PROJECT}}"
+  SAML_KEYCLOAK_IMAGE="${SAML_KEYCLOAK_IMAGE:-rcbj/sts-saml-keycloak:${COMPOSE_PROJECT}}"
 fi
 # The appconfig layer the SERVICE reads. EMPTY here and resolved after the
 # arguments are parsed, by THE SERVICE'S LOG LEVEL below: which file this stack
@@ -264,6 +278,37 @@ STS_TEARDOWN_TIMEOUT="${STS_TEARDOWN_TIMEOUT:-300}"
 # ---------------------------------------------------------------------------
 STS_TEST_CONFORMANCE_MODES="${STS_TEST_CONFORMANCE_MODES-memory}"
 STS_CONFORMANCE_TIMEOUT="${STS_CONFORMANCE_TIMEOUT:-1800}"
+
+# ---------------------------------------------------------------------------
+# THE SAML INTEROPERABILITY PEERS (#189-#192, 2026-09-24).
+#
+# Four independent SAML service providers — the Shibboleth SP 3, pysaml2,
+# SimpleSAMLphp and Keycloak's SAML broker — built from tests/saml-peers/ and
+# brought up behind the `saml-peers` compose profile, each driven by a job of
+# its own (tests/vendored/sts_saml_interop_*.js). tests/CLAUDE.md, *THE SAML
+# PEERS*, argues all of it.
+#
+#   STS_TEST_SAML_PEERS_MODES    a comma list of modes, in modes.sh's
+#                                spelling (default `memory,single-node`, what
+#                                CI's `tests` job runs); empty runs them in
+#                                none. `single-node` because it is the
+#                                deployment the peers stand in for the
+#                                clients of — product mode, postgres, the
+#                                AuthnRequest ID and the artifact claimed
+#                                through the shared store. NOT `cluster` by
+#                                default: that job's budget has no room left
+#                                under the 120-minute ceiling
+#                                tests/teardown_bounds.js holds, and
+#                                `STS_TEST_SAML_PEERS_MODES=cluster
+#                                ./run-tests.sh --modes=cluster` runs them
+#                                there by hand.
+#   STS_SAML_PEERS_TIMEOUT       seconds ADDED to such a mode's bound (default
+#                                900): Keycloak's JVM starts when its job
+#                                hands it the anchor, and the four jobs took
+#                                about four minutes together on 2026-09-24.
+# ---------------------------------------------------------------------------
+STS_TEST_SAML_PEERS_MODES="${STS_TEST_SAML_PEERS_MODES-memory,single-node}"
+STS_SAML_PEERS_TIMEOUT="${STS_SAML_PEERS_TIMEOUT:-900}"
 
 BUILD=1
 KEEP_STACK=0
@@ -753,6 +798,15 @@ COMPOSE_ENV=(
   "CONFORMANCE_MONGO_ADDRESS=${STS_NETWORK_PREFIX}.40"
   "CONFORMANCE_SERVER_ADDRESS=${STS_NETWORK_PREFIX}.41"
   "CONFORMANCE_NGINX_ADDRESS=${STS_NETWORK_PREFIX}.42"
+  "STS_SAML_SHIB_CONTAINER_NAME=${STS_SAML_SHIB_CONTAINER_NAME}"
+  "STS_SAML_SSP_CONTAINER_NAME=${STS_SAML_SSP_CONTAINER_NAME}"
+  "STS_SAML_PYSAML2_CONTAINER_NAME=${STS_SAML_PYSAML2_CONTAINER_NAME}"
+  "STS_SAML_KEYCLOAK_CONTAINER_NAME=${STS_SAML_KEYCLOAK_CONTAINER_NAME}"
+  # The SAML peers' four, above the conformance suite's (#189-#192).
+  "SAML_SHIB_ADDRESS=${STS_NETWORK_PREFIX}.43"
+  "SAML_SSP_ADDRESS=${STS_NETWORK_PREFIX}.44"
+  "SAML_PYSAML2_ADDRESS=${STS_NETWORK_PREFIX}.45"
+  "SAML_KEYCLOAK_ADDRESS=${STS_NETWORK_PREFIX}.46"
   "CONFIG_FILE=${CONFIG_FILE}"
   "STS_TEST_ARGS=${STS_TEST_ARGS}"
   # ---------------------------------------------------------------------
@@ -841,6 +895,14 @@ if [ -n "${STS_TESTS_IMAGE:-}" ];
 then
   COMPOSE_ENV+=("STS_TESTS_IMAGE=${STS_TESTS_IMAGE}")
 fi
+for peerImage in SAML_SHIB_IMAGE SAML_SSP_IMAGE SAML_PYSAML2_IMAGE \
+                 SAML_KEYCLOAK_IMAGE;
+do
+  if [ -n "${!peerImage:-}" ];
+  then
+    COMPOSE_ENV+=("${peerImage}=${!peerImage}")
+  fi
+done
 # ---------------------------------------------------------------------------
 # WHERE THE SERVICE IS, AS THE LAUNCHER'S OWN ONE-SHOT CONTAINERS DIAL IT
 # (2026-09-14). `sts` in every mode but `cluster`, where it is the balancer —
@@ -1069,6 +1131,19 @@ docker_compose_bounded "${STS_TEARDOWN_TIMEOUT}" \
 # point is to test what is in the working tree and an image is a snapshot of
 # when it was built.
 # ---------------------------------------------------------------------------
+# THE SAML PEERS' IMAGES ARE BUILT WITH THE REST (#189-#192) when any mode
+# this run makes brings them up: `build` builds only the services of the
+# active profiles, and a peer image left to `up` would be built from whatever
+# tree was current the first time and never again.
+BUILD_ENV=(${COMPOSE_ENV[@]+"${COMPOSE_ENV[@]}"})
+for buildMode in "${RUN_MODES[@]}";
+do
+  if printf ',%s,' "${STS_TEST_SAML_PEERS_MODES}" | grep -q ",${buildMode},";
+  then
+    COMPOSE_ENV+=("COMPOSE_PROFILES=saml-peers")
+    break
+  fi
+done
 if [ "${BUILD}" = "1" ];
 then
   echo "Building the service and test images from this working tree..."
@@ -1083,6 +1158,7 @@ else
   echo "tree, and they will answer every request either way. Drop --no-build if"
   echo "a result surprises you."
 fi
+COMPOSE_ENV=(${BUILD_ENV[@]+"${BUILD_ENV[@]}"})
 
 # ---------------------------------------------------------------------------
 # THE SERVICE FIRST, THEN THE CREDENTIAL, THEN EVERYTHING ELSE.
@@ -1535,10 +1611,14 @@ do
   # the job reports every module itself.
   UP_NO_ATTACH=(--no-attach openbao-tls --no-attach openbao-seed
                 --no-attach mailpit-tls --no-attach mailpit)
+  # The profiles this mode brings up, joined once below: compose reads ONE
+  # COMPOSE_PROFILES, and the conformance suite and the SAML peers can both
+  # be on.
+  MODE_PROFILES=()
   if printf ',%s,' "${STS_TEST_CONFORMANCE_MODES}" | grep -q ",${MODE},";
   then
+    MODE_PROFILES+=(conformance)
     MODE_ENV+=(
-      "COMPOSE_PROFILES=conformance"
       "CONFORMANCE_SUITE_URL=https://localhost.emobix.co.uk:8443/"
     )
     UP_NO_ATTACH+=(--no-attach conformance-mongo
@@ -1547,6 +1627,33 @@ do
     STS_MODE_TIMEOUT=$(( STS_MODE_TIMEOUT + STS_CONFORMANCE_TIMEOUT ))
     echo " The OpenID conformance suite runs in this mode (#176); its bound" \
          "is ${STS_MODE_TIMEOUT}s."
+  fi
+
+  # ---- THE SAML PEERS, IN THE MODES THAT RUN THEM (#189-#192) ------------
+  #
+  # The profile starts the four with the runner's `up` (Keycloak then waits
+  # for its job), the URLs tell the jobs they are there, and the mode's bound
+  # grows by what they take. Not attached: each peer's log goes to the shared
+  # volume, where its job reads it, and Keycloak's console is thousands of
+  # lines.
+  if printf ',%s,' "${STS_TEST_SAML_PEERS_MODES}" | grep -q ",${MODE},";
+  then
+    MODE_PROFILES+=(saml-peers)
+    MODE_ENV+=(
+      "SAML_PEER_SHIBBOLETH_URL=http://saml-shib"
+      "SAML_PEER_SSP_URL=http://saml-ssp"
+      "SAML_PEER_PYSAML2_URL=http://saml-pysaml2:8000"
+      "SAML_PEER_KEYCLOAK_URL=http://saml-keycloak:8080"
+    )
+    UP_NO_ATTACH+=(--no-attach saml-shib --no-attach saml-ssp
+                   --no-attach saml-pysaml2 --no-attach saml-keycloak)
+    STS_MODE_TIMEOUT=$(( STS_MODE_TIMEOUT + STS_SAML_PEERS_TIMEOUT ))
+    echo " The SAML interoperability peers run in this mode (#189-#192);" \
+         "its bound is ${STS_MODE_TIMEOUT}s."
+  fi
+  if [ "${#MODE_PROFILES[@]}" -gt 0 ];
+  then
+    MODE_ENV+=("COMPOSE_PROFILES=$(IFS=','; echo "${MODE_PROFILES[*]}")")
   fi
 
   COMPOSE_ENV=(

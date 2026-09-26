@@ -981,6 +981,11 @@ const CODES = [
     summary: 'A batch request (workers.batch) waited ' +
       'workers.batchQueueTimeoutS for the pool\'s batch lane and was refused.',
     spec: 'HTTP 503 with Retry-After' },
+  { code: 'STS-WORKER-0042',
+    summary: 'The connection to a request worker failed before any byte of ' +
+      'a dispatched request reached it, and the request was sent again on ' +
+      'a new connection (#77).',
+    spec: 'Nothing: the client gets the worker\'s answer' },
   // ===== STORE =============================================================
   { code: 'STS-STORE-0001',
     summary: 'A scheduled persistence flush threw past its own handler.',
@@ -7144,8 +7149,10 @@ const CODES = [
     spec: 'SOAP samlp:Response with status samlp:Requester (HTTP 200)' },
   { code: 'STS-SAML-0039',
     summary: 'A SAML 1.1 AttributeQuery or AuthenticationQuery was refused ' +
-      'because the realm is in product mode and nothing authenticates ' +
-      'the caller.',
+      'in product mode: it names no registered relying party (Resource or ' +
+      'the path segment), or its caller did not authenticate as that ' +
+      'relying party (a signed Request or its registered certificate at the ' +
+      'TLS handshake). Until #189 every query was refused in product.',
     spec: 'SOAP samlp:Response with status samlp:Requester (HTTP 200)' },
   { code: 'STS-SAML-0040',
     summary: 'A SAML 1.1 query carries no <saml:Subject> with a ' +
@@ -7381,6 +7388,64 @@ const CODES = [
       'in product mode and has no saml2.metadataTrustAnchors, so the answer ' +
       'could not be verified, and saml2.mdqImportWithoutAnchors is off.',
     spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
+  { code: 'STS-SAML-0085',
+    summary: 'A SAML 2.0 AuthnRequest or LogoutRequest was refused: its ' +
+      'Destination is not the URL it arrived at (saml-core-2.0-os section ' +
+      '3.2.1), or it is signed and names no Destination ' +
+      '(saml-bindings-2.0-os sections 3.4.5.2 and 3.5.5.2). #190.',
+    spec: 'an HTTP 400 page' },
+  { code: 'STS-SAML-0086',
+    summary: 'A SAML 2.0 AuthnRequest or LogoutRequest was refused: its ' +
+      'IssueInstant is missing, not a dateTime, more than a minute in the ' +
+      'future, or older than saml2.requestTtlMin (plus a minute). #190.',
+    spec: 'an HTTP 400 page' },
+  { code: 'STS-SAML-0087',
+    summary: 'A SAML 2.0 AuthnRequest or LogoutRequest was refused: its ' +
+      'Version is not "2.0" (saml-core-2.0-os section 3.2.2.1). #190.',
+    spec: 'an HTTP 400 page' },
+  { code: 'STS-SAML-0088',
+    summary: 'A SAML 2.0 AuthnRequest was refused as a REPLAY: its issuer ' +
+      'and ID arrived before, inside the freshness window (the claim ' +
+      'scope saml2.authnrequest). #190.',
+    spec: 'an HTTP 400 page' },
+  { code: 'STS-SAML-0089',
+    summary: 'A SAML 2.0 AuthnRequest was refused because the claim store ' +
+      'that records which requests were answered could not be asked (fail ' +
+      'closed). #190.',
+    spec: 'an HTTP 400 page' },
+  { code: 'STS-SAML-0090',
+    summary: 'A SAML 2.0 LogoutRequest with no session cookie (a ' +
+      'back-channel logout) named a SessionIndex whose session did not sign ' +
+      'into that service provider, or was issued another NameID there. ' +
+      'Nothing was ended. #192.',
+    spec: 'a LogoutResponse with StatusCode Requester / UnknownPrincipal' },
+  { code: 'STS-SAML-0091',
+    summary: 'An identity-provider-initiated sign-in (/saml2/unsolicited) ' +
+      'was refused: saml2.unsolicitedSso is off in the realm. #189.',
+    spec: 'an HTTP 403 page' },
+  { code: 'STS-SAML-0092',
+    summary: 'An identity-provider-initiated sign-in (/saml2/unsolicited) ' +
+      'named no service provider (providerId or the path segment). #189.',
+    spec: 'an HTTP 400 page' },
+  { code: 'STS-SAML-0093',
+    summary: 'An identity-provider-initiated sign-in asked for a binding a ' +
+      'Response does not go on (anything but HTTP-POST, POST-SimpleSign or ' +
+      'HTTP-Artifact). #189.',
+    spec: 'an HTTP 400 page' },
+  { code: 'STS-SAML-0094',
+    summary: 'A SAML 2.0 AttributeQuery named a subject no live session here ' +
+      'gave the asking service provider (by the NameID it was issued), or ' +
+      'that session has ended. #189.',
+    spec: 'SOAP samlp:Response, Requester / UnknownPrincipal (HTTP 200)' },
+  { code: 'STS-SAML-0095',
+    summary: 'The SAML 2.0 attribute authority received no ' +
+      '<samlp:AttributeQuery>, or one naming no Issuer. #189.',
+    spec: 'SOAP samlp:Response, Requester (HTTP 200)' },
+  { code: 'STS-SAML-0096',
+    summary: 'A SAML 1.1 AttributeQuery or AuthenticationQuery in product ' +
+      'mode named a subject no live session here gave the asking relying ' +
+      'party (by the NameIdentifier it was issued). #189.',
+    spec: 'SOAP samlp:Response with status samlp:Requester (HTTP 200)' },
   // ===== WSTRUST ===========================================================
   { code: 'STS-WSTRUST-0001',
     summary: 'The RequestSecurityToken body is not well-formed XML (or is ' +
@@ -9502,6 +9567,52 @@ const CODES = [
       'an application, a federation, a container — and was refused before ' +
       'its password was read; only people bind to the directory.',
     spec: 'LDAP result code 49, invalidCredentials (RFC 4513 section 5.1.3)' },
+  { code: 'STS-LDAP-0101',
+    summary: 'A person\'s attribute edit (#228) found no directory installed ' +
+      'in this process, so there is no entry to change.',
+    spec: 'HTTP 400 (API) or a 303 with error=' },
+  { code: 'STS-LDAP-0102',
+    summary: 'A person\'s attribute edit (#228) named nobody in this ' +
+      'realm\'s directory.',
+    spec: 'HTTP 400 (API) or a 303 with error=' },
+  { code: 'STS-LDAP-0103',
+    summary: 'A person\'s attribute edit (#228) named an attribute the ' +
+      'editor does not change: a credential, a binary value, the ' +
+      'username or the address (which have doors of their own), or ' +
+      'one outside the person schema.',
+    spec: 'HTTP 400 (API) or a 303 with error=' },
+  { code: 'STS-LDAP-0104',
+    summary: 'A person\'s attribute edit (#228) named the attribute the ' +
+      'entry\'s own DN is built from, which would leave the DN and ' +
+      'the entry disagreeing.',
+    spec: 'HTTP 400 (API) or a 303 with error=' },
+  { code: 'STS-LDAP-0105',
+    summary: 'A person\'s attribute edit (#228) was not set, add or remove, ' +
+      'or was an add to an attribute that holds one value.',
+    spec: 'HTTP 400 (API) or a 303 with error=' },
+  { code: 'STS-LDAP-0106',
+    summary: 'A person\'s attribute edit (#228) carried a value that is too ' +
+      'long, holds a control character, does not have its ' +
+      'attribute\'s shape (a country code, a date, a language range, ' +
+      'an http(s) URL, a DN), or was empty for an add or a remove.',
+    spec: 'HTTP 400 (API) or a 303 with error=' },
+  { code: 'STS-LDAP-0107',
+    summary: 'A person\'s attribute edit (#228) added a value the attribute ' +
+      'already holds.',
+    spec: 'HTTP 400 (API) or a 303 with error=' },
+  { code: 'STS-LDAP-0108',
+    summary: 'A person\'s attribute edit (#228) removed a value the ' +
+      'attribute does not hold.',
+    spec: 'HTTP 400 (API) or a 303 with error=' },
+  { code: 'STS-LDAP-0109',
+    summary: 'A person\'s attribute edit (#228) would have left cn or sn, ' +
+      'which RFC 4519 3.12 requires of every person, with no value.',
+    spec: 'HTTP 400 (API) or a 303 with error=' },
+  { code: 'STS-LDAP-0110',
+    summary: 'A person\'s attribute edit (#228) was refused by the ' +
+      'directory: the entry was gone or not a person\'s when the ' +
+      'write reached it.',
+    spec: 'HTTP 400 (API) or a 303 with error=' },
   // ===== SCIM ==============================================================
   { code: 'STS-SCIM-0001',
     summary: 'A SCIM endpoint (or HOBA key registration) was called while ' +
@@ -13801,7 +13912,7 @@ const CODES = [
     spec: 'HTTP 400 (API)' },
   { code: 'STS-ADMIN-0518',
     summary: 'A users action that acts on one person (activation link, ' +
-      'password, second-factor clear) named nobody.',
+      'password, second-factor clear, attribute edit) named nobody.',
     spec: 'HTTP 400 (API) or a 303 with error=' },
   { code: 'STS-ADMIN-0519',
     summary: 'An activation link could not be issued for the named person.',
@@ -14447,6 +14558,10 @@ const CODES = [
     summary: 'A set-aud-sub act named a person with no entry in this ' +
       'realm, or the directory would not write it (#148).',
     spec: 'none (a console or management API refusal, HTTP 400)' },
+  { code: 'STS-ADMIN-0819',
+    summary: 'set-attribute, add-attribute or remove-attribute was refused ' +
+      'and ldap/person_editor.ts named no more specific reason (#228).',
+    spec: 'HTTP 400 (API) or a 303 with error=' },
   { code: 'STS-API-0001',
     summary: 'A management API request carried no Bearer access token while ' +
       'adminApi.authRequired is on.',

@@ -559,6 +559,7 @@ var config = {
     encryptLogoutNameId: false,                                            // Encrypt the NameID in a LogoutRequest
     autocreateApplications: true,                                          // Register a service provider on sight
     requireSignedAuthnRequests: "auto",                                    // Require signed requests from service providers
+    unsolicitedSso: true,                                                  // Identity-provider-initiated sign-in
     defaultSingleLogoutService: "",                                        // Fallback logout return address
     requestTtlMin: 10,                                                     // Held AuthnRequest lifetime (minutes)
     mockSpContextTtlMin: 30,                                               // Mock service provider RelayState lifetime (minutes)
@@ -580,6 +581,7 @@ var config = {
     signResponse: true,                                                    // Sign the response
     nameIdFormat: "urn:oasis:names:tc:SAML:1.1:nameid-format:unspecified", // Default NameIdentifier format
     defaultProfile: "post",                                                // Default browser profile
+    doNotCacheCondition: false,                                            // Mark a Browser/POST assertion DoNotCache
     artifactTtlS: 300,                                                     // Artifact lifetime (seconds)
     autocreateApplications: true,                                          // Register relying parties on sight
     requestTtlMin: 10,                                                     // Held flow lifetime (minutes)
