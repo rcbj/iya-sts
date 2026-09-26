@@ -2229,6 +2229,19 @@ const SPECS: Spec[] = [
               'third-party-initiated login adds tenant, domain_hint and ' +
               'target_link_uri. MISSING: an aud_sub learned from the client, ' +
               'which arrives with OpenID Provider Commands (#151).' },
+  { id: 'oidc-ephemeral', name: 'OpenID Connect Ephemeral Subject ' +
+                                'Identifier (draft 03)',
+    where: 'OpenID Foundation',
+    url: 'https://openid.net/specs/openid-connect-ephemeral-subject-identifier-1_0.html',
+    coverage: 'full (#149), in every mode: subject_type ephemeral at ' +
+              'registration (DCR, the console, the management API) and in ' +
+              'subject_types_supported; 160 random bits per authentication ' +
+              'and client, the same for its ID Tokens, UserInfo, refresh ' +
+              'and Logout Token and never reused; a persisted per-realm ' +
+              'mapping that takes an id_token_hint back to the person and is ' +
+              'purged by a scheduler job once no token or session of that ' +
+              'authentication can remain; Shared Signals events to the ' +
+              'client\'s own stream name its ephemeral sub.' },
   { id: 'jarm', name: 'JWT Secured Authorization Response Mode for OAuth ' +
                      '2.0 (JARM)',
     where: 'OpenID Foundation',
@@ -9920,7 +9933,7 @@ const ENDPOINTS: EndpointEntry[] = [
   { path: '/oauth2/userinfo', group: 'OAuth 2.0 / OIDC', name: 'UserInfo ' +
       'endpoint',
     specs: ['oidc', 'oidc-ida-claims', 'oidc-ida', 'rfc6750', 'rfc9449',
-            'rfc7591',
+            'rfc7591', 'oidc-ephemeral',
             'rfc8705', 'rfc8707',
             'rfc9068', 'rfc9470'],
     effect: 'answers 401 with a WWW-Authenticate challenge when followed ' +
@@ -10710,7 +10723,7 @@ const PROTOCOLS: Protocol[] = [
     specs: ['rfc6749', 'oidc', 'rfc8414', 'rfc9700', 'oauth21',
             'oidc-session', 'oidc-ida-claims', 'oidc-ida', 'oidc-native-sso',
             'oidc-ciba', 'fapi-ciba', 'oauth-grant-management',
-            'oidc-claims-aggregation', 'oidc-enterprise'],
+            'oidc-claims-aggregation', 'oidc-enterprise', 'oidc-ephemeral'],
     what: 'A mock authorization server and OpenID Provider: all five grants, ' +
           'PKCE, DPoP, introspection, revocation, dynamic registration, ' +
           'UserInfo and RP-initiated logout, with as many named ' +
