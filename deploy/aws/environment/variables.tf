@@ -296,3 +296,57 @@ variable "workers_read_your_write" {
   type        = bool
   default     = false
 }
+
+# ---------------------------------------------------------------------------
+# WHERE AN UPLOADED RISK DATASET LANDS WHILE IT IS IMPORTED (#214, for #215).
+#
+# An operator uploads a provider's download (DB-IP Lite's `.csv.gz`, a `.zip`)
+# on Monitoring → Risk or `POST /admin-api/risk/upload`; the node streams it to
+# `risk.uploadDirectory`, expands it line by line into PostgreSQL and deletes
+# it. Each node task gets an EBS volume of its own there, created when the task
+# starts and deleted when it stops (ecs.tf, iam.tf). deploy/aws/CLAUDE.md,
+# *Risk dataset uploads*, argues it against ephemeral storage and EFS.
+# ---------------------------------------------------------------------------
+variable "risk_upload_volume_gib" {
+  description = <<-EOT
+    GiB of each node's upload volume. It holds the file AS SENT — compressed,
+    since nothing expanded is written — and an upload the free space cannot
+    hold is refused (STS-RISK-0029). The default is five times the service's
+    `risk.uploadMaxBytes` (2 GiB): the largest file allowed, with room for
+    concurrent uploads to the same node and the filesystem's own overhead.
+    DB-IP Lite's city file, the largest dataset documented, is a few hundred
+    megabytes compressed. Raise it with `risk.uploadMaxBytes` (through
+    `extra_environment`, STS_RISK_UPLOAD_MAX_BYTES), never below it.
+  EOT
+  type        = number
+  default     = 10
+  validation {
+    condition     = var.risk_upload_volume_gib >= 1 && var.risk_upload_volume_gib <= 16384 && floor(var.risk_upload_volume_gib) == var.risk_upload_volume_gib
+    error_message = "risk_upload_volume_gib is a whole number of GiB from 1 to 16384 (gp3's range)."
+  }
+}
+
+variable "risk_upload_volume_throughput" {
+  description = <<-EOT
+    The upload volume's gp3 throughput, MiB/s. 125 is gp3's baseline and costs
+    nothing extra; it is well above what one browser upload or the import
+    reading it back can use, and an import is bounded by PostgreSQL's inserts
+    rather than by this disk.
+  EOT
+  type        = number
+  default     = 125
+  validation {
+    condition     = var.risk_upload_volume_throughput >= 125 && var.risk_upload_volume_throughput <= 1000
+    error_message = "risk_upload_volume_throughput is 125 to 1000 MiB/s (gp3's range)."
+  }
+}
+
+variable "risk_upload_volume_iops" {
+  description = "The upload volume's gp3 IOPS. 3000 is gp3's baseline and costs nothing extra."
+  type        = number
+  default     = 3000
+  validation {
+    condition     = var.risk_upload_volume_iops >= 3000 && var.risk_upload_volume_iops <= 16000
+    error_message = "risk_upload_volume_iops is 3000 to 16000 (gp3's range)."
+  }
+}

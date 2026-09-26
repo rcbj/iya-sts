@@ -55,6 +55,15 @@ locals {
   tls_cert    = "/var/run/sts-tls/certificate.pem"
   tls_keyfile = "/var/run/sts-tls/key.pem"
 
+  # WHERE AN UPLOADED RISK DATASET IS WRITTEN WHILE IT IS IMPORTED (#214): the
+  # task's EBS volume (ecs.tf), mounted in mock-sts and named to the service
+  # as `risk.uploadDirectory`. The same path the compose stacks mount their
+  # volume at, `risk.uploadDirectory`'s default resolved against the package
+  # root, so a reader of either finds the other. Spelt once for the reason the
+  # TLS paths above are: the volume, the mount and the setting must agree.
+  risk_upload_volume = "risk-uploads"
+  risk_upload_dir    = "/usr/src/sts/data/risk-uploads"
+
   # EVERY PORT THE LOAD BALANCER PUBLISHES, and the node port behind it. The
   # main port is 443 outside and 8081 inside.
   #   ldap  389   the embedded directory, in the clear (the LDAP bulk load,
@@ -141,4 +150,11 @@ data "aws_cloudwatch_log_group" "containers" {
 # which the deployer is deliberately not allowed to do.
 data "aws_iam_policy" "workload_boundary" {
   arn = "arn:${local.partition}:iam::${local.account_id}:policy/${var.name}-workload-boundary"
+}
+
+# The ceiling the ECS infrastructure role must carry (iam.tf, #214) — a
+# boundary of its own, so that no task role can ever be given what attaching a
+# volume takes. Also by ARN.
+data "aws_iam_policy" "ecs_infrastructure_boundary" {
+  arn = "arn:${local.partition}:iam::${local.account_id}:policy/${var.name}-ecs-infrastructure-boundary"
 }

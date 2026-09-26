@@ -81,6 +81,12 @@ locals {
     # (variables.tf, reset-environment.js).
     LDAP_MAX_ENTRIES     = tostring(var.ldap_max_entries)
     STS_APPLICATIONS_MAX = tostring(var.applications_max)
+
+    # WHERE A RISK DATASET UPLOAD IS WRITTEN (#214): the task's own EBS volume,
+    # below. Set explicitly, although it is the setting's default resolved,
+    # so that the mount and the setting are read side by side here rather than
+    # agreeing by coincidence with a default in another repository file.
+    STS_RISK_UPLOAD_DIRECTORY = local.risk_upload_dir
     },
     # THE PUBLIC CERTIFICATE, WHERE THERE IS ONE. `cert-init` has written both
     # files into the shared volume before this container is allowed to start, so
@@ -128,6 +134,25 @@ resource "aws_ecs_task_definition" "node" {
     content {
       name = local.tls_volume
     }
+  }
+
+  # THE RISK DATASET UPLOAD VOLUME (#214): an Amazon EBS volume CONFIGURED AT
+  # LAUNCH — the task definition names it and says nothing else; its size,
+  # type and key are the SERVICE's `volume_configuration` below, and ECS
+  # creates it as the task starts and deletes it as the task stops. Temporary
+  # space, therefore, holding no state: a file in it is deleted when its
+  # import ends however it ends, and a task that dies mid-import takes the
+  # volume with it (the version it was loading is refused by the
+  # `risk.stalled-imports` job, risk/CLAUDE.md).
+  #
+  # UNCONDITIONAL, unlike the TLS volume above, and so a new revision in
+  # `dev` and `ci` too: the upload job runs against every environment the
+  # suite is pointed at, and a node without the volume would write the upload
+  # onto the task's 20 GiB of ephemeral storage, shared with the image layers
+  # — which is the thing this volume exists to prevent.
+  volume {
+    name                = local.risk_upload_volume
+    configure_at_launch = true
   }
 
   container_definitions = jsonencode(concat(local.public_name ? [
@@ -179,7 +204,7 @@ resource "aws_ecs_task_definition" "node" {
         }
       }
     },
-    merge({
+    {
       name      = "mock-sts"
       image     = "${local.ecr_repository_url}:${var.image_tag}"
       essential = true
@@ -228,6 +253,17 @@ resource "aws_ecs_task_definition" "node" {
         startPeriod = 180
       }
       ulimits = [{ name = "nofile", softLimit = 65536, hardLimit = 65536 }]
+      # THE UPLOAD VOLUME, READ-WRITE: the node writes, hashes, reads back
+      # and deletes each uploaded file here (#214). AND THE CERTIFICATE,
+      # READ-ONLY, where there is one — the node reads it and must never be
+      # able to change it. `mountPoints` was merged in only with a public name
+      # until the upload volume made it unconditional.
+      mountPoints = concat(
+        [{ sourceVolume = local.risk_upload_volume, containerPath = local.risk_upload_dir, readOnly = false }],
+        local.public_name ? [
+          { sourceVolume = local.tls_volume, containerPath = local.tls_dir, readOnly = true },
+        ] : [],
+      )
       logConfiguration = {
         logDriver = "awslogs"
         options = {
@@ -236,16 +272,7 @@ resource "aws_ecs_task_definition" "node" {
           awslogs-stream-prefix = "${var.environment}-${each.key}"
         }
       }
-      },
-      # MERGED IN RATHER THAN WRITTEN ABOVE AS `[]`, for the reason the volume
-      # is `dynamic`: an empty `mountPoints` where there was no key at all is
-      # a difference, and `dev` and `ci` are meant to see none. READ-ONLY —
-      # the node reads the certificate and must never be able to change it.
-      local.public_name ? {
-        mountPoints = [
-          { sourceVolume = local.tls_volume, containerPath = local.tls_dir, readOnly = true },
-        ]
-    } : {}),
+    },
   ]))
 }
 
@@ -275,6 +302,32 @@ resource "aws_ecs_service" "first" {
     assign_public_ip = true
   }
 
+  # THE UPLOAD VOLUME'S SHAPE (#214), for the task definition's volume that is
+  # configured at launch. gp3, ENCRYPTED WITH THE PROJECT KEY — the one that
+  # already seals the secrets, RDS and the logs — rather than EBS's default
+  # key, so the one key policy and its rotation cover it too. ECS creates it
+  # through the infrastructure role (iam.tf) and deletes it when the task
+  # stops; a service-managed volume is always deleted on termination.
+  volume_configuration {
+    name = local.risk_upload_volume
+    managed_ebs_volume {
+      role_arn         = aws_iam_role.ecs_infrastructure.arn
+      encrypted        = true
+      kms_key_id       = data.aws_kms_key.main.arn
+      volume_type      = "gp3"
+      size_in_gb       = var.risk_upload_volume_gib
+      throughput       = var.risk_upload_volume_throughput
+      iops             = var.risk_upload_volume_iops
+      file_system_type = "xfs"
+      # The service's tags (Project, Environment, …) on the volume, so the
+      # bill and a search by tag find it beside the rest of the environment.
+      tag_specifications {
+        resource_type  = "volume"
+        propagate_tags = "SERVICE"
+      }
+    }
+  }
+
   dynamic "load_balancer" {
     for_each = local.published_ports
     content {
@@ -290,6 +343,10 @@ resource "aws_ecs_service" "first" {
     aws_lb_listener.ports,
     aws_iam_role_policy.execution,
     aws_iam_role_policy.task,
+    # The upload volume is created and deleted through this role, so its
+    # policy must be in place before the first task and stay until the last
+    # one has stopped — which is also the order a destroy then takes.
+    aws_iam_role_policy.ecs_infrastructure,
     aws_secretsmanager_secret_version.main,
     aws_vpc_security_group_ingress_rule.database_from_nodes,
     aws_vpc_security_group_egress_rule.nodes_to_database,
@@ -323,6 +380,32 @@ resource "aws_ecs_service" "others" {
     subnets          = [aws_subnet.public[each.value].id]
     security_groups  = [aws_security_group.nodes.id]
     assign_public_ip = true
+  }
+
+  # THE UPLOAD VOLUME'S SHAPE (#214), for the task definition's volume that is
+  # configured at launch. gp3, ENCRYPTED WITH THE PROJECT KEY — the one that
+  # already seals the secrets, RDS and the logs — rather than EBS's default
+  # key, so the one key policy and its rotation cover it too. ECS creates it
+  # through the infrastructure role (iam.tf) and deletes it when the task
+  # stops; a service-managed volume is always deleted on termination.
+  volume_configuration {
+    name = local.risk_upload_volume
+    managed_ebs_volume {
+      role_arn         = aws_iam_role.ecs_infrastructure.arn
+      encrypted        = true
+      kms_key_id       = data.aws_kms_key.main.arn
+      volume_type      = "gp3"
+      size_in_gb       = var.risk_upload_volume_gib
+      throughput       = var.risk_upload_volume_throughput
+      iops             = var.risk_upload_volume_iops
+      file_system_type = "xfs"
+      # The service's tags (Project, Environment, …) on the volume, so the
+      # bill and a search by tag find it beside the rest of the environment.
+      tag_specifications {
+        resource_type  = "volume"
+        propagate_tags = "SERVICE"
+      }
+    }
   }
 
   dynamic "load_balancer" {
