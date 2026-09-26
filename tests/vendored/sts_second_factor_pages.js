@@ -424,12 +424,24 @@ async function theReportFollowsTheSettings() {
     });
 
     // THE FAILURE MODE THAT IS NOT AN ERROR: a name the verifier does not
-    // know. `webauthn_policy.js` asserts the module drops it; this asserts the
-    // page never reports it as offered, because a client author reading this
+    // know. Since #86 the WRITE is refused — the setting's csvValues are the
+    // verifier's own names — and `webauthn_policy.js` asserts the module
+    // still drops one that arrives by a layer nobody checks on write. This
+    // asserts the refusal names the setting, and that the page still never
+    // reports the name as offered, because a client author reading this
     // page is deciding what to test against.
-    await ok("/config/set-many",
-      { "webauthn.algorithms": "ES256,NOSUCHALG" },
-      "set an algorithm list naming something unverifiable");
+    const refusedWrite = await post("/config/set-many",
+      { "webauthn.algorithms": "ES256,NOSUCHALG" });
+    check("A WRITE NAMING AN ALGORITHM THE VERIFIER CANNOT CHECK IS REFUSED, " +
+          "BY NAME (#86)", function () {
+      assert.ok(refusedWrite.status >= 400 && refusedWrite.status < 500,
+        "set-many answered " + refusedWrite.status + " " +
+        refusedWrite.raw.slice(0, 300));
+      assert.ok(refusedWrite.raw.indexOf("webauthn.algorithms") >= 0 &&
+                refusedWrite.raw.indexOf("NOSUCHALG") >= 0,
+        "the refusal should name the setting and the value: " +
+        refusedWrite.raw.slice(0, 300));
+    });
     const bad = await get("/webauthn");
     check("AN ALGORITHM THE VERIFIER CANNOT CHECK IS NEVER REPORTED AS " +
           "OFFERED — it would produce a credential that enrols perfectly and " +
@@ -437,7 +449,8 @@ async function theReportFollowsTheSettings() {
       const offered = bad.body.status.algorithms
         .filter(function (a) { return a.offered; })
         .map(function (a) { return a.name; });
-      assert.deepStrictEqual(offered, ["ES256"],
+      assert.deepStrictEqual(offered, ["EdDSA"],
+        "the refused write left the list it was given before (EdDSA), and " +
         "the report offers " + offered.join(", "));
       assert.ok(!bad.body.status.algorithms.some(function (a) {
         return a.name === "NOSUCHALG";

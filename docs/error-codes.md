@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3613** of them, in **39** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3662** of them, in **39** subsystems.
 
 ## Where a code appears
 
@@ -51,23 +51,23 @@ is an ordinary outcome.
 
 * [HTTP front door (`STS-HTTP`)](#sts-http) — 18
 * [PROXY protocol (`STS-PROXY`)](#sts-proxy) — 9
-* [Service core (`STS-CORE`)](#sts-core) — 61
+* [Service core (`STS-CORE`)](#sts-core) — 62
 * [Worker pools (`STS-WORKER`)](#sts-worker) — 43
 * [Persistence and coordination (`STS-STORE`)](#sts-store) — 62
 * [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 28
 * [Scheduler (`STS-SCHED`)](#sts-sched) — 16
 * [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 79
-* [Certificate authority (`STS-PKI`)](#sts-pki) — 189
+* [Certificate authority (`STS-PKI`)](#sts-pki) — 190
 * [Certificate enrollment core (`STS-ENROLL`)](#sts-enroll) — 51
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 72
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 26
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 47
 * [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 249
-* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 619
+* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 662
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 97
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 21
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 16
-* [Federation (`STS-FED`)](#sts-fed) — 133
+* [Federation (`STS-FED`)](#sts-fed) — 134
 * [OpenID Federation (`STS-OIDFED`)](#sts-oidfed) — 66
 * [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 164
 * [LDAP directory (`STS-LDAP`)](#sts-ldap) — 84
@@ -82,11 +82,11 @@ is an ordinary outcome.
 * [Device register (`STS-DEVICE`)](#sts-device) — 38
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 74
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 32
-* [Admin console (`STS-ADMIN`)](#sts-admin) — 198
-* [Management API (`STS-API`)](#sts-api) — 73
+* [Admin console (`STS-ADMIN`)](#sts-admin) — 199
+* [Management API (`STS-API`)](#sts-api) — 74
 * [User portal (`STS-PORTAL`)](#sts-portal) — 75
 * [Sign-out (`STS-LOGOUT`)](#sts-logout) — 7
-* [Registries (`STS-REG`)](#sts-reg) — 131
+* [Registries (`STS-REG`)](#sts-reg) — 132
 * [Protocol debugger (`STS-DBG`)](#sts-dbg) — 28
 
 ## STS-HTTP
@@ -203,6 +203,7 @@ Raised from: server.js, common/protocol_stack.ts, common/config.js, common/confi
 | `STS-CORE-0105` | The service did not start: the appconfig file or the environment still names a setting removed on 2026-09-23 (#171) — gnap.pushAllowInsecure, ssf.pushAllowInsecure, federation.outboundAllowInsecure or xacml.pepNotifyAllowInsecure. | none — the process exits |
 | `STS-CORE-0106` | A development-only setting — one of those STS-CORE-0103 lists, or an application attribute overriding one (#181) — is stored in a realm that is in product mode, and is ignored: its default is in force. Logged once per process and setting or attribute (#104). | none — a warning in the log |
 | `STS-CORE-0107` | A trust realm id is an EST label (a certificate profile). /.well-known/est/<realm>/ and /.well-known/est/<label>/ share one path position (#251), so a realm may not be called by a label's name. | the caller's refusal (errors on a console or /admin-api reply) |
+| `STS-CORE-0108` | The service did not start: a value in the environment, the appconfig file or env/defaults.js fails the check a console or API write of it would (a value outside an enum or a list's csvValues, a number out of bounds, a malformed boolean) — #86. | — |
 
 ## STS-WORKER
 
@@ -674,6 +675,7 @@ Raised from: common/pki.js, common/pki_authoring.ts, common/pki_revocation.js, c
 | `STS-PKI-0200` | A certificate authority build named an alternative key algorithm (pki.alternativeKeyAlgorithm, or altKeyAlg on the form) that is not a pure post-quantum signature algorithm this service generates, nor "none" (#68). | console: the page's error list; /admin-api: HTTP 400 { ok: false, errors } |
 | `STS-PKI-0201` | A certificate carries an ITU-T X.509 clause 9.8 alternative signature that does not verify under its issuer's alternative key (any path: this realm's own, an uploaded chain, a registered root), or — on a path to this realm's own hierarchy — cannot be checked (#68). | the verifier's refusal: whatever the certificate was presented for is refused as an untrusted certificate |
 | `STS-PKI-0202` | A certificate on a path to this realm's own hierarchy carries no alternative signature although its issuer holds an alternative (post-quantum) key — a hybrid path presented as classical, the downgrade #68 refuses. | the verifier's refusal: whatever the certificate was presented for is refused as an untrusted certificate |
+| `STS-PKI-0203` | A Certificate & Key Configuration pane field that takes a closed set (pki_profile, pki_pq_mode, pki_key_alg, pki_alt_key_alg, pki_ks_format) held a value outside it (#86). | HTTP 400 page or { ok: false, errors } |
 
 ## STS-ENROLL
 
@@ -1688,7 +1690,7 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0633` | A Native SSO exchange's device secret is bound to a sign-on session that has ended, that is not the ID Token's sid, or that is no longer the device owner's (#130). | invalid_request (HTTP 400) |
 | `STS-OAUTH-0634` | A client not enabled for Native SSO asked the revocation endpoint to revoke a device secret (#130). Nothing was revoked. | invalid_grant (HTTP 400) |
 | `STS-OAUTH-0635` | A CIBA request was refused because the person already has oauth2.cibaMaxPendingPerPerson requests waiting (#131, section 14). | access_denied (HTTP 403) |
-| `STS-OAUTH-0636` | A CIBA ping or push to a client notification endpoint was given up after its attempts, or could not be sent at all (#131). | none — the client polls, or never learns |
+| `STS-OAUTH-0636` | A CIBA notification endpoint answered a status other than 2xx or 400 — 5xx, 408 and 429 are retried, the rest are not (#131; the shared outbound queue since #151). | none — the client polls, or never learns |
 | `STS-OAUTH-0637` | The CIBA Backchannel Authentication Endpoint failed unexpectedly (#131). | server_error (HTTP 500) |
 | `STS-OAUTH-0638` | A CIBA request or token request arrived in a realm where oauth2.ciba is off (#131). | invalid_request (HTTP 404) or unsupported_grant_type |
 | `STS-OAUTH-0639` | A CIBA authentication request was malformed (#131). | invalid_request (HTTP 400) |
@@ -1760,6 +1762,18 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0705` | An authorization request asked for bound_key outside response_type=code (OpenID Connect Key Binding, #150). | redirect {error: invalid_request} |
 | `STS-OAUTH-0706` | A refresh of a grant whose ID Token is key-bound carried no proof from that key (OpenID Connect Key Binding, #150). | HTTP 400 {error: invalid_dpop_proof} |
 | `STS-OAUTH-0707` | A key-bound ID Token was presented at token exchange without a DPoP proof from the key its cnf names (OpenID Connect Key Binding section 7, #150). | HTTP 400 {error: invalid_dpop_proof} |
+| `STS-OAUTH-0708` | A CIBA ping or push was not sent because federation.outbound is off (#151, the shared outbound queue). | none (a dead letter) |
+| `STS-OAUTH-0709` | A CIBA ping or push was not sent because the client's notification endpoint cannot be dialled (#151). | none (a dead letter) |
+| `STS-OAUTH-0710` | A CIBA ping or push was refused because the notification endpoint resolves to an internal address in product mode (#151). | none (a dead letter) |
+| `STS-OAUTH-0711` | A CIBA notification endpoint's host name did not resolve (#151). | none (a dead letter) |
+| `STS-OAUTH-0712` | A CIBA notification endpoint answered with a redirect, which is not followed (#151). | none (a dead letter) |
+| `STS-OAUTH-0713` | A CIBA ping or push could not be built (#151). | none (a dead letter) |
+| `STS-OAUTH-0714` | A CIBA ping or push timed out; retried with backoff (#151). | none (retried, then a dead letter) |
+| `STS-OAUTH-0715` | A CIBA ping or push failed to connect; retried with backoff (#151). | none (retried, then a dead letter) |
+| `STS-OAUTH-0716` | A CIBA notification endpoint answered 400, which is not retried (#151). | none (a dead letter) |
+| `STS-OAUTH-0717` | A CIBA notification attempt was deferred because the claim store was unavailable (#151). | none (the sweep tries again) |
+| `STS-OAUTH-0718` | A CIBA ping or push was still unsent past oauth2.cibaNotifyRetentionS and was dead-lettered (#151). | none (a dead letter) |
+| `STS-OAUTH-0719` | The CIBA notification summary line: some were dead- lettered or deferred since the last one (#151). | none (a log line) |
 | `STS-OAUTH-0720` | A request carried more than one OAuth-Client-Attestation header, or one that is not a JWT in token68 syntax (#229, section 7.1 item 1). | token / PAR / introspection / revocation {error: invalid_client} (HTTP 401) |
 | `STS-OAUTH-0721` | The OAuth-Client-Attestation header does not hold a JWT whose header can be read (#229). | token / PAR / introspection / revocation {error: invalid_client} (HTTP 401) |
 | `STS-OAUTH-0722` | A Client Attestation's typ is not oauth-client-attestation+jwt (#229, section 4). | token / PAR / introspection / revocation {error: invalid_client} (HTTP 401) |
@@ -1792,6 +1806,37 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0749` | An authorization code pushed under a client attestation was redeemed without an attestation of the same client instance key (#229, section 10.4). | token {error: invalid_grant} (HTTP 400) |
 | `STS-OAUTH-0750` | oauth2.clientAttestationTrustAnchors holds a certificate that cannot be read, or oauth2.clientAttestationTrustedKeys is not a JWKS or holds a symmetric or private key; the unreadable part is ignored (#229). | log only |
 | `STS-OAUTH-0751` | A client that declared attest_jwt_client_auth or attest_jwt_client_auth_dpop sent no OAuth-Client-Attestation header, or did not authenticate with it (#229, section 7.5). | token / PAR / introspection / revocation {error: invalid_client} (HTTP 401) |
+| `STS-OAUTH-0752` | The CIBA notification sweep failed in a realm (#151). | none (a log line) |
+| `STS-OAUTH-0753` | An operator's retry of a CIBA notification was refused: unknown, not a dead letter, or no endpoint now (#151). | console / /admin-api refusal (HTTP 400) |
+| `STS-OAUTH-0754` | An OpenID Provider Command was not sent because federation.outbound is off (#151). | none (a dead letter) |
+| `STS-OAUTH-0755` | An OpenID Provider Command was not sent because the client's command_endpoint cannot be dialled (#151). | none (a dead letter) |
+| `STS-OAUTH-0756` | An OpenID Provider Command was refused because the command_endpoint resolves to an internal address in product mode (#151). | none (a dead letter) |
+| `STS-OAUTH-0757` | A command_endpoint's host name did not resolve (#151). | none (a dead letter) |
+| `STS-OAUTH-0758` | A command_endpoint answered with a redirect, which is not followed (#151). | none (a dead letter) |
+| `STS-OAUTH-0759` | A Command Token could not be built or signed — the client registered alg none, or signing failed (#151). | none (a dead letter) |
+| `STS-OAUTH-0760` | An OpenID Provider Command timed out; retried with backoff (#151). | none (retried, then a dead letter) |
+| `STS-OAUTH-0761` | An OpenID Provider Command failed to connect; retried with backoff (#151). | none (retried, then a dead letter) |
+| `STS-OAUTH-0762` | A command_endpoint answered a status the draft does not name — 5xx, 408 and 429 are retried, the rest are not (#151). | none (a dead letter) |
+| `STS-OAUTH-0763` | A command attempt was deferred because the claim store was unavailable (#151). | none (the sweep tries again) |
+| `STS-OAUTH-0764` | An OpenID Provider Command was still unsent past oauth2.commandRetentionS and was dead-lettered (#151). | none (a dead letter) |
+| `STS-OAUTH-0765` | The provider commands summary line: some were dead- lettered or deferred since the last one (#151). | none (a log line) |
+| `STS-OAUTH-0766` | The provider commands sweep failed in a realm (#151). | none (a log line) |
+| `STS-OAUTH-0767` | No issuer is known for a Command Token: set global.publicBaseUrl, or send one command from the console so the realm's address is learned (#151). | none (a dead letter or a failed run) |
+| `STS-OAUTH-0768` | A relying party answered a command with invalid_request (section 3) (#151). | none (a dead letter) |
+| `STS-OAUTH-0769` | A relying party answered a command with unrecognized_provider: it does not know this issuer (#151). | none (a dead letter) |
+| `STS-OAUTH-0770` | A relying party answered unsupported_command (#151). | none (a dead letter) |
+| `STS-OAUTH-0771` | A relying party answered incompatible_state: the account was not in a state the command may start from; the state it gave is recorded (#151). | none (a dead letter) |
+| `STS-OAUTH-0772` | A relying party answered access_denied to a migrate command (#151). | none (a dead letter) |
+| `STS-OAUTH-0773` | A relying party answered authentication_not_transferable to a migrate command (#151). | none (a dead letter) |
+| `STS-OAUTH-0774` | An operator's retry of a command delivery was refused: unknown, not a dead letter, or no command_endpoint now (#151). | console / /admin-api refusal (HTTP 400) |
+| `STS-OAUTH-0775` | A relying party's answer to a command is not the draft's: no matching sub and account_state, a metadata answer without commands_supported or context, or a stream that is not text/event-stream (#151). | none (a dead letter or a failed run) |
+| `STS-OAUTH-0776` | A command was not sent: provider commands are off, the command is unknown, the client has no command_endpoint, the person has no subject there, or the client requires an aud_sub none is recorded for (#151). | console / /admin-api refusal (HTTP 400) |
+| `STS-OAUTH-0777` | A tenant command's stream could not be resumed: the relying party answered last-event-id-unavailable (#151). | none (a failed run) |
+| `STS-OAUTH-0778` | A tenant command's stream ended without command- complete after every resumption (#151). | none (a failed run) |
+| `STS-OAUTH-0779` | A call to /oauth2/commands/callback carried no callback token, or an unknown or expired one (#151). | HTTP 401 {error: invalid_token} with WWW-Authenticate |
+| `STS-OAUTH-0780` | A call to /oauth2/commands/callback was malformed: an async result not naming the command's sub and an account_state, or a command_requested other than metadata or audit_tenant (#151). | HTTP 400 {error: invalid_request} |
+| `STS-OAUTH-0781` | An automatic OpenID Provider Command could not be queued after a directory change or a sign-out; the change stands (#151). | none (a log line) |
+| `STS-OAUTH-0782` | The mock relying party's command endpoint refused a command — the development test control answering as a relying party would (#151). | HTTP 400, 401, 409 or 404 {error} |
 
 ## STS-SAML
 
@@ -2095,6 +2140,7 @@ Raised from: federation/.
 | `STS-FED-0147` | A partner's SAML Response or wresult carried an encrypted assertion beside another assertion; which one a signature covered and which one was read must not be a choice. | HTTP 400 page |
 | `STS-FED-0148` | A relationship whose OpenID Provider is discovered through an OpenID Federation could not resolve it to its fedTrustAnchor (#134). | HTTP 502 page |
 | `STS-FED-0149` | An OpenID Provider resolved through an OpenID Federation cannot be used: no openid_provider metadata, an issuer that is not its Entity Identifier, no https endpoints, no automatic registration, or no keys (#134). | HTTP 502 page |
+| `STS-FED-0150` | A federation relationship field that takes a closed set of values (fedAuthnMechanism, fedBinding, fedResponseType, or any row with an enum) was set to a value outside it (#86). | HTTP 400 (console and API) |
 
 ## STS-OIDFED
 
@@ -3710,6 +3756,7 @@ Raised from: admin-ui/ (except pki_admin.js), admin-core/.
 | `STS-ADMIN-0817` | A set-aud-sub act named no person or no client, a client_id with spaces, or an aud_sub over 255 characters or with control characters (#148). | none (a console or management API refusal, HTTP 400) |
 | `STS-ADMIN-0818` | A set-aud-sub act named a person with no entry in this realm, or the directory would not write it (#148). | none (a console or management API refusal, HTTP 400) |
 | `STS-ADMIN-0819` | set-attribute, add-attribute or remove-attribute was refused and ldap/person_editor.ts named no more specific reason (#228). | HTTP 400 (API) or a 303 with error= |
+| `STS-ADMIN-0820` | A console form POST held a value outside the closed set the mirroring /admin-api operation's enum declares (#86). | HTTP 400 page |
 
 ## STS-API
 
@@ -3727,7 +3774,7 @@ Raised from: mgmt-api/.
 | `STS-API-0006` | In product mode with the token gate off, the XACML access policy refused a management API caller who does hold a console role. | HTTP 403 forbidden |
 | `STS-API-0007` | In product mode with the token gate off, a management API request arrived with nobody signed in. | HTTP 401 JSON (HTTP 403 page for a browser) |
 | `STS-API-0008` | In product mode with the token gate off, a signed-in management API caller did not hold the console role the method needs. | HTTP 403 forbidden (HTTP 403 page for a browser) |
-| `STS-API-0009` | A management API request body did not match the operation's JSON Schema (an unknown member or a wrong type). | HTTP 400 { ok: false, errors } |
+| `STS-API-0009` | A management API request body did not match the operation's JSON Schema (an unknown member, a wrong type, or a value outside a closed set its enum declares — #86). | HTTP 400 { ok: false, errors } |
 | `STS-API-0010` | A management API request schema would not compile at startup, so that operation runs unvalidated. | — |
 | `STS-API-0011` | The crypto reporter slot that admin-ui/crypto_metadata.ts fills was not installed, so the crypto report, the key list or a key export could not be answered. | HTTP 503 { ok: false, errors } |
 | `STS-API-0012` | The database report could not be built (the probe run rejected). | HTTP 500 { ok: false, errors } |
@@ -3792,6 +3839,7 @@ Raised from: mgmt-api/.
 | `STS-API-0121` | A DPoP proof presented at /admin-api did not verify, and the proof check reported no code of its own. | invalid_dpop_proof (HTTP 401) |
 | `STS-API-0122` | A management API access token was refused because this service has revoked or disowned it, or the person it was issued to has a disabled account. | invalid_token (HTTP 401) |
 | `STS-API-0123` | A management API access token carried the admin scope an operation needs, and the client it was issued to does not declare that scope in its oauthAllowedScope (in the realm that issued it). | HTTP 403 forbidden |
+| `STS-API-0124` | A management API query parameter held a value outside the closed set its operation's enum declares (#86). | HTTP 400 { ok: false, errors } |
 
 ## STS-PORTAL
 
@@ -4032,6 +4080,7 @@ Raised from: common/applications.js, common/consent.ts, common/app_permissions.t
 | `STS-REG-0196` | A write of gnapMtlsTrust=pinned on an application was refused because the realm holds GNAP mutual TLS to a PKI (gnap.mtlsTrust resolves to pki); an entry may be stricter than the realm, never weaker (#107). | console: the page's error list; /admin-api: HTTP 400 |
 | `STS-REG-0197` | A registration's CIBA metadata was refused: an unknown backchannel_token_delivery_mode, no https notification endpoint for ping or push, a signing algorithm that is not asymmetric, or a user code parameter that is not a boolean (#131). | invalid_client_metadata (HTTP 400) |
 | `STS-REG-0198` | FAPI-CIBA: a registration under a FAPI profile asked for the push delivery mode, which the profile does not allow (#142). | invalid_client_metadata (HTTP 400) |
+| `STS-REG-0199` | A command_endpoint (OpenID Provider Commands, #151) was not an https URL with no fragment, at registration or update (a console or API write is refused under STS-REG-0071). | HTTP 400 {error: invalid_client_metadata} |
 
 ## STS-DBG
 

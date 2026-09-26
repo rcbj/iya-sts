@@ -6350,9 +6350,24 @@ upload; three things are this file's:
   asks the `/admin/risk` rule with them, so a realm administrator can upload
   their own realm's lists and nothing else, as they can paste them.
 
+## A FORM FIELD OUTSIDE ITS CLOSED SET IS REFUSED AT THE GATE (#86, 2026-09-26)
+
+A middleware beside the console query check, after the gate (so a caller who
+may not write is told that first) and before every console route, refuses a
+form POST whose field holds a value outside the closed set the mirroring
+`/admin-api` operation declares — 400 `invalid_value`, `STS-ADMIN-0820`, with
+`common/closed_sets.ts`'s sentence. This page's forms carry no copy of any
+set: the management API registers each operation's enums under the console
+pages its `mirrors` names, keyed by the `action` the form posts, and a value
+added to an enum there is accepted here the moment it is. A streamed upload
+(#215) is not read. The design, and what is deliberately not an enum, are
+`mgmt-api/CLAUDE.md`'s *Every closed set is held, at every door*; the one
+form the register cannot hold, the PKI pane, is held by
+`PkiAuthoring.closedFieldProblem()`.
+
 ## `/admin/devices`, `/admin/device-registration`, `/admin/devices/monitor`: THE DEVICE REGISTER'S PAGES (#164, #218, 2026-09-26)
 
-One module, `devices_admin.ts` (18o), filed in THREE sections by the filing
+One module, `devices_admin.ts` (18p), filed in THREE sections by the filing
 rule, because the register answers three questions:
 
 - **Directory → Devices** (`/admin/devices`) — *what is in the directory*:

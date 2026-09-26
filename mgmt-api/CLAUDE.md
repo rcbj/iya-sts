@@ -1776,6 +1776,99 @@ body into an answered request.
 `requestBodyTypes` publishes the body as `type: string, format: binary`
 under each type, and `extraResponses` adds statuses beyond 200 and 400.
 
+## EVERY CLOSED SET IS HELD, AT EVERY DOOR (#86, 2026-09-26)
+
+**THE `enum` IS ENFORCED NOW, AND THAT REVERSES A DECISION THIS FILE'S
+VALIDATOR MADE ON 2026-09-06.** `structureOnly()` stripped `enum` (and
+`required`) from the compiled copy, on the rule *the validator never
+duplicates a check the handler already makes better* — and the handler that
+explains itself, `createApplication`'s kinds refusal, was the example. The
+rule is still right; the example was the exception. The #86 audit found
+closed-set fields whose handler silently ignored a value outside the set,
+silently replaced it with a default, or STORED it, and a few where the
+replacement was the dangerous one: an XACML rule whose `effect` was anything
+but exactly `Deny` was written as **Permit**. So:
+
+* **ONE DECLARATION, THE DOCUMENT'S `enum`, AND THREE DOORS.** ajv enforces it
+  on a request body (`STS-API-0009`); `checkQueryEnums()` in the registration
+  loop holds a query parameter's declared enum on a GET or a POST
+  (`STS-API-0124`); and the console gate (`admin-ui/admin.ts`, after the
+  query check) holds a form POST (`STS-ADMIN-0820`). The console has no copy
+  of any set: `registerConsoleClosedSets()` puts each action's top-level enums
+  in `common/closed_sets.ts`'s register under every `POST /admin…` page its
+  `mirrors` names — an action's own `mirrors` winning over its route's, as in
+  the document — and the gate reads the register. A register in a leaf both
+  modules require, NOT a slot (rule 3e): neither calls the other.
+* **ONE SENTENCE AT EVERY DOOR**, `closedSets.sentence()`: the field, the
+  value, how many values it accepts and every one — `"deliver" is "fax",
+  which is not one of the 2 values it accepts: "show", "mail".` That is as
+  good as the kinds sentence it replaces (`sts_admin_api_operations.js` now
+  reads this one, and still holds the named kinds to `GET
+  /applications/new`'s), and it is not ajv's *must be equal to one of the
+  allowed values*, which is useless without the document open.
+* **AN EMPTY STRING IS ABSENT.** `structureOnly()` compiles each enum with
+  `""` added: this API takes form-encoded bodies copied from the console, and
+  an untouched `<select>` posts `name=`. The sentence names the declared set
+  without it. The console and query doors skip an empty value too.
+* **CASE IS EXACT.** Three handlers lower-cased before comparing (`role`,
+  `doors`, a policy `profile`) and PKI's key algorithm too; they are refused
+  now in any other case, because the declared set is what the handler
+  compares and a validator that accepts what the handler then refuses is two
+  answers to one question.
+* **A SET IS READ OFF ITS OWNER, NEVER RETYPED.** `closedLists()` builds the
+  sets the table declares from the constant each handler checks against —
+  `riskDatasets.CATALOGUE`, `mailTemplates.BUILT_IN`, `applications.KIND_IDS`
+  and `editableAttributes()`, `stats.ISSUED_FAMILIES` / `REVOCABLE_KINDS`,
+  `audit`, `delegation`, `usedAssertions`, `issuanceGate.KINDS`,
+  `pki.keyAlgorithms()` / `signatureAlgorithms()` / `USE_CASE_IDS`,
+  `countryCodes.ALPHA2`, `federation.editableFields()`, `xacmlModel.EFFECT`
+  — and three retyped lists had gone stale when the audit read them: the
+  application `kind` filter (8 of 11), `revoke-kind` (no
+  `gnap_access_token`), federation `add-value` (no `fedSubjectGroup` or
+  `fedSubjectDomain`, which the console's own form posts). **One is written
+  out** because its owner cannot be loaded at 19 — CAEP's four
+  `initiating_entity` values (`ssf/ssf_events.js`) — and `tests/closed_sets.js`
+  holds it equal to its owner.
+
+**What is deliberately NOT an enum**, each with its reason: EST's and SCEP's
+`profile` (a closed set, and the ONE case the suite found where the handler's
+refusal is the better one — `checkProfile()` tells a caller who asked for
+`root-ca` that a Root CA is a trust anchor, and the validator runs first, so
+an enum would replace that with a list; `sts_scep_enrollment.js` asserts the
+sentence); a claim-set or
+credential-claim `attributes[]` (LDAP attribute names, which RFC 4512 makes
+case-insensitive, and the handler refuses an unknown one by name); the
+verifier's `format` (the handler turns a form-decoded space back into `+`);
+`config/set`'s `key` and a setting's `value` (a per-key set, which
+`config.js`'s TYPES check holds); `getErrorCodes`'s `subsystem` (a read
+filter that is case-insensitive by design); the XACML function, data type and
+combining-algorithm URIs (a 275-entry library a node's type narrows, refused
+by the editor); the SSF event types a stream delivers (per stream); the
+revocation `ca` and a key `unit`/`slot` (the realm's, at run time); the
+federation `set` `value` (its set depends on `field` — `federation.update()`
+holds a row's own `enum` instead, `STS-FED-0150`); and filters that are read
+off the data (`protocol`, `origin` on the directory, the logout `family`).
+
+**ONE MARKER KEEPS AN ENUM PUBLISHED AND LEAVES IT TO THE HANDLER**:
+`x-refused-by-handler: true` on the property (`REFUSED_BY_HANDLER` in
+`admin_api.ts`, honoured by `closed_sets.ts` and both tests). One property
+carries it: `spiffe/entries/update`'s `field`, whose handler refuses a field
+that records what HAPPENED differently from one that does not exist, and
+`sts_admin_api_operations.js` asserts which a caller met. It is not a way to
+switch the check off where a handler also refuses — nearly every handler does;
+a use needs a refusal the validator cannot say.
+
+**THE PKI PANE IS THE ONE CONSOLE FORM THE REGISTER CANNOT HOLD**: it posts no
+`action` (the pressed button is the action) and its API schema takes any
+member. `PkiAuthoring.closedFieldProblem()` holds its five closed fields
+instead, before any pane action, for both doors (`STS-PKI-0203`) — two of
+them fell back silently to a default before.
+
+`tests/closed_sets.js` holds all of this in process, through the route
+wrapper itself; `tests/vendored/sts_admin_closed_sets.js` (ours) holds the
+running service at every door, discovering every enum from the published
+document.
+
 ## `/admin-api/devices` (#164, #218, 2026-09-26)
 
 Four GETs and one action resource, all `admin-ui/devices_admin.ts`'s own

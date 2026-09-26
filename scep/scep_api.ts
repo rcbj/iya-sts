@@ -45,6 +45,13 @@ const { log, parseBody } = helpers;
 import errorCodes = require('../common/error_codes');
 import InstanceSlot = require('../common/instance_slot');
 
+// THE PROFILE IS DELIBERATELY NOT AN ENUM (#86). It is a closed set, and
+// the handler (`common/cert_enrollment.ts`'s checkProfile()) holds it — and
+// says WHY for the five it refuses on purpose: `root-ca` is a trust anchor,
+// and a caller who asked for one needs that sentence, not "not one of the 9
+// values". The validator runs first, so an enum here would replace it; this
+// is the one case #86 found where the handler's refusal is the better one.
+
 const BASE = '/admin-api';
 
 // What `ScepApi` needs from the rest of the service: the modules this file

@@ -96,6 +96,7 @@ anything heavier.**
 | `ldap/ldap_server.js` | fills `setDirectory()` at its own require time | the ordinary direction, exactly as `applications.js` |
 | `federation/federation_graph.ts` | the graph `/admin/federation/map` is drawn from | the easiest of them: it registers no route itself, and there is nothing in it this module wants |
 | `federation/federation_sp.ts` | the register the four endpoints serve | the ordinary direction; see 4b |
+| `mgmt-api/admin_api.ts` | the editable fields, as the enums of `set`, `add-value` and `remove-value` (#86) | the ordinary direction: a cache hit at 19, after `admin-core` loaded it |
 
 ### AND IT REQUIRES ONE THING BACK — `common/applications.js`, since 2026-08-26
 

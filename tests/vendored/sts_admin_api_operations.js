@@ -1120,29 +1120,32 @@ async function theApplicationsRegistryRoundTrips() {
     "and it should name THIS realm's container, since that is where a create " +
     "made through this prefix lands; it named " + form.body.container);
 
-  // The kinds refusal counts its own list, and the two halves of that sentence
-  // are edited independently — a ninth kind added to the table with the word
-  // "eight" left beside it is a sentence that is wrong about the thing it
-  // exists to explain.
+  // The kinds refusal names the set it holds `kind` to, and says how many
+  // there are. Since #86 it is the management API's closed-set sentence —
+  // the operation's `enum`, which is `applications.KIND_IDS` — rather than
+  // the registry's own, so the count is computed rather than written by
+  // hand; what is still asserted is the thing that matters to a caller: the
+  // kinds it names ARE the kinds GET /applications/new publishes, one table
+  // read through two doors, and the count it gives is the count it lists.
   const badKind = await refused("/applications/create",
     { identifier: "kind-probe-" + REALM, kind: "no-such-kind" },
-    /is not one of the kinds/, "an unknown kind");
+    /which is not one of the \d+ values? it accepts/, "an unknown kind");
   const kindSentence = (badKind.errors || []).join(" ")
-      .match(/The\s+(\S+)\s+are:\s*([^.]+)\./);
+      .match(/"kind" is "no-such-kind", which is not one of the (\d+) values? it accepts: ([^.]+)\./);
   assert.ok(kindSentence,
     "the unknown-kind refusal should name the kinds it knows; it said " +
     (badKind.errors || []).join(" "));
-  const kindsNamed = splitList(kindSentence[2]);
+  const kindsNamed = (kindSentence[2].match(/"[^"]+"/g) || [])
+    .map(function (q) {
+      return q.slice(1, -1);
+    });
   assert.deepStrictEqual(kindsNamed.slice().sort(), kinds.slice().sort(),
     "the kinds the refusal names must be the kinds GET /applications/new " +
     "publishes — they are one table read through two doors.");
-  assert.strictEqual(kindsNamed.length, wordToNumber(kindSentence[1]),
+  assert.strictEqual(kindsNamed.length, Number(kindSentence[1]),
     "the unknown-kind refusal says there are " + kindSentence[1] + " kinds " +
     "and then lists " + kindsNamed.length + " of them: " +
-    kindsNamed.join(", ") + ". The count is written into the sentence by " +
-    "hand and the list is generated from the table, so they part company the " +
-    "day a kind is added — which is the day the sentence is most likely to " +
-    "be read.");
+    kindsNamed.join(", ") + ".");
 
   const identifier = "app-" + names.usernameFor("stsapi-app");
   const created = await ok("/applications/create", {

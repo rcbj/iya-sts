@@ -83,6 +83,34 @@ function withSetting(key, value, fn) {
   }
 }
 
+// A VALUE AS THE APPCONFIG FILE OR THE ENVIRONMENT WOULD GIVE IT (#86). A
+// write through `config.setOverride()` of a value outside the setting's
+// `csvValues` is refused now, so the reader's own defence — dropping a name it
+// does not know — is reached only by a value that arrived by a layer nobody
+// checks on write. `config.value()` is answered for this one key for the
+// length of `fn`, which is exactly that. Every key it is used for is a
+// `csv` row.
+function withReadValue(key, raw, fn) {
+  log.debug("Entering withReadValue().");
+  const was = config.value;
+  // A csv row's parse, done here: `config.parseAs()` runs the same check
+  // the write does and would refuse the value this exists to deliver.
+  const parsed = String(raw).split(',').map(function (part) {
+    return part.trim();
+  }).filter(function (part) {
+    return part.length > 0;
+  });
+  config.value = function (asked) {
+    return asked === key ? parsed : was.apply(config, arguments);
+  };
+  try {
+    log.debug("Leaving withReadValue().");
+    return fn();
+  } finally {
+    config.value = was;
+  }
+}
+
 function aKey(id) {
   log.debug("Entering aKey().");
   log.debug("Leaving aKey().");
@@ -105,7 +133,12 @@ function run(t) {
   }), 'every algorithm offered by default is one the verifier can check',
   policy.algorithmsOffered().join(', '));
 
-  withSetting('webauthn.algorithms', 'ES256,NOSUCHALG,RS256', function () {
+  t.check(config.setOverride('webauthn.algorithms', 'ES256,NOSUCHALG').ok ===
+          false,
+          'A WRITE NAMING AN ALGORITHM THE VERIFIER DOES NOT KNOW IS REFUSED ' +
+          '(#86) — the setting\'s csvValues are the verifier\'s own names',
+          config.text('webauthn.algorithms'));
+  withReadValue('webauthn.algorithms', 'ES256,NOSUCHALG,RS256', function () {
     const offered = policy.algorithmsOffered();
     t.check(offered.indexOf('NOSUCHALG') < 0,
       'AN ALGORITHM THE VERIFIER DOES NOT KNOW IS DROPPED FROM THE OFFER — ' +
@@ -118,7 +151,7 @@ function run(t) {
       'pubKeyCredParams is a preference list', offered.join(', '));
   });
 
-  withSetting('webauthn.algorithms', 'NOSUCHALG,ALSONOT', function () {
+  withReadValue('webauthn.algorithms', 'NOSUCHALG,ALSONOT', function () {
     const offered = policy.algorithmsOffered();
     t.check(offered.length > 0,
       'A SETTING THAT NAMES NOTHING USABLE FALLS BACK RATHER THAN OFFERING ' +

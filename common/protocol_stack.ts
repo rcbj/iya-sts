@@ -1093,7 +1093,19 @@ class ProtocolStack {
                'ClaimsProvidersAdmin');
     this.register(app, require('../oauth-oidc/claims_providers_admin'),
                   'oauth-oidc/claims_providers_admin');
-    // 18o. DEVICES (#164, #218): Directory → Devices, Protocols → Device
+    // 18o. PROVIDER COMMANDS AND OUTBOUND DELIVERIES (#151): /admin/commands
+    // and /admin/deliveries, 18a's placement and 18a's reason. The library
+    // they read (`provider_commands`) is BUILT at 23b-iv, after the
+    // directory, and reached here only through its forwarders at request
+    // time; `mgmt-api/admin_api` reads the API's routes out of
+    // `provider_commands_api`, built below.
+    this.build('oauth-oidc/provider_commands_admin',
+               require('../oauth-oidc/provider_commands_admin'),
+               'ProviderCommandsAdmin');
+    this.register(app, require('../oauth-oidc/provider_commands_admin'),
+                  'oauth-oidc/provider_commands_admin');
+
+    // 18p. DEVICES (#164, #218): Directory → Devices, Protocols → Device
     // registration and Monitoring → Devices, one module for the three. 18a's
     // placement and 18a's reason: the console's shell, the device register
     // (built with `credentials` above) and the authorization server (9),
@@ -1132,6 +1144,9 @@ class ProtocolStack {
     this.build('oauth-oidc/claims_providers_api',
                require('../oauth-oidc/claims_providers_api'),
                'ClaimsProvidersApi');
+    this.build('oauth-oidc/provider_commands_api',
+               require('../oauth-oidc/provider_commands_api'),
+               'ProviderCommandsApi');
     this.build('mgmt-api/admin_api', require('../mgmt-api/admin_api'),
                'AdminApi');
     this.register(app, require('../mgmt-api/admin_api'), 'mgmt-api/admin_api');
@@ -1376,6 +1391,21 @@ class ProtocolStack {
     // reaches is reached lazily, so the order is for a reader.
     this.build('kerberos/krb5_krbtgt_rotation',
                require('../kerberos/krb5_krbtgt_rotation'), 'KrbtgtRotation');
+    // 23b-iv. OPENID PROVIDER COMMANDS (#151): the library — Command Tokens
+    // on the shared outbound queue, tenant runs, the account-state register
+    // — whose wire step registers the `oauth2.command-sweep` job and adds it
+    // to the directory's account observers, so it is built after
+    // `ldap/ldap_server` (21); its one route is the callback. Then the mock
+    // relying party's command endpoint (development only).
+    this.build('oauth-oidc/provider_commands',
+               require('../oauth-oidc/provider_commands'),
+               'ProviderCommands');
+    this.register(app, require('../oauth-oidc/provider_commands'),
+                  'oauth-oidc/provider_commands');
+    this.build('oauth-oidc/command_mock_rp',
+               require('../oauth-oidc/command_mock_rp'), 'CommandMockRp');
+    this.register(app, require('../oauth-oidc/command_mock_rp'),
+                  'oauth-oidc/command_mock_rp');
     // -------------------------------------------------------------------------
     // 23c. XACML 3.0 — the PDP, the policy repository, the PIP, the embedded
     // PEPs and the PAP console.
