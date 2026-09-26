@@ -115,6 +115,7 @@ import realms = require('../common/realms');
 // config.
 import mode = require('../common/mode');
 import audit = require('../common/audit');
+import errorCodes = require('../common/error_codes');
 import events = require('./ssf_events');
 import subjects = require('./ssf_subjects');
 
@@ -183,6 +184,7 @@ interface RiscRegisterDeps {
   config: { value(key: string): any };
   mode: { inventsClaimValues(): boolean; valueInForce(key: string): any };
   audit: { audit(row: object): unknown };
+  errorCodes: { tag(code: string): string };
   events: {
     RISC_PREFIX: string;
     RISC_EVENT_URIS: string[];
@@ -715,18 +717,46 @@ class RiscRegister {
     return row;
   }
 
+  // THE CAP NEVER FORGETS AN OPT-OUT (#260). A row whose holder opted out
+  // (`opt-out-initiated` or `opt-out-effective`) is the only record of a
+  // choice RISC 1.0 section 2.8 makes theirs, and the gate that withholds
+  // their events reads it; dropping it would opt them back in without a word,
+  // which is what #233 stopped a register reset from doing. So the OLDEST
+  // OPTED-IN row goes first (never the one just added), and when nothing
+  // else is left to drop the register stays over its cap and says so
+  // (STS-SSF-0130) rather than choosing whose choice to lose.
   private trim(): number {
-    const { log, config } = this.deps;
+    const { log, config, errorCodes } = this.deps;
     log.debug("Entering RiscRegister.trim().");
     const cap = Number(config.value('risc.maxAccountsTracked')) || 200;
     let dropped = 0;
-    while (register.size > cap) {
-      const oldest = register.keys().next();
-      if (oldest.done) {
-        break;
+    if (register.size > cap) {
+      // Never the NEWEST row either: every caller has just put it there and
+      // goes on writing to it, so evicting it would hand back a row the
+      // register no longer holds (the old trim, oldest first, never did).
+      const ids: string[] = [];
+      const evictable: string[] = [];
+      register.forEach(function (row: RiscRow, id: string) {
+        ids.push(id);
+        if (!row.optOut || row.optOut === 'opt-in') {
+          evictable.push(id);
+        }
+      });
+      const newest = ids[ids.length - 1];
+      if (evictable[evictable.length - 1] === newest) {
+        evictable.pop();
       }
-      register.delete(oldest.value);
-      dropped += 1;
+      while (register.size > cap && dropped < evictable.length) {
+        register.delete(evictable[dropped]);
+        dropped += 1;
+      }
+      if (register.size > cap) {
+        log.warn(errorCodes.tag('STS-SSF-0130') + 'risc: the account ' +
+                 'register holds ' + register.size + ' rows over its cap ' +
+                 'of ' + cap + ' (risc.maxAccountsTracked), and every row ' +
+                 'left is an account holder\'s opt-out, which is never ' +
+                 'dropped. Raise the cap.');
+      }
     }
     log.debug("Leaving RiscRegister.trim(). " + dropped + ' dropped.');
     return dropped;
@@ -2229,6 +2259,7 @@ class RiscRegister {
       config: config,
       mode: mode,
       audit: audit,
+      errorCodes: errorCodes,
       events: events,
       subjects: subjects
     };

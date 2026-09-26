@@ -536,6 +536,42 @@ function run(t) {
   risc.applyToState(risc.get('hal'), P + 'opt-in', {});
   t.equal(risc.clear(), 2, 'once both opt back in, a clear drops them');
   t.equal(risc.list().length, 0, 'the register is empty');
+
+  // -----------------------------------------------------------------------
+  t.log.info('O. the cap never forgets an opt-out (#260)');
+  // -----------------------------------------------------------------------
+  // Until #260 trim() dropped the OLDEST row at risc.maxAccountsTracked
+  // whatever it held, so a register at its cap opted a holder back in
+  // without a word — #233's defect by another door.
+  config.setOverride('risc.maxAccountsTracked', '3');
+  const early = risc.rowFor('ivy', { iss: 'https://sts.example.com' });
+  risc.applyToState(early, P + 'opt-out-initiated', {});
+  risc.applyToState(early, P + 'opt-out-effective', {});
+  const pendingEarly = risc.rowFor('jan', { iss: 'https://sts.example.com' });
+  risc.applyToState(pendingEarly, P + 'opt-out-initiated', {});
+  risc.rowFor('kim', { iss: 'https://sts.example.com' });
+  risc.rowFor('lou', { iss: 'https://sts.example.com' });
+  t.equal(risc.list().map(function (row) {
+    return row.accountId;
+  }).sort().join(','), 'ivy,jan,lou',
+          'OVER THE CAP THE OLDEST OPTED-IN ROW GOES (kim), not the older ' +
+          'opt-outs ahead of it');
+  t.equal(risc.gate(risc.get('ivy'), P + 'account-disabled').send, false,
+          'and ivy\'s opt-out still withholds her events');
+  risc.applyToState(risc.get('lou'), P + 'opt-out-initiated', {});
+  risc.rowFor('max', { iss: 'https://sts.example.com' });
+  t.equal(risc.list().length, 4,
+          'WHEN EVERY OTHER ROW IS AN OPT-OUT the register stays over its ' +
+          'cap (STS-SSF-0130) rather than choose whose choice to lose; ' +
+          'only max, opted in, could go, and max is the row just made');
+  t.check(!!risc.get('ivy') && !!risc.get('jan') && !!risc.get('lou'),
+          'all three opt-outs are kept');
+  config.clearOverride('risc.maxAccountsTracked');
+  ['ivy', 'jan', 'lou'].forEach(function (id) {
+    risc.applyToState(risc.get(id), P + 'opt-in', {});
+  });
+  risc.clear();
+  t.equal(risc.list().length, 0, 'the register is empty again');
   log.debug("Leaving run().");
 }
 

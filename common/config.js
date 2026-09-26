@@ -12082,7 +12082,9 @@ const SETTINGS = [
     label: 'Accounts tracked', env: 'STS_RISC_MAX_ACCOUNTS_TRACKED',
     type: 'int', dflt: 200, runtime: true,
     description: 'How many accounts the RISC register holds before the ' +
-                 'oldest is dropped. It outlives the ACCOUNT it describes ' +
+                 'oldest opted-in row is dropped. A row whose holder opted ' +
+                 'out is never dropped (#260): the register stays over the ' +
+                 'cap instead and logs STS-SSF-0130. It outlives the ACCOUNT it describes ' +
                  'on purpose and more starkly than CAEP\'s register does: a ' +
                  'purged account is gone from the directory entirely, and ' +
                  'its row is the only remaining evidence that this service ' +

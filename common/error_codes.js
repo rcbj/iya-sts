@@ -12488,6 +12488,12 @@ const CODES = [
       'spiffe-authority-rotated or tls-certificate-changed, #245) could not ' +
       'be transmitted after the key moved; the change itself stands.',
     spec: 'none — logged; nothing is sent to a receiver' },
+  { code: 'STS-SSF-0130',
+    summary: 'The RISC account register is over risc.maxAccountsTracked and ' +
+      'every row left is an account holder\'s opt-out (#260), which is ' +
+      'never dropped to make room: RISC 1.0 section 2.8 makes the choice ' +
+      'theirs. The register stays over its cap until the cap is raised.',
+    spec: 'none — logged; the opt-outs are kept' },
   // ===== RISK ==============================================================
   { code: 'STS-RISK-0001',
     summary: 'A dataset import was refused before anything was loaded: the ' +

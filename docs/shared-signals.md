@@ -580,7 +580,7 @@ types from what a stream may ask for.
 | `risc.reasonLanguage` | `STS_RISC_REASON_LANGUAGE` | `en` | yes | The language tag of the reason members on `credential-compromise`. |
 | `risc.includeReasons` | `STS_RISC_INCLUDE_REASONS` | `true` | yes | Whether `credential-compromise` carries its optional reason members. |
 | `risc.omitEventTimestamp` | `STS_RISC_OMIT_EVENT_TIMESTAMP` | `false` | yes | Deliberate defect: leaves `event_timestamp` off `credential-compromise`. |
-| `risc.maxAccountsTracked` | `STS_RISC_MAX_ACCOUNTS_TRACKED` | `200` | yes | The size of the RISC account register. The oldest row is dropped first. |
+| `risc.maxAccountsTracked` | `STS_RISC_MAX_ACCOUNTS_TRACKED` | `200` | yes | The size of the RISC account register. The oldest opted-in row is dropped first. A row whose holder opted out is never dropped; the register stays over the cap and logs `STS-SSF-0130` instead. |
 | `risc.eventsPerAccount` | `STS_RISC_EVENTS_PER_ACCOUNT` | `25` | yes | How many recent events a register row lists. |
 | `risc.historyPerAccount` | `STS_RISC_HISTORY_PER_ACCOUNT` | `10` | yes | How many credential-compromise and identifier-change records a row keeps. |
 
