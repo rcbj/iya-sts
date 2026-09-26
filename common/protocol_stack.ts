@@ -335,6 +335,11 @@ class ProtocolStack {
                'RealmChooser');
     this.build('ssf/account_signals', require('../ssf/account_signals'),
                'AccountSignals');
+    // #244, #245: what the service's own keys and certificate hierarchy say
+    // over Shared Signals when they move. A library in account_signals's
+    // shape — `ssf.ts` read from the cache, everything else lazily.
+    this.build('ssf/service_signals', require('../ssf/service_signals'),
+               'ServiceSignals');
     this.build('saml/authn_context', require('../saml/authn_context'),
                'AuthnContext');
     this.build('common/inetorgperson', require('./inetorgperson'),

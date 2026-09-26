@@ -1133,8 +1133,11 @@ const STS_EVENTS = [
       { name: 'kvno', required: true, type: 'number',
         what: 'The krbtgt key version now current; no earlier one is kept.' },
       { name: 'reason', required: true, type: 'enum',
-        values: ['invalidated'],
-        what: 'Why: an administrator asked for "rotate and invalidate".' },
+        values: ['invalidated', 'nothing-retained'],
+        what: 'Why: an administrator asked for "rotate and invalidate" ' +
+              '(invalidated), or an ordinary rotation kept no previous ' +
+              'version because krb5.retainedKeyVersions is 0 ' +
+              '(nothing-retained, #245) — the same outcome, unasked.' },
       { name: 'event_timestamp', required: false, type: 'number',
         what: 'When the key was replaced, in seconds since the epoch.' }
     ],
@@ -1152,15 +1155,143 @@ const STS_EVENTS = [
         realm: String(v.realm || 'default'),
         kerberos_realm: String(v.kerberos_realm || ''),
         kvno: Number(v.kvno) || 0,
-        reason: 'invalidated',
+        reason: v.reason === 'nothing-retained' ? 'nothing-retained'
+                                                : 'invalidated',
         event_timestamp: Number(v.event_timestamp) ||
                          Math.floor(Date.now() / 1000)
       };
       log.debug("Leaving generate().");
       return payload;
     }
-  }
+  },
+  // -------------------------------------------------------------------------
+  // THE OTHER KEYS A RELYING PARTY PINS OR TRUSTS (#245, 2026-09-26): a
+  // realm's OpenID Federation entity keys, its SPIFFE authorities and the
+  // listener certificate. SIBLING URNs RATHER THAN MORE UNITS OF
+  // `signing-key-rotated`, and the reason is the receiver's handling: a
+  // stream chooses what it receives BY EVENT TYPE, and each of these four
+  // types means exactly one thing to do — fetch THIS document again (the
+  // JWKS, the Entity Configuration, the SPIFFE bundle, the listener's
+  // anchor). One type with more units would hand every receiver that caches
+  // the JWKS three kinds of change it cannot act on, make it parse `rotated`
+  // to tell them apart, and carry a `jwks_uri` that is the wrong document for
+  // all three. So each keeps #42's shape — `realm`, `rotated` as
+  // "<unit> <from> -> <to>", `reason` from the same three words, the one
+  // address to fetch, `event_timestamp` — and differs only in that address.
+  // None has a subject: each is about the issuer, not anybody.
+  // -------------------------------------------------------------------------
+  keyEventRow({
+    name: 'federation-key-rotated', title: 'Federation Entity Key Rotated',
+    unitWhat: 'The keys moved, each as "federation-entity-key <previous ' +
+              'kid> -> <kid>", or "federation-entity-key <kid> -> revoked" ' +
+              'for a key that left the published set.',
+    uriMember: 'entity_configuration_uri',
+    uriWhat: 'The realm\'s Entity Configuration, whose jwks now carries the ' +
+             'keys; the Historical Keys endpoint lists every one it retired.',
+    what: 'NON-SPEC, this service\'s own. A realm\'s OpenID Federation ' +
+          'entity key rotated (or, in an emergency, the current and next ' +
+          'keys were revoked as compromised), or a retired key was revoked. ' +
+          'A receiver that resolves Trust Chains through this realm ' +
+          'fetches its Entity Configuration again; after an emergency ' +
+          'nothing the revoked keys signed verifies.'
+  }),
+  keyEventRow({
+    name: 'spiffe-authority-rotated', title: 'SPIFFE Authority Rotated',
+    unitWhat: 'The authorities moved, each as "x509-authority <previous> -> ' +
+              '<new>" or "jwt-authority <previous kid> -> <kid>".',
+    uriMember: 'bundle_uri',
+    uriWhat: 'The realm\'s SPIFFE bundle endpoint (the trust domain\'s ' +
+             'bundle), which carries the authorities a workload verifies ' +
+             'against.',
+    extra: [
+      { name: 'trust_domain', required: false, type: 'string',
+        what: 'The realm\'s SPIFFE trust domain.' },
+      { name: 'bundle_changed', required: false, type: 'boolean',
+        what: 'Whether the published bundle changed. False for an X.509 ' +
+              'authority re-issued under this service\'s Root: the bundle ' +
+              'publishes the Root, so SVIDs go on verifying and only the ' +
+              'Issuing CA in an SVID\'s chain is new.' }
+    ],
+    what: 'NON-SPEC, this service\'s own. A realm\'s SPIFFE X.509 or JWT ' +
+          'authority was rotated or re-issued — on the schedule, by an ' +
+          'administrator, or because the certificate hierarchy under it was ' +
+          'rebuilt. A receiver that caches the trust domain\'s bundle ' +
+          'fetches it again.'
+  }),
+  keyEventRow({
+    name: 'tls-certificate-changed', title: 'TLS Certificate Changed',
+    unitWhat: 'The listener certificates replaced, each as "<algorithm> ' +
+              '<previous SHA-256 fingerprint> -> <fingerprint>".',
+    uriMember: 'certificate_uri',
+    uriWhat: 'GET /tls/server-certificate, which publishes the certificate ' +
+             'the main port presents and the anchor it chains to.',
+    what: 'NON-SPEC, this service\'s own. The certificate this service\'s ' +
+          'main port (and LDAPS, and every realm\'s SPIRE Server API) ' +
+          'presents was re-issued — the certificate hierarchy it chains to ' +
+          'was rebuilt. A receiver that pins the certificate or its anchor ' +
+          'fetches them again. Sent to every realm\'s streams, because the ' +
+          'listener is the whole service\'s.'
+  })
 ];
+
+// One row of the key-event family above: the shared shape, with the address
+// and the unit wording of its own. `rotated` is "<unit> <from> -> <to>" in
+// every one of them, `reason` the same three words as signing-key-rotated.
+function keyEventRow(spec) {
+  log.debug("Entering keyEventRow(). " + spec.name);
+  const reasons = ['scheduled', 'requested', 'emergency'];
+  const extra = spec.extra || [];
+  const row = {
+    uri: STS_PREFIX + spec.name,
+    family: 'sts',
+    name: spec.title,
+    subject: 'none',
+    members: [
+      { name: 'realm', required: true, type: 'string',
+        what: 'The trust realm the key belongs to.' },
+      { name: 'rotated', required: true, type: 'string',
+        what: spec.unitWhat },
+      { name: 'reason', required: true, type: 'enum', values: reasons,
+        what: 'Why: the schedule, an administrator, or a key presumed ' +
+              'compromised — in which case what it signed no longer ' +
+              'verifies.' },
+      { name: spec.uriMember, required: false, type: 'string',
+        what: spec.uriWhat }
+    ].concat(extra).concat([
+      { name: 'event_timestamp', required: false, type: 'number',
+        what: 'When it happened, in seconds since the epoch.' }
+    ]),
+    required: ['realm', 'rotated', 'reason'],
+    what: spec.what,
+    generate: function (values) {
+      log.debug("Entering generate().");
+      const v = values || {};
+      const payload = {
+        realm: String(v.realm || 'default'),
+        rotated: String(v.rotated || ''),
+        reason: reasons.indexOf(v.reason) >= 0 ? v.reason : 'requested',
+        event_timestamp: Number(v.event_timestamp) ||
+                         Math.floor(Date.now() / 1000)
+      };
+      if (typeof v[spec.uriMember] === 'string' && v[spec.uriMember]) {
+        payload[spec.uriMember] = v[spec.uriMember];
+      }
+      extra.forEach(function (member) {
+        const value = v[member.name];
+        if (member.type === 'boolean' && typeof value === 'boolean') {
+          payload[member.name] = value;
+        } else if (member.type === 'string' && typeof value === 'string' &&
+                   value) {
+          payload[member.name] = value;
+        }
+      });
+      log.debug("Leaving generate().");
+      return payload;
+    }
+  };
+  log.debug("Leaving keyEventRow().");
+  return row;
+}
 
 // THE FOUR VOCABULARIES IN ONE TABLE. SSF's own first, because they are about
 // the pipe every one of the others travels on; then CAEP's eight about a
@@ -1325,6 +1456,12 @@ function checkMember(member, value, errors, warnings) {
         'the epoch, not a string. A quoted timestamp parses everywhere and ' +
         'is compared numerically nowhere.');
     log.debug('Leaving checkMember(). Not a number.');
+    return;
+  }
+  // A true or false (#245's `bundle_changed`), never the string "true".
+  if (member.type === 'boolean' && typeof value !== 'boolean') {
+    errors.push('"' + member.name + '" must be true or false.');
+    log.debug('Leaving checkMember(). Not a boolean.');
     return;
   }
   if (member.type === 'strings') {
@@ -1890,6 +2027,9 @@ module.exports = {
   STS_EVENTS: STS_EVENTS,
   SIGNING_KEY_ROTATED: STS_PREFIX + 'signing-key-rotated',
   KERBEROS_TICKETS_INVALIDATED: STS_PREFIX + 'kerberos-tickets-invalidated',
+  FEDERATION_KEY_ROTATED: STS_PREFIX + 'federation-key-rotated',
+  SPIFFE_AUTHORITY_ROTATED: STS_PREFIX + 'spiffe-authority-rotated',
+  TLS_CERTIFICATE_CHANGED: STS_PREFIX + 'tls-certificate-changed',
   STATUSES: STATUSES,
   supportedEventUris: supportedEventUris,
   validateEvent: validateEvent,

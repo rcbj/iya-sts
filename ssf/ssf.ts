@@ -3355,7 +3355,8 @@ class SharedSignals {
     const n = notice || {};
     const uri = events.KERBEROS_TICKETS_INVALIDATED;
     const payload = events.EVENT_BY_URI[uri].generate({
-      realm: n.realm, kerberos_realm: n.kerberos_realm, kvno: n.kvno });
+      realm: n.realm, kerberos_realm: n.kerberos_realm, kvno: n.kvno,
+      reason: n.reason });
     const candidates = streams.listStreams().filter((record: Json) => {
       return streams.deliversEvent(record, uri);
     });
@@ -3384,6 +3385,95 @@ class SharedSignals {
       log.error(errorCodes.tag('STS-SSF-0112') + 'ssf: the ' +
                 'kerberos-tickets-invalidated event could not be sent: ' +
                 e.message);
+      return { sent: 0, streams: candidates.length, why: e.message };
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // ANOTHER KEY A RELYING PARTY PINS MOVED (#245) — a realm's OpenID
+  // Federation entity key, its SPIFFE authorities, or the listener
+  // certificate: `federation-key-rotated`, `spiffe-authority-rotated` and
+  // `tls-certificate-changed`, this service's own, beside
+  // `signingKeyRotated()` and in its shape (`ssf_events.js` argues why they
+  // are sibling types rather than more units of that one). To every stream
+  // of the AMBIENT realm that delivers the type; `ssf/service_signals.ts`
+  // enters the realm, and enters each one in turn for the listener, which is
+  // the whole service's. `notice.rotated` is `[{ unit, from, to }]`; the
+  // address a receiver fetches again is built here, from the realm's base.
+  // Never throws, for `signingKeyRotated()`'s reason.
+  // ---------------------------------------------------------------------------
+  serviceKeyChanged(kind: string, notice?: Json): Promise<EmitResult> {
+    const { log, events, streams, errorCodes, helpers, config } = this.deps;
+    log.debug('Entering SharedSignals.serviceKeyChanged(). ' + kind);
+    const kinds: Json = {
+      federation: { uri: events.FEDERATION_KEY_ROTATED,
+                    member: 'entity_configuration_uri',
+                    path: '/.well-known/openid-federation' },
+      spiffe: { uri: events.SPIFFE_AUTHORITY_ROTATED, member: 'bundle_uri',
+                path: String(config.value('spiffe.bundlePath') ||
+                             '/spiffe/bundle') },
+      tls: { uri: events.TLS_CERTIFICATE_CHANGED, member: 'certificate_uri',
+             path: '/tls/server-certificate' }
+    };
+    const chosen = kinds[kind];
+    if (!chosen) {
+      log.debug('Leaving SharedSignals.serviceKeyChanged(). Unknown kind.');
+      return Promise.resolve({ sent: 0, streams: 0,
+                               why: 'no such kind of key: ' + kind });
+    }
+    if (!this.enabled()) {
+      log.debug('Leaving SharedSignals.serviceKeyChanged(). SSF is off.');
+      return Promise.resolve({ sent: 0, streams: 0 });
+    }
+    const n = notice || {};
+    const uri = chosen.uri;
+    let base = '';
+    try {
+      base = helpers.baseUrlOf(null);
+    } catch (e) {
+      // No public base URL outside a request: the address is an optional
+      // member, and the event goes without it.
+      log.debug('Caught in SharedSignals.serviceKeyChanged(): ' +
+                ((e && e.message) || e));
+      base = '';
+    }
+    const values: Json = {
+      realm: n.realm, reason: n.reason,
+      rotated: (n.rotated || []).map(function (r: Json): string {
+        return r.unit + ' ' + r.from + ' -> ' + r.to;
+      }).join(', '),
+      trust_domain: n.trustDomain,
+      bundle_changed: n.bundleChanged
+    };
+    values[chosen.member] = base ? base + chosen.path : '';
+    const payload = events.EVENT_BY_URI[uri].generate(values);
+    const candidates = streams.listStreams().filter((record: Json) => {
+      return streams.deliversEvent(record, uri);
+    });
+    if (!candidates.length) {
+      log.debug('Leaving SharedSignals.serviceKeyChanged(). No stream ' +
+                'takes it.');
+      return Promise.resolve({ sent: 0, streams: 0 });
+    }
+    log.debug('Leaving SharedSignals.serviceKeyChanged().');
+    // ONE `txn` FOR EVERY SET THIS ONE EVENT BECOMES (SSF 1.0 section 4.1.9).
+    const txn = this.newTxn();
+    return Promise.all(candidates.map((record: Json) => {
+      return this.transmit(record, { txn: txn, uri: uri, payload: payload,
+        toe: payload.event_timestamp });
+    })).then((reports) => {
+      const sent = reports.filter((one) => {
+        return one.ok;
+      }).length;
+      log.info('ssf: ' + uri.slice(uri.lastIndexOf(':') + 1) + ' for the "' +
+               payload.realm + '" realm went to ' + sent + ' of ' +
+               candidates.length + ' stream(s).');
+      return { sent: sent, streams: candidates.length, reports: reports };
+    }).catch((e) => {
+      log.debug('Caught in SharedSignals.serviceKeyChanged(): ' +
+                ((e && e.message) || e));
+      log.error(errorCodes.tag('STS-SSF-0123') + 'ssf: the ' + uri +
+                ' event could not be sent: ' + e.message);
       return { sent: 0, streams: candidates.length, why: e.message };
     });
   }
@@ -5040,6 +5130,7 @@ export = {
   caepAutoEmit: slot.forward('caepAutoEmit'),
   signingKeyRotated: slot.forward('signingKeyRotated'),
   kerberosTicketsInvalidated: slot.forward('kerberosTicketsInvalidated'),
+  serviceKeyChanged: slot.forward('serviceKeyChanged'),
   emitProtocolEvent: slot.forward('emitProtocolEvent'),
   caepReport: slot.forward('caepReport'),
   caepAction: slot.forward('caepAction'),
