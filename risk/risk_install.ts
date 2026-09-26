@@ -387,8 +387,8 @@ class RiskInstall {
       log.debug("Leaving RiskInstall.driverOptions(). Unresolved.");
       throw new Error(errorCodes.tag('STS-RISK-0040') + 'risk_install: ' +
         'the database connection could not be made the way the service ' +
-        'makes it — persistence.databasePasswordProvider names ' +
-        (label || 'a secret store') + ', and ' + ((e && e.message) || e));
+        'makes it (the password from persistence.databasePasswordProvider: ' +
+        (label || 'a secret store') + '): ' + ((e && e.message) || e));
     }
     log.debug("Leaving RiskInstall.driverOptions().");
     return { url: connection.url, verifyTls: connection.verifyTls, log: log };

@@ -378,8 +378,9 @@ ways in:
   expanded as it is read, and nothing expanded is written to disk. See
   [Uploading a file](#uploading-a-file). A short list can also be pasted on
   the same page, or sent as `content` to `POST /admin-api/risk/import`.
-- **At install time, with the loader.** Run it inside the image, with
-  `STS_DATABASE_URL` set:
+- **At install time, with the loader.** Run it inside the image. It
+  connects to the database the way the service does, from the same
+  settings (see step 3 below):
 
   ```bash
   node risk/risk_install.js \
@@ -547,16 +548,17 @@ The service itself dials none of them. On AWS, run the same command as a
 one-off task of the service's task definition, which is on the database's
 network.
 
-> **The database password.** The loader connects with `STS_DATABASE_URL`
-> only. It does not yet read the password from OpenBao or AWS Secrets Manager
-> the way the service does
-> ([#213](https://github.com/rcbj/iya-sts/issues/213)), so on the stacks this
-> repository ships it cannot sign in to the database by itself. Until that is
-> fixed, read the password from your secret store and pass it as
-> `docker exec -e PGPASSWORD=… sts node risk/risk_install.js …`. The
-> container's `STS_DATABASE_URL` carries no password, so the database client
-> uses `PGPASSWORD` instead. Or use the watched directory below, which runs
-> inside the service and uses its connection.
+The loader connects to the database exactly as the service does. It reads
+the same settings: the connection string from `STS_DATABASE_URL` or
+`persistence.databaseUrl`, and the password from
+`persistence.databasePasswordProvider` (OpenBao, AWS Secrets Manager or
+another secret store). It also verifies the database server's certificate
+when `persistence.databaseTlsRejectUnauthorized` is on. So in a container of
+the service's image it needs nothing else: no password on the command line
+and no `PGPASSWORD`. For a throwaway database with no secret store, a
+password written into `STS_DATABASE_URL` still works. If the secret store is
+configured but cannot be read, the loader stops with `STS-RISK-0040` and the
+store's own reason, and imports nothing.
 
 The loader prints one line per dataset, and exits non-zero if any failed.
 Running it again is safe: a version already loaded is skipped.
