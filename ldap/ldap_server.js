@@ -2123,6 +2123,11 @@ const OWN_NAMES = [
   'stsOidfedEntry', 'stsOidfedKind', 'stsOidfedEntityId', 'stsOidfedData',
   'stsOidfedKeys',
 
+  // AND A PERSON'S ACCOUNT ID AT EACH CLIENT (#148, Enterprise Extensions
+  // section 2.3): `<client_id> <aud_sub>` per value, recorded by an
+  // administrator and sent as the ID Token's `aud_sub` to that client.
+  'stsAudSub',
+
   // AND THE CLAIMS PROVIDER REGISTER'S (#147, 2026-09-24): the class of an
   // `ou=claimproviders` entry, its record as one JSON value, and its client
   // secret at that provider (sealed where keys persist, and withheld,
@@ -8857,6 +8862,38 @@ function deleteClaimProviderEntry(cn) {
   return true;
 }
 
+// A PERSON'S ACCOUNT IDS AT CLIENTS (#148): every `<client_id> <aud_sub>`
+// value, and all of them written at once. Not created here, for
+// `writeTotp()`'s reason.
+function readAudSubs(key) {
+  log.debug('Entering readAudSubs(). key=' + key);
+  const located = locateEntry(String(key || ''));
+  const stored = located.stored;
+  log.debug('Leaving readAudSubs().');
+  return stored ? (stored.attributes.stsaudsub || []).map(String) : [];
+}
+
+function writeAudSubs(key, values) {
+  log.debug('Entering writeAudSubs(). key=' + key);
+  const located = locateEntry(String(key || ''));
+  const stored = located.stored;
+  if (!stored) {
+    log.warn(errorCodes.tag('STS-LDAP-0040') +
+             'ldap: "' + key + '" has no entry in this realm, so no aud_sub ' +
+             'was recorded.');
+    log.debug('Leaving writeAudSubs(). No entry.');
+    return false;
+  }
+  if (!values || !values.length) {
+    delete stored.attributes.stsaudsub;
+  } else {
+    stored.attributes.stsaudsub = values.map(String);
+  }
+  touchDirectory();
+  log.debug('Leaving writeAudSubs().');
+  return true;
+}
+
 // A PERSON'S ENROLLED SELF-ISSUED SUBJECTS (#129): every value, as stored.
 // `oid4vc/siop.ts` reads and writes the JSON; this only carries it.
 function readSelfIssuedSubjects(key) {
@@ -9184,6 +9221,9 @@ if (typeof credentials.setDirectory === 'function') {
     listOidfedEntries: listOidfedEntries,
     writeOidfedEntry: writeOidfedEntry,
     deleteOidfedEntry: deleteOidfedEntry,
+    // A person's account ids at clients (#148), checked where used.
+    readAudSubs: readAudSubs,
+    writeAudSubs: writeAudSubs,
     // The Claims Provider register and a person's tokens (#147), checked
     // where they are used.
     listClaimProviderEntries: listClaimProviderEntries,

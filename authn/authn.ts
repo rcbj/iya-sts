@@ -4716,6 +4716,33 @@ class Authn {
   // first thing checked, because every sign-in in this service passes through
   // here.
   // ---------------------------------------------------------------------------
+  // The one usable service-provider relationship whose fedHomeRealmDomain
+  // holds `domainHint` (#148), or null — none, or more than one, which is
+  // not a choice this service makes for the person.
+  private homeRealmFor(domainHint) {
+    const { log, federation } = this.deps;
+    log.debug("Entering Authn.homeRealmFor().");
+    const wanted = String(domainHint || '').trim().toLowerCase();
+    if (!wanted) {
+      log.debug("Leaving Authn.homeRealmFor(). No hint.");
+      return null;
+    }
+    const ids = federation.list().filter(function (r) {
+      return [].concat(r.fedHomeRealmDomain || []).map(function (d) {
+        return String(d).toLowerCase();
+      }).indexOf(wanted) >= 0;
+    }).map(function (r) {
+      return r.fedId;
+    });
+    const resolved = ids.length
+      ? federation.usableServiceProviders(ids, 'A domain_hint')
+      : { usable: [] };
+    log.debug("Leaving Authn.homeRealmFor(). " + resolved.usable.length +
+              " usable.");
+    return resolved.usable.length === 1 ?
+      resolved.usable[0].relationship : null;
+  }
+
   private federationFor(applicationId) {
     const { log, federation, applications, errorCodes } = this.deps;
     log.debug("Entering Authn.federationFor(). application=" +
@@ -5135,6 +5162,22 @@ class Authn {
     // ---------------------------------------------------------------------
     const chosen = this.mechanismFor(opts.application);
     const home = chosen.federation;
+    // ENTERPRISE EXTENSIONS SECTION 3.1 (#148): a `domain_hint` names the
+    // person's home realm, and a relationship whose fedHomeRealmDomain holds
+    // it is where their sign-in happens — asked only when the application
+    // names no partner of its own to go to, which is the more specific
+    // configuration.
+    const hinted = (home && home.relationship && home.auto) ? null :
+      this.homeRealmFor(opts.domainHint);
+    if (hinted) {
+      log.info('authn: domain_hint "' + String(opts.domainHint) + '" names ' +
+               'the home realm of the federation relationship "' +
+               hinted.fedId + '", so this sign-in goes straight there.');
+      log.debug("Leaving Authn.beginAuthentication(). Home realm.");
+      return federation.PATHS.login + '/' + encodeURIComponent(hinted.fedId) +
+        '?returnTo=' + encodeURIComponent(returnTo) +
+        '&application=' + encodeURIComponent(String(opts.application || ''));
+    }
     if (home && home.relationship && home.auto) {
       const target = federation.PATHS.login + '/' +
         encodeURIComponent(home.relationship.fedId) +

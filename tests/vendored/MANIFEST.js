@@ -327,6 +327,21 @@ const JOBS = [
   // realm it leaves behind.
   { file: 'sts_oidc_core.js',            browser: false, local: true },
   { file: 'sts_discovery_realms.js',     browser: false, local: true },
+  // THREE REALMS WHOSE DOMAINS OVERLAP (#85, 2026-09-26): dev.iyasec.io,
+  // test.iyasec.io and prod.iyasec.io, an application and a person in each
+  // under its own dc= RDNs, each person signed in by the authorization code
+  // flow at their own realm, and no realm (nor the default one) knowing
+  // another's person by name, DN or subject, or its application. `local:
+  // true`: this repository's realms, directory and authorization server.
+  // The realms are left standing and a kept stack reuses them.
+  { file: 'sts_realm_overlapping_domains.js', browser: false, local: true },
+  // TWO REALMS, TWO UNRELATED DOMAINS (#87, 2026-09-26): an application, a
+  // person and a group in each at exactly the DN expected, each person signed
+  // in by the authorization code flow, the whole of each realm's tree under
+  // its own base with every DN-valued attribute pointing inside it, and
+  // neither realm knowing the other's objects. `local: true`: this
+  // repository's realms, directory and authorization server.
+  { file: 'sts_two_realm_domains.js',    browser: false, local: true },
   // RFC 7009 TOKEN REVOCATION (#102, 2026-09-22): client authentication by
   // mode, another client's token refused invalid_grant, the token types, an
   // unknown hint, and a refresh token taking its grant with it. `local:
@@ -768,6 +783,11 @@ const JOBS = [
   // portal, aggregated and distributed claims, revocation. `local: true`:
   // this repository's authorization server, portal and API.
   { file: 'sts_claims_aggregation.js',   browser: false, local: true },
+  // OPENID CONNECT ENTERPRISE EXTENSIONS (#148, 2026-09-26): session_expiry,
+  // tenant and aud_sub in the ID Token, tenant refused for another realm,
+  // domain_hint's home-realm discovery. `local: true`: this repository's
+  // authorization server and API.
+  { file: 'sts_enterprise_extensions.js', browser: false, local: true },
   // THE OPENID FOUNDATION'S CONFORMANCE SUITE (#176, 2026-09-24): FAPI 2.0
   // Security Profile and Message Signing, FAPI 1.0 Advanced and FAPI-CIBA,
   // each plan a throwaway realm, every module run, and a FAILED module a

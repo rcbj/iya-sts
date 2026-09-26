@@ -88,7 +88,7 @@ on a new device scores well above 1.
 |---|---|---|
 | `tor-exit` | ×5 | the address is on the active Tor exit list |
 | `reputation` | ×5 | the address is on the active IP reputation list |
-| `operator-deny` | ×50 | the address is on this realm's operator deny list |
+| `operator-deny` | ×20 | the address is on this realm's operator deny list |
 | `operator-allow` | ×0.2 | the address is on this realm's operator allow list |
 | `automated-client` | ×10 | the User-Agent belongs to an automated client |
 | `new-tls-stack` | ×2 | the connection's TLS client fingerprint (JA4) is one this person has not signed in with before |
@@ -96,6 +96,27 @@ on a new device scores well above 1.
 | `account-failures` | ×3 | five or more refused passwords for this person in the last hour |
 | `network-failures` | ×3 | twenty or more refused passwords from this network in the last hour |
 | `authenticator-compromised` | ×50 | the security key's model is reported revoked or compromised in the FIDO metadata |
+
+**Lists and private addresses.** A list matches a loopback, private,
+link-local or reserved address exactly as the list says. FireHOL's level 1
+list includes the bogons: 10.0.0.0/8, 172.16.0.0/12 and 192.168.0.0/16.
+Behind a container bridge, a NAT or a proxy whose address is private, every
+person arrives from the same address, so one listed bogon puts a signal on
+everybody. Turn off `risk.listsMatchSpecialPurpose` (Monitoring → Risk) when
+you test on one machine or run that way. The Tor, reputation and deny lists
+are then set aside for such an address, and the assessment records which
+lists were set aside. The allow list is not affected.
+
+**A known context caps the address evidence at MEDIUM.** A person may have at
+least `risk.minimumHistory` earlier sign-ins from this exact address and this
+browser. For that person, the address signals (`tor-exit`, `reputation`,
+`operator-deny`, `network-failures`) can raise a sign-in to MEDIUM, which asks
+for a step-up, but not to HIGH. The score is held just under the HIGH line,
+and the assessment says what was capped. Evidence about the credential is not
+capped, because a network does not share it: `account-failures`,
+`automated-client`, `authenticator-compromised` and "this wasn't me". The cap
+also bounds how far the `risk.rescore` job can raise that session on a list it
+gains later.
 
 These factors are a first calibration. You can change any of them for a
 realm with `risk.signalFactors`, without a new release. It takes a list of
@@ -151,9 +172,11 @@ person's roles:
 | `urn:sts:xacml:risk-score` | the score (absent for a first sign-in) |
 | `urn:sts:xacml:risk-signal` | every evaluator that fired, such as `tor-exit` |
 | `urn:sts:xacml:risk-satisfied` | the step-ups the authentication already meets: `second-factor`, and `security-key` when a WebAuthn key was used |
+| `urn:sts:xacml:risk-held` | the step-ups the person could answer: `second-factor` if they hold an authenticator app or a security key, and `security-key` if they hold a key |
 
 The built-in policy has three risk rules, ahead of the role rule, and a risk
-Deny overrides a role Permit:
+Deny overrides a role Permit. The console (`sts-admin-console`) is the
+exception, described below.
 
 | Risk | Decision |
 |---|---|
@@ -164,6 +187,26 @@ Deny overrides a role Permit:
 
 **An authentication with no assessment is decided on roles alone.** Nothing
 unknown is ever a reason to refuse.
+
+**The admin console is never refused on risk.** A console that nobody can sign
+in to leaves a cluster that nobody can repair (#226). For the applications
+named by the `role-issuance` template's `neverLockOut` parameter
+(`sts-admin-console` by default), HIGH and MEDIUM ask for a step-up instead:
+
+| The person holds | Decision at HIGH or MEDIUM |
+|---|---|
+| a security key | refused until the authentication used the key |
+| a second factor but no key | refused until the authentication carried a second factor |
+| neither | **permitted on roles, with an alarm**: an `xacml.issuance.alarm` audit record and a warning in the log, both `STS-RISK-0038` |
+
+The alarm is the one place where a step-up the person cannot answer is not a
+refusal. If you see it, enrol a second factor for that administrator and read
+the assessment's signals. Set `neverLockOut` to `none` to put the console
+under the ordinary rules.
+
+**If you are locked out anyway**, for example by an override of the policy,
+start the service with `STS_RISK_ASSESS_SIGN_INS=false`. No sign-in is
+assessed, and every authentication is then decided on roles alone.
 
 **Where a person can act, a step-up is a question, not a refusal:**
 
@@ -703,6 +746,7 @@ kept in step with `common/config.js`.
 | `risk.mediumScorePercent` | `STS_RISK_MEDIUM_SCORE_PERCENT` | `100` | The score, in hundredths, from which a sign-in is MEDIUM. |
 | `risk.highScorePercent` | `STS_RISK_HIGH_SCORE_PERCENT` | `1000` | The score, in hundredths, from which a sign-in is HIGH. |
 | `risk.signalFactors` | `STS_RISK_SIGNAL_FACTORS` | *(empty)* | Factors over the built-in ones, as `signal=factor`, comma-separated. |
+| `risk.listsMatchSpecialPurpose` | `STS_RISK_LISTS_MATCH_SPECIAL_PURPOSE` | `true` | Let the Tor, reputation and deny lists match loopback, private and reserved addresses. Turn off for a service on one machine, or behind a private bridge, NAT or proxy. |
 | `risk.calibrationMediumPercent` | `STS_RISK_CALIBRATION_MEDIUM_PERCENT` | `5` | The share of sign-ins calibration aims to have at MEDIUM or worse. |
 | `risk.calibrationHighPercent` | `STS_RISK_CALIBRATION_HIGH_PERCENT` | `1` | The share of sign-ins calibration aims to have at HIGH. |
 | `risk.recordFailures` | `STS_RISK_RECORD_FAILURES` | `true` | Record every refused password. |

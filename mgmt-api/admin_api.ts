@@ -4177,6 +4177,33 @@ class AdminApi {
             },
             responseDescription: 'Whether a factor was turned off.' },
 
+          { action: 'set-aud-sub', operationId: 'setUserAudSub',
+            summary: 'Record the account id a client knows somebody by',
+            description: 'OpenID Connect Enterprise Extensions section 2.3 ' +
+                         '(#148): the ID Tokens issued for this person to ' +
+                         'this client carry it as `aud_sub`. An empty ' +
+                         '`value` removes it. Audited.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                user: { type: 'string',
+                        description:
+                          'The person, as /admin-api/users names them.' },
+                username: { type: 'string',
+                            description: 'Accepted for `user`.' },
+                client: { type: 'string', maxLength: 256,
+                          description: 'The client_id.' },
+                value: { type: 'string', maxLength: 255,
+                         description: 'The aud_sub; empty removes it.' }
+              },
+              required: ['user', 'client'],
+              examples: [{ user: 'alice', client: 'crm',
+                           value: 'account-4711' }],
+              additionalProperties: false
+            },
+            responseDescription: 'What the ID Token now carries.' },
+
           { action: 'set-mail', operationId: 'setUserMail',
             summary: 'Set somebody\'s email address',
             description: 'Writes `mail` on the person\'s entry and marks it ' +
