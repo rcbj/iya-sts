@@ -665,11 +665,18 @@ async function main() {
   log.info('THE INBOUND HALF: an EncryptedID this service provider sends, and three ' +
            'that must be refused');
   await provision(SP_LOGOUT, {});
+  // A SIGNED request names where it was sent (SAML 2.0 bindings, sections
+  // 3.4.5.2 and 3.5.5.2), and this service refuses one that does not
+  // (STS-SAML-0085, #190) — so every LogoutRequest here carries the
+  // Destination it arrives at, and the refusals below are refusals of the
+  // ciphertext rather than of a missing attribute.
+  const SLO_DESTINATION = BASE + '/saml2/slo';
   const logoutRequest = function (subject) {
     const nameId = '<saml:NameID xmlns:saml="' + NS_SAML + '">' + subject + '</saml:NameID>';
     return '<samlp:LogoutRequest xmlns:samlp="' + NS_SAMLP + '" xmlns:saml="' + NS_SAML + '"' +
       ' ID="_' + crypto.randomBytes(8).toString('hex') + '" Version="2.0"' +
-      ' IssueInstant="' + new Date().toISOString() + '">' +
+      ' IssueInstant="' + new Date().toISOString() + '"' +
+      ' Destination="' + SLO_DESTINATION + '">' +
       '<saml:Issuer>' + SP_LOGOUT + '</saml:Issuer>' +
       encryptAsServiceProvider(nameId, idpCert) + '</samlp:LogoutRequest>';
   };
@@ -705,7 +712,8 @@ async function main() {
     const other = selfSignedCertificate(spKeyPair(), 'someone-else');
     const wrongKey = '<samlp:LogoutRequest xmlns:samlp="' + NS_SAMLP + '" xmlns:saml="' +
       NS_SAML + '" ID="_x' + STAMP + '" Version="2.0" IssueInstant="' +
-      new Date().toISOString() + '"><saml:Issuer>' + SP_LOGOUT + '</saml:Issuer>' +
+      new Date().toISOString() + '" Destination="' + SLO_DESTINATION +
+      '"><saml:Issuer>' + SP_LOGOUT + '</saml:Issuer>' +
       encryptAsServiceProvider('<saml:NameID xmlns:saml="' + NS_SAML + '">' + USER +
                                '</saml:NameID>', other) + '</samlp:LogoutRequest>';
     r = await sendLogout(wrongKey);

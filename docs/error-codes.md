@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3477** of them, in **38** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3489** of them, in **38** subsystems.
 
 ## Where a code appears
 
@@ -64,7 +64,7 @@ is an ordinary outcome.
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 47
 * [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 248
 * [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 568
-* [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 84
+* [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 96
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 21
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 16
 * [Federation (`STS-FED`)](#sts-fed) — 133
@@ -1773,7 +1773,7 @@ Raised from: saml/.
 | `STS-SAML-0036` | The SOAP body posted to the SAML 1.1 SAML responder carries no <samlp:Request>. | SOAP samlp:Response with status samlp:Requester (HTTP 200) |
 | `STS-SAML-0037` | A SAML 1.1 artifact does not resolve: never issued here, expired (saml11.artifactTtlS), or already resolved once. | SOAP samlp:Response with status samlp:Requester (HTTP 200) |
 | `STS-SAML-0038` | A SAML 1.1 AssertionIDReference names an assertion this service does not hold. | SOAP samlp:Response with status samlp:Requester (HTTP 200) |
-| `STS-SAML-0039` | A SAML 1.1 AttributeQuery or AuthenticationQuery was refused because the realm is in product mode and nothing authenticates the caller. | SOAP samlp:Response with status samlp:Requester (HTTP 200) |
+| `STS-SAML-0039` | A SAML 1.1 AttributeQuery or AuthenticationQuery was refused in product mode: it names no registered relying party (Resource or the path segment), or its caller did not authenticate as that relying party (a signed Request or its registered certificate at the TLS handshake). Until #189 every query was refused in product. | SOAP samlp:Response with status samlp:Requester (HTTP 200) |
 | `STS-SAML-0040` | A SAML 1.1 query carries no <saml:Subject> with a NameIdentifier. | SOAP samlp:Response with status samlp:Requester (HTTP 200) |
 | `STS-SAML-0041` | A SAML 1.1 <samlp:Request> carries none of the four request types the responder answers (an AuthorizationDecisionQuery included). | SOAP samlp:Response with status samlp:Requester (HTTP 200) |
 | `STS-SAML-0042` | The mock SAML 1.1 relying party was handed an artifact that does not resolve (already resolved, expired or never issued). | HTTP 400 page |
@@ -1819,6 +1819,18 @@ Raised from: saml/.
 | `STS-SAML-0082` | A SAML 2.0 per-service-provider path (/saml2/metadata/{sp}, /saml2/sso/{sp}, /saml2/slo/{sp} or /saml2/ars/{sp}) named something that is not a registered SAML 2.0 service provider, in product mode (mode.publishesMetadataForUnregisteredProviders()). | an HTTP 404, text/plain |
 | `STS-SAML-0083` | A SAML 1.1 per-relying-party path (/saml11/metadata/{rp}, /saml11/sso/{rp} or /saml11/responder/{rp}) named something that is not a registered SAML 1.1 relying party, in product mode (mode.publishesMetadataForUnregisteredProviders()). | an HTTP 404, text/plain |
 | `STS-SAML-0084` | An administrator's Import from MDQ was refused: the realm is in product mode and has no saml2.metadataTrustAnchors, so the answer could not be verified, and saml2.mdqImportWithoutAnchors is off. | the caller's refusal (errors on a console or /admin-api reply) |
+| `STS-SAML-0085` | A SAML 2.0 AuthnRequest or LogoutRequest was refused: its Destination is not the URL it arrived at (saml-core-2.0-os section 3.2.1), or it is signed and names no Destination (saml-bindings-2.0-os sections 3.4.5.2 and 3.5.5.2). #190. | an HTTP 400 page |
+| `STS-SAML-0086` | A SAML 2.0 AuthnRequest or LogoutRequest was refused: its IssueInstant is missing, not a dateTime, more than a minute in the future, or older than saml2.requestTtlMin (plus a minute). #190. | an HTTP 400 page |
+| `STS-SAML-0087` | A SAML 2.0 AuthnRequest or LogoutRequest was refused: its Version is not "2.0" (saml-core-2.0-os section 3.2.2.1). #190. | an HTTP 400 page |
+| `STS-SAML-0088` | A SAML 2.0 AuthnRequest was refused as a REPLAY: its issuer and ID arrived before, inside the freshness window (the claim scope saml2.authnrequest). #190. | an HTTP 400 page |
+| `STS-SAML-0089` | A SAML 2.0 AuthnRequest was refused because the claim store that records which requests were answered could not be asked (fail closed). #190. | an HTTP 400 page |
+| `STS-SAML-0090` | A SAML 2.0 LogoutRequest with no session cookie (a back-channel logout) named a SessionIndex whose session did not sign into that service provider, or was issued another NameID there. Nothing was ended. #192. | a LogoutResponse with StatusCode Requester / UnknownPrincipal |
+| `STS-SAML-0091` | An identity-provider-initiated sign-in (/saml2/unsolicited) was refused: saml2.unsolicitedSso is off in the realm. #189. | an HTTP 403 page |
+| `STS-SAML-0092` | An identity-provider-initiated sign-in (/saml2/unsolicited) named no service provider (providerId or the path segment). #189. | an HTTP 400 page |
+| `STS-SAML-0093` | An identity-provider-initiated sign-in asked for a binding a Response does not go on (anything but HTTP-POST, POST-SimpleSign or HTTP-Artifact). #189. | an HTTP 400 page |
+| `STS-SAML-0094` | A SAML 2.0 AttributeQuery named a subject no live session here gave the asking service provider (by the NameID it was issued), or that session has ended. #189. | SOAP samlp:Response, Requester / UnknownPrincipal (HTTP 200) |
+| `STS-SAML-0095` | The SAML 2.0 attribute authority received no <samlp:AttributeQuery>, or one naming no Issuer. #189. | SOAP samlp:Response, Requester (HTTP 200) |
+| `STS-SAML-0096` | A SAML 1.1 AttributeQuery or AuthenticationQuery in product mode named a subject no live session here gave the asking relying party (by the NameIdentifier it was issued). #189. | SOAP samlp:Response with status samlp:Requester (HTTP 200) |
 
 ## STS-WSTRUST
 

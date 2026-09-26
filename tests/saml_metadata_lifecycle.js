@@ -199,7 +199,8 @@ async function run(t) {
     log.debug("Leaving authnRequest().");
     return '<samlp:AuthnRequest xmlns:samlp="' + NS_SAMLP + '" ' +
       'xmlns:saml="' + NS_SAML + '" ID="' + id + '" Version="2.0" ' +
-      'IssueInstant="' + new Date().toISOString() + '">' +
+      'IssueInstant="' + new Date().toISOString() + '" ' +
+      'Destination="https://idp.test/saml2/sso">' +
       '<saml:Issuer>' + issuer + '</saml:Issuer></samlp:AuthnRequest>';
   };
   const logoutRequest = function (issuer, id) {
@@ -207,7 +208,8 @@ async function run(t) {
     log.debug("Leaving logoutRequest().");
     return '<samlp:LogoutRequest xmlns:samlp="' + NS_SAMLP + '" ' +
       'xmlns:saml="' + NS_SAML + '" ID="' + id + '" Version="2.0" ' +
-      'IssueInstant="' + new Date().toISOString() + '">' +
+      'IssueInstant="' + new Date().toISOString() + '" ' +
+      'Destination="https://idp.test/saml2/slo">' +
       '<saml:Issuer>' + issuer + '</saml:Issuer>' +
       '<saml:NameID>alice</saml:NameID></samlp:LogoutRequest>';
   };

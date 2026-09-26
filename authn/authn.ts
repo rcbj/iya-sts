@@ -4526,6 +4526,26 @@ class Authn {
     return out;
   }
 
+  // THE SESSIONS OF THIS REALM THAT `test` ACCEPTS (#189), without the cookie
+  // and without expiring them. For a SAML attribute authority, which is asked
+  // about a subject by the NameID a service provider was GIVEN — a transient
+  // or an emailAddress NameID is not the username, so the question is which
+  // live session gave that service provider that NameID, and nothing but the
+  // session holds the answer.
+  sessionsMatching(test) {
+    const { log } = this.deps;
+    log.debug("Entering Authn.sessionsMatching().");
+    const out = [];
+    sessions.forEach(function (session) {
+      if (test(session)) {
+        out.push(session);
+      }
+    });
+    log.debug("Leaving Authn.sessionsMatching(). " + out.length +
+              " session(s).");
+    return out;
+  }
+
   // One session by its id, without the cookie and without expiring it. Used by
   // /logout to draw a row for a session that is not the caller's; `sessionOf()`
   // stays the function that reads the cookie and sweeps what it finds expired.
@@ -10528,6 +10548,9 @@ export = {
   // somewhere else would be a sign-out that revoked nothing and logged nothing,
   // and it would look exactly like this one from the outside.
   sessionsOf: slot.forward('sessionsOf'),
+  // The SAML 2.0 attribute authority's question (#189): which live session
+  // gave a service provider a NameID.
+  sessionsMatching: slot.forward('sessionsMatching'),
   sessionById: slot.forward('sessionById'),
   endSessionById: slot.forward('endSessionById'),
   endEverySessionIn: slot.forward('endEverySessionIn'),

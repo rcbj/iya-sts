@@ -784,6 +784,24 @@ const JOBS = [
   // repository's authorization server.
   { file: 'sts_fapi_conformance.js',     browser: false, local: true,
     conformance: true, timeoutMs: 3600000 },
+  // THE SAML INTEROPERABILITY PEERS (#189-#192, 2026-09-24): four independent
+  // SAML service providers, each a second container under the `saml-peers`
+  // compose profile (tests/saml-peers/), each driven by a job of its own
+  // against a development and a product realm, with the peer's own log as the
+  // error-and-warning source. `samlPeer` — like `conformance`, a DELIBERATE
+  // exclusion the runner reports as SKIPPED with its reason where the
+  // launcher brought no peer up (STS_TEST_SAML_PEERS_MODES, `memory` and
+  // `single-node` by default). Keycloak's watchdog covers its JVM starting
+  // when its job hands it the anchor. `local: true`: this repository's
+  // identity providers, and these jobs are written here.
+  { file: 'sts_saml_interop_shibboleth.js', browser: false, local: true,
+    samlPeer: 'shibboleth', timeoutMs: 900000 },
+  { file: 'sts_saml_interop_pysaml2.js', browser: false, local: true,
+    samlPeer: 'pysaml2', timeoutMs: 900000 },
+  { file: 'sts_saml_interop_simplesamlphp.js', browser: false, local: true,
+    samlPeer: 'simplesamlphp', timeoutMs: 900000 },
+  { file: 'sts_saml_interop_keycloak.js', browser: false, local: true,
+    samlPeer: 'keycloak', timeoutMs: 1200000 },
   // OPENID FEDERATION 1.1 (#132, 2026-09-23): the default realm a Trust
   // Anchor and a throwaway realm its subordinate — Entity Configurations,
   // fetch, list, resolve, Trust Marks, a registered subordinate and the
@@ -1018,6 +1036,10 @@ const LOCAL_HELPERS = [
   // foreign certificate that names no list, so every chain this suite mints
   // names one — `tests/tools/pep-credential.js` included.
   'test_crl_host.js',
+  // WHAT THE FOUR SAML INTEROPERABILITY JOBS SHARE (#189-#192): the check
+  // ledger, the management API, a browser that walks the peer's origin and
+  // the service's, and the peer's own log as the error-and-warning source.
+  'saml_peer_kit.js',
   // A ZIP ARCHIVE BUILT FROM THE FORMAT (#215), for the dataset upload's
   // tests — `sts_admin_risk_upload.js` and the in-process
   // `tests/risk_upload.js`: one entry, several, a directory and __MACOSX/
