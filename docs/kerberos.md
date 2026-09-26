@@ -379,6 +379,10 @@ ticket"). Since #169:
   next use, everybody runs a fresh AS exchange, and the Shared Signals event
   `urn:iya:sts:secevent:event-type:kerberos-tickets-invalidated` says so. It is
   also the one act that replaces a stored record the service cannot open.
+  An **ordinary** rotation by hand while `krb5.retainedKeyVersions` is 0 keeps
+  nothing either, so it ends every TGT in the same way. It is announced with the
+  same event, with `reason: nothing-retained` (#245), so a receiver can tell an
+  invalidation that was asked for from one the setting caused.
   **Drop previous versions** ends a rotation's window early.
 * **A sign-out still works across a rotation** (#111): it is a stamp on the
   person's principal checked against the TGT's `authtime`, whatever key sealed

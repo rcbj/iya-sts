@@ -5722,6 +5722,21 @@ the Root's by forgetting. `tests/pki.js` asserts that over the whole serialised
 view rather than field by field, because what is being checked is that nothing
 anywhere in it is a key.
 
+### A PIN INTO A SIGNING SLOT IS REFUSED (2026-09-26, #245)
+
+`pinKeyPair()` refuses (`STS-PKI-0206`) a slot whose plain record certifies a
+live key, which is a record carrying a `kid`, set by `certify()` for the
+current signing key. **Nothing signs with a pinned key**: `pinnedKeyFor()`,
+whose comment says `helpers.js` reads it, has no reader in the service and
+never had one. So a pin there changed no signature. What it did was overwrite
+the current key's certificate with a record over another key and no kid.
+`publishedCertificateFor(slot, kid)` then found nothing, so the key's `x5c` left
+the JWKS and its certificate left the SAML metadata, until the next
+re-certification put them back. That is a change to what relying parties pin,
+and no signing-key-rotated announced it. A slot nothing signs from is still
+pinnable. **Left open for rcbj:** making a pinned key an actual signer, which
+this section's slot header ("what signs my ES384") implies was the intent.
+
 ### THE PATH CHECK IS WHERE A SECURITY CLAIM RESTS
 
 `verifyLeaf()` decides whether an `x5c` header counts, and **a chain to somebody

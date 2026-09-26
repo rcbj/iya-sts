@@ -422,6 +422,17 @@ const JOBS = [
   // assurance-level-change in NIST-IAL. `local: true`: this repository's own
   // transmitter, in a throwaway realm.
   { file: 'sts_caep_claims_doors.js', browser: false, local: true },
+  // THE HIERARCHY TELLS THE PEOPLE UNDER IT (#244, 2026-09-26): a reissued
+  // Issuing CA orphans a person's key pair (credential-change x509 revoke),
+  // and a revoked Issuing CA walks down to its leaves, with RISC
+  // credential-compromise for keyCompromise. A throwaway realm's
+  // authorities only.
+  { file: 'sts_ca_hierarchy_signals.js', browser: false, local: true },
+  // THE OTHER KEYS A RELYING PARTY PINS (#245, 2026-09-26): an OpenID
+  // Federation rotation and emergency, a SPIFFE JWT authority rotation, and
+  // an ordinary krbtgt rotation that keeps nothing, each announced as this
+  // service's own event, in a throwaway realm.
+  { file: 'sts_service_key_signals.js', browser: false, local: true },
   // RISC ON ITS OWN (#146, 2026-09-22): a reset link marked compromised
   // (account-credential-change-required, recovery-activated,
   // credential-compromise), a disable's reason, an address recycled, and the

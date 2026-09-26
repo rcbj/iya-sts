@@ -1096,6 +1096,44 @@ class SharedSignals {
   }
 
   // -------------------------------------------------------------------------
+  // A STREAM THIS TRANSMITTER DELETES, TOLD FIRST (#245). SSF 1.0 has no
+  // event for a deleted stream, and the receiver did not ask for it — the
+  // console, `/admin-api` and `ssf.inactivityAction: delete` are the
+  // transmitter's own doors — so the one notice available is sent first:
+  // `stream-updated` with status `disabled` and the reason, through
+  // `changeStatus()`, which transmits BEFORE it stops the stream (section
+  // 8.1.5). Only then is the stream removed. What that notice can reach is
+  // the delivery's to decide: a push is attempted and settled before the
+  // removal; on a poll stream the SET is queued and leaves with the stream,
+  // as it does for every disable, unless the receiver polls in between. A
+  // stream already disabled was told when it was disabled, and is removed.
+  // The receiver's own `DELETE /ssf/stream` sends nothing: it asked.
+  // Resolves when the stream is gone; never rejects.
+  // -------------------------------------------------------------------------
+  retireStream(record: Json, reason: string): Promise<void> {
+    const { log, streams } = this.deps;
+    log.debug('Entering SharedSignals.retireStream(). ' +
+              (record && record.stream_id));
+    if (!record || !record.stream_id) {
+      log.debug('Leaving SharedSignals.retireStream(). No stream.');
+      return Promise.resolve();
+    }
+    const id = String(record.stream_id);
+    const told = record.status === 'disabled' || streams.isInternal(record)
+      ? Promise.resolve(null)
+      : this.changeStatus(record, 'disabled', reason);
+    log.debug('Leaving SharedSignals.retireStream().');
+    return told.then(function (): void {
+      streams.removeStream(id);
+    }, function (e: Json): void {
+      log.debug('Caught in SharedSignals.retireStream(): ' +
+                ((e && e.message) || e));
+      // The notice failed; the stream goes anyway, which is what was asked.
+      streams.removeStream(id);
+    });
+  }
+
+  // -------------------------------------------------------------------------
   // A STREAM DECLARED DEAD, AND ONE REVIVED (2026-09-14). One audit row and
   // one log line for each — the only per-stream lines this machinery writes.
   // -------------------------------------------------------------------------
@@ -1408,13 +1446,17 @@ class SharedSignals {
       if (timeout && idle >= timeout) {
         if (action === 'delete') {
           summary.inactive += 1;
-          streams.removeStream(record.stream_id);
-          this.deps.audit.audit({ action: 'ssf.stream.delete',
-            category: 'signals', protocol: 'SSF', channel: 'internal',
-            target: record.stream_id,
-            summary: 'A Shared Signals stream was deleted after ' + idle +
-              's with no activity from its receiver ' +
-              '(ssf.inactivityTimeoutS)' });
+          work.push(this.retireStream(record, 'No activity from the ' +
+            'receiver for ' + idle + 's; the stream\'s inactivity_timeout ' +
+            'is ' + timeout + 's, and this transmitter deletes such a ' +
+            'stream (ssf.inactivityAction)').then(() => {
+            this.deps.audit.audit({ action: 'ssf.stream.delete',
+              category: 'signals', protocol: 'SSF', channel: 'internal',
+              target: record.stream_id,
+              summary: 'A Shared Signals stream was deleted after ' + idle +
+                's with no activity from its receiver ' +
+                '(ssf.inactivityTimeoutS)' });
+          }));
           return;
         }
         const target = action === 'disable' ? 'disabled' : 'paused';
@@ -2984,13 +3026,15 @@ class SharedSignals {
         return this.actionRefused('STS-SSF-0045', 'SSF', name, { ok: false,
           errors: ['No stream with stream_id "' + id + '".'] });
       }
-      streams.removeStream(id);
-      audit.audit({ action: 'ssf.stream.delete', category: 'signals',
-        protocol: 'SSF', channel: 'http', target: id,
-        summary: 'A Shared Signals stream was deleted from the console' });
-      log.debug('Leaving SharedSignals.consoleAction(). Deleted.');
-      return Promise.resolve({ ok: true, message: 'Stream ' + id + ' deleted.',
-        errors: [] });
+      log.debug('Leaving SharedSignals.consoleAction(). Deleting.');
+      return this.retireStream(streams.getStream(id), 'The transmitter\'s ' +
+        'administrator deleted this stream').then(function () {
+        audit.audit({ action: 'ssf.stream.delete', category: 'signals',
+          protocol: 'SSF', channel: 'http', target: id,
+          summary: 'A Shared Signals stream was deleted from the console' });
+        return { ok: true, message: 'Stream ' + id + ' deleted; its ' +
+          'receiver was sent stream-updated (disabled) first.', errors: [] };
+      });
     }
     if (name === 'status') {
       const record: Json = streams.getStream(id);
@@ -3361,7 +3405,8 @@ class SharedSignals {
     const n = notice || {};
     const uri = events.KERBEROS_TICKETS_INVALIDATED;
     const payload = events.EVENT_BY_URI[uri].generate({
-      realm: n.realm, kerberos_realm: n.kerberos_realm, kvno: n.kvno });
+      realm: n.realm, kerberos_realm: n.kerberos_realm, kvno: n.kvno,
+      reason: n.reason });
     const candidates = streams.listStreams().filter((record: Json) => {
       return streams.deliversEvent(record, uri);
     });
@@ -3390,6 +3435,95 @@ class SharedSignals {
       log.error(errorCodes.tag('STS-SSF-0112') + 'ssf: the ' +
                 'kerberos-tickets-invalidated event could not be sent: ' +
                 e.message);
+      return { sent: 0, streams: candidates.length, why: e.message };
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // ANOTHER KEY A RELYING PARTY PINS MOVED (#245) — a realm's OpenID
+  // Federation entity key, its SPIFFE authorities, or the listener
+  // certificate: `federation-key-rotated`, `spiffe-authority-rotated` and
+  // `tls-certificate-changed`, this service's own, beside
+  // `signingKeyRotated()` and in its shape (`ssf_events.js` argues why they
+  // are sibling types rather than more units of that one). To every stream
+  // of the AMBIENT realm that delivers the type; `ssf/service_signals.ts`
+  // enters the realm, and enters each one in turn for the listener, which is
+  // the whole service's. `notice.rotated` is `[{ unit, from, to }]`; the
+  // address a receiver fetches again is built here, from the realm's base.
+  // Never throws, for `signingKeyRotated()`'s reason.
+  // ---------------------------------------------------------------------------
+  serviceKeyChanged(kind: string, notice?: Json): Promise<EmitResult> {
+    const { log, events, streams, errorCodes, helpers, config } = this.deps;
+    log.debug('Entering SharedSignals.serviceKeyChanged(). ' + kind);
+    const kinds: Json = {
+      federation: { uri: events.FEDERATION_KEY_ROTATED,
+                    member: 'entity_configuration_uri',
+                    path: '/.well-known/openid-federation' },
+      spiffe: { uri: events.SPIFFE_AUTHORITY_ROTATED, member: 'bundle_uri',
+                path: String(config.value('spiffe.bundlePath') ||
+                             '/spiffe/bundle') },
+      tls: { uri: events.TLS_CERTIFICATE_CHANGED, member: 'certificate_uri',
+             path: '/tls/server-certificate' }
+    };
+    const chosen = kinds[kind];
+    if (!chosen) {
+      log.debug('Leaving SharedSignals.serviceKeyChanged(). Unknown kind.');
+      return Promise.resolve({ sent: 0, streams: 0,
+                               why: 'no such kind of key: ' + kind });
+    }
+    if (!this.enabled()) {
+      log.debug('Leaving SharedSignals.serviceKeyChanged(). SSF is off.');
+      return Promise.resolve({ sent: 0, streams: 0 });
+    }
+    const n = notice || {};
+    const uri = chosen.uri;
+    let base = '';
+    try {
+      base = helpers.baseUrlOf(null);
+    } catch (e) {
+      // No public base URL outside a request: the address is an optional
+      // member, and the event goes without it.
+      log.debug('Caught in SharedSignals.serviceKeyChanged(): ' +
+                ((e && e.message) || e));
+      base = '';
+    }
+    const values: Json = {
+      realm: n.realm, reason: n.reason,
+      rotated: (n.rotated || []).map(function (r: Json): string {
+        return r.unit + ' ' + r.from + ' -> ' + r.to;
+      }).join(', '),
+      trust_domain: n.trustDomain,
+      bundle_changed: n.bundleChanged
+    };
+    values[chosen.member] = base ? base + chosen.path : '';
+    const payload = events.EVENT_BY_URI[uri].generate(values);
+    const candidates = streams.listStreams().filter((record: Json) => {
+      return streams.deliversEvent(record, uri);
+    });
+    if (!candidates.length) {
+      log.debug('Leaving SharedSignals.serviceKeyChanged(). No stream ' +
+                'takes it.');
+      return Promise.resolve({ sent: 0, streams: 0 });
+    }
+    log.debug('Leaving SharedSignals.serviceKeyChanged().');
+    // ONE `txn` FOR EVERY SET THIS ONE EVENT BECOMES (SSF 1.0 section 4.1.9).
+    const txn = this.newTxn();
+    return Promise.all(candidates.map((record: Json) => {
+      return this.transmit(record, { txn: txn, uri: uri, payload: payload,
+        toe: payload.event_timestamp });
+    })).then((reports) => {
+      const sent = reports.filter((one) => {
+        return one.ok;
+      }).length;
+      log.info('ssf: ' + uri.slice(uri.lastIndexOf(':') + 1) + ' for the "' +
+               payload.realm + '" realm went to ' + sent + ' of ' +
+               candidates.length + ' stream(s).');
+      return { sent: sent, streams: candidates.length, reports: reports };
+    }).catch((e) => {
+      log.debug('Caught in SharedSignals.serviceKeyChanged(): ' +
+                ((e && e.message) || e));
+      log.error(errorCodes.tag('STS-SSF-0123') + 'ssf: the ' + uri +
+                ' event could not be sent: ' + e.message);
       return { sent: 0, streams: candidates.length, why: e.message };
     });
   }
@@ -5228,6 +5362,7 @@ export = {
   caepAutoEmit: slot.forward('caepAutoEmit'),
   signingKeyRotated: slot.forward('signingKeyRotated'),
   kerberosTicketsInvalidated: slot.forward('kerberosTicketsInvalidated'),
+  serviceKeyChanged: slot.forward('serviceKeyChanged'),
   emitProtocolEvent: slot.forward('emitProtocolEvent'),
   caepReport: slot.forward('caepReport'),
   caepAction: slot.forward('caepAction'),

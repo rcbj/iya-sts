@@ -1668,6 +1668,20 @@ signing key pairs from the bottom of it to applications — which is what makes
 [RFC 7521 and RFC 7523](../oauth-oidc/CLAUDE.md) usable here without an operator
 moving key material by hand.
 
+### AN ACT ON THE TIERS TELLS THE PEOPLE UNDER THEM (2026-09-26, #244)
+
+The actions that replace, renew or remove an authority (`build`,
+`build-root`, `build-scope`, `reissue-use-case`, `recertify`, `import-ca`,
+`clear`) each take `signalsBefore()`, a snapshot of the person-held
+certificates they can reach, and hand it to `signalsAfter()` once they have
+succeeded. That runs `ssf/service_signals.ts`'s `hierarchyChanged()`, which
+sends each holder `update` or `revoke` and tells a realm whose SPIFFE Issuing
+CA moved. The answer's `why` says how many people were affected.
+`revoke-certificate` on the `intermediate` or `root` list calls `caRevoked()`,
+which walks down to the leaves. A LEAF's revoke keeps its own
+`credential-change` above it. The argument, and what is re-minted versus
+orphaned, is in `ssf/CLAUDE.md`.
+
 ### IT SHOWS ONE REALM'S AUTHORITIES, AND FOR A DAY IT SHOWED EVERY REALM'S (2026-09-11)
 
 The page draws the **Root**, the **process branch** and **this realm's

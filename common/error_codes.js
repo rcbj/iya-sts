@@ -2813,6 +2813,11 @@ const CODES = [
       'issued for another name — set oid4vp.x509DnsName or pin ' +
       'global.publicBaseUrl (#230).',
     spec: 'the Verifier\'s refusal: STS-VC-0112, HTTP 500 at /oid4vp/start' },
+  { code: 'STS-PKI-0206',
+    summary: 'A key pair was not pinned in a slot that certifies a key the ' +
+      'realm signs with: a pinned key does not sign, and the pin would have ' +
+      'replaced that key\'s published certificate (#245).',
+    spec: 'console / /admin-api refusal (HTTP 400)' },
   { code: 'STS-ENROLL-0001',
     summary: 'A certificate request named a profile that is not one of the nine issued over an enrollment protocol.',
     spec: 'the protocol\'s refusal: ACME malformed / badCSR, EST HTTP 400, SCEP failInfo badRequest' },
@@ -12447,6 +12452,11 @@ const CODES = [
       'transmitter — ending a person\'s sessions, disabling or enabling ' +
       'their account — failed; the SET is recorded (#153).',
     spec: 'none (logged)' },
+  { code: 'STS-SSF-0123',
+    summary: 'A key event of this service\'s own (federation-key-rotated, ' +
+      'spiffe-authority-rotated or tls-certificate-changed, #245) could not ' +
+      'be transmitted after the key moved; the change itself stands.',
+    spec: 'none — logged; nothing is sent to a receiver' },
   // ===== RISK ==============================================================
   { code: 'STS-RISK-0001',
     summary: 'A dataset import was refused before anything was loaded: the ' +

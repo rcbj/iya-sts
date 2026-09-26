@@ -387,6 +387,41 @@ async function child(phase) {
   out.eventRow = row ? row.generate({ realm: '', kerberos_realm: REALM,
                                       kvno: inv.kvno }) : null;
 
+  // --- #245: an ordinary rotation that kept nothing is announced too ---
+  // `rotateKrbtgt()` stood in for, so the realm's kvno does not move: once
+  // keeping nothing (krb5.retainedKeyVersions 0), once keeping the version
+  // it replaced, and once a first key that replaced nothing.
+  const kept = [];
+  const stand = function (result) {
+    log.debug("Entering stand().");
+    log.debug("Leaving stand().");
+    return new Cls(Object.assign(Cls.defaultDeps(), {
+      keys: function () {
+        return { rotateKrbtgt: function () {
+          return Promise.resolve(result);
+        } };
+      },
+      ssf: function () {
+        return { kerberosTicketsInvalidated: function (n) {
+          kept.push(n);
+          return Promise.resolve({ sent: 0 });
+        } };
+      }
+    }));
+  };
+  await stand({ ok: true, kvno: 9, previousKvno: 8, retained: [],
+                invalidated: false }).rotate('', { reason: 'requested' });
+  await stand({ ok: true, kvno: 10, previousKvno: 9,
+                retained: [{ kvno: 9 }], invalidated: false })
+    .rotate('', { reason: 'requested' });
+  await stand({ ok: true, kvno: 3, previousKvno: null, retained: [],
+                invalidated: false }).rotate('', { reason: 'scheduled' });
+  out.nothingRetained = kept.map(function (n) {
+    return { kvno: n.kvno, reason: n.reason };
+  });
+  out.nothingRetainedRow = row ? row.generate({ realm: '',
+    kerberos_realm: REALM, kvno: 9, reason: 'nothing-retained' }) : null;
+
   // --- the doors ---
   const refuse = function (result) {
     log.debug("Entering refuse().");
@@ -651,6 +686,15 @@ function product(t, dir, kekFile) {
           r.eventRow.kvno === 6,
           'F6. the invalidation is announced as this service\'s own ' +
           'kerberos-tickets-invalidated event', j([r.notices, r.eventRow]));
+  t.check(Array.isArray(r.nothingRetained) &&
+          JSON.stringify(r.nothingRetained) ===
+            JSON.stringify([{ kvno: 9, reason: 'nothing-retained' }]) &&
+          r.nothingRetainedRow &&
+          r.nothingRetainedRow.reason === 'nothing-retained',
+          'F7. an ORDINARY rotation that kept no previous version ' +
+          '(krb5.retainedKeyVersions 0) is announced too, reason ' +
+          'nothing-retained; one that kept it, and a first key, are not ' +
+          '(#245)', j([r.nothingRetained, r.nothingRetainedRow]));
   t.check(r.unconfirmed && !r.unconfirmed.ok &&
           r.unconfirmed.code === 'STS-ADMIN-0610' &&
           r.wrongWord && r.wrongWord.code === 'STS-ADMIN-0610',

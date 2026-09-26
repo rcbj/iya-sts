@@ -468,7 +468,7 @@ session should be allowed to do next.
   | Password | `password` | `/admin/users` and `/admin-api` (set, reset, reset link, a new person), the portal (change, account activation, reset link), a change forced at sign-in, an LDAP add or modify of `userPassword` |
   | Security key | `fido2-platform` or `fido2-roaming`, with `fido2_aaguid` | enrolled at sign-in or on the portal, removed on the portal or the console |
   | Authenticator app | `app` | set up at sign-in, on the portal or at activation; removed on the portal or the console |
-  | Certificate | `x509`, with `x509_issuer` and `x509_serial` | ACME, EST and SCEP issue and revoke, a TLS client certificate, an RFC 7523/7522 signing key pair, a person's certificate revoked on `/admin/pki` |
+  | Certificate | `x509`, with `x509_issuer` and `x509_serial` | ACME, EST and SCEP issue and revoke, a TLS client certificate, an RFC 7523/7522 signing key pair, a person's certificate revoked on `/admin/pki`, and an act on the certificate authority above it (below) |
   | Wallet credential | `verifiable-credential` | issued over OpenID4VCI, disowned by a global sign-out |
 
   A security key is `fido2-platform` when the browser reported a platform
@@ -479,6 +479,29 @@ session should be allowed to do next.
   did it themselves, `admin` when somebody else did, and `system` for a
   certificate superseded by its renewal or a credential disowned by a
   sign-out.
+
+  **An act on the certificate authority reaches every person under it
+  ([#244](https://github.com/rcbj/iya-sts/issues/244)).** When an administrator
+  revokes an Issuing CA or an Intermediate on `/admin/pki`, every person holding
+  a live certificate beneath it is sent `revoke`. When the reason is
+  `keyCompromise` or `cACompromise`, they are also sent RISC
+  `credential-compromise` with `credential_type` `x509`.
+
+  Building a Root, rebuilding a realm's branch, reissuing, renewing or importing
+  an Issuing CA, or removing the realm's authority sends each affected person
+  one of two change types:
+
+  - `update`, naming the new certificate, when this service re-issued it. This
+    applies to a TLS client certificate after a reissue, a renewal or an import.
+  - `revoke`, naming the old certificate, when the certificate now chains to an
+    authority that is gone or revoked. This applies to a signing key pair, to
+    anything enrolled over ACME, EST or SCEP (this service keeps no key to
+    re-issue those from), and to a TLS client certificate after a branch
+    rebuild.
+
+  A certificate that an earlier act already orphaned is not announced again.
+  The events go out in batches, so a realm with thousands of certificates does
+  not flood the queue.
 
 ## `assurance-level-change`
 

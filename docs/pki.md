@@ -654,6 +654,7 @@ curl --cert alice-laptop-tls-client-chain.pem \
 | **Per authority and NOT per realm** | A CRL is signed by an ISSUER and lists serials that issuer minted, so a list per realm would be a document with no valid issuer and nothing could sign it. |
 | **A pane on `/admin/pki`** | Pick an authority, see what it has issued, revoke with any of the nine RFC 5280 reasons, release a `certificateHold`. |
 | **Rotation revokes automatically** | Reissuing a use case's Issuing CA puts every leaf it had signed on its own list and the replaced CA on the Intermediate's, as `superseded`. |
+| **The holders are told** | Revoking an Issuing CA or an Intermediate, and building, rebuilding, reissuing, renewing, importing or removing an authority, sends a CAEP `credential-change` to every person who holds a live certificate beneath it. That is `update` when this service re-issued the certificate, and `revoke` when it now chains to nothing (#244). A compromise reason adds RISC `credential-compromise`, and a certificate enrolled over ACME, EST or SCEP is never re-issued. See [CAEP events](caep-events.md#credential-change). |
 
 **AND IT CONSULTS THEM.** A certificate PRESENTED to this service is checked
 under `pki.revocationCheck`:
@@ -985,6 +986,16 @@ it stops verifying at once.
 After each rotation a Shared Signals event of this service's own,
 `urn:iya:sts:secevent:event-type:signing-key-rotated`, goes to every stream
 that asked for it. The settings are the Signing keys group on `/admin/keys`.
+The listener certificate, the SPIFFE authorities and the OpenID Federation
+entity keys have events of their own (#245); see
+[Shared Signals](shared-signals.md).
+
+**A key pair cannot be pinned into a slot that certifies a signing key**
+(`STS-PKI-0206`). This service never signs with a pinned key. Pinning into such
+a slot therefore changed no signature. What it did was replace the current
+key's published certificate, so the key's `x5c` disappeared from the JWKS and
+its certificate from the SAML metadata. A slot that no signing key uses can
+still be pinned.
 
 ## Where the CA private keys live
 
