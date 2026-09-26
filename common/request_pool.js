@@ -587,7 +587,11 @@ function setServerCertificate(material) {
   // `process.env` at the other end while the key deliberately does not.
   tlsMaterial = { certPem: material.certPem, keyPem: material.keyPem,
                   chainPem: (material.chainPem || []).slice(0),
-                  trustAnchorPem: material.trustAnchorPem || '' };
+                  trustAnchorPem: material.trustAnchorPem || '',
+                  // The other leaves the socket presents (#248): public, and
+                  // what `tls_server.presentedCertificatePems()` answers in a
+                  // worker beside the first.
+                  extraCertPems: (material.extraCertPems || []).slice(0) };
   log.debug("Leaving setServerCertificate().");
 }
 

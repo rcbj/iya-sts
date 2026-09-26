@@ -187,6 +187,13 @@ Shibboleth SP requires before it will send Shibboleth's request profile. It hold
 profiles and an `AttributeAuthorityDescriptor` for the responder, where a
 Shibboleth service provider looks for its attribute authority.
 
+Both descriptors also carry **the TLS certificate the responder presents**
+(#248) — a `use="signing"` KeyDescriptor after the XML signing key — so a
+relying party that authenticates the SOAP back channel (artifact resolution
+and the attribute query) from metadata needs no anchor configured for it. The
+details, and the warning about a listener key you supply yourself, are the
+SAML 2.0 page's: *Metadata, one document per service provider*.
+
 As with SAML 2.0 it is **per relying party and, in development, minted for
 anything asked for** — in product mode `/saml11/metadata/{rp}`,
 `/saml11/sso/{rp}` and `/saml11/responder/{rp}` answer 404 for a name that is
