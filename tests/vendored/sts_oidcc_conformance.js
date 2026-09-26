@@ -155,7 +155,33 @@ const PLANS = [
                auth_request_non_repudiation_method: "unsigned",
                sender_constrain: "none", fapi_response_mode: "plain_response",
                ekyc_profile: "plain_ekyc",
-               ekyc_verified_claims_response_support: "id_token_userinfo" } }
+               ekyc_verified_claims_response_support: "id_token_userinfo" },
+    // The plan registers `token_endpoint_auth_signing_alg` RS256 whatever
+    // key it is given, and this OP holds a client to the algorithm it
+    // registered (OIDC Core section 9), so its clients' keys are RSA.
+    keyAlg: "RS256",
+    settings: [["oauth2.idaTrustFrameworks", "eidas"]],
+    // A verification RECORDED on the person, as an administrator would
+    // (#127), rather than development's invented `urn:sts:demo` one — so
+    // the plan reads what product would release. `name` because the plan
+    // asks for the first of claims_in_verified_claims_supported.
+    verification: {
+      verification: { trust_framework: "eidas", assurance_level: "high",
+        evidence: [{ type: "document",
+          check_details: [{ check_method: "vpip" }],
+          document_details: { type: "passport",
+                              document_number: "C01X00T47" } }] },
+      claims: ["name", "given_name", "family_name", "email"] },
+    // ekyc-server-testuserprovidedrequest sends each request the operator
+    // lists: here, the recorded claims, in the ID Token and at UserInfo.
+    ekyc: { verified_claims_request_list: [
+      { id_token: { verified_claims: {
+          verification: { trust_framework: null },
+          claims: { given_name: null, family_name: null } } },
+        userinfo: { verified_claims: {
+          verification: { trust_framework: { value: "eidas" } },
+          claims: { given_name: null, family_name: null, email: null } } }
+      }] } }
 ];
 
 // ---------------------------------------------------------------------------
@@ -404,8 +430,16 @@ async function prepare(plan) {
     browser: browserFor(base, person, !!plan.frontchannel),
     override: overridesFor(base, person)
   };
-  const keys1 = oidf.keyPair("conf-" + plan.key + "-1");
-  const keys2 = oidf.keyPair("conf-" + plan.key + "-2");
+  if (plan.verification) {
+    await oidf.ok(api + "/users/record-verification",
+                  Object.assign({ user: person }, plan.verification),
+                  "recorded a verification for " + person);
+  }
+  if (plan.ekyc) {
+    configuration.ekyc = plan.ekyc;
+  }
+  const keys1 = oidf.keyPair("conf-" + plan.key + "-1", plan.keyAlg);
+  const keys2 = oidf.keyPair("conf-" + plan.key + "-2", plan.keyAlg);
   if (plan.static) {
     const clients = await staticClients(plan, base, api, alias);
     configuration.client = { client_id: clients[0].client_id,

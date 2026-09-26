@@ -661,7 +661,10 @@ It is answered from the **identity verifications recorded for the person**:
 
 `value`, `values` and `time.max_age` on the verification and its evidence
 **choose** which record answers; an element no record satisfies is left out
-entirely, and only the members you asked for are returned. A claim is released
+entirely, and only the members you asked for are returned. `value` and
+`values` on a claim inside `verified_claims` are enforced too (section
+5.7.4): a claim that does not match is left out, and an element left with no
+claim is left out whole. On ordinary claims they are still only reported. A claim is released
 as verified only **while the directory still holds the value that was
 verified** — change the entry and the claim drops out of `verified_claims`
 (the ordinary claim carries the new value). A malformed request —

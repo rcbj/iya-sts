@@ -4122,6 +4122,12 @@ otherwise; each carries its regression check.
 * **A `request_uri` is fetched through the federation outbound policy's TLS**
   (`federation.outboundCaFile`), so a host a private CA certifies can be
   verified; it used node's store alone.
+* **Identity Assurance 1.0 section 5.7.4**: `value`/`values` on a claim
+  INSIDE `verified_claims` were reported and not enforced; a claim that does
+  not fulfil them is now omitted, and an element left with none omitted
+  whole (`common/identity_assurance.ts`, `tests/identity_assurance.js` 3g–3i).
+  #127's answer was "as IDA requires", and this is what IDA requires;
+  ordinary claims keep OIDC Core 5.5.1's rule.
 * **RP-Initiated Logout 1.0 section 2**: a `post_logout_redirect_uri`
   with neither an `id_token_hint` nor a `client_id` was followed in
   development (#118's acceptance of an unregistered address). Nothing

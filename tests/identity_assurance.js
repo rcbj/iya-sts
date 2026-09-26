@@ -216,6 +216,23 @@ function body(t) {
   t.check(Array.isArray(both) && both.length === 2,
           '3f. two elements asked, an array of two answered');
 
+  // #187, section 5.7.4: `value`/`values` on a claim INSIDE verified_claims
+  // are enforced — a claim that does not fulfil them is omitted, and an
+  // element left with none is omitted whole.
+  const unmetValue = answer({ verification: { trust_framework: null },
+    claims: { given_name: { value: 'Somebody Else' }, family_name: null } });
+  t.check(unmetValue && !('given_name' in unmetValue.claims) &&
+          unmetValue.claims.family_name === 'Liddell',
+          '3g. a claim whose value does not match is omitted (5.7.4); the ' +
+          'rest of the element stands', JSON.stringify(unmetValue));
+  t.check(answer({ verification: { trust_framework: null },
+    claims: { given_name: { values: ['Bob', 'Carol'] } } }) === undefined,
+          '3h. and an element left with no claim is omitted whole');
+  const metValue = answer({ verification: { trust_framework: null },
+    claims: { given_name: { value: 'Alice' } } });
+  t.check(metValue && metValue.claims.given_name === 'Alice',
+          '3i. a matching value is released', JSON.stringify(metValue));
+
   t.log.info('=== 4. a value the entry no longer holds ===');
   const entry = ldap.existingUserEntry('ida-alice');
   entry.attributes.givenname = ['Alicia'];
