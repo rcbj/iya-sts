@@ -581,7 +581,7 @@ var config = {
     signResponse: true,                                                    // Sign the response
     nameIdFormat: "urn:oasis:names:tc:SAML:1.1:nameid-format:unspecified", // Default NameIdentifier format
     defaultProfile: "post",                                                // Default browser profile
-    doNotCacheCondition: true,                                             // Mark a Browser/POST assertion DoNotCache
+    doNotCacheCondition: false,                                            // Mark a Browser/POST assertion DoNotCache
     artifactTtlS: 300,                                                     // Artifact lifetime (seconds)
     autocreateApplications: true,                                          // Register relying parties on sight
     requestTtlMin: 10,                                                     // Held flow lifetime (minutes)

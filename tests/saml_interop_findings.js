@@ -522,18 +522,19 @@ async function run(t) {
     t.check(hiddenField(posted.body, 'TARGET') === 'ss:mem:' + stamp,
             'Shibboleth\'s lower-case `target` comes back as TARGET',
             posted.body.slice(0, 300));
-    t.check(/DoNotCacheCondition/.test(assertion11),
-            'by default a Browser/POST assertion is marked DoNotCache');
+    t.check(!/DoNotCacheCondition/.test(assertion11),
+            'by default a Browser/POST assertion carries no DoNotCache ' +
+            '(saml11.doNotCacheCondition is off since 2026-09-26)');
     t.check(assertion11.indexOf('AttributeName="urn:mace:dir:attribute-def:' +
                                 'uid" AttributeNamespace="urn:mace:' +
                                 'shibboleth:1.0:attributeNamespace:uri"') >= 0,
             'and names uid the way Shibboleth\'s attribute map reads it',
             assertion11.slice(0, 200));
-    const plain = shib(rpPost, { 'saml11.doNotCacheCondition': false });
-    t.check(!/DoNotCacheCondition/.test(Buffer.from(
-              hiddenField(plain.body, 'SAMLResponse'), 'base64')
+    const marked = shib(rpPost, { 'saml11.doNotCacheCondition': true });
+    t.check(/DoNotCacheCondition/.test(Buffer.from(
+              hiddenField(marked.body, 'SAMLResponse'), 'base64')
               .toString('utf8')),
-            'saml11.doNotCacheCondition off: no DoNotCacheCondition');
+            'saml11.doNotCacheCondition on: a DoNotCacheCondition');
     const artifact = shib(rpArt);
     t.check(artifact.statusCode === 303 &&
             /SAMLart=/.test(artifact.location) &&

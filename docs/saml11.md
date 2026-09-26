@@ -82,11 +82,10 @@ it appears.
 
 * **Browser/POST** (profiles section 4.2) puts the whole signed Response in a
   self-submitting form. The assertion is confirmed
-  `urn:oasis:names:tc:SAML:1.0:cm:bearer` and carries a `DoNotCacheCondition`,
-  because it passed through the browser — unless `saml11.doNotCacheCondition`
-  is off, which a realm serving **Shibboleth** SPs needs: the profile does not
-  ask for the condition, and Shibboleth's stock policy refuses an assertion
-  carrying it.
+  `urn:oasis:names:tc:SAML:1.0:cm:bearer`. It carries no `DoNotCacheCondition`
+  unless `saml11.doNotCacheCondition` is on (off by default): the profile does
+  not ask for the condition — single use is the relying party's to keep — and
+  a **Shibboleth** SP's stock policy refuses an assertion carrying it.
 * **Browser/Artifact** (section 4.1) sends a 42-byte artifact (type `0x0001`,
   with a SourceID that is the SHA-1 of the providerID) on a redirect, and the
   relying party fetches the assertion from the responder over SOAP — **the
@@ -251,7 +250,7 @@ session hold in **both** modes. See [What is not checked](what-is-not-checked.md
 | `saml11.signResponse` | `STS_SAML11_SIGN_RESPONSE` | `true` | yes | Sign the Response; per relying party with `saml11SignResponse`. Off is development mode only: Browser/POST requires a signed Response, so product always signs it and refuses turning it off (#181). |
 | `saml11.nameIdFormat` | `STS_SAML11_NAMEID_FORMAT` | `urn:oasis:names:tc:SAML:1.1:nameid-format:unspecified` | yes | The NameIdentifier format, unless the non-spec `format` overrides it; per relying party with `saml11NameIdFormat`. |
 | `saml11.defaultProfile` | `STS_SAML11_DEFAULT_PROFILE` | `post` | yes | `post` or `artifact`, when the request does not say. |
-| `saml11.doNotCacheCondition` | `STS_SAML11_DO_NOT_CACHE_CONDITION` | `true` | yes | A `<saml:DoNotCacheCondition/>` on a Browser/POST assertion. The profile does not require it, and the Shibboleth SP's stock policy refuses it — turn it off for a realm serving Shibboleth SPs (#189). |
+| `saml11.doNotCacheCondition` | `STS_SAML11_DO_NOT_CACHE_CONDITION` | `false` | yes | A `<saml:DoNotCacheCondition/>` on a Browser/POST assertion. Off by default (#189): the profile does not require it, and the Shibboleth SP's stock policy refuses it. **Warning:** turn it on only for relying parties known to honour it. |
 | `saml11.artifactTtlS` | `STS_SAML11_ARTIFACT_TTL_S` | `300` | yes | How long an unresolved artifact lives (it is one-shot regardless); per relying party with `saml11ArtifactTtlS`. |
 | `saml11.autocreateApplications` | `STS_SAML11_AUTOCREATE_APPLICATIONS` | `true` | yes | Create an application entry the first time a relying party is named. |
 | `saml11.requestTtlMin` | `STS_SAML11_REQUEST_TTL_MIN` | `10` | yes | How long a flow is held while the person signs in. |

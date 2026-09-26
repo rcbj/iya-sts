@@ -7195,20 +7195,20 @@ const SETTINGS = [
 
   { key: 'saml11.doNotCacheCondition', group: 'SAML 1.1 assertions',
     label: 'Mark a Browser/POST assertion DoNotCache',
-    env: 'STS_SAML11_DO_NOT_CACHE_CONDITION', type: 'bool', dflt: true,
+    env: 'STS_SAML11_DO_NOT_CACHE_CONDITION', type: 'bool', dflt: false,
     runtime: true,
     description: 'Put a <saml:DoNotCacheCondition/> in the Conditions of ' +
-                 'an assertion sent on the Browser/POST profile. The ' +
-                 'profile does not ask for one — its single-use policy ' +
-                 '(oasis-sstc-saml-bindings-1.1 section 4.1.2) is the ' +
-                 'RELYING PARTY\'s to keep — and saml-core 1.1 section ' +
-                 '2.3.2.1 makes an assertion whose condition a relying ' +
-                 'party does not understand Indeterminate. WARNING: the ' +
-                 'Shibboleth SP refuses such an assertion with its stock ' +
-                 'security-policy.xml ("DoNotCacheCondition not ' +
-                 'successfully validated by policy", #189): turn this off ' +
-                 'for a realm whose SAML 1.1 relying parties are Shibboleth ' +
-                 'service providers.' },
+                 'an assertion sent on the Browser/POST profile. OFF by ' +
+                 'default (#189): the profile does not ask for one — its ' +
+                 'single-use policy (oasis-sstc-saml-bindings-1.1 section ' +
+                 '4.1.2) is the RELYING PARTY\'s to keep — and saml-core ' +
+                 '1.1 section 2.3.2.1 makes an assertion whose condition ' +
+                 'a relying party does not understand Indeterminate. ' +
+                 'WARNING: turning it on makes the Shibboleth SP refuse ' +
+                 'every such assertion with its stock security-policy.xml ' +
+                 '("DoNotCacheCondition not successfully validated by ' +
+                 'policy"); turn it on only for relying parties known to ' +
+                 'honour the condition.' },
 
   { key: 'saml11.artifactTtlS', group: 'SAML 1.1 assertions',
     label: 'Artifact ' +
