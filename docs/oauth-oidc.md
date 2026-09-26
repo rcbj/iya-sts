@@ -1352,7 +1352,8 @@ it may not name this service's own protected scopes.
 * `default_max_age` and `default_acr_values` apply unless the request names
   its own `max_age`, or its own `acr_values` or essential `acr`.
 * An `initiate_login_uri` must be `https`. The user portal (`/portal/applications`) shows a
-  **Sign in** link to it, carrying `iss` and `login_hint` (Core section 4).
+  **Sign in** link to it, carrying `iss` and `login_hint` (Core section 4) and
+  Enterprise Extensions' `tenant`, `domain_hint` and `target_link_uri`.
 
 An RFC 7592 update must name the client's own `client_id` and, if it sends a
 `client_secret`, the one it was issued. A registration access token for a
