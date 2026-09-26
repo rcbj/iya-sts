@@ -131,7 +131,8 @@ const PLANS = [
   { key: "logout-front",
     name: "oidcc-frontchannel-rp-initiated-logout-certification-test-plan",
     variant: { response_type: "code",
-               client_registration: "dynamic_client" } },
+               client_registration: "dynamic_client" },
+    frontchannel: true },
   { key: "logout-back",
     name: "oidcc-backchannel-rp-initiated-logout-certification-test-plan",
     variant: { response_type: "code",
@@ -207,8 +208,31 @@ function check(what, fn) {
 // ---------------------------------------------------------------------------
 // THE SCRIPTED BROWSER (see the header).
 // ---------------------------------------------------------------------------
-function browserFor(base, person) {
+function browserFor(base, person, frontchannel) {
   log.debug("Entering browserFor().");
+  const logoutTasks = [
+    // The confirmation page, or a refusal — photographed either way, then
+    // the confirmation pressed where there is one.
+    { task: "End-session page", optional: true,
+      match: base + "/oauth2/logout*",
+      commands: [
+        ["wait", "xpath", "//body", 10, ".*",
+         "update-image-placeholder-optional"],
+        ["click", "xpath", "//button[@value='yes']", "optional"]] }
+  ];
+  // Front-channel only: the notification page returns by a refresh, so the
+  // browser waits for it. Nowhere else — the suite's `wait` has no optional
+  // form, and the RP-Initiated modules whose right answer is NOT to return
+  // (no id_token_hint, a bad or absent post_logout_redirect_uri, no
+  // parameters) would time out on it with the page they wanted on screen.
+  if (frontchannel) {
+    logoutTasks.push({ task: "Return to the client", optional: true,
+                       match: base + "/oauth2/logout*",
+                       commands: [["wait", "contains",
+                                   "/post_logout_redirect", 20]] });
+  }
+  logoutTasks.push({ task: "Verify complete", optional: true,
+                     match: oidf.SUITE + "test/*/post_logout_redirect*" });
   log.debug("Leaving browserFor().");
   return [{
     match: base + "/oauth2/authorize*",
@@ -235,22 +259,7 @@ function browserFor(base, person) {
     ]
   }, {
     match: base + "/oauth2/logout*",
-    tasks: [
-      // The confirmation page, or a refusal — photographed either way, then
-      // the confirmation pressed where there is one.
-      { task: "End-session page", optional: true,
-        match: base + "/oauth2/logout*",
-        commands: [
-          ["wait", "xpath", "//body", 10, ".*",
-           "update-image-placeholder-optional"],
-          ["click", "xpath", "//button[@value='yes']", "optional"]] },
-      // Front-channel: the notification page returns by a refresh.
-      { task: "Return to the client", optional: true,
-        match: base + "/oauth2/logout*",
-        commands: [["wait", "contains", "/post_logout_redirect", 20]] },
-      { task: "Verify complete", optional: true,
-        match: oidf.SUITE + "test/*/post_logout_redirect*" }
-    ]
+    tasks: logoutTasks
   }];
 }
 
@@ -392,7 +401,7 @@ async function prepare(plan) {
     realmApi: api,
     server: { discoveryUrl: base + "/.well-known/openid-configuration",
               allow_unexpected_metadata_fields: oidf.EXTENSION_METADATA },
-    browser: browserFor(base, person),
+    browser: browserFor(base, person, !!plan.frontchannel),
     override: overridesFor(base, person)
   };
   const keys1 = oidf.keyPair("conf-" + plan.key + "-1");
