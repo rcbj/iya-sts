@@ -29,6 +29,7 @@
 delete process.env.CONFIG_FILE;
 
 const nodeCrypto = require('crypto');
+const config = require('../common/config');
 const pki = require('../common/pki');
 const keystore = require('../common/keystore');
 const errorCodes = require('../common/error_codes');
@@ -103,6 +104,12 @@ async function run(t) {
              'set aside so the Root asserted below is one this file built.');
     keystore.attachPki(pki.SERVICE_SCOPE, null);
   }
+  // HYBRID IS OFF BY DEFAULT since 2026-09-26 (rcbj): `none` is the
+  // setting's default, so this file turns it on for itself and puts it back.
+  const set = config.setOverride('pki.alternativeKeyAlgorithm', 'ml-dsa-87');
+  t.check(set && set.ok !== false,
+          'pki.alternativeKeyAlgorithm is set to ml-dsa-87 for this file',
+          JSON.stringify(set));
   try {
     await everyTierIsHybrid(t);
     await aLeafIsSignedTwiceAndVerified(t);
@@ -114,6 +121,7 @@ async function run(t) {
     [REALM, CLASSICAL, REFUSED].forEach(function (id) {
       pki.clearChain(id);
     });
+    config.clearOverride('pki.alternativeKeyAlgorithm');
   }
   log.debug("Leaving run().");
 }
@@ -123,7 +131,7 @@ async function everyTierIsHybrid(t) {
   t.log.info('=== 1. every tier holds an ML-DSA-87 key, and is signed ' +
              'twice ===');
   const built = await pki.buildChain(REALM, { organisation: 'Hybrid' });
-  t.check(built.ok, 'a hierarchy is built with the default setting',
+  t.check(built.ok, 'a hierarchy is built with the setting at ml-dsa-87',
           (built.errors || []).join(' '));
   const tiers = built.chain.tiers;
   t.check(tiers.every(function (one) {

@@ -108,14 +108,22 @@ to `urn:wstrust:mock:sts`.
 
 ### An environment variable is a string, and the table knows what to do with it
 
-A `bool` takes `1/true/yes/on` and `0/false/no/off` in either case; anything else
-is warned about and falls back to that setting's own default, so
-`LDAP_AUTOCREATE_USERS=treu` does not silently turn a feature off. A `csv` is a
+A `bool` takes `1/true/yes/on` and `0/false/no/off` in either case. A `csv` is a
 comma-separated list, trimmed, and may be written as a real array in an appconfig
-file. An `int` may narrow itself with a minimum, a maximum and a multiple-of —
-the four token lifetimes do — and the same three numbers constrain the console's
-form, the management API and the variable read at startup, because there is one
-check rather than three.
+file; a list drawn from a closed set (`csvValues`) holds only its members. An
+`enum` holds one of its `enumValues`, spelt exactly. An `int` may narrow itself
+with a minimum, a maximum and a multiple-of — the four token lifetimes do.
+
+**These are one check, wherever the value is written.** The console's form, the
+management API, a realm's override, the appconfig file and the environment are
+all held to it. A value typed into `/admin/config` that would be refused is
+refused the same way at startup: the service does not start (`STS-CORE-0108`),
+and it names every offending value, the file or variable it came from, and what
+the setting accepts. For example, `LDAP_AUTOCREATE_USERS=treu`,
+`STS_PKI_KEY_ALGORITHM=RSA-2048` (the ids are lower case) or
+`webauthn: { algorithms: 'ES256,NOSUCHALG' }` all stop the start. Every layer
+that holds a value is checked, including one an environment variable currently
+shadows, because it becomes live when the variable is unset.
 
 ## Runtime versus restart-only
 
@@ -1578,12 +1586,33 @@ passwords.
 | `oauth2.cibaNotifyTimeoutMs` | `STS_OAUTH2_CIBA_NOTIFY_TIMEOUT_MS` | `5000` | yes | How long one ping or push to a client's notification endpoint may take. |
 | `oauth2.cibaNotifyAttempts` | `STS_OAUTH2_CIBA_NOTIFY_ATTEMPTS` | `5` | yes | How many times a ping or push is tried before it is given up (dead-lettered). |
 | `oauth2.cibaNotifyBackoffMs` | `STS_OAUTH2_CIBA_NOTIFY_BACKOFF_MS` | `2000` | yes | The wait before a failed ping or push is tried again, doubling each time. |
+| `oauth2.providerCommands` | `STS_OAUTH2_PROVIDER_COMMANDS` | `false` | yes | Send OpenID Provider Commands (draft 02, #151): a signed Command Token POSTed to each relying party's registered command_endpoint — account commands about one person, tenant commands about all of them — and accept their callbacks at /oauth2/commands/callback. OFF by default: it tells other services what to do with accounts. |
+| `oauth2.commandAutomatic` | `STS_OAUTH2_COMMAND_AUTOMATIC` | `true` | yes | While provider commands are on: send suspend on a disable, reactivate on an enable, delete on a directory or SCIM delete, maintain on a change to the person or their groups and invalidate on an administrator's global sign-out — only to a relying party whose metadata answer listed the command, and where the person has an account there. |
+| `oauth2.commandTokenTtlS` | `STS_OAUTH2_COMMAND_TOKEN_TTL_S` | `120` | yes | How long a Command Token is valid; the draft asks for at most two minutes, so a retry after a backoff signs it again with the same jti. |
+| `oauth2.commandAttempts` | `STS_OAUTH2_COMMAND_ATTEMPTS` | `5` | yes | How many times a command is tried before it is a dead letter. Only a timeout, a connection failure, 5xx, 408 and 429 are tried again. |
+| `oauth2.commandTimeoutMs` | `STS_OAUTH2_COMMAND_TIMEOUT_MS` | `10000` | yes | How long one command request may take. |
+| `oauth2.commandBackoffMs` | `STS_OAUTH2_COMMAND_BACKOFF_MS` | `2000` | yes | The wait before a failed command is tried again, doubling each time. |
+| `oauth2.commandLeaseMs` | `STS_OAUTH2_COMMAND_LEASE_MS` | `60000` | yes | How long one process holds an attempt before another may take it over; never less than the timeout and a second. |
+| `oauth2.commandRetentionS` | `STS_OAUTH2_COMMAND_RETENTION_S` | `86400` | yes | How long a command delivery and a finished tenant run are kept; a delivery still pending this long is dead-lettered. |
+| `oauth2.commandMaxRows` | `STS_OAUTH2_COMMAND_MAX_ROWS` | `5000` | yes | The most command deliveries kept per realm; past it the oldest FINISHED one goes first. |
+| `oauth2.commandConcurrency` | `STS_OAUTH2_COMMAND_CONCURRENCY` | `8` | yes | How many command attempts one sweep makes at once in one process. |
+| `oauth2.commandSummaryS` | `STS_OAUTH2_COMMAND_SUMMARY_S` | `60` | yes | At most one log line per realm this often, counting the commands sent, retried and dead-lettered. |
+| `oauth2.commandSweepS` | `STS_OAUTH2_COMMAND_SWEEP_S` | `15` | yes | How often the oauth2.command-sweep scheduler job sends what is due and drops expired callback tokens and old tenant runs. |
+| `oauth2.commandCallbackTtlS` | `STS_OAUTH2_COMMAND_CALLBACK_TTL_S` | `86400` | yes | How long a callback_token this service put in a Command Token is accepted at /oauth2/commands/callback. |
+| `oauth2.commandStreamIdleMs` | `STS_OAUTH2_COMMAND_STREAM_IDLE_MS` | `30000` | yes | How long a tenant command's event stream may be silent before it is treated as dropped and resumed. |
+| `oauth2.commandStreamResumes` | `STS_OAUTH2_COMMAND_STREAM_RESUMES` | `3` | yes | How many times a tenant command's stream that dropped before command-complete is resumed with Last-Event-ID before the run fails. |
+| `oauth2.commandStreamMaxEvents` | `STS_OAUTH2_COMMAND_STREAM_MAX_EVENTS` | `1000000` | yes | The most events one tenant command's stream may carry. |
+| `oauth2.commandMetadataMaxGroups` | `STS_OAUTH2_COMMAND_METADATA_MAX_GROUPS` | `200` | yes | The most directory groups the metadata command's OP metadata lists. |
+| `oauth2.cibaNotifyRetentionS` | `STS_OAUTH2_CIBA_NOTIFY_RETENTION_S` | `3600` | yes | How long a ping or push delivery is kept after it was queued, sent or dead; one still pending this long is dead-lettered, so nothing is pending for ever. |
+| `oauth2.cibaNotifyMaxRows` | `STS_OAUTH2_CIBA_NOTIFY_MAX_ROWS` | `2000` | yes | The most ping and push deliveries kept per realm; past it the oldest FINISHED one goes first, and a pending one is never dropped to make room. |
+| `oauth2.cibaNotifyConcurrency` | `STS_OAUTH2_CIBA_NOTIFY_CONCURRENCY` | `8` | yes | How many ping and push attempts one sweep makes at once in one process. |
+| `oauth2.cibaNotifySummaryS` | `STS_OAUTH2_CIBA_NOTIFY_SUMMARY_S` | `60` | yes | At most one log line per realm this often, counting the pings and pushes sent, retried and dead-lettered. |
 | `oauth2.cibaSweepS` | `STS_OAUTH2_CIBA_SWEEP_S` | `30` | yes | How often the oauth2.ciba-sweep scheduler job retries due notifications and expires unanswered requests. |
 | `oauth2.idaTrustFrameworks` | `STS_OAUTH2_IDA_TRUST_FRAMEWORKS` | `urn:sts:local` | yes | The trust frameworks (OpenID Connect for Identity Assurance section 5.1) an administrator may record a person's identity verification under, comma-separated, and what discovery publishes as trust_frameworks_supported. The first is the framework a sign-in's own verification is recorded under. `urn:sts:demo` is reserved for development mode's invented verification. |
 | `oauth2.idaAutomaticVerifications` | `STS_OAUTH2_IDA_AUTOMATIC_VERIFICATIONS` | `true` | yes | ON: a wallet sign-in with a credential this realm issued records an electronic_record verification, and a client certificate sign-in an electronic_signature one, of the claims the entry agrees with. OFF: only what an administrator records is released as verified_claims. |
 | `pki.keyAlgorithm` | `STS_PKI_KEY_ALGORITHM` | `rsa-2048` | yes | Which key algorithm a new certificate authority is built with when the form names none: `rsa-2048`, `rsa-3072`, `rsa-4096`, `ec-p256`, `ec-p384`, `ec-p521` or `ed25519`. RSA 2048 because the LEAF this chain exists to issue signs a client assertion somebody else's OAuth library has to verify. |
 | `pki.signatureAlgorithm` | `STS_PKI_SIGNATURE_ALGORITHM` | *(empty)* | yes | Which signature algorithm the tiers sign each other with. **Empty means "the right one for the key algorithm"**, which is what almost every deployment wants: an EC key's digest is decided by its CURVE, and a fixed value here would hand a P-521 key SHA-256 — legal, verifying, and nobody's intention. `sha1-rsa` and `sha1-ecdsa` are development mode only: product uses the key's default instead and refuses setting either, or a build naming one (#181). |
-| `pki.alternativeKeyAlgorithm` | `STS_PKI_ALTERNATIVE_KEY_ALGORITHM` | `ml-dsa-87` | yes | The post-quantum key every certificate authority this service builds holds beside its classical one, in ITU-T X.509 (2019) clause 9.8's non-critical alternative-key extensions; each authority signs everything it issues twice, and a certificate in this service's own hierarchy whose alternative signature is missing or wrong is refused (`STS-PKI-0202`, `STS-PKI-0201`). Read at the next build; a hierarchy keeps what it was built with. One of `ml-dsa-87`, `ml-dsa-65`, `ml-dsa-44`, `slh-dsa-sha2-256s`, `slh-dsa-sha2-192s`, `slh-dsa-sha2-128s` or `none`. **Warning:** `none` builds classical-only authorities a quantum-capable attacker can forge; SLH-DSA costs seconds per certificate issued. |
+| `pki.alternativeKeyAlgorithm` | `STS_PKI_ALTERNATIVE_KEY_ALGORITHM` | `none` | yes | **Off by default** (a hybrid certificate is too large for some products; libest refuses an enroll response over 4 KB). Otherwise, the post-quantum key every certificate authority this service builds holds beside its classical one, in ITU-T X.509 (2019) clause 9.8's non-critical alternative-key extensions; each authority signs everything it issues twice, and a certificate in this service's own hierarchy whose alternative signature is missing or wrong is refused (`STS-PKI-0202`, `STS-PKI-0201`). Read at the next build; a hierarchy keeps what it was built with. One of `ml-dsa-87`, `ml-dsa-65`, `ml-dsa-44`, `slh-dsa-sha2-256s`, `slh-dsa-sha2-192s`, `slh-dsa-sha2-128s` or `none`; `ml-dsa-87` is the recommended value. **Warning:** `none` builds classical-only authorities a quantum-capable attacker can forge; SLH-DSA costs seconds per certificate issued. |
 | `pki.organisation` | `STS_PKI_ORGANISATION` | `sts` | yes | The `O=` every tier of a new hierarchy carries, and what the tiers are named after when the form gives no common names. |
 | `pki.leafLifetimeDays` | `STS_PKI_LEAF_LIFETIME_DAYS` | `365` | yes | How long a signing certificate issued to an application or a person is good for when the request names no lifetime — every door that issues one. **Clamped** to the Issuing CA's own expiry rather than refused where it would overshoot. |
 | `pki.personSelfService` | `STS_PKI_PERSON_SELF_SERVICE` | `true` | yes | Whether `/portal/signing-key` lets a person issue **themselves** an RFC 7523 or RFC 7522 key pair (one switch for both). The key can only assert about its own holder, so it is a credential for an account they are already signed in to. **Turning it off takes nobody's key away** — one already on an entry goes on verifying — and it stops new ones from the PORTAL only; `/admin/pki` and `POST /admin-api/pki/issue` are an operator's door and are unaffected. |

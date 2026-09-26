@@ -5897,13 +5897,22 @@ NOT: RFC 7518 pins ES256 to P-256, ES384 to P-384 and ES512 to P-521, so a P-256
 key under a SHA-512 chain is still ES256, and naming it ES512 would produce
 assertions nothing can verify. `tests/pki.js` asserts both readings.
 
-### 3w, CONTINUED: EVERY AUTHORITY IS HYBRID (2026-09-26, #68 phase 1)
+### 3w, CONTINUED: HYBRID AUTHORITIES, OFF BY DEFAULT (2026-09-26, #68 phase 1)
+
+**OFF BY DEFAULT, THE SAME DAY IT LANDED (rcbj).** `pki.alternativeKeyAlgorithm`
+defaults to `none`: the hierarchy is the original one, every use case and
+every signature its own classical key pair, because a hybrid certificate
+breaks too many other products — Cisco libest refuses any enroll response over
+4 KB (`EST_MAX_CLIENT_CERT_LEN`), which every hybrid leaf is, and
+`sts_est_libest` found it. Everything below is what the setting does when it
+is set; `tests/pki_hybrid.js` sets it for itself.
+
 
 **rcbj's D4 on #68 was "whole chain hybrid"**: the approach is #1 of his
 article *X.509 Certificates With More Than One Signature*, ITU-T X.509 (2019)
-clause 9.8's alternative public key and alternative signature. So every tier
-`issueCaTier()` builds holds a SECOND key pair: `pki.alternativeKeyAlgorithm`,
-ML-DSA-87 by default. Its public half goes in `subjectAltPublicKeyInfo`, and
+clause 9.8's alternative public key and alternative signature. So, with the
+setting on, every tier `issueCaTier()` builds holds a SECOND key pair:
+`pki.alternativeKeyAlgorithm` (ML-DSA-87 recommended). Its public half goes in `subjectAltPublicKeyInfo`, and
 it is kept on the tier as `altKeyAlg` / `altPrivateKeyPem` / `altPublicKeyPem`,
 sealed with the rest of the row, since `keystore.js` seals the chain as one
 blob. **Every certificate a tier issues carries an alternative signature**,
@@ -9143,3 +9152,19 @@ meets NO risk step-up (`risk_engine.satisfiedBy()`'s `kinds`, D1).
 `tests/email_factor.js` drives it end to end in process;
 `tests/vendored/sts_email_factor.js` over HTTP into Mailpit.
 
+
+## `closed_sets.ts`: THE CLOSED SETS AN ADMINISTRATOR'S INPUT IS HELD TO (#86, 2026-09-26)
+
+A LEAF (rule 3) requiring only `bunyan`. It holds no set of its own — every
+set is an `enum` in `/admin-api`'s OpenAPI document — and gives the three
+doors what they need to hold that one declaration: `collect()` (every enum a
+request schema declares outside `anyOf`/`oneOf`, following `$ref`), the
+console register `mgmt-api/admin_api.ts` fills at wire time and
+`admin-ui/admin.ts`'s gate reads, `checkQuery()`, `formValues()` (every value
+of a repeated form field, which `helpers.parseBody()` cannot give) and
+`sentence()`, the one refusal all three give. **A register in a leaf that both
+modules require in the ordinary direction, like `cache_registry.js` — not a
+slot**: neither module calls the other, so rule 3e's test is never reached.
+Its three rules (an empty form or query value is absent, case is exact, an
+enum inside an alternative is ajv's) are argued in its header; the design is
+`mgmt-api/CLAUDE.md`'s *Every closed set is held, at every door*.

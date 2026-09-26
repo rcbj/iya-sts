@@ -16672,6 +16672,7 @@ class OAuth2Server {
       applications.pushedAuthorizationMetadataProblem(metadata) ||
       applications.oidcSubjectMetadataProblem(metadata) ||
       applications.cibaMetadataProblem(metadata) ||
+      applications.commandMetadataProblem(metadata) ||
       applications.oidcRegistrationProblem(metadata) ||
       applications.mtlsMetadataProblem(metadata) ||
       self.mtlsRegistrationProblem(metadata) ||
@@ -16855,6 +16856,7 @@ class OAuth2Server {
       applications.pushedAuthorizationMetadataProblem(metadata) ||
       applications.oidcSubjectMetadataProblem(metadata) ||
       applications.cibaMetadataProblem(metadata) ||
+      applications.commandMetadataProblem(metadata) ||
       applications.oidcRegistrationProblem(metadata) ||
       applications.mtlsMetadataProblem(metadata) ||
       self.mtlsRegistrationProblem(metadata) ||
@@ -17070,6 +17072,7 @@ class OAuth2Server {
       applications.pushedAuthorizationMetadataProblem(metadata) ||
       applications.oidcSubjectMetadataProblem(metadata) ||
       applications.cibaMetadataProblem(metadata) ||
+      applications.commandMetadataProblem(metadata) ||
       applications.oidcRegistrationProblem(metadata) ||
       applications.mtlsMetadataProblem(metadata) ||
       self.mtlsRegistrationProblem(metadata) ||

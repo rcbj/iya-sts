@@ -2010,8 +2010,18 @@ class PkiAdmin {
     // apply-profile, then issue, without keeping its own copy of the form.
     //
     // The MODEL is `common/pki_authoring.ts`. Nothing about a certificate is
-    // decided here.
+    // decided here — including which values its closed fields take (#86).
     // =====================================================================
+    if (['apply-profile', 'generate-keys', 'generate-alt-keys',
+         'issue-certificate', 'use-key', 'export'].indexOf(action) >= 0) {
+      const closedProblem =
+        authoring.closedFieldProblem(authoring.draftFrom(body));
+      if (closedProblem) {
+        log.debug('Leaving PkiAdmin.pkiAction(). A closed field was ' +
+                  'outside its set.');
+        return closedProblem;
+      }
+    }
     if (action === 'apply-profile') {
       const draft = authoring.draftFrom(body);
       const applied = authoring.applyProfile(draft,

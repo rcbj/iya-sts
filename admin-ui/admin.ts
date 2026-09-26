@@ -782,6 +782,11 @@ import krb5Principals = require('../kerberos/krb5_principals');
 // requires only `config`, `bunyan` and zod, so it closes no cycle here and
 // moves nothing in the route order.
 import validation = require('../common/validation');
+// THE CLOSED SETS a console form is held to (#86). A LEAF (rule 3) requiring
+// only `bunyan`; `mgmt-api/admin_api.ts` fills its register at wire time from
+// the OpenAPI table, and the check below reads it. A register both modules
+// require in the ordinary direction, not a slot: neither calls the other.
+import closedSets = require('../common/closed_sets');
 import InstanceSlot = require('../common/instance_slot');
 
 // REQUIRED FOR THE ORDER THEY WERE ALWAYS REQUIRED IN, AND READ NOWHERE HERE
@@ -1360,6 +1365,16 @@ const SECTIONS = [
       // reason: another party this realm is configured to trust, here for
       // claims about a person — OpenID Connect aggregated and distributed
       // claims. Drawn by oauth-oidc/claims_providers_admin.ts.
+      // OPENID PROVIDER COMMANDS (#151, 2026-09-26), beside Claims
+      // Providers for the same reason: another party this realm acts
+      // towards, here telling relying parties what to do with an account.
+      // Drawn by oauth-oidc/provider_commands_admin.ts.
+      { path: '/admin/commands', label: 'Provider Commands',
+        blurb: 'OpenID Provider Commands: each client\'s command_endpoint ' +
+               'and what it supports, sending an account command about a ' +
+               'person or a tenant command about everybody, what each ' +
+               'relying party said about each account, tenant runs, and ' +
+               'the deliveries.' },
       { path: '/admin/claim-providers', label: 'Claims Providers',
         blurb: 'The OpenID Providers this realm fetches claims from for a ' +
                'person who linked one on the portal, passed to a relying ' +
@@ -2170,6 +2185,18 @@ const SECTIONS = [
                    'are on each stream at ' +
                    '<a href="/admin/ssf">Protocols &rarr; Shared Signals</a>.' }
         ] },
+
+      // OUTBOUND DELIVERIES (#151, 2026-09-26): what this service POSTed to
+      // an address a client registered — Back-Channel Logout Tokens, CIBA
+      // pings and pushes, OpenID Provider Commands — on the one durable
+      // queue, with each kind's dead letters and Retry. Drawn by
+      // oauth-oidc/provider_commands_admin.ts.
+      { path: '/admin/deliveries', label: 'Outbound deliveries',
+        blurb: 'Every Logout Token, CIBA notification and OpenID Provider ' +
+               'Command this realm sent to a relying party, by kind: pending, ' +
+               'sent and <strong>dead</strong> — each dead letter with its ' +
+               'code and the reason, and a Retry that sends it again as a ' +
+               'new generation.' },
 
       // Beside Delegation and not inside it, and the argument is the one both
       // of that page's pictures rest on: every row there is about two
@@ -17695,7 +17722,13 @@ class AdminConsole {
     // so a typo is a warning in the log and the service-wide value silently in
     // force, which is the failure a select cannot have.
     const choices = described.type === 'bool' ? ['true', 'false']
-      : (described.type === 'enum' ? (described.enumValues || []) : null);
+      : (described.type === 'enum'
+        // The empty value is the inherit option drawn first, not a second
+        // blank line (#86).
+        ? (described.enumValues || []).filter(function (option) {
+            return option !== '';
+          })
+        : null);
     const control = choices
       ? '<select id="' + this.esc(id) + '" name="field.' +
         this.esc(row.attribute) + '"' +
@@ -17777,7 +17810,13 @@ class AdminConsole {
     // so a typo is a warning in the log and the service-wide value silently in
     // force, which is the failure a select cannot have.
     const choices = described.type === 'bool' ? ['true', 'false']
-      : (described.type === 'enum' ? (described.enumValues || []) : null);
+      : (described.type === 'enum'
+        // The empty value is the inherit option drawn first, not a second
+        // blank line (#86).
+        ? (described.enumValues || []).filter(function (option) {
+            return option !== '';
+          })
+        : null);
     const control = choices
       ? '<select id="' + this.esc(id) + '" name="field.' +
         this.esc(row.attribute) + '"' +
@@ -22707,9 +22746,12 @@ class AdminConsole {
         '"' + hint +
         (setting.editable ? '' : ' disabled') + '>' +
         setting.enumValues.map(function (option) {
+          // An enum whose set holds the empty string (#86 made
+          // `pki.signatureAlgorithm` one) draws it as what it means rather
+          // than as a blank line.
           return '<option value="' + self.esc(option) + '"' +
             (option === setting.text ? ' selected' : '') + '>' +
-            self.esc(option) +
+            self.esc(option === '' ? '(empty — the default)' : option) +
                  '</option>';
         }).join('') + '</select>'
       : (setting.type === 'bool'
@@ -23114,9 +23156,12 @@ class AdminConsole {
         '"' + hint +
         '>' +
         (setting.enumValues || []).map(function (option) {
+          // An enum whose set holds the empty string (#86 made
+          // `pki.signatureAlgorithm` one) draws it as what it means rather
+          // than as a blank line.
           return '<option value="' + self.esc(option) + '"' +
             (option === setting.text ? ' selected' : '') + '>' +
-            self.esc(option) +
+            self.esc(option === '' ? '(empty — the default)' : option) +
                  '</option>';
         }).join('') + '</select>'
       : (setting.type === 'bool'
@@ -28292,6 +28337,52 @@ class AdminConsole {
       }
       log.debug("Leaving the console query check. Accepted.");
       return next();
+    });
+
+    // -------------------------------------------------------------------------
+    // A FORM FIELD OUTSIDE ITS CLOSED SET (#86).
+    //
+    // A console form posts the same `action` as the `/admin-api` operation that
+    // mirrors it, and that operation's request schema declares which fields
+    // take a closed set of values. `mgmt-api/admin_api.ts` registered those in
+    // `common/closed_sets.ts` when it was wired; this holds a POST to them,
+    // after the gate — so a caller who may not write is told that, not
+    // something about a field — and before any handler. Every console page is
+    // registered below this line, so one check covers the pages of every
+    // directory (`ldap_server.js`'s and the `*_admin.ts` modules' included).
+    //
+    // A field an untouched `<select>` left empty is absent; a streamed upload
+    // (#215) is not read here, its fields being in a body nobody has read yet.
+    // A process that never loaded the management API has an empty register,
+    // and this passes everything, which is what it did before #86.
+    // -------------------------------------------------------------------------
+    app.use('/admin', function (req, res, next) {
+      log.debug("Entering the console closed-set check.");
+      if (req.method !== 'POST' || app.isStreamedUpload(req)) {
+        log.debug("Leaving the console closed-set check. Not a form POST.");
+        return next();
+      }
+      const page = ('/admin' + (req.path === '/' ? '' : req.path))
+        .replace(/\/+$/, '');
+      const parsed = parseBody(req);
+      const body = closedSets.formValues(req, parsed);
+      const action = String((parsed && parsed.action) || '');
+      const checked = closedSets.checkForm(page, action, body);
+      if (checked.ok) {
+        log.debug("Leaving the console closed-set check. Accepted.");
+        return next();
+      }
+      log.info('admin console: a POST to ' + page +
+               (action ? ' (' + action + ')' : '') + ' was refused: ' +
+               checked.sentence);
+      errorCodes.mark(res, 'STS-ADMIN-0820');
+      self.refuse(req, res, 400, 'invalid_value',
+                  'That value is not one this control accepts.',
+                  checked.sentence,
+                  { field: checked.field, values: checked.values });
+      log.debug("Leaving the console closed-set check. Refused on \"" +
+                checked.field + "\".");
+      return undefined;
     });
 
     // =========================================================================
@@ -40430,8 +40521,11 @@ const CONSOLE_QUERY = vz.looseObject((function () {
     per: bounded(16),
 
     // Which rendering is being asked for; compared against 'json' and 'svg' at
-    // the call sites, so anything else already falls through to HTML.
-    format: bounded(16),
+    // the call sites, so anything else already falls through to HTML. It is
+    // ALSO a filter: /admin/used-assertions filters by the history's formats,
+    // and `attestation-challenge` (#229) is 21 characters, so a bound of 16
+    // made that page's own filter answer 400 (sts_admin_console, 2026-09-26).
+    format: bounded(32),
 
     // The identifiers a drill-down page is reached by: a name in the directory,
     // a realm id, a credential handle. None of them is free text.
