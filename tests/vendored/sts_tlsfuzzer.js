@@ -139,14 +139,15 @@ async function clientCertificates() {
     rsapss: selfSigned(dir, "rsapss", ["-newkey", "rsa-pss", "-pkeyopt",
                                        "rsa_keygen_bits:2048"]),
     mldsa: selfSigned(dir, "mldsa", ["-newkey", "ml-dsa-65"]),
-    brainpool: selfSigned(dir, "brainpool", ["-newkey", "ec", "-pkeyopt",
-                                             "ec_paramgen_curve:" +
-                                             "brainpoolP256r1"])
+    // A curve outside the NIST set, for the guard's refusal (#212).
+    nonNist: selfSigned(dir, "nonNist", ["-newkey", "ec", "-pkeyopt",
+                                         "ec_paramgen_curve:" +
+                                         "brainpoolP256r1"])
   };
-  // tlslite reads a brainpool key only in the traditional SEC 1 form: its
+  // tlslite reads a non-NIST EC key only in the traditional SEC 1 form: its
   // PKCS #8 parser knows the NIST curves alone ("Unknown curve").
-  openssl(["ec", "-in", certificates.brainpool.key, "-out",
-           certificates.brainpool.key]);
+  openssl(["ec", "-in", certificates.nonNist.key, "-out",
+           certificates.nonNist.key]);
   log.debug("Leaving clientCertificates().");
   return { dir: dir, certificates: certificates };
 }
