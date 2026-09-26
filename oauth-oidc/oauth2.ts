@@ -308,6 +308,8 @@ import devices = require('../common/devices');
 // notifications — a library over `common/` and `federation_http`; it reaches
 // this file back only lazily, for a push.
 import ciba = require('./ciba');
+// RFC 8628 (#150): the device codes and the grant's states.
+import deviceAuthorization = require('./device_authorization');
 import grantManagement = require('./grant_management');
 import usedAssertions = require('../common/used_assertions');
 // THE ROLE GATE. A LEAF (rule 3): it registers nothing, requires `helpers`,
@@ -1398,6 +1400,12 @@ const TOKEN_QUERY_FORM = vz.looseObject({
 // OPENID CONNECT CIBA CORE 1.0 SECTION 7.1 (#131): the Backchannel
 // Authentication Endpoint's form. A `request` carries every other member
 // signed instead (section 7.1.1).
+// RFC 8628 section 3.1 (#150): what a device sends besides its client
+// authentication.
+const DEVICE_FORM = vz.looseObject({
+  scope: vt.opt(vt.scope)
+});
+
 const CIBA_FORM = vz.looseObject({
   scope: vt.opt(vt.scope),
   client_notification_token: vz.string().max(1024).optional(),
@@ -4992,6 +5000,37 @@ class OAuth2Server {
   // The names one member of a parsed claims request asks for, in the order the
   // client wrote them. A helper rather than an inline Object.keys() because
   // three call sites need it and one of them is the console.
+  // OPENID CONNECT KEY BINDING SECTION 2/3 (#150): a grant whose scope
+  // holds `bound_key` needs a DPoP proof whose `c_s256` is the base64url
+  // SHA-256 of the code it redeems (the authorization code, or the device
+  // code). Null when it holds, or when `bound_key` was not granted.
+  boundKeyProofRefusal(scope: Json, code: string, proof: Json): Json {
+    const { log } = this.deps;
+    log.debug("Entering OAuth2Server.boundKeyProofRefusal().");
+    if (String(scope || '').split(/\s+/).indexOf('bound_key') < 0) {
+      log.debug("Leaving OAuth2Server.boundKeyProofRefusal(). Not bound.");
+      return null;
+    }
+    if (!proof) {
+      log.debug("Leaving OAuth2Server.boundKeyProofRefusal(). No proof.");
+      return { code: 'STS-OAUTH-0702', error: 'invalid_dpop_proof',
+               description: 'bound_key was granted, so the token request ' +
+                 'must carry a DPoP proof (OpenID Connect Key Binding ' +
+                 'section 2).' };
+    }
+    const expected = crypto.createHash('sha256').update(code)
+      .digest('base64url');
+    if (String((proof.claims || {}).c_s256 || '') !== expected) {
+      log.debug("Leaving OAuth2Server.boundKeyProofRefusal(). c_s256.");
+      return { code: 'STS-OAUTH-0703', error: 'invalid_dpop_proof',
+               description: 'the DPoP proof\'s c_s256 is not the SHA-256 ' +
+                 'of the code being redeemed (OpenID Connect Key Binding ' +
+                 'section 2).' };
+    }
+    log.debug("Leaving OAuth2Server.boundKeyProofRefusal().");
+    return null;
+  }
+
   // The Claims Provider library (#147), loaded when first asked: it reads
   // the directory and the outbound policy, which load around this module.
   claimsProviders(): Json {
@@ -10727,6 +10766,9 @@ class OAuth2Server {
     // refresh. A wallet that sends none gets a Bearer token exactly as before,
     // which is what keeps this switch invisible to the workflows that do not
     // use it.
+    // THE WHOLE PROOF, kept for OpenID Connect Key Binding (#150): its
+    // `c_s256` claim and its public JWK, which a bound ID Token names.
+    let dpopProof: Json = null;
     let dpopJkt = '';
     if (req.headers['dpop'] !== undefined) {
       const checked = dpop.verifyProof(req.headers['dpop'], {
@@ -10756,6 +10798,7 @@ class OAuth2Server {
                                checked.description);
       }
       dpopJkt = checked.jkt;
+      dpopProof = checked;
       log.debug("This Token Request carries a valid DPoP proof. jkt=" +
                 dpopJkt);
     }
@@ -13126,6 +13169,83 @@ class OAuth2Server {
       log.debug("Leaving OAuth2Server.tokenGrant(). CIBA tokens issued.");
       return respond(cibaIssued);
     }
+    // RFC 8628 SECTION 3.4/3.5 (#150): the device polls with its device
+    // code. CIBA's poll, in RFC 8628's own errors.
+    if (grant === deviceAuthorization.GRANT_TYPE) {
+      const deviceRefuse = function (code: string, error: string,
+                                     description: string): Json {
+        log.debug("Entering deviceRefuse(). " + code);
+        errorCodes.mark(res, code);
+        log.debug("Leaving deviceRefuse().");
+        // error-code: none — marked on the line above, by the caller's code.
+        return self.oauthError(res, 400, error, description);
+      };
+      if (!deviceAuthorization.enabled()) {
+        log.debug("Leaving OAuth2Server.tokenGrant(). Device flow off.");
+        return deviceRefuse('STS-OAUTH-0689', 'unsupported_grant_type',
+                            'The device authorization grant is not enabled ' +
+                            'in this realm.');
+      }
+      const polled = deviceAuthorization.poll(body.device_code,
+                                              client.client_id);
+      const stateErrors: Json = {
+        unknown: ['STS-OAUTH-0695', 'invalid_grant', 'device_code names no ' +
+                  'device authorization of this client.'],
+        pending: ['STS-OAUTH-0696', 'authorization_pending', 'The person ' +
+                  'has not answered yet.'],
+        slow_down: ['STS-OAUTH-0697', 'slow_down', 'Polled sooner than the ' +
+                    'interval; wait ' + (polled.record &&
+                    polled.record.interval) + ' seconds between requests.'],
+        expired: ['STS-OAUTH-0698', 'expired_token', 'The device code ' +
+                  'expired before the person answered.'],
+        denied: ['STS-OAUTH-0699', 'access_denied', 'The person denied the ' +
+                 'request.'],
+        redeemed: ['STS-OAUTH-0700', 'invalid_grant', 'The tokens for this ' +
+                   'device code have already been issued.']
+      };
+      if (polled.state !== 'approved') {
+        const answer = stateErrors[polled.state] || stateErrors.unknown;
+        log.debug("Leaving OAuth2Server.tokenGrant(). Device " +
+                  polled.state);
+        return deviceRefuse(answer[0], answer[1], answer[2]);
+      }
+      const record = polled.record;
+      // A device code bound to a DPoP key at the device authorization
+      // request is redeemed only by that key (Key Binding section 3).
+      if (record.dpopJkt && record.dpopJkt !== dpopJkt) {
+        log.debug("Leaving OAuth2Server.tokenGrant(). Device code bound to " +
+                  "another key.");
+        errorCodes.mark(res, 'STS-OAUTH-0701');
+        return self.oauthError(res, 400, 'invalid_dpop_proof', 'This device ' +
+          'code is bound to DPoP key ' + record.dpopJkt + '; the token ' +
+          'request must carry a proof from that key.');
+      }
+      const deviceProof = self.boundKeyProofRefusal(record.scope,
+        String(body.device_code || ''), dpopProof);
+      if (deviceProof) {
+        log.debug("Leaving OAuth2Server.tokenGrant(). Key Binding.");
+        errorCodes.mark(res, deviceProof.code);
+        return self.oauthError(res, 400, deviceProof.error,
+                               deviceProof.description);
+      }
+      const person = self.provisionedPerson(record.username);
+      if (!person || !(await deviceAuthorization.redeem(record))) {
+        log.debug("Leaving OAuth2Server.tokenGrant(). Device code redeemed " +
+                  "elsewhere, or nobody.");
+        return deviceRefuse('STS-OAUTH-0700', 'invalid_grant', 'The tokens ' +
+                            'for this device code have already been issued.');
+      }
+      const deviceIssued = await issue({
+        jkt: dpopJkt, dpopJwk: dpopProof ? dpopProof.jwk : null,
+        user: person, client_id: client.client_id, scope: record.scope,
+        auth_time: record.approval.authTime, amr: record.approval.amr,
+        acr: record.approval.acr || undefined,
+        session_id: record.approval.sessionId || undefined,
+        grant: 'device_code'
+      });
+      log.debug("Leaving OAuth2Server.tokenGrant(). Device tokens issued.");
+      return respond(deviceIssued);
+    }
     if (grant === 'urn:ietf:params:oauth:grant-type:token-exchange') {
       const subjectToken = String(body.subject_token || '');
       if (!subjectToken) {
@@ -15051,6 +15171,124 @@ class OAuth2Server {
   // a row (`ciba.ts`) and the acknowledgement (section 7.3) is answered.
   // `oauth-oidc/ciba.ts` argues the rest.
   // ===========================================================================
+  // ---------------------------------------------------------------------------
+  // RFC 8628 SECTION 3.1/3.2 (#150): /oauth2/device_authorization. The client
+  // authenticates as it would at the token endpoint — a PUBLIC client may
+  // use it with its client_id alone, which is the case the RFC was written
+  // for — and is given a device code, a user code and where to type it. A
+  // DPoP proof on this request binds the device code to its key (OpenID
+  // Connect Key Binding section 3): the token request must then prove the
+  // same key.
+  // ---------------------------------------------------------------------------
+  private async deviceAuthorizationRequest(req: Req, res: Res): Promise<Json> {
+    const { log, parseBody, validation, errorCodes, applications, dpop } =
+      this.deps;
+    const self = this;
+    log.debug("Entering OAuth2Server.deviceAuthorizationRequest().");
+    res.set('Cache-Control', 'no-store');
+    const refuse = function (code: string, status: number, error: string,
+                             description: string): Json {
+      log.debug("Entering refuse(). " + code);
+      errorCodes.mark(res, code);
+      log.debug("Leaving refuse().");
+      return self.oauthError(res, status, error, description);
+    };
+    if (!deviceAuthorization.enabled()) {
+      log.debug("Leaving OAuth2Server.deviceAuthorizationRequest(). Off.");
+      return refuse('STS-OAUTH-0689', 404, 'invalid_request', 'the device ' +
+                    'authorization grant is not enabled in this realm ' +
+                    '(oauth2.deviceAuthorization).');
+    }
+    const posted = validation.checkParsed(parseBody(req), 'body',
+                                          DEVICE_FORM);
+    if (!posted.ok) {
+      log.debug("Leaving OAuth2Server.deviceAuthorizationRequest(). " +
+                "Malformed.");
+      return refuse('STS-OAUTH-0690', 400, 'invalid_request', posted.detail);
+    }
+    const body = posted.value;
+    const caller = await self.authenticateEndpointCaller(req, res, body, {
+      endpoint: 'device authorization',
+      path: '/oauth2/device_authorization',
+      capability: 'token_endpoint_auth_methods_supported',
+      advertisedCode: 'STS-OAUTH-0691',
+      advertisedStatus: 401,
+      allowPublic: true,
+      lenient: false,
+      refusal: function (observed: Json, why: string): Json {
+        return { code: 'STS-OAUTH-0691', status: 401, challenge: true,
+                 description: 'RFC 8628 section 3.1: a confidential client ' +
+                   'authenticates here as at the token endpoint — and ' +
+                   why };
+      }
+    });
+    if (!caller.ok) {
+      log.debug("Leaving OAuth2Server.deviceAuthorizationRequest(). The " +
+                "client was refused.");
+      return undefined;
+    }
+    const clientId = String(caller.clientId);
+    const flows = applications.registeredFlowsOf(clientId);
+    if (flows && flows.grant_types && flows.grant_types.length &&
+        flows.grant_types.indexOf(deviceAuthorization.GRANT_TYPE) < 0) {
+      log.debug("Leaving OAuth2Server.deviceAuthorizationRequest(). Not " +
+                "a registered grant.");
+      return refuse('STS-OAUTH-0692', 400, 'unauthorized_client', 'client "' +
+                    clientId + '" did not register the device_code grant ' +
+                    '(RFC 7591 section 2).');
+    }
+    const scope = String(body.scope || '').trim();
+    const scopeProblem = scope ? self.scopeRefusal(scope, clientId) : null;
+    if (scopeProblem) {
+      log.debug("Leaving OAuth2Server.deviceAuthorizationRequest(). Scope.");
+      return refuse(scopeProblem.code, 400, 'invalid_scope',
+                    scopeProblem.description);
+    }
+    let dpopJkt = '';
+    if (req.headers['dpop'] !== undefined) {
+      const checked = dpop.verifyProof(req.headers['dpop'],
+        { htm: req.method, htu: dpop.htuOf(req), req: req });
+      if (!checked.ok) {
+        log.debug("Leaving OAuth2Server.deviceAuthorizationRequest(). DPoP.");
+        return refuse(checked.errorCode || 'STS-OAUTH-0693', 400,
+                      'invalid_dpop_proof', checked.description);
+      }
+      dpopJkt = String(checked.jkt);
+    }
+    const cfg = applications.clientConfigOf(clientId);
+    const made = deviceAuthorization.create(clientId,
+      String(cfg.client_name || clientId), scope, dpopJkt);
+    const base = self.asBaseOf(req);
+    const verification = base + '/portal/device';
+    log.debug("Leaving OAuth2Server.deviceAuthorizationRequest().");
+    res.status(200).type('application/json').send(JSON.stringify({
+      device_code: made.deviceCode,
+      user_code: made.userCode.slice(0, 4) + '-' + made.userCode.slice(4),
+      verification_uri: verification,
+      verification_uri_complete: verification + '?user_code=' +
+        encodeURIComponent(made.userCode),
+      expires_in: Math.round((made.expiresAt - made.createdAt) / 1000),
+      interval: made.interval }));
+    return undefined;
+  }
+
+  private deviceAuthorizationEndpoint(req: Req, res: Res): Json {
+    const { log, errorCodes } = this.deps;
+    const self = this;
+    log.debug("Entering OAuth2Server.deviceAuthorizationEndpoint().");
+    self.deviceAuthorizationRequest(req, res).catch(function (e) {
+      log.error(errorCodes.tag('STS-OAUTH-0694') + 'the device ' +
+                'authorization endpoint failed: ' +
+                (e && e.stack ? e.stack : e));
+      if (!res.headersSent) {
+        errorCodes.mark(res, 'STS-OAUTH-0694');
+        self.oauthError(res, 500, 'server_error',
+                        String((e && e.message) || e));
+      }
+    });
+    log.debug("Leaving OAuth2Server.deviceAuthorizationEndpoint().");
+  }
+
   private backchannelAuthenticationEndpoint(req: Req, res: Res): Json {
     const { log, errorCodes } = this.deps;
     const self = this;
@@ -17111,6 +17349,8 @@ class OAuth2Server {
 
     app.post('/oauth2/revoke', self.revokeEndpoint.bind(self));
     // OpenID Connect CIBA's Backchannel Authentication Endpoint (#131).
+    app.post('/oauth2/device_authorization',
+             self.deviceAuthorizationEndpoint.bind(self));
     app.post('/oauth2/bc-authorize',
              self.backchannelAuthenticationEndpoint.bind(self));
 
