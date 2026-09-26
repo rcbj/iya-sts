@@ -11,7 +11,8 @@
 //        [--terms-log ./risk-terms-acceptance.log] [--check-terms] \
 //        [--dry-run]
 //
-// with `STS_DATABASE_URL` naming the deployment's database. It is an
+// inside the service's image, where the deployment's database is already
+// configured: see *THE CONNECTION*, below. It is an
 // OPERATOR'S TOOL, run by whoever installs a deployment — from a shell, an
 // init container, a deploy pipeline — and NOT a part of the running service.
 // That is the whole point of it:
@@ -62,6 +63,25 @@
 // BLOB is verified against the FIDO root and its chain's CRLs are fetched
 // (MDS3 section 3.1.8) inside `importVersion()`, and only the latest BLOB is
 // kept. Run it again when the BLOB's `nextUpdate` comes round.
+//
+// **THE CONNECTION IS THE SERVICE'S OWN (#213, 2026-09-26).** This loader
+// dialled `STS_DATABASE_URL` as written and nothing else. Every stack this
+// repository ships keeps the password OUT of that URL — the compose stack
+// reads it from OpenBao, AWS from Secrets Manager — and the service puts it
+// back in `persistence.js`'s `resolveDatabaseUrl()`, so on a new cluster's
+// first install, the case this tool is for, it failed to authenticate; the
+// only way round was the operator reading the secret into `PGPASSWORD`,
+// which is what a secret store exists to prevent. It never verified the
+// server's certificate either, even where
+// `persistence.databaseTlsRejectUnauthorized` asked the service to. It now
+// asks `persistence.databaseConnection()` — the SAME code, not a copy —
+// which reads the settings through `config.js`
+// and so through the same `CONFIG_FILE` the image names: the URL from
+// `STS_DATABASE_URL` or else `persistence.databaseUrl`, the password through
+// `persistence.databasePasswordProvider`, and `verifyTls`. A password
+// written into `STS_DATABASE_URL` still works where no provider is
+// configured, for a throwaway database. A provider that is configured and
+// cannot be read is STS-RISK-0040, with the provider's own reason.
 //
 // **ONLY THE SERVICE'S OWN DATASETS AND THE DEFAULT REALM'S LISTS.** A list
 // for another realm is imported through Monitoring → Risk or the API, where
@@ -325,6 +345,56 @@ class RiskInstall {
   }
 
   // -------------------------------------------------------------------------
+  // WHAT THE DATABASE DRIVER IS GIVEN (#213): the connection the service
+  // itself would make — see the header. Rejects with an Error whose message
+  // is tagged and written for the operator: STS-RISK-0012 when no database
+  // is named at all, STS-RISK-0040 when the configured password provider
+  // (or the URL it has to be injected into) cannot be used.
+  //
+  // **"NO DATABASE NAMED" IS NOT "NO URL".** `persistence.databaseUrl` has a
+  // default — the local development one — so a URL always exists. A
+  // deployment names its database either by `STS_DATABASE_URL` or by running
+  // on postgres; with neither, dialling the development default would fail
+  // with a connection error about localhost, which answers the wrong
+  // question.
+  //
+  // `persistence.js` is required HERE rather than at the top so that a test
+  // loading this file for `optionsOf()` or `providerOf()` does not load the
+  // service's settings graph.
+  // -------------------------------------------------------------------------
+  static async driverOptions(): Promise<Json> {
+    log.debug("Entering RiskInstall.driverOptions().");
+    const config = require('../common/config');
+    const persistence = require('../persistence/persistence');
+    if (!process.env.STS_DATABASE_URL &&
+        config.value('persistence.mode') !== 'postgres') {
+      log.debug("Leaving RiskInstall.driverOptions(). No database.");
+      throw new Error(errorCodes.tag('STS-RISK-0012') + 'risk_install: ' +
+        'no database is named: STS_DATABASE_URL is not set and ' +
+        'persistence.mode is "' + config.value('persistence.mode') + '", ' +
+        'not "postgres". The datasets are pulled into the deployment\'s ' +
+        'database; run this where the service\'s own settings name it (in ' +
+        'a container of the service\'s image), or set STS_DATABASE_URL.');
+    }
+    let connection: Json = null;
+    try {
+      connection = await persistence.databaseConnection();
+    } catch (e) {
+      log.debug("Caught in RiskInstall.driverOptions(): " +
+                ((e && e.message) || e));
+      const secrets = require('../common/secrets');
+      const label = secrets.describeDatabasePassword().label;
+      log.debug("Leaving RiskInstall.driverOptions(). Unresolved.");
+      throw new Error(errorCodes.tag('STS-RISK-0040') + 'risk_install: ' +
+        'the database connection could not be made the way the service ' +
+        'makes it — persistence.databasePasswordProvider names ' +
+        (label || 'a secret store') + ', and ' + ((e && e.message) || e));
+    }
+    log.debug("Leaving RiskInstall.driverOptions().");
+    return { url: connection.url, verifyTls: connection.verifyTls, log: log };
+  }
+
+  // -------------------------------------------------------------------------
   // THE RUN: each manifest entry checked against the accepted terms,
   // fetched or read, and imported into the database. Answers the number of
   // entries that failed.
@@ -333,17 +403,21 @@ class RiskInstall {
     log.debug("Entering RiskInstall.run().");
     const manifest = JSON.parse(fs.readFileSync(options.manifest, 'utf8'));
     const entries = Array.isArray(manifest.datasets) ? manifest.datasets : [];
-    const url = String(process.env.STS_DATABASE_URL || '');
-    if (!url) {
-      process.stderr.write(errorCodes.tag('STS-RISK-0012') + 'risk_install: ' +
-        'STS_DATABASE_URL is not set; the datasets are pulled into the ' +
-        'deployment\'s database, and this names it.\n');
-      log.debug("Leaving RiskInstall.run(). No database.");
-      return entries.length || 1;
-    }
-    const driver = require('../persistence/persistence_postgres')
-      .create({ url: url, log: log });
+    // A dry run names nothing it would dial and reads no secret: it says
+    // what would be imported, and the connection is made only for real.
+    let driver: Json = null;
     if (!options.dryRun) {
+      let driverOptions: Json = null;
+      try {
+        driverOptions = await RiskInstall.driverOptions();
+      } catch (e) {
+        log.debug("Caught in RiskInstall.run(): " + ((e && e.message) || e));
+        process.stderr.write(String((e && e.message) || e) + '\n');
+        log.debug("Leaving RiskInstall.run(). No connection.");
+        return entries.length || 1;
+      }
+      driver = require('../persistence/persistence_postgres')
+        .create(driverOptions);
       await driver.open();
       riskStore.setDriver(driver, 'postgres');
     }
@@ -356,7 +430,7 @@ class RiskInstall {
       }
     } finally {
       fs.rmSync(work, { recursive: true, force: true });
-      if (!options.dryRun && typeof driver.close === 'function') {
+      if (driver && typeof driver.close === 'function') {
         await driver.close();
       }
     }
