@@ -121,8 +121,8 @@ const PROFILE_OF = {
 };
 
 // The minimum number of passing tests: well under what a run yields (#204's
-// first complete run: 260), well over what a harness that stopped reaching
-// the KDC would.
+// first complete runs: 268 in memory, 267 in single-node), well over what a
+// harness that stopped reaching the KDC would.
 const FLOOR = 200;
 
 // A whole run of every module is well under a minute (#204: ~10 s); this

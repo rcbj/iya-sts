@@ -1948,7 +1948,9 @@ principal, and a computer, server or managed-service account — one key for a
 sAMAccountName and its SPNs — or a user with any AD attribute is skipped
 naming what it needed. So a newly applicable test in a later pin runs without
 an edit, and the job's log counts the not-applicable ones by reason. The first
-complete run: about 260 applicable tests passing, ~5,800 not applicable.
+complete runs (2026-09-26): 268 passing in `memory` (267 in `single-node`,
+whose default realm has no development trust for `xrealm_tests`), 31 failing
+or erroring, every one a documented exception, and 4,398 not applicable.
 
 **Three service profiles** (the job's header): FAST and `kdc_base` name
 `host/<name>`, `kdc_tgs_tests` and `s4u_tests` name the account itself, and
