@@ -129,6 +129,42 @@ the entry's valid EST certificates by the subject and names the request repeats.
 `urn:sts:person:<username>` (or `urn:sts:application:<id>`) subjectAltName, or
 by their username as the common name.
 
+## With libest's estclient
+
+Cisco's `estclient` (libest, the reference implementation) bootstraps from the
+Root and then uses the `/cacerts` answer as its trust anchors, as RFC 7030
+section 4.1.1 has a client do:
+
+```sh
+export EST_OPENSSL_CACERT=sts-root.pem
+estclient -g -s host -p 8081 -o out                     # out/cacert-0-0.pkcs7
+base64 -d out/cacert-0-0.pkcs7 | openssl pkcs7 -inform DER -print_certs > est-ca.pem
+export EST_OPENSSL_CACERT=est-ca.pem
+estclient -e -s host -p 8081 -o out -u alice -h "$PASSWORD" --common-name alice --pem-output
+estclient -r -s host -p 8081 -o out -c out/cert-0-0.pem -k out/key-x-x.pem --pem-output
+estclient -q -s host -p 8081 -o out -x key.pem -u alice -h "$PASSWORD" --common-name alice --pem-output
+estclient -e -s host -p 8081 -o out -y web.csr --path-seg tls-server -u alice -h "$PASSWORD"
+```
+
+Things to know, each found by the suite's run of it
+(`tests/vendored/sts_est_libest.js`):
+
+* **It reaches the DEFAULT REALM only.** estclient builds its URL as
+  `https://host:port/.well-known/est[/label]/op` and can be told nothing else,
+  and a realm's EST is at `/realm/<id>/.well-known/est`. No RFC 7030 client can
+  name a path in front of the well-known URI (RFC 8615 puts it at the root).
+* With only the Root as `EST_OPENSSL_CACERT`, every `-r` warns "unable to get
+  local issuer certificate": estclient verifies what it was issued against its
+  trust anchors, which must hold the Issuing CA and the Intermediate — the
+  `/cacerts` answer.
+* `-q` prints `OSSL error: (null)` on success: libest dumps OpenSSL's (empty)
+  error queue whether or not anything failed. The key it writes
+  (`key-0-0.key`) is base64 PKCS#8 without PEM armour.
+* It exits 0 whether or not it enrolled; read what it wrote.
+* It builds against OpenSSL 1.1 only (`FIPS_mode()` is gone from 3.0).
+* `-z` enrolls, but the challengePassword is not read (see *Not implemented*),
+  and `--srp` is refused at the handshake.
+
 ## Server-generated keys
 
 `/serverkeygen` takes the request as a **template**: the key pair is generated
@@ -151,8 +187,12 @@ it needs (`dNSName`, `iPAddress`, `rfc822Name`, or the UPN otherName).
 
 ## What the CA decides, not the request
 
-The subject is `CN=<username or identifier>, O=<organisation>`; the
-subjectAltName always carries the entry's `urn:sts:` name plus any requested
+The subject is `CN=<username or identifier>, O=<organisation>` — or, for a
+certificate that names a host, `CN=<the first dNSName, else iPAddress>,
+UID=<username or identifier>, O=<organisation>` (#207: a client that reads a
+certificate's names back as its CN and its dNSNames, as certbot and lego do,
+asked for the entry's name as a host on every renewal; the UID keeps the
+subject naming exactly one entry). The subjectAltName always carries the entry's `urn:sts:` name plus any requested
 name the entry owns — a name it does not own **refuses the request**. Key usage,
 extended key usage and basic constraints come from the profile, whatever the
 request asked for. The lifetime is `est.certificateLifetimeDays`.

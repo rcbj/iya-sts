@@ -146,6 +146,7 @@ and `/admin-api`; refusals decided by the core keep their `STS-ENROLL-*` code.
 |---|---|
 | `tests/est_codec.js` | the strict body decoder (the non-canonical case included), OID encoding, a certs-only message read back by pkijs with each certificate BYTE FOR BYTE (EC and ML-DSA), csrattrs structure, multipart framing |
 | `tests/est_handlers.js` | in a child process: every refusal's STATUS AND CODE, plain HTTP answered in development and refused in a product-mode realm, product-mode passwords, a DecryptKeyIdentifier template (501), re-enrollment by client certificate and the supersede, the realm boundary of the certificate listing and the monitor, the Basic header's malformed shapes, the view model's refusals and that no view carries a private key |
+| `tests/vendored/sts_est_libest.js` | **Cisco's libest estclient, the reference client** (#209), in the DEFAULT realm (it can name no other): `-g` bootstrapped from the Root and the answer used as the trust anchors after it, `-a` under a label, `-e` by Basic and by a certificate, `-e` with an `openssl` CSR for a registered host (CN the host, UID the entry), `-z`, `-r` and the superseded certificate then refused, `-q` with the key matching the certificate, and the refusals — none, a wrong password (product only), an unknown label, `root-ca`, an unregistered host, a self-signed certificate, `--auth-token`, `--srp` |
 | `tests/vendored/sts_est_enrollment.js` | over HTTPS with `est_client.js` (nothing from `est/`): every profile labelled, the application for itself, an administrator for another person, both `/serverkeygen` templates, re-enrollment and the CRL, revocation through `/admin-api`, and the negatives — cross-realm credentials and certificates, a non-enrolled certificate, refused and disallowed profiles, unregistered names, bad PoP, KEM keys, 413/415/400/404/405/501/503, throttling, product-mode wrong password and secret |
 
 Mutants confirmed caught: the canonical base64 check removed and a dropped
@@ -153,6 +154,27 @@ certificate (codec); the media-type check removed, the re-enrollment subject
 comparison removed, the transport refusal removed, the DecryptKeyIdentifier check
 removed, and the KEM-profile check removed from the console (handlers); the
 `WWW-Authenticate` challenge removed (protocol job).
+
+## What libest's estclient found (#209, 2026-09-24)
+
+* **`-q` failed "OSSL error: (null)"** and wrote nothing usable: a
+  `multipart/mixed` part's last base64 line reached the client unterminated —
+  RFC 2046 section 5.1.1 gives the CRLF before a delimiter to the delimiter —
+  and OpenSSL 1.1's base64 BIO drops such a line. `est_codec.ts` now ends each
+  part's base64 with a CRLF of its own (whitespace RFC 8951 tells a reader to
+  tolerate); `tests/est_codec.js` holds it. estclient STILL prints `OSSL
+  error: (null)` on a successful `-q`: libest's
+  `est_client_verify_key_and_cert()` dumps the (empty) error queue at its
+  `end:` label whatever happened. The job accepts that exact line.
+* **A realm other than the default cannot be reached by any RFC 7030 client**:
+  the well-known URI is at the root (RFC 8615) and estclient takes only a host,
+  a port and a label. Documented exception on #209; routing a realm by label
+  or host name is an open question there.
+* **Three warning lines are the client's**: its note that it has no
+  certificate, the `HTTP auth failure` of the 401 that asks for Basic (it never
+  sends credentials unasked), and — with only the Root as its trust anchors —
+  "unable to get local issuer" on every `-r`, which the RFC's bootstrap (use
+  `/cacerts` as the anchors) removes.
 
 ## Traps
 

@@ -176,12 +176,28 @@ async function signInWithPassword(realmBase, user, password, newPassword) {
                                 action: "login", csrf_token: csrf })
       .toString()
   });
-  if (answered.status === 200) {
+  // Up to two steps before a session: the forced password change, and —
+  // since #246 — the second factor OFFERED to an administrator, which this
+  // job ignores (rcbj: "update tests to just click ignore for the time
+  // being"). Either may come first; each is answered once.
+  for (let step = 0; step < 2 && answered.status === 200; step++) {
     const page = await answered.text();
     const changeId = (page.match(/name="change_id" value="([^"]+)"/) ||
                       [])[1] || "";
-    assert.ok(changeId, "the sign-in screen answered 200 with neither a " +
-              "session nor the password-change step: " + page.slice(0, 300));
+    const setupId = /id="mfa-setup-ignore"/.test(page)
+      ? (page.match(/name="mfa_id" value="([^"]+)"/) || [])[1] || "" : "";
+    assert.ok(changeId || setupId, "the sign-in screen answered 200 with " +
+              "neither a session, the password-change step nor the offer " +
+              "of a second factor: " + page.slice(0, 300));
+    if (setupId) {
+      answered = await hop(base + realmBase + "/authn/mfa-setup", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({ mfa_id: setupId, action: "ignore" })
+          .toString()
+      });
+      continue;
+    }
     const changeCsrf = (page.match(/name="csrf_token" value="([^"]+)"/) ||
                         [])[1] || "";
     answered = await hop(base + realmBase + "/authn/password-change", {

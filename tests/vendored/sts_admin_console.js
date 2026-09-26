@@ -938,6 +938,13 @@ async function signIn(driver, username) {
                "//button"));
   await button.click();
   await settleAfterSubmit(driver);
+  // An administrator is OFFERED a second factor since #246; this suite
+  // ignores it, as rcbj asked ("just click ignore for the time being").
+  const ignore = await driver.findElements(By.id("mfa-setup-ignore"));
+  if (ignore.length) {
+    await ignore[0].click();
+    await settleAfterSubmit(driver);
+  }
   const after = await driver.getCurrentUrl();
   assert.ok(after.indexOf("/authn/login") < 0,
     "signing in as " + username + " left the browser on the sign-in screen (" +

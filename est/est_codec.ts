@@ -302,6 +302,17 @@ class EstCodec {
   // another. The boundary is random so that no base64 line can collide with it
   // (none can anyway — a boundary line starts with two hyphens, which the
   // base64 alphabet does not contain — but a fixed boundary is a fingerprint).
+  //
+  // **EACH PART'S BASE64 ENDS WITH ITS OWN LINE BREAK (#209, 2026-09-24)**,
+  // so a part is followed by TWO CRLFs before the next delimiter. RFC 2046
+  // section 5.1.1 attaches the CRLF before a delimiter to the delimiter, so
+  // with one CRLF a parser hands the part over with its last base64 line
+  // unterminated — which is correct, and which libest's estclient (Cisco's
+  // reference EST client) cannot decode: OpenSSL 1.1's base64 BIO drops a
+  // final line with no newline, so `--pem-output` after /serverkeygen
+  // failed with "OSSL error: (null)" while /simpleenroll's single-part body,
+  // which ends in CRLF, converted. The extra CRLF is whitespace inside the
+  // base64, which RFC 8951 section 3.1 tells every reader to tolerate.
   // ---------------------------------------------------------------------------
   multipartMixed(parts) {
     const { log, nodeCrypto } = this.deps;
@@ -313,7 +324,7 @@ class EstCodec {
       chunks.push('--' + boundary + '\r\n' +
                   'Content-Type: ' + part.contentType + '\r\n' +
                   'Content-Transfer-Encoding: base64\r\n\r\n' +
-                  self.base64Lines(part.der));
+                  self.base64Lines(part.der) + '\r\n');
     });
     chunks.push('--' + boundary + '--\r\n');
     log.debug("Leaving EstCodec.multipartMixed(). " + (parts || []).length +

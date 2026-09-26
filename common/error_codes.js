@@ -1545,7 +1545,9 @@ const CODES = [
     spec: 'refusal by the calling protocol' },
   { code: 'STS-KEYS-0023',
     summary: 'An XML-encrypted element decrypted with AES-GCM to something ' +
-      'that is not well-formed XML. (AES-CBC: STS-KEYS-0078 since #202.)',
+      'that is not well-formed XML — or, since #193, to octets that are not ' +
+      'UTF-8 at all (binary data). (AES-CBC: every such failure is ' +
+      'STS-KEYS-0078 since #202, one answer, closing the padding oracle.)',
     spec: 'refusal by the calling protocol' },
   { code: 'STS-KEYS-0024',
     summary: 'An XML-encrypted element\'s key could not be unwrapped with ' +
@@ -1768,9 +1770,11 @@ const CODES = [
       'key operation (#168).',
     spec: 'the caller\'s refusal — federation answers STS-FED-0139' },
   { code: 'STS-KEYS-0072',
-    summary: 'An rsa-oaep EncryptedKey named a digest and mask generation ' +
-      'function this service cannot unwrap with: an unknown one, or two ' +
-      'that differ (node derives MGF1 from the OAEP digest).',
+    summary: 'An rsa-oaep or rsa-oaep-mgf1p EncryptedKey named a digest ' +
+      'and mask generation function this service cannot unwrap with: an ' +
+      'unknown one, or two that differ (node derives MGF1 from the OAEP ' +
+      'digest; rsa-oaep-mgf1p fixes MGF1 at SHA-1, so any other digest ' +
+      'there, since #193).',
     spec: 'the caller\'s refusal' },
   { code: 'STS-KEYS-0073',
     summary: 'An XML element\'s key is agreed by an AgreementMethod other ' +
@@ -1807,6 +1811,13 @@ const CODES = [
       'and which is deliberately one answer — the padding oracle of XML ' +
       'Encryption 1.1 section 6.1.3, closed (#202).',
     spec: 'refusal by the calling protocol' },
+  { code: 'STS-KEYS-0090',
+    summary: 'An XML element encrypted by ECDH-ES key agreement derives its ' +
+      'key with something other than a SHA-256/384/512 ConcatKDF (PBKDF2, ' +
+      'a SHA-1 digest, none), or names its originator key on a curve this ' +
+      'service does not agree over; refused before any key operation ' +
+      '(#193 — it was reported as a key encrypted to another certificate).',
+    spec: 'the caller\'s refusal' },
   { code: 'STS-PKI-0001',
     summary: 'A certificate-authority use case prefers a key algorithm this ' +
       'service cannot use, so its Issuing CA was built with the ' +
@@ -2453,8 +2464,8 @@ const CODES = [
     spec: 'OCSPResponse unauthorized(6), HTTP 200' },
   { code: 'STS-PKI-0134',
     summary: 'A request reached the plain-HTTP revocation listener for a ' +
-      'path outside /pki/. That socket serves the revocation endpoints and ' +
-      'nothing else.',
+      'path outside /pki/ and /enroll/scep. That socket serves the ' +
+      'revocation endpoints, SCEP and /healthcheck, and nothing else.',
     spec: 'HTTP 404 text/plain' },
   { code: 'STS-PKI-0140',
     summary: 'A certificate upload named no application, or the registration ' +
@@ -2701,11 +2712,62 @@ const CODES = [
     spec: 'none — logged. The key still signs; its certificate chains to ' +
       'an authority nothing publishes until the slot is certified again' },
   { code: 'STS-PKI-0194',
+    summary: 'A certificate path a signer\'s key or an upload depends on ' +
+      'breaks a NAME CONSTRAINT: a name of a certificate below a CA is ' +
+      'outside what that CA permits or inside what it excludes, is ' +
+      'malformed where it is constrained, is in a form constrained in a way ' +
+      'this service does not evaluate, or the names and constraints are ' +
+      'too many to compare (RFC 5280 section 4.2.1.10; pki.pathRuleProblem, ' +
+      '#201).',
+    spec: 'invalid_grant at the grant, invalid_client at client ' +
+      'authentication; the console\'s error list for an upload' },
+  { code: 'STS-PKI-0195',
+    summary: 'A certificate on a signer\'s or an uploaded path carries a ' +
+      'CRITICAL extension this service does not implement, which RFC 5280 ' +
+      'section 4.2 says must be refused (pki.pathRuleProblem, #201).',
+    spec: 'invalid_grant at the grant, invalid_client at client ' +
+      'authentication; the console\'s error list for an upload' },
+  { code: 'STS-PKI-0196',
+    summary: 'A certificate on a signer\'s or an uploaded path breaks a rule ' +
+      'of RFC 5280 section 4 a relying party holds it to: an extension ' +
+      'twice, an unreadable basicConstraints, keyUsage, extKeyUsage, ' +
+      'subjectAltName or nameConstraints, an empty subject without a ' +
+      'critical subjectAltName, a CA with an empty subject, keyCertSign or ' +
+      'nameConstraints on a certificate that is not a CA, or an ML-DSA key ' +
+      'with a keyUsage RFC 9881 does not permit (pki.pathRuleProblem, #201).',
+    spec: 'invalid_grant at the grant, invalid_client at client ' +
+      'authentication; the console\'s error list for an upload' },
+  // ===== ENROLL ============================================================
+  { code: 'STS-PKI-0197',
+    summary: 'A certificate on a path below its anchor is signed with a ' +
+      'broken hash — MD2 or MD5 on every path, SHA-1 on every path but this ' +
+      'service\'s own hierarchy in a development realm (#181) — and the ' +
+      'path is refused (pki.pathRuleProblem, #201).',
+    spec: 'invalid_grant at the grant, invalid_client at client ' +
+      'authentication; the console\'s error list for an upload' },
+  { code: 'STS-PKI-0198',
+    summary: 'A certificate chain OpenSSL verified in a TLS handshake breaks ' +
+      'the path rules every other path here is held to ' +
+      '(pki.peerChainProblem, #201): on the main port the client ' +
+      'certificate is treated as unverified (authorized false); on an ' +
+      'outbound request the request fails as a TLS error. Also logged when ' +
+      'the rules could not be asked.',
+    spec: 'none on the wire: an unverified client certificate, or the ' +
+      'family\'s own failure for an outbound request' },
+  { code: 'STS-PKI-0199',
+    summary: 'RFC 5280 section 6.1\'s certificate policy processing refuses ' +
+      'a path: a certificate on it requires an explicit policy ' +
+      '(policyConstraints) and no acceptable policy remains in the ' +
+      'valid_policy_tree, a policyMappings maps anyPolicy, or the policies ' +
+      'and mappings make a tree too large to evaluate ' +
+      '(pki.pathPolicyOutcome, #201).',
+    spec: 'invalid_grant at the grant, invalid_client at client ' +
+      'authentication; the console\'s error list for an upload' },
+  { code: 'STS-PKI-0200',
     summary: 'A Certificate & Key Configuration pane field that takes a ' +
       'closed set (pki_profile, pki_pq_mode, pki_key_alg, pki_alt_key_alg, ' +
       'pki_ks_format) held a value outside it (#86).',
     spec: 'HTTP 400 page or { ok: false, errors }' },
-  // ===== ENROLL ============================================================
   { code: 'STS-ENROLL-0001',
     summary: 'A certificate request named a profile that is not one of the nine issued over an enrollment protocol.',
     spec: 'the protocol\'s refusal: ACME malformed / badCSR, EST HTTP 400, SCEP failInfo badRequest' },
@@ -3177,7 +3239,8 @@ const CODES = [
     summary: 'The SCEP RA certificate could not be issued or its replacement could not be recorded.',
     spec: 'HTTP 503 text/plain, or the console/API refusal' },
   { code: 'STS-SCEP-0007',
-    summary: 'A PKIOperation POST did not carry Content-Type application/x-pki-message.',
+    summary: 'A PKIOperation POST carried a Content-Type other than ' +
+      'application/x-pki-message, application/octet-stream or none.',
     spec: 'HTTP 415 text/plain' },
   { code: 'STS-SCEP-0008',
     summary: 'A pkiMessage was larger than scep.maxRequestBytes.',
@@ -3240,7 +3303,9 @@ const CODES = [
     summary: 'A SCEP certificate request carries a key that is not RSA; SCEP encrypts its reply with RSA key transport.',
     spec: 'CertRep FAILURE badAlg' },
   { code: 'STS-SCEP-0034',
-    summary: 'A PKCSReq was signed by a certificate whose key is not the key in the PKCS#10 request (RFC 8894 section 2.3).',
+    summary: 'A PKCSReq was signed by a certificate whose key is not the ' +
+      'key in the PKCS#10 request, and which this realm did not issue (RFC ' +
+      '8894 section 2.3; one this realm issued makes it a renewal).',
     spec: 'CertRep FAILURE badMessageCheck' },
   { code: 'STS-SCEP-0035',
     summary: 'A PKCSReq carried no challengePassword attribute.',
@@ -4424,6 +4489,11 @@ const CODES = [
       'password or wallet after another factor, or an emailed code or ' +
       'link) (#64).',
     spec: 'the door\'s own refusal page' },
+  { code: 'STS-AUTHN-0270',
+    summary: 'Ignore was posted on a second-factor set-up step that was ' +
+      'REQUIRED rather than offered (#246): only an administrator the ' +
+      'authentication policy OFFERS a second factor may decline it.',
+    spec: 'HTTP 400, the set-up page again' },
   { code: 'STS-OAUTH-0001',
     summary: 'A JWT client assertion could not be read as a JWT (its header ' +
       'is not base64url JSON).',
@@ -10588,6 +10658,15 @@ const CODES = [
       'read barrier, so the exception could not reach grpc-js; a unary ' +
       'call is answered INTERNAL.',
     spec: 'INTERNAL for a unary call' },
+  { code: 'STS-SPIFFE-0144',
+    summary: 'A certificate presented to the SPIRE Server or Broker API was ' +
+      'signed by an authority this trust domain trusts and is refused: the ' +
+      'two-certificate path breaks RFC 5280 (pki.verifyIssuedDirectly — a ' +
+      'critical extension nothing here implements, a name constraint, a ' +
+      'malformed certificate) or it is not a leaf X509-SVID (cA set, or a ' +
+      'keyUsage without digitalSignature or with keyCertSign or cRLSign; ' +
+      'X509-SVID section 4.3). #201.',
+    spec: 'UNAUTHENTICATED / PERMISSION_DENIED, as for any unverified caller' },
   // ===== TLS ===============================================================
   { code: 'STS-TLS-0001',
     summary: 'The service did not start: tls.minVersion or tls.ciphers ' +
@@ -11827,6 +11906,14 @@ const CODES = [
       'The alarm: enrol a second factor for this person, and look at the ' +
       'assessment\'s signals.',
     spec: 'permitted; recorded on the audit row and logged as a warning' },
+  { code: 'STS-RISK-0039',
+    summary: 'An administrator with no second factor was sent to set one up ' +
+      '(offered or required, #246) at a sign-in whose risk is HIGH or ' +
+      'MEDIUM. The enrolment goes ahead so the console is never locked out ' +
+      '(#226); whoever holds the password could be the one enrolling, so ' +
+      'confirm it with the person.',
+    spec: 'the set-up step; recorded on the audit row and logged as a ' +
+      'warning' },
   // ===== MAIL ==============================================================
   { code: 'STS-MAIL-0001',
     summary: 'A message was not queued because no mail transport is ' +

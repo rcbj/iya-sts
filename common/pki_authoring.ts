@@ -1032,7 +1032,7 @@ class PkiAuthoring {
                           'one of the ' + values.length + ' values it ' +
                           'accepts: ' + values.map(function (v) {
                             return '"' + v + '"';
-                          }).join(', ') + '.'] }, 'STS-PKI-0194');
+                          }).join(', ') + '.'] }, 'STS-PKI-0200');
       }
     }
     log.debug("Leaving PkiAuthoring.closedFieldProblem(). None.");

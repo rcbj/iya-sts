@@ -447,6 +447,8 @@ class ScepAdmin {
               '</td></tr><tr><th>Expires</th><td>' +
               esc(result.expiresAt) + '</td></tr><tr><th>SCEP URL</th><td>' +
               self.code(result.url) +
+              '</td></tr><tr><th>Plain-HTTP SCEP URL</th><td>' +
+              self.code(result.plainUrl) +
               '</td></tr></table><h3>With sscep</h3><pre>' +
               esc(result.hint) + '</pre>';
             self.drawScep(req, res, shown);

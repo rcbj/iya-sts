@@ -652,6 +652,10 @@ class SsfHttp {
         requestOptions.checkServerIdentity = function () {
           return undefined;
         };
+      } else if (policy && policy.checkServerIdentity) {
+        // The host check, and the verified chain held to the path rules
+        // (#201, `OutboundTls.checkServerIdentity()`).
+        requestOptions.checkServerIdentity = policy.checkServerIdentity;
       }
       try {
         request = (secure ? https : http).request(requestOptions,

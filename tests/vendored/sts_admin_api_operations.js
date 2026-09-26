@@ -5030,7 +5030,14 @@ const NOT_DRIVEN_HERE = {
     ".js drives it in a throwaway realm, with a TGT across it",
   "POST /kerberos/principals/rotate-krbtgt-invalidate":
     "sts_kerberos_krbtgt_rotation.js drives it in a throwaway realm; it ends " +
-    "every TGT of the realm it runs in"
+    "every TGT of the realm it runs in",
+  // A RISK DATASET UPLOAD (#215). Driven by `sts_admin_risk_upload.js`: the
+  // body is the dataset FILE itself, streamed and never parsed as JSON, so
+  // this file's example-replaying walk has no shape to send it in, and what
+  // matters is checked there — the gzip expanded as it is read, the version
+  // imported and activated, the size bound refused before the body arrives.
+  "POST /risk/upload": "sts_admin_risk_upload.js drives it: a dataset file " +
+    "streamed as the request body, imported and read back"
 };
 
 function everyDocumentedOperationWasDriven(doc) {

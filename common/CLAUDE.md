@@ -30,7 +30,7 @@ more than one family needs it, not because it felt general.
 | `pqc_support.ts` | **DOES THIS KEY PAIR USE A POST-QUANTUM ALGORITHM — ONE ANSWER (2026-09-13).** Behind the icon on `/admin/pki` and `/admin/keys`, the `pqc` member on those pages' JSON, and the mark in the certificate details dialog. It reads every spelling the two pages hold a key in — a JOSE `alg`, a key-material id, a node key type, an OID, a certificate's SubjectPublicKeyInfo — and answers one of FOUR kinds, because "PQC" is four claims: `pq` (ML-DSA, SLH-DSA), `composite` (one key with a post-quantum and a classical half), `kem` (ML-KEM, which signs nothing), and `hybrid` (a CLASSICAL key whose certificate carries an alternative post-quantum key under X.509 (2019) clause 9.8 — the key itself is not post-quantum). **The key decides, never the signature on its certificate**: an ML-DSA key under an RSA CA is marked and an EC key under an ML-DSA CA is not. A classical key is `null`. A LEAF over `pq_jose.js` and the vendored registry. |
 | `certificate_details.ts` | **ONE CERTIFICATE, EVERY FIELD, AND THE PATH IT BUILDS (2026-09-13)** — the model behind the certificate details dialog on `/admin/pki` and `/admin/crypto-metadata` and `GET /admin-api/certificates`: the tbsCertificate in RFC 5280 section 4.1's order (both signature algorithms, every RDN with its OID, each validity bound's ASN.1 time type, the key's parameters and bytes, both unique identifiers, every extension decoded) and a trust chain BUILT by matching each issuer's name AND verifying its signature, because a stored chain is a snapshot and a replaced Root has the same subject as the one it replaced. Built on the vendored inspector (`describeCertificate()`, `verifyChain()`); fingerprints are node's, and a post-quantum key is named from the PQC registry because the inspector summarises a composite by its classical half. A LEAF: it reads no caller's PEM and decides nothing about where a certificate came from — `admin-core/certificate_views.ts` does. |
 | `pki_merge.js` | **ONE CERTIFICATE AUTHORITY ROW WRITTEN BY SEVERAL NODES AT ONCE (2026-09-14, #46).** The three-way merge `keystore.js` applies under the row's lock: revocations and issued serials are unions, a CA tier or certificate slot is first writer wins, the register's CRL number adds. Pure JSON in, JSON out; a LEAF over config and bunyan. Its header argues why a merge and not a row per revocation. |
-| `pki.js` | **A CERTIFICATE AUTHORITY, since 2026-09-10 — ONE ROOT FOR THE SERVICE AND AN INTERMEDIATE PER TRUST REALM since 2026-09-11 (3w)** — Root, Intermediate, an Issuing CA per use case, and the leaves it issues (signing key pairs, TLS certificates, enrolled certificates, and since #168 a federation relationship's ENCRYPTION key pair — `issueEncryptionKeyPair()`, the signing door with keyEncipherment or keyAgreement and never digitalSignature, reached through a marker only this module can make). **And since 2026-09-11 the SPIFFE authority every X509-SVID is minted under**, which is the one Issuing CA here with room beneath it and the one door that issues WITHOUT recording (`issueUnder()`). **And since 2026-09-21 (#40) SOMEBODY ELSE'S certificates**: `verifyPathToAnchors()` — a path to a caller's trust anchors, Go's `x509.Certificate.Verify()` as SPIRE's node attestors use it, failing closed on an unhandled critical extension and on any CA with nameConstraints — and OpenSSH certificates (`parseSshPublicKey()`, `parseSshAuthorizedKey()`, `checkSshHostCertificate()`), moved here from `spiffe/` the day they were written at rcbj's direction; their signatures are `crypto.js`'s section 8. **And since 2026-09-23 (#105) a WebAuthn attestation certificate's facts** — `attestationCertificateFacts()` (version, subject, basicConstraints, EKU, the SAN's directoryName types, the extensions' raw values, the key) and `attestationKeyIdentifier()`, the key identifier FIDO MDS lists a fido-u2f model under; a certificate with an EMPTY subject (a TPM AIK) is named by its SAN in `verifyPathToAnchors()`'s sentences, which read `x509.subject` unguarded until then. The AWS and Azure certificates SPIRE embeds for its cloud attestors are here too, GENERATED into `pki_cloud_anchors.json` (`awsIidCertificate()`, `azureImdsRoots()`). A LEAF (rule 3w): it holds no store, registers no route, and requires `config`, `crypto`, `keystore`, `realms`, `error_codes`, `cluster/cluster_capabilities`, `pkijs` and four vendored modules. |
+| `pki.js` | **A CERTIFICATE AUTHORITY, since 2026-09-10 — ONE ROOT FOR THE SERVICE AND AN INTERMEDIATE PER TRUST REALM since 2026-09-11 (3w)** — Root, Intermediate, an Issuing CA per use case, and the leaves it issues (signing key pairs, TLS certificates, enrolled certificates, and since #168 a federation relationship's ENCRYPTION key pair — `issueEncryptionKeyPair()`, the signing door with keyEncipherment or keyAgreement and never digitalSignature, reached through a marker only this module can make). **And since 2026-09-11 the SPIFFE authority every X509-SVID is minted under**, which is the one Issuing CA here with room beneath it and the one door that issues WITHOUT recording (`issueUnder()`). **And since 2026-09-21 (#40) SOMEBODY ELSE'S certificates**: `verifyPathToAnchors()` — a path to a caller's trust anchors, Go's `x509.Certificate.Verify()` as SPIRE's node attestors use it, failing closed on an unhandled critical extension; since #201 a BACKTRACKING builder over the one set of RFC 5280 rules (`pathRuleProblem()`, name constraints EVALUATED — see *3w, CONTINUED: ONE SET OF PATH RULES*) — and OpenSSH certificates (`parseSshPublicKey()`, `parseSshAuthorizedKey()`, `checkSshHostCertificate()`), moved here from `spiffe/` the day they were written at rcbj's direction; their signatures are `crypto.js`'s section 8. **And since 2026-09-23 (#105) a WebAuthn attestation certificate's facts** — `attestationCertificateFacts()` (version, subject, basicConstraints, EKU, the SAN's directoryName types, the extensions' raw values, the key) and `attestationKeyIdentifier()`, the key identifier FIDO MDS lists a fido-u2f model under; a certificate with an EMPTY subject (a TPM AIK) is named by its SAN in `verifyPathToAnchors()`'s sentences, which read `x509.subject` unguarded until then. The AWS and Azure certificates SPIRE embeds for its cloud attestors are here too, GENERATED into `pki_cloud_anchors.json` (`awsIidCertificate()`, `azureImdsRoots()`). A LEAF (rule 3w): it holds no store, registers no route, and requires `config`, `crypto`, `keystore`, `realms`, `error_codes`, `cluster/cluster_capabilities`, `pkijs` and four vendored modules. |
 | `cert_enrollment.ts` | **WHO MAY BE ISSUED A CERTIFICATE FOR WHOM, AND WHAT GOES IN IT (2026-09-13)** — the core ACME (`acme/`), EST (`est/`) and SCEP (`scep/`) issue through, so none of the three decides any of it: the identity rule (yourself, or any person or application in the realm for a holder of Admin Write), the nine issued `/admin/pki` profiles and the five refused by design, the PKCS#10 proof of possession for every key family, names built from the DIRECTORY ENTRY with an unowned name refusing the request, every certificate kept on the entry it names (and a private key only when this service made it), and the two entry-bound credentials — an ACME EAB key and a SCEP challenge. A LIBRARY (rule 3ag) whose store is the entry, through a slot `ldap/ldap_server.js` fills. |
 | `enrollment_monitor.ts` | **WHAT THE THREE ENROLLMENT PROTOCOLS HAVE DONE (2026-09-13)** — one vocabulary of counters for `/admin/{acme,est,scep}/monitor`, per realm, merged across processes in `gnap_monitor.js`'s shape, and unable to throw into the request it counts. |
 | `jose_certificate_header.js` | **WHICH `x5c` OR `x5u` A SIGNED TOKEN CARRIES (2026-09-13)** — twelve use cases, one setting each in its protocol's group (`none`/`x5c`/`x5u`/`both`, `x5u` by default, per realm), the chain of the certified key that signed (leaf to service Root), and the `x5u` resource behind `GET /pki/chain/{scope}/{sha256}.pem`. A LIBRARY over `config`, `realms` and `error_codes`; `pki` and `helpers` lazily. See *3af* below. |
@@ -522,6 +522,75 @@ had sixteen open alerts on `ldap/ldap_server.js` whose SOURCE was a test's
 `Math.random()` — a realm id or username suffix handed to the directory.
 Every test now draws from `crypto`, and `tests/random_values.js` holds the
 tests' own files (the parent's copies excepted) to the `Math.random` rule.
+
+## `crypto.js` HELD TO THE W3C INTEROP CASES (#193, 2026-09-24)
+
+**Until #193 nothing held the XML half of this file to anybody's reading but
+the parent project's**, whose engine is the one vendored here — so a shared
+misunderstanding was invisible by construction. `tests/w3c_xmlsec.js` now runs
+the W3C working groups' own interop cases against it: XML Signature 1.1
+(ECDSA on three curves, SHA-2, DEREncodedKeyValue, KeyInfoReference,
+X509Digest), the second-round merlin and Phaos signature sets, the Exclusive
+C14N sets with their published canonical forms, the Second Edition's C14N 1.1
+cases, and XML Encryption 1.1 plus merlin-xmlenc-five and Phaos's xmlenc-3 —
+each signature case in development, development with SHA-1 allowed, and
+product; each encryption case in both modes. The files carry private keys and
+are fetched into the tests image, never committed
+(`tests/tools/W3C-XMLSEC-PROVENANCE.md`). The run found five things here, all
+fixed in this file:
+
+* **AES-192 was not read** (`aes192-gcm`, `aes192-cbc`, both OPTIONAL in XML
+  Encryption 1.1 section 5.2), while `kw-aes192` was — so a 192-bit key was
+  unwrapped and then its content refused. Both are in `BLOCK_CIPHERS` now;
+  `saml2.encryptionAlgorithm`'s enum does not offer them, so nothing encrypts
+  with one unless a caller names it.
+* **`rsa-oaep-mgf1p`'s DigestMethod was ignored** and the key unwrapped under
+  SHA-1 whatever it said, failing as a wrong certificate (STS-KEYS-0024). Its
+  MGF is fixed at MGF1-SHA-1 and node derives MGF1 from the OAEP digest, so a
+  non-SHA-1 digest there is now refused BY NAME, STS-KEYS-0072 — the same
+  refusal `rsa-oaep`'s differing pair always had.
+* **`<xenc:OAEPparams>` (the PSource label) was ignored**, so a key
+  transported with one could only fail — found the same day by #202's
+  Wycheproof vectors, whose one implementation (item 4 of that list, above)
+  is the one kept; the harness re-wraps a published case with a label to hold
+  it (no published case both carries one and names a digest pair node can
+  unwrap).
+* **An ECDH-ES agreement this file does not perform** — PBKDF2 (the W3C
+  AGRMNT.9), a SHA-1 ConcatKDF, an unknown curve — surfaced from inside
+  `agreedKey()`'s throw as a key encrypted to another certificate.
+  `agreementRefusal()` asks first, before any key operation, and refuses under
+  **STS-KEYS-0090** with `refused: true`.
+* **Binary plaintext** (octets that are not UTF-8) made forge's
+  `decodeUtf8()` throw "URI malformed", reported as STS-KEYS-0025. Under
+  AES-GCM it is decoded strictly now and refused as not-XML, STS-KEYS-0023.
+  **Under AES-CBC it is #202's one refusal, STS-KEYS-0078**, with the padding
+  and the parse — a separate code there would reopen the padding oracle
+  that refusal closes, so 0023 is GCM only.
+
+**What it found in the vendored engine and left there** (the parent project's
+to fix, recorded on #193): a bare-name or empty Reference URI under a
+`#WithComments` method keeps the comments XMLDSig core 4.3.3.3 removes — on
+the signing side as well as the verifying one, so fixing only this file's
+verifier would break every round trip with the parent; `#xpointer(/)` and
+`#xpointer(id('x'))` are not resolved; the document node is not canonicalized
+(an element apex only); inclusive C14N 1.0 does not render the `xml:*`
+attributes an apex inherits (section 2.4 — merlin-c14n-three's SignedInfo
+under an `xml:lang` ancestor; the harness confirms that adding them is the
+whole difference); and C14N 1.1 and the XPath transform are absent. **The
+`xml:*` and comment defects are in the engine's SIGNER as well as its
+canonicalizer**, which is why neither was patched in this file: a
+verifier-only correction would refuse this service's own inclusive or
+`#WithComments` signatures the day a document carried an `xml:lang` root or a
+comment.
+
+**What stays refused, deliberately, and is counted as an exception rather
+than a failure**: HMAC (a relying party registers a certificate, not a
+secret — which also refuses the truncated HMACs the specification says must
+fail), SHA-1 while `saml.allowSha1Signatures` is off and always in product,
+3DES, DH and DH-ES, `rsa-1_5` in product, symmetric keys known out of band,
+external references (this service fetches nothing a signed document names),
+XSLT, and the Decryption Transform. `tests/w3c_xmlsec.js`'s `EXCEPTIONS`
+names each.
 
 ## `applications.js` GREW A FOURTH ATTRIBUTE ROLE, AND THE NAME IS THE ARGUMENT
 
@@ -1436,6 +1505,15 @@ to REFUSE them well:
   into a worker that stopped reading and resetting the client mid-upload.
 
 Every ordinary request is proxied exactly as before.
+
+**A RELAYED HEADER KEEPS THE WORKER'S SPELLING (2026-09-26, #209).** The
+front process set the worker's headers back by `answer.headers`' lower-case
+keys, so a dispatched answer said `content-type:` where a process answering
+by itself says `Content-Type:`. Legal — field names are case-insensitive (RFC
+9110 section 5.1) — and still a difference the dispatched path must not make:
+libest's estclient compares names byte for byte and failed every EST request
+in `single-node` and in no other mode. The spelling is read from
+`rawHeaders`; `tests/request_barrier.js` section 11 holds it on the wire.
 
 ### A SECOND POOL FOR THE CONSOLE AND THE PORTAL (2026-09-13)
 
@@ -5693,9 +5771,12 @@ Three anchors, decided by who issued the leaf:
 `pqSubjectPublicKeyPem()` and pkijs for a post-quantum JWK, since node cannot read
 that key out of a certificate. **Refused in both modes**, by the user's decision:
 the signature is the whole security of both grants. A bare key is not asked.
-`registerCertificate()` and this function build the path with the one
-`pathByIssuer()` over `realmCandidatesFor()`, so registration and use cannot
-disagree about what the path is. `tests/signer_chain_validation.js` pins it,
+`registerCertificate()` and this function find the TOP of the path with the one
+`pathByIssuer()` over `realmCandidatesFor()`, so registration and use agree on
+whether it is this service's Root; **since #201 the `registered-root` path itself
+is built by `verifyPathToAnchors()`** — the registered self-signed certificates
+its anchors — which backtracks where the greedy walk took the first issuer whose
+name matched. `tests/signer_chain_validation.js` pins it,
 thirteen mutants caught (keyCertSign only after its fixture was added).
 
 `report()` carries `revocation` — the sentence, so every surface drawing it
@@ -5703,6 +5784,81 @@ repeats one wording — and `/admin/pki` carries `revocationNote` beside
 `revocation`, which is the REGISTER. They are two members because an empty list
 and no lists at all are different answers and one field could only carry one of
 them.
+
+### 3w, CONTINUED: ONE SET OF PATH RULES, HELD TO C2SP x509-LIMBO (#201, 2026-09-24)
+
+**Every certificate path this service checks is now held to one function,
+`pathRuleProblem()`, and C2SP x509-limbo (9802 testcases at the pinned commit)
+is driven through every door by `tests/x509_limbo.js`.** Until #201 there were
+three partial rule sets — `authorityProblem()` (cA, keyCertSign, pathLen and
+nothing else, for `verifyLeaf()`, `verifySignerChain()` and
+`registerCertificate()`), `verifyPathToAnchors()`'s own (which refused EVERY CA
+with nameConstraints) and two one-hop `checkIssued()` + `verify()` doors outside
+this module — plus OpenSSL. The inventory, and what drives each:
+
+| Validator | Callers | x509-limbo driver |
+|---|---|---|
+| `verifyPathToAnchors()` — backtracking builder, caller's anchors | WebAuthn attestation and the FIDO MDS BLOB, SPIFFE x509pop / tpm_devid / azure_imds, sigstore | `anchors`, every case |
+| `verifySignerChain()` — `registered-root` built by the above; `realm` is `verifyLeaf()` | RFC 7523 / 7522 grants and client auth, JAR, software statements, the hosted surfaces' ID Tokens | `signer`, every case |
+| `verifyLeaf()`, `registerCertificate()` | a presented `x5c`, cert enrollment, an upload | same `authorityProblem()` → `pathRuleProblem()`; its anchor is the service Root, so no limbo case can reach it |
+| `verifyIssuedDirectly()` — the synchronous one-hop door (#201) | `spiffe/spiffe_auth.ts` (SPIRE Server / Broker API callers), `oid4vc/vc_issuer.ts` (key attestation `x5c`) | `direct`, every case |
+| `revocation_status.crlInHandVerdict()` — the CRL route with the lists in hand | every foreign CRL answer | `crl`, the 17 `crl::` cases; and every PKITS path, per certificate |
+| OpenSSL + `peerChainProblem()` on the main port (`tls_server.js` `holdToPathRules()`) | certificate sign-in, RFC 8705, the XACML gate, SCIM, the portal | `inbound`, the CLIENT cases with a key |
+| OpenSSL + `OutboundTls.checkServerIdentity()` (`common/outbound_tls.ts`) | GNAP push, SSF push, federation back channels and `fetchPublished()`, the XACML PEP nudge | `outbound`, the SERVER cases with a key |
+
+**What the rules are** is argued in the header above `pathRuleProblem()`: parse,
+no duplicate extension, no unimplemented critical extension, no MD2/MD5 and no
+SHA-1 signature below the anchor (SHA-1 allowed only on this service's OWN
+hierarchy in a development realm, `verifyLeaf()`'s `allowSha1`, because #181 lets
+`pki.signatureAlgorithm` build one), an EC key on a named curve (RFC 5480), an
+empty subject only with a critical SAN, the leaf's keyCertSign and
+nameConstraints only on a CA, cA / keyCertSign / pathLen above the leaf with
+SELF-ISSUED certificates not counted (6.1.4(l) — the old count was wrong), an
+ML-DSA keyUsage RFC 9881 permits, and NAME CONSTRAINTS for dNSName, rfc822Name,
+URI, iPAddress and directoryName — a leaf's host-like CN counted as a dNSName when
+it has no SAN at all, a wildcard refused where it reaches into an excluded subtree
+(CVE-2025-61727), unevaluated forms refused where the certificate has a name of
+that form, a malformed constraint refusing the path, and 2^20 comparisons the most
+one path may cost. The validity instant is floored to whole seconds. **And
+CERTIFICATE POLICIES, whole (RFC 5280 sections 6.1.3(d)-(f), 6.1.4(a)-(j),
+6.1.5; `pathPolicyOutcome()`)**: the valid_policy_tree, explicit_policy,
+inhibit_anyPolicy and policy_mapping, certificatePolicies, policyMappings,
+policyConstraints and inhibitAnyPolicy read (so understood when critical —
+the stopgap that refused a critical policy extension as unimplemented is
+gone), anyPolicy mapped refused, 10,000 tree nodes the most one path may make
+(CVE-2023-0464), and the user-constrained-policy-set returned in the anchor's
+policy domain. `opts.policy` carries the four inputs; no caller sets one, so
+the defaults run and a path is refused (STS-PKI-0199) only where its own
+certificates require an explicit policy and none survives.
+
+**NIST PKITS (`tests/nist_pkits.js`)** holds all of it to the 224 tests /
+249 subparts of PKITS.pdf, fetched from csrc.nist.gov with BoringSSL's
+transcription of the table: `verifyPathToAnchors()` with each subpart's policy
+inputs and every certificate's revocation through the CRL route with the lists
+in hand, and `verifySignerChain()` with the defaults. It found, and #201 fixed,
+beyond the policy processing: a CRL signed by another key of the issuer (a
+rollover, a separate CRL key) was never accepted, and that key's own
+revocation never asked (6.3.3(f), `crlSignerStatusProblem()`); a point served
+by several lists covering different reasons answered from one; a negative
+serial and its positive twin were one serial (`serialKeyOf()`); and names
+differing only in case or spacing did not chain at the signer door
+(`namesChain()`).
+
+**Codes**: STS-PKI-0199 (certificate policy), 0194 (name constraints), 0195 (critical extension), 0196
+(malformed), 0197 (broken hash), 0198 (a chain OpenSSL verified that breaks the
+rules — the main port demotes it to unverified, an outbound request fails);
+STS-SPIFFE-0144 (an SVID whose path breaks them, or not a leaf SVID per X509-SVID
+4.3). The three issuer checks keep 0158 / 0151.
+
+**What is deliberately NOT applied** — the Web PKI's rules, issuer-profile MUSTs
+section 6 does not ask of a relying party, EKU as a path rule, a caller-set
+depth, DSA — is the `EXCEPTIONS` of `tests/x509_limbo.js` and
+`tests/nist_pkits.js`, each with its reason; each list fails its test when an
+entry stops excusing anything. **The CRL driver scores `unknown` as a refusal**,
+which is hard-fail (product's `auto`): a realm on `pki.revocationCheck=
+soft-fail` would ACCEPT those cases — a list that could not be used, a signer
+whose status could not be established — which is that policy's documented
+trade-off, not the reader's answer.
 
 ### THE LEAF IS A SIGNING CERTIFICATE AND DELIBERATELY NOT A TLS ONE
 
@@ -6018,8 +6174,10 @@ outside.
   administrator installed — and never for an unverified one. http/https only, no
   redirects, a timeout and a size cap, a cache honouring `nextUpdate` capped by
   `pki.revocationCrlMaxAgeS`, failures remembered for
-  `pki.revocationFailureRetryS`, one fetch per URL at a time. https is not
-  certificate-checked: the CRL's own signature is the authentication.
+  `pki.revocationFailureRetryS`, one fetch per URL at a time. **https is
+  certificate-checked since #201** (`OutboundTls.verifiedOptions()`, node's
+  store plus `pki.revocationHttpsCaFile`, RFC 9525's host check and the path
+  rules); the list's own signature is still what is believed.
 * **`auto` IS `mode.refusesUnknownRevocationStatus()`**: hard-fail in product,
   soft-fail in development. Development checks too, because the register cannot
   make a good certificate fail. **A certificate naming no list and no
@@ -6194,6 +6352,24 @@ lists now, served by `tests/vendored/test_crl_host.js` from the job's own
 process, or (for the launcher's PEP credential, whose minter exits) written by
 `tests/tools/pep-credential.js --crl-base` and served by the PEP container at
 `GET /crl/<name>`. None of it is committed key material.
+
+### THE CRL READER HELD TO x509-LIMBO (#201, 2026-09-24)
+
+`crlInHandVerdict({ certificate, issuer, crls })` is `crlRoute()` for lists that
+did not come from a fetch — the same `readCrl()`, `entriesOf()` and
+`scopeProblem()`, for a point naming no reasons and no CRL issuer, nothing
+dialled — and `tests/x509_limbo.js` drives x509-limbo's seventeen `crl::` cases
+through it. Three defects it found, fixed in the reader every foreign answer uses:
+
+* **A CRL WITH MORE THAN ABOUT TWO THOUSAND ENTRIES DID NOT PARSE.** asn1js stops
+  at 10,000 nodes by default and a list is ~5 nodes an entry, so the CRL of any CA
+  that had revoked much was "not a CRL" — unknown, and refused under hard-fail.
+  The node bound is now the input's own length (a node is at least two bytes),
+  which `pki.revocationMaxCrlBytes` already bounds.
+* **A LIST WITHOUT A cRLNumber, OR WITH A CRITICAL ONE, WAS USED** — RFC 5280
+  section 5.2.3 requires one, non-critical, in every CRL. Refused as unusable.
+* **THE SAME SERIAL TWICE** was answered by whichever entry was read last. The
+  list is now unusable: what it says about that certificate is ambiguous.
 
 ### A BRANCH IS BUILT ONCE, IN ONE PROCESS (2026-09-12)
 
@@ -7172,6 +7348,38 @@ SSF and XACML not requiring the federation module for their transport).
   a file that cannot be used refuses the request, `STS-CORE-0104`.
 * **`describe(family)`** — the three as they are IN FORCE, for the console and
   `/admin-api` views, where a skip stored in a product realm reads false.
+* **`checkServerIdentity(host, cert)` (#201)** — returned on every verifying
+  `tlsVerdict()` and handed to node by all four families (only when present:
+  node refuses an explicit `undefined`). The host is matched as **RFC 9525**
+  reads it (`hostNameProblem()`): subjectAltName DNS-IDs and IP-IDs only, the
+  common name NEVER (node's own check falls back to it), a wildcard only as a
+  whole left-most label over at least two labels, an IP compared as an address.
+  Then the chain OpenSSL verified is held to `pki.pathRuleProblem()`
+  (`pki.peerChainProblem()`, `STS-PKI-0198`), because x509-limbo found OpenSSL
+  accepting chains those rules refuse. Where OpenSSL is STRICTER — one path, no
+  backtracking, only a self-signed anchor without `X509_V_FLAG_PARTIAL_CHAIN` —
+  it fails closed, and `tests/x509_limbo.js` records it.
+* **EVERY OTHER DIALER ASKS IT TOO (#201's second pass, the owner's
+  decision).** `verifiedOptions(ca)` is the ONE helper for a verified
+  connection outside the four families — SMTP (`mail_transports.ts`), a CRL or
+  OCSP server over https and an LDAPS directory (`revocation_status.js`, with
+  the new `pki.revocationHttpsCaFile` beside node's store; https there was
+  unverified until then), the risk dataset installer — and `checkChainOnly()`
+  is SPIRE's kubelet with its own CA (`chainOnly`: the path rules, no name).
+  `fetchPublished()` and `requestConfigured()` — the metadata, JWKS, SIOP,
+  OpenID Federation, MDS, Pwned Passwords, sigstore and TUF fetches — carry
+  the family policy's check already. **And `installProcessWide()`**, called
+  first by `common/protocol_stack.ts` in the front process and every worker,
+  replaces node's `tls.checkServerIdentity`, which `tls.connect()` reads when
+  a caller names none — so node-postgres, nodemailer, the cloud SDKs (SES,
+  Secrets Manager, Key Vault, Secret Manager, Gmail, ACS), a secret store's
+  client and anything added later get the RFC 9525 check and the path rules
+  without a copy. A caller naming its own check keeps it (the hosted
+  surfaces' pinned token endpoint, SSF's pin to this service's own
+  receiver); `rejectUnauthorized: false` only marks the socket unauthorized,
+  as node always did. **Not covered, and argued**: the embedded debugger's
+  forked api and the remote XACML PEP container are other programs with a
+  process of their own.
 
 **THE WRITE IS REFUSED IN `config.js`, NOT HERE.** A row carrying
 `onlyWhile: '<mode predicate>'` may be set to anything but its DEFAULT only
@@ -7954,6 +8162,18 @@ and all six secret names are in `ldap_server.js`'s `SECRET_ATTRIBUTES`. A
 person's subject DN is added to `x509subject`, which every certificate-to-entry
 lookup here already reads.
 
+**A CERTIFICATE THAT NAMES A HOST HAS THE HOST AS ITS CN AND THE ENTRY AS ITS
+UID (2026-09-24, #207).** `subjectFor()`: the first dNSName (else iPAddress) is
+the common name and the entry's identifier goes in `UID`; a certificate that
+names no host keeps `CN=<entry>`. certbot and lego read a certificate's names
+back as its CN plus its dNSNames, so with `CN=alice` on a certificate for
+`www.alice.test` every renewal asked for `alice` as a host and was refused
+`rejectedIdentifier` — and the CA/Browser Forum's Baseline Requirements 7.1.4.3
+say the same thing. The UID is what keeps the subject DN naming exactly ONE
+entry, since a host may be registered on two and `ldap_server.js`'s
+`locateEntry()` turns a person's subject DN back into an entry.
+`tests/vendored/sts_acme_certbot.js` and `sts_acme_lego.js` renew through it.
+
 **CERTIFICATE AUTHENTICATION CHECKS THREE THINGS AND THE THIRD IS THE
 MAPPING**: `pki.verifyLeaf()` in this realm (another realm's certificate does not
 pass through this Intermediate), `clientAuth`, and a urn:sts: SAN naming an entry
@@ -8689,6 +8909,21 @@ the session starts; the built-in `role-issuance` template's
 on an emailed factor, carrying an obligation the PEP refuses on even where
 the role question is waived. The facts ride along whenever the policy is
 asked and do not make it asked.
+
+**ADMINISTRATORS HAVE A FIELD OF THEIR OWN (#246, 2026-09-26)**:
+`requireSecondFactorForAdministrators`, `if-held` | `offer` | `always`,
+default `offer` for now (rcbj: "we can offer it, but they can decline").
+The field is read in exactly one place, `credentials.mfaRequirementFor()`,
+which reports `byAdministrator` (the requirement) or `offered`. The sign-in
+screen mints `offered` as the ordinary set-up step marked `optional`, drawn
+with an Ignore button that finishes the sign-in on the password.
+"Administrator" means MEMBERSHIP of the roster's groups, not the console's
+`read`/`write` answer. Those are also true for everybody while the roster
+is empty (the open-console rule), and a rule that makes everybody an
+administrator cannot decide who is one. The default realm's
+`admin.bootstrapUsername` is only ever offered one, even under `always`: it
+is the account a service is recovered through. `tests/admin_second_factor.js`
+holds it.
 
 `tests/authn_policy.js` holds the module, the inheritance, the mail guard,
 the retired settings and a kind registered later.
