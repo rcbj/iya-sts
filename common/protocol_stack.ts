@@ -250,6 +250,17 @@ class ProtocolStack {
     // #130: the device register (ou=devices), a library over the directory
     // hooks `credentials.ts` carries; Native SSO mints its devices.
     this.build('common/devices', require('./devices'), 'Devices');
+    // #164 phase 2: what a device key's attestation proves
+    // (`device_attestation`), which device a request came from
+    // (`device_recognition`, asked by `authn` and `oauth2` below), and a
+    // person registering their own device by proving a key
+    // (`device_enrolment`, the portal's door). Three libraries (rule 3).
+    this.build('common/device_attestation', require('./device_attestation'),
+               'DeviceAttestation');
+    this.build('common/device_recognition', require('./device_recognition'),
+               'DeviceRecognition');
+    this.build('common/device_enrolment', require('./device_enrolment'),
+               'DeviceEnrolment');
     // #127: a person's identity verifications and the `verified_claims`
     // answer. A library, asked by the authorization server's claims request,
     // the console and API, and the wallet and certificate sign-ins.
@@ -1111,6 +1122,19 @@ class ProtocolStack {
                'SsfTransmittersAdmin');
     this.register(app, require('../ssf/ssf_transmitters_admin'),
                   'ssf/ssf_transmitters_admin');
+
+    // 18q. DEVICES (#164, #218): Directory → Devices, Protocols → Device
+    // registration and Monitoring → Devices, one module for the three. 18a's
+    // placement and 18a's reason: the console's shell, the device register
+    // (built with `credentials` above) and the authorization server (9),
+    // whose `sessionIsLive()` it asks, already loaded, and
+    // `mgmt-api/admin_api` requires it. `/admin/ldap/devices` is
+    // `ldap/ldap_server.js`'s, at 21.
+    require('../admin-ui/devices_admin');
+    this.build('admin-ui/devices_admin', require('../admin-ui/devices_admin'),
+               'DevicesAdmin');
+    this.register(app, require('../admin-ui/devices_admin'),
+                  'admin-ui/devices_admin');
     // The management API: everything that console shows and everything it can
     // change, at /admin-api, over JSON. It must come AFTER admin.js and the
     // order is a dependency rather than a preference — it requires that module

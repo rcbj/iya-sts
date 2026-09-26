@@ -7048,7 +7048,8 @@ class AdminViews {
   // the Devices block on their /admin/users page draws: each device entry in
   // ou=devices they own, the applications that used it, and whether its
   // Native SSO secret is live. Never the secret or its hash. Bounded by
-  // `oauth2.maxDevicesPerPerson`, so not paged.
+  // `devices.maxPerPerson`, so not paged. The whole register, paged and
+  // filtered, is `admin-ui/devices_admin.ts`'s (#218).
   // ---------------------------------------------------------------------------
   devicesJson(query) {
     const { log, devices, oauth2, config } = this.deps;
@@ -7058,7 +7059,7 @@ class AdminViews {
     log.debug("Leaving AdminViews.devicesJson(). " + held.length + ".");
     return {
       user: who,
-      maxPerPerson: Number(config.value('oauth2.maxDevicesPerPerson')),
+      maxPerPerson: Number(config.value('devices.maxPerPerson')),
       devices: held.map(function (one) {
         return devices.view(one, function (sid) {
           return oauth2.sessionIsLive(sid, who);

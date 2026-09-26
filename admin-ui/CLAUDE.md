@@ -6477,3 +6477,41 @@ added to an enum there is accepted here the moment it is. A streamed upload
 `mgmt-api/CLAUDE.md`'s *Every closed set is held, at every door*; the one
 form the register cannot hold, the PKI pane, is held by
 `PkiAuthoring.closedFieldProblem()`.
+
+## `/admin/devices`, `/admin/device-registration`, `/admin/devices/monitor`: THE DEVICE REGISTER'S PAGES (#164, #218, 2026-09-26)
+
+One module, `devices_admin.ts` (18q), filed in THREE sections by the filing
+rule, because the register answers three questions:
+
+- **Directory → Devices** (`/admin/devices`) — *what is in the directory*:
+  every device, paged, filtered by owner kind, compliance, attestation, key
+  kind and a search; `?device=<id>` is the drill-down, with `up`, and every
+  edit (label and descriptive fields, a new owner of either kind, a key
+  added or removed, removal). The create form is at the foot of the list —
+  Groups' shape, not a `/new` page. The Devices block on a person's
+  `/admin/users` page stays and links each device here.
+- **Protocols → Device registration** (`/admin/device-registration`) — *how
+  does a device arrive*: each enrolment method and recognition kind with
+  whether THIS build has it (all built since #164 phase 2), the attestation
+  paragraph with whether THIS realm registers an unattested key, the
+  attestation trust anchors per statement (the shipped Google and Apple
+  roots by subject, expiry and SHA-256 pin — never a certificate's text),
+  the enrolment challenge store, where a recognised device is recorded,
+  compliance, and the `Devices` settings group (`SETTING_HOMES`). Its
+  endpoint row is `/oauth2/token`, `/oauth2/revoke`, `/portal/devices` and
+  its two JSON doors, EST's labelled `simpleenroll` and `/enroll/scep`.
+- **Monitoring → Devices** (`/admin/devices/monitor`) — *what happened*: the
+  counts (keys by attestation format among them), the day-by-day
+  registrations, removals and evictions, and — `activity`, counted by THIS
+  process and said to be — recognitions by key, enrolments by a device or
+  its owner by method, and attestation outcomes and refusals.
+
+**The console never forwards a proof or an attestation from a form**:
+`keySpecOf()` builds a key from kind, value and label, and the register
+records it as `admin`-proven and `self-asserted`. A read-only session is
+refused a POST with `STS-DEVICE-0014`, and an unknown action with the
+five-name sentence (`STS-DEVICE-0013`) the parity jobs read.
+
+Two labels read *Devices* — the Directory page and the Monitoring one — the
+way *Policies* is shared; the sections tell them apart. The fourth view,
+`/admin/ldap/devices`, is `ldap/ldap_server.js`'s (`ldap/CLAUDE.md`).

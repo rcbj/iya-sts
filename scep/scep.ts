@@ -631,7 +631,10 @@ class Scep {
       family: 'scep', profile: spent.profile, principal: principal,
       target: target.target, publicKeyPem: read.csr.publicKeyPem,
       requested: read.csr.requested, keySource: 'client',
-      keyAlg: read.csr.keyAlg, via: 'scep'
+      keyAlg: read.csr.keyAlg, via: 'scep',
+      // The request's key attestation, read only by the device profile
+      // (#164 phase 2, `core.issueForDevice()`).
+      attestations: read.csr.attestations
     });
     if (!issued.ok) {
       log.debug("Leaving Scep.pkcsReq(). The core refused.");

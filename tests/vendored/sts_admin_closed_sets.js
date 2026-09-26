@@ -44,7 +44,10 @@
 //
 // Every refusal is made before a handler runs, so nothing is written; the
 // positive probes are refused on the extra member for the same reason. The
-// console session is the only thing left behind (`console_signin.js`).
+// console session is left behind (`console_signin.js`), and so is one client
+// per scope an operation takes instead of the admin pair (#164's
+// `device:compliance`), registered to probe that operation with its own
+// token.
 // ===========================================================================
 
 const assert = require("assert");
@@ -118,14 +121,75 @@ async function call(method, url, options) {
   return { status: r.status, body: body, text: text };
 }
 
-async function postJson(url, body) {
+// `token`, when given, is sent instead of the launcher's admin token (the
+// preload never replaces a header a job set).
+async function postJson(url, body, token) {
   log.debug("Entering postJson(). " + url);
+  const headers = { "Content-Type": "application/json" };
+  if (token) {
+    headers.Authorization = "Bearer " + token;
+  }
   const r = await call("POST", url, {
-    headers: { "Content-Type": "application/json" },
+    headers: headers,
     body: JSON.stringify(body)
   });
   log.debug("Leaving postJson().");
   return r;
+}
+
+// AN OPERATION UNDER A SCOPE OF ITS OWN (#164): `POST
+// /admin-api/device-compliance` takes `device:compliance` and REFUSES the
+// admin token (403, before its body is read), so its enums are probed with a
+// token of that scope, from a client this job registers declaring it (#110:
+// a protected scope is issued only to a client that declares it). The admin
+// pair is the launcher's token and needs nothing.
+function ownScopeOf(op) {
+  log.debug("Entering ownScopeOf().");
+  let own = "";
+  (op.security || []).forEach(function (requirement) {
+    Object.keys(requirement || {}).forEach(function (name) {
+      (requirement[name] || []).forEach(function (scope) {
+        if (!own && String(scope).indexOf("admin:") !== 0) {
+          own = String(scope);
+        }
+      });
+    });
+  });
+  log.debug("Leaving ownScopeOf(). " + (own || "the admin pair"));
+  return own;
+}
+
+const scopeTokens = {};
+async function tokenForScope(scope) {
+  log.debug("Entering tokenForScope(). " + scope);
+  if (scopeTokens[scope]) {
+    log.debug("Leaving tokenForScope(). Cached.");
+    return scopeTokens[scope];
+  }
+  const id = "closed-sets-" + scope.replace(/[^a-z0-9]+/gi, "-")
+    .toLowerCase() + "-" + Date.now().toString(36);
+  const secret = "closed-sets-" + Math.random().toString(36).slice(2) +
+                 Date.now().toString(36);
+  const made = await postJson(API + "/applications/create", {
+    identifier: id, kind: "oauth2-client", name: id, protocols: ["oauth2"],
+    fields: { oauthClientId: [id], oauthAllowedScope: [scope],
+              oauthClientSecret: secret,
+              oauthTokenEndpointAuthMethod: "client_secret_post" } });
+  assert.ok(made.status === 200 || made.status === 201,
+            "registering a client that declares " + scope + ": " +
+            made.status + " " + made.text.slice(0, 300));
+  const r = await call("POST", base + "/oauth2/token", {
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ grant_type: "client_credentials",
+                                client_id: id, client_secret: secret,
+                                scope: scope, resource: API }).toString()
+  });
+  assert.ok(r.status === 200 && r.body && r.body.access_token,
+            "a " + scope + " token: " + r.status + " " +
+            r.text.slice(0, 300));
+  scopeTokens[scope] = r.body.access_token;
+  log.debug("Leaving tokenForScope().");
+  return scopeTokens[scope];
 }
 
 function errorsOf(r) {
@@ -293,10 +357,12 @@ async function theBodies(doc) {
     }
     const schema = requestSchemaOf(row.op);
     const fields = enumsOf(schema, doc.components, [], [], 0);
+    const own = fields.length ? ownScopeOf(row.op) : "";
+    const token = own ? await tokenForScope(own) : "";
     for (const f of fields) {
       const url = base + concrete(row.path);
       const where = row.method + " " + row.path + " " + f.path.join(".");
-      const bad = await postJson(url, bodyAt(f.path, OUTSIDE));
+      const bad = await postJson(url, bodyAt(f.path, OUTSIDE), token);
       const said = errorsOf(bad);
       check(where + " refuses a value outside its set", function () {
         assert.strictEqual(bad.status, 400, where + ": " +
@@ -312,7 +378,7 @@ async function theBodies(doc) {
       }
       const body = bodyAt(f.path, f.values[0]);
       body[EXTRA] = true;
-      const good = await postJson(url, body);
+      const good = await postJson(url, body, token);
       const goodSaid = errorsOf(good);
       check(where + " accepts " + JSON.stringify(f.values[0]), function () {
         assert.strictEqual(good.status, 400, where + ": the extra member " +

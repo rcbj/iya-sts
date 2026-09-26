@@ -186,9 +186,13 @@ function childMain() {
     probe('webauthn.algorithms', function () {
       return Object.keys(rq('authn/webauthn_policy').ALG_IDS);
     });
+    // EST and SCEP also issue the device profile (#164); ACME does not.
     ['acme', 'est', 'scep'].forEach(function (family) {
       probe(family + '.allowedProfiles', function () {
-        return rq('common/cert_enrollment').PROFILE_IDS.slice();
+        const enrollment = rq('common/cert_enrollment');
+        return enrollment.PROFILE_IDS.concat(
+          enrollment.DEVICE_PROFILE_FAMILIES.indexOf(family) >= 0
+            ? [enrollment.DEVICE_PROFILE] : []);
       });
     });
     probe('federation.jwtAlgorithms', function () {

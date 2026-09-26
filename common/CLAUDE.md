@@ -8407,6 +8407,37 @@ survived the first version and both were the fixture: the non-canonical kid neve
 got past the regex, and no certificate was presented that its entry did not hold.
 
 
+### The `device` profile (#164 decision 6c, phase 2, 2026-09-26)
+
+**A certificate issued to a DEVICE entry**, over EST and SCEP only (ACME is
+not in decision 6 and proves control of a name, not possession by a machine;
+refused `STS-DEVICE-0025`). It is a profile in the enrollment sense —
+`checkProfile()` and the `est.allowedProfiles`/`scep.allowedProfiles`
+defaults carry it — and not /admin/pki's: its extensions are the `tls-client`
+leaf's (clientAuth, because its one use is to be presented on the main port
+and recognised), and its ONLY name is `urn:sts:device:<id>`, built from the
+entry. `issue()` hands it to `issueForDevice()`:
+
+* **Who** — the device's OWNER (read off the device entry, never the
+  request) or an Admin Write holder (`authorizeDevice()`, `STS-DEVICE-0023`).
+  A request naming no `urn:sts:device:` MAKES a device, owned by
+  `targetFromRequest()`'s target and so by the rule above.
+* **Attestation** — the request's `id-aa-attestation` values (`parseCsr()`
+  now returns them as `attestations`; more than one is `STS-DEVICE-0021`),
+  verified by `device_attestation.csrAttestation()`; product refuses a key
+  with no anchored TPM attestation (`STS-DEVICE-0024`).
+* **Kept ON THE DEVICE** as an `x509` key (`proof` the family, the serial and
+  expiry in its material), NOT on the owner's entry — it names the device —
+  and recorded by `pki.issueEnrolled()` (subject kind `device`) so OCSP and
+  the CRL know it. The same key again REPLACES that key's certificate; a key
+  another device holds is refused. A server-generated key and a re-enrolment
+  (`/simplereenroll`, RenewalReq, which look on person and application
+  entries) are refused `STS-DEVICE-0025`: a device proves its own key, and is
+  renewed by a `simpleenroll` naming its URN.
+* **Not done**: removing a device or a key does not revoke its certificate
+  (it stops being RECOGNISED at once, which is what the register answers);
+  revocation on removal belongs with phase 4's RISC.
+
 ## `credentials.ts`: A RESET LINK, A REMOVED PASSWORD, AND A REQUIRED SECOND FACTOR (2026-09-13)
 
 For the *Password and second factors* section of a person's console page.
@@ -8559,21 +8590,143 @@ answered in `requestedClaimsOf()` beside the ordinary claims — so the
 federation release policy applies to it as to any requested claim.
 `tests/identity_assurance.js` holds it.
 
-## `devices.ts`: THE DEVICE REGISTER (#130, 2026-09-23 — the foundation of #164)
+## `devices.ts`: THE DEVICE REGISTER (#130, 2026-09-23; #164 and #218, 2026-09-26)
 
-A device is an entry under `ou=devices` (`ldap/CLAUDE.md`), owned by a person
-and linked to the applications that used it. Today OpenID Connect Native SSO
-makes them (`oauth-oidc/CLAUDE.md`, 3bb). Four rules, each argued in the
-file's header:
+A device is an entry under `ou=devices` (`ldap/CLAUDE.md`) with ONE owner —
+a person or an application entry (#164 decision 5) — linked to the
+applications that used it. OpenID Connect Native SSO makes them
+(`oauth-oidc/CLAUDE.md`, 3bb), and since #164's phase 1 an administrator does
+(`admin-ui/devices_admin.ts`, `/admin-api/devices`). **#164 is built in six
+phases and the MODEL was built whole in the first**, so a later phase fills
+fields rather than reshaping entries already in somebody's directory; the
+file's header lists every attribute and which phase fills it. The rules,
+each argued there:
 
-* **The device outlives its secret.** The secret is accepted only while its
-  session lives; a later sign-in presenting it re-binds the SAME device, and
-  the secret is never rotated.
-* **A secret presented for somebody else is ignored** — a new device is made.
-* **A person holds at most `oauth2.maxDevicesPerPerson`**; at the bound the
-  least recently used device whose session has ended makes room.
-* **The view never carries the hash**, on the console, the API or the
-  portal.
+* **A key is ONE JSON value** of `stsDeviceKey` — kind (`x509`, `jwk`,
+  `webauthn`), thumbprint, public material, who added it, how it was PROVEN
+  and what its attestation showed — never parallel attributes, and never
+  changed once written (a merge by value would keep both versions). No
+  secret is ever in one; a private or symmetric JWK is refused.
+* **One digest per key**: RFC 7638 for a JWK (DPoP's `jkt`) and for a
+  WebAuthn credential's public key, SHA-256 over the SubjectPublicKeyInfo
+  for a certificate (`crypto.certificateSpkiThumbprint()`, so renewal over
+  the same key is the same key). **A thumbprint belongs to one device.**
+* **The console and the API never forward a proof or an attestation**: a key
+  typed by an administrator is `admin`-proven and `self-asserted`. The
+  device's `stsDeviceAttestation` is DERIVED from its keys on every write.
+* **Compliance and status keep their previous value and who set it**
+  (`setCompliance()`, `setStatus()`) — CAEP's device-compliance-change needs
+  both (phase 4). Built and tested now; the doors are phase 3.
+* **The device outlives its secret**; a new owner takes the device WITHOUT
+  its Native SSO secret and WITH its keys.
+* **Bounds**: `devices.maxPerPerson` (it was `oauth2.maxDevicesPerPerson`) —
+  a Native SSO sign-in evicts at it, an administrator is refused;
+  `devices.maxPerApplication`; `devices.maxKeysPerDevice`.
+* **The events** Monitoring → Devices draws are a per-realm, persisted
+  `realms.map` keyed by a random id — never a per-day counter two nodes
+  would overwrite — bounded at the insert by `devices.eventsKept`.
+* **The view never carries the hash or the session id**, on the console,
+  the API or the portal.
+
+### Phase 2 (2026-09-26): enrolment, attestation and recognition — three libraries
+
+* **`device_attestation.ts`** verifies what a presented key's attestation
+  proves: a `device-key-proof+jwt` JWS with an **Android Key Attestation**
+  in its `x5c` (the extension's `attestationChallenge` is the enrolment
+  challenge, a TEE or StrongBox security level, the chain to
+  `devices.androidAttestationTrustAnchors`), an **Apple App Attest** object
+  (Apple's nine steps, `devices.appleAppAttestAppIds`), and a **TPM key
+  attestation** in a certificate request (draft-ietf-lamps-csr-attestation's
+  `id-aa-attestation`, TCG `tcg-attest-tpm-certify`: the AK signature, the
+  certified Name, the request's key, fixedTPM/fixedParent/
+  sensitiveDataOrigin, the AK chain to `devices.tpmTrustAnchors`). **A
+  statement that does not verify is refused in both modes; one that verifies
+  and chains to nothing this realm trusts is `self-asserted`; only an
+  anchored one is `attested`.** Every codec is `crypto.js`'s (the CSR
+  attestation codec is new there) and every chain `pki.js`'s.
+* **The Google and Apple roots SHIP** in `pki_device_anchors.json`,
+  generated from the vendors' URLs and PINNED by SHA-256, re-checked by
+  `pki.deviceAttestationAnchors()` at load (a mismatch is dropped,
+  `STS-DEVICE-0027`) — `pki_cloud_anchors.json`'s precedent, and the
+  opposite of `webauthn.attestationTrustAnchors` (which ships nothing because
+  MDS3 supplies WebAuthn's roots). A realm's setting REPLACES the shipped set,
+  which is how a test uses its own generated root. **TPM roots are not
+  shipped**: dozens of manufacturers, and an operator knows which it buys.
+  Nothing here is post-quantum and cannot be: the formats are the vendors'.
+* **`device_enrolment.ts`** is a person registering their own device on
+  `/portal/devices` (`portal/CLAUDE.md`): the `devices.challenges` store (per
+  realm at its declaration, persisted, one per session and purpose, spent
+  once through `cluster_claims`, bounded by `devices.maxChallenges`, ejected
+  by `caches.eject-expired`), the JWK proof, the App Attest statement and the
+  WebAuthn link. **The mode split is here**: an unattested key a device or
+  its owner PRESENTS is refused in product (`mode.acceptsUnattestedDevice-
+  Keys()`, `STS-DEVICE-0024`) and self-asserted in development. **An
+  administrator's by-value key is not asked** — an administrator's act,
+  `proof: admin`, self-asserted, in both modes (SIOPv2's #129 arrangement).
+* **`device_recognition.ts`'s `recognize(evidence)`** answers which
+  registered device a request came from — `{ id, via, keyId, owner,
+  ownerKind, ownerName, status, attestation, keyAttestation, compliance,
+  chainVerified, ownerMatches?, conflict?, at }` or null — by `x509` (the
+  connection's client certificate by its SPKI; the handshake proves
+  possession, the chain is recorded not required, a certificate refused on
+  revocation is not recognised), `webauthn` (a linked credential id), `jwk`
+  (a DPoP `jkt`) or `native-sso` (the secret), in that order of strength, a
+  second device kept as `conflict`. **A compromised device IS recognised.**
+  It decides nothing: the fact is recorded on the authentication event as
+  `registeredDevice` (`authn.registeredDeviceOf(session)`) and on the token
+  issuance as `opts.registered_device`, before `checkIssuance()` — where
+  phases 3 to 6 read it. The last use moves (`devices.noteRecognized()`, at
+  most every `devices.lastUsedResolutionSeconds`); recognitions, enrolments
+  and attestation outcomes are counted per realm in THIS process.
+* **The `device` enrollment profile** is `cert_enrollment.ts`'s (3ag, below).
+
+### Phases 5 and 6 (2026-09-26): risk, policy, acr and claims — rule 3bo
+
+**Each phase reads the recognition fact; none decides in this directory.**
+
+* **Risk scoring** (`risk/CLAUDE.md`, *The registered device*). The
+  signals, the device feature and the device's own level are covered there.
+  What this directory owes it is below.
+  * `devices.holdsAny(username)`: "does this person own any device", which
+    the owner index answers.
+  * `setRiskLevel()` refuses to move a COMPROMISED device for source
+    `risk`. The compromise raised it to HIGH, and only a restore puts it
+    back.
+* **The issuance policy** (`xacml/CLAUDE.md`, 3v's device facts). The
+  pieces in this directory:
+  * **`issuance_gate.js` finds the device.** It uses the caller's
+    `device`, or else the device the session's latest event recognised.
+  * **The gate brings it up to date** through
+    `device_recognition.current()`, which reads the device again by id
+    (an index lookup). Compliance is exactly what an MDM moves under a
+    live session, and a device removed since is no device.
+  * **The realm's requirement** comes from `deviceRequirementOf()`, built
+    from three settings: `devices.refuseCompromised` (ON),
+    `devices.requireCompliantDevice` (OFF in both modes, decision 3) and
+    `devices.compliantDeviceAttested`.
+  * **The gate asks the policy past its two shortcuts** only where a
+    device rule could refuse.
+  * **`deviceDeferred`** is how a caller asking before its credential is
+    complete (the sign-in screen, ahead of WebAuthn) leaves the device
+    question to the session's start. `authn.ts`'s `refusedOnDevice()`
+    asks that question, about the device alone, for a gated door.
+* **Ownership** is `DeviceRecognition.ownedBy(fact, subject)`:
+  * a person's device belongs to that person;
+  * an application's device belongs to that application, as the subject
+    of a `client_credentials` grant.
+
+  `current()` looks up the owner's name again for a device given away
+  since.
+* **The acr and the claim** are covered in `oauth-oidc/CLAUDE.md` 3bo. Both
+  read the same fact through `current()`.
+* **Performance: every per-request lookup is indexed.**
+  * `byCredentialId()` (every WebAuthn sign-in) reads the derived
+    `stsDeviceCredentialId`.
+  * `holdsAny()` reads `owner`. Several entries share one owner, so the
+    index keeps one entry per value, and a stale hit now REBUILDS rather
+    than answering "none" (`ldap/ldap_server.js`).
+  * `listForOwner()` still walks. It wants every device an owner has, and
+    its callers are pages and a Native SSO grant.
 
 ## Several nodes: second factors, links, enrollment credentials and the bootstrap (2026-09-14, #46)
 

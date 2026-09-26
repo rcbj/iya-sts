@@ -43,6 +43,7 @@
     - { title: Sessions, url: /sessions.html }
     - { title: Signing out, url: /signing-out.html }
     - { title: Risk scoring, url: /risk-scoring.html }
+    - { title: Devices, url: /devices.html }
     - { title: "Mail: reset, verification, notices", url: /mail.html }
 
 - section: Verifiable credentials

@@ -699,6 +699,11 @@ const ENROLLMENT_PROFILES = ['tls-server', 'tls-client', 'tls-server-client',
                              'code-signing', 'email', 'timestamping',
                              'smartcard-logon'];
 
+// EST and SCEP also issue `device` (#164): cert_enrollment.ts's
+// DEVICE_PROFILE, for the families in its DEVICE_PROFILE_FAMILIES. ACME does
+// not, and its row stays on the nine.
+const DEVICE_ENROLLMENT_PROFILES = ENROLLMENT_PROFILES.concat(['device']);
+
 // oid4vc/vc_issuer.ts's IMPLEMENTED_ENC_VALUES, for both OID4VCI rows.
 const OID4VCI_ENC_VALUES = ['A128GCM', 'A256GCM'];
 
@@ -4534,18 +4539,194 @@ const SETTINGS = [
                  'path and a load generator must not take the feature away ' +
                  'from the names that matter.' },
 
-  // THE DEVICE REGISTER (#130): how many devices one person holds.
-  // `common/devices.ts` argues it.
-  { key: 'oauth2.maxDevicesPerPerson', group: 'OAuth 2.0 / OIDC',
+  // THE DEVICE REGISTER (#130, #164, #218): its bounds, and how many events
+  // Monitoring → Devices keeps. A group of its own since #218, drawn on
+  // Protocols → Device registration (`SETTING_HOMES`); the person bound was
+  // `oauth2.maxDevicesPerPerson` until then. `common/devices.ts` argues them.
+  { key: 'devices.maxPerPerson', group: 'Devices',
     label: 'Devices one person may hold',
-    env: 'STS_OAUTH2_MAX_DEVICES_PER_PERSON', type: 'int', dflt: 20,
+    env: 'STS_DEVICES_MAX_PER_PERSON', type: 'int', dflt: 20,
     min: 1, max: 1000, runtime: true,
-    description: 'How many device entries (ou=devices) one person holds. A ' +
+    description: 'How many device entries (ou=devices) one person owns. A ' +
                  'Native SSO sign-in from a device not seen before makes ' +
-                 'one; ' +
-                 'at the bound it replaces the person\'s least recently used ' +
-                 'device whose sign-on session has ended — or, failing that, ' +
-                 'their least recently used one.' },
+                 'one; at the bound it replaces the person\'s least ' +
+                 'recently used device whose sign-on session has ended — ' +
+                 'or, failing that, their least recently used one. An ' +
+                 'administrator\'s registration at the bound is refused ' +
+                 'instead (STS-DEVICE-0002).' },
+  { key: 'devices.maxPerApplication', group: 'Devices',
+    label: 'Devices one application may own',
+    env: 'STS_DEVICES_MAX_PER_APPLICATION', type: 'int', dflt: 1000,
+    min: 1, max: 100000, runtime: true,
+    description: 'How many device entries one application entry owns — a ' +
+                 'workload or server host registering the machines it runs ' +
+                 'on. A registration at the bound is refused ' +
+                 '(STS-DEVICE-0003); nothing is replaced to make room.' },
+  { key: 'devices.maxKeysPerDevice', group: 'Devices',
+    label: 'Keys one device may hold',
+    env: 'STS_DEVICES_MAX_KEYS_PER_DEVICE', type: 'int', dflt: 10,
+    min: 1, max: 100, runtime: true,
+    description: 'How many keys (a certificate, a JWK or DPoP key, a ' +
+                 'linked WebAuthn credential) one device holds. Each is a ' +
+                 'way the device is recognised; the Native SSO secret is ' +
+                 'not counted. A key past it is refused (STS-DEVICE-0006).' },
+  { key: 'devices.eventsKept', group: 'Devices',
+    label: 'Device events kept for monitoring',
+    env: 'STS_DEVICES_EVENTS_KEPT', type: 'int', dflt: 5000,
+    min: 100, max: 100000, runtime: true,
+    description: 'How many device creations, removals, evictions and ' +
+                 'compliance changes this realm keeps for Monitoring → ' +
+                 'Devices. The oldest is dropped when a new one is ' +
+                 'recorded past it.' },
+
+  // #164 PHASE 3 (2026-09-26): the MDM / posture feed.
+  // `admin-ui/devices_admin.ts`'s `mdmFeed()` argues it.
+  { key: 'devices.complianceFeedMaxReports', group: 'Devices',
+    label: 'Compliance reports per feed request',
+    env: 'STS_DEVICES_COMPLIANCE_FEED_MAX_REPORTS', type: 'int', dflt: 500,
+    min: 1, max: 10000, runtime: true,
+    description: 'The most device reports one POST ' +
+                 '/admin-api/device-compliance (the MDM or posture feed, ' +
+                 'under the device:compliance scope) may carry. A larger ' +
+                 'batch is refused whole (STS-DEVICE-0034) rather than ' +
+                 'applied in part, so a feed knows to split it.' },
+
+  // #164 PHASE 2 (2026-09-26): enrolment and recognition.
+  // `common/device_enrolment.ts` and `common/device_attestation.ts` argue
+  // them.
+  { key: 'devices.challengeTtlSeconds', group: 'Devices',
+    label: 'Enrolment challenge lifetime (seconds)',
+    env: 'STS_DEVICES_CHALLENGE_TTL_SECONDS', type: 'int', dflt: 300,
+    min: 30, max: 3600, runtime: true,
+    description: 'How long a challenge /portal/devices issues for a key ' +
+                 'proof, an Android Key Attestation or an Apple App ' +
+                 'Attest statement may be answered. It is answered once, ' +
+                 'by the session it was issued to.' },
+  { key: 'devices.maxChallenges', group: 'Devices',
+    label: 'Enrolment challenges held',
+    env: 'STS_DEVICES_MAX_CHALLENGES', type: 'int', dflt: 10000,
+    min: 100, max: 1000000, runtime: true,
+    description: 'How many unanswered enrolment challenges this realm ' +
+                 'holds. One session holds at most one per purpose; past ' +
+                 'this the oldest is dropped when a new one is issued.' },
+  { key: 'devices.androidAttestationTrustAnchors', group: 'Devices',
+    label: 'Android Key Attestation roots (PEM)',
+    env: 'STS_DEVICES_ANDROID_ATTESTATION_TRUST_ANCHORS', type: 'string',
+    dflt: '', runtime: true,
+    description: 'The roots an Android Key Attestation chain must end at, ' +
+                 'as a PEM bundle. Empty — the default — uses Google\'s ' +
+                 'two published hardware attestation roots, shipped in ' +
+                 'common/pki_device_anchors.json and pinned there by ' +
+                 'SHA-256. Set, it REPLACES them.' },
+  { key: 'devices.androidMinimumSecurityLevel', group: 'Devices',
+    label: 'Android Key Attestation: least security level',
+    env: 'STS_DEVICES_ANDROID_MINIMUM_SECURITY_LEVEL', type: 'enum',
+    enumValues: ['trusted-environment', 'strongbox'],
+    dflt: 'trusted-environment', runtime: true,
+    description: 'The KeyMint security level an attested Android key must ' +
+                 'have: a TEE (`trusted-environment`) or a separate ' +
+                 'secure element (`strongbox`). A SOFTWARE key is never ' +
+                 'attested, whatever this says.' },
+  { key: 'devices.appleAppAttestTrustAnchors', group: 'Devices',
+    label: 'Apple App Attest root (PEM)',
+    env: 'STS_DEVICES_APPLE_APP_ATTEST_TRUST_ANCHORS', type: 'string',
+    dflt: '', runtime: true,
+    description: 'The root an App Attest certificate chain must end at, as ' +
+                 'a PEM bundle. Empty — the default — uses the Apple App ' +
+                 'Attestation Root CA, shipped in ' +
+                 'common/pki_device_anchors.json and pinned by SHA-256. ' +
+                 'Set, it REPLACES it.' },
+  { key: 'devices.appleAppAttestAppIds', group: 'Devices',
+    label: 'Apple App Attest app identifiers',
+    env: 'STS_DEVICES_APPLE_APP_ATTEST_APP_IDS', type: 'csv', dflt: '',
+    runtime: true,
+    description: 'The apps whose App Attest keys this realm registers, as ' +
+                 'TEAMID.bundle.id, comma-separated: the authenticator ' +
+                 'data\'s RP ID hash must be the SHA-256 of one. Empty — ' +
+                 'the default — accepts no App Attest statement at all.' },
+  { key: 'devices.appleAppAttestAllowDevelopment', group: 'Devices',
+    label: 'Apple App Attest: accept the development environment',
+    env: 'STS_DEVICES_APPLE_APP_ATTEST_ALLOW_DEVELOPMENT', type: 'bool',
+    dflt: false, runtime: true,
+    description: 'Accept a key attested in App Attest\'s DEVELOPMENT ' +
+                 'environment (AAGUID `appattestdevelop`), which Apple ' +
+                 'issues to builds signed for development. Off: only ' +
+                 'the production environment (`appattest`).' },
+  { key: 'devices.tpmTrustAnchors', group: 'Devices',
+    label: 'TPM attestation roots (PEM)',
+    env: 'STS_DEVICES_TPM_TRUST_ANCHORS', type: 'string', dflt: '',
+    runtime: true,
+    description: 'The roots a TPM Attestation Key certificate must chain ' +
+                 'to — a TPM manufacturer\'s EK or AK CA, or the ' +
+                 'enterprise CA that certified the AK — as a PEM bundle. ' +
+                 'Nothing is shipped: there are dozens of manufacturers ' +
+                 'and an operator knows which it buys. Empty verifies no ' +
+                 'TPM key attestation, so EST and SCEP device keys are ' +
+                 'self-asserted (and refused in product).' },
+  { key: 'devices.lastUsedResolutionSeconds', group: 'Devices',
+    label: 'Last-used resolution (seconds)',
+    env: 'STS_DEVICES_LAST_USED_RESOLUTION_SECONDS', type: 'int', dflt: 60,
+    min: 0, max: 86400, runtime: true,
+    description: 'A recognised device\'s last-used time is written to the ' +
+                 'directory at most this often, so a busy device is not a ' +
+                 'directory write on every token request. 0 writes it on ' +
+                 'every recognition.' },
+
+  // #164 PHASE 5 (2026-09-26): risk scoring. `risk/risk_engine.ts`'s
+  // SIGNALS argue the scope of `unregistered-device`.
+  { key: 'devices.expectRegistered', group: 'Devices',
+    label: 'Expect every person to sign in from a registered device',
+    env: 'STS_DEVICES_EXPECT_REGISTERED', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'On, risk scoring\'s unregistered-device signal (x2) ' +
+                 'fires for ANY person whose sign-in no registered device ' +
+                 'of theirs proved. Off — the default — it fires only for ' +
+                 'a person who has registered a device, so a realm with ' +
+                 'no devices is not scored as though every sign-in were ' +
+                 'suspect. It waits for risk.minimumHistory, as ' +
+                 'new-device does. Per realm, like every setting.' },
+
+  // #164 PHASE 6 (2026-09-26): the issuance policy's two device rules and
+  // the compliant-device acr. The settings SWITCH the rules — they go into
+  // every issuance request as `urn:sts:xacml:device-requirement` — and the
+  // built-in `role-issuance` policy states them (`xacml/xacml_templates.ts`).
+  { key: 'devices.requireCompliantDevice', group: 'Devices',
+    label: 'Require a compliant registered device',
+    env: 'STS_DEVICES_REQUIRE_COMPLIANT_DEVICE', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'OFF BY DEFAULT IN BOTH MODES (#164 decision 3). On, the ' +
+                 'issuance policy refuses every token, assertion, ticket ' +
+                 'and session that did not come from the subject\'s own ' +
+                 '(or an application\'s) registered device, recognised by ' +
+                 'one of its keys, COMPLIANT and not compromised ' +
+                 '(STS-DEVICE-0037). The console and the portal — where a ' +
+                 'person registers a device — are exempt in the built-in ' +
+                 'policy. A door with no device evidence (a Kerberos ' +
+                 'ticket, a password grant without DPoP) is refused. Per ' +
+                 'realm, like every setting.' },
+  { key: 'devices.compliantDeviceAttested', group: 'Devices',
+    label: 'A compliant device must also be attested',
+    env: 'STS_DEVICES_COMPLIANT_DEVICE_ATTESTED', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'On, a device counts as a compliant registered device — ' +
+                 'for devices.requireCompliantDevice and for the ' +
+                 'urn:sts:acr:compliant-device acr — only when it is also ' +
+                 'ATTESTED: a verifier checked a statement about its key\'s ' +
+                 'hardware (WebAuthn against FIDO MDS3, TPM, Android Key ' +
+                 'Attestation, Apple App Attest). Off, a self-asserted ' +
+                 'device counts once it is compliant.' },
+  { key: 'devices.refuseCompromised', group: 'Devices',
+    label: 'Refuse a compromised device',
+    env: 'STS_DEVICES_REFUSE_COMPROMISED', type: 'bool', dflt: true,
+    runtime: true,
+    description: 'ON BY DEFAULT. The issuance policy refuses anything asked ' +
+                 'for from a registered device marked compromised ' +
+                 '(STS-DEVICE-0038), for every application: a compromise ' +
+                 'ends the device\'s sessions and revokes its certificates ' +
+                 'and secret, but its JWK and WebAuthn keys still prove the ' +
+                 'device, so a DPoP-bound token request from it is still ' +
+                 'possible. Off, a compromised device is only a risk signal ' +
+                 '(compromised-device, x50).' },
 
   // OPENID CONNECT CIBA (#131). `oauth-oidc/ciba.ts` argues them.
   { key: 'oauth2.deviceAuthorization', group: 'OAuth 2.0 / OIDC',
@@ -5531,13 +5712,16 @@ const SETTINGS = [
     label: 'Certificate profiles EST may issue',
     env: 'STS_EST_ALLOWED_PROFILES', type: 'csv',
     dflt: 'tls-server,tls-client,tls-server-client,digital-signature,' +
-          'key-encipherment,code-signing,email,timestamping,smartcard-logon',
+          'key-encipherment,code-signing,email,timestamping,smartcard-logon,' +
+          'device',
     runtime: true,
-    // Mirrors common/cert_enrollment.ts's PROFILE_IDS.
-    csvValues: ENROLLMENT_PROFILES,
+    // Mirrors cert_enrollment.ts's PROFILE_IDS and DEVICE_PROFILE.
+    csvValues: DEVICE_ENROLLMENT_PROFILES,
     description: 'The /admin/pki profiles an EST label may name ' +
-                 '(/.well-known/est/<profile>/…). The five CA, OCSP and KDC ' +
-                 'profiles are never issued over an enrollment protocol.' },
+                 '(/.well-known/est/<profile>/…), and `device` — a ' +
+                 'certificate issued to a DEVICE entry (#164). The five ' +
+                 'CA, OCSP and KDC profiles are never issued over an ' +
+                 'enrollment protocol.' },
   { key: 'est.defaultProfile', group: 'EST',
     label: 'Profile at the unlabelled path',
     env: 'STS_EST_DEFAULT_PROFILE', type: 'enum',
@@ -5605,13 +5789,15 @@ const SETTINGS = [
     label: 'Certificate profiles SCEP may issue',
     env: 'STS_SCEP_ALLOWED_PROFILES', type: 'csv',
     dflt: 'tls-server,tls-client,tls-server-client,digital-signature,' +
-          'key-encipherment,code-signing,email,timestamping,smartcard-logon',
+          'key-encipherment,code-signing,email,timestamping,smartcard-logon,' +
+          'device',
     runtime: true,
-    // Mirrors common/cert_enrollment.ts's PROFILE_IDS.
-    csvValues: ENROLLMENT_PROFILES,
+    // Mirrors cert_enrollment.ts's PROFILE_IDS and DEVICE_PROFILE.
+    csvValues: DEVICE_ENROLLMENT_PROFILES,
     description: 'The /admin/pki profiles a challenge password may be issued ' +
-                 'for. The five CA, OCSP and KDC profiles are never issued ' +
-                 'over an enrollment protocol.' },
+                 'for, and `device` — a certificate issued to a DEVICE ' +
+                 'entry (#164). The five CA, OCSP and KDC profiles are ' +
+                 'never issued over an enrollment protocol.' },
   { key: 'scep.defaultProfile', group: 'SCEP',
     label: 'Profile a new challenge defaults to',
     env: 'STS_SCEP_DEFAULT_PROFILE', type: 'enum',
@@ -10934,19 +11120,20 @@ const SETTINGS = [
     env: 'STS_CAEP_AUTO_EMIT_TYPES', type: 'csv',
     dflt: 'session-established,session-presented,session-revoked,' +
           'credential-change,assurance-level-change,token-claims-change,' +
-          'risk-level-change',
+          'risk-level-change,device-compliance-change',
     runtime: true,
     // Mirrors ssf/caep.ts's AUTO_ACTS, short and under CAEP_PREFIX.
     csvValues: withEventTypeUris(
       'https://schemas.openid.net/secevent/caep/event-type/',
       ['session-established', 'session-presented', 'session-revoked',
        'credential-change', 'assurance-level-change', 'token-claims-change',
-       'risk-level-change']),
+       'risk-level-change', 'device-compliance-change']),
     description: 'The SHORT NAMES of the CAEP events this service emits by ' +
-                 'itself, out of the seven acts it can actually observe — ' +
+                 'itself, out of the eight acts it can actually observe — ' +
                  'the seventh, since #62 P4, a person\'s RISK LEVEL ' +
                  'changing, which emits risk-level-change where the ' +
-                 'risk-response policy permits announcing it: a ' +
+                 'risk-response policy permits announcing it (and, since ' +
+                 '#164, a registered DEVICE\'s, with principal DEVICE): a ' +
                  'session starting, a session being presented, a session ' +
                  'ending, a person re-authenticating on a session they ' +
                  'already hold with a different acr (a step-up or ' +
@@ -10961,12 +11148,14 @@ const SETTINGS = [
                  'write that moves a claim of a person who holds live ' +
                  'tokens or assertions (an attribute the claim catalogue ' +
                  'maps, or a group joined, left or renamed), which emits ' +
-                 'token-claims-change. The eighth is a thing nothing here ' +
-                 'does — no device reports compliance to this service ' +
-                 '(#164) — so device-compliance-change is emitted BY HAND ' +
-                 'from /admin/caep or POST /admin-api/caep/emit, and a row ' +
-                 'naming it here is dropped with a warning rather than ' +
-                 'producing an event nothing can cause.' },
+                 'token-claims-change. The eighth, since #164 (2026-09-26), ' +
+                 'is a registered device\'s COMPLIANCE changing — set by ' +
+                 'an administrator, the MDM feed or development\'s test ' +
+                 'control — which emits device-compliance-change; a ' +
+                 'device\'s keys and Native SSO secret also emit ' +
+                 'credential-change. A row naming anything else is dropped ' +
+                 'with a warning rather than producing an event nothing ' +
+                 'here can cause.' },
 
   { key: 'caep.eventsSupported', group: 'CAEP',
     label: 'CAEP event types offered', env: 'STS_CAEP_EVENTS_SUPPORTED',
@@ -11598,7 +11787,7 @@ const SETTINGS = [
           'account-credential-change-required,' +
           'recovery-information-changed,recovery-activated,' +
           'credential-compromise,opt-out-initiated,opt-out-cancelled,' +
-          'opt-out-effective,opt-in',
+          'opt-out-effective,opt-in,sessions-revoked',
     runtime: true,
     // Mirrors ssf/risc.ts's AUTO_ACTS, short and under RISC_PREFIX.
     csvValues: withEventTypeUris(
@@ -11607,10 +11796,11 @@ const SETTINGS = [
        'identifier-changed', 'account-credential-change-required',
        'recovery-information-changed', 'identifier-recycled',
        'recovery-activated', 'credential-compromise', 'opt-out-initiated',
-       'opt-out-cancelled', 'opt-out-effective', 'opt-in']),
+       'opt-out-cancelled', 'opt-out-effective', 'opt-in',
+       'sessions-revoked']),
     description: 'The SHORT NAMES of the RISC events this service emits by ' +
-                 'itself, out of the thirteen acts it can observe (every ' +
-                 'one since 2026-09-22, #146). In its own directory: an ' +
+                 'itself, out of the fourteen acts it can observe (every ' +
+                 'one since 2026-09-26, #164). In its own directory: an ' +
                  'account purged, disabled (with the reason an ' +
                  'administrator gave, and none when none was given) or ' +
                  'enabled, an identifier changed, and an identifier ' +
@@ -11625,9 +11815,15 @@ const SETTINGS = [
                  'new ones on the portal). From the account holder on ' +
                  '/portal/signals: opt-out-initiated, opt-out-cancelled and ' +
                  'opt-in, and opt-out-effective when risc.optOutDelayHours ' +
-                 'has passed. Only the deprecated sessions-revoked is never ' +
-                 'caused here; a row naming it is dropped with a warning ' +
-                 'rather than producing an event nothing can cause.' },
+                 'has passed. From the device register (#164): a person\'s ' +
+                 'device marked compromised emits credential-compromise ' +
+                 'for each credential it held, and a device compromised or ' +
+                 'removed emits the deprecated sessions-revoked — with the ' +
+                 'DEVICE beside the person in a complex subject, which is ' +
+                 'what makes "every session of the account" true of every ' +
+                 'session on that device. Each ended session also sends ' +
+                 'CAEP session-revoked, the event RISC 1.0 section 2.11 ' +
+                 'points at; drop sessions-revoked here to send only that.' },
 
   { key: 'risc.recycleWindowDays', group: 'RISC',
     label: 'Recycled identifier window (days)',

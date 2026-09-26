@@ -136,14 +136,44 @@ interface StepUpDeps {
   config: typeof config;
   errorCodes: typeof errorCodes;
   monitor: typeof monitor;
+  // The device a session's event recognised, brought up to date against
+  // the register (#164 phase 6) — `device_recognition.ts`'s `current()`.
+  // Optional, so a test's instance built without it meets the device class
+  // with nothing.
+  currentDevice?: (fact: Json) => Json;
 }
 
 // The context classes this service's own sign-in produces, weakest first. The
 // index is the level.
 const LEVELS = ['0', '1', 'mfa'];
 
-// What `acr_values_supported` publishes.
-const SUPPORTED = LEVELS.slice();
+// ---------------------------------------------------------------------------
+// THE COMPLIANT-DEVICE CONTEXT CLASS (#164 decision 3, phase 6, 2026-09-26),
+// in this service's own acr namespace (`urn:sts:acr`, which CAEP's
+// assurance-level-change already names). Met by an authentication — at
+// least one factor — whose event recognised a registered device that is the
+// person's OWN, COMPLIANT, not compromised, and ATTESTED as well where
+// `devices.compliantDeviceAttested` says so; the device as it stands NOW in
+// the register, not as it stood at the sign-in, because compliance is what
+// an MDM moves under a live session.
+//
+// **IT IS NOT A RUNG ON THE LADDER.** `0` < `1` < `mfa` counts factors; this
+// says where the authentication came FROM. A password from a compliant
+// laptop is not `mfa`, and two factors from an unmanaged phone are not this
+// — so it meets no request for `mfa` and `mfa` does not meet a request for
+// it; it sits above `1` only in that it needs an authentication at all. A
+// request naming it on a session without such a device gets RFC 9470's
+// road: the person is sent to sign in again (from the device, which the
+// screen cannot ask for — a certificate on the connection, or a WebAuthn
+// credential linked to it), and a return that still does not meet it is
+// `unmet_authentication_requirements`. A token that met it carries it as
+// its `acr`, section 5's "the requested acr value", so a resource server
+// asking for it again (the challenge) is answered by the token.
+// ---------------------------------------------------------------------------
+const COMPLIANT_DEVICE = 'urn:sts:acr:compliant-device';
+
+// What `acr_values_supported` publishes: the ladder, then the device class.
+const SUPPORTED = LEVELS.concat([COMPLIANT_DEVICE]);
 
 // RFC 8176 method names accepted as a demand for two factors including a key.
 const KEY_ALIASES = ['hwk', 'phr', 'phrh'];
@@ -164,6 +194,7 @@ const MAX_AGE_LIMIT = 315360000;
 
 class StepUp {
   static readonly LEVELS = LEVELS;
+  static readonly COMPLIANT_DEVICE = COMPLIANT_DEVICE;
   static readonly SUPPORTED = SUPPORTED;
   static readonly KEY_ALIASES = KEY_ALIASES;
   static readonly HONOURED = HONOURED;
@@ -184,7 +215,14 @@ class StepUp {
       log: helpers.log,
       config: config,
       errorCodes: errorCodes,
-      monitor: monitor
+      monitor: monitor,
+      // Required when asked: `device_recognition` is built at 8, before
+      // this module, and requires nothing that requires this one.
+      currentDevice: function currentDevice(fact: Json): Json {
+        helpers.log.debug("Entering currentDevice().");
+        helpers.log.debug("Leaving currentDevice().");
+        return require('../common/device_recognition').current(fact);
+      }
     };
   }
 
@@ -376,6 +414,12 @@ class StepUp {
       return true;
     }
     const hadLevel = this.levelOf(had);
+    if (requested === COMPLIANT_DEVICE) {
+      const met = hadLevel >= this.levelOf('1') &&
+                  this.compliantDeviceOf(facts);
+      log.debug("Leaving StepUp.meets(). The device class; met=" + met);
+      return met;
+    }
     if (KEY_ALIASES.indexOf(requested) >= 0) {
       const met = hadLevel >= this.levelOf('mfa') &&
                   this.amrOf(facts).indexOf('hwk') >= 0;
@@ -391,6 +435,39 @@ class StepUp {
     log.debug("Leaving StepUp.meets(). Ordered; had " + hadLevel +
               ", wanted " + wanted + ".");
     return hadLevel >= wanted;
+  }
+
+  // -------------------------------------------------------------------------
+  // WHETHER AN AUTHENTICATION CAME FROM THE PERSON'S OWN COMPLIANT DEVICE
+  // (the COMPLIANT_DEVICE class above). `facts` is a SESSION — its latest
+  // event's `registeredDevice` and its `user` — or anything else, which
+  // carries no device and meets nothing. Never throws: a register that
+  // cannot answer is no device.
+  // -------------------------------------------------------------------------
+  compliantDeviceOf(facts: Json): boolean {
+    const { log, config, currentDevice } = this.deps;
+    log.debug("Entering StepUp.compliantDeviceOf().");
+    const events = facts && Array.isArray(facts.events) ? facts.events : [];
+    const last = events.length ? events[events.length - 1] : null;
+    let device: Json = last && last.registeredDevice || null;
+    if (device && currentDevice) {
+      try {
+        device = currentDevice(device);
+      } catch (e) {
+        log.debug("Caught in StepUp.compliantDeviceOf(): " +
+                  ((e && e.message) || e));
+        device = null;
+      }
+    }
+    const username = String((facts && facts.user && facts.user.username) ||
+                            '');
+    const met = !!device && !!username && device.ownerKind === 'person' &&
+      String(device.ownerName || '') === username &&
+      device.compliance === 'compliant' && device.status !== 'compromised' &&
+      (config.value('devices.compliantDeviceAttested') !== true ||
+       device.attestation === 'attested');
+    log.debug("Leaving StepUp.compliantDeviceOf(). " + met);
+    return met;
   }
 
   // The most preferred requested value `facts` meets, or null. With nothing
@@ -567,10 +644,12 @@ class StepUp {
         description: 'RFC 9470 section 5: acr_values "' +
           need.acrValues.join(' ') + '" were requested and the ' +
           'authentication performed does not meet any of them. This ' +
-          'service produces ' + SUPPORTED.join(', ') + ' (ordered, so a ' +
-          'stronger one meets a weaker request); hwk, phr and phrh are met ' +
-          'by a password with a security key; any other value only by a ' +
-          'sign-in that reports exactly that acr.'
+          'service produces ' + LEVELS.join(', ') + ' (ordered, so a ' +
+          'stronger one meets a weaker request); ' + COMPLIANT_DEVICE +
+          ' is met by a sign-in from the person\'s own compliant ' +
+          'registered device; hwk, phr and phrh are met by a password with ' +
+          'a security key; any other value only by a sign-in that reports ' +
+          'exactly that acr.'
       }, 'STS-OAUTH-0500');
     }
     log.debug("Leaving StepUp.unmetRefusal(). " + out.error);
@@ -701,6 +780,7 @@ export = {
   installInstance: (instance: StepUp): void => slot.install(instance),
   instanceOrigin: (): string => slot.origin(),
   LEVELS: StepUp.LEVELS,
+  COMPLIANT_DEVICE: StepUp.COMPLIANT_DEVICE,
   SUPPORTED: StepUp.SUPPORTED,
   KEY_ALIASES: StepUp.KEY_ALIASES,
   HONOURED: StepUp.HONOURED,
@@ -711,6 +791,7 @@ export = {
   requirementOf: slot.forward('requirementOf'),
   ownResourceRequirement: slot.forward('ownResourceRequirement'),
   meets: slot.forward('meets'),
+  compliantDeviceOf: slot.forward('compliantDeviceOf'),
   satisfiedAcr: slot.forward('satisfiedAcr'),
   demandsSecondFactor: slot.forward('demandsSecondFactor'),
   screenDemand: slot.forward('screenDemand'),

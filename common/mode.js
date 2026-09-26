@@ -948,6 +948,25 @@ function acceptsUnverifiedAttestation() {
   return !isProduct();
 }
 
+// May a DEVICE KEY be registered on the word of whoever presents it (#164
+// decision 9, phase 2, 2026-09-26)? A key the device or its owner PRESENTS —
+// a JWK proven on `/portal/devices`, a linked WebAuthn credential, a
+// certificate request over EST or SCEP — carries an attestation statement or
+// it does not, and a statement that does not verify against this realm's
+// trust anchors proves nothing about where the key lives. Development
+// registers such a key and records it `self-asserted`, because a client under
+// test has no TPM, no StrongBox and no Secure Enclave. Product REFUSES it
+// (STS-DEVICE-0024): a device register that anybody's software key can join
+// is a register of claims. **An ADMINISTRATOR entering a key by value is not
+// asked** — that is an administrator's act, recorded `proof: admin` and
+// self-asserted in both modes, as SIOPv2's by-value enrolment is (#129).
+// `common/device_enrolment.ts` and `common/cert_enrollment.ts` ask it.
+function acceptsUnattestedDeviceKeys() {
+  log.debug("Entering acceptsUnattestedDeviceKeys().");
+  log.debug("Leaving acceptsUnattestedDeviceKeys().");
+  return !isProduct();
+}
+
 // May a password alone open a PASSWORD-ONLY DOOR for a person who holds, or
 // is required to hold, a second factor (#101, 2026-09-22)? An LDAP simple
 // bind, a WS-Security UsernameToken, SCIM and SSF HTTP Basic and EST Basic
@@ -2144,7 +2163,9 @@ const REQUIREMENTS = [
   { id: 'test-controls',
     what: 'Test controls are open',
     development: 'POST /tls/trust and /tls/trust/clear, POST ' +
-                 '/dpop/nonce-mode, the passwords on ' +
+                 '/dpop/nonce-mode, POST /devices/test/compliance (a ' +
+                 'device\'s compliance, without the device:compliance ' +
+                 'scope, #164), the passwords on ' +
                  '/krb5/principals, signing another person out with ' +
                  '?username=, open dynamic client registration, the SAML ' +
                  '1.1 attribute authority and HOBA key registration all ' +
@@ -2166,7 +2187,7 @@ const REQUIREMENTS = [
              'statements to trust.',
     where: 'tls/tls_server.js, oauth-oidc/oauth2.ts, kerberos/krb5_kdc.js, ' +
            'logout/logout.ts, saml/saml11_sso.ts, scim/scim_auth.ts, ' +
-           'admin-core/admin_actions.ts' },
+           'admin-core/admin_actions.ts, admin-ui/devices_admin.ts' },
   { id: 'directory-writes',
     what: 'A write to the directory over LDAP is authorized',
     development: 'Any connection may add, modify, rename or delete any entry ' +
@@ -2460,7 +2481,23 @@ const REQUIREMENTS = [
              'double reset in one act: nothing is kept and every TGT in the ' +
              'realm is refused KRB_AP_ERR_BADKEYVER.',
     where: 'kerberos/krb5_person_keys.ts, kerberos/krb5_krbtgt_rotation.ts, ' +
-           'kerberos/krb5_principals.js' }
+           'kerberos/krb5_principals.js' },
+  // 2026-09-26 (#164 decision 9, phase 2).
+  { id: 'unattested-device-keys',
+    what: 'A device key presented without a verifiable attestation is ' +
+          'refused',
+    development: 'A key proven on /portal/devices (a JWK proof, a linked ' +
+                 'WebAuthn credential) or certified over EST or SCEP for a ' +
+                 'device is registered with no attestation, or with one ' +
+                 'that does not chain to devices.*TrustAnchors, and ' +
+                 'recorded self-asserted.',
+    product: 'Such a key is refused (STS-DEVICE-0024): only an Android Key ' +
+             'Attestation, an Apple App Attest statement, a TPM key ' +
+             'attestation or a WebAuthn attestation that verified and ' +
+             'chained to an anchor registers a key. An administrator ' +
+             'entering a key by value is an administrator\'s act and is ' +
+             'accepted in both modes, recorded proof admin, self-asserted.',
+    where: 'common/device_enrolment.ts, common/cert_enrollment.ts' }
 ];
 
 // WHAT PRODUCT MODE STILL DOES NOT DO. Named here rather than left to be
@@ -2922,6 +2959,7 @@ module.exports = {
   honoursUngrantedPermissions: honoursUngrantedPermissions,
   enrolsKeysOnFirstUse: enrolsKeysOnFirstUse,
   acceptsUnverifiedAttestation: acceptsUnverifiedAttestation,
+  acceptsUnattestedDeviceKeys: acceptsUnattestedDeviceKeys,
   acceptsPasswordAloneFromSecondFactorAccounts:
     acceptsPasswordAloneFromSecondFactorAccounts,
   issuesTicketsOnPasswordAlone: issuesTicketsOnPasswordAlone,

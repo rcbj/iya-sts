@@ -276,9 +276,13 @@ class ScepConsole {
     const base = baseUrlOf(req) + '/enroll/scep/';
     const allowed = core.allowedProfiles('scep');
     log.debug("Leaving ScepConsole.profileRows().");
-    return core.PROFILE_IDS.map(function (id) {
+    // The device profile (#164 phase 2) beside /admin/pki's nine.
+    return core.PROFILE_IDS.concat([core.DEVICE_PROFILE]).map(function (id) {
       return { id: id, allowed: allowed.indexOf(id) >= 0,
-               needs: core.PROFILE_NEEDS[id] || '',
+               needs: id === core.DEVICE_PROFILE
+                 ? 'a device entry — the one the request\'s urn:sts:device: ' +
+                   'names, or a new one; a TPM key attestation in product'
+                 : core.PROFILE_NEEDS[id] || '',
                keys: 'RSA only over SCEP',
                url: base + id };
     });

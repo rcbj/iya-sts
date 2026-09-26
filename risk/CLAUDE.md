@@ -631,6 +631,73 @@ RISC `credential-compromise` then names a FIDO credential. An unlisted
 model, and the all-zero AAGUID of an authenticator that attests nothing, are
 unknown and decide nothing.
 
+## THE REGISTERED DEVICE (#164 phase 5, 2026-09-26)
+
+rcbj's decision 4 on #164: "full integration with risk scoring". The device
+register (`common/devices.ts`) is a second source of facts about a sign-in,
+beside the datasets, and it enters the engine the way everything else does —
+as SIGNALS on the score — so nothing here decides on it either.
+
+**THE FACT ARRIVES WITH THE SIGN-IN.** `authn.assessSignIn()` recognises the
+device (`device_recognition.recognize()`, through `registeredDeviceFor()`)
+BEFORE it asks the engine, and hands it in as `registeredDevice`; a door that
+assesses after the session hands in the event's. The recognition is
+remembered on the request, so the event built a moment later is the same
+answer and the device's last use moves once. **The gap**: the sign-in
+screen assesses BEFORE its own WebAuthn ceremony (P3's order — the
+assessment decides whether to ask for one), so a linked platform credential
+presented THERE is on the session's event, and so in the policy, the acr and
+the token claims (phase 6), but not in that sign-in's score. A certificate
+on the connection is scored at every door, and a door that assesses after
+its credential (the wallet, federation, a session started directly) scores
+whatever it recognised.
+
+| Signal | Factor | When |
+|---|---|---|
+| `compromised-device` | ×50 | the recognised device is marked compromised — HIGH on its own, as `authenticator-compromised` is |
+| `non-compliant-device` | ×3 | the recognised device is `not-compliant` (evidence: not held back for history) |
+| `unregistered-device` | ×2 | no device of the PERSON'S OWN was recognised — none, or somebody else's — and they have registered one (`devices.holdsAny()`, an index lookup) or `devices.expectRegistered` is on; waits for `risk.minimumHistory` |
+| `compliant-attested-device` | ×0.5 | their own device, compliant, attested |
+| `compliant-device` | ×0.8 | their own device, compliant, self-asserted |
+
+**THE SCOPE OF `unregistered-device` IS THE ARGUMENT.** In a realm where
+nobody has registered anything it would fire on every sign-in and move
+every score by the same factor — calibration noise, not evidence. So it is
+about people who registered a device, or a realm that says it expects
+everybody to; and it is an ABSENCE, which is why it waits for history as
+`new-device` does (a device owner's second sign-in from a laptop would
+otherwise be MEDIUM and asked for a second factor on this alone).
+
+**THE LOWERING FACTORS NEEDED NO NEW MACHINERY**: the score is a likelihood
+ratio times the evaluators' factors, and `operator-allow` (×0.2) already
+lowered it. Two rules keep them honest: a lowering factor alone never makes
+an UNSCORED sign-in scored (`LOWERING_ONLY`), and a compromised device is
+never "compliant".
+
+**THE DEVICE FEATURE.** Where the person's own registered device proved the
+sign-in, the history's `device` feature is `registered:<id>` rather than the
+browser fingerprint (P6), and it is never `new-device`: its key was proven
+theirs at enrolment, which is stronger than any history. `riskOf()` carries
+the id as `device.registered`. Somebody else's device changes nothing about
+the fingerprint path.
+
+**THE DEVICE'S OWN LEVEL** (`setDeviceLevel()`): after a sign-in (phase
+`user`) the person's own device proved, the device takes THAT SIGN-IN'S
+LEVEL through `devices.setRiskLevel(…, { source: 'risk' })`, which sends
+CAEP risk-level-change with principal DEVICE only when the level moves. The
+same level, not a score of its own: the model is one ratio over the whole
+context and nothing in it says which part is the device's; the latest
+sign-in the device proved is the best evidence there is about what is
+happening on it. UNSCORED sets nothing; a compromised device's HIGH is held
+by `setRiskLevel()` itself; a live session's re-assessment sets nothing; a
+device that is somebody else's is not moved by this person. A register that
+will not store it is STS-DEVICE-0036, and the sign-in stands.
+
+Monitoring → Risk draws the device beside the browser on every assessment
+(the model row's `device`, which is a JSON value in both stores, so no
+column moved); Monitoring → Devices draws the levels. `tests/device_risk.js`
+holds all of it.
+
 ## WHAT THE PERSON SAYS ABOUT A SIGN-IN (P6, 2026-09-22)
 
 `/portal/sign-ins` (`portal/portal_sign_ins.ts`) lists a person's own

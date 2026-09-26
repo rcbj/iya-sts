@@ -4312,7 +4312,9 @@ class Portal {
       .concat([ACTIVATE, BASE + '/callback', BASE + '/remove-key',
                BASE + '/signout', BASE + '/signals/receive',
                // The mail channel's two pages nobody is signed in to (#63).
-               BASE + '/forgot-password', BASE + '/verify-email']);
+               BASE + '/forgot-password', BASE + '/verify-email',
+               // The device app's two JSON doors (#164 phase 2).
+               BASE + '/devices/challenge', BASE + '/devices/proof']);
   }
 
   registerRoutes(app: typeof import('../common/app')): void {

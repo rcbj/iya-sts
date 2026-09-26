@@ -958,6 +958,20 @@ class RiskAdmin {
       }).map(function (x: Json): string {
         return esc(x.signal) + ' ×' + esc(x.factor);
       }).join(', ');
+      // THE REGISTERED DEVICE (#164 phase 5), from the model's row: its id
+      // linked to its page, how it was recognised, and what the register
+      // said of it at the sign-in.
+      const modelRow = (a.signals || []).filter(function (x: Json) {
+        return x.signal === 'model';
+      })[0] || {};
+      const dev = modelRow.device;
+      const deviceCell = dev ? '<br>registered device <a href="' +
+        esc('/admin/devices?device=' + encodeURIComponent(dev.id)) +
+        '"><code>' + esc(String(dev.id).slice(0, 8)) + '</code></a> (' +
+        esc(dev.via) + ', ' + esc(dev.compliance) + ', ' +
+        esc(dev.attestation) + (dev.status === 'compromised'
+          ? ', <strong>compromised</strong>' : '') +
+        (dev.own ? '' : ', not theirs') + ')' : '';
       return '<tr><td><small>' + esc(self.when(a.at)) + '</small></td><td>' +
         self.whoCell(a) + '<br><small>' + esc(a.door) +
         '</small></td><td><code>' + esc(a.addressPrefix) + '</code>' +
@@ -968,7 +982,7 @@ class RiskAdmin {
         '</td><td><small>' + esc([a.uaFamily, a.uaOs, a.uaPlatform]
           .filter(Boolean).join(' / ') || '—') +
         (a.bot ? ' (automated)' : '') + '<br>' + esc(a.credentialKind) +
-        '</small></td><td class="num">' +
+        deviceCell + '</small></td><td class="num">' +
         esc(Number(a.score).toPrecision(3)) + '</td><td><strong>' +
         esc(a.level) + '</strong></td><td><small>' + (signals || '—') +
         '</small></td><td>' + esc(a.decision) +

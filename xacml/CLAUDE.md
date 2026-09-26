@@ -1358,6 +1358,59 @@ intermediary, subject or target denies exactly that. A Deny is audited as
 `delegate` is NOT a member of `ISSUANCE`/`KINDS`: delegating issues nothing of
 its own, and every reader of that list lists issuances.
 
+### The registered device, and two rules that settings switch (#164 phase 6, 2026-09-26)
+
+rcbj's decision 3 is that enforcement is XACML. So the device register's
+facts go into the issuance request, and the built-in `role-issuance` policy
+decides on them. There is no `if` at an issuance site.
+
+* **The facts** are the environment attributes in `xacml_templates.ts`'s
+  `DEVICE_ATTRIBUTE`, built by `xacml_role_pep.ts`'s `deviceAttributes()`:
+  * recognized (a boolean), id, via, owner-matches (a boolean), owner-kind,
+    compliance, attestation, status and risk-level;
+  * the REQUIREMENT bag, from the realm's settings
+    (`issuance_gate.deviceRequirementOf()`).
+  They are sent only when the gate asked the device question (the question
+  carries a `deviceRequirement` array). A delegation question, a preview
+  or a caller that went round the gate carries none, so every device rule
+  is inapplicable to it.
+* **Ownership is decided in the PEP** against the subject the gate names: a
+  person's own device, or an application's own device for a
+  `client_credentials` subject. The policy reads a boolean.
+* **The two rules come FIRST in the document**, so that under
+  ordered-deny-overrides their obligation is the one the PEP reads. A risk
+  Deny may only ask for a step-up; a device refused after a step-up would
+  be one refusal made in two steps.
+  * `device-compromised`: applies while `not-compromised` is required,
+    which `devices.refuseCompromised` puts there (ON by default).
+  * `device-required`: applies while `compliant` is required
+    (`devices.requireCompliantDevice`, OFF by default in both modes), and
+    `attested` beside it.
+  An application's device satisfies `device-required` for a person, and
+  another person's device does not. `deviceExempt` (by default the console
+  and the portal) is never refused by it: the console for #226's reason,
+  and the portal because it is where a person registers a device.
+* **Settings switch the rules, and the policy states them.** That is
+  #62's arrangement: the risk rules are always in the document and apply
+  only to the facts that make them applicable. So a realm switches a rule
+  with a setting, never an edit to this document, and an operator's own
+  document may still say anything else.
+* **The device obligation** (`urn:sts:xacml:obligation:device`, with
+  `device-refusal` naming the rule) is how the PEP tells a device Deny from
+  the rest:
+  * it is enforced in BOTH modes, since a compromise and a realm's explicit
+    requirement are not things development should only observe;
+  * it refuses even where the role question was waived;
+  * the audit row carries STS-DEVICE-0037 or 0038;
+  * the client is told only "Authentication failed." or "A compliant
+    registered device is required."
+* **The gate asks the policy past its two shortcuts only when a device rule
+  could refuse**: the realm requires a compliant device, or the device in
+  hand is compromised and the realm refuses one. Every other issuance is
+  asked exactly as before.
+* **`decideDevices: no`** builds a document with neither rule, as
+  `decideRisk: no` builds one with no risk rules.
+
 ## THE FOURTEENTH DEFECT: TWO CONTAINERS CLAIMING A PAGE THAT WAS NEVER WRITTEN
 
 `xacml_store.ts` and `xacml_pep_registry.ts` each carry a `SCHEMA` whose comment

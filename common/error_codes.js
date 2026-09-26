@@ -300,6 +300,12 @@ const SUBSYSTEMS = [
           'resource registration and token derivation of RFC 9767; the ' +
           'push finish outbound request; the console pages; and CAEP ' +
           'emission for grants.' },
+  { id: 'DEVICE', label: 'Device register',
+    where: 'common/devices.ts, admin-ui/devices_admin.ts',
+    what: 'The device register (#164, #218): a device\'s owner, its keys, ' +
+          'its attestation, compliance and status, the bounds on how many ' +
+          'a person or an application holds, and the console\'s and the ' +
+          'management API\'s doors to it.' },
   { id: 'XACML', label: 'XACML and access policy',
     where: 'xacml/, common/access_gate.ts, common/issuance_gate.js, ' +
            'common/roles.js',
@@ -14015,6 +14021,202 @@ const CODES = [
       'finish verifies the client\'s certificate whatever it says. Logged ' +
       'once per process (#171).',
     spec: 'none — a warning in the log' },
+  // ===== DEVICE ============================================================
+  { code: 'STS-DEVICE-0001',
+    summary: 'A device named an owner that is not a person or an application' +
+      ' in the realm\'s directory, named no owner, or an owner kind ' +
+      'outside person and application (#164).',
+    spec: 'HTTP 400 (API) or a 303 with error=' },
+  { code: 'STS-DEVICE-0002',
+    summary: 'A person already owns devices.maxPerPerson devices, so an ' +
+      'administrator\'s registration, or a move of a device to them, ' +
+      'was refused (#164). A Native SSO sign-in replaces one instead.',
+    spec: 'HTTP 400 (API) or a 303 with error=' },
+  { code: 'STS-DEVICE-0003',
+    summary: 'An application already owns devices.maxPerApplication devices,' +
+      ' so a registration or a move to it was refused (#164).',
+    spec: 'HTTP 400 (API) or a 303 with error=' },
+  { code: 'STS-DEVICE-0004',
+    summary: 'A device key could not be accepted: an unknown kind, proof or ' +
+      'attestation format, a certificate or JWK that could not be ' +
+      'read, or a JWK carrying private material or a symmetric key ' +
+      '(#164).',
+    spec: 'HTTP 400 (API) or a 303 with error=' },
+  { code: 'STS-DEVICE-0005',
+    summary: 'A device key is already registered to another device in the ' +
+      'realm, or one registration named the same key twice: a key ' +
+      'identifies one device (#164).',
+    spec: 'HTTP 400 (API) or a 303 with error=' },
+  { code: 'STS-DEVICE-0006',
+    summary: 'A device already holds devices.maxKeysPerDevice keys, or a ' +
+      'registration named more (#164).',
+    spec: 'HTTP 400 (API) or a 303 with error=' },
+  { code: 'STS-DEVICE-0007',
+    summary: 'A request named a device the realm does not hold, or — on ' +
+      '/portal/devices and a person\'s Remove — one that is not ' +
+      'theirs (#164).',
+    spec: 'HTTP 400 (API) or a 303 with error=' },
+  { code: 'STS-DEVICE-0008',
+    summary: 'A request named a key the device does not hold (#164).',
+    spec: 'HTTP 400 (API) or a 303 with error=' },
+  { code: 'STS-DEVICE-0009',
+    summary: 'The directory did not store or remove a device entry — ' +
+      'typically because it holds its maximum of entries (#164).',
+    spec: 'HTTP 400 (API) or a 303 with error=' },
+  { code: 'STS-DEVICE-0010',
+    summary: 'A device\'s label, model or operating system was too long or ' +
+      'not one line, its platform was not one of the closed list, or ' +
+      'an enrolment method was unknown (#164).',
+    spec: 'HTTP 400 (API) or a 303 with error=' },
+  { code: 'STS-DEVICE-0011',
+    summary: 'A compliance status, its source or a device status was outside' +
+      ' its closed list (#164).',
+    spec: 'HTTP 400 (API) or a 303 with error=' },
+  { code: 'STS-DEVICE-0012',
+    summary: 'A device named an application that is not in the realm\'s ' +
+      'directory (#164).',
+    spec: 'HTTP 400 (API) or a 303 with error=' },
+  { code: 'STS-DEVICE-0013',
+    summary: 'A POST to /admin/devices or /admin-api/devices named an action' +
+      ' that does not exist (#218).',
+    spec: 'HTTP 400 (API) or a 303 with error=' },
+  { code: 'STS-DEVICE-0014',
+    summary: 'A console session with Admin Read only posted to ' +
+      '/admin/devices (#218).',
+    spec: 'HTTP 303 with error=' },
+  { code: 'STS-DEVICE-0015',
+    summary: 'A WebAuthn key named for a device is not a security key its ' +
+      'owner enrolled, or the device\'s owner is an application ' +
+      '(#164).',
+    spec: 'HTTP 400 (API) or a 303 with error=' },
+  { code: 'STS-DEVICE-0016',
+    summary: 'A device enrolment challenge was refused: none was named, it ' +
+      'is ' +
+      'unknown or expired, it was issued to another session or person, or it ' +
+      'was already answered (#164 phase 2).',
+    spec: 'HTTP 400 (JSON) or the page with the sentence' },
+  { code: 'STS-DEVICE-0017',
+    summary: 'A device key proof (a JWS over an enrolment challenge) is ' +
+      'malformed, is signed with an algorithm not accepted, does not verify ' +
+      'under the key in its own header, or carries the wrong typ, nonce, aud ' +
+      'or iat (#164 phase 2).',
+    spec: 'HTTP 400 (JSON) or the page with the sentence' },
+  { code: 'STS-DEVICE-0018',
+    summary: 'An Android Key Attestation on a device key proof did not ' +
+      'verify: the x5c chain, the leaf\'s key, the key attestation ' +
+      'extension, ' +
+      'the attestationChallenge or the security level (#164 phase 2).',
+    spec: 'HTTP 400 (JSON) or the page with the sentence' },
+  { code: 'STS-DEVICE-0019',
+    summary: 'An Apple App Attest attestation object did not verify: its ' +
+      'CBOR, the certificate chain to the App Attestation root, the nonce, ' +
+      'the key id, the app id, the counter or the AAGUID (#164 phase 2).',
+    spec: 'HTTP 400 (JSON) or the page with the sentence' },
+  { code: 'STS-DEVICE-0020',
+    summary: 'A TPM key attestation in a certificate request ' +
+      '(draft-ietf-lamps-csr-attestation, tcg-attest-tpm-certify) did not ' +
+      'verify: the AK chain, the TPMS_ATTEST, its signature, or the ' +
+      'certified ' +
+      'key\'s name and attributes (#164 phase 2).',
+    spec: 'EST 400 / SCEP failInfo badRequest' },
+  { code: 'STS-DEVICE-0021',
+    summary: 'A certificate request\'s id-aa-attestation attribute is ' +
+      'malformed, or there is more than one ' +
+      '(draft-ietf-lamps-csr-attestation ' +
+      'section 4.3) (#164 phase 2).',
+    spec: 'EST 400 / SCEP failInfo badRequest' },
+  { code: 'STS-DEVICE-0022',
+    summary: 'A WebAuthn credential could not be linked to a device: it is ' +
+      'not one the signed-in person enrolled, or the fresh assertion with it ' +
+      'did not verify (#164 phase 2).',
+    spec: 'HTTP 400 (the page with the sentence)' },
+  { code: 'STS-DEVICE-0023',
+    summary: 'A device certificate (the device profile over EST or SCEP) was ' +
+      'refused by the identity rule: the device named is unknown, or it is ' +
+      'not the requester\'s and the requester holds no Admin Write (#164 ' +
+      'phase 2, rule 3ag).',
+    spec: 'EST 403 / SCEP failInfo badRequest' },
+  { code: 'STS-DEVICE-0024',
+    summary: 'Product mode refused a device key presented without a ' +
+      'verifiable attestation (common/mode.js acceptsUnattestedDeviceKeys()) ' +
+      '(#164 decision 9).',
+    spec: 'HTTP 400 (JSON or page) / EST 403 / SCEP failInfo badRequest' },
+  { code: 'STS-DEVICE-0025',
+    summary: 'The device profile was asked for where it is not issued: over ' +
+      'ACME, or as a re-enrollment of a certificate (a device is re-enrolled ' +
+      'with simpleenroll naming its urn:sts:device: name) (#164 phase 2).',
+    spec: 'HTTP 403 / EST 403 / SCEP failInfo badRequest' },
+  { code: 'STS-DEVICE-0026',
+    summary: 'A POST to /portal/devices or /portal/devices/proof was ' +
+      'malformed (#164 phase 2).',
+    spec: 'HTTP 400' },
+  { code: 'STS-DEVICE-0027',
+    summary: 'A shipped device attestation trust anchor ' +
+      '(common/pki_device_anchors.json) did not match its pinned SHA-256 and ' +
+      'was not used (#164 phase 2).',
+    spec: 'none — logged; the anchor set is smaller' },
+  { code: 'STS-DEVICE-0028',
+    summary: 'A device enrolment challenge could not be proved unspent ' +
+      'because the claim store could not be asked, so it was refused (#164 ' +
+      'phase 2).',
+    spec: 'HTTP 503 (JSON) or the page with the sentence' },
+  { code: 'STS-DEVICE-0029',
+    summary: 'Recognising the registered device behind a sign-in or a ' +
+      'token request threw; nothing was recorded and nothing refused ' +
+      '(#164 phase 2).',
+    spec: 'none — logged' },
+  { code: 'STS-DEVICE-0030',
+    summary: 'A Shared Signals event about a device (a compliance, risk or ' +
+      'credential change, a compromise or a removal) threw on its way to ' +
+      'ssf/account_signals.ts; the change stands and nothing was sent ' +
+      '(#164 phase 4).',
+    spec: 'none — logged' },
+  { code: 'STS-DEVICE-0031',
+    summary: 'The sign-on sessions a compromised or removed device ' +
+      'authenticated could not all be ended (#164 phase 4).',
+    spec: 'none — logged; the device\'s change stands' },
+  { code: 'STS-DEVICE-0032',
+    summary: 'A certificate this service issued a compromised or removed ' +
+      'device could not be revoked by its Issuing CA (#164 phase 4).',
+    spec: 'none — logged and audited; the device\'s change stands' },
+  { code: 'STS-DEVICE-0033',
+    summary: 'A device risk level outside LOW, MEDIUM and HIGH (CAEP ' +
+      'section 3.8.1), or a source outside risk, compromise and admin, was ' +
+      'refused (#164 phase 4).',
+    spec: 'none — the caller\'s refusal' },
+  { code: 'STS-DEVICE-0034',
+    summary: 'A device compliance feed request carried no report or more ' +
+      'than devices.complianceFeedMaxReports, and was refused whole (#164 ' +
+      'phase 3).',
+    spec: 'HTTP 400' },
+  { code: 'STS-DEVICE-0035',
+    summary: 'The compliance test control, POST /devices/test/compliance, ' +
+      'was refused because the realm is in product mode, where test ' +
+      'controls are closed (#164 phase 3).',
+    spec: 'HTTP 403' },
+  { code: 'STS-DEVICE-0036',
+    summary: 'Risk scoring could not set the risk level of the registered ' +
+      'device that proved a sign-in: the device register refused or did ' +
+      'not store it (#164 phase 5). The sign-in stands and the device ' +
+      'keeps the level it had.',
+    spec: 'none — logged as a warning' },
+  { code: 'STS-DEVICE-0037',
+    summary: 'An issuance was refused by the issuance policy\'s ' +
+      'device-required rule: the realm requires a compliant registered ' +
+      'device (devices.requireCompliantDevice) and this did not come from ' +
+      'the subject\'s own (or an application\'s) compliant, uncompromised ' +
+      'device — attested too where devices.compliantDeviceAttested says ' +
+      'so (#164 phase 6).',
+    spec: 'the issuance site\'s own refusal — access_denied, a SOAP fault, ' +
+      'a SAML status — whose description says a compliant registered ' +
+      'device is required' },
+  { code: 'STS-DEVICE-0038',
+    summary: 'An issuance was refused by the issuance policy\'s ' +
+      'device-compromised rule: it came from a registered device marked ' +
+      'compromised, and the realm refuses one (devices.refuseCompromised, ' +
+      'on by default) (#164 phase 6).',
+    spec: 'the issuance site\'s own refusal, saying only that ' +
+      'authentication failed' },
   // ===== XACML =============================================================
   { code: 'STS-XACML-0001',
     summary: 'A request reached an XACML endpoint while the family is ' +

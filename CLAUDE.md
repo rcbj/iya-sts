@@ -122,6 +122,7 @@ these protocol families:
 - **Federation**: either end of a relationship with a foreign identity service, in five protocols.
 - **OpenID Federation 1.1**: every realm a federation entity with its own keys, subordinates, Trust Anchors and Trust Marks; the default realm a Trust Anchor over the others.
 - **OAuth 2.0 / OpenID Connect**: a full authorization server, with DPoP — Native SSO, whose devices are entries in the directory, and CIBA, approved on the portal.
+- **Device registration** (#164, #218): a register of devices per realm, owned by a person or an application and recognised by any key they proved. Each device is attested or self-asserted, and its compliance comes from an administrator or an MDM feed. Devices feed CAEP and RISC, risk scoring, the issuance policy, `urn:sts:acr:compliant-device` and a `device_id` claim (`docs/devices.md`).
 - **RFC 7521/7523 and RFC 7521/7522**: JWT and SAML assertions as client credentials and as grants.
 - **WebAuthn Level 3, RFC 6238 TOTP and recovery codes**: the second factors on the sign-in screen — and, OFF by default (NIST SP 800-63B-4 section 3.1.3.1), an emailed code or sign-in link as a first or second factor (#64), each where the realm's authentication policy on Directory → Policies allows it.
 - **OpenID4VCI 1.0, OpenID4VP 1.0**, and W3C DID Core with DIF domain linkage — and a wallet sign-in, `/authn/wallet`, which also takes a SIOPv2 self-issued ID Token from an enrolled key.
@@ -478,6 +479,7 @@ is and the named file says why.
 | 18l | `admin-ui/mail_admin` | 18a's placement and 18a's reason (#63): Server configuration → Mail and Monitoring → Mail outbox, one module; the console's shell and the channel (8a-mail) already loaded, and `mgmt-api/admin_api` requires it. | `admin-ui/CLAUDE.md`, `common/CLAUDE.md` |
 | 18m | `oauth-oidc/grant_management_admin` | 18a's placement and 18a's reason (#142): Monitoring → Grants, beside Consent; the console's shell and the grant register (built with `oauth2` at 9, which registers `/oauth2/grants/{id}` just after its own routes) already loaded. | `oauth-oidc/CLAUDE.md` (3bf) |
 | 18n | `oauth-oidc/claims_providers_admin` | 18a's placement and 18a's reason (#147): the Claims Provider register's page, beside Federation; the register (built with `oauth2`'s libraries) already loaded, and `mgmt-api/admin_api` reads the API's routes out of `claims_providers_api`. | `oauth-oidc/CLAUDE.md` (3bh) |
+| 18q | `admin-ui/devices_admin` | 18a's placement and 18a's reason (#164, #218): Directory → Devices, Protocols → Device registration and Monitoring → Devices, one module; the console's shell, the device register (built with `credentials`) and `oauth2` (9), whose `sessionIsLive()` it asks, already loaded, and `mgmt-api/admin_api` requires it. `/admin/ldap/devices` is `ldap_server`'s, at 21. | `admin-ui/CLAUDE.md` |
 | 19 | `mgmt-api/admin_api` | After `admin-ui/admin` (rule 7). | `mgmt-api/CLAUDE.md` |
 | 19a | `admin-ui/api_explorer` | After `admin-ui/admin` (the shell and gate) and `mgmt-api/admin_api` (the route table its OpenAPI document is built from); a file of its own so `admin.ts` never requires the API. | `mgmt-api/CLAUDE.md`, `admin-ui/CLAUDE.md` |
 | 20 | `tls/tls_server` | JavaScript: registers its `/tls*` views at this require. Before `ldap/ldap_server`, which serves its certificate on 636. | `tls/CLAUDE.md` |
@@ -560,6 +562,7 @@ in every file, including the ones in the source comments. This is the index.
 | 3bj | The Ephemeral Subject Identifier (#149) in `pairwise_subjects.ts`: a random `sub` per authentication and client held in `oauth2.ephemeralSubjects` and purged by a job, the session passed wherever a client-facing `sub` is made, `localFor()` for an id_token_hint, and SSF naming the owning client's `sub` | `oauth-oidc/CLAUDE.md` |
 | 3bk | RFC 8628 (#150) in `device_authorization.ts` and `/portal/device`: device codes in a persisted per-realm map swept by a job, one claimed redemption per approval, section 5's two protections on the page; and OpenID Connect Key Binding — `bound_key` with `dpop_jkt`, `c_s256`, `cnf.jwk` with `typ: dpop+id_token`, `kb_jkt` across refresh, section 7 at token exchange — and ML-DSA DPoP keys | `oauth-oidc/CLAUDE.md` |
 | 3bl | OpenID Provider Commands (#151) in `provider_commands.ts`, and `outbound_delivery.ts` — ONE durable outbound queue whose kinds are back-channel logout, CIBA ping/push and Command Tokens; tenant commands over `federation_http.streamEvents()`; the account-state register; automatic commands through `ldap_server`'s `addAccountObserver()` and `logout.terminate()`; the callback; the mock relying party | `oauth-oidc/CLAUDE.md` |
+| 3bo | The registered device in decisions (#164 phases 5 and 6), `devices.ts` and `device_recognition.ts`: five risk signals (two of them lowering) and the device's own level; the device's facts in every issuance request, a compromised device refused by default and a compliant one required only where a realm says; `urn:sts:acr:compliant-device`; `device_id` by the subject rule (per sector for pairwise, none for ephemeral) | `common/CLAUDE.md`, `risk/CLAUDE.md`, `xacml/CLAUDE.md`, `oauth-oidc/CLAUDE.md` |
 | 3bc | `ciba.ts` and `oauth2.ts`'s `/oauth2/bc-authorize`, CIBA (#131): the person approves on `/portal/ciba` as strongly as `acr_values` asks, poll / ping / push with each notification a persisted delivery retried by the `oauth2.ciba-sweep` job and dead-lettered, nothing relaxed in development | `oauth-oidc/CLAUDE.md`, `portal/CLAUDE.md` |
 | 3ba | `siop.ts`, SIOPv2 as the relying party (#129): a self-issued subject enrolled on the entry (by proof on the portal, by value by an administrator), refused unenrolled in both modes, section 11.1, a did:web fetched only when enrolled, the four Client Identifier prefixes | `oid4vc/CLAUDE.md` |
 | 3ay | `identity_assurance.ts`, OpenID Connect for Identity Assurance 1.0 (#127): verifications recorded on the entry by an administrator or a wallet or certificate sign-in, only directory values verified and released while unchanged, `value`/`values` enforced on the verification only, development's `urn:sts:demo` | `common/CLAUDE.md` |
@@ -622,7 +625,7 @@ repository where failing to open something stops the process.
 ## `frame-ancestors` is the one CSP clause a page may not drop
 
 RFC 9700 section 4.14. `app.js` sets the policy on every response, and a
-growing number of routes relax it — the ten scripted pages below, and others
+growing number of routes relax it — the eleven scripted pages below, and others
 that widen `img-src`, `style-src`, `frame-src` or `connect-src` — by SETTING
 THE WHOLE HEADER, so each of them could lose the framing clause with nothing
 failing: the page works, the script runs, and the protection is gone.
@@ -657,11 +660,11 @@ argues it.
 silently.
 
 
-## Ten pages here have a script on them, and each is the same exception
+## Eleven pages here have a script on them, and each is the same exception
 
 `app.js` sets `script-src 'none'` for the whole service, and the reason is in its
 own comment: it is what makes the family of reflected-content problems moot rather
-than merely unlikely. Ten pages need a script and each takes the SAME shape of
+than merely unlikely. Eleven pages need a script and each takes the SAME shape of
 exception — `script-src 'self'` naming one resource, never `'unsafe-inline'` —
 and **each but the OP iframe carries a REAL SUBMIT BUTTON as well**, because
 with the script blocked the button is the whole mechanism. The OP iframe has
@@ -676,6 +679,7 @@ no person in front of it and nothing to submit; its argument is its row.
 | the SAML 2.0 HTTP POST binding | `/saml2/autopost.js` | `saml/CLAUDE.md` |
 | the SAML 1.1 Browser/POST profile | `/saml11/autopost.js` | `saml/CLAUDE.md` |
 | `/portal/keys` | `/authn/webauthn.js` — the SAME resource, not a copy | `portal/CLAUDE.md` |
+| `/portal/devices`, **only while a WebAuthn link ceremony is armed** (#164 phase 2) | `/authn/webauthn.js` in `get` mode — a fresh assertion links a platform credential to a device; the page's key-proof form beside it runs no script | `portal/CLAUDE.md` |
 | `/authn/wallet/wait` (2026-09-17) | `/authn/wallet.js` — the W3C Digital Credentials API call, which no markup can make | `oid4vc/CLAUDE.md`, `authn/CLAUDE.md` |
 | the sign-in screen `/authn/login`, **only while `risk.fingerprinting` is on in the realm** (#62 P6, off by default) | `/authn/fingerprint.js` — FingerprintJS (MIT, served with its notice) computing a browser identifier, which no markup can; the form works with it blocked, the field simply empty | `authn/CLAUDE.md`, `risk/CLAUDE.md` |
 | `/oauth2/check_session` (#121, 2026-09-23, off by default) | `/oauth2/check_session.js` — it answers a relying party's `postMessage`, which no markup can; so it is the one page here with **NO submit button**, and with script off a relying party's question simply goes unanswered | `oauth-oidc/CLAUDE.md` |
@@ -1018,6 +1022,7 @@ the file the row names.
 | Let an authenticator app be a FIRST factor | `common/CLAUDE.md` |
 | ~~Issue a set of recovery codes on request~~ — **reversed 2026-09-11**: a person generates a set, is shown it once, and it is stored HASHED | `common/CLAUDE.md`, `portal/CLAUDE.md` |
 | Offer a self-service reset of a second factor | `admin-ui/CLAUDE.md` |
+| Require a compliant registered device, **by default in either mode** — `devices.requireCompliantDevice` switches the issuance policy's rule on per realm (#164 decision 3); a COMPROMISED device is refused by default | `xacml/CLAUDE.md`, `common/CLAUDE.md` |
 | ~~Decide who may delegate to whom IN THE ACT, in two of the three families that can~~ — **reversed 2026-09-23 (#108)**: WS-Trust `OnBehalfOf` / `ActAs` and RFC 8693 are decided by `delegation_policy.ts`, Kerberos's model on application entries, enforced in product and recorded in development; `may_act` read in every mode | `common/CLAUDE.md` (3az), `kerberos/CLAUDE.md`, `oauth-oidc/CLAUDE.md`, `ws-trust/CLAUDE.md` |
 | ~~Give every trust realm a certificate authority of its own~~ — **reversed 2026-09-11**: one Root, an Intermediate per realm, and the boundary moved down a tier | `common/CLAUDE.md`, `docs/pki.md` |
 | ~~Give a trust realm its own Kerberos KDC or TLS listeners~~ — **reversed 2026-09-15 (#33)**: a KDC, a Kerberos realm and keys per trust realm, routed by the realm name on the shared port 88. The TLS listeners left this row on 2026-09-16 by being DELETED, and the directory and SPIFFE came off it earlier — so nothing is left of what it used to say | `common/CLAUDE.md`, `ldap/CLAUDE.md`, `spiffe/CLAUDE.md`, `kerberos/CLAUDE.md`, `tls/CLAUDE.md` |

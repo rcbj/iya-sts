@@ -15,7 +15,8 @@
 //      throws is reported and does not stop the others; `eject` must be a
 //      function.
 //   B. THE LIST. Exactly the stores whose entries expire carry an ejector —
-//      twenty-five — and the two that do not, on purpose, are named.
+//      thirty-one, the device enrolment challenges (#164) the latest —
+//      and the two that do not, on purpose, are named.
 //   C. THE JOB is registered, per-process and quiet.
 //   D. AN EJECTOR DELETES WHAT ITS READER WOULD REFUSE AND NOTHING ELSE:
 //      through two replay stores' own doors (ACME's spent nonces and GNAP's
@@ -99,7 +100,7 @@ function childMain() {
     // Loading what registers lazily, so every store is in the registry.
     require(ROOT + '/common/used_assertions');
     const expected = [
-      'acme.nonces', 'dpop.nonces', 'dpop.proof-ids',
+      'acme.nonces', 'devices.challenges', 'dpop.nonces', 'dpop.proof-ids',
       'federation.release-index', 'gnap.signatures',
       'krb5.authenticator-replay', 'oauth2.redeemed-codes',
       'oauth2.client-jwks', 'oauth2.request-uri', 'oauth2.signed-metadata',

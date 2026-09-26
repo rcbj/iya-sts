@@ -349,6 +349,7 @@ class Est {
     if (label !== undefined) {
       const known = LABEL_SHAPE.test(String(label)) &&
         (core.PROFILE_IDS.indexOf(String(label)) >= 0 ||
+         String(label) === core.DEVICE_PROFILE ||
          core.REFUSED_PROFILES.some(function (one) {
            return one.id === String(label);
          }));
@@ -376,7 +377,8 @@ class Est {
         this.estError(req, res, ctx, 404, 'There is no EST label "' +
                       String(label).slice(0, 40) + '" here. A label is a ' +
                       'certificate profile, one of: ' +
-                      core.PROFILE_IDS.join(', ') +
+                      core.PROFILE_IDS.concat([core.DEVICE_PROFILE])
+                        .join(', ') +
                       '.');
         log.debug("Leaving Est.refusedBeforeAuthentication(). Unknown label.");
         return true;
@@ -682,6 +684,9 @@ class Est {
       family: FAMILY, profile: ctx.profile, principal: ctx.principal,
       target: target.target, publicKeyPem: csr.publicKeyPem,
       requested: csr.requested, keySource: 'client', keyAlg: csr.keyAlg,
+      // The request's key attestation, read only by the device profile
+      // (#164 phase 2, `core.issueForDevice()`).
+      attestations: csr.attestations,
       via: 'est:simpleenroll'
     });
     if (!issued.ok) {

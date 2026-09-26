@@ -139,7 +139,17 @@ function deciderInstalled() {
 //     session       (#62 P3) the session the issuance rests on, where the
 //                   caller holds it: its `risk` and its `amr`/`acr` are the
 //                   facts, so every token on a session is decided on the
-//                   risk its sign-in established. }
+//                   risk its sign-in established.
+//     device        (#164 phase 6) the REGISTERED DEVICE this issuance came
+//                   from — `common/device_recognition.ts`'s fact, or null
+//                   for "none". A caller that names none has the session's
+//                   found (`deviceFactsOf()` below), brought up to date
+//                   against the register.
+//     deviceDeferred  (#164 phase 6) true where a caller asks BEFORE the
+//                   credential that could name the device has been
+//                   presented — the sign-in screen, ahead of its WebAuthn
+//                   ceremony — so the device question is left to the
+//                   session's start. }
 //
 // The answer is `{ allowed, decision, why, roles, required, policy }` — the
 // XACML decision and the reason, kept apart on purpose: `allowed` is what an
@@ -201,19 +211,33 @@ function check(request) {
   // never was. A rule refusing an emailed factor therefore reaches every
   // session an application is being signed in to, and every assessed one.
   const enforceRoles = config.value('roles.enforceIssuance') !== false;
-  if (!enforceRoles && !risk) {
+  // THE REGISTERED DEVICE (#164 phase 6) rides along whenever the policy is
+  // asked, and makes it asked — past both shortcuts, as risk does — only
+  // where a device rule could refuse: the realm requires a compliant device,
+  // or the device in hand is compromised and the realm refuses one. Every
+  // other issuance is asked exactly when it was before.
+  const deferred = asked.deviceDeferred === true;
+  const device = deferred ? null : deviceFactsOf(asked);
+  const deviceRequirement = deferred ? [] : deviceRequirementOf();
+  const deviceMatters = deviceRequirement.indexOf('compliant') >= 0 ||
+    (!!device && device.status === 'compromised' &&
+     deviceRequirement.indexOf('not-compromised') >= 0);
+  if (!enforceRoles && !risk && !deviceMatters) {
     log.debug('Leaving check(). Enforcement is switched off.');
     return allow('roles.enforceIssuance is off, so the decision was not ' +
                  'asked for.');
   }
-  if (!asked.application && !risk) {
+  if (!asked.application && !risk && !deviceMatters) {
     log.debug('Leaving check(). No application to decide about.');
     return allow('Nothing named an application, so there is no requirement ' +
                  'to check.');
   }
   const question = Object.assign({}, asked, {
     risk: risk,
-    rolesWaived: !enforceRoles || !asked.application
+    device: device,
+    deviceRequirement: deviceRequirement,
+    rolesWaived: asked.rolesWaived === true || !enforceRoles ||
+                 !asked.application
   });
   let answer;
   try {
@@ -336,6 +360,69 @@ function riskFactsOf(asked) {
   return facts;
 }
 
+// ---------------------------------------------------------------------------
+// THE REGISTERED DEVICE OF AN ISSUANCE (#164 phase 6). The caller's own,
+// where it named one — the token endpoint recognises the DPoP key, the client
+// certificate or the Native SSO secret it was handed, and the session's start
+// the credential it was handed — and an explicit null means none. Otherwise
+// the device the session's latest authentication event recognised. Either
+// way BROUGHT UP TO DATE against the register (`device_recognition.ts`'s
+// `current()`): compliance is exactly what moves under a live session, and a
+// device removed since is no device. Required LAZILY, for `riskFactsOf()`'s
+// reason; a process without the register has no device facts, which a
+// device rule reads as "none".
+// ---------------------------------------------------------------------------
+function deviceFactsOf(asked) {
+  log.debug("Entering deviceFactsOf().");
+  let fact = null;
+  if (Object.prototype.hasOwnProperty.call(asked, 'device')) {
+    fact = asked.device || null;
+  } else if (asked.session && Array.isArray(asked.session.events) &&
+             asked.session.events.length) {
+    const last = asked.session.events[asked.session.events.length - 1];
+    fact = (last && last.registeredDevice) || null;
+  }
+  if (!fact) {
+    log.debug("Leaving deviceFactsOf(). None.");
+    return null;
+  }
+  let current = fact;
+  try {
+    current = require('./device_recognition').current(fact);
+  } catch (e) {
+    log.debug("Caught in deviceFactsOf(): " + ((e && e.message) || e));
+    // No register in this process: the fact as it was recorded.
+    current = fact;
+  }
+  log.debug("Leaving deviceFactsOf(). " + (current ? current.id : 'Gone.'));
+  return current;
+}
+
+// ---------------------------------------------------------------------------
+// WHAT THIS REALM REQUIRES OF A DEVICE (#164 decision 3, phase 6), as the
+// bag the issuance policy reads (`urn:sts:xacml:device-requirement`):
+// `not-compromised` while `devices.refuseCompromised` is on (the default),
+// `compliant` while `devices.requireCompliantDevice` is (off by default in
+// both modes, rcbj's decision), and `attested` beside it while
+// `devices.compliantDeviceAttested` is. The settings SWITCH the rules and
+// the policy states them — `xacml/xacml_templates.ts` argues it.
+// ---------------------------------------------------------------------------
+function deviceRequirementOf() {
+  log.debug("Entering deviceRequirementOf().");
+  const out = [];
+  if (config.value('devices.refuseCompromised') !== false) {
+    out.push('not-compromised');
+  }
+  if (config.value('devices.requireCompliantDevice') === true) {
+    out.push('compliant');
+    if (config.value('devices.compliantDeviceAttested') === true) {
+      out.push('attested');
+    }
+  }
+  log.debug("Leaving deviceRequirementOf(). " + out.join(', '));
+  return out;
+}
+
 function disabledSubject(name) {
   log.debug("Entering disabledSubject().");
   let disabled = false;
@@ -362,6 +449,8 @@ module.exports = {
   setDecider: setDecider,
   deciderInstalled: deciderInstalled,
   check: check,
+  deviceFactsOf: deviceFactsOf,
+  deviceRequirementOf: deviceRequirementOf,
   DELEGATE: DELEGATE,
   checkDelegation: checkDelegation
 };
