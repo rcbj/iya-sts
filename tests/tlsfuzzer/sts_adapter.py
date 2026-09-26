@@ -66,12 +66,15 @@ def main():
     argv = sys.argv[1:]
     cert_request = False
     ldap = False
-    while argv and argv[0].startswith('--') and argv[0] in (
-            '--client-cert-request', '--ldap'):
+    aead = False
+    while argv and argv[0] in ('--client-cert-request', '--ldap',
+                               '--tls12-aead'):
         if argv[0] == '--client-cert-request':
             cert_request = True
-        else:
+        elif argv[0] == '--ldap':
             ldap = True
+        else:
+            aead = True
         argv = argv[1:]
     if not argv:
         sys.stderr.write('usage: sts_adapter.py [--client-cert-request] '
@@ -83,40 +86,106 @@ def main():
 
     from tlsfuzzer import runner as fuzz_runner
     from tlsfuzzer import messages as fuzz_messages
-    from tlsfuzzer.expect import ExpectCertificateRequest
+    from tlsfuzzer.expect import ExpectCertificateRequest, \
+        ExpectServerHello, ExpectServerKeyExchange
     from tlslite import messagesocket
-    from tlslite.constants import ContentType, HandshakeType
+    from tlsfuzzer.helpers import RSA_SIG_ALL
+    from tlslite.constants import CipherSuite, ContentType, ExtensionType, \
+        GroupName, HandshakeType
+    from tlslite.extensions import SignatureAlgorithmsExtension, \
+        SupportedGroupsExtension
 
-    current = {'state': None, 'adapt': False}
+    current = {'state': None, 'request': False, 'key_exchange': False}
+
+    original_init = fuzz_runner.Runner.__init__
+
+    def runner_init(self, conversation):
+        original_init(self, conversation)
+        current['state'] = self.state
+        current['request'] = cert_request and not graph_has(
+            conversation, ExpectCertificateRequest)
+        current['key_exchange'] = aead and not graph_has(
+            conversation, ExpectServerKeyExchange)
+        self.state.sts_request_pending = False
+    fuzz_runner.Runner.__init__ = runner_init
+
+    original_recv = messagesocket.MessageSocket.recvMessageBlocking
+
+    def handshake_type(res):
+        if (isinstance(res, tuple) and
+                res[0].type == ContentType.handshake and res[1].bytes):
+            return res[1].bytes[0]
+        return None
+
+    def recv(self):
+        while True:
+            res = original_recv(self)
+            state = current['state']
+            kind = handshake_type(res)
+            if state is None or kind is None:
+                return res
+            msg = fuzz_messages.Message(res[0].type, res[1].bytes)
+            if current['request'] and \
+                    kind == HandshakeType.certificate_request:
+                ExpectCertificateRequest().process(state, msg)
+                state.sts_request_pending = True
+                continue
+            if current['key_exchange'] and \
+                    kind == HandshakeType.server_key_exchange:
+                ExpectServerKeyExchange().process(state, msg)
+                continue
+            return res
+    messagesocket.MessageSocket.recvMessageBlocking = recv
+
+    if aead:
+        swap = aead_substitutes(CipherSuite)
+
+        def substitute(ciphers):
+            if not ciphers:
+                return ciphers
+            out = []
+            for one in ciphers:
+                one = swap.get(one, one)
+                if one not in out:
+                    out.append(one)
+            return out
+
+        chg = fuzz_messages.ClientHelloGenerator
+        original_chg = chg.__init__
+
+        ecdhe = set(swap.values())
+
+        def chg_init(self, ciphers=None, extensions=None, *args, **kwargs):
+            ciphers = substitute(ciphers)
+            # A script written for RSA key exchange sends neither extension,
+            # and ECDHE needs both: without signature_algorithms a TLS 1.2
+            # server may only sign with SHA-1 (RFC 5246 section 7.4.1.4.1),
+            # which OpenSSL's default security level refuses. Added only
+            # where the script sent none of its own.
+            if ciphers and ecdhe.intersection(ciphers) and \
+                    not kwargs.get('ssl2'):
+                extensions = dict(extensions or {})
+                if ExtensionType.signature_algorithms not in extensions:
+                    extensions[ExtensionType.signature_algorithms] = \
+                        SignatureAlgorithmsExtension().create(RSA_SIG_ALL)
+                if ExtensionType.supported_groups not in extensions:
+                    extensions[ExtensionType.supported_groups] = \
+                        SupportedGroupsExtension().create(
+                            [GroupName.x25519, GroupName.secp256r1])
+            original_chg(self, ciphers, extensions, *args, **kwargs)
+        chg.__init__ = chg_init
+
+        esh = ExpectServerHello
+        original_esh = esh.__init__
+
+        def esh_init(self, *args, **kwargs):
+            if kwargs.get('cipher') is not None:
+                kwargs['cipher'] = swap.get(kwargs['cipher'],
+                                            kwargs['cipher'])
+            original_esh(self, *args, **kwargs)
+        esh.__init__ = esh_init
 
     if cert_request:
-        original_init = fuzz_runner.Runner.__init__
-
-        def runner_init(self, conversation):
-            original_init(self, conversation)
-            current['state'] = self.state
-            current['adapt'] = not graph_expects_request(conversation)
-            self.state.sts_request_pending = False
-        fuzz_runner.Runner.__init__ = runner_init
-
-        original_recv = messagesocket.MessageSocket.recvMessageBlocking
-
-        def recv(self):
-            while True:
-                res = original_recv(self)
-                state = current['state']
-                if (current['adapt'] and state is not None and
-                        isinstance(res, tuple) and
-                        res[0].type == ContentType.handshake and
-                        res[1].bytes and
-                        res[1].bytes[0] == HandshakeType.certificate_request):
-                    msg = fuzz_messages.Message(res[0].type, res[1].bytes)
-                    ExpectCertificateRequest().process(state, msg)
-                    state.sts_request_pending = True
-                    continue
-                return res
-        messagesocket.MessageSocket.recvMessageBlocking = recv
-
         def send_empty_certificate(state, queue):
             gen = fuzz_messages.CertificateGenerator()
             msg = gen.generate(state)
@@ -164,8 +233,25 @@ def main():
     runpy.run_path(script, run_name='__main__')
 
 
-def graph_expects_request(conversation):
-    from tlsfuzzer.expect import ExpectCertificateRequest
+def aead_substitutes(suite):
+    """The TLS 1.2 suites a script offers by default, each mapped to the
+    ECDHE-RSA AES-GCM suite of the same key size this service offers."""
+    small = suite.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256
+    large = suite.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384
+    swap = {}
+    for kex in ('RSA', 'DHE_RSA', 'ECDHE_RSA', 'ECDHE_ECDSA'):
+        for bulk, target in (('AES_128_CBC_SHA', small),
+                             ('AES_128_CBC_SHA256', small),
+                             ('AES_256_CBC_SHA', large),
+                             ('AES_256_CBC_SHA256', large),
+                             ('AES_256_CBC_SHA384', large)):
+            name = 'TLS_' + kex + '_WITH_' + bulk
+            if hasattr(suite, name):
+                swap[getattr(suite, name)] = target
+    return swap
+
+
+def graph_has(conversation, kind):
     seen = set()
     todo = [conversation]
     while todo:
@@ -173,7 +259,7 @@ def graph_expects_request(conversation):
         if node is None or id(node) in seen:
             continue
         seen.add(id(node))
-        if isinstance(node, ExpectCertificateRequest):
+        if isinstance(node, kind):
             return True
         todo.append(getattr(node, 'child', None))
         todo.append(getattr(node, 'next_sibling', None))
