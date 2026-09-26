@@ -480,17 +480,21 @@ function childMain() {
                             'stsKrb5Keys']) {
           const answer = await modify('replace', type, ['x']);
           refusedWrites.push({ type: type, ok: answer.ok,
-                               name: answer.errorName });
+                               name: answer.errorName,
+                               door: /is a credential and is not written over LDAP; use /
+                                 .test(String(answer.error || '')) });
         }
         const audited = audit.list().filter(function (row) {
           return row.errorCode === 'STS-LDAP-0111';
         });
         note(refusedWrites.every(function (one) {
-          return one.ok === false && one.name === 'UnwillingToPerformError';
+          return one.ok === false && one.name === 'UnwillingToPerformError' &&
+                 one.door;
         }) && audited.length >= refusedWrites.length,
              'D1. a modify of every credential attribute is refused ' +
-             'unwillingToPerform, recorded STS-LDAP-0111, in development ' +
-             'mode too', JSON.stringify(refusedWrites));
+             'unwillingToPerform naming the door to use, recorded ' +
+             'STS-LDAP-0111, in development mode too',
+             JSON.stringify(refusedWrites));
         const added = await Promise.resolve(ldap.performOperation('add', {
           dn: 'uid=cs-ldap-new,' + dn.split(',').slice(1).join(','),
           boundDn: '', channel: 'ldaps',
