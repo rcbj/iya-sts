@@ -4400,6 +4400,29 @@ class Credentials {
     return answer;
   }
 
+  // A PERSON'S ACCOUNT IDS AT CLIENTS (#148): every `<client_id> <aud_sub>`
+  // value (none where no directory is loaded), and a write of all of them.
+  audSubsOf(username: string): string[] {
+    const { log } = this.deps;
+    const directory = this.directory;
+    log.debug('Entering Credentials.audSubsOf().');
+    const values = directory && typeof directory.readAudSubs === 'function'
+      ? (directory.readAudSubs(String(username || '')) || []) : [];
+    log.debug('Leaving Credentials.audSubsOf().');
+    return values.map(String);
+  }
+
+  writeAudSubs(username: string, values: string[]): boolean {
+    const { log } = this.deps;
+    const directory = this.directory;
+    log.debug('Entering Credentials.writeAudSubs().');
+    const written = !!(directory &&
+      typeof directory.writeAudSubs === 'function' &&
+      directory.writeAudSubs(String(username || ''), values || []));
+    log.debug('Leaving Credentials.writeAudSubs(). ' + written);
+    return written;
+  }
+
   // A PERSON'S CIBA USER CODE (#131), for `oauth-oidc/ciba.ts`: the stored
   // hash ('' for none or no store), and the hash written ('' removes it).
   readCibaUserCode(username) {
@@ -6365,6 +6388,8 @@ export = {
   selfIssuedSubjectOwner: slot.forward('selfIssuedSubjectOwner'),
   deviceStore: slot.forward('deviceStore'),
   oidfedStore: slot.forward('oidfedStore'),
+  audSubsOf: slot.forward('audSubsOf'),
+  writeAudSubs: slot.forward('writeAudSubs'),
   claimsAggregationStore: slot.forward('claimsAggregationStore'),
   readCibaUserCode: slot.forward('readCibaUserCode'),
   writeCibaUserCode: slot.forward('writeCibaUserCode'),

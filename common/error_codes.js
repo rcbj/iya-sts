@@ -6972,6 +6972,12 @@ const CODES = [
       'discovery document could not be fetched or does not name its issuer ' +
       '(#147).',
     spec: 'console / /admin-api refusal (HTTP 400)' },
+  { code: 'STS-OAUTH-0688',
+    summary: 'An authorization request named a `tenant` other than the ' +
+      'trust realm it was sent to (OpenID Connect Enterprise Extensions ' +
+      'section 3.2, #148); a realm is chosen by the path, never by a ' +
+      'parameter.',
+    spec: 'redirect {error: invalid_request}' },
   { code: 'STS-SAML-0001',
     summary: 'A SAML 2.0 sign-in resumed with a held-request id that is ' +
       'unknown or has expired (saml2.requestTtlMin), so there is no ' +
@@ -14432,6 +14438,15 @@ const CODES = [
     summary: 'set-mail named nobody in this realm, or the directory would ' +
       'not write the address (#64).',
     spec: 'HTTP 400 (API)' },
+  { code: 'STS-ADMIN-0817',
+    summary: 'A set-aud-sub act named no person or no client, a client_id ' +
+      'with spaces, or an aud_sub over 255 characters or with control ' +
+      'characters (#148).',
+    spec: 'none (a console or management API refusal, HTTP 400)' },
+  { code: 'STS-ADMIN-0818',
+    summary: 'A set-aud-sub act named a person with no entry in this ' +
+      'realm, or the directory would not write it (#148).',
+    spec: 'none (a console or management API refusal, HTTP 400)' },
   { code: 'STS-API-0001',
     summary: 'A management API request carried no Bearer access token while ' +
       'adminApi.authRequired is on.',

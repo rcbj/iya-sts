@@ -4012,6 +4012,40 @@ dial itself over TLS, so that job publishes the service's own Root in the
 directory shared with the service and names it as the OP realm's
 `federation.outboundCaFile`.
 
+## 3bi. OPENID CONNECT ENTERPRISE EXTENSIONS 1.0 (2026-09-26, #148)
+
+rcbj's answers were every recommendation: a tenant is the trust realm's id
+(#151 shares it); a `tenant` naming another realm is refused; sessions stay
+absolute; `aud_sub` is recorded per person per client; `domain_hint` is
+home-realm discovery. All in every mode.
+
+* **`session_expiry`** is set in `idToken()` from `authn.sessionById()`'s
+  `expires` whenever the token is issued on a session — keyed on
+  `opts.session_id` ALONE, unlike `sid`, which only the logout features and
+  Native SSO switch on.
+* **`tenant`** is `realms.current().id` in every ID Token. On the request it
+  is declared in `AUTHORIZE_QUERY` and refused in
+  `vetAuthorizationRequest()` when it names another realm
+  (`STS-OAUTH-0688`, redirected `invalid_request`), before the response type
+  is read. PAR runs the same vetting.
+* **`aud_sub`** is `stsAudSub` on the person's entry, one `<client_id>
+  <aud_sub>` per value (`credentials.audSubsOf()` / `writeAudSubs()`),
+  written by `usersAction`'s `set-aud-sub` (console form on the person's
+  page, `POST /admin-api/users/set-aud-sub`). The learned half — a value a
+  client reports — is #151's.
+* **`domain_hint`** goes to `authn.beginAuthentication()` as `domainHint`;
+  `homeRealmFor()` takes the usable service-provider relationship whose
+  `fedHomeRealmDomain` (a new multi-valued federation attribute, lower-cased
+  as `fedSubjectDomain` is) lists it — exactly one, or none. An
+  application's own auto-redirect partner wins, being the more specific
+  configuration. `fedSubjectDomain` stays an ADMISSION rule; this is a
+  routing hint.
+* **The portal launch** (`Portal.initiateLoginLink()`) adds `tenant`,
+  `domain_hint` (the realm's DNS domain) and `target_link_uri` (the
+  application's registered https home page).
+
+Tests: `tests/vendored/sts_enterprise_extensions.js`.
+
 ## OPENID CONNECT CORE, READ AGAINST THE CODE (2026-09-22, #118)
 
 The review on #45 found Core bugs that no test had asked about. What changed, and

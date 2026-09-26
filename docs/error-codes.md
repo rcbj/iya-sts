@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3462** of them, in **38** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3465** of them, in **38** subsystems.
 
 ## Where a code appears
 
@@ -63,7 +63,7 @@ is an ordinary outcome.
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 25
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 47
 * [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 248
-* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 567
+* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 568
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 84
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 21
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 16
@@ -81,7 +81,7 @@ is an ordinary outcome.
 * [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 282
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 74
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 32
-* [Admin console (`STS-ADMIN`)](#sts-admin) — 195
+* [Admin console (`STS-ADMIN`)](#sts-admin) — 197
 * [Management API (`STS-API`)](#sts-api) — 73
 * [User portal (`STS-PORTAL`)](#sts-portal) — 72
 * [Sign-out (`STS-LOGOUT`)](#sts-logout) — 7
@@ -1724,6 +1724,7 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0685` | A person's Claims Provider tokens could not be read or sealed (#147). | portal refusal (HTTP 500), or logged |
 | `STS-OAUTH-0686` | An administrator's Claims Provider act was refused: an invalid or duplicate provider, an unknown action, or a link that does not exist (#147). | console / /admin-api refusal (HTTP 400) |
 | `STS-OAUTH-0687` | Registering a Claims Provider by discovery failed: its discovery document could not be fetched or does not name its issuer (#147). | console / /admin-api refusal (HTTP 400) |
+| `STS-OAUTH-0688` | An authorization request named a `tenant` other than the trust realm it was sent to (OpenID Connect Enterprise Extensions section 3.2, #148); a realm is chosen by the path, never by a parameter. | redirect {error: invalid_request} |
 
 ## STS-SAML
 
@@ -3552,6 +3553,8 @@ Raised from: admin-ui/ (except pki_admin.js), admin-core/.
 | `STS-ADMIN-0814` | clear-email-factor could not write the person's entry (#64). | HTTP 400 (API) |
 | `STS-ADMIN-0815` | set-mail was given something that is not an address this service can send to (#64). | HTTP 400 (API) |
 | `STS-ADMIN-0816` | set-mail named nobody in this realm, or the directory would not write the address (#64). | HTTP 400 (API) |
+| `STS-ADMIN-0817` | A set-aud-sub act named no person or no client, a client_id with spaces, or an aud_sub over 255 characters or with control characters (#148). | none (a console or management API refusal, HTTP 400) |
+| `STS-ADMIN-0818` | A set-aud-sub act named a person with no entry in this realm, or the directory would not write it (#148). | none (a console or management API refusal, HTTP 400) |
 
 ## STS-API
 
