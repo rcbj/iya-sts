@@ -748,6 +748,20 @@ const JOBS = [
   // on the kvno — in both modes. `local: true`: this repository's KDC,
   // scheduler and API.
   { file: 'sts_kerberos_krbtgt_rotation.js', browser: false, local: true },
+  // SAMBA'S RAW KERBEROS KDC TESTS (#204, 2026-09-26): python/samba/tests/
+  // krb5 from a pinned Samba built into the tests image (GPL-3.0, never
+  // vendored), every module run unchanged by tests/kerberos-interop/
+  // samba_krb5_driver.py against a throwaway development realm's KDC on TCP
+  // 88 — the AD-only tests skipped by reason, every failure fixed or a
+  // documented exception. `local: true`: this repository's KDC.
+  { file: 'sts_kerberos_samba.js',       browser: false, local: true,
+    timeoutMs: 2700000 },
+  // HEIMDAL'S CLIENT TOOLS BESIDE MIT'S (#205, 2026-09-26): kinit, klist,
+  // kgetcred, kvno, ktutil, gss-token and a Heimdal-GSSAPI curl, built into
+  // the tests image from a pinned commit — AS and TGS per realm (FAST-armored
+  // by Heimdal, hide-client-names), keytabs, FAST, RC4 by mode and SPNEGO at
+  // /authn/spnego, in both modes. `local: true`: this repository's KDC.
+  { file: 'sts_kerberos_heimdal.js',     browser: false, local: true },
   // Both gRPC surfaces over the network. Since #166 (2026-09-23) also the
   // Workload API's TCP port in product: refused where the network is not
   // declared to authenticate source addresses, and entries selecting this

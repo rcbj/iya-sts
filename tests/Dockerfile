@@ -186,6 +186,54 @@ FROM golang:1.26 AS scim2-test-suite
 COPY tests/scim-conformance/build-test-suite.sh /usr/src/build-test-suite.sh
 RUN /usr/src/build-test-suite.sh /opt/scim2-test-suite
 
+# THE KERBEROS INTEROPERABILITY HARNESSES (#204, #205), each built from a
+# pinned upstream source in a stage of its own, on the runner's own base so
+# the libraries and the Python they link against are the runner's.
+#
+#   * SAMBA 4.25.0 (GPL-3.0, NEVER VENDORED): the release tarball, checked by
+#     sha256, built into /opt/samba for its raw Kerberos KDC tests,
+#     python/samba/tests/krb5 — tests/vendored/sts_kerberos_samba.js runs them
+#     through tests/kerberos-interop/samba_krb5_driver.py. The distribution's
+#     python3-samba ships the bindings without that test tree, and the tree
+#     must match the bindings it imports, so both come from one tarball. The
+#     build deps are the subset of Samba's own bootstrap/generated-dists/
+#     ubuntu2604 list a build without CUPS, PAM, GlusterFS, Ceph and gpgme
+#     needs.
+#   * HEIMDAL (BSD-3-Clause) at a pinned master commit — 7.8.0, the last
+#     release, has no gss-token — and curl 8.16.0, the last curl that builds
+#     against Heimdal's GSSAPI, into /opt/heimdal, for
+#     tests/vendored/sts_kerberos_heimdal.js. Nothing of it goes on the PATH:
+#     the runner's kinit is MIT's.
+#
+# tests/kerberos-interop/build-*.sh pin, check and build; tests/CLAUDE.md,
+# *The Kerberos interoperability harnesses*, is the provenance. About twenty
+# minutes on a cold build, cached after that.
+FROM ubuntu:latest AS samba-krb5
+RUN apt-get update \
+    && DEBIAN_FRONTEND=noninteractive apt-get -y install --no-install-recommends \
+        ca-certificates curl gcc g++ make perl bison flex pkg-config python3 \
+        python3-dev libparse-yapp-perl python3-cryptography python3-pyasn1 \
+        python3-dnspython python3-markdown python3-iso8601 libgnutls28-dev \
+        libjansson-dev libarchive-dev libacl1-dev libattr1-dev libblkid-dev \
+        libbsd-dev libcap-dev libldap2-dev liblmdb-dev libpopt-dev \
+        libreadline-dev libtasn1-dev libtasn1-bin libtirpc-dev uuid-dev \
+        zlib1g-dev libicu-dev libdbus-1-dev libkeyutils-dev libutf8proc-dev \
+        libcrypt-dev libevent-dev liburing-dev libncurses-dev \
+    && rm -rf /var/lib/apt/lists/*
+COPY tests/kerberos-interop/build-samba.sh /usr/src/build-samba.sh
+RUN /usr/src/build-samba.sh /opt/samba
+
+FROM ubuntu:latest AS heimdal
+RUN apt-get update \
+    && DEBIAN_FRONTEND=noninteractive apt-get -y install --no-install-recommends \
+        ca-certificates curl gcc g++ make perl python3 autoconf automake \
+        libtool pkg-config bison flex libssl-dev libdb-dev libncurses-dev \
+        libedit-dev libsqlite3-dev libcap-ng-dev xz-utils texinfo \
+        libjson-c-dev libjson-perl comerr-dev ss-dev zlib1g-dev \
+    && rm -rf /var/lib/apt/lists/*
+COPY tests/kerberos-interop/build-heimdal.sh /usr/src/build-heimdal.sh
+RUN /usr/src/build-heimdal.sh /opt/heimdal
+
 FROM ubuntu:latest
 
 # replace shell with bash so we can source files (the nvm install below needs it)
@@ -375,6 +423,25 @@ RUN python3 -m venv /opt/scim2-tester \
 ENV STS_SCIM2_TESTER_PYTHON=/opt/scim2-tester/bin/python
 COPY --from=scim2-test-suite /opt/scim2-test-suite /opt/scim2-test-suite
 ENV STS_SCIM2_TEST_SUITE=/opt/scim2-test-suite/scim-compliance
+# THE KERBEROS INTEROPERABILITY HARNESSES (#204, #205), from the two stages
+# at the top of this file, and the shared libraries they link — the packages
+# each build stage wrote into its prefix's RUNTIME_PACKAGES, so the list is
+# what was linked on this base rather than a hand-kept one — with the three
+# Python modules Samba's tests import.
+COPY --from=samba-krb5 /opt/samba /opt/samba
+COPY --from=heimdal /opt/heimdal /opt/heimdal
+RUN apt-get update \
+    && DEBIAN_FRONTEND=noninteractive apt-get -y install --no-install-recommends \
+        $(cat /opt/samba/RUNTIME_PACKAGES /opt/heimdal/RUNTIME_PACKAGES \
+          | sort -u) \
+        python3-cryptography python3-pyasn1 python3-dnspython \
+    && rm -rf /var/lib/apt/lists/* \
+    && PYTHONPATH=$(ls -d /opt/samba/lib/python3*/site-packages) \
+       python3 -c 'import samba.tests.krb5.kdc_base_test' \
+    && /opt/heimdal/bin/kinit --version \
+    && /opt/heimdal/bin/curl --version | grep -q SPNEGO
+ENV STS_SAMBA_DIR=/opt/samba
+ENV STS_HEIMDAL_DIR=/opt/heimdal
 COPY package*.json ./
 COPY .npmrc ./
 COPY node-ldapjs ./node-ldapjs

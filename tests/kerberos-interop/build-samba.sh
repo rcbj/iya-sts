@@ -39,4 +39,16 @@ echo "$SAMBA_VERSION" > "$OUT/SAMBA_VERSION"
 PY="$(ls -d "$OUT"/lib/python3*/site-packages)"
 test -f "$PY/samba/tests/krb5/raw_testcase.py"
 PYTHONPATH="$PY" python3 -c 'import samba.tests.krb5.kdc_base_test'
+# THE RUNTIME PACKAGES the runner must install for this prefix: every shared
+# library its binaries and modules link, outside the prefix, resolved to the
+# Debian package that owns it. Written here, where the build knows, so the
+# runner's list cannot drift from what was linked (a library soname in a
+# hand-kept list changes with the base image).
+find "$OUT" -type f \( -name '*.so*' -o -perm -u+x \) -print0 \
+  | { xargs -0 ldd 2>/dev/null || true; } | awk '/=> \//{print $3}' \
+  | sort -u | { grep -v "^$OUT/" || true; } | xargs -r readlink -f \
+  | sort -u | { xargs -r dpkg -S 2>/dev/null || true; } \
+  | cut -d: -f1 | tr ',' '\n' | tr -d ' ' | sort -u \
+  > "$OUT/RUNTIME_PACKAGES"
+test -s "$OUT/RUNTIME_PACKAGES"
 rm -rf "$WORK"
