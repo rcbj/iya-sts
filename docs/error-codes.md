@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3500** of them, in **38** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3532** of them, in **38** subsystems.
 
 ## Where a code appears
 
@@ -63,7 +63,7 @@ is an ordinary outcome.
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 25
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 47
 * [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 249
-* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 568
+* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 600
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 96
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 21
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 16
@@ -1735,6 +1735,38 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0686` | An administrator's Claims Provider act was refused: an invalid or duplicate provider, an unknown action, or a link that does not exist (#147). | console / /admin-api refusal (HTTP 400) |
 | `STS-OAUTH-0687` | Registering a Claims Provider by discovery failed: its discovery document could not be fetched or does not name its issuer (#147). | console / /admin-api refusal (HTTP 400) |
 | `STS-OAUTH-0688` | An authorization request named a `tenant` other than the trust realm it was sent to (OpenID Connect Enterprise Extensions section 3.2, #148); a realm is chosen by the path, never by a parameter. | redirect {error: invalid_request} |
+| `STS-OAUTH-0720` | A request carried more than one OAuth-Client-Attestation header, or one that is not a JWT in token68 syntax (#229, section 7.1 item 1). | token / PAR / introspection / revocation {error: invalid_client} (HTTP 401) |
+| `STS-OAUTH-0721` | The OAuth-Client-Attestation header does not hold a JWT whose header can be read (#229). | token / PAR / introspection / revocation {error: invalid_client} (HTTP 401) |
+| `STS-OAUTH-0722` | A Client Attestation's typ is not oauth-client-attestation+jwt (#229, section 4). | token / PAR / introspection / revocation {error: invalid_client} (HTTP 401) |
+| `STS-OAUTH-0723` | A Client Attestation is signed with an algorithm this server does not accept: not an asymmetric one in the JWS table, or a MAC (#229, section 7.1 item 3). | token / PAR / introspection / revocation {error: invalid_client} (HTTP 401) |
+| `STS-OAUTH-0724` | A client attestation was presented in a realm that trusts no client attester: oauth2.clientAttestationTrustAnchors and oauth2.clientAttestationTrustedKeys are both empty (#229). | token / PAR / introspection / revocation {error: invalid_client} (HTTP 401) |
+| `STS-OAUTH-0725` | A Client Attestation's x5c is unreadable, its signing certificate is self-signed, or its path does not hold to a trust anchor in oauth2.clientAttestationTrustAnchors (#229, section 10.8). | token / PAR / introspection / revocation {error: invalid_client} (HTTP 401) |
+| `STS-OAUTH-0726` | No trusted attester key verifies a Client Attestation: no configured key with its kid, or the signature does not verify (#229, section 7.1 item 4). | token / PAR / introspection / revocation {error: invalid_client} (HTTP 401) |
+| `STS-OAUTH-0727` | A Client Attestation lacks sub, exp or cnf, or a claim has the wrong type (#229, section 4). | token / PAR / introspection / revocation {error: invalid_client} (HTTP 401) |
+| `STS-OAUTH-0728` | A Client Attestation has expired, or its nbf or iat is in the future (#229, section 4). | token / PAR / introspection / revocation {error: invalid_client} (HTTP 401) |
+| `STS-OAUTH-0729` | A Client Attestation's cnf carries no public jwk, a symmetric one, or private key material (#229, section 7.1 item 5). | token / PAR / introspection / revocation {error: invalid_client} (HTTP 401) |
+| `STS-OAUTH-0730` | A Client Attestation is older than oauth2.clientAttestationMaxAgeS (#229, section 7.1 item 6). | token / PAR {error: use_fresh_attestation} (HTTP 400) |
+| `STS-OAUTH-0731` | A Client Attestation's sub is not the client_id the request names (#229, sections 7.1 item 7 and 7.5). | token / PAR / introspection / revocation {error: invalid_client} (HTTP 401) |
+| `STS-OAUTH-0732` | A request carried more than one OAuth-Client-Attestation-PoP header, or one that is not a JWT in token68 syntax (#229, section 7.2 item 1). | token / PAR / introspection / revocation {error: invalid_client} (HTTP 401) |
+| `STS-OAUTH-0733` | A Client Attestation PoP's typ is not oauth-client-attestation-pop+jwt, or its alg is not an accepted asymmetric one (#229, section 5.1). | token / PAR / introspection / revocation {error: invalid_client} (HTTP 401) |
+| `STS-OAUTH-0734` | A Client Attestation PoP does not verify under the key in the attestation's cnf (#229, section 7.2 item 4). | token / PAR / introspection / revocation {error: invalid_client} (HTTP 401) |
+| `STS-OAUTH-0735` | A Client Attestation PoP lacks aud, jti or iat, or a claim has the wrong type (#229, section 5.1). | token / PAR / introspection / revocation {error: invalid_client} (HTTP 401) |
+| `STS-OAUTH-0736` | A Client Attestation PoP does not name this authorization server's issuer identifier as its single audience (#229, section 7.2 item 7). | token / PAR / introspection / revocation {error: invalid_client} (HTTP 401) |
+| `STS-OAUTH-0737` | A Client Attestation PoP is older than oauth2.clientAttestationPopMaxAgeS, expired, or dated in the future (#229, section 7.2 item 6). | token / PAR / introspection / revocation {error: invalid_client} (HTTP 401) |
+| `STS-OAUTH-0738` | A Client Attestation PoP carries no challenge where oauth2.clientAttestationChallengeRequired asks for one (#229, section 6.1). | token / PAR {error: use_attestation_challenge} (HTTP 400) with an OAuth-Client-Attestation-Challenge header |
+| `STS-OAUTH-0739` | A Client Attestation PoP's challenge is not one this realm issued, has expired, or has been used (#229, section 6.1). | token / PAR {error: use_attestation_challenge} (HTTP 400) with an OAuth-Client-Attestation-Challenge header |
+| `STS-OAUTH-0740` | A Client Attestation PoP was presented again: its jti has been used (#229, section 12.1). | token / PAR / introspection / revocation {error: invalid_client} (HTTP 401) |
+| `STS-OAUTH-0741` | The used-assertion history is full of unexpired rows, so a Client Attestation PoP or challenge is refused rather than accepted unrecorded (#229). | token / PAR {error: invalid_client} (HTTP 503) |
+| `STS-OAUTH-0742` | A Client Attestation PoP or challenge could not be recorded as used, so it is refused rather than accepted unrecorded (#229). | token / PAR {error: invalid_client} (HTTP 503) |
+| `STS-OAUTH-0743` | A request carried a Client Attestation and no proof of possession of its key: no OAuth-Client-Attestation-PoP header and no DPoP proof (#229, section 7). | token / PAR / introspection / revocation {error: invalid_client} (HTTP 401) |
+| `STS-OAUTH-0744` | The DPoP combined mode was used at an endpoint that verifies no DPoP proof (introspection, revocation, CIBA) (#229, section 7.3). | token / PAR / introspection / revocation {error: invalid_client} (HTTP 401) |
+| `STS-OAUTH-0745` | In the DPoP combined mode the DPoP proof's key is not the key the Client Attestation binds (#229, section 7.3 item 4). | token / PAR / introspection / revocation {error: invalid_client} (HTTP 401) |
+| `STS-OAUTH-0746` | A client that declared attest_jwt_client_auth proved its key with DPoP alone, or one that declared attest_jwt_client_auth_dpop sent an OAuth-Client-Attestation-PoP (#229, section 7). | token / PAR / introspection / revocation {error: invalid_client} (HTTP 401) |
+| `STS-OAUTH-0747` | POST /oauth2/challenge in a realm that trusts no client attester (#229, section 6.3). | /oauth2/challenge {error: invalid_request} (HTTP 400) |
+| `STS-OAUTH-0748` | A refresh token issued on a client attestation was redeemed without an attestation of the same client instance key (#229, section 10.3). | token {error: invalid_grant} (HTTP 400) |
+| `STS-OAUTH-0749` | An authorization code pushed under a client attestation was redeemed without an attestation of the same client instance key (#229, section 10.4). | token {error: invalid_grant} (HTTP 400) |
+| `STS-OAUTH-0750` | oauth2.clientAttestationTrustAnchors holds a certificate that cannot be read, or oauth2.clientAttestationTrustedKeys is not a JWKS or holds a symmetric or private key; the unreadable part is ignored (#229). | log only |
+| `STS-OAUTH-0751` | A client that declared attest_jwt_client_auth or attest_jwt_client_auth_dpop sent no OAuth-Client-Attestation header, or did not authenticate with it (#229, section 7.5). | token / PAR / introspection / revocation {error: invalid_client} (HTTP 401) |
 
 ## STS-SAML
 

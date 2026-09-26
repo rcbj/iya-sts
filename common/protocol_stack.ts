@@ -460,6 +460,12 @@ class ProtocolStack {
     this.build('oauth-oidc/request_object',
                require('../oauth-oidc/request_object'),
                'RequestObject');
+    // OAuth 2.0 Attestation-Based Client Authentication (#229): a library
+    // `client_auth.js` asks at request time and `oauth2` owns the challenge
+    // endpoint of; built before `oauth2`, which reads it.
+    this.build('oauth-oidc/client_attestation',
+               require('../oauth-oidc/client_attestation'),
+               'ClientAttestation');
     this.build('oauth-oidc/par', require('../oauth-oidc/par'),
                'PushedRequests');
     this.build('debugger/debugger_access',

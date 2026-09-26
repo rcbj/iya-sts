@@ -3749,7 +3749,103 @@ const SETTINGS = [
                  'allowance for two machines that are not synchronised. It ' +
                  'is also how long past its expiry an assertion\'s jti is ' +
                  'remembered, so the replay cache and the expiry check cover ' +
-                 'exactly the same span with no gap between them.' },
+                 'exactly the same span with no gap between them. It is ' +
+                 'also the skew a client attestation and its PoP are ' +
+                 'allowed (#229).' },
+
+  // -------------------------------------------------------------------------
+  // OAUTH 2.0 ATTESTATION-BASED CLIENT AUTHENTICATION (#229, 2026-09-26),
+  // draft-ietf-oauth-attestation-based-client-auth-11 —
+  // `oauth-oidc/client_attestation.ts` argues each row. Per trust realm, and
+  // the same in both modes: an attestation is a credential a client
+  // DECLARED, and the strict answer is the one a HAIP wallet meets anywhere.
+  // -------------------------------------------------------------------------
+  { key: 'oauth2.clientAttestationTrustAnchors', group: 'OAuth 2.0 / OIDC',
+    label: 'Trusted client attesters: certificate anchors (PEM)',
+    env: 'STS_OAUTH2_CLIENT_ATTESTATION_TRUST_ANCHORS', type: 'string',
+    dflt: '', runtime: true,
+    description: 'PEM certificates, concatenated: the trust anchors a ' +
+                 'Client Attestation\'s x5c chain must lead to ' +
+                 '(attest_jwt_client_auth, draft-ietf-oauth-attestation-' +
+                 'based-client-auth section 10.8). The signing certificate ' +
+                 'may not be self-signed (HAIP 1.0 section 4.4.1), and the ' +
+                 'whole path is checked as RFC 5280 says. Empty, with ' +
+                 'oauth2.clientAttestationTrustedKeys empty too, trusts no ' +
+                 'attester: the two attestation methods are then not ' +
+                 'advertised and every attestation is refused.' },
+
+  { key: 'oauth2.clientAttestationTrustedKeys', group: 'OAuth 2.0 / OIDC',
+    label: 'Trusted client attesters: keys (JWKS)',
+    env: 'STS_OAUTH2_CLIENT_ATTESTATION_TRUSTED_KEYS', type: 'string',
+    dflt: '', runtime: true,
+    description: 'A JWKS ({"keys": [...]}) of client attester public keys: ' +
+                 'a Client Attestation that carries no x5c must verify ' +
+                 'under one of them, narrowed by its kid. Symmetric and ' +
+                 'private keys are refused — a MAC-protected attestation ' +
+                 '(section 12.2) is not accepted here. Post-quantum (AKP) ' +
+                 'keys are accepted like any other.' },
+
+  { key: 'oauth2.clientAttestationChallengeRequired', group: 'OAuth 2.0 / OIDC',
+    label: 'Require a server challenge in a client attestation PoP',
+    env: 'STS_OAUTH2_CLIENT_ATTESTATION_CHALLENGE_REQUIRED', type: 'bool',
+    dflt: true, runtime: true,
+    description: 'Require every Client Attestation PoP to carry a challenge ' +
+                 'this server issued — from POST /oauth2/challenge, or the ' +
+                 'OAuth-Client-Attestation-Challenge header on the response ' +
+                 'to the previous request — each good for one request ' +
+                 '(section 6). A PoP without one is answered 400 ' +
+                 'use_attestation_challenge with a fresh challenge. Off, a ' +
+                 'challenge is still checked when sent and the PoP\'s jti ' +
+                 'and iat are the only replay protection — weaker, and not ' +
+                 'recommended. The DPoP combined mode uses DPoP nonces ' +
+                 'instead (oauth2.dpopNonceRequired).' },
+
+  { key: 'oauth2.clientAttestationChallengeTtlS', group: 'OAuth 2.0 / OIDC',
+    label: 'Client attestation challenge lifetime (s)',
+    env: 'STS_OAUTH2_CLIENT_ATTESTATION_CHALLENGE_TTL_S', type: 'int',
+    dflt: 300, min: 10, max: 3600, runtime: true,
+    description: 'How long a challenge this server hands out is accepted ' +
+                 'in a Client Attestation PoP.' },
+
+  { key: 'oauth2.clientAttestationChallengeCacheSize',
+    group: 'OAuth 2.0 / OIDC',
+    label: 'Client attestation challenges held per realm',
+    env: 'STS_OAUTH2_CLIENT_ATTESTATION_CHALLENGE_CACHE_SIZE', type: 'int',
+    dflt: 10000, min: 10, max: 1000000, runtime: true,
+    description: 'The most unexpired challenges a realm holds. At the bound ' +
+                 'the oldest is dropped, and a client presenting it is ' +
+                 'answered use_attestation_challenge with a fresh one.' },
+
+  { key: 'oauth2.clientAttestationMaxAgeS', group: 'OAuth 2.0 / OIDC',
+    label: 'Oldest client attestation accepted (s)',
+    env: 'STS_OAUTH2_CLIENT_ATTESTATION_MAX_AGE_S', type: 'int',
+    dflt: 86400, min: 60, max: 31536000, runtime: true,
+    description: 'How long after its iat a Client Attestation is still ' +
+                 'fresh enough (section 7.1 item 6); an older one is ' +
+                 'answered use_fresh_attestation. Its own exp still ends it ' +
+                 'sooner.' },
+
+  { key: 'oauth2.clientAttestationPopMaxAgeS', group: 'OAuth 2.0 / OIDC',
+    label: 'Oldest client attestation PoP accepted (s)',
+    env: 'STS_OAUTH2_CLIENT_ATTESTATION_POP_MAX_AGE_S', type: 'int',
+    dflt: 300, min: 10, max: 3600, runtime: true,
+    description: 'How long after its iat a Client Attestation PoP is ' +
+                 'accepted (section 7.2 item 6), plus ' +
+                 'oauth2.clientAssertionSkewS. Its jti is remembered for ' +
+                 'the same window, so a replay is refused for as long as ' +
+                 'the PoP could be accepted at all.' },
+
+  { key: 'oauth2.fapiAllowClientAttestation', group: 'OAuth 2.0 / OIDC',
+    label: 'FAPI 2.0: accept client attestation (HAIP)',
+    env: 'STS_OAUTH2_FAPI_ALLOW_CLIENT_ATTESTATION', type: 'bool',
+    dflt: false, runtime: true,
+    description: 'Under a FAPI 2.0 profile (oauth2.fapi 2-security or ' +
+                 '2-message-signing), accept attest_jwt_client_auth and ' +
+                 'attest_jwt_client_auth_dpop beside mTLS and ' +
+                 'private_key_jwt, as the OpenID4VC High Assurance ' +
+                 'Interoperability Profile allows (HAIP 1.0 section 4). Off, ' +
+                 'FAPI 2.0 section 5.3.2.1 item 6 is held to as written. ' +
+                 'FAPI 1.0 never accepts them.' },
 
   // -------------------------------------------------------------------------
   // THE 2026-09-12 HARD-CODED-VALUE SWEEP OF oauth-oidc/ AND oid4vc/.

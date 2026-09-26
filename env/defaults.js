@@ -297,6 +297,14 @@ var config = {
     saml2BearerRequireRegisteredIssuer: true,    // Require a registered SAML assertion issuer
     saml2BearerMaxLifetimeS: 300,                // Longest SAML assertion lifetime accepted (s)
     clientAssertionSkewS: 60,                    // Client assertion clock skew (s)
+    clientAttestationTrustAnchors: "",           // Trusted client attesters: certificate anchors (PEM)
+    clientAttestationTrustedKeys: "",            // Trusted client attesters: keys (JWKS)
+    clientAttestationChallengeRequired: true,    // Require a server challenge in a client attestation PoP
+    clientAttestationChallengeTtlS: 300,         // Client attestation challenge lifetime (s)
+    clientAttestationChallengeCacheSize: 10000,  // Client attestation challenges held per realm
+    clientAttestationMaxAgeS: 86400,             // Oldest client attestation accepted (s)
+    clientAttestationPopMaxAgeS: 300,            // Oldest client attestation PoP accepted (s)
+    fapiAllowClientAttestation: false,           // FAPI 2.0: accept client attestation (HAIP)
     assertionReplayCacheSize: 1000,              // Assertion replay cache size (per realm)
     dpopNonceRequired: false,                    // Require a DPoP server nonce
     dpopIatSkewS: 300,                           // DPoP proof iat window (s)
