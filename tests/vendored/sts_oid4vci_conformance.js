@@ -86,11 +86,12 @@ const PLANS = [
   // Attestation-Based Client Authentication (`attest_jwt_client_auth`,
   // draft-ietf-oauth-attestation-based-client-auth), which this
   // authorization server does not implement: every module stops at its
-  // first token request. It is listed so the gap is in the run's own
-  // output, and runs once the method exists (#187's report names it).
+  // first token request. It is listed NOT RUN so the gap is in the run's
+  // own output, and runs once the method exists (rcbj/iya-sts#229).
   { key: "haip", name: "oid4vci-1_0-issuer-haip-test-plan",
     pending: "this authorization server does not implement " +
-             "attest_jwt_client_auth, which HAIP requires of every wallet",
+             "attest_jwt_client_auth, which HAIP requires of every " +
+             "wallet (#229)",
     variant: { credential_format: "sd_jwt_vc", grant_management: "disabled",
                vci_authorization_code_flow_variant: "wallet_initiated" } }
 ];

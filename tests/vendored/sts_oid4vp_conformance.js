@@ -16,7 +16,8 @@
 // direct_post.jwt. The Verifier's own signed-request prefixes are
 // pre-registered, decentralized_identifier, verifier_attestation and
 // openid_federation; the plan's signed variants use x509_san_dns and
-// x509_hash, which this Verifier does not implement — recorded on #187.
+// x509_hash, which this Verifier does not implement — NOT RUN until #230
+// adds those two prefixes.
 //
 // A module waits for the Verifier to send the End-User to the wallet. This
 // job is that End-User: it asks the realm's start page for a request — the

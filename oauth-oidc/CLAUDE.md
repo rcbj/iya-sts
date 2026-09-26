@@ -4044,8 +4044,9 @@ otherwise; each carries its regression check.
   (STS-OAUTH-0143); the courtesy survives as `oauth2.codeReplayIdempotent`,
   off by default, a documented weaker option, on in `env/docker-tests.js`
   ONLY because the parent's vendored `oauth2_sts_endpoints.js` still asserts
-  it in development — the parent owes that job's update, after which the
-  appconfig line goes.
+  it in development — the parent owes that job's update
+  (rcbj/id-proto-debugger#306, with `vc_did.js`'s for OpenID4VCI's
+  `credential_metadata`), after which the appconfig line goes.
 * **The hybrid flow's nonce.** OIDC Core 3.3.2.1 makes `nonce` REQUIRED for
   `code id_token` and `code id_token token` — this file said the hybrid flow
   kept it optional. STS-OAUTH-0562 now covers every response type that
@@ -4118,6 +4119,11 @@ failure in its driver):
   attribute answers (`middle_name`, `profile`, `picture`, `gender`,
   `zoneinfo`), which is also why `VerifyScopesReturnedInUserInfoClaims`
   warns — rcbj's call, map them or stop listing them.
+
+**Not run, each until the service has what the plan needs**: the HAIP
+issuer plan, whose every wallet authenticates with
+`attest_jwt_client_auth` (#229), and the OpenID4VP verifier plan's
+`x509_san_dns` and `x509_hash` variants (#230).
 
 ## OPENID CONNECT CORE, READ AGAINST THE CODE (2026-09-22, #118)
 

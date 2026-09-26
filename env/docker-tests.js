@@ -66,7 +66,7 @@ var config = {
     // courtesy (an identical repeat answered with the same tokens). ON HERE
     // ONLY because the parent project's vendored `oauth2_sts_endpoints.js`
     // still asserts that courtesy in development mode; remove it once that
-    // job asserts the refusal. The OpenID conformance jobs switch it off in
+    // job asserts the refusal (rcbj/id-proto-debugger#306). The OpenID conformance jobs switch it off in
     // their own realms, so they test the default.
     codeReplayIdempotent: true,
 

@@ -1726,6 +1726,10 @@ Management under Message Signing, CIBA ping).
 * **Not run**: the relying-party plans (this service is nobody's RP but its
   own), the Brazil and panva plans, the superseded drafts, AuthZEN, and the
   SSF receiver plans (#153). The suite publishes no push-mode FAPI-CIBA plan.
+  Two more are NOT RUN until the service grows what they need: the HAIP
+  issuer plan (`attest_jwt_client_auth`, #229, listed in the OpenID4VCI job
+  as NOT RUN) and the OpenID4VP verifier plan's `x509_san_dns` and
+  `x509_hash` variants (#230).
 
 **By hand, beside a service of your own**: start the three images on one
 docker network with the aliases above (`mongodb`, `server`,
