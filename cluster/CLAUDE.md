@@ -165,6 +165,14 @@ computation, so the beat stays a lookup; the cost is a few kilobytes on each
 row (an ML-DSA leaf is about seven), and a new node's key reaches the other
 nodes' documents at most a heartbeat late.
 
+**THE LAST LISTENER CERTIFICATE ANNOUNCED IS THE SERVICE'S, NOT A ROW OF THIS
+TABLE (#264).** `tls-certificate-changed` at restart compares with a
+fingerprint kept in the shared minted store (`tls.listenerAnnounced`), not
+with anything on a membership row. A membership row belongs to a node id that
+a restart replaces, and a receiver sees the service rather than a node.
+Every node's start is therefore announced, because each node has its own
+listener key. `tls/CLAUDE.md` argues it.
+
 Three things the page decides rather than reads:
 
 * **Live and gone are separated**, and the gone fold under a `<details>`. A row

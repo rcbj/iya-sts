@@ -131,15 +131,32 @@ person. A receiver that does not know a type ignores it, as SSF says it should.
 | `signing-key-rotated` | a realm's signing keys rotate (on the schedule, by hand, or in an emergency) | `jwks_uri`, `crypto_metadata_uri` |
 | `federation-key-rotated` | a realm's OpenID Federation entity key rotates (in an emergency, the current and next keys are revoked), or a retired key is revoked | `entity_configuration_uri` |
 | `spiffe-authority-rotated` | a realm's SPIFFE X.509 or JWT authority is rotated, or the certificate hierarchy under it is rebuilt | `bundle_uri`; `bundle_changed` says whether the bundle itself changed |
-| `tls-certificate-changed` | the certificate the main port presents is re-issued (sent to every realm's streams) | `certificate_uri` |
+| `tls-certificate-changed` | the certificate the main port presents is re-issued, or the service (or one node of it) starts presenting a certificate other than the one it last announced (`reason: restarted`). Sent to every realm's streams | `certificate_uri` |
 | `kerberos-tickets-invalidated` | a krbtgt rotation keeps no previous version, so every TGT in the realm is refused: "rotate and invalidate" (`reason: invalidated`), or an ordinary rotation with `krb5.retainedKeyVersions` 0 (`reason: nothing-retained`) | none |
 
 The first four share one shape: `realm`, `rotated` as `<unit> <previous> ->
-<new>`, `reason` (`scheduled`, `requested` or `emergency`), the address above,
-and `event_timestamp`. Each kind of key has its own type so that a receiver
+<new>`, `reason` (`scheduled`, `requested` or `emergency`, and for
+`tls-certificate-changed` also `restarted`), the address above, and
+`event_timestamp`. Each kind of key has its own type so that a receiver
 subscribes only to the keys it pins, and every type it receives means one
 action: fetch that document again. The refresh-token encryption keys are
 never announced, because they are published nowhere.
+
+**The listener's key is made at every start**, so a restart presents a new
+certificate. The service keeps the fingerprint it last announced in its store
+and compares it with the new certificate once the port is bound. If they
+differ, it sends `tls-certificate-changed` with `reason: restarted`, where
+`<previous>` is the certificate it last announced.
+- **Where it works:** only where minted state survives a restart, which is
+  product mode on postgres or a cluster. In `memory` mode, on an `ldif` store
+  and in a single-process development service a restart is not announced.
+  Development builds a new Root at every start anyway.
+- **In a cluster:** the record is the SERVICE's, not a node's. Every node's
+  start is announced, and `<previous>` may be a certificate another node
+  still presents. A receiver behind the balancer should pin the Root, not a
+  leaf.
+- **Never announced:** a self-signed bootstrap certificate or one supplied
+  through `tls.certificateFile`.
 
 **A stream this service deletes is told first.** SSF 1.0 has no event for a
 deleted stream. So when an administrator deletes a stream (on the console or

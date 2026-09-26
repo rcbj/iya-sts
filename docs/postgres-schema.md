@@ -219,7 +219,7 @@ tests):
 | Devices | `devices.events` |
 | OpenID Federation | `oidfed.registerGeneration` |
 | Console statistics and audit | `admin_stats.tokens`, `admin_stats.artifacts`, `admin_stats.revokedArtifacts`, `admin_stats.revokedJtis`, `admin_stats.claimSets`, `admin_stats.users`, `admin_stats.calls`, `admin_stats.nums`, `admin_stats.scimCounts`, `claim_attributes.selections`, `xacml_monitor.counters`, `audit.events`, `audit.nums` |
-| Process-wide | `security.rateLimitBuckets`, `ldap.clusterConnections`, `ldap.clusterSignOuts`, `scheduler.runs`, `signing.history` |
+| Process-wide | `security.rateLimitBuckets`, `ldap.clusterConnections`, `ldap.clusterSignOuts`, `scheduler.runs`, `signing.history`, `tls.listenerAnnounced` |
 
 To list them from a running tree:
 `grep -rhoE "persist: *'[^']+'" --include=*.js --include=*.ts . | sort -u`.

@@ -130,6 +130,16 @@ offered signature schemes by policy.
   re-issued under this service's Root.
 * **A random 128-bit serial**, so a browser that trusted a previous start's
   certificate does not meet `SEC_ERROR_REUSED_ISSUER_AND_SERIAL`.
+* **A new key and certificate at every start, announced over Shared
+  Signals.** The listener's key is made at start, so every restart presents
+  a new leaf, even where the Root survives. A receiver subscribed to
+  `tls-certificate-changed` is told once the port is bound
+  (`reason: restarted`), and whenever the certificate is re-issued while the
+  service runs. The last certificate announced is kept in the store, so this
+  works only where minted state survives a restart (product mode on
+  postgres, a cluster). In a cluster, each node's start is announced, because
+  each node has its own listener key. **Pin the Root, not the leaf.**
+  [Shared Signals](shared-signals.md) has the event.
 
 ### When a browser refuses the certificate
 
