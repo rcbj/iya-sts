@@ -5767,8 +5767,27 @@ certificate. A partnered ML-DSA key has NO certificate of its own, because
 its certificate is its partner's. `certifyKeySet()` certifies a restored
 set's groups.
 
-Phase 3 routes signatures to these keys. Until then they are made and
-certified and sign nothing, which `docs/configuration.md` says.
+**Phase 3: which signature uses them.** `groupSignerFor(useCase, alg)` is
+the one answer. The use case is the certificate-header id that every JOSE
+signing call already passes, so a signature finds its group from what it says
+about itself. `signJwt`, `signingKeyFor(Async)` (and through them `signJwtAs`,
+`signJwtAsAsync`, `signPublishedDocument`) and `vc_status.signerAsync()` all
+ask it first. It answers null outside a `hybrid-groups` realm, for a use with
+no group, for an algorithm outside the set (D6), and while a realm's keys are
+still being made. That last case falls back and is said once, because a
+signature never waits for key generation. `signJwt()` never takes the
+post-quantum branch, which is `ownSignerFor()`'s old rule.
+
+Verification finds group keys whatever the model is NOW, so a realm switched
+back still verifies what it issued. That covers `ownCandidatesFor()`,
+`allVerificationKeys(Async)` and `publicJwkOfKid()`. The XML group is
+excluded from every JOSE list. The JWKS appends the JOSE groups last
+(`groupPublishedJwks()`), so `keys[0]` stays the RSA key: a classical key with
+its hybrid certificate in `x5c`, and a partnered ML-DSA key BARE (D5, RFC 7517
+section 4.7). A token signed with that ML-DSA key gets no `x5c` header either,
+because `headerFor()`'s key check finds that the partner's certificate holds
+another key. Still to come: XML signing with the `xml` group, and rotation
+units for the groups.
 
 ### A LEAF IS ISSUED FOR A PROFILE, AND THE TWO PROFILES' KEY PAIRS ARE TWO (2026-09-11)
 

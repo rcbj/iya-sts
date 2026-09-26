@@ -201,6 +201,47 @@ bearer. `x5u`, the default, does not carry the chain.
 
 CRLs and OCSP responses are still signed classically only.
 
+### Signer groups: a key pair per use, in a chosen set of algorithms
+
+A realm normally signs with **one key per algorithm**: an RSA key, six curve
+keys and eleven post-quantum keys, shared by every kind of JWT. Setting
+`keys.signerModel` to `hybrid-groups` changes that for the realm. Each of five
+**signer groups** gets keys of its own:
+
+| Group | What it signs |
+|---|---|
+| `tokens` | access tokens, ID Tokens, refresh tokens, signed UserInfo, JWT introspection responses, signed discovery metadata |
+| `credentials` | OpenID4VCI credentials and status lists, signed issuer metadata, OpenID4VP request objects |
+| `events` | Security Event Tokens (CAEP, RISC) |
+| `wstrust-gnap` | WS-Trust JWTs, GNAP access tokens |
+| `xml` | SAML, WS-Federation and WS-Trust XML signatures |
+
+Each group has seven key pairs and four certificates:
+
+* an **RSA-3072** key, certified together with an **ML-DSA-65** key
+* a **P-256** key, certified together with an **ML-DSA-44** key
+* a **P-384** key, certified together with an **ML-DSA-87** key
+* an **SLH-DSA-SHA2-128s** key, certified alone
+
+"Certified together" means one hybrid certificate: the classical key in the
+ordinary field and the ML-DSA key in `subjectAltPublicKeyInfo` (see above).
+Every key is still a key pair of its own; what the two share is the
+certificate.
+
+A JWT signed for a group's use takes the group's key for its algorithm. RS256
+and PS256 use the RSA key, ES256 the P-256 key, and ML-DSA-65 the ML-DSA-65
+key. **An algorithm outside the set** (ES512, ES256K, EdDSA, a composite)
+still signs with the per-algorithm key. The keys are made in the background
+when the service starts, or on the first signature after a realm is switched.
+Until they exist, signatures use the per-algorithm keys.
+
+**In the JWKS**, a group's classical key carries its hybrid certificate in
+`x5c`. Its ML-DSA partner is published **without** `x5c`, because RFC 7517
+requires the first certificate to hold the JWK's own key, and this
+certificate's primary key is the classical one. A token signed with that
+ML-DSA key likewise carries no `x5c` header. The SLH-DSA key has a
+certificate of its own and carries it.
+
 ### SPIFFE takes its authority from here now
 
 Two objections to a SPIFFE authority under this service's Root — that a trust

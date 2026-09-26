@@ -250,7 +250,159 @@ async function inProcess(t) {
           'a blob gaining the groups ENRICHES the one without them, and ' +
           'never the reverse — so a sibling process adopts them rather than ' +
           'making its own');
+
+  await whichKeySigns(t, { signerGroups: signerGroups, helpers: helpers,
+                           realms: realms, pki: pki });
   log.debug("Leaving inProcess().");
+}
+
+// ---------------------------------------------------------------------------
+// F. WHICH KEY SIGNS (phase 3) — in the switched realm and the default one.
+// ---------------------------------------------------------------------------
+async function whichKeySigns(t, m) {
+  log.debug("Entering whichKeySigns().");
+  const stsCrypto = require('../common/crypto');
+  t.log.info('=== F. a group use signs with its group key; nothing else ' +
+             'does ===');
+  const realm = m.realms.get(REALM);
+  const kidOf = function (token) {
+    log.debug("Entering kidOf().");
+    log.debug("Leaving kidOf().");
+    return m.helpers.peekJoseHeader(token).kid;
+  };
+  const inRealm = function (fn) {
+    log.debug("Entering inRealm().");
+    log.debug("Leaving inRealm().");
+    return m.realms.run(realm, fn);
+  };
+  const accessToken = inRealm(function () {
+    return m.helpers.signJwt({ sub: 'probe', iss: 'x', aud: 'y' }, null,
+                             { certificateHeader: 'access-token' });
+  });
+  t.check(/^sts-g-tokens-rs256-/.test(kidOf(accessToken)),
+          'an RS256 access token signs with the TOKENS group\'s RSA-3072 ' +
+          'key', kidOf(accessToken));
+  const verified = inRealm(function () {
+    return m.helpers.verifyOwnJws(accessToken, { ignoreExpiration: true });
+  });
+  t.equal(verified && verified.sub, 'probe',
+          'and this service verifies its own group-signed token');
+  const ps = inRealm(function () {
+    return m.helpers.signJwt({ sub: 'probe' }, null,
+                             { certificateHeader: 'id-token',
+                               algorithm: 'PS256' });
+  });
+  t.equal(kidOf(ps), kidOf(accessToken),
+          'PS256 in the same group signs with the same RSA key — one key per ' +
+          'algorithm FAMILY, as the per-algorithm model does');
+  const event = inRealm(function () {
+    return m.helpers.signJwtAs({ sub: 'probe' }, 'ES384', null,
+                               { certificateHeader: 'ssf-set' });
+  });
+  t.check(/^sts-g-events-es384-/.test(kidOf(event)),
+          'an ES384 Security Event Token signs with the EVENTS group\'s ' +
+          'P-384 key — a different group, a different key pair',
+          kidOf(event));
+  const credential = await inRealm(function () {
+    return m.helpers.signJwtAsAsync({ sub: 'probe' }, 'ML-DSA-65', null,
+                                    { certificateHeader: 'vci-credential' });
+  });
+  t.check(/^sts-g-credentials-ml-dsa-65-/.test(kidOf(credential)),
+          'an ML-DSA-65 credential signs with the CREDENTIALS group\'s ' +
+          'ML-DSA-65 key', kidOf(credential));
+  const pqJwk = inRealm(function () {
+    return m.helpers.publicJwkOfKid(kidOf(credential));
+  });
+  let pqOk = false;
+  try {
+    await stsCrypto.verifyCompactJwsAsync(credential, pqJwk,
+                                          { algorithms: ['ML-DSA-65'] });
+    pqOk = true;
+  } catch (e) {
+    log.debug("Caught in whichKeySigns(): " + ((e && e.message) || e));
+    pqOk = false;
+  }
+  t.check(pqOk, 'and it verifies under the key publicJwkOfKid() names');
+  const es512 = inRealm(function () {
+    return m.helpers.signJwtAs({ sub: 'probe' }, 'ES512', null,
+                               { certificateHeader: 'access-token' });
+  });
+  t.check(/^sts-es512-/.test(kidOf(es512)),
+          'ES512 is outside the set, so it signs with the PER-ALGORITHM key ' +
+          '(D6)', kidOf(es512));
+  const ungrouped = inRealm(function () {
+    // certificate-header: none — the probe of a signature that names no use.
+    return m.helpers.signJwt({ sub: 'probe' }, null, {});
+  });
+  t.check(!/^sts-g-/.test(kidOf(ungrouped)),
+          'a signature naming no use case signs with the per-algorithm key');
+  const defaultRealm = m.helpers.signJwt({ sub: 'probe' }, null,
+                                         { certificateHeader: 'access-token' });
+  t.check(!/^sts-g-/.test(kidOf(defaultRealm)),
+          'and the default realm, in the per-algorithm model, is untouched');
+
+  t.log.info('=== G. the JWKS publishes the JOSE groups as D5 says ===');
+  const jwks = inRealm(function () {
+    return m.helpers.groupPublishedJwks(m.helpers.stsKeysFor.of(REALM));
+  });
+  t.equal(jwks.length, 28, 'four JOSE groups of seven keys — the XML ' +
+          'group\'s keys are not JOSE keys and are not published here');
+  const members = m.helpers.stsKeysFor.of(REALM).signerGroups;
+  const byKid = {};
+  members.forEach(function (one) {
+    byKid[one.publicJwk.kid] = one;
+  });
+  const bad = [];
+  jwks.forEach(function (jwk) {
+    const member = byKid[jwk.kid];
+    const partnered = member.kind === 'pq' && !!member.pairedSlot;
+    if (partnered && jwk.x5c) {
+      bad.push(jwk.kid + ': a partnered ML-DSA key carries x5c');
+    }
+    if (!partnered) {
+      if (!jwk.x5c) {
+        bad.push(jwk.kid + ': no x5c');
+        return;
+      }
+      if (member.kind !== 'pq') {
+        const certKey = new nodeCrypto.X509Certificate(
+          Buffer.from(jwk.x5c[0], 'base64')).publicKey
+          .export({ format: 'jwk' });
+        if ((certKey.n || certKey.x) !== (jwk.n || jwk.x)) {
+          bad.push(jwk.kid + ': x5c[0] does not hold this key');
+        }
+      }
+    }
+  });
+  t.equal(bad.join('; '), '',
+          'each classical key carries its hybrid certificate in x5c, whose ' +
+          'subjectPublicKeyInfo IS that key (RFC 7517 section 4.7); a ' +
+          'partnered ML-DSA key is published bare (D5); SLH-DSA carries its ' +
+          'own certificate');
+
+  t.log.info('=== H. an x5c header names the hybrid certificate ===');
+  m.realms.setOverride(REALM, 'oauth2.accessTokenCertificateHeader', 'x5c');
+  const withChain = inRealm(function () {
+    return m.helpers.signJwt({ sub: 'probe' }, null,
+                             { certificateHeader: 'access-token' });
+  });
+  const header = m.helpers.peekJoseHeader(withChain);
+  const certificate = m.pki.certificateFor(REALM, 'jose', 'tokens/RS256');
+  t.check(!!(header.x5c && certificate) &&
+          header.x5c[0] === certificate.certificatePem
+            .replace(/-----[^-]+-----/g, '').replace(/\s+/g, ''),
+          'a group-signed token\'s x5c starts with the tokens group\'s ' +
+          'hybrid RS256 certificate');
+  const pqHeader = m.helpers.peekJoseHeader(await inRealm(function () {
+    return m.helpers.signJwtAsAsync({ sub: 'probe' }, 'ML-DSA-65', null,
+                                    { certificateHeader: 'access-token' });
+  }));
+  t.check(!pqHeader.x5c,
+          'and an ML-DSA-65 token carries NO x5c: its certificate is its ' +
+          'partner\'s, whose first key is not the signing key (RFC 7515 ' +
+          'section 4.1.6)');
+  m.realms.clearOverride(REALM, 'oauth2.accessTokenCertificateHeader');
+  log.debug("Leaving whichKeySigns().");
 }
 
 module.exports = {
