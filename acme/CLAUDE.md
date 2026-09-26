@@ -265,7 +265,28 @@ as failure patterns.
 | `tests/acme_jws.js` | the envelope's refusals one by one, RFC 7638's and RFC 9773's published values, the nonce's proof (another realm, a flipped bit, a version, an expiry at a chosen instant), the EAB's five shapes and a wrong MAC key, identifier values, and the seven stores per realm and purged with it |
 | `tests/acme_protocol.js` | a CHILD PROCESS running the whole stack on a plain-HTTP port, driven by the independent client: every refusal by type, realm isolation at the door, finalize and the chain verified by OpenSSL, revocation (by account, by key, alreadyRevoked), key change and its 409, deactivation, renewal information, the monitor, `acme.enabled`, **product mode refusing plain HTTP** (which the HTTPS job cannot reach), and the console pages through their own handlers — the EAB key answered once on a 200 no-store page and absent from every view |
 | `tests/vendored/sts_acme_enrollment.js` | over HTTPS against the running service: all nine profiles chained to the realm Intermediate and the Root with their EKUs, the UPN equal to the person's mail, an application for itself, OCSP `good` then `revoked`, the serial on `/pki/crl/{realm}/acme.crl` after revokeCert and after the console action, every refusal the brief lists, the expired nonce and the expired EAB key, the throttle, and a product-mode realm over TLS |
+| `tests/vendored/sts_acme_certbot.js` | **EFF's certbot 5.8.0, the real client** (#207): EAB registration and its two refusals, `certonly` with no profile, `--required-profile` and `--preferred-profile`, a profile not offered and an unregistered host refused, `renew --force-renewal` (same names, same profile) and a plain `renew` that renews nothing and consults `renewalInfo`, `revoke --reason keycompromise` onto the CRL, `update_account`, `unregister`, and no WARNING or ERROR in certbot's own DEBUG log |
+| `tests/vendored/sts_acme_lego.js` | **go-acme's lego v5.5.2** (#208): EAB registration, `run --profile`, the default profile, `--not-after`, a profile not offered and an unregistered host refused, `renewalInfo` consulted, `--renew-force`, `accounts keyrollover` and an order under the new key, `certificates revoke --reason 4` onto the CRL, and no `level=WARN`/`ERROR` beyond lego's own back-up-your-keys notice |
 | `tests/vendored/acme_client.js` | the independent client: RFC 8555 flattened JWS signed with node's crypto (RS256, PS256, ES256, ES384, EdDSA), RFC 7638, the EAB MAC, the badNonce retry, key change, RFC 9773's identifier; CSRs through the vendored `x509.js` and a KEM CSR built with pkijs |
+
+## What the two real clients found (#207, #208, 2026-09-24)
+
+* **Every certbot and lego renewal failed** `rejectedIdentifier`: both read a
+  certificate's names back as its CN plus its dNSNames, and the CN was the
+  entry. Fixed in the core (`common/CLAUDE.md` 3ag, *a certificate that names
+  a host*).
+* **Not exercised, by decision**: `http-01`, `dns-01`, `dns-persist-01` and
+  `tls-alpn-01` (the table above), and **certbot's key rollover, which does
+  not exist** — certbot has no RFC 8555 section 7.3.5 command at all; lego
+  drives it.
+* **An order naming no profile gets `acme.defaultProfile`** (`tls-client`), so
+  a bare `certbot certonly` is issued a clientAuth-only certificate for a web
+  server. Documented in `docs/acme.md`; whether host orders should default to
+  `tls-server` is an open question on #207.
+* lego keeps the account key a REFUSED registration generated, and the next
+  `register` in the same `--path` asks for the account by that key
+  (`onlyReturnExisting`) and is answered `accountDoesNotExist` — correct; the
+  job uses a separate path for its refusal.
 
 ## Things that cost real time, and would again
 

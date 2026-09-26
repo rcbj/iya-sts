@@ -7909,6 +7909,18 @@ and all six secret names are in `ldap_server.js`'s `SECRET_ATTRIBUTES`. A
 person's subject DN is added to `x509subject`, which every certificate-to-entry
 lookup here already reads.
 
+**A CERTIFICATE THAT NAMES A HOST HAS THE HOST AS ITS CN AND THE ENTRY AS ITS
+UID (2026-09-24, #207).** `subjectFor()`: the first dNSName (else iPAddress) is
+the common name and the entry's identifier goes in `UID`; a certificate that
+names no host keeps `CN=<entry>`. certbot and lego read a certificate's names
+back as its CN plus its dNSNames, so with `CN=alice` on a certificate for
+`www.alice.test` every renewal asked for `alice` as a host and was refused
+`rejectedIdentifier` — and the CA/Browser Forum's Baseline Requirements 7.1.4.3
+say the same thing. The UID is what keeps the subject DN naming exactly ONE
+entry, since a host may be registered on two and `ldap_server.js`'s
+`locateEntry()` turns a person's subject DN back into an entry.
+`tests/vendored/sts_acme_certbot.js` and `sts_acme_lego.js` renew through it.
+
 **CERTIFICATE AUTHENTICATION CHECKS THREE THINGS AND THE THIRD IS THE
 MAPPING**: `pki.verifyLeaf()` in this realm (another realm's certificate does not
 pass through this Intermediate), `clientAuth`, and a urn:sts: SAN naming an entry

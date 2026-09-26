@@ -1286,6 +1286,11 @@ and carrying them twice is what made this table's own arithmetic wrong.
 | `tests/vendored/sts_acme_enrollment.js` **(ours)** | **ACME (RFC 8555) OVER HTTPS WITH AN INDEPENDENT CLIENT** (2026-09-13), `vendored/acme_client.js`, in a throwaway realm: EAB-bound accounts for a person, an application and — through an administrator's `create-eab` — another person; all nine profiles by identifier type; the chain, the SAN URN, OCSP and revocation; and the negatives — bad and reused nonces, a wrong `url`, `jwk` with `kid`, an EAB reused or with a wrong MAC or from another realm, CSR names that are not the order's, revocation by an unrelated account, and a key change to a key already bound |
 | `tests/vendored/sts_est_enrollment.js` **(ours)** | **EST (RFC 7030) WITH AN INDEPENDENT CLIENT**, `vendored/est_client.js`: every labelled profile, Basic as a person and as an application, re-enrollment with the client certificate a previous enrollment issued (the old one superseded on the CRL), server key generation for an EC key and an ML-KEM template, an administrator naming another person, and the negatives — an unknown user, a wrong password and a wrong secret in a product-mode realm, a certificate from another realm or not enrolled, illegal base64, `fullcmc` and an unknown label |
 | `tests/vendored/sts_scep_enrollment.js` **(ours)** | **SCEP (RFC 8894) WITH AN INDEPENDENT CLIENT**, `vendored/scep_client.js` on node-forge: GetCACaps, GetCACert, PKIOperation over POST and GET for all nine profiles, RenewalReq, CertPoll and the idempotent retry, and the negatives — a wrong, reused, expired or foreign-realm challenge, a URL profile disagreeing with the challenge, a tampered signature, the wrong recipient, an EC requester key, a foreign-realm renewal. Raised watchdog: it waits out a sixty-second challenge |
+| `tests/vendored/sts_acme_certbot.js` **(ours)** | **EFF'S CERTBOT AGAINST THE ACME SERVER** (#207, 2026-09-26), certbot 5.8.0 from the tests image, in a throwaway realm: EAB registration (refused without one and with a wrong MAC), `certonly` with no profile, `--required-profile tls-server`, `--preferred-profile tls-server-client`, `root-ca` and an unregistered host refused, `renew --force-renewal` and a plain `renew` consulting `renewalInfo`, `revoke --reason keycompromise` onto the CRL, `update_account`, `unregister`, the spent EAB key refused — and no WARNING or ERROR in certbot's DEBUG log for any success. Floor of fifteen checks |
+| `tests/vendored/sts_acme_lego.js` **(ours)** | **GO-ACME'S LEGO AGAINST THE ACME SERVER** (#208), lego v5.5.2, in a throwaway realm: EAB registration, `run --profile tls-server` with the authorization already valid, the default profile, `--not-after`, `root-ca` and an unregistered host refused, `renewalInfo` then `--renew-force`, `accounts keyrollover` and an order under the new key, `certificates revoke --reason 4` onto the CRL; no `level=WARN`/`ERROR` but lego's back-up-your-keys notice |
+| `tests/vendored/sts_est_libest.js` **(ours)** | **CISCO'S LIBEST ESTCLIENT AGAINST THE EST SERVER** (#209), at a464ba8, in the DEFAULT realm with people of its own (an EST client can name no other realm): bootstrap from the Root then `/cacerts` as the anchors, csrattrs, enroll by Basic, by certificate and with an openssl CSR for a host, `-z`, re-enroll and the superseded certificate refused, serverkeygen with the key matching, and eight refusals (password in product only). Three client lines accepted by name, argued in the file |
+| `tests/vendored/sts_scep_sscep.js` **(ours)** | **SSCEP AGAINST THE SCEP SERVER** (#210), at cb3e539, over the plain-HTTP listener, in two throwaway realms: GetCACaps, GetCACert, the `/admin-api` hint run literally, a portal-made challenge, `-R`, GetCert, GetCRL, the historical renewal onto the CRL, and the refusals (reused, unknown, another realm's RA, 3DES, SHA-1) |
+| `tests/vendored/sts_scep_micromdm.js` **(ours)** | **MICROMDM'S SCEPCLIENT AGAINST THE SCEP SERVER** (#211), v2.3.0: its transport over HTTPS and plain HTTP, three recipient selections, and the `badAlg` its fixed SHA-1/DES draws — it cannot be issued a certificate here, by design (`scep/CLAUDE.md`) — which spends no challenge |
 | `tests/vendored/sts_portal_certificates.js` **(ours)** | **`/portal/certificates` WITH TWO SIGNED-IN BROWSERS** (2026-09-13): an ACME binding key and a SCEP challenge made for the signed-in person whatever the body names and shown once; a refused profile; no CSRF token; the other person's key not deletable and their EST certificate not revocable — each answered as not found and still on the other person's own page; revoking one's own; ACME turned off hiding the card and refusing the door. Both ownership checks mutation-tested through a hook preloaded into the throwaway service |
 | `tests/vendored/sts_oauth21.js` **(ours)** | **OAUTH 2.1 MODE AT THE REAL ENDPOINTS** (2026-09-13), in two throwaway realms — one in OAuth 2.1 mode, one in RFC 9700 mode beside it. **The section to read first is a POSITIVE**: a public client with PKCE and NO `redirect_uri` at the token endpoint gets a token in the 2.1 realm and the SAME request is refused `invalid_grant` in the RFC 9700 realm, which is what makes the acceptance the mode rather than a service that stopped checking. Then the authorization request's `redirect_uri` defaulted to the one registered (and refused with two), an unregistered client refused ON THE SERVER with nothing redirected, PKCE refused for a confidential client (as a PAGE, because RFC 9700's authenticate-before-redirect applies before sign-in) and the nonce exemption issuing, refusing redemption without client authentication and without `redirect_uri`, and redeeming with both; the token endpoint refusing a client that declares nothing (asserted on a REFRESH, because client_credentials is refused by section 4.2 first and cannot show which rule answered — a mutant removing the declaration check survived until then), a public client's client_credentials and its presented secret, two methods, a repeated parameter, SAML client authentication (by the metadata that stops advertising it), and a client assertion addressed to the token endpoint while one to the issuer alone is accepted; three wrong secrets then a 429 that the right secret does not open while another client is unaffected; and registration's two mirrors. Six service mutants through a require hook preloaded into the throwaway service, all caught |
 | `tests/vendored/sts_consent.js` **(ours)** | **THE CONSENT SCREEN, AND THE OVERRIDE THAT MAKES IT NOT APPEAR.** Mostly negatives, for `sts_dpop.js`'s reason: a screen that draws, takes an Allow and hands over a code looks finished and can be worth nothing. What it asserts is that a GET of the screen records NOTHING (or anything that prefetches a link has consented for somebody), that a consent id is spendable ONCE, that a consent asked of one person cannot be drawn OR answered by another's session and that every one of those refusals leaves the pending record answerable by the person it belongs to, that Deny records nothing and the refused scope is asked again, that a second request is silent and a new scope asks about ITSELF ALONE, that `prompt=none` answers `consent_required` and `prompt=consent` asks again without destroying what was already agreed. **And the half that is not drivable from the parent's suite and is why this file is here**: a delegated permission consented globally on an application's entry stops a person who has never been here being asked — with NOTHING written about them — while a second application asking for the same permission is still asked, and removing the override asks everybody again including the people it was covering |
@@ -1738,6 +1743,49 @@ the tests image, where the directory is already there.
 
 **A new document type in these four families owes a scenario here** in the
 change that adds it.
+
+## THE CERTIFICATE ENROLLMENT CLIENTS (#207-#211, 2026-09-26)
+
+No official conformance suite exists for ACME, EST or SCEP, so the strongest
+independent check of each server is the client its operators run. Five of
+them drive the service from five `local: true` jobs (the table above):
+
+| Client | Pinned at | Licence | Built |
+|---|---|---|---|
+| certbot (EFF) | 5.8.0 | Apache-2.0 | pip into a venv in the runner, every package hash-pinned in `tests/tools/certbot-requirements.txt` (`--require-hashes --no-deps`) |
+| lego (go-acme) | v5.5.2 | MIT | `go install` in the `enroll-go` stage, checked against sum.golang.org (its `--version` says v5.6.1+dev-release: upstream's generated constant, not the module) |
+| scepclient (micromdm/scep) | v2.3.0 | MIT | the same stage (`-version` says "unknown": `go install` stamps none) |
+| estclient (cisco/libest) | a464ba8 (`main`, 2022-09-22) | BSD-3-Clause | the `enroll-c` stage, statically against OpenSSL 1.1.1w (it does not build on OpenSSL 3), both archives sha256-checked |
+| sscep (certnanny) | cb3e539 (`master`, 2024-08-14) | BSD-style | the same stage, against the base's OpenSSL 3, sha256-checked (v0.10.0 cannot GetCert from a CA with a separate RA) |
+
+**IN THE TESTS IMAGE, NOT A COMPOSE PROFILE — and that is the argument.** Each
+client is a command line a job runs and whose files it reads: a second
+container would need a way to be told what to run and to hand the files back,
+which is a server of our own in front of the real client. So they are built in
+two stages of `tests/Dockerfile` (compilers, OpenSSL 1.1 and the Go toolchain
+stay out of the runner) and copied in with their licences
+(`/opt/enroll-clients/licenses`), above the source copy so an edited job
+rebuilds nothing. Nothing is vendored and no key material exists before a run:
+every key, CSR and account is made by the job or the client at run time. The
+cost is about five minutes on a cold tests-image build.
+
+**Every local mode runs them**; nothing is wired into `./run-tests.sh` beyond
+the jobs themselves, because there is no second container to start. The shared
+plumbing — the management API, a trust-bundle FILE for a client that is not
+node, an ASYNCHRONOUS bounded runner (spawnSync blocked the event loop while
+the service closed the job's keep-alive connection, and the next fetch failed
+"other side closed"), the portal sign-in under a realm, the CRL reader — is
+`tests/vendored/enroll_clients_kit.js`.
+
+**Each job checks the client's own output**: a successful command may log no
+warning and no error, and the few lines a client prints about itself are
+accepted by name, each argued in the job's header. What the clients found in
+the service, and the exceptions, are in `acme/CLAUDE.md`, `est/CLAUDE.md` and
+`scep/CLAUDE.md`, *What the real clients found*, and on the tickets.
+
+**By hand**, inside the tests image on the stack's network: the job with the
+usual `WSTRUST_STS_URL`, `OID4VCI_ISSUER_URL`, `NODE_EXTRA_CA_CERTS`, the
+admin token and the preload — the clients themselves are on the PATH.
 
 ## THREE CI-ONLY FAILURES, AND WHAT EACH ONE TEACHES (2026-08-30, 2026-09-10)
 
