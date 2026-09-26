@@ -634,7 +634,12 @@ class SsfTransmitters {
     const rounds = Math.max(1, this.setting('ssf.foreignPollMaxRounds'));
     for (let i = 0; i < rounds + 1; i++) {
       const last = i === rounds;
-      const asked: Json = { returnImmediately: true,
+      // `stream_id` too: RFC 8936 has no such member because a poll URL is
+      // per stream, but a transmitter publishing ONE poll URL for every
+      // stream (this service's own does) needs it, and one that does not
+      // ignores a member it does not know.
+      const asked: Json = { returnImmediately: true, stream_id:
+        record.streamId,
         maxEvents: last ? 0 : this.setting('ssf.foreignPollMaxEvents') };
       if (ack.length) {
         asked.ack = ack;
