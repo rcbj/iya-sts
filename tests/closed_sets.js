@@ -86,6 +86,10 @@ function unitRules(t) {
     return /^either/.test(g);
   }), 'collect() leaves an enum inside oneOf to ajv', got.join(', '));
   t.check(got.length < 40, 'a $ref cycle ends', got.length + ' rows');
+  const marked = closedSets.collect({ type: 'object', properties: {
+    field: { type: 'string', enum: ['a'], 'x-refused-by-handler': true } } });
+  t.equal(marked.length, 0, 'an enum marked x-refused-by-handler is left ' +
+          'to its handler (published, not collected)');
 
   const P = '/admin/probe86';
   closedSets.registerConsole(P, 'save', closedSets.collect(schema,

@@ -671,9 +671,10 @@ async function theReadsAgreeWithTheConsole(session) {
     "family and kind are ANDed, so a kind from another family should match " +
     "nothing; got " + contradiction.matched);
   const unknownFamily = await common.httpJson(api + "/tokens?family=kerberos");
+  const unknownSaid = ((unknownFamily.body && unknownFamily.body.errors) ||
+                       []).join(" ");
   assert.ok(unknownFamily.status === 400 &&
-            /"family" is "kerberos", which is not one of/.test(
-              String(unknownFamily.raw)),
+            /"family" is "kerberos", which is not one of/.test(unknownSaid),
     "a family that is not one of the four is refused by name (#86); got " +
     unknownFamily.status + " " + String(unknownFamily.raw).slice(0, 200));
 

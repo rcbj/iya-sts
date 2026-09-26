@@ -1849,6 +1849,15 @@ federation `set` `value` (its set depends on `field` — `federation.update()`
 holds a row's own `enum` instead, `STS-FED-0150`); and filters that are read
 off the data (`protocol`, `origin` on the directory, the logout `family`).
 
+**ONE MARKER KEEPS AN ENUM PUBLISHED AND LEAVES IT TO THE HANDLER**:
+`x-refused-by-handler: true` on the property (`REFUSED_BY_HANDLER` in
+`admin_api.ts`, honoured by `closed_sets.ts` and both tests). One property
+carries it: `spiffe/entries/update`'s `field`, whose handler refuses a field
+that records what HAPPENED differently from one that does not exist, and
+`sts_admin_api_operations.js` asserts which a caller met. It is not a way to
+switch the check off where a handler also refuses — nearly every handler does;
+a use needs a refusal the validator cannot say.
+
 **THE PKI PANE IS THE ONE CONSOLE FORM THE REGISTER CANNOT HOLD**: it posts no
 `action` (the pressed button is the action) and its API schema takes any
 member. `PkiAuthoring.closedFieldProblem()` holds its five closed fields

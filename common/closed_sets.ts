@@ -142,7 +142,10 @@ class ClosedSets {
       log.debug("Leaving ClosedSets.walk(). Followed " + node.$ref + ".");
       return;
     }
-    if (Array.isArray(node.enum) && path.length) {
+    // `x-refused-by-handler` keeps an enum in the document and out of every
+    // door's check: `mgmt-api/admin_api.ts`'s REFUSED_BY_HANDLER argues it.
+    if (Array.isArray(node.enum) && path.length &&
+        node['x-refused-by-handler'] !== true) {
       out.push({ path: path.slice(), values: node.enum.slice() });
     }
     if (Array.isArray(node.allOf)) {
@@ -322,6 +325,9 @@ class ClosedSets {
     });
     for (let i = 0; i < declared.length; i++) {
       const p = declared[i];
+      if (p.schema['x-refused-by-handler'] === true) {
+        continue;
+      }
       const values = Array.isArray(p.schema.enum) ? p.schema.enum :
                      (p.schema.items && Array.isArray(p.schema.items.enum)
                        ? p.schema.items.enum : null);

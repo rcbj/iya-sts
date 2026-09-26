@@ -151,7 +151,10 @@ function enumsOf(schema, components, path, out, depth) {
     log.debug("Leaving enumsOf().");
     return out;
   }
-  if (Array.isArray(schema.enum) && path.length) {
+  // `x-refused-by-handler` marks an enum the document publishes and the
+  // handler, not the validator, refuses (`mgmt-api/admin_api.ts`).
+  if (Array.isArray(schema.enum) && path.length &&
+      schema["x-refused-by-handler"] !== true) {
     out.push({ path: path.slice(), values: schema.enum.slice(),
                type: schema.type });
   }
@@ -344,6 +347,7 @@ async function theQueries(doc) {
   for (const row of doc.ops) {
     const params = (row.op.parameters || []).filter(function (p) {
       return p && p.in === "query" && p.schema &&
+             p.schema["x-refused-by-handler"] !== true &&
              (Array.isArray(p.schema.enum) ||
               (p.schema.items && Array.isArray(p.schema.items.enum)));
     });

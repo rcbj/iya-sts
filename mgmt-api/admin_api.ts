@@ -391,6 +391,23 @@ addFormats(ajv);
 // ---------------------------------------------------------------------------
 const NOT_ENFORCED_HERE = ['required'];
 
+// ---------------------------------------------------------------------------
+// THE ONE EXCEPTION TO ENFORCING AN ENUM, AND IT IS MARKED WHERE IT APPLIES.
+//
+// A property carrying `x-refused-by-handler: true` keeps its `enum` in the
+// published document and is NOT held to it here, by the console register or
+// by the query check (`common/closed_sets.ts` skips it too). It is for a
+// handler whose refusal of a value outside the set says something the
+// validator cannot: `spiffe/entries/update`'s `field` refuses a field that
+// records what HAPPENED differently from one that does not exist, and
+// `sts_admin_api_operations.js` asserts the difference, because a caller
+// fixing a request has to know which of the two it met. The marker is a
+// vendor extension (OpenAPI's `x-`), so the document says out loud which
+// sets are the handler's to refuse. A new use needs that argument made for
+// it — "the handler refuses it too" is not one; nearly every handler does.
+// ---------------------------------------------------------------------------
+const REFUSED_BY_HANDLER = 'x-refused-by-handler';
+
 // What `AdminApi` needs from the rest of the service: the modules this file
 // used to reach for itself, passed in so that the composition root can build
 // one and a test can build one with stubs.
@@ -582,6 +599,10 @@ class AdminApi {
     const out: any = {};
     Object.keys(node).forEach(function (key) {
       if (NOT_ENFORCED_HERE.indexOf(key) >= 0) {
+        return;
+      }
+      if (key === 'enum' && node[REFUSED_BY_HANDLER] === true) {
+        // The handler refuses this one, in words of its own.
         return;
       }
       if (key === 'enum' && Array.isArray(node.enum)) {
@@ -17746,6 +17767,11 @@ class AdminApi {
                                 'federatesWith', 'x509SvidTtl', 'jwtSvidTtl',
                                 'hint', 'expiresAt', 'admin', 'downstream',
                                 'storeSvid'],
+                         // The handler tells a field that records what
+                         // HAPPENED from one that does not exist, and a
+                         // caller needs to know which (#86, see
+                         // REFUSED_BY_HANDLER).
+                         'x-refused-by-handler': true,
                          description: 'Which field. Anything else is refused ' +
                                       'naming these.' },
                 value: { type: 'string',
