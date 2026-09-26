@@ -168,6 +168,9 @@ interface ClaimAttributesDeps {
     CLAIM_SETS: Record<string, { label?: string }>;
     DEFAULT_SAML11_NAMESPACE: string;
     setAttributeResolver(hooks: unknown): void;
+    // CAEP token-claims-change to the holders of what the set shapes (#238).
+    // Optional, so a test supplying the rest need not supply it.
+    announceClaimsReshaped?(change: Record<string, unknown>): void;
   };
   vcClaims: {
     subjectClaimsFor(name: unknown, tokenClaims?: any,
@@ -535,10 +538,38 @@ class ClaimAttributes {
              '. Removed: ' + (removed.join(', ') || 'nothing') + '.');
     this.recordChange(id, how || 'select', added, removed, now.length, true,
                       []);
+    this.announce(id, added.concat(removed));
     log.debug("Leaving ClaimAttributes.setSelection(). " + now.length +
               " attribute(s) selected.");
     return { ok: true, set: id, attributes: now, added: added,
              removed: removed };
+  }
+
+  // THE CLAIMS AN ATTRIBUTE SELECTED OR DROPPED MOVED, for every holder of a
+  // live artifact of the set (#238): named as the set names them — the
+  // top-level claim in a JWT set (a nested one is sent whole, as `address`),
+  // the dotted path in a SAML set (samlAttributesFor()).
+  private announce(setId: string, attributes: string[]): void {
+    const { log, stats } = this.deps;
+    log.debug("Entering ClaimAttributes.announce().");
+    if (!attributes.length ||
+        typeof stats.announceClaimsReshaped !== 'function') {
+      log.debug("Leaving ClaimAttributes.announce(). Nothing to say.");
+      return;
+    }
+    const saml = setId === 'saml2' || setId === 'saml11';
+    const names: string[] = [];
+    attributes.forEach(function (ldapName) {
+      const row = BY_LDAP.get(String(ldapName).toLowerCase());
+      const name = row ? (saml ? row.claim.join('.') : row.claim[0]) : '';
+      if (name && names.indexOf(name) < 0) {
+        names.push(name);
+      }
+    });
+    stats.announceClaimsReshaped({ sets: [setId], names: names,
+      why: 'The ' + this.labelOf(setId) + ' set changed which directory ' +
+           'attributes it carries (' + attributes.join(', ') + ')' });
+    log.debug("Leaving ClaimAttributes.announce().");
   }
 
   selectAll(setId: unknown): SelectionResult {

@@ -3025,6 +3025,11 @@ function setClaimSet(id, entries) {
     return errorCodes.mark({ ok: false, errors: errors }, code);
   }
   const beforeNames = set.claims.map(function (claim) { return claim.name; });
+  // A claim kept under its name with a different value moved too (#238).
+  const beforeValues = {};
+  set.claims.forEach(function (claim) {
+    beforeValues[claim.name] = JSON.stringify(claim);
+  });
   const afterNames = cleaned.map(function (claim) { return claim.name; });
   const added = afterNames.filter(function (name) {
     return beforeNames.indexOf(name) < 0;
@@ -3051,6 +3056,16 @@ function setClaimSet(id, entries) {
       'custom claim(s): ' +
            (afterNames.join(', ') || '(none)'));
   recordClaimSetChange(id, set, added, removed, cleaned.length, true, []);
+  const moved = added.concat(removed, cleaned.filter(function (claim) {
+    return beforeValues[claim.name] !== undefined &&
+           beforeValues[claim.name] !== JSON.stringify(claim);
+  }).map(function (claim) {
+    return claim.name;
+  }));
+  if (moved.length) {
+    announceClaimsReshaped({ sets: [id], names: moved,
+      why: 'The ' + set.label + ' claim set changed ' + moved.join(', ') });
+  }
   log.debug("Leaving setClaimSet(). Installed " + cleaned.length +
             " claim(s).");
   return { ok: true, errors: [], claims: cleaned };
@@ -3480,6 +3495,74 @@ function claimValuesFor(setId, record, names) {
             " claim(s).");
   return out;
 }
+
+// EVERY CLAIM NAME `setId` WOULD CARRY for `username` with no audience — so
+// with no federation release policy applied, which releaseFilterFor() finds
+// only by a client or an audience. The candidates a release list can
+// withhold (#238, `federation/federation.js`).
+function claimNamesFor(setId, username) {
+  log.debug("Entering claimNamesFor(). set=" + setId);
+  const context = { username: String(username || ''),
+                    subject: String(username || '') };
+  const out = (setId === 'saml2' || setId === 'saml11')
+    ? samlAttributes(setId, context).map(function (attribute) {
+      return attribute.name;
+    })
+    : Object.keys(jwtClaims(setId, context));
+  log.debug("Leaving claimNamesFor(). " + out.length + " name(s).");
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// THE CLAIM SETS WERE RESHAPED (#238): CAEP token-claims-change to every
+// person holding a live artifact built from one of `sets` (and, where given,
+// that `match` accepts — a release list's application), naming `names` — an
+// array, or a function of the holder where they differ per holder — with the
+// values that artifact would carry now (claimValuesFor()). The doors are
+// setClaimSet() below, `claim_attributes.ts`'s setSelection(), a claim
+// setting written through `config.js`, and a federation release list. The
+// UserInfo set moves no issued claim: it is re-read on every call, and no
+// artifact is listed under it.
+//
+// Through `ssf/account_signals.ts`'s claimsFanOut(), LAZILY required — it is
+// SSF's library, and this module is loaded long before — which walks the
+// holders in slices after this call has returned, and never throws.
+// ---------------------------------------------------------------------------
+function announceClaimsReshaped(change) {
+  log.debug("Entering announceClaimsReshaped().");
+  const asked = change || {};
+  const sets = Array.isArray(asked.sets) ? asked.sets : [];
+  if (!sets.length) {
+    log.debug("Leaving announceClaimsReshaped(). No set.");
+    return;
+  }
+  try {
+    require('../ssf/account_signals').claimsFanOut({
+      protocol: String(asked.protocol || 'Claim configuration'),
+      initiatingEntity: 'admin',
+      reasonAdmin: String(asked.why || 'The claim configuration changed'),
+      reasonUser: 'How information about you is put into tokens changed, ' +
+                  'and tokens already issued to you carry the old form.',
+      match: function (token) {
+        return sets.indexOf(token.setId) >= 0 &&
+               (typeof asked.match !== 'function' || asked.match(token));
+      },
+      claimsFor: function (bearer) {
+        const names = typeof asked.names === 'function'
+          ? asked.names(bearer) : asked.names;
+        return names && names.length
+          ? claimValuesFor(bearer.setId, bearer.record, names) : null;
+      } });
+  } catch (e) {
+    log.warn('admin: a token-claims-change for "' + String(asked.why || '') +
+             '" could not be started: ' + ((e && e.message) || e));
+  }
+  log.debug("Leaving announceClaimsReshaped().");
+}
+
+// The four sets an issued artifact is built from, which every claim setting
+// shapes.
+const ISSUED_CLAIM_SETS = ['access_token', 'id_token', 'saml2', 'saml11'];
 
 // FOUR ANSWERS FOR AN ARTIFACT SINCE 2026-09-05, AND THE FOURTH REVERSED A
 // DOCUMENTED DECISION.
@@ -4683,6 +4766,9 @@ module.exports = {
   // configuration change shaped, and what its claims would say now.
   liveClaimBearers: liveClaimBearers,
   claimValuesFor: claimValuesFor,
+  claimNamesFor: claimNamesFor,
+  announceClaimsReshaped: announceClaimsReshaped,
+  ISSUED_CLAIM_SETS: ISSUED_CLAIM_SETS,
   artifactList: artifactList,
   issuedList: issuedList,
   issuedSets: issuedSets,
