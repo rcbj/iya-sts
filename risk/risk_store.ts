@@ -1256,7 +1256,9 @@ class RiskStore {
     return Promise.resolve(true);
   }
 
-  listSubjects(realm: string, opts: Json, sealing: boolean): Promise<Json[]> {
+  // A page of the realm's people by current standing, with the count of
+  // them all (`{ total, rows }`, as `listAssessments()` answers).
+  listSubjects(realm: string, opts: Json, sealing: boolean): Promise<Json> {
     const { log } = this.deps;
     log.debug("Entering RiskStore.listSubjects().");
     if (this.failuresInDatabase(sealing)) {
@@ -1269,10 +1271,14 @@ class RiskStore {
         out.push(Object.assign({}, row));
       });
     out.sort(function (a: Json, b: Json): number {
-      return (b.score - a.score) || (b.updatedAt - a.updatedAt);
+      return (b.score - a.score) || (b.updatedAt - a.updatedAt) ||
+        (a.subject < b.subject ? -1 : a.subject > b.subject ? 1 : 0);
     });
+    const offset = Number((opts || {}).offset) || 0;
+    const limit = Number((opts || {}).limit) || 50;
     log.debug("Leaving RiskStore.listSubjects(). Memory.");
-    return Promise.resolve(out.slice(0, Number((opts || {}).limit) || 50));
+    return Promise.resolve({ total: out.length,
+                             rows: out.slice(offset, offset + limit) });
   }
 
   upsertSessionContext(c: Json, sealing: boolean): Promise<boolean> {

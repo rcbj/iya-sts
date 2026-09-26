@@ -2764,6 +2764,28 @@ const CODES = [
     spec: 'invalid_grant at the grant, invalid_client at client ' +
       'authentication; the console\'s error list for an upload' },
   { code: 'STS-PKI-0200',
+    summary: 'A certificate authority build named an alternative key ' +
+      'algorithm (pki.alternativeKeyAlgorithm, or altKeyAlg on the form) ' +
+      'that is not a pure post-quantum signature algorithm this service ' +
+      'generates, nor "none" (#68).',
+    spec: 'console: the page\'s error list; /admin-api: HTTP 400 ' +
+      '{ ok: false, errors }' },
+  { code: 'STS-PKI-0201',
+    summary: 'A certificate carries an ITU-T X.509 clause 9.8 alternative ' +
+      'signature that does not verify under its issuer\'s alternative key ' +
+      '(any path: this realm\'s own, an uploaded chain, a registered root), ' +
+      'or — on a path to this realm\'s own hierarchy — cannot be checked ' +
+      '(#68).',
+    spec: 'the verifier\'s refusal: whatever the certificate was presented ' +
+      'for is refused as an untrusted certificate' },
+  { code: 'STS-PKI-0202',
+    summary: 'A certificate on a path to this realm\'s own hierarchy carries ' +
+      'no alternative signature although its issuer holds an alternative ' +
+      '(post-quantum) key — a hybrid path presented as classical, the ' +
+      'downgrade #68 refuses.',
+    spec: 'the verifier\'s refusal: whatever the certificate was presented ' +
+      'for is refused as an untrusted certificate' },
+  { code: 'STS-PKI-0203',
     summary: 'A Certificate & Key Configuration pane field that takes a ' +
       'closed set (pki_profile, pki_pq_mode, pki_key_alg, pki_alt_key_alg, ' +
       'pki_ks_format) held a value outside it (#86).',
@@ -12015,6 +12037,14 @@ const CODES = [
       'confirm it with the person.',
     spec: 'the set-up step; recorded on the audit row and logged as a ' +
       'warning' },
+  { code: 'STS-RISK-0040',
+    summary: 'The install-time dataset loader (risk/risk_install.ts) could ' +
+      'not make the database connection the way the service makes it ' +
+      '(#213): persistence.databasePasswordProvider names a secret store ' +
+      'whose password could not be read, or persistence.databaseUrl is not ' +
+      'a URL it can be put into. The provider\'s own reason follows. ' +
+      'Nothing is imported and the loader exits non-zero.',
+    spec: '' },
   // ===== MAIL ==============================================================
   { code: 'STS-MAIL-0001',
     summary: 'A message was not queued because no mail transport is ' +

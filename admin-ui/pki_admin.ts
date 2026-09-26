@@ -1345,6 +1345,8 @@ class PkiAdmin {
         keyAlg: String(body.keyAlg || '').trim() ||
                 config.value('pki.keyAlgorithm'),
         signatureAlg: String(body.signatureAlg || '').trim(),
+        // Empty is the setting, read by `pki.js`'s algorithmsFrom() (#68).
+        altKeyAlg: String(body.altKeyAlg || '').trim() || undefined,
         organisation: String(body.organisation || '').trim() ||
                       config.value('pki.organisation'),
         country: String(body.country || '').trim(),
@@ -1761,6 +1763,7 @@ class PkiAdmin {
     if (action === 'build-root') {
       const built = await pki.buildRoot({
         keyAlg: String(body.keyAlg || '').trim() || undefined,
+        altKeyAlg: String(body.altKeyAlg || '').trim() || undefined,
         commonName: String(body.commonName || '').trim() || undefined,
         organisation: config.value('pki.organisation'),
         years: Number(body.years) > 0 ? Number(body.years) : undefined
@@ -1792,6 +1795,7 @@ class PkiAdmin {
       const scope = self.scopeFrom(body);
       const built = await pki.buildScope(scope, {
         keyAlg: String(body.keyAlg || '').trim() || undefined,
+        altKeyAlg: String(body.altKeyAlg || '').trim() || undefined,
         organisation: config.value('pki.organisation'),
         replaceImported: !!body.replaceImported
       });
@@ -2154,6 +2158,7 @@ class PkiAdmin {
   // THE PAGE.
   // ---------------------------------------------------------------------------
   private chainTable(chain: Json) {
+    const self = this;
     const { log, certificateDialog, pqcBadge, admin, esc } = this.deps;
     log.debug('Entering PkiAdmin.chainTable().');
     if (!chain) {
@@ -2170,7 +2175,8 @@ class PkiAdmin {
         '<td><code>' + esc(tier.keyAlg) + '</code> / <code>' +
           esc(tier.signatureAlg) + '</code>' +
           pqcBadge.badgeFor({ certificatePem: tier.certificatePem,
-                              algorithms: [tier.keyAlg] }) + '</td>' +
+                              algorithms: [tier.keyAlg] }) +
+          self.alternativeNote(tier) + '</td>' +
         '<td><code>' + esc(tier.thumbprint.slice(0, 16)) +
         '&hellip;</code><br>' +
         certificateDialog.link('/admin/pki', tier.thumbprint, 'pki-chain') +
@@ -2213,6 +2219,48 @@ class PkiAdmin {
         (one.id === selected ? ' selected' : '') + '>' + esc(one.label) +
         '</option>';
     }).join('');
+  }
+
+  // The alternative (post-quantum) key a tier holds beside its classical one
+  // (#68, ITU-T X.509 clause 9.8). One labelled select, drawn on all three
+  // build forms, so the console offers what `altKeyAlg` on the three
+  // `/admin-api/pki` actions takes (rule 7).
+  private alternativeField(json: Json, selected: Json) {
+    const { log, esc, admin } = this.deps;
+    log.debug("Entering PkiAdmin.alternativeField().");
+    const chosen = String(selected || '') ||
+                   String(this.deps.config.value('pki.alternativeKeyAlgorithm'));
+    const options = (json.alternativeKeyAlgorithms || []).map(function (id) {
+      return '<option value="' + esc(id) + '"' +
+        (id === chosen ? ' selected' : '') + '>' +
+        esc(id === 'none' ? 'none (classical only)' : id.toUpperCase()) +
+        '</option>';
+    }).join('');
+    log.debug("Leaving PkiAdmin.alternativeField().");
+    return '<label' + admin.tip('The post-quantum key each authority holds ' +
+      'beside its classical one, in the alternative-key extensions of ' +
+      'ITU-T X.509 (2019) clause 9.8. Every certificate the authority ' +
+      'issues is then signed twice, and this service refuses one whose ' +
+      'second signature is wrong or missing. "none" builds a classical-only ' +
+      'authority, which a quantum-capable attacker can forge.') +
+      '>Alternative key <select name="altKeyAlg">' + options +
+      '</select></label> ';
+  }
+
+  // A tier's hybrid half (#68), under its classical algorithms: the key it
+  // holds and the algorithm its own alternative signature was made with.
+  private alternativeNote(tier: Json) {
+    const { log, esc } = this.deps;
+    log.debug("Entering PkiAdmin.alternativeNote().");
+    if (!tier || !tier.altKeyAlg) {
+      log.debug("Leaving PkiAdmin.alternativeNote(). Classical.");
+      return '';
+    }
+    log.debug("Leaving PkiAdmin.alternativeNote().");
+    return '<br><small>alt <code>' + esc(tier.altKeyAlg) + '</code>' +
+      (tier.altSignatureAlg
+        ? ' / signed <code>' + esc(tier.altSignatureAlg) + '</code>'
+        : ' / no alternative signature') + '</small>';
   }
 
   private signatureOptions(json: Json, keyAlg: Json) {
@@ -3292,6 +3340,7 @@ class PkiAdmin {
   // exactly as well and a reader can select text out of.
   // ===========================================================================
   private tierRow(tier: Json, depth: Json, extra?: Json) {
+    const self = this;
     const { log, certificateDialog, pqcBadge, esc } = this.deps;
     log.debug("Entering PkiAdmin.tierRow().");
     if (!tier) {
@@ -3311,7 +3360,8 @@ class PkiAdmin {
       '<td><code>' + esc(tier.keyAlg) + '</code> / <code>' +
         esc(tier.signatureAlg) + '</code>' +
         pqcBadge.badgeFor({ certificatePem: tier.certificatePem,
-                            algorithms: [tier.keyAlg] }) + '</td>' +
+                            algorithms: [tier.keyAlg] }) +
+        self.alternativeNote(tier) + '</td>' +
       '<td><code>' + esc(String(tier.thumbprint).slice(0, 16)) +
       '&hellip;</code><br>' +
       certificateDialog.link('/admin/pki', tier.thumbprint, 'pki-tree') +
@@ -3414,6 +3464,7 @@ class PkiAdmin {
       self.algorithmOptions(json, scope.keyAlg ||
                             config.value('pki.keyAlgorithm')) +
                             '</select></label> ' +
+      self.alternativeField(json, scope.altKeyAlg) +
       '<button type="submit"' +
       admin.tip('Replace this branch: a new Intermediate CA and a new ' +
                 'Issuing CA for every use case under it. The Root is NOT ' +
@@ -3537,6 +3588,9 @@ class PkiAdmin {
       self.algorithmOptions(json, (tree.root && tree.root.keyAlg) ||
                             config.value('pki.keyAlgorithm')) +
                             '</select></label> ' +
+      self.alternativeField(json, tree.root &&
+                            (tree.root.altKeyAlg ||
+                             (tree.rootBuilt ? 'none' : ''))) +
       '<label>Common name <input name="commonName" placeholder="' +
       esc(config.value('pki.organisation')) + ' Root CA"></label> ' +
       '<label>Years <input name="years" size="4" placeholder="20"></label> ' +
@@ -4096,6 +4150,7 @@ class PkiAdmin {
         self.algorithmOptions(json, keyAlg) + '</select></label> ' +
       '<label>Signature algorithm <select name="signatureAlg">' +
         self.signatureOptions(json, keyAlg) + '</select></label> ' +
+      self.alternativeField(json, '') +
       '<label>Organisation (O=) <input name="organisation" value="' +
         esc(config.value('pki.organisation')) + '"></label> <label>Country ' +
       '(C=) <input name="country" size="4" ' +

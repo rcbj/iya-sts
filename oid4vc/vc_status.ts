@@ -353,12 +353,15 @@ class VcStatus {
     log.debug("Entering VcStatus.signerAsync().");
     const alg = String(config.value('oid4vci.credentialSigningAlgorithm') ||
                        'RS256');
-    if (alg === 'RS256') {
+    // THE CREDENTIALS GROUP'S KEY in a hybrid-groups realm (#68) — the list
+    // and the credentials it describes are both `vci-credential`, so they
+    // still sign with one key — else the per-algorithm key.
+    const signer = await signingKeyForAsync(alg, 'vci-credential');
+    if (alg === 'RS256' && signer.kid === STS.kid) {
       log.debug("Leaving VcStatus.signerAsync(). RS256.");
       return { alg: 'RS256', key: STS.privateKey, kid: STS.kid,
                headerKid: publishedKidFor(STS.kid) };
     }
-    const signer = await signingKeyForAsync(alg);
     log.debug("Leaving VcStatus.signerAsync(). " + alg + ".");
     return { alg: alg, key: signer.key, kid: signer.kid,
              headerKid: publishedKidFor(signer.kid) };

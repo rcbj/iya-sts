@@ -2586,14 +2586,16 @@ class OAuth2Server {
     log.debug("Entering OAuth2Server.signPublishedDocument().");
     const alg = String(config.value('oauth2.signedMetadataAlgorithm') ||
                        'RS256');
-    if (alg === 'RS256') {
+    // The use case's signer-group key in a hybrid-groups realm (#68), else
+    // the per-algorithm key — `signingKeyFor()` decides both.
+    const signer = signingKeyFor(alg, useCase);
+    if (alg === 'RS256' && signer.kid === STS.kid) {
       log.debug("Leaving OAuth2Server.signPublishedDocument(). RS256.");
       return stsCrypto.signJws(claims, STS.privateKey,
         { algorithm: 'RS256', issuer: issuer, expiresIn: lifetimeS,
           keyid: publishedKidFor(STS.kid),
           header: certificateHeaderFor(useCase, 'RS256', STS.kid) });
     }
-    const signer = signingKeyFor(alg);
     const iat = nowSec();
     const payload = Object.assign({}, claims,
                                   { iss: issuer, iat: iat,
@@ -3151,7 +3153,11 @@ class OAuth2Server {
                     Number(one.retiredUntil) > Date.now());
           }).map(function (one: any): Json {
             return one.publicJwk;
-          })))
+          }))
+          // THE SIGNER GROUPS' KEYS (#68), after every per-algorithm key so
+          // `keys[0]` stays the RSA key — classical ones with their hybrid
+          // certificate in `x5c`, a partnered ML-DSA key bare (D5).
+          .concat(helpers.groupPublishedJwks(STS)))
         // THE REQUEST OBJECT ENCRYPTION KEYS (RFC 9101 section 6.1,
         // 2026-09-13), LAST — after every signing key, for the ordering rule
         // above — and marked `use: "enc"`, which is what tells a client these

@@ -2497,6 +2497,27 @@ const SETTINGS = [
   // on a protocol page because it names the realm's SIGNING KEYS, which every
   // family here signs with; `common/jose_kid.js` argues the rest. Runtime,
   // so a realm may carry it — a `kid` is read per signature.
+  // THE SIGNER MODEL (2026-09-26, #68). See `common/signer_groups.js`.
+  { key: 'keys.signerModel', group: 'Key material',
+    label: 'Signer model',
+    path: 'keys.signerModel', env: 'STS_KEYS_SIGNER_MODEL', type: 'enum',
+    enumValues: ['per-algorithm', 'hybrid-groups'],
+    dflt: 'per-algorithm', runtime: true,
+    description: 'How this realm\'s signing keys are divided. ' +
+                 '`per-algorithm` — the default — is one key per JWS ' +
+                 'algorithm (an RSA key, six curve keys and eleven ' +
+                 'post-quantum keys) shared by every JOSE use, and one RSA ' +
+                 'key for every XML signature. `hybrid-groups` gives each of ' +
+                 'five signer groups — OAuth/OIDC tokens, verifiable ' +
+                 'credentials, Security Event Tokens, WS-Trust and GNAP, XML ' +
+                 '— keys of its OWN, in a chosen set of algorithms: RSA-3072, ' +
+                 'P-256 and P-384, each certified together with an ML-DSA key ' +
+                 '(65, 44 and 87) in one hybrid certificate (ITU-T X.509 ' +
+                 'clause 9.8), and SLH-DSA-SHA2-128s alone. A signature in a ' +
+                 'group\'s use signs with the group\'s key for its ' +
+                 'algorithm; an algorithm outside the set still signs with ' +
+                 'the per-algorithm key. Every key is a key pair of its own; ' +
+                 'what the hybrid certificate shares is the certificate.' },
   { key: 'keys.kidFormat', group: 'Key material',
     label: 'Signed token kid format',
     path: 'keys.kidFormat', env: 'STS_KEYS_KID_FORMAT', type: 'enum',
@@ -4745,6 +4766,41 @@ const SETTINGS = [
                  'key\'s own default is used, logged once, STS-CORE-0106), ' +
                  'setting either is refused (STS-CORE-0103), and a build or ' +
                  'a key pair that names one is refused (STS-PKI-0191).' },
+  // THE SECOND KEY EVERY AUTHORITY HOLDS (2026-09-26, #68, rcbj's D4: "whole
+  // chain hybrid"). ITU-T X.509 (2019) clause 9.8's alternative public key
+  // and alternative signature, on the Root, every Intermediate and every
+  // Issuing CA, and an alternative signature on every certificate they issue.
+  // A DEFAULT for the next build like the rows above: a hierarchy keeps the
+  // algorithm it was built with.
+  { key: 'pki.alternativeKeyAlgorithm', group: 'PKI',
+    label: 'CA alternative (post-quantum) key algorithm',
+    env: 'STS_PKI_ALTERNATIVE_KEY_ALGORITHM', type: 'enum',
+    enumValues: ['ml-dsa-87', 'ml-dsa-65', 'ml-dsa-44',
+                 'slh-dsa-sha2-256s', 'slh-dsa-sha2-192s',
+                 'slh-dsa-sha2-128s', 'none'],
+    dflt: 'ml-dsa-87', runtime: true,
+    description: 'The post-quantum key every certificate authority this ' +
+                 'service builds carries BESIDE its classical one, in the ' +
+                 'non-critical subjectAltPublicKeyInfo, altSignatureAlgorithm ' +
+                 'and altSignatureValue extensions of ITU-T X.509 (2019) ' +
+                 'clause 9.8 — a hybrid certificate. Each authority signs ' +
+                 'every certificate it issues twice: classically in the ' +
+                 'ordinary fields, which every validator reads, and with this ' +
+                 'key over the preTBSCertificate, which a hybrid-aware ' +
+                 'validator reads. This service is one: a certificate issued ' +
+                 'by an authority holding an alternative key MUST carry a ' +
+                 'valid alternative signature to verify here (STS-PKI-0201, ' +
+                 'STS-PKI-0202), so the classical signature alone is never a ' +
+                 'way past it. ML-DSA-87 (FIPS 204, category 5) is the ' +
+                 'default because an authority outlives the keys it ' +
+                 'certifies. The value is read at the NEXT build of a tier; ' +
+                 'a hierarchy keeps what it was built with. SLH-DSA (FIPS ' +
+                 '205) is offered for a hash-based anchor and costs SECONDS ' +
+                 'per signature, i.e. per certificate issued. WARNING: ' +
+                 '`none` builds classical-only authorities, whose ' +
+                 'certificates a quantum-capable attacker can forge; it ' +
+                 'exists for a client that cannot parse a large certificate, ' +
+                 'and nothing else.' },
   { key: 'pki.organisation', group: 'PKI',
     label: 'Default organisation name (O=)',
     env: 'STS_PKI_ORGANISATION', type: 'string', dflt: 'sts',
@@ -6766,7 +6822,10 @@ const SETTINGS = [
   { key: 'saml.signatureAlgorithm', group: 'SAML',
     label: 'XML signature algorithm',
     env: 'STS_SAML_SIGNATURE_ALGORITHM', type: 'enum',
-    enumValues: ['rsa-sha256', 'rsa-sha384', 'rsa-sha512', 'rsa-sha1'],
+    enumValues: ['rsa-sha256', 'rsa-sha384', 'rsa-sha512', 'rsa-sha1',
+                 // The signer groups' (#68): a hybrid-groups realm only.
+                 'ecdsa-sha256', 'ecdsa-sha384', 'ml-dsa-44', 'ml-dsa-65',
+                 'ml-dsa-87', 'slh-dsa-sha2-128s'],
     dflt: 'rsa-sha256', runtime: true,
     // `rsa-sha1` is DEVELOPMENT ONLY since #181 (2026-09-23).
     onlyWhile: 'usesBrokenAlgorithms', onlyWhileValues: ['rsa-sha1'],
@@ -6775,8 +6834,16 @@ const SETTINGS = [
                  'response, a SAML metadata document, the WS-Federation ' +
                  'metadata and a signed federated AuthnRequest — and the ' +
                  'SigAlg of the HTTP Redirect binding\'s query-string ' +
-                 'signature. The digest follows the algorithm. RSA only, ' +
-                 'because the key these are made with is RSA. `rsa-sha1` is ' +
+                 'signature. The digest follows the algorithm. The RSA ' +
+                 'values sign with this realm\'s RSA XML key. The rest need ' +
+                 'keys.signerModel = hybrid-groups, and sign with the XML ' +
+                 'signer group\'s own key: ecdsa-sha256 and ecdsa-sha384 its ' +
+                 'P-256 and P-384 keys, and ml-dsa-44/65/87 and ' +
+                 'slh-dsa-sha2-128s its post-quantum keys, under the W3C ' +
+                 'xmldsig-more DRAFT identifiers — WARNING: a draft, which ' +
+                 'few service providers verify yet. In a realm without that ' +
+                 'key (or before it is certified) the realm signs rsa-sha256 ' +
+                 'instead and says so once (#68). `rsa-sha1` is ' +
                  'BROKEN and offered for the reason rsa-1_5 is: deployed ' +
                  'service providers still demand it and a client library is ' +
                  'entitled to be tested against them. WARNING: rsa-sha1 is ' +

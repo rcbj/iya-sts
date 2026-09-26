@@ -1861,7 +1861,7 @@ a use needs a refusal the validator cannot say.
 **THE PKI PANE IS THE ONE CONSOLE FORM THE REGISTER CANNOT HOLD**: it posts no
 `action` (the pressed button is the action) and its API schema takes any
 member. `PkiAuthoring.closedFieldProblem()` holds its five closed fields
-instead, before any pane action, for both doors (`STS-PKI-0200`) — two of
+instead, before any pane action, for both doors (`STS-PKI-0203`) — two of
 them fell back silently to a default before.
 
 `tests/closed_sets.js` holds all of this in process, through the route

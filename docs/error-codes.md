@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3531** of them, in **38** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3535** of them, in **38** subsystems.
 
 ## Where a code appears
 
@@ -57,7 +57,7 @@ is an ordinary outcome.
 * [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 28
 * [Scheduler (`STS-SCHED`)](#sts-sched) — 16
 * [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 79
-* [Certificate authority (`STS-PKI`)](#sts-pki) — 187
+* [Certificate authority (`STS-PKI`)](#sts-pki) — 190
 * [Certificate enrollment core (`STS-ENROLL`)](#sts-enroll) — 51
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 72
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 25
@@ -76,7 +76,7 @@ is an ordinary outcome.
 * [TLS and client certificates (`STS-TLS`)](#sts-tls) — 33
 * [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 94
 * [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 104
-* [Risk scoring (`STS-RISK`)](#sts-risk) — 39
+* [Risk scoring (`STS-RISK`)](#sts-risk) — 40
 * [Mail (`STS-MAIL`)](#sts-mail) — 39
 * [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 282
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 74
@@ -670,7 +670,10 @@ Raised from: common/pki.js, common/pki_authoring.ts, common/pki_revocation.js, c
 | `STS-PKI-0197` | A certificate on a path below its anchor is signed with a broken hash — MD2 or MD5 on every path, SHA-1 on every path but this service's own hierarchy in a development realm (#181) — and the path is refused (pki.pathRuleProblem, #201). | invalid_grant at the grant, invalid_client at client authentication; the console's error list for an upload |
 | `STS-PKI-0198` | A certificate chain OpenSSL verified in a TLS handshake breaks the path rules every other path here is held to (pki.peerChainProblem, #201): on the main port the client certificate is treated as unverified (authorized false); on an outbound request the request fails as a TLS error. Also logged when the rules could not be asked. | none on the wire: an unverified client certificate, or the family's own failure for an outbound request |
 | `STS-PKI-0199` | RFC 5280 section 6.1's certificate policy processing refuses a path: a certificate on it requires an explicit policy (policyConstraints) and no acceptable policy remains in the valid_policy_tree, a policyMappings maps anyPolicy, or the policies and mappings make a tree too large to evaluate (pki.pathPolicyOutcome, #201). | invalid_grant at the grant, invalid_client at client authentication; the console's error list for an upload |
-| `STS-PKI-0200` | A Certificate & Key Configuration pane field that takes a closed set (pki_profile, pki_pq_mode, pki_key_alg, pki_alt_key_alg, pki_ks_format) held a value outside it (#86). | HTTP 400 page or { ok: false, errors } |
+| `STS-PKI-0200` | A certificate authority build named an alternative key algorithm (pki.alternativeKeyAlgorithm, or altKeyAlg on the form) that is not a pure post-quantum signature algorithm this service generates, nor "none" (#68). | console: the page's error list; /admin-api: HTTP 400 { ok: false, errors } |
+| `STS-PKI-0201` | A certificate carries an ITU-T X.509 clause 9.8 alternative signature that does not verify under its issuer's alternative key (any path: this realm's own, an uploaded chain, a registered root), or — on a path to this realm's own hierarchy — cannot be checked (#68). | the verifier's refusal: whatever the certificate was presented for is refused as an untrusted certificate |
+| `STS-PKI-0202` | A certificate on a path to this realm's own hierarchy carries no alternative signature although its issuer holds an alternative (post-quantum) key — a hybrid path presented as classical, the downgrade #68 refuses. | the verifier's refusal: whatever the certificate was presented for is refused as an untrusted certificate |
+| `STS-PKI-0203` | A Certificate & Key Configuration pane field that takes a closed set (pki_profile, pki_pq_mode, pki_key_alg, pki_alt_key_alg, pki_ks_format) held a value outside it (#86). | HTTP 400 page or { ok: false, errors } |
 
 ## STS-ENROLL
 
@@ -2946,6 +2949,7 @@ Raised from: risk/, admin-ui/risk_admin.ts.
 | `STS-RISK-0037` | A risk dataset upload failed unexpectedly: its fields could not be checked, or its import threw rather than answering. The upload's file is deleted. | — |
 | `STS-RISK-0038` | An authentication at HIGH or MEDIUM risk was PERMITTED for an application the issuance policy says risk may never lock out (the role-issuance template's neverLockOut, the console by default), because the person holds no second factor to step up with (#226). The alarm: enrol a second factor for this person, and look at the assessment's signals. | permitted; recorded on the audit row and logged as a warning |
 | `STS-RISK-0039` | An administrator with no second factor was sent to set one up (offered or required, #246) at a sign-in whose risk is HIGH or MEDIUM. The enrolment goes ahead so the console is never locked out (#226); whoever holds the password could be the one enrolling, so confirm it with the person. | the set-up step; recorded on the audit row and logged as a warning |
+| `STS-RISK-0040` | The install-time dataset loader (risk/risk_install.ts) could not make the database connection the way the service makes it (#213): persistence.databasePasswordProvider names a secret store whose password could not be read, or persistence.databaseUrl is not a URL it can be put into. The provider's own reason follows. Nothing is imported and the loader exits non-zero. | — |
 
 ## STS-MAIL
 
