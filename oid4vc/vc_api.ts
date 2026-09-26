@@ -74,6 +74,7 @@ import realms = require('../common/realms');
 import scopePolicy = require('../common/scope_policy');
 import InstanceSlot = require('../common/instance_slot');
 import validation = require('../common/validation');
+import cacheRegistry = require('../common/cache_registry');
 import dpop = require('../oauth-oidc/dpop');
 import vcDataIntegrity = require('./vc_data_integrity');
 import vcDataModel = require('./vc_data_model');
@@ -159,6 +160,40 @@ const MAX_ISSUED = 4096;
 // credential id -> { idx, expiresAt }. PER REALM, persisted, so a status
 // change reaches the index whichever process issued the credential.
 const issued = realms.map({ persist: 'vc_api.issued' });
+
+const issuedCount = cacheRegistry.register({
+  name: 'vc-api.issued',
+  title: 'VC-API credentials with a status',
+  description: 'Each credential the VC-API test adapter issued with a ' +
+    'status entry, and the status-list index it took, so that a status ' +
+    'change can find it.',
+  owner: 'oid4vc/vc_api.ts',
+  scope: 'realm',
+  kind: 'cache',
+  persisted: true,
+  hitMeaning: 'a status change found the credential',
+  settings: [],
+  maxEntries: function (): number {
+    return MAX_ISSUED;
+  },
+  bound: 'Enforced: ' + MAX_ISSUED + ' credentials per realm, the oldest ' +
+    'forgotten first (its status can then no longer be changed here; the ' +
+    'list entry itself is vc_status.ts\'s and stays).',
+  lifetime: function (): string {
+    return 'the credential\'s validUntil, or a year.';
+  },
+  eject: cacheRegistry.realmMapEjector(realms, issued,
+    function (row: any, id: unknown, now: number): boolean {
+      return !!(row && row.expiresAt && row.expiresAt <= now);
+    }),
+  entries: function (): unknown[] {
+    return cacheRegistry.realmMapRows(realms, issued,
+      function (row: any, id: unknown): object {
+        return { key: String(id),
+                 validUntil: Number((row && row.expiresAt) || 0) || null };
+      });
+  }
+});
 
 class VcApi {
   static readonly ISSUERS = ISSUERS;
@@ -639,8 +674,8 @@ class VcApi {
   private remember(id: string, idx: string, until: number): void {
     const { log, issued, now } = this.deps;
     log.debug("Entering VcApi.remember().");
-    if (issued.size >= MAX_ISSUED) {
-      issued.delete(issued.keys().next().value);
+    if (!issued.has(String(id))) {
+      cacheRegistry.makeRoom(issued, MAX_ISSUED, { counter: issuedCount });
     }
     issued.set(String(id), { idx: idx,
       expiresAt: until > now() ? until : now() + DEFAULT_STATUS_MS });
@@ -933,6 +968,11 @@ class VcApi {
     const cs = body.credentialStatus || {};
     const row = typeof body.credentialId === 'string'
       ? issued.get(body.credentialId) : null;
+    if (row) {
+      issuedCount.hit();
+    } else {
+      issuedCount.miss();
+    }
     if (!row || (row.expiresAt && row.expiresAt < now())) {
       this.refuse(res, 404, 'STS-VC-0107', 'No credential ' +
                   JSON.stringify(body.credentialId) + ' was issued here ' +

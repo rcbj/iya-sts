@@ -46,6 +46,18 @@
 // reason. A presentation's holder proof is signed by the wallet over a
 // document the wallet built; nothing is gained by reading it as a graph.
 //
+// **AND THE RDFC SUITES ARE HERE TOO SINCE #195/#196 (2026-09-26)** —
+// `eddsa-rdfc-2022` and `ecdsa-rdfc-2019` (P-256 with SHA-256, P-384 with
+// SHA-384), and `ecdsa-sd-2023` through `vc_ecdsa_sd.ts` — for the VC-API
+// test adapter (`vc_api.ts`), which issues and verifies credentials in
+// every suite the W3C test suites drive. The argument above holds and is
+// kept by `vc_jsonld.ts`: its loader answers from the contexts this service
+// ships and FETCHES NOTHING, so a document naming any other context is
+// refused, not resolved. They are not the DEFAULT (`SUPPORTED_CRYPTOSUITES`
+// is the JCS four): a caller asks for one by name, and the sign-in's holder
+// proof still asks for none of them. Proof sets and chains are verified
+// member by member in `verifyAllProofs()` (Data Integrity 1.0 section 4.4).
+//
 // THE ALGORITHM, identical in shape in all three (the suite decides the hash,
 // the signature and the multibase):
 //
@@ -198,7 +210,15 @@ const SUITES: Record<string, Suite> = {
     spec: 'W3C Data Integrity ECDSA Cryptosuites v1.0, section 3.6' }
 };
 
-const SUPPORTED_CRYPTOSUITES = Object.keys(SUITES);
+// THE DEFAULT a verification accepts when its caller names no list: the
+// JCS suites, the holder proof's (see the header — a presentation made for a
+// sign-in is checked without a JSON-LD processor). The RDFC suites and
+// ecdsa-sd-2023 (#195, #196) are accepted where a caller asks for them by
+// name, as the VC-API adapter does; ALL_CRYPTOSUITES lists every one.
+const SUPPORTED_CRYPTOSUITES = Object.keys(SUITES).filter(function (id) {
+  return SUITES[id].canon === 'jcs';
+});
+const ALL_CRYPTOSUITES = Object.keys(SUITES);
 
 // The EC curves ecdsa-jcs-2019 defines, with the hash each is signed under
 // and the length of a raw r||s signature.
@@ -245,6 +265,7 @@ const ED25519_SPKI_PREFIX = '302a300506032b6570032100';
 
 class VcDataIntegrity {
   static readonly SUPPORTED_CRYPTOSUITES = SUPPORTED_CRYPTOSUITES;
+  static readonly ALL_CRYPTOSUITES = ALL_CRYPTOSUITES;
   static readonly SUITES = SUITES;
 
   constructor(private readonly deps: VcDataIntegrityDeps) {
@@ -1370,6 +1391,7 @@ export = {
   installInstance: (instance: VcDataIntegrity): void => slot.install(instance),
   instanceOrigin: (): string => slot.origin(),
   SUPPORTED_CRYPTOSUITES: VcDataIntegrity.SUPPORTED_CRYPTOSUITES,
+  ALL_CRYPTOSUITES: VcDataIntegrity.ALL_CRYPTOSUITES,
   SUITES: VcDataIntegrity.SUITES,
   jcs: slot.forward('jcs'),
   base58Encode: slot.forward('base58Encode'),

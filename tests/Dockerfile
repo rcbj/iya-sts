@@ -155,6 +155,19 @@ RUN curl -fsSL --retry 5 --retry-all-errors -o sscep.tgz \
 # provenance. The golang image is Debian, whose glibc is older than
 # ubuntu:latest's, so the binary (cgo, for a store only its built-in server
 # uses) runs in the runner unchanged.
+# THE W3C VERIFIABLE CREDENTIALS AND DID TEST SUITES (#194-#199), each
+# fetched at a pinned commit, checked by sha256 and installed from its own
+# lockfile by tests/vc-suites/fetch-suites.sh (which argues the pins and why
+# the suites' `pretest` is not run). A stage of their own, on the same node
+# as the runner, because the install needs git (two lockfile dependencies
+# are GitHub commits) and the runner has none; the runner copies only
+# /opt/vc-suites. Several carry test PRIVATE keys, which is why they are
+# fetched here and never committed. tests/CLAUDE.md, *The W3C VC and DID
+# suites*, is the provenance.
+FROM node:24.16.0-bookworm AS vc-suites
+COPY tests/vc-suites/fetch-suites.sh /usr/src/fetch-suites.sh
+RUN /usr/src/fetch-suites.sh /opt/vc-suites
+
 FROM golang:1.26 AS scim2-test-suite
 COPY tests/scim-conformance/build-test-suite.sh /usr/src/build-test-suite.sh
 RUN /usr/src/build-test-suite.sh /opt/scim2-test-suite
@@ -349,6 +362,8 @@ RUN python3 -m venv /opt/scim2-tester \
         -r /usr/src/scim2-tester/requirements.txt
 ENV STS_SCIM2_TESTER_PYTHON=/opt/scim2-tester/bin/python
 COPY --from=scim2-test-suite /opt/scim2-test-suite /opt/scim2-test-suite
+COPY --from=vc-suites /opt/vc-suites /opt/vc-suites
+ENV STS_VC_SUITES_DIR=/opt/vc-suites
 ENV STS_SCIM2_TEST_SUITE=/opt/scim2-test-suite/scim-compliance
 COPY package*.json ./
 COPY .npmrc ./

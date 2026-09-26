@@ -789,6 +789,25 @@ const JOBS = [
   // exception. `local: true`: this repository's SCIM surface.
   { file: 'sts_scim_conformance.js',     browser: false, local: true,
     timeoutMs: 900000 },
+  // THE W3C VERIFIABLE CREDENTIALS AND DID TEST SUITES (#194-#199,
+  // 2026-09-26): each Working Group suite, pinned and installed in the tests
+  // image by tests/vc-suites/fetch-suites.sh, run against the VC-API test
+  // adapter (oid4vc/vc_api.ts) of a throwaway development realm — or, for
+  // the DID suite, over fixtures generated from this service's DIDs and
+  // resolver. Every failure fixed or a documented exception. `local: true`:
+  // this repository's oid4vc/ and its test adapter.
+  { file: 'sts_vc_data_model_suite.js',  browser: false, local: true,
+    timeoutMs: 900000 },
+  { file: 'sts_vc_di_eddsa_suite.js',    browser: false, local: true,
+    timeoutMs: 900000 },
+  { file: 'sts_vc_di_ecdsa_suite.js',    browser: false, local: true,
+    timeoutMs: 900000 },
+  { file: 'sts_vc_bitstring_status_suite.js', browser: false, local: true,
+    timeoutMs: 900000 },
+  { file: 'sts_vc_jose_cose_suite.js',   browser: false, local: true,
+    timeoutMs: 900000 },
+  { file: 'sts_did_test_suite.js',       browser: false, local: true,
+    timeoutMs: 900000 },
   // OPENID CONNECT ENTERPRISE EXTENSIONS (#148, 2026-09-26): session_expiry,
   // tenant and aud_sub in the ID Token, tenant refused for another realm,
   // domain_hint's home-realm discovery. `local: true`: this repository's
