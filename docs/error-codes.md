@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3461** of them, in **38** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3462** of them, in **38** subsystems.
 
 ## Where a code appears
 
@@ -76,7 +76,7 @@ is an ordinary outcome.
 * [TLS and client certificates (`STS-TLS`)](#sts-tls) — 33
 * [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 94
 * [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 104
-* [Risk scoring (`STS-RISK`)](#sts-risk) — 37
+* [Risk scoring (`STS-RISK`)](#sts-risk) — 38
 * [Mail (`STS-MAIL`)](#sts-mail) — 39
 * [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 282
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 74
@@ -2884,6 +2884,7 @@ Raised from: risk/, admin-ui/risk_admin.ts.
 | `STS-RISK-0035` | A risk dataset version was left loading with no progress for risk.importStallMinutes — the process importing it stopped — and the risk.stalled-imports job refused it; or an import found its version already refused that way and stopped. | — |
 | `STS-RISK-0036` | The risk.upload-cleanup job removed a leftover upload file that no live process had touched for risk.importStallMinutes, or an upload file could not be deleted after its import. | — |
 | `STS-RISK-0037` | A risk dataset upload failed unexpectedly: its fields could not be checked, or its import threw rather than answering. The upload's file is deleted. | — |
+| `STS-RISK-0038` | An authentication at HIGH or MEDIUM risk was PERMITTED for an application the issuance policy says risk may never lock out (the role-issuance template's neverLockOut, the console by default), because the person holds no second factor to step up with (#226). The alarm: enrol a second factor for this person, and look at the assessment's signals. | permitted; recorded on the audit row and logged as a warning |
 
 ## STS-MAIL
 

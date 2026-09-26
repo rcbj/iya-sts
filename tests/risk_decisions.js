@@ -35,6 +35,16 @@
 //      session at MEDIUM with a device signal back to sign in with a key.
 //   H. HIGH AT SIGN-IN (an operator deny list) is refused; in development,
 //      observed and signed in.
+//   I. THE CONSOLE IS NEVER LOCKED OUT ON RISK (#226): for
+//      `sts-admin-console` HIGH is a step-up to the strongest factor the
+//      person holds, and a person holding none is PERMITTED with the alarm
+//      (STS-RISK-0038). Any other application is refused as before.
+//   J. `risk.listsMatchSpecialPurpose` OFF sets a list aside for a
+//      loopback address — the one #226 put everybody behind a bridge on —
+//      and the assessment says which lists were set aside.
+//   K. A KNOWN CONTEXT caps the address evidence at MEDIUM (#226): the same
+//      listed address is HIGH for a newcomer and not HIGH for a person who
+//      has signed in from it, with this browser, `risk.minimumHistory` times.
 //
 // In a child process, because it loads the whole stack and changes settings
 // the rest of the in-process suite must not see. Every list is synthetic;
@@ -165,10 +175,13 @@ function childMain() {
     const ruleIds = (built.policy && built.policy.rules || [])
       .map(function (r) { return r.id.split(':rule:')[1]; });
     note(built.ok && ruleIds.join(',') === 'risk-high,risk-medium-key,' +
-         'risk-medium-second-factor,holds-a-required-role' &&
+         'risk-medium-second-factor,risk-protected-key,' +
+         'risk-protected-second-factor,risk-protected-alarm,' +
+         'holds-a-required-role' &&
          /ordered-deny-overrides$/.test(built.policy.combiningAlgId),
-         'A1. the built-in issuance policy carries the three risk rules ' +
-         'ahead of the role rule, under ordered-deny-overrides',
+         'A1. the built-in issuance policy carries the three risk rules, ' +
+         'the console\'s two step-ups and its alarm ahead of the role ' +
+         'rule, under ordered-deny-overrides',
          ruleIds.join(',') + ' ' + (built.policy || {}).combiningAlgId);
     const rolesOnly = templates.build('role-issuance',
       { decideRisk: 'no' }, { name: 'role-issuance' });
@@ -421,6 +434,117 @@ function childMain() {
          JSON.stringify(erinAssessed && { level: erinAssessed.level,
                                           decision: erinAssessed.decision }));
 
+    // --- I. the console is never locked out on risk (#226) ----------------
+    config.setOverride('risk.enforceInDevelopment', true);
+    const audit = require(ROOT + '/common/audit');
+    const CONSOLE = 'sts-admin-console';
+    const onConsole = function (name, satisfied) {
+      return gate.check({
+        application: CONSOLE, kind: gate.ISSUANCE.SESSION,
+        subject: { kind: 'user', name: name, authenticated: true },
+        claims: null,
+        risk: { level: 'HIGH', score: 20, signals: ['operator-deny'],
+                satisfied: satisfied || [], enforced: true,
+                assessmentId: 'rd-i-' + name } });
+    };
+    const alarmsBefore = audit.list().filter(function (row) {
+      return row.action === 'xacml.issuance.alarm';
+    }).length;
+    const bare = onConsole('rd-unit');
+    const alarms = audit.list().filter(function (row) {
+      return row.action === 'xacml.issuance.alarm';
+    });
+    note(bare.allowed && alarms.length === alarmsBefore + 1 &&
+         alarms[alarms.length - 1].errorCode === 'STS-RISK-0038',
+         'I1. HIGH at the console, for a person holding no second factor, ' +
+         'is PERMITTED — and the alarm is on the audit log (STS-RISK-0038)',
+         JSON.stringify({ allowed: bare.allowed, why: bare.why,
+                          alarms: alarms.length - alarmsBefore }));
+    const withCode = onConsole('rd-carol');
+    note(!withCode.allowed && withCode.risk &&
+         withCode.risk.action === 'step-up' &&
+         withCode.risk.factor === 'second-factor',
+         'I2. a person holding an authenticator app is asked for it at the ' +
+         'console, not refused', JSON.stringify(withCode.risk));
+    note(onConsole('rd-carol', ['second-factor']).allowed,
+         'I3. and permitted once the authentication carries it');
+    const elsewhere = gate.check({
+      application: CLIENT, kind: gate.ISSUANCE.SESSION,
+      subject: { kind: 'user', name: 'rd-unit', authenticated: true },
+      claims: null,
+      risk: { level: 'HIGH', score: 20, signals: ['operator-deny'],
+              satisfied: [], enforced: true, assessmentId: 'rd-i-other' } });
+    note(!elsewhere.allowed && elsewhere.risk &&
+         elsewhere.risk.action === 'refuse',
+         'I4. any other application is still refused at HIGH',
+         JSON.stringify(elsewhere.risk));
+    const unprotectedPolicy = templates.build('role-issuance',
+      { neverLockOut: 'none' }, { name: 'role-issuance' });
+    const consoleRequest = rolePep.buildRequest({
+      application: CONSOLE, kind: 'start-session',
+      subject: { kind: 'user', name: 'rd-unit', authenticated: true },
+      risk: { level: 'HIGH', score: 20, signals: [], satisfied: [],
+              enforced: true } }, ['EVERYBODY'], [], ['EVERYBODY']);
+    const plain = pdp.evaluate(unprotectedPolicy.policy, consoleRequest, {});
+    note(unprotectedPolicy.ok && plain.decision === 'Deny' &&
+         unprotectedPolicy.policy.rules.length === 4,
+         'I5. neverLockOut none puts the console under the three rules, ' +
+         'and HIGH refuses it', plain.decision);
+
+    // --- J. lists set aside for a special-purpose address (#226) ---------
+    config.setOverride('risk.listsMatchSpecialPurpose', false);
+    ldap.createUser('rd-fay', { invent: false });
+    const fay = browser(port, CHROME);
+    const fayLanded = await follow(fay, await signIn(fay, 'rd-fay'));
+    const fayAssessed = await assessmentOf('rd-fay');
+    const fayModel = fayAssessed && (fayAssessed.signals || [])
+      .filter(function (one) { return one.signal === 'model'; })[0];
+    note(String(fayLanded.headers.location || '').indexOf(REDIRECT) === 0 &&
+         fayAssessed && fayAssessed.level === 'UNSCORED' &&
+         fayModel && (fayModel.listsSetAside || []).sort().join(',') ===
+           'operator-deny,tor-exit',
+         'J1. with risk.listsMatchSpecialPurpose off, the Tor and deny ' +
+         'lists are set aside for a loopback address, the first sign-in is ' +
+         'UNSCORED and signed in, and the assessment names both lists',
+         JSON.stringify(fayAssessed && { level: fayAssessed.level,
+           setAside: fayModel && fayModel.listsSetAside }));
+    config.setOverride('risk.listsMatchSpecialPurpose', true);
+
+    // --- K. a known context caps address evidence at MEDIUM (#226) --------
+    config.setOverride('risk.minimumHistory', 2);
+    const contextOf = function (name) {
+      return { realm: 'default', subject: helpers.subjectForName(name),
+               username: name, sessionId: '', door: 'a test',
+               context: { address: '127.0.0.1', uaFingerprint: 'fp-k-' + name },
+               userAgent: CHROME };
+    };
+    ldap.createUser('rd-gus', { invent: false });
+    await riskEngine.assess(contextOf('rd-gus'));
+    await riskEngine.assess(contextOf('rd-gus'));
+    const known = await riskEngine.assess(contextOf('rd-gus'));
+    const knownModel = (known && known.signals || []).filter(function (one) {
+      return one.signal === 'model';
+    })[0];
+    ldap.createUser('rd-hal', { invent: false });
+    const newcomer = await riskEngine.assess(contextOf('rd-hal'));
+    note(newcomer && newcomer.level === 'HIGH' &&
+         known && known.level !== 'HIGH' && knownModel &&
+         knownModel.knownContext === true &&
+         known.signals.some(function (one) {
+           return one.signal === 'operator-deny';
+         }),
+         'K1. on the same listed address a newcomer is HIGH, and a person ' +
+         'with two earlier sign-ins from it in this browser is not: the ' +
+         'address evidence still counts, capped at MEDIUM',
+         JSON.stringify({ newcomer: newcomer && newcomer.level,
+                          known: known && known.level,
+                          score: known && known.score,
+                          capped: knownModel && knownModel.capped }));
+    note(riskEngine.riskOf(known).knownContext === true,
+         'K2. the session carries the known context, so the rescore job ' +
+         'caps what a list gained later can raise it to');
+    config.setOverride('risk.minimumHistory', 5);
+
     server.close();
     require('fs').writeFileSync(OUT, JSON.stringify(findings));
     process.exit(0);
@@ -488,7 +612,9 @@ module.exports = {
   describe: 'risk decided by the issuance policy (#62 P3): the risk rules in ' +
             'the built-in document, HIGH refused and MEDIUM stepped up, no ' +
             'shortcut round them, facts from the session or the standing, ' +
-            'development observing, and the sign-in screen and the ' +
-            'authorization endpoint acting on the decision',
+            'development observing, the sign-in screen and the ' +
+            'authorization endpoint acting on the decision, the console ' +
+            'never locked out, lists set aside for special-purpose ' +
+            'addresses, and a known context capping address evidence (#226)',
   run: run
 };

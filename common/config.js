@@ -10688,6 +10688,26 @@ const SETTINGS = [
                  'compromised security key) apply however new the person ' +
                  'is. 1 scores from the second sign-in on.' },
 
+  // #226 (2026-09-26): a bogon on a list is a signal on everybody behind a
+  // NAT or a container bridge. ON is the lists' own word; OFF is for a
+  // service tested on one machine or run where every person shares a
+  // private address.
+  { key: 'risk.listsMatchSpecialPurpose', group: 'Risk',
+    label: 'Lists match private and reserved addresses',
+    env: 'STS_RISK_LISTS_MATCH_SPECIAL_PURPOSE', type: 'bool', dflt: true,
+    runtime: true,
+    description: 'On, a Tor, reputation or operator deny list matches a ' +
+                 'loopback, private (RFC 1918, RFC 6598, unique-local), ' +
+                 'link-local or reserved address exactly as the list ' +
+                 'says — and FireHOL\'s level 1 lists the bogons, ' +
+                 '10.0.0.0/8, 172.16.0.0/12 and 192.168.0.0/16 among them. ' +
+                 'Off sets those matches aside, and the assessment records ' +
+                 'which lists were set aside. Turn it off when the service ' +
+                 'is tested on one machine, or when every person arrives ' +
+                 'through one bridge, NAT or proxy whose address is private: ' +
+                 'there one listed bogon is a signal on everybody at once. ' +
+                 'The operator allow list is not affected.' },
+
   { key: 'risk.accountFailureThreshold', group: 'Risk',
     label: 'Refused passwords for one person that are a signal',
     env: 'STS_RISK_ACCOUNT_FAILURE_THRESHOLD', type: 'int', dflt: 5, min: 1,
