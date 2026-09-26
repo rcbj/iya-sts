@@ -803,6 +803,11 @@ const JOBS = [
   // flow end to end through /portal/device, c_s256, a bound ID Token, its
   // refresh and section 7, and an ML-DSA-44 DPoP key. `local: true`.
   { file: 'sts_device_key_binding.js',   browser: false, local: true },
+  // OPENID PROVIDER COMMANDS (#151, 2026-09-26): registration, metadata,
+  // account commands, the callback, automatic suspend and reactivate, a
+  // resumed tenant stream and a retried delivery, against the mock relying
+  // party. `local: true`.
+  { file: 'sts_provider_commands.js',    browser: false, local: true },
   // THE OPENID FOUNDATION'S CONFORMANCE SUITE (#176, 2026-09-24): FAPI 2.0
   // Security Profile and Message Signing, FAPI 1.0 Advanced and FAPI-CIBA,
   // each plan a throwaway realm, every module run, and a FAILED module a

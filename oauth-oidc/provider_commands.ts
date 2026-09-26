@@ -1231,7 +1231,8 @@ class ProviderCommands {
       const was = lock(change.before);
       const now = lock(change.after);
       command = !was && now ? 'suspend' : (was && !now ? 'reactivate'
-                                                        : 'maintain');
+        : (ProviderCommands.profileChanged(change.before, change.after)
+            ? 'maintain' : ''));
     }
     if (!command) {
       log.debug("Leaving ProviderCommands.directoryChanged(). No command.");
@@ -1261,6 +1262,36 @@ class ProviderCommands {
       self.directoryChanged(change);
     });
     log.debug("Leaving ProviderCommands.observeDirectory().");
+  }
+
+  // Did an attribute a relying party could hold change? A sign-in writes
+  // bookkeeping to the entry (the password policy's counters, a last-seen
+  // time), and `maintain` on every sign-in would be noise to every relying
+  // party; so only the attributes the account's claims come from count.
+  static profileChanged(before: Json, after: Json): boolean {
+    helpers.log.debug("Entering ProviderCommands.profileChanged().");
+    const names = ['cn', 'sn', 'givenName', 'displayName', 'mail', 'uid',
+                   'telephoneNumber', 'mobile', 'postalAddress',
+                   'preferredLanguage', 'title', 'o', 'ou', 'initials',
+                   'employeeNumber', 'employeeType', 'labeledURI',
+                   'jpegPhoto', 'street', 'l', 'st', 'postalCode', 'c'];
+    const lower = function (attrs: Json): Json {
+      const out: Json = {};
+      Object.keys(attrs || {}).forEach(function (k) {
+        out[k.toLowerCase()] = attrs[k];
+      });
+      return out;
+    };
+    const b = lower(before);
+    const a = lower(after);
+    const changed = names.some(function (name) {
+      const k = name.toLowerCase();
+      return JSON.stringify(b[k] === undefined ? null : b[k]) !==
+             JSON.stringify(a[k] === undefined ? null : a[k]);
+    });
+    helpers.log.debug("Leaving ProviderCommands.profileChanged(). " +
+                      changed);
+    return changed;
   }
 
   // An administrator's global sign-out of a person: `invalidate`.
