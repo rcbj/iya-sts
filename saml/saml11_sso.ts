@@ -1879,7 +1879,9 @@ class Saml11Sso {
       pendingFlows.delete(String(params.fid || ''));
       log.debug("Leaving Saml11Sso.interSiteTransfer(). The issuance policy " +
                 "refused it.");
-      errorCodes.mark(res, 'STS-SAML-0032');
+      // A realm being removed (#262) is its own code.
+      errorCodes.mark(res, roleAnswer.retiring ? 'STS-CORE-0121'
+                                               : 'STS-SAML-0032');
       log.debug("Leaving Saml11Sso.interSiteTransfer().");
       return this.samlError(res, 403, 'Refused by policy', roleAnswer.why,
         '<p>The person is signed in. The XACML issuance policy would not let ' +

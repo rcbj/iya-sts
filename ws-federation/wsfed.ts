@@ -1268,7 +1268,9 @@ class WsFederation {
                roleAnswer.why);
       log.debug("Leaving WsFederation.issueSignInResponse(). The issuance " +
                 "policy refused it.");
-      errorCodes.mark(res, 'STS-WSFED-0011');
+      // A realm being removed (#262) is its own code.
+      errorCodes.mark(res, roleAnswer.retiring ? 'STS-CORE-0121'
+                                               : 'STS-WSFED-0011');
       log.debug("Leaving WsFederation.issueSignInResponse().");
       return this.wsfedError(res, 403, 'Refused by policy', roleAnswer.why,
         '<p>The person is signed in. The XACML issuance policy would not let ' +

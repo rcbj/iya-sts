@@ -32,7 +32,8 @@
 // THE SCHEMA, AND THE TWO COLUMN DECISIONS THAT ARE NOT OBVIOUS.
 //
 //   sts_ldap_entries(realm, dn_key, dn, attrs, origin, created_at, modified_at)
-//   sts_realms(id, name, description, created_at, overrides)
+//   sts_realms(id, name, description, created_at, overrides, domain,
+//              retiring_at)
 //   sts_appconfig(key, value)
 //
 // **THE PRIMARY KEY IS (realm, dn_key) AND dn_key IS THE NORMALISED DN.** Not
@@ -141,8 +142,11 @@ const CHANGE_ROWS_PER_STATEMENT = 5000;
 // SCHEMA_COLUMNS below. 7 SINCE 2026-09-22, for the thirteen `sts_risk_*`
 // tables of risk scoring (#62) — see their block in SCHEMA_OBJECTS. 8 SINCE
 // 2026-09-23, for `sts_risk_terms_acceptances`, the record of who accepted
-// which dataset provider's terms (the second licence review on #62).
-const SCHEMA_VERSION = 9;
+// which dataset provider's terms (the second licence review on #62). 10 SINCE
+// 2026-09-26, for `sts_realms.retiring_at` (#262): the mark
+// `realms.retire()` sets before it ends anything, which every process reads
+// to refuse new sign-ins in a realm being removed.
+const SCHEMA_VERSION = 10;
 
 // THE DATABASE'S CLOCK, in the milliseconds every cluster table stores. See the
 // cluster block in SCHEMA_OBJECTS for why no process's own clock is used.
@@ -241,7 +245,8 @@ const SCHEMA_OBJECTS = [
   '  description text,' +
   '  created_at  bigint,' +
   '  overrides   jsonb NOT NULL DEFAULT \'{}\'::jsonb,' +
-  '  domain      text)' },
+  '  domain      text,' +
+  '  retiring_at bigint)' },
   { name: 'sts_appconfig', statement:
   'CREATE TABLE IF NOT EXISTS sts_appconfig (' +
   '  key   text PRIMARY KEY,' +
@@ -800,6 +805,9 @@ const SCHEMA_OBJECTS = [
 const SCHEMA_COLUMNS = [
   { table: 'sts_realms', column: 'domain', statement:
   'ALTER TABLE sts_realms ADD COLUMN IF NOT EXISTS domain text' },
+  // When the realm's removal began (#262, schema version 10), or NULL.
+  { table: 'sts_realms', column: 'retiring_at', statement:
+  'ALTER TABLE sts_realms ADD COLUMN IF NOT EXISTS retiring_at bigint' },
   // What the person said about a sign-in (#62 P6, schema version 9).
   { table: 'sts_risk_assessments', column: 'feedback', statement:
   'ALTER TABLE sts_risk_assessments ADD COLUMN IF NOT EXISTS feedback text ' +
@@ -2117,8 +2125,8 @@ function create(options) {
       log.debug('Entering the postgres driver loadRealms().');
       log.debug("Leaving loadRealms().");
       return pool.query(
-        'SELECT id, name, description, created_at, overrides, domain ' +
-        'FROM sts_realms ' +
+        'SELECT id, name, description, created_at, overrides, domain, ' +
+        'retiring_at FROM sts_realms ' +
         'ORDER BY created_at NULLS FIRST, id'
       ).then(function (result) {
         if (!result.rows.length) {
@@ -2137,7 +2145,10 @@ function create(options) {
             // millisecond count, which does, so it is converted here rather
             // than left as a string for realms.js to be surprised by.
             createdAt: row.created_at === null ? null : Number(row.created_at),
-            overrides: row.overrides || {}
+            overrides: row.overrides || {},
+            // bigint, a string, for created_at's reason (#262).
+            retiringSince: row.retiring_at === null ||
+              row.retiring_at === undefined ? null : Number(row.retiring_at)
           };
         });
       });
@@ -2482,8 +2493,12 @@ function create(options) {
           chain = chain.then(function () {
             return client.query(
               'INSERT INTO sts_realms (id, name, description, created_at, ' +
-              'overrides, domain) VALUES ($1, $2, $3, $4, $5::jsonb, $11) ' +
+              'overrides, domain, retiring_at) VALUES ($1, $2, $3, $4, ' +
+              '$5::jsonb, $11, $12) ' +
               'ON CONFLICT (id) DO UPDATE SET ' +
+              // ONE-WAY (#262): a mark once written stays until the row goes.
+              '  retiring_at = COALESCE(sts_realms.retiring_at, ' +
+              '                         EXCLUDED.retiring_at), ' +
               // FIXED AT CREATION, so the first value written stays.
               '  domain = COALESCE(sts_realms.domain, EXCLUDED.domain), ' +
               '  name = CASE WHEN $6 THEN EXCLUDED.name ' +
@@ -2499,7 +2514,9 @@ function create(options) {
                JSON.stringify(row.overrides || {}), !!one.name,
                !!one.description, (one.cleared || []).map(String),
                JSON.stringify(one.set || {}), !!one.whole,
-               row.domain || null]);
+               row.domain || null,
+               Number(row.retiringSince) > 0 ? Number(row.retiringSince)
+                                             : null]);
           });
         });
         return chain.then(function () {

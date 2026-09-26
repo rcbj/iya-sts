@@ -3903,6 +3903,33 @@ class Authn {
               acr);
     const extra = detail || {};
     // -------------------------------------------------------------------------
+    // A REALM BEING REMOVED STARTS NO SESSION (#262, 2026-09-26), from any
+    // door, in either mode, authenticated or not — before everything below,
+    // the disabled account included. `realms.retire()` has marked the realm
+    // and is ending every session in it; one started now would be dropped by
+    // the purge with no `session-revoked` and no Logout Token. The issuance
+    // gate refuses the same, but the sign-in screen asks it ahead of time and
+    // passes `gated: true`, so this line is what holds for every door.
+    // -------------------------------------------------------------------------
+    const retiring = realms.retiringRefusal();
+    if (retiring) {
+      log.info('authn: a session for "' + username + '" was REFUSED at the ' +
+               (via || 'sign-in') + ' door: ' + retiring.why);
+      audit.audit({
+        action: 'session.refuse', actor: String(username || ''),
+        errorCode: 'STS-CORE-0121',
+        protocol: via || 'OAuth 2.0 / OIDC', channel: 'http', target: '',
+        summary: 'a session for ' + username + ' was refused at the ' +
+                 (via || 'sign-in') + ' door: the realm is being removed',
+        detail: { why: retiring.why,
+                  application: String(extra.application || '') }
+      });
+      extra.refusedWith = 'STS-CORE-0121';
+      extra.refusedWhy = retiring.why;
+      log.debug("Leaving Authn.startSession(). The realm is being removed.");
+      return null;
+    }
+    // -------------------------------------------------------------------------
     // A DISABLED ACCOUNT GETS NO SESSION (2026-09-17, #36 follow-up), from any
     // door, in any mode — FIRST, before the browser's previous session is
     // touched, before the issuance gate (which the password screen skips with
@@ -7388,7 +7415,9 @@ class Authn {
                '" at "' + String(record.application) + '". ' + roleAnswer.why);
       log.debug("Leaving the authentication endpoint. The issuance policy " +
                 "refused the session.");
-      errorCodes.mark(res, 'STS-AUTHN-0009');
+      // A realm being removed (#262) is its own code; the policy's is 0009.
+      errorCodes.mark(res, roleAnswer.retiring ? 'STS-CORE-0121'
+                                               : 'STS-AUTHN-0009');
       log.debug("Leaving Authn.finishPasswordSignIn().");
       return this.sendLoginPage(res, this.loginPage(base, record,
                                                     roleAnswer.why));

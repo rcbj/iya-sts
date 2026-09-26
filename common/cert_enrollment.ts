@@ -1742,6 +1742,17 @@ class CertEnrollment {
       return self.refuse('STS-ENROLL-0004', 500, 'Not an enrollment family: ' +
                          family);
     }
+    // A REALM BEING REMOVED ISSUES NOTHING NEW (#262), in any family or
+    // profile and in both modes — asked before the device door, which is the
+    // other way in. 503: the refusal is about the realm, not the request.
+    const retiring = realms.retiringRefusal();
+    if (retiring) {
+      log.info(errorCodes.tag('STS-CORE-0121') + 'enrollment: a ' +
+               FAMILY_LABELS[family] + ' certificate was refused. ' +
+               retiring.why);
+      log.debug("Leaving CertEnrollment.issue(). The realm is being removed.");
+      return self.refuse('STS-CORE-0121', 503, retiring.why);
+    }
     // THE DEVICE PROFILE is its own door (#164 phase 2): its holder is a
     // device entry, not a person or an application. See `issueForDevice()`.
     if (String(asked.profile || '') === DEVICE_PROFILE) {

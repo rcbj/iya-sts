@@ -989,12 +989,14 @@ class GnapGrants {
       if (!allowed.allowed) {
         log.info('gnap: the issuance policy refused a token for grant ' +
                  grant.id + ': ' + allowed.why);
-        audit.failure('STS-GNAP-0090', { protocol: PROTOCOL, channel: 'http',
-                                         target: grant.client.identifier,
-                                         summary: 'The issuance policy ' +
-                                         'refused a GNAP access token', detail:
-                                         { grant: grant.id, why:
-                                           String(allowed.why || '') } });
+        // A realm being removed (#262) is its own code.
+        audit.failure(allowed.retiring ? 'STS-CORE-0121' : 'STS-GNAP-0090',
+                      { protocol: PROTOCOL, channel: 'http',
+                        target: grant.client.identifier,
+                        summary: 'The issuance policy refused a GNAP ' +
+                                 'access token',
+                        detail: { grant: grant.id,
+                                  why: String(allowed.why || '') } });
         continue;
       }
       const rsIds = this.resourceServersFor(asked.access);

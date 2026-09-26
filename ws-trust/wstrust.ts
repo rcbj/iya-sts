@@ -1214,7 +1214,10 @@ class WsTrust {
       log.info('wstrust: the issuance policy refused a token for "' +
                String(subject) + '" to "' + audience + '". ' + roleAnswer.why);
       log.debug("Leaving the RST handler. The issuance policy refused it.");
-      return { status: 403, version: version, errorCode: 'STS-WSTRUST-0011',
+      // A realm being removed (#262) is its own code.
+      return { status: 403, version: version,
+               errorCode: roleAnswer.retiring ? 'STS-CORE-0121'
+                                              : 'STS-WSTRUST-0011',
                body: this.soapFault(version, roleAnswer.why) };
     }
 
