@@ -517,7 +517,67 @@ function nodeInfo() {
            uptimeMs: Math.round(process.uptime() * 1000),
            workers: requestWorkerCount(),
            lastStallMs: lastStall ? lastStall.ms : 0,
-           caches: cacheReport };
+           caches: cacheReport,
+           listenerCertificates: listenerCertificates.slice(0) };
+}
+
+// ---------------------------------------------------------------------------
+// THE CERTIFICATES THIS NODE'S MAIN PORT PRESENTS, FOR THE OTHER NODES' SAML
+// METADATA (#248).
+//
+// The SAML identity provider's metadata publishes the TLS certificate its back
+// channel presents, so a service provider can authenticate artifact
+// resolution and the attribute query from metadata. EACH NODE PRESENTS A LEAF
+// OF ITS OWN — over its own listener key, under the hierarchy the cluster
+// agrees on (`tls/CLAUDE.md`) — and a service provider behind a balancer
+// reaches whichever node it reaches, so a document naming only the node that
+// served it would authenticate one node in N. The membership row's `info` is
+// the channel between nodes (above), so each node's leaves ride on its
+// heartbeat, and `listenerCertificatesOfLiveNodes()` reads them back out of
+// the last state read — at most a heartbeat behind, like every other member
+// figure. Public material: base64 DER, no key. `server.js` sets it when the
+// main port binds as HTTPS and again whenever the listener is re-issued.
+// ---------------------------------------------------------------------------
+let listenerCertificates = [];
+
+function setListenerCertificates(pems) {
+  log.debug("Entering setListenerCertificates().");
+  listenerCertificates = (Array.isArray(pems) ? pems : []).map(function (pem) {
+    return String(pem || '').replace(/-----(BEGIN|END) CERTIFICATE-----/g, '')
+      .replace(/\s+/g, '');
+  }).filter(function (b64) {
+    return !!b64;
+  });
+  log.debug("Leaving setListenerCertificates(). " +
+            listenerCertificates.length + ".");
+}
+
+// Every live node's leaves, as base64 DER, this node's own among them once
+// its row has been read; empty with no cluster. A node that left, or whose
+// heartbeat lapsed, is not presenting anything a balancer sends traffic to.
+function listenerCertificatesOfLiveNodes() {
+  log.debug("Entering listenerCertificatesOfLiveNodes().");
+  if (!enabled()) {
+    log.debug("Leaving listenerCertificatesOfLiveNodes(). No cluster.");
+    return [];
+  }
+  const last = snapshot().state;
+  const now = (last && Number(last.now)) || Date.now();
+  const out = [];
+  ((last && last.nodes) || []).forEach(function (node) {
+    if (!node || node.leftAt || !(Number(node.expiresAt) > now)) {
+      return;
+    }
+    const certs = (node.info && node.info.listenerCertificates) || [];
+    (Array.isArray(certs) ? certs : []).forEach(function (b64) {
+      if (typeof b64 === 'string' && b64 && out.indexOf(b64) < 0) {
+        out.push(b64);
+      }
+    });
+  });
+  log.debug("Leaving listenerCertificatesOfLiveNodes(). " + out.length +
+            ".");
+  return out;
 }
 
 // ---------------------------------------------------------------------------
@@ -1207,6 +1267,10 @@ module.exports = {
   state: state,
   refreshState: refreshState,
   snapshot: snapshot,
+  // The main port's leaves, on this node's row and read off every live one's
+  // (#248, the SAML metadata's back-channel key).
+  setListenerCertificates: setListenerCertificates,
+  listenerCertificatesOfLiveNodes: listenerCertificatesOfLiveNodes,
   forkEnvironment: forkEnvironment,
   nodeId: currentNodeId,
   // The node's stable name (`cluster.nodeName`, or the host name), which a

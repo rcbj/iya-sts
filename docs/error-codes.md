@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3492** of them, in **38** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3493** of them, in **38** subsystems.
 
 ## Where a code appears
 
@@ -64,7 +64,7 @@ is an ordinary outcome.
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 47
 * [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 249
 * [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 568
-* [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 96
+* [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 97
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 21
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 16
 * [Federation (`STS-FED`)](#sts-fed) — 133
@@ -1833,6 +1833,7 @@ Raised from: saml/.
 | `STS-SAML-0094` | A SAML 2.0 AttributeQuery named a subject no live session here gave the asking service provider (by the NameID it was issued), or that session has ended. #189. | SOAP samlp:Response, Requester / UnknownPrincipal (HTTP 200) |
 | `STS-SAML-0095` | The SAML 2.0 attribute authority received no <samlp:AttributeQuery>, or one naming no Issuer. #189. | SOAP samlp:Response, Requester (HTTP 200) |
 | `STS-SAML-0096` | A SAML 1.1 AttributeQuery or AuthenticationQuery in product mode named a subject no live session here gave the asking relying party (by the NameIdentifier it was issued). #189. | SOAP samlp:Response with status samlp:Requester (HTTP 200) |
+| `STS-SAML-0097` | The TLS certificate the SAML back channel presents (this process's main-port leaves, or another cluster node's off its membership row) could not be read while a SAML 2.0 or SAML 1.1 metadata document was built, so the document went out without that KeyDescriptor and a service provider authenticating the back channel from metadata will refuse the node it names none for. #248. | none — the metadata is served (HTTP 200) without the key |
 
 ## STS-WSTRUST
 

@@ -290,6 +290,10 @@ class ProtocolStack {
     require('../ws-trust/wstrust');
     this.build('saml/document_settings', require('../saml/document_settings'),
                'DocumentSettings');
+    // #248: the back channel's TLS certificate as a metadata key. A library;
+    // it reaches `tls/tls_server` lazily, when a document is built.
+    this.build('saml/listener_keys', require('../saml/listener_keys'),
+               'ListenerKeys');
     this.build('saml/saml2', require('../saml/saml2'), 'Saml2Assertions');
     this.build('ws-trust/wstrust', require('../ws-trust/wstrust'), 'WsTrust');
     this.register(app, require('../ws-trust/wstrust'), 'ws-trust/wstrust');
