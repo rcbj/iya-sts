@@ -3670,8 +3670,8 @@ const ENDPOINTS: EndpointEntry[] = [
           'every certificate this service issues resolves to. Ungated, and ' +
           'it has to be: a relying party fetches this before it has decided ' +
           'to trust anything. EVERY CERTIFICATE NAMES IT OVER PLAIN HTTP, on ' +
-          '`pki.httpPort`, a second listener that answers /pki/ and nothing ' +
-          'else — RFC 5280 section 8 says a CA SHOULD NOT write an https or ' +
+          '`pki.httpPort`, a second listener that answers /pki/ (and ' +
+          'SCEP, since #210) and nothing else — RFC 5280 section 8 says a CA SHOULD NOT write an https or ' +
           'ldaps URI into an extension, and RFC 5019 section 5 says an OCSP ' +
           'responder MUST answer plain HTTP. The main port answers these ' +
           'paths too.' },
@@ -4195,6 +4195,13 @@ const ENDPOINTS: EndpointEntry[] = [
           'ServiceProviderConfig ADVERTISES rather than against the express ' +
           'body parser\'s service-wide one, because a client reads a ' +
           'published limit as a promise.' },
+  { path: '/scim/v2/*', group: 'SCIM', name: 'Any other path under the base',
+    specs: ['rfc7644'],
+    what: 'A path under /scim/v2 that names no endpoint, answered 404 in the ' +
+          'SCIM Error schema (section 3.12) rather than by express as an ' +
+          'HTML page, so a client that mistyped a resource type gets a body ' +
+          'it can parse (#206). Registered after every endpoint above, per ' +
+          'method.' },
   { path: '/scim/v2/Me', group: 'SCIM', name: '/Me, the authenticated subject',
     specs: ['rfc7644', 'rfc7235'],
     what: 'Section 3.11\'s alias for the subject the request authenticated ' +
@@ -10741,7 +10748,11 @@ const ENDPOINTS: EndpointEntry[] = [
           'requester and encrypted to the RA; the reply is a CertRep signed ' +
           'by the RA. Refusals after the message is read are CertRep FAILURE ' +
           'with a failInfo; not refused over plain HTTP in either mode, ' +
-          'because the security is the CMS envelope (RFC 8894 section 2.1).' },
+          'because the security is the CMS envelope (RFC 8894 section 2.1) ' +
+          '— and served on the plain-HTTP listener (`pki.httpPort`) as well ' +
+          'as the main port, since sscep and most device firmware speak no ' +
+          'TLS (#210). A POST is application/x-pki-message, or ' +
+          'application/octet-stream as micromdm\'s client sends it (#211).' },
   { path: '/enroll/scep/pkiclient.exe', group: 'SCEP',
     name: 'The SCEP server (CGI name)', specs: ['rfc8894'],
     effect: 'as /enroll/scep',

@@ -437,6 +437,7 @@ var config = {
     revocationCrlIssuersFile: "",               // Certificates that may sign an indirect CRL
     revocationLdap: "ldaps",                    // LDAP revocation addresses
     revocationLdapCaFile: "",                   // CA certificates for ldaps revocation directories
+    revocationHttpsCaFile: "",                  // CA certificates for https CRL and OCSP servers
     revocationLdapDirectory: "",                // Directory for CRL names relative to their issuer
     enrollmentMaxCertificatesPerEntry: 20       // Enrolled certificates one entry may hold
   },
@@ -781,6 +782,7 @@ var config = {
     bulkMaxOperations: 100,      // Bulk operation limit
     bulkMaxPayloadSize: 1048576, // Bulk payload limit
     authDiscovery: false,        // Authenticate discovery too
+    inventOnCreate: true,        // Fill a provisioned person in (development mode)
     authRealm: "SCIM",           // Authentication realm
     scopeRead: "scim:read",      // OAuth scope to read
     scopeWrite: "scim:write",    // OAuth scope to write

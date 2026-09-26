@@ -415,7 +415,11 @@ class PepNotifier {
         // policy above decides this; `ca` is added only when a CA file names
         // one, because node reads that option by value.
         rejectUnauthorized: !policy || policy.rejectUnauthorized
-      }, policy && policy.ca ? { ca: policy.ca } : {}),
+      }, policy && policy.ca ? { ca: policy.ca } : {},
+      // The host check, and the verified chain held to the path rules
+      // (#201, `OutboundTls.checkServerIdentity()`); only when present.
+      policy && policy.checkServerIdentity
+        ? { checkServerIdentity: policy.checkServerIdentity } : {}),
       function (response) {
         let received = 0;
         const chunks: Buffer[] = [];

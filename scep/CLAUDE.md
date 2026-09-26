@@ -177,6 +177,38 @@ section 2.3; `STS-SCEP-0034`).
   cannot be asked `STS-SCEP-0065`; the claim lives two minutes, so a node that
   died holding it blocks that one transactionID and nothing else.
 
+## What the real clients found (#210, #211, 2026-09-24)
+
+* **sscep has no TLS** and refuses an https URL, and SCEP was answered only on
+  the main port. `pki/pki_service.ts`'s plain-HTTP listener now answers
+  `/enroll/scep`, bare and under a realm prefix, beside `/pki/` — nothing else
+  moved there.
+* **sscep POSTs with no Content-Type; micromdm's client with
+  `application/octet-stream`.** Both were 415 `STS-SCEP-0007`; `messageBytes()`
+  takes both (an absent type reads `req.rawBody`, the bytes the text parser
+  kept). Any other declared type is still 415.
+* **sscep renews with a PKCSReq signed by the old certificate** (it has no
+  RenewalReq) and was refused `STS-SCEP-0034`. RFC 8894 section 2.3 notes most
+  implementations keep that form; `pkcsReq()` hands one whose signer this
+  realm issued to `renewalReq()`, with exactly its checks. A foreign signer is
+  still 0034.
+* **The hint could not work**: the https URL, `openssl req` without
+  `prompt=no` (so no challengePassword, `STS-SCEP-0035`), and `-c ca.crt-1`
+  where sscep verifies the RA's CertRep with `-c`. `scep_console.ts` now names
+  the plain URL (`plainUrl` in the answer), writes the subject the certificate
+  will carry, and passes the RA. The job runs it literally.
+* **micromdm's scepclient cannot be issued a certificate, and the service is
+  right.** It builds every pkiMessage with smallstep/pkcs7 v0.1.1's package
+  defaults — single DES-CBC for the envelope, SHA-1 for the signature — reads
+  GetCACaps only to choose POST, and has no flag for either (v2.3.0 and `main`
+  at 9902c1a). Refused `badAlg` (`STS-SCEP-0020`, the SHA-1 signature, first).
+  Documented exception on #211; a legacy-algorithm setting is an open
+  question there, and would be a weaker option behind a setting.
+* **sscep warns when the certificate's subject is not the request's.** The
+  certificate's content comes from the entry, never the CSR (RFC 8894 lets the
+  CA change it), so a request must carry `CN=<entry>, O=<organisation>` (or
+  `CN=<host>, UID=<entry>, O=…`) to see no warning; the hint does.
+
 ## Documented exceptions
 
 | Not implemented | Why |
@@ -184,7 +216,7 @@ section 2.3; `STS-SCEP-0034`).
 | A non-RSA requester key (ECDSA, EdDSA, ML-DSA, composites, ML-KEM) | The CertRep's certificate is encrypted to the requester with RSA key transport; a non-RSA signer is `STS-SCEP-0025` and a non-RSA CSR `STS-SCEP-0033`, both `badAlg`. **Every one of the nine profiles is issued over SCEP for an RSA key**, and no /admin/pki cryptographic approach but classical RSA reaches SCEP. |
 | PENDING | Nothing is approved by hand. |
 | GetNextCACert | No pre-announced CA rollover; 501, not in GetCACaps. |
-| SHA-1, MD5, DES, DES-EDE3 | Refused `badAlg`. |
+| SHA-1, MD5, DES, DES-EDE3 | Refused `badAlg` — which is why micromdm's scepclient, fixed on SHA-1 and single DES, cannot enroll (above). |
 | KeyAgreeRecipientInfo, RSASSA-PSS signers | An RSA RA has no agreement key; PSS signers are refused `badAlg` as an unknown signature algorithm. |
 | `failInfoText` (RFC 8894's human-readable failure) | The reason is an operator's; it is recorded, not sent. |
 | The five CA / OCSP / KDC profiles | Never over an enrollment protocol (`core.REFUSED_PROFILES`); a challenge for one cannot be created. |
@@ -197,6 +229,16 @@ section 2.3; `STS-SCEP-0034`).
   and the API rows' schemas, the failInfo map. Mutants caught: signature always
   verifying, no implicit rejection, a process-wide transaction store, a zod
   schema that drifted from the OpenAPI body.
+* `tests/vendored/sts_scep_sscep.js` — **certnanny's sscep at cb3e539, the real
+  client** (#210), over the plain-HTTP listener: GetCACaps, GetCACert, the
+  `/admin-api` hint run literally by bash, a challenge the person made on
+  `/portal/certificates`, `-R`, GetCert, GetCRL, the historical renewal and the
+  old serial on the CRL, and the refusals (reused, unknown, another realm's RA,
+  3DES, SHA-1). No sscep warning on any success.
+* `tests/vendored/sts_scep_micromdm.js` — **micromdm's scepclient v2.3.0**
+  (#211): its transport over HTTPS and plain HTTP, three ways of choosing the
+  recipient, and the `badAlg` its fixed SHA-1 and DES draw (below), which
+  spends no challenge.
 * `tests/vendored/sts_scep_enrollment.js` with `tests/vendored/scep_client.js`
   (forge + node, nothing from here) — over HTTP, ~70 checks, ~70 seconds (it
   waits out a sixty-second challenge). Mutants caught: no URL-profile check, no

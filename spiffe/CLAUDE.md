@@ -1092,6 +1092,20 @@ its specification says it MUST NOT — a workload has no root of trust until tha
 call gives it one — so there is no subject to decide about and no session to
 record. Only the `server` surface asks.
 
+## A PRESENTED X509-SVID IS HELD TO THE SHARED PATH RULES (#201, 2026-09-24)
+
+`verifyPresentedCertificate()` found its signer with node's `checkIssued()` and
+`verify()` and asked nothing else, so an SVID that was itself a CA, carried a
+critical extension nothing implements or broke a name constraint on the
+authority was accepted whenever the signature verified. It asks
+`pki.verifyIssuedDirectly()` now — the one synchronous one-hop door, holding the
+two-certificate path to `pki.pathRuleProblem()` with this surface's own
+`spiffe.clockSkew` — and then X509-SVID section 4.3's leaf rules
+(`leafSvidProblem()`: cA false, digitalSignature, neither keyCertSign nor
+cRLSign). Either refusal is `STS-SPIFFE-0144`. Still ONE HOP, as argued above:
+this CA signs leaves directly. C2SP x509-limbo is driven through the same door by
+`tests/x509_limbo.js` (`common/CLAUDE.md`, *3w, ONE SET OF PATH RULES*).
+
 ## A PRESENTED X509-SVID IS LOOKED UP IN THE REVOCATION REGISTER (2026-09-12)
 
 `verifyPresentedCertificate()` asks `common/revocation_status.js`'s SYNCHRONOUS

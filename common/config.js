@@ -4424,8 +4424,11 @@ const SETTINGS = [
     env: 'PKI_HTTP_PORT', type: 'port', dflt: 8082, runtime: false,
     restartReason: 'the listener is bound when the process starts',
     description: 'A second HTTP listener, PLAIN rather than TLS, that ' +
-                 'answers the revocation endpoints under `/pki/` and refuses ' +
-                 'every other path. Every certificate this service issues ' +
+                 'answers the revocation endpoints under `/pki/` and SCEP ' +
+                 'under `/enroll/scep` (RFC 8894 is HTTP and secures its ' +
+                 'own messages; sscep and most device firmware speak no ' +
+                 'TLS), and refuses every other path. Every certificate ' +
+                 'this service issues ' +
                  'names it for its CRL, its OCSP responder and its issuer\'s ' +
                  'certificate.\n\n**WHY PLAIN.** RFC 5280 section 8 says a ' +
                  'CA SHOULD NOT put an https URI in an extension — a client ' +
@@ -4932,6 +4935,16 @@ const SETTINGS = [
                  'certificate may chain to, BESIDE node\'s own CA store. A ' +
                  'directory certified by a private CA is refused until its ' +
                  'CA is here.' },
+  { key: 'pki.revocationHttpsCaFile', group: 'PKI',
+    label: 'CA certificates for https CRL and OCSP servers',
+    env: 'STS_PKI_REVOCATION_HTTPS_CA_FILE', type: 'string', dflt: '',
+    runtime: true,
+    description: 'A PEM file of CA certificates the certificate of a CRL ' +
+                 'distribution point or OCSP responder reached over https ' +
+                 'may chain to, BESIDE node\'s own CA store (#201). Such a ' +
+                 'server\'s certificate is verified, its host checked as ' +
+                 'RFC 9525 does and its chain held to the path rules; plain ' +
+                 'http, which RFC 5280 and RFC 6960 expect, is unaffected.' },
   { key: 'pki.revocationLdapDirectory', group: 'PKI',
     label: 'Directory for CRL names relative to their issuer',
     env: 'STS_PKI_REVOCATION_LDAP_DIRECTORY', type: 'string', dflt: '',
@@ -9230,6 +9243,21 @@ const SETTINGS = [
                  'the question it is asking. RFC 7644 section 4 says nothing ' +
                  'either way, so both are conforming and both are worth ' +
                  'being able to try.' },
+
+  { key: 'scim.inventOnCreate', group: 'SCIM',
+    label: 'Fill a provisioned person in (development mode)',
+    env: 'SCIM_INVENT_ON_CREATE', type: 'bool', dflt: true, runtime: true,
+    description: 'DEVELOPMENT MODE ONLY, and ON there by default: a person a ' +
+                 'SCIM client creates is given the invented persona values ' +
+                 '(a cn, sn, givenName, displayName and mail) and the ' +
+                 'credential-claim attributes /admin/vc selects, wherever ' +
+                 'the client sent none — so the provisioned person can be ' +
+                 'issued a credential like one who signed in. OFF, a SCIM ' +
+                 'create writes exactly what the client sent, and reading ' +
+                 'the resource back returns only that, which is what a ' +
+                 'provisioning client checking its own round trip — and ' +
+                 'the SCIM conformance harnesses (#206) — expects. Product ' +
+                 'mode invents nothing whatever this says.' },
 
   { key: 'scim.authRealm', group: 'SCIM', label: 'Authentication realm',
     env: 'SCIM_AUTH_REALM', type: 'string', dflt: 'SCIM', runtime: true,

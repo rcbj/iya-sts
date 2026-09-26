@@ -369,6 +369,11 @@ class FederationHttp {
     if (policy.ca) {
       requestOptions.ca = policy.ca;
     }
+    // The host check, and the verified chain held to the path rules (#201,
+    // `OutboundTls.checkServerIdentity()`); only when present.
+    if (policy.checkServerIdentity) {
+      requestOptions.checkServerIdentity = policy.checkServerIdentity;
+    }
     log.debug("Leaving FederationHttp.applyTls().");
   }
 
@@ -1115,10 +1120,9 @@ class FederationHttp {
       requestOptions.key = String(opts.key);
     }
     if (secure && opts.chainOnly) {
-      // The chain is still verified against `ca`; only the name is not.
-      requestOptions.checkServerIdentity = function () {
-        return undefined;
-      };
+      // The chain is still verified against `ca`, and held to the path rules
+      // (#201); only the name is not.
+      requestOptions.checkServerIdentity = OutboundTls.checkChainOnly;
     }
     // SPIRE's `skip_kubelet_verification` (#171): development only. The
     // attestor asks `common/outbound_tls.ts` before it sets `skipVerify`, and

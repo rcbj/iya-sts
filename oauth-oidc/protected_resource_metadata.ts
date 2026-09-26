@@ -717,6 +717,10 @@ class ProtectedResourceMetadata {
         if (policy && policy.ca) {
           options.ca = policy.ca;
         }
+        // The host check, and the verified chain held to the path rules (#201).
+        if (policy && policy.checkServerIdentity) {
+          options.checkServerIdentity = policy.checkServerIdentity;
+        }
         if (vetted.address) {
           // PINNED to the address that was checked. The Host header and TLS
           // server name still come from the URL, so a certificate is checked
