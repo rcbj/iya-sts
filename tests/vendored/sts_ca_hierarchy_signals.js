@@ -18,7 +18,11 @@
 //   c. a second key pair, then the NEW Issuing CA revoked on its
 //      Intermediate's list for keyCompromise: credential-change (x509,
 //      revoke) naming the second serial AND RISC credential-compromise
-//      (x509), both about the person — the revocation walks down the tier.
+//      (x509), both about the person — the revocation walks down the tier;
+//   d. the revoked Issuing CA reissued, so the realm this job leaves behind
+//      publishes no certificate its own CRL lists as revoked —
+//      sts_pki_distribution_points.js checks that of every realm, and a
+//      throwaway realm is left in place rather than removed.
 //
 // Only this realm's authorities are touched: a revoked Issuing CA in the
 // default realm would refuse other jobs' certificates.
@@ -354,6 +358,17 @@ async function test() {
   check("AND, FOR keyCompromise, RISC credential-compromise (x509) about " +
         "the person", function () {
     assert.ok(found.hit, JSON.stringify(found.seen).slice(0, 1200));
+  });
+
+  log.info("=== d. the revoked Issuing CA replaced ===");
+  const restored = await postJson(realmApi + "/pki/reissue-use-case",
+                                  { useCase: "assertions" });
+  const after = await assertionsCa();
+  check("REISSUING THE REVOKED ISSUING CA leaves the realm publishing an " +
+        "authority no list names", function () {
+    assert.strictEqual(restored.status, 200, restored.raw.slice(0, 400));
+    assert.notStrictEqual(normal(after.serialHex), normal(tier.serialHex),
+                          "the Issuing CA was not replaced");
   });
 
   log.info("Test completed successfully. " + checks + " check(s) passed.");
