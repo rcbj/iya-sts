@@ -35,6 +35,10 @@
 //      from the shire's registered binding, saml11.doNotCacheCondition, the
 //      attribute names Shibboleth's map reads, and the product release
 //      policy for a query (0039, 0096).
+//   H. FEDERATION (#189, found by sts_federation_realms): a partner's value
+//      sent under two names that map to one directory attribute — this
+//      service's own `mail`, now under the claim URI and urn:oid — is written
+//      once, not twice.
 //
 // The SimpleSign octets (#189) are held by saml_artifact_and_simplesign.js.
 //
@@ -604,6 +608,33 @@ async function run(t) {
             'PRODUCT: the authenticated relying party, about the subject it ' +
             'holds a live session for, is ANSWERED (#189 — every query was ' +
             'refused in product until then)', released11.body.slice(0, 400));
+
+    // H. ONE FACT UNDER TWO NAMES IS ONE VALUE (#189). Since the identity
+    // provider sends `mail` as the claim URI and as the X.500/LDAP name, a
+    // federation relationship in front of it mapped both to `mail` and wrote
+    // the address twice (sts_federation_realms found it). The values of an
+    // LDAP attribute are a set; two DIFFERENT values still both arrive.
+    const federationMap = require('../federation/federation_map');
+    const address = 'fed-' + stamp + '@partner.test';
+    const both = federationMap.mapIncoming(null, {
+      'http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress':
+        [address],
+      'urn:oid:0.9.2342.19200300.100.1.3': [address]
+    }, 'fed-' + stamp);
+    t.equal(JSON.stringify(both.attributes.mail), JSON.stringify([address]),
+            'federation: mail sent under the claim URI AND urn:oid is ONE ' +
+            'value on the entry, not two (RFC 4512 section 2.3)');
+    t.equal(both.mapped.length, 2,
+            'federation: both incoming names are still reported as mapped');
+    const two = federationMap.mapIncoming(null, {
+      'http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress':
+        [address],
+      'urn:oid:0.9.2342.19200300.100.1.3': ['other-' + address]
+    }, 'fed-' + stamp);
+    t.equal(JSON.stringify(two.attributes.mail),
+            JSON.stringify([address, 'other-' + address]),
+            'federation: two DIFFERENT values under the two names are both ' +
+            'kept, as they always were');
   } finally {
     created.forEach(function (identifier) {
       if (applications.get(identifier)) {

@@ -603,6 +603,14 @@ class FederationMap {
   // answer for a directory attribute, which is multi-valued by nature —
   // `telephoneNumber` from both `homephone` and `otherphone` is two telephone
   // numbers, and picking one would be picking one.
+  //
+  // BUT A VALUE IS KEPT ONCE (#189). The values of an LDAP attribute are a
+  // SET (RFC 4512 section 2.3: no two values may be equivalent), and a
+  // partner that sends one fact under two names — this service's own identity
+  // provider does since #189, `mail` as the claim URI AND as the X.500/LDAP
+  // profile's `urn:oid:0.9.2342.19200300.100.1.3`, because Shibboleth reads
+  // one and AD FS-configured providers the other — is sending ONE address,
+  // not two. Concatenating blindly wrote `mail: [x, x]` onto the entry.
   // -------------------------------------------------------------------------
   mapIncoming(record: RelationshipLike | null | undefined,
               bag: Record<string, any> | null | undefined,
@@ -622,7 +630,13 @@ class FederationMap {
         unmapped.push({ incoming: name, values: values });
         return;
       }
-      attributes[row.ldap] = (attributes[row.ldap] || []).concat(values);
+      const kept = attributes[row.ldap] || [];
+      [].concat(values).forEach(function (value) {
+        if (kept.indexOf(value) < 0) {
+          kept.push(value);
+        }
+      });
+      attributes[row.ldap] = kept;
       mapped.push({ incoming: name, ldap: row.ldap, where: row.where,
                     values: values });
     });
