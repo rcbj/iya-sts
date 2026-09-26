@@ -637,31 +637,39 @@ class AdminApi {
     const { log, spec, closedSets } = this.deps;
     log.debug("Entering AdminApi.registerConsoleClosedSets().");
     let held = 0;
-    ROUTES.forEach(function (entry) {
+    const pagesOf = function (mirrors) {
       const pages = [];
       const re = /POST (\/admin(?:\/[^\s,]*)?)/g;
       let m;
-      while ((m = re.exec(String(entry.mirrors || ''))) !== null) {
+      while ((m = re.exec(String(mirrors || ''))) !== null) {
         pages.push(m[1]);
       }
-      if (!pages.length || entry.method === 'GET') {
+      return pages;
+    };
+    ROUTES.forEach(function (entry) {
+      if (entry.method === 'GET') {
         return;
       }
+      // An action may name a control of its own (`source.mirrors` in
+      // `admin_api_spec.ts`), and wins over its route's, as it does in the
+      // document.
       const rows = (entry.actions || []).map(function (a) {
-        return { action: a.action || '', body: a.requestBody };
+        return { action: a.action || '', body: a.requestBody,
+                 pages: pagesOf(a.mirrors || entry.mirrors) };
       });
       if (entry.requestBody && !(entry.actions || []).length) {
-        rows.push({ action: '', body: entry.requestBody });
+        rows.push({ action: '', body: entry.requestBody,
+                    pages: pagesOf(entry.mirrors) });
       }
       rows.forEach(function (row) {
-        if (!row.body) {
+        if (!row.body || !row.pages.length) {
           return;
         }
         const fields = closedSets.collect(row.body, spec.SCHEMAS);
         if (!fields.length) {
           return;
         }
-        pages.forEach(function (page) {
+        row.pages.forEach(function (page) {
           closedSets.registerConsole(page, row.action, fields);
         });
         held = held + 1;
