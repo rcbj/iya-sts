@@ -253,11 +253,13 @@ function childMain() {
     note(!(await honoured(alice)),
          'A4. the old session cookie no longer signs in: the authorization ' +
          'endpoint sends the browser to the screen');
-    note(revokedFor(aliceSid).length === 1,
-         'A5. the session observer was told `revoked` once, which is CAEP ' +
-         'session-revoked at delete time rather than at an expiry',
+    note(revokedFor(aliceSid).length === 1 &&
+         revokedFor(aliceSid)[0].initiatingEntity === 'admin',
+         'A5. the session observer was told `revoked` once, initiated by an ' +
+         'ADMINISTRATOR — CAEP session-revoked at delete time rather than ' +
+         'at an expiry labelled `policy`',
          JSON.stringify(revokedFor(aliceSid).map(function (n) {
-           return n.via;
+           return [n.via, n.initiatingEntity];
          })));
     await sleep(200);
     const tokens = posted.slice(postedBefore).filter(function (one) {
@@ -290,7 +292,8 @@ function childMain() {
          'B2. the next request presenting it is sent to the screen: ' +
          'sessionOf() treats a session whose person has no entry as ended');
     note(authn.sessionsOf('adel-bob').length === 0 &&
-         revokedFor(bobSid).length === 1,
+         revokedFor(bobSid).length === 1 &&
+         revokedFor(bobSid)[0].initiatingEntity === 'admin',
          'B3. and ends it through dropSession(), with its `revoked` notice',
          authn.sessionsOf('adel-bob').length + ' ' +
          revokedFor(bobSid).length);

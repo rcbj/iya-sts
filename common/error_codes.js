@@ -4165,8 +4165,9 @@ const CODES = [
     spec: 'none — audit row only; the sign-out is answered as usual' },
   { code: 'STS-AUTHN-0192',
     summary: 'Whether another process had already reported a session\'s end ' +
-      'could not be asked, so it was reported here and a receiver may be ' +
-      'told twice.',
+      'could not be asked — the claim answered that the store could not ' +
+      'say, or rejected three times (#242) — so it was reported here and a ' +
+      'receiver may be told twice.',
     spec: 'none — logged' },
   { code: 'STS-AUTHN-0193',
     summary: 'A security key registration was refused because the same ' +
@@ -4544,6 +4545,17 @@ const CODES = [
       'REQUIRED rather than offered (#246): only an administrator the ' +
       'authentication policy OFFERS a second factor may decline it.',
     spec: 'HTTP 400, the set-up page again' },
+  { code: 'STS-AUTHN-0290',
+    summary: 'A session was ended by a caller that did not say who ' +
+      'initiated it (#242): CAEP session-revoked says `system`, and the ' +
+      'caller should state admin, user, policy or system.',
+    spec: 'none — logged; the session is ended' },
+  { code: 'STS-AUTHN-0291',
+    summary: 'Reporting a session\'s end (its audit row, CAEP ' +
+      'session-revoked and back-channel Logout Tokens) threw after the ' +
+      'claim that decides who reports it was won (#242); it is not tried ' +
+      'again, because a second try could tell a receiver twice.',
+    spec: 'none — logged' },
   { code: 'STS-OAUTH-0001',
     summary: 'A JWT client assertion could not be read as a JWT (its header ' +
       'is not base64url JSON).',

@@ -6104,11 +6104,10 @@ class AdminApi {
           log.debug("Entering the management API sessions action endpoint.");
           const body = parseBody(req);
           // `by` REACHES THE EVENT and not only the audit row: the session
-          // family spends it as the `via` it hands `endSessionById()`, and
-          // `dropSession()` decides CAEP's `initiating_entity` by looking for
-          // `admin` or `console` in that string. "the management API" alone
-          // reported a person signing themselves out, which is the one
-          // distinction that member exists to draw.
+          // family spends it as the `via` it hands `endSessionById()`, which
+          // is the sentence in CAEP's `reason_admin`. Who ended it — `admin`
+          // here — is stated by `sessionsAction()` itself since #242, rather
+          // than read out of these words.
           const result = adminActions.sessionsAction(self.withAction(req, body),
             { by: 'the management API at /admin-api/sessions' });
           if (!result.ok) {

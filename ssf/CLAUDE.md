@@ -1624,6 +1624,26 @@ caller's own words on the context now, and the same phrase reaches
 `tests/caep_initiating_entity.js` is the guard, mutation-tested against five
 mutants.
 
+**AND THEN THE WORDS WERE READ THE WRONG WAY ROUND (#242, 2026-09-26).**
+Reading the entity out of the sentence made the console's own Sign out button
+("the Sign out button on the admin console") an ADMINISTRATOR ending the
+session of a person who signed themselves out, with every child it cascaded
+to, and made an emergency key rotation and the risk engine the PERSON. So the
+regex is gone: every door STATES `admin`, `user`, `policy` or `system` —
+`logout.terminate({ initiatingEntity })`, `authn.endSessionById(id, via,
+entity)`, `endEverySessionIn()`, `endRelyingPartySessions()` — and the words
+reach `reason_admin` only. A derived session ends with its parent's entity; a
+door that says nothing is `system` with `STS-AUTHN-0290`. The table of doors
+and their entities is `docs/caep-events.md`'s `session-revoked` section.
+`caep.ts`'s own fallback (`byAdmin`, then `user`) is kept for a notice from
+elsewhere that states nothing; `authn` always states one.
+
+**AN ARRIVAL SESSION IS NEVER ANNOUNCED (#242).** `authn.notifySession()`
+drops every notice about a session with `chosen: false` — the anonymous
+tracking row a cookie-less visitor gets at a front door — so its expiry, the
+sweep and a realm's every-session end no longer send a `session-revoked`
+about a session no receiver was ever told was established.
+
 ## PER-RECEIVER STATISTICS, AND THE COUNTER THEY NEEDED (2026-09-04)
 
 `caepApplications()` answers what this transmitter has said to each RECEIVER

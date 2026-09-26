@@ -28592,10 +28592,13 @@ class AdminConsole {
       const rp = oidcRp.sessionFor(req, 'admin');
       const parent = rp ? String(rp.derivedFrom || '') : '';
       const username = rp ? rp.user.username : '';
+      // The person signed THEMSELVES out (#242): the words name the
+      // console, and CAEP's `initiating_entity` is `user` all the same.
       oidcRp.endSessionFor(req, res, 'admin', 'the Sign out button on the ' +
-                                              'admin console');
+                                              'admin console', 'user');
       const signOnEnded = parent
-        ? !!endSessionById(parent, 'the Sign out button on the admin console')
+        ? !!endSessionById(parent, 'the Sign out button on the admin console',
+                           'user')
         : false;
       // AND THE SIGN-ON COOKIE, because `endSessionById()` has no response to
       // clear one on — it is the door /logout uses to end sessions that are not

@@ -227,6 +227,10 @@ class AccountState {
                                 Array.isArray(o.selection) ? o.selection : [], {
         actor: o.actor || '', channel: o.channel || 'internal',
         by: o.by || 'the account was disabled by an administrator',
+        // WHO ENDED IT, for CAEP's `initiating_entity` (#242): the caller
+        // says, and an administrator's act is the default of this file's
+        // callers — risk scoring says `policy`.
+        initiatingEntity: o.initiatingEntity || 'admin',
         // The disable's own `suspend` (#151) says it; no `invalidate` too.
         providerCommand: false
       });
@@ -314,6 +318,11 @@ class AccountState {
     const ended = disabled
       ? this.endEverything(name, {
           actor: o.actor || '', channel: o.via || 'http',
+          // `door` names an actor that is not an administrator — risk
+          // scoring, a foreign transmitter's SET — and each of those is a
+          // policy deciding (#242).
+          initiatingEntity: o.initiatingEntity ||
+                            (o.door ? 'policy' : 'admin'),
           by: o.by ? String(o.by)
             : 'the account was disabled by an administrator (' + door + ')' })
       : null;
@@ -387,6 +396,7 @@ class AccountState {
         const ended = c.disabled
           ? self.endEverything(name, {
               channel: 'internal',
+              initiatingEntity: 'admin',
               by: 'the account was disabled by an administrator through ' +
                   'the directory (' + String(c.kind || 'a write') + ')' })
           : null;

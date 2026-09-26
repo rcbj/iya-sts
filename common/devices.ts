@@ -1208,9 +1208,11 @@ class Devices {
   // those whose authentication events name the device as `registeredDevice`
   // (`authn.authenticationEvent()`). Each goes through `dropSession()`, so
   // it is an audit row, a CAEP session-revoked (with the device in its
-  // subject) and its relying parties' back-channel Logout Tokens. `via`
-  // decides `admin` against `user` there. Answers how many ended.
-  private endSessionsFrom(device: Device, via: string): number {
+  // subject) and its relying parties' back-channel Logout Tokens, with the
+  // caller's `entity` as CAEP's `initiating_entity` (#242). Answers how many
+  // ended.
+  private endSessionsFrom(device: Device, via: string,
+                          entity: string): number {
     const { log, findAuthn, errorCodes } = this.deps;
     log.debug("Entering Devices.endSessionsFrom(). " + device.id);
     const authn = findAuthn();
@@ -1230,7 +1232,7 @@ class Devices {
         return String(session.id || '');
       }).filter(Boolean);
       ids.forEach(function (id: string): void {
-        if (authn.endSessionById(id, via)) {
+        if (authn.endSessionById(id, via, entity)) {
           ended += 1;
         }
       });
@@ -1284,7 +1286,7 @@ class Devices {
     const ended = this.endSessionsFrom(device, entity === 'admin'
       ? 'an administrator removed device ' + device.id
       : (entity === 'user' ? 'the owner removed device ' + device.id
-                           : 'device ' + device.id + ' was removed'));
+                           : 'device ' + device.id + ' was removed'), entity);
     device.keys.forEach((key) => {
       this.credentialChanged(device, 'delete', key, opts, fallback, why);
     });
@@ -2345,7 +2347,7 @@ class Devices {
     const revoked = this.revokeCertificates(device, 'keyCompromise', actor);
     const ended = this.endSessionsFrom(device, entity === 'admin'
       ? 'an administrator marked device ' + device.id + ' compromised'
-      : 'device ' + device.id + ' was marked compromised');
+      : 'device ' + device.id + ' was marked compromised', entity);
     this.setRiskLevel(device.id, 'HIGH', 'DEVICE_COMPROMISED',
                       { source: 'compromise', actor: actor,
                         initiatingEntity: entity,

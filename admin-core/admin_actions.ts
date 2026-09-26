@@ -1417,6 +1417,7 @@ class AdminActions {
     }
     const result = logoutReader.terminate(key, [selected], {
       actor: (opts && opts.actor) || '',
+      initiatingEntity: 'admin',
       by: (opts && opts.by) || 'the sessions page',
       channel: 'http'
     });
@@ -1516,7 +1517,7 @@ class AdminActions {
 
     if (action === 'global') {
       const result = logoutReader.terminate(key, [], {
-        actor: user, channel: 'console',
+        actor: user, channel: 'console', initiatingEntity: 'admin',
         by: 'the admin console at /admin/logout'
       });
       this.mailSessionsEnded(user, result.terminated.length,
@@ -1552,7 +1553,7 @@ class AdminActions {
                                           'out of everything by accident.'] });
       }
       const result = logoutReader.terminate(key, selection, {
-        actor: user, channel: 'console',
+        actor: user, channel: 'console', initiatingEntity: 'admin',
         by: 'the admin console at /admin/logout'
       });
       this.mailSessionsEnded(user, result.terminated.length,
@@ -1902,7 +1903,7 @@ class AdminActions {
                         'session was ended.' };
     }
     const result = logoutReader.terminate(stats.identityKeyOf(who), [], {
-      actor: ctx.actor || who, channel: ctx.via,
+      actor: ctx.actor || who, channel: ctx.via, initiatingEntity: 'admin',
       by: why + ' (' + (ctx.via === 'api' ? '/admin-api/users'
                                            : 'the admin console') + ')'
     });

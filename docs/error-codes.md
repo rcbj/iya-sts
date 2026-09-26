@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3693** of them, in **39** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3695** of them, in **39** subsystems.
 
 ## Where a code appears
 
@@ -62,7 +62,7 @@ is an ordinary outcome.
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 72
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 26
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 47
-* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 249
+* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 251
 * [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 665
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 97
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 21
@@ -1092,7 +1092,7 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0189` | A hosted surface's token renewal was in flight on another node (its claim was held) and its renewed tokens had not reached this node within the wait; this request went on without renewing. | none — logged only |
 | `STS-AUTHN-0190` | A hosted surface could not renew a session's tokens because the claim store could not be asked; the request went on without renewing, rather than risk a second redemption of the refresh token. | none — logged only |
 | `STS-AUTHN-0191` | A sign-out ended a session whose end another process had already reported, so no second event or success row was written. | none — audit row only; the sign-out is answered as usual |
-| `STS-AUTHN-0192` | Whether another process had already reported a session's end could not be asked, so it was reported here and a receiver may be told twice. | none — logged |
+| `STS-AUTHN-0192` | Whether another process had already reported a session's end could not be asked — the claim answered that the store could not say, or rejected three times (#242) — so it was reported here and a receiver may be told twice. | none — logged |
 | `STS-AUTHN-0193` | A security key registration was refused because the same credential id was being (or had just been) registered by another request or node. | WebAuthn Level 3 section 7.1 step 26 (a credential id already registered is refused) |
 | `STS-AUTHN-0194` | A security key registration was refused because the store that decides whether its credential id is already registered elsewhere could not be asked. | none — fail closed |
 | `STS-AUTHN-0195` | A recovery-code set written before 2026-09-11 (codes, not hashes) could not be sealed under the key-encryption key when it was rewritten, so the change was not stored. | none — the spend that asked is refused (STS-AUTHN-0093) |
@@ -1168,6 +1168,8 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0268` | A session was refused: this realm's authentication policy does not accept the mechanism the door named as a first factor (a certificate, a Kerberos ticket, a federation partner, a wallet, a passkey, a password or an emailed code or link) (#64). | the door's own refusal page |
 | `STS-AUTHN-0269` | A session was refused: this realm's authentication policy does not accept the mechanism that answered as a second factor (a password or wallet after another factor, or an emailed code or link) (#64). | the door's own refusal page |
 | `STS-AUTHN-0270` | Ignore was posted on a second-factor set-up step that was REQUIRED rather than offered (#246): only an administrator the authentication policy OFFERS a second factor may decline it. | HTTP 400, the set-up page again |
+| `STS-AUTHN-0290` | A session was ended by a caller that did not say who initiated it (#242): CAEP session-revoked says `system`, and the caller should state admin, user, policy or system. | none — logged; the session is ended |
+| `STS-AUTHN-0291` | Reporting a session's end (its audit row, CAEP session-revoked and back-channel Logout Tokens) threw after the claim that decides who reports it was won (#242); it is not tried again, because a second try could tell a receiver twice. | none — logged |
 
 ## STS-OAUTH
 

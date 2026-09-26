@@ -6212,10 +6212,10 @@ class Portal {
       }
       const parent = String(session.derivedFrom || '');
       oidcRp.endSessionFor(req, res, 'portal', 'the Sign out button on the ' +
-                                               'user portal');
+                                               'user portal', 'user');
       const signOnEnded = parent
         ? !!authn.endSessionById(parent, 'the Sign out button on the user ' +
-                                         'portal')
+                                         'portal', 'user')
         : false;
       // AND THE SIGN-ON COOKIE. `endSessionById()` takes no response — it is
       // how /logout ends sessions that are not the caller's — so the cookie

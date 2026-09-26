@@ -987,8 +987,10 @@ class SsfReceivers {
       //   person's other sign-ins are not — and one whose initiating entity
       //   is `policy` is an EXPIRY, which a renewable relying-party session
       //   is designed to outlive (`authn.ts`, "A PARENT THAT RAN OUT IS NOT
-      //   A PARENT THAT SIGNED OUT"). The sign-out cascade in `dropSession()`
-      //   already ends what a real sign-out ends.
+      //   A PARENT THAT SIGNED OUT"), or since #242 a policy's decision (risk
+      //   scoring), whose end the sign-out cascade in `dropSession()` has
+      //   already carried to every derived session. That cascade ends what a
+      //   real sign-out ends.
       // * a `credential-change` the PERSON made (`initiating_entity: user`)
       //   is them changing their own credential — on the portal, usually —
       //   and signing them out of the page they did it on is the opposite of
@@ -1034,6 +1036,7 @@ class SsfReceivers {
           return;
         }
         try {
+          // `policy` (#242): the signal-response rule decided it.
           const ended = require('../authn/authn').endRelyingPartySessions(
             surface.rpSurface, realms.currentId(),
             // The person as the portal composes one (`personOf()`): three
@@ -1052,7 +1055,7 @@ class SsfReceivers {
                                            mail: user.email || '' });
             },
             'the ' + surface.label + ' received ' + short + ' (' +
-            entry.jti + ')');
+            entry.jti + ')', 'policy');
           out.push({ event: short, reaction: reaction, ended: ended });
         } catch (e) {
           log.warn(errorCodes.tag('STS-SSF-0111') + 'ssf: the ' +
