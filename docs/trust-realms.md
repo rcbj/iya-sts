@@ -436,12 +436,21 @@ with a fresh seeded tree. The default realm cannot be removed at all.
 ([#232](https://github.com/rcbj/iya-sts/issues/232)). Removing a realm from
 `/admin/realms` or `POST /admin-api/realms/remove`:
 
-1. ends every session in it the way a sign-out does — a CAEP
+1. stops anything NEW from starting in it
+   ([#262](https://github.com/rcbj/iya-sts/issues/262)): from this moment,
+   on every node, a sign-in there is refused, and so is every issuance — a
+   token of any grant, an authorization code, a SAML or WS-Federation
+   assertion, a WS-Trust token, a Kerberos ticket, a GNAP grant, an
+   OpenID4VCI credential, an ACME, EST or SCEP certificate and a SPIFFE SVID
+   (`STS-CORE-0121`; the token endpoint answers `invalid_grant`). A sign-out,
+   a revocation, introspection, UserInfo, metadata and a Shared Signals poll
+   still work, so a receiver can collect what the removal sends it;
+2. ends every session in it the way a sign-out does — a CAEP
    `session-revoked` (`initiating_entity: admin`) for each, and the
    back-channel Logout Tokens of the relying parties on it;
-2. reports every person in its directory purged — RISC `account-purged`;
-3. tells every Shared Signals stream `stream-updated` with status `disabled`;
-4. waits, at most `realms.removalDeliveryTimeoutS` seconds, for all of that
+3. reports every person in its directory purged — RISC `account-purged`;
+4. tells every Shared Signals stream `stream-updated` with status `disabled`;
+5. waits, at most `realms.removalDeliveryTimeoutS` seconds, for all of that
    to be delivered, and only then removes the realm.
 
 What had not been delivered when the wait ran out — a push receiver that did
@@ -452,3 +461,8 @@ only while the wait lasts; the removal does not wait for somebody to come
 and poll. On a cluster the node that received the removal does this once:
 the other nodes remove the realm when they learn of it, and say nothing
 again.
+
+The first step is written to the store before anything else happens, so
+every node refuses from then on. If the service stops half way through a
+removal, the realm stays in that state — refusing sign-ins — until you
+remove it again, which finishes the job.

@@ -9,7 +9,7 @@ each column, and why the tables are shaped that way. [Persistence](persistence.m
 covers turning the store on, the compose stack and what survives a restart.
 This page covers only what is in the database.
 
-**Schema version 9**: 26 tables in a schema of their own, `sts`.
+**Schema version 10**: 26 tables in a schema of their own, `sts`.
 
 ## Where the schema is written down
 
@@ -46,6 +46,7 @@ which shape is on disk.
 | 7 | the thirteen `sts_risk_*` tables of risk scoring (#62) |
 | 8 | `sts_risk_terms_acceptances` |
 | 9 | the columns `sts_risk_assessments.feedback` and `.feedback_at` |
+| 10 | the column `sts_realms.retiring_at` (#262) |
 
 ### The application role
 
@@ -148,6 +149,7 @@ so that they match the LDAP attributes byte for byte. A round trip through
 | `created_at` | bigint | milliseconds |
 | `overrides` | jsonb | the realm's own setting values, `{ "oauth2.rfc9700": true, … }` |
 | `domain` | text | the realm's DNS domain, **fixed at creation**, which becomes the directory base `dc=…` (v6) |
+| `retiring_at` | bigint | milliseconds, or NULL: when the realm's removal began. While it is set, every process refuses new sign-ins and issuance in the realm; it is never cleared, because the removal deletes the row (v10, [#262](https://github.com/rcbj/iya-sts/issues/262)) |
 
 The default realm is not a row. Its settings are the process's own.
 
