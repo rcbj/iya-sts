@@ -1381,6 +1381,18 @@ would be ignoring the configuration that exists to keep it out of the URL.
 `describeDatabase()` reports WHERE it came from and never what it is, which is
 the Password row on `/admin/persistence`.
 
+**A PROCESS THAT IS NOT THE SERVICE DIALS THE SAME WAY (#213, 2026-09-26).**
+`databaseConnection()` answers `{ url, verifyTls }` — `resolveDatabaseUrl()`
+and `verifiesDatabaseTls()`, the one reading of
+`persistence.databaseTlsRejectUnauthorized` that `openStore()` and
+`describeDatabase()` now use too — for an out-of-process tool to hand
+`persistence_postgres.create()`. Its first caller is the install-time risk
+loader (`risk/risk_install.ts`), which dialled `STS_DATABASE_URL` alone and so
+could not sign in to any shipped stack. **A tool that dials the database
+calls this rather than copying the injection**, because the encoding above is
+exactly the kind of detail a copy gets wrong. Requiring this module does not
+open anything (only `start()` does), so a CLI may load it.
+
 ## THE `ldif` STORE HAD STOPPED WRITING THE DIRECTORY (fixed 2026-09-12)
 
 The journalled flush (2026-09-08) hands the driver `all: null` when it knows

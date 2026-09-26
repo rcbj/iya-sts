@@ -142,6 +142,8 @@ TESTS_IMAGE="mock-sts-tests:${TAG}"
 if [ "${STS_SUITE_SKIP_BUILD:-0}" != "1" ];
 then
   say "building ${TESTS_IMAGE} from this working tree"
+  # The test corpora are a PRIVATE image on ghcr.io (#253).
+  tests/tools/corpora-preflight.sh
   docker build -q -t "${TESTS_IMAGE}" -f tests/Dockerfile . >/dev/null
 fi
 

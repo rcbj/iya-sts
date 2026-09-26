@@ -96,6 +96,20 @@
 # any other layer. tests/CLAUDE.md, *THE CERTIFICATE ENROLLMENT CLIENTS*,
 # argues why here rather than a compose profile.
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# THE THIRD-PARTY TEST CORPORA, BY DIGEST (#253, 2026-09-26). Five corpora
+# this image used to fetch on nearly every build — the schemas, x509-limbo,
+# NIST PKITS, the W3C XML security interop cases and Wycheproof with ACVP —
+# come out of ONE image built by tests/corpora/Dockerfile (the same fetch
+# scripts, the same sha256 checks) and kept PRIVATE on GitHub Container
+# Registry. A build needs `docker login ghcr.io` with read:packages; CI logs
+# in with GITHUB_TOKEN. Pinned by DIGEST, so what a run reads is exactly
+# what was verified when the image was built; tests/tools/build-corpora-image.sh
+# rebuilds it after a pin changes and rewrites this line.
+# ---------------------------------------------------------------------------
+ARG STS_CORPORA_IMAGE=ghcr.io/rcbj/iya-sts-test-corpora@sha256:ef3797760cc8b1bc414ffcc9130aadd132e9a2f8bc0f950c75275ebbb3b92838
+FROM ${STS_CORPORA_IMAGE} AS corpora
+
 FROM golang:1.26.8-bookworm AS enroll-go
 ENV CGO_ENABLED=0 GOFLAGS=-trimpath GOTOOLCHAIN=local
 RUN go install github.com/go-acme/lego/v5@v5.5.2 \
@@ -329,9 +343,7 @@ RUN apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get -y install --no-install-recommends \
         libxml2-utils \
     && rm -rf /var/lib/apt/lists/*
-COPY tests/xml-schemas ./tests/xml-schemas
-COPY tests/tools/fetch-xml-schemas.sh ./tests/tools/fetch-xml-schemas.sh
-RUN ./tests/tools/fetch-xml-schemas.sh /opt/xml-schemas
+COPY --from=corpora /opt/xml-schemas /opt/xml-schemas
 ENV STS_XML_SCHEMA_DIR=/opt/xml-schemas
 # THE FIRST SCIM HARNESS (#206): python-scim's scim2-tester, into a virtual
 # environment of its own, every package pinned to a version AND a sha256
@@ -373,15 +385,13 @@ RUN npm install --prefix ./tests && npm cache clean --force
 # layer above the source copy, so editing a test does not download forty
 # megabytes again; outside /usr/src/sts, so neither copy of the tree holds it.
 # ---------------------------------------------------------------------------
-COPY tests/tools/fetch-x509-limbo.sh /usr/src/corpora/fetch-x509-limbo.sh
-RUN /usr/src/corpora/fetch-x509-limbo.sh /usr/src/corpora/x509-limbo
+COPY --from=corpora /usr/src/corpora/x509-limbo /usr/src/corpora/x509-limbo
 ENV STS_X509_LIMBO_DIR=/usr/src/corpora/x509-limbo
 # NIST PKITS FOR tests/nist_pkits.js (#201), from csrc.nist.gov, with the test
 # table BoringSSL transcribed from PKITS.pdf — each pinned by SHA-256, never
 # committed (the data carries a PKCS #12 of every private key; only certs/
 # and crls/ are unpacked).
-COPY tests/tools/fetch-nist-pkits.sh /usr/src/corpora/fetch-nist-pkits.sh
-RUN /usr/src/corpora/fetch-nist-pkits.sh /usr/src/corpora/nist-pkits
+COPY --from=corpora /usr/src/corpora/nist-pkits /usr/src/corpora/nist-pkits
 ENV STS_NIST_PKITS_DIR=/usr/src/corpora/nist-pkits
 
 # THE W3C XML SIGNATURE AND XML ENCRYPTION INTEROP CASES (#193), for
@@ -390,10 +400,7 @@ ENV STS_NIST_PKITS_DIR=/usr/src/corpora/nist-pkits
 # THE BUILD on a mismatch. Above the source copy, with only its two inputs
 # copied first, so that editing a test does not fetch ~340 paced requests
 # again. tests/tools/W3C-XMLSEC-PROVENANCE.md says where they come from.
-COPY tests/tools/fetch-w3c-xmlsec.sh tests/tools/w3c-xmlsec.sha256 \
-     /usr/src/corpora/
-RUN /usr/src/corpora/fetch-w3c-xmlsec.sh /usr/src/corpora/w3c-xmlsec.sha256 \
-      /usr/src/corpora/w3c-xmlsec
+COPY --from=corpora /usr/src/corpora/w3c-xmlsec /usr/src/corpora/w3c-xmlsec
 ENV STS_W3C_XMLSEC_DIR=/usr/src/corpora/w3c-xmlsec
 
 # THE EXTERNAL TEST VECTORS (#202, #203): C2SP Wycheproof (Apache-2.0) and
@@ -405,8 +412,7 @@ ENV STS_W3C_XMLSEC_DIR=/usr/src/corpora/w3c-xmlsec
 # the checksums change; tests/vectors is in .dockerignore, so `COPY . ./`
 # below cannot replace it with a host copy. tests/CLAUDE.md, *The external
 # test vectors*, is the provenance.
-COPY tests/tools/fetch-vectors.sh tests/tools/vectors.sha256 /usr/src/vector-fetch/
-RUN /usr/src/vector-fetch/fetch-vectors.sh /usr/src/sts/tests/vectors
+COPY --from=corpora /usr/src/sts/tests/vectors /usr/src/sts/tests/vectors
 
 # The repository. The root .dockerignore decides what is in it — see the header
 # — and the guard is what a context missing the suite says instead of failing

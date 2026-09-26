@@ -25,6 +25,9 @@ cd "$(dirname "$0")"
 TAG="${STS_NPM_TEST_IMAGE:-iya-sts-npm-test:local}"
 
 echo "docker-npm-test.sh: building ${TAG} from tests/Dockerfile"
+# The test corpora are a PRIVATE image on ghcr.io (#253); a missing login is
+# said in a sentence rather than as a pull error.
+tests/tools/corpora-preflight.sh
 docker build -f tests/Dockerfile -t "${TAG}" .
 
 echo "docker-npm-test.sh: npm test $*"
