@@ -876,6 +876,18 @@ so nothing downstream would ever report that the name was wrong. Listing them as
 unmapped is what turns a partner's fifteenth claim into a line somebody can act
 on, and mapping it is one form field away.
 
+### Two names for one attribute: values concatenated, each kept once (#189)
+
+Two incoming names that map to one directory attribute have their values
+CONCATENATED — a directory attribute is multi-valued — but **an identical value
+is kept once**, because an LDAP attribute's values are a set (RFC 4512 section
+2.3). It was a blind concatenation until #189 made this service's own identity
+provider send `mail` both as the AD FS claim URI and as the X.500/LDAP profile's
+`urn:oid:0.9.2342.19200300.100.1.3` (Shibboleth reads one, AD FS-configured
+providers the other); a relationship in front of it then wrote `mail: [x, x]`,
+which `tests/vendored/sts_federation_realms.js` caught and
+`tests/saml_interop_findings.js` (section H) now holds.
+
 ### The username is the one mapping that cannot be got wrong quietly
 
 Everything else on the entry is decoration; the username decides WHICH ENTRY.

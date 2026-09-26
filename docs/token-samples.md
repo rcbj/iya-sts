@@ -876,6 +876,21 @@ C14N). The `KeyInfo` certificate is issued by the realm's *XML signing* CA.
       <saml:Attribute Name="displayName" NameFormat="urn:oasis:names:tc:SAML:2.0:attrname-format:basic">
         <saml:AttributeValue>alice (mock)</saml:AttributeValue>
       </saml:Attribute>
+      <saml:Attribute Name="urn:oid:0.9.2342.19200300.100.1.1" NameFormat="urn:oasis:names:tc:SAML:2.0:attrname-format:uri" FriendlyName="uid">
+        <saml:AttributeValue>alice</saml:AttributeValue>
+      </saml:Attribute>
+      <saml:Attribute Name="urn:oid:0.9.2342.19200300.100.1.3" NameFormat="urn:oasis:names:tc:SAML:2.0:attrname-format:uri" FriendlyName="mail">
+        <saml:AttributeValue>alice@example.com</saml:AttributeValue>
+      </saml:Attribute>
+      <saml:Attribute Name="urn:oid:2.5.4.42" NameFormat="urn:oasis:names:tc:SAML:2.0:attrname-format:uri" FriendlyName="givenName">
+        <saml:AttributeValue>alice</saml:AttributeValue>
+      </saml:Attribute>
+      <saml:Attribute Name="urn:oid:2.5.4.4" NameFormat="urn:oasis:names:tc:SAML:2.0:attrname-format:uri" FriendlyName="sn">
+        <saml:AttributeValue>Mock</saml:AttributeValue>
+      </saml:Attribute>
+      <saml:Attribute Name="urn:oid:2.16.840.1.113730.3.1.241" NameFormat="urn:oasis:names:tc:SAML:2.0:attrname-format:uri" FriendlyName="displayName">
+        <saml:AttributeValue>alice (mock)</saml:AttributeValue>
+      </saml:Attribute>
       <saml:Attribute Name="groups">
         <saml:AttributeValue>developers</saml:AttributeValue>
       </saml:Attribute>
@@ -1003,6 +1018,21 @@ answers with a different `Issuer`. That is a bug,
             <saml:Attribute Name="displayName" NameFormat="urn:oasis:names:tc:SAML:2.0:attrname-format:basic">
               <saml:AttributeValue>alice (mock)</saml:AttributeValue>
             </saml:Attribute>
+            <saml:Attribute Name="urn:oid:0.9.2342.19200300.100.1.1" NameFormat="urn:oasis:names:tc:SAML:2.0:attrname-format:uri" FriendlyName="uid">
+              <saml:AttributeValue>alice</saml:AttributeValue>
+            </saml:Attribute>
+            <saml:Attribute Name="urn:oid:0.9.2342.19200300.100.1.3" NameFormat="urn:oasis:names:tc:SAML:2.0:attrname-format:uri" FriendlyName="mail">
+              <saml:AttributeValue>alice@example.com</saml:AttributeValue>
+            </saml:Attribute>
+            <saml:Attribute Name="urn:oid:2.5.4.42" NameFormat="urn:oasis:names:tc:SAML:2.0:attrname-format:uri" FriendlyName="givenName">
+              <saml:AttributeValue>alice</saml:AttributeValue>
+            </saml:Attribute>
+            <saml:Attribute Name="urn:oid:2.5.4.4" NameFormat="urn:oasis:names:tc:SAML:2.0:attrname-format:uri" FriendlyName="sn">
+              <saml:AttributeValue>Mock</saml:AttributeValue>
+            </saml:Attribute>
+            <saml:Attribute Name="urn:oid:2.16.840.1.113730.3.1.241" NameFormat="urn:oasis:names:tc:SAML:2.0:attrname-format:uri" FriendlyName="displayName">
+              <saml:AttributeValue>alice (mock)</saml:AttributeValue>
+            </saml:Attribute>
             <saml:Attribute Name="groups">
               <saml:AttributeValue>developers</saml:AttributeValue>
             </saml:Attribute>
@@ -1078,8 +1108,23 @@ schema requires). `GET /saml2/metadata` is the service-wide one
     <md:SingleSignOnService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect" Location="https://127.0.0.1:38081/saml2/sso/app-aaf6073df227"/>
     <md:SingleSignOnService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST" Location="https://127.0.0.1:38081/saml2/sso/app-aaf6073df227"/>
     <md:SingleSignOnService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST-SimpleSign" Location="https://127.0.0.1:38081/saml2/sso/app-aaf6073df227"/>
-    <md:SingleSignOnService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Artifact" Location="https://127.0.0.1:38081/saml2/sso/app-aaf6073df227"/>
   </md:IDPSSODescriptor>
+  <md:AttributeAuthorityDescriptor protocolSupportEnumeration="urn:oasis:names:tc:SAML:2.0:protocol">
+    <md:KeyDescriptor use="signing">
+      <ds:KeyInfo xmlns:ds="http://www.w3.org/2000/09/xmldsig#">
+        <ds:X509Data>
+          <ds:X509Certificate>MIIEbjCCA1igAwIBAgIQMztF…</ds:X509Certificate>
+        </ds:X509Data>
+      </ds:KeyInfo>
+    </md:KeyDescriptor>
+    <md:AttributeService Binding="urn:oasis:names:tc:SAML:2.0:bindings:SOAP" Location="https://127.0.0.1:38081/saml2/aa/app-aaf6073df227"/>
+    <md:NameIDFormat>urn:oasis:names:tc:SAML:1.1:nameid-format:unspecified</md:NameIDFormat>
+    <md:NameIDFormat>urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress</md:NameIDFormat>
+    <md:NameIDFormat>urn:oasis:names:tc:SAML:2.0:nameid-format:persistent</md:NameIDFormat>
+    <md:NameIDFormat>urn:oasis:names:tc:SAML:2.0:nameid-format:transient</md:NameIDFormat>
+    <md:NameIDFormat>urn:oasis:names:tc:SAML:1.1:nameid-format:X509SubjectName</md:NameIDFormat>
+    <md:NameIDFormat>urn:oasis:names:tc:SAML:2.0:nameid-format:entity</md:NameIDFormat>
+  </md:AttributeAuthorityDescriptor>
   <md:Organization>
     <md:OrganizationName xml:lang="en">sts</md:OrganizationName>
     <md:OrganizationDisplayName xml:lang="en">Mock security token service</md:OrganizationDisplayName>
@@ -1155,19 +1200,19 @@ as SAML 2.0's, so they are shortened to one line here.
       <saml:Attribute AttributeName="authenticationinstant" AttributeNamespace="http://schemas.microsoft.com/ws/2008/06/identity/claims">
         <saml:AttributeValue>2026-09-22T20:54:36.000Z</saml:AttributeValue>
       </saml:Attribute>
-      <saml:Attribute AttributeName="uid" AttributeNamespace="urn:mace:dir:attribute-def">
+      <saml:Attribute AttributeName="urn:mace:dir:attribute-def:uid" AttributeNamespace="urn:mace:shibboleth:1.0:attributeNamespace:uri">
         <saml:AttributeValue>alice</saml:AttributeValue>
       </saml:Attribute>
-      <saml:Attribute AttributeName="mail" AttributeNamespace="urn:mace:dir:attribute-def">
+      <saml:Attribute AttributeName="urn:mace:dir:attribute-def:mail" AttributeNamespace="urn:mace:shibboleth:1.0:attributeNamespace:uri">
         <saml:AttributeValue>alice@example.com</saml:AttributeValue>
       </saml:Attribute>
-      <saml:Attribute AttributeName="givenName" AttributeNamespace="urn:mace:dir:attribute-def">
+      <saml:Attribute AttributeName="urn:mace:dir:attribute-def:givenName" AttributeNamespace="urn:mace:shibboleth:1.0:attributeNamespace:uri">
         <saml:AttributeValue>alice</saml:AttributeValue>
       </saml:Attribute>
-      <saml:Attribute AttributeName="sn" AttributeNamespace="urn:mace:dir:attribute-def">
+      <saml:Attribute AttributeName="urn:mace:dir:attribute-def:sn" AttributeNamespace="urn:mace:shibboleth:1.0:attributeNamespace:uri">
         <saml:AttributeValue>Mock</saml:AttributeValue>
       </saml:Attribute>
-      <saml:Attribute AttributeName="displayName" AttributeNamespace="urn:mace:dir:attribute-def">
+      <saml:Attribute AttributeName="urn:mace:dir:attribute-def:displayName" AttributeNamespace="urn:mace:shibboleth:1.0:attributeNamespace:uri">
         <saml:AttributeValue>alice (mock)</saml:AttributeValue>
       </saml:Attribute>
       <saml:Attribute AttributeName="groups" AttributeNamespace="http://schemas.xmlsoap.org/ws/2005/05/identity/claims">
@@ -1268,19 +1313,19 @@ resolved. Its subject confirmation is `cm:artifact`, not `cm:bearer`:
           <saml:Attribute AttributeName="authenticationinstant" AttributeNamespace="http://schemas.microsoft.com/ws/2008/06/identity/claims">
             <saml:AttributeValue>2026-09-22T21:13:14.000Z</saml:AttributeValue>
           </saml:Attribute>
-          <saml:Attribute AttributeName="uid" AttributeNamespace="urn:mace:dir:attribute-def">
+          <saml:Attribute AttributeName="urn:mace:dir:attribute-def:uid" AttributeNamespace="urn:mace:shibboleth:1.0:attributeNamespace:uri">
             <saml:AttributeValue>alice</saml:AttributeValue>
           </saml:Attribute>
-          <saml:Attribute AttributeName="mail" AttributeNamespace="urn:mace:dir:attribute-def">
+          <saml:Attribute AttributeName="urn:mace:dir:attribute-def:mail" AttributeNamespace="urn:mace:shibboleth:1.0:attributeNamespace:uri">
             <saml:AttributeValue>alice@example.com</saml:AttributeValue>
           </saml:Attribute>
-          <saml:Attribute AttributeName="givenName" AttributeNamespace="urn:mace:dir:attribute-def">
+          <saml:Attribute AttributeName="urn:mace:dir:attribute-def:givenName" AttributeNamespace="urn:mace:shibboleth:1.0:attributeNamespace:uri">
             <saml:AttributeValue>alice</saml:AttributeValue>
           </saml:Attribute>
-          <saml:Attribute AttributeName="sn" AttributeNamespace="urn:mace:dir:attribute-def">
+          <saml:Attribute AttributeName="urn:mace:dir:attribute-def:sn" AttributeNamespace="urn:mace:shibboleth:1.0:attributeNamespace:uri">
             <saml:AttributeValue>Mock</saml:AttributeValue>
           </saml:Attribute>
-          <saml:Attribute AttributeName="displayName" AttributeNamespace="urn:mace:dir:attribute-def">
+          <saml:Attribute AttributeName="urn:mace:dir:attribute-def:displayName" AttributeNamespace="urn:mace:shibboleth:1.0:attributeNamespace:uri">
             <saml:AttributeValue>alice (mock)</saml:AttributeValue>
           </saml:Attribute>
           <saml:Attribute AttributeName="groups" AttributeNamespace="http://schemas.xmlsoap.org/ws/2005/05/identity/claims">

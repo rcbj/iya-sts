@@ -399,8 +399,67 @@ function reset() {
 
 capabilities.provide('cluster.claims');
 
+// ---------------------------------------------------------------------------
+// THE SAME CLAIM, ANSWERED NOW WHEN IT CAN BE (#190).
+//
+// `claimInProcess(opts)` answers exactly what `claim()` would — synchronously
+// — when this process holds no shared claims table, so the claim is the
+// in-memory one and nothing needs awaiting; and `null` when a shared table is
+// configured, which is the caller's cue to `claim()` and wait. It exists for a
+// handler that must stay synchronous where it can (the SAML 2.0 Single
+// Sign-On service, whose refusals several in-process tests read straight off
+// the response), and it takes nothing away where it cannot: with a table the
+// answer is the table's, as it always is.
+// ---------------------------------------------------------------------------
+/**
+ * @param {any} opts
+ * @returns {import('../types/cluster').ClaimResult | null}
+ */
+function claimInProcess(opts) {
+  log.debug("Entering claimInProcess().");
+  if (store()) {
+    log.debug("Leaving claimInProcess(). A shared table: claim() instead.");
+    return null;
+  }
+  const o = opts || {};
+  const scope = String(o.scope || '');
+  if (!scope || o.value === undefined || o.value === null || o.value === '') {
+    log.debug("Leaving claimInProcess(). Malformed.");
+    return { ok: false, reason: 'store',
+             why: 'a claim needs a scope and a value' };
+  }
+  const realmId = o.realm === undefined ? realms.currentId()
+    : String(o.realm || '');
+  const ttlMs = Math.min(MAX_TTL_MS,
+                         Math.max(1000, Math.floor(Number(o.ttlMs) || 0)));
+  const digest = digestOf(scope, o.value);
+  const now = Date.now();
+  claimsSinceSweep += 1;
+  if (claimsSinceSweep >= MEMORY_SWEEP_EVERY) {
+    claimsSinceSweep = 0;
+    sweepMemory(now);
+  }
+  const key = memoryKey(scope, realmId, digest);
+  const existing = memory.get(key);
+  if (existing && existing.expiresAt > now) {
+    log.debug("Leaving claimInProcess(). Used, in memory.");
+    return { ok: false, reason: 'used',
+             existing: { claimedAt: existing.claimedAt,
+                         expiresAt: existing.expiresAt,
+                         origin: 'this process' } };
+  }
+  const reservation = nodeCrypto.randomBytes(12).toString('base64url');
+  memory.set(key, { reservation: reservation, claimedAt: now,
+                    expiresAt: now + ttlMs });
+  log.debug("Leaving claimInProcess(). Claimed, in memory.");
+  return { ok: true, claimedAt: now,
+           handle: { scope: scope, realm: realmId, key: digest,
+                     reservation: reservation } };
+}
+
 module.exports = {
   claim: claim,
+  claimInProcess: claimInProcess,
   release: release,
   releaseUnlessSucceeded: releaseUnlessSucceeded,
   isClaimed: isClaimed,

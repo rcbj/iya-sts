@@ -333,7 +333,13 @@ function checkTheJobTimeoutIsAboveOurs(t) {
   const conformanceBound = Number(
     (/STS_CONFORMANCE_TIMEOUT="\$\{STS_CONFORMANCE_TIMEOUT:-(\d+)\}"/
       .exec(launcher) || [])[1]) || 0;
-  const modeBound = Math.max(sharedBound + conformanceBound, singleNodeBound);
+  // And one that brings up the SAML interoperability peers (#189-#192,
+  // `memory` and `single-node` by default) has STS_SAML_PEERS_TIMEOUT added.
+  const peersBound = Number(
+    (/STS_SAML_PEERS_TIMEOUT="\$\{STS_SAML_PEERS_TIMEOUT:-(\d+)\}"/
+      .exec(launcher) || [])[1]) || 0;
+  const modeBound = Math.max(sharedBound + conformanceBound + peersBound,
+                             singleNodeBound + peersBound);
   const teardownBound = Number(
     /STS_TEARDOWN_TIMEOUT="\$\{STS_TEARDOWN_TIMEOUT:-(\d+)\}"/
       .exec(launcher)[1]);

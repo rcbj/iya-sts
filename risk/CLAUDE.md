@@ -313,7 +313,7 @@ number of users. It is read BEFORE the sign-in is counted — the notebook's
 order — and moved with one statement, so two nodes never lose a count.
 
 **THE EVALUATORS** are factors on the score, in `SIGNALS`: a Tor exit (×5),
-the reputation list (×5), the operator's deny list (×50) and allow list
+the reputation list (×5), the operator's deny list (×20; ×50 until #226) and allow list
 (×0.2), an automated client (×10), a JA4 this person never signed in with
 (×2), five refused passwords for the person in the last hour (×3), twenty from
 the network (×3). **They are a first calibration and deliberately visible**:
@@ -358,6 +358,7 @@ every token passes through.
 | `urn:sts:xacml:risk-score` | the score (absent for a first sign-in) |
 | `urn:sts:xacml:risk-signal` | a bag of `SIGNALS` keys that fired |
 | `urn:sts:xacml:risk-satisfied` | a bag: `second-factor` (acr `mfa`), `security-key` and `second-factor` (amr `hwk`) |
+| `urn:sts:xacml:risk-held` | a bag (#226): what the person HOLDS — `second-factor` (an app or a key), `security-key` (a key) — from `credentials.mechanismsFor()`, asked by the PEP's `heldFactors` dep |
 
 **THE THREE RULES** are Deny rules ahead of the role rule, under
 ordered-deny-overrides, each carrying the obligation
@@ -369,6 +370,63 @@ how the PEP tells a risk Deny from a role Deny**, which matters twice: the
 risk one is only OBSERVED in development (`mode.observesRiskOnly()`,
 `risk.enforceInDevelopment`) — the PEP asks again without the facts and the
 roles decide — and only a risk Deny can be answered by a step-up.
+
+## #226: THE DAY RISK LOCKED EVERY ADMINISTRATOR OUT (2026-09-25)
+
+**What happened.** With IPinfo, FireHOL-style block lists and Pwned loaded on
+a compose stack, every sign-in to the console and the portal was refused:
+`operator-deny` ×50 on `172.29.0.1`, the Docker bridge, over a model score
+of 0.42 — 21.1, HIGH, and `risk-high` refused the console like anything
+else. A block list carried the bogons (172.16.0.0/12), and every person
+arrives through the bridge from the same address, so the whole population
+was listed at once. rcbj had to wipe the instance; `STS_RISK_ASSESS_SIGN_INS
+=false` would have recovered it and nobody knew. **Three changes, rcbj's
+decisions of 2026-09-26:**
+
+* **`risk.listsMatchSpecialPurpose`** (ON by default: lists mean what they
+  say). Off, `RiskEngine.countedLists()` sets the Tor, reputation and deny
+  lists aside for a loopback, private, link-local or reserved address — the
+  set `federation_http.ts`'s `internalAddressProblem()` refuses to dial, so
+  the service has one list of internal addresses. The allow list is never
+  set aside. The model row of the assessment names what was
+  (`listsSetAside`). The rescore job reads the same function.
+* **A known context caps the ADDRESS evidence at MEDIUM** (`ADDRESS_SIGNALS`:
+  the three raising lists and `network-failures` — what everybody behind one
+  NAT shares). Known means `risk.minimumHistory` earlier sign-ins from this
+  address digest AND this User-Agent fingerprint, counted separately from
+  the person's own history (the two are not a joint count; nothing records
+  the pair, and a new one would start empty). The score is held just under
+  the HIGH line rather than the level relabelled, so score, level and the
+  bands stay one story; the model row says `knownContext` and what was
+  `capped`. `riskOf()` carries `knownContext` so the rescore job caps a list
+  a session gains later. Credential evidence is never capped.
+* **The console is never refused on risk.** `role-issuance`'s `neverLockOut`
+  (default `sts-admin-console`; `none` for no application, since a blank
+  answer is the default) excludes those applications from the three rules
+  and adds two Deny step-ups (a key if the person holds one, else a second
+  factor if they hold one) and a PERMIT rule, ANDed with the role condition,
+  whose obligation `urn:sts:xacml:obligation:risk-alarm` makes the PEP audit
+  `xacml.issuance.alarm` and warn under STS-RISK-0038. **A policy decision,
+  not an `if`**: the PEP only supplies `risk-held` and reads the obligation.
+  It is the one place a step-up the person cannot answer is not a refusal,
+  and it is rcbj's call that a bricked cluster is worse than an alarmed
+  permit. `operator-deny` went from ×50 to ×20 the same day.
+
+**Two more found on rcbj's stack the same day.** (1) The six second-factor
+finishers in `authn.ts` handed `startSession()` no application, so after a
+step-up the policy was asked about `""` and the console's rules never
+matched — see the comment at the gate call in `startSession()`. (2) A
+sign-in that CROSSES into HIGH triggers `risk-end-sessions`, taken a moment
+after the assessment is answered — after the door has started the session
+the policy just permitted on that same risk. It ended that session: the
+`admin` user's alarm-permitted console sign-in lost its authorization code
+150 ms later. So `noteChange()` now takes, for a sign-in (`phase` user), the
+ids of what the person holds IN THE SAME TICK as the assessment
+(`account_state.heldBy()` → `logout.heldIds()`), and the reaction ends only
+those; nothing held means nothing ended (an empty selection is a GLOBAL
+logout to `terminate()`). A session re-assessment or the rescore job still
+ends everything. The alarm is raised on the SESSION decision only, once per
+sign-in, not on every code and token issued on it.
 
 **UNKNOWN NEVER DENIES.** No assessment puts no attribute in the request, and
 every risk rule is then inapplicable: the datasets' rule carried into the

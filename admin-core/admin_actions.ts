@@ -185,6 +185,10 @@ import accountSignals = require('../ssf/account_signals');
 // on (2026-09-17, #36 follow-up). Two libraries loaded long before this file,
 // neither of which requires anything back.
 import accountState = require('../common/account_state');
+// A PERSON'S ATTRIBUTES, ONE AT A TIME (#228). A library whose directory is
+// filled through its own slot by `ldap_server.js`, so requiring it here loads
+// no route module.
+import personEditor = require('../ldap/person_editor');
 import identityAssurance = require('../common/identity_assurance');
 import siop = require('../oid4vc/siop');
 import devices = require('../common/devices');
@@ -326,6 +330,9 @@ const USERS_ACTIONS = ['create', 'set-password', 'issue-activation',
                        // The emailed second factor, and the address
                        // (#64, 2026-09-23).
                        'clear-email-factor', 'set-mail',
+                       // The account id a client knows the person by
+                       // (#148, Enterprise Extensions `aud_sub`).
+                       'set-aud-sub',
                        // What an administrator does to somebody's
                        // credentials from their page (2026-09-13).
                        'reset-password', 'issue-password-reset',
@@ -348,7 +355,10 @@ const USERS_ACTIONS = ['create', 'set-password', 'issue-activation',
                        // Devices (#130, 2026-09-23).
                        'remove-device',
                        // CIBA's test control (#131, 2026-09-23).
-                       'answer-ciba-request'];
+                       'answer-ciba-request',
+                       // One attribute of their entry (#228, 2026-09-26).
+                       'set-attribute', 'add-attribute',
+                       'remove-attribute'];
 
 // ---------------------------------------------------------------------------
 // WHAT AN ADMINISTRATOR DOES TO SOMEBODY'S CREDENTIALS FROM THEIR PAGE
@@ -821,6 +831,7 @@ interface AdminActionsDeps {
   signals: typeof signals;
   accountSignals: typeof accountSignals;
   accountState: typeof accountState;
+  personEditor: typeof personEditor;
   identityAssurance: typeof identityAssurance;
   siop: typeof siop;
   devices: typeof devices;
@@ -885,6 +896,7 @@ class AdminActions {
       signals: signals,
       accountSignals: accountSignals,
       accountState: accountState,
+      personEditor: personEditor,
       identityAssurance: identityAssurance,
       siop: siop,
       devices: devices,
@@ -2605,6 +2617,31 @@ class AdminActions {
                message: answer.message };
     }
 
+    // ONE OF A PERSON'S ATTRIBUTES, SET, ADDED TO OR REMOVED FROM (#228).
+    // `ldap/person_editor.ts` decides everything — which attributes, what a
+    // value may be, the audit row — and the directory writes it; this names
+    // the three actions and the person. The same three the application
+    // editor offers, with `-attribute` on each because this resource's other
+    // actions are verbs about the PERSON.
+    if (action === 'set-attribute' || action === 'add-attribute' ||
+        action === 'remove-attribute') {
+      const { personEditor } = this.deps;
+      const who = String(body.user || body.username || '').trim();
+      if (!who) {
+        log.debug("Leaving AdminActions.usersAction(). No person named.");
+        return this.refused('STS-ADMIN-0518', { ok: false, errors: ['Name ' +
+            'the person in `user`.'] });
+      }
+      const result = personEditor.update(who, {
+        attribute: body.attribute,
+        mode: action.slice(0, action.indexOf('-')),
+        value: body.value
+      }, { actor: ctx.actor, via: ctx.via });
+      log.debug("Leaving AdminActions.usersAction(). " + action + " " +
+                (result.ok ? "ok." : "refused."));
+      return this.refusedBy('STS-ADMIN-0819', result);
+    }
+
     // A FEDERATION LINK, MADE OR REMOVED BY AN ADMINISTRATOR (#109).
     if (action === 'federation-link' || action === 'federation-unlink') {
       log.debug("Leaving AdminActions.usersAction(). A federation link.");
@@ -2879,6 +2916,47 @@ class AdminActions {
         : this.refused('STS-ADMIN-0816', { ok: false, errors: ['There is ' +
             'no person called "' + who + '" in this realm, or the directory ' +
             'would not write the address.'] });
+    }
+
+    // ENTERPRISE EXTENSIONS SECTION 2.3 (#148): the account id a client
+    // knows this person by, sent to that client as the ID Token's `aud_sub`.
+    // An empty value removes it. Learned values arrive with Provider
+    // Commands (#151); this is the administrator's door.
+    if (action === 'set-aud-sub') {
+      const who = String(body.user || body.username || '').trim();
+      const client = String(body.client || body.client_id || '').trim();
+      const value = String(body.value || body.aud_sub || '').trim();
+      if (!who || !client || /\s/.test(client) || value.length > 255 ||
+          /[\u0000-\u001f]/.test(value)) {
+        log.debug("Leaving AdminActions.usersAction(). A malformed aud_sub.");
+        return this.refused('STS-ADMIN-0817', { ok: false, errors: ['Name ' +
+          'the person and the client (a client_id, no spaces), and give an ' +
+          'aud_sub of at most 255 characters with no control characters — ' +
+          'or none, to remove it.'] });
+      }
+      const prefix = client + ' ';
+      const kept = credentials.audSubsOf(who).filter(function (v) {
+        return String(v).indexOf(prefix) !== 0;
+      });
+      const written = credentials.writeAudSubs(who, value
+        ? kept.concat([prefix + value]) : kept);
+      auditLog.record({
+        category: 'admin', action: 'admin.aud-sub.set',
+        actor: ctx.actor, target: who, outcome: written ? 'success'
+                                                        : 'failure',
+        summary: (written ? (value ? 'set' : 'removed') : 'could not set') +
+                 ' the aud_sub of ' + who + ' at ' + client,
+        detail: { username: who, client: client, via: ctx.via } });
+      log.debug("Leaving AdminActions.usersAction(). set-aud-sub " +
+                (written ? "ok." : "refused."));
+      return written
+        ? { ok: true, message: value ? 'The ID Tokens ' + client +
+            ' is issued for ' + who + ' carry aud_sub "' + value + '".'
+                                     : 'The aud_sub of ' + who + ' at ' +
+            client + ' was removed.' }
+        : this.refused('STS-ADMIN-0818', { ok: false, errors: ['There is ' +
+            'no person called "' + who + '" in this realm, or the directory ' +
+            'would not write the aud_sub.'] });
     }
 
     if (action === 'clear-key') {

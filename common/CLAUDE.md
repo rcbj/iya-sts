@@ -1213,6 +1213,32 @@ is simply a bug on its own account. **The cap must not be small**: this service
 makes requests to itself, so a worker whose connections are all held by
 requests awaiting a reentrant call needs one more to make progress.
 
+**AND THE AGENT'S `keepAlive: false` WAS NOT WHAT IT SAID (#77, 2026-09-26).**
+Node sends `Connection: keep-alive` from any agent whose `maxSockets` is finite
+and hands a freed socket to the next QUEUED request — measured, 336 of 400
+requests on a reused connection — and `proxy()` forwarded the client's own
+hop-by-hop headers besides. So the race the agent's comment refuses keep-alive
+to avoid was open exactly when a worker was busiest. `proxy()` strips the
+client's `Connection`, `Keep-Alive`, `Proxy-Connection` and whatever
+`Connection` names (the framing headers excepted) and sends
+`Connection: close`: one request per connection, as designed.
+
+**AND A REQUEST NO BYTE OF WHICH REACHED THE WORKER IS SENT AGAIN.** The issue
+was a `502 … write EPIPE` for a `POST /oauth2/register` from a worker that went
+on serving. What closed its end was not found — a replica of the proxy under
+saturation, loop stalls, client aborts and every client framing produced
+nothing — but what the error MEANS is exact: a write the kernel refuses
+delivers nothing. `proxy()` writes the body itself (a pipe writes with no
+callback, and the callback is the only thing that says the kernel took the
+bytes), keeps a copy of a body up to 1 MiB until the first write is accepted,
+and when the connection fails with nothing delivered, nothing answered and the
+client still there, sends the request ONCE more on a new connection to the
+SAME worker — its ticket, `inFlight` and barrier are that worker's, and a
+worker that has really gone refuses the new connection and the client gets
+the 502 it always did. `STS-WORKER-0042`, logged through `warnSparingly()`;
+`stats().replayed` counts them. A request any byte of which was delivered is
+never repeated. `tests/request_proxy_replay.js` pins both halves.
+
 **THE RULE THAT COMES OUT OF IT** is worth more than the mechanism: a store is
 shared by coordination, and anything that is NOT a row in a store — a socket, a
 timer, a listener — is held by one process and reachable from no other. There
@@ -1231,10 +1257,29 @@ SIMPLER OF THE TWO SHAPES: A PIN** — `request_pool.js`'s `NEVER_DISPATCHED`;
 `tls/CLAUDE.md` argues it. The suite's own blind spot one layer out is
 `tests/CLAUDE.md`'s.
 
+**A WORKER THAT DIES IS REPLACED (2026-09-26).** Until then the pool was
+forked once, in `start()`, and `reap()` never forked again: a worker that
+crashed, was OOM-killed or was sent a SIGKILL left the pool a worker short for
+the life of the process, and when the last one went every request was served
+on the front process's one thread. rcbj met it more than once. `reap()` now asks
+`replacementFor()` and forks one worker into the dead one's POOL AND SLOT — the
+slot names the persistence origin, which the replacement adopts once the dead
+worker's claim lapses (`adoptOrigin()`, inside the worker's start timeout) —
+**not while `stop()` is draining, not once the pool has given up, and never
+past `size()`**. A worker that reports it could not start (`ready: false`) is
+ENDED, where it used to stay alive and never ready, holding its place; so it
+goes through the same path, and a failed start is now any worker that never
+became ready as well as one gone within `QUICK_EXIT_MS` having served nothing.
+`QUICK_EXIT_LIMIT` (3) failed starts in a row still give the pool up, so a
+worker that can never start is tried three times rather than forked for ever.
+`STS-WORKER-0043` names each replacement and `stats().pools[].replaced` counts
+them. `tests/request_worker_replacement.js` drives the real `fork()` and
+`reap()` with a stub worker.
+
 **DISPATCH WITHOUT COORDINATION IS REFUSED, AND THE SERVICE DOES NOT START.**
 Everything else about the pool degrades — no workers means the front process
-does the work, a dead worker is a 502, a pool that gave up handles everything
-here — and all of those leave a service that is correct and slow. This one
+does the work, a dead worker's requests in flight are a 502 and the worker is
+replaced, a pool that gave up handles everything here — and all of those leave a service that is correct and slow. This one
 leaves a service that answers WRONGLY, which was measured before the guard
 existed: `/admin-api` across three workers with a memory store, one setting
 written, six reads, and the fifth returned the value from before the write.

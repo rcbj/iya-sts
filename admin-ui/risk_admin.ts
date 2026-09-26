@@ -90,6 +90,15 @@ const LEVELS = ['HIGH', 'MEDIUM', 'LOW', 'UNSCORED'];
 // What `riskAction()` does, and what each needs.
 const ACTIONS = ['import', 'activate', 'rollback', 'delete', 'accept-terms'];
 
+// EVERY ACTION `/risk` HAS, which is what the unknown-action refusal names
+// (2026-09-26). `upload` (#215) is answered by a route of its own, registered
+// above `/risk/:action`, so `riskAction()` never sees it — but it is still one
+// of this resource's actions, and `tests/vendored/admin_api.js` reads THIS
+// sentence for the console/API parity (rule 7): an action missing from it is
+// invisible to that check. `sts_admin_api_operations.js` compares the sentence
+// with the OpenAPI document and found `upload` missing.
+const NAMED_ACTIONS = ACTIONS.concat(['upload']);
+
 // The failure page's size, and the window it reads.
 const FAILURES_PER_PAGE = 50;
 const FAILURE_WINDOW_MS = 7 * 86400000;
@@ -227,8 +236,9 @@ class RiskAdmin {
       return errorCodes.mark({ ok: false, errors: [why] }, 'STS-RISK-0011');
     };
     if (ACTIONS.indexOf(action) < 0) {
-      return refuse('Unknown action "' + action + '". The ' + ACTIONS.length +
-                    ' are: ' + ACTIONS.join(', ') + '.');
+      return refuse('Unknown action "' + action + '". The ' +
+                    NAMED_ACTIONS.length + ' are: ' +
+                    NAMED_ACTIONS.join(', ') + '.');
     }
     if (action === 'accept-terms') {
       const provider = String(b.provider || '').trim();

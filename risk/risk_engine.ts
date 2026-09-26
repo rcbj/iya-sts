@@ -73,7 +73,10 @@ const SIGNALS: Record<string, Json> = {
   'tor-exit': { factor: 5, what: 'the address is a Tor exit' },
   'reputation': { factor: 5,
     what: 'the address is on the IP reputation list' },
-  'operator-deny': { factor: 50,
+  // ×20 since #226 (2026-09-26); it was ×50, HIGH on its own for anybody
+  // whatever their history said, and one bogon on a list put a whole NAT's
+  // population there at once. ×20 is still HIGH over a model of even odds.
+  'operator-deny': { factor: 20,
     what: 'the address is on this realm\'s operator deny list' },
   'operator-allow': { factor: 0.2,
     what: 'the address is on this realm\'s operator allow list' },
@@ -128,6 +131,37 @@ const networkFailureThreshold = function (): number {
 const minimumHistory = function (): number {
   return Math.max(1, Number(config.value('risk.minimumHistory')) || 1);
 };
+
+// ---------------------------------------------------------------------------
+// THE SIGNALS THAT ARE ABOUT THE ADDRESS AND NOTHING ELSE (#226,
+// 2026-09-26): a list the address is on, and the refused passwords from its
+// network. What they have in common is that every person behind one NAT, one
+// proxy or one container bridge shares them — so one listed address, or one
+// person mistyping twenty times, is a signal on EVERYBODY there at once. That
+// is how #226 refused every sign-in to the service, the console's included:
+// the address was the Docker bridge, 172.29.0.1, and a loaded block list
+// carried the bogons, 172.16.0.0/12 among them.
+//
+// Two rules read this set:
+//
+//   * A KNOWN CONTEXT CAPS THEM AT MEDIUM. A person with at least
+//     `risk.minimumHistory` earlier sign-ins from this very address AND this
+//     very browser (by its fingerprint) is somebody the address evidence is
+//     least likely to be about: it can ask them for a step-up, and it cannot
+//     refuse them. The evidence about the CREDENTIAL — refused passwords for
+//     this person, a compromised security key, a sign-in they said was not
+//     them, an automated client — is not capped, because none of it is
+//     shared by a network.
+//   * `risk.listsMatchSpecialPurpose` off makes a LIST signal inapplicable
+//     to a loopback, private, link-local or reserved address — below.
+// ---------------------------------------------------------------------------
+const ADDRESS_SIGNALS = ['tor-exit', 'reputation', 'operator-deny',
+                         'network-failures'];
+
+// The lists whose match RAISES risk. The operator's allow list lowers it,
+// and is not set aside for a special-purpose address: an operator vouching
+// for their own private network is saying exactly what they mean.
+const RAISING_LISTS = ['tor-exit', 'reputation', 'operator-deny'];
 const HOUR_MS = 3600 * 1000;
 
 // The population's subject in `sts_risk_feature_counts`.
@@ -383,6 +417,11 @@ class RiskEngine {
       }),
       assessmentId: String(assessment.id || ''),
       at: Number(assessment.at) || 0,
+      // A KNOWN CONTEXT (#226): the sign-in came from an address and a
+      // browser this person has used `risk.minimumHistory` times, which
+      // caps the address evidence at MEDIUM — and so caps what the
+      // `risk.rescore` job may raise the session to on a list it gains.
+      knownContext: !!(modelled && modelled.knownContext),
       // THE DEVICE, AS A FAMILY (#62 P4): the browser and the operating
       // system without their versions, which is what continuous evaluation
       // compares a later request with. A browser updating itself mid-session
@@ -691,6 +730,75 @@ class RiskEngine {
     };
   }
 
+  // -------------------------------------------------------------------------
+  // THE LISTS THAT COUNT for an address (#226): every match whose category
+  // is a signal — except, while `risk.listsMatchSpecialPurpose` is off, a
+  // list that RAISES risk matching a loopback, private, link-local or
+  // reserved address. It is ON by default: a list says what it says, and
+  // FireHOL's level 1 carries the bogons on purpose. Off is for a service
+  // tested on one machine, or run behind a bridge or a NAT that every
+  // person arrives through, where a bogon on a list is a signal on
+  // everybody. The set of addresses is the one the outbound rules refuse to
+  // dial (`federation_http.ts`'s `internalAddressProblem()`), so this
+  // service has one opinion of what is internal, not two.
+  // -------------------------------------------------------------------------
+  private countedLists(found: Json, address: string): Json[] {
+    const { log, config, lazy } = this.deps;
+    log.debug("Entering RiskEngine.countedLists().");
+    const all = (found.lists || []).filter(function (l: Json): boolean {
+      return !!SIGNALS[l.category];
+    });
+    const raising = all.filter(function (l: Json): boolean {
+      return RAISING_LISTS.indexOf(l.category) >= 0;
+    });
+    if (!raising.length ||
+        config.value('risk.listsMatchSpecialPurpose') !== false) {
+      log.debug("Leaving RiskEngine.countedLists(). " + all.length + ".");
+      return all;
+    }
+    const internal = lazy('../federation/federation_http')
+      .internalAddressProblem(address);
+    if (!internal || / is not an IP address$/.test(internal)) {
+      log.debug("Leaving RiskEngine.countedLists(). A public address.");
+      return all;
+    }
+    log.debug("Leaving RiskEngine.countedLists(). " + raising.length +
+              " list(s) set aside for a special-purpose address.");
+    return all.filter(function (l: Json): boolean {
+      return raising.indexOf(l) < 0;
+    });
+  }
+
+  // -------------------------------------------------------------------------
+  // THE CAP ON ADDRESS EVIDENCE (#226): `{ score, why }` when `score` is
+  // HIGH and would not be without the ADDRESS_SIGNALS among `signals`, or
+  // null. The capped score is the largest number under the HIGH line, so
+  // the level is MEDIUM and the score still says how close it came.
+  // -------------------------------------------------------------------------
+  private capped(score: number, signals: Json[]): Json | null {
+    const { log, config } = this.deps;
+    log.debug("Entering RiskEngine.capped().");
+    const high = Number(config.value('risk.highScorePercent')) / 100;
+    let address = 1;
+    const named: string[] = [];
+    signals.forEach(function (s: Json): void {
+      if (ADDRESS_SIGNALS.indexOf(s.signal) >= 0 && s.factor > 1) {
+        address *= s.factor;
+        named.push(s.signal);
+      }
+    });
+    if (score < high || !named.length || score / address >= high) {
+      log.debug("Leaving RiskEngine.capped(). Not capped.");
+      return null;
+    }
+    const under = high * (1 - 1e-9);
+    log.debug("Leaving RiskEngine.capped(). Capped.");
+    return { score: under,
+             why: 'a known address and browser: ' + named.join(', ') +
+                  ' capped at MEDIUM (' + score.toPrecision(3) + ', held ' +
+                  'just under the HIGH line at ' + high + ')' };
+  }
+
   // The level a score is at, by the two settings (percent of the score).
   private levelOf(score: number): string {
     const { log, config } = this.deps;
@@ -779,10 +887,9 @@ class RiskEngine {
                      what: SIGNALS[id].what, evidence: evidence });
       log.debug("Leaving add().");
     };
-    found.lists.forEach(function (l: Json): void {
-      if (SIGNALS[l.category]) {
-        add(l.category, l.dataset);
-      }
+    const lists = this.countedLists(found, address);
+    lists.forEach(function (l: Json): void {
+      add(l.category, l.dataset);
     });
     if (device.bot) {
       add('automated-client', device.browser || 'unnamed');
@@ -826,11 +933,22 @@ class RiskEngine {
       }
     }
 
-    // THE SCORE AND ITS LEVEL.
+    // THE SCORE AND ITS LEVEL, with the address evidence capped at MEDIUM
+    // for a known context (#226; ADDRESS_SIGNALS, above). The cap holds the
+    // SCORE just under the HIGH line rather than relabelling the level, so
+    // the score, the level and the bands Monitoring → Risk Scoring draws
+    // stay one story; what was capped is on the model's row.
+    const knownContext = enough && !!attempt.ua &&
+      user.count('ip', attempt.ip) >= minimumHistory() &&
+      user.count('ua', attempt.ua) >= minimumHistory();
     let score = modelled.score === null ? 1 : modelled.score;
     signals.forEach(function (s: Json): void {
       score *= s.factor;
     });
+    const capped = knownContext ? this.capped(score, signals) : null;
+    if (capped) {
+      score = capped.score;
+    }
     const level = modelled.score === null && !signals.length ? 'UNSCORED'
       : this.levelOf(score);
     const assessment: Json = {
@@ -873,7 +991,16 @@ class RiskEngine {
                                 attributions: found.attributions }),
       signals: [{ signal: 'model', score: modelled.score,
                   factors: modelled.factors || null,
-                  why: modelled.why || '' }].concat(signals),
+                  why: modelled.why || '',
+                  knownContext: knownContext,
+                  capped: capped ? capped.why : '',
+                  // Lists the address is on that were set aside for a
+                  // special-purpose address (#226), so the record says so.
+                  listsSetAside: found.lists.filter(function (l: Json) {
+                    return !!SIGNALS[l.category] && lists.indexOf(l) < 0;
+                  }).map(function (l: Json): string {
+                    return l.category;
+                  }) }].concat(signals),
       score: score, level: level, decision: 'observe'
     };
     await store.recordAssessment(assessment, sealing);
@@ -987,10 +1114,31 @@ class RiskEngine {
       return;
     }
     const risk = RiskEngine.riskOf(assessment);
+    // WHAT THE PERSON HELD BEFORE THIS SIGN-IN (#226), taken NOW — in the
+    // same tick as the assessment, before the door that asked for it starts
+    // a session. The reactions run afterwards, and ending "everything" then
+    // ended the session this sign-in had just been PERMITTED, by the
+    // issuance policy, on this very risk: the console's alarm-permitted
+    // sign-in was thrown out 150 ms after it was let in. A sign-in's
+    // reaction ends what was held before it; a session re-assessment
+    // (`phase` session or rescore) has no new session to spare and ends all.
+    let heldBefore: string[] | null = null;
+    if (assessment.phase === 'user') {
+      try {
+        heldBefore = this.deps.lazy('../common/account_state')
+          .heldBy(username);
+      } catch (e) {
+        log.debug("Caught in RiskEngine.noteChange(): " +
+                  ((e && e.message) || e));
+        // Cannot say what was held: the reaction ends everything, as it did.
+        heldBefore = null;
+      }
+    }
     this.respond({ realm: realm, subject: subject, username: username,
                    level: level, previousLevel: was,
                    score: risk ? risk.score : null,
                    signals: risk ? risk.signals : [],
+                   heldBefore: heldBefore,
                    assessmentId: String(assessment.id || '') })
       .catch(function (e: Json): void {
         log.debug("Caught in RiskEngine.noteChange(): " +
@@ -1108,8 +1256,19 @@ class RiskEngine {
         sub: change.subject, previous: change.previousLevel,
         current: change.level, reason: reason });
     } else if (reaction === 'risk-end-sessions') {
+      // A sign-in's reaction ends only what was held BEFORE it (#226; see
+      // noteChange()), and nothing when nothing was — an empty selection
+      // is a GLOBAL logout to `terminate()`, which would end exactly the
+      // session this is sparing.
+      const before = Array.isArray(change.heldBefore)
+        ? change.heldBefore : null;
+      if (before && !before.length) {
+        log.debug("Leaving RiskEngine.take(). Nothing was held before.");
+        return;
+      }
       const ended = lazy('../common/account_state').endEverything(
         change.username, { actor: 'risk scoring', channel: 'internal',
+          selection: before || undefined,
           by: 'the person\'s risk went to ' + change.level +
               (reason ? ' (' + reason + ')' : '') });
       if (ended && ended.ended === false) {
@@ -1176,10 +1335,8 @@ class RiskEngine {
     const sealing = this.sealing();
     const found = await datasets.lookup(address, realm);
     const signals: string[] = [];
-    found.lists.forEach(function (l: Json): void {
-      if (SIGNALS[l.category]) {
-        signals.push(l.category);
-      }
+    this.countedLists(found, address).forEach(function (l: Json): void {
+      signals.push(l.category);
     });
     const since = now() - HOUR_MS;
     const mine = await store.listFailures(realm, { since: since,
@@ -1215,6 +1372,17 @@ class RiskEngine {
     fresh.forEach(function (one: string): void {
       score *= factorOf[one];
     });
+    // The sign-in's known context caps what the session is raised to on
+    // address evidence, as it capped the sign-in (#226). The score the
+    // session carries already holds its own signals, so the cap is asked
+    // about the FRESH ones on top of it.
+    const recapped = risk.knownContext
+      ? this.capped(score, fresh.map(function (one: string): Json {
+        return { signal: one, factor: factorOf[one] };
+      })) : null;
+    if (recapped) {
+      score = recapped.score;
+    }
     const level = this.levelOf(score);
     if ((RANK[level] || 0) <= (RANK[String(risk.level)] || 0)) {
       log.debug("Leaving RiskEngine.rescoreSession(). No higher.");

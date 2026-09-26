@@ -6070,6 +6070,38 @@ things are this console's.
 `tests/admin_credential_controls.js` drives the actions, the portal page and the
 enrolment step in a child process; no owned browser job presses the section yet.
 
+## `/admin/users?user=…` HAS A *CHANGE THEIR ATTRIBUTES* SECTION (#228, 2026-09-26)
+
+rcbj's ticket: the application page's general attribute editor, on the user
+page, for the attributes that are neither sensitive nor managed.
+`userAttributesSection()` draws it directly under the directory entry it
+changes. What may be edited, every refusal and the audit row are
+`ldap/person_editor.ts`'s (`ldap/CLAUDE.md` argues the list); this page draws
+`view.attributeEditor`, which is the same object `GET /admin-api/users?user=`
+answers under that name.
+
+* **THREE FORMS, EACH OFFERING ONLY WHAT IT COULD DO.** Set offers every
+  attribute this entry lets be edited (not the one its DN is named by), Add to
+  only the multi-valued ones, Remove from only those holding a value. The
+  application page's rule — a form must not offer what the action refuses for
+  the plainest reason — read for a person. The values are not in the selects
+  (the entry table above has them); a count is.
+* **`set-mail` GOT ITS CONSOLE FORM HERE.** The editor withholds `mail`
+  because `set-mail` (#64) marks what it writes verified and tells the former
+  address, and until #228 that action had no console form at all — only
+  `POST /admin-api/users/set-mail`. The withheld row pointing at "its own
+  control" would have pointed at nothing, so the form sits in this section.
+* **`#attributes` is a fourth `userReturnTo()` anchor**, for the three edits
+  and `set-mail`.
+* **A table in a `<details>` says what each attribute takes and what is not
+  offered and why**, from the library's own rows, so the page cannot describe
+  a different list from the one it enforces. Admin Read sees the table and not
+  the forms, the rule the sections around it follow.
+
+`tests/person_attribute_editor.js` draws the page in process and checks the
+section and its selects; `tests/vendored/sts_person_attributes.js` drives the
+API half over HTTP. No owned browser job presses the section yet.
+
 ## `/admin/mode`: WHAT THE MODE CHANGES, AND WHAT IS IN FORCE HERE (#181, 2026-09-23)
 
 Server configuration → Mode, beside Configuration, drawn by `mode_admin.ts`
@@ -6323,7 +6355,7 @@ upload; three things are this file's:
 A middleware beside the console query check, after the gate (so a caller who
 may not write is told that first) and before every console route, refuses a
 form POST whose field holds a value outside the closed set the mirroring
-`/admin-api` operation declares — 400 `invalid_value`, `STS-ADMIN-0817`, with
+`/admin-api` operation declares — 400 `invalid_value`, `STS-ADMIN-0820`, with
 `common/closed_sets.ts`'s sentence. This page's forms carry no copy of any
 set: the management API registers each operation's enums under the console
 pages its `mirrors` names, keyed by the `action` the form posts, and a value

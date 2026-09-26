@@ -1793,7 +1793,7 @@ but exactly `Deny` was written as **Permit**. So:
   on a request body (`STS-API-0009`); `checkQueryEnums()` in the registration
   loop holds a query parameter's declared enum on a GET or a POST
   (`STS-API-0124`); and the console gate (`admin-ui/admin.ts`, after the
-  query check) holds a form POST (`STS-ADMIN-0817`). The console has no copy
+  query check) holds a form POST (`STS-ADMIN-0820`). The console has no copy
   of any set: `registerConsoleClosedSets()` puts each action's top-level enums
   in `common/closed_sets.ts`'s register under every `POST /admin…` page its
   `mirrors` names — an action's own `mirrors` winning over its route's, as in

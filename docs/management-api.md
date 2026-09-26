@@ -193,7 +193,7 @@ present, and the other members depend on the action.
 A field that takes only certain values declares them as an `enum` in the
 OpenAPI document, and that one list is enforced everywhere the value can be
 typed: a request body, a query parameter (`STS-API-0124`), and the console form
-that the operation mirrors (`STS-ADMIN-0817`). Each refusal names the field,
+that the operation mirrors (`STS-ADMIN-0820`). Each refusal names the field,
 the value, and every value it accepts:
 
 ```

@@ -257,6 +257,9 @@ const STATUS_NO_PASSIVE = 'urn:oasis:names:tc:SAML:2.0:status:NoPassive';
 const STATUS_PARTIAL_LOGOUT =
     'urn:oasis:names:tc:SAML:2.0:status:PartialLogout';
 
+const STATUS_UNKNOWN_PRINCIPAL =
+    'urn:oasis:names:tc:SAML:2.0:status:UnknownPrincipal';
+
 // `SigAlg` is a QUERY PARAMETER of the HTTP Redirect binding
 // (saml-bindings-2.0-os section 3.4.4.1), sent so the far end knows what to
 // verify with. It was the constant SIG_RSA_SHA256 here until 2026-09-12 and is
@@ -319,6 +322,14 @@ const ARS_PATH = BASE_PATH + '/ars';
 const METADATA_PATH = BASE_PATH + '/metadata';
 
 const SP_PATH = BASE_PATH + '/sp';
+
+// Identity-provider-initiated SSO (#189): an unsolicited Response,
+// saml-profiles-2.0-os section 4.1.5.
+const UNSOLICITED_PATH = BASE_PATH + '/unsolicited';
+
+// The attribute authority (#189): the Assertion Query and Request profile's
+// AttributeQuery, over SOAP (saml-profiles-2.0-os section 6).
+const AA_PATH = BASE_PATH + '/aa';
 
 // PER TRUST REALM. `realms.map()` is a Map that holds a separate one for each
 // realm and hands out the ambient realm's — so every reader below is
@@ -625,6 +636,17 @@ class Saml2Sso {
     // cross-site POST.
     app.post(SSO_PATH, singleSignOn);
     app.post(SSO_PATH + '/:sp', singleSignOn);
+
+    // IDENTITY-PROVIDER-INITIATED SSO (#189): a GET a link on this service,
+    // or a portal, sends a browser to; see unsolicitedSignOn().
+    const unsolicitedSignOn = this.unsolicitedSignOn.bind(this);
+    app.get(UNSOLICITED_PATH, unsolicitedSignOn);
+    app.get(UNSOLICITED_PATH + '/:sp', unsolicitedSignOn);
+
+    // THE ATTRIBUTE AUTHORITY (#189), SOAP like the resolver below.
+    const attributeQuery = this.attributeQuery.bind(this);
+    app.post(AA_PATH, attributeQuery);
+    app.post(AA_PATH + '/:sp', attributeQuery);
 
     app.post(ARS_PATH, resolveArtifact);
     app.post(ARS_PATH + '/:sp', resolveArtifact);
@@ -966,6 +988,7 @@ class Saml2Sso {
       sso: base + SSO_PATH + suffix,
       slo: base + SLO_PATH + suffix,
       ars: base + ARS_PATH + suffix,
+      aa: base + AA_PATH + suffix,
       metadata: base + METADATA_PATH + suffix
     };
   }
@@ -2042,6 +2065,23 @@ class Saml2Sso {
       { name: 'sn', nameFormat: ATTRNAME_FORMAT_BASIC,
         value: user.family_name },
       { name: 'displayName', nameFormat: ATTRNAME_FORMAT_BASIC,
+        value: user.name },
+      // AND THE SAML V2.0 X.500/LDAP ATTRIBUTE PROFILE'S NAMES (#189): the
+      // LDAP attribute's OID as a `urn:oid:` URN in the `uri` name format,
+      // with its LDAP name as FriendlyName. They are what a Shibboleth or
+      // SimpleSAMLphp service provider's stock attribute map reads — the two
+      // spellings above are Keycloak's and AD FS's — and without them the
+      // Shibboleth SP 3 skipped every attribute this service sent.
+      { name: 'urn:oid:0.9.2342.19200300.100.1.1', friendlyName: 'uid',
+        nameFormat: ATTRNAME_FORMAT_URI, value: user.username },
+      { name: 'urn:oid:0.9.2342.19200300.100.1.3', friendlyName: 'mail',
+        nameFormat: ATTRNAME_FORMAT_URI, value: user.email },
+      { name: 'urn:oid:2.5.4.42', friendlyName: 'givenName',
+        nameFormat: ATTRNAME_FORMAT_URI, value: user.given_name },
+      { name: 'urn:oid:2.5.4.4', friendlyName: 'sn',
+        nameFormat: ATTRNAME_FORMAT_URI, value: user.family_name },
+      { name: 'urn:oid:2.16.840.1.113730.3.1.241',
+        friendlyName: 'displayName', nameFormat: ATTRNAME_FORMAT_URI,
         value: user.name }
     ]);
     log.debug("Leaving Saml2Sso.attributesFor(). " + attributes.length +
@@ -2265,7 +2305,13 @@ class Saml2Sso {
     const { documentSettings } = this.deps;
     const { log } = this.deps.helpers;
     log.debug("Entering Saml2Sso.redirectUrlFor(). field=" + field);
-    let qs = field + '=' + encodeURIComponent(this.encodeRedirect(xml));
+    // THE ENVELOPED SIGNATURE COMES OFF (saml-bindings-2.0-os section
+    // 3.4.4.1): on this binding the query string is what is signed, below. It
+    // was left on until #192, and a LogoutRequest from here then reached
+    // Keycloak with an XML signature it does not read on this binding and no
+    // SigAlg, which it refuses.
+    let qs = field + '=' + encodeURIComponent(this.encodeRedirect(
+      this.withoutEnvelopedSignature(xml)));
     if (relayState) {
       qs += '&RelayState=' + encodeURIComponent(relayState);
     }
@@ -2290,18 +2336,34 @@ class Saml2Sso {
   // where `saml2.signResponse` holds for this service provider, `SigAlg` and
   // `Signature` over `SAMLResponse=<b64>[&RelayState=<rs>]&SigAlg=<alg>`, the
   // octets `request_signature.ts`'s `simpleSignOctets()` checks.
+  // THE MESSAGE WITHOUT ITS OWN ENVELOPED SIGNATURE: the one after the
+  // root's Issuer (or first in the root). Both detached bindings sign the
+  // octets instead and say the XML signature is to be removed —
+  // saml-bindings-2.0-os section 3.4.4.1 for HTTP-Redirect, and the
+  // SimpleSign binding's section 2.5 — and a signature inside the assertion
+  // is not touched.
+  private withoutEnvelopedSignature(xml) {
+    const { log } = this.deps.helpers;
+    log.debug("Entering Saml2Sso.withoutEnvelopedSignature().");
+    log.debug("Leaving Saml2Sso.withoutEnvelopedSignature().");
+    return String(xml).replace(
+      /^(<[^>]*>(?:\s*<(?:[A-Za-z_][\w.-]*:)?Issuer\b[\s\S]*?<\/(?:[A-Za-z_][\w.-]*:)?Issuer>)?)\s*<(?:[A-Za-z_][\w.-]*:)?Signature\b[\s\S]*?<\/(?:[A-Za-z_][\w.-]*:)?Signature>/,
+      '$1');
+  }
+
   private simpleSignFields(field, xml, relayState, spEntityId) {
     const { documentSettings } = this.deps;
     const { log } = this.deps.helpers;
     log.debug("Entering Saml2Sso.simpleSignFields().");
-    const bare = String(xml).replace(
-      /^(<[^>]*>(?:\s*<(?:[A-Za-z_][\w.-]*:)?Issuer\b[\s\S]*?<\/(?:[A-Za-z_][\w.-]*:)?Issuer>)?)\s*<(?:[A-Za-z_][\w.-]*:)?Signature\b[\s\S]*?<\/(?:[A-Za-z_][\w.-]*:)?Signature>/,
-      '$1');
+    const bare = this.withoutEnvelopedSignature(xml);
     const message = this.encodePost(bare);
     const extra = [];
     if (this.settingFor(spEntityId || '', 'saml2.signResponse')) {
       const sigAlg = documentSettings.signatureOptions().sigAlg;
-      const octets = field + '=' + message +
+      // THE RAW XML, NOT ITS BASE64 (the SimpleSign binding, section 2.5;
+      // `request_signature.ts`'s `simpleSignOctets()` says what this got
+      // wrong until #189).
+      const octets = field + '=' + bare +
         (relayState ? '&RelayState=' + relayState : '') +
         '&SigAlg=' + sigAlg;
       extra.push(['SigAlg', sigAlg]);
@@ -2451,17 +2513,148 @@ class Saml2Sso {
   //   4. get a session, which may mean going to the sign-in screen and back
   //   5. build the response and deliver it on the binding that was asked for
   // ---------------------------------------------------------------------------
+  // ---------------------------------------------------------------------------
+  // ONE AuthnRequest ID IS ANSWERED ONCE (#190).
+  //
+  // saml-core-2.0-os section 3.2.1 makes the ID unique per message, and a
+  // request replayed at this service — out of a proxy log, or a browser's
+  // history — would otherwise start a new sign-in and deliver a fresh
+  // assertion in answer to a request its service provider sent long ago. So
+  // the first arrival of a request CLAIMS its issuer and ID for as long as a
+  // request can be fresh (`requestWindowMs()`), through the cluster's claim
+  // store, before anything else reads it; a second arrival is refused with
+  // STS-SAML-0088 once the rest of the request has been checked (below, in
+  // singleSignOnChecked()). A store that cannot be asked refuses too
+  // (STS-SAML-0089): fail closed, as the artifact's claim does.
+  //
+  // The claim is answered in this process, synchronously, where this process
+  // holds no shared claims table (`claimInProcess()`), and awaited where it
+  // does. A held request coming back (`rid`) was claimed on its first arrival.
+  // ---------------------------------------------------------------------------
   private singleSignOn(req, res) {
-    const { applications, config, errorCodes, gate, mode,
+    const { clusterClaims } = this.deps;
+    const { log } = this.deps.helpers;
+    log.debug("Entering Saml2Sso.singleSignOn().");
+    const params: any = this.paramsOf(req);
+    if (params.rid || !params.SAMLRequest) {
+      log.debug("Leaving Saml2Sso.singleSignOn(). Nothing to claim.");
+      return this.singleSignOnChecked(req, res, null);
+    }
+    const request: any = this.readAuthnRequest(
+      this.decodeMessage(params.SAMLRequest));
+    const issuer = request.ok
+      ? (request.issuer || this.entityIdFromSegment(req.params.sp).entityId)
+      : '';
+    if (!request.ok || !request.id || !issuer) {
+      // Unreadable, or naming no issuer or no ID: refused by the checks the
+      // claim would only have run ahead of.
+      log.debug("Leaving Saml2Sso.singleSignOn(). Nothing claimable.");
+      return this.singleSignOnChecked(req, res, null);
+    }
+    const spec = { scope: 'saml2.authnrequest',
+                   value: issuer + '\n' + request.id,
+                   ttlMs: this.requestWindowMs() + CLAIM_SKEW_MS };
+    const now = clusterClaims.claimInProcess(spec);
+    if (now) {
+      log.debug("Leaving Saml2Sso.singleSignOn(). Claimed in process.");
+      return this.singleSignOnChecked(req, res, now);
+    }
+    log.debug("Leaving Saml2Sso.singleSignOn(). Asking the claim store.");
+    return clusterClaims.claim(spec).then((claimed) => {
+      return this.singleSignOnChecked(req, res, claimed);
+    });
+  }
+
+  // How long a request is FRESH (#190): as long as one may be held at the
+  // sign-in screen (`saml2.requestTtlMin`). Older, and its IssueInstant is
+  // refused; the ID claim above lives as long.
+  private requestWindowMs() {
+    const { log } = this.deps.helpers;
+    log.debug("Entering Saml2Sso.requestWindowMs().");
+    log.debug("Leaving Saml2Sso.requestWindowMs().");
+    return this.requestTtlMs();
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE MESSAGE'S OWN ENVELOPE (#190): what the service provider said about
+  // the message itself, checked after its signature and before anything is
+  // acted on. pysaml2, scripted to send each of these wrong, found every one
+  // of them ANSWERED until #190.
+  //
+  //   Version       "2.0" (saml-core-2.0-os section 3.2.2.1: anything else is
+  //                 a version this service does not speak) — STS-SAML-0087
+  //   IssueInstant  present, an xs:dateTime, no later than now plus a minute
+  //                 of clock disagreement (CLAIM_SKEW_MS) and no earlier than
+  //                 the freshness window before it — STS-SAML-0086
+  //   Destination   where present, the URL the message ARRIVED at: section
+  //                 3.2.1 requires the recipient to check it and to discard a
+  //                 message addressed elsewhere, and saml-bindings-2.0-os
+  //                 sections 3.4.5.2 and 3.5.5.2 require it on a signed
+  //                 message — whose signature is then about THIS endpoint —
+  //                 so it is REQUIRED when the message is signed.
+  //                 STS-SAML-0085
+  //
+  // `null` when it is in order; otherwise { errorCode, title, why }.
+  // ---------------------------------------------------------------------------
+  private envelopeProblem(req, base, spec): any {
+    const { log } = this.deps.helpers;
+    log.debug("Entering Saml2Sso.envelopeProblem(). " + spec.what);
+    if (spec.version !== '2.0') {
+      log.debug("Leaving Saml2Sso.envelopeProblem(). Version.");
+      return { errorCode: 'STS-SAML-0087',
+               title: 'That ' + spec.what + ' is not SAML 2.0',
+               why: 'Its Version is "' + spec.version + '"; this endpoint ' +
+                    'speaks SAML 2.0 (saml-core-2.0-os section 3.2.2.1).' };
+    }
+    const issued = Date.parse(String(spec.issueInstant || ''));
+    const now = Date.now();
+    if (!spec.issueInstant || isNaN(issued) ||
+        issued > now + CLAIM_SKEW_MS ||
+        issued < now - this.requestWindowMs() - CLAIM_SKEW_MS) {
+      log.debug("Leaving Saml2Sso.envelopeProblem(). IssueInstant.");
+      return { errorCode: 'STS-SAML-0086',
+               title: 'That ' + spec.what + ' is not fresh',
+               why: 'Its IssueInstant is "' + (spec.issueInstant || '') +
+                    '". A request is accepted from a minute in the future ' +
+                    'to ' + Math.round(this.requestWindowMs() / 60000) +
+                    ' minute(s) in the past (saml2.requestTtlMin, plus a ' +
+                    'minute of clock disagreement); an older one is a ' +
+                    'replay or a stale page, and a missing one is not a ' +
+                    'SAML message.' };
+    }
+    const arrivedAt = base + req.path;
+    const destination = String(spec.destination || '');
+    if (destination ? destination !== arrivedAt : spec.signed) {
+      log.debug("Leaving Saml2Sso.envelopeProblem(). Destination.");
+      return { errorCode: 'STS-SAML-0085',
+               title: 'That ' + spec.what + ' was addressed elsewhere',
+               why: destination
+                 ? 'Its Destination is "' + destination + '", and it ' +
+                   'arrived at "' + arrivedAt + '". saml-core-2.0-os ' +
+                   'section 3.2.1 has the recipient discard a message whose ' +
+                   'Destination is not the location it was received at — ' +
+                   'a signature over a message sent to another endpoint is ' +
+                   'not a signature about this one.'
+                 : 'It is signed and carries no Destination, which ' +
+                   'saml-bindings-2.0-os sections 3.4.5.2 and 3.5.5.2 ' +
+                   'require of a signed message, so what it was signed for ' +
+                   'cannot be told.' };
+    }
+    log.debug("Leaving Saml2Sso.envelopeProblem(). In order.");
+    return null;
+  }
+
+  private singleSignOnChecked(req, res, claimed) {
+    const { applications, audit, config, errorCodes, gate, mode,
             returnAddress } = this.deps;
     const { beginAuthentication, notePresented, sessionOf } = this.deps.authn;
     const { baseUrlOf, log, logArtifact, nowSec, randomId } = this.deps.helpers;
-    log.debug("Entering Saml2Sso.singleSignOn(). method=" + req.method);
+    log.debug("Entering Saml2Sso.singleSignOnChecked(). method=" + req.method);
     const base = baseUrlOf(req);
     const params: any = this.paramsOf(req);
     const scoped = this.entityIdFromSegment(req.params.sp);
     if (this.refusedUnregistered(res, scoped, SSO_PATH + '/{sp}')) {
-      log.debug("Leaving Saml2Sso.singleSignOn(). Not registered.");
+      log.debug("Leaving Saml2Sso.singleSignOnChecked(). Not registered.");
       return;
     }
 
@@ -2471,10 +2664,11 @@ class Saml2Sso {
     // GET.
     const held = params.rid ? pendingRequests.get(String(params.rid)) : null;
     if (params.rid && !held) {
-      log.debug("Leaving Saml2Sso.singleSignOn(). The held request had " +
+      log.debug("Leaving Saml2Sso.singleSignOnChecked(). " +
+                "The held request had " +
                 "expired.");
       errorCodes.mark(res, 'STS-SAML-0001');
-      log.debug("Leaving Saml2Sso.singleSignOn().");
+      log.debug("Leaving Saml2Sso.singleSignOnChecked().");
       return this.samlError(res, 400, 'This sign-in request has expired',
         'A request is held for ' + config.value('saml2.requestTtlMin') + ' ' +
         'minute(s) (saml2.requestTtlMin) while the browser is at the sign-in ' +
@@ -2483,7 +2677,8 @@ class Saml2Sso {
 
     const encoded = held ? held.samlRequest : params.SAMLRequest;
     if (!encoded) {
-      log.debug("Leaving Saml2Sso.singleSignOn(). No SAMLRequest, so it " +
+      log.debug("Leaving Saml2Sso.singleSignOnChecked(). " +
+                "No SAMLRequest, so it " +
                 "describes itself.");
       return this.sendPage(res, 200, 'SAML 2.0 Single Sign-On service',
                            this.describeSsoPage(base, scoped));
@@ -2503,10 +2698,11 @@ class Saml2Sso {
                     'binding', xml);
     const request: any = this.readAuthnRequest(xml);
     if (!request.ok) {
-      log.debug("Leaving Saml2Sso.singleSignOn(). The message could not be " +
+      log.debug("Leaving Saml2Sso.singleSignOnChecked(). " +
+                "The message could not be " +
                 "read.");
       errorCodes.mark(res, 'STS-SAML-0002');
-      log.debug("Leaving Saml2Sso.singleSignOn().");
+      log.debug("Leaving Saml2Sso.singleSignOnChecked().");
       return this.samlError(res, 400, 'That is not an AuthnRequest',
         request.why + '. The Single Sign-On service reads ' +
         '<samlp:AuthnRequest> (saml-core-2.0-os section 3.4.1); a ' +
@@ -2543,7 +2739,7 @@ class Saml2Sso {
           });
         }
         errorCodes.mark(res, checked.refusal.errorCode || 'STS-SAML-0061');
-        log.debug("Leaving Saml2Sso.singleSignOn(). The signature was " +
+        log.debug("Leaving Saml2Sso.singleSignOnChecked(). The signature was " +
                   "refused.");
         return this.samlError(res, 403, checked.refusal.title ||
                               'That AuthnRequest\'s signature is not accepted',
@@ -2564,6 +2760,55 @@ class Saml2Sso {
     request.sigAlg = String(verification.sigAlg || '');
     request.signingCertificate = String(verification.observed || '');
     request.verification = verification;
+
+    // --- THE ENVELOPE AND THE ID (#190), on the FIRST arrival only: a held
+    // request coming back is this service's own copy, already checked and
+    // already claimed. Refused on a PAGE, for the signature's reason above.
+    if (!held) {
+      const problem = this.envelopeProblem(req, base, {
+        what: 'AuthnRequest', version: request.version,
+        issueInstant: request.issueInstant,
+        destination: request.destination, signed: request.signed
+      });
+      const replay = claimed && !claimed.ok
+        ? (claimed.reason === 'used'
+          ? { errorCode: 'STS-SAML-0088',
+              title: 'That AuthnRequest has already been answered',
+              why: 'Its ID "' + request.id + '" from "' +
+                   (request.issuer || scoped.entityId) + '" arrived ' +
+                   'before. saml-core-2.0-os section 3.2.1 makes a request ' +
+                   'ID unique, and one arriving twice is a replay — of a ' +
+                   'page from a browser\'s history, or of a message ' +
+                   'captured on its way here. Start again from the service ' +
+                   'provider.' }
+          : { errorCode: 'STS-SAML-0089',
+              title: 'That AuthnRequest could not be checked for a replay',
+              why: 'The store that remembers which requests were answered ' +
+                   'could not be asked (' + String(claimed.why || '') +
+                   '), and a request that cannot be shown to be new is ' +
+                   'refused rather than answered.' })
+        : null;
+      const refusal = problem || replay;
+      if (refusal) {
+        audit.audit({
+          action: 'saml2.authnrequest', outcome: 'refused',
+          errorCode: refusal.errorCode, protocol: 'SAML 2.0',
+          channel: 'http',
+          target: String(request.issuer || scoped.entityId || ''),
+          summary: 'An AuthnRequest was refused: ' + refusal.title,
+          detail: { id: request.id, issueInstant: request.issueInstant,
+                    destination: request.destination }
+        });
+        log.warn('saml2: refused an AuthnRequest from "' +
+                 (request.issuer || scoped.entityId || '(unnamed)') + '": ' +
+                 refusal.why);
+        errorCodes.mark(res, refusal.errorCode);
+        log.debug("Leaving Saml2Sso.singleSignOnChecked(). " +
+                  refusal.errorCode);
+        // error-code: none — marked above: refusal.errorCode is 0085–0089.
+        return this.samlError(res, 400, refusal.title, refusal.why);
+      }
+    }
 
     // --- step 2 proper -------------------------------------------------------
     // A POST-binding request has to become a GET before this service can see
@@ -2588,7 +2833,8 @@ class Saml2Sso {
       pendingRequests.forEach(function (v, k) {
         if (v.expires < Date.now()) pendingRequests.delete(k);
       });
-      log.debug("Leaving Saml2Sso.singleSignOn(). Held and redirected so the " +
+      log.debug("Leaving Saml2Sso.singleSignOnChecked(). " +
+                "Held and redirected so the " +
                 "session cookie is visible.");
       return res.set('Cache-Control', 'no-store')
                 .redirect(303,
@@ -2598,10 +2844,11 @@ class Saml2Sso {
     // --- step 3: where does the answer go ------------------------------------
     const spEntityId = request.issuer || scoped.entityId;
     if (!spEntityId) {
-      log.debug("Leaving Saml2Sso.singleSignOn(). The request names no " +
+      log.debug("Leaving Saml2Sso.singleSignOnChecked(). " +
+                "The request names no " +
                 "issuer.");
       errorCodes.mark(res, 'STS-SAML-0003');
-      log.debug("Leaving Saml2Sso.singleSignOn().");
+      log.debug("Leaving Saml2Sso.singleSignOnChecked().");
       return this.samlError(res, 400, 'The AuthnRequest names no issuer',
         'A <saml:Issuer> is what says which service provider this request is ' +
         'from, and it becomes the assertion\'s audience restriction. An ' +
@@ -2612,10 +2859,11 @@ class Saml2Sso {
     }
     const issuerProblem = this.idpEntityIdProblem();
     if (issuerProblem) {
-      log.debug("Leaving Saml2Sso.singleSignOn(). There is no entityID to " +
+      log.debug("Leaving Saml2Sso.singleSignOnChecked(). " +
+                "There is no entityID to " +
                 "issue under.");
       errorCodes.mark(res, 'STS-SAML-0004');
-      log.debug("Leaving Saml2Sso.singleSignOn().");
+      log.debug("Leaving Saml2Sso.singleSignOnChecked().");
       return this.samlError(res, 503, 'This identity provider has no entityID',
                             issuerProblem);
     }
@@ -2658,7 +2906,7 @@ class Saml2Sso {
       log.info('saml2: refused an AuthnRequest from "' + spEntityId + '": ' +
                consumedAcs.why);
       errorCodes.mark(res, consumedAcs.errorCode || 'STS-SAML-0070');
-      log.debug("Leaving Saml2Sso.singleSignOn(). Not a registered " +
+      log.debug("Leaving Saml2Sso.singleSignOnChecked(). Not a registered " +
                 "assertion consumer service.");
       return this.samlError(res, 400, 'That assertion consumer service is ' +
                                       'not registered', consumedAcs.why);
@@ -2678,19 +2926,20 @@ class Saml2Sso {
     if (!acsWhere.ok) {
       log.info('saml2: refused an AuthnRequest from "' + spEntityId + '": ' +
                acsWhere.why);
-      log.debug("Leaving Saml2Sso.singleSignOn(). The assertion consumer " +
+      log.debug("Leaving Saml2Sso.singleSignOnChecked(). " +
+                "The assertion consumer " +
                 "service is not registered.");
       errorCodes.mark(res, errorCodes.codeOf(acsWhere) || 'STS-SAML-0005');
-      log.debug("Leaving Saml2Sso.singleSignOn().");
+      log.debug("Leaving Saml2Sso.singleSignOnChecked().");
       return this.samlError(res, 400, 'That assertion consumer service is ' +
                                       'not registered', acsWhere.why);
     }
     const acsUrl = String(acsWhere.url);
     if (!/^https?:\/\//i.test(acsUrl)) {
-      log.debug("Leaving Saml2Sso.singleSignOn(). The ACS URL is not " +
+      log.debug("Leaving Saml2Sso.singleSignOnChecked(). The ACS URL is not " +
                 "absolute.");
       errorCodes.mark(res, 'STS-SAML-0006');
-      log.debug("Leaving Saml2Sso.singleSignOn().");
+      log.debug("Leaving Saml2Sso.singleSignOnChecked().");
       return this.samlError(res, 400, 'The assertion consumer service URL ' +
                                       'must be absolute',
         'It is "' + acsUrl + '". The response is delivered to that address ' +
@@ -2700,10 +2949,10 @@ class Saml2Sso {
     }
     let wanted = this.responseBindingFor(request);
     if (wanted.error) {
-      log.debug("Leaving Saml2Sso.singleSignOn(). An unimplemented " +
+      log.debug("Leaving Saml2Sso.singleSignOnChecked(). An unimplemented " +
                 "ProtocolBinding was asked for.");
       errorCodes.mark(res, 'STS-SAML-0007');
-      log.debug("Leaving Saml2Sso.singleSignOn().");
+      log.debug("Leaving Saml2Sso.singleSignOnChecked().");
       return this.samlError(res, 400,
                             'That response binding is not implemented',
         'This request asked for ProtocolBinding="' + wanted.error + '". This ' +
@@ -2768,7 +3017,7 @@ class Saml2Sso {
                      sub: 'A <samlp:Response> carrying InvalidNameIDPolicy. ' +
                           policyProblem }
       });
-      log.debug("Leaving Saml2Sso.singleSignOn(). InvalidNameIDPolicy.");
+      log.debug("Leaving Saml2Sso.singleSignOnChecked(). InvalidNameIDPolicy.");
       return;
     }
 
@@ -2809,7 +3058,7 @@ class Saml2Sso {
                           'WS-Federation\'s passive profile, this one has ' +
                           'somewhere to report a cancellation to.' }
       });
-      log.debug("Leaving Saml2Sso.singleSignOn(). AuthnFailed.");
+      log.debug("Leaving Saml2Sso.singleSignOnChecked(). AuthnFailed.");
       return;
     }
 
@@ -2881,7 +3130,7 @@ class Saml2Sso {
                             'from taking control of the user interface, so ' +
                             'it reports rather than asks.' }
         });
-        log.debug("Leaving Saml2Sso.singleSignOn(). NoPassive.");
+        log.debug("Leaving Saml2Sso.singleSignOnChecked(). NoPassive.");
         return;
       }
       // Hold the request and go to authn.js's screen. The return address is a
@@ -2948,7 +3197,8 @@ class Saml2Sso {
                      'has one.' }]
           : [])
       });
-      log.debug("Leaving Saml2Sso.singleSignOn(). To the sign-in screen, " +
+      log.debug("Leaving Saml2Sso.singleSignOnChecked(). " +
+                "To the sign-in screen, " +
                 "returning to " +
                 returnTo + ".");
       return res.set('Cache-Control', 'no-store').redirect(303, where);
@@ -2999,7 +3249,7 @@ class Saml2Sso {
                        sub: 'A <samlp:Response> carrying ' +
                             subStatus.split(':').pop() + '. ' + why }
         });
-        log.debug("Leaving Saml2Sso.singleSignOn(). " +
+        log.debug("Leaving Saml2Sso.singleSignOnChecked(). " +
                   subStatus.split(':').pop() + ".");
         return;
       }
@@ -3081,7 +3331,7 @@ class Saml2Sso {
                           'not let this service provider have an assertion ' +
                           'for them.' }
       });
-      log.debug("Leaving Saml2Sso.singleSignOn(). RequestDenied.");
+      log.debug("Leaving Saml2Sso.singleSignOnChecked(). RequestDenied.");
       return;
     }
 
@@ -3092,8 +3342,439 @@ class Saml2Sso {
            idpEntityId: idpEntityId,
            acsUrl: acsUrl, binding: wanted.binding, relayState: relayState
     });
-    log.debug("Leaving Saml2Sso.singleSignOn(). A response went to " +
+    log.debug("Leaving Saml2Sso.singleSignOnChecked(). A response went to " +
               spEntityId + ".");
+  }
+
+  // ---------------------------------------------------------------------------
+  // IDENTITY-PROVIDER-INITIATED SSO (#189): an UNSOLICITED Response
+  // (saml-profiles-2.0-os section 4.1.5), for a service provider that did not
+  // ask — the sign-in starts HERE, at a link, and the service provider
+  // receives an assertion carrying no InResponseTo. This was listed under
+  // *What is still absent* in saml/CLAUDE.md until #189; the Shibboleth SP,
+  // SimpleSAMLphp and pysaml2 all accept one, and a deployable identity
+  // provider is expected to send one.
+  //
+  //   GET /saml2/unsolicited[/{sp}]?providerId=<entityID>
+  //       [&shire=<ACS URL>][&target=<RelayState>][&binding=post|artifact]
+  //
+  // The parameter names are the Shibboleth identity provider's for the same
+  // thing (its /profile/SAML2/Unsolicited/SSO), which is what a deployer's
+  // links already say. `providerId` may be the path segment instead.
+  //
+  // WHAT IS HELD TO WHAT a solicited request is held to, since nothing here
+  // is the service provider's word: the service provider must be one this
+  // realm registered in product (a 404, STS-SAML-0082, as every per-SP path);
+  // the assertion consumer service is one its CONSUMED metadata registered —
+  // `shire` choosing among them, the default otherwise, in every mode — or,
+  // with no metadata, an address on its entry, which product requires; the
+  // Response goes on that endpoint's binding (never HTTP-Redirect, which
+  // section 4.1.2 forbids for a Response); and the issuance policy is asked
+  // as for any sign-in. `saml2.unsolicitedSso` turns the whole of it off for
+  // a realm (STS-SAML-0091). The Response and its assertion carry no
+  // InResponseTo, and the target travels as RelayState, byte for byte.
+  // ---------------------------------------------------------------------------
+  private unsolicitedSignOn(req, res) {
+    const { applications, config, errorCodes, gate, mode,
+            returnAddress } = this.deps;
+    const { beginAuthentication, notePresented, sessionOf } = this.deps.authn;
+    const { baseUrlOf, log } = this.deps.helpers;
+    log.debug("Entering Saml2Sso.unsolicitedSignOn().");
+    const base = baseUrlOf(req);
+    const params: any = this.paramsOf(req);
+    const scoped = this.entityIdFromSegment(req.params.sp);
+    if (this.refusedUnregistered(res, scoped, UNSOLICITED_PATH + '/{sp}')) {
+      log.debug("Leaving Saml2Sso.unsolicitedSignOn(). Not registered.");
+      return;
+    }
+    if (!config.value('saml2.unsolicitedSso')) {
+      errorCodes.mark(res, 'STS-SAML-0091');
+      log.debug("Leaving Saml2Sso.unsolicitedSignOn(). Turned off.");
+      return this.samlError(res, 403, 'Identity-provider-initiated sign-in ' +
+                                      'is turned off here',
+        'saml2.unsolicitedSso is off in this realm, so this identity ' +
+        'provider sends a Response only in answer to an AuthnRequest. Start ' +
+        'the sign-in from the service provider.');
+    }
+    const spEntityId = String(params.providerId || '') || scoped.entityId;
+    if (!spEntityId) {
+      errorCodes.mark(res, 'STS-SAML-0092');
+      log.debug("Leaving Saml2Sso.unsolicitedSignOn(). No service provider.");
+      return this.samlError(res, 400, 'Which service provider?',
+        'An unsolicited sign-in names the service provider it is for, as ' +
+        'providerId or as the path segment, because that entityID is the ' +
+        'assertion\'s audience.');
+    }
+    if (!mode.publishesMetadataForUnregisteredProviders() &&
+        !this.isRegisteredServiceProvider(spEntityId)) {
+      this.refusedUnregistered(res, { entityId: spEntityId },
+                               UNSOLICITED_PATH);
+      log.debug("Leaving Saml2Sso.unsolicitedSignOn(). Unregistered.");
+      return;
+    }
+    const issuerProblem = this.idpEntityIdProblem();
+    if (issuerProblem) {
+      errorCodes.mark(res, 'STS-SAML-0004');
+      log.debug("Leaving Saml2Sso.unsolicitedSignOn(). No entityID.");
+      return this.samlError(res, 503, 'This identity provider has no ' +
+                                      'entityID', issuerProblem);
+    }
+    const askedFor = String(params.binding || '').toLowerCase();
+    const asked = askedFor === 'artifact' || askedFor === BINDING_ARTIFACT
+      ? BINDING_ARTIFACT
+      : (askedFor === 'post' || askedFor === BINDING_POST ? BINDING_POST
+        : (askedFor === 'simplesign' || askedFor === BINDING_SIMPLESIGN
+          ? BINDING_SIMPLESIGN : ''));
+    if (askedFor && !asked) {
+      errorCodes.mark(res, 'STS-SAML-0093');
+      log.debug("Leaving Saml2Sso.unsolicitedSignOn(). Unknown binding.");
+      return this.samlError(res, 400, 'That binding is not one a Response ' +
+                                      'goes on',
+        'binding="' + askedFor + '": an unsolicited Response goes on ' +
+        'HTTP-POST, HTTP-POST-SimpleSign or HTTP-Artifact — never ' +
+        'HTTP-Redirect, which saml-profiles-2.0-os section 4.1.2 forbids ' +
+        'for a Response.');
+    }
+    const idpEntityId = this.idpEntityIdFor(spEntityId);
+    const known = this.fieldsOf(spEntityId);
+    const shire = String(params.shire || '');
+    const consumed = this.registeredAcsFor({ acsIndex: '', acsUrl: shire,
+                                             protocolBinding: asked }, known);
+    if (consumed.consumed && !consumed.ok) {
+      errorCodes.mark(res, consumed.errorCode || 'STS-SAML-0070');
+      log.debug("Leaving Saml2Sso.unsolicitedSignOn(). Not registered ACS.");
+      return this.samlError(res, 400, 'That assertion consumer service is ' +
+                                      'not registered', consumed.why);
+    }
+    const acsKnown = applications.returnAddressesOf(
+      known, 'samlAssertionConsumerService');
+    const where = returnAddress.resolve({
+      requested: consumed.consumed ? consumed.url : shire,
+      registered: acsKnown.registered,
+      unconfirmed: acsKnown.unconfirmed,
+      fallback: '',
+      attribute: 'samlAssertionConsumerService',
+      parameter: 'shire',
+      application: spEntityId
+    });
+    const acsUrl = where.ok ? String(where.url || '') : '';
+    if (!acsUrl || !/^https?:\/\//i.test(acsUrl)) {
+      errorCodes.mark(res, errorCodes.codeOf(where) || 'STS-SAML-0005');
+      log.debug("Leaving Saml2Sso.unsolicitedSignOn(). No ACS.");
+      return this.samlError(res, 400, 'There is nowhere to send it',
+        where.ok ? 'This service provider has no registered assertion ' +
+                   'consumer service and the link named no shire.'
+                 : String(where.why || ''));
+    }
+    const binding = consumed.consumed &&
+                    consumed.binding !== BINDING_REDIRECT &&
+                    this.deliverable(consumed.binding)
+      ? consumed.binding : (asked || BINDING_POST);
+    const relayState = String(params.target || params.RelayState || '');
+
+    const session = sessionOf(req);
+    if (!session) {
+      const query = this.rawQueryOf(req);
+      const where2 = beginAuthentication({
+        returnTo: req.path + (query ? '?' + query : ''),
+        application: spEntityId,
+        protocol: 'SAML 2.0',
+        details: [
+          { label: 'Service provider', value: spEntityId,
+            note: 'named by the link — an identity-provider-initiated ' +
+                  'sign-in (saml-profiles-2.0-os section 4.1.5); the ' +
+                  'service provider did not ask.' },
+          { label: 'Assertion consumer service', value: acsUrl,
+            note: consumed.consumed ? consumed.from
+                                    : String(where.from || '') },
+          { label: 'Response binding', value: binding, note: '' }
+        ]
+      });
+      log.debug("Leaving Saml2Sso.unsolicitedSignOn(). To the sign-in " +
+                "screen.");
+      return res.set('Cache-Control', 'no-store').redirect(303, where2);
+    }
+    this.recordServiceProvider({
+      identifier: spEntityId, kind: 'saml2-service-provider',
+      protocol: 'SAML 2.0', counts: false,
+      note: 'was sent an unsolicited Response (identity-provider-initiated)',
+      fields: { samlEntityId: spEntityId }
+    });
+    const roleAnswer = gate.check({
+      application: spEntityId,
+      kind: gate.ISSUANCE.SAML_ASSERTION,
+      subject: { kind: 'user', name: String((session.user || {}).username ||
+                                            ''),
+                 authenticated: session.authenticated !== false },
+      claims: null,
+      session: session
+    });
+    if (!roleAnswer.allowed) {
+      errorCodes.mark(res, 'STS-SAML-0010');
+      const denied = this.buildResponse({
+        issuer: idpEntityId, sp: spEntityId, destination: acsUrl,
+        inResponseTo: '', status: STATUS_RESPONDER,
+        subStatus: 'urn:oasis:names:tc:SAML:2.0:status:RequestDenied',
+        statusMessage: roleAnswer.why
+      });
+      this.deliver(res, {
+        binding: binding, destination: acsUrl, field: 'SAMLResponse',
+        xml: denied.xml, relayState: relayState, issuer: idpEntityId,
+        spEntityId: spEntityId, inResponseTo: '',
+        note: { title: 'Refused by policy — SAML 2.0',
+                who: 'the service provider',
+                sub: 'A <samlp:Response> carrying RequestDenied.' }
+      });
+      log.debug("Leaving Saml2Sso.unsolicitedSignOn(). RequestDenied.");
+      return;
+    }
+    notePresented(session, 'SAML 2.0', req);
+    this.issueSignInResponse(res, {
+      request: { id: '', nameIdFormat: '', requestedAuthnContexts: [] },
+      session: session, spEntityId: spEntityId, idpEntityId: idpEntityId,
+      acsUrl: acsUrl, binding: binding, relayState: relayState
+    });
+    log.debug("Leaving Saml2Sso.unsolicitedSignOn(). An unsolicited " +
+              "Response went to " + spEntityId + ".");
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE ATTRIBUTE AUTHORITY (#189): the Assertion Query and Request profile's
+  // <samlp:AttributeQuery> over the SOAP binding (saml-profiles-2.0-os section
+  // 6, saml-bindings-2.0-os section 3.2), published as an
+  // AttributeAuthorityDescriptor in the per-SP metadata. It was listed under
+  // *What is still absent* until #189; the Shibboleth SP's Query resolver
+  // asks one after every SAML 2.0 sign-in that carried no attributes, and its
+  // AttributeResolver handler on demand.
+  //
+  // WHO MAY ASK, AND ABOUT WHOM — the release policy SAML 1.1's responder
+  // never had, and the reason this one is not refused in product:
+  //
+  //   * the caller is the service provider its <Issuer> names, AUTHENTICATED
+  //     as the artifact resolver's caller is (`authenticateSoapCaller()`: a
+  //     signature on the query or its registered certificate at the TLS
+  //     handshake, required where signed requests are — product by default;
+  //     a signature present and wrong refused in every mode);
+  //   * the SUBJECT is a person that service provider holds a live session
+  //     for FROM THIS SERVICE: the NameID in the query must be the one a
+  //     session here gave it (`saml2ServiceProviders[sp].nameId`) — which is
+  //     what makes a transient NameID answerable at all, and what keeps a
+  //     service provider from asking about anybody it names. Otherwise
+  //     Requester / UnknownPrincipal (STS-SAML-0094);
+  //   * the issuance policy is asked with that session, as a sign-in is;
+  //   * what is released is what that sign-in released (`attributesFor()`),
+  //     narrowed to the <saml:Attribute>s the query names when it names any.
+  //
+  // The assertion is signed as the service provider's sign-in assertions are,
+  // and encrypted to it where they are. It carries no SubjectConfirmation and
+  // no AuthnStatement (`attributeQuery` in saml2.ts).
+  // ---------------------------------------------------------------------------
+  private attributeQuery(req, res) {
+    const { audit, errorCodes, gate, mode, validation } = this.deps;
+    const { firstByLocal, log, logArtifact, textByLocal } = this.deps.helpers;
+    const { buildSamlAssertion } = this.deps.saml2;
+    const self = this;
+    log.debug("Entering Saml2Sso.attributeQuery().");
+    const scoped = this.entityIdFromSegment(req.params.sp);
+    if (this.refusedUnregistered(res, scoped, AA_PATH + '/{sp}')) {
+      log.debug("Leaving Saml2Sso.attributeQuery(). Not registered.");
+      return;
+    }
+    const raw = typeof req.body === 'string' ? req.body : '';
+    logArtifact('SAML 2.0 AttributeQuery', 'as received over SOAP', raw);
+    let inResponseTo = '';
+    let spEntityId = '';
+    const answer = function (code, status, subStatus, message, assertion) {
+      log.debug("Entering answer().");
+      if (code) {
+        errorCodes.mark(res, code);
+      }
+      audit.audit({
+        action: 'saml2.attribute-query', outcome: code ? 'refused' : 'success',
+        errorCode: code || '', protocol: 'SAML 2.0', channel: 'http',
+        target: spEntityId,
+        summary: 'An AttributeQuery from "' + (spEntityId || '(unnamed)') +
+                 '": ' + (code ? 'refused — ' + message : 'answered')
+      });
+      const response = self.buildResponse({
+        issuer: self.idpEntityIdFor(spEntityId || scoped.entityId),
+        sp: spEntityId, destination: '', inResponseTo: inResponseTo,
+        status: status,
+        subStatus: subStatus, statusMessage: message, assertion: assertion
+      });
+      const envelope = self.soapEnvelope(response.xml);
+      logArtifact('SAML 2.0 attribute query Response', 'as returned over ' +
+                  'SOAP', envelope);
+      res.status(200)
+         .type('text/xml; charset=utf-8')
+         .set('Cache-Control', 'no-store')
+         .send(envelope);
+      log.debug("Leaving answer().");
+    };
+    const read = validation.parseXml(raw, 'AttributeQuery');
+    const query = read.ok ? firstByLocal(read.value, 'AttributeQuery') : null;
+    if (!query) {
+      log.debug("Leaving Saml2Sso.attributeQuery(). No AttributeQuery.");
+      return answer('STS-SAML-0095', STATUS_REQUESTER, '',
+                    'there is no <samlp:AttributeQuery> in the SOAP body: ' +
+                    'this endpoint answers the Assertion Query and Request ' +
+                    'profile\'s attribute query, over SOAP, and nothing ' +
+                    'else.', '');
+    }
+    inResponseTo = query.getAttribute('ID') || '';
+    spEntityId = textByLocal(query, 'Issuer') || '';
+    if (!spEntityId) {
+      log.debug("Leaving Saml2Sso.attributeQuery(). No issuer.");
+      return answer('STS-SAML-0095', STATUS_REQUESTER, '',
+                    'the AttributeQuery names no <Issuer>, and the Issuer is ' +
+                    'who the answer is for.', '');
+    }
+    if (!mode.publishesMetadataForUnregisteredProviders() &&
+        !this.isRegisteredServiceProvider(spEntityId)) {
+      log.debug("Leaving Saml2Sso.attributeQuery(). Unregistered.");
+      return answer('STS-SAML-0082', STATUS_REQUESTER,
+                    'urn:oasis:names:tc:SAML:2.0:status:RequestDenied',
+                    'no SAML 2.0 service provider is registered here as "' +
+                    spEntityId + '".', '');
+    }
+    const envelopeProblem = this.envelopeProblem(req, this.deps.helpers
+      .baseUrlOf(req), {
+      what: 'AttributeQuery', version: query.getAttribute('Version') || '',
+      issueInstant: query.getAttribute('IssueInstant') || '',
+      destination: query.getAttribute('Destination') || '', signed: false
+    });
+    if (envelopeProblem) {
+      log.debug("Leaving Saml2Sso.attributeQuery(). Its envelope.");
+      return answer(envelopeProblem.errorCode, STATUS_REQUESTER, '',
+                    envelopeProblem.why, '');
+    }
+    const caller = this.authenticateQueryCaller(req, query, spEntityId);
+    if (caller.refuse) {
+      log.debug("Leaving Saml2Sso.attributeQuery(). The caller.");
+      return answer(caller.errorCode || 'STS-SAML-0077', STATUS_REQUESTER,
+                    'urn:oasis:names:tc:SAML:2.0:status:RequestDenied',
+                    caller.why, '');
+    }
+    const nameIdEl = firstByLocal(query, 'NameID');
+    const nameId = nameIdEl ? String(nameIdEl.textContent || '').trim() : '';
+    const nameIdFormat = nameIdEl
+      ? (nameIdEl.getAttribute('Format') ||
+         'urn:oasis:names:tc:SAML:1.1:nameid-format:unspecified') : '';
+    const authnApi = this.deps.authn;
+    const live = nameId ? authnApi.sessionsMatching(function (session) {
+      const there = (session.saml2ServiceProviders || {})[spEntityId];
+      return !!there && there.nameId === nameId &&
+             !authnApi.sessionEnded(session);
+    }) : [];
+    const session = live[0];
+    if (!session) {
+      log.info('saml2: an AttributeQuery from "' + spEntityId + '" named "' +
+               nameId + '", which no live session here gave it; ' +
+               'UnknownPrincipal.');
+      log.debug("Leaving Saml2Sso.attributeQuery(). Unknown principal.");
+      return answer('STS-SAML-0094', STATUS_REQUESTER,
+                    STATUS_UNKNOWN_PRINCIPAL,
+                    'no session here gave this service provider that NameID ' +
+                    '(or it has ended); an attribute query is answered only ' +
+                    'about a subject the asking service provider was signed ' +
+                    'in for by this identity provider.', '');
+    }
+    const roleAnswer = gate.check({
+      application: spEntityId,
+      kind: gate.ISSUANCE.SAML_ASSERTION,
+      subject: { kind: 'user',
+                 name: String((session.user || {}).username || ''),
+                 authenticated: session.authenticated !== false },
+      claims: null,
+      session: session
+    });
+    if (!roleAnswer.allowed) {
+      log.debug("Leaving Saml2Sso.attributeQuery(). The issuance policy.");
+      return answer('STS-SAML-0010', STATUS_RESPONDER,
+                    'urn:oasis:names:tc:SAML:2.0:status:RequestDenied',
+                    roleAnswer.why, '');
+    }
+    // NARROWED TO WHAT WAS ASKED FOR (saml-core-2.0-os section 3.3.2.3): an
+    // attribute the query names, by Name and — where it gives one — by
+    // NameFormat; everything the sign-in released when it names none.
+    const asked = [];
+    const askedEls = query.getElementsByTagNameNS('*', 'Attribute');
+    for (let i = 0; i < askedEls.length; i++) {
+      asked.push({ name: askedEls[i].getAttribute('Name') || '',
+                   nameFormat: askedEls[i].getAttribute('NameFormat') || '' });
+    }
+    const released = this.attributesFor(session.user).filter(function (a) {
+      return !asked.length || asked.some(function (one) {
+        return one.name === a.name &&
+               (!one.nameFormat || one.nameFormat === a.nameFormat);
+      });
+    });
+    const idpEntityId = this.idpEntityIdFor(spEntityId);
+    const lifetimeMin = Number(this.settingFor(spEntityId,
+                                               'saml2.assertionLifetimeMin')) ||
+                                                 60;
+    const built = buildSamlAssertion(
+      String((session.user || {}).username || ''), spEntityId, lifetimeMin, {
+        issuer: idpEntityId, nameIdFormat: nameIdFormat, nameIdValue: nameId,
+        // The query's qualifiers, repeated: the answer's Subject must STRONGLY
+        // match the query's (saml-core-2.0-os section 3.3.4), and the
+        // Shibboleth SP ignores an assertion whose NameID drops them.
+        nameQualifier: nameIdEl ? nameIdEl.getAttribute('NameQualifier') || ''
+                                : '',
+        spNameQualifier: nameIdEl
+          ? nameIdEl.getAttribute('SPNameQualifier') || '' : '',
+        attributes: released, attributeQuery: true,
+        sign: this.signsAssertionFor(spEntityId)
+      });
+    const wantsEncryption = !!this.settingFor(spEntityId,
+                                              'saml2.encryptAssertion') ||
+      String(this.fieldsOf(spEntityId).samlSpWantAssertionsEncrypted ||
+             '') === 'TRUE';
+    const sealed: any = wantsEncryption
+      ? this.encryptFor(spEntityId, built, 'saml:EncryptedAssertion',
+                        'assertion')
+      : { xml: built, encrypted: false };
+    if (wantsEncryption && !sealed.encrypted && !mode.sendsWeakerThanAsked()) {
+      log.debug("Leaving Saml2Sso.attributeQuery(). Encryption impossible.");
+      return answer('STS-SAML-0011', STATUS_RESPONDER, '',
+                    'the assertion for this service provider is to be ' +
+                    'encrypted and could not be (' + (sealed.why ||
+                    'unknown') + ').', '');
+    }
+    log.info('saml2: answered an AttributeQuery from "' + spEntityId +
+             '" about ' + nameId + ' with ' + released.length +
+             ' attribute(s).');
+    log.debug("Leaving Saml2Sso.attributeQuery(). Answered.");
+    return answer('', STATUS_SUCCESS, '', '', sealed.xml);
+  }
+
+  // The attribute authority's caller: the artifact resolver's rule, without
+  // an artifact (see authenticateArtifactCaller()).
+  private authenticateQueryCaller(req, query, spEntityId): any {
+    const { mtls, requestSignature, spMetadata } = this.deps;
+    const { baseUrlOf, log } = this.deps.helpers;
+    const { XMLSerializer } = this.deps.xmldom;
+    log.debug("Entering Saml2Sso.authenticateQueryCaller().");
+    const fields = this.fieldsOf(spEntityId);
+    const fresh = spMetadata.freshness(fields);
+    if (fresh.state === 'expired') {
+      log.debug("Leaving Saml2Sso.authenticateQueryCaller(). Expired.");
+      return { refuse: true, errorCode: 'STS-SAML-0074', why: fresh.why };
+    }
+    const peer = mtls.peerCertificate(req);
+    const revoked = req.certificateRevocation &&
+                    req.certificateRevocation.refused;
+    const caller = requestSignature.authenticateSoapCaller({
+      xml: new XMLSerializer().serializeToString(query),
+      rootLocalName: 'AttributeQuery', fields: fields,
+      tlsCertificate: peer && !revoked
+        ? Buffer.from(peer.raw).toString('base64') : '',
+      implicitCertificates: this.implicitCertificatesFor(baseUrlOf(req),
+                                                         spEntityId)
+    });
+    log.debug("Leaving Saml2Sso.authenticateQueryCaller(). " +
+              (caller.refuse ? caller.errorCode : 'via ' + caller.via));
+    return caller;
   }
 
   private issueSignInResponse(res, ctx) {
@@ -3205,8 +3886,15 @@ class Saml2Sso {
     // when the session goes, so does the list, and nothing has to be swept. The
     // same decision `wsfed.ts` makes about `session.wsfedRealms`.
     session.saml2ServiceProviders = session.saml2ServiceProviders || {};
+    // AND THE NameID IT WAS GIVEN THERE (#192): what a LogoutRequest from
+    // that service provider names, and what one from here must name — a
+    // transient or an emailAddress NameID is not the username.
+    const issuedFormat = this.nameIdFormatFor(ctx.request || {},
+                                              ctx.spEntityId);
     session.saml2ServiceProviders[ctx.spEntityId] = {
-      acs: ctx.acsUrl, idpEntityId: ctx.idpEntityId, at: Date.now()
+      acs: ctx.acsUrl, idpEntityId: ctx.idpEntityId, at: Date.now(),
+      nameId: this.nameIdValueFor(issuedFormat, session),
+      nameIdFormat: issuedFormat
     };
     // AND THE STORE IS TOLD (2026-09-14, #46): the line above edits an object
     // the session store holds, which it does not journal, so without this the
@@ -3649,7 +4337,7 @@ class Saml2Sso {
   }
 
   private buildLogoutResponse(idpEntityId, destination, inResponseTo, status,
-                               message, sp) {
+                               message, sp, subStatus?) {
     const { errorCodes } = this.deps;
     const { genId, iso, log, logArtifact, xmlEscape } = this.deps.helpers;
     log.debug("Entering Saml2Sso.buildLogoutResponse(). status=" + status);
@@ -3661,7 +4349,10 @@ class Saml2Sso {
         (destination ? ' Destination="' + xmlEscape(destination) + '"' : '') +
         (inResponseTo ? ' InResponseTo="' + xmlEscape(inResponseTo) + '"' :
          '') + '><saml:Issuer>' + xmlEscape(idpEntityId) + '</saml:Issuer>' +
-        this.statusElement(status, '', message) +
+        // THE SECOND-LEVEL CODE (#192): PartialLogout, or UnknownPrincipal.
+        // It was computed by singleLogout() and never passed here, so every
+        // LogoutResponse said a bare Success whatever it had meant to say.
+        this.statusElement(status, subStatus || '', message) +
       '</samlp:LogoutResponse>';
     logArtifact('SAML 2.0 LogoutResponse', 'before signing', xml);
     if (!this.settingFor(sp || '', 'saml2.signResponse')) {
@@ -3883,6 +4574,26 @@ class Saml2Sso {
                             checkedLogout.refusal.why + ' The session was ' +
                             'NOT ended.');
     }
+    // ITS ENVELOPE (#190): Version, IssueInstant and Destination, as an
+    // AuthnRequest's — a LogoutRequest ending somebody's session is at least
+    // as worth being sure of.
+    const logoutEnvelope = this.envelopeProblem(req, base, {
+      what: 'LogoutRequest', version: root.getAttribute('Version') || '',
+      issueInstant: root.getAttribute('IssueInstant') || '',
+      destination: root.getAttribute('Destination') || '',
+      signed: !!checkedLogout.assessment.signed
+    });
+    if (logoutEnvelope) {
+      errorCodes.mark(res, logoutEnvelope.errorCode);
+      log.warn('saml2: refused a LogoutRequest from "' +
+               (spEntityId || '(unnamed)') + '": ' + logoutEnvelope.why);
+      log.debug("Leaving Saml2Sso.singleLogout(). Its envelope was " +
+                "refused.");
+      // error-code: none — marked above: STS-SAML-0085, 0086 or 0087.
+      return this.samlError(res, 400, logoutEnvelope.title,
+                            logoutEnvelope.why + ' The session was NOT ' +
+                            'ended.');
+    }
     // THE SUBJECT, WHICH MAY BE ENCRYPTED. A service provider that has this
     // service's metadata has an encryption key to use, and section 3.7.1 lets
     // it send <saml:EncryptedID> in place of <saml:NameID>.
@@ -3951,7 +4662,34 @@ class Saml2Sso {
     // The session ends here. `endSession()` returns what it dropped, which is
     // how the page below can name the other service providers that were signed
     // in — and which is why the list has to be read BEFORE the answer is built.
-    const session = endSession(req, res);
+    let session = endSession(req, res);
+    // THE BACK CHANNEL (#192). A LogoutRequest a service provider sends
+    // SERVER TO SERVER — Keycloak's broker does, and saml-profiles-2.0-os
+    // section 4.4 allows every binding for it — arrives with no browser and
+    // so no cookie, and until #192 it ended NOTHING while the LogoutResponse
+    // said Success. The request names the session itself: its SessionIndex is
+    // the session id this service put in the assertion. That session is ended
+    // when it signed into this service provider and was issued THIS NameID
+    // there; a SessionIndex naming anybody else's session ends nothing and is
+    // answered UnknownPrincipal (STS-SAML-0090).
+    let principalRefused = false;
+    if (!session && sessionIndex) {
+      const back = this.sessionNamedBy(spEntityId, sessionIndex, nameId);
+      if (back.session) {
+        session = this.deps.authn.endSessionById(
+          back.session.id, 'saml2-slo ' + spEntityId);
+        log.info('saml2: the back-channel LogoutRequest from "' +
+                 spEntityId + '" ended the session it named (' +
+                 sessionIndex + ').');
+      } else if (back.mismatch) {
+        principalRefused = true;
+        errorCodes.mark(res, 'STS-SAML-0090');
+        log.warn(errorCodes.tag('STS-SAML-0090') + 'saml2: a LogoutRequest ' +
+                 'from "' + spEntityId + '" named session ' + sessionIndex +
+                 ' and the NameID "' + nameId + '", which is not the ' +
+                 'NameID that session was issued there; nothing was ended.');
+      }
+    }
     const others = (session && session.saml2ServiceProviders) || {};
     const otherNames = Object.keys(others)
                              .filter(function (name) {
@@ -3977,8 +4715,9 @@ class Saml2Sso {
     // Every real identity provider that does not implement front-channel
     // fan-out gets this wrong.
     const partial = otherNames.length > 0;
-    const status = partial ? STATUS_SUCCESS : STATUS_SUCCESS;
-    const subStatus = partial ? STATUS_PARTIAL_LOGOUT : '';
+    const status = principalRefused ? STATUS_REQUESTER : STATUS_SUCCESS;
+    const subStatus = principalRefused ? STATUS_UNKNOWN_PRINCIPAL
+      : (partial ? STATUS_PARTIAL_LOGOUT : '');
     const message = partial
       ? 'The browser session ended. ' + otherNames.length + ' other service ' +
         'provider(s) were signed in on it and were NOT sent a LogoutRequest ' +
@@ -4012,7 +4751,8 @@ class Saml2Sso {
     }
 
     const response = this.buildLogoutResponse(idpEntityId, back.url, requestId,
-                                              status, message, spEntityId);
+                                              status, message, spEntityId,
+                                              subStatus);
     log.info('saml2: ' + spEntityId + ' logged out' +
              (nameId ? ' ' + nameId : '') +
              (sessionIndex ? ' (session index ' + sessionIndex + ')' : '') +
@@ -4034,6 +4774,30 @@ class Saml2Sso {
               spEntityId +
               ".");
     return undefined;
+  }
+
+  // The session a back-channel LogoutRequest names (#192): the one whose id is
+  // its SessionIndex, when that session signed into this service provider and
+  // was given this NameID there. `{ session }`, `{ mismatch: true }` when the
+  // session exists and the rest does not hold, or `{}` when there is no such
+  // session — already ended, which a logout may answer Success to.
+  private sessionNamedBy(spEntityId, sessionIndex, nameId): any {
+    const { log } = this.deps.helpers;
+    log.debug("Entering Saml2Sso.sessionNamedBy().");
+    const named = this.deps.authn.sessionById(sessionIndex);
+    if (!named) {
+      log.debug("Leaving Saml2Sso.sessionNamedBy(). No such session.");
+      return {};
+    }
+    const there = (named.saml2ServiceProviders || {})[spEntityId];
+    const given = there && there.nameId !== undefined ? there.nameId
+      : ((named.user && named.user.username) || '');
+    if (!there || given !== nameId) {
+      log.debug("Leaving Saml2Sso.sessionNamedBy(). Not this principal's.");
+      return { mismatch: true };
+    }
+    log.debug("Leaving Saml2Sso.sessionNamedBy(). Found.");
+    return { session: named };
   }
 
   // ---------------------------------------------------------------------------
@@ -4063,18 +4827,24 @@ class Saml2Sso {
       const back = self.logoutReturnAddressFor(name);
       const idpEntityId = signedInto[name].idpEntityId ||
                           self.idpEntityIdFor(name);
-      const request = self.buildLogoutRequest(idpEntityId, back.url, username,
-                                              String(self.settingFor(
-                                                name, 'saml2.nameIdFormat')),
-                                              (session && session.id) || '',
-                                                name);
+      // The NameID that service provider was GIVEN (#192), where the
+      // session recorded one; the username in the configured format for a
+      // session from before that was recorded.
+      const given = signedInto[name] || {};
+      const request = self.buildLogoutRequest(idpEntityId, back.url,
+        given.nameId !== undefined ? given.nameId : username,
+        String(given.nameIdFormat ||
+               self.settingFor(name, 'saml2.nameIdFormat')),
+        (session && session.id) || '', name);
+      // THROUGH redirectUrlFor() (#192), so it is signed on the query
+      // string as the binding requires, rather than carrying only the
+      // enveloped signature the Redirect binding removes.
       return {
         entityId: name,
         from: back.from,
         destination: back.url,
         url: back.url
-          ? back.url + (back.url.indexOf('?') >= 0 ? '&' : '?') +
-            'SAMLRequest=' + encodeURIComponent(self.encodeRedirect(request))
+          ? self.redirectUrlFor(back.url, 'SAMLRequest', request, '', name)
           : ''
       };
     });
@@ -4246,17 +5016,30 @@ class Saml2Sso {
           service('SingleSignOnService', BINDING_REDIRECT, where.sso) +
           service('SingleSignOnService', BINDING_POST, where.sso) +
           service('SingleSignOnService', BINDING_SIMPLESIGN, where.sso) +
-          // The artifact SSO endpoint. It is the same URL as the other two,
-          // which is correct and looks wrong: HTTP-Artifact as a REQUEST
-          // binding means the AuthnRequest arrives as an artifact this service
-          // would resolve at the service provider — which this service does not
-          // do — while the ARTIFACT PROFILE that everybody means is a request
-          // over Redirect or POST with ProtocolBinding=HTTP-Artifact on it. It
-          // is advertised so a service provider that populates its binding menu
-          // from the metadata (the debugger does) offers the artifact choice at
-          // all.
-          service('SingleSignOnService', BINDING_ARTIFACT, where.sso) +
+          // NO HTTP-Artifact SingleSignOnService (#191). A SingleSignOnService
+          // names a binding an AuthnRequest may ARRIVE on, and HTTP-Artifact
+          // as a request binding means an artifact this service would resolve
+          // at the service provider's own ArtifactResolutionService — which
+          // it does not do. The ARTIFACT PROFILE everybody means is a request
+          // over Redirect or POST carrying ProtocolBinding=HTTP-Artifact, and
+          // that needs no endpoint here. It was advertised anyway until #191,
+          // so a service provider building a binding menu from this document
+          // offered the artifact choice — and SimpleSAMLphp, which reads it
+          // literally, sent its AuthnRequest AS an artifact nothing resolved.
         '</md:IDPSSODescriptor>' +
+        // THE ATTRIBUTE AUTHORITY (#189): its own role, after the IdP's, as
+        // saml-metadata-2.0-os section 2.4.7 has it — a service provider
+        // looks for an AttributeService here and nowhere else. The signing
+        // keys are the same generations; the NameID formats the ones it can
+        // be asked about (whatever a sign-in here gave).
+        '<md:AttributeAuthorityDescriptor protocolSupportEnumeration="' +
+          NS_SAMLP + '">' +
+          keyDescriptor('signing') +
+          service('AttributeService', BINDING_SOAP, where.aa) +
+          NAMEID_FORMATS.map(function (format) {
+            return '<md:NameIDFormat>' + format + '</md:NameIDFormat>';
+          }).join('') +
+        '</md:AttributeAuthorityDescriptor>' +
         // `saml.organizationName` and its two siblings since 2026-09-12 — the
         // literal "mock-sts" / "Mock security token service" until then — and
         // omitted entirely when the name is emptied. See document_settings.ts.

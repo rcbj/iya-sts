@@ -1011,6 +1011,10 @@ const AUTHORIZE_QUERY = vz.looseObject({
   claims_locales: vz.string().max(256).optional(),
   id_token_hint: vz.string().max(validation.CAP.TOKEN).optional(),
   login_hint: vt.opt(vt.name),
+  // Enterprise Extensions (#148), section 3: a domain for home-realm
+  // discovery, and the tenant the client means — a trust realm's id here.
+  domain_hint: vz.string().max(253).regex(/^[A-Za-z0-9.-]+$/).optional(),
+  tenant: vz.string().max(64).optional(),
   acr_values: vz.string().max(512).optional(),
 
   // RFC 7636 (PKCE). The verifier's length is section 4.1's, and the challenge
@@ -2759,7 +2763,7 @@ class OAuth2Server {
       // `pairwise` since #118 (OIDC Core section 8): a client that registers
       // subject_type=pairwise is told a sub of its own sector's, computed by
       // `pairwise_subjects.ts`.
-      subject_types_supported: ['public', 'pairwise'],
+      subject_types_supported: ['public', 'pairwise', 'ephemeral'],
       // OIDC Core section 10.2 (2026-09-17): an ID Token is encrypted — signed
       // first, then encrypted to the key in the client's inline `jwks` — when
       // the client registered `id_token_encrypted_response_alg`. The lists
@@ -2792,7 +2796,9 @@ class OAuth2Server {
       claims_supported: ['iss', 'sub', 'aud', 'exp', 'iat', 'nbf', 'auth_time',
                          'nonce', 'azp', 'jti', 'at_hash', 'c_hash',
                          's_hash', 'amr',
-                         'acr', 'sid'].concat(
+                         'acr', 'sid',
+                         // Enterprise Extensions (#148), section 2.
+                         'session_expiry', 'tenant', 'aud_sub'].concat(
                            USERINFO_SCOPE_CLAIMS.profile,
                            USERINFO_SCOPE_CLAIMS.email,
                            USERINFO_SCOPE_CLAIMS.address,
@@ -3837,11 +3843,13 @@ class OAuth2Server {
   // place every reader of a CLIENT-facing subject asks: the ID Token, the
   // UserInfo response and the Logout Tokens that must name what the ID Token
   // named. `pairwise_subjects.ts` decides.
-  subjectFor(clientId: Json, localSub: Json): Json {
+  // `sessionId` is the authentication an ephemeral subject belongs to
+  // (#149); a public or pairwise client ignores it.
+  subjectFor(clientId: Json, localSub: Json, sessionId?: Json): Json {
     const { log, pairwiseSubjects } = this.deps;
     log.debug("Entering OAuth2Server.subjectFor().");
     log.debug("Leaving OAuth2Server.subjectFor().");
-    return pairwiseSubjects.subjectFor(clientId, localSub);
+    return pairwiseSubjects.subjectFor(clientId, localSub, sessionId);
   }
 
   // -------------------------------------------------------------------------
@@ -4005,7 +4013,8 @@ class OAuth2Server {
     // -----------------------------------------------------------------------
     const payload = self.definedOnly(Object.assign({
       iss: self.issuerOf(base),
-      sub: opts.sub || self.subjectFor(opts.client_id, user.sub),
+      sub: opts.sub || self.subjectFor(opts.client_id, user.sub,
+                                       opts.session_id),
       aud: opts.client_id,
       iat: iat, nbf: iat, exp: iat +
                                self.idTokenTtl(opts.client_id),
@@ -4077,6 +4086,24 @@ class OAuth2Server {
     if (opts.session_id && (frontchannel.enabled() || backchannel.enabled() ||
                             opts.device_secret)) {
       payload.sid = opts.session_id;
+    }
+    // OPENID CONNECT ENTERPRISE EXTENSIONS (#148), sections 2.1 to 2.3.
+    // `session_expiry` whenever the token is issued on a session: the
+    // session's ABSOLUTE end (rcbj's answer: sessions stay absolute and a
+    // later sign-in does not extend them), so a relying party can end its
+    // own session no later. `tenant` always: the trust realm this person
+    // authenticated in — the one definition of a tenant here, which Provider
+    // Commands (#151) shares. `aud_sub`: the account id this client knows
+    // the person by, where an administrator recorded one.
+    const held = opts.session_id ?
+      this.deps.authn.sessionById(String(opts.session_id)) : null;
+    if (held && Number(held.expires) > 0) {
+      payload.session_expiry = Math.floor(Number(held.expires) / 1000);
+    }
+    payload.tenant = String(realms.current().id);
+    const audSub = this.audSubFor(user.username, opts.client_id);
+    if (audSub) {
+      payload.aud_sub = audSub;
     }
     // Native SSO section 3.4: `ds_hash`, hashed as at_hash is.
     if (opts.device_secret) {
@@ -4971,6 +4998,21 @@ class OAuth2Server {
     this.deps.log.debug("Entering OAuth2Server.claimsProviders().");
     this.deps.log.debug("Leaving OAuth2Server.claimsProviders().");
     return require('./claims_providers');
+  }
+
+  // The `aud_sub` an administrator recorded for this person at this client
+  // (#148), or ''. One value per client on the person's entry,
+  // `<client_id> <aud_sub>`.
+  audSubFor(username: Json, clientId: Json): string {
+    const { log } = this.deps;
+    log.debug("Entering OAuth2Server.audSubFor().");
+    const prefix = String(clientId || '') + ' ';
+    const found = (credentials.audSubsOf(String(username || '')) || [])
+      .filter(function (v: string): boolean {
+        return String(v).indexOf(prefix) === 0;
+      })[0];
+    log.debug("Leaving OAuth2Server.audSubFor().");
+    return found ? String(found).slice(prefix.length) : '';
   }
 
   requestedClaimNames(request: Json, member: Json): Json {
@@ -6694,7 +6736,7 @@ class OAuth2Server {
     frontchannel.noteClient(authInfo, String(query.client_id),
                             { iss: self.issuerOf(base),
                               sub: self.subjectFor(query.client_id,
-                                                   user.sub) });
+                                                   user.sub, sessionId) });
 
     if (types.indexOf('code') >= 0) {
       const code = randomId(24);
@@ -7728,6 +7770,19 @@ class OAuth2Server {
       return redirectable('STS-OAUTH-0161', 'invalid_request',
                           'client_id is required.');
     }
+    // ENTERPRISE EXTENSIONS SECTION 3.2 (#148): a `tenant` names the realm
+    // the request is for, and a realm is chosen by its PATH — so one naming
+    // another realm is refused rather than followed (rcbj's answer), in
+    // every mode. A parameter must not switch realms.
+    if (q.tenant !== undefined && String(q.tenant) !==
+        String(realms.current().id)) {
+      log.debug("Leaving OAuth2Server.vetAuthorizationRequest(). Another " +
+                "tenant.");
+      return redirectable('STS-OAUTH-0688', 'invalid_request',
+        'tenant "' + q.tenant + '" is not this authorization server\'s ' +
+        'tenant ("' + realms.current().id + '"); a tenant is chosen by the ' +
+        'path the request is sent to.');
+    }
     const types = String(q.response_type || '').split(/\s+/).filter(Boolean);
     const known = ['code', 'token', 'id_token', 'none'];
     // OAuth 2.0 Multiple Response Type Encoding Practices section 4 (#125):
@@ -8501,7 +8556,7 @@ class OAuth2Server {
     // answer to this request (section 3.1.2.1): with prompt=none it is
     // login_required, and otherwise the person signs in again.
     const hintMismatch = !!(idTokenHint && idTokenHint.ok && session &&
-      self.subjectFor(q.client_id, (session.user || {}).sub) !==
+      self.subjectFor(q.client_id, (session.user || {}).sub, session.id) !==
         idTokenHint.sub);
     // THE SECOND PASS: the person was sent to sign in because of the hint and
     // came back as somebody else again. Refused rather than sent round again,
@@ -8826,7 +8881,8 @@ class OAuth2Server {
       // that subject is one this directory can name (#118).
       hint: q.login_hint ||
             (idTokenHint && idTokenHint.ok
-              ? (nameForSubject(idTokenHint.sub) || '') : ''),
+              ? (nameForSubject(pairwiseSubjects.localFor(idTokenHint.sub) ||
+                                idTokenHint.sub) || '') : ''),
       forceMfa: forceMfa, forceKey: !!screen.forceKey,
       protocol: 'OAuth 2.0 / OIDC',
       // WHICH APPLICATION this is, so that an entry naming a federation
@@ -8834,7 +8890,9 @@ class OAuth2Server {
       // screen. It is the raw client_id: the registry is keyed by the
       // identifier exactly as a protocol presented it, and one this service has
       // never heard of simply has no entry, which is not an error.
-      application: q.client_id || ''
+      application: q.client_id || '',
+      // Enterprise Extensions section 3.1 (#148): home-realm discovery.
+      domainHint: q.domain_hint || ''
     }));
     log.debug("Leaving the authorization endpoint. Sent to the " +
               "authentication " +
@@ -9736,7 +9794,11 @@ class OAuth2Server {
     // that section 5.3.2's rule — it MUST match the ID Token's `sub` — holds
     // for a pairwise client too. The access token keeps the public subject,
     // because it is what this endpoint looks the person up by.
-    body.sub = self.subjectFor(claims.client_id, claims.sub || user.sub);
+    // The session the access token was issued on, so an ephemeral client is
+    // told the `sub` its ID Token carried (#149, Core 5.3.2).
+    body.sub = self.subjectFor(claims.client_id, claims.sub || user.sub,
+                               claims.sid ||
+                                 stats.sessionIdOfJti(claims.jti));
     logArtifact('UserInfo response', 'as returned', body);
 
     // Section 5.3.2: the response is JSON unless the client registered a
@@ -15421,7 +15483,9 @@ class OAuth2Server {
                  why: 'the ' + kind + ' is not a token this authorization ' +
                       'server issued and still stands by.' };
       }
-      username = String(nameForSubject(String(claims.sub || '')) || '');
+      // An ephemeral `sub` is mapped back to the person first (#149).
+      username = String(nameForSubject(pairwiseSubjects.localFor(
+        String(claims.sub || '')) || String(claims.sub || '')) || '');
     }
     const person = username ? this.provisionedPerson(username) : null;
     if (!person || !person.sub) {

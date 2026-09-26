@@ -4012,6 +4012,71 @@ dial itself over TLS, so that job publishes the service's own Root in the
 directory shared with the service and names it as the OP realm's
 `federation.outboundCaFile`.
 
+## 3bi. OPENID CONNECT ENTERPRISE EXTENSIONS 1.0 (2026-09-26, #148)
+
+rcbj's answers were every recommendation: a tenant is the trust realm's id
+(#151 shares it); a `tenant` naming another realm is refused; sessions stay
+absolute; `aud_sub` is recorded per person per client; `domain_hint` is
+home-realm discovery. All in every mode.
+
+* **`session_expiry`** is set in `idToken()` from `authn.sessionById()`'s
+  `expires` whenever the token is issued on a session — keyed on
+  `opts.session_id` ALONE, unlike `sid`, which only the logout features and
+  Native SSO switch on.
+* **`tenant`** is `realms.current().id` in every ID Token. On the request it
+  is declared in `AUTHORIZE_QUERY` and refused in
+  `vetAuthorizationRequest()` when it names another realm
+  (`STS-OAUTH-0688`, redirected `invalid_request`), before the response type
+  is read. PAR runs the same vetting.
+* **`aud_sub`** is `stsAudSub` on the person's entry, one `<client_id>
+  <aud_sub>` per value (`credentials.audSubsOf()` / `writeAudSubs()`),
+  written by `usersAction`'s `set-aud-sub` (console form on the person's
+  page, `POST /admin-api/users/set-aud-sub`). The learned half — a value a
+  client reports — is #151's.
+* **`domain_hint`** goes to `authn.beginAuthentication()` as `domainHint`;
+  `homeRealmFor()` takes the usable service-provider relationship whose
+  `fedHomeRealmDomain` (a new multi-valued federation attribute, lower-cased
+  as `fedSubjectDomain` is) lists it — exactly one, or none. An
+  application's own auto-redirect partner wins, being the more specific
+  configuration. `fedSubjectDomain` stays an ADMISSION rule; this is a
+  routing hint.
+* **The portal launch** (`Portal.initiateLoginLink()`) adds `tenant`,
+  `domain_hint` (the realm's DNS domain) and `target_link_uri` (the
+  application's registered https home page).
+
+Tests: `tests/vendored/sts_enterprise_extensions.js`.
+
+## 3bj. THE EPHEMERAL SUBJECT IDENTIFIER (2026-09-26, #149)
+
+rcbj's answers were every recommendation: a persisted per-realm mapping
+purged by a job, the same `sub` within one authentication, Logout Tokens and
+SSF events naming it for that client, nothing relaxed in development.
+
+* **`pairwise_subjects.ts` owns it**, beside pairwise (#118), because both are
+  the same indirection: `subjectFor(clientId, localSub, sessionId)`. For a
+  client whose `subject_type` is `ephemeral` it returns the `sub` minted for
+  that (session, client), minting 160 random bits the first time. The map is
+  `oauth2.ephemeralSubjects`: `s|<session>|<client>` to the `sub`, and
+  `e|<sub>` to `{ local, client, session, until }`. Every use extends `until`
+  by the larger of `authn.sessionLifetimeS` and `oauth2.refreshTokenTtlS`;
+  the `oauth2.ephemeral-subjects-purge` job removes what has passed it. A
+  grant with no session (no browser) mints afresh on every call.
+* **Every client-facing `sub` passes the session**: `idToken()`
+  (`opts.session_id`), the implicit response and `noteClient()` (so the
+  Logout Token agrees), the `id_token_hint` comparison, and UserInfo (the
+  access token's `sid`, or `stats.sessionIdOfJti()`). Access and refresh
+  tokens keep the PUBLIC `sub`, which is what this service looks a person up
+  by, so a refresh re-derives the same ephemeral one from the same session.
+* **Mapping back**: `localFor(sub)` turns an ephemeral `id_token_hint` into
+  the person at the authorization and CIBA endpoints. Pairwise has no reverse
+  map and still has none: a pairwise hint names nobody here.
+* **SSF**: `ssf.ts`'s `subjectForReceiver()` rewrites an `iss_sub` user to
+  the `sub` the stream's owning client knows (pairwise or ephemeral), using
+  the event's own `session` member; before this a pairwise client's stream
+  was told the public `sub`.
+
+Tests: `tests/vendored/sts_ephemeral_subjects.js`.
+
 ## OPENID CONNECT CORE, READ AGAINST THE CODE (2026-09-22, #118)
 
 The review on #45 found Core bugs that no test had asked about. What changed, and

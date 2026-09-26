@@ -499,6 +499,16 @@ Connect Core section 12.2). An ID Token issued on a browser session carries
   JSON array listing every redirect URI; a value an administrator writes on
   the console is not fetched. UserInfo and Logout Tokens name the same
   pairwise `sub` as the ID Token.
+* **Ephemeral subjects** (the Ephemeral Subject Identifier draft, #149): a
+  client registered with `subject_type=ephemeral` is given a random `sub`
+  (160 bits) for each authentication. Everything one sign-in issues it — the
+  ID Token, UserInfo, a refreshed ID Token, the Logout Token — names that
+  one `sub`. The next sign-in gets another, never reused. The mapping is
+  kept only as long as a token or the session of that sign-in can last, and
+  a scheduler job removes it after that. An `id_token_hint` carrying an
+  ephemeral `sub` still names the person while the mapping lasts.
+* **Shared Signals events** sent to a stream a pairwise or ephemeral client
+  owns name that client's `sub` for the person, not the public one.
 
 ### UserInfo and the claims request
 
@@ -662,6 +672,27 @@ Discovery publishes `verified_claims_supported`, `trust_frameworks_supported`,
 `documents_check_methods_supported`, `electronic_records_supported` and
 `claims_in_verified_claims_supported`. Aggregated and distributed verified
 claims, and attachments, are not supported.
+
+### Enterprise Extensions: `session_expiry`, `tenant`, `aud_sub`, `domain_hint`
+
+OpenID Connect Enterprise Extensions 1.0 (#148), in every mode:
+
+* **The ID Token** carries `tenant` (the trust realm's id) and, when it is
+  issued on a sign-on session, `session_expiry`: the session's absolute end.
+  A later sign-in does not extend a session, so a relying party can end its
+  own session no later than this. Where an administrator recorded the
+  account id a client knows the person by (`POST
+  /admin-api/users/set-aud-sub`, or the person's page on the console), the
+  ID Token for that client carries it as `aud_sub`.
+* **`tenant` on an authorization request** must be the realm's own id. One
+  naming another realm is refused with `invalid_request`: a realm is chosen
+  by the path the request is sent to, never by a parameter.
+* **`domain_hint`** is home-realm discovery. A federation relationship whose
+  `fedHomeRealmDomain` lists the domain receives the person's sign-in
+  directly, unless the application names a partner of its own.
+* **Third-party-initiated login** from the portal adds `tenant`,
+  `domain_hint` (the realm's DNS domain) and `target_link_uri` (the
+  application's registered https home page) to `iss` and `login_hint`.
 
 ### Aggregated and distributed claims (Claims Providers)
 
@@ -1331,7 +1362,8 @@ it may not name this service's own protected scopes.
 * `default_max_age` and `default_acr_values` apply unless the request names
   its own `max_age`, or its own `acr_values` or essential `acr`.
 * An `initiate_login_uri` must be `https`. The user portal (`/portal/applications`) shows a
-  **Sign in** link to it, carrying `iss` and `login_hint` (Core section 4).
+  **Sign in** link to it, carrying `iss` and `login_hint` (Core section 4) and
+  Enterprise Extensions' `tenant`, `domain_hint` and `target_link_uri`.
 
 An RFC 7592 update must name the client's own `client_id` and, if it sends a
 `client_secret`, the one it was issued. A registration access token for a
