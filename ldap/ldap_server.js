@@ -178,6 +178,11 @@ const createClaims = require('./directory_create_claims');
 // asked once per entry. This file classifies the reader and the entry and
 // asks it — see *WHO MAY READ THIS DIRECTORY*, below the write half.
 const readPolicy = require('./directory_read_policy');
+// WHAT AN ADMINISTRATOR MAY CHANGE ON A PERSON (#228, 2026-09-26): the rule
+// table and the edit, a LIBRARY that cannot require this file (it is loaded
+// by the console long before this one) and so is handed the two functions it
+// needs through its setDirectory(), filled below.
+const personEditor = require('./person_editor');
 // The revocation register, for the CRL container below. A LEAF (rule 3): it
 // registers no route, so requiring it here moves nothing.
 const pkiRevocation = require('../common/pki_revocation');
@@ -7132,6 +7137,29 @@ if (typeof groupClaims.setDirectory === 'function') {
            'unaffected.');
 }
 
+// A PERSON'S ATTRIBUTE EDITOR (#228, 2026-09-26), the same shape as the two
+// above: `ldap/person_editor.ts` decides which attributes an administrator may
+// change and what a value may be, and must not require this module — the
+// console loads it at 18, and a require from there would drag the
+// `/admin/ldap/*` routes ahead of the console's. What crosses is a READ of one
+// person and a WRITE of one attribute (`writePersonAttribute()`, below), and
+// the library refuses a directory that offers only one of them.
+personEditor.setDirectory({
+  locate: function locate(key) {
+    log.debug('Entering locate(). key=' + key);
+    const stored = locateEntry(String(key || '')).stored;
+    if (!stored || !isPersonEntry(stored)) {
+      log.debug('Leaving locate(). ' + (stored ? 'Not a person.' : 'Nobody.'));
+      return null;
+    }
+    log.debug('Leaving locate(). ' + stored.dn);
+    return { dn: stored.dn, attributes: attributeSnapshot(stored),
+             naming: rdnPairs(splitRdns(stored.dn)[0] || '')
+               .map(function (pair) { return pair.attribute; }) };
+  },
+  write: writePersonAttribute
+});
+
 // ---------------------------------------------------------------------------
 // THE CRL CONTAINER (2026-09-11).
 //
@@ -10177,6 +10205,52 @@ function writePersonFlag(key, name, value, options) {
                                             options.riscReason) || '') });
   }
   log.debug('Leaving writePersonFlag().');
+  return true;
+}
+
+// ---------------------------------------------------------------------------
+// ONE ATTRIBUTE OF A PERSON, REPLACED IN PLACE (#228, 2026-09-26) — the write
+// half of `ldap/person_editor.ts`'s slot, which has already decided that the
+// attribute may be changed and what its values are.
+//
+// **IN PLACE, AND ONLY THAT ATTRIBUTE**, like writePersonFlag() above and
+// unlike writePerson(), which REPLACES the entry through putEntry() and so
+// turns every value it is handed back into a string: an entry may carry a
+// binary value (a certificate, a photograph) that an edit of somebody's
+// telephone number has no business re-encoding. The attributes the editor
+// offers are never a naming attribute nor `uid`, so the username index is not
+// touched by this, and never `mail`, so the address verification is not
+// either.
+//
+// **AND THE ACCOUNT OBSERVER IS TOLD**, with the before and after, as it is
+// told of a SCIM PATCH or an `ldapmodify` of the same attribute: Shared
+// Signals reads an edit made here exactly as it reads one arriving by either
+// of those doors.
+// ---------------------------------------------------------------------------
+function writePersonAttribute(dn, name, values) {
+  log.debug('Entering writePersonAttribute(). dn=' + dn + ', name=' + name);
+  const stored = getEntry(dn);
+  if (!stored || !isPersonEntry(stored)) {
+    log.warn(errorCodes.tag('STS-LDAP-0110') + 'ldap: ' + dn + ' is not a ' +
+             'person in this realm, so ' + name + ' was not written.');
+    log.debug('Leaving writePersonAttribute(). Not a person.');
+    return false;
+  }
+  const before = attributeSnapshot(stored);
+  const key = String(name).toLowerCase();
+  const kept = (values || []).map(String);
+  if (kept.length) {
+    stored.attributes[key] = kept;
+  } else {
+    delete stored.attributes[key];
+  }
+  // Both, as the LDAP modify handler keeps them: the console's "last
+  // modified" reads the field and an LDAP client the attribute.
+  stored.modifiedAt = generalizedTime();
+  stored.attributes.modifytimestamp = [stored.modifiedAt];
+  touchDirectory(stored.dn);
+  noteAccountChange('updated', stored.dn, before, attributeSnapshot(stored));
+  log.debug('Leaving writePersonAttribute(). ' + kept.length + ' value(s).');
   return true;
 }
 

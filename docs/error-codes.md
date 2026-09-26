@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3461** of them, in **38** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3472** of them, in **38** subsystems.
 
 ## Where a code appears
 
@@ -70,7 +70,7 @@ is an ordinary outcome.
 * [Federation (`STS-FED`)](#sts-fed) — 133
 * [OpenID Federation (`STS-OIDFED`)](#sts-oidfed) — 66
 * [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 164
-* [LDAP directory (`STS-LDAP`)](#sts-ldap) — 74
+* [LDAP directory (`STS-LDAP`)](#sts-ldap) — 84
 * [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 74
 * [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 143
 * [TLS and client certificates (`STS-TLS`)](#sts-tls) — 33
@@ -81,7 +81,7 @@ is an ordinary outcome.
 * [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 282
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 74
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 32
-* [Admin console (`STS-ADMIN`)](#sts-admin) — 195
+* [Admin console (`STS-ADMIN`)](#sts-admin) — 196
 * [Management API (`STS-API`)](#sts-api) — 73
 * [User portal (`STS-PORTAL`)](#sts-portal) — 72
 * [Sign-out (`STS-LOGOUT`)](#sts-logout) — 7
@@ -2345,6 +2345,16 @@ Raised from: ldap/.
 | `STS-LDAP-0098` | The node-ldapjs in use does not support the routeAnonymousBinds server option, so an anonymous bind is answered by the library and never reaches the bind handler; product mode cannot refuse it (reads on that connection are still refused). | none — logged at startup |
 | `STS-LDAP-0099` | In product mode, a compare named an attribute the bound identity may not read on that entry (ldap/directory_read_policy.ts); answered whether or not the entry holds it, so the refusal says nothing about the value. | LDAP result code 50, insufficientAccessRights |
 | `STS-LDAP-0100` | In product mode, a bind named a DN that is not a person's — an application, a federation, a container — and was refused before its password was read; only people bind to the directory. | LDAP result code 49, invalidCredentials (RFC 4513 section 5.1.3) |
+| `STS-LDAP-0101` | A person's attribute edit (#228) found no directory installed in this process, so there is no entry to change. | HTTP 400 (API) or a 303 with error= |
+| `STS-LDAP-0102` | A person's attribute edit (#228) named nobody in this realm's directory. | HTTP 400 (API) or a 303 with error= |
+| `STS-LDAP-0103` | A person's attribute edit (#228) named an attribute the editor does not change: a credential, a binary value, the username or the address (which have doors of their own), or one outside the person schema. | HTTP 400 (API) or a 303 with error= |
+| `STS-LDAP-0104` | A person's attribute edit (#228) named the attribute the entry's own DN is built from, which would leave the DN and the entry disagreeing. | HTTP 400 (API) or a 303 with error= |
+| `STS-LDAP-0105` | A person's attribute edit (#228) was not set, add or remove, or was an add to an attribute that holds one value. | HTTP 400 (API) or a 303 with error= |
+| `STS-LDAP-0106` | A person's attribute edit (#228) carried a value that is too long, holds a control character, does not have its attribute's shape (a country code, a date, a language range, an http(s) URL, a DN), or was empty for an add or a remove. | HTTP 400 (API) or a 303 with error= |
+| `STS-LDAP-0107` | A person's attribute edit (#228) added a value the attribute already holds. | HTTP 400 (API) or a 303 with error= |
+| `STS-LDAP-0108` | A person's attribute edit (#228) removed a value the attribute does not hold. | HTTP 400 (API) or a 303 with error= |
+| `STS-LDAP-0109` | A person's attribute edit (#228) would have left cn or sn, which RFC 4519 3.12 requires of every person, with no value. | HTTP 400 (API) or a 303 with error= |
+| `STS-LDAP-0110` | A person's attribute edit (#228) was refused by the directory: the entry was gone or not a person's when the write reached it. | HTTP 400 (API) or a 303 with error= |
 
 ## STS-SCIM
 
@@ -3396,7 +3406,7 @@ Raised from: admin-ui/ (except pki_admin.js), admin-core/.
 | `STS-ADMIN-0515` | A delegated-permission grant or revoke named no client application. | HTTP 400 (API) or a 303 with error= |
 | `STS-ADMIN-0516` | The delegated-permission register refused a change made from the console or the management API. | HTTP 400 (API) or a 303 with error= |
 | `STS-ADMIN-0517` | The XACML administration pages refused an action reached through the management API. | HTTP 400 (API) |
-| `STS-ADMIN-0518` | A users action that acts on one person (activation link, password, second-factor clear) named nobody. | HTTP 400 (API) or a 303 with error= |
+| `STS-ADMIN-0518` | A users action that acts on one person (activation link, password, second-factor clear, attribute edit) named nobody. | HTTP 400 (API) or a 303 with error= |
 | `STS-ADMIN-0519` | An activation link could not be issued for the named person. | HTTP 400 (API) or a 303 with error= |
 | `STS-ADMIN-0520` | An operator's clear of a person's authenticator app was refused. | HTTP 400 (API) or a 303 with error= |
 | `STS-ADMIN-0521` | An operator's clear of a person's recovery codes was refused. | HTTP 400 (API) or a 303 with error= |
@@ -3551,6 +3561,7 @@ Raised from: admin-ui/ (except pki_admin.js), admin-core/.
 | `STS-ADMIN-0814` | clear-email-factor could not write the person's entry (#64). | HTTP 400 (API) |
 | `STS-ADMIN-0815` | set-mail was given something that is not an address this service can send to (#64). | HTTP 400 (API) |
 | `STS-ADMIN-0816` | set-mail named nobody in this realm, or the directory would not write the address (#64). | HTTP 400 (API) |
+| `STS-ADMIN-0817` | set-attribute, add-attribute or remove-attribute was refused and ldap/person_editor.ts named no more specific reason (#228). | HTTP 400 (API) or a 303 with error= |
 
 ## STS-API
 

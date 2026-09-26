@@ -4205,6 +4205,140 @@ class AdminApi {
             },
             responseDescription: 'The address now on the entry, verified.' },
 
+          { action: 'set-attribute', operationId: 'setUserAttribute',
+            summary: 'Replace every value of one of somebody\'s attributes',
+            description: 'One attribute of the person\'s directory entry, ' +
+                         'written in place, as an `ldapmodify` of it ' +
+                         'would be. The ' +
+                         'attributes it takes are the person schema ' +
+                         '(person, organizationalPerson, inetOrgPerson and ' +
+                         'the Identity Assurance claims) and the credential ' +
+                         'catalogue, less what is managed: `userPassword` ' +
+                         '(`set-password`), the binary ones, `uid`, `mail` ' +
+                         '(`set-mail`, which verifies it) and whichever ' +
+                         'attribute names the entry. `attributeEditor` in ' +
+                         'GET /admin-api/users?user= lists them, with what ' +
+                         'each holds and the shape its value must have. A ' +
+                         'change is told to Shared Signals as a SCIM or ' +
+                         'LDAP write of it is.\n\n' +
+                         '**`set` REPLACES** every value with `value`; ' +
+                         'an empty `value` removes the attribute, except ' +
+                         '`cn` and `sn`, which every person must hold.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                user: { type: 'string',
+                        description:
+                          'The person, as /admin-api/users names them.' },
+                username: { type: 'string',
+                            description: 'Accepted for `user`.' },
+                attribute: { type: 'string', maxLength: 64,
+                             description: 'The attribute, as ' +
+                               '`attributeEditor.attributes[].name` in GET ' +
+                               '/admin-api/users?user= names it.' },
+                value: { type: 'string', maxLength: 1024,
+                         description: 'The one value it will hold; ' +
+                                      'empty removes it.' }
+              },
+              required: ['user', 'attribute'],
+              examples: [{ user: 'alice', attribute: 'title',
+                          value: 'Principal Engineer' }],
+              additionalProperties: false
+            },
+            responseDescription: 'The attribute and every value it now ' +
+                                 'holds.' },
+
+          { action: 'add-attribute', operationId: 'addUserAttributeValue',
+            summary: 'Add a value to one of somebody\'s multi-valued ' +
+                     'attributes',
+            description: 'One attribute of the person\'s directory entry, ' +
+                         'written in place, as an `ldapmodify` of it ' +
+                         'would be. The ' +
+                         'attributes it takes are the person schema ' +
+                         '(person, organizationalPerson, inetOrgPerson and ' +
+                         'the Identity Assurance claims) and the credential ' +
+                         'catalogue, less what is managed: `userPassword` ' +
+                         '(`set-password`), the binary ones, `uid`, `mail` ' +
+                         '(`set-mail`, which verifies it) and whichever ' +
+                         'attribute names the entry. `attributeEditor` in ' +
+                         'GET /admin-api/users?user= lists them, with what ' +
+                         'each holds and the shape its value must have. A ' +
+                         'change is told to Shared Signals as a SCIM or ' +
+                         'LDAP write of it is.\n\n' +
+                         '**`add`** appends `value`, and is refused on an ' +
+                         'attribute that holds one value (`displayName`, ' +
+                         '`employeeNumber`, `preferredLanguage`, `c`, ' +
+                         '`schacDateOfBirth`, and this service\'s own ' +
+                         'single-fact attributes) and for a value already ' +
+                         'held.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                user: { type: 'string',
+                        description:
+                          'The person, as /admin-api/users names them.' },
+                username: { type: 'string',
+                            description: 'Accepted for `user`.' },
+                attribute: { type: 'string', maxLength: 64,
+                             description: 'The attribute, as ' +
+                               '`attributeEditor.attributes[].name` in GET ' +
+                               '/admin-api/users?user= names it.' },
+                value: { type: 'string', maxLength: 1024,
+                         description: 'The value to add.' }
+              },
+              required: ['user', 'attribute', 'value'],
+              examples: [{ user: 'alice', attribute: 'mobile',
+                          value: '+46 70 000 00 00' }],
+              additionalProperties: false
+            },
+            responseDescription: 'The attribute and every value it now ' +
+                                 'holds.' },
+
+          { action: 'remove-attribute', operationId: 'removeUserAttributeValue',
+            summary: 'Remove one value from one of somebody\'s attributes',
+            description: 'One attribute of the person\'s directory entry, ' +
+                         'written in place, as an `ldapmodify` of it ' +
+                         'would be. The ' +
+                         'attributes it takes are the person schema ' +
+                         '(person, organizationalPerson, inetOrgPerson and ' +
+                         'the Identity Assurance claims) and the credential ' +
+                         'catalogue, less what is managed: `userPassword` ' +
+                         '(`set-password`), the binary ones, `uid`, `mail` ' +
+                         '(`set-mail`, which verifies it) and whichever ' +
+                         'attribute names the entry. `attributeEditor` in ' +
+                         'GET /admin-api/users?user= lists them, with what ' +
+                         'each holds and the shape its value must have. A ' +
+                         'change is told to Shared Signals as a SCIM or ' +
+                         'LDAP write of it is.\n\n' +
+                         '**`remove`** takes off the value named, compared ' +
+                         'without regard to case; it is refused for a value ' +
+                         'not held and for the last value of `cn` or `sn`.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                user: { type: 'string',
+                        description:
+                          'The person, as /admin-api/users names them.' },
+                username: { type: 'string',
+                            description: 'Accepted for `user`.' },
+                attribute: { type: 'string', maxLength: 64,
+                             description: 'The attribute, as ' +
+                               '`attributeEditor.attributes[].name` in GET ' +
+                               '/admin-api/users?user= names it.' },
+                value: { type: 'string', maxLength: 1024,
+                         description: 'The value to remove.' }
+              },
+              required: ['user', 'attribute', 'value'],
+              examples: [{ user: 'alice', attribute: 'mobile',
+                          value: '+46 70 000 00 00' }],
+              additionalProperties: false
+            },
+            responseDescription: 'The attribute and every value it now ' +
+                                 'holds.' },
+
           // -----------------------------------------------------------------
           // WHAT AN ADMINISTRATOR DOES TO SOMEBODY'S CREDENTIALS (2026-09-13),
           // mirroring the Password and second-factor controls on a person's
