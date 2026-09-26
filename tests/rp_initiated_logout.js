@@ -278,6 +278,16 @@ function childMain() {
     note(r.status === 200 && !r.headers.location,
          'd3. a private-use address nobody registered is not followed',
          r.status + ' ' + r.headers.location);
+    // #187: neither an id_token_hint nor a client_id — section 2's MUST
+    // NOT — so even development, which follows an address a NAMED client
+    // never registered (d2), does not follow this one.
+    r = await logout({ post_logout_redirect_uri: 'https://rp.rl.example/any',
+                       state: 's' });
+    note(r.status === 200 && !r.headers.location &&
+           /neither an id_token_hint nor/.test(r.text),
+         'd3b. an https address with no client named is not followed in ' +
+         'development either (STS-OAUTH-0691), and the page says why',
+         r.status + ' ' + r.headers.location);
     r = await logout({});
     note(r.status === 200 && /text\/html/.test(r.headers['content-type']) &&
            !/mock/i.test(r.text),

@@ -9165,7 +9165,27 @@ class OAuth2Server {
     let returnTo = '';
     let refusedNote = '';
     const target = q.post_logout_redirect_uri;
-    if (target && self.logoutTargetConsidered(target)) {
+    // A REQUEST THAT NAMES NO CLIENT IS NOT RETURNED ANYWHERE, in every mode
+    // (#187). RP-Initiated Logout 1.0 section 2: without an id_token_hint
+    // the OP "MUST NOT perform post-logout redirection unless the OP has
+    // other means of confirming the legitimacy of the post-logout
+    // redirection target". A `client_id` is such a means — the address is
+    // then held to that client's registration (below) — but with neither,
+    // nothing ties the address to anybody, and development's acceptance of
+    // an unregistered address (#118's rule) does not reach this far. The
+    // conformance suite's oidcc-rp-initiated-logout-no-id-token-hint found
+    // it followed.
+    const namesNoClient = !q.id_token_hint && !String(q.client_id || '');
+    if (target && namesNoClient && self.logoutTargetConsidered(target)) {
+      errorCodes.mark(res, 'STS-OAUTH-0691');
+      log.info('oauth2: a post_logout_redirect_uri was not followed ' +
+               '(STS-OAUTH-0691): the request named no client.');
+      refusedNote = '<p class="sub">You were not returned to <code>' +
+        xmlEscape(String(target)) + '</code>: RP-Initiated Logout 1.0 ' +
+        'section 2 — a sign-out that carries neither an id_token_hint nor ' +
+        'a client_id is not redirected, because nothing confirms the ' +
+        'address belongs to the application that sent you here.</p>';
+    } else if (target && self.logoutTargetConsidered(target)) {
       const check = bcp.checkPostLogoutRedirectUri({ target: String(target),
                                                      client: client });
       if (check.ok) {

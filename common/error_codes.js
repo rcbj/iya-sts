@@ -6997,6 +6997,12 @@ const CODES = [
       'signed request object) named no scope; RFC 6749 section 3.3\'s ' +
       'refusal rather than a default (#187).',
     spec: 'invalid_request' },
+  { code: 'STS-OAUTH-0691',
+    summary: 'An RP-Initiated Logout request carried a ' +
+      'post_logout_redirect_uri with neither an id_token_hint nor a ' +
+      'client_id, so it was not followed (section 2: nothing confirms the ' +
+      'address, #187).',
+    spec: 'none (the sign-out page says so; no redirect)' },
   { code: 'STS-SAML-0001',
     summary: 'A SAML 2.0 sign-in resumed with a held-request id that is ' +
       'unknown or has expired (saml2.requestTtlMin), so there is no ' +

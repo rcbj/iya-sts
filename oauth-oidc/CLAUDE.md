@@ -4122,6 +4122,16 @@ otherwise; each carries its regression check.
 * **A `request_uri` is fetched through the federation outbound policy's TLS**
   (`federation.outboundCaFile`), so a host a private CA certifies can be
   verified; it used node's store alone.
+* **RP-Initiated Logout 1.0 section 2**: a `post_logout_redirect_uri`
+  with neither an `id_token_hint` nor a `client_id` was followed in
+  development (#118's acceptance of an unregistered address). Nothing
+  confirms such an address, which is the section's MUST NOT, so it is not
+  followed in any mode (STS-OAUTH-0691). A NAMED client that registered
+  none still has development's leniency.
+* **The OP iframe (Session Management, #121)** hashes with a SHA-256 of its
+  own where Web Crypto is missing or its digest rejects — the suite's
+  browser, HtmlUnit, has a `crypto.subtle` that rejects — so it answered
+  `error` where it should have answered `unchanged`.
 * **`oauth2.requestUriFragmentCheck`** (on by default): Core 6.2 gives the
   fragment as a cache-version signal and asks no OP to verify it; this OP
   verifies a SHA-256-shaped fragment as an integrity check, which the

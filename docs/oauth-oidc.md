@@ -1418,7 +1418,10 @@ from a script.
     a page with a real button and no script.
   * `post_logout_redirect_uri` is followed only if the client registered it
     exactly, in every mode. Development still follows one for a client that
-    registered none. `state` is returned with it.
+    registered none. `state` is returned with it. A request that names no
+    client at all (neither `id_token_hint` nor `client_id`) is never
+    redirected, in any mode: section 2 says the OP must not redirect unless
+    something confirms the address.
 * **[Front-Channel Logout 1.0](https://openid.net/specs/openid-connect-frontchannel-1_0.html)**:
   every sign-out page renders a hidden iframe per registered
   `frontchannel_logout_uri`, with a visible link beside each one.
