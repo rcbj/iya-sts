@@ -62,7 +62,10 @@ const RISK_GROUP = ['riskListDatasets', 'riskListVersions', 'riskBeginVersion',
                     'riskClaimAction', 'riskLookupFido',
                     'riskSetFeedback',
                     // Monitoring → Risk Scoring.
-                    'riskAssessmentMetrics', 'riskSubjectLevels'];
+                    'riskAssessmentMetrics', 'riskSubjectLevels',
+                    // #215: an import's progress, and the ones a stopped
+                    // process left loading.
+                    'riskTouchVersion', 'riskAbandonStalled'];
 
 // The most assessments one realm holds in memory, as for failures.
 const MAX_MEMORY_ASSESSMENTS = 50000;
@@ -494,6 +497,67 @@ class RiskStore {
     }
     log.debug("Leaving RiskStore.finishVersion().");
     return Promise.resolve(true);
+  }
+
+  // -------------------------------------------------------------------------
+  // AN IMPORT'S PROGRESS (#215): the version's `progressAt` and row count so
+  // far, written only while it is still `loading`. False when it is not —
+  // the stalled-import job refused it — which is the importer's signal to
+  // stop.
+  // -------------------------------------------------------------------------
+  touchVersion(realm: string, dataset: string, version: string, at: number,
+               rows: number): Promise<boolean> {
+    const { log } = this.deps;
+    log.debug("Entering RiskStore.touchVersion(). " + dataset + " " +
+              version);
+    if (this.driver) {
+      log.debug("Leaving RiskStore.touchVersion(). Database.");
+      return Promise.resolve(this.driver.riskTouchVersion(realm, dataset,
+                                                           version, at,
+                                                           rows));
+    }
+    const row = this.versions.get(RiskStore.key(realm, dataset, version));
+    if (!row || row.state !== 'loading') {
+      log.debug("Leaving RiskStore.touchVersion(). Not loading.");
+      return Promise.resolve(false);
+    }
+    row.parameters = Object.assign({}, row.parameters,
+                                   { progressAt: Number(at) || 0,
+                                     progressRows: Number(rows) || 0 });
+    log.debug("Leaving RiskStore.touchVersion().");
+    return Promise.resolve(true);
+  }
+
+  // -------------------------------------------------------------------------
+  // EVERY VERSION STILL `loading` WHOSE START AND LAST PROGRESS ARE BOTH
+  // OLDER THAN `before`, marked refused with `why` and `code`, in one
+  // conditional write per store; answers the versions it refused, as
+  // `{ realm, dataset, version }`.
+  // -------------------------------------------------------------------------
+  abandonStalled(before: number, at: number, why: string,
+                 code: string): Promise<Json[]> {
+    const { log } = this.deps;
+    log.debug("Entering RiskStore.abandonStalled().");
+    if (this.driver) {
+      log.debug("Leaving RiskStore.abandonStalled(). Database.");
+      return Promise.resolve(this.driver.riskAbandonStalled(before, at, why,
+                                                             code));
+    }
+    const out: Json[] = [];
+    this.versions.forEach(function (row) {
+      const last = Math.max(Number(row.fetchedAt) || 0,
+                            Number(row.parameters &&
+                                   row.parameters.progressAt) || 0);
+      if (row.state === 'loading' && last < before) {
+        Object.assign(row, { state: 'refused', loadedAt: Number(at) || 0,
+                             refusal: String(why || ''),
+                             errorCode: String(code || '') });
+        out.push({ realm: row.realm, dataset: row.dataset,
+                   version: row.version });
+      }
+    });
+    log.debug("Leaving RiskStore.abandonStalled(). " + out.length + ".");
+    return Promise.resolve(out);
   }
 
   activate(realm: string, dataset: string, kind: string, version: string,
@@ -1365,6 +1429,8 @@ export = {
   beginVersion: slot.forward('beginVersion'),
   insertRows: slot.forward('insertRows'),
   finishVersion: slot.forward('finishVersion'),
+  touchVersion: slot.forward('touchVersion'),
+  abandonStalled: slot.forward('abandonStalled'),
   activate: slot.forward('activate'),
   deleteRows: slot.forward('deleteRows'),
   markRowsDeleted: slot.forward('markRowsDeleted'),

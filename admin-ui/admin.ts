@@ -27987,7 +27987,16 @@ class AdminConsole {
         // `?format=json` and a POST from a script is exactly what CSRF is not
         // about — but the token is cheap to send and letting `Content-Type:
         // application/json` past would make the header the bypass.
-        if (needsWrite) {
+        //
+        // **THE ONE POST WHOSE TOKEN IS CHECKED PAST THIS POINT (#215)** is the
+        // dataset upload, `POST /admin/risk/upload`: its body is a file of up
+        // to gigabytes that `common/app.js` leaves unread — the same predicate
+        // decides both — so the token is not in `parseBody(req)` here. The
+        // upload handler (`risk/risk_upload.ts`) reads the form's fields
+        // first and checks this session's token against them before it
+        // writes a byte of the file; the role and the policy are still
+        // decided below, on the headers, as for every write.
+        if (needsWrite && !app.isStreamedUpload(req)) {
           const token = websecurity.checkCsrf(state.session ? state.session.id :
                                               '',
                                               parseBody(req));

@@ -356,6 +356,110 @@ is there for `tests/crypto_module.js`, which is the only independent reading of
 XMLDSIG in this repository — the thing that makes "our signature verifies"
 mean something. Removing it saves a package and costs that.
 
+### Held to Wycheproof and ACVP (#202, #203, 2026-09-24)
+
+**`tests/wycheproof.js` drives C2SP Wycheproof through every door this file
+has, and `tests/acvp_pqc.js` NIST's FIPS 203/204/205 vectors** (the corpora
+and their provenance: `tests/CLAUDE.md`, *The external test vectors*). Four
+functions were exported for it, and each is a REFACTOR of what the service
+already runs rather than a second copy: `jwsSignatureValid()` is the check
+`verifyCompactJws()` makes once it has read the token (`checkPreparedSignature()`,
+shared), `jwsSignatureOver()` is what `signJws()` signs EdDSA, ES256K and every
+post-quantum algorithm with, and `sealJweContent()` / `openJweContent()` are
+`sealContent()` / `openContent()` by `enc` name — a vector is arbitrary
+octets, and no compact serialization can carry them. `aesKeyWrap()` and
+`aesKeyUnwrap()` are exported as they are.
+
+**What the vectors found, and the fix for each:**
+
+1. **A JWE AES-GCM tag cut to four octets opened** (Wycheproof's
+   truncated-tag and `rejectsTruncatedGhash` vectors). Node's GCM takes any
+   tag from 4 octets without `authTagLength`, so forging content cost 2^32
+   guesses. `openContent()` and the `A*GCMKW` unwrap now require RFC 7518's
+   96-bit IV and 128-bit tag and pin the tag length in the decipher.
+2. **An AES-wrapped key of zero octets unwrapped** to an empty key.
+   `aesKeyWrap()` / `aesKeyUnwrap()` now refuse what RFC 3394 does not
+   define (fewer than two semiblocks, a partial one).
+3. **An XML Encryption AES-CBC ciphertext with a final padding octet of zero,
+   or none at all, "decrypted"** — forge checks only that the last octet is
+   at most a block. `openXmlContent()` decrypts on node with XML Encryption
+   1.1 section 5.2's rule: whole blocks, and a last octet of 1 to 16. It is
+   deliberately NOT PKCS#7: the other padding octets are arbitrary there
+   (Santuario writes random ones), so Wycheproof's PKCS#5 vectors that differ
+   only in those octets are, correctly, opened — the harness decides that
+   case independently. `openXmlContent()` is exported so that verdict can be
+   held to the vectors: `decryptElement()` no longer tells anyone (below).
+4. **`<xenc:OAEPparams>` was ignored**: a key wrapped under an OAEP label
+   failed and was reported as a key for another certificate. It is now the
+   label, for `rsa-oaep` and `rsa-oaep-mgf1p`.
+5. **A JWS segment with a space, `?`, `#`, padding or non-zero unused bits
+   verified** — node's base64url decoder skips what it does not know, so the
+   signed text and the decoded bytes were different things.
+   `strictBase64url()` refuses anything but the one canonical encoding, in
+   the shared verifier, in `verifyJws()`'s library path and for every
+   segment of a compact JWE.
+6. **An RSA key with public exponent 1 verified** — its "signature" is the
+   padded digest, which anybody can write. `rsaKeyProblem()` refuses an even
+   exponent or one below 3 (RFC 8017 section 3.1) at every RSA door, in both
+   modes.
+7. **A ROCA key verified** (CVE-2017-15361). Refused at every RSA door, in
+   both modes, by the published fingerprint test (the modulus modulo 38
+   small primes lies in the subgroup 65537 generates).
+8. **A 1024-bit RSA key verified a JWS.** RFC 7518 section 3.3 and RFC 8230
+   section 5 (COSE) say 2048 MUST; refused in PRODUCT
+   (`mode.usesBrokenAlgorithms()`, REQUIREMENTS `jose-key-sizes`),
+   accepted in development so a client holding one can be exercised. XMLDSig
+   and the raw proofs have no floor and get none.
+9. **An empty HMAC key verified, and so did one shorter than the hash
+   output.** Empty is refused in both modes; shorter than the hash output
+   (RFC 7518 section 3.2, MUST) in PRODUCT, by the same predicate and row as
+   8. The key is a `client_secret_jwt` client's secret as UTF-8, so
+   `oauth2.registeredSecretBytes` now mints 48 random bytes (64 base64url
+   characters, enough for HS512) by default, and the parent project's
+   `sts_jws_verification.js` registers 64-octet-plus secrets.
+10. **A JWK whose `use` is `enc`, or whose `key_ops` lack `verify`, verified
+    a signature.** `jwkUseProblem()` refuses it (RFC 7517 sections 4.2, 4.3).
+
+11. **An XML ECDSA signature verified on any curve node could load** —
+    secp160, secp192, secp224 among them; XMLDSig names no curve and nothing
+    asked. `xmlEcdsaCurveProblem()` refuses, in PRODUCT, every curve not on
+    an allow-list of the 256-bit-and-larger ones (P-256/384/521, secp256k1,
+    brainpoolP256r1 and up): `verifyXmlSignatureValue()` answers false and
+    logs `STS-KEYS-0077`, and `xmlSignatureKeyProblem()` refuses to register
+    such a certificate. Development keeps every curve (same predicate,
+    REQUIREMENTS `xml-ecdsa-curves`).
+12. **THE AES-CBC PADDING ORACLE.** `decryptElement()` answered a bad CBC
+    padding (STS-KEYS-0022), a plaintext that was not UTF-8 (0025) and one
+    that was not XML (0023) with three codes, three sentences and an early
+    return — Jager and Somorovsky's attack on XML Encryption (XML Encryption
+    1.1 section 6.1.3) needs nothing more than that difference. Now all three
+    are ONE refusal, `STS-KEYS-0078` with one sentence, and the padding,
+    decoding and parse all RUN before the answer is chosen
+    (`cbcPlaintextUsable()`): a bad count strips nothing and is carried as a
+    flag. What still varies with the plaintext is the XML parser's own time,
+    which no refusal can hide; AES-GCM (the default, and what a relationship
+    can be held to with `allowedCiphers`) is the real answer, and CBC stays
+    because service providers that require it exist. A GCM tag failure keeps
+    STS-KEYS-0022 and GCM's non-XML plaintext 0023: authenticated, so saying
+    which reveals nothing. **One oracle is left, in development only**: an
+    `rsa-1_5` key transport whose unwrap lands on the wrong length is 0021,
+    before the content — Bleichenbacher's, which is why product never
+    unwraps `rsa-1_5` at all (STS-KEYS-0070).
+
+**No ACVP vector failed**, and it showed the ML-DSA and SLH-DSA JWS signers
+were FIPS 204/205's DETERMINISTIC variants byte for byte — noble signs with
+no randomness when none is passed, and `pq_jose.js` passed none. **They are
+HEDGED now** (FIPS 204 section 3.4 and FIPS 205 section 9.2 recommend it):
+`pq_jose.sign()` hands noble 32 fresh octets for ML-DSA (and a composite's
+ML-DSA half) and n for SLH-DSA. The deterministic variant is reachable only
+through `jwsSignatureOver(alg, key, input, { deterministic: true })`, an
+internal parameter `tests/acvp_pqc.js` passes to compare with NIST's
+vectors — not a setting, and nothing in the service passes it. **The one
+exception is the vendored engine** (`vendored/pqc.js`, which `pki.js`
+signs post-quantum CERTIFICATES and CRLs with through `pqc_x509.sign()`): it
+still signs deterministically and may not be edited here; the parent project
+owns that change.
+
 ### Random values: node's generator, drawn uniformly (#65, 2026-09-23)
 
 **Section 13 adds no generator.** Node's `crypto` is OpenSSL's DRBG seeded
@@ -1265,6 +1369,28 @@ a socket is not, so anything the front process holds needs a mechanism of its
 own — the LDAP connection needed a mirror and an ask, and everything the front
 process MINTS needed the barrier to know it had. Neither was found by reasoning
 about the design; both were found by one job in one mode.
+
+### A BODY THE PARSERS DO NOT TAKE, AND A PROXY THAT MUST NOT HOLD IT (#215, 2026-09-24)
+
+`app.js`'s two body parsers drain every body into memory at 5 MB. **The two
+risk dataset upload paths are their one exception** (`isStreamedUpload()`,
+exported on the app for the console gate, which leaves those uploads' CSRF
+token to `risk/risk_upload.ts` — `risk/CLAUDE.md` argues the upload). The
+pool needed nothing to STREAM them — `proxy()` already pipes — and two things
+to REFUSE them well:
+
+* **a large body's headers are flushed to the worker at once** (declared over
+  5 MB, or chunked): node sends a client request's headers with its first
+  write, so an upload declaring more than `risk.uploadMaxBytes` reached the
+  worker only with its first chunk, and one whose client waited to be told
+  reached it never — a 408 at the request timeout, found by
+  `sts_admin_risk_upload.js` in `single-node`;
+* **an answer that comes before the body has all arrived closes the
+  client's connection** (`Connection: close`, set here because the worker's
+  own is hop-by-hop and dropped) and drains the rest, rather than writing
+  into a worker that stopped reading and resetting the client mid-upload.
+
+Every ordinary request is proxied exactly as before.
 
 ### A SECOND POOL FOR THE CONSOLE AND THE PORTAL (2026-09-13)
 

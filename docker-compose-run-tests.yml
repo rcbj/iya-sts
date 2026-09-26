@@ -600,6 +600,10 @@ services:
       # same volume below. The cluster file's `sts2` inherits it through
       # `extends`. Read-only on this side.
       - sts-test-shared:/run/sts-test:ro
+      # WHERE AN UPLOADED RISK DATASET IS WRITTEN WHILE IT IS IMPORTED (#215),
+      # at `risk.uploadDirectory`'s default: docker-compose.yml's volume and
+      # its reason. The cluster file gives node B one of its own.
+      - sts-risk-uploads:/usr/src/sts/data/risk-uploads
     healthcheck:
       # The scheme follows the mode in this service — oauth2.rfc9700 derives
       # global.https — so the probe decides which module to use the same way
@@ -1129,6 +1133,8 @@ volumes:
   sts-bao-client:
   # The run-time CA certificates a job hands the service (#171).
   sts-test-shared:
+  # An uploaded risk dataset while it is imported (#215).
+  sts-risk-uploads:
 
 # One bridge, and nothing published on it. `docker compose` gives the network a
 # name from the project, so two projects cannot share one.

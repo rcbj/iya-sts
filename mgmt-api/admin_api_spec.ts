@@ -458,6 +458,15 @@ class AdminApiSpec {
         content: { 'application/json': { schema: source.requestBody } }
       };
     }
+    // A BODY THAT IS A FILE (#215, `POST /admin-api/risk/upload`): the bytes
+    // themselves under each type the operation takes, never JSON.
+    if (source.requestBodyTypes) {
+      operation.requestBody = { required: true, content: {} };
+      source.requestBodyTypes.forEach(function (type: string): void {
+        operation.requestBody.content[type] = {
+          schema: { type: 'string', format: 'binary' } };
+      });
+    }
     if (action) {
       operation.responses['200'] = {
         description: source.responseDescription || 'The operation was applied.',
@@ -495,6 +504,15 @@ class AdminApiSpec {
           schema: { $ref: '#/components/schemas/ActionResult' } } }
       };
     }
+    // The statuses an operation answers beyond 200 and 400 (#215's upload:
+    // 202 stored and loading, 413, 415, 507), each an ActionResult.
+    Object.keys(source.extraResponses || {}).forEach(function (status) {
+      operation.responses[status] = {
+        description: source.extraResponses[status],
+        content: { 'application/json': {
+          schema: { $ref: '#/components/schemas/ActionResult' } } }
+      };
+    });
     log.debug("Leaving AdminApiSpec.operationOf().");
     return operation;
   }

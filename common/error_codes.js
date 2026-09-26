@@ -1524,12 +1524,12 @@ const CODES = [
       'length: it was encrypted to a different certificate.',
     spec: 'refusal by the calling protocol' },
   { code: 'STS-KEYS-0022',
-    summary: 'An XML-encrypted element failed its AES-GCM authentication tag ' +
-      'or AES-CBC padding check.',
+    summary: 'An XML-encrypted element failed its AES-GCM authentication ' +
+      'tag. (An AES-CBC failure is STS-KEYS-0078 since #202.)',
     spec: 'refusal by the calling protocol' },
   { code: 'STS-KEYS-0023',
-    summary: 'An XML-encrypted element decrypted to something that is not ' +
-      'well-formed XML.',
+    summary: 'An XML-encrypted element decrypted with AES-GCM to something ' +
+      'that is not well-formed XML. (AES-CBC: STS-KEYS-0078 since #202.)',
     spec: 'refusal by the calling protocol' },
   { code: 'STS-KEYS-0024',
     summary: 'An XML-encrypted element\'s key could not be unwrapped with ' +
@@ -1779,6 +1779,18 @@ const CODES = [
     spec: 'none — logged. The evidence of a certification that crossed a ' +
       'rebuild; the row would otherwise publish a certificate no published ' +
       'authority signed' },
+  { code: 'STS-KEYS-0077',
+    summary: 'An XML signature was checked with an ECDSA key on a curve ' +
+      'weaker than P-256 (secp160, secp192, secp224 and the like), and the ' +
+      'realm is in product mode, where such a key verifies nothing (#202).',
+    spec: 'the caller\'s refusal: the signature does not verify, and each ' +
+      'protocol answers that as it answers a wrong signature' },
+  { code: 'STS-KEYS-0078',
+    summary: 'An AES-CBC XML-encrypted element did not decrypt to a ' +
+      'well-formed element: its padding, its UTF-8 or its XML was wrong, ' +
+      'and which is deliberately one answer — the padding oracle of XML ' +
+      'Encryption 1.1 section 6.1.3, closed (#202).',
+    spec: 'refusal by the calling protocol' },
   { code: 'STS-PKI-0001',
     summary: 'A certificate-authority use case prefers a key algorithm this ' +
       'service cannot use, so its Issuing CA was built with the ' +
@@ -11682,6 +11694,53 @@ const CODES = [
       'server did not answer 200, or the BLOB is larger than ' +
       'risk.mdsMaxBytes (#105). The active BLOB stays in force.',
     spec: 'FIDO Metadata Service section 3.2' },
+  // A DATASET FILE UPLOADED, AND EXPANDED (#215).
+  { code: 'STS-RISK-0028',
+    summary: 'A risk dataset upload was refused for its size: it declared, ' +
+      'or sent, more than risk.uploadMaxBytes. Nothing of it is kept.' },
+  { code: 'STS-RISK-0029',
+    summary: 'A risk dataset upload was refused because risk.uploadDirectory ' +
+      'has no room for it: its free space (statfs) could not hold the ' +
+      'declared length — or, with none declared, risk.uploadMaxBytes — or ' +
+      'the disk filled while it was written.' },
+  { code: 'STS-RISK-0030',
+    summary: 'risk.uploadDirectory could not be created or written, or an ' +
+      'upload could not be written to it for a reason other than space. ' +
+      'Nothing of the upload is kept.' },
+  { code: 'STS-RISK-0031',
+    summary: 'A risk dataset upload was malformed: not multipart/form-data ' +
+      '(the console) or not one of the three body types (the API), no ' +
+      'file, a second file, a field after the file, no dataset or ' +
+      'format, an unknown or repeated query parameter, an empty file, a ' +
+      'body that ended early — or a body a body parser had already read, ' +
+      'which is a defect in common/app.js\'s exemption.' },
+  { code: 'STS-RISK-0032',
+    summary: 'A compressed risk dataset file expanded past what it may: ' +
+      'risk.expandedMaxBytes, or risk.expansionMaxRatio times its stored ' +
+      'size above 16 MiB — a decompression bomb. The version is refused and ' +
+      'nothing of it is kept.' },
+  { code: 'STS-RISK-0033',
+    summary: 'A zip risk dataset file holds no data entry or more than one ' +
+      '(directories and __MACOSX/ aside), or its entry is encrypted or ' +
+      'compressed with a method other than stored or deflate. Refused as ' +
+      'ambiguous or unreadable.' },
+  { code: 'STS-RISK-0034',
+    summary: 'A compressed risk dataset file could not be expanded: a ' +
+      'truncated or corrupt gzip stream, or a zip whose directory or entry ' +
+      'does not read. The version is refused.' },
+  { code: 'STS-RISK-0035',
+    summary: 'A risk dataset version was left loading with no progress for ' +
+      'risk.importStallMinutes — the process importing it stopped — and ' +
+      'the risk.stalled-imports job refused it; or an import found its ' +
+      'version already refused that way and stopped.' },
+  { code: 'STS-RISK-0036',
+    summary: 'The risk.upload-cleanup job removed a leftover upload file ' +
+      'that no live process had touched for risk.importStallMinutes, or ' +
+      'an upload file could not be deleted after its import.' },
+  { code: 'STS-RISK-0037',
+    summary: 'A risk dataset upload failed unexpectedly: its fields could ' +
+      'not be checked, or its import threw rather than answering. The ' +
+      'upload\'s file is deleted.' },
   // ===== MAIL ==============================================================
   { code: 'STS-MAIL-0001',
     summary: 'A message was not queued because no mail transport is ' +

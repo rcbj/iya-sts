@@ -318,7 +318,7 @@ var config = {
     registeredSecretLifetimeS: 0,                // Dynamically registered secret lifetime (s)
     registeredClientIdPrefix: "sts-client-",     // Dynamically registered client_id prefix
     registeredClientIdBytes: 8,                  // Dynamically registered client_id random bytes
-    registeredSecretBytes: 24,                   // Dynamically registered secret random bytes
+    registeredSecretBytes: 48,                   // Dynamically registered secret random bytes
     authorizationCodeTtlS: 300,                  // Authorization code lifetime (s)
     redeemedCodeCacheSize: 10000,                // Redeemed authorization codes remembered (per realm)
     maxPendingTransactions: 500,                 // RFC 9700: remembered transactions (per realm)
@@ -867,6 +867,12 @@ var config = {
   risk: {
     datasetsDirectory: "",                                 // Dataset directory
     datasetsDirectoryScanS: 300,                           // Dataset directory scan interval (seconds)
+    uploadDirectory: "./data/risk-uploads",                // Dataset upload directory
+    uploadMaxBytes: 2147483648,                            // Largest dataset upload (bytes)
+    expandedMaxBytes: 8589934592,                          // Largest expanded dataset (bytes)
+    expansionMaxRatio: 100,                                // Largest expansion ratio
+    importStallMinutes: 15,                                // An import with no progress is abandoned after (minutes)
+    uploadSweepS: 60,                                      // Upload clean-up interval (seconds)
     datasetShrinkLimitPercent: 50,                         // Largest shrink accepted (percent)
     supersededRetentionDays: 30,                           // Keep a superseded version (days)
     geoStaleAfterDays: 45,                                 // Geolocation and ASN data is stale after (days)

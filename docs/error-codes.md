@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3461** of them, in **38** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3473** of them, in **38** subsystems.
 
 ## Where a code appears
 
@@ -56,7 +56,7 @@ is an ordinary outcome.
 * [Persistence and coordination (`STS-STORE`)](#sts-store) — 62
 * [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 28
 * [Scheduler (`STS-SCHED`)](#sts-sched) — 16
-* [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 76
+* [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 78
 * [Certificate authority (`STS-PKI`)](#sts-pki) — 180
 * [Certificate enrollment core (`STS-ENROLL`)](#sts-enroll) — 51
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 72
@@ -76,7 +76,7 @@ is an ordinary outcome.
 * [TLS and client certificates (`STS-TLS`)](#sts-tls) — 33
 * [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 94
 * [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 104
-* [Risk scoring (`STS-RISK`)](#sts-risk) — 27
+* [Risk scoring (`STS-RISK`)](#sts-risk) — 37
 * [Mail (`STS-MAIL`)](#sts-mail) — 39
 * [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 282
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 74
@@ -414,8 +414,8 @@ Raised from: common/crypto.js, common/pq_jose.js, common/keystore.js, common/sec
 | `STS-KEYS-0019` | An XML-encrypted element wraps its key with a key transport this service does not unwrap. | refusal by the calling protocol |
 | `STS-KEYS-0020` | An XML-encrypted element is missing one of its two xenc:CipherValue elements. | refusal by the calling protocol |
 | `STS-KEYS-0021` | An XML-encrypted element's wrapped key unwrapped to the wrong length: it was encrypted to a different certificate. | refusal by the calling protocol |
-| `STS-KEYS-0022` | An XML-encrypted element failed its AES-GCM authentication tag or AES-CBC padding check. | refusal by the calling protocol |
-| `STS-KEYS-0023` | An XML-encrypted element decrypted to something that is not well-formed XML. | refusal by the calling protocol |
+| `STS-KEYS-0022` | An XML-encrypted element failed its AES-GCM authentication tag. (An AES-CBC failure is STS-KEYS-0078 since #202.) | refusal by the calling protocol |
+| `STS-KEYS-0023` | An XML-encrypted element decrypted with AES-GCM to something that is not well-formed XML. (AES-CBC: STS-KEYS-0078 since #202.) | refusal by the calling protocol |
 | `STS-KEYS-0024` | An XML-encrypted element's key could not be unwrapped with this service's private key. | refusal by the calling protocol |
 | `STS-KEYS-0025` | An XML-encrypted element could not be read for a reason other than the key. | refusal by the calling protocol |
 | `STS-KEYS-0026` | The keystore was handed a store without both loadKeys and saveKeys, and refused it whole. | — |
@@ -469,6 +469,8 @@ Raised from: common/crypto.js, common/pq_jose.js, common/keystore.js, common/sec
 | `STS-KEYS-0074` | An XML element encrypted by ECDH-ES key agreement was handed to a recipient whose private key is not an EC key. | the caller's refusal |
 | `STS-KEYS-0075` | A certificate authority another process in this service sent publishes a tier this process holds as superseded — a copy from before a rebuild — so it was refused, and the hierarchy held here was asserted again where it is itself consistent. | none — logged. A supersession is permanent; adopting the copy put a replaced Intermediate back in every process |
 | `STS-KEYS-0076` | A certificate authority merged with a copy another process had written publishes certificates its own Issuing CAs did not sign — keys certified from the branch a rebuild replaced — and each is certified again from the live Issuing CA. | none — logged. The evidence of a certification that crossed a rebuild; the row would otherwise publish a certificate no published authority signed |
+| `STS-KEYS-0077` | An XML signature was checked with an ECDSA key on a curve weaker than P-256 (secp160, secp192, secp224 and the like), and the realm is in product mode, where such a key verifies nothing (#202). | the caller's refusal: the signature does not verify, and each protocol answers that as it answers a wrong signature |
+| `STS-KEYS-0078` | An AES-CBC XML-encrypted element did not decrypt to a well-formed element: its padding, its UTF-8 or its XML was wrong, and which is deliberately one answer — the padding oracle of XML Encryption 1.1 section 6.1.3, closed (#202). | refusal by the calling protocol |
 
 ## STS-PKI
 
@@ -2884,6 +2886,16 @@ Raised from: risk/, admin-ui/risk_admin.ts.
 | `STS-RISK-0025` | Monitoring → Risk Scoring, or GET /admin-api/risk/metrics, could not be answered: the risk store failed to count the window's assessments. | — |
 | `STS-RISK-0026` | An entry of risk.signalFactors was ignored: it names no known signal, or its factor is not a positive number. The signal keeps its built-in factor; logged once for each value the setting is given. | — |
 | `STS-RISK-0027` | The risk.mds-refresh job could not download the FIDO MDS3 BLOB from risk.mdsUrl: outbound is off, the address is refused, the server did not answer 200, or the BLOB is larger than risk.mdsMaxBytes (#105). The active BLOB stays in force. | FIDO Metadata Service section 3.2 |
+| `STS-RISK-0028` | A risk dataset upload was refused for its size: it declared, or sent, more than risk.uploadMaxBytes. Nothing of it is kept. | — |
+| `STS-RISK-0029` | A risk dataset upload was refused because risk.uploadDirectory has no room for it: its free space (statfs) could not hold the declared length — or, with none declared, risk.uploadMaxBytes — or the disk filled while it was written. | — |
+| `STS-RISK-0030` | risk.uploadDirectory could not be created or written, or an upload could not be written to it for a reason other than space. Nothing of the upload is kept. | — |
+| `STS-RISK-0031` | A risk dataset upload was malformed: not multipart/form-data (the console) or not one of the three body types (the API), no file, a second file, a field after the file, no dataset or format, an unknown or repeated query parameter, an empty file, a body that ended early — or a body a body parser had already read, which is a defect in common/app.js's exemption. | — |
+| `STS-RISK-0032` | A compressed risk dataset file expanded past what it may: risk.expandedMaxBytes, or risk.expansionMaxRatio times its stored size above 16 MiB — a decompression bomb. The version is refused and nothing of it is kept. | — |
+| `STS-RISK-0033` | A zip risk dataset file holds no data entry or more than one (directories and __MACOSX/ aside), or its entry is encrypted or compressed with a method other than stored or deflate. Refused as ambiguous or unreadable. | — |
+| `STS-RISK-0034` | A compressed risk dataset file could not be expanded: a truncated or corrupt gzip stream, or a zip whose directory or entry does not read. The version is refused. | — |
+| `STS-RISK-0035` | A risk dataset version was left loading with no progress for risk.importStallMinutes — the process importing it stopped — and the risk.stalled-imports job refused it; or an import found its version already refused that way and stopped. | — |
+| `STS-RISK-0036` | The risk.upload-cleanup job removed a leftover upload file that no live process had touched for risk.importStallMinutes, or an upload file could not be deleted after its import. | — |
+| `STS-RISK-0037` | A risk dataset upload failed unexpectedly: its fields could not be checked, or its import threw rather than answering. The upload's file is deleted. | — |
 
 ## STS-MAIL
 

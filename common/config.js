@@ -4103,12 +4103,18 @@ const SETTINGS = [
 
   { key: 'oauth2.registeredSecretBytes', group: 'OAuth 2.0 / OIDC',
     label: 'Dynamically registered secret random bytes',
-    env: 'STS_OAUTH2_REGISTERED_SECRET_BYTES', type: 'int', dflt: 24,
+    env: 'STS_OAUTH2_REGISTERED_SECRET_BYTES', type: 'int', dflt: 48,
     min: 16, max: 128, runtime: true,
     description: 'How many random bytes make a registered client\'s ' +
                  '`client_secret` and its RFC 7592 ' +
                  '`registration_access_token`. Both ARE secrets, which is ' +
-                 'why the floor is 16 bytes (128 bits).' },
+                 'why the floor is 16 bytes (128 bits). **48 by default ' +
+                 '(#202)**: a `client_secret_jwt` client signs with the ' +
+                 'UTF-8 octets of its base64url secret, and RFC 7518 ' +
+                 'section 3.2 says the key MUST be at least the hash ' +
+                 'output — 48 bytes are 64 characters, enough for HS512. ' +
+                 'WARNING: below 24 even HS256 is refused in product ' +
+                 'mode, and below 48 HS512 is.' },
 
   { key: 'oauth2.authorizationCodeTtlS', group: 'OAuth 2.0 / OIDC',
     label: 'Authorization code lifetime (s)',
@@ -10372,6 +10378,77 @@ const SETTINGS = [
                  'not yet imported. A version already recorded is never ' +
                  'loaded twice, so a short interval costs a directory ' +
                  'listing and a checksum per new file.' },
+
+  // ---------------------------------------------------------------------
+  // A DATASET FILE UPLOADED ON MONITORING → RISK OR `POST
+  // /admin-api/risk/upload` (#215). `risk/risk_upload.ts` argues the
+  // design: streamed to a file in this directory, hashed on the way,
+  // expanded by `risk/risk_expand.ts` as it is read, deleted when the import
+  // ends. The expansion limits apply to every compressed dataset file,
+  // whichever door it came through.
+  // ---------------------------------------------------------------------
+  { key: 'risk.uploadDirectory', group: 'Risk',
+    label: 'Dataset upload directory', env: 'STS_RISK_UPLOAD_DIRECTORY',
+    type: 'string', dflt: './data/risk-uploads', runtime: true,
+    description: 'Where an uploaded dataset file is written while it is ' +
+                 'imported, and deleted from when the import ends however ' +
+                 'it ends. A relative path is resolved against this ' +
+                 'package root, as persistence.dataDir is. Give it a ' +
+                 'volume of its own with room for the largest file you ' +
+                 'will upload — compressed; nothing expanded is written — ' +
+                 'since an upload is refused when the directory\'s free ' +
+                 'space cannot hold it. Every stack this repository ships ' +
+                 'mounts one here.' },
+
+  { key: 'risk.uploadMaxBytes', group: 'Risk',
+    label: 'Largest dataset upload (bytes)', env: 'STS_RISK_UPLOAD_MAX_BYTES',
+    type: 'int', dflt: 2147483648, min: 1024, max: 68719476736,
+    runtime: true,
+    description: 'The largest file an upload may be, as sent (compressed, ' +
+                 'if it is). Refused before a byte is read when the ' +
+                 'request declares more, and stopped where it passes this ' +
+                 'otherwise. DB-IP Lite\'s city file is a few hundred ' +
+                 'megabytes compressed.' },
+
+  { key: 'risk.expandedMaxBytes', group: 'Risk',
+    label: 'Largest expanded dataset (bytes)',
+    env: 'STS_RISK_EXPANDED_MAX_BYTES', type: 'int', dflt: 8589934592,
+    min: 1048576, max: 1099511627776, runtime: true,
+    description: 'The most a gzip or zip dataset file may expand to, from ' +
+                 'any door — an upload, the dataset directory or the ' +
+                 'install-time loader. Counted as it is read; past it the ' +
+                 'import stops and the version is refused as a ' +
+                 'decompression bomb.' },
+
+  { key: 'risk.expansionMaxRatio', group: 'Risk',
+    label: 'Largest expansion ratio', env: 'STS_RISK_EXPANSION_MAX_RATIO',
+    type: 'int', dflt: 100, min: 2, max: 100000, runtime: true,
+    description: 'The most bytes a compressed dataset file may expand to per ' +
+                 'byte stored. A CSV of addresses compresses five to twenty ' +
+                 'times; a decompression bomb, a thousand and more. Not ' +
+                 'asked below 16 MiB expanded, where a small list can ' +
+                 'honestly compress better than any ratio.' },
+
+  { key: 'risk.importStallMinutes', group: 'Risk',
+    label: 'An import with no progress is abandoned after (minutes)',
+    env: 'STS_RISK_IMPORT_STALL_MINUTES', type: 'int', dflt: 15, min: 2,
+    max: 1440, runtime: true,
+    description: 'A dataset version still loading with no progress for this ' +
+                 'long — a live import stamps every five thousand rows — ' +
+                 'belongs to a process that stopped, and the ' +
+                 'risk.stalled-imports job marks it refused. An uploaded ' +
+                 'file nobody has touched for this long is a leftover, and ' +
+                 'the risk.upload-cleanup job deletes it.' },
+
+  { key: 'risk.uploadSweepS', group: 'Risk',
+    label: 'Upload clean-up interval (seconds)',
+    env: 'STS_RISK_UPLOAD_SWEEP_S', type: 'int', dflt: 60, min: 10,
+    max: 3600, runtime: true,
+    description: 'How often every process keeps the upload files it is ' +
+                 'importing fresh and deletes the leftovers of a process ' +
+                 'that stopped (risk.upload-cleanup), and how often the ' +
+                 'risk.stalled-imports job looks for an abandoned version. ' +
+                 'Keep it well under risk.importStallMinutes.' },
 
   { key: 'risk.datasetShrinkLimitPercent', group: 'Risk',
     label: 'Largest shrink accepted (percent)',
