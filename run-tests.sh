@@ -1030,7 +1030,7 @@ captureOneContainerLog()
 # arrangement the loader could not sign in to before #213, and the only
 # workaround was the operator reading the secret into PGPASSWORD; so the step
 # first asserts the arrangement (no password in the URL, no PGPASSWORD in the
-# container), then imports a SYNTHETIC operator deny list — addresses in
+# container), then imports a SYNTHETIC operator ALLOW list — two addresses in
 # 198.19.213.0/24 (RFC 2544), written into the container at run time, never
 # committed (tests/no_third_party_datasets.js) — and asserts it was imported
 # and that a second run finds it already recorded (the loader is safe to run
@@ -1038,9 +1038,12 @@ captureOneContainerLog()
 # provider's terms (`--accept-terms operator`) and no network.
 #
 # BEFORE the runner, while the stack is certainly up (a single-node mode's
-# runner stops it on exit). The list is the default realm's operator deny
-# list, which the risk jobs replace with versions of their own; nothing in the
-# suite signs in from 198.19.213.0/24. Its output is
+# runner stops it on exit). The ALLOW list and TWO rows, both on purpose: the
+# first run imported a hundred rows into the DENY list, and
+# sts_admin_risk.js's five-row deny version was then refused by
+# risk.datasetShrinkLimitPercent — a job's list is compared with the active
+# one. No job imports an allow list, and nothing in the suite signs in from
+# 198.19.213.0/24. Its output is
 # tests/report/<mode>-98-risk-install.log. STS_TEST_RISK_INSTALL=0 skips it.
 # ---------------------------------------------------------------------------
 riskInstallCheck()
@@ -1048,7 +1051,7 @@ riskInstallCheck()
   local mode="$1" container="${STS_CONTAINER_NAME}" url out rc version pass
   local dest="${CURRENT_DIR}/tests/report/${mode}-98-risk-install.log"
   local dir="/tmp/sts-risk-install-check"
-  local line='^risk_install: iplist.operator-deny: '
+  local line='^risk_install: iplist.operator-allow: '
   mkdir -p "${CURRENT_DIR}/tests/report" 2> /dev/null || true
   echo ""
   echo "Mode ${mode}: the install-time risk loader, by docker exec (#213)."
@@ -1073,13 +1076,14 @@ riskInstallCheck()
   fi
   version="run-tests-$(date -u +%Y%m%dT%H%M%SZ)"
   # The synthetic list and its manifest, written inside the container.
-  local manifest='{ "datasets": [ { "dataset": "iplist.operator-deny", '
-  manifest+='"format": "ip-list", "file": "'"${dir}"'/synthetic-deny.txt", '
+  local manifest='{ "datasets": [ { "dataset": "iplist.operator-allow", '
+  manifest+='"format": "ip-list", "file": "'"${dir}"'/synthetic-allow.txt", '
   manifest+='"version": "'"${version}"'" } ] }'
   if ! printf '%s\n' "${manifest}" |
        timeout 60 docker exec -i "${container}" sh -c \
          "mkdir -p ${dir} && cat > ${dir}/datasets.json &&
-          seq 0 99 | sed 's/^/198.19.213./' > ${dir}/synthetic-deny.txt" \
+          printf '198.19.213.1\\n198.19.213.2\\n' \
+            > ${dir}/synthetic-allow.txt" \
          >> "${dest}" 2>&1;
   then
     echo "  The synthetic dataset could not be written; see ${dest}." >&2
