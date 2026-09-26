@@ -83,6 +83,29 @@ provider encrypts an `EncryptedID` to — the NameID formats this identity provi
 `WantAuthnRequestsSigned` according to the signing policy below, the
 bindings it speaks, and an `<md:Organization>` from `saml.organization*`.
 
+**It also publishes the TLS certificate the back channel presents** (#248):
+the certificate the main port serves, which is what a service provider meets
+when it resolves an artifact at `/saml2/ars` or sends an attribute query to
+`/saml2/aa`. It is a `use="signing"` KeyDescriptor of its own, after the XML
+signing and encryption keys, in the `IDPSSODescriptor` and in the
+`AttributeAuthorityDescriptor`, so a service provider that authenticates the
+SOAP peer from metadata — the Shibboleth SP's `ExplicitKey` trust engine,
+SimpleSAMLphp's SOAP client — needs no CA or anchor configured for it. There is
+one per certificate the port presents (`tls.certificateAlgorithms` may name
+two) and, in a cluster, one per live node, since each node presents a leaf of
+its own; none when the main port is plain HTTP. The document is built per
+request, so after the listener is re-issued (*Replace the Root CA* on
+`/admin/pki`, or `POST /admin-api/pki/build-root`) the next fetch names the
+new certificate — fetch it again rather than caching it.
+
+> **Warning.** `use="signing"` is the only use SAML metadata gives a TLS key,
+> so a service provider that accepts an XML signature by ANY signing key in
+> the document would accept one made with the listener's key. That key is
+> generated and held by this service beside its XML key — but if you supply
+> the listener certificate yourself (`tls.certificateFile`) and share its key
+> with a proxy or load balancer, that device holds a key this metadata vouches
+> for. Keep such a key as close as the signing key, or terminate TLS here.
+
 ### Signing in: the Single Sign-On service
 
 The AuthnRequest arrives on the Redirect binding (DEFLATE, base64, and an
@@ -419,6 +442,15 @@ application says, refuses to set it, and refuses an `rsa-1_5` key sent to it
 in an `EncryptedID` before unwrapping it (`STS-KEYS-0070`) — XML Encryption 1.1
 section 6.1.2, and 6.1.3's warning about a key that both decrypts and signs.
 
+What this service READS is wider than what it offers: an EncryptedID sent
+to it may also be encrypted with `aes192-gcm` or `aes192-cbc`
+(XML Encryption 1.1's optional ciphers, since #193), with `rsa-oaep` or
+`rsa-oaep-mgf1p` carrying an `OAEPparams` label, or by ECDH-ES with a SHA-2
+ConcatKDF. An `rsa-oaep-mgf1p` naming a digest other than SHA-1, or an
+ECDH-ES derivation other than ConcatKDF, is refused by name before any key
+is used (`STS-KEYS-0072`, `STS-KEYS-0090`). A federation relationship still
+accepts only what it published (`docs/federation.md`).
+
 ### The mock service provider
 
 `/saml2/sp` is the default assertion consumer service and a test harness. It
@@ -531,7 +563,7 @@ one-shot artifact are enforced in **both** modes. See
 |---|---|---|---|---|
 | `saml.issuer` | `STS_SAML_ISSUER` (or `STS_ISSUER`) | `urn:wstrust:mock:sts` | yes | Who signed an assertion: the issuer of the SAML assertions WS-Trust and WS-Federation carry, and what `/wsfed/rp` checks one against. The browser profiles name themselves with `saml2.entityId` and `saml11.providerId`. |
 | `saml.clockSkewS` | `STS_SAML_CLOCK_SKEW_S` | `0` | yes | Seconds added to both ends of every issued assertion's validity window (at most 300). |
-| `saml.signatureAlgorithm` | `STS_SAML_SIGNATURE_ALGORITHM` | `rsa-sha256` | yes | The XML signature algorithm and Redirect `SigAlg`: `rsa-sha256`, `rsa-sha384`, `rsa-sha512`, or the broken `rsa-sha1`. `rsa-sha1` is development mode only: product signs with `rsa-sha256` instead and refuses setting it (#181). |
+| `saml.signatureAlgorithm` | `STS_SAML_SIGNATURE_ALGORITHM` | `rsa-sha256` | yes | The XML signature algorithm and Redirect `SigAlg`: `rsa-sha256`, `rsa-sha384`, `rsa-sha512`, or the broken `rsa-sha1`. `rsa-sha1` is development mode only: product signs with `rsa-sha256` instead and refuses setting it (#181). **In a realm with `keys.signerModel = hybrid-groups` (#68)** it may also be `ecdsa-sha256` or `ecdsa-sha384` (the XML signer group's P-256 or P-384 key) or `ml-dsa-44`, `ml-dsa-65`, `ml-dsa-87` or `slh-dsa-sha2-128s` (the group's post-quantum keys, each with its own certificate, under the W3C xmldsig-more **draft** identifiers — few service providers verify them yet). Elsewhere, or before that key is certified, the realm signs `rsa-sha256` and says so once. |
 | `saml.canonicalizationAlgorithm` | `STS_SAML_CANONICALIZATION_ALGORITHM` | `exclusive` | yes | `exclusive` or `exclusive-with-comments`; inclusive c14n is not offered. |
 | `saml.allowSha1Signatures` | `STS_SAML_ALLOW_SHA1_SIGNATURES` | `false` | yes | Whether an XML signature this service verifies may use SHA-1; if allowed it is recorded as weak. On is development mode only: product refuses SHA-1 whatever this says, and refuses turning it on (#181). |
 | `saml.organizationName` | `STS_SAML_ORGANIZATION_NAME` | `sts` | yes | `<md:OrganizationName>` in the SAML metadata; empty omits `<md:Organization>`. |

@@ -95,6 +95,10 @@
 #   STS_TEARDOWN_TIMEOUT=600 ./run-tests.sh
 #                                             # the same for every `down` and
 #                                             # `logs` (default 300)
+#   STS_TEST_RISK_INSTALL=0 ./run-tests.sh
+#                                             # skip the install-time risk
+#                                             # loader step in the postgres
+#                                             # modes (#213; riskInstallCheck)
 #   STS_TEST_CONFORMANCE_MODES=memory,single-node ./run-tests.sh
 #                                             # the modes that run the OpenID
 #                                             # conformance suite's FAPI plans
@@ -1024,6 +1028,101 @@ captureOneContainerLog()
 }
 
 # ---------------------------------------------------------------------------
+# THE INSTALL-TIME RISK LOADER, RUN AS AN OPERATOR RUNS IT (#213, 2026-09-26).
+#
+# `risk/risk_install.ts` is an operator's CLI and not a route, so no job can
+# reach it over HTTP: this step is `docker exec <sts> node
+# risk/risk_install.js ...` with NO extra environment, against the stack as it
+# is — in the modes whose store is postgres, where the database password is in
+# OpenBao and the container's `STS_DATABASE_URL` carries none. That is the
+# arrangement the loader could not sign in to before #213, and the only
+# workaround was the operator reading the secret into PGPASSWORD; so the step
+# first asserts the arrangement (no password in the URL, no PGPASSWORD in the
+# container), then imports a SYNTHETIC operator ALLOW list — two addresses in
+# 198.19.213.0/24 (RFC 2544), written into the container at run time, never
+# committed (tests/no_third_party_datasets.js) — and asserts it was imported
+# and that a second run finds it already recorded (the loader is safe to run
+# twice, which is what its header promises). The operator list needs no
+# provider's terms (`--accept-terms operator`) and no network.
+#
+# BEFORE the runner, while the stack is certainly up (a single-node mode's
+# runner stops it on exit). The ALLOW list and TWO rows, both on purpose: the
+# first run imported a hundred rows into the DENY list, and
+# sts_admin_risk.js's five-row deny version was then refused by
+# risk.datasetShrinkLimitPercent — a job's list is compared with the active
+# one. No job imports an allow list, and nothing in the suite signs in from
+# 198.19.213.0/24. Its output is
+# tests/report/<mode>-98-risk-install.log. STS_TEST_RISK_INSTALL=0 skips it.
+# ---------------------------------------------------------------------------
+riskInstallCheck()
+{
+  local mode="$1" container="${STS_CONTAINER_NAME}" url out rc version pass
+  local dest="${CURRENT_DIR}/tests/report/${mode}-98-risk-install.log"
+  local dir="/tmp/sts-risk-install-check"
+  local line='^risk_install: iplist.operator-allow: '
+  mkdir -p "${CURRENT_DIR}/tests/report" 2> /dev/null || true
+  echo ""
+  echo "Mode ${mode}: the install-time risk loader, by docker exec (#213)."
+  url="$(timeout 60 docker exec "${container}" printenv STS_DATABASE_URL \
+         2> /dev/null)"
+  {
+    echo "container: ${container}"
+    echo "STS_DATABASE_URL: ${url}"
+  } > "${dest}"
+  if [ -z "${url}" ] ||
+     grep -Eq '://[^/@:]*:[^@/]*@' <<< "${url}";
+  then
+    echo "  The container's STS_DATABASE_URL is empty or carries a" \
+         "password, so this step would prove nothing; see ${dest}." >&2
+    return 1
+  fi
+  if timeout 60 docker exec "${container}" printenv PGPASSWORD \
+     > /dev/null 2>&1;
+  then
+    echo "  The container has PGPASSWORD set; see ${dest}." >&2
+    return 1
+  fi
+  version="run-tests-$(date -u +%Y%m%dT%H%M%SZ)"
+  # The synthetic list and its manifest, written inside the container.
+  local manifest='{ "datasets": [ { "dataset": "iplist.operator-allow", '
+  manifest+='"format": "ip-list", "file": "'"${dir}"'/synthetic-allow.txt", '
+  manifest+='"version": "'"${version}"'" } ] }'
+  if ! printf '%s\n' "${manifest}" |
+       timeout 60 docker exec -i "${container}" sh -c \
+         "mkdir -p ${dir} && cat > ${dir}/datasets.json &&
+          printf '198.19.213.1\\n198.19.213.2\\n' \
+            > ${dir}/synthetic-allow.txt" \
+         >> "${dest}" 2>&1;
+  then
+    echo "  The synthetic dataset could not be written; see ${dest}." >&2
+    return 1
+  fi
+  for pass in first second;
+  do
+    out="$(timeout 300 docker exec "${container}" node risk/risk_install.js \
+           --manifest "${dir}/datasets.json" --accept-terms operator \
+           --operator "run-tests.sh" 2>&1)"
+    rc=$?
+    printf '%s pass (exit %s):\n%s\n' "${pass}" "${rc}" "${out}" >> "${dest}"
+    if [ "${rc}" -ne 0 ] ||
+       ! grep -q "${line}" <<< "${out}" ||
+       grep -q 'REFUSED' <<< "${out}" ||
+       { [ "${pass}" = "second" ] &&
+         ! grep -q 'already recorded' <<< "${out}"; };
+    then
+      echo "  The loader's ${pass} pass did not import the synthetic list" \
+           "(exit ${rc}); see ${dest}." >&2
+      printf '%s\n' "${out}" | tail -n 5 | sed 's/^/    /' >&2
+      return 1
+    fi
+    echo "  ✓ ${pass} pass: $(grep "${line}" <<< "${out}" | tail -n 1)"
+  done
+  timeout 60 docker exec "${container}" rm -rf "${dir}" > /dev/null 2>&1 ||
+    true
+  return 0
+}
+
+# ---------------------------------------------------------------------------
 # THE SCHEDULER SURVIVES A CRASHED LEADER (#49, rcbj's D10(a), 2026-09-22).
 #
 # The LAST step of the `cluster` mode, because it removes a node: the runner
@@ -1155,6 +1254,13 @@ done
 if [ "${BUILD}" = "1" ];
 then
   echo "Building the service and test images from this working tree..."
+  # The test corpora are a PRIVATE image on ghcr.io (#253); without a login
+  # the build fails on a pull error naming neither. Asked first.
+  if ! tests/tools/corpora-preflight.sh;
+  then
+    echo "Nothing was run." >&2
+    exit 1
+  fi
   if ! docker_compose "${COMPOSE_FILE_ARGS[@]}" build;
   then
     echo "" >&2
@@ -1708,6 +1814,20 @@ do
     # -----------------------------------------------------------------------
     mintThePepCredential
 
+    # The install-time risk loader against this stack's own database (#213),
+    # before the runner stops the stack. Its failure fails the mode after
+    # the runner has run, so one broken step does not hide the suite.
+    RISK_INSTALL_RC=0
+    if printf '%s\n' "${MODE_ENV[@]}" |
+       grep -qx 'STS_PERSISTENCE_MODE=postgres' &&
+       [ "${STS_TEST_RISK_INSTALL:-1}" = "1" ];
+    then
+      if ! riskInstallCheck "${MODE}";
+      then
+        RISK_INSTALL_RC=1
+      fi
+    fi
+
     # THE ROOT CA AS TEXT, SO THAT sts_xacml_remote_pep.js CAN PUT IT BACK.
     #
     # The truststore is a Map in the service's process that ANY job can empty:
@@ -1802,6 +1922,12 @@ do
       then
         MODE_RC=1
       fi
+    fi
+    if [ "${MODE_RC}" -eq 0 ] && [ "${RISK_INSTALL_RC}" -ne 0 ];
+    then
+      echo "Mode ${MODE}: the install-time risk loader step failed" \
+           "(above)." >&2
+      MODE_RC=1
     fi
     # A MODE WHOSE RUNNER WROTE NO REPORT DID NOT PASS, whatever compose
     # returned. The stack stopping before the runner started is exactly the

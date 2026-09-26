@@ -1736,6 +1736,39 @@ const SPECS: Spec[] = [
               'urn:openid:params:jwt:claim:auth_req_id and rt_hash; the ' +
               'section 4 metadata in discovery and registration. A push to ' +
               'a device is #164\'s.' },
+  { id: 'rfc8628', name: 'RFC 8628 — OAuth 2.0 Device Authorization Grant',
+    where: 'IETF',
+    url: 'https://www.rfc-editor.org/rfc/rfc8628',
+    coverage: 'full (#150, 2026-09-26), where oauth2.deviceAuthorization ' +
+              'is on (off by default): the device authorization endpoint ' +
+              'with client authentication as at the token endpoint, a ' +
+              'registered grant and the scope policy, an eight-letter user ' +
+              'code from a twenty-letter alphabet and ' +
+              'verification_uri_complete; the verification URI is the ' +
+              'person\'s /portal/device, where a code only brings up the ' +
+              'request — client and scopes — and approving is a second act ' +
+              '(section 5.4), with five wrong codes a session refused for ' +
+              'ten minutes (section 5.1); the device_code grant with every ' +
+              'section 3.5 error, slow_down growing the interval by five ' +
+              'seconds, one token response per approval claimed once for ' +
+              'the cluster, and the codes swept by the ' +
+              'oauth2.device-code-sweep job; the section 4 metadata. A DPoP ' +
+              'proof on the device request binds the device code to its ' +
+              'key.' },
+  { id: 'oidc-key-binding', name: 'OpenID Connect Key Binding 1.0',
+    where: 'OpenID Foundation',
+    url: 'https://openid.net/specs/openid-connect-key-binding-1_0.html',
+    coverage: 'full (#150, 2026-09-26), in every mode: the bound_key ' +
+              'scope, honoured with response_type=code and dpop_jkt only; ' +
+              'a DPoP proof at the token endpoint whose c_s256 is the ' +
+              'hash of the authorization or device code; an ID Token with ' +
+              'cnf.jwk and the JOSE header typ dpop+id_token; a refresh ' +
+              'held to the same key whether or not RFC 9449 bound the ' +
+              'refresh token; and section 7 — a bound ID Token presented ' +
+              'at token exchange (Native SSO included) only with a proof ' +
+              'from its key. ML-DSA-44, -65 and -87 keys are accepted, as ' +
+              'for any DPoP proof. An id_token_hint is a hint, not a ' +
+              'credential, and is not held to the key.' },
   { id: 'oidc-native-sso', name: 'OpenID Connect Native SSO for Mobile ' +
                                   'Apps 1.0',
     where: 'OpenID Foundation',
@@ -2760,7 +2793,12 @@ const SPECS: Spec[] = [
   { id: 'vcdm', name: 'W3C Verifiable Credentials Data Model 1.1 and 2.0',
     where: 'W3C', url: 'https://www.w3.org/TR/vc-data-model-2.0/',
     coverage: 'partial: the VC-JWT encoding of VCDM 1.1 (jwt_vc_json) and ' +
-              'VCDM 2.0 credentials with an embedded proof (ldp_vc).' },
+              'VCDM 2.0 credentials with an embedded proof (ldp_vc); and, ' +
+              'at the VC-API test endpoints (#194), every MUST of the data ' +
+              'model checked on a credential or presentation somebody else ' +
+              'wrote, JSON-LD safe mode over the vendored contexts, and ' +
+              'enveloped credentials and presentations — held to the W3C ' +
+              'VC Data Model 2.0 test suite.' },
   { id: 'di-jcs', name: 'W3C Data Integrity — ecdsa-jcs-2019, ' +
                         'eddsa-jcs-2022, mldsa44-jcs-2024 and ' +
                         'slhdsa128-jcs-2024',
@@ -2772,7 +2810,45 @@ const SPECS: Spec[] = [
               'did:key verification methods; and signing and verification ' +
               'of a GNAP zcap token\'s delegation proof in Ed25519, ML-DSA-44 ' +
               'or SLH-DSA-SHA2-128s against a Multikey controller document. ' +
-              'No RDF-canonicalized suites, no proof chains.' },
+              'At the VC-API test endpoints the two EC and EdDSA JCS suites ' +
+              'also secure and verify credentials, with proof sets and ' +
+              'proof chains (#195, #196). The RDFC suites are di-rdfc.' },
+  { id: 'di-rdfc', name: 'W3C Data Integrity — eddsa-rdfc-2022 and ' +
+                         'ecdsa-rdfc-2019',
+    where: 'W3C', url: 'https://www.w3.org/TR/vc-di-eddsa/',
+    coverage: 'full for issuing and verifying at the VC-API test endpoints ' +
+              '(#195, #196): Ed25519, P-256 and P-384, RDFC-1.0 over the ' +
+              'vendored contexts in safe mode with a null base, proof sets ' +
+              'and chains, VC 1.1 and 2.0 — held to the W3C EdDSA and ECDSA ' +
+              'test suites. A context this service does not ship is refused, ' +
+              'never fetched.' },
+  { id: 'di-ecdsa-sd', name: 'W3C Data Integrity — ecdsa-sd-2023',
+    where: 'W3C', url: 'https://www.w3.org/TR/vc-di-ecdsa/',
+    coverage: 'full for P-256, the curve section 3.5.8 fixes a derived ' +
+              'proof to: base proofs with mandatory pointers, derived ' +
+              'proofs from any selective pointers, and their verification ' +
+              '(#196) — a derived proof from the specification\'s own base ' +
+              'proof is byte-for-byte its test vector, and one derived by ' +
+              'Digital Bazaar\'s library verifies here and vice versa.' },
+  { id: 'vc-jose-cose', name: 'W3C Securing Verifiable Credentials using ' +
+                              'JOSE and COSE',
+    where: 'W3C', url: 'https://www.w3.org/TR/vc-jose-cose/',
+    coverage: 'partial: vc+jwt, vc+sd-jwt and vc+cose and their vp forms, ' +
+              'secured and verified at the VC-API test endpoints (#198), ' +
+              'SD-JWT disclosures processed as RFC 9901 section 7.1 says; ' +
+              'keys by a did:key or did:jwk kid or a caller-named public ' +
+              'key, nothing fetched. The OID4VCI issuer does not issue these ' +
+              'forms (jwt_vc_json is VCDM 1.1), and a Key Binding JWT on an ' +
+              'SD-JWT presentation is reported, not checked.' },
+  { id: 'vc-api', name: 'W3C CCG Verifiable Credentials API (test ' +
+                        'endpoints)',
+    where: 'W3C CCG', url: 'https://w3c-ccg.github.io/vc-api/',
+    coverage: 'partial, and a TEST CONTROL: the issue, verify, prove, ' +
+              'derive and status operations the W3C test suites drive, over ' +
+              'this service\'s own cryptosuites, keys and status lists, in ' +
+              'a development realm only, behind an access token carrying ' +
+              'vc-api:issue or vc-api:verify. No zcap authorization, no ' +
+              'workflows, no credential storage.' },
   { id: 'token-status-list',
     name: 'Token Status List (draft-ietf-oauth-status-list-21)',
     where: 'IETF',
@@ -2788,8 +2864,9 @@ const SPECS: Spec[] = [
   { id: 'bitstring-status-list', name: 'W3C Bitstring Status List v1.0',
     where: 'W3C', url: 'https://www.w3.org/TR/vc-bitstring-status-list/',
     coverage: 'partial: revocation and suspension lists per realm, served ' +
-              'as a BitstringStatusListCredential secured as a JWT, and a ' +
-              'BitstringStatusListEntry for each purpose in every ' +
+              'as a BitstringStatusListCredential secured as a JWT or, by ' +
+              'Accept, as JSON-LD with an eddsa-rdfc-2022 proof (#197), and ' +
+              'a BitstringStatusListEntry for each purpose in every ' +
               'jwt_vc_json and ldp_vc credential; the Verifier reads them. ' +
               'statusSize 1 only; no statusMessage.' },
   { id: 'dc-api', name: 'W3C Digital Credentials API',
@@ -2812,8 +2889,11 @@ const SPECS: Spec[] = [
   { id: 'did-core', name: 'W3C DID Core 1.0 (did:web, did:key, did:jwk)',
     where: 'W3C', url: 'https://www.w3.org/TR/did-1.0/',
     coverage: 'partial: this service PUBLISHES a did:web document with two ' +
-              'verification methods. The wallet side resolves all three ' +
-              'methods.' },
+              'verification methods, and resolves and dereferences (section ' +
+              '7) did:key, did:jwk and its own did:web in both JSON ' +
+              'representations at the VC-API test endpoints (#199), held to ' +
+              'the W3C DID test suite. No other did:web is fetched; no DID ' +
+              'parameters (service, versionId, …) are supported.' },
   { id: 'did-config', name: 'DIF Well Known DID Configuration',
     where: 'DIF',
     url: 'https://identity.foundation/well-known-did-configuration/resources/did-configuration/',
@@ -3637,8 +3717,8 @@ const ENDPOINTS: EndpointEntry[] = [
           'every certificate this service issues resolves to. Ungated, and ' +
           'it has to be: a relying party fetches this before it has decided ' +
           'to trust anything. EVERY CERTIFICATE NAMES IT OVER PLAIN HTTP, on ' +
-          '`pki.httpPort`, a second listener that answers /pki/ and nothing ' +
-          'else — RFC 5280 section 8 says a CA SHOULD NOT write an https or ' +
+          '`pki.httpPort`, a second listener that answers /pki/ (and ' +
+          'SCEP, since #210) and nothing else — RFC 5280 section 8 says a CA SHOULD NOT write an https or ' +
           'ldaps URI into an extension, and RFC 5019 section 5 says an OCSP ' +
           'responder MUST answer plain HTTP. The main port answers these ' +
           'paths too.' },
@@ -4162,6 +4242,13 @@ const ENDPOINTS: EndpointEntry[] = [
           'ServiceProviderConfig ADVERTISES rather than against the express ' +
           'body parser\'s service-wide one, because a client reads a ' +
           'published limit as a promise.' },
+  { path: '/scim/v2/*', group: 'SCIM', name: 'Any other path under the base',
+    specs: ['rfc7644'],
+    what: 'A path under /scim/v2 that names no endpoint, answered 404 in the ' +
+          'SCIM Error schema (section 3.12) rather than by express as an ' +
+          'HTML page, so a client that mistyped a resource type gets a body ' +
+          'it can parse (#206). Registered after every endpoint above, per ' +
+          'method.' },
   { path: '/scim/v2/Me', group: 'SCIM', name: '/Me, the authenticated subject',
     specs: ['rfc7644', 'rfc7235'],
     what: 'Section 3.11\'s alias for the subject the request authenticated ' +
@@ -5618,6 +5705,14 @@ const ENDPOINTS: EndpointEntry[] = [
           'request shows its client, scopes and binding_message; an ' +
           'approval that asks for more than the session proved offers a ' +
           'stronger sign-in first.' },
+  { path: '/portal/device', group: 'User portal',
+    name: 'Sign in a device — RFC 8628\'s verification URI',
+    specs: ['rfc8628'],
+    effect: 'finds the device waiting with the code typed, shows its ' +
+            'client and scopes, and approves or denies it',
+    what: 'NON-SPEC page (#150): the verification URI. A code, typed or ' +
+          'prefilled, only brings the request up; approving is a second ' +
+          'act (section 5.4).' },
   { path: '/portal/devices', group: 'User portal',
     name: 'Your devices — ou=devices, and Native SSO',
     specs: ['oidc-native-sso'],
@@ -9310,7 +9405,7 @@ const ENDPOINTS: EndpointEntry[] = [
     name: 'Authorization ' +
       'endpoint',
     specs: ['rfc6749', 'oidc', 'rfc7636', 'rfc9396', 'rfc9207',
-            'oidc-enterprise',
+            'oidc-enterprise', 'oidc-key-binding',
             'rfc9700', 'rfc9101', 'rfc9126', 'rfc9470',
             'oauth-multiple-response-types', 'jarm', 'fapi1-advanced'],
     effect: 'needs ' +
@@ -9769,9 +9864,11 @@ const ENDPOINTS: EndpointEntry[] = [
   { path: '/oauth2/token', group: 'OAuth 2.0 / OIDC', name: 'Token endpoint',
     specs: ['rfc6749', 'oidc', 'rfc8693', 'rfc9396', 'oid4vci', 'rfc9449',
             'rfc7800', 'rfc9700', 'oidc-native-sso', 'oidc-ciba',
+            'rfc8628', 'oidc-key-binding',
             'rfc8705', 'rfc8707', 'rfc7523', 'rfc7522', 'rfc9068'],
     what: 'authorization_code, refresh_token, client_credentials, password, ' +
-          'token-exchange, and OID4VCI\'s pre-authorized_code with tx_code ' +
+          'token-exchange, RFC 8628\'s device_code (#150), and OID4VCI\'s ' +
+          'pre-authorized_code with tx_code ' +
           'enforcement. An RFC 8693 exchange can come back with a REFRESH ' +
           'TOKEN beside the exchanged access token — an ordinary one of this ' +
           'service, redeemable at the refresh grant and bound and rotated ' +
@@ -10124,6 +10221,12 @@ const ENDPOINTS: EndpointEntry[] = [
     specs: ['oidc-claims-aggregation'],
     what: 'add-provider, update-provider, remove-provider and revoke-link: ' +
           'the console\'s four acts.' },
+  { path: '/oauth2/device_authorization', group: 'OAuth 2.0 / OIDC',
+    name: 'Device Authorization Endpoint',
+    specs: ['rfc8628', 'oidc-key-binding'],
+    what: 'RFC 8628 section 3.1 (#150): a device with no usable browser ' +
+          'asks for a device_code and a user_code, and the person approves ' +
+          'on /portal/device. 404 where oauth2.deviceAuthorization is off.' },
   { path: '/oauth2/bc-authorize', group: 'OAuth 2.0 / OIDC',
     name: 'Backchannel Authentication Endpoint (CIBA)',
     specs: ['oidc-ciba', 'fapi-ciba', 'oauth-grant-management'],
@@ -10234,10 +10337,20 @@ const ENDPOINTS: EndpointEntry[] = [
   { path: '/oid4vci/status-lists/bitstring/:purpose',
     group: 'VC Issuance (OID4VCI)',
     name: 'Bitstring Status List credential',
-    specs: ['bitstring-status-list', 'vcdm', 'rfc7519'],
+    specs: ['bitstring-status-list', 'vcdm', 'rfc7519', 'di-rdfc'],
     what: 'This realm\'s BitstringStatusListCredential for revocation or ' +
           'suspension, as application/vc+jwt: a GZIP bitstring of 131,072 ' +
-          'entries, index 0 first, signed with the credential key.' },
+          'entries, index 0 first, signed with the credential key — or, ' +
+          'when Accept asks for JSON-LD or JSON and not the JWT first, the ' +
+          'same credential with an eddsa-rdfc-2022 proof by the realm\'s ' +
+          'Ed25519 key, issued as its did:key (#197).' },
+  { path: '/oid4vci/status-lists/bitstring/:purpose/publish',
+    group: 'W3C VC-API (test endpoints)',
+    name: 'Publish a status list (VC-API, test control)',
+    specs: ['vc-api', 'bitstring-status-list'],
+    what: 'The W3C suites\' "publish the list now". A list here is computed ' +
+          'on every read, so 204 and nothing else; a test control, behind ' +
+          'vc-api:issue.' },
   { path: '/oid4vci/deferred_credential', group: 'VC Issuance (OID4VCI)',
     name: 'Deferred credential endpoint', specs: ['oid4vci', 'rfc6750'],
     what: 'Collects a credential the issuer answered 202 for, against its ' +
@@ -10279,6 +10392,76 @@ const ENDPOINTS: EndpointEntry[] = [
           'the realm\'s BBS key (current, next, and retired ones within ' +
           'their grace — the key rotates with the realm\'s signing keys, ' +
           '#49); `/bbs/keys/1` is the current one. 404 for any other.' },
+
+  // --- W3C VC-API test endpoints (#194-#199) ---
+  { path: '/vc-api/issuers', group: 'W3C VC-API (test endpoints)',
+    name: 'The VC-API issuers (test control)', specs: ['vc-api'],
+    what: 'NON-SPEC listing, for the suite jobs: each issuer this adapter ' +
+          'offers — a securing mechanism and the realm key it signs with — ' +
+          'with its did:key and endpoint. A development realm only; ' +
+          'vc-api:issue.' },
+  { path: '/vc-api/issuers/:issuer/credentials/issue',
+    group: 'W3C VC-API (test endpoints)',
+    name: 'Issue a credential (VC-API, test control)',
+    specs: ['vc-api', 'vcdm', 'di-rdfc', 'di-jcs', 'di-ecdsa-sd',
+            'vc-jose-cose', 'bitstring-status-list'],
+    what: 'Secures the credential it is handed after checking every MUST ' +
+          'of the data model and JSON-LD safe mode: an embedded Data ' +
+          'Integrity proof (eddsa-rdfc-2022, eddsa-jcs-2022, ' +
+          'ecdsa-rdfc-2019 and ecdsa-jcs-2019 over P-256 and P-384, ' +
+          'ecdsa-sd-2023) or a VC-JOSE-COSE envelope (jose-p256, ' +
+          'sd-jwt-p256, cose-p256). The credential\'s issuer must be the ' +
+          'key\'s did:key; options.credentialStatus allocates an index in ' +
+          'the realm\'s Bitstring Status Lists. A development realm only; ' +
+          'vc-api:issue. 201 { verifiableCredential }.' },
+  { path: '/vc-api/credentials/verify', group: 'W3C VC-API (test endpoints)',
+    name: 'Verify a credential (VC-API, test control)',
+    specs: ['vc-api', 'vcdm', 'di-rdfc', 'di-jcs', 'di-ecdsa-sd',
+            'vc-jose-cose', 'bitstring-status-list'],
+    what: 'The data model, JSON-LD safe mode, every proof of a proof set ' +
+          'and chain (verification methods did:key and did:jwk, nothing ' +
+          'fetched) or the envelope, and — asked, or named — the ' +
+          'credential\'s status in this realm\'s lists. 200 or 400 ' +
+          '{ verified, checks, warnings, errors }. vc-api:verify.' },
+  { path: '/vc-api/presentations/verify',
+    group: 'W3C VC-API (test endpoints)',
+    name: 'Verify a presentation (VC-API, test control)',
+    specs: ['vc-api', 'vcdm', 'di-rdfc', 'di-jcs', 'vc-jose-cose'],
+    what: 'The presentation\'s own proof (authentication, the challenge ' +
+          'and domain asked for) or envelope (its nonce and aud), and every ' +
+          'credential in it as /vc-api/credentials/verify checks one. ' +
+          'vc-api:verify.' },
+  { path: '/vc-api/holders/:holder/presentations/prove',
+    group: 'W3C VC-API (test endpoints)',
+    name: 'Prove a presentation (VC-API, test control)',
+    specs: ['vc-api', 'vcdm', 'di-rdfc', 'di-jcs', 'vc-jose-cose'],
+    what: 'Secures a presentation as the realm key\'s did:key: a Data ' +
+          'Integrity proof with the challenge and domain given, or a ' +
+          'VC-JOSE-COSE envelope. vc-api:issue.' },
+  { path: '/vc-api/credentials/derive', group: 'W3C VC-API (test endpoints)',
+    name: 'Derive a selective disclosure (VC-API, test control)',
+    specs: ['vc-api', 'di-ecdsa-sd'],
+    what: 'An ecdsa-sd-2023 derived proof from a base proof, revealing the ' +
+          'mandatory statements and options.selectivePointers. ' +
+          'vc-api:issue.' },
+  { path: '/vc-api/credentials/status', group: 'W3C VC-API (test endpoints)',
+    name: 'Change a credential\'s status (VC-API, test control)',
+    specs: ['vc-api', 'bitstring-status-list'],
+    what: 'Revokes, suspends or lifts a suspension of a credential this ' +
+          'adapter issued with a status — the act /admin/vc-status ' +
+          'performs, one of the three that disown a credential. A ' +
+          'revocation is final. vc-api:issue.' },
+  { path: '/vc-api/resolve', group: 'W3C VC-API (test endpoints)',
+    name: 'Resolve a DID (test control)', specs: ['did-core', 'vc-api'],
+    what: 'DID Core section 7.1\'s resolve or resolveRepresentation ' +
+          '(?function=) for did:key, did:jwk and this realm\'s own did:web, ' +
+          'answering the resolution result; any other did:web is notFound ' +
+          'rather than fetched. vc-api:verify.' },
+  { path: '/vc-api/dereference', group: 'W3C VC-API (test endpoints)',
+    name: 'Dereference a DID URL (test control)', specs: ['did-core',
+                                                          'vc-api'],
+    what: 'DID Core section 7.2: the document, or the verification method a ' +
+          'fragment names. vc-api:verify.' },
 
   // --- DIDs ---
   { path: '/.well-known/did.json', group: 'Decentralized Identifiers',
@@ -10692,7 +10875,11 @@ const ENDPOINTS: EndpointEntry[] = [
           'requester and encrypted to the RA; the reply is a CertRep signed ' +
           'by the RA. Refusals after the message is read are CertRep FAILURE ' +
           'with a failInfo; not refused over plain HTTP in either mode, ' +
-          'because the security is the CMS envelope (RFC 8894 section 2.1).' },
+          'because the security is the CMS envelope (RFC 8894 section 2.1) ' +
+          '— and served on the plain-HTTP listener (`pki.httpPort`) as well ' +
+          'as the main port, since sscep and most device firmware speak no ' +
+          'TLS (#210). A POST is application/x-pki-message, or ' +
+          'application/octet-stream as micromdm\'s client sends it (#211).' },
   { path: '/enroll/scep/pkiclient.exe', group: 'SCEP',
     name: 'The SCEP server (CGI name)', specs: ['rfc8894'],
     effect: 'as /enroll/scep',
@@ -11148,10 +11335,11 @@ const PROTOCOLS: Protocol[] = [
           'session standing on one (refuseEmailFactor).' },
   { name: 'Verifiable Credentials (OID4VCI / OID4VP)',
     groups: ['VC Issuance (OID4VCI)', 'VC Presentation (OID4VP)',
-             'Decentralized Identifiers'],
+             'Decentralized Identifiers', 'W3C VC-API (test endpoints)'],
     specs: ['oid4vci', 'oid4vp', 'sd-jwt-vc', 'vcdm', 'did-core',
             'token-status-list', 'bitstring-status-list', 'dc-api',
-            'di-jcs', 'siopv2'],
+            'di-jcs', 'di-rdfc', 'di-ecdsa-sd', 'vc-jose-cose', 'vc-api',
+            'siopv2'],
     what: 'Both sides of it: an issuer (three credential formats, Credential ' +
           'Offers, pre-authorized codes, deferred and batch issuance, ' +
           'notifications, status lists, key attestations) and a verifier ' +
@@ -11184,6 +11372,7 @@ const GROUP_ORDER = ['Service', 'Authentication', 'WS-Trust', 'WS-Federation',
                      'VC Issuance (OID4VCI)', 'Decentralized Identifiers',
                      'VC ' +
                          'Presentation (OID4VP)',
+                     'W3C VC-API (test endpoints)',
                      'Admin', 'Management API', 'Undocumented'];
 
 // One row of the router's own list: a path and the methods it answers.

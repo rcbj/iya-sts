@@ -587,7 +587,11 @@ function setServerCertificate(material) {
   // `process.env` at the other end while the key deliberately does not.
   tlsMaterial = { certPem: material.certPem, keyPem: material.keyPem,
                   chainPem: (material.chainPem || []).slice(0),
-                  trustAnchorPem: material.trustAnchorPem || '' };
+                  trustAnchorPem: material.trustAnchorPem || '',
+                  // The other leaves the socket presents (#248): public, and
+                  // what `tls_server.presentedCertificatePems()` answers in a
+                  // worker beside the first.
+                  extraCertPems: (material.extraCertPems || []).slice(0) };
   log.debug("Leaving setServerCertificate().");
 }
 
@@ -938,6 +942,15 @@ quickExits[SURFACE_POOL] = 0;
 const givenUp = {};
 givenUp[PROTOCOL_POOL] = false;
 givenUp[SURFACE_POOL] = false;
+// How many dead workers each pool has replaced, for stats(). See
+// replacementFor().
+const replaced = {};
+replaced[PROTOCOL_POOL] = 0;
+replaced[SURFACE_POOL] = 0;
+// The module a worker runs. Only tests/request_worker_replacement.js changes
+// it, to fork a stub that answers the same channel without loading the stack;
+// reset() puts it back.
+let workerModule = WORKER_MODULE;
 let stopped = false;
 let starting = null;
 
@@ -2162,7 +2175,7 @@ function fork(pool, slot) {
   const socket = path.join(ensureSocketDir(),
                            (which === SURFACE_POOL ? 's' : 'w') +
                            (nextSocket++) + '.sock');
-  const child = child_process.fork(WORKER_MODULE, [socket], {
+  const child = child_process.fork(workerModule, [socket], {
     // stdout and stderr are the front process's, so a worker's bunyan lines
     // land in the same stream as everything else. They carry the pid.
     stdio: ['ignore', 'inherit', 'inherit', 'ipc'],
@@ -2210,6 +2223,10 @@ function fork(pool, slot) {
   });
   const entry = { child: child, pid: child.pid, pool: which, socket: socket,
                   ready: false,
+                  // Its position in the pool, which a replacement takes over
+                  // — and with it the persistence origin (see fork()'s
+                  // header and replacementFor()).
+                  slot: typeof slot === 'number' ? slot : null,
                   // -------------------------------------------------------
                   // ONE AGENT PER WORKER, AND IT IS A BOUND RATHER THAN A
                   // CACHE (2026-09-12).
@@ -2313,6 +2330,18 @@ function fork(pool, slot) {
         log.error(errorCodes.tag('STS-WORKER-0017') +
                   'request_pool: worker ' + entry.pid + ' could not start: ' +
                   message.error);
+        // A WORKER THAT COULD NOT START IS ENDED, SO THAT IT IS REPLACED
+        // (2026-09-26). It used to stay: alive, never ready, holding its
+        // place in the pool, so the pool ran a worker short for the life of
+        // the process. Ended, it goes through reap() like any worker that
+        // died — counted as a failed start, so a worker that can never start
+        // is tried QUICK_EXIT_LIMIT times and then given up on.
+        try {
+          child.kill('SIGKILL');
+        } catch (e) {
+          log.debug('request_pool: could not end worker ' + entry.pid +
+                    ', which could not start: ' + ((e && e.message) || e));
+        }
         resolve(null);
         return;
       }
@@ -2421,10 +2450,15 @@ function reap(entry, code, signal) {
   }
   failOperations(entry);
   const how = signal ? 'was killed with ' + signal : 'exited with code ' + code;
+  // A FAILED START: a worker that never became ready, however long it took
+  // to fail, or one that went within QUICK_EXIT_MS of being forked having
+  // served nothing. A worker that was ready resets the count (fork()), so
+  // this counts failed starts IN A ROW.
   const shortLived = (Date.now() - entry.startedAt) < QUICK_EXIT_MS &&
                      entry.served === 0;
+  const failedStart = !entry.ready || shortLived;
   const pool = entry.pool || PROTOCOL_POOL;
-  if (shortLived && !stopped) {
+  if (failedStart && !stopped) {
     quickExits[pool]++;
   }
   if (entry.inFlight) {
@@ -2444,8 +2478,9 @@ function reap(entry, code, signal) {
     // pool, which is what workers.surfaceCount=0 means. See poolFor().
     log.error(errorCodes.tag('STS-WORKER-0023') +
       'request_pool: ' + quickExits[pool] + ' ' + pool + ' workers in a ' +
-      'row exited within ' + QUICK_EXIT_MS + 'ms without serving anything, ' +
-      'so this service has STOPPED FORKING THEM and ' +
+      'row failed to start (never ready, or gone within ' + QUICK_EXIT_MS +
+      'ms without serving anything), so this service has STOPPED FORKING ' +
+      'THEM and ' +
       (pool === SURFACE_POOL
         ? 'is sending the hosted surfaces to the protocol workers — which ' +
           'is what workers.surfaceCount=0 means'
@@ -2457,7 +2492,108 @@ function reap(entry, code, signal) {
       'memory; ' + WORKER_MODULE + ' run by hand with a socket path says ' +
       'which.');
   }
+  replaceIfWanted(entry);
   log.debug('Leaving reap().');
+}
+
+// ---------------------------------------------------------------------------
+// A WORKER THAT DIES IS REPLACED (2026-09-26).
+//
+// Until this date the pool was forked once, in start(), and a worker that
+// exited — a crash, the kernel's OOM killer, a SIGKILL from anybody — was
+// reaped and never replaced: the pool ran a worker short for the life of the
+// process, and when the last one went, every request was handled on the
+// front process's one thread. rcbj met it more than once. reap() now asks
+// this, and forks one worker into the dead one's place.
+//
+// **THE SAME POOL AND THE SAME SLOT.** The slot is what the persistence
+// origin is named after (`adoptOrigin()` in persistence_postgres.js), so the
+// replacement takes over what its predecessor wrote under that origin. The
+// predecessor's claim on it lapses on its own — a dead process renews
+// nothing — and adoptOrigin() waits that out (ORIGIN_WAIT_MS in
+// persistence.js, inside the worker's own start timeout); a claim somebody
+// still holds leaves the replacement on a random origin, and it says so.
+//
+// **NOT WHILE STOPPING, NOT AFTER GIVING UP, AND NEVER PAST THE CONFIGURED
+// SIZE.** stop() sets `stopped` before its workers exit, so a drain forks
+// nothing. A pool that has given up (QUICK_EXIT_LIMIT failed starts in a row)
+// stays given up — a worker that cannot start is a configuration or a machine
+// out of memory, and forking it for ever would turn a slow service into one
+// that does nothing but fork. And a pool already holding `size()` workers
+// forks nothing, whatever died.
+//
+// A decision over its arguments, exported for tests/request_worker_
+// replacement.js; `state` defaults to this module's own.
+// ---------------------------------------------------------------------------
+function replacementFor(dead, live, state) {
+  log.debug("Entering replacementFor().");
+  const pool = (dead && dead.pool) || PROTOCOL_POOL;
+  const s = state || {};
+  const isStopped = s.stopped === undefined ? stopped : s.stopped;
+  const hasGivenUp = s.givenUp === undefined ? givenUp[pool] : s.givenUp;
+  const wanted = s.wanted === undefined ? size(pool) : s.wanted;
+  if (isStopped) {
+    log.debug("Leaving replacementFor(). Stopping.");
+    return { replace: false, pool: pool, why: 'the pool is stopping' };
+  }
+  if (hasGivenUp) {
+    log.debug("Leaving replacementFor(). Given up.");
+    return { replace: false, pool: pool,
+             why: 'the ' + pool + ' pool has given up on its workers' };
+  }
+  const held = (live || []).filter(function (one) {
+    return one !== dead && (one.pool || PROTOCOL_POOL) === pool;
+  });
+  if (held.length >= wanted) {
+    log.debug("Leaving replacementFor(). Full.");
+    return { replace: false, pool: pool,
+             why: 'the ' + pool + ' pool already holds ' + held.length +
+                  ' of ' + wanted + ' worker(s)' };
+  }
+  const taken = held.map(function (one) { return one.slot; });
+  let slot = (dead && typeof dead.slot === 'number' &&
+              taken.indexOf(dead.slot) < 0) ? dead.slot : null;
+  for (let i = 0; slot === null && i < wanted; i++) {
+    if (taken.indexOf(i) < 0) {
+      slot = i;
+    }
+  }
+  log.debug("Leaving replacementFor(). Slot " + slot + ".");
+  return { replace: true, pool: pool, slot: slot };
+}
+
+// For tests/request_worker_replacement.js only: fork a stub in place of
+// request_worker.js. reset() restores the real module.
+function useWorkerModule(modulePath) {
+  log.debug("Entering useWorkerModule().");
+  workerModule = modulePath || WORKER_MODULE;
+  log.debug("Leaving useWorkerModule().");
+}
+
+// A copy of the worker table, for the same test.
+function workerTable() {
+  log.debug("Entering workerTable().");
+  log.debug("Leaving workerTable().");
+  return workers.slice();
+}
+
+function replaceIfWanted(dead) {
+  log.debug("Entering replaceIfWanted().");
+  const plan = replacementFor(dead, workers);
+  if (!plan.replace) {
+    log.info('request_pool: ' + plan.pool + ' worker ' + dead.pid +
+             ' is not replaced: ' + plan.why + '.');
+    log.debug("Leaving replaceIfWanted(). Not replaced.");
+    return null;
+  }
+  replaced[plan.pool]++;
+  log.warn(errorCodes.tag('STS-WORKER-0043') +
+           'request_pool: forking a replacement for ' + plan.pool +
+           ' worker ' + dead.pid + ' in slot ' + plan.slot + ' (' +
+           replaced[plan.pool] + ' replaced in this pool so far).');
+  const next = fork(plan.pool, plan.slot);
+  log.debug("Leaving replaceIfWanted().");
+  return next;
 }
 
 // The ready workers of ONE pool — the protocol pool when none is named. Every
@@ -4170,6 +4306,22 @@ function proxy(entry, req, res, atGeneration, ticket) {
     // the pipe from now on. See ticketAbandoned().
     answered = true;
     res.status(answer.statusCode);
+    // **EACH HEADER GOES OUT UNDER THE NAME THE WORKER SPELLED IT WITH
+    // (2026-09-26, #209).** `answer.headers` is keyed in lower case, and
+    // setting it back by those keys sent `content-type:` where the process
+    // answering by itself sends `Content-Type:`. RFC 9110 section 5.1 makes
+    // a field name case-insensitive, and libest's estclient — Cisco's
+    // reference EST client — compares it byte for byte: every EST request a
+    // dispatched service answered failed "Missing HTTP content type header",
+    // and only on the modes that dispatch. The spelling comes from
+    // `rawHeaders`; the values are still `answer.headers`', merged as
+    // before. A name the worker did not send (the pin's `set-cookie` on an
+    // answer that set none) keeps its lower-case key.
+    const spelled = {};
+    const raw = answer.rawHeaders || [];
+    for (let i = 0; i + 1 < raw.length; i += 2) {
+      spelled[String(raw[i]).toLowerCase()] = String(raw[i]);
+    }
     Object.keys(answer.headers).forEach(function (name) {
       // The worker's instruction to this process, and no business of the
       // client's — for the reason the hop-by-hop headers below are dropped, and
@@ -4184,7 +4336,7 @@ function proxy(entry, req, res, atGeneration, ticket) {
           name === 'transfer-encoding') {
         return;
       }
-      res.setHeader(name, answer.headers[name]);
+      res.setHeader(spelled[name] || name, answer.headers[name]);
     });
     // AN ANSWER BEFORE THE REQUEST'S BODY HAD ALL ARRIVED (#215) is a
     // refusal made on the headers — a dataset upload over its cap, or with
@@ -4825,6 +4977,7 @@ function stats() {
     pools: POOLS.map(function (pool) {
       return { pool: pool, configured: size(pool),
                ready: readyWorkers(pool).length, gaveUp: givenUp[pool],
+               replaced: replaced[pool],
                affinities: affinities[pool].size,
                prefixes: pool === SURFACE_POOL ? surfacePrefixes() : [] };
     }),
@@ -4867,7 +5020,9 @@ function reset() {
   POOLS.forEach(function (pool) {
     givenUp[pool] = false;
     quickExits[pool] = 0;
+    replaced[pool] = 0;
   });
+  workerModule = WORKER_MODULE;
   stopped = false;
   starting = null;
   // AND THE BARRIER, because it is process-wide module state exactly as the
@@ -4983,5 +5138,13 @@ module.exports = {
   admitBatch: admitBatch,
   batchStats: batchStats,
   leastLoaded: leastLoaded,
+  // A DEAD WORKER'S REPLACEMENT (2026-09-26), for
+  // tests/request_worker_replacement.js: the decision, and — to drive the
+  // real fork() and reap() with a stub worker — the module a worker runs
+  // and fork() itself.
+  replacementFor: replacementFor,
+  useWorkerModule: useWorkerModule,
+  fork: fork,
+  workerTable: workerTable,
   PEER_AUTHORIZED_HEADER: PEER_AUTHORIZED_HEADER
 };

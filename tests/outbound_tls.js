@@ -339,6 +339,73 @@ async function run(t) {
     t.check(typeof mode.skipsOutboundTlsVerification === 'function' &&
             typeof mode.dialsPlainHttpOutbound === 'function',
             'and the two predicates exist');
+
+    // H. EVERY OTHER DIALER (#201): the one helper and the process-wide hook.
+    const tlsModule = require('tls');
+    const httpsModule = require('https');
+    const dialOut = function (options) {
+      log.debug("Entering dialOut().");
+      log.debug("Leaving dialOut().");
+      return new Promise(function (resolve) {
+        const req = httpsModule.get(Object.assign({ host: '127.0.0.1',
+          port: trusted.address().port, path: '/' }, options),
+        function (res) {
+          res.resume();
+          resolve({ ok: true, status: res.statusCode });
+        });
+        req.on('error', function (e) {
+          resolve({ ok: false, code: e.code || '', message: e.message });
+        });
+      });
+    };
+    const opts = outboundTls.verifiedOptions(ca.certPem);
+    t.check(opts.rejectUnauthorized === true &&
+            opts.checkServerIdentity === outboundTls.checkServerIdentity &&
+            Array.isArray(opts.ca) && opts.ca.some(function (one) {
+              return one.trim() === ca.certPem.trim();
+            }),
+            'verifiedOptions() verifies, checks the host as RFC 9525 does, ' +
+            'and adds the CA beside node\'s store');
+    const viaHelper = await dialOut(Object.assign({}, opts,
+                                                  { agent: false }));
+    t.check(viaHelper.ok, 'a request with verifiedOptions() reaches a ' +
+            'server whose leaf names 127.0.0.1 in its SAN',
+            JSON.stringify(viaHelper));
+    const wrongName = await dialOut(Object.assign({}, opts, { agent: false,
+      servername: 'elsewhere.example',
+      checkServerIdentity: function (host, cert) {
+        return outboundTls.checkServerIdentity('elsewhere.example', cert);
+      } }));
+    t.check(!wrongName.ok && wrongName.code === 'ERR_TLS_CERT_ALTNAME_INVALID',
+            'and refuses one that does not name the host asked for',
+            JSON.stringify(wrongName));
+    const cnOnly = outboundTls.hostNameProblem('example.com',
+      { subject: { CN: 'example.com' }, subjectaltname: '' });
+    t.check(!!cnOnly, 'the host check never falls back to the common name ' +
+            '(RFC 9525 section 6.3)', cnOnly);
+    t.check(!!outboundTls.hostNameProblem('foo.example.com',
+      { subjectaltname: 'DNS:f*.example.com' }) &&
+            !outboundTls.hostNameProblem('foo.example.com',
+              { subjectaltname: 'DNS:*.example.com' }),
+            'and takes a wildcard only as a whole left-most label');
+    const before = tlsModule.checkServerIdentity;
+    outboundTls.installProcessWide();
+    t.check(tlsModule.checkServerIdentity === outboundTls.checkServerIdentity,
+            'installProcessWide() puts the check under every TLS client ' +
+            'that names none (it was ' + (before === outboundTls
+              .checkServerIdentity ? 'already installed' : 'node\'s') + ')');
+    const plain = await dialOut({ agent: false, ca: [ca.certPem],
+                               servername: 'elsewhere.example' });
+    t.check(!plain.ok && plain.code === 'ERR_TLS_CERT_ALTNAME_INVALID',
+            'so a plain https.get() naming no check of its own refuses a ' +
+            'host its server\'s certificate does not name',
+            JSON.stringify(plain));
+    const chainOnly = await dialOut({ agent: false, ca: [ca.certPem],
+      servername: 'elsewhere.example',
+      checkServerIdentity: outboundTls.checkChainOnly });
+    t.check(chainOnly.ok, 'while checkChainOnly() — the kubelet with its ' +
+            'own CA — holds the chain to the path rules and not the name',
+            JSON.stringify(chainOnly));
   } finally {
     touched.forEach(function (key) {
       try {

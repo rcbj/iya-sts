@@ -76,6 +76,8 @@ on:
 
 permissions:
   contents: read
+  # The private test corpora image on ghcr.io (#253).
+  packages: read
 
 jobs:
   # ---------------------------------------------------------------------------
@@ -131,6 +133,15 @@ jobs:
       # installed here. This is where the parent project's workflow installs
       # docker-compose, and the difference is that its launcher supports the v1
       # standalone binary as well; tests/tools/compose.sh finds either.
+      # THE TEST CORPORA ARE A PRIVATE IMAGE ON GHCR.IO (#253): tests/Dockerfile
+      # copies them out of ghcr.io/rcbj/iya-sts-test-corpora by digest, and a
+      # private package is pulled only by a logged-in client. GITHUB_TOKEN
+      # carries packages: read (the workflow's permissions) and the package
+      # grants this repository access.
+      - name: Log in to GitHub Container Registry
+        run: echo "${{ secrets.GITHUB_TOKEN }}" |
+             docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
       - name: Show docker and compose versions
         run: |
           docker --version
@@ -216,6 +227,15 @@ jobs:
         uses: actions/checkout@v4
         with:
           submodules: recursive
+
+      # THE TEST CORPORA ARE A PRIVATE IMAGE ON GHCR.IO (#253): tests/Dockerfile
+      # copies them out of ghcr.io/rcbj/iya-sts-test-corpora by digest, and a
+      # private package is pulled only by a logged-in client. GITHUB_TOKEN
+      # carries packages: read (the workflow's permissions) and the package
+      # grants this repository access.
+      - name: Log in to GitHub Container Registry
+        run: echo "${{ secrets.GITHUB_TOKEN }}" |
+             docker login ghcr.io -u "${{ github.actor }}" --password-stdin
 
       - name: Show docker and compose versions
         run: |
@@ -369,6 +389,15 @@ jobs:
         uses: actions/checkout@v4
         with:
           submodules: recursive
+
+      # THE TEST CORPORA ARE A PRIVATE IMAGE ON GHCR.IO (#253): tests/Dockerfile
+      # copies them out of ghcr.io/rcbj/iya-sts-test-corpora by digest, and a
+      # private package is pulled only by a logged-in client. GITHUB_TOKEN
+      # carries packages: read (the workflow's permissions) and the package
+      # grants this repository access.
+      - name: Log in to GitHub Container Registry
+        run: echo "${{ secrets.GITHUB_TOKEN }}" |
+             docker login ghcr.io -u "${{ github.actor }}" --password-stdin
 
       - name: Show docker and compose versions
         run: |

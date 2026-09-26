@@ -543,6 +543,24 @@ class Scep {
       return read.refusal;
     }
     if (this.spkiSha256(read.csr.publicKeyPem) !== message.signer.spkiSha256) {
+      // **A PKCSReq SIGNED BY A CERTIFICATE THIS REALM ISSUED IS A RENEWAL
+      // (#210, 2026-09-24).** RFC 8894 section 2.3 names that RenewalReq;
+      // the drafts before it (draft-nourse-scep) renewed with a PKCSReq
+      // signed by the certificate being renewed, and sscep still does — it
+      // has no RenewalReq at all, and `sscep enroll -K old.key -O old.crt`
+      // was refused here STS-SCEP-0034. The section's own note says most
+      // implementations keep to the historical form. So the signer is asked
+      // exactly what a RenewalReq's signer is asked (`signerEntry()`), and a
+      // PKCSReq that passes is handled by `renewalReq()` — the same
+      // authority a RenewalReq already had, and nothing more. A signer this
+      // realm did not issue is still the refusal below.
+      const renewing = await core.authenticatePresentedCertificate(
+        message.signer.pem, 'scep', { clientAuth: false });
+      if (renewing.ok) {
+        log.debug("Leaving Scep.pkcsReq(). A renewal in the historical " +
+                  "form.");
+        return this.renewalReq(ctx);
+      }
       log.debug("Leaving Scep.pkcsReq(). Two keys.");
       return this.failed('STS-SCEP-0034',
                          'The request is signed by a certificate ' +
@@ -947,7 +965,24 @@ class Scep {
     if (req.method === 'POST') {
       const type = String(req.headers['content-type'] || '').split(';')[0]
         .trim().toLowerCase();
-      if (type !== 'application/x-pki-message' || !Buffer.isBuffer(req.body)) {
+      // **`application/octet-stream` AND NO CONTENT TYPE AT ALL ARE ACCEPTED
+      // TOO (#210, #211, 2026-09-24).** RFC 8894 section 4.3 names
+      // x-pki-message, and the two independent clients the interop jobs
+      // drive send neither: micromdm's — the SCEP client of the Apple MDM
+      // ecosystem — POSTs every PKIOperation as octet-stream (its own server
+      // accepts it), and sscep sends no Content-Type header whatsoever. The
+      // first two are raw-parsed (`common/app.js`); a body with no type met
+      // the text parser, which keeps the bytes it was sent as `req.rawBody`
+      // before it decodes them, so those are what is read here. Either way
+      // the bytes checked are the bytes sent: what the body IS is decided by
+      // the CMS parse that follows, not by the label, and any OTHER type —
+      // one that says the body is something else — is still 415.
+      const bytes = type === ''
+        ? (Buffer.isBuffer(req.rawBody) ? req.rawBody : Buffer.alloc(0))
+        : req.body;
+      if ((type !== 'application/x-pki-message' &&
+           type !== 'application/octet-stream' && type !== '') ||
+          !Buffer.isBuffer(bytes)) {
         this.record({ operation: operation, outcome: 'refused', status: 415,
                       errorCode: 'STS-SCEP-0007' });
         this.scepError(res, 415, 'STS-SCEP-0007',
@@ -956,17 +991,17 @@ class Scep {
         log.debug("Leaving Scep.messageBytes(). Content type.");
         return null;
       }
-      if (req.body.length > limit) {
+      if (bytes.length > limit) {
         this.record({ operation: operation, outcome: 'refused', status: 413,
                       errorCode: 'STS-SCEP-0008' });
         this.scepError(res, 413, 'STS-SCEP-0008', 'The message is ' +
-                       req.body.length + ' bytes and scep.maxRequestBytes is ' +
+                       bytes.length + ' bytes and scep.maxRequestBytes is ' +
                        limit + '.');
         log.debug("Leaving Scep.messageBytes(). Too large.");
         return null;
       }
       log.debug("Leaving Scep.messageBytes(). POST.");
-      return req.body;
+      return bytes;
     }
     const text = String(req.query.message || '');
     if (text.length > Math.ceil(limit / 3) * 4 + 4) {

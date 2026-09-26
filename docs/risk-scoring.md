@@ -201,7 +201,11 @@ named by the `role-issuance` template's `neverLockOut` parameter
 
 The alarm is the one place where a step-up the person cannot answer is not a
 refusal. If you see it, enrol a second factor for that administrator and read
-the assessment's signals. Set `neverLockOut` to `none` to put the console
+the assessment's signals. An administrator with no second factor is also offered one,
+or required to set one up, by the authentication policy's
+`requireSecondFactorForAdministrators` (#246). When that happens at HIGH or
+MEDIUM it is recorded under `STS-RISK-0039`, because whoever has the password
+could be the one enrolling. Set `neverLockOut` to `none` to put the console
 under the ordinary rules.
 
 **If you are locked out anyway**, for example by an override of the policy,
@@ -374,8 +378,9 @@ ways in:
   expanded as it is read, and nothing expanded is written to disk. See
   [Uploading a file](#uploading-a-file). A short list can also be pasted on
   the same page, or sent as `content` to `POST /admin-api/risk/import`.
-- **At install time, with the loader.** Run it inside the image, with
-  `STS_DATABASE_URL` set:
+- **At install time, with the loader.** Run it inside the image. It
+  connects to the database the way the service does, from the same
+  settings (see step 3 below):
 
   ```bash
   node risk/risk_install.js \
@@ -543,16 +548,17 @@ The service itself dials none of them. On AWS, run the same command as a
 one-off task of the service's task definition, which is on the database's
 network.
 
-> **The database password.** The loader connects with `STS_DATABASE_URL`
-> only. It does not yet read the password from OpenBao or AWS Secrets Manager
-> the way the service does
-> ([#213](https://github.com/rcbj/iya-sts/issues/213)), so on the stacks this
-> repository ships it cannot sign in to the database by itself. Until that is
-> fixed, read the password from your secret store and pass it as
-> `docker exec -e PGPASSWORD=… sts node risk/risk_install.js …`. The
-> container's `STS_DATABASE_URL` carries no password, so the database client
-> uses `PGPASSWORD` instead. Or use the watched directory below, which runs
-> inside the service and uses its connection.
+The loader connects to the database exactly as the service does. It reads
+the same settings: the connection string from `STS_DATABASE_URL` or
+`persistence.databaseUrl`, and the password from
+`persistence.databasePasswordProvider` (OpenBao, AWS Secrets Manager or
+another secret store). It also verifies the database server's certificate
+when `persistence.databaseTlsRejectUnauthorized` is on. So in a container of
+the service's image it needs nothing else: no password on the command line
+and no `PGPASSWORD`. For a throwaway database with no secret store, a
+password written into `STS_DATABASE_URL` still works. If the secret store is
+configured but cannot be read, the loader stops with `STS-RISK-0040` and the
+store's own reason, and imports nothing.
 
 The loader prints one line per dataset, and exits non-zero if any failed.
 Running it again is safe: a version already loaded is skipped.
@@ -791,7 +797,17 @@ events it sends. At `HIGH`, each one ends its own sessions for that person
   assessments, people by current standing, a lookup of any address, every
   dataset and its versions, the providers, their terms and who accepted
   them, and the refused passwords. It also shows the data credits and these
-  settings. `?subject=` narrows the assessments to one person.
+  settings. `?subject=` narrows the assessments to one person. The
+  assessments and the standings are paged, each on its own parameter
+  (`assessmentsPage`, `subjectsPage`) with `per` shared, as every other
+  console list is; `GET /admin-api/risk` takes the same parameters and
+  answers `assessmentsPaging` and `subjectsPaging`. Every person is shown
+  by username, linked to their Directory → Users page, with the
+  `urn:uuid:` subject under it; the API's rows carry `username` too.
+- **Both pages are per realm.** Each shows the realm it is opened in:
+  `/admin/risk` is the default realm's, and another realm's risk is at
+  `/realm/<id>/admin/risk` (`/realm/<id>/admin-api/risk` in the API).
+  Nothing in the request names another realm.
 - **A realm's own administrators** see both pages for their realm, at
   `/realm/<id>/admin/risk` and `/realm/<id>/admin/risk-scoring`. They see:
   - the realm's assessments;

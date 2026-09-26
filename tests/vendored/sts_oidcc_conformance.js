@@ -201,12 +201,12 @@ const EXPECTED = {
   // tests/session_management.js and tests/vendored/sts_session_management.js.
   "session/oidcc-session-management-rp-initiated-logout": "HtmlUnit " +
     "checks frame-ancestors against the framed document's own origin, so " +
-    "the suite's browser never loads the OP iframe (3bk)"
+    "the suite's browser never loads the OP iframe (3bl)"
 };
 
 // FAILURE conditions this service keeps, keyed by the suite's condition (a
 // module still fails if anything ELSE in it fails) — the same sentences as
-// `oauth-oidc/CLAUDE.md` 3bk.
+// `oauth-oidc/CLAUDE.md` 3bl.
 const KNOWN_FAILURES = {
   // The suite's own contradiction: this module requires verified_claims to
   // be ABSENT from the ID Token (EnsureIdTokenDoesNotContainVerifiedClaims,
@@ -227,7 +227,7 @@ const KNOWN_FAILURES = {
 };
 
 // Conditions whose WARNING this service keeps, and why — the same sentences
-// as `oauth-oidc/CLAUDE.md` 3bk.
+// as `oauth-oidc/CLAUDE.md` 3bl.
 const KNOWN_WARNINGS = {
   WarnOnUnusableJwksKeys: "the realm's JWKS carries post-quantum keys " +
     "(kty AKP, ML-DSA and SLH-DSA) the suite cannot parse; rcbj " +

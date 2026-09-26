@@ -680,7 +680,7 @@ async function theReadsAgreeWithTheConsole(session) {
 // ---------------------------------------------------------------------------
 // The revocation is the real one.
 // ---------------------------------------------------------------------------
-async function revokingHereReachesIntrospection() {
+async function revokingHereReachesIntrospection(session) {
   log.debug("Entering revokingHereReachesIntrospection().");
   log.info("=== A revocation through the API reaches RFC 7662 ===");
   // THE PERSON AND THE CLIENT ARE REAL (2026-09-12). The person is the console
@@ -695,6 +695,13 @@ async function revokingHereReachesIntrospection() {
   // password grant is refused in product mode (RFC 9700 section 2.4), so the
   // console account signs in with its password the way a browser would, as a
   // client registered here with its redirect URI and a secret.
+  // THE CONSOLE'S SIGN-ON SESSION IS REUSED (2026-09-26): the console account
+  // holds Admin Write, and since #246 an administrator with no second factor
+  // is OFFERED one at every password sign-in. `console_signin.js` presses
+  // Ignore on that step; the vendored `sts_applications.js` helper does not
+  // know it, so a second password sign-in here stopped on the offer. The
+  // session the console sign-in established is what a browser would carry to
+  // the authorization endpoint anyway.
   const clientSecret = "admin-api-test-client-secret";
   const redirectUri = "https://admin-api-test.example.test/cb";
   await registry.provision(base, {
@@ -710,7 +717,7 @@ async function revokingHereReachesIntrospection() {
   const granted = await registry.authorizationCode(base, {
     clientId: CONSOLE_USER, redirectUri: redirectUri, username: CONSOLE_USER,
     password: consoleSignIn.consolePasswordFor(CONSOLE_USER),
-    scope: "openid" });
+    cookie: session || undefined, scope: "openid" });
   const minted = await common.httpJson(base + "/oauth2/token", {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -1603,7 +1610,7 @@ async function test() {
   // First of the three that need artifacts to exist, because it is the one
   // that mints them: a schema checked against an empty list, and a comparison
   // of 0 against 0, both pass and prove nothing.
-  await revokingHereReachesIntrospection();
+  await revokingHereReachesIntrospection(session);
   await theSchemasMatchTheReplies(doc);
   await theReadsAgreeWithTheConsole(session);
   await customClaimsCanBeChangedAndPutBack();

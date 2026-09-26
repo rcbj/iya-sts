@@ -1328,6 +1328,13 @@ class RequestWorker {
       if (message.tls.trustAnchorPem) {
         process.env.STS_TLS_SERVER_ANCHOR_PEM = message.tls.trustAnchorPem;
       }
+      // THE OTHER LEAVES THE SOCKET PRESENTS (#248) — an ML-DSA certificate
+      // beside the RSA one — concatenated for the chain's reason, and public
+      // for the same one. The SAML metadata a worker serves publishes them.
+      if (message.tls.extraCertPems && message.tls.extraCertPems.length) {
+        process.env.STS_TLS_SERVER_EXTRA_CERTS_PEM =
+          message.tls.extraCertPems.join('');
+      }
     }
     // -------------------------------------------------------------------
     // THE SIGNING KEYS, ON THE SAME CHANNEL AND FOR THE SAME REASON.

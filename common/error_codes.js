@@ -986,6 +986,11 @@ const CODES = [
       'a dispatched request reached it, and the request was sent again on ' +
       'a new connection (#77).',
     spec: 'Nothing: the client gets the worker\'s answer' },
+  { code: 'STS-WORKER-0043',
+    summary: 'A request worker exited (or could not start) and a ' +
+      'replacement was forked into its pool and slot.',
+    spec: 'Nothing directly: requests in flight on the dead worker were ' +
+      'answered 502 (STS-WORKER-0030)' },
   // ===== STORE =============================================================
   { code: 'STS-STORE-0001',
     summary: 'A scheduled persistence flush threw past its own handler.',
@@ -1534,7 +1539,9 @@ const CODES = [
     spec: 'refusal by the calling protocol' },
   { code: 'STS-KEYS-0023',
     summary: 'An XML-encrypted element decrypted with AES-GCM to something ' +
-      'that is not well-formed XML. (AES-CBC: STS-KEYS-0078 since #202.)',
+      'that is not well-formed XML — or, since #193, to octets that are not ' +
+      'UTF-8 at all (binary data). (AES-CBC: every such failure is ' +
+      'STS-KEYS-0078 since #202, one answer, closing the padding oracle.)',
     spec: 'refusal by the calling protocol' },
   { code: 'STS-KEYS-0024',
     summary: 'An XML-encrypted element\'s key could not be unwrapped with ' +
@@ -1757,9 +1764,11 @@ const CODES = [
       'key operation (#168).',
     spec: 'the caller\'s refusal — federation answers STS-FED-0139' },
   { code: 'STS-KEYS-0072',
-    summary: 'An rsa-oaep EncryptedKey named a digest and mask generation ' +
-      'function this service cannot unwrap with: an unknown one, or two ' +
-      'that differ (node derives MGF1 from the OAEP digest).',
+    summary: 'An rsa-oaep or rsa-oaep-mgf1p EncryptedKey named a digest ' +
+      'and mask generation function this service cannot unwrap with: an ' +
+      'unknown one, or two that differ (node derives MGF1 from the OAEP ' +
+      'digest; rsa-oaep-mgf1p fixes MGF1 at SHA-1, so any other digest ' +
+      'there, since #193).',
     spec: 'the caller\'s refusal' },
   { code: 'STS-KEYS-0073',
     summary: 'An XML element\'s key is agreed by an AgreementMethod other ' +
@@ -1796,6 +1805,13 @@ const CODES = [
       'and which is deliberately one answer — the padding oracle of XML ' +
       'Encryption 1.1 section 6.1.3, closed (#202).',
     spec: 'refusal by the calling protocol' },
+  { code: 'STS-KEYS-0090',
+    summary: 'An XML element encrypted by ECDH-ES key agreement derives its ' +
+      'key with something other than a SHA-256/384/512 ConcatKDF (PBKDF2, ' +
+      'a SHA-1 digest, none), or names its originator key on a curve this ' +
+      'service does not agree over; refused before any key operation ' +
+      '(#193 — it was reported as a key encrypted to another certificate).',
+    spec: 'the caller\'s refusal' },
   { code: 'STS-PKI-0001',
     summary: 'A certificate-authority use case prefers a key algorithm this ' +
       'service cannot use, so its Issuing CA was built with the ' +
@@ -2442,8 +2458,8 @@ const CODES = [
     spec: 'OCSPResponse unauthorized(6), HTTP 200' },
   { code: 'STS-PKI-0134',
     summary: 'A request reached the plain-HTTP revocation listener for a ' +
-      'path outside /pki/. That socket serves the revocation endpoints and ' +
-      'nothing else.',
+      'path outside /pki/ and /enroll/scep. That socket serves the ' +
+      'revocation endpoints, SCEP and /healthcheck, and nothing else.',
     spec: 'HTTP 404 text/plain' },
   { code: 'STS-PKI-0140',
     summary: 'A certificate upload named no application, or the registration ' +
@@ -2689,7 +2705,80 @@ const CODES = [
       'the live one.',
     spec: 'none — logged. The key still signs; its certificate chains to ' +
       'an authority nothing publishes until the slot is certified again' },
+  { code: 'STS-PKI-0194',
+    summary: 'A certificate path a signer\'s key or an upload depends on ' +
+      'breaks a NAME CONSTRAINT: a name of a certificate below a CA is ' +
+      'outside what that CA permits or inside what it excludes, is ' +
+      'malformed where it is constrained, is in a form constrained in a way ' +
+      'this service does not evaluate, or the names and constraints are ' +
+      'too many to compare (RFC 5280 section 4.2.1.10; pki.pathRuleProblem, ' +
+      '#201).',
+    spec: 'invalid_grant at the grant, invalid_client at client ' +
+      'authentication; the console\'s error list for an upload' },
+  { code: 'STS-PKI-0195',
+    summary: 'A certificate on a signer\'s or an uploaded path carries a ' +
+      'CRITICAL extension this service does not implement, which RFC 5280 ' +
+      'section 4.2 says must be refused (pki.pathRuleProblem, #201).',
+    spec: 'invalid_grant at the grant, invalid_client at client ' +
+      'authentication; the console\'s error list for an upload' },
+  { code: 'STS-PKI-0196',
+    summary: 'A certificate on a signer\'s or an uploaded path breaks a rule ' +
+      'of RFC 5280 section 4 a relying party holds it to: an extension ' +
+      'twice, an unreadable basicConstraints, keyUsage, extKeyUsage, ' +
+      'subjectAltName or nameConstraints, an empty subject without a ' +
+      'critical subjectAltName, a CA with an empty subject, keyCertSign or ' +
+      'nameConstraints on a certificate that is not a CA, or an ML-DSA key ' +
+      'with a keyUsage RFC 9881 does not permit (pki.pathRuleProblem, #201).',
+    spec: 'invalid_grant at the grant, invalid_client at client ' +
+      'authentication; the console\'s error list for an upload' },
   // ===== ENROLL ============================================================
+  { code: 'STS-PKI-0197',
+    summary: 'A certificate on a path below its anchor is signed with a ' +
+      'broken hash — MD2 or MD5 on every path, SHA-1 on every path but this ' +
+      'service\'s own hierarchy in a development realm (#181) — and the ' +
+      'path is refused (pki.pathRuleProblem, #201).',
+    spec: 'invalid_grant at the grant, invalid_client at client ' +
+      'authentication; the console\'s error list for an upload' },
+  { code: 'STS-PKI-0198',
+    summary: 'A certificate chain OpenSSL verified in a TLS handshake breaks ' +
+      'the path rules every other path here is held to ' +
+      '(pki.peerChainProblem, #201): on the main port the client ' +
+      'certificate is treated as unverified (authorized false); on an ' +
+      'outbound request the request fails as a TLS error. Also logged when ' +
+      'the rules could not be asked.',
+    spec: 'none on the wire: an unverified client certificate, or the ' +
+      'family\'s own failure for an outbound request' },
+  { code: 'STS-PKI-0199',
+    summary: 'RFC 5280 section 6.1\'s certificate policy processing refuses ' +
+      'a path: a certificate on it requires an explicit policy ' +
+      '(policyConstraints) and no acceptable policy remains in the ' +
+      'valid_policy_tree, a policyMappings maps anyPolicy, or the policies ' +
+      'and mappings make a tree too large to evaluate ' +
+      '(pki.pathPolicyOutcome, #201).',
+    spec: 'invalid_grant at the grant, invalid_client at client ' +
+      'authentication; the console\'s error list for an upload' },
+  { code: 'STS-PKI-0200',
+    summary: 'A certificate authority build named an alternative key ' +
+      'algorithm (pki.alternativeKeyAlgorithm, or altKeyAlg on the form) ' +
+      'that is not a pure post-quantum signature algorithm this service ' +
+      'generates, nor "none" (#68).',
+    spec: 'console: the page\'s error list; /admin-api: HTTP 400 ' +
+      '{ ok: false, errors }' },
+  { code: 'STS-PKI-0201',
+    summary: 'A certificate carries an ITU-T X.509 clause 9.8 alternative ' +
+      'signature that does not verify under its issuer\'s alternative key ' +
+      '(any path: this realm\'s own, an uploaded chain, a registered root), ' +
+      'or — on a path to this realm\'s own hierarchy — cannot be checked ' +
+      '(#68).',
+    spec: 'the verifier\'s refusal: whatever the certificate was presented ' +
+      'for is refused as an untrusted certificate' },
+  { code: 'STS-PKI-0202',
+    summary: 'A certificate on a path to this realm\'s own hierarchy carries ' +
+      'no alternative signature although its issuer holds an alternative ' +
+      '(post-quantum) key — a hybrid path presented as classical, the ' +
+      'downgrade #68 refuses.',
+    spec: 'the verifier\'s refusal: whatever the certificate was presented ' +
+      'for is refused as an untrusted certificate' },
   { code: 'STS-ENROLL-0001',
     summary: 'A certificate request named a profile that is not one of the nine issued over an enrollment protocol.',
     spec: 'the protocol\'s refusal: ACME malformed / badCSR, EST HTTP 400, SCEP failInfo badRequest' },
@@ -3161,7 +3250,8 @@ const CODES = [
     summary: 'The SCEP RA certificate could not be issued or its replacement could not be recorded.',
     spec: 'HTTP 503 text/plain, or the console/API refusal' },
   { code: 'STS-SCEP-0007',
-    summary: 'A PKIOperation POST did not carry Content-Type application/x-pki-message.',
+    summary: 'A PKIOperation POST carried a Content-Type other than ' +
+      'application/x-pki-message, application/octet-stream or none.',
     spec: 'HTTP 415 text/plain' },
   { code: 'STS-SCEP-0008',
     summary: 'A pkiMessage was larger than scep.maxRequestBytes.',
@@ -3224,7 +3314,9 @@ const CODES = [
     summary: 'A SCEP certificate request carries a key that is not RSA; SCEP encrypts its reply with RSA key transport.',
     spec: 'CertRep FAILURE badAlg' },
   { code: 'STS-SCEP-0034',
-    summary: 'A PKCSReq was signed by a certificate whose key is not the key in the PKCS#10 request (RFC 8894 section 2.3).',
+    summary: 'A PKCSReq was signed by a certificate whose key is not the ' +
+      'key in the PKCS#10 request, and which this realm did not issue (RFC ' +
+      '8894 section 2.3; one this realm issued makes it a renewal).',
     spec: 'CertRep FAILURE badMessageCheck' },
   { code: 'STS-SCEP-0035',
     summary: 'A PKCSReq carried no challengePassword attribute.',
@@ -4408,6 +4500,11 @@ const CODES = [
       'password or wallet after another factor, or an emailed code or ' +
       'link) (#64).',
     spec: 'the door\'s own refusal page' },
+  { code: 'STS-AUTHN-0270',
+    summary: 'Ignore was posted on a second-factor set-up step that was ' +
+      'REQUIRED rather than offered (#246): only an administrator the ' +
+      'authentication policy OFFERS a second factor may decline it.',
+    spec: 'HTTP 400, the set-up page again' },
   { code: 'STS-OAUTH-0001',
     summary: 'A JWT client assertion could not be read as a JWT (its header ' +
       'is not base64url JSON).',
@@ -6988,16 +7085,95 @@ const CODES = [
       'parameter.',
     spec: 'redirect {error: invalid_request}' },
   { code: 'STS-OAUTH-0689',
+    summary: 'The device authorization grant or endpoint was used ' +
+      'in a realm where oauth2.deviceAuthorization is off (RFC 8628, #150).',
+    spec: 'HTTP 404 {error: invalid_request} at the endpoint; {error: ' +
+      'unsupported_grant_type} at the token endpoint' },
+  { code: 'STS-OAUTH-0690',
+    summary: 'A device authorization request was malformed (RFC ' +
+      '8628 section 3.1, #150).',
+    spec: 'HTTP 400 {error: invalid_request}' },
+  { code: 'STS-OAUTH-0691',
+    summary: 'A device authorization request\'s client did not ' +
+      'authenticate as it registered to (RFC 8628 section 3.1, #150).',
+    spec: 'HTTP 401 {error: invalid_client}' },
+  { code: 'STS-OAUTH-0692',
+    summary: 'A client that did not register the device_code grant ' +
+      'asked the device authorization endpoint for codes (#150).',
+    spec: 'HTTP 400 {error: unauthorized_client}' },
+  { code: 'STS-OAUTH-0693',
+    summary: 'The DPoP proof on a device authorization request did ' +
+      'not verify (RFC 9449, OpenID Connect Key Binding, #150).',
+    spec: 'HTTP 400 {error: invalid_dpop_proof}' },
+  { code: 'STS-OAUTH-0694',
+    summary: 'The device authorization endpoint failed ' +
+      'unexpectedly (#150).',
+    spec: 'HTTP 500 {error: server_error}' },
+  { code: 'STS-OAUTH-0695',
+    summary: 'A device_code grant named no device authorization of ' +
+      'this client (RFC 8628 section 3.5, #150).',
+    spec: 'HTTP 400 {error: invalid_grant}' },
+  { code: 'STS-OAUTH-0696',
+    summary: 'A device polled before the person answered (RFC 8628 ' +
+      'section 3.5, #150). Expected, not a fault.',
+    spec: 'HTTP 400 {error: authorization_pending}' },
+  { code: 'STS-OAUTH-0697',
+    summary: 'A device polled sooner than its interval, which ' +
+      'grows by five seconds (RFC 8628 section 3.5, #150).',
+    spec: 'HTTP 400 {error: slow_down}' },
+  { code: 'STS-OAUTH-0698',
+    summary: 'A device code expired before the person answered ' +
+      '(RFC 8628 section 3.5, #150).',
+    spec: 'HTTP 400 {error: expired_token}' },
+  { code: 'STS-OAUTH-0699',
+    summary: 'The person denied a device\'s sign-in on ' +
+      '/portal/device (RFC 8628 section 3.5, #150).',
+    spec: 'HTTP 400 {error: access_denied}' },
+  { code: 'STS-OAUTH-0700',
+    summary: 'A device code whose tokens were already issued was ' +
+      'presented again (#150).',
+    spec: 'HTTP 400 {error: invalid_grant}' },
+  { code: 'STS-OAUTH-0701',
+    summary: 'A device code bound to a DPoP key was redeemed ' +
+      'without a proof from that key (#150).',
+    spec: 'HTTP 400 {error: invalid_dpop_proof}' },
+  { code: 'STS-OAUTH-0702',
+    summary: 'A grant holding bound_key was redeemed without a ' +
+      'DPoP proof (OpenID Connect Key Binding, #150).',
+    spec: 'HTTP 400 {error: invalid_dpop_proof}' },
+  { code: 'STS-OAUTH-0703',
+    summary: 'A grant holding bound_key was redeemed with a DPoP ' +
+      'proof whose c_s256 is not the hash of the code (OpenID Connect Key ' +
+      'Binding, #150).',
+    spec: 'HTTP 400 {error: invalid_dpop_proof}' },
+  { code: 'STS-OAUTH-0704',
+    summary: 'An authorization request asked for bound_key without ' +
+      'dpop_jkt (OpenID Connect Key Binding, #150).',
+    spec: 'redirect {error: invalid_request}' },
+  { code: 'STS-OAUTH-0705',
+    summary: 'An authorization request asked for bound_key outside ' +
+      'response_type=code (OpenID Connect Key Binding, #150).',
+    spec: 'redirect {error: invalid_request}' },
+  { code: 'STS-OAUTH-0706',
+    summary: 'A refresh of a grant whose ID Token is key-bound ' +
+      'carried no proof from that key (OpenID Connect Key Binding, #150).',
+    spec: 'HTTP 400 {error: invalid_dpop_proof}' },
+  { code: 'STS-OAUTH-0707',
+    summary: 'A key-bound ID Token was presented at token exchange ' +
+      'without a DPoP proof from the key its cnf names (OpenID Connect Key ' +
+      'Binding section 7, #150).',
+    spec: 'HTTP 400 {error: invalid_dpop_proof}' },
+  { code: 'STS-OAUTH-0708',
     summary: 'Under FAPI 1.0 Advanced, an authorization request asked for ' +
       'response_type code with a response mode that is not JARM (Part 2 ' +
       'section 5.2.2 item 2, #187).',
     spec: 'invalid_request' },
-  { code: 'STS-OAUTH-0690',
+  { code: 'STS-OAUTH-0709',
     summary: 'Under FAPI 1.0 Advanced, an authorization request (its ' +
       'signed request object) named no scope; RFC 6749 section 3.3\'s ' +
       'refusal rather than a default (#187).',
     spec: 'invalid_request' },
-  { code: 'STS-OAUTH-0691',
+  { code: 'STS-OAUTH-0710',
     summary: 'An RP-Initiated Logout request carried a ' +
       'post_logout_redirect_uri with neither an id_token_hint nor a ' +
       'client_id, so it was not followed (section 2: nothing confirms the ' +
@@ -7466,6 +7642,14 @@ const CODES = [
       'mode named a subject no live session here gave the asking relying ' +
       'party (by the NameIdentifier it was issued). #189.',
     spec: 'SOAP samlp:Response with status samlp:Requester (HTTP 200)' },
+  { code: 'STS-SAML-0097',
+    summary: 'The TLS certificate the SAML back channel presents (this ' +
+      'process\'s main-port leaves, or another cluster node\'s off its ' +
+      'membership row) could not be read while a SAML 2.0 or SAML 1.1 ' +
+      'metadata document was built, so the document went out without that ' +
+      'KeyDescriptor and a service provider authenticating the back channel ' +
+      'from metadata will refuse the node it names none for. #248.',
+    spec: 'none — the metadata is served (HTTP 200) without the key' },
   // ===== WSTRUST ===========================================================
   { code: 'STS-WSTRUST-0001',
     summary: 'The RequestSecurityToken body is not well-formed XML (or is ' +
@@ -9936,6 +10120,20 @@ const CODES = [
       'the client it was issued to no longer declares that scope in its ' +
       'oauthAllowedScope.',
     spec: 'HTTP 403 insufficient_scope (SCIM Error)' },
+  { code: 'STS-SCIM-0080',
+    summary: 'A request named a path under /scim/v2 that is no SCIM ' +
+      'endpoint; it is answered in the SCIM Error schema rather than by ' +
+      'express as an HTML page (#206).',
+    spec: 'HTTP 404 (SCIM Error, RFC 7644 section 3.12)' },
+  { code: 'STS-SCIM-0081',
+    summary: 'A PUT, PATCH or DELETE carried an If-Match other than *, and ' +
+      'this service keeps no entity-tags, so no version can match it ' +
+      '(RFC 9110 section 13.1.1); nothing was changed (#206).',
+    spec: 'HTTP 412 (SCIM Error, RFC 7644 sections 3.12 and 3.14)' },
+  { code: 'STS-SCIM-0082',
+    summary: 'A filter ordered (gt, ge, lt, le) a boolean or binary ' +
+      'attribute, which RFC 7644 section 3.4.2.2 refuses (#206).',
+    spec: 'HTTP 400 invalidFilter (SCIM Error)' },
   // ===== SPIFFE ============================================================
   { code: 'STS-SPIFFE-0001',
     summary: 'A SPIFFE gRPC handler failed with something that was not a ' +
@@ -10593,6 +10791,15 @@ const CODES = [
       'read barrier, so the exception could not reach grpc-js; a unary ' +
       'call is answered INTERNAL.',
     spec: 'INTERNAL for a unary call' },
+  { code: 'STS-SPIFFE-0144',
+    summary: 'A certificate presented to the SPIRE Server or Broker API was ' +
+      'signed by an authority this trust domain trusts and is refused: the ' +
+      'two-certificate path breaks RFC 5280 (pki.verifyIssuedDirectly — a ' +
+      'critical extension nothing here implements, a name constraint, a ' +
+      'malformed certificate) or it is not a leaf X509-SVID (cA set, or a ' +
+      'keyUsage without digitalSignature or with keyCertSign or cRLSign; ' +
+      'X509-SVID section 4.3). #201.',
+    spec: 'UNAUTHENTICATED / PERMISSION_DENIED, as for any unverified caller' },
   // ===== TLS ===============================================================
   { code: 'STS-TLS-0001',
     summary: 'The service did not start: tls.minVersion or tls.ciphers ' +
@@ -10675,7 +10882,8 @@ const CODES = [
     spec: '' },
   { code: 'STS-TLS-0021',
     summary: 'A TLS handshake failed on a listener this module watches — ' +
-      'a version, cipher or certificate mismatch, or a non-TLS client. It ' +
+      'a version or cipher mismatch, or a non-TLS client; a client refusing ' +
+      'this service\'s certificate is STS-TLS-0034 since #225. It ' +
       'named the required-client-certificate listener until 2026-09-16, when ' +
       'that listener was deleted; it is now the main port, where a client ' +
       'certificate is asked for and never required',
@@ -10738,6 +10946,13 @@ const CODES = [
       're-issued; the others were still told, and the main port serves the ' +
       'new one.',
     spec: '' },
+  { code: 'STS-TLS-0034',
+    summary: 'A TLS client REFUSED this service\'s certificate: it sent a ' +
+      'certificate alert (bad_certificate, unsupported_certificate, ' +
+      'certificate_revoked, certificate_expired, certificate_unknown or ' +
+      'unknown_ca) during the handshake. From a browser it almost always ' +
+      'means the client does not trust this service\'s Root CA (#225).',
+    spec: 'TLS handshake failure (the client closed the connection)' },
   // ===== VC ================================================================
   { code: 'STS-VC-0001',
     summary: 'An oid4vci encryption setting names no content encryption ' +
@@ -11176,6 +11391,60 @@ const CODES = [
       'response named no outstanding request\'s key or could not be ' +
       'opened (OpenID4VP 1.0 section 8.3.1, #187).',
     spec: 'invalid_request (HTTP 400)' },
+  { code: 'STS-VC-0100',
+    summary: 'A VC-API test endpoint (/vc-api/*, the Bitstring Status ' +
+      'List publish hook) was called in a realm whose test controls are ' +
+      'closed — a product realm — and answered as though it did not exist ' +
+      '(#194).',
+    spec: 'HTTP 404' },
+  { code: 'STS-VC-0101',
+    summary: 'A VC-API test endpoint was presented an access token it ' +
+      'refused: not issued by this realm, not an access token, revoked, ' +
+      'without the vc-api:issue / vc-api:verify scope it needs, or issued ' +
+      'to a client that no longer declares that scope (#194).',
+    spec: 'HTTP 401 / 403 with WWW-Authenticate' },
+  { code: 'STS-VC-0102',
+    summary: 'The VC-API issuer refused a credential that does not conform ' +
+      'to the VC Data Model (a MUST of VCDM 2.0 or 1.1 broken), or that ' +
+      'names an issuer other than the key it is asked to sign with (#194).',
+    spec: 'HTTP 400 {errors}' },
+  { code: 'STS-VC-0103',
+    summary: 'The VC-API issuer refused a credential JSON-LD safe mode ' +
+      'rejects — a context this service does not hold (it fetches none), ' +
+      'an undefined term, a redefined protected term, a relative IRI — or ' +
+      'one its cryptosuite could not sign (#194-#196).',
+    spec: 'HTTP 400 {errors}' },
+  { code: 'STS-VC-0104',
+    summary: 'A VC-API issue request named an issuer (a securing mechanism ' +
+      'and key) this service does not offer (#194).',
+    spec: 'HTTP 404 {errors}' },
+  { code: 'STS-VC-0105',
+    summary: 'A VC-API request failed inside this service rather than on ' +
+      'its input (#194).',
+    spec: 'HTTP 500 {errors}' },
+  { code: 'STS-VC-0106',
+    summary: 'The VC-API verifier refused a credential or presentation: ' +
+      'the data model, JSON-LD safe mode, a proof (the key, the purpose, ' +
+      'the challenge or domain, the signature, the issuer), or a status ' +
+      'list entry (#194-#198).',
+    spec: 'HTTP 400 {verified: false, errors}' },
+  { code: 'STS-VC-0107',
+    summary: 'A VC-API status change named a credential this realm issued ' +
+      'no status for, a status type or purpose it does not publish, or ' +
+      'tried to clear a revocation (#197).',
+    spec: 'HTTP 404 / 400 {errors}' },
+  { code: 'STS-VC-0108',
+    summary: 'A VC-API request body was not a JSON object, or carried a ' +
+      'polluting key or more depth or members than any document this ' +
+      'service accepts (validation.checkDocument, #194).',
+    spec: 'HTTP 400 {errors}' },
+  { code: 'STS-VC-0109',
+    summary: 'A DID the VC-API resolver was asked for could not be resolved, ' +
+      'or a DID URL dereferenced: not a DID (invalidDid, invalidDidUrl), a ' +
+      'method it does not support, a representation it does not produce, ' +
+      'or a did:web other than this realm\'s own, which it does not fetch ' +
+      '(notFound) (#199).',
+    spec: 'HTTP 400 / 404 / 501 with the resolution result\'s error' },
   { code: 'STS-SSF-0001',
     summary: 'A Shared Signals endpoint was called while the family is ' +
       'turned off (ssf.enabled).',
@@ -11847,6 +12116,22 @@ const CODES = [
       'The alarm: enrol a second factor for this person, and look at the ' +
       'assessment\'s signals.',
     spec: 'permitted; recorded on the audit row and logged as a warning' },
+  { code: 'STS-RISK-0039',
+    summary: 'An administrator with no second factor was sent to set one up ' +
+      '(offered or required, #246) at a sign-in whose risk is HIGH or ' +
+      'MEDIUM. The enrolment goes ahead so the console is never locked out ' +
+      '(#226); whoever holds the password could be the one enrolling, so ' +
+      'confirm it with the person.',
+    spec: 'the set-up step; recorded on the audit row and logged as a ' +
+      'warning' },
+  { code: 'STS-RISK-0040',
+    summary: 'The install-time dataset loader (risk/risk_install.ts) could ' +
+      'not make the database connection the way the service makes it ' +
+      '(#213): persistence.databasePasswordProvider names a secret store ' +
+      'whose password could not be read, or persistence.databaseUrl is not ' +
+      'a URL it can be put into. The provider\'s own reason follows. ' +
+      'Nothing is imported and the loader exits non-zero.',
+    spec: '' },
   // ===== MAIL ==============================================================
   { code: 'STS-MAIL-0001',
     summary: 'A message was not queued because no mail transport is ' +
@@ -15250,6 +15535,19 @@ const CODES = [
     summary: 'An unlink on /portal/claim-sources named a Claims Provider ' +
       'the person has no link to (#147).',
     spec: 'none (a portal page, HTTP 400)' },
+  { code: 'STS-PORTAL-0095',
+    summary: 'A user code typed or approved on /portal/device ' +
+      'matched no waiting device (#150).',
+    spec: 'none (a portal page, HTTP 404 or 400)' },
+  { code: 'STS-PORTAL-0096',
+    summary: 'A sign-on session typed too many user codes that ' +
+      'matched nothing on /portal/device and is refused for ten minutes ' +
+      '(RFC 8628 section 5.1, #150).',
+    spec: 'none (a portal page, HTTP 429)' },
+  { code: 'STS-PORTAL-0097',
+    summary: 'Answering a device sign-in on /portal/device failed ' +
+      'unexpectedly (#150).',
+    spec: 'none (a portal page, HTTP 500)' },
   { code: 'STS-LOGOUT-0001',
     summary: 'A sign-out named somebody other than the caller while naming ' +
       'another person is closed (logout.anyUser off, or product ' +

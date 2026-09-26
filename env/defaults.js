@@ -232,6 +232,7 @@ var config = {
     source: "auto",                  // Where signing keys come from; restart to apply
     plaintextRetention: "timed",     // How long a decrypted private key is kept
     plaintextTtlS: 300,              // Decrypted key idle timeout (seconds)
+    signerModel: "per-algorithm",    // Signer model
     kidFormat: "internal",           // Signed token kid format
     kekProvider: "file",             // Key-encryption key provider; restart to apply
     kekFile: "/run/secrets/sts-kek", // Key-encryption key file; restart to apply
@@ -336,6 +337,9 @@ var config = {
     basicAuthRealm: "sts",                       // Token endpoint Basic realm
     maxAuthorizationServerProfiles: 200,         // Named authorization servers (per realm)
     maxDevicesPerPerson: 20,                     // Devices one person may hold
+    deviceAuthorization: false,                  // Device authorization grant (RFC 8628)
+    deviceCodeLifetimeS: 600,                    // Device code lifetime (seconds)
+    deviceCodeIntervalS: 5,                      // Device code polling interval (seconds)
     ciba: false,                                 // CIBA (backchannel authentication)
     cibaDefaultExpiryS: 120,                     // CIBA request lifetime (s)
     cibaMaxExpiryS: 600,                         // CIBA request longest lifetime (s)
@@ -411,6 +415,7 @@ var config = {
     autoBuild: true,                            // Build the certificate authority at startup; restart to apply
     keyAlgorithm: "rsa-2048",                   // Default CA key algorithm
     signatureAlgorithm: "",                     // Default CA signature algorithm
+    alternativeKeyAlgorithm: "ml-dsa-87",       // CA alternative (post-quantum) key algorithm
     organisation: "sts",                        // Default organisation name (O=)
     personSelfService: true,                    // Let a person issue their own signing key pair
     leafLifetimeDays: 365,                      // Default lifetime of an issued key pair (days)
@@ -436,6 +441,7 @@ var config = {
     revocationCrlIssuersFile: "",               // Certificates that may sign an indirect CRL
     revocationLdap: "ldaps",                    // LDAP revocation addresses
     revocationLdapCaFile: "",                   // CA certificates for ldaps revocation directories
+    revocationHttpsCaFile: "",                  // CA certificates for https CRL and OCSP servers
     revocationLdapDirectory: "",                // Directory for CRL names relative to their issuer
     enrollmentMaxCertificatesPerEntry: 20       // Enrolled certificates one entry may hold
   },
@@ -779,6 +785,7 @@ var config = {
     bulkMaxOperations: 100,      // Bulk operation limit
     bulkMaxPayloadSize: 1048576, // Bulk payload limit
     authDiscovery: false,        // Authenticate discovery too
+    inventOnCreate: true,        // Fill a provisioned person in (development mode)
     authRealm: "SCIM",           // Authentication realm
     scopeRead: "scim:read",      // OAuth scope to read
     scopeWrite: "scim:write",    // OAuth scope to write

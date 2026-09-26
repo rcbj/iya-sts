@@ -15,6 +15,7 @@ provider for each of them**.
 | `document_settings.ts` | **The signature algorithm, the canonicalization and `<md:Organization>`** every signed document here asks the configuration for (2026-09-12). Registers nothing. |
 | `return_address.ts` | **Where a response may be delivered**: anything in development, a registered address in product (2026-09-12). Shared with WS-Federation. Registers nothing. |
 | `person_attributes.ts` | **The persona facts an assertion carries**, invented in development and read off the directory entry (or omitted) in product (2026-09-12). Registers nothing. |
+| `listener_keys.ts` | **The certificate the back channel presents, as a metadata key** (#248): every leaf the main port presents — every live cluster node's — as a `use="signing"` KeyDescriptor for both profiles' metadata. Registers nothing; reaches `tls/tls_server.js` lazily. See *THE BACK CHANNEL'S TLS CERTIFICATE IS IN THE METADATA*, at the end. |
 
 ## THE TWO PROFILES ARE SEPARATE IMPLEMENTATIONS, NOT ONE WITH A VERSION FLAG
 
@@ -1286,11 +1287,12 @@ names. No AuthnStatement, no SubjectConfirmation (`attributeQuery` in
 **Exceptions recorded on the tickets, not fixed here**: a SimpleSAMLphp SP
 cannot use the artifact profile at all (it sends an artifact-ProtocolBinding
 request over the artifact binding and publishes no ArtifactResolutionService
-— #191); SimpleSAMLphp's SOAP client pins the back channel's TLS certificate
-to the metadata's signing keys, which this service's listener certificate is
-not (whether the metadata should carry the listener's key is an owner decision,
-recorded on #189 — the Shibboleth SP trusts it here through its own StaticPKIX
-option); ECP is not claimed (#190).
+— #191); ECP is not claimed (#190). ~~SimpleSAMLphp's SOAP client pins the
+back channel's TLS certificate to the metadata's signing keys, which this
+service's listener certificate is not~~ — **decided and built on #248**: the
+metadata carries it now (the next section), so that pin would pass; with the
+artifact profile out of SimpleSAMLphp's reach there is still nothing of its
+to exercise it with.
 
 ## EVERY DOCUMENT HERE IS VALIDATED AGAINST THE PUBLISHED SCHEMAS (#188, 2026-09-24)
 
@@ -1307,3 +1309,57 @@ SAML document was a schema's, not the document's: `cm:CryptoMetadataLocation`
 in the metadata's `md:Extensions` (#42) was declared by no schema, and
 `/crypto/metadata.xsd` declares it now. **A new SAML document owes a
 scenario in that job.**
+
+## THE BACK CHANNEL'S TLS CERTIFICATE IS IN THE METADATA (#248, 2026-09-26)
+
+rcbj's decision on #189: **both identity providers' metadata publish the TLS
+certificate the SOAP endpoints present** — the ArtifactResolutionService and
+the AttributeService of SAML 2.0 (`/saml2/ars`, `/saml2/aa`) and the SAML 1.1
+responder, which is both. A service provider that authenticates the
+back-channel peer from metadata — the Shibboleth SP's ExplicitKey engine,
+SimpleSAMLphp's SOAP client — then needs no key handed to it some other way.
+`listener_keys.ts` is the rule and its header the argument; what a reader
+needs before changing it:
+
+* **`use="signing"`, in a KeyDescriptor of its own, LAST in the role.**
+  saml-metadata-2.0-os 2.4.1.1 has two uses and "omitted" means both; a TLS
+  key is not one anybody may encrypt to — nothing here decrypts with it — so
+  omitting `use` would invite an EncryptedID under a key whose holder does not
+  open XML Encryption. TLS server authentication is a signing use of a key and
+  is where every metadata-reading TLS engine looks. Last, so a consumer that
+  takes the first signing certificate for XML signatures still takes the XML
+  key (`tests/vendored/sts_xml_schema_validation.js` is one such consumer).
+* **In BOTH roles**: the IDPSSODescriptor (artifact resolution) and the
+  AttributeAuthorityDescriptor (the attribute query), because a service
+  provider looks up the keys of the role whose endpoint it is calling.
+* **What the cost is**: a consumer that verifies XML signatures against every
+  signing key will accept one made with the listener's key. That key is held by
+  the process that holds the XML key — except a `tls.certificateFile` an
+  operator supplied and shares with something in front of this service, which
+  then holds a key this metadata vouches for.
+* **Which certificates**: every leaf the main port presents
+  (`tls.certificateAlgorithms` may name two, and OpenSSL picks per client), AS
+  THE SOCKET PRESENTS THEM — `tls_server.presentedCertificatePems()`, which in
+  a request worker answers the front process's leaves (the extra ones now
+  travel with the hand-off and each re-issue's bundle) rather than the
+  certificates that worker made for itself; and in a cluster every LIVE node's
+  (`cluster/cluster.js` carries each node's on its membership row's `info`,
+  read back at most a heartbeat behind), because each node presents a leaf of
+  its own and a balancer sends a service provider to any of them. **None when
+  the main port is plain HTTP** (`global.https` off).
+* **It follows the certificate**: nothing is cached, every document asks at
+  request time, so after `build-root` re-issues the listener (`tls/CLAUDE.md`)
+  the next document names the new leaf. A service provider that cached the
+  old document has to fetch it again — which `no-store` already tells it.
+* **Nothing is refused**: a certificate that cannot be read is a document
+  without that key, logged under `STS-SAML-0097`.
+
+**What authenticates the back channel in each peer harness now**: Shibboleth
+from the metadata ALONE — its StaticPKIX engine and the anchor the job handed
+it are gone, the job checks the published key is the one the service
+presents, and a development-realm control strips the key and sees the SP
+refuse to resolve an artifact or run an attribute query. **pysaml2 and
+Keycloak still get the anchor**, as documented exceptions: pysaml2 verifies
+TLS with `requests` against `ca_certs`, Keycloak with its Java truststore, and
+neither reads a metadata key for TLS. Held in process by
+`tests/saml_listener_key.js`.

@@ -146,8 +146,8 @@ async function until(what, fn, limitMs) {
 
 async function lookup(address) {
   log.debug("Entering lookup(). " + address);
-  const r = await api("GET", "/admin-api/risk?realm=" + REALM +
-                      "&address=" + encodeURIComponent(address));
+  const r = await api("GET", "/admin-api/risk?address=" +
+                      encodeURIComponent(address));
   assert.strictEqual(r.status, 200, "GET /admin-api/risk answered " +
                      r.status + " " + r.text.slice(0, 300));
   log.debug("Leaving lookup().");
@@ -164,7 +164,7 @@ function denyVersionIn(view) {
 async function theView(cookie) {
   log.debug("Entering theView().");
   log.info("=== 1. the view ===");
-  const r = await api("GET", "/admin-api/risk?realm=" + REALM);
+  const r = await api("GET", "/admin-api/risk");
   check("GET /admin-api/risk lists every dataset and names its store",
         function () {
           assert.strictEqual(r.status, 200, r.text.slice(0, 300));
@@ -320,7 +320,7 @@ async function ruleSeven() {
 async function theTermsAreAccepted() {
   log.debug("Entering theTermsAreAccepted().");
   log.info("=== 5b. a provider's terms are accepted, and recorded ===");
-  const view = await api("GET", "/admin-api/risk?realm=" + REALM);
+  const view = await api("GET", "/admin-api/risk");
   const firehol = (view.body.providers || []).filter(function (p) {
     return p.provider === "firehol";
   })[0];
@@ -357,7 +357,7 @@ async function theFailureHistory() {
   log.debug("Entering theFailureHistory().");
   log.info("=== 6. the failure history ===");
   const typed = "risk-probe-" + STAMP;
-  const before = await api("GET", "/admin-api/risk?realm=" + REALM);
+  const before = await api("GET", "/admin-api/risk");
   const scim = await call("GET", base + "/scim/v2/Users", {
     headers: { Authorization: "Basic " +
       Buffer.from(typed + ":invalid").toString("base64") } });
@@ -366,7 +366,7 @@ async function theFailureHistory() {
           assert.strictEqual(scim.status, 401, scim.text.slice(0, 300));
         });
   const after = await until("the failure to be recorded", async function () {
-    const r = await api("GET", "/admin-api/risk?realm=" + REALM);
+    const r = await api("GET", "/admin-api/risk");
     const mine = (r.body.failures.rows || []).filter(function (row) {
       return row.door === "SCIM HTTP Basic" && !row.subject &&
         row.at >= Date.now() - 120000;
@@ -403,7 +403,7 @@ async function signInsAreAssessed(cookie) {
   }
   const found = await until("the console sign-in's assessment",
                             async function () {
-    const r = await api("GET", "/admin-api/risk?realm=" + REALM);
+    const r = await api("GET", "/admin-api/risk");
     const rows = (r.body.assessments && r.body.assessments.rows) || [];
     return rows.length ? r.body : null;
   });
@@ -416,6 +416,32 @@ async function signInsAreAssessed(cookie) {
                     JSON.stringify(a));
           assert.ok(a.level, JSON.stringify(a));
           assert.ok(found.subjects.length > 0, JSON.stringify(found.subjects));
+          // Each person named by username as well as by subject.
+          assert.ok(a.username, JSON.stringify(a));
+          assert.ok(found.subjects.every(function (p) {
+            return typeof p.username === 'string';
+          }), JSON.stringify(found.subjects));
+        });
+  // Both lists are paged, each on a parameter of its own with `per` shared
+  // (2026-09-26): one row a page, and the second page of each asked for.
+  const paged = await api("GET", "/admin-api/risk?per=1&assessmentsPage=2" +
+                          "&subjectsPage=2");
+  check("the assessments and the standings are paged, each on its own " +
+        "parameter, clamped past the end", function () {
+          const b = paged.body;
+          const a = b.assessmentsPaging;
+          const s = b.subjectsPaging;
+          assert.ok(a && s, JSON.stringify(Object.keys(b)));
+          assert.strictEqual(a.perPage, 1, JSON.stringify(a));
+          assert.strictEqual(s.perPage, 1, JSON.stringify(s));
+          assert.ok(b.assessments.rows.length <= 1 &&
+                    b.subjects.length <= 1, JSON.stringify(b.subjects));
+          assert.strictEqual(a.total, b.assessments.total, JSON.stringify(a));
+          // Asked for page 2: page 2, or page 1 when there is only one.
+          assert.strictEqual(a.page, Math.min(2, a.pages), JSON.stringify(a));
+          assert.strictEqual(s.page, Math.min(2, s.pages), JSON.stringify(s));
+          assert.ok(s.total >= 1 && b.subjects.length === 1,
+                    JSON.stringify(s));
         });
   log.debug("Leaving signInsAreAssessed().");
 }
@@ -432,8 +458,7 @@ function sumOf(table) {
 async function theScoringMeasured(cookie) {
   log.debug("Entering theScoringMeasured().");
   log.info("=== 8. the scoring measured ===");
-  const r = await api("GET", "/admin-api/risk/metrics?realm=" + REALM +
-                      "&window=24h");
+  const r = await api("GET", "/admin-api/risk/metrics?window=24h");
   check("GET /admin-api/risk/metrics answers the window, the signals with " +
         "their factors, and this process", function () {
           assert.strictEqual(r.status, 200, r.text.slice(0, 300));

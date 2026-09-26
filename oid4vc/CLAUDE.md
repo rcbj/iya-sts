@@ -15,8 +15,15 @@ DID Core with DIF domain linkage.
 | `vc_signin.ts` | Signing in with a wallet: `/authn/wallet`, `/authn/wallet/wait`, the Digital Credentials API answer at `/authn/wallet/dc-api` and the one script at `/authn/wallet.js`. |
 | `vc_status.ts` | The status lists every issued credential names, and the check the Verifier makes against them (rule 3as). A library and four routes. |
 | `vc_status_codec.ts` | Their encodings: the compressed byte array, CBOR, COSE_Sign1, the JWT and CWT tokens, and the W3C bitstring (rule 3as). A pure library. |
-| `vc_data_integrity.ts` | The holder's Data Integrity proof on a presentation (`ecdsa-jcs-2019`, `eddsa-jcs-2022`, `mldsa44-jcs-2024`, `slhdsa128-jcs-2024`), `did:jwk` and `did:key` (rule 3at). A pure library — and since 2026-09-22 (#43) also the signer and verifier of a GNAP zcap token's JCS proof (`gnap/token_zcap.ts`), through `signDocument()`, `multikeyOf()` and a caller-supplied `resolveVerificationMethod`. |
+| `vc_data_integrity.ts` | The holder's Data Integrity proof on a presentation (`ecdsa-jcs-2019`, `eddsa-jcs-2022`, `mldsa44-jcs-2024`, `slhdsa128-jcs-2024`), `did:jwk` and `did:key` (rule 3at). A pure library — and since 2026-09-22 (#43) also the signer and verifier of a GNAP zcap token's JCS proof (`gnap/token_zcap.ts`), through `signDocument()`, `multikeyOf()` and a caller-supplied `resolveVerificationMethod`; and since #195/#196 the RDFC suites (`eddsa-rdfc-2022`, `ecdsa-rdfc-2019`), `ecdsa-sd-2023` (through `vc_ecdsa_sd.ts`), proof sets and chains (`verifyAllProofs()`) and the realm's own keys as did:keys (`realmKeyFor()`) — asked for by name, never the default. |
 | `vc_did.ts` | `did:web`, `did:jwk`, and the domain linkage document. |
+| `vc_jsonld.ts` | The CLOSED JSON-LD loader (the contexts in `contexts/` and `../common/vendored/contexts/`, each held to its SHA-256; nothing is fetched) and RDFC-1.0 over it (#194-#196). A library. |
+| `vc_data_model.ts` | The VC Data Model 2.0 and 1.1 MUSTs a credential or presentation is refused for (#194). A library. |
+| `vc_ecdsa_sd.ts` | `ecdsa-sd-2023`: base proofs, derived proofs and their verification, the specification's own steps (#196). A library `vc_data_integrity.ts` dispatches to. |
+| `vc_jose_cose.ts` | VC-JOSE-COSE's envelopes: `vc+jwt`, `vc+sd-jwt`, `vc+cose` and the `vp` forms, secured and verified (#198). A library. |
+| `vc_did_resolver.ts` | DID Core section 7: resolve, resolveRepresentation and dereference for `did:key`, `did:jwk` and this realm's `did:web` (#199). A library. |
+| `vc_api.ts` | The W3C VC-API test endpoints (`/vc-api/*`) over everything above — a TEST CONTROL (#194-#199). *The W3C VC-API adapter* below. |
+| `contexts/` | The JSON-LD contexts `vc_jsonld.ts` answers from, fetched once from their URLs; `vc_jsonld.ts`'s header is their provenance. |
 
 **`vc_configs.ts` and `vc_offers.ts` exist to break require cycles, not to group
 code** — see rule 2 in the root `CLAUDE.md`. The credential configurations are
@@ -454,7 +461,12 @@ sign-out cannot be undone by the token it was meant to cut off.
 * **W3C Bitstring Status List** for the W3C formats, one list per purpose at
   `/oid4vci/status-lists/bitstring/{revocation,suspension}`, each a
   `BitstringStatusListCredential` secured as `application/vc+jwt`, 131,072
-  entries (the specification's minimum).
+  entries (the specification's minimum) — **or, since #197, as JSON-LD with
+  an `eddsa-rdfc-2022` proof** by the realm's Ed25519 key, issued as its
+  did:key, when `Accept` asks for JSON-LD or JSON and not the JWT first
+  (`bitstringFormFor()`): a verifier of embedded-proof credentials reads
+  JSON, not a JWT string, and the W3C suite reads the list exactly so. The
+  JWT stays the default.
 
 **ONE INDEX PER CREDENTIAL, THE SAME IN EVERY LIST**, taken at random (the
 draft's linkability guidance) through a cluster claim, and free again when the
@@ -515,7 +527,11 @@ The response endpoint marks the refusal with `verified.statusErrorCode`
 `oid4vp.statusOptionalIssuers` (empty) — group OID4VP; and
 `oid4vci.statusListTtlS` (300), `oid4vci.statusListLifetimeS` (86400),
 `oid4vci.keyAttestationRequired` (off) and
-`oid4vci.keyAttestationTrustedCertificates` (empty) — group OID4VCI. So
+`oid4vci.keyAttestationTrustedCertificates` (empty) — group OID4VCI. (A key
+attestation's `x5c` leaf is trusted only through `pki.verifyIssuedDirectly()`
+since #201 — issued directly by a trusted attester AND the two-certificate path
+holding RFC 5280, where it was `checkIssued()` and a signature: an expired leaf,
+a CA as the leaf or an unimplemented critical extension vouched for the key.) So
 `/admin/oid4vp`, `/admin/oid4vci` and `/admin-api/config` carry them, and
 `/admin/vc-status` is where the lists themselves are read and changed. **On by default in both modes**: the screen
 offers every mechanism the service supports, and this one signs in only an
@@ -745,3 +761,88 @@ Verifier tries the generation the proof options name first, then the rest.
 `vc_verifier.ts` about the issuer being disclosed already assumed was not
 needed to tell them apart.
 
+
+---
+
+## THE W3C VC-API ADAPTER AND THE W3C SUITES (#194-#199, 2026-09-26)
+
+The Verifiable Credentials and DID Working Groups' own test suites — VC Data
+Model 2.0, Data Integrity EdDSA and ECDSA, Bitstring Status List,
+VC-JOSE-COSE and DID Core — drive an implementation through the W3C CCG
+VC-API: an issuer that secures a credential it is HANDED, verifiers, a
+status change. OpenID4VCI never secures a document a caller wrote and
+OpenID4VP judges a presentation against its own query, so `vc_api.ts` is an
+ADAPTER — and what it adapts to is this directory's machinery, not a copy:
+the cryptosuites are `vc_data_integrity.ts`'s, the keys are the realm key
+set's Ed25519, P-256 and P-384 members (`realmKeyFor()`, named by their
+did:key), a credential's status is an index `vc_status.ts` allocates, and a
+status change is `vc_status.setStatus()` — the act `/admin/vc-status`
+performs, one of the three that DISOWN a credential (*Disowned*, above).
+
+**A TEST CONTROL** (`mode.opensTestControls()`): in a product realm every
+route is a 404 (`STS-VC-0100`). An endpoint that signs whatever it is handed
+with a realm's key is what a conformance suite needs and no deployment
+should expose. **AND AUTHENTICATED ANYWAY**, the way
+`vc-test-suite-implementations` lets a suite authenticate: an OAuth 2.0
+client-credentials token this realm issued, verified and not revoked,
+carrying `vc-api:issue` or `vc-api:verify` — two new PROTECTED scopes
+(`common/scope_policy.ts`), issued only to a client an administrator
+declared them on, re-checked on every call (`STS-VC-0101`).
+
+**NOTHING IS FETCHED, WHICH IS WHY THE RDFC SUITES COULD BE ADDED AT ALL.**
+`vc_data_integrity.ts`'s header argued JCS for the holder proof because an
+RDFC suite needs every `@context` resolved. `vc_jsonld.ts` resolves them
+from the files it ships and refuses every other URL, so a document naming
+an unknown context is refused with the URL named, and a verification method
+must be a `did:key` or `did:jwk` (the adapter's DID resolver likewise
+answers only those and this realm's own `did:web`). The RDFC suites are
+still NOT the default: `SUPPORTED_CRYPTOSUITES` is the JCS four, and the
+sign-in's holder proof asks for no other.
+
+**`ecdsa-sd-2023` IS P-256 ONLY**, because section 3.5.8 fixes a derived
+proof's base signature at 64 bytes and its labels at 32; it is implemented
+from the specification's steps (a derived proof from its base proof is
+byte for byte its Appendix vector — `tests/vc_rdfc_suites.js`), not with
+the Digital Bazaar library the suite derives with, so the two check each
+other (`vendored/bbs2023.js`'s argument, made again).
+
+**WHO SIGNED IT IS A WARNING, NOT A REFUSAL, AT THIS VERIFIER.**
+Verification is that every proof verifies against a key its method's
+controller authorizes (Data Integrity); whether that controller is the
+credential's `issuer` is validation (VCDM 2.0 section 7.2), and the
+specifications' own vectors name an https issuer and sign with a did:key.
+The sign-in door keeps its stricter rule.
+
+### What the suites found, and what changed
+
+| Found by | Defect | Fixed in |
+|---|---|---|
+| VC Data Model 2.0 | a `name` or `description` with `@direction` could not be canonicalized: safe mode refused it as lossy without `rdfDirection: 'i18n-datatype'` | `vc_jsonld.ts` |
+| Data Integrity EdDSA | a proof CHAIN (`previousProof`) was refused outright | `vc_data_integrity.ts` `verifyAllProofs()` |
+| Data Integrity ECDSA | requiring the proof's controller to be the issuer refused the specification's own vectors | `vc_api.ts`, a warning |
+| ecdsa-sd-2023 vectors | jsonld 9 reads rdf-canonize's options from `canonizeOptions`; `canonicalIdMap` passed at the top level was silently ignored, so every label was `undefined` | `vc_jsonld.ts` |
+| VC-JOSE-COSE | `typ` and COSE header 16 are SHOULDs: a missing one was refused, and only a CONTRADICTING one may be | `vc_jose_cose.ts` `kindOf()` |
+| DID Core (fixture generation) | the did:web document published `Multikey` methods under a context that defines neither `Multikey` nor `publicKeyMultibase` | `vc_did.ts` |
+
+The documented exceptions — each a suite fixture disagreeing with a
+specification, recorded with its clause in the job and on the ticket: the
+VC Data Model suite's enveloped presentation carries a `vp` claim
+VC-JOSE-COSE section 1.1.2.1 forbids (#194, three tests); the VC-JOSE-COSE
+suite's "unknown extensions" are defined by the examples context's `@vocab`,
+its presentation fixture expired in 2024 (RFC 7519 section 4.1.4), and two
+presentations carry a credential signed by a key it does not supply or that
+is not a JWS at all (#198, four tests); the DID suite asks an UNSUCCESSFUL
+resolveRepresentation for a contentType and a parseable stream (#199, one).
+
+### Not built
+
+zcap authorization (OAuth only); a Key Binding JWT on an SD-JWT presentation
+is reported, not checked; `ecdsa-sd-2023` over P-384 (see above); DID
+parameters (`service`, `versionId`, …) and any did:web but the realm's own;
+Bitstring Status Lists of the `message` purpose (`statusSize` > 1); the
+bbs-2023 suite at the adapter (no ticket asks for its suite).
+
+`tests/vc_jsonld.js`, `tests/vc_rdfc_suites.js`, `tests/vc_data_model.js`,
+`tests/vc_jose_cose.js` and `tests/vc_api.js` hold the libraries in process;
+the six `tests/vendored/sts_*_suite.js` jobs run the W3C suites
+(`tests/CLAUDE.md`, *The W3C VC and DID suites*).

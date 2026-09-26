@@ -1099,7 +1099,10 @@ class FederationSlo {
     const how = documentSettings.signatureOptions();
     if (String(record.fedSloBinding || 'HTTP-Redirect') === 'HTTP-POST') {
       const signed = stsCrypto.signXml(built.xml, {
-        privateKeyPem: STS.xml.privateKeyPem, certPem: STS.xml.certPem,
+        // The key for the configured algorithm (#68): `STS.xmlSigner`.
+        privateKeyPem: STS.xmlSigner.privateKeyPem,
+        privateKey: STS.xmlSigner.privateKey,
+        certPem: STS.xmlSigner.certPem,
         sigAlg: how.sigAlg, c14nAlg: how.c14nAlg,
         placement: stsCrypto.PLACEMENT.AFTER_ISSUER, refUri: '#' + built.id,
         what: 'federated SAML 2.0 ' + field
@@ -1121,7 +1124,8 @@ class FederationSlo {
     }
     qs += '&SigAlg=' + encodeURIComponent(how.sigAlg);
     qs += '&Signature=' + encodeURIComponent(
-      stsCrypto.signQueryString(qs, STS.xml.privateKeyPem, how.sigAlg));
+      stsCrypto.signQueryString(qs, STS.xmlSigner.privateKeyPem, how.sigAlg,
+                                STS.xmlSigner.privateKey));
     const url = destination + (destination.indexOf('?') >= 0 ? '&' : '?') +
                 qs;
     log.debug("Leaving FederationSlo.outbound(). HTTP-Redirect.");

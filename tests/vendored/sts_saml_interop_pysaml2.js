@@ -98,6 +98,10 @@ async function makeWorld(realmMode) {
   const idpXml = await m2.text();
   kit.must(m2.status === 200, "the identity provider metadata answered " +
            m2.status);
+  // THE ANCHOR STILL GOES WITH IT (#248). The metadata now publishes the
+  // back channel's TLS certificate, but pysaml2's SOAP client verifies the
+  // server with `requests` against a CA bundle (`ca_certs`) and reads no
+  // metadata key for TLS, so for pysaml2 metadata cannot suffice.
   const configured = await peer("POST", "/configure", {
     idpMetadata: idpXml, caPem: await kit.stsAnchor() });
   kit.must(configured.status === 200 && configured.body &&

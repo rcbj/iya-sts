@@ -51,6 +51,7 @@ import helpers = require('./helpers');
 import errorCodes = require('./error_codes');
 import secrets = require('./secrets');
 import crypto = require('./crypto');
+import OutboundTls = require('./outbound_tls');
 
 type Json = any;
 
@@ -282,11 +283,13 @@ class MailTransports {
       throw sendError('the smtp transport has no host (mail.smtpHost, or ' +
                       'a preset)', 'STS-MAIL-0004', false);
     }
-    const tls: Json = {
+    // Verified, with RFC 9525's host check and the path rules (#201) —
+    // `OutboundTls.verifiedOptions()`, the one helper every dialer outside
+    // the four families asks. `mail.smtpCaFile` is added beside it below.
+    const tls: Json = Object.assign(OutboundTls.verifiedOptions(null), {
       minVersion: 'TLSv1.2',
-      rejectUnauthorized: true,
       servername: String(cfg.smtpServerName || '') || host
-    };
+    });
     try {
       if (cfg.smtpCaFile) {
         tls.ca = readFile(String(cfg.smtpCaFile));

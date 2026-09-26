@@ -375,9 +375,18 @@ async function checkConsole(t) {
     { action: 'create-challenge', kind: 'person', identifier: ALICE,
       profile: 'email' }, { req: fakeReq(), actor: 'tester' });
   t.check(made.ok && /\.[A-Za-z0-9_-]{20,}$/.test(made.challenge) &&
-          /sscep enroll -u https:\/\/x\.test\/enroll\/scep\/email/
-            .test(made.hint),
-          'create-challenge answers the challenge once with an sscep hint');
+          made.url === 'https://x.test/enroll/scep/email' &&
+          /^http:\/\/[^/]+\/enroll\/scep\/email$/.test(made.plainUrl) &&
+          made.hint.indexOf('sscep enroll -u ' + made.plainUrl +
+                            ' -c ca.crt-0 -e ca.crt-0 ') >= 0,
+          'create-challenge answers the challenge once with an sscep hint ' +
+          'on the plain-HTTP URL, verifying with the RA (#210)',
+          made.plainUrl + ' / ' + made.hint);
+  t.check(/prompt=no/.test(made.hint) &&
+          made.hint.indexOf('\\nCN=' + made.target.id + '\\nO=') >= 0 &&
+          made.hint.indexOf('challengePassword=' + made.challenge) >= 0,
+          'the hint\'s openssl request carries the challenge (prompt=no) and ' +
+          'the subject the certificate will carry', made.hint);
   const view = consoleModel.scepView(fakeReq({ per: '1000' }));
   const row = view.challenges.rows.filter(function (one) {
     return one.id === made.id;

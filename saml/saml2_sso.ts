@@ -208,6 +208,8 @@ import applications = require('../common/applications');
 import mode = require('../common/mode');
 import authnContext = require('./authn_context');
 import documentSettings = require('./document_settings');
+// The certificate the back channel presents, as a metadata key (#248).
+import listenerKeys = require('./listener_keys');
 import returnAddress = require('./return_address');
 import personAttributes = require('./person_attributes');
 // THE CLUSTER CLAIM (2026-09-14, #46): the atomic "once" an artifact is spent
@@ -458,6 +460,7 @@ interface Saml2SsoDeps {
   mode: typeof mode;
   authnContext: typeof authnContext;
   documentSettings: typeof documentSettings;
+  listenerKeys: typeof listenerKeys;
   returnAddress: typeof returnAddress;
   personAttributes: typeof personAttributes;
   clusterClaims: typeof clusterClaims;
@@ -497,6 +500,7 @@ class Saml2Sso {
       mode: mode,
       authnContext: authnContext,
       documentSettings: documentSettings,
+      listenerKeys: listenerKeys,
       returnAddress: returnAddress,
       personAttributes: personAttributes,
       clusterClaims: clusterClaims,
@@ -1600,9 +1604,11 @@ class Saml2Sso {
     // answer.
     const how = documentSettings.signatureOptions();
     const signed = stsCrypto.signXml(xml, {
-      // The XML signing key (#42, D2): `STS.xml`, not the JOSE key.
-      privateKeyPem: STS.xml.privateKeyPem,
-      certPem: STS.xml.certPem,
+      // The XML signing key (#42, D2): `STS.xml`, not the JOSE key — and
+      // `STS.xmlSigner`, the one for the configured algorithm (#68).
+      privateKeyPem: STS.xmlSigner.privateKeyPem,
+      privateKey: STS.xmlSigner.privateKey,
+      certPem: STS.xmlSigner.certPem,
       sigAlg: how.sigAlg,
       c14nAlg: how.c14nAlg,
       placement: placement === 'prepend'
@@ -1636,9 +1642,12 @@ class Saml2Sso {
     const { stsCrypto } = this.deps;
     const { STS, log } = this.deps.helpers;
     log.debug("Entering Saml2Sso.signQueryString().");
-    // The XML signing key (#42, D2), which the metadata publishes for it.
+    // The XML signing key (#42, D2), which the metadata publishes for it —
+    // for the configured algorithm, `STS.xmlSigner` (#68).
+    const signer = STS.xmlSigner;
     const signature = stsCrypto.signQueryString(queryString,
-                                                STS.xml.privateKeyPem, sigAlg);
+                                                signer.privateKeyPem, sigAlg,
+                                                signer.privateKey);
     log.debug("Leaving Saml2Sso.signQueryString().");
     return signature;
   }
@@ -4925,13 +4934,20 @@ class Saml2Sso {
   // It answers for ANY {sp}. See decision 1 — the ask is what registers it.
   // ---------------------------------------------------------------------------
   metadataFor(base, spEntityId) {
-    const { documentSettings, errorCodes, requestSignature } = this.deps;
+    const { documentSettings, errorCodes, listenerKeys,
+            requestSignature } = this.deps;
     const { STS, genId, log, logArtifact, xmlEscape } = this.deps.helpers;
     log.debug("Entering Saml2Sso.metadataFor(). sp=" +
               (spEntityId || '(unscoped)'));
     const id = genId();
     const idpEntityId = this.idpEntityIdFor(spEntityId);
     const where = this.endpointsFor(base, spEntityId);
+    // THE BACK CHANNEL'S TLS CERTIFICATE (#248), last among each role's
+    // KeyDescriptors: the ArtifactResolutionService is the IdP role's and
+    // the AttributeService the attribute authority's, and a service provider
+    // authenticating the SOAP peer from metadata looks in the role whose
+    // endpoint it is calling. saml/listener_keys.ts argues `use="signing"`.
+    const backChannelKeys = listenerKeys.keyDescriptors();
     const keyDescriptor = function (use) {
       log.debug("Entering keyDescriptor().");
       log.debug("Leaving keyDescriptor().");
@@ -4940,7 +4956,7 @@ class Saml2Sso {
       // still verifying. ENCRYPTION: the current key alone, so new encryption
       // goes to it while something encrypted to a retired one still opens.
       if (use === 'signing') {
-        return helpers.ownRsaCertificates('xml').map(function (one: any) {
+        return helpers.ownXmlSigningCertificates().map(function (one: any) {
           return '<md:KeyDescriptor use="signing"><ds:KeyInfo xmlns:ds="' +
             NS_DS + '"><ds:X509Data><ds:X509Certificate>' +
             stsCrypto.stripPem(one.certPem) + '</ds:X509Certificate>' +
@@ -4999,6 +5015,7 @@ class Saml2Sso {
           // no longer exists — which decryptElement() names as the usual cause
           // when an unwrap fails.
           keyDescriptor('encryption') +
+          backChannelKeys +
           // The artifact resolution service comes FIRST inside the descriptor,
           // because the metadata schema's sequence puts
           // ArtifactResolutionService before SingleLogoutService before
@@ -5035,6 +5052,7 @@ class Saml2Sso {
         '<md:AttributeAuthorityDescriptor protocolSupportEnumeration="' +
           NS_SAMLP + '">' +
           keyDescriptor('signing') +
+          backChannelKeys +
           service('AttributeService', BINDING_SOAP, where.aa) +
           NAMEID_FORMATS.map(function (format) {
             return '<md:NameIDFormat>' + format + '</md:NameIDFormat>';

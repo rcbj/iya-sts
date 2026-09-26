@@ -152,7 +152,7 @@ Status List entry per purpose, and a `jwt_vc_json` credential carries both.
 |---|---|---|
 | Status List Token | `/oid4vci/status-lists/1` | `application/statuslist+jwt`, or `application/statuslist+cwt` (a COSE_Sign1) when `Accept` asks for it |
 | Status List Aggregation | `/oid4vci/status-lists` | `application/json` |
-| Bitstring Status List credentials | `/oid4vci/status-lists/bitstring/revocation` and `…/suspension` | `application/vc+jwt` |
+| Bitstring Status List credentials | `/oid4vci/status-lists/bitstring/revocation` and `…/suspension` | `application/vc+jwt`, or JSON-LD with an `eddsa-rdfc-2022` proof when `Accept` asks for JSON-LD or JSON ([more](vc-api.md)) |
 
 The Token Status List uses two bits per credential and carries `ttl` and `exp`.
 Each Bitstring Status List has 131,072 entries, the specification's minimum.

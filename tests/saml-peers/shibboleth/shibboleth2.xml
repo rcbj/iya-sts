@@ -9,10 +9,12 @@
   * TWO metadata files the control server writes (control.py), the per-SP SAML
     2.0 document and the per-relying-party SAML 1.1 one, exactly as the
     service published them.
-  * THE SERVICE'S TLS ANCHOR as a StaticPKIX trust engine beside the
-    metadata's explicit keys, for the SOAP back channel (artifact resolution
-    and the attribute query) — the service's listener certificate is issued
-    under a Root made when the stack started, so nothing can be baked in.
+  * NO TLS ANCHOR (#248): the SOAP back channel (artifact resolution and
+    the attribute query) is authenticated by the ExplicitKey trust engine
+    against the metadata alone, because the identity provider's metadata
+    publishes the certificate its listener presents. Until #248 a StaticPKIX
+    engine with the service's Root, handed over by the job, stood beside it;
+    it is gone so that metadata is the only thing the SP can trust it by.
   * signing="true": every AuthnRequest, LogoutRequest, ArtifactResolve and
     AttributeQuery is signed, which is what a product-mode realm requires.
   * handlerSSL="false" and http cookies: the peers speak plain HTTP on the
@@ -87,11 +89,7 @@
                 path="/etc/shibboleth/peer/idp-saml11.xml"/>
         </MetadataProvider>
 
-        <TrustEngine type="Chaining">
-            <TrustEngine type="ExplicitKey"/>
-            <TrustEngine type="StaticPKIX" verifyDepth="5"
-                certificate="/etc/shibboleth/peer/sts-ca.pem"/>
-        </TrustEngine>
+        <TrustEngine type="ExplicitKey"/>
 
         <AttributeExtractor type="XML" validate="true" reloadChanges="false" path="attribute-map.xml"/>
 

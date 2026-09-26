@@ -9,9 +9,10 @@
 #    shares with its runner), because the peer's own log is this harness's
 #    error-and-warning source and a container's stdout is not readable from
 #    another container.
-# 3. PLACEHOLDER TRUST until the job configures it: shibd will not start on a
-#    metadata file or a trust anchor that does not exist, and the real ones
-#    belong to a realm the job has not created yet.
+# 3. PLACEHOLDER METADATA until the job configures it: shibd will not start
+#    on a metadata file that does not exist, and the real ones belong to a
+#    realm the job has not created yet. There is no TLS anchor to hold a place
+#    for since #248: the back channel is trusted from the metadata.
 # 4. shibd, the control server, and Apache in the foreground.
 # ===========================================================================
 set -euo pipefail
@@ -46,11 +47,6 @@ mkdir -p /etc/shibboleth/peer
 # container.
 mkdir -p /run/shibboleth
 chown shibd:shibd /run/shibboleth
-if [ ! -s /etc/shibboleth/peer/sts-ca.pem ];
-then
-  openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj "/CN=placeholder" \
-    -keyout /dev/null -out /etc/shibboleth/peer/sts-ca.pem 2> /dev/null
-fi
 for doc in idp-saml2.xml idp-saml11.xml;
 do
   if [ ! -s "/etc/shibboleth/peer/${doc}" ];

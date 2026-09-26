@@ -4576,24 +4576,33 @@ function create(options) {
       });
     },
 
-    // The realm's people by current standing, highest score first.
+    // A page of the realm's people by current standing, highest score
+    // first, with the count of them all — the console pages it (2026-09-26),
+    // because the table has a row for every person ever assessed.
     riskListSubjects: function (realm, opts) {
       log.debug("Entering riskListSubjects(). realm=" + realm);
       const o = opts || {};
       log.debug("Leaving riskListSubjects().");
-      return pool.query(
-        'SELECT subject, score, level, previous_level, reason, ' +
-        'last_assessment, crossed_at, updated_at FROM sts_risk_subjects ' +
-        'WHERE realm = $1 ORDER BY score DESC, updated_at DESC LIMIT $2',
-        [realm || '', Number(o.limit) || 50]
-      ).then(function (r) {
-        return r.rows.map(function (row) {
-          return { subject: row.subject, score: Number(row.score),
-                   level: row.level, previousLevel: row.previous_level,
-                   reason: row.reason, lastAssessment: row.last_assessment,
-                   crossedAt: Number(row.crossed_at) || 0,
-                   updatedAt: Number(row.updated_at) || 0 };
-        });
+      return Promise.all([
+        pool.query(
+          'SELECT subject, score, level, previous_level, reason, ' +
+          'last_assessment, crossed_at, updated_at FROM sts_risk_subjects ' +
+          'WHERE realm = $1 ORDER BY score DESC, updated_at DESC, ' +
+          'subject LIMIT $2 OFFSET $3',
+          [realm || '', Number(o.limit) || 50, Number(o.offset) || 0]),
+        pool.query('SELECT count(*) AS total FROM sts_risk_subjects ' +
+                   'WHERE realm = $1', [realm || ''])
+      ]).then(function (answers) {
+        return {
+          total: Number(answers[1].rows[0].total) || 0,
+          rows: answers[0].rows.map(function (row) {
+            return { subject: row.subject, score: Number(row.score),
+                     level: row.level, previousLevel: row.previous_level,
+                     reason: row.reason, lastAssessment: row.last_assessment,
+                     crossedAt: Number(row.crossed_at) || 0,
+                     updatedAt: Number(row.updated_at) || 0 };
+          })
+        };
       });
     },
 
