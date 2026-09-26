@@ -45,6 +45,13 @@ import helpers = require('../common/helpers');
 import errorCodes = require('../common/error_codes');
 import InstanceSlot = require('../common/instance_slot');
 import devices = require('../common/devices');
+// #164 phase 2: the challenge store, the recognition and enrolment
+// counters, and the attestation trust anchors this page reports.
+import deviceEnrolment = require('../common/device_enrolment');
+import deviceRecognition = require('../common/device_recognition');
+import pki = require('../common/pki');
+import config = require('../common/config');
+import mode = require('../common/mode');
 import oauth2 = require('../oauth-oidc/oauth2');
 
 type Req = import('express').Request;
@@ -77,27 +84,41 @@ const ENROLMENT = [
           '/admin-api/devices/create: owned by a person or by an ' +
           'application, with keys typed in by value. A key added this way ' +
           'is recorded as proven by nobody and self-asserted.' },
-  { method: 'portal', built: false,
-    what: 'The owner on /portal/devices, proving a key — a WebAuthn ' +
-          'platform credential or a JWK proof.' },
-  { method: 'est', built: false,
-    what: 'EST (RFC 7030) issuing a certificate to the device entry under ' +
-          'a "device" leaf profile, with TPM key attestation.' },
-  { method: 'scep', built: false,
-    what: 'SCEP (RFC 8894), the same, for the devices that speak only it.' }
+  { method: 'portal', built: true,
+    what: 'The owner on /portal/devices (or its JSON doors, ' +
+          'POST /portal/devices/challenge and /portal/devices/proof), ' +
+          'proving a key: a device-key-proof+jwt JWS over a challenge ' +
+          'bound to their session — with an Android Key Attestation in ' +
+          'its x5c, or an Apple App Attest statement instead — or linking ' +
+          'a WebAuthn platform credential they enrolled, with a fresh ' +
+          'assertion.' },
+  { method: 'est', built: true,
+    what: 'EST (RFC 7030) simpleenroll at /.well-known/est/device/: a ' +
+          'certificate issued to the device entry the request\'s ' +
+          'urn:sts:device:<id> names — or to a new one, owned by the ' +
+          'requester — with a TPM key attestation ' +
+          '(draft-ietf-lamps-csr-attestation, tcg-attest-tpm-certify). ' +
+          'The owner for their own device, Admin Write for any.' },
+  { method: 'scep', built: true,
+    what: 'SCEP (RFC 8894) PKCSReq with a challenge password issued for ' +
+          'the device profile — the same, for the devices that speak only ' +
+          'it.' }
 ];
 
 // HOW A DEVICE IS RECOGNISED (#164 decision 1): presenting any key it holds.
 const RECOGNITION = [
-  { kind: 'x509', built: false,
-    what: 'A device certificate over mutual TLS on the main port, matched ' +
-          'by the SHA-256 of its SubjectPublicKeyInfo — so a renewed ' +
-          'certificate over the same key is the same device.' },
-  { kind: 'jwk', built: false,
-    what: 'A DPoP proof or a JWK proof, matched by the key\'s RFC 7638 ' +
-          'thumbprint — which is DPoP\'s jkt.' },
-  { kind: 'webauthn', built: false,
-    what: 'A WebAuthn platform credential the owner enrolled and linked to ' +
+  { kind: 'x509', built: true,
+    what: 'The client certificate on the TLS connection — at a sign-in and ' +
+          'at the token endpoint (RFC 8705) — matched by the SHA-256 of its ' +
+          'SubjectPublicKeyInfo, so a renewed certificate over the same key ' +
+          'is the same device. The handshake proves possession; whether ' +
+          'the chain verified is recorded, and a certificate refused on ' +
+          'revocation is not recognised.' },
+  { kind: 'jwk', built: true,
+    what: 'A DPoP proof at the token endpoint, matched by its jkt — the ' +
+          'RFC 7638 thumbprint every jwk key carries.' },
+  { kind: 'webauthn', built: true,
+    what: 'A WebAuthn assertion at a sign-in whose credential is linked to ' +
           'the device.' },
   { kind: 'native-sso', built: true,
     what: 'The Native SSO device_secret, while the sign-on session it was ' +
@@ -330,6 +351,37 @@ class DevicesAdmin {
   // -------------------------------------------------------------------------
   // /admin/device-registration — the JSON both surfaces answer.
   // -------------------------------------------------------------------------
+  // The attestation trust anchors, per statement kind: where they come
+  // from in this realm and, for the shipped ones, their subjects and pins.
+  // Never a certificate's text.
+  trustAnchors(): Json {
+    const { log } = this.deps;
+    log.debug("Entering DevicesAdmin.trustAnchors().");
+    const shipped = pki.describeDeviceAnchors();
+    const row = function (kind: string, setting: string,
+                          shippedKind: string): Json {
+      log.debug("Entering row(). " + kind);
+      const held = pki.deviceAttestationAnchors(shippedKind || kind,
+                                                config.value(setting));
+      log.debug("Leaving row().");
+      return { kind: kind, setting: setting, source: held.source,
+               count: held.anchors.length,
+               shipped: shippedKind ? shipped[shippedKind] || [] : [] };
+    };
+    log.debug("Leaving DevicesAdmin.trustAnchors().");
+    return [
+      row('android-key-attestation', 'devices.androidAttestationTrustAnchors',
+          'androidKeyAttestation'),
+      row('apple-app-attest', 'devices.appleAppAttestTrustAnchors',
+          'appleAppAttest'),
+      row('tcg-tpm2-key', 'devices.tpmTrustAnchors', ''),
+      { kind: 'webauthn', setting: 'webauthn.attestationTrustAnchors',
+        source: 'the FIDO Metadata Service import and the setting, ' +
+                'verified at the credential\'s registration (#105)',
+        count: null, shipped: [] }
+    ];
+  }
+
   registrationView(req: Req): Json {
     const { log, admin, devices } = this.deps;
     log.debug("Entering DevicesAdmin.registrationView().");
@@ -349,6 +401,22 @@ class DevicesAdmin {
       complianceStates: devices.COMPLIANCE_STATES.slice(0),
       complianceSources: devices.COMPLIANCE_SOURCES.slice(0),
       mdmFeed: { built: false },
+      // Where the recognised device is recorded (#164 phase 2).
+      recordedAt: {
+        signIn: 'the authentication event\'s registeredDevice ' +
+                '(authn.registeredDeviceOf(session) reads the latest)',
+        tokenEndpoint: 'the issuance request\'s registered_device, ' +
+                       'before the issuance gate'
+      },
+      // Decision 9: whether this realm registers an unattested key.
+      unattestedKeys: {
+        accepted: mode.acceptsUnattestedDeviceKeys(),
+        predicate: 'acceptsUnattestedDeviceKeys',
+        adminKeys: 'an administrator\'s by-value key is accepted in both ' +
+                   'modes, recorded proof admin and self-asserted'
+      },
+      trustAnchors: this.trustAnchors(),
+      challenges: deviceEnrolment.describeChallenges(),
       settings: admin.configSettingsJson(REGISTRATION)
     };
   }
@@ -367,7 +435,10 @@ class DevicesAdmin {
     });
     log.debug("Leaving DevicesAdmin.monitorView().");
     return { counts: counts, timeline: devices.timeline(Number(q.days) ||
-                                                        30) };
+                                                        30),
+             // Recognitions, enrolments and attestation outcomes, counted
+             // in THIS process (#164 phase 2).
+             activity: deviceRecognition.activity() };
   }
 
   // -------------------------------------------------------------------------
@@ -557,7 +628,12 @@ class DevicesAdmin {
         esc(k.thumbprint) + '</code></small></td><td>' + esc(k.proof) +
         '</td><td>' + esc(k.attestation.level) +
         (k.attestation.format !== 'none' ? '<br><small>' +
-          esc(k.attestation.format) + '</small>' : '') + '</td><td><small>' +
+          esc(k.attestation.format) + '</small>' : '') +
+        (k.attestation.summary ? '<br><small>' +
+          esc(k.attestation.summary) + '</small>' : '') +
+        (k.attestation.verifiedAt ? '<br><small>verified ' +
+          esc(k.attestation.verifiedAt) + '</small>' : '') +
+        '</td><td><small>' +
         esc(k.added) + (k.addedBy ? ' by ' + esc(k.addedBy) : '') +
         '</small></td><td>' + (canWrite
           ? '<form method="post" action="' + LIST + '" class="inline">' +
@@ -656,11 +732,44 @@ class DevicesAdmin {
       }).join('') + '</tbody></table>' +
       '<h2>Attestation</h2>' +
       admin.note('A device is <strong>attested</strong> when a verifier ' +
-        'checked an attestation statement for one of its keys, and ' +
-        '<strong>self-asserted</strong> otherwise. The formats it will ' +
-        'record: ' + esc(json.attestationFormats.join(', ')) + '. No ' +
-        'attestation verifier is wired to the register yet, so every ' +
-        'device here is self-asserted.') +
+        'checked an attestation statement for one of its keys and it ' +
+        'chained to a trust anchor below, and <strong>self-asserted' +
+        '</strong> otherwise. The formats it records: ' +
+        esc(json.attestationFormats.join(', ')) + '. A statement that ' +
+        'does not verify is refused in both modes; one that verifies and ' +
+        'chains to nothing here is self-asserted. ' +
+        (json.unattestedKeys.accepted
+          ? 'This realm (development) registers a self-asserted key a ' +
+            'device or its owner presents.'
+          : 'This realm (product) REFUSES a self-asserted key a device or ' +
+            'its owner presents (STS-DEVICE-0024).') + ' ' +
+        esc(json.unattestedKeys.adminKeys) + '.') +
+      '<table class="grid"><thead><tr><th>Statement</th><th>Anchors</th>' +
+      '<th>Setting</th><th>Shipped</th></tr></thead><tbody>' +
+      json.trustAnchors.map(function (r: Json): string {
+        return '<tr><td><code>' + esc(r.kind) + '</code></td><td>' +
+          esc(r.count === null ? r.source : r.count + ' (' + r.source +
+                                           ')') +
+          '</td><td><code>' + esc(r.setting) + '</code></td><td>' +
+          (r.shipped.length ? r.shipped.map(function (a: Json): string {
+            return esc(a.subject) + ' — until ' + esc(a.notAfter) +
+              '<br><small>SHA-256 <code>' + esc(a.sha256) + '</code>' +
+              (a.used ? '' : ' <strong>not used: pin mismatch</strong>') +
+              '</small>';
+          }).join('<br>') : '—') + '</td></tr>';
+      }).join('') + '</tbody></table>' +
+      '<h2>Enrolment challenges</h2>' +
+      admin.note('The challenges <code>/portal/devices</code> issues are ' +
+        'held in <code>' + esc(json.challenges.store) + '</code>, per ' +
+        'realm and persisted, one per session and purpose, answered once ' +
+        'across the cluster and for ' +
+        esc(String(json.challenges.ttlSeconds)) + ' seconds; ' +
+        esc(String(json.challenges.live)) + ' are live, of at most ' +
+        esc(String(json.challenges.max)) + '.') +
+      '<h2>Where a recognised device is recorded</h2>' +
+      admin.note('At a sign-in: ' + esc(json.recordedAt.signIn) + '. At ' +
+        'the token endpoint: ' + esc(json.recordedAt.tokenEndpoint) + '. ' +
+        'A compromised device is still recognised, and says so.') +
       '<h2>Compliance</h2>' +
       admin.note('A device is <code>compliant</code>, ' +
         '<code>not-compliant</code> or <code>unknown</code> (CAEP\'s ' +
@@ -706,6 +815,17 @@ class DevicesAdmin {
       table('By key', c.byKeyKind) +
       table('By enrolment', c.byEnrolment) +
       table('Native SSO', c.nativeSso) +
+      table('Keys by attestation format', c.byKeyAttestationFormat || {}) +
+      admin.note('Counted in this process since it started (' +
+        esc(json.activity.scope) + '): a page served by one node of a ' +
+        'cluster shows that node\'s.', 'The counters below') +
+      table('Recognitions, by key', json.activity.recognitions) +
+      table('Enrolments by a device or its owner, by method',
+            json.activity.enrolments) +
+      table('Enrolled keys, by attestation', json.activity.attestationLevels) +
+      table('Enrolled keys, by attestation format',
+            json.activity.attestationFormats) +
+      table('Attestations refused', json.activity.attestationRefusals) +
       '<h2>The last ' + esc(String(t.days)) + ' days</h2>' +
       '<table class="grid"><thead><tr><th>Day (UTC)</th><th>Registered' +
       '</th><th>Removed</th><th>Evicted</th></tr></thead><tbody>' +

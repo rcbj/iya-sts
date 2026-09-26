@@ -391,9 +391,9 @@ class DeviceAttestation {
     const { log, pki, stsCrypto, config, webauthnCodec } = this.deps;
     log.debug("Entering DeviceAttestation.appAttest().");
     const s = spec || {};
-    const fail = (why: string): Json => {
-      log.debug("Entering fail().");
-      log.debug("Leaving fail().");
+    const falsified = (why: string): Json => {
+      log.debug("Entering falsified().");
+      log.debug("Leaving falsified().");
       return this.refuse('STS-DEVICE-0019', 'The App Attest statement does ' +
                          'not verify: ' + why + '.');
     };
@@ -426,7 +426,7 @@ class DeviceAttestation {
         !Array.isArray(x5c) || x5c.length < 2 ||
         !Buffer.isBuffer(authDataRaw) || keyId.length !== 32) {
       log.debug("Leaving DeviceAttestation.appAttest(). Shape.");
-      return fail('it is not an apple-appattest attestation object with ' +
+      return falsified('it is not an apple-appattest attestation object with ' +
                   'x5c, authData and a 32-byte key id');
     }
     // Step 1: the chain.
@@ -435,7 +435,7 @@ class DeviceAttestation {
         config.value('devices.appleAppAttestTrustAnchors')));
     if (!chain.ok) {
       log.debug("Leaving DeviceAttestation.appAttest(). Chain.");
-      return fail('the certificate chain does not end at the Apple App ' +
+      return falsified('the certificate chain does not end at the Apple App ' +
                   'Attestation root (' + chain.why + ')');
     }
     let authData: Json = null;
@@ -448,7 +448,7 @@ class DeviceAttestation {
     }
     if (!authData || !authData.credentialPublicKey) {
       log.debug("Leaving DeviceAttestation.appAttest(). authData.");
-      return fail('the authenticator data carries no attested credential');
+      return falsified('the authenticator data carries no attested credential');
     }
     // Steps 2-4: the nonce in the credential certificate.
     const clientDataHash = nodeCrypto.createHash('sha256')
@@ -460,7 +460,7 @@ class DeviceAttestation {
     const certified = ext ? stsCrypto.appleAttestationNonce(ext.value) : null;
     if (!certified || !certified.equals(nonce)) {
       log.debug("Leaving DeviceAttestation.appAttest(). Nonce.");
-      return fail('the credential certificate\'s nonce is not SHA-256(' +
+      return falsified('the credential certificate\'s nonce is not SHA-256(' +
                   'authData ‖ SHA-256(challenge))');
     }
     // Step 5: the key id is the SHA-256 of the uncompressed point.
@@ -471,7 +471,8 @@ class DeviceAttestation {
     if (!point || !nodeCrypto.createHash('sha256').update(point).digest()
           .equals(keyId)) {
       log.debug("Leaving DeviceAttestation.appAttest(). Key id.");
-      return fail('the key id is not the SHA-256 of the certified P-256 key');
+      return falsified('the key id is not the SHA-256 of the certified ' +
+                       'P-256 key');
     }
     // Step 6: the app.
     const appId = appIds.filter(function (one: string): boolean {
@@ -480,7 +481,7 @@ class DeviceAttestation {
     })[0];
     if (!appId) {
       log.debug("Leaving DeviceAttestation.appAttest(). App.");
-      return fail('the RP ID hash is not the SHA-256 of an app in ' +
+      return falsified('the RP ID hash is not the SHA-256 of an app in ' +
                   'devices.appleAppAttestAppIds');
     }
     // Steps 7-9: the counter, the environment and the credential id.
@@ -500,7 +501,8 @@ class DeviceAttestation {
     }
     let jwk: Json = null;
     try {
-      jwk = webauthnCodec.coseKeyToJwk(authData.credentialPublicKey);
+      // `{ jwk, alg, coseAlg }`, the verifier's shape.
+      jwk = webauthnCodec.coseKeyToJwk(authData.credentialPublicKey).jwk;
     } catch (e) {
       log.debug("Caught in DeviceAttestation.appAttest(): " +
                 ((e && e.message) || e));
@@ -512,7 +514,7 @@ class DeviceAttestation {
     }
     if (why) {
       log.debug("Leaving DeviceAttestation.appAttest(). " + why);
-      return fail(why);
+      return falsified(why);
     }
     const pub = { kty: 'EC', crv: 'P-256', x: certJwk.x, y: certJwk.y };
     log.debug("Leaving DeviceAttestation.appAttest(). Attested.");
@@ -574,9 +576,9 @@ class DeviceAttestation {
                            publicKeyPem: string): Promise<Json> {
     const { log, stsCrypto, pki, config } = this.deps;
     log.debug("Entering DeviceAttestation.tpmCertify().");
-    const fail = (why: string): Json => {
-      log.debug("Entering fail().");
-      log.debug("Leaving fail().");
+    const falsified = (why: string): Json => {
+      log.debug("Entering falsified().");
+      log.debug("Leaving falsified().");
       return this.refuse('STS-DEVICE-0020', 'The TPM key attestation does ' +
                          'not verify: ' + why + '.');
     };
@@ -592,11 +594,12 @@ class DeviceAttestation {
       log.debug("Caught in DeviceAttestation.tpmCertify(): " +
                 ((e && e.message) || e));
       log.debug("Leaving DeviceAttestation.tpmCertify(). Unreadable.");
-      return fail(String((e && e.message) || e));
+      return falsified(String((e && e.message) || e));
     }
     if (!pub) {
       log.debug("Leaving DeviceAttestation.tpmCertify(). No public area.");
-      return fail('it carries no tpmTPublic, so the certified Name cannot ' +
+      return falsified('it carries no tpmTPublic, so the certified Name ' +
+                       'cannot ' +
                   'be tied to the request\'s key');
     }
     let requestJwk: Json = null;
@@ -635,14 +638,14 @@ class DeviceAttestation {
     }
     if (why) {
       log.debug("Leaving DeviceAttestation.tpmCertify(). " + why);
-      return fail(why);
+      return falsified(why);
     }
     // The Attestation Key: the bundle's certificate with tcg-kp-AIKCertificate
     // whose key verifies the signature.
     const signature = stsCrypto.tpmParseSignature(stmt.signature);
     if (!signature) {
       log.debug("Leaving DeviceAttestation.tpmCertify(). Signature shape.");
-      return fail('the signature is not one TPMT_SIGNATURE');
+      return falsified('the signature is not one TPMT_SIGNATURE');
     }
     const scheme = {
       family: signature.sigAlg === stsCrypto.TPM_ALG.RSASSA ? 'rsa-pkcs1'
@@ -654,7 +657,8 @@ class DeviceAttestation {
     } catch (e) {
       log.debug("Caught in DeviceAttestation.tpmCertify(): " +
                 ((e && e.message) || e));
-      return fail('the signature\'s hash algorithm is not one this service ' +
+      return falsified('the signature\'s hash algorithm is not one this ' +
+                       'service ' +
                   'verifies');
     }
     let ak: Buffer | null = null;
@@ -672,7 +676,8 @@ class DeviceAttestation {
     }
     if (!ak) {
       log.debug("Leaving DeviceAttestation.tpmCertify(). No AK.");
-      return fail('no certificate in the bundle with tcg-kp-AIKCertificate (' +
+      return falsified('no certificate in the bundle with ' +
+                       'tcg-kp-AIKCertificate (' +
                   OID_TCG_AIK + ') verifies the TPMS_ATTEST signature');
     }
     const chain = await this.chainOf(ak, certs.filter(function (one) {

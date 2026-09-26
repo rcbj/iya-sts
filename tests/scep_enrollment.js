@@ -386,9 +386,10 @@ async function checkConsole(t) {
           JSON.stringify(view).indexOf(made.challenge) < 0 &&
           JSON.stringify(view).indexOf('PRIVATE KEY') < 0,
           'the view lists it with no secret and no private key');
-  t.check(view.profiles.length === 9 && view.refusedProfiles.length === 5 &&
+  t.check(view.profiles.length === 10 && view.refusedProfiles.length === 5 &&
           view.endpoints.getCaCert === 'https://x.test/enroll/scep' +
-          '?operation=GetCACert', 'nine profiles, five refused, absolute URLs');
+          '?operation=GetCACert', 'nine profiles and the device profile, five ' +
+          'refused, absolute URLs');
   const route = (app._router || app.router).stack.filter(function (one) {
     return one.route && one.route.path === '/admin/scep' &&
            one.route.methods.get;

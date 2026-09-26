@@ -5629,12 +5629,34 @@ const ENDPOINTS: EndpointEntry[] = [
           'stronger sign-in first.' },
   { path: '/portal/devices', group: 'User portal',
     name: 'Your devices — ou=devices, and Native SSO',
-    specs: ['oidc-native-sso'],
-    effect: 'lists the signed-in person\'s devices and removes one',
-    what: 'NON-SPEC page (#130). The device entries the person owns, the ' +
-          'applications that used each, and whether its Native SSO secret ' +
-          'is live; removing one takes the secret with it. The identity is ' +
-          'the session\'s; the form names only the device.' },
+    specs: ['oidc-native-sso', 'webauthn'],
+    effect: 'lists the signed-in person\'s devices and removes one; ' +
+            'registers one by a key proof over a challenge (a JWS, an ' +
+            'Android Key Attestation, an Apple App Attest statement) or by ' +
+            'linking a WebAuthn platform credential with a fresh assertion',
+    what: 'NON-SPEC page (#130, #164 phase 2). The device entries the ' +
+          'person owns, their keys and attestation, the applications that ' +
+          'used each, and whether its Native SSO secret is live. The ' +
+          'identity is the session\'s; the forms name only the device or ' +
+          'the credential. The link step runs /authn/webauthn.js.' },
+  { path: '/portal/devices/challenge', group: 'User portal',
+    name: 'Device enrolment challenge (JSON)',
+    specs: [],
+    effect: 'issues a challenge bound to the portal session, for a device ' +
+            'app to sign or attest',
+    what: 'NON-SPEC (#164 phase 2). application/json only. Answers ' +
+          '{ challenge, audience, typ, expires_at, proof_endpoint }; one ' +
+          'per session, answered once, devices.challengeTtlSeconds.' },
+  { path: '/portal/devices/proof', group: 'User portal',
+    name: 'Device key proof (JSON)',
+    specs: [],
+    effect: 'registers the signed-in person\'s device by a JWS over the ' +
+            'challenge, or an Apple App Attest statement',
+    what: 'NON-SPEC (#164 phase 2). application/json only. A ' +
+          'device-key-proof+jwt JWS (an Android Key Attestation in x5c) ' +
+          'or { app_attest: { key_id, attestation } }; 201 with the ' +
+          'device, or 400 with the reason. Product refuses a key with no ' +
+          'attestation that chained to a trusted root.' },
   { path: '/portal/self-issued', group: 'User portal',
     name: 'Your self-issued IDs — the SIOPv2 keys that sign you in',
     specs: ['siopv2'],

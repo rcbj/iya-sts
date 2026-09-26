@@ -471,7 +471,7 @@ var config = {
   // --- EST -------------------------------------------------------------
   est: {
     enabled: true,                                                                                                                                 // Run the EST server
-    allowedProfiles: "tls-server,tls-client,tls-server-client,digital-signature,key-encipherment,code-signing,email,timestamping,smartcard-logon", // Certificate profiles EST may issue
+    allowedProfiles: "tls-server,tls-client,tls-server-client,digital-signature,key-encipherment,code-signing,email,timestamping,smartcard-logon,device", // Certificate profiles EST may issue
     defaultProfile: "tls-client",                                                                                                                  // Profile at the unlabelled path
     certificateLifetimeDays: 365,                                                                                                                  // Certificate lifetime (days)
     maxRequestBytes: 65536,                                                                                                                        // Largest request body (bytes)
@@ -485,7 +485,7 @@ var config = {
   // --- SCEP ------------------------------------------------------------
   scep: {
     enabled: true,                                                                                                                                 // Run the SCEP server
-    allowedProfiles: "tls-server,tls-client,tls-server-client,digital-signature,key-encipherment,code-signing,email,timestamping,smartcard-logon", // Certificate profiles SCEP may issue
+    allowedProfiles: "tls-server,tls-client,tls-server-client,digital-signature,key-encipherment,code-signing,email,timestamping,smartcard-logon,device", // Certificate profiles SCEP may issue
     defaultProfile: "tls-client",                                                                                                                  // Profile a new challenge defaults to
     certificateLifetimeDays: 365,                                                                                                                  // Certificate lifetime (days)
     maxRequestBytes: 262144,                                                                                                                       // Largest PKIOperation message (bytes)

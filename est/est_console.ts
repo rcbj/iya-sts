@@ -269,12 +269,18 @@ class EstConsole {
             managedAt: '/admin/est' }
         ]
       },
-      profiles: core.PROFILE_IDS.map(function (id) {
+      // The device profile (#164 phase 2) beside /admin/pki's nine.
+      profiles: core.PROFILE_IDS.concat([core.DEVICE_PROFILE]).map(
+        function (id) {
         const urls = {};
         OPERATIONS.forEach(function (op) {
           urls[op.name] = base + '/.well-known/est/' + id + '/' + op.name;
         });
-        return { id: id, needs: core.PROFILE_NEEDS[id] || null,
+        return { id: id, needs: id === core.DEVICE_PROFILE
+                   ? 'a device entry — the one the request\'s ' +
+                     'urn:sts:device: names, or a new one; a TPM key ' +
+                     'attestation in product; simpleenroll only'
+                   : core.PROFILE_NEEDS[id] || null,
                  allowed: allowed.indexOf(id) >= 0,
                  isDefault: id === defaultProfile, urls: urls };
       }),

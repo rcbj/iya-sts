@@ -7973,6 +7973,37 @@ survived the first version and both were the fixture: the non-canonical kid neve
 got past the regex, and no certificate was presented that its entry did not hold.
 
 
+### The `device` profile (#164 decision 6c, phase 2, 2026-09-26)
+
+**A certificate issued to a DEVICE entry**, over EST and SCEP only (ACME is
+not in decision 6 and proves control of a name, not possession by a machine;
+refused `STS-DEVICE-0025`). It is a profile in the enrollment sense —
+`checkProfile()` and the `est.allowedProfiles`/`scep.allowedProfiles`
+defaults carry it — and not /admin/pki's: its extensions are the `tls-client`
+leaf's (clientAuth, because its one use is to be presented on the main port
+and recognised), and its ONLY name is `urn:sts:device:<id>`, built from the
+entry. `issue()` hands it to `issueForDevice()`:
+
+* **Who** — the device's OWNER (read off the device entry, never the
+  request) or an Admin Write holder (`authorizeDevice()`, `STS-DEVICE-0023`).
+  A request naming no `urn:sts:device:` MAKES a device, owned by
+  `targetFromRequest()`'s target and so by the rule above.
+* **Attestation** — the request's `id-aa-attestation` values (`parseCsr()`
+  now returns them as `attestations`; more than one is `STS-DEVICE-0021`),
+  verified by `device_attestation.csrAttestation()`; product refuses a key
+  with no anchored TPM attestation (`STS-DEVICE-0024`).
+* **Kept ON THE DEVICE** as an `x509` key (`proof` the family, the serial and
+  expiry in its material), NOT on the owner's entry — it names the device —
+  and recorded by `pki.issueEnrolled()` (subject kind `device`) so OCSP and
+  the CRL know it. The same key again REPLACES that key's certificate; a key
+  another device holds is refused. A server-generated key and a re-enrolment
+  (`/simplereenroll`, RenewalReq, which look on person and application
+  entries) are refused `STS-DEVICE-0025`: a device proves its own key, and is
+  renewed by a `simpleenroll` naming its URN.
+* **Not done**: removing a device or a key does not revoke its certificate
+  (it stops being RECOGNISED at once, which is what the register answers);
+  revocation on removal belongs with phase 4's RISC.
+
 ## `credentials.ts`: A RESET LINK, A REMOVED PASSWORD, AND A REQUIRED SECOND FACTOR (2026-09-13)
 
 For the *Password and second factors* section of a person's console page.
@@ -8162,6 +8193,58 @@ each argued there:
   would overwrite — bounded at the insert by `devices.eventsKept`.
 * **The view never carries the hash or the session id**, on the console,
   the API or the portal.
+
+### Phase 2 (2026-09-26): enrolment, attestation and recognition — three libraries
+
+* **`device_attestation.ts`** verifies what a presented key's attestation
+  proves: a `device-key-proof+jwt` JWS with an **Android Key Attestation**
+  in its `x5c` (the extension's `attestationChallenge` is the enrolment
+  challenge, a TEE or StrongBox security level, the chain to
+  `devices.androidAttestationTrustAnchors`), an **Apple App Attest** object
+  (Apple's nine steps, `devices.appleAppAttestAppIds`), and a **TPM key
+  attestation** in a certificate request (draft-ietf-lamps-csr-attestation's
+  `id-aa-attestation`, TCG `tcg-attest-tpm-certify`: the AK signature, the
+  certified Name, the request's key, fixedTPM/fixedParent/
+  sensitiveDataOrigin, the AK chain to `devices.tpmTrustAnchors`). **A
+  statement that does not verify is refused in both modes; one that verifies
+  and chains to nothing this realm trusts is `self-asserted`; only an
+  anchored one is `attested`.** Every codec is `crypto.js`'s (the CSR
+  attestation codec is new there) and every chain `pki.js`'s.
+* **The Google and Apple roots SHIP** in `pki_device_anchors.json`,
+  generated from the vendors' URLs and PINNED by SHA-256, re-checked by
+  `pki.deviceAttestationAnchors()` at load (a mismatch is dropped,
+  `STS-DEVICE-0027`) — `pki_cloud_anchors.json`'s precedent, and the
+  opposite of `webauthn.attestationTrustAnchors` (which ships nothing because
+  MDS3 supplies WebAuthn's roots). A realm's setting REPLACES the shipped set,
+  which is how a test uses its own generated root. **TPM roots are not
+  shipped**: dozens of manufacturers, and an operator knows which it buys.
+  Nothing here is post-quantum and cannot be: the formats are the vendors'.
+* **`device_enrolment.ts`** is a person registering their own device on
+  `/portal/devices` (`portal/CLAUDE.md`): the `devices.challenges` store (per
+  realm at its declaration, persisted, one per session and purpose, spent
+  once through `cluster_claims`, bounded by `devices.maxChallenges`, ejected
+  by `caches.eject-expired`), the JWK proof, the App Attest statement and the
+  WebAuthn link. **The mode split is here**: an unattested key a device or
+  its owner PRESENTS is refused in product (`mode.acceptsUnattestedDevice-
+  Keys()`, `STS-DEVICE-0024`) and self-asserted in development. **An
+  administrator's by-value key is not asked** — an administrator's act,
+  `proof: admin`, self-asserted, in both modes (SIOPv2's #129 arrangement).
+* **`device_recognition.ts`'s `recognize(evidence)`** answers which
+  registered device a request came from — `{ id, via, keyId, owner,
+  ownerKind, ownerName, status, attestation, keyAttestation, compliance,
+  chainVerified, ownerMatches?, conflict?, at }` or null — by `x509` (the
+  connection's client certificate by its SPKI; the handshake proves
+  possession, the chain is recorded not required, a certificate refused on
+  revocation is not recognised), `webauthn` (a linked credential id), `jwk`
+  (a DPoP `jkt`) or `native-sso` (the secret), in that order of strength, a
+  second device kept as `conflict`. **A compromised device IS recognised.**
+  It decides nothing: the fact is recorded on the authentication event as
+  `registeredDevice` (`authn.registeredDeviceOf(session)`) and on the token
+  issuance as `opts.registered_device`, before `checkIssuance()` — where
+  phases 3 to 6 read it. The last use moves (`devices.noteRecognized()`, at
+  most every `devices.lastUsedResolutionSeconds`); recognitions, enrolments
+  and attestation outcomes are counted per realm in THIS process.
+* **The `device` enrollment profile** is `cert_enrollment.ts`'s (3ag, below).
 
 ## Several nodes: second factors, links, enrollment credentials and the bootstrap (2026-09-14, #46)
 

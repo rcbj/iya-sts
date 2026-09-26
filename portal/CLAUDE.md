@@ -1271,16 +1271,57 @@ never whose it is (`STS-PORTAL-0087` when it is not theirs).
 administrator enrols by value from `/admin/users` and `/admin-api`
 (`oid4vc/CLAUDE.md`, 3ba).
 
-## `/portal/devices`: A PERSON'S OWN DEVICES (2026-09-23, #130)
+## `/portal/devices`: A PERSON'S OWN DEVICES (2026-09-23, #130; #164 phase 2, 2026-09-26)
 
 The entries in `ou=devices` the person owns, the applications that used
-each, whether its Native SSO secret is live and how many keys it holds; a
-Remove each (`STS-PORTAL-0088` when the device is not theirs). Nothing is
-added here yet — a device is made by signing in on it or by an
-administrator; registering one by proving a key here is #164's phase 2. It asks `authn` about sessions directly,
-because the portal is loaded before the authorization server whose
-`sessionIsLive()` says the same. `portal_devices.ts`, drawn the way
-`portal_self_issued.ts` is.
+each, whether its Native SSO secret is live, its keys and whether each is
+attested, and how it was registered; a Remove each (`STS-PORTAL-0088` when
+the device is not theirs). It asks `authn` about sessions directly, because
+the portal is loaded before the authorization server whose `sessionIsLive()`
+says the same. `portal_devices.ts`, drawn the way `portal_self_issued.ts`
+is; `common/device_enrolment.ts` holds everything that is not a page.
+
+**SINCE #164 PHASE 2 THE PERSON REGISTERS A DEVICE HERE BY PROVING A KEY**
+(decision 6b), two ways:
+
+* **A JWK proof.** *Get a challenge* issues one bound to the portal session
+  (`devices.challenges`, per realm, persisted, one per session and purpose,
+  answered once across the cluster, `devices.challengeTtlSeconds`). The
+  device signs a `device-key-proof+jwt` JWS over `{ nonce, aud, iat }`
+  (`aud` is this page's absolute address), or answers with an Apple App
+  Attest object whose clientDataHash is the challenge's SHA-256, and the
+  person pastes it. An `x5c` in the JWS is an Android Key Attestation.
+  **No script**: a browser cannot sign with a device's key, so the page is a
+  form carrying what the device made. A device APP drives the same act
+  through `POST /portal/devices/challenge` and `POST /portal/devices/proof`
+  (`application/json` only, the portal session's cookie; the challenge is
+  the anti-forgery token — a forgery can neither read it nor sign over it —
+  which `device_enrolment.ts` argues).
+* **Linking a WebAuthn platform credential** the person enrolled on
+  `/portal/keys`, proven by a FRESH assertion over a challenge from here,
+  spent through `credentials.spendAssertion()` (the challenge claim and the
+  signature counter a sign-in advances). A roaming (`cross-platform`) key is
+  refused: it identifies no device. It is attested when its REGISTRATION
+  attestation (#105) verified and was trusted.
+
+**THE LINK STEP IS A SCRIPTED PAGE, AND ITS OWN ROW IN THE ROOT TABLE.** A
+fresh assertion is `navigator.credentials.get()` and no markup makes it, which
+is `/portal/keys`' argument and `/authn/webauthn`'s, made again here from
+scratch because the rule says "the page next door" is not one. It runs
+`/authn/webauthn.js` — the SAME resource, in `get` mode — and the relaxed
+policy (`app.contentSecurityPolicy()`, so `frame-ancestors` stays) is sent
+ONLY on the page that draws an armed ceremony; every other state of the page
+runs no script. The button under it is real: with the script blocked it posts
+a `link-finish` with no assertion, answered by a sentence.
+
+**Product refuses a key with no attestation that chained to a trusted root**
+(`mode.acceptsUnattestedDeviceKeys()`, `STS-DEVICE-0024`); development
+registers it self-asserted. Refusals are `STS-DEVICE-0016`–`0028`; the page
+and the JSON doors never take an identity from the request.
+
+**What it still has no test for**: the scripted link step in a real browser
+(the Selenium console job is rcbj's; `tests/device_enrolment.js` drives the
+same `finishLink()` with an assertion built in process).
 
 ## `/portal/ciba`: SIGN-IN REQUESTS (2026-09-23, #131)
 

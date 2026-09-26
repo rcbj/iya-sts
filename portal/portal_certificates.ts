@@ -131,7 +131,9 @@ class PortalCertificatesPage {
                                'delete-challenge', 'revoke'])),
       kid: vz.string().max(600).regex(/^[A-Za-z0-9_-]*$/).optional(),
       id: vz.string().max(600).regex(/^[A-Za-z0-9_-]*$/).optional(),
-      profile: vt.opt(vt.oneOf(deps.core.PROFILE_IDS)),
+      // `device` (#164 phase 2): a SCEP challenge for a device of theirs.
+      profile: vt.opt(vt.oneOf(deps.core.PROFILE_IDS.concat(
+        [deps.core.DEVICE_PROFILE]))),
       serial: vz.string().max(80).regex(/^[0-9A-Fa-f:]*$/).optional(),
       reason: vt.opt(vt.oneOf(REVOCATION_REASONS)),
       csrf_token: vt.opt(vt.token)

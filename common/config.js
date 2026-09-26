@@ -5127,11 +5127,14 @@ const SETTINGS = [
     label: 'Certificate profiles EST may issue',
     env: 'STS_EST_ALLOWED_PROFILES', type: 'csv',
     dflt: 'tls-server,tls-client,tls-server-client,digital-signature,' +
-          'key-encipherment,code-signing,email,timestamping,smartcard-logon',
+          'key-encipherment,code-signing,email,timestamping,smartcard-logon,' +
+          'device',
     runtime: true,
     description: 'The /admin/pki profiles an EST label may name ' +
-                 '(/.well-known/est/<profile>/…). The five CA, OCSP and KDC ' +
-                 'profiles are never issued over an enrollment protocol.' },
+                 '(/.well-known/est/<profile>/…), and `device` — a ' +
+                 'certificate issued to a DEVICE entry (#164). The five ' +
+                 'CA, OCSP and KDC profiles are never issued over an ' +
+                 'enrollment protocol.' },
   { key: 'est.defaultProfile', group: 'EST',
     label: 'Profile at the unlabelled path',
     env: 'STS_EST_DEFAULT_PROFILE', type: 'enum',
@@ -5199,11 +5202,13 @@ const SETTINGS = [
     label: 'Certificate profiles SCEP may issue',
     env: 'STS_SCEP_ALLOWED_PROFILES', type: 'csv',
     dflt: 'tls-server,tls-client,tls-server-client,digital-signature,' +
-          'key-encipherment,code-signing,email,timestamping,smartcard-logon',
+          'key-encipherment,code-signing,email,timestamping,smartcard-logon,' +
+          'device',
     runtime: true,
     description: 'The /admin/pki profiles a challenge password may be issued ' +
-                 'for. The five CA, OCSP and KDC profiles are never issued ' +
-                 'over an enrollment protocol.' },
+                 'for, and `device` — a certificate issued to a DEVICE ' +
+                 'entry (#164). The five CA, OCSP and KDC profiles are ' +
+                 'never issued over an enrollment protocol.' },
   { key: 'scep.defaultProfile', group: 'SCEP',
     label: 'Profile a new challenge defaults to',
     env: 'STS_SCEP_DEFAULT_PROFILE', type: 'enum',

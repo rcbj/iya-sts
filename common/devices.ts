@@ -1630,6 +1630,9 @@ class Devices {
       byKeyKind: zero(KEY_KIND_FILTERS),
       byEnrolment: zero(ENROLMENT_METHODS),
       byStatus: zero(STATUSES),
+      // Keys by what verified them (#164 phase 2): the attestation format
+      // of each key, `none` for an unattested one.
+      byKeyAttestationFormat: {},
       keys: 0,
       nativeSso: { live: 0, ended: 0, none: 0 }
     };
@@ -1645,6 +1648,10 @@ class Devices {
       bump(out.byStatus, d.status);
       bump(out.byEnrolment, d.enrolment.method);
       out.keys += d.keys.length;
+      d.keys.forEach(function (k) {
+        bump(out.byKeyAttestationFormat,
+             (k.attestation && k.attestation.format) || 'none');
+      });
       Devices.keyKindsOf(d).forEach(function (k) {
         bump(out.byKeyKind, k);
       });
