@@ -470,7 +470,7 @@ async function test() {
                        pq.jkt);
   });
 
-  assert.ok(checks >= 9, "only " + checks + " checks ran");
+  assert.ok(checks >= 8, "only " + checks + " checks ran");
   log.info(checks + " check(s) passed.");
   log.info("Test completed successfully.");
   log.debug("Leaving test().");

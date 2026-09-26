@@ -15392,9 +15392,11 @@ class OAuth2Server {
       }
       dpopJkt = String(checked.jkt);
     }
-    const cfg = applications.clientConfigOf(clientId);
+    // The name the person is shown on /portal/device (section 5.4): the
+    // registration's client_name, as CIBA's page shows it.
+    const registration: Json = applications.registrationOf(clientId) || {};
     const made = deviceAuthorization.create(clientId,
-      String(cfg.client_name || clientId), scope, dpopJkt);
+      String(registration.client_name || clientId), scope, dpopJkt);
     const base = self.asBaseOf(req);
     const verification = base + '/portal/device';
     log.debug("Leaving OAuth2Server.deviceAuthorizationRequest().");
