@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3504** of them, in **38** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3513** of them, in **38** subsystems.
 
 ## Where a code appears
 
@@ -74,7 +74,7 @@ is an ordinary outcome.
 * [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 77
 * [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 144
 * [TLS and client certificates (`STS-TLS`)](#sts-tls) — 33
-* [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 94
+* [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 103
 * [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 104
 * [Risk scoring (`STS-RISK`)](#sts-risk) — 39
 * [Mail (`STS-MAIL`)](#sts-mail) — 39
@@ -2763,6 +2763,15 @@ Raised from: oid4vc/.
 | `STS-VC-0092` | oid4vp.verifierAttestation cannot be used — unreadable, not typ verifier-attestation+jwt, no sub, expired, or its cnf is not this realm's request-signing key — so no signed request with the verifier_attestation prefix was built (#129). | HTTP 500 |
 | `STS-VC-0093` | A SIOPv2 enrolment was started or collected by a browser holding no sign-on session, or for a person other than the one now signed in; or a self-issued ID was asked for as a second factor, which it is not offered as (#129). | HTTP 403 / 400 page |
 | `STS-VC-0094` | A key proved by a SIOPv2 enrolment was not enrolled: it is already enrolled for somebody, or the person holds the most they may (#129). | HTTP 400 page |
+| `STS-VC-0100` | A VC-API test endpoint (/vc-api/*, the Bitstring Status List publish hook) was called in a realm whose test controls are closed — a product realm — and answered as though it did not exist (#194). | HTTP 404 |
+| `STS-VC-0101` | A VC-API test endpoint was presented an access token it refused: not issued by this realm, not an access token, revoked, without the vc-api:issue / vc-api:verify scope it needs, or issued to a client that no longer declares that scope (#194). | HTTP 401 / 403 with WWW-Authenticate |
+| `STS-VC-0102` | The VC-API issuer refused a credential that does not conform to the VC Data Model (a MUST of VCDM 2.0 or 1.1 broken), or that names an issuer other than the key it is asked to sign with (#194). | HTTP 400 {errors} |
+| `STS-VC-0103` | The VC-API issuer refused a credential JSON-LD safe mode rejects — a context this service does not hold (it fetches none), an undefined term, a redefined protected term, a relative IRI — or one its cryptosuite could not sign (#194-#196). | HTTP 400 {errors} |
+| `STS-VC-0104` | A VC-API issue request named an issuer (a securing mechanism and key) this service does not offer (#194). | HTTP 404 {errors} |
+| `STS-VC-0105` | A VC-API request failed inside this service rather than on its input (#194). | HTTP 500 {errors} |
+| `STS-VC-0106` | The VC-API verifier refused a credential or presentation: the data model, JSON-LD safe mode, a proof (the key, the purpose, the challenge or domain, the signature, the issuer), or a status list entry (#194-#198). | HTTP 400 {verified: false, errors} |
+| `STS-VC-0107` | A VC-API status change named a credential this realm issued no status for, a status type or purpose it does not publish, or tried to clear a revocation (#197). | HTTP 404 / 400 {errors} |
+| `STS-VC-0108` | A VC-API request body was not a JSON object, or carried a polluting key or more depth or members than any document this service accepts (validation.checkDocument, #194). | HTTP 400 {errors} |
 
 ## STS-SSF
 

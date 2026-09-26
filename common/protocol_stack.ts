@@ -590,6 +590,13 @@ class ProtocolStack {
     // references them. None requires the issuer or the verifier.
     this.build('oid4vc/vc_status_codec', require('../oid4vc/vc_status_codec'),
                'VcStatusCodec');
+    // #194-#196: the closed JSON-LD loader and RDFC-1.0 the RDFC
+    // cryptosuites canonicalize with, and the VC Data Model's MUSTs. Two
+    // libraries, built before the Data Integrity suites that read them.
+    this.build('oid4vc/vc_jsonld', require('../oid4vc/vc_jsonld'),
+               'VcJsonLd');
+    this.build('oid4vc/vc_data_model', require('../oid4vc/vc_data_model'),
+               'VcDataModel');
     this.build('oid4vc/vc_data_integrity',
                require('../oid4vc/vc_data_integrity'), 'VcDataIntegrity');
     // #129: SIOPv2's relying-party half — the self-issued ID Token's check
@@ -611,6 +618,13 @@ class ProtocolStack {
     this.build('oid4vc/vc_verifier', require('../oid4vc/vc_verifier'),
                'VcVerifier');
     this.register(app, require('../oid4vc/vc_verifier'), 'oid4vc/vc_verifier');
+    // #194-#199: the W3C VC-API test endpoints (/vc-api/*), a TEST CONTROL
+    // over the libraries above — the Data Integrity suites, the status lists
+    // and the data model. After the verifier, whose libraries it reads; it
+    // requires no route module.
+    require('../oid4vc/vc_api');
+    this.build('oid4vc/vc_api', require('../oid4vc/vc_api'), 'VcApi');
+    this.register(app, require('../oid4vc/vc_api'), 'oid4vc/vc_api');
     // -------------------------------------------------------------------------
     // 14a. AND A PRESENTATION AS A SIGN-IN (2026-09-17, #38): /authn/wallet,
     // which turns a verified presentation of a credential this realm issued

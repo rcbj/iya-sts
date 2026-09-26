@@ -131,6 +131,9 @@ import helpers = require('../common/helpers');
 import stsCrypto = require('../common/crypto');
 import pqJose = require('../common/pq_jose');
 import InstanceSlot = require('../common/instance_slot');
+// The closed JSON-LD loader and RDFC-1.0 (#195, #196). A library that
+// requires only `jsonld` and `common/` leaves.
+import vcJsonLd = require('./vc_jsonld');
 
 interface Check {
   name: string;
@@ -144,6 +147,9 @@ interface Suite {
   multibase: 'z' | 'u';
   spec: string;
   pqAlg?: string;
+  // How the document is made into bytes: RFC 8785 JSON, or RDFC-1.0 N-Quads
+  // (#195, #196).
+  canon: 'jcs' | 'rdfc';
 }
 
 interface VcDataIntegrityDeps {
@@ -151,23 +157,35 @@ interface VcDataIntegrityDeps {
   pqSignAsync: typeof pqJose.signAsync;
   pqVerifyAsync: typeof pqJose.verifyAsync;
   clockSkewS: () => number;
+  // RDFC-1.0 over the closed loader (`vc_jsonld.ts`, #195/#196).
+  canonize: (document: any) => Promise<string>;
+  stsCrypto: typeof stsCrypto;
+  // The ambient realm's key set, for `realmKeyFor()` (#194).
+  stsKeysFor: () => any;
 }
 
 const SUITES: Record<string, Suite> = {
   'ecdsa-jcs-2019': {
-    id: 'ecdsa-jcs-2019', kind: 'ec', multibase: 'z',
+    id: 'ecdsa-jcs-2019', kind: 'ec', multibase: 'z', canon: 'jcs',
     spec: 'W3C Data Integrity ECDSA Cryptosuites v1.0, section 3.3' },
   'eddsa-jcs-2022': {
-    id: 'eddsa-jcs-2022', kind: 'ed25519', multibase: 'z',
+    id: 'eddsa-jcs-2022', kind: 'ed25519', multibase: 'z', canon: 'jcs',
     spec: 'W3C Data Integrity EdDSA Cryptosuites v1.0, section 3.3' },
   'mldsa44-jcs-2024': {
-    id: 'mldsa44-jcs-2024', kind: 'pq', multibase: 'u',
+    id: 'mldsa44-jcs-2024', kind: 'pq', multibase: 'u', canon: 'jcs',
     pqAlg: 'ML-DSA-44',
     spec: 'W3C Quantum-Resistant Cryptosuites v1.0 (FPWD), section 3.3' },
   'slhdsa128-jcs-2024': {
-    id: 'slhdsa128-jcs-2024', kind: 'pq', multibase: 'u',
+    id: 'slhdsa128-jcs-2024', kind: 'pq', multibase: 'u', canon: 'jcs',
     pqAlg: 'SLH-DSA-SHA2-128s',
-    spec: 'W3C Quantum-Resistant Cryptosuites v1.0 (FPWD), section 3.4' }
+    spec: 'W3C Quantum-Resistant Cryptosuites v1.0 (FPWD), section 3.4' },
+  // #195, #196: the RDFC suites, over `vc_jsonld.ts`'s closed loader.
+  'ecdsa-rdfc-2019': {
+    id: 'ecdsa-rdfc-2019', kind: 'ec', multibase: 'z', canon: 'rdfc',
+    spec: 'W3C Data Integrity ECDSA Cryptosuites v1.0, section 3.2' },
+  'eddsa-rdfc-2022': {
+    id: 'eddsa-rdfc-2022', kind: 'ed25519', multibase: 'z', canon: 'rdfc',
+    spec: 'W3C Data Integrity EdDSA Cryptosuites v1.0, section 3.2' }
 };
 
 const SUPPORTED_CRYPTOSUITES = Object.keys(SUITES);
@@ -236,6 +254,17 @@ class VcDataIntegrity {
         helpers.log.debug("Entering clockSkewS().");
         helpers.log.debug("Leaving clockSkewS().");
         return Number(stsCrypto.tokenClockSkew()) || 0;
+      },
+      canonize: function canonize(document: any): Promise<string> {
+        helpers.log.debug("Entering canonize().");
+        helpers.log.debug("Leaving canonize().");
+        return vcJsonLd.canonize(document);
+      },
+      stsCrypto: stsCrypto,
+      stsKeysFor: function stsKeysFor(): any {
+        helpers.log.debug("Entering stsKeysFor().");
+        helpers.log.debug("Leaving stsKeysFor().");
+        return helpers.stsKeysFor();
       }
     };
   }
@@ -497,7 +526,7 @@ class VcDataIntegrity {
     return encoded;
   }
 
-  private jwkOfMultikey(multikey: string): any {
+  jwkOfMultikey(multikey: string): any {
     const { log } = this.deps;
     log.debug("Entering VcDataIntegrity.jwkOfMultikey().");
     const base = multikey.charAt(0);
@@ -591,6 +620,42 @@ class VcDataIntegrity {
       'have to fetch.');
   }
 
+  // ---------------------------------------------------------------------------
+  // THE REALM'S OWN KEY OF A CURVE, AS A did:key (#194-#197): the Ed25519,
+  // P-256 or P-384 member of the ambient realm's key set — made at run time,
+  // sealed in product, agreed across every process of the realm — named by
+  // the did:key of its public half. What this service signs a Data Integrity
+  // proof with when it is the ISSUER (the VC-API adapter, `vc_api.ts`) and
+  // what the JSON-LD form of its Bitstring Status List credentials is signed
+  // with. A did:key rather than the realm's did:web because it resolves from
+  // the identifier itself: nobody has to fetch anything to check it, which
+  // is the property this file's own verifier holds every holder to.
+  // Answers `{ privateKey, publicJwk, did, verificationMethod }`; throws
+  // when the realm holds no such key, which is a defect in the key set.
+  // ---------------------------------------------------------------------------
+  realmKeyFor(curve: string): any {
+    const { log, stsKeysFor } = this.deps;
+    log.debug("Entering VcDataIntegrity.realmKeyFor(). " + curve);
+    const alg = curve === 'Ed25519' ? 'EdDSA'
+      : (curve === 'P-256' ? 'ES256' : (curve === 'P-384' ? 'ES384' : ''));
+    const held = stsKeysFor() || {};
+    const found = (held.extraKeys || []).filter(function (one: any) {
+      return one && one.alg === alg && one.publicJwk &&
+        (alg !== 'EdDSA' || one.publicJwk.crv === 'Ed25519');
+    })[0];
+    if (!alg || !found || !found.privateKey) {
+      log.debug("Leaving VcDataIntegrity.realmKeyFor(). None.");
+      throw new Error('this realm holds no ' + curve + ' signing key.');
+    }
+    const publicJwk = this.publicJwkOf(found.publicJwk);
+    const multikey = this.multikeyOf(publicJwk);
+    const did = 'did:key:' + multikey;
+    log.debug("Leaving VcDataIntegrity.realmKeyFor().");
+    return { privateKey: found.privateKey, publicJwk: publicJwk, did: did,
+             verificationMethod: did + '#' + multikey,
+             kid: found.publicJwk.kid };
+  }
+
   // Which of the three suites a holder key signs with, or '' — and, for '',
   // the sentence that says why.
   cryptosuiteForJwk(jwk: any): string {
@@ -646,7 +711,11 @@ class VcDataIntegrity {
     log.debug("Entering VcDataIntegrity.keyMismatch(). suite=" + suite.id);
     const actual = this.cryptosuiteForJwk(jwk);
     log.debug("Leaving VcDataIntegrity.keyMismatch().");
-    if (actual === suite.id) {
+    // The JCS suite a key signs with names its KIND; the RDFC suite of the
+    // same kind signs with the same keys (#195, #196).
+    const actualSuite = SUITES[actual];
+    if (actualSuite && actualSuite.kind === suite.kind &&
+        (actualSuite.pqAlg || '') === (suite.pqAlg || '')) {
       return '';
     }
     return 'the verification method is ' + ((jwk && jwk.kty) || '?') + ' ' +
@@ -662,6 +731,37 @@ class VcDataIntegrity {
     log.debug("Leaving VcDataIntegrity.hashName().");
     return suite.kind === 'ec' && jwk && jwk.crv === 'P-384' ? 'sha384'
                                                              : 'sha256';
+  }
+
+  // THE SAME FOR EITHER KIND OF SUITE (#195, #196): for an RDFC suite,
+  // H(RDFC(proofConfig)) || H(RDFC(unsecuredDocument)), the proof
+  // configuration carrying the document's `@context` (EdDSA and ECDSA
+  // Cryptosuites v1.0, sections 3.2.4 and 3.2.5). Asynchronous, because the
+  // JSON-LD processor is.
+  async hashDataAsync(suite: Suite, jwk: any, proofConfig: any,
+                      unsecured: any): Promise<Buffer> {
+    const { log, canonize } = this.deps;
+    log.debug("Entering VcDataIntegrity.hashDataAsync(). suite=" + suite.id);
+    if (suite.canon !== 'rdfc') {
+      log.debug("Leaving VcDataIntegrity.hashDataAsync(). JCS.");
+      return this.hashData(suite, jwk, proofConfig, unsecured);
+    }
+    const hash = this.hashName(suite, jwk);
+    const config = Object.assign({}, proofConfig);
+    delete config.proofValue;
+    if (unsecured && unsecured['@context'] !== undefined) {
+      config['@context'] = unsecured['@context'];
+    } else {
+      delete config['@context'];
+    }
+    const canonicalConfig = await canonize(config);
+    const canonicalDocument = await canonize(unsecured);
+    const configHash = crypto.createHash(hash)
+      .update(canonicalConfig, 'utf8').digest();
+    const documentHash = crypto.createHash(hash)
+      .update(canonicalDocument, 'utf8').digest();
+    log.debug("Leaving VcDataIntegrity.hashDataAsync(). RDFC.");
+    return Buffer.concat([configHash, documentHash]);
   }
 
   // hashData = H(JCS(proofConfig)) || H(JCS(unsecuredDocument)).
@@ -701,15 +801,15 @@ class VcDataIntegrity {
       log.debug("Leaving VcDataIntegrity.signBytes(). " + suite.pqAlg);
       return Buffer.from(sig);
     }
-    const key = privateKey instanceof crypto.KeyObject ? privateKey
-      : crypto.createPrivateKey({ key: privateKey, format: 'jwk' });
+    const { stsCrypto } = this.deps;
     if (suite.kind === 'ed25519') {
       log.debug("Leaving VcDataIntegrity.signBytes(). Ed25519.");
-      return crypto.sign(null, data, key);
+      return stsCrypto.signRawSignature({ family: 'eddsa' }, privateKey,
+                                        data);
     }
     log.debug("Leaving VcDataIntegrity.signBytes(). ECDSA.");
-    return crypto.sign(this.hashName(suite, jwk), data,
-                       { key: key, dsaEncoding: 'ieee-p1363' });
+    return stsCrypto.signRawSignature({ family: 'ecdsa',
+      hash: this.hashName(suite, jwk), encoding: 'p1363' }, privateKey, data);
   }
 
   private async verifyBytes(suite: Suite, jwk: any, data: Buffer,
@@ -723,14 +823,17 @@ class VcDataIntegrity {
                 " " + ok);
       return !!ok;
     }
+    const { stsCrypto } = this.deps;
     const key = crypto.createPublicKey({ key: jwk, format: 'jwk' });
     if (suite.kind === 'ed25519') {
-      const ok = crypto.verify(null, data, key, signature);
+      const ok = await stsCrypto.verifyRawSignature({ family: 'eddsa' }, key,
+                                                    data, signature);
       log.debug("Leaving VcDataIntegrity.verifyBytes(). Ed25519 " + ok);
       return ok;
     }
-    const ok = crypto.verify(this.hashName(suite, jwk), data,
-      { key: key, dsaEncoding: 'ieee-p1363' }, signature);
+    const ok = await stsCrypto.verifyRawSignature({ family: 'ecdsa',
+      hash: this.hashName(suite, jwk), encoding: 'p1363' }, key, data,
+      signature);
     log.debug("Leaving VcDataIntegrity.verifyBytes(). ECDSA " + ok);
     return ok;
   }
@@ -812,19 +915,48 @@ class VcDataIntegrity {
     Object.keys(extra).forEach(function (name) {
       proof[name] = extra[name];
     });
-    // Create step 2 of every suite here: the document's @context goes on the
-    // proof, so a verifier can check the document still starts with it.
-    if (document['@context'] !== undefined) {
+    // Create step 2 of every JCS suite: the document's @context goes on the
+    // proof, so a verifier can check the document still starts with it. An
+    // RDFC suite puts it on the proof CONFIGURATION only (section 3.2.5),
+    // which `hashDataAsync()` does; the proof it returns carries none.
+    if (document['@context'] !== undefined && suite.canon === 'jcs') {
       proof['@context'] = document['@context'];
     }
-    const data = this.hashData(suite, publicJwk, proof, document);
+    if (o.id !== undefined) {
+      proof.id = o.id;
+    }
+    if (o.previousProof !== undefined) {
+      proof.previousProof = o.previousProof;
+    }
+    // A proof SET or CHAIN (Data Integrity 1.0 section 4.2): the document
+    // already secured is signed as it stands, with the earlier proofs a
+    // chain names as its `proof` (section 4.3, "Add Proof Set/Chain").
+    const existing = [].concat(unsecured && unsecured.proof !== undefined ?
+                               unsecured.proof : []);
+    const signedOver: any = Object.assign({}, document);
+    if (o.previousProof !== undefined) {
+      const wanted = [].concat(o.previousProof);
+      const matching = existing.filter(function (p: any) {
+        return p && wanted.indexOf(p.id) >= 0;
+      });
+      if (matching.length !== wanted.length) {
+        log.debug("Leaving VcDataIntegrity.signDocument(). A previous " +
+                  "proof is missing.");
+        throw new Error('previousProof names a proof the document does ' +
+                        'not carry.');
+      }
+      signedOver.proof = matching.length === 1 ? matching[0] : matching;
+    }
+    const data = await this.hashDataAsync(suite, publicJwk, proof,
+                                          signedOver);
     const signature = await this.signBytes(suite, o.privateKey, publicJwk,
                                            data);
     proof.proofValue = suite.multibase === 'z'
       ? 'z' + this.base58Encode(signature)
       : 'u' + signature.toString('base64url');
     log.debug("Leaving VcDataIntegrity.signDocument(). " + suite.id);
-    return Object.assign(document, { proof: proof });
+    return Object.assign(document, { proof: existing.length
+      ? existing.concat([proof]) : proof });
   }
 
   // The one member of a proof set this verification is about. See the
@@ -888,18 +1020,40 @@ class VcDataIntegrity {
       log.debug("Leaving VcDataIntegrity.verifyProof(). Not an object.");
       return result;
     }
-    const proof = this.chooseProof(doc.proof, o);
-    if (!proof || typeof proof !== 'object') {
-      check('Proof', false, 'the document carries no proof.');
+    // `onlyProof` names the member to verify (`verifyAllProofs()`, which
+    // also sets `chain`: a member naming `previousProof` is then verified
+    // over the document carrying the proofs it names, Data Integrity 1.0
+    // section 4.4).
+    const proof = o.onlyProof !== undefined ? o.onlyProof
+                                            : this.chooseProof(doc.proof, o);
+    if (!proof || typeof proof !== 'object' || Array.isArray(proof)) {
+      check('Proof', false, 'the document carries no proof, or its proof ' +
+            'is not a map.');
       log.debug("Leaving VcDataIntegrity.verifyProof(). No proof.");
       return result;
     }
-    check('Proof', !proof.previousProof, proof.previousProof
-      ? 'the proof names previousProof — a proof chain, which this ' +
-        'Verifier does not follow.'
-      : (Array.isArray(doc.proof)
-          ? 'one member of a proof set of ' + doc.proof.length + ' chosen.'
-          : 'one proof.'));
+    let chained: any[] = null;
+    if (proof.previousProof !== undefined && o.chain) {
+      const wanted = [].concat(proof.previousProof);
+      const members = [].concat(doc.proof);
+      chained = members.filter(function (p: any) {
+        return p && typeof p === 'object' && p.id !== undefined &&
+          wanted.indexOf(p.id) >= 0;
+      });
+      check('Proof', chained.length === wanted.length &&
+            wanted.every(function (w: any) { return typeof w === 'string'; }),
+            chained.length === wanted.length
+              ? 'a proof chained to ' + wanted.join(', ') + '.'
+              : 'previousProof names ' + JSON.stringify(proof.previousProof) +
+                ', and the document carries no proof with that id.');
+    } else {
+      check('Proof', proof.previousProof === undefined, proof.previousProof
+        ? 'the proof names previousProof — a proof chain, which this ' +
+          'Verifier does not follow.'
+        : (Array.isArray(doc.proof)
+            ? 'one member of a proof set of ' + doc.proof.length + ' chosen.'
+            : 'one proof.'));
+    }
 
     // --- what the proof says about itself ---------------------------------
     check('Proof type', proof.type === 'DataIntegrityProof',
@@ -947,7 +1101,9 @@ class VcDataIntegrity {
     const skewMs = Math.max(0, Number(o.clockSkewS !== undefined ?
       o.clockSkewS : clockSkewS()) || 0) * 1000;
     const created = this.dateCheck(proof.created);
-    if (isNaN(created)) {
+    if (proof.created === undefined && o.createdRequired === false) {
+      check('Created', true, 'no created, which a proof may omit.');
+    } else if (isNaN(created)) {
       check('Created', false, 'created is ' + JSON.stringify(
         proof.created === undefined ? null : proof.created) + '; a holder ' +
         'proof must say when it was made, as an XML Schema dateTime.');
@@ -1026,10 +1182,30 @@ class VcDataIntegrity {
     }
     const unsecured = Object.assign({}, doc);
     delete unsecured.proof;
+    if (chained && chained.length) {
+      unsecured.proof = chained.length === 1 ? chained[0] : chained;
+    }
     const config = Object.assign({}, proof);
     delete config.proofValue;
     const configs: any[] = [];
-    if (config['@context'] !== undefined) {
+    if (suite && suite.canon === 'rdfc') {
+      // RDFC: the configuration takes the document's @context whatever the
+      // proof carried (`hashDataAsync()`); a proof that does carry one must
+      // still be a prefix of the document's.
+      if (config['@context'] !== undefined) {
+        const proofContext = [].concat(config['@context']);
+        const docContext = [].concat(doc['@context'] === undefined ? [] :
+                                     doc['@context']);
+        const prefixOk = proofContext.every(function (one, i) {
+          return JSON.stringify(one) === JSON.stringify(docContext[i]);
+        });
+        check('Context', prefixOk, prefixOk
+          ? 'the document\'s @context starts with the proof\'s.'
+          : 'the document\'s @context does not start with the proof\'s ' +
+            '@context, in order.');
+      }
+      configs.push(config);
+    } else if (config['@context'] !== undefined) {
       const proofContext = [].concat(config['@context']);
       const docContext = [].concat(doc['@context'] === undefined ? [] :
                                    doc['@context']);
@@ -1064,7 +1240,8 @@ class VcDataIntegrity {
     for (let i = 0; i < configs.length && !verified; i++) {
       try {
         verified = await this.verifyBytes(suite, resolved.jwk,
-          this.hashData(suite, resolved.jwk, configs[i], unsecured),
+          await this.hashDataAsync(suite, resolved.jwk, configs[i],
+                                   unsecured),
           signature);
       } catch (e) {
         log.debug("Caught in VcDataIntegrity.verifyProof(): " +
@@ -1082,6 +1259,39 @@ class VcDataIntegrity {
     result.ok = checks.every(function (c) { return c.ok; });
     log.debug("Leaving VcDataIntegrity.verifyProof(). ok=" + result.ok);
     return result;
+  }
+
+  // ---------------------------------------------------------------------------
+  // EVERY PROOF ON A DOCUMENT (#194-#196): a proof set and its chains, each
+  // member verified (Data Integrity 1.0 section 4.4, "Verify Proof Sets and
+  // Chains"), where `verifyProof()` chooses ONE for a sign-in. Answers
+  // `{ ok, results }`, one result per member in order; `ok` only when there
+  // is at least one member and every one verified.
+  // ---------------------------------------------------------------------------
+  async verifyAllProofs(securedDocument: any, options: any): Promise<any> {
+    const { log } = this.deps;
+    log.debug("Entering VcDataIntegrity.verifyAllProofs().");
+    const doc = securedDocument;
+    if (!doc || typeof doc !== 'object' || Array.isArray(doc)) {
+      log.debug("Leaving VcDataIntegrity.verifyAllProofs(). Not a map.");
+      return { ok: false, results: [], reason: 'a secured document is a ' +
+               'JSON object.' };
+    }
+    const members = doc.proof === undefined ? [] : [].concat(doc.proof);
+    if (!members.length || doc.proof === null) {
+      log.debug("Leaving VcDataIntegrity.verifyAllProofs(). No proof.");
+      return { ok: false, results: [], reason: 'the document carries no ' +
+               'proof.' };
+    }
+    const results: any[] = [];
+    for (let i = 0; i < members.length; i++) {
+      results.push(await this.verifyProof(doc, Object.assign({}, options,
+        { onlyProof: members[i], chain: true })));
+    }
+    const ok = results.every(function (r) { return r.ok; });
+    log.debug("Leaving VcDataIntegrity.verifyAllProofs(). " + ok + " (" +
+              results.length + " member(s)).");
+    return { ok: ok, results: results, reason: '' };
   }
 }
 
@@ -1118,6 +1328,10 @@ export = {
   cryptosuiteForJwk: slot.forward('cryptosuiteForJwk'),
   unsupportedReason: slot.forward('unsupportedReason'),
   hashData: slot.forward('hashData'),
+  hashDataAsync: slot.forward('hashDataAsync'),
+  jwkOfMultikey: slot.forward('jwkOfMultikey'),
+  verifyAllProofs: slot.forward('verifyAllProofs'),
+  realmKeyFor: slot.forward('realmKeyFor'),
   signPresentation: slot.forward('signPresentation'),
   signDocument: slot.forward('signDocument'),
   multikeyOf: slot.forward('multikeyOf'),

@@ -79,6 +79,10 @@ import InstanceSlot = require('../common/instance_slot');
 import clusterClaims = require('../cluster/cluster_claims');
 import fedHttp = require('../federation/federation_http');
 import codec = require('./vc_status_codec');
+// The Data Integrity signer, for the JSON-LD form of the Bitstring Status
+// List credential (#197). A library that requires nothing in this directory
+// but `vc_jsonld.ts`.
+import vcDataIntegrity = require('./vc_data_integrity');
 
 type RouteApp = typeof app;
 
@@ -258,6 +262,9 @@ interface VcStatusDeps {
   fetchPublished: (url: string, opts: any) => Promise<any>;
   entries: any;
   now: () => number;
+  // #197: the realm's Ed25519 key as a did:key, and the proof it signs.
+  realmKeyFor: (curve: string) => any;
+  signDocument: (document: any, options: any) => Promise<any>;
 }
 
 class VcStatus {
@@ -295,6 +302,17 @@ class VcStatus {
       entries: entries,
       now: function now(): number {
         return Date.now();
+      },
+      realmKeyFor: function realmKeyFor(curve: string): any {
+        helpers.log.debug("Entering realmKeyFor().");
+        helpers.log.debug("Leaving realmKeyFor().");
+        return vcDataIntegrity.realmKeyFor(curve);
+      },
+      signDocument: function signDocument(document: any,
+                                          options: any): Promise<any> {
+        helpers.log.debug("Entering signDocument().");
+        helpers.log.debug("Leaving signDocument().");
+        return vcDataIntegrity.signDocument(document, options);
       }
     };
   }
@@ -699,6 +717,58 @@ class VcStatus {
   }
 
   // ---------------------------------------------------------------------------
+  // THE SAME CREDENTIAL AS JSON-LD, SECURED WITH A DATA INTEGRITY PROOF
+  // (#197, 2026-09-26). The Bitstring Status List specification names no
+  // securing mechanism, and a credential secured with an EMBEDDED proof —
+  // the Data Integrity credentials the VC-API adapter issues, and anybody
+  // else's `ldp_vc` world — is naturally checked against a list secured the
+  // same way: its verifier reads JSON, and a JWT is a string it cannot. So
+  // the list answers in both forms, chosen by `Accept`
+  // (`registerRoutes()`): `application/vc+jwt` as before, and this one for a
+  // client asking for JSON-LD or JSON.
+  //
+  // Signed with eddsa-rdfc-2022 by the realm's Ed25519 key, named by its
+  // did:key, which is also the credential's `issuer`: the key resolves from
+  // the identifier, so a verifier needs to fetch nothing further to check
+  // the list it just fetched. The subject is the same `bitstringBytes()` the
+  // JWT carries, so the two forms cannot say different things.
+  // ---------------------------------------------------------------------------
+  async bitstringLdp(req: any, purpose: string): Promise<any> {
+    const { log, baseUrlOf, now, realmKeyFor, signDocument } = this.deps;
+    log.debug("Entering VcStatus.bitstringLdp(). " + purpose);
+    const bytes = this.bitstringBytes(purpose);
+    const slot = this.reuse('bsl-ldp-' + purpose, bytes);
+    if (slot.token) {
+      log.debug("Leaving VcStatus.bitstringLdp(). Reused.");
+      return slot.token;
+    }
+    const key = realmKeyFor('Ed25519');
+    const base = baseUrlOf(req);
+    const uri = this.bitstringUri(base, purpose);
+    const t = now();
+    const credential = {
+      '@context': ['https://www.w3.org/ns/credentials/v2'],
+      id: uri,
+      type: ['VerifiableCredential', 'BitstringStatusListCredential'],
+      issuer: key.did,
+      validFrom: new Date(t).toISOString().replace(/\.\d{3}Z$/, 'Z'),
+      validUntil: new Date(t + this.lifetimeSeconds() * 1000).toISOString()
+        .replace(/\.\d{3}Z$/, 'Z'),
+      credentialSubject: codec.bitstringStatusListSubject({
+        id: uri + '#list', statusPurpose: purpose,
+        encodedList: codec.encodedList(bytes),
+        ttl: this.ttlSeconds() * 1000 })
+    };
+    const signed = await signDocument(credential, {
+      cryptosuite: 'eddsa-rdfc-2022', publicJwk: key.publicJwk,
+      privateKey: key.privateKey, verificationMethod: key.verificationMethod,
+      proofPurpose: 'assertionMethod' });
+    this.remember(slot, signed);
+    log.debug("Leaving VcStatus.bitstringLdp().");
+    return signed;
+  }
+
+  // ---------------------------------------------------------------------------
   // IS A PRESENTED CREDENTIAL STILL GOOD, BY ITS STATUS?
   //
   //   own      the credential verified against THIS realm's key
@@ -1072,6 +1142,34 @@ class VcStatus {
     return false;
   }
 
+  // Which form of a Bitstring Status List credential an `Accept` asks for:
+  // 'jwt', or the JSON-LD media type to answer with. The JWT, the form this
+  // list has always had, unless the header names a JSON form and does not
+  // name the JWT first. `application/vc` (VCDM 2.0 section 6.3) is answered
+  // as itself; `application/ld+json` and `application/json` as
+  // `application/ld+json`.
+  bitstringFormFor(accept: unknown): string {
+    const { log } = this.deps;
+    log.debug("Entering VcStatus.bitstringFormFor().");
+    const header = String(accept || '').toLowerCase();
+    const at = function (type: string): number {
+      const i = header.split(',').map(function (one) {
+        return one.split(';')[0].trim();
+      }).indexOf(type);
+      return i < 0 ? Infinity : i;
+    };
+    const jwt = at(VC_JWT_TYPE);
+    const vc = at('application/vc');
+    const ld = Math.min(at('application/vc+ld+json'),
+                        at('application/ld+json'), at('application/json'));
+    let form = 'jwt';
+    if (Math.min(vc, ld) < jwt) {
+      form = vc <= ld ? 'application/vc' : 'application/ld+json';
+    }
+    log.debug("Leaving VcStatus.bitstringFormFor(). " + form);
+    return form;
+  }
+
   registerRoutes(app: RouteApp): void {
     const { log } = this.deps;
     const self = this;
@@ -1117,10 +1215,17 @@ class VcStatus {
         log.debug('Leaving GET ' + BITSTRING_PATH + '/:purpose. Unknown.');
         return;
       }
-      self.bitstringJwt(req, purpose).then(function (token: string) {
-        res.status(200).set('Content-Type', VC_JWT_TYPE)
+      // #197: JSON-LD for a client that asks for it and not for the JWT.
+      const form = self.bitstringFormFor(req.headers.accept);
+      const work: Promise<any> = form === 'jwt'
+        ? self.bitstringJwt(req, purpose)
+        : self.bitstringLdp(req, purpose);
+      work.then(function (body: any) {
+        res.status(200)
+          .set('Content-Type', form === 'jwt' ? VC_JWT_TYPE : form)
           .set('Cache-Control', 'max-age=' + self.ttlSeconds())
-          .send(token);
+          .set('Vary', 'Accept')
+          .send(form === 'jwt' ? body : JSON.stringify(body, null, 2));
         log.debug('Leaving GET ' + BITSTRING_PATH + '/:purpose.');
       }).catch(function (e: any) {
         log.debug("Caught in VcStatus.registerRoutes(): " +
@@ -1145,6 +1250,8 @@ export = {
   installInstance: (instance: VcStatus): void => slot.install(instance),
   instanceOrigin: (): string => slot.origin(),
   registerRoutes: slot.forward('registerRoutes'),
+  bitstringLdp: slot.forward('bitstringLdp'),
+  bitstringFormFor: slot.forward('bitstringFormFor'),
   LIST_SIZE: LIST_SIZE,
   TSL_PATH: TSL_PATH,
   AGGREGATION_PATH: AGGREGATION_PATH,

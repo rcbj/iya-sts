@@ -6027,6 +6027,59 @@ async function verifyRawSignature(scheme, key, data, signature) {
   }
 }
 
+// THE SIGNING HALF OF THE PRIMITIVE ABOVE (#194-#196, 2026-09-26), for the
+// Data Integrity cryptosuites that sign bytes rather than a JWS: the RDFC
+// suites, and ecdsa-sd-2023's base and per-statement signatures. Same
+// `scheme` (families 'ecdsa' and 'eddsa' only — nothing here signs raw bytes
+// with RSA, and a post-quantum signature goes through `pq_jose`'s pool);
+// `privateKey` is a node KeyObject or a private JWK. Throws for a key of the
+// wrong kind, because a signer handed the wrong key is a bug, not an input.
+function signRawSignature(scheme, privateKey, data) {
+  const s = scheme || {};
+  log.debug("Entering signRawSignature(). " + s.family + "/" +
+            (s.hash || ''));
+  const key = privateKey && privateKey.type === 'private' ? privateKey
+    : nodeCrypto.createPrivateKey(privateKey && privateKey.kty
+        ? { key: privateKey, format: 'jwk' } : privateKey);
+  const type = String(key.asymmetricKeyType || '');
+  const message = Buffer.from(data || []);
+  if (s.family === 'ecdsa' && type === 'ec') {
+    const out = nodeCrypto.sign(s.hash, message, { key: key,
+      dsaEncoding: s.encoding === 'der' ? 'der' : 'ieee-p1363' });
+    log.debug("Leaving signRawSignature(). ECDSA.");
+    return out;
+  }
+  if (s.family === 'eddsa' && (type === 'ed25519' || type === 'ed448')) {
+    const out = nodeCrypto.sign(null, message, key);
+    log.debug("Leaving signRawSignature(). EdDSA.");
+    return out;
+  }
+  log.debug("Leaving signRawSignature(). Refused.");
+  throw new Error('signRawSignature: a ' + (type || 'unknown') + ' key ' +
+                  'does not sign ' + String(s.family || 'nothing') + '.');
+}
+
+// HMAC-SHA-256 of `data` under `key` — ecdsa-sd-2023's blank node labels
+// (vc-di-ecdsa section 3.4.4, createHmacIdLabelMapFunction).
+function hmacSha256(key, data) {
+  log.debug("Entering hmacSha256().");
+  const out = nodeCrypto.createHmac('sha256', Buffer.from(key || []))
+    .update(Buffer.from(data || [])).digest();
+  log.debug("Leaving hmacSha256().");
+  return out;
+}
+
+// A fresh key pair of a kind `generateKeyPairSync()` names ('ec' with a
+// namedCurve, 'ed25519') — ecdsa-sd-2023's proof-scoped key, made and thrown
+// away inside one signature.
+function ephemeralKeyPair(kind, curve) {
+  log.debug("Entering ephemeralKeyPair(). " + kind + " " + (curve || ''));
+  const pair = nodeCrypto.generateKeyPairSync(kind,
+    curve ? { namedCurve: curve } : undefined);
+  log.debug("Leaving ephemeralKeyPair().");
+  return pair;
+}
+
 // An ECDSA signature held as its two integers, big-endian and unpadded (Go's
 // big.Int.Bytes(), an SSH mpint), as the r||s the primitive above takes.
 // `curve` is node's name ('prime256v1'). null when either integer is longer
@@ -7785,6 +7838,9 @@ module.exports = {
   RAW_SIGNATURE_FAMILIES: RAW_SIGNATURE_FAMILIES,
   publicKeyFromSpki: publicKeyFromSpki,
   verifyRawSignature: verifyRawSignature,
+  signRawSignature: signRawSignature,
+  hmacSha256: hmacSha256,
+  ephemeralKeyPair: ephemeralKeyPair,
   olpcCanonicalJson: olpcCanonicalJson,
   jcsCanonicalJson: jcsCanonicalJson,
   spkiFromPublicKeyPem: spkiFromPublicKeyPem,
