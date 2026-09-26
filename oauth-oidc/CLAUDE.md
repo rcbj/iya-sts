@@ -4204,6 +4204,28 @@ failure in its driver):
   `zoneinfo`), which is also why `VerifyScopesReturnedInUserInfoClaims`
   warns — rcbj's call, map them or stop listing them.
 
+* `EnsureIdTokenDoesNotContainNonRequestedClaims`, for `session_expiry` and
+  `tenant` ONLY: Enterprise Extensions 1.0 lets an ID Token carry them and
+  rcbj's answer on #148 puts them in every one. The driver matches the
+  suite's message, so any other unrequested claim is still a finding.
+* **Session Management's `oidcc-session-management-rp-initiated-logout`**:
+  the suite's browser, HtmlUnit 4.17, checks `frame-ancestors` against the
+  FRAMED document's own origin (it hands `Policy.allowsFrameAncestor()` its
+  two origins the wrong way round), so it refuses to load the OP iframe
+  framed from the suite's origin, which this OP lists. Shown by driving
+  HtmlUnit directly: refused as served; with the OP's own origin added to
+  the header it loads, runs `check_session.js` and answers. Listing that
+  origin here would mean taking it from the request (the suite reaches the
+  OP as `sts:8081`), so the module is argued, and the iframe is held by
+  `tests/session_management.js` and `tests/vendored/sts_session_management.js`.
+  The job's browser entry for the suite's `session_verify` page stays, so
+  the module runs once HtmlUnit is fixed.
+* `ekyc-server-one-claim-with-random-value-omitted` /
+  `ValidateVerifiedClaimsResponseAgainstSchema`: the module requires
+  `verified_claims` to be absent from the ID Token (which passes, 5.7.4)
+  and then schema-validates the UserInfo `verified_claims` the same
+  omission removes — the suite contradicting itself.
+
 **Not run, each until the service has what the plan needs**: the HAIP
 issuer plan, whose every wallet authenticates with
 `attest_jwt_client_auth` (#229), and the OpenID4VP verifier plan's

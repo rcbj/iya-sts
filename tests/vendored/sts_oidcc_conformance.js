@@ -188,12 +188,34 @@ const PLANS = [
 // KNOWN AND ARGUED DIFFERENCES. `<plan key>/<module>` (or `*/<module>`) ->
 // why a FAILED module is not a defect here.
 // ---------------------------------------------------------------------------
-const EXPECTED = {};
+const EXPECTED = {
+  // The suite's browser cannot load the OP iframe at all. HtmlUnit 4.17's
+  // WebClient passes Policy.allowsFrameAncestor() the FRAMED document's own
+  // origin where the framing page's belongs, so `frame-ancestors` is met
+  // only by listing the OP's own origin — which this OP reaches here as
+  // `https://sts:8081` and could list only by taking an origin from the
+  // request. Shown 2026-09-26 by driving HtmlUnit itself: the same page
+  // framed from the suite's origin is refused, and with the OP's origin
+  // added it loads, runs check_session.js and answers. The module never
+  // gets its `session_result`; the iframe's answers are checked in
+  // tests/session_management.js and tests/vendored/sts_session_management.js.
+  "session/oidcc-session-management-rp-initiated-logout": "HtmlUnit " +
+    "checks frame-ancestors against the framed document's own origin, so " +
+    "the suite's browser never loads the OP iframe (3bk)"
+};
 
 // FAILURE conditions this service keeps, keyed by the suite's condition (a
 // module still fails if anything ELSE in it fails) — the same sentences as
 // `oauth-oidc/CLAUDE.md` 3bk.
 const KNOWN_FAILURES = {
+  // The suite's own contradiction: this module requires verified_claims to
+  // be ABSENT from the ID Token (EnsureIdTokenDoesNotContainVerifiedClaims,
+  // which passes) and then validates the verified_claims of the UserInfo
+  // response against the schema, which fails when the same section 5.7.4
+  // omission leaves UserInfo without one. The claim IS omitted from both.
+  ["ekyc/ekyc-server-one-claim-with-random-value-omitted/" +
+   "ValidateVerifiedClaimsResponseAgainstSchema"]: "the suite validates " +
+    "a UserInfo verified_claims its own module needs omitted (5.7.4)",
   // oidcc-server-rotate-keys: the condition hands every key in the rotated
   // JWKS to nimbus's JWK.parse(), which throws on kty AKP (the post-quantum
   // ML-DSA and SLH-DSA keys), so the module fails on a key it cannot read
@@ -219,7 +241,14 @@ const KNOWN_WARNINGS = {
   // The same five, in an ID Token the implicit flow returns without an
   // access token (Core 5.4 puts the scope claims there then).
   VerifyScopesReturnedInAuthorizationEndpointIdToken: "the same five " +
-    "profile-scope claims, absent from an implicit-flow ID Token"
+    "profile-scope claims, absent from an implicit-flow ID Token",
+  // OpenID Connect Enterprise Extensions 1.0 (#148): `session_expiry` and
+  // `tenant` MAY be in an ID Token, and rcbj's answer on #148 puts them in
+  // every one. Only those two are argued: any other unrequested claim is a
+  // finding.
+  EnsureIdTokenDoesNotContainNonRequestedClaims: { why: "session_expiry " +
+    "and tenant, in every ID Token by rcbj's answer on #148",
+    msg: /non-requested claim '(session_expiry|tenant)'|contains non-requested claims\. This may indicate/ }
 };
 
 let checks = 0;
@@ -286,6 +315,18 @@ function browserFor(base, person, frontchannel) {
   }, {
     match: base + "/oauth2/logout*",
     tasks: logoutTasks
+  }, {
+    // Session Management (#121): the suite sends the browser to a page of
+    // its own that frames this realm's OP iframe beside an RP iframe, whose
+    // script asks the OP iframe and then moves the page to the suite's
+    // result URL. Without an entry here the suite has no browser for that
+    // URL and the module waits out its bound; the wait is what gives the
+    // page's script time to run.
+    match: oidf.SUITE + "test/*/*session_verify*",
+    tasks: [
+      { task: "Session check", match: oidf.SUITE + "test/*/*session_verify*",
+        commands: [["wait", "contains", "session_result", 20]] }
+    ]
   }];
 }
 

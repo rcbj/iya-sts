@@ -420,7 +420,12 @@ function judge(label, ran, expected, knownWarnings, knownFailures) {
   ran.results.forEach(function (r) {
     const k = r.result || r.status;
     counts[k] = (counts[k] || 0) + 1;
-    const onlyKnown = r.status === "FINISHED" && r.failures.length > 0 &&
+    // FINISHED, or INTERRUPTED by a stop-on-failure condition that is itself
+    // known: a module the suite ends at its first failure is judged by that
+    // failure, which is all it ran.
+    const onlyKnown = (r.status === "FINISHED" ||
+                       r.status === "INTERRUPTED") &&
+      r.failures.length > 0 &&
       r.failures.every(function (f) {
         return !!(failureKnown[f.src] ||
                   failureKnown[label + "/" + r.module + "/" + f.src]);
@@ -435,7 +440,13 @@ function judge(label, ran, expected, knownWarnings, knownFailures) {
         }).join(" | "));
     }
     r.warnings.forEach(function (w) {
-      if (!knownWarnings[w.src] && !moduleArgued) {
+      // A known warning is a reason (any message from that condition), or
+      // { why, msg: RegExp } when only some of the condition's messages are
+      // argued and another would be a new finding.
+      const known = knownWarnings[w.src];
+      const covered = !!known && (typeof known === "string" ||
+                                  known.msg.test(String(w.msg || "")));
+      if (!covered && !moduleArgued) {
         const key = w.src + ": " + w.msg.slice(0, 200);
         warned[key] = (warned[key] || []).concat([r.module]);
       }
