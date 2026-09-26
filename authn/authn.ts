@@ -9390,8 +9390,32 @@ class Authn {
           const breach = await require('../common/breached_passwords')
             .screen(String(body.password || ''));
           if (breach.breached) {
+            // THE PASSWORD IS COMPROMISED, AND THE CHANGE IS REQUIRED (#231):
+            // RISC `credential-compromise` (`password`) and
+            // `account-credential-change-required`, through the account
+            // signals funnel, so `risc.autoEmitTypes` and the opt-out gate
+            // hold. Sent once per demand — a person who abandons the change
+            // step and signs in again with the same password is not a
+            // second finding while `pwdReset` still stands.
+            const alreadyRequired =
+              credentials.passwordResetRequired(username);
             credentials.setPasswordResetRequired(username, true);
             breachedAtSignIn = true;
+            if (!alreadyRequired) {
+              this.deps.accountSignals.credentialCompromised({
+                username: username, credentialType: 'password',
+                initiatingEntity: 'system', via: 'sign-in',
+                reasonAdmin: 'The password ' + username + ' signed in with ' +
+                             'has appeared in a data breach; it must be ' +
+                             'changed before the sign-in finishes.',
+                reasonUser: 'The password you signed in with has appeared ' +
+                            'in a data breach. Choose a new one.' });
+              this.deps.accountSignals.credentialChangeRequired({
+                username: username,
+                reasonAdmin: 'The password of ' + username + ' has ' +
+                             'appeared in a data breach and must be ' +
+                             'changed.' });
+            }
             log.info('authn: the password "' + username + '" signed in with ' +
                      'has appeared in a data breach; it must be changed ' +
                      'before the sign-in finishes.');
@@ -10152,6 +10176,14 @@ class Authn {
             requireUserVerification: webauthnPolicy.requireUserVerification(),
             previousSignCount: known.signCount
           });
+          // A CLONE, BY THE ENTRY'S COUNTER (#231): everything else verified
+          // and the counter did not go up. Refused below like any failed
+          // check; `noteKeyCloned()` tells RISC and risk scoring.
+          if (credentials.Credentials.clonedKeyVerdict(verdict)) {
+            credentials.noteKeyCloned(step.username, known.credentialId,
+              'signature counter ' + verdict.signCount + ', last recorded ' +
+              known.signCount);
+          }
           if (verdict.ok) {
             // WHICH KEY ANSWERED, for the authentication event (#62 P0): the
             // stored record, since the assertion names itself only by id.

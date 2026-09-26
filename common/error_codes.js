@@ -12672,6 +12672,13 @@ const CODES = [
       'with verification "overridden" and the reason. Replace it with a ' +
       'BLOB that verifies as soon as FIDO publishes one.',
     spec: 'loaded; recorded on the audit row and logged as a warning' },
+  { code: 'STS-RISK-0044',
+    summary: 'A security key found cloned (its signature counter went ' +
+      'backwards) could not be recorded on the person\'s risk standing ' +
+      '(#231). The assertion was refused and RISC credential-compromise ' +
+      'was still sent; only the standing, and the risk-response policy\'s ' +
+      'reaction to it, are missing.',
+    spec: 'WebAuthn Level 3 section 6.1.1' },
   // ===== MAIL ==============================================================
   { code: 'STS-MAIL-0001',
     summary: 'A message was not queued because no mail transport is ' +

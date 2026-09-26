@@ -4291,16 +4291,20 @@ function create(options) {
       const where = 'WHERE realm = $1 AND at >= $2 ' +
         'AND ($3 = \'\' OR subject = $3) AND ($4 = \'\' OR name_hmac = $4) ' +
         'AND ($5 = \'\' OR address_prefix = $5::cidr) ' +
-        'AND ($6 = \'\' OR door = $6)';
+        'AND ($6 = \'\' OR door = $6) ' +
+        // `excludeDoor` (#231): the password signals leave a replayed
+        // one-time code out (`risk/risk_engine.ts`, TOTP_REPLAY_DOOR).
+        'AND ($7 = \'\' OR door <> $7)';
       const params = [realm || '', Number(o.since) || 0, o.subject || '',
-                      o.nameHmac || '', o.prefix || '', o.door || ''];
+                      o.nameHmac || '', o.prefix || '', o.door || '',
+                      o.excludeDoor || ''];
       log.debug("Leaving riskListFailures().");
       return Promise.all([
         pool.query(
           'SELECT id, realm, at, door, subject, name_hmac, address_sealed, ' +
           'host(address_prefix) || \'/\' || masklen(address_prefix) AS ' +
           'address_prefix, asn, error_code, origin FROM sts_risk_failures ' +
-          where + ' ORDER BY at DESC, id DESC LIMIT $7 OFFSET $8',
+          where + ' ORDER BY at DESC, id DESC LIMIT $8 OFFSET $9',
           params.concat([Number(o.limit) || 50, Number(o.offset) || 0])),
         pool.query('SELECT count(*) AS total FROM sts_risk_failures ' + where,
                    params)

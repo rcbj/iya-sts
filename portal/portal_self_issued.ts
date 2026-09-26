@@ -179,7 +179,7 @@ class PortalSelfIssuedPage {
       log.debug('Leaving POST ' + PATH + '. CSRF.');
       return ctx.send(res, 403, this.page(session, null, csrf.detail));
     }
-    const result = siop.remove(who, body.subject);
+    const result = siop.remove(who, body.subject, who);
     ctx.audit.record({
       category: 'authentication', action: 'portal.siop.remove',
       errorCode: result.ok ? undefined : 'STS-PORTAL-0087',

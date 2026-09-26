@@ -1960,8 +1960,11 @@ class AdminActions {
                     'changed when you next sign in.' });
       accountSignals.credentialChangeRequired({ username: who,
         reasonAdmin: 'An administrator reset the password of ' + who + '.' });
-      // THE ADMINISTRATOR'S WORD THAT THIS WAS A COMPROMISE (#146), and the
-      // only automatic source of credential-compromise until #62 scores one.
+      // THE ADMINISTRATOR'S WORD THAT THIS WAS A COMPROMISE (#146). It is
+      // one source of credential-compromise among several: risk scoring's
+      // reaction (#62), and the detectors #231 added — a breached password
+      // at sign-in, a security key's counter going backwards, a certificate
+      // revoked for keyCompromise, the emailed factor's failure limit.
       if (body.compromised === true || body.compromised === 'true' ||
           body.compromised === 'on') {
         accountSignals.credentialCompromised({ username: who,
@@ -2425,7 +2428,7 @@ class AdminActions {
       const subject = String(body.subject || '').trim();
       const done = enrolling
         ? siop.enrol(who, subject, body.label, ctx.actor)
-        : siop.remove(who, subject);
+        : siop.remove(who, subject, ctx.actor);
       audited(enrolling ? 'admin.siop.enrolled' : 'admin.siop.removed',
               (done.ok ? '' : 'could not ') +
               (enrolling ? 'enrol ' : 'remove ') + 'the self-issued ' +

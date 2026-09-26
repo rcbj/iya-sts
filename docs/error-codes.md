@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3692** of them, in **39** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3693** of them, in **39** subsystems.
 
 ## Where a code appears
 
@@ -76,7 +76,7 @@ is an ordinary outcome.
 * [TLS and client certificates (`STS-TLS`)](#sts-tls) — 35
 * [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 110
 * [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 114
-* [Risk scoring (`STS-RISK`)](#sts-risk) — 43
+* [Risk scoring (`STS-RISK`)](#sts-risk) — 44
 * [Mail (`STS-MAIL`)](#sts-mail) — 39
 * [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 282
 * [Device register (`STS-DEVICE`)](#sts-device) — 38
@@ -3070,6 +3070,7 @@ Raised from: risk/, admin-ui/risk_admin.ts.
 | `STS-RISK-0041` | Monitoring → Geolocation (/admin/geolocation or GET /admin-api/geolocation, #255) could not be drawn or answered: the store's count of the realm's assessments by place failed, or the country outlines (admin-ui/natural_earth/countries.json) could not be read. The reason follows on the log line. | HTTP 500 |
 | `STS-RISK-0042` | Monitoring → Geolocation was asked for something it does not draw (#255): a window other than live, 24h, 7d or 30d, a continent that is not one of the seven slugs, a country that is not an ISO 3166-1 alpha-2 code on the map, or a country together with a continent it is not in. | HTTP 400 |
 | `STS-RISK-0043` | A FIDO MDS3 BLOB was LOADED although its signature or signing chain does not verify, because the administrator who uploaded it ticked the signature override. Its contents are unauthenticated and its chain's revocation was not checked; the version is recorded with verification "overridden" and the reason. Replace it with a BLOB that verifies as soon as FIDO publishes one. | loaded; recorded on the audit row and logged as a warning |
+| `STS-RISK-0044` | A security key found cloned (its signature counter went backwards) could not be recorded on the person's risk standing (#231). The assertion was refused and RISC credential-compromise was still sent; only the standing, and the risk-response policy's reaction to it, are missing. | WebAuthn Level 3 section 6.1.1 |
 
 ## STS-MAIL
 
