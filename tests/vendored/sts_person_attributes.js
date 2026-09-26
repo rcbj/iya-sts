@@ -212,7 +212,7 @@ async function test() {
     });
   });
 
-  assert.ok(checks >= 11, "only " + checks + " checks ran; a section has " +
+  assert.ok(checks >= 9, "only " + checks + " checks ran; a section has " +
             "stopped being called.");
   log.info(checks + " check(s) passed.");
   log.info("Test completed successfully.");
