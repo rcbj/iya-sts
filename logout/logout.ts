@@ -1490,9 +1490,6 @@ class Logout {
       partnerLogouts: [],
       base: '',
       browser: false,
-      // CAEP's initiating_entity where the door states one (#239); see
-      // terminate().
-      initiatingEntity: '',
       // THE SESSIONS THIS ACT WILL END (2026-09-17, #36 follow-up), filled by
       // terminate() before any family runs. The `oidc-rp` family reads it: a
       // relying party on a session that is ending is told by the session's
@@ -2149,12 +2146,10 @@ class Logout {
                                 options.initiatingEntity);
     ctx.base = String(options.base || '');
     ctx.browser = options.browser === true && !!ctx.base;
-    // WHO ENDED IT, IN CAEP's WORDS (#239), where the door says: `user` at
-    // `/logout`, `admin` at the console's and the API's doors. The token
-    // family hands it to `stats.revoke()`, whose observer reports the grant
-    // a revoked token ends; a door that says nothing leaves it to that
-    // observer's default.
-    ctx.initiatingEntity = String(options.initiatingEntity || '');
+    // WHO ENDED IT, IN CAEP's WORDS (#239, #242): `contextFor()` carries the
+    // door's `initiatingEntity`. The session family hands it to
+    // `endSessionById()`, and the token family to `stats.revoke()`, whose
+    // observer reports the grant a revoked token ends.
     const wanted = (selection || []).map(String).filter(Boolean);
     const global = !wanted.length;
     const wantedSet = {};

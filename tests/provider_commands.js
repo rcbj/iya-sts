@@ -255,6 +255,19 @@ async function body(t) {
   const maintained = sent.slice(before).map(function (one) {
     return decode(one.form.command_token).claims.command;
   });
+  // A ROLE the person holds moving (#238's `roles` kind) is a change to
+  // them, as a group's is: `maintain`.
+  before = sent.length;
+  answers.push(json(200, { sub: sub, account_state: 'active' }));
+  c.directoryChanged({ kind: 'roles', username: 'cmd-alice',
+                       realm: 'default', before: {}, after: {} });
+  await settle();
+  const roleMaintained = sent.slice(before).map(function (one) {
+    return decode(one.form.command_token).claims.command;
+  });
+  t.check(roleMaintained.join() === 'maintain',
+          '5b. a role moving is maintain, as a group is',
+          JSON.stringify(roleMaintained));
   before = sent.length;
   answers.push(json(200, { sub: sub, account_state: 'suspended' }));
   c.directoryChanged({ kind: 'updated', username: 'cmd-alice',

@@ -4703,7 +4703,11 @@ class Authn {
                   .indexOf(clientId) >= 0) &&
                bcp.revokeRefreshOnLogout(clientId);
       }, 'Back-Channel Logout section 2.7: the sign-on session it was ' +
-         'issued on ended');
+         'issued on ended',
+      // The grant each revoked token ends is reported by `stats.revoke()`'s
+      // observer (#239) with the sign-out's own initiating entity (#242), so
+      // a person signing out is `user` there too, not the observer's default.
+      { initiatingEntity: entity });
       if (revoked) {
         log.info('Back-Channel Logout section 2.7: signing out of session ' +
                  id + ' ' +

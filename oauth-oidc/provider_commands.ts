@@ -1207,7 +1207,8 @@ class ProviderCommands {
 
   // THE DIRECTORY'S EVENTS (ldap_server's account observers): a lock set is
   // `suspend`, a lock cleared `reactivate`, a delete `delete`, any other
-  // change to the person or their groups `maintain`.
+  // change to the person, their groups or their roles (the `roles` kind,
+  // #238) `maintain`.
   directoryChanged(change: Json): void {
     const { log, realms } = this.deps;
     const self = this;
@@ -1231,7 +1232,7 @@ class ProviderCommands {
     let command = '';
     if (kind.indexOf('deleted') === 0) {
       command = 'delete';
-    } else if (kind === 'membership') {
+    } else if (kind === 'membership' || kind === 'roles') {
       command = 'maintain';
     } else if (kind === 'updated') {
       const was = lock(change.before);
