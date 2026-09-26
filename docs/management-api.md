@@ -182,11 +182,28 @@ every operation.
 ### Request bodies
 
 A `POST` takes a JSON body. Before the operation runs, the body is checked
-against the schema the OpenAPI document publishes for it. An unknown member or
-a value of the wrong type gets `400 { "ok": false, "errors": [...] }`
-(`STS-API-0009`) and nothing changes. Every `POST` replies with the console
-action's own result: `ok` is always present, and the other members depend on
-the action.
+against the schema the OpenAPI document publishes for it. An unknown member,
+a value of the wrong type, or a value outside the `enum` a field declares gets
+`400 { "ok": false, "errors": [...] }` (`STS-API-0009`) and nothing changes.
+Every `POST` replies with the console action's own result: `ok` is always
+present, and the other members depend on the action.
+
+### Closed sets
+
+A field that takes only certain values declares them as an `enum` in the
+OpenAPI document, and that one list is enforced everywhere the value can be
+typed: a request body, a query parameter (`STS-API-0124`), and the console form
+that the operation mirrors (`STS-ADMIN-0820`). Each refusal names the field,
+the value, and every value it accepts:
+
+```
+"deliver" is "fax", which is not one of the 2 values it accepts: "show", "mail".
+```
+
+Case must match exactly. An empty string counts as "not given". A setting
+written through `/config/set-many` is held to its own list: an `enum`
+setting's `enumValues`, and for a comma-separated setting, every entry against
+its `csvValues`. `GET /admin-api/config` publishes both.
 
 ### The explorer
 

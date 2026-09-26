@@ -794,6 +794,12 @@ const CODES = [
       'path position (#251), so a realm may not be called by a label\'s ' +
       'name.',
     spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
+  { code: 'STS-CORE-0108',
+    summary: 'The service did not start: a value in the environment, the ' +
+      'appconfig file or env/defaults.js fails the check a console or API ' +
+      'write of it would (a value outside an enum or a list\'s csvValues, ' +
+      'a number out of bounds, a malformed boolean) — #86.',
+    spec: '' },
   { code: 'STS-WORKER-0001',
     summary: 'The IPC channel to a post-quantum worker process failed, so a ' +
       'job sent to it may not arrive or its answer may not come back.',
@@ -2785,6 +2791,11 @@ const CODES = [
       'downgrade #68 refuses.',
     spec: 'the verifier\'s refusal: whatever the certificate was presented ' +
       'for is refused as an untrusted certificate' },
+  { code: 'STS-PKI-0203',
+    summary: 'A Certificate & Key Configuration pane field that takes a ' +
+      'closed set (pki_profile, pki_pq_mode, pki_key_alg, pki_alt_key_alg, ' +
+      'pki_ks_format) held a value outside it (#86).',
+    spec: 'HTTP 400 page or { ok: false, errors }' },
   { code: 'STS-PKI-0204',
     summary: 'The OpenID4VP Verifier\'s certificate was refused its name or ' +
       'its key: a DNS name a certificate cannot carry, a wildcard (the ' +
@@ -6878,8 +6889,9 @@ const CODES = [
       'oauth2.cibaMaxPendingPerPerson requests waiting (#131, section 14).',
     spec: 'access_denied (HTTP 403)' },
   { code: 'STS-OAUTH-0636',
-    summary: 'A CIBA ping or push to a client notification endpoint was ' +
-      'given up after its attempts, or could not be sent at all (#131).',
+    summary: 'A CIBA notification endpoint answered a status other than ' +
+      '2xx or 400 — 5xx, 408 and 429 are retried, the rest are not (#131; ' +
+      'the shared outbound queue since #151).',
     spec: 'none — the client polls, or never learns' },
   { code: 'STS-OAUTH-0637',
     summary: 'The CIBA Backchannel Authentication Endpoint failed ' +
@@ -7181,6 +7193,54 @@ const CODES = [
       'without a DPoP proof from the key its cnf names (OpenID Connect Key ' +
       'Binding section 7, #150).',
     spec: 'HTTP 400 {error: invalid_dpop_proof}' },
+  { code: 'STS-OAUTH-0708',
+    summary: 'A CIBA ping or push was not sent because ' +
+      'federation.outbound is off (#151, the shared outbound queue).',
+    spec: 'none (a dead letter)' },
+  { code: 'STS-OAUTH-0709',
+    summary: 'A CIBA ping or push was not sent because the ' +
+      'client\'s notification endpoint cannot be dialled (#151).',
+    spec: 'none (a dead letter)' },
+  { code: 'STS-OAUTH-0710',
+    summary: 'A CIBA ping or push was refused because the ' +
+      'notification endpoint resolves to an internal address in product ' +
+      'mode (#151).',
+    spec: 'none (a dead letter)' },
+  { code: 'STS-OAUTH-0711',
+    summary: 'A CIBA notification endpoint\'s host name did not ' +
+      'resolve (#151).',
+    spec: 'none (a dead letter)' },
+  { code: 'STS-OAUTH-0712',
+    summary: 'A CIBA notification endpoint answered with a ' +
+      'redirect, which is not followed (#151).',
+    spec: 'none (a dead letter)' },
+  { code: 'STS-OAUTH-0713',
+    summary: 'A CIBA ping or push could not be built (#151).',
+    spec: 'none (a dead letter)' },
+  { code: 'STS-OAUTH-0714',
+    summary: 'A CIBA ping or push timed out; retried with backoff ' +
+      '(#151).',
+    spec: 'none (retried, then a dead letter)' },
+  { code: 'STS-OAUTH-0715',
+    summary: 'A CIBA ping or push failed to connect; retried with ' +
+      'backoff (#151).',
+    spec: 'none (retried, then a dead letter)' },
+  { code: 'STS-OAUTH-0716',
+    summary: 'A CIBA notification endpoint answered 400, which is ' +
+      'not retried (#151).',
+    spec: 'none (a dead letter)' },
+  { code: 'STS-OAUTH-0717',
+    summary: 'A CIBA notification attempt was deferred because the ' +
+      'claim store was unavailable (#151).',
+    spec: 'none (the sweep tries again)' },
+  { code: 'STS-OAUTH-0718',
+    summary: 'A CIBA ping or push was still unsent past ' +
+      'oauth2.cibaNotifyRetentionS and was dead-lettered (#151).',
+    spec: 'none (a dead letter)' },
+  { code: 'STS-OAUTH-0719',
+    summary: 'The CIBA notification summary line: some were dead- ' +
+      'lettered or deferred since the last one (#151).',
+    spec: 'none (a log line)' },
   { code: 'STS-OAUTH-0720',
     summary: 'A request carried more than one OAuth-Client-Attestation ' +
       'header, or one that is not a JWT in token68 syntax (#229, ' +
@@ -7357,6 +7417,140 @@ const CODES = [
       'header, or did not authenticate with it (#229, section 7.5).',
     spec: 'token / PAR / introspection / revocation ' +
       '{error: invalid_client} (HTTP 401)' },
+  { code: 'STS-OAUTH-0752',
+    summary: 'The CIBA notification sweep failed in a realm ' +
+      '(#151).',
+    spec: 'none (a log line)' },
+  { code: 'STS-OAUTH-0753',
+    summary: 'An operator\'s retry of a CIBA notification was ' +
+      'refused: unknown, not a dead letter, or no endpoint now (#151).',
+    spec: 'console / /admin-api refusal (HTTP 400)' },
+  { code: 'STS-OAUTH-0754',
+    summary: 'An OpenID Provider Command was not sent because ' +
+      'federation.outbound is off (#151).',
+    spec: 'none (a dead letter)' },
+  { code: 'STS-OAUTH-0755',
+    summary: 'An OpenID Provider Command was not sent because the ' +
+      'client\'s command_endpoint cannot be dialled (#151).',
+    spec: 'none (a dead letter)' },
+  { code: 'STS-OAUTH-0756',
+    summary: 'An OpenID Provider Command was refused because the ' +
+      'command_endpoint resolves to an internal address in product mode ' +
+      '(#151).',
+    spec: 'none (a dead letter)' },
+  { code: 'STS-OAUTH-0757',
+    summary: 'A command_endpoint\'s host name did not resolve ' +
+      '(#151).',
+    spec: 'none (a dead letter)' },
+  { code: 'STS-OAUTH-0758',
+    summary: 'A command_endpoint answered with a redirect, which ' +
+      'is not followed (#151).',
+    spec: 'none (a dead letter)' },
+  { code: 'STS-OAUTH-0759',
+    summary: 'A Command Token could not be built or signed — the ' +
+      'client registered alg none, or signing failed (#151).',
+    spec: 'none (a dead letter)' },
+  { code: 'STS-OAUTH-0760',
+    summary: 'An OpenID Provider Command timed out; retried with ' +
+      'backoff (#151).',
+    spec: 'none (retried, then a dead letter)' },
+  { code: 'STS-OAUTH-0761',
+    summary: 'An OpenID Provider Command failed to connect; ' +
+      'retried with backoff (#151).',
+    spec: 'none (retried, then a dead letter)' },
+  { code: 'STS-OAUTH-0762',
+    summary: 'A command_endpoint answered a status the draft does ' +
+      'not name — 5xx, 408 and 429 are retried, the rest are not (#151).',
+    spec: 'none (a dead letter)' },
+  { code: 'STS-OAUTH-0763',
+    summary: 'A command attempt was deferred because the claim ' +
+      'store was unavailable (#151).',
+    spec: 'none (the sweep tries again)' },
+  { code: 'STS-OAUTH-0764',
+    summary: 'An OpenID Provider Command was still unsent past ' +
+      'oauth2.commandRetentionS and was dead-lettered (#151).',
+    spec: 'none (a dead letter)' },
+  { code: 'STS-OAUTH-0765',
+    summary: 'The provider commands summary line: some were dead- ' +
+      'lettered or deferred since the last one (#151).',
+    spec: 'none (a log line)' },
+  { code: 'STS-OAUTH-0766',
+    summary: 'The provider commands sweep failed in a realm ' +
+      '(#151).',
+    spec: 'none (a log line)' },
+  { code: 'STS-OAUTH-0767',
+    summary: 'No issuer is known for a Command Token: set ' +
+      'global.publicBaseUrl, or send one command from the console so the ' +
+      'realm\'s address is learned (#151).',
+    spec: 'none (a dead letter or a failed run)' },
+  { code: 'STS-OAUTH-0768',
+    summary: 'A relying party answered a command with ' +
+      'invalid_request (section 3) (#151).',
+    spec: 'none (a dead letter)' },
+  { code: 'STS-OAUTH-0769',
+    summary: 'A relying party answered a command with ' +
+      'unrecognized_provider: it does not know this issuer (#151).',
+    spec: 'none (a dead letter)' },
+  { code: 'STS-OAUTH-0770',
+    summary: 'A relying party answered unsupported_command (#151).',
+    spec: 'none (a dead letter)' },
+  { code: 'STS-OAUTH-0771',
+    summary: 'A relying party answered incompatible_state: the ' +
+      'account was not in a state the command may start from; the state it ' +
+      'gave is recorded (#151).',
+    spec: 'none (a dead letter)' },
+  { code: 'STS-OAUTH-0772',
+    summary: 'A relying party answered access_denied to a migrate ' +
+      'command (#151).',
+    spec: 'none (a dead letter)' },
+  { code: 'STS-OAUTH-0773',
+    summary: 'A relying party answered ' +
+      'authentication_not_transferable to a migrate command (#151).',
+    spec: 'none (a dead letter)' },
+  { code: 'STS-OAUTH-0774',
+    summary: 'An operator\'s retry of a command delivery was ' +
+      'refused: unknown, not a dead letter, or no command_endpoint now ' +
+      '(#151).',
+    spec: 'console / /admin-api refusal (HTTP 400)' },
+  { code: 'STS-OAUTH-0775',
+    summary: 'A relying party\'s answer to a command is not the ' +
+      'draft\'s: no matching sub and account_state, a metadata answer ' +
+      'without commands_supported or context, or a stream that is not ' +
+      'text/event-stream (#151).',
+    spec: 'none (a dead letter or a failed run)' },
+  { code: 'STS-OAUTH-0776',
+    summary: 'A command was not sent: provider commands are off, ' +
+      'the command is unknown, the client has no command_endpoint, the ' +
+      'person has no subject there, or the client requires an aud_sub none ' +
+      'is recorded for (#151).',
+    spec: 'console / /admin-api refusal (HTTP 400)' },
+  { code: 'STS-OAUTH-0777',
+    summary: 'A tenant command\'s stream could not be resumed: the ' +
+      'relying party answered last-event-id-unavailable (#151).',
+    spec: 'none (a failed run)' },
+  { code: 'STS-OAUTH-0778',
+    summary: 'A tenant command\'s stream ended without command- ' +
+      'complete after every resumption (#151).',
+    spec: 'none (a failed run)' },
+  { code: 'STS-OAUTH-0779',
+    summary: 'A call to /oauth2/commands/callback carried no ' +
+      'callback token, or an unknown or expired one (#151).',
+    spec: 'HTTP 401 {error: invalid_token} with WWW-Authenticate' },
+  { code: 'STS-OAUTH-0780',
+    summary: 'A call to /oauth2/commands/callback was malformed: ' +
+      'an async result not naming the command\'s sub and an account_state, ' +
+      'or a command_requested other than metadata or audit_tenant (#151).',
+    spec: 'HTTP 400 {error: invalid_request}' },
+  { code: 'STS-OAUTH-0781',
+    summary: 'An automatic OpenID Provider Command could not be ' +
+      'queued after a directory change or a sign-out; the change stands ' +
+      '(#151).',
+    spec: 'none (a log line)' },
+  { code: 'STS-OAUTH-0782',
+    summary: 'The mock relying party\'s command endpoint refused a ' +
+      'command — the development test control answering as a relying party ' +
+      'would (#151).',
+    spec: 'HTTP 400, 401, 409 or 404 {error}' },
   { code: 'STS-SAML-0001',
     summary: 'A SAML 2.0 sign-in resumed with a held-request id that is ' +
       'unknown or has expired (saml2.requestTtlMin), so there is no ' +
@@ -8626,6 +8820,11 @@ const CODES = [
       'its Entity Identifier, no https endpoints, no automatic ' +
       'registration, or no keys (#134).',
     spec: 'HTTP 502 page' },
+  { code: 'STS-FED-0150',
+    summary: 'A federation relationship field that takes a closed set of ' +
+      'values (fedAuthnMechanism, fedBinding, fedResponseType, or any row ' +
+      'with an enum) was set to a value outside it (#86).',
+    spec: 'HTTP 400 (console and API)' },
   // ===== OIDFED ============================================================
   { code: 'STS-OIDFED-0001',
     summary: 'A metadata_policy is not the three levels of JSON objects ' +
@@ -15075,6 +15274,10 @@ const CODES = [
     summary: 'set-attribute, add-attribute or remove-attribute was refused ' +
       'and ldap/person_editor.ts named no more specific reason (#228).',
     spec: 'HTTP 400 (API) or a 303 with error=' },
+  { code: 'STS-ADMIN-0820',
+    summary: 'A console form POST held a value outside the closed set the ' +
+      'mirroring /admin-api operation\'s enum declares (#86).',
+    spec: 'HTTP 400 page' },
   { code: 'STS-API-0001',
     summary: 'A management API request carried no Bearer access token while ' +
       'adminApi.authRequired is on.',
@@ -15113,7 +15316,8 @@ const CODES = [
     spec: 'HTTP 403 forbidden (HTTP 403 page for a browser)' },
   { code: 'STS-API-0009',
     summary: 'A management API request body did not match the operation\'s ' +
-      'JSON Schema (an unknown member or a wrong type).',
+      'JSON Schema (an unknown member, a wrong type, or a value outside a ' +
+      'closed set its enum declares — #86).',
     spec: 'HTTP 400 { ok: false, errors }' },
   { code: 'STS-API-0010',
     summary: 'A management API request schema would not compile at startup, ' +
@@ -15418,6 +15622,10 @@ const CODES = [
       'operation needs, and the client it was issued to does not declare ' +
       'that scope in its oauthAllowedScope (in the realm that issued it).',
     spec: 'HTTP 403 forbidden' },
+  { code: 'STS-API-0124',
+    summary: 'A management API query parameter held a value outside the ' +
+      'closed set its operation\'s enum declares (#86).',
+    spec: 'HTTP 400 { ok: false, errors }' },
   { code: 'STS-PORTAL-0001',
     summary: 'A user portal request\'s query string or form body did not ' +
       'match the shape its route accepts, and was refused before ' +
@@ -16366,6 +16574,11 @@ const CODES = [
     summary: 'FAPI-CIBA: a registration under a FAPI profile asked for the ' +
       'push delivery mode, which the profile does not allow (#142).',
     spec: 'invalid_client_metadata (HTTP 400)' },
+  { code: 'STS-REG-0199',
+    summary: 'A command_endpoint (OpenID Provider Commands, #151) ' +
+      'was not an https URL with no fragment, at registration or update ' +
+      '(a console or API write is refused under STS-REG-0071).',
+    spec: 'HTTP 400 {error: invalid_client_metadata}' },
   { code: 'STS-DBG-0001',
     summary: 'The debugger permission was asked for by somebody who may ' +
       'not hold it — not a person, not signed in, not in the ' +

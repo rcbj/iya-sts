@@ -360,6 +360,10 @@ class ProtocolEndpoints {
       '/admin/claim-providers': [
         '/portal/claim-sources', '/portal/claim-sources/callback'
       ].map(route),
+      // ===== Provider Commands endpoints row (#151) =====
+      '/admin/commands': [
+        '/oauth2/commands/callback', '/oauth2/commands/mock-rp'
+      ].map(route),
       // ===== SCEP endpoints row =====
       '/admin/scep': [
         '/enroll/scep', '/enroll/scep/pkiclient.exe', '/enroll/scep/:profile',

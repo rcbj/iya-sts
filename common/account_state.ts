@@ -226,7 +226,9 @@ class AccountState {
       result = logout.terminate(this.keyOf(who),
                                 Array.isArray(o.selection) ? o.selection : [], {
         actor: o.actor || '', channel: o.channel || 'internal',
-        by: o.by || 'the account was disabled by an administrator'
+        by: o.by || 'the account was disabled by an administrator',
+        // The disable's own `suspend` (#151) says it; no `invalidate` too.
+        providerCommand: false
       });
     } catch (e) {
       log.error(errorCodes.tag('STS-AUTHN-0203') + 'account state: ending ' +

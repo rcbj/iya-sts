@@ -507,7 +507,7 @@ const DEFAULT_ORGANISATION = 'sts';
 // allows only behind a setting with a warning on it (`config.js`'s row).
 // ---------------------------------------------------------------------------
 const ALTERNATIVE_NONE = 'none';
-const DEFAULT_ALTERNATIVE_KEY_ALG = 'ml-dsa-87';
+const DEFAULT_ALTERNATIVE_KEY_ALG = 'none';
 
 function alternativeKeyAlgs() {
   log.debug("Entering alternativeKeyAlgs().");
@@ -521,8 +521,9 @@ function alternativeKeyAlgs() {
 }
 
 // The alternative key algorithm a build asked for — the caller's, else the
-// setting, else ML-DSA-87 — as `{ ok, altKeyAlg }` with `altKeyAlg` null for
-// `none`, or a refusal naming what it knows.
+// setting, else `none` (the default since 2026-09-26) — as
+// `{ ok, altKeyAlg }` with `altKeyAlg` null for `none`, or a refusal naming
+// what it knows.
 function alternativeKeyAlgFrom(asked) {
   log.debug("Entering alternativeKeyAlgFrom().");
   const id = String(asked || config.value('pki.alternativeKeyAlgorithm') ||
@@ -1292,6 +1293,20 @@ function oneBuildAtATime(scopeId, build) {
   });
   log.debug("Leaving oneBuildAtATime().");
   return mine;
+}
+
+// Every build queued in this process, settled — for a caller that must not
+// race one it did not start. A realm created by one caller builds its branch
+// (and a Root, where there is none) in the background, and a test that sets
+// the Root aside and builds its own would otherwise have that background
+// build land in the middle (tests/pki.js, 2026-09-26). Never rejects.
+function buildsSettled() {
+  log.debug("Entering buildsSettled().");
+  const tails = Array.from(scopeBuilds.values());
+  log.debug("Leaving buildsSettled(). " + tails.length + " queued.");
+  return Promise.all(tails).then(function () {
+    return scopeBuilds.size ? buildsSettled() : null;
+  });
 }
 
 // The key and signature algorithm a build is to use, checked as a PAIR. It is
@@ -10561,6 +10576,7 @@ module.exports = {
   scopeChainsToRoot: scopeChainsToRoot,
   buildRoot: buildRoot,
   ensureRoot: ensureRoot,
+  buildsSettled: buildsSettled,
   buildScope: buildScope,
   repairBranch: repairBranch,
   ensureScope: ensureScope,

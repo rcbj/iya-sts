@@ -875,14 +875,14 @@ const SCHEMA = {
             'OAuth 2.0 one, because what an OAuth 2.0 authorization server ' +
             'will give you is entirely local to it.' },
     { name: 'fedResponseType', kind: 'single', role: 'service-provider',
-      from: 'this register',
+      from: 'this register', enum: ['code', 'id_token'],
       what: 'code (the default) or id_token. `id_token` with form_post is ' +
             'the shape that needs NO back channel and therefore no token ' +
             'endpoint, no client secret and no outbound request — which is ' +
             'the only way to federate with an OIDC partner from a deployment ' +
             'that has no egress at all.' },
     { name: 'fedBinding', kind: 'single', role: 'service-provider',
-      from: 'this register',
+      from: 'this register', enum: ['HTTP-Redirect', 'HTTP-POST'],
       what: 'Which binding the outbound SAML AuthnRequest goes on: ' +
             'HTTP-Redirect (the default, and what every identity provider ' +
             'supports) or HTTP-POST. It says nothing about the response, ' +
@@ -2798,6 +2798,25 @@ function update(id, change) {
     actionRefused(refusal.code, id, refusal.why);
     log.debug("Leaving update().");
     return { ok: false, errors: [refusal.message] };
+  }
+  // A FIELD WITH A CLOSED SET HOLDS ONE OF ITS VALUES (#86). The rows that
+  // carry an `enum` and no refusal of their own above — `fedAuthnMechanism`,
+  // `fedBinding` and `fedResponseType` — stored whatever was sent, and the
+  // readers then guessed: anything but `HTTP-POST` was the Redirect binding,
+  // anything but `code` was id_token, and an unknown mechanism was merely
+  // "not ready". Empty still clears the field, as it does for every row.
+  if (Array.isArray(row.enum) && value !== '' &&
+      row.enum.indexOf(value) < 0) {
+    log.debug('Leaving update(). Not one of the field\'s values.');
+    actionRefused('STS-FED-0150', id, '"' + value + '" is not one of ' +
+                                      field + '\'s values');
+    log.debug("Leaving update().");
+    return { ok: false,
+             errors: ['"' + field + '" is "' + value + '", which is not one ' +
+                      'of the ' + row.enum.length + ' values it accepts: ' +
+                      row.enum.map(function (v) {
+                        return '"' + v + '"';
+                      }).join(', ') + '.'] };
   }
   const before = row.kind === 'multi' ? (record[field] || []).slice() :
                  record[field];

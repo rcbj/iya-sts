@@ -643,6 +643,12 @@ const CONFIG_SETTING = openObject(
             description: 'How a value posted for it is coerced and checked.' },
     enumValues: { type: 'array', items: { type: 'string' },
                   description: 'Present on `enum` settings only.' },
+    // #86: a `csv` row whose entries come from a closed set says which, so a
+    // client can draw the choices rather than learn them from a refusal.
+    csvValues: { type: 'array', items: { type: 'string' },
+                 description: 'Present on a `csv` setting whose entries ' +
+                              'must each be one of these; absent on an ' +
+                              'open list.' },
     // Present on an `int` setting whose row narrows it, and absent everywhere
     // else — the same way `enumValues` is present on an enum and nowhere else.
     // They are DOCUMENTED rather than left implicit because a client rendering
