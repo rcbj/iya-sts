@@ -202,6 +202,13 @@ const WHY = {
     "session ticket presented as a TLS 1.3 PSK identity with decode_error; " +
     "RFC 8446 section 4.2.11 has the server ignore an identity it cannot " +
     "use and continue with a full handshake" },
+  lateAlert: { why: "tool", reason: "the script waits a short " +
+    "ExpectNoMessage timeout for the server's decode_error; when a busy " +
+    "service (other lanes of the suite running beside it) sends the alert " +
+    "after that, tlsfuzzer takes its no-message branch, and FlushMessageList " +
+    "pops split_message's post-send hook as though it were a fragment and " +
+    "fails before anything is judged. The same probe passes on a quiet " +
+    "service (2026-09-26, memory mode)" },
   levelZeroAlert: { why: "tool", reason: "the script's closing alert is " +
     "built with the DESCRIPTION as its level (AlertGenerator(" +
     "close_notify)), so it is sent with level 0; the directory keeps the " +
@@ -630,7 +637,9 @@ const PLAN = [
     exceptions: [
       ex(/^max pad/, "Can't represent value", "overflow"),
       ex(/^hello truncate|^huge pad/, ["handshake_failure",
-         "illegal_parameter"], "alertChoice")] },
+         "illegal_parameter"], "alertChoice"),
+      ex(/^(small|hello) truncate|pad/,
+         "'function' object has no attribute 'contentType'", "lateAlert")] },
   { script: "test-truncating-of-finished.py" },
   { script: "test-unsupported-curve-fallback.py",
     exceptions: [ex("check for unsupported curve fallback",
