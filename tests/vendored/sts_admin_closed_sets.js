@@ -318,8 +318,9 @@ async function theBodies(doc) {
         assert.strictEqual(good.status, 400, where + ": the extra member " +
                            "should have been refused: " +
                            good.text.slice(0, 400));
-        assert.ok(goodSaid.indexOf('"' + EXTRA + '"') >= 0, where + ": " +
-                  goodSaid);
+        // Named in either wording: the validator quotes it, and the narrow
+        // doors that own their body name it in a list of their own.
+        assert.ok(goodSaid.indexOf(EXTRA) >= 0, where + ": " + goodSaid);
         assert.ok(!SENTENCE.test(goodSaid) &&
                   !SETTING_SENTENCE.test(goodSaid), where + ": a value from " +
                   "the set was refused as outside it: " + goodSaid);
