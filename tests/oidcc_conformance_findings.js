@@ -251,6 +251,45 @@ function checkEcdhPartyInfo(t) {
   log.debug("Leaving checkEcdhPartyInfo().");
 }
 
+// ---------------------------------------------------------------------------
+// 6. OPENID4VCI CREDENTIAL RESPONSE ENCRYPTION TO AN EC KEY (#187): the HAIP
+// issuer plan asks for ECDH-ES to a P-256 key, which this issuer refused
+// (RSA-OAEP-256 only). Each algorithm is taken with the key type it fits.
+// ---------------------------------------------------------------------------
+function checkCredentialResponseEcdh(t) {
+  log.debug("Entering checkCredentialResponseEcdh().");
+  t.log.info('=== 6. a Credential Response encrypted to an EC key ===');
+  const nodeCrypto = require('crypto');
+  const stsCrypto = require('../common/crypto');
+  const issuer = require('../oid4vc/vc_issuer');
+  const pair = nodeCrypto.generateKeyPairSync('ec', { namedCurve: 'P-256' });
+  const jwk = Object.assign(pair.publicKey.export({ format: 'jwk' }),
+                            { alg: 'ECDH-ES' });
+  t.equal(issuer.encryptionProblem({ jwk: jwk, enc: 'A128GCM' }), '',
+          '6a. an EC P-256 key with ECDH-ES is accepted');
+  t.check(/ECDH-ES only/.test(issuer.encryptionProblem({
+    jwk: Object.assign({}, jwk, { alg: 'RSA-OAEP-256' }), enc: 'A128GCM' })),
+          '6b. but not with RSA-OAEP-256, which is an RSA key\'s');
+  t.check(/EC public key on/.test(issuer.encryptionProblem({
+    jwk: Object.assign({}, jwk, { crv: 'secp256k1' }), enc: 'A128GCM' })),
+          '6c. and not on a curve outside P-256, P-384 and P-521');
+  const compact = issuer.encryptToJwe('{"credentials":[]}',
+                                      { jwk: jwk, enc: 'A128GCM' });
+  let opened = null;
+  try {
+    opened = stsCrypto.decryptJweCompact(compact, {
+      privateKey: pair.privateKey,
+      allowedAlg: ['ECDH-ES'], allowedEnc: ['A128GCM'] });
+  } catch (e) {
+    log.debug("Caught in checkCredentialResponseEcdh(): " +
+              ((e && e.message) || e));
+    opened = { plaintext: 'refused: ' + e.message };
+  }
+  t.equal(opened.plaintext, '{"credentials":[]}',
+          '6d. the response is an ECDH-ES JWE the wallet\'s key opens');
+  log.debug("Leaving checkCredentialResponseEcdh().");
+}
+
 function removeRealms() {
   log.debug("Entering removeRealms().");
   MADE.splice(0).forEach(function (id) {
@@ -267,6 +306,7 @@ function run(t) {
     checkFragmentSetting(t);
     checkFederationRequestObject(t);
     checkEcdhPartyInfo(t);
+    checkCredentialResponseEcdh(t);
   } finally {
     removeRealms();
   }

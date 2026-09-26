@@ -133,8 +133,9 @@ means the whole configured set.
   [OpenID4VP](oid4vp.md#what-the-session-says)).
 * **Encryption.** A request may be a JWE to the realm's own RSA-OAEP-256 key
   (`credential_request_encryption`), and a wallet may ask for an encrypted
-  response (`credential_response_encryption`). The `enc` values offered are
-  A128GCM and A256GCM. Either direction can be made mandatory.
+  response (`credential_response_encryption`): RSA-OAEP-256 to an RSA key,
+  ECDH-ES to an EC key on P-256, P-384 or P-521 (#187). The `enc` values
+  offered are A128GCM and A256GCM. Either direction can be made mandatory.
 * **Deferred issuance.** A credential request on the access token from a
   deferred offer is answered with a `transaction_id` instead of a credential.
   `POST /oid4vci/deferred_credential` answers `issuance_pending` until
@@ -253,8 +254,6 @@ unverifiable, not invalid: it is somebody else's conforming document.
 ### Not implemented
 
 * No historical status lists: `?time=` on the status list endpoint answers 501.
-* ECDH-ES response encryption. RSA-OAEP-256 is the only key transport, and it
-  is not a setting.
 * A key attestation or trusted issuer **certificate** with a post-quantum key,
   because such certificates cannot be read here.
 

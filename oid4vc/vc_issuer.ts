@@ -286,6 +286,12 @@ const notificationIds = realms.map({ persist: 'vc_issuer.notificationIds' });
 // advertising an algorithm this then refuses would make the metadata a lie.
 // ---------------------------------------------------------------------------
 const VCI_ENC_ALG = 'RSA-OAEP-256';
+// And ECDH-ES to an EC key (#187): the algorithm HAIP 1.0 asks for
+// wherever it names one (section 5, OpenID4VP) and the one the OpenID
+// conformance suite's HAIP issuer plan sends a P-256 key for. RSA-OAEP-256
+// stays for an RSA key; each is taken only with the key type it fits.
+const VCI_ENC_ALGS = [VCI_ENC_ALG, 'ECDH-ES'];
+const VCI_ENC_CURVES = ['P-256', 'P-384', 'P-521'];
 
 // The implemented list, kept under its old name. What is ADVERTISED and
 // ACCEPTED is `responseEncValues()` — `oid4vci.responseEncryptionEncValues`
@@ -565,7 +571,7 @@ class VcIssuer {
       // as well, which nothing implemented — metadata that overstates is worse
       // than metadata that says little.
       credential_response_encryption: {
-        alg_values_supported: [VCI_ENC_ALG],
+        alg_values_supported: VCI_ENC_ALGS.slice(),
         enc_values_supported: this.responseEncValues(),
         encryption_required:
           config.value('oid4vci.responseEncryptionRequired') === true
@@ -2395,22 +2401,27 @@ class VcIssuer {
     }
   }
 
-  private encryptionProblem(encryption) {
+  encryptionProblem(encryption) {
     const { log } = this.deps;
     log.debug("Entering VcIssuer.encryptionProblem().");
     const jwk = encryption.jwk;
-    if (!jwk || jwk.kty !== 'RSA' || !jwk.n || !jwk.e) {
+    const rsa = !!jwk && jwk.kty === 'RSA' && !!jwk.n && !!jwk.e;
+    const ec = !!jwk && jwk.kty === 'EC' && !!jwk.x && !!jwk.y &&
+               VCI_ENC_CURVES.indexOf(jwk.crv) >= 0;
+    if (!rsa && !ec) {
       log.debug("Leaving VcIssuer.encryptionProblem(). The key is unusable.");
-      return 'credential_response_encryption.jwk must be an RSA public key; ' +
-             'this issuer encrypts with ' +
-             VCI_ENC_ALG + '.';
+      return 'credential_response_encryption.jwk must be an RSA public key ' +
+             '(for ' + VCI_ENC_ALG + ') or an EC public key on ' +
+             VCI_ENC_CURVES.join(', ') + ' (for ECDH-ES).';
     }
-    const alg = jwk.alg || encryption.alg || VCI_ENC_ALG;
-    if (alg !== VCI_ENC_ALG) {
+    const alg = jwk.alg || encryption.alg ||
+                (rsa ? VCI_ENC_ALG : 'ECDH-ES');
+    if (alg !== (rsa ? VCI_ENC_ALG : 'ECDH-ES')) {
       log.debug("Leaving VcIssuer.encryptionProblem(). Unsupported alg " +
                 alg);
-      return 'This issuer supports alg ' + VCI_ENC_ALG + ' only; "' + alg +
-             '" was requested.';
+      return 'This issuer encrypts to ' + (rsa ? 'an RSA' : 'an EC') +
+             ' key with ' + (rsa ? VCI_ENC_ALG : 'ECDH-ES') + ' only; "' +
+             alg + '" was requested.';
     }
     if (!encryption.enc) {
       log.debug("Leaving VcIssuer.encryptionProblem(). No enc.");
@@ -2433,10 +2444,10 @@ class VcIssuer {
     return "";
   }
 
-  // A JWE in compact serialization: RSA-OAEP-256 for the content key, AES-GCM
-  // for the content. Written out by hand rather than with a JOSE library,
+  // A JWE in compact serialization: RSA-OAEP-256 (to an RSA key) or ECDH-ES
+  // (to an EC key, #187) for the content key, AES-GCM for the content. Written out by hand rather than with a JOSE library,
   // because having the steps visible is the point of a mock.
-  private encryptToJwe(plaintext, encryption) {
+  encryptToJwe(plaintext, encryption) {
     const { log, stsCrypto } = this.deps;
     log.debug("Entering VcIssuer.encryptToJwe(). enc=" + encryption.enc);
     // Still written out by hand rather than with a JOSE library — see
@@ -2445,7 +2456,9 @@ class VcIssuer {
     // endpoint's business; the CEK, the wrap, the AAD and the tag are not.
     const compact = stsCrypto.encryptJweCompact(plaintext, {
       jwk: encryption.jwk,
-      enc: encryption.enc
+      enc: encryption.enc,
+      alg: encryption.jwk && encryption.jwk.kty === 'EC' ? 'ECDH-ES' :
+        VCI_ENC_ALG
     });
     log.debug("Leaving VcIssuer.encryptToJwe(). " + compact.length +
               " characters.");
@@ -3179,5 +3192,9 @@ export = {
     slot.forward('credentialRequestEncryptionMetadata'),
   decryptJweRequest: slot.forward('decryptJweRequest'),
   readPossiblyEncryptedRequest: slot.forward('readPossiblyEncryptedRequest'),
+  // The Credential Response's encryption, for tests/oidcc_conformance_findings
+  // (#187's ECDH-ES).
+  encryptionProblem: slot.forward('encryptionProblem'),
+  encryptToJwe: slot.forward('encryptToJwe'),
   lastCredentialRequest: slot.forward('lastCredentialRequest')
 };
