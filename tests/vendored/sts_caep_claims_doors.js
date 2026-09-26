@@ -263,24 +263,29 @@ async function drain(token, streamId) {
 }
 
 // Waits for the stream to hold a SET the predicate accepts. Delivery is on a
-// promise after the write answers, so a first poll may be early.
+// promise after the write answers, so a first poll may be early. Every SET
+// polled is KEPT until a wait takes it: one act sends two events here (a
+// verification is token-claims-change AND assurance-level-change), and a
+// poll acknowledges both at once.
+const received = [];
 async function waitFor(token, streamId, what, predicate) {
   log.debug("Entering waitFor(). " + what);
-  const seen = [];
   for (let i = 0; i < 20; i++) {
-    const sets = await drain(token, streamId);
-    sets.forEach(function (one) {
-      seen.push(one);
-    });
-    const hit = seen.filter(predicate)[0];
-    if (hit) {
+    const at = received.findIndex(predicate);
+    if (at >= 0) {
+      const hit = received.splice(at, 1)[0];
       log.debug("Leaving waitFor(). Found.");
-      return { hit: hit, seen: seen };
+      return { hit: hit, seen: received.slice(0) };
     }
-    await new Promise(function (r) { setTimeout(r, 250); });
+    (await drain(token, streamId)).forEach(function (one) {
+      received.push(one);
+    });
+    if (received.findIndex(predicate) < 0) {
+      await new Promise(function (r) { setTimeout(r, 250); });
+    }
   }
   log.debug("Leaving waitFor(). Not found.");
-  return { hit: null, seen: seen };
+  return { hit: null, seen: received.slice(0) };
 }
 
 function eventOf(set, type) {
@@ -382,6 +387,7 @@ async function test() {
       assert.strictEqual(redeemed.status, 200, redeemed.raw.slice(0, 300));
     });
   await drain(token, streamId);
+  received.length = 0;
 
   const claimsAbout = function (set) {
     const ev = eventOf(set, "token-claims-change");
