@@ -304,8 +304,9 @@ so must `admin-ui/admin.ts`.
    oidcc-codereuse called that what it is — RFC 6749 section 4.1.2's MUST
    broken — so `checkCodeReplay()` now refuses in every mode unless
    `oauth2.codeReplayIdempotent` is on (off by default, a documented weaker
-   option, on in `env/docker-tests.js` only for the parent's vendored
-   `oauth2_sts_endpoints.js`), and RFC 9700 mode refuses whatever it says.
+   option, on in `env/test.js` and `env/docker-tests.js` only for the
+   parent's vendored `oauth2_sts_endpoints.js`), and RFC 9700 mode refuses
+   whatever it says.
    It revokes the access, refresh and ID Tokens that
    code bought (RFC 6749 section 10.5), through `stats.revoke()` called by
    `oauth2.ts`, never by this module. It sits BELOW the two refusals that are
@@ -4107,9 +4108,10 @@ otherwise; each carries its regression check.
   answered with the same tokens outside the mode (the courtesy argued at 3a
   above). It is refused and what the code bought revoked in every mode
   (STS-OAUTH-0143); the courtesy survives as `oauth2.codeReplayIdempotent`,
-  off by default, a documented weaker option, on in `env/docker-tests.js`
-  ONLY because the parent's vendored `oauth2_sts_endpoints.js` still asserts
-  it in development — the parent owes that job's update
+  off by default, a documented weaker option, on in `env/test.js` and
+  `env/docker-tests.js` ONLY because the parent's vendored
+  `oauth2_sts_endpoints.js` still asserts it in development — the parent
+  owes that job's update
   (rcbj/id-proto-debugger#306, with `vc_did.js`'s for OpenID4VCI's
   `credential_metadata`), after which the appconfig line goes.
 * **The hybrid flow's nonce.** OIDC Core 3.3.2.1 makes `nonce` REQUIRED for
