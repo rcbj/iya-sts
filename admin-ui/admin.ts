@@ -782,6 +782,11 @@ import krb5Principals = require('../kerberos/krb5_principals');
 // requires only `config`, `bunyan` and zod, so it closes no cycle here and
 // moves nothing in the route order.
 import validation = require('../common/validation');
+// THE CLOSED SETS a console form is held to (#86). A LEAF (rule 3) requiring
+// only `bunyan`; `mgmt-api/admin_api.ts` fills its register at wire time from
+// the OpenAPI table, and the check below reads it. A register both modules
+// require in the ordinary direction, not a slot: neither calls the other.
+import closedSets = require('../common/closed_sets');
 import InstanceSlot = require('../common/instance_slot');
 
 // REQUIRED FOR THE ORDER THEY WERE ALWAYS REQUIRED IN, AND READ NOWHERE HERE
@@ -28146,6 +28151,52 @@ class AdminConsole {
       }
       log.debug("Leaving the console query check. Accepted.");
       return next();
+    });
+
+    // -------------------------------------------------------------------------
+    // A FORM FIELD OUTSIDE ITS CLOSED SET (#86).
+    //
+    // A console form posts the same `action` as the `/admin-api` operation that
+    // mirrors it, and that operation's request schema declares which fields
+    // take a closed set of values. `mgmt-api/admin_api.ts` registered those in
+    // `common/closed_sets.ts` when it was wired; this holds a POST to them,
+    // after the gate — so a caller who may not write is told that, not
+    // something about a field — and before any handler. Every console page is
+    // registered below this line, so one check covers the pages of every
+    // directory (`ldap_server.js`'s and the `*_admin.ts` modules' included).
+    //
+    // A field an untouched `<select>` left empty is absent; a streamed upload
+    // (#215) is not read here, its fields being in a body nobody has read yet.
+    // A process that never loaded the management API has an empty register,
+    // and this passes everything, which is what it did before #86.
+    // -------------------------------------------------------------------------
+    app.use('/admin', function (req, res, next) {
+      log.debug("Entering the console closed-set check.");
+      if (req.method !== 'POST' || app.isStreamedUpload(req)) {
+        log.debug("Leaving the console closed-set check. Not a form POST.");
+        return next();
+      }
+      const page = ('/admin' + (req.path === '/' ? '' : req.path))
+        .replace(/\/+$/, '');
+      const parsed = parseBody(req);
+      const body = closedSets.formValues(req, parsed);
+      const action = String((parsed && parsed.action) || '');
+      const checked = closedSets.checkForm(page, action, body);
+      if (checked.ok) {
+        log.debug("Leaving the console closed-set check. Accepted.");
+        return next();
+      }
+      log.info('admin console: a POST to ' + page +
+               (action ? ' (' + action + ')' : '') + ' was refused: ' +
+               checked.sentence);
+      errorCodes.mark(res, 'STS-ADMIN-0817');
+      self.refuse(req, res, 400, 'invalid_value',
+                  'That value is not one this control accepts.',
+                  checked.sentence,
+                  { field: checked.field, values: checked.values });
+      log.debug("Leaving the console closed-set check. Refused on \"" +
+                checked.field + "\".");
+      return undefined;
     });
 
     // =========================================================================

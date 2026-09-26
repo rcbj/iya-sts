@@ -250,6 +250,11 @@ import applications = require('../common/applications');
 // computes them and hands them to the action. A library that registers nothing.
 import resourceMetadata = require('../oauth-oidc/protected_resource_metadata');
 import spec = require('./admin_api_spec');
+// THE CLOSED SETS (#86). A LEAF (rule 3): the refusal sentence this file's
+// enum errors use, the query-parameter check, and the register the console
+// gate reads — filled here at wire time from the same table the document is
+// built from. `admin-ui/admin.ts` requires it too, in the ordinary direction.
+import closedSets = require('../common/closed_sets');
 
 // ---------------------------------------------------------------------------
 // THE DOCUMENT IS THE VALIDATOR (2026-09-06).
@@ -292,7 +297,10 @@ import addFormatsModule = require('ajv-formats');
 const Ajv: any = AjvModule;
 const addFormats: any = addFormatsModule;
 
-const ajv = new Ajv({ strict: false, allErrors: true, coerceTypes: false });
+// `verbose` so an `enum` error carries the value it refused, which the
+// refusal sentence names (#86).
+const ajv = new Ajv({ strict: false, allErrors: true, coerceTypes: false,
+                      verbose: true });
 addFormats(ajv);
 
 // ---------------------------------------------------------------------------
@@ -316,15 +324,13 @@ addFormats(ajv);
 // verbatim, and this wrapper exists only for the length of the compile.
 // ---------------------------------------------------------------------------
 // ---------------------------------------------------------------------------
-// **WHAT IS ENFORCED IS STRUCTURE. `required` AND `enum` ARE STRIPPED FROM THE
-// COMPILED COPY AND KEPT IN THE DOCUMENT.**
+// **WHAT IS ENFORCED IS STRUCTURE AND THE CLOSED SETS. `required` IS STRIPPED
+// FROM THE COMPILED COPY AND KEPT IN THE DOCUMENT.**
 //
 // The rule is the one this file rests on: *the validator adds the checks
 // nothing else makes, and never duplicates a check the handler already makes
-// better.* Two of the four JSON Schema assertions here fall on each side, and
-// the suite decided it rather than taste.
-//
-// ENFORCED, because nothing else in this service checks them:
+// better.* It was applied on 2026-09-06 and three of the four JSON Schema
+// assertions here fell on the ENFORCED side:
 //
 //   * `additionalProperties: false` — a member the operation does not define.
 //     This is the one that catches the silently ignored field, which is the
@@ -334,28 +340,33 @@ addFormats(ajv);
 //     `label` on the authorization-server create — every one of them a member
 //     the handler never read and the job asserted nothing about.
 //   * `type` — a number or an array where a string belongs.
+//   * `enum` — a value outside the closed set the document declares (#86,
+//     2026-09-26). **It was stripped until then**, on the argument that
+//     `applicationsAction()` refuses an unknown kind by naming the kinds and
+//     that ajv would replace the sentence with "must be equal to one of the
+//     allowed values". Both halves were true and the conclusion was wrong,
+//     because the handler that explains itself was the exception: the #86
+//     audit found closed-set fields that a handler silently ignored, silently
+//     replaced with its default, or STORED. So the enum is enforced here, and
+//     the sentence is `common/closed_sets.ts`'s — the field, the value, how
+//     many values it accepts and every one — which is as good as the kinds
+//     refusal was and is the same words at every door.
 //
-// NOT ENFORCED, because a handler already answers them and says more:
+// NOT ENFORCED, because a handler already answers it and says more:
 //
-//   * `enum` — `applicationsAction()` refuses an unknown kind by NAMING the
-//     kinds and COUNTING them, and `sts_admin_api_operations.js` asserts all
-//     three properties, because that list and the one
-//     `GET /applications/new` publishes are one table read through two doors.
 //   * `required` — `logoutAction()` answers a sign-out with no identity with
-//     *Name the identity ... in `user`*, and the same job asserts that wording
-//     SO THAT A CALLER CAN TELL WHICH REFUSAL IT MET.
+//     *Name the identity ... in `user`*, and `sts_admin_api_operations.js`
+//     asserts that wording SO THAT A CALLER CAN TELL WHICH REFUSAL IT MET.
 //
-// In both cases ajv runs first, so enforcing would replace a sentence a caller
-// can act on with "must be equal to one of the allowed values" — and switch off
-// an assertion in the same stroke. That is the opposite of the point.
-//
-// **Both stay in the published document**, where they are exactly right:
-// documentation of the valid set and the mandatory members. What this decides
-// is only WHICH LAYER refuses, and the answer is the layer that can explain
-// itself. Stripped recursively, because these schemas nest — an array's `items`
-// and a `$ref`'d `ClaimEntry` each carry their own.
+// **An enum is compiled with `""` added to it**, when it does not already
+// hold it, and that is not a loophole: an empty string is how a form — and a
+// form-encoded body copied from the console, which this API takes — says
+// "nothing chosen", and the handlers here treat it as absent. The refusal
+// sentence names the declared set, without it. Stripped recursively, because
+// these schemas nest — an array's `items` and a `$ref`'d `ClaimEntry` each
+// carry their own.
 // ---------------------------------------------------------------------------
-const NOT_ENFORCED_HERE = ['enum', 'required'];
+const NOT_ENFORCED_HERE = ['required'];
 
 // What `AdminApi` needs from the rest of the service: the modules this file
 // used to reach for itself, passed in so that the composition root can build
@@ -393,6 +404,7 @@ interface AdminApiDeps {
   applications: typeof applications;
   resourceMetadata: typeof resourceMetadata;
   spec: typeof spec;
+  closedSets: typeof closedSets;
   realms: typeof realms;
   jwtAccessToken: typeof jwtAccessToken;
   mtls: typeof mtls;
@@ -459,6 +471,7 @@ class AdminApi {
       applications: applications,
       resourceMetadata: resourceMetadata,
       spec: spec,
+      closedSets: closedSets,
       realms: realms,
       jwtAccessToken: jwtAccessToken,
       mtls: mtls,
@@ -506,6 +519,7 @@ class AdminApi {
     PROTOCOL_SETTINGS_OPERATIONS = instance.buildProtocolSettingsOperations();
     ROUTES = instance.buildRoutes();
     instance.compileRequestSchemas();
+    instance.registerConsoleClosedSets();
     log.info(startupBanner(instance.operationSummaries().length));
     log.debug("Leaving AdminApi.wire().");
   }
@@ -522,9 +536,15 @@ class AdminApi {
       log.debug("Leaving AdminApi.structureOnly().");
       return node;
     }
-    const out = {};
+    const out: any = {};
     Object.keys(node).forEach(function (key) {
       if (NOT_ENFORCED_HERE.indexOf(key) >= 0) {
+        return;
+      }
+      if (key === 'enum' && Array.isArray(node.enum)) {
+        // The empty string is absent (see NOT_ENFORCED_HERE's header).
+        out.enum = node.enum.indexOf('') >= 0 ? node.enum.slice()
+                                              : node.enum.concat('');
         return;
       }
       out[key] = self.structureOnly(node[key]);
@@ -596,6 +616,84 @@ class AdminApi {
   }
 
   // ---------------------------------------------------------------------------
+  // THE CONSOLE'S CLOSED SETS, FROM THIS TABLE (#86).
+  //
+  // Every operation here names the console control it is the machine's door
+  // to — `mirrors: 'POST /admin/users and POST /admin/users/new'` — and a
+  // console form posts the SAME `action` the operation is named for (rule 7;
+  // `/permissions/define-permission`'s stutter is that rule showing). So the
+  // enums an action's request schema declares are registered in
+  // `common/closed_sets.ts` under every console page its route mirrors, and
+  // the console gate holds a form POST to them. The console has no copy of
+  // any set: a value this document adds to an enum is accepted on both doors
+  // the moment it is added, and one it removes is refused on both.
+  //
+  // Only a flat field is held there (a form has nothing nested); what a form
+  // spells differently from the API — `leafKeyAlg` for `keyAlg` — is simply
+  // not matched, and is the handler's to refuse. Returns how many controls
+  // hold at least one field.
+  // ---------------------------------------------------------------------------
+  registerConsoleClosedSets() {
+    const { log, spec, closedSets } = this.deps;
+    log.debug("Entering AdminApi.registerConsoleClosedSets().");
+    let held = 0;
+    ROUTES.forEach(function (entry) {
+      const pages = [];
+      const re = /POST (\/admin(?:\/[^\s,]*)?)/g;
+      let m;
+      while ((m = re.exec(String(entry.mirrors || ''))) !== null) {
+        pages.push(m[1]);
+      }
+      if (!pages.length || entry.method === 'GET') {
+        return;
+      }
+      const rows = (entry.actions || []).map(function (a) {
+        return { action: a.action || '', body: a.requestBody };
+      });
+      if (entry.requestBody && !(entry.actions || []).length) {
+        rows.push({ action: '', body: entry.requestBody });
+      }
+      rows.forEach(function (row) {
+        if (!row.body) {
+          return;
+        }
+        const fields = closedSets.collect(row.body, spec.SCHEMAS);
+        if (!fields.length) {
+          return;
+        }
+        pages.forEach(function (page) {
+          closedSets.registerConsole(page, row.action, fields);
+        });
+        held = held + 1;
+      });
+    });
+    log.debug("Leaving AdminApi.registerConsoleClosedSets(). " + held +
+              " control(s) hold a closed set.");
+    return held;
+  }
+
+  // ---------------------------------------------------------------------------
+  // A QUERY PARAMETER'S CLOSED SET (#86). The enums an operation's
+  // `parameters` declare `in: query` were published and never checked, so a
+  // filter spelt wrong answered 200 with every row — the answer to a question
+  // nobody asked. Both the route's parameters and its action's are held.
+  // ---------------------------------------------------------------------------
+  checkQueryEnums(entry, req) {
+    const { log, closedSets } = this.deps;
+    log.debug("Entering AdminApi.checkQueryEnums().");
+    const action = String((req.params && req.params.action) || '');
+    const row = (entry.actions || []).filter(function (a) {
+      return a.action === action;
+    })[0];
+    const parameters = (entry.parameters || [])
+      .concat((row && row.parameters) || []);
+    const checked = closedSets.checkQuery(parameters, req.query);
+    log.debug("Leaving AdminApi.checkQueryEnums(). " +
+              (checked.ok ? "Accepted." : "Refused."));
+    return checked;
+  }
+
+  // ---------------------------------------------------------------------------
   // Turn ajv's errors into the `{ ok: false, errors: [...] }` shape every
   // refusal on this API already uses, so a caller parses one thing.
   //
@@ -604,13 +702,22 @@ class AdminApi {
   // beside a body they typed rather than resolving a pointer.
   // ---------------------------------------------------------------------------
   errorsFromAjv(errors) {
-    const { log } = this.deps;
+    const { log, closedSets } = this.deps;
     log.debug("Entering AdminApi.errorsFromAjv().");
     const out = (errors || []).map(function (e) {
       const where = String(e.instancePath || '').replace(/^\//, '')
                                                 .replace(/\//g, '.');
       const missing = e.params && e.params.missingProperty;
       const extra = e.params && e.params.additionalProperty;
+      if (e.keyword === 'enum' && e.params &&
+          Array.isArray(e.params.allowedValues)) {
+        // A value outside a closed set (#86), in the words every door uses.
+        // The `""` the compile added is not part of the declared set.
+        return closedSets.sentence(where || 'the request', e.data,
+          e.params.allowedValues.filter(function (v) {
+            return v !== '';
+          }));
+      }
       if (missing) {
         return '"' + missing + '" is required.';
       }
@@ -18447,12 +18554,25 @@ class AdminApi {
     // OpenAPI document is built from, so an operation cannot acquire a schema
     // without acquiring its enforcement.
     //
-    // A GET is registered exactly as before. Nothing about a query string goes
-    // through here — that is `common/validation.js`'s guard and the per-page
-    // schemas.
+    // A query string's SHAPE is `common/validation.js`'s guard and the
+    // per-page schemas; what goes through here is only its closed sets — a
+    // parameter whose declared `enum` does not hold the value (#86).
     // -------------------------------------------------------------------------
     ROUTES.forEach(function (entry) {
       const path = entry.route || entry.path;
+      // A query parameter outside its declared set is refused before the
+      // handler runs, on a GET and a POST alike (#86).
+      const queryRefused = function (req, res) {
+        const asked = self.checkQueryEnums(entry, req);
+        if (asked.ok) {
+          return false;
+        }
+        log.debug("The management API refused a query parameter against " +
+                  (entry.operationId || path) + "'s declared set.");
+        errorCodes.mark(res, 'STS-API-0124');
+        self.sendJson(res, 400, { ok: false, errors: [asked.sentence] });
+        return true;
+      };
       if (entry.method === 'GET') {
         // A GET that `mirrors` exactly one Protocols page answers that page's
         // endpoints as well, which is rule 7 for the section `respond()` draws
@@ -18464,16 +18584,27 @@ class AdminApi {
                      protocolEndpoints.pages().indexOf(mirrored[1]) >= 0 ?
                      mirrored[1] : null;
         if (!page) {
-          app.get(path, entry.handler);
+          app.get(path, function (req, res) {
+            if (queryRefused(req, res)) {
+              return undefined;
+            }
+            return entry.handler(req, res);
+          });
           return;
         }
         app.get(path, function (req, res) {
+          if (queryRefused(req, res)) {
+            return undefined;
+          }
           res.locals.protocolEndpoints = protocolEndpoints.forPage(req, page);
           return entry.handler(req, res);
         });
         return;
       }
       app.post(path, function (req, res) {
+        if (queryRefused(req, res)) {
+          return undefined;
+        }
         // The route this request matched, so the wrapper can find its schema
         // without re-deriving the path from what express matched.
         req.__adminApiRoute = path;

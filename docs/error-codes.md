@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3461** of them, in **38** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3463** of them, in **38** subsystems.
 
 ## Where a code appears
 
@@ -81,8 +81,8 @@ is an ordinary outcome.
 * [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 282
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 74
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 32
-* [Admin console (`STS-ADMIN`)](#sts-admin) — 195
-* [Management API (`STS-API`)](#sts-api) — 73
+* [Admin console (`STS-ADMIN`)](#sts-admin) — 196
+* [Management API (`STS-API`)](#sts-api) — 74
 * [User portal (`STS-PORTAL`)](#sts-portal) — 72
 * [Sign-out (`STS-LOGOUT`)](#sts-logout) — 7
 * [Registries (`STS-REG`)](#sts-reg) — 131
@@ -3551,6 +3551,7 @@ Raised from: admin-ui/ (except pki_admin.js), admin-core/.
 | `STS-ADMIN-0814` | clear-email-factor could not write the person's entry (#64). | HTTP 400 (API) |
 | `STS-ADMIN-0815` | set-mail was given something that is not an address this service can send to (#64). | HTTP 400 (API) |
 | `STS-ADMIN-0816` | set-mail named nobody in this realm, or the directory would not write the address (#64). | HTTP 400 (API) |
+| `STS-ADMIN-0817` | A console form POST held a value outside the closed set the mirroring /admin-api operation's enum declares (#86). | HTTP 400 page |
 
 ## STS-API
 
@@ -3568,7 +3569,7 @@ Raised from: mgmt-api/.
 | `STS-API-0006` | In product mode with the token gate off, the XACML access policy refused a management API caller who does hold a console role. | HTTP 403 forbidden |
 | `STS-API-0007` | In product mode with the token gate off, a management API request arrived with nobody signed in. | HTTP 401 JSON (HTTP 403 page for a browser) |
 | `STS-API-0008` | In product mode with the token gate off, a signed-in management API caller did not hold the console role the method needs. | HTTP 403 forbidden (HTTP 403 page for a browser) |
-| `STS-API-0009` | A management API request body did not match the operation's JSON Schema (an unknown member or a wrong type). | HTTP 400 { ok: false, errors } |
+| `STS-API-0009` | A management API request body did not match the operation's JSON Schema (an unknown member, a wrong type, or a value outside a closed set its enum declares — #86). | HTTP 400 { ok: false, errors } |
 | `STS-API-0010` | A management API request schema would not compile at startup, so that operation runs unvalidated. | — |
 | `STS-API-0011` | The crypto reporter slot that admin-ui/crypto_metadata.ts fills was not installed, so the crypto report, the key list or a key export could not be answered. | HTTP 503 { ok: false, errors } |
 | `STS-API-0012` | The database report could not be built (the probe run rejected). | HTTP 500 { ok: false, errors } |
@@ -3633,6 +3634,7 @@ Raised from: mgmt-api/.
 | `STS-API-0121` | A DPoP proof presented at /admin-api did not verify, and the proof check reported no code of its own. | invalid_dpop_proof (HTTP 401) |
 | `STS-API-0122` | A management API access token was refused because this service has revoked or disowned it, or the person it was issued to has a disabled account. | invalid_token (HTTP 401) |
 | `STS-API-0123` | A management API access token carried the admin scope an operation needs, and the client it was issued to does not declare that scope in its oauthAllowedScope (in the realm that issued it). | HTTP 403 forbidden |
+| `STS-API-0124` | A management API query parameter held a value outside the closed set its operation's enum declares (#86). | HTTP 400 { ok: false, errors } |
 
 ## STS-PORTAL
 

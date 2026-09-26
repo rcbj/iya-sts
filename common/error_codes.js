@@ -14424,6 +14424,10 @@ const CODES = [
     summary: 'set-mail named nobody in this realm, or the directory would ' +
       'not write the address (#64).',
     spec: 'HTTP 400 (API)' },
+  { code: 'STS-ADMIN-0817',
+    summary: 'A console form POST held a value outside the closed set the ' +
+      'mirroring /admin-api operation\'s enum declares (#86).',
+    spec: 'HTTP 400 page' },
   { code: 'STS-API-0001',
     summary: 'A management API request carried no Bearer access token while ' +
       'adminApi.authRequired is on.',
@@ -14462,7 +14466,8 @@ const CODES = [
     spec: 'HTTP 403 forbidden (HTTP 403 page for a browser)' },
   { code: 'STS-API-0009',
     summary: 'A management API request body did not match the operation\'s ' +
-      'JSON Schema (an unknown member or a wrong type).',
+      'JSON Schema (an unknown member, a wrong type, or a value outside a ' +
+      'closed set its enum declares — #86).',
     spec: 'HTTP 400 { ok: false, errors }' },
   { code: 'STS-API-0010',
     summary: 'A management API request schema would not compile at startup, ' +
@@ -14767,6 +14772,10 @@ const CODES = [
       'operation needs, and the client it was issued to does not declare ' +
       'that scope in its oauthAllowedScope (in the realm that issued it).',
     spec: 'HTTP 403 forbidden' },
+  { code: 'STS-API-0124',
+    summary: 'A management API query parameter held a value outside the ' +
+      'closed set its operation\'s enum declares (#86).',
+    spec: 'HTTP 400 { ok: false, errors }' },
   { code: 'STS-PORTAL-0001',
     summary: 'A user portal request\'s query string or form body did not ' +
       'match the shape its route accepts, and was refused before ' +
