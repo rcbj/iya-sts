@@ -1344,6 +1344,14 @@ const SCHEMA = {
       what: 'CIBA `backchannel_client_notification_endpoint`: the https ' +
             'URL a ping or a push is POSTed to, under the outbound policy. ' +
             'Required for ping and push.' },
+    { name: 'oauthCommandEndpoint', kind: 'single',
+      from: 'POST /oauth2/register, the console, the management API',
+      families: ['oidc'],
+      familyWhy: 'OpenID Provider Commands are sent to OpenID Connect ' +
+                 'relying parties.',
+      what: 'OpenID Provider Commands `command_endpoint` (#151): the https ' +
+            'URL a Command Token is POSTed to, under the outbound policy. ' +
+            'A client with none is sent no command.' },
     { name: 'oauthBackchannelAuthenticationRequestSigningAlg',
       kind: 'single',
       from: 'POST /oauth2/register, the console, the management API',
@@ -3288,6 +3296,8 @@ const EDITABLE = {
   oauthBackchannelClientNotificationEndpoint: 'set',
   oauthBackchannelAuthenticationRequestSigningAlg: 'set',
   oauthBackchannelUserCodeParameter: 'set',
+  // OpenID Provider Commands (#151).
+  oauthCommandEndpoint: 'set',
   // OIDC Core sections 8 and 9 (#118). One answer each.
   oauthSubjectType: 'set',
   oauthSectorIdentifierUri: 'set',
@@ -4641,7 +4651,9 @@ const ADDRESS_ATTRIBUTES = {
   oauthRedirectUri: 'redirect',
   oauthPostLogoutRedirectUri: 'redirect',
   oauthFrontchannelLogoutUri: 'frontchannel',
-  oauthBackchannelLogoutUri: 'backchannel'
+  oauthBackchannelLogoutUri: 'backchannel',
+  // OpenID Provider Commands (#151): https, no fragment, at every door.
+  oauthCommandEndpoint: 'command'
 };
 
 function addressProblem(attribute, value) {
@@ -4650,6 +4662,13 @@ function addressProblem(attribute, value) {
   if (!kind) {
     log.debug("Leaving addressProblem(). Not an address attribute.");
     return null;
+  }
+  const commandProblem = kind === 'command'
+    ? commandMetadataProblem({ command_endpoint: String(value) }) : null;
+  if (kind === 'command') {
+    log.debug("Leaving addressProblem(). A command endpoint.");
+    return commandProblem ? '"' + value + '" cannot be ' + attribute +
+      ': it must be an https URL with no fragment.' : null;
   }
   const problem = kind === 'frontchannel'
     ? validation.frontchannelUriProblem(String(value))
@@ -5607,6 +5626,56 @@ function cibaOf(clientId) {
     userCode: one('oauthBackchannelUserCodeParameter').toUpperCase() ===
       'TRUE'
   };
+}
+
+// ---------------------------------------------------------------------------
+// OPENID PROVIDER COMMANDS 1.0 (#151): `command_endpoint`, "MUST use the
+// https scheme; MUST NOT include a fragment". STS-REG-0199.
+// ---------------------------------------------------------------------------
+function commandMetadataProblem(values) {
+  log.debug("Entering commandMetadataProblem().");
+  const endpoint = (values || {}).command_endpoint;
+  if (endpoint !== undefined && endpoint !== null && endpoint !== '' &&
+      !/^https:\/\/[^\s#]+$/i.test(String(endpoint))) {
+    log.debug("Leaving commandMetadataProblem(). Not https.");
+    return { errorCode: 'STS-REG-0199', error: 'invalid_client_metadata',
+             member: 'command_endpoint',
+             description: 'command_endpoint: must be an https URL with no ' +
+                          'fragment (OpenID Provider Commands 1.0).' };
+  }
+  log.debug("Leaving commandMetadataProblem(). Nothing refused.");
+  return null;
+}
+
+// The `command_endpoint` a client registered, or ''.
+function commandEndpointOf(clientId) {
+  log.debug("Entering commandEndpointOf().");
+  const who = String(clientId == null ? '' : clientId).trim();
+  const found = who ? (forClientId(who) || get(who)) : null;
+  const fields = (found && found.fields) || {};
+  log.debug("Leaving commandEndpointOf().");
+  return String(valuesOf(fields.oauthCommandEndpoint)[0] || '').trim();
+}
+
+// Every client in the ambient realm that registered a command endpoint:
+// `[{ clientId, name, endpoint }]`.
+function commandClients() {
+  log.debug("Entering commandClients().");
+  const out = [];
+  list().forEach(function (entry) {
+    const fields = (entry && entry.fields) || {};
+    const endpoint = String(valuesOf(fields.oauthCommandEndpoint)[0] || '')
+      .trim();
+    const clientId = String(valuesOf(fields.oauthClientId)[0] ||
+                            entry.identifier || '').trim();
+    if (endpoint && clientId) {
+      out.push({ clientId: clientId,
+                 name: String(valuesOf(fields.appName)[0] || clientId),
+                 endpoint: endpoint });
+    }
+  });
+  log.debug("Leaving commandClients(). " + out.length + ".");
+  return out;
 }
 
 const OIDC_SUBJECT_ATTRIBUTES = {
@@ -7679,6 +7748,13 @@ function applyRegistrationFields(record, registration, statement) {
       delete record.fields[CIBA_ATTRIBUTES[member]];
     }
   });
+  // OpenID Provider Commands (#151), the same way.
+  if (String(meta.command_endpoint || '').trim()) {
+    setField(record, 'oauthCommandEndpoint',
+             String(meta.command_endpoint).trim());
+  } else {
+    delete record.fields.oauthCommandEndpoint;
+  }
   if (typeof meta.backchannel_user_code_parameter === 'boolean') {
     setField(record, 'oauthBackchannelUserCodeParameter',
              meta.backchannel_user_code_parameter ? 'TRUE' : 'FALSE');
@@ -7770,6 +7846,7 @@ function register(clientId, registration, options) {
                      pushedAuthorizationMetadataProblem(registration) ||
                      oidcSubjectMetadataProblem(registration) ||
                      cibaMetadataProblem(registration) ||
+                     commandMetadataProblem(registration) ||
                      mtlsMetadataProblem(registration) ||
                      authorizationDetailsMetadataProblem(registration);
   if (uriProblem) {
@@ -7840,6 +7917,7 @@ function updateRegistration(clientId, registration, options) {
                      idTokenEncryptionMetadataProblem(registration) ||
                      requestObjectMetadataProblem(registration) ||
                      pushedAuthorizationMetadataProblem(registration) ||
+                     commandMetadataProblem(registration) ||
                      mtlsMetadataProblem(registration) ||
                      authorizationDetailsMetadataProblem(registration);
   if (uriProblem) {
@@ -8041,6 +8119,11 @@ function registrationOf(clientId) {
     document.backchannel_logout_session_required =
       String(fields.oauthBackchannelLogoutSessionRequired)
         .toUpperCase() === 'TRUE';
+  }
+  // OpenID Provider Commands (#151).
+  if (valuesOf(fields.oauthCommandEndpoint)[0]) {
+    document.command_endpoint =
+      String(valuesOf(fields.oauthCommandEndpoint)[0]);
   }
   if (fields.oauthGrantType) document.grant_types = fields.oauthGrantType.slice(
       0);
@@ -11851,6 +11934,9 @@ module.exports = {
   requestObjectMetadataProblem: requestObjectMetadataProblem,
   oidcSubjectMetadataProblem: oidcSubjectMetadataProblem,
   cibaMetadataProblem: cibaMetadataProblem,
+  commandMetadataProblem: commandMetadataProblem,
+  commandEndpointOf: commandEndpointOf,
+  commandClients: commandClients,
   cibaOf: cibaOf,
   oidcRegistrationProblem: oidcRegistrationProblem,
   revokeRegistrationAccessToken: revokeRegistrationAccessToken,

@@ -2340,6 +2340,21 @@ class Logout {
       result.acrossCluster = acrossCluster;
     }
     log.info('logout: ' + result.message);
+    // OPENID PROVIDER COMMANDS (#151): a GLOBAL sign-out of a person is
+    // `invalidate` at every relying party that supports it. A disable passes
+    // `providerCommand: false` — it sends `suspend`, which invalidates too.
+    // Lazily and never thrown into the sign-out.
+    if (global && options.providerCommand !== false && ctx.key) {
+      try {
+        const found = require.cache[require.resolve(
+          '../oauth-oidc/provider_commands')];
+        if (found) {
+          found.exports.personSignedOut(String(ctx.key));
+        }
+      } catch (e) {
+        log.debug("Caught in Logout.terminate(): " + ((e && e.message) || e));
+      }
+    }
     log.debug("Leaving Logout.terminate(). " + done.length + " ended.");
     return result;
   }

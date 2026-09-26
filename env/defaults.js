@@ -355,6 +355,27 @@ var config = {
     cibaNotifyTimeoutMs: 5000,                   // CIBA notification timeout (ms)
     cibaNotifyAttempts: 5,                       // CIBA notification attempts
     cibaNotifyBackoffMs: 2000,                   // CIBA notification backoff (ms)
+    providerCommands: false,                     // OpenID Provider Commands
+    commandAutomatic: true,                      // Automatic provider commands
+    commandTokenTtlS: 120,                       // Command Token lifetime (s)
+    commandAttempts: 5,                          // Command attempts
+    commandTimeoutMs: 10000,                     // Command timeout (ms)
+    commandBackoffMs: 2000,                      // Command backoff (ms)
+    commandLeaseMs: 60000,                       // Command attempt lease (ms)
+    commandRetentionS: 86400,                    // Command retention (s)
+    commandMaxRows: 5000,                        // Command rows kept
+    commandConcurrency: 8,                       // Commands in flight
+    commandSummaryS: 60,                         // Command summary interval (s)
+    commandSweepS: 15,                           // Command sweep interval (s)
+    commandCallbackTtlS: 86400,                  // Command callback token lifetime (s)
+    commandStreamIdleMs: 30000,                  // Tenant command stream idle timeout (ms)
+    commandStreamResumes: 3,                     // Tenant command stream resumptions
+    commandStreamMaxEvents: 1000000,             // Tenant command stream event cap
+    commandMetadataMaxGroups: 200,               // Groups in a metadata command
+    cibaNotifyRetentionS: 3600,                  // CIBA notification retention (s)
+    cibaNotifyMaxRows: 2000,                     // CIBA notification rows kept
+    cibaNotifyConcurrency: 8,                    // CIBA notifications in flight
+    cibaNotifySummaryS: 60,                      // CIBA notification summary interval (s)
     cibaSweepS: 30,                              // CIBA sweep interval (s)
     maxRequestedClaims: 64,                      // Claims one claims request may name
     idaTrustFrameworks: "urn:sts:local",         // Identity Assurance trust frameworks

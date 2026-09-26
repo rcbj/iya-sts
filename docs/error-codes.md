@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3580** of them, in **38** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3624** of them, in **38** subsystems.
 
 ## Where a code appears
 
@@ -63,7 +63,7 @@ is an ordinary outcome.
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 26
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 47
 * [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 249
-* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 619
+* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 662
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 97
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 21
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 16
@@ -85,7 +85,7 @@ is an ordinary outcome.
 * [Management API (`STS-API`)](#sts-api) — 74
 * [User portal (`STS-PORTAL`)](#sts-portal) — 75
 * [Sign-out (`STS-LOGOUT`)](#sts-logout) — 7
-* [Registries (`STS-REG`)](#sts-reg) — 131
+* [Registries (`STS-REG`)](#sts-reg) — 132
 * [Protocol debugger (`STS-DBG`)](#sts-dbg) — 28
 
 ## STS-HTTP
@@ -1689,7 +1689,7 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0633` | A Native SSO exchange's device secret is bound to a sign-on session that has ended, that is not the ID Token's sid, or that is no longer the device owner's (#130). | invalid_request (HTTP 400) |
 | `STS-OAUTH-0634` | A client not enabled for Native SSO asked the revocation endpoint to revoke a device secret (#130). Nothing was revoked. | invalid_grant (HTTP 400) |
 | `STS-OAUTH-0635` | A CIBA request was refused because the person already has oauth2.cibaMaxPendingPerPerson requests waiting (#131, section 14). | access_denied (HTTP 403) |
-| `STS-OAUTH-0636` | A CIBA ping or push to a client notification endpoint was given up after its attempts, or could not be sent at all (#131). | none — the client polls, or never learns |
+| `STS-OAUTH-0636` | A CIBA notification endpoint answered a status other than 2xx or 400 — 5xx, 408 and 429 are retried, the rest are not (#131; the shared outbound queue since #151). | none — the client polls, or never learns |
 | `STS-OAUTH-0637` | The CIBA Backchannel Authentication Endpoint failed unexpectedly (#131). | server_error (HTTP 500) |
 | `STS-OAUTH-0638` | A CIBA request or token request arrived in a realm where oauth2.ciba is off (#131). | invalid_request (HTTP 404) or unsupported_grant_type |
 | `STS-OAUTH-0639` | A CIBA authentication request was malformed (#131). | invalid_request (HTTP 400) |
@@ -1761,6 +1761,18 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0705` | An authorization request asked for bound_key outside response_type=code (OpenID Connect Key Binding, #150). | redirect {error: invalid_request} |
 | `STS-OAUTH-0706` | A refresh of a grant whose ID Token is key-bound carried no proof from that key (OpenID Connect Key Binding, #150). | HTTP 400 {error: invalid_dpop_proof} |
 | `STS-OAUTH-0707` | A key-bound ID Token was presented at token exchange without a DPoP proof from the key its cnf names (OpenID Connect Key Binding section 7, #150). | HTTP 400 {error: invalid_dpop_proof} |
+| `STS-OAUTH-0708` | A CIBA ping or push was not sent because federation.outbound is off (#151, the shared outbound queue). | none (a dead letter) |
+| `STS-OAUTH-0709` | A CIBA ping or push was not sent because the client's notification endpoint cannot be dialled (#151). | none (a dead letter) |
+| `STS-OAUTH-0710` | A CIBA ping or push was refused because the notification endpoint resolves to an internal address in product mode (#151). | none (a dead letter) |
+| `STS-OAUTH-0711` | A CIBA notification endpoint's host name did not resolve (#151). | none (a dead letter) |
+| `STS-OAUTH-0712` | A CIBA notification endpoint answered with a redirect, which is not followed (#151). | none (a dead letter) |
+| `STS-OAUTH-0713` | A CIBA ping or push could not be built (#151). | none (a dead letter) |
+| `STS-OAUTH-0714` | A CIBA ping or push timed out; retried with backoff (#151). | none (retried, then a dead letter) |
+| `STS-OAUTH-0715` | A CIBA ping or push failed to connect; retried with backoff (#151). | none (retried, then a dead letter) |
+| `STS-OAUTH-0716` | A CIBA notification endpoint answered 400, which is not retried (#151). | none (a dead letter) |
+| `STS-OAUTH-0717` | A CIBA notification attempt was deferred because the claim store was unavailable (#151). | none (the sweep tries again) |
+| `STS-OAUTH-0718` | A CIBA ping or push was still unsent past oauth2.cibaNotifyRetentionS and was dead-lettered (#151). | none (a dead letter) |
+| `STS-OAUTH-0719` | The CIBA notification summary line: some were dead- lettered or deferred since the last one (#151). | none (a log line) |
 | `STS-OAUTH-0720` | A request carried more than one OAuth-Client-Attestation header, or one that is not a JWT in token68 syntax (#229, section 7.1 item 1). | token / PAR / introspection / revocation {error: invalid_client} (HTTP 401) |
 | `STS-OAUTH-0721` | The OAuth-Client-Attestation header does not hold a JWT whose header can be read (#229). | token / PAR / introspection / revocation {error: invalid_client} (HTTP 401) |
 | `STS-OAUTH-0722` | A Client Attestation's typ is not oauth-client-attestation+jwt (#229, section 4). | token / PAR / introspection / revocation {error: invalid_client} (HTTP 401) |
@@ -1793,6 +1805,37 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0749` | An authorization code pushed under a client attestation was redeemed without an attestation of the same client instance key (#229, section 10.4). | token {error: invalid_grant} (HTTP 400) |
 | `STS-OAUTH-0750` | oauth2.clientAttestationTrustAnchors holds a certificate that cannot be read, or oauth2.clientAttestationTrustedKeys is not a JWKS or holds a symmetric or private key; the unreadable part is ignored (#229). | log only |
 | `STS-OAUTH-0751` | A client that declared attest_jwt_client_auth or attest_jwt_client_auth_dpop sent no OAuth-Client-Attestation header, or did not authenticate with it (#229, section 7.5). | token / PAR / introspection / revocation {error: invalid_client} (HTTP 401) |
+| `STS-OAUTH-0752` | The CIBA notification sweep failed in a realm (#151). | none (a log line) |
+| `STS-OAUTH-0753` | An operator's retry of a CIBA notification was refused: unknown, not a dead letter, or no endpoint now (#151). | console / /admin-api refusal (HTTP 400) |
+| `STS-OAUTH-0754` | An OpenID Provider Command was not sent because federation.outbound is off (#151). | none (a dead letter) |
+| `STS-OAUTH-0755` | An OpenID Provider Command was not sent because the client's command_endpoint cannot be dialled (#151). | none (a dead letter) |
+| `STS-OAUTH-0756` | An OpenID Provider Command was refused because the command_endpoint resolves to an internal address in product mode (#151). | none (a dead letter) |
+| `STS-OAUTH-0757` | A command_endpoint's host name did not resolve (#151). | none (a dead letter) |
+| `STS-OAUTH-0758` | A command_endpoint answered with a redirect, which is not followed (#151). | none (a dead letter) |
+| `STS-OAUTH-0759` | A Command Token could not be built or signed — the client registered alg none, or signing failed (#151). | none (a dead letter) |
+| `STS-OAUTH-0760` | An OpenID Provider Command timed out; retried with backoff (#151). | none (retried, then a dead letter) |
+| `STS-OAUTH-0761` | An OpenID Provider Command failed to connect; retried with backoff (#151). | none (retried, then a dead letter) |
+| `STS-OAUTH-0762` | A command_endpoint answered a status the draft does not name — 5xx, 408 and 429 are retried, the rest are not (#151). | none (a dead letter) |
+| `STS-OAUTH-0763` | A command attempt was deferred because the claim store was unavailable (#151). | none (the sweep tries again) |
+| `STS-OAUTH-0764` | An OpenID Provider Command was still unsent past oauth2.commandRetentionS and was dead-lettered (#151). | none (a dead letter) |
+| `STS-OAUTH-0765` | The provider commands summary line: some were dead- lettered or deferred since the last one (#151). | none (a log line) |
+| `STS-OAUTH-0766` | The provider commands sweep failed in a realm (#151). | none (a log line) |
+| `STS-OAUTH-0767` | No issuer is known for a Command Token: set global.publicBaseUrl, or send one command from the console so the realm's address is learned (#151). | none (a dead letter or a failed run) |
+| `STS-OAUTH-0768` | A relying party answered a command with invalid_request (section 3) (#151). | none (a dead letter) |
+| `STS-OAUTH-0769` | A relying party answered a command with unrecognized_provider: it does not know this issuer (#151). | none (a dead letter) |
+| `STS-OAUTH-0770` | A relying party answered unsupported_command (#151). | none (a dead letter) |
+| `STS-OAUTH-0771` | A relying party answered incompatible_state: the account was not in a state the command may start from; the state it gave is recorded (#151). | none (a dead letter) |
+| `STS-OAUTH-0772` | A relying party answered access_denied to a migrate command (#151). | none (a dead letter) |
+| `STS-OAUTH-0773` | A relying party answered authentication_not_transferable to a migrate command (#151). | none (a dead letter) |
+| `STS-OAUTH-0774` | An operator's retry of a command delivery was refused: unknown, not a dead letter, or no command_endpoint now (#151). | console / /admin-api refusal (HTTP 400) |
+| `STS-OAUTH-0775` | A relying party's answer to a command is not the draft's: no matching sub and account_state, a metadata answer without commands_supported or context, or a stream that is not text/event-stream (#151). | none (a dead letter or a failed run) |
+| `STS-OAUTH-0776` | A command was not sent: provider commands are off, the command is unknown, the client has no command_endpoint, the person has no subject there, or the client requires an aud_sub none is recorded for (#151). | console / /admin-api refusal (HTTP 400) |
+| `STS-OAUTH-0777` | A tenant command's stream could not be resumed: the relying party answered last-event-id-unavailable (#151). | none (a failed run) |
+| `STS-OAUTH-0778` | A tenant command's stream ended without command- complete after every resumption (#151). | none (a failed run) |
+| `STS-OAUTH-0779` | A call to /oauth2/commands/callback carried no callback token, or an unknown or expired one (#151). | HTTP 401 {error: invalid_token} with WWW-Authenticate |
+| `STS-OAUTH-0780` | A call to /oauth2/commands/callback was malformed: an async result not naming the command's sub and an account_state, or a command_requested other than metadata or audit_tenant (#151). | HTTP 400 {error: invalid_request} |
+| `STS-OAUTH-0781` | An automatic OpenID Provider Command could not be queued after a directory change or a sign-out; the change stands (#151). | none (a log line) |
+| `STS-OAUTH-0782` | The mock relying party's command endpoint refused a command — the development test control answering as a relying party would (#151). | HTTP 400, 401, 409 or 404 {error} |
 
 ## STS-SAML
 
@@ -3989,6 +4032,7 @@ Raised from: common/applications.js, common/consent.ts, common/app_permissions.t
 | `STS-REG-0196` | A write of gnapMtlsTrust=pinned on an application was refused because the realm holds GNAP mutual TLS to a PKI (gnap.mtlsTrust resolves to pki); an entry may be stricter than the realm, never weaker (#107). | console: the page's error list; /admin-api: HTTP 400 |
 | `STS-REG-0197` | A registration's CIBA metadata was refused: an unknown backchannel_token_delivery_mode, no https notification endpoint for ping or push, a signing algorithm that is not asymmetric, or a user code parameter that is not a boolean (#131). | invalid_client_metadata (HTTP 400) |
 | `STS-REG-0198` | FAPI-CIBA: a registration under a FAPI profile asked for the push delivery mode, which the profile does not allow (#142). | invalid_client_metadata (HTTP 400) |
+| `STS-REG-0199` | A command_endpoint (OpenID Provider Commands, #151) was not an https URL with no fragment, at registration or update (a console or API write is refused under STS-REG-0071). | HTTP 400 {error: invalid_client_metadata} |
 
 ## STS-DBG
 

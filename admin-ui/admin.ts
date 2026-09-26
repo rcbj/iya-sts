@@ -1365,6 +1365,16 @@ const SECTIONS = [
       // reason: another party this realm is configured to trust, here for
       // claims about a person — OpenID Connect aggregated and distributed
       // claims. Drawn by oauth-oidc/claims_providers_admin.ts.
+      // OPENID PROVIDER COMMANDS (#151, 2026-09-26), beside Claims
+      // Providers for the same reason: another party this realm acts
+      // towards, here telling relying parties what to do with an account.
+      // Drawn by oauth-oidc/provider_commands_admin.ts.
+      { path: '/admin/commands', label: 'Provider Commands',
+        blurb: 'OpenID Provider Commands: each client\'s command_endpoint ' +
+               'and what it supports, sending an account command about a ' +
+               'person or a tenant command about everybody, what each ' +
+               'relying party said about each account, tenant runs, and ' +
+               'the deliveries.' },
       { path: '/admin/claim-providers', label: 'Claims Providers',
         blurb: 'The OpenID Providers this realm fetches claims from for a ' +
                'person who linked one on the portal, passed to a relying ' +
@@ -2175,6 +2185,18 @@ const SECTIONS = [
                    'are on each stream at ' +
                    '<a href="/admin/ssf">Protocols &rarr; Shared Signals</a>.' }
         ] },
+
+      // OUTBOUND DELIVERIES (#151, 2026-09-26): what this service POSTed to
+      // an address a client registered — Back-Channel Logout Tokens, CIBA
+      // pings and pushes, OpenID Provider Commands — on the one durable
+      // queue, with each kind's dead letters and Retry. Drawn by
+      // oauth-oidc/provider_commands_admin.ts.
+      { path: '/admin/deliveries', label: 'Outbound deliveries',
+        blurb: 'Every Logout Token, CIBA notification and OpenID Provider ' +
+               'Command this realm sent to a relying party, by kind: pending, ' +
+               'sent and <strong>dead</strong> — each dead letter with its ' +
+               'code and the reason, and a Retry that sends it again as a ' +
+               'new generation.' },
 
       // Beside Delegation and not inside it, and the argument is the one both
       // of that page's pictures rest on: every row there is about two
