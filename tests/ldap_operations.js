@@ -315,10 +315,14 @@ function checkAnUnknownRefusalIsStillARefusal(t) {
           'an unknown error name rebuilds to something with a result code (' +
           unknown.code + ')',
           'the client would be handed an object with no result code on it');
-  t.check(unknown.message.indexOf('invented') >= 0,
-          'and keeps the original wording',
-          'the reason the worker gave was lost, which leaves the one ' +
-          'sentence that says what happened nowhere at all');
+  // The original wording goes to the log and the audit row, and NOT to the
+  // client (#261): the message is sent as the diagnosticMessage, and a
+  // worker's own error describes this service rather than the request.
+  t.check(unknown.message === 'internal error',
+          'and tells the client "internal error", not the original wording',
+          'the client would be told "' + unknown.message + '" — a ' +
+          'worker\'s own error message, describing this service\'s ' +
+          'internals to whoever is connected');
 
   const notAnError = ldapServer.ldapErrorNamed('createServer', 'not an error');
   t.check(typeof notAnError.code === 'number' && notAnError.code === 1,

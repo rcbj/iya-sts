@@ -10806,7 +10806,8 @@ populateVcAttributes();
 // every listen path here makes.
 // ---------------------------------------------------------------------------
 const plainServer = ldap.createServer({ log: log,
-                                       routeAnonymousBinds: true });
+                                       routeAnonymousBinds: true,
+                                       encodeErrorMessage: true });
 
 // The TLS protocol policy, asked of the module that states it. An older copy of
 // `tls_server.js` without the function gets node's defaults, which is what
@@ -10896,6 +10897,7 @@ if (serverCertificate && serverCertificate.certPem &&
   secureServer = ldap.createServer(Object.assign({
     log: log,
     routeAnonymousBinds: true,
+    encodeErrorMessage: true,
     certificate: serverCertificate.certPem,
     key: serverCertificate.privateKeyPem
   }, tlsProtocolOptions()));
@@ -10943,6 +10945,37 @@ function anonymousBindsRouted(ldapServer) {
 }
 
 servers.forEach(anonymousBindsRouted);
+
+// ---------------------------------------------------------------------------
+// A REFUSAL'S TEXT REACHES THE CLIENT (#261, 2026-09-26).
+//
+// Every refusal here is an ldapjs error with a message written for the client
+// — `credentialWriteRefusal()` names the door to use instead, a lockout says
+// when to retry — and ldapRefusal() keeps the operator's version on the audit
+// row. node-ldapjs put that message in `res.errorMessage`, which
+// `@ldapjs/messages` never encodes, so every result left with an EMPTY
+// diagnosticMessage (RFC 4511 section 4.1.9) and a client saw 53 and nothing
+// else. The fix is in the `rcbj/node-ldapjs` fork, `encodeErrorMessage: true`
+// on both servers above, which sends it; an uncaught exception in a handler
+// is sent as `internal error` rather than its own message, and
+// `ldapErrorNamed()` does the same for a worker's. Asked of each server as
+// routeAnonymousBinds is, because an older submodule ignores the option and a
+// client would silently lose the text again (STS-LDAP-0112).
+// ---------------------------------------------------------------------------
+function diagnosticMessagesEncoded(ldapServer) {
+  log.debug("Entering diagnosticMessagesEncoded().");
+  const encoded = !!(ldapServer && ldapServer._encodeErrorMessage === true);
+  if (!encoded) {
+    log.warn(errorCodes.tag('STS-LDAP-0112') + 'ldap: this node-ldapjs does ' +
+             'not support encodeErrorMessage, so every LDAP result is sent ' +
+             'with an empty diagnosticMessage and a client never sees why ' +
+             'it was refused. Update the node-ldapjs submodule.');
+  }
+  log.debug("Leaving diagnosticMessagesEncoded(). " + encoded);
+  return encoded;
+}
+
+servers.forEach(diagnosticMessagesEncoded);
 
 // The eight operations and unbind. Written out rather than read off ldapjs's
 // prototype, because that would fan out `listen`, `close` and `address` too —
@@ -11955,11 +11988,14 @@ function operationContext(operation, shape) {
 // numeric `code`, or this is not an LDAP error at all and the front process
 // must not turn an arbitrary export into one.
 //
-// A name that fails those tests becomes an `OperationsError` (result code 1)
-// with the original wording, logged loudly. That is the honest answer — the
+// A name that fails those tests becomes an `OperationsError` (result code 1),
+// logged loudly with the original wording. That is the honest answer — the
 // operation genuinely failed and this process cannot say precisely how — and
 // it is far better than the alternative of resolving successfully, which would
-// answer a failed add with LDAP_SUCCESS.
+// answer a failed add with LDAP_SUCCESS. **The client is told `internal
+// error`, not the original wording** (#261): since the message is sent as the
+// diagnosticMessage, a worker's TypeError would otherwise describe this
+// service's internals to whoever is connected. The audit row keeps it.
 // ---------------------------------------------------------------------------
 function ldapErrorNamed(name, message) {
   log.debug('Entering ldapErrorNamed(). name=' + name);
@@ -11979,19 +12015,19 @@ function ldapErrorNamed(name, message) {
     }
   }
   log.warn('ldap: a request worker refused an operation with "' + name +
-           '", which is not an LDAP error this process can rebuild. The ' +
-           'client is being told LDAP_OPERATIONS_ERROR with the original ' +
-           'wording.');
+           '" (' + String(message || '') + '), which is not an LDAP error ' +
+           'this process can rebuild. The client is being told ' +
+           'LDAP_OPERATIONS_ERROR.');
   audit.failure('STS-LDAP-0023', {
     channel: 'ldap', protocol: 'LDAP',
     summary: 'a request worker refused an LDAP operation with "' +
-             String(name || '') + '", which this process could not rebuild, ' +
-             'so the client was told LDAP_OPERATIONS_ERROR',
+             String(name || '') + '" (' + String(message || '') + '), ' +
+             'which this process could not rebuild, so the client was told ' +
+             'LDAP_OPERATIONS_ERROR',
     outcome: 'error'
   });
   log.debug('Leaving ldapErrorNamed(). Generic.');
-  return coded('STS-LDAP-0023', new ldap.OperationsError(message ||
-    'the request worker refused this operation'));
+  return coded('STS-LDAP-0023', new ldap.OperationsError('internal error'));
 }
 
 // ---------------------------------------------------------------------------

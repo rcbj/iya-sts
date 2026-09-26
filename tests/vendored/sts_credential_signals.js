@@ -23,7 +23,8 @@
 //      `x509` beside the CAEP revoke.
 //   c. #237, over LDAPS, bound as the realm's own administrator: a modify of
 //      `stsTotpCredential` and an add carrying `stsWebauthnCredential` are
-//      refused unwillingToPerform (53) — administrator or not; deleting the
+//      refused unwillingToPerform (53) — administrator or not — with a
+//      diagnosticMessage naming the door that writes each (#261); deleting the
 //      person's `userPassword` sends credential-change password revoke,
 //      initiated by admin; setting `pwdReset` sends RISC
 //      account-credential-change-required.
@@ -254,10 +255,11 @@ function settle(fn) {
   log.debug("Leaving settle().");
   return new Promise(function (resolve) {
     fn(function (e) {
-      // The server's diagnostic message is `lde_message`; ldapjs makes
-      // `message` the result code's name.
+      // `message` is the result code's name; what the server said is the
+      // error's `diagnosticMessage` (RFC 4511 section 4.1.9, #261).
       resolve({ code: e ? e.code : 0,
-                message: e ? String(e.lde_message || e.message || "") : "" });
+                message: e ? String(e.lde_message || e.message || "") : "",
+                diagnostic: e ? String(e.diagnosticMessage || "") : "" });
     });
   });
 }
@@ -411,13 +413,20 @@ async function test() {
   });
   const totp = await modify(client, dns[ALICE], "replace",
                             "stsTotpCredential", ["{}"]);
-  // The door the refusal names is asserted in process
-  // (tests/credential_signals.js): the diagnostic message does not reach a
-  // client of this directory today, whatever the refusal.
   check("a modify of stsTotpCredential is refused unwillingToPerform (53), " +
         "administrator or not", function () {
     assert.strictEqual(totp.code, 53, JSON.stringify(totp));
   });
+  // The refusal's text arrives as the diagnosticMessage since #261, and it
+  // names the door that writes the attribute.
+  check("and its diagnostic message names the door, /portal/mfa",
+    function () {
+      // The server names the attribute lower-cased, as it matches it.
+      assert.ok(totp.diagnostic.toLowerCase()
+                  .indexOf("ststotpcredential") >= 0 &&
+                totp.diagnostic.indexOf("/portal/mfa") >= 0,
+                JSON.stringify(totp));
+    });
   const usersDn = dns[ALICE].split(",").slice(1).join(",");
   const addDn = "uid=c231-new-" + STAMP.toLowerCase() + "," + usersDn;
   const added = await settle(function (done) {
@@ -425,10 +434,12 @@ async function test() {
       uid: ["c231-new-" + STAMP.toLowerCase()], cn: ["x"], sn: ["x"],
       stsWebauthnCredential: ["{}"] }, done);
   });
-  check("an add carrying stsWebauthnCredential is refused the same way",
-    function () {
-      assert.strictEqual(added.code, 53, JSON.stringify(added));
-    });
+  check("an add carrying stsWebauthnCredential is refused the same way, " +
+        "naming /portal/keys", function () {
+    assert.strictEqual(added.code, 53, JSON.stringify(added));
+    assert.ok(added.diagnostic.indexOf("/portal/keys") >= 0,
+              JSON.stringify(added));
+  });
   const removed = await modify(client, dns[ALICE], "delete", "userPassword",
                                []);
   check("the administrator deletes alice's userPassword", function () {

@@ -10294,6 +10294,12 @@ const CODES = [
       '(#237), in every mode and for every bind, administrator included; ' +
       'the refusal names the door.',
     spec: 'RFC 4511 section 4.1.9 unwillingToPerform (53)' },
+  { code: 'STS-LDAP-0112',
+    summary: 'The node-ldapjs in use does not support the ' +
+      'encodeErrorMessage server option, so every LDAP result is sent with ' +
+      'an empty diagnosticMessage and a client never sees the text of a ' +
+      'refusal (#261).',
+    spec: 'none — logged at startup' },
   { code: 'STS-LDAP-0120',
     summary: 'A person was deleted from the directory (#241) and handing ' +
       'the delete to account_state.ts failed, so what they held may not ' +
