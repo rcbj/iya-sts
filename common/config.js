@@ -11044,7 +11044,7 @@ const SETTINGS = [
       'https://schemas.openid.net/secevent/caep/event-type/',
       ['session-established', 'session-presented', 'session-revoked',
        'credential-change', 'assurance-level-change', 'token-claims-change',
-       'risk-level-change']),
+       'risk-level-change', 'device-compliance-change']),
     description: 'The SHORT NAMES of the CAEP events this service emits by ' +
                  'itself, out of the eight acts it can actually observe — ' +
                  'the seventh, since #62 P4, a person\'s RISK LEVEL ' +
@@ -11697,7 +11697,8 @@ const SETTINGS = [
        'identifier-changed', 'account-credential-change-required',
        'recovery-information-changed', 'identifier-recycled',
        'recovery-activated', 'credential-compromise', 'opt-out-initiated',
-       'opt-out-cancelled', 'opt-out-effective', 'opt-in']),
+       'opt-out-cancelled', 'opt-out-effective', 'opt-in',
+       'sessions-revoked']),
     description: 'The SHORT NAMES of the RISC events this service emits by ' +
                  'itself, out of the fourteen acts it can observe (every ' +
                  'one since 2026-09-26, #164). In its own directory: an ' +
