@@ -430,13 +430,24 @@ async function prepare(plan) {
     browser: browserFor(base, person, !!plan.frontchannel),
     override: overridesFor(base, person)
   };
+  let recorded = null;
   if (plan.verification) {
-    await oidf.ok(api + "/users/record-verification",
-                  Object.assign({ user: person }, plan.verification),
-                  "recorded a verification for " + person);
+    recorded = await oidf.ok(api + "/users/record-verification",
+                             Object.assign({ user: person },
+                                           plan.verification),
+                             "recorded a verification for " + person);
   }
   if (plan.ekyc) {
-    configuration.ekyc = plan.ekyc;
+    configuration.ekyc = Object.assign({}, plan.ekyc);
+    // `ekyc.userinfo`: what the operator knows this person's verified
+    // claims to be — the record just made, as UserInfo would carry it. The
+    // two modules that read it (the defaults and the not-advertised check)
+    // are skipped without it.
+    if (recorded && recorded.verification) {
+      configuration.ekyc.userinfo = { verified_claims: {
+        verification: recorded.verification.verification,
+        claims: recorded.verification.claims } };
+    }
   }
   const keys1 = oidf.keyPair("conf-" + plan.key + "-1", plan.keyAlg);
   const keys2 = oidf.keyPair("conf-" + plan.key + "-2", plan.keyAlg);
