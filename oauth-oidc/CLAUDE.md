@@ -4225,6 +4225,12 @@ the final text's error codes (8.3.1.2); `nbf` and `exp` are rounded to the
 hour (RFC 9901 10.1, batch unlinkability), and the signing-key grace grew
 by the hour that rounding can add.
 
+**HAIP (#229 in, 2026-09-26)**: the `x5c` of a credential, a Status List
+Token and a signed OpenID4VP request leaves the trust anchor out (HAIP 1.0
+sections 5, 6.1, 6.1.1), through `withoutAnchor` on those rows of
+`common/jose_certificate_header.js` (`tests/jose_certificate_header.js`
+C13b); every other token's chain still runs to the Root.
+
 **OpenID4VP**: the Verifier speaks `direct_post.jwt` (8.3.1, an ephemeral
 ECDH-ES key per transaction named by the JWE kid, STS-VC-0096), and its
 requests' `client_metadata` carries only section 5.1's parameters.

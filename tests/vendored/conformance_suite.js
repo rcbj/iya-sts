@@ -52,7 +52,11 @@ const EXTENSION_METADATA = [
   "urn:ietf:params:oauth:client-assertion-type:saml2-bearer_supported",
   "assertion_signing_alg_values_supported",
   "assertion_encryption_alg_values_supported",
-  "assertion_encryption_enc_values_supported"];
+  "assertion_encryption_enc_values_supported",
+  // draft-ietf-oauth-attestation-based-client-auth-11 section 15.2 registers
+  // it (#229); the suite's RFC 8414 schema (v5.3.1) predates it, and knows
+  // the other three members that section registers.
+  "client_attestation_pop_methods_supported"];
 
 function waitMs(ms) {
   log.debug("Entering waitMs().");
@@ -465,8 +469,9 @@ async function caAndLeaf(label) {
 // ---------------------------------------------------------------------------
 // THE LEDGER. `expected` is `<label>/<module>` -> reason (a FAILED module
 // that is argued), `knownWarnings` is `<condition>` -> reason (a WARNING the
-// service keeps, and why), and `knownFailures` is `<condition>` (or, for a
-// difference in one module only, `<label>/<module>/<condition>`) -> reason: a
+// service keeps, and why), and `knownFailures` is `<condition>` (or, for one
+// plan only, `<label>/*/<condition>`, and for one module only,
+// `<label>/<module>/<condition>`) -> reason: a
 // FAILURE from that condition alone is argued, and a module that fails on it
 // AND on anything else is still a failure — which is why it is keyed by the
 // suite's condition and not by the module, so one argued difference cannot
@@ -489,6 +494,7 @@ function judge(label, ran, expected, knownWarnings, knownFailures) {
       r.failures.length > 0 &&
       r.failures.every(function (f) {
         return !!(failureKnown[f.src] ||
+                  failureKnown[label + "/*/" + f.src] ||
                   failureKnown[label + "/" + r.module + "/" + f.src]);
       });
     const moduleArgued = expected[label + "/" + r.module] ||

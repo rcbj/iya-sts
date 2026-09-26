@@ -68,7 +68,10 @@ the composites are allowed and are signed in the worker pool). `ldp_vc` is
 signed with the realm's BBS key, which is published at `/bbs/keys/{kid}` and in
 the DID document, and which rotates like any other signing key. A credential
 names the certificate chain of its signing key in `x5u` or `x5c`, as
-`oid4vci.credentialCertificateHeader` says.
+`oid4vci.credentialCertificateHeader` says. The `x5c` of a credential and of
+a Status List Token stops short of the service Root, the trust anchor, which
+HAIP 1.0 sections 6.1 and 6.1.1 forbid there; a HAIP deployment sets the
+header to `x5c`, because HAIP's verifier holds only the anchor.
 
 ### What a credential says
 

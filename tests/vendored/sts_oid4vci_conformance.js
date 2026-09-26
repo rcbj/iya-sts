@@ -27,6 +27,7 @@
 // ---------------------------------------------------------------------------
 
 const assert = require("assert");
+const nodeCrypto = require("crypto");
 const { Command, Option } = require("commander");
 const names = require("./random_username.js");
 const registry = require("./sts_applications.js");
@@ -105,6 +106,29 @@ const KNOWN_WARNINGS = {
 };
 // FAILUREs that are the suite's and not this service's, each argued.
 const KNOWN_FAILURES = {
+  // HAIP (#187 with #229, 2026-09-26). The credential's x5c is the realm's
+  // chain without the Root, as HAIP 6.1.1 requires — and every certificate
+  // in it is HYBRID (pki.alternativeKeyAlgorithm, ML-DSA-87 beside the
+  // classical key), about 8 KB of base64 each, so the header runs past the
+  // 20,000 characters nimbus-jose-jwt 10.9 accepts
+  // (Header.MAX_HEADER_STRING_LENGTH) and the suite cannot parse the
+  // credential at all. rcbj's decision on #176: PQC support over a clean
+  // run. Plan-wide, since every module that receives a credential hits it.
+  "haip/*/ParseCredentialAsSdJwt": "nimbus refuses a JOSE header over " +
+    "20,000 characters, and the realm's hybrid (ML-DSA) x5c chain is ~40,000",
+  // fapi2-security-profile-final-refresh-token redeems the refresh token a
+  // second time with the PoP it already used: it harvests the
+  // OAuth-Client-Attestation-Challenge header of the first refresh response
+  // nowhere, and does not retry on use_attestation_challenge, which carries
+  // a fresh one. Challenges are single use here by default (#229,
+  // oauth2.clientAttestationChallengeRequired, section 6), and a spent one
+  // is refused whatever that setting says.
+  ["haip/fapi2-security-profile-final-refresh-token/" +
+   "CheckTokenEndpointHttpStatus200"]: "the suite reuses a spent client " +
+    "attestation challenge on its second refresh and does not retry",
+  ["haip/fapi2-security-profile-final-refresh-token/" +
+   "CheckIfTokenEndpointResponseError"]: "the same refusal, " +
+    "use_attestation_challenge",
   // The post-quantum JWS algorithms a key proof may be signed with, and the
   // AKP keys in the realm's JWKS: the suite's JWS table has ML-DSA but not
   // SLH-DSA or the composite algorithms, and its JOSE library cannot parse
@@ -160,7 +184,12 @@ async function prepare(plan) {
                                           TAG);
     settings.push(["oauth2.clientAttestationTrustAnchors",
                    clientAttester.caPem],
-                  ["oauth2.fapiAllowClientAttestation", true]);
+                  ["oauth2.fapiAllowClientAttestation", true],
+                  // HAIP: a credential and a status list token carry their
+                  // certificate chain in x5c (the verifier holds only a
+                  // trust anchor), which this realm's setting chooses
+                  // (x5u is the default).
+                  ["oid4vci.credentialCertificateHeader", "x5c"]);
   }
   const realm = await oidf.makeRealm(root, id, "Conformance " + plan.name,
                                      settings);
@@ -203,6 +232,15 @@ async function prepare(plan) {
     }
     clients.push(client);
   }
+  // HAIP: the anchors the suite checks the credential's and the status list
+  // token's x5c against — the service Root, which every chain here ends at.
+  let rootPem = null;
+  if (plan.haip) {
+    const fetched = await fetch(root + "/pki/ca/service/root.cer");
+    assert.strictEqual(fetched.status, 200, "the service Root is published");
+    rootPem = new nodeCrypto.X509Certificate(
+      Buffer.from(await fetched.arrayBuffer())).toString();
+  }
   const configuration = {
     alias: alias,
     description: "iya-sts " + plan.name + " " + STAMP,
@@ -224,6 +262,10 @@ async function prepare(plan) {
         issuer: "https://attester.conformance.test/" + TAG } : {}),
     client: clients[0],
     client2: clients[1],
+    credential: rootPem ? { trust_anchor_pem: rootPem,
+                            status_list_trust_anchor_pem: rootPem }
+                        : undefined,
+    override: plan.haip ? overridesFor(realm.base, person) : undefined,
     browser: [{
       match: realm.base + "/oauth2/authorize*",
       tasks: [
@@ -247,6 +289,48 @@ async function prepare(plan) {
   };
   log.debug("Leaving prepare().");
   return { realm: realm, person: person, configuration: configuration };
+}
+
+// HAIP's plan runs FAPI 2.0 Security Profile modules beside the issuer's,
+// and two of them need a path of their own — the FAPI job's two overrides:
+// Cancel on the sign-in page, and a first visit that only loads it.
+function overridesFor(base, person) {
+  log.debug("Entering overridesFor().");
+  const prefix = "fapi2-security-profile-final-";
+  const out = {};
+  out[prefix + "user-rejects-authentication"] = { browser: [{
+    match: base + "/oauth2/authorize*",
+    tasks: [
+      { task: "Cancel", match: base + "/authn/login*",
+        commands: [["click", "id", "kc-cancel"]] },
+      { task: "Verify complete", match: oidf.SUITE + "test/*/callback*",
+        commands: [["wait", "id", "submission_complete", 10]] }
+    ]
+  }] };
+  out[prefix + "par-ensure-reused-request-uri-prior-to-auth-completion-" +
+      "succeeds"] = { browser: [{
+    match: base + "/oauth2/authorize*",
+    "match-limit": 1,
+    tasks: [
+      { task: "Load the sign-in page", match: base + "/authn/login*",
+        commands: [["wait", "id", "username", 10]] }
+    ]
+  }, {
+    match: base + "/oauth2/authorize*",
+    tasks: [
+      { task: "Sign in", optional: true, match: base + "/authn/login*",
+        commands: [["text", "id", "username", person, "optional"],
+                   ["text", "id", "password", PASSWORD, "optional"],
+                   ["click", "id", "kc-login"]] },
+      { task: "Consent", optional: true, match: base + "/oauth2/consent*",
+        commands: [["click", "id", "consent-allow"]] },
+      { task: "Verify complete", optional: true,
+        match: oidf.SUITE + "test/*/callback*",
+        commands: [["wait", "id", "submission_complete", 10]] }
+    ]
+  }] };
+  log.debug("Leaving overridesFor().");
+  return out;
 }
 
 // ---------------------------------------------------------------------------

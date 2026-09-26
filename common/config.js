@@ -7982,7 +7982,9 @@ const SETTINGS = [
     'one of the ways a verifier may find an issuer\'s key, so a wallet or ' +
     'verifier that never fetches this issuer\'s metadata can still check ' +
     'the signature against a trust anchor. ldp_vc is not a JWS and is not ' +
-    'affected.'),
+    'affected. The x5c here (and on a Status List Token) leaves the trust ' +
+    'anchor, the service Root, off the end, as HAIP 1.0 section 6.1.1 ' +
+    'requires; HAIP also requires x5c, so a HAIP realm sets x5c.'),
 
   certificateHeaderSetting('oid4vci.signedMetadataCertificateHeader',
     'OID4VCI', 'OID4VCI_SIGNED_METADATA_CERTIFICATE_HEADER',

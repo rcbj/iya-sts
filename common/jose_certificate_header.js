@@ -28,6 +28,11 @@
 // certificates and roughly five kilobytes on every access token, where a URL is
 // a hundred bytes and one GET.
 //
+// A row marked `withoutAnchor` leaves the service Root off its `x5c` (#187):
+// HAIP 1.0 forbids the trust anchor there for credentials, Status List Tokens
+// and signed OpenID4VP requests. Every other row keeps the chain through the
+// Root, as it always has.
+//
 // ---------------------------------------------------------------------------
 // WHY ONE SETTING PER USE CASE AND NOT ONE FOR THE SERVICE.
 //
@@ -185,14 +190,17 @@ const USE_CASES = [
     where: 'oauth-oidc/oauth2.ts signedMetadata(), both discovery documents' },
   { id: 'vci-credential', setting: 'oid4vci.credentialCertificateHeader',
     label: 'OpenID4VCI credentials',
-    where: 'oid4vc/vc_issuer.ts, the SD-JWT VC issuer JWT and the JWT VC' },
+    where: 'oid4vc/vc_issuer.ts, the SD-JWT VC issuer JWT and the JWT VC; ' +
+           'oid4vc/vc_status.ts, the Token Status List',
+    withoutAnchor: true },
   { id: 'vci-signed-metadata',
     setting: 'oid4vci.signedMetadataCertificateHeader',
     label: 'OpenID4VCI signed issuer metadata',
     where: 'oid4vc/vc_issuer.ts, the credential issuer\'s signed_metadata' },
   { id: 'vp-request-object', setting: 'oid4vp.requestObjectCertificateHeader',
     label: 'OpenID4VP Request Objects',
-    where: 'oid4vc/vc_verifier.ts, the signed authorization request' },
+    where: 'oid4vc/vc_verifier.ts, the signed authorization request',
+    withoutAnchor: true },
   { id: 'ssf-set', setting: 'ssf.setCertificateHeader',
     label: 'Security Event Tokens',
     where: 'ssf/ssf_events.js, every SET pushed or polled — CAEP and RISC ' +
@@ -506,7 +514,19 @@ function headerFor(useCaseId, signer) {
     }
     const out = {};
     if (mode === 'x5c' || mode === 'both') {
-      out.x5c = chainPemsOf(pki, record).map(pemToBase64);
+      let chain = chainPemsOf(pki, record);
+      // `withoutAnchor` (#187): HAIP 1.0 sections 5, 6.1 and 6.1.1 — the
+      // trust anchor's certificate MUST NOT be in the x5c of a credential,
+      // a Status List Token or a signed OpenID4VP request. The verifier
+      // holds it already; the service Root, the one anchor here, is left
+      // off the end (the chain document `x5u` names is unchanged).
+      const root = useCase(useCaseId).withoutAnchor && pki.serviceRoot();
+      if (root && root.certificatePem && chain.length > 1) {
+        chain = chain.filter(function (pem) {
+          return pem !== root.certificatePem;
+        });
+      }
+      out.x5c = chain.map(pemToBase64);
     }
     if (mode === 'x5u' || mode === 'both') {
       const url = chainUrlFor(signer.realm, record.thumbprint);
