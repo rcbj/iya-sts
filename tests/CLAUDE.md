@@ -3164,3 +3164,30 @@ neither key signing for the other profile, taken off alone. Its "the other
 person holds nothing" check reads the Credentials section's `held` flags now;
 it searched the reply for `stsassertionjwks`, which the section prints as an
 attribute NAME whether or not anything is held.
+
+## THE THIRD-PARTY CORPORA ARE ONE PRIVATE IMAGE ON GHCR.IO (#253, 2026-09-26)
+
+The schemas (#188), x509-limbo and NIST PKITS (#201), the W3C XML Signature
+and Encryption interop cases (#193) and Wycheproof with NIST ACVP (#202,
+#203) are no longer fetched by `tests/Dockerfile`. They sat below the package
+files, `node-ldapjs` and both npm installs, so nearly every build re-fetched
+all of them — about 340 paced requests to w3.org alone — and on 2026-09-26
+w3.org answered 429 for an hour and no run could start.
+
+* **`tests/corpora/Dockerfile`** fetches them with the same five scripts and
+  the same sha256 checks into a `scratch` image. **`tests/tools/build-corpora-image.sh`**
+  builds it, pushes `ghcr.io/rcbj/iya-sts-test-corpora:<date>-<commit>`, and
+  rewrites the `ARG STS_CORPORA_IMAGE=` line at the top of `tests/Dockerfile`
+  to the REGISTRY DIGEST it got back. Run it after any change to a fetch
+  script, `w3c-xmlsec.sha256`, `vectors.sha256` or `tests/xml-schemas`, and
+  commit the rewritten line; until then the tests image reads the old digest.
+* **`tests/Dockerfile` pins that digest** and `COPY --from`s the five trees to
+  the paths they always had, so no test and no `STS_*_DIR` changed.
+* **PRIVATE, and it stays so** (rcbj): the W3C and PKI corpora carry published
+  test private keys. Pulling needs `docker login ghcr.io` with
+  `read:packages` — `gh auth token | docker login ghcr.io -u <user>
+  --password-stdin`. **`tests/tools/corpora-preflight.sh`** asks first in
+  `./run-tests.sh`, `./docker-npm-test.sh` and `deploy/aws/run-suite.sh`, and
+  says so in a sentence rather than as a pull error. CI logs in with
+  `GITHUB_TOKEN` under `packages: read` (`tests.yml`, `aws-cluster.yml`), and
+  the package grants this repository access.
