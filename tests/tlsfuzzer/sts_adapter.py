@@ -25,7 +25,8 @@
 #   connection on a request it cannot parse, so every probe that needs the
 #   server to answer application data would fail on a question of protocol
 #   above TLS. A complete HTTP request a script sends (ending in a blank
-#   line, CRLF or bare LF — scripts use both) is replaced by an LDAP
+#   line, CRLF or bare LF — scripts use both; in one record or split over
+#   several, sliced back into the same sizes) is replaced by an LDAP
 #   BindRequest (RFC 4511 section 4.2) of THE SAME LENGTH — the name is padded
 #   to fit — which the directory answers with one BindResponse in every mode
 #   (success, or 48 where product mode refuses the bind). Record sizes and
@@ -246,15 +247,32 @@ def main():
     if ldap:
         adg = fuzz_messages.ApplicationDataGenerator
         original_adg = adg.__init__
+        # A request a script splits over several records ("GET", KeyUpdate,
+        # " / HTTP/1.0\r\n\r\n") is gathered as its generators are built —
+        # the conversation is a graph built before anything is sent — and
+        # the bind is sliced back into the same fragment sizes once the
+        # request is complete. A request never completed (an "incomplete
+        # GET" probe) is left as the script wrote it.
+        pending = []
 
         def adg_init(self, payload, *args, **kwargs):
-            data = bytes(payload)
-            if data.startswith(b'GET ') and data.endswith(b'\n\n') or \
-                    data.startswith(b'GET ') and data.endswith(b'\r\n\r\n'):
-                bind = ldap_bind(len(data))
-                if bind is not None:
-                    payload = bytearray(bind)
             original_adg(self, payload, *args, **kwargs)
+            data = bytes(payload)
+            if data.startswith(b'GET '):
+                del pending[:]
+            if not pending and not data.startswith(b'GET '):
+                return
+            pending.append(self)
+            whole = b''.join(bytes(one.payload) for one in pending)
+            if whole.endswith(b'\n\n') or whole.endswith(b'\r\n\r\n'):
+                bind = ldap_bind(len(whole))
+                if bind is not None:
+                    at = 0
+                    for one in pending:
+                        size = len(one.payload)
+                        one.payload = bytearray(bind[at:at + size])
+                        at += size
+                del pending[:]
         adg.__init__ = adg_init
 
     sys.argv = argv
