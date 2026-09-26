@@ -5728,6 +5728,48 @@ ML-DSA-87. `docs/pki.md` says what that does to a TLS handshake and to an
 #68. `tests/pki_hybrid.js` holds all of it, including OpenSSL verifying the
 classical chain untouched.
 
+### 3w, CONTINUED: SIGNER GROUPS, COLLAPSED BY ALGORITHM (2026-09-26, #68 phase 2a)
+
+`keys.signerModel = hybrid-groups` gives a realm a second family of signing
+keys beside the per-algorithm ones. `common/signer_groups.js` is the table:
+five groups (rcbj's D2), and in each an RSA-3072, a P-256 and a P-384 key
+paired with ML-DSA-65, -44 and -87, plus SLH-DSA-SHA2-128s alone (D3). That
+is 35 key pairs per realm. Each key pair is its own; the HYBRID CERTIFICATE is
+what the pair shares.
+
+**Why it is a new member, `signerGroups`, and not more `extraKeys`/`pqKeys`**:
+the algorithms are the SAME as the per-algorithm keys', and four things key on
+the algorithm. `certificateSlotOf()` would give `ES256:P-256` twice.
+`signingKeyFromList()` takes the first key with an `alg`. `privateMaterialFor()`
+maps are keyed by kid. And the units in `signingUnitsOf()` would collide. So
+slots are `<group>/<slot>` (the slash is the test, `isGroupSlot()`), kids are
+`sts-g-<group>-<slot>-<hash>`, and the member travels by itself. That means:
+
+* `serialise`/`deserialise`/`privateMaterialFor().groups` handle it.
+* `enriches` and `KEY_SET_MEMBERS` count it, with `LIST_MEMBERS` for the two
+  arrays.
+* It has a `signerGroupsHeldFor()` reader.
+* `plainKeySet`/`lazyKeySet` (a getter per private half, and a setter for the
+  backfill), and `plainCopyOf`, carry it.
+
+**Made like the post-quantum keys** (`signerGroupsForAsync()`): lazily, off
+the loop, first writer wins, shared, remembered and certified by the winner.
+It is warmed by `server.js` only for a realm in the model, and made on first
+use in a realm switched later. **No new recipe**: RSA through
+`generateRsaPairAsync(3072)`, the curves through `generateKeyPair`, ML-DSA and
+SLH-DSA through `pq_jose.generateAsync()`.
+
+**Certified by `pki.certifySignerGroups()`**: one certificate per classical
+key, carrying its ML-DSA partner in `subjectAltPublicKeyInfo` through
+`certify()`'s new `altPublicKeyPem`, which is stored on the record so that
+both renewal paths re-issue it hybrid. The SLH-DSA key gets a plain
+certificate. A partnered ML-DSA key has NO certificate of its own, because
+its certificate is its partner's. `certifyKeySet()` certifies a restored
+set's groups.
+
+Phase 3 routes signatures to these keys. Until then they are made and
+certified and sign nothing, which `docs/configuration.md` says.
+
 ### A LEAF IS ISSUED FOR A PROFILE, AND THE TWO PROFILES' KEY PAIRS ARE TWO (2026-09-11)
 
 `issueSigningKeyPair()` takes a `purpose`: `jwt` for RFC 7523 and `saml` for RFC

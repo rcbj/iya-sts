@@ -4396,6 +4396,10 @@ async function certify(scopeId, useCaseId, spec) {
     issued = await x509.issueCertificate(Object.assign({
       subject: subject,
       subjectPublicKey: spec.publicKeyPem,
+      // A HYBRID LEAF (#68): the subject's second key, a signer group's
+      // ML-DSA partner, in subjectAltPublicKeyInfo — see
+      // certifySignerGroups().
+      subjectAltPublicKey: spec.altPublicKeyPem || undefined,
       signatureAlg: sigAlgId,
       profile: spec.profile || 'digital-signature',
       notBefore: notBefore.toISOString(),
@@ -4449,6 +4453,11 @@ async function certify(scopeId, useCaseId, spec) {
     // The SHA-256 of that SubjectPublicKeyInfo, which is how
     // `certifyPqKeys()` tells "already certified" from "a different key".
     subjectKeyFingerprint: thumbprintOf(spec.publicKeyPem),
+    // AND THE SECOND KEY OF A HYBRID LEAF (#68), for the same reason: a
+    // renewal (`recertifyUseCase()`) re-issues from what is stored, and a
+    // renewal that dropped this would turn a hybrid certificate classical.
+    altPublicKeyPem: spec.altPublicKeyPem ? String(spec.altPublicKeyPem)
+                                          : null,
     pinned: !!spec.pinned,
     createdAt: Date.now()
   };
@@ -5627,6 +5636,128 @@ async function certifyPqKeys(realmId, pqKeys, keepKids) {
   return failed.length ? errorCodes.mark(verdict, 'STS-PKI-0031') : verdict;
 }
 
+// ===========================================================================
+// THE SIGNER GROUPS' CERTIFICATES (2026-09-26, #68).
+//
+// `common/signer_groups.js` pairs each group's classical key with an ML-DSA
+// key; this issues ONE certificate per pair — the classical key in
+// subjectPublicKeyInfo, the ML-DSA key in subjectAltPublicKeyInfo (ITU-T
+// X.509 (2019) clause 9.8) — and one plain certificate for the SLH-DSA key,
+// from the group's Issuing CA (JOSE, or XML for the `xml` group), under the
+// slot `<group>/<slot>`. The Issuing CA's own alternative signature is added
+// by `certify()` as it is to every leaf (phase 1).
+//
+// An ML-DSA member that HAS a partner gets no certificate of its own: its
+// certificate is its partner's, which is what "collapsing by signing
+// algorithm" means for the certificate count. Its slot is looked up through
+// `pairedSlot`.
+//
+// Unchanged when the slot already holds a certificate over the same classical
+// key AND the same alternative key under the current Issuing CA —
+// `certifyPqKeys()`'s test, over both keys, so regenerating either half
+// re-issues.
+// ===========================================================================
+async function certifySignerGroups(realmId, members) {
+  log.debug('Entering certifySignerGroups(). realm=' + realmId);
+  const signerGroups = require('./signer_groups');
+  const id = realmIdOf(realmId);
+  const list = Array.isArray(members) ? members : [];
+  const bySlot = {};
+  list.forEach(function (one) {
+    bySlot[one.slot] = one;
+  });
+  let certified = 0;
+  let unchanged = 0;
+  const failed = [];
+  for (let i = 0; i < list.length; i++) {
+    const one = list[i] || {};
+    if (one.kind === 'pq' && one.pairedSlot) {
+      continue;
+    }
+    const grp = signerGroups.group(one.group);
+    const ucId = grp ? grp.pkiUseCase : 'jose';
+    const row = rawRowFor(id);
+    if (!row || !row.issuing || !row.issuing[ucId]) {
+      failed.push(one.slot + ': the realm has no ' + ucId + ' Issuing CA');
+      continue;
+    }
+    let spkiPem = '';
+    let altPem = null;
+    try {
+      spkiPem = one.kind === 'pq'
+        ? pqSubjectPublicKeyPem(one.alg, one.publicJwk)
+        : String(nodeCrypto.createPublicKey({ key: one.publicJwk,
+                                              format: 'jwk' })
+                   .export({ type: 'spki', format: 'pem' }));
+      const partner = one.pairedSlot ? bySlot[one.pairedSlot] : null;
+      if (one.pairedSlot && !partner) {
+        failed.push(one.slot + ': its partner ' + one.pairedSlot +
+                    ' is missing');
+        continue;
+      }
+      altPem = partner
+        ? pqSubjectPublicKeyPem(partner.alg, partner.publicJwk) : null;
+    } catch (e) {
+      failed.push(one.slot + ': ' + e.message);
+      continue;
+    }
+    const kid = (one.publicJwk && one.publicJwk.kid) || '';
+    const held = certificateFor(id, ucId, one.slot);
+    const issuingNow = (row.issuing[ucId] || {}).certificatePem;
+    if (held && !held.pinned &&
+        held.subjectKeyFingerprint === thumbprintOf(spkiPem) &&
+        (held.altPublicKeyPem || null) === altPem &&
+        (held.chainPem || [])[0] === issuingNow && scopeChainsToRoot(id)) {
+      unchanged += 1;
+      continue;
+    }
+    const keyAlg = one.kind === 'pq'
+      ? PQ_JOSE_IN_X509[one.alg].id.toLowerCase()
+      : (signerGroups.PAIRS.filter(function (pair) {
+          return signerGroups.slotOf(one.group, pair.slot) === one.slot;
+        })[0] || {}).keyAlg;
+    const done = await certify(id, ucId, {
+      slot: one.slot, alg: one.alg, kid: kid, keyAlg: keyAlg,
+      label: one.slot + ' signing key' + (altPem ? ' (hybrid)' : ''),
+      commonName: (grp ? grp.label : one.group) + ' (' + one.alg +
+                  (partner(one) ? ' + ' + partner(one).alg : '') + ')',
+      publicKeyPem: spkiPem,
+      altPublicKeyPem: altPem,
+      keyUsage: ['digitalSignature', 'nonRepudiation']
+    });
+    if (!done.ok) {
+      failed.push(one.slot + ': ' + done.errors.join(' '));
+      continue;
+    }
+    certified += 1;
+    if (held && held.subjectKeyFingerprint !== thumbprintOf(spkiPem)) {
+      supersede(id, ucId, held, 'the ' + one.slot + ' key it certified ' +
+                'was replaced');
+    }
+  }
+  function partner(one) {
+    log.debug("Entering partner().");
+    log.debug("Leaving partner().");
+    return one.pairedSlot ? bySlot[one.pairedSlot] : null;
+  }
+  if (failed.length) {
+    log.warn(errorCodes.tag('STS-PKI-0031') + 'pki: the "' + id + '" realm ' +
+             'has ' + (certified + unchanged) + ' certified signer-group ' +
+             'key(s) and ' + failed.length + ' that could not be ' +
+             'certified: ' + failed.join('; ') + '. Those keys still SIGN.');
+  } else if (certified) {
+    log.info('pki: ' + certified + ' signer-group certificate(s) of the "' +
+             id + '" realm were issued, each classical key with its ML-DSA ' +
+             'partner (hybrid)' +
+             (unchanged ? ' (' + unchanged + ' already were)' : '') + '.');
+  }
+  const verdict = { ok: !failed.length, certified: certified,
+                    unchanged: unchanged, failed: failed };
+  log.debug('Leaving certifySignerGroups(). ' + certified + ' certified, ' +
+            unchanged + ' unchanged.');
+  return failed.length ? errorCodes.mark(verdict, 'STS-PKI-0031') : verdict;
+}
+
 // Certify one realm's signing keys under its JOSE and XML Issuing CAs.
 //
 // **THE RSA KEY IS CERTIFIED TWICE, ON PURPOSE.** It signs JWTs and it signs
@@ -5897,6 +6028,18 @@ async function certifyKeySet(realmId, keys, nodeCryptoModule) {
     });
   }
 
+  // --- the signer groups, WHERE THEY EXIST (#68) ------------------------
+  // Made lazily like the post-quantum keys, and for their reason here: a set
+  // reaching this line with them is a restored one.
+  const groupMembers = keys.signerGroups || [];
+  if (groupMembers.length) {
+    const groups = await certifySignerGroups(id, groupMembers);
+    certified += groups.certified || 0;
+    (groups.failed || []).forEach(function (one) {
+      failed.push(one);
+    });
+  }
+
   // --- every STANDBY key generation, in a slot of its own (#42) -----------
   const standby = await certifyStandbyKeys(id, keys, nodeC);
   certified += standby.certified;
@@ -6106,6 +6249,8 @@ async function recertifyUseCase(scopeId, useCaseId) {
       slot: was.slot, alg: was.alg, keyAlg: was.keyAlg,
       label: was.label, commonName: subjectCnOf(was.subject) || was.slot,
       publicKeyPem: publicPem,
+      // A hybrid leaf stays hybrid across a renewal (#68).
+      altPublicKeyPem: was.altPublicKeyPem || null,
       pinned: was.pinned, privateKeyPem: was.privateKeyPem,
       publicKeyPemStored: was.publicKeyPem
     });
@@ -6190,6 +6335,7 @@ async function recertifyOrphanedSlots(scopeId, slots) {
       generationSlot: name !== slotKey(was.useCase, was.slot),
       label: was.label, commonName: subjectCnOf(was.subject) || was.slot,
       publicKeyPem: publicPem,
+      altPublicKeyPem: was.altPublicKeyPem || null,
       keyUsage: usages && usages.length ? usages : undefined,
       pinned: was.pinned, privateKeyPem: was.privateKeyPem,
       publicKeyPemStored: was.publicKeyPem
@@ -8541,6 +8687,7 @@ module.exports = {
   keyAlgorithms: keyAlgorithms,
   signatureAlgorithms: signatureAlgorithms,
   alternativeKeyAlgs: alternativeKeyAlgs,
+  certifySignerGroups: certifySignerGroups,
   alternativeProblem: alternativeProblem,
   defaultSignatureAlgorithmFor: defaultSignatureAlgorithmFor,
   // What a build would sign with, decided before any key is made — exported

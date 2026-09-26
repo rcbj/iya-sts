@@ -2343,6 +2343,27 @@ const SETTINGS = [
   // on a protocol page because it names the realm's SIGNING KEYS, which every
   // family here signs with; `common/jose_kid.js` argues the rest. Runtime,
   // so a realm may carry it — a `kid` is read per signature.
+  // THE SIGNER MODEL (2026-09-26, #68). See `common/signer_groups.js`.
+  { key: 'keys.signerModel', group: 'Key material',
+    label: 'Signer model',
+    path: 'keys.signerModel', env: 'STS_KEYS_SIGNER_MODEL', type: 'enum',
+    enumValues: ['per-algorithm', 'hybrid-groups'],
+    dflt: 'per-algorithm', runtime: true,
+    description: 'How this realm\'s signing keys are divided. ' +
+                 '`per-algorithm` — the default — is one key per JWS ' +
+                 'algorithm (an RSA key, six curve keys and eleven ' +
+                 'post-quantum keys) shared by every JOSE use, and one RSA ' +
+                 'key for every XML signature. `hybrid-groups` gives each of ' +
+                 'five signer groups — OAuth/OIDC tokens, verifiable ' +
+                 'credentials, Security Event Tokens, WS-Trust and GNAP, XML ' +
+                 '— keys of its OWN, in a chosen set of algorithms: RSA-3072, ' +
+                 'P-256 and P-384, each certified together with an ML-DSA key ' +
+                 '(65, 44 and 87) in one hybrid certificate (ITU-T X.509 ' +
+                 'clause 9.8), and SLH-DSA-SHA2-128s alone. A signature in a ' +
+                 'group\'s use signs with the group\'s key for its ' +
+                 'algorithm; an algorithm outside the set still signs with ' +
+                 'the per-algorithm key. Every key is a key pair of its own; ' +
+                 'what the hybrid certificate shares is the certificate.' },
   { key: 'keys.kidFormat', group: 'Key material',
     label: 'Signed token kid format',
     path: 'keys.kidFormat', env: 'STS_KEYS_KID_FORMAT', type: 'enum',

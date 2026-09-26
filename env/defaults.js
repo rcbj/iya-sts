@@ -232,6 +232,7 @@ var config = {
     source: "auto",                  // Where signing keys come from; restart to apply
     plaintextRetention: "timed",     // How long a decrypted private key is kept
     plaintextTtlS: 300,              // Decrypted key idle timeout (seconds)
+    signerModel: "per-algorithm",    // Signer model
     kidFormat: "internal",           // Signed token kid format
     kekProvider: "file",             // Key-encryption key provider; restart to apply
     kekFile: "/run/secrets/sts-kek", // Key-encryption key file; restart to apply
