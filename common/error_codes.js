@@ -986,6 +986,11 @@ const CODES = [
       'a dispatched request reached it, and the request was sent again on ' +
       'a new connection (#77).',
     spec: 'Nothing: the client gets the worker\'s answer' },
+  { code: 'STS-WORKER-0043',
+    summary: 'A request worker exited (or could not start) and a ' +
+      'replacement was forked into its pool and slot.',
+    spec: 'Nothing directly: requests in flight on the dead worker were ' +
+      'answered 502 (STS-WORKER-0030)' },
   // ===== STORE =============================================================
   { code: 'STS-STORE-0001',
     summary: 'A scheduled persistence flush threw past its own handler.',

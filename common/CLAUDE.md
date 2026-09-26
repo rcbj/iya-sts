@@ -1257,10 +1257,29 @@ SIMPLER OF THE TWO SHAPES: A PIN** — `request_pool.js`'s `NEVER_DISPATCHED`;
 `tls/CLAUDE.md` argues it. The suite's own blind spot one layer out is
 `tests/CLAUDE.md`'s.
 
+**A WORKER THAT DIES IS REPLACED (2026-09-26).** Until then the pool was
+forked once, in `start()`, and `reap()` never forked again: a worker that
+crashed, was OOM-killed or was sent a SIGKILL left the pool a worker short for
+the life of the process, and when the last one went every request was served
+on the front process's one thread. rcbj met it more than once. `reap()` now asks
+`replacementFor()` and forks one worker into the dead one's POOL AND SLOT — the
+slot names the persistence origin, which the replacement adopts once the dead
+worker's claim lapses (`adoptOrigin()`, inside the worker's start timeout) —
+**not while `stop()` is draining, not once the pool has given up, and never
+past `size()`**. A worker that reports it could not start (`ready: false`) is
+ENDED, where it used to stay alive and never ready, holding its place; so it
+goes through the same path, and a failed start is now any worker that never
+became ready as well as one gone within `QUICK_EXIT_MS` having served nothing.
+`QUICK_EXIT_LIMIT` (3) failed starts in a row still give the pool up, so a
+worker that can never start is tried three times rather than forked for ever.
+`STS-WORKER-0043` names each replacement and `stats().pools[].replaced` counts
+them. `tests/request_worker_replacement.js` drives the real `fork()` and
+`reap()` with a stub worker.
+
 **DISPATCH WITHOUT COORDINATION IS REFUSED, AND THE SERVICE DOES NOT START.**
 Everything else about the pool degrades — no workers means the front process
-does the work, a dead worker is a 502, a pool that gave up handles everything
-here — and all of those leave a service that is correct and slow. This one
+does the work, a dead worker's requests in flight are a 502 and the worker is
+replaced, a pool that gave up handles everything here — and all of those leave a service that is correct and slow. This one
 leaves a service that answers WRONGLY, which was measured before the guard
 existed: `/admin-api` across three workers with a memory store, one setting
 written, six reads, and the fifth returned the value from before the write.
