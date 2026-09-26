@@ -878,13 +878,23 @@ class RiskDatasets {
       return refuse('STS-RISK-0022', 'The BLOB does not verify: ' +
                     verified.reason + '. Nothing was loaded.');
     }
-    const overridden = verified.overridden ? String(verified.overridden) : '';
+    let overridden = verified.overridden ? String(verified.overridden) : '';
     const verdict = overridden
       ? { status: 'unchecked (signature overridden)' }
       : await require('../common/revocation_status').verdictFor({
         leaf: verified.chainPems[0], chain: verified.chainPems.slice(1),
         verified: true }, { external: 'fetch' });
-    if (verdict.refused || verdict.status === 'revoked') {
+    // Under the override, a chain whose revocation status could not be
+    // ESTABLISHED is loaded as an unverifiable signature is — the checkbox
+    // says "its signature or signing chain" — and recorded the same way. A
+    // chain positively REVOKED is still refused: that is FIDO saying the
+    // signing key is not to be trusted, not a gap in what this node can see.
+    if (!overridden && o.overrideSignature === true && verdict.refused &&
+        verdict.status !== 'revoked') {
+      overridden = 'the signing chain\'s revocation status could not be ' +
+        'established under the policy (' + String(verdict.policy || '') +
+        '): ' + String(verdict.message || verdict.why || '');
+    } else if (verdict.refused || verdict.status === 'revoked') {
       log.debug("Leaving RiskDatasets.importMds(). Revocation.");
       return refuse('STS-RISK-0023', 'The BLOB\'s signing chain is ' +
                     (verdict.status === 'revoked' ? 'REVOKED'

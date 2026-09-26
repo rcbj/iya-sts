@@ -617,7 +617,15 @@ true of it before a byte is kept:
   The version is `verification: overridden` with `signatureOverride` and
   `signatureOverrideBy` in its parameters, and the audit row and a warning
   carry STS-RISK-0043. Any other dataset asking for it is STS-RISK-0001.
-  `tests/risk_mds.js` J.
+  `tests/risk_mds.js` J. **A verified chain whose revocation status cannot be
+  established is overridden too** (the reason says so); a chain the verdict
+  calls REVOKED is refused whatever the override says (K3, K4).
+* **The revocation walk is handed the VERIFIED PATH, anchor included**
+  (`verifyFidoMdsBlob()`'s `chainPems`, 2026-09-26), not the `x5c`. FIDO's
+  `x5c` ends below GlobalSign Root CA - R3, so the walk found the top
+  certificate's issuer "neither held here nor in the chain that was
+  presented", and under hard-fail every genuine BLOB was refused
+  (STS-RISK-0023). `tests/risk_mds.js` K1, K2 shape the `x5c` as FIDO does.
 * **The latest only** (`latestOnly`, FIDO's terms): activating a BLOB
   deletes every older version's rows at once; the version rows stay as the
   record. The shrink check does not apply — the signature is the integrity

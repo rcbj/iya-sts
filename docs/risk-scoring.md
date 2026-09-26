@@ -636,6 +636,10 @@ What the override does and does not change:
 - It lets through a chain that does not reach the root and a signature that
   does not verify. A file that is not a JWS with an `x5c` header, or whose
   payload is not a BLOB, is still refused.
+- It also lets through a chain that verifies but whose revocation status
+  cannot be established when `pki.revocationCheck` is `hard-fail` (product
+  mode's default). A signing chain that is positively **revoked** is still
+  refused (`STS-RISK-0023`), with or without the override.
 - The serial-number check still applies, so an overridden BLOB cannot roll
   back to an older one, and the next BLOB FIDO publishes replaces it as usual.
 - The version is recorded with verification `overridden`. The reason it did

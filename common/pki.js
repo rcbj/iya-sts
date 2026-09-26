@@ -10288,7 +10288,10 @@ function describeDeviceAnchors() {
 //     rollback and staleness checks.
 //
 // Answers `{ ok: true, header, payload, chainPems }` or `{ ok: false,
-// reason }`. Never rejects.
+// reason }`. Never rejects. `chainPems` is the path that VERIFIED, leaf
+// first and the anchor last — not the x5c, which FIDO ends below the root —
+// so a revocation walk over it ends at the anchor; under the override it is
+// the x5c as presented.
 //
 // **`opts.overrideSignature`** is an administrator's act on one upload,
 // never the download job's: FIDO has published a BLOB whose signature or
@@ -10351,6 +10354,11 @@ async function verifyFidoMdsBlob(token, opts) {
   let failure = '';
   const anchors = fidoMdsRoots(options.anchorsPem);
   let verified = null;
+  // The path that verified, ANCHOR INCLUDED: FIDO's x5c stops below the
+  // root, so the revocation walk handed only the x5c found the top
+  // certificate's issuer "neither held here nor in the chain that was
+  // presented" and hard-fail refused every genuine BLOB (2026-09-26).
+  let pathChain = null;
   if (!anchors.length) {
     failure = 'no FIDO MDS trust anchor: none is configured ' +
       '(risk.mdsTrustAnchors) and GlobalSign Root CA - R3 is not in this ' +
@@ -10361,6 +10369,7 @@ async function verifyFidoMdsBlob(token, opts) {
     if (!path.ok) {
       failure = 'the BLOB\'s signing chain does not verify: ' + path.reason;
     } else {
+      pathChain = path.chain || null;
       try {
         verified = stsCrypto.verifyCompactJws(text,
                                               certificateFromDer(ders[0]).pem,
@@ -10399,9 +10408,13 @@ async function verifyFidoMdsBlob(token, opts) {
   }
   let chainPems = [];
   try {
-    chainPems = ders.map(function (der) {
-      return certificateFromDer(der).pem;
-    });
+    chainPems = (!failure && pathChain && pathChain.length)
+      ? pathChain.map(function (one) {
+        return one.pem;
+      })
+      : ders.map(function (der) {
+        return certificateFromDer(der).pem;
+      });
   } catch (e) {
     log.debug("Caught in verifyFidoMdsBlob(): " + ((e && e.message) || e));
     // Only reachable under the override: a verified chain parsed already.
