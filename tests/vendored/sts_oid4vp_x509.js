@@ -68,7 +68,10 @@ const REALM = ("x509-" + STAMP).toLowerCase().replace(/[^a-z0-9-]/g, "")
                                              .slice(0, 31);
 const base = root + "/realm/" + REALM;
 const api = base + "/admin-api";
-const HOST = new URL(base).hostname;
+// The Response URI's host, which the x509_san_dns name must be: read off the
+// document the Verifier publishes, because a pinned global.publicBaseUrl
+// makes it a different host from the one this job dials.
+let HOST = new URL(base).hostname;
 
 let checks = 0;
 function check(what, fn) {
@@ -226,7 +229,15 @@ async function test() {
             "the realm was not created: " + created.status + " " +
             created.text.slice(0, 300));
   let doc = await hop("GET", base + "/oid4vp/verifier-certificate");
-  if (product) {
+  assert.ok(doc.json && doc.json.response_uri, "no verifier-certificate " +
+            "document: " + doc.status + " " + doc.text.slice(0, 300));
+  HOST = new URL(doc.json.response_uri).hostname;
+  const pinned = !!(doc.json.x509_san_dns &&
+                    doc.json.x509_san_dns.dns_name === HOST);
+  if (product && pinned) {
+    log.info("  (product mode, and global.publicBaseUrl names " + HOST +
+             ", so x509_san_dns is certified without oid4vp.x509DnsName)");
+  } else if (product) {
     check("product mode: x509_san_dns is refused until a name is " +
           "configured — the Host header is never certified — while " +
           "x509_hash answers", function () {
@@ -336,10 +347,10 @@ async function test() {
     assert.strictEqual(refusedDoc.json.x509_san_dns, null);
     assert.strictEqual(stillHash.status, 302, stillHash.text.slice(0, 300));
   });
-  await set("oid4vp.x509DnsName", product ? HOST : "");
+  await set("oid4vp.x509DnsName", product && !pinned ? HOST : "");
   await set("oid4vp.clientIdPrefix", "pre-registered");
 
-  assert.ok(checks >= 14, "only " + checks + " checks ran");
+  assert.ok(checks >= 13, "only " + checks + " checks ran");
   log.info(checks + " check(s) passed.");
   log.info("Test completed successfully.");
   log.debug("Leaving test().");
