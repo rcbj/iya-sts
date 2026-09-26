@@ -7058,6 +7058,85 @@ const CODES = [
       'section 3.2, #148); a realm is chosen by the path, never by a ' +
       'parameter.',
     spec: 'redirect {error: invalid_request}' },
+  { code: 'STS-OAUTH-0689',
+    summary: 'The device authorization grant or endpoint was used ' +
+      'in a realm where oauth2.deviceAuthorization is off (RFC 8628, #150).',
+    spec: 'HTTP 404 {error: invalid_request} at the endpoint; {error: ' +
+      'unsupported_grant_type} at the token endpoint' },
+  { code: 'STS-OAUTH-0690',
+    summary: 'A device authorization request was malformed (RFC ' +
+      '8628 section 3.1, #150).',
+    spec: 'HTTP 400 {error: invalid_request}' },
+  { code: 'STS-OAUTH-0691',
+    summary: 'A device authorization request\'s client did not ' +
+      'authenticate as it registered to (RFC 8628 section 3.1, #150).',
+    spec: 'HTTP 401 {error: invalid_client}' },
+  { code: 'STS-OAUTH-0692',
+    summary: 'A client that did not register the device_code grant ' +
+      'asked the device authorization endpoint for codes (#150).',
+    spec: 'HTTP 400 {error: unauthorized_client}' },
+  { code: 'STS-OAUTH-0693',
+    summary: 'The DPoP proof on a device authorization request did ' +
+      'not verify (RFC 9449, OpenID Connect Key Binding, #150).',
+    spec: 'HTTP 400 {error: invalid_dpop_proof}' },
+  { code: 'STS-OAUTH-0694',
+    summary: 'The device authorization endpoint failed ' +
+      'unexpectedly (#150).',
+    spec: 'HTTP 500 {error: server_error}' },
+  { code: 'STS-OAUTH-0695',
+    summary: 'A device_code grant named no device authorization of ' +
+      'this client (RFC 8628 section 3.5, #150).',
+    spec: 'HTTP 400 {error: invalid_grant}' },
+  { code: 'STS-OAUTH-0696',
+    summary: 'A device polled before the person answered (RFC 8628 ' +
+      'section 3.5, #150). Expected, not a fault.',
+    spec: 'HTTP 400 {error: authorization_pending}' },
+  { code: 'STS-OAUTH-0697',
+    summary: 'A device polled sooner than its interval, which ' +
+      'grows by five seconds (RFC 8628 section 3.5, #150).',
+    spec: 'HTTP 400 {error: slow_down}' },
+  { code: 'STS-OAUTH-0698',
+    summary: 'A device code expired before the person answered ' +
+      '(RFC 8628 section 3.5, #150).',
+    spec: 'HTTP 400 {error: expired_token}' },
+  { code: 'STS-OAUTH-0699',
+    summary: 'The person denied a device\'s sign-in on ' +
+      '/portal/device (RFC 8628 section 3.5, #150).',
+    spec: 'HTTP 400 {error: access_denied}' },
+  { code: 'STS-OAUTH-0700',
+    summary: 'A device code whose tokens were already issued was ' +
+      'presented again (#150).',
+    spec: 'HTTP 400 {error: invalid_grant}' },
+  { code: 'STS-OAUTH-0701',
+    summary: 'A device code bound to a DPoP key was redeemed ' +
+      'without a proof from that key (#150).',
+    spec: 'HTTP 400 {error: invalid_dpop_proof}' },
+  { code: 'STS-OAUTH-0702',
+    summary: 'A grant holding bound_key was redeemed without a ' +
+      'DPoP proof (OpenID Connect Key Binding, #150).',
+    spec: 'HTTP 400 {error: invalid_dpop_proof}' },
+  { code: 'STS-OAUTH-0703',
+    summary: 'A grant holding bound_key was redeemed with a DPoP ' +
+      'proof whose c_s256 is not the hash of the code (OpenID Connect Key ' +
+      'Binding, #150).',
+    spec: 'HTTP 400 {error: invalid_dpop_proof}' },
+  { code: 'STS-OAUTH-0704',
+    summary: 'An authorization request asked for bound_key without ' +
+      'dpop_jkt (OpenID Connect Key Binding, #150).',
+    spec: 'redirect {error: invalid_request}' },
+  { code: 'STS-OAUTH-0705',
+    summary: 'An authorization request asked for bound_key outside ' +
+      'response_type=code (OpenID Connect Key Binding, #150).',
+    spec: 'redirect {error: invalid_request}' },
+  { code: 'STS-OAUTH-0706',
+    summary: 'A refresh of a grant whose ID Token is key-bound ' +
+      'carried no proof from that key (OpenID Connect Key Binding, #150).',
+    spec: 'HTTP 400 {error: invalid_dpop_proof}' },
+  { code: 'STS-OAUTH-0707',
+    summary: 'A key-bound ID Token was presented at token exchange ' +
+      'without a DPoP proof from the key its cnf names (OpenID Connect Key ' +
+      'Binding section 7, #150).',
+    spec: 'HTTP 400 {error: invalid_dpop_proof}' },
   { code: 'STS-OAUTH-0720',
     summary: 'A request carried more than one OAuth-Client-Attestation ' +
       'header, or one that is not a JWT in token68 syntax (#229, ' +
@@ -7697,6 +7776,14 @@ const CODES = [
       'mode named a subject no live session here gave the asking relying ' +
       'party (by the NameIdentifier it was issued). #189.',
     spec: 'SOAP samlp:Response with status samlp:Requester (HTTP 200)' },
+  { code: 'STS-SAML-0097',
+    summary: 'The TLS certificate the SAML back channel presents (this ' +
+      'process\'s main-port leaves, or another cluster node\'s off its ' +
+      'membership row) could not be read while a SAML 2.0 or SAML 1.1 ' +
+      'metadata document was built, so the document went out without that ' +
+      'KeyDescriptor and a service provider authenticating the back channel ' +
+      'from metadata will refuse the node it names none for. #248.',
+    spec: 'none — the metadata is served (HTTP 200) without the key' },
   // ===== WSTRUST ===========================================================
   { code: 'STS-WSTRUST-0001',
     summary: 'The RequestSecurityToken body is not well-formed XML (or is ' +
@@ -10161,6 +10248,20 @@ const CODES = [
       'the client it was issued to no longer declares that scope in its ' +
       'oauthAllowedScope.',
     spec: 'HTTP 403 insufficient_scope (SCIM Error)' },
+  { code: 'STS-SCIM-0080',
+    summary: 'A request named a path under /scim/v2 that is no SCIM ' +
+      'endpoint; it is answered in the SCIM Error schema rather than by ' +
+      'express as an HTML page (#206).',
+    spec: 'HTTP 404 (SCIM Error, RFC 7644 section 3.12)' },
+  { code: 'STS-SCIM-0081',
+    summary: 'A PUT, PATCH or DELETE carried an If-Match other than *, and ' +
+      'this service keeps no entity-tags, so no version can match it ' +
+      '(RFC 9110 section 13.1.1); nothing was changed (#206).',
+    spec: 'HTTP 412 (SCIM Error, RFC 7644 sections 3.12 and 3.14)' },
+  { code: 'STS-SCIM-0082',
+    summary: 'A filter ordered (gt, ge, lt, le) a boolean or binary ' +
+      'attribute, which RFC 7644 section 3.4.2.2 refuses (#206).',
+    spec: 'HTTP 400 invalidFilter (SCIM Error)' },
   // ===== SPIFFE ============================================================
   { code: 'STS-SPIFFE-0001',
     summary: 'A SPIFFE gRPC handler failed with something that was not a ' +
@@ -15477,6 +15578,19 @@ const CODES = [
     summary: 'An unlink on /portal/claim-sources named a Claims Provider ' +
       'the person has no link to (#147).',
     spec: 'none (a portal page, HTTP 400)' },
+  { code: 'STS-PORTAL-0095',
+    summary: 'A user code typed or approved on /portal/device ' +
+      'matched no waiting device (#150).',
+    spec: 'none (a portal page, HTTP 404 or 400)' },
+  { code: 'STS-PORTAL-0096',
+    summary: 'A sign-on session typed too many user codes that ' +
+      'matched nothing on /portal/device and is refused for ten minutes ' +
+      '(RFC 8628 section 5.1, #150).',
+    spec: 'none (a portal page, HTTP 429)' },
+  { code: 'STS-PORTAL-0097',
+    summary: 'Answering a device sign-in on /portal/device failed ' +
+      'unexpectedly (#150).',
+    spec: 'none (a portal page, HTTP 500)' },
   { code: 'STS-LOGOUT-0001',
     summary: 'A sign-out named somebody other than the caller while naming ' +
       'another person is closed (logout.anyUser off, or product ' +

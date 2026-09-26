@@ -295,6 +295,10 @@ class ProtocolStack {
     require('../ws-trust/wstrust');
     this.build('saml/document_settings', require('../saml/document_settings'),
                'DocumentSettings');
+    // #248: the back channel's TLS certificate as a metadata key. A library;
+    // it reaches `tls/tls_server` lazily, when a document is built.
+    this.build('saml/listener_keys', require('../saml/listener_keys'),
+               'ListenerKeys');
     this.build('saml/saml2', require('../saml/saml2'), 'Saml2Assertions');
     this.build('ws-trust/wstrust', require('../ws-trust/wstrust'), 'WsTrust');
     this.register(app, require('../ws-trust/wstrust'), 'ws-trust/wstrust');
@@ -364,6 +368,9 @@ class ProtocolStack {
     // #131: /portal/ciba, where a person answers a backchannel sign-in.
     this.build('portal/portal_ciba', require('../portal/portal_ciba'),
                'PortalCiba');
+    // #150: /portal/device, where a person enters a device's user code.
+    this.build('portal/portal_device', require('../portal/portal_device'),
+               'PortalDevice');
     // #147: /portal/claim-sources, where a person links a Claims Provider.
     // Its require loads `oauth-oidc/claims_providers` early, which declares a
     // map and nothing else at load; the library is BUILT below with `oauth2`'s
@@ -432,6 +439,12 @@ class ProtocolStack {
     // #131: OpenID Connect CIBA's requests, approvals and notifications — a
     // library whose wire step registers the `oauth2.ciba-sweep` job.
     this.build('oauth-oidc/ciba', require('../oauth-oidc/ciba'), 'Ciba');
+    // #150: RFC 8628's device codes — a library whose wire step registers
+    // the `oauth2.device-code-sweep` job; `oauth2` answers the endpoint and
+    // the grant, and `/portal/device` the person.
+    this.build('oauth-oidc/device_authorization',
+               require('../oauth-oidc/device_authorization'),
+               'DeviceAuthorization');
     // Grant Management (#142): a library `oauth2` reads at every issuance,
     // whose wire step registers the `oauth2.grant-management-purge` job; its
     // routes (/oauth2/grants/{id}) are registered just after `oauth2`'s.

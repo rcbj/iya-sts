@@ -343,6 +343,9 @@ var config = {
     basicAuthRealm: "sts",                       // Token endpoint Basic realm
     maxAuthorizationServerProfiles: 200,         // Named authorization servers (per realm)
     maxDevicesPerPerson: 20,                     // Devices one person may hold
+    deviceAuthorization: false,                  // Device authorization grant (RFC 8628)
+    deviceCodeLifetimeS: 600,                    // Device code lifetime (seconds)
+    deviceCodeIntervalS: 5,                      // Device code polling interval (seconds)
     ciba: false,                                 // CIBA (backchannel authentication)
     cibaDefaultExpiryS: 120,                     // CIBA request lifetime (s)
     cibaMaxExpiryS: 600,                         // CIBA request longest lifetime (s)
@@ -787,6 +790,7 @@ var config = {
     bulkMaxOperations: 100,      // Bulk operation limit
     bulkMaxPayloadSize: 1048576, // Bulk payload limit
     authDiscovery: false,        // Authenticate discovery too
+    inventOnCreate: true,        // Fill a provisioned person in (development mode)
     authRealm: "SCIM",           // Authentication realm
     scopeRead: "scim:read",      // OAuth scope to read
     scopeWrite: "scim:write",    // OAuth scope to write

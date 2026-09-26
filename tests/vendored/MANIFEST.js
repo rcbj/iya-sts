@@ -783,6 +783,12 @@ const JOBS = [
   // portal, aggregated and distributed claims, revocation. `local: true`:
   // this repository's authorization server, portal and API.
   { file: 'sts_claims_aggregation.js',   browser: false, local: true },
+  // SCIM 2.0 CONFORMANCE (#206, 2026-09-26): python-scim's scim2-tester and
+  // scim2/test-suite, both installed in the tests image, against /scim/v2 of
+  // a throwaway realm; every error and warning fixed or a documented
+  // exception. `local: true`: this repository's SCIM surface.
+  { file: 'sts_scim_conformance.js',     browser: false, local: true,
+    timeoutMs: 900000 },
   // OPENID CONNECT ENTERPRISE EXTENSIONS (#148, 2026-09-26): session_expiry,
   // tenant and aud_sub in the ID Token, tenant refused for another realm,
   // domain_hint's home-realm discovery. `local: true`: this repository's
@@ -793,6 +799,10 @@ const JOBS = [
   // for the next, and an id_token_hint mapped back. `local: true`: this
   // repository's authorization server.
   { file: 'sts_ephemeral_subjects.js',   browser: false, local: true },
+  // RFC 8628 AND OPENID CONNECT KEY BINDING (#150, 2026-09-26): the device
+  // flow end to end through /portal/device, c_s256, a bound ID Token, its
+  // refresh and section 7, and an ML-DSA-44 DPoP key. `local: true`.
+  { file: 'sts_device_key_binding.js',   browser: false, local: true },
   // THE OPENID FOUNDATION'S CONFORMANCE SUITE (#176, 2026-09-24): FAPI 2.0
   // Security Profile and Message Signing, FAPI 1.0 Advanced and FAPI-CIBA,
   // each plan a throwaway realm, every module run, and a FAILED module a

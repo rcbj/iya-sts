@@ -4368,6 +4368,31 @@ const SETTINGS = [
                  'their least recently used one.' },
 
   // OPENID CONNECT CIBA (#131). `oauth-oidc/ciba.ts` argues them.
+  { key: 'oauth2.deviceAuthorization', group: 'OAuth 2.0 / OIDC',
+    label: 'Device authorization grant (RFC 8628)',
+    env: 'STS_OAUTH2_DEVICE_AUTHORIZATION', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'Answer RFC 8628 at /oauth2/device_authorization: a device ' +
+                 'with no browser is given a device code and a user code, ' +
+                 'the person approves on /portal/device, and the device ' +
+                 'polls the token endpoint with the device_code grant ' +
+                 '(#150). OFF by default: a new way in is something a realm ' +
+                 'turns on, and section 5.4 describes the phishing a device ' +
+                 'flow invites.' },
+  { key: 'oauth2.deviceCodeLifetimeS', group: 'OAuth 2.0 / OIDC',
+    label: 'Device code lifetime (seconds)',
+    env: 'STS_OAUTH2_DEVICE_CODE_LIFETIME_S', type: 'int', dflt: 600,
+    min: 60, max: 1800, runtime: true,
+    description: 'How long a device code and its user code stay valid ' +
+                 '(RFC 8628 expires_in). Short, because the user code is ' +
+                 'short.' },
+  { key: 'oauth2.deviceCodeIntervalS', group: 'OAuth 2.0 / OIDC',
+    label: 'Device code polling interval (seconds)',
+    env: 'STS_OAUTH2_DEVICE_CODE_INTERVAL_S', type: 'int', dflt: 5,
+    min: 1, max: 60, runtime: true,
+    description: 'The minimum wait between a device\'s polls (RFC 8628 ' +
+                 'interval); a poll sooner is answered slow_down and the ' +
+                 'interval grows by five seconds.' },
   { key: 'oauth2.ciba', group: 'OAuth 2.0 / OIDC',
     label: 'CIBA (backchannel authentication)',
     env: 'STS_OAUTH2_CIBA', type: 'bool', dflt: false, runtime: true,
@@ -9314,6 +9339,21 @@ const SETTINGS = [
                  'the question it is asking. RFC 7644 section 4 says nothing ' +
                  'either way, so both are conforming and both are worth ' +
                  'being able to try.' },
+
+  { key: 'scim.inventOnCreate', group: 'SCIM',
+    label: 'Fill a provisioned person in (development mode)',
+    env: 'SCIM_INVENT_ON_CREATE', type: 'bool', dflt: true, runtime: true,
+    description: 'DEVELOPMENT MODE ONLY, and ON there by default: a person a ' +
+                 'SCIM client creates is given the invented persona values ' +
+                 '(a cn, sn, givenName, displayName and mail) and the ' +
+                 'credential-claim attributes /admin/vc selects, wherever ' +
+                 'the client sent none — so the provisioned person can be ' +
+                 'issued a credential like one who signed in. OFF, a SCIM ' +
+                 'create writes exactly what the client sent, and reading ' +
+                 'the resource back returns only that, which is what a ' +
+                 'provisioning client checking its own round trip — and ' +
+                 'the SCIM conformance harnesses (#206) — expects. Product ' +
+                 'mode invents nothing whatever this says.' },
 
   { key: 'scim.authRealm', group: 'SCIM', label: 'Authentication realm',
     env: 'SCIM_AUTH_REALM', type: 'string', dflt: 'SCIM', runtime: true,

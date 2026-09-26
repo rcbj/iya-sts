@@ -761,6 +761,50 @@ OpenID Connect Enterprise Extensions 1.0 (#148), in every mode:
   `domain_hint` (the realm's DNS domain) and `target_link_uri` (the
   application's registered https home page) to `iss` and `login_hint`.
 
+### Signing in a device (RFC 8628)
+
+A television, a console or a command line with no usable browser can sign a
+person in **on another device**. It is **off by default**; turn on
+`oauth2.deviceAuthorization` in the realm.
+
+1. **Register the client** with the grant type
+   `urn:ietf:params:oauth:grant-type:device_code`.
+2. **The device asks** at `POST /oauth2/device_authorization`, authenticating
+   as it would at the token endpoint (a public client sends its `client_id`),
+   with an optional `scope`. It gets a `device_code`, a `user_code` such as
+   `WDJB-MJHT`, `verification_uri` (`/portal/device`),
+   `verification_uri_complete`, `expires_in` and `interval`.
+3. **The person** opens `/portal/device`, types the code (or follows the
+   complete URI), is shown which application asks and for what, and
+   approves or denies. Five codes that match nothing lock the session out
+   for ten minutes.
+4. **The device polls** `POST /oauth2/token` with
+   `grant_type=urn:ietf:params:oauth:grant-type:device_code` and the
+   `device_code`, no faster than `interval`: `authorization_pending`,
+   `slow_down` (the interval grows by five seconds), `expired_token`,
+   `access_denied`, and then the tokens, once.
+
+A DPoP proof on the device request binds the device code to its key; the
+tokens are then issued only to a proof from that key.
+
+### Key-bound ID Tokens (OpenID Connect Key Binding)
+
+A client that asks for the `bound_key` scope gets an ID Token bound to its
+DPoP key, in every mode:
+
+* the authorization request carries `dpop_jkt` and `response_type=code`
+  (otherwise `invalid_request`);
+* the token request's DPoP proof carries `c_s256`, the base64url SHA-256 of
+  the authorization code (or device code);
+* the ID Token carries `cnf.jwk` and the JOSE header `typ: dpop+id_token`;
+* a refresh must carry a proof from the same key, and the renewed ID Token
+  is bound to it;
+* a bound ID Token presented as a token exchange `subject_token` (Native SSO
+  included) needs a DPoP proof from its key.
+
+DPoP keys may be ML-DSA-44, ML-DSA-65 or ML-DSA-87 (`kty: AKP`) as well as
+RSA, EC and OKP.
+
 ### Aggregated and distributed claims (Claims Providers)
 
 A realm can hand a relying party claims that another OpenID Provider vouches

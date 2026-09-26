@@ -149,10 +149,11 @@ presented, while ciphertext captured today can be kept and opened later.
 Symmetric cryptography is a third category, where Grover costs a square root
 and the answer is key length — which makes **Kerberos the family least affected**,
 having no public-key cryptography in it at all. The most instructive row is
-DPoP, whose list excludes the post-quantum algorithms on purpose: a proof is
-bound through the RFC 7638 thumbprint, which is defined for RSA, EC, OKP and
-`oct` and not for `AKP`, so a proof signed with ML-DSA would verify perfectly
-and bind to nothing.
+DPoP, whose list takes ML-DSA-44, -65 and -87 and no other post-quantum
+algorithm: a proof is bound through a JWK thumbprint, which RFC 9964 defines
+for `AKP` keys, and those three are the post-quantum algorithms the JOSE
+registry names. SLH-DSA and the composites are signed here under draft names,
+so a proof in one would bind to a name no client could interoperate on.
 
 **It publishes no private key and no secret** — key types, key identifiers,
 curve names, certificate fingerprints and validity dates, all already readable

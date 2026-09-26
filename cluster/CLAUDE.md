@@ -151,6 +151,20 @@ report that cannot be taken costs the other nodes this node's figures and
 never a heartbeat. `cache_registry.js` requires only `config` and
 `error_codes`, so it is a plain require at the top of this file.
 
+**AND THE LEAVES ITS MAIN PORT PRESENTS (2026-09-26, #248)**, as
+`info.listenerCertificates` (base64 DER, no key): the SAML identity
+provider's metadata publishes the back channel's TLS certificate, each node
+presents a leaf of its own, and a service provider behind the balancer
+resolves an artifact at whichever node it reaches — so a document has to
+name EVERY live node's. `server.js` hands them over with
+`setListenerCertificates()` when the port binds as HTTPS and again from
+`tls_server.onServerCertificateChange()` after a re-issue;
+`listenerCertificatesOfLiveNodes()` reads them back out of `snapshot()`,
+skipping a node that left or whose row lapsed. It is a stored value, not a
+computation, so the beat stays a lookup; the cost is a few kilobytes on each
+row (an ML-DSA leaf is about seven), and a new node's key reaches the other
+nodes' documents at most a heartbeat late.
+
 Three things the page decides rather than reads:
 
 * **Live and gone are separated**, and the gone fold under a `<details>`. A row
@@ -549,6 +563,7 @@ next beat. It is the one addition this feature made to `cluster.js`.
 | `oauth2.claim-sources-refresh` | cluster, realm; every minute — refreshes each person's Claims Provider token five minutes before it expires and drops link requests older than ten minutes (#147) | `oauth-oidc/claims_providers.ts` |
 | `oauth2.grant-management-purge` | cluster, realm; hourly — removes each Grant Management grant past its last token's exp, and each token row past its own (#142) | `oauth-oidc/grant_management.ts` |
 | `oauth2.ciba-sweep` | cluster, service; `oauth2.cibaSweepS` | `oauth-oidc/ciba.ts` (#131): CIBA pings and pushes due, requests nobody answered expired |
+| `oauth2.device-code-sweep` | cluster, per realm, every 300 s | `oauth-oidc/device_authorization.ts` (#150): expired and answered RFC 8628 device codes removed |
 | `oidfed.key-rotate` | cluster, realm; hourly, off in development (`mode.rotatesSigningKeys()`): a Federation Entity Key where there is none, a `next` key where there is none, and a rotation once the current key is older than `oidfed.keyRotationDays` and the next one has been published for `oidfed.keyOverlapDays` | `oidfed/federation_keys.ts` (#132) |
 | `oidfed.key-rotate-now` | cluster, realm; manual only, ON in every mode — what `/admin/oidfed` and `POST /admin-api/oidfed/rotate-key` queue; `params.emergency` revokes the current and next keys as compromised | `oidfed/federation_keys.ts` (#132) |
 | `oidfed.collection-crawl` | cluster, realm; `oidfed.collectionCrawlS` (hourly), off while `global.publicBaseUrl` is empty — a job has no request to take the realm's Entity Identifier from, and Crawl now on `/admin/oidfed` (`POST /admin-api/oidfed/crawl-collection`) runs one with the administrator's; walks every entity beneath the realm and keeps what it finds in `ou=oidfed` for every node (#136) | `oidfed/entity_collection.ts` |
