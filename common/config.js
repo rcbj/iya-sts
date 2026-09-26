@@ -699,6 +699,11 @@ const ENROLLMENT_PROFILES = ['tls-server', 'tls-client', 'tls-server-client',
                              'code-signing', 'email', 'timestamping',
                              'smartcard-logon'];
 
+// EST and SCEP also issue `device` (#164): cert_enrollment.ts's
+// DEVICE_PROFILE, for the families in its DEVICE_PROFILE_FAMILIES. ACME does
+// not, and its row stays on the nine.
+const DEVICE_ENROLLMENT_PROFILES = ENROLLMENT_PROFILES.concat(['device']);
+
 // oid4vc/vc_issuer.ts's IMPLEMENTED_ENC_VALUES, for both OID4VCI rows.
 const OID4VCI_ENC_VALUES = ['A128GCM', 'A256GCM'];
 
@@ -5710,8 +5715,8 @@ const SETTINGS = [
           'key-encipherment,code-signing,email,timestamping,smartcard-logon,' +
           'device',
     runtime: true,
-    // Mirrors common/cert_enrollment.ts's PROFILE_IDS.
-    csvValues: ENROLLMENT_PROFILES,
+    // Mirrors cert_enrollment.ts's PROFILE_IDS and DEVICE_PROFILE.
+    csvValues: DEVICE_ENROLLMENT_PROFILES,
     description: 'The /admin/pki profiles an EST label may name ' +
                  '(/.well-known/est/<profile>/…), and `device` — a ' +
                  'certificate issued to a DEVICE entry (#164). The five ' +
@@ -5787,8 +5792,8 @@ const SETTINGS = [
           'key-encipherment,code-signing,email,timestamping,smartcard-logon,' +
           'device',
     runtime: true,
-    // Mirrors common/cert_enrollment.ts's PROFILE_IDS.
-    csvValues: ENROLLMENT_PROFILES,
+    // Mirrors cert_enrollment.ts's PROFILE_IDS and DEVICE_PROFILE.
+    csvValues: DEVICE_ENROLLMENT_PROFILES,
     description: 'The /admin/pki profiles a challenge password may be issued ' +
                  'for, and `device` — a certificate issued to a DEVICE ' +
                  'entry (#164). The five CA, OCSP and KDC profiles are ' +
