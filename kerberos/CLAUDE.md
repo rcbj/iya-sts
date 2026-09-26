@@ -1472,6 +1472,15 @@ Latin-1 and encodes as UTF-8 — the fix is the parent's
 (rcbj/id-proto-debugger#308). Heimdal has no RFC 6560 OTP client and no MS-KKDCP
 transport, so those two halves of #205 are recorded rather than driven.
 
+**The in-process half** is `tests/kerberos_samba_findings.js` (the salt hints, the
+AS-REP's hint and kvno, the ticket under the krbtgt's strongest key with
+`enc-pa-rep`, NOT_US, the TGT-only PAC buffers), mutation-checked against the
+filter, the ticket enctype and the NOT_US refusal each removed — all caught.
+`kerberos_fast_otp.js` holds hide-client-names (outer anonymous, inner the client)
+and `kerberos_person_keys.js` presents its non-TGT tickets as renewals of
+themselves. FAST in the TGS exchange, user-to-user and RFC 6806's checksum are held
+by Samba's tests over TCP, which have no in-process client here.
+
 **What these harnesses cannot reach**: Samba's tests that create or read their
 accounts in Active Directory (SamDB, DRSUAPI, LSA, SAMR, NETLOGON), and those that
 need a computer, server or managed-service account — a sAMAccountName and SPNs
