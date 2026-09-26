@@ -1752,6 +1752,23 @@ strips the prefix before the router sees the URL, which is why no route
 registration in this service carries a realm and no protocol module was edited.
 **Nothing may be registered above it.**
 
+**THE PREFIX IS ONE OF TWO WAYS A PATH NAMES A REALM (2026-09-26, #251).** The
+other is EST's label position: `/.well-known/est/<realm>/…` enters `<realm>`
+and is rewritten to `/.well-known/est/…`, because an RFC 7030 client is given a
+host, a port and at most one label and can put nothing in front of a
+well-known URI (libest's estclient refuses even a second segment). It is
+decided in the SAME place — `matchPath()` falls through to `matchEstLabel()`
+when the path does not open with the prefix — so the same middleware enters
+it, a request worker derives it by the same rule from the same `originalUrl`,
+and `unknownRealmPath()` catches up on it the same way. A realm may not be
+called by an EST label's name (`validateId()`, `STS-CORE-0107`; the names come
+from the data leaf `enrollment_profiles.ts`, which realms.js may require and
+`cert_enrollment.ts` could not be), and a realm that already was is never
+read there: the label reading wins. `est/CLAUDE.md` argues the collision rule
+and the "named once" refusal. **A third way needs the argument made again**,
+not this one copied: this one exists because a specification puts its paths
+at the root and the clients cannot be told otherwise.
+
 `AsyncLocalStorage` is the right primitive rather than a convenient one. A
 request here is a chain of awaits and callbacks — an LDAP search, an RSA
 signature, a gRPC call — and a module-level `currentRealm` variable would be

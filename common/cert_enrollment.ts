@@ -81,6 +81,7 @@ import applications = require('./applications');
 import audit = require('./audit');
 import config = require('./config');
 import credentials = require('./credentials');
+import enrollmentProfiles = require('./enrollment_profiles');
 import errorCodes = require('./error_codes');
 import keyMaterial = require('./vendored/key_material');
 import keystore = require('./keystore');
@@ -110,39 +111,14 @@ const FAMILY_LABELS = { acme: 'ACME', est: 'EST', scep: 'SCEP' };
 // THE PROFILES.
 //
 // **NINE ARE ISSUED AND FIVE ARE NOT, AND THE FIVE ARE A DECISION rcbj MADE
-// RATHER THAN A GAP.** /admin/pki offers fourteen because an OPERATOR sitting
-// at that page is the authority; an enrollment protocol hands a certificate to
-// whoever holds a credential, and for five profiles holding the certificate is
-// holding a power over everybody else in the realm. The `why` of each is drawn
-// on every protocol page and returned by every refusal.
+// RATHER THAN A GAP** — the argument is beside the lists, which live in the
+// leaf `./enrollment_profiles` since 2026-09-26 (#251): `common/realms.js`
+// needs the names to keep an EST label and a trust realm apart, and cannot
+// require this module. They are DECIDED here, as before.
 // ---------------------------------------------------------------------------
-const PROFILE_IDS = ['tls-server', 'tls-client', 'tls-server-client',
-                     'digital-signature', 'key-encipherment', 'code-signing',
-                     'email', 'timestamping', 'smartcard-logon'];
+const PROFILE_IDS = enrollmentProfiles.PROFILE_IDS;
 
-const REFUSED_PROFILES = [
-  { id: 'root-ca',
-    why: 'A Root CA is a trust anchor. Its holder could issue a certificate ' +
-         'for anybody and be believed by everything that trusts this ' +
-         'service\'s Root — and it is self-signed, so it would not even ' +
-         'chain to this authority.' },
-  { id: 'intermediate-ca',
-    why: 'An Intermediate CA may sign further CAs. Its holder could build a ' +
-         'branch of this hierarchy nobody operates.' },
-  { id: 'issuing-ca',
-    why: 'An Issuing CA signs certificates. Its holder could issue a ' +
-         'certificate naming any person or application in the realm, which ' +
-         'is exactly the rule this whole module exists to enforce.' },
-  { id: 'ocsp-responder',
-    why: 'An OCSP Responder certificate issued by this realm\'s CA is a ' +
-         'DELEGATED responder (RFC 6960 section 4.2.2.2): its holder could ' +
-         'sign "good" about a certificate this service revoked, and a ' +
-         'relying party would believe it.' },
-  { id: 'kdc',
-    why: 'A Kerberos KDC certificate lets its holder answer PKINIT as the ' +
-         'realm\'s KDC and impersonate it to every client that trusts this ' +
-         'authority.' }
-];
+const REFUSED_PROFILES = enrollmentProfiles.REFUSED_PROFILES;
 
 // What each issued profile REQUIRES of the request or the entry, beyond the
 // identity rule. Drawn on the pages from this table.

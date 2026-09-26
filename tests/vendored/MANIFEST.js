@@ -295,7 +295,8 @@ const JOBS = [
   // ACME, libest's estclient against EST, sscep and micromdm's scepclient
   // against SCEP — each at the version tests/Dockerfile pins, driven as an
   // operator would run it, in a throwaway realm (estclient: the default
-  // realm, which is all an EST client can name). tests/CLAUDE.md, *THE
+  // realm, and a throwaway realm named in the EST label position, #251 —
+  // the one way an EST client can name one). tests/CLAUDE.md, *THE
   // CERTIFICATE ENROLLMENT CLIENTS*.
   { file: 'sts_acme_certbot.js',         browser: false, local: true,
     timeoutMs: 900000 },

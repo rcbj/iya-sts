@@ -314,6 +314,84 @@ async function childMain() {
   note(bobRight.status === 200, 'product mode: the right password is issued',
        bobRight.status + ' ' + String(bobRight.body).slice(0, 300));
 
+  // --- 5b. a realm in the EST label position (#251) -------------------------
+  const viaLabel = realms.matchPath('/.well-known/est/' + A + '/cacerts');
+  note(viaLabel && viaLabel.realm.id === A &&
+       viaLabel.rest === '/.well-known/est/cacerts',
+       'the label position names a realm: /.well-known/est/<realm>/cacerts ' +
+       'enters it, rewritten to /.well-known/est/cacerts',
+       JSON.stringify(viaLabel && { id: viaLabel.realm.id,
+                                    rest: viaLabel.rest }));
+  const pair = realms.matchPath('/.well-known/est/' + A +
+                                '/tls-server/simpleenroll');
+  note(pair && pair.realm.id === A &&
+       pair.rest === '/.well-known/est/tls-server/simpleenroll',
+       'and /.well-known/est/<realm>/<profile>/<op> keeps the profile label',
+       JSON.stringify(pair && pair.rest));
+  note(realms.matchPath('/.well-known/est/tls-server/simpleenroll') === null,
+       'a profile label is not a realm');
+  note(realms.matchPath('/.well-known/est/nosuch-' + stamp + '/cacerts') ===
+       null, 'an unknown name in the label position is not a realm');
+  note(realms.matchPath('/.well-known/est/' + A) === null,
+       'a lone segment after /.well-known/est/ is an operation, not a realm');
+  const prefixed = realms.matchPath('/' + realms.pathSegment() + '/' + A +
+                                    '/.well-known/est/' + B + '/cacerts');
+  note(prefixed && prefixed.realm.id === A &&
+       prefixed.rest === '/.well-known/est/' + B + '/cacerts',
+       'with the prefix the prefix decides, and a realm in the label is ' +
+       'left for est.ts to refuse — never a mix',
+       JSON.stringify(prefixed && prefixed.rest));
+  const twice = await call(A, 'cacerts', { label: B });
+  note(twice.status === 404 && twice.code === 'STS-EST-0022',
+       'a label naming a realm after the realm was named is 404 ' +
+       'STS-EST-0022', twice.status + ' ' + twice.code);
+  const selfTwice = await call(A, 'cacerts', { label: A });
+  note(selfTwice.status === 404 && selfTwice.code === 'STS-EST-0022',
+       'even when it names the same realm again',
+       selfTwice.status + ' ' + selfTwice.code);
+  const unknownLabel = await call(A, 'cacerts', { label: 'nosuch' });
+  note(unknownLabel.status === 404 && unknownLabel.code === 'STS-EST-0002',
+       'an unknown label is still STS-EST-0002', unknownLabel.code);
+  const labelIds = ['tls-server', 'email', 'kdc', 'root-ca'];
+  labelIds.forEach(function (id) {
+    const errors = realms.validateId(id);
+    note(errors.length > 0 && errors.some(function (one) {
+      return /EST label/.test(one);
+    }), 'a realm may not be called "' + id + '", an EST label',
+         JSON.stringify(errors));
+  });
+  note(errorCodes.codeOf(realms.validateId('smartcard-logon')) ===
+       'STS-CORE-0107', 'and the refusal is STS-CORE-0107',
+       errorCodes.codeOf(realms.validateId('smartcard-logon')));
+  note(realms.validateId('est-ok-' + stamp).length === 0,
+       'a name that is not a label is still accepted');
+  note(realms.estLabelPath(realms.get(A)) === '/.well-known/est/' + A &&
+       realms.estLabelPath(realms.get('default')) === null,
+       'estLabelPath() names a realm\'s label form, and none for the default');
+  note(realms.unknownRealmPath('/.well-known/est/later-' + stamp +
+                               '/cacerts') === true &&
+       realms.unknownRealmPath('/.well-known/est/tls-server/cacerts') ===
+         false &&
+       realms.unknownRealmPath('/.well-known/est/' + A + '/cacerts') ===
+         false,
+       'unknownRealmPath() catches up on the label position too, and not ' +
+       'for a label or a realm already held');
+  await inRealm(A, function () {
+    const view = estConsole.estView(fakeReq({ path: '/admin/est' }));
+    note(view.labelForm && /\/\.well-known\/est\/[^/]+$/
+      .test(view.labelForm.base) &&
+         view.labelForm.base.indexOf('/realm/') < 0 &&
+         view.endpoints[0].labelFormUrl ===
+           view.labelForm.base + '/cacerts',
+         '/admin/est in a realm shows the label form at the origin root',
+         JSON.stringify(view.labelForm));
+  });
+  await inRealm('default', function () {
+    const view = estConsole.estView(fakeReq({ path: '/admin/est' }));
+    note(view.labelForm === null && view.endpoints[0].labelFormUrl === null,
+         'and the default realm shows none');
+  });
+
   // --- 6. the realm boundary ------------------------------------------------
   const inB = await call(B, 'simpleenroll', { headers: PKCS10,
     basic: [WHO, 'x'], body: b64Body(aliceCsr.der) });

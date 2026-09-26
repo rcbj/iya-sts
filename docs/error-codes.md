@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3503** of them, in **38** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3505** of them, in **38** subsystems.
 
 ## Where a code appears
 
@@ -51,7 +51,7 @@ is an ordinary outcome.
 
 * [HTTP front door (`STS-HTTP`)](#sts-http) — 18
 * [PROXY protocol (`STS-PROXY`)](#sts-proxy) — 9
-* [Service core (`STS-CORE`)](#sts-core) — 60
+* [Service core (`STS-CORE`)](#sts-core) — 61
 * [Worker pools (`STS-WORKER`)](#sts-worker) — 43
 * [Persistence and coordination (`STS-STORE`)](#sts-store) — 62
 * [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 28
@@ -60,7 +60,7 @@ is an ordinary outcome.
 * [Certificate authority (`STS-PKI`)](#sts-pki) — 186
 * [Certificate enrollment core (`STS-ENROLL`)](#sts-enroll) — 51
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 72
-* [EST (RFC 7030) (`STS-EST`)](#sts-est) — 25
+* [EST (RFC 7030) (`STS-EST`)](#sts-est) — 26
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 47
 * [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 249
 * [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 568
@@ -201,6 +201,7 @@ Raised from: server.js, common/protocol_stack.ts, common/config.js, common/confi
 | `STS-CORE-0104` | An outbound request (a GNAP push, an SSF push, a federation back channel or an XACML nudge) was not made because the CA file its …CaFile setting names could not be read or holds no certificate. | none — the family's own failure record (a grant history, a dead letter, a relationship's last error, a PEP row) |
 | `STS-CORE-0105` | The service did not start: the appconfig file or the environment still names a setting removed on 2026-09-23 (#171) — gnap.pushAllowInsecure, ssf.pushAllowInsecure, federation.outboundAllowInsecure or xacml.pepNotifyAllowInsecure. | none — the process exits |
 | `STS-CORE-0106` | A development-only setting — one of those STS-CORE-0103 lists, or an application attribute overriding one (#181) — is stored in a realm that is in product mode, and is ignored: its default is in force. Logged once per process and setting or attribute (#104). | none — a warning in the log |
+| `STS-CORE-0107` | A trust realm id is an EST label (a certificate profile). /.well-known/est/<realm>/ and /.well-known/est/<label>/ share one path position (#251), so a realm may not be called by a label's name. | the caller's refusal (errors on a console or /admin-api reply) |
 
 ## STS-WORKER
 
@@ -840,6 +841,7 @@ Raised from: est/.
 | `STS-EST-0019` | An EST request carried a query string; no EST operation takes one. | HTTP 400 |
 | `STS-EST-0020` | An EST handler failed unexpectedly; the client is told nothing about why. | HTTP 500 with a generic sentence |
 | `STS-EST-0021` | A /simplereenroll named a certificate that has expired or been revoked. | HTTP 400 |
+| `STS-EST-0022` | An EST label named a trust realm where the realm was already named — by the /realm/<id> prefix or by an earlier label segment (#251). A request names its realm once. | HTTP 404 with a plain-text sentence |
 | `STS-EST-0030` | A query string on /admin/est or /admin/est/monitor failed validation. | HTTP 400 on the console |
 | `STS-EST-0031` | An EST console or /admin-api action body failed validation. | HTTP 400 on the console or /admin-api |
 | `STS-EST-0032` | An EST console or /admin-api action named an action that does not exist. | HTTP 400 on the console or /admin-api |

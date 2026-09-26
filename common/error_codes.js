@@ -788,6 +788,12 @@ const CODES = [
       'default is in force. Logged once per process and setting or ' +
       'attribute (#104).',
     spec: 'none — a warning in the log' },
+  { code: 'STS-CORE-0107',
+    summary: 'A trust realm id is an EST label (a certificate profile). ' +
+      '/.well-known/est/<realm>/ and /.well-known/est/<label>/ share one ' +
+      'path position (#251), so a realm may not be called by a label\'s ' +
+      'name.',
+    spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
   { code: 'STS-WORKER-0001',
     summary: 'The IPC channel to a post-quantum worker process failed, so a ' +
       'job sent to it may not arrive or its answer may not come back.',
@@ -3196,6 +3202,11 @@ const CODES = [
   { code: 'STS-EST-0021',
     summary: 'A /simplereenroll named a certificate that has expired or been revoked.',
     spec: 'HTTP 400' },
+  { code: 'STS-EST-0022',
+    summary: 'An EST label named a trust realm where the realm was already ' +
+      'named — by the /realm/<id> prefix or by an earlier label segment ' +
+      '(#251). A request names its realm once.',
+    spec: 'HTTP 404 with a plain-text sentence' },
   { code: 'STS-EST-0030',
     summary: 'A query string on /admin/est or /admin/est/monitor failed validation.',
     spec: 'HTTP 400 on the console' },
