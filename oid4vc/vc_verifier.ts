@@ -1087,7 +1087,9 @@ class VcVerifier {
     log.debug("Entering VcVerifier.x509NameFor(). " + prefix);
     const resolved = this.x509DnsNameFor(req);
     if (!resolved.name && prefix === 'x509_san_dns') {
-      this.deps.log.error(this.deps.errorCodes.tag(resolved.code) +
+      const code = resolved.code === 'STS-VC-0110' ? 'STS-VC-0110' :
+                   'STS-VC-0111';
+      this.deps.log.error(this.deps.errorCodes.tag(code) +
                           'oid4vp: no x509_san_dns request was built — ' +
                           resolved.problem);
       const refused: any = new Error(resolved.problem);
@@ -3788,6 +3790,8 @@ class VcVerifier {
       }
       if (!out.x509_san_dns && !out.x509_hash) {
         errorCodes.mark(res, refusals[0].code);
+        // error-code: none — marked on the line above with the refusal's own
+        // code, STS-VC-0110 to STS-VC-0113.
         res.status(409).type('application/json').send(JSON.stringify(out));
         log.debug("Leaving the verifier certificate endpoint. Neither.");
         return;
