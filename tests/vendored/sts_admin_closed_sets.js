@@ -30,7 +30,7 @@
 //      a real form — a console session, the page's CSRF token, the
 //      operation's `action` — with a value outside the set; the console must
 //      refuse it 400 `invalid_value` before any handler runs.
-//   4. THE SETTINGS. Every runtime setting of type `enum` in `GET
+//   4. THE SETTINGS. Every editable setting of type `enum` in `GET
 //      /admin-api/config`, and every `csv` one carrying `csvValues` (a list
 //      with one entry outside it), is set to a value outside its set through
 //      `POST /admin-api/config/set-many` (refused, all-or-nothing) and through
@@ -491,7 +491,9 @@ async function theSettings(cookie) {
   // for the second the probe is a list with one entry outside the set,
   // beside one from it, so the refusal is about the entry and not the list.
   const rows = all.filter(function (s) {
-    return s && s.runtime &&
+    // `editable` is what the published row calls a setting a running service
+    // takes a write of (config.js's describe(); there is no `runtime` there).
+    return s && s.editable &&
            ((s.type === "enum" && Array.isArray(s.enumValues)) ||
             (s.type === "csv" && Array.isArray(s.csvValues) &&
              s.csvValues.length));
