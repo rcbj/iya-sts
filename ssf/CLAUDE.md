@@ -526,9 +526,9 @@ signed SET through `accept()`: development observes; the person's own
 console session is ended, once; somebody else's event, an unverified SET
 and an unpermitted event end nothing; and a disabled policy ends nothing.
 
-**Not built: acting on a FOREIGN transmitter's events.** That needs #153
-(this service as a receiver of somebody else's stream), and the same rule
-will bind it.
+**A FOREIGN transmitter's events are acted on since #153** (see *THIS REALM
+AS A RECEIVER*, below), under the same rule: nothing acts unless the SET
+verified, and what it does is the same policy's decision.
 
 ---
 
@@ -651,7 +651,8 @@ after delivery, so without the claim a second run of the job would send
   `/portal/forgot-password`, and `recovery-activated` is sent with the person
   as the initiating entity (`common/mail_uses.ts`).
 - The deprecated `sessions-revoked` is by hand only.
-- A received event is not acted on (#153, #117).
+- A received event is acted on only by the console's and portal's own
+  receivers (#62), and by a realm receiving a foreign transmitter (#153).
 
 ---
 
@@ -1239,9 +1240,9 @@ the half a reader cannot discover from a protocol trace.
   emitted only when asked for.
 * **It does not retry a failed push unless `ssf.pushRetries` says to.** See
   above.
-* **It is not a receiver of anybody else's transmitter** (#153). It discovers
-  no foreign transmitter, creates no stream there, polls none, and fetches no
-  foreign `jwks_uri`, so a SET another party signed never verifies here.
+* ~~It is not a receiver of anybody else's transmitter~~ — **reversed
+  2026-09-26 (#153)**: a realm registers a foreign transmitter by its issuer
+  and receives from it; see *THIS REALM AS A RECEIVER*, below.
 * **It verifies nothing about a subject.** A stream may name somebody who has
   never been here, which is what a receiver's "I do not know this subject" path
   needs.
@@ -1818,7 +1819,67 @@ fingerprint, as CAEP defines the member, and not the header.
 
 **Not here:**
 * `device-compliance-change` has no source (#164).
-* Acting on a RECEIVED event is #153 and #117.
+* Acting on a RECEIVED event: the console's and portal's receivers (#62)
+  and foreign transmitters (#153).
+
+## THIS REALM AS A RECEIVER OF A FOREIGN TRANSMITTER (2026-09-26, #153)
+
+rcbj's answers were every recommendation: only a transmitter an
+administrator registers; both poll and push; act on session-revoked,
+credential-change and account disabled or enabled; map subjects through a
+federation relationship. `ssf/ssf_transmitters.ts` carries the argument in
+its header. The points a reader of this directory needs:
+
+* **Registration is by ISSUER.** The configuration document is fetched from
+  `/.well-known/ssf-configuration` inserted before the issuer's path (section
+  7), and it must name that issuer, a `jwks_uri` and a
+  `configuration_endpoint`. Every address dialled afterwards comes from that
+  document: stream management, status, subjects, verification and the poll
+  endpoint the stream names. They go through
+  `federation_http.fetchPublished()`, which gained `method`, `headers` and
+  `body` for them. Its bounds are unchanged: internal addresses refused in
+  product mode, the connection pinned, no redirect, a cap. It is the fifteenth
+  row of root CLAUDE.md's "Dial a URL a CALLER supplied" index. It reverses
+  this file's *no create stream on the console* rule for this direction only:
+  there the address would be one a console user typed for us to deliver to,
+  and here it is the transmitter's own.
+* **This realm authenticates to the transmitter** by client credentials at
+  an administrator-named token endpoint (token cached per process, short),
+  or by a pasted bearer. Secrets live in the persisted register, sealed at
+  rest like every minted row, and no page or answer shows them.
+* **Push** is `POST /ssf/transmitters/{id}/push`. The Authorization header
+  this realm gave the transmitter at stream creation is kept as its digest
+  and compared in constant time. **Poll** is the `ssf.foreign-poll` cluster
+  job, per realm. What was received is acknowledged (`ack`) or refused
+  (`setErrs`) on the next request, with one more request after the last
+  round to acknowledge it.
+* **Verification** is done here, not by `ssf_events.verifySet()`, which only
+  knows this realm's keys. The signature is checked against the
+  transmitter's `jwks_uri`, reusing `oauth-oidc/client_jwks.js`'s cache, with
+  the kid named or else each key and the asymmetric algorithms named. Then
+  `typ` must be secevent+jwt, `iss` the transmitter's, and `aud` the
+  stream's. A `jti` is accepted once, and the inbox that holds it is also the
+  history. In product an unverified SET is refused (`invalid_key`). In
+  development it is recorded and acted on in no way.
+* **Reactions** come from the `signal-response` policy, asked with the
+  surface `foreign:<id>`, and there are three new actions:
+  * `signal-end-person-sessions`: a global sign-out of the person here;
+  * `signal-disable-account` (`account_state.setDisabled`, which re-emits
+    RISC to this realm's own receivers);
+  * `signal-enable-account`, only for a lock this transmitter's own event put
+    there (`ssf.foreignLocks`).
+
+  The template's foreign rules require that surface prefix, so the console's
+  and portal's receivers never match them. Development only records what it
+  would do, unless `ssf.actOnSignalsInDevelopment` is on.
+* **Subjects.** An `iss_sub` with the relationship's `fedPeer` is the ONE
+  person whose `federationLink` holds it. An `email` subject is matched only
+  where the relationship sets `fedSignalEmailMatch`, which is off by default:
+  an address is not an identifier. Anything else names nobody, and the SET is
+  recorded. A `complex` subject's `user` member is what is mapped.
+* **CAEP device-compliance-change** goes to `devices.setCompliance()` when
+  the device register offers it (#164). The device is found by the subject's
+  `sub` or a key thumbprint.
 
 ## A RENAMED ACCOUNT KEEPS ITS RISC ROW (2026-09-14)
 

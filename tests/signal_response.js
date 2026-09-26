@@ -69,9 +69,11 @@ function childMain() {
     const slugs = (plain.policy ? plain.policy.rules : []).map(function (r) {
       return r.id.split(':rule:')[1];
     }).join(',');
-    note(slugs === 'end-sessions,end-sessions-on-risk',
+    note(slugs === 'end-sessions,end-sessions-on-risk,' +
+                   'foreign-end-sessions,foreign-disable,foreign-enable',
          'A1. the built-in policy ends sessions on the listed events and on ' +
-         'a risk-level-change to HIGH', slugs);
+         'a risk-level-change to HIGH, and a foreign transmitter\'s (#153) ' +
+         'end sessions, disable and enable', slugs);
     let roundTrips = '';
     try {
       xacmlXml.parsePolicy(xacmlXml.writePolicy(plain.policy));

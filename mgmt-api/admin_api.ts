@@ -476,6 +476,7 @@ interface AdminApiDeps {
   loadGrantManagementApi(): typeof import('../oauth-oidc/grant_management_api');
   loadClaimsProvidersApi(): typeof import('../oauth-oidc/claims_providers_api');
   loadProviderCommandsApi(): typeof import('../oauth-oidc/provider_commands_api');
+  loadSsfTransmittersApi(): typeof import('../ssf/ssf_transmitters_api');
 }
 
 type RouteApp = typeof app;
@@ -570,6 +571,9 @@ class AdminApi {
       },
       loadProviderCommandsApi: function () {
         return require('../oauth-oidc/provider_commands_api');
+      },
+      loadSsfTransmittersApi: function () {
+        return require('../ssf/ssf_transmitters_api');
       },
       loadGrantManagementApi: function () {
         return require('../oauth-oidc/grant_management_api');
@@ -1993,7 +1997,7 @@ class AdminApi {
             pkiAdmin, certificateViews, passwordPolicy, loadAcmeApi, loadEstApi,
             loadScepApi, loadOidfedApi, loadOauth2MonitorApi,
             loadGrantManagementApi, loadClaimsProvidersApi,
-            loadProviderCommandsApi } = this.deps;
+            loadProviderCommandsApi, loadSsfTransmittersApi } = this.deps;
     const self = this;
     log.debug("Entering AdminApi.buildRoutes().");
     const closed = this.closedLists();
@@ -18184,7 +18188,9 @@ class AdminApi {
       ...loadClaimsProvidersApi().ROUTES,
       // PROVIDER COMMANDS AND OUTBOUND DELIVERIES (#151): /admin/commands'
       // and /admin/deliveries' twins, in the same shape.
-      ...loadProviderCommandsApi().ROUTES
+      ...loadProviderCommandsApi().ROUTES,
+      // FOREIGN SSF TRANSMITTERS (#153): /admin/ssf/transmitters' twin.
+      ...loadSsfTransmittersApi().ROUTES
     ];
     log.debug("Leaving AdminApi.buildRoutes().");
     return ROUTES;
