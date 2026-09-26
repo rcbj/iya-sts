@@ -2213,6 +2213,22 @@ const SPECS: Spec[] = [
               'verified_claims (Identity Assurance section 6), and the ' +
               'Claims Provider role (this service\'s signed UserInfo serves ' +
               'another aggregator, which is the draft\'s CP side).' },
+  { id: 'oidc-enterprise', name: 'OpenID Connect Enterprise Extensions 1.0 ' +
+                                 '(draft 01)',
+    where: 'OpenID Foundation',
+    url: 'https://openid.net/specs/openid-connect-enterprise-extensions-1_0.html',
+    coverage: 'full (#148), in every mode. Section 2: session_expiry (the ' +
+              'session\'s absolute end, whenever a token is issued on a ' +
+              'session), tenant (the trust realm\'s id) and aud_sub (an ' +
+              'account id an administrator records per person per client, ' +
+              'console and /admin-api) in the ID Token and ' +
+              'claims_supported. Section 3: tenant refused as ' +
+              'invalid_request when it names another realm; domain_hint ' +
+              'sends the person to the federation relationship whose ' +
+              'fedHomeRealmDomain holds it. Section 4: the portal\'s ' +
+              'third-party-initiated login adds tenant, domain_hint and ' +
+              'target_link_uri. MISSING: an aud_sub learned from the client, ' +
+              'which arrives with OpenID Provider Commands (#151).' },
   { id: 'jarm', name: 'JWT Secured Authorization Response Mode for OAuth ' +
                      '2.0 (JARM)',
     where: 'OpenID Foundation',
@@ -10693,7 +10709,7 @@ const PROTOCOLS: Protocol[] = [
     specs: ['rfc6749', 'oidc', 'rfc8414', 'rfc9700', 'oauth21',
             'oidc-session', 'oidc-ida-claims', 'oidc-ida', 'oidc-native-sso',
             'oidc-ciba', 'fapi-ciba', 'oauth-grant-management',
-            'oidc-claims-aggregation'],
+            'oidc-claims-aggregation', 'oidc-enterprise'],
     what: 'A mock authorization server and OpenID Provider: all five grants, ' +
           'PKCE, DPoP, introspection, revocation, dynamic registration, ' +
           'UserInfo and RP-initiated logout, with as many named ' +
