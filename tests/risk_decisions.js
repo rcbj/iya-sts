@@ -38,7 +38,9 @@
 //   I. THE CONSOLE IS NEVER LOCKED OUT ON RISK (#226): for
 //      `sts-admin-console` HIGH is a step-up to the strongest factor the
 //      person holds, and a person holding none is PERMITTED with the alarm
-//      (STS-RISK-0038). Any other application is refused as before.
+//      (STS-RISK-0038). Any other application is refused as before. And
+//      the whole sign-in over HTTP: /admin, a password at HIGH, the code,
+//      the console's callback.
 //   J. `risk.listsMatchSpecialPurpose` OFF sets a list aside for a
 //      loopback address — the one #226 put everybody behind a bridge on —
 //      and the assessment says which lists were set aside.
@@ -490,6 +492,53 @@ function childMain() {
          unprotectedPolicy.policy.rules.length === 4,
          'I5. neverLockOut none puts the console under the three rules, ' +
          'and HIGH refuses it', plain.decision);
+
+    // THE WHOLE CONSOLE SIGN-IN, OVER HTTP (#226, what rcbj hit on the
+    // rebuilt stack): /admin sends the browser to the authorization
+    // endpoint, the password on the deny-listed loopback is HIGH, the
+    // console's rule asks for the second factor the person holds, and the
+    // code is answered — and the SESSION'S decision, made again after the
+    // second factor, must still be about the console. It was about "" until
+    // the second-factor finishers named the application, and the ordinary
+    // HIGH rule refused it.
+    ldap.createUser('rd-ivy', { invent: false });
+    const ivyTotp = credentials.beginTotpEnrolment('rd-ivy', {});
+    credentials.confirmTotpEnrolment('rd-ivy', totp.codeAt(ivyTotp.secret));
+    const ivy = browser(port, CHROME);
+    const pathOf = function (location) {
+      const u = new URL(String(location || ''), 'http://127.0.0.1');
+      return u.pathname + u.search;
+    };
+    let ivyAt = await ivy.go('GET', '/admin');
+    for (let i = 0; i < 4 && ivyAt.status >= 300 && ivyAt.status < 400 &&
+         !/\/authn\/login\?/.test(String(ivyAt.headers.location || ''));
+         i++) {
+      ivyAt = await ivy.go('GET', pathOf(ivyAt.headers.location));
+    }
+    const ivyScreen = pathOf(ivyAt.headers.location);
+    const ivyPage = await ivy.go('GET', ivyScreen);
+    const ivyAsked = await ivy.go('POST', ivyScreen.split('?')[0], {
+      form: Object.assign(hiddenFields(ivyPage.text), {
+        username: 'rd-ivy', password: 'anything', action: 'login' }) });
+    const ivyStep = hiddenFields(ivyAsked.text);
+    let ivyDone = ivyStep.mfa_id ? await ivy.go('POST', '/authn/totp', {
+      form: { mfa_id: ivyStep.mfa_id,
+              code: totp.codeAt(ivyTotp.secret, Date.now() + 30000) } })
+      : ivyAsked;
+    for (let i = 0; i < 4 && ivyDone.status >= 300 && ivyDone.status < 400 &&
+         !/\/admin\/callback\?/.test(String(ivyDone.headers.location || ''));
+         i++) {
+      ivyDone = await ivy.go('GET', pathOf(ivyDone.headers.location));
+    }
+    note(!!ivyStep.mfa_id &&
+         /\/admin\/callback\?.*code=/.test(String(ivyDone.headers.location ||
+                                                  '')),
+         'I6. a HIGH console sign-in is asked for the second factor, and ' +
+         'answering it reaches the console\'s callback with a code — the ' +
+         'session decided on the console, not on no application at all',
+         ivyAsked.status + ' ' + ivyDone.status + ' ' +
+         String(ivyDone.headers.location || '') + ' ' +
+         String(ivyDone.text || '').slice(0, 160));
 
     // --- J. lists set aside for a special-purpose address (#226) ---------
     config.setOverride('risk.listsMatchSpecialPurpose', false);
