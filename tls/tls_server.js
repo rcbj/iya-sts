@@ -1101,12 +1101,23 @@ function takeIssuedCertificate(record, certPem, chainPem) {
   // **AND A RELYING PARTY THAT PINS IT IS TOLD (#245)**: a certificate this
   // service had ALREADY issued to the listener was replaced — a rebuilt
   // hierarchy, a reissued TLS Issuing CA — so `tls-certificate-changed` goes
-  // to every realm's streams, the one port serving them all. The first
-  // certificate a process takes over its self-signed bootstrap is not a
-  // change anybody could have pinned, and is not announced.
-  if (wasIssued && wasFingerprint && wasFingerprint !== record.fingerprint256) {
-    announceCertificateChange(record.algorithm, wasFingerprint,
-                              record.fingerprint256);
+  // to every realm's streams, the one port serving them all.
+  //
+  // **THE FIRST CERTIFICATE A PROCESS TAKES OVER ITS SELF-SIGNED BOOTSTRAP IS
+  // COMPARED WITH WHAT THE SERVICE LAST ANNOUNCED (#264)**, not ignored: the
+  // listener key is made again at every start, so a restart presents a
+  // certificate a receiver has never seen. At start that comparison waits
+  // for `listen()` — the main port is bound by then, so a receiver that
+  // fetches the certificate at once reaches it; a first certificate taken
+  // AFTER `listen()` (a hierarchy that arrived late) is compared here.
+  if (wasIssued) {
+    if (wasFingerprint && wasFingerprint !== record.fingerprint256) {
+      announceCertificateChange(record.algorithm, wasFingerprint,
+                                record.fingerprint256);
+    }
+    rememberAnnounced(record);
+  } else if (listened) {
+    announceSinceLastStart([record]);
   }
   log.info('tls: the ' + record.algorithm + ' listener certificate is ' +
            'issued by this service\'s ' +
@@ -1123,19 +1134,146 @@ function takeIssuedCertificate(record, certPem, chainPem) {
 // which has happened.
 function announceCertificateChange(algorithm, from, to) {
   log.debug("Entering announceCertificateChange(). " + algorithm);
+  sendCertificateNotice([{ unit: String(algorithm), from: from, to: to }],
+                        'requested');
+  log.debug("Leaving announceCertificateChange().");
+}
+
+// The one place the notice leaves, for a re-issue and for a start (#264).
+function sendCertificateNotice(rotated, reason) {
+  log.debug("Entering sendCertificateNotice(). " + reason);
   try {
     Promise.resolve(require('../ssf/service_signals').keyChanged('tls', '*',
-      { rotated: [{ unit: String(algorithm), from: from, to: to }],
-        reason: 'requested' }))
+      { rotated: rotated, reason: reason }))
       .catch(function (e) {
-        log.debug("Caught in a callback in announceCertificateChange(): " +
+        log.debug("Caught in a callback in sendCertificateNotice(): " +
                   ((e && e.message) || e));
       });
   } catch (e) {
-    log.debug("Caught in announceCertificateChange(): " +
+    log.debug("Caught in sendCertificateNotice(): " +
               ((e && e.message) || e));
   }
-  log.debug("Leaving announceCertificateChange().");
+  log.debug("Leaving sendCertificateNotice().");
+}
+
+// ---------------------------------------------------------------------------
+// WHAT THE SERVICE LAST ANNOUNCED, KEPT ACROSS A RESTART (#264, 2026-09-26).
+//
+// `tls-certificate-changed` was sent only when a certificate the RUNNING
+// process had issued was replaced. The listener key is made again at every
+// start (`makeServerCertificate()`), so a restart presents a certificate
+// nobody was told about, and a receiver that pins it learned nothing.
+//
+// **FOR THE SERVICE, NOT PER NODE — rcbj's rule that no node is ever
+// exposed, and a fact about node identity.** A receiver reaches the
+// service's address and whichever node answers there; it has no notion of a
+// node. And a node cannot remember itself: its membership id is a fresh UUID
+// at every start (`cluster/CLAUDE.md`), and `cluster.nodeName` is stable only
+// where the platform keeps host names. So the record is shared through the
+// store and any node compares against it — #162's arrangement for the
+// process CA. It also catches a node that JOINS and presents a leaf nobody
+// was told of, which a per-node record would have nothing to compare with.
+// **The cost, documented rather than hidden**: every node's start is
+// announced (each has a listener key of its own), and `from` is the
+// certificate the SERVICE last announced, which another live node may still
+// present. A receiver behind a balancer pins the anchor, not a leaf.
+//
+// **KEYED BY THE CERTIFICATE'S ALGORITHM UNIT** (`rsa`, `ml-dsa-65`, …) —
+// the `unit` the event names — holding `{ fingerprint256, at }`. Public
+// fingerprints only. Written whenever the listener takes a certificate this
+// service issued, at start and at every re-issue, so the next start compares
+// with the latest.
+//
+// **IT SURVIVES A RESTART WHEREVER MINTED STATE DOES** — product mode on
+// postgres, a cluster, a dispatched pool (`persistence_minted.js`'s
+// `enabled()`). In `memory` mode, on an `ldif` store and in a
+// single-process development service it does not, so a restart there is not
+// announced; nothing could have been pinned across it, since development
+// builds a new Root at every start.
+//
+// **NEVER RECORDED, NEVER ANNOUNCED**: a self-signed bootstrap certificate (a
+// process with no hierarchy — `selfSigned` is false only on one this service
+// ISSUED), a supplied one (`tls.certificateFile`) and a request worker's
+// handed-in copy (`listenerCertificatesOwned()` excludes both).
+// ---------------------------------------------------------------------------
+const announcedListener = realms.sharedMap({ persist: 'tls.listenerAnnounced',
+                                             scope: 'shared' });
+// Set by `listen()`: from then on a first issued certificate is compared at
+// once rather than left for it.
+let listened = false;
+
+function rememberAnnounced(record) {
+  log.debug("Entering rememberAnnounced(). " + record.algorithm);
+  const unit = String(record.algorithm);
+  const held = announcedListener.get(unit);
+  if (!held || held.fingerprint256 !== record.fingerprint256) {
+    announcedListener.set(unit, { fingerprint256: record.fingerprint256,
+                                  at: new Date().toISOString() });
+  }
+  log.debug("Leaving rememberAnnounced().");
+}
+
+// The units whose issued certificate differs from what the service last
+// announced, as the event's `rotated` rows. A unit with no record is
+// remembered and not announced: nothing was announced for it to differ from
+// (a first start, or a store that keeps nothing across a restart). Remembers
+// every certificate it is shown, so asking twice announces once.
+function listenerChangesSinceAnnounced(records) {
+  log.debug("Entering listenerChangesSinceAnnounced().");
+  const rotated = [];
+  (records || []).forEach(function (record) {
+    if (!record || record.selfSigned !== false || record.handedIn ||
+        record.algorithm === 'supplied' || !record.fingerprint256) {
+      return;
+    }
+    const held = announcedListener.get(String(record.algorithm));
+    const was = (held && held.fingerprint256) || '';
+    if (was && was !== record.fingerprint256) {
+      rotated.push({ unit: String(record.algorithm), from: was,
+                     to: record.fingerprint256 });
+    }
+    rememberAnnounced(record);
+  });
+  log.debug("Leaving listenerChangesSinceAnnounced(). " + rotated.length);
+  return rotated;
+}
+
+// Compare and, when anything moved, send ONE event naming every unit, with
+// the reason `restarted`. Never throws into a start.
+function announceSinceLastStart(records) {
+  log.debug("Entering announceSinceLastStart().");
+  let rotated = [];
+  try {
+    rotated = listenerChangesSinceAnnounced(records);
+  } catch (e) {
+    // The record could not be read or written; the certificate is served
+    // either way, and the next start compares again.
+    log.warn('tls: the listener certificate could not be compared with the ' +
+             'one last announced: ' + ((e && e.message) || e));
+    rotated = [];
+  }
+  if (!rotated.length) {
+    log.debug("Leaving announceSinceLastStart(). Nothing moved.");
+    return 0;
+  }
+  log.info('tls: the listener presents ' + rotated.length + ' certificate(s) ' +
+           'other than the one(s) this service last announced — the key is ' +
+           'made at every start — so tls-certificate-changed goes to every ' +
+           'realm\'s streams, reason "restarted".');
+  sendCertificateNotice(rotated, 'restarted');
+  log.debug("Leaving announceSinceLastStart().");
+  return rotated.length;
+}
+
+// What the store says was last announced, for a page and for the tests.
+function lastAnnouncedListenerCertificates() {
+  log.debug("Entering lastAnnouncedListenerCertificates().");
+  const out = {};
+  announcedListener.forEach(function (value, unit) {
+    out[unit] = Object.assign({}, value);
+  });
+  log.debug("Leaving lastAnnouncedListenerCertificates().");
+  return out;
 }
 
 // ---------------------------------------------------------------------------
@@ -4443,6 +4581,11 @@ function listen() {
   // ---------------------------------------------------------------------
   reloadStoredAnchors();
   applyAnchors();
+  // AND A LISTENER CERTIFICATE OTHER THAN THE ONE LAST ANNOUNCED IS
+  // ANNOUNCED (#264), now that the main port is bound — `server.js` calls
+  // this from its listening callback. See `announceSinceLastStart()`.
+  listened = true;
+  announceSinceLastStart(listenerCertificatesOwned());
   log.info('tls: no listener of this module\'s own to bind — the 8443 and ' +
            '9443 listeners were deleted on 2026-09-16 and the main port ' +
            'carries what they did. The client truststore holds ' +
@@ -4459,6 +4602,9 @@ function close() {
 module.exports = {
   listen: listen,
   close: close,
+  // What the service last announced of the listener certificate (#264).
+  lastAnnouncedListenerCertificates: lastAnnouncedListenerCertificates,
+  listenerChangesSinceAnnounced: listenerChangesSinceAnnounced,
   // Exported for tests, which check these without opening a socket.
   splitPemCertificates: splitPemCertificates,
   // The RFC 4514 form of a subject. It now LIVES in common/helpers.js and is

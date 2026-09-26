@@ -1225,21 +1225,33 @@ const STS_EVENTS = [
     uriMember: 'certificate_uri',
     uriWhat: 'GET /tls/server-certificate, which publishes the certificate ' +
              'the main port presents and the anchor it chains to.',
+    // `restarted` (#264): the listener key is made again at every start, so
+    // a start presents a certificate nobody was told about. Only this type
+    // can say it — a signing key, an entity key and an authority are kept
+    // across a restart.
+    reasons: ['restarted'],
+    reasonsWhat: ' For this type, "restarted": the service (or one node of ' +
+                 'it) started and presents a certificate other than the ' +
+                 'one it last announced.',
     what: 'NON-SPEC, this service\'s own. The certificate this service\'s ' +
           'main port (and LDAPS, and every realm\'s SPIRE Server API) ' +
           'presents was re-issued — the certificate hierarchy it chains to ' +
-          'was rebuilt. A receiver that pins the certificate or its anchor ' +
-          'fetches them again. Sent to every realm\'s streams, because the ' +
-          'listener is the whole service\'s.'
+          'was rebuilt, or the service started again with a listener key ' +
+          'made at that start. A receiver that pins the certificate or its ' +
+          'anchor fetches them again. Sent to every realm\'s streams, ' +
+          'because the listener is the whole service\'s.'
   })
 ];
 
 // One row of the key-event family above: the shared shape, with the address
 // and the unit wording of its own. `rotated` is "<unit> <from> -> <to>" in
-// every one of them, `reason` the same three words as signing-key-rotated.
+// every one of them, `reason` the same three words as signing-key-rotated,
+// plus any a row adds of its own (`spec.reasons` — tls-certificate-changed's
+// `restarted`, #264).
 function keyEventRow(spec) {
   log.debug("Entering keyEventRow(). " + spec.name);
-  const reasons = ['scheduled', 'requested', 'emergency'];
+  const reasons = ['scheduled', 'requested', 'emergency']
+    .concat(spec.reasons || []);
   const extra = spec.extra || [];
   const row = {
     uri: STS_PREFIX + spec.name,
@@ -1254,7 +1266,7 @@ function keyEventRow(spec) {
       { name: 'reason', required: true, type: 'enum', values: reasons,
         what: 'Why: the schedule, an administrator, or a key presumed ' +
               'compromised — in which case what it signed no longer ' +
-              'verifies.' },
+              'verifies.' + (spec.reasonsWhat || '') },
       { name: spec.uriMember, required: false, type: 'string',
         what: spec.uriWhat }
     ].concat(extra).concat([
