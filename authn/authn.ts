@@ -189,6 +189,10 @@ import audit = require('../common/audit');
 // The client's JA4 TLS fingerprint, for the authentication event (#62 P0). A
 // LIBRARY (rule 3) with library requires only.
 import clientHello = require('../tls/client_hello');
+// WHICH REGISTERED DEVICE PROVED AN AUTHENTICATION (#164 phase 2): a
+// library over the device register that registers nothing and requires
+// nothing of this module's (`common/device_recognition.ts`).
+import deviceRecognition = require('../common/device_recognition');
 // ONE END PER SESSION IN THE CLUSTER (2026-09-14, #46 section 6). A library:
 // it requires `persistence.js` lazily and registers nothing. See
 // sessionEndOnce() below.
@@ -1047,6 +1051,7 @@ type SessionRow = Record<string, any>;
 interface AuthnDeps {
   accountSignals: typeof accountSignals;
   clientHello: typeof clientHello;
+  deviceRecognition: typeof deviceRecognition;
   crypto: typeof crypto;
   stsCrypto: typeof stsCrypto;
   realms: typeof realms;
@@ -1096,6 +1101,7 @@ class Authn {
     return {
       accountSignals: accountSignals,
       clientHello: clientHello,
+      deviceRecognition: deviceRecognition,
       crypto: crypto,
       stsCrypto: stsCrypto,
       realms: realms,
@@ -2894,8 +2900,56 @@ class Authn {
       authenticated: detail.authenticated !== false,
       authority: authority,
       evidence: detail.key ? String(detail.key) : '',
-      context: this.eventContext(detail)
+      context: this.eventContext(detail),
+      registeredDevice: this.registeredDeviceFor(detail)
     };
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE REGISTERED DEVICE THAT PROVED THIS AUTHENTICATION (#164 decision 1,
+  // phase 2, 2026-09-26), or null: a linked WebAuthn credential that
+  // answered, or the client certificate on this connection, recognised by
+  // `common/device_recognition.ts`, which argues what counts. It is recorded
+  // on the EVENT, beside `context`, as `registeredDevice` — `context.device`
+  // is the browser fingerprint (#62 P6), a different thing — so every event
+  // of a session says which device proved it, and later phases (compliance,
+  // risk, policy, CAEP, token claims) read it from the session through
+  // `registeredDeviceOf()`. A compromised device is recognised and says so.
+  // A recogniser that throws records nothing and refuses nothing: a sign-in
+  // is not the place a device register's defect should show.
+  // ---------------------------------------------------------------------------
+  private registeredDeviceFor(detail) {
+    const { log, audit, deviceRecognition } = this.deps;
+    log.debug("Entering Authn.registeredDeviceFor().");
+    const given = detail.credential || {};
+    let fact = null;
+    try {
+      fact = deviceRecognition.recognize({
+        request: detail.request || audit.currentRequest(),
+        webauthnCredentialId: given.kind === 'webauthn' ? String(given.id ||
+                                                                  '') : '',
+        clientId: detail.application || undefined });
+    } catch (e) {
+      log.error(this.deps.errorCodes.tag('STS-DEVICE-0029') + 'authn: ' +
+                'recognising the device behind a sign-in threw: ' +
+                ((e && e.stack) || e));
+      fact = null;
+    }
+    log.debug("Leaving Authn.registeredDeviceFor(). " +
+              (fact ? fact.id : 'none'));
+    return fact;
+  }
+
+  // The registered device the session's LATEST authentication event
+  // recognised, or null (#164 phase 2). What a later phase reads.
+  registeredDeviceOf(session) {
+    const { log } = this.deps;
+    log.debug("Entering Authn.registeredDeviceOf().");
+    const events = session && Array.isArray(session.events)
+      ? session.events : [];
+    const last = events.length ? events[events.length - 1] : null;
+    log.debug("Leaving Authn.registeredDeviceOf().");
+    return (last && last.registeredDevice) || null;
   }
 
   // ---------------------------------------------------------------------------
@@ -10506,6 +10560,7 @@ export = {
   // itself would be a second place to get the handle check wrong.
   sessionStartedAt: slot.forward('sessionStartedAt'),
   signOnFactsFor: slot.forward('signOnFactsFor'),
+  registeredDeviceOf: slot.forward('registeredDeviceOf'),
   cookieSession: slot.forward('cookieSession'),
   MAX_SESSION_EVENTS: MAX_SESSION_EVENTS,
   startArrivalSession: slot.forward('startArrivalSession'),

@@ -4297,6 +4297,87 @@ const SETTINGS = [
                  'realm keeps for Monitoring → Devices. The oldest is ' +
                  'dropped when a new one is recorded past it.' },
 
+  // #164 PHASE 2 (2026-09-26): enrolment and recognition.
+  // `common/device_enrolment.ts` and `common/device_attestation.ts` argue
+  // them.
+  { key: 'devices.challengeTtlSeconds', group: 'Devices',
+    label: 'Enrolment challenge lifetime (seconds)',
+    env: 'STS_DEVICES_CHALLENGE_TTL_SECONDS', type: 'int', dflt: 300,
+    min: 30, max: 3600, runtime: true,
+    description: 'How long a challenge /portal/devices issues for a key ' +
+                 'proof, an Android Key Attestation or an Apple App ' +
+                 'Attest statement may be answered. It is answered once, ' +
+                 'by the session it was issued to.' },
+  { key: 'devices.maxChallenges', group: 'Devices',
+    label: 'Enrolment challenges held',
+    env: 'STS_DEVICES_MAX_CHALLENGES', type: 'int', dflt: 10000,
+    min: 100, max: 1000000, runtime: true,
+    description: 'How many unanswered enrolment challenges this realm ' +
+                 'holds. One session holds at most one per purpose; past ' +
+                 'this the oldest is dropped when a new one is issued.' },
+  { key: 'devices.androidAttestationTrustAnchors', group: 'Devices',
+    label: 'Android Key Attestation roots (PEM)',
+    env: 'STS_DEVICES_ANDROID_ATTESTATION_TRUST_ANCHORS', type: 'string',
+    dflt: '', runtime: true,
+    description: 'The roots an Android Key Attestation chain must end at, ' +
+                 'as a PEM bundle. Empty — the default — uses Google\'s ' +
+                 'two published hardware attestation roots, shipped in ' +
+                 'common/pki_device_anchors.json and pinned there by ' +
+                 'SHA-256. Set, it REPLACES them.' },
+  { key: 'devices.androidMinimumSecurityLevel', group: 'Devices',
+    label: 'Android Key Attestation: least security level',
+    env: 'STS_DEVICES_ANDROID_MINIMUM_SECURITY_LEVEL', type: 'enum',
+    enumValues: ['trusted-environment', 'strongbox'],
+    dflt: 'trusted-environment', runtime: true,
+    description: 'The KeyMint security level an attested Android key must ' +
+                 'have: a TEE (`trusted-environment`) or a separate ' +
+                 'secure element (`strongbox`). A SOFTWARE key is never ' +
+                 'attested, whatever this says.' },
+  { key: 'devices.appleAppAttestTrustAnchors', group: 'Devices',
+    label: 'Apple App Attest root (PEM)',
+    env: 'STS_DEVICES_APPLE_APP_ATTEST_TRUST_ANCHORS', type: 'string',
+    dflt: '', runtime: true,
+    description: 'The root an App Attest certificate chain must end at, as ' +
+                 'a PEM bundle. Empty — the default — uses the Apple App ' +
+                 'Attestation Root CA, shipped in ' +
+                 'common/pki_device_anchors.json and pinned by SHA-256. ' +
+                 'Set, it REPLACES it.' },
+  { key: 'devices.appleAppAttestAppIds', group: 'Devices',
+    label: 'Apple App Attest app identifiers',
+    env: 'STS_DEVICES_APPLE_APP_ATTEST_APP_IDS', type: 'csv', dflt: '',
+    runtime: true,
+    description: 'The apps whose App Attest keys this realm registers, as ' +
+                 'TEAMID.bundle.id, comma-separated: the authenticator ' +
+                 'data\'s RP ID hash must be the SHA-256 of one. Empty — ' +
+                 'the default — accepts no App Attest statement at all.' },
+  { key: 'devices.appleAppAttestAllowDevelopment', group: 'Devices',
+    label: 'Apple App Attest: accept the development environment',
+    env: 'STS_DEVICES_APPLE_APP_ATTEST_ALLOW_DEVELOPMENT', type: 'bool',
+    dflt: false, runtime: true,
+    description: 'Accept a key attested in App Attest\'s DEVELOPMENT ' +
+                 'environment (AAGUID `appattestdevelop`), which Apple ' +
+                 'issues to builds signed for development. Off: only ' +
+                 'the production environment (`appattest`).' },
+  { key: 'devices.tpmTrustAnchors', group: 'Devices',
+    label: 'TPM attestation roots (PEM)',
+    env: 'STS_DEVICES_TPM_TRUST_ANCHORS', type: 'string', dflt: '',
+    runtime: true,
+    description: 'The roots a TPM Attestation Key certificate must chain ' +
+                 'to — a TPM manufacturer\'s EK or AK CA, or the ' +
+                 'enterprise CA that certified the AK — as a PEM bundle. ' +
+                 'Nothing is shipped: there are dozens of manufacturers ' +
+                 'and an operator knows which it buys. Empty verifies no ' +
+                 'TPM key attestation, so EST and SCEP device keys are ' +
+                 'self-asserted (and refused in product).' },
+  { key: 'devices.lastUsedResolutionSeconds', group: 'Devices',
+    label: 'Last-used resolution (seconds)',
+    env: 'STS_DEVICES_LAST_USED_RESOLUTION_SECONDS', type: 'int', dflt: 60,
+    min: 0, max: 86400, runtime: true,
+    description: 'A recognised device\'s last-used time is written to the ' +
+                 'directory at most this often, so a busy device is not a ' +
+                 'directory write on every token request. 0 writes it on ' +
+                 'every recognition.' },
+
   // OPENID CONNECT CIBA (#131). `oauth-oidc/ciba.ts` argues them.
   { key: 'oauth2.ciba', group: 'OAuth 2.0 / OIDC',
     label: 'CIBA (backchannel authentication)',

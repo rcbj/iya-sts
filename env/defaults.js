@@ -398,10 +398,19 @@ var config = {
 
   // --- Devices ---------------------------------------------------------
   devices: {
-    maxPerPerson: 20,        // Devices one person may hold
-    maxPerApplication: 1000, // Devices one application may own
-    maxKeysPerDevice: 10,    // Keys one device may hold
-    eventsKept: 5000         // Device events kept for monitoring
+    maxPerPerson: 20,                                  // Devices one person may hold
+    maxPerApplication: 1000,                           // Devices one application may own
+    maxKeysPerDevice: 10,                              // Keys one device may hold
+    eventsKept: 5000,                                  // Device events kept for monitoring
+    challengeTtlSeconds: 300,                          // Enrolment challenge lifetime (seconds)
+    maxChallenges: 10000,                              // Enrolment challenges held
+    androidAttestationTrustAnchors: "",                // Android Key Attestation roots (PEM)
+    androidMinimumSecurityLevel: "trusted-environment", // Android Key Attestation: least security level
+    appleAppAttestTrustAnchors: "",                    // Apple App Attest root (PEM)
+    appleAppAttestAppIds: "",                          // Apple App Attest app identifiers
+    appleAppAttestAllowDevelopment: false,             // Apple App Attest: accept the development environment
+    tpmTrustAnchors: "",                               // TPM attestation roots (PEM)
+    lastUsedResolutionSeconds: 60                      // Last-used resolution (seconds)
   },
 
   // --- PKI -------------------------------------------------------------

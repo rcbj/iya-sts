@@ -7768,6 +7768,99 @@ function azureImdsRoots() {
     .certificates;
 }
 
+// ----- A device key's attestation roots (#164 phase 2, 2026-09-26) ----------
+//
+// Android Key Attestation and Apple App Attest each chain to ONE vendor's
+// root, and both vendors publish them: `pki_device_anchors.json` is
+// GENERATED from those publications (its `_provenance` says which URLs), as
+// `pki_cloud_anchors.json` is from SPIRE's. **Each certificate is PINNED by
+// the SHA-256 of its DER**, recomputed here at load: a certificate that does
+// not match its pin is not used, logged under STS-DEVICE-0027 — so a hand
+// edit of the file, or a merge that mangled a line, fails CLOSED to a smaller
+// anchor set rather than to one nobody reviewed. They are public certificates
+// and not key material; rcbj's rule about key material in git is about keys
+// and the test CAs, which are generated at test time.
+//
+// **WHY SHIPPED, WHEN `webauthn.attestationTrustAnchors` SHIPS NOTHING.**
+// A WebAuthn authenticator's roots come from the FIDO Metadata Service,
+// which #105 imports; nothing plays that part for a phone's key store. An
+// empty default would make every Android and Apple key self-asserted, and
+// refused in product, until an operator went and found two certificates
+// every deployment needs. The TPM set is the opposite case — dozens of
+// manufacturers, and an operator knows which it buys — so nothing is
+// shipped for it (`devices.tpmTrustAnchors`).
+//
+// A realm's setting, when it holds any certificate, REPLACES the shipped set
+// for that kind: a test configures its own generated root, and an operator
+// who wants to drop a vendor can.
+let deviceAnchors = null;
+const DEVICE_ANCHOR_KINDS = ['androidKeyAttestation', 'appleAppAttest'];
+
+function deviceAnchorTable() {
+  log.debug("Entering deviceAnchorTable().");
+  if (!deviceAnchors) {
+    const raw = require('./pki_device_anchors.json');
+    const table = {};
+    DEVICE_ANCHOR_KINDS.forEach(function (kind) {
+      table[kind] = (raw[kind] || []).filter(function (row) {
+        const one = certificateBundle(row.pem).certificates[0] || null;
+        const digest = one ? nodeCrypto.createHash('sha256').update(one.der)
+          .digest('hex') : '';
+        if (!one || digest !== String(row.sha256 || '').toLowerCase()) {
+          log.error(errorCodes.tag('STS-DEVICE-0027') + 'pki: the shipped ' +
+                    kind + ' anchor "' + String(row.subject || '') + '" ' +
+                    'does not match its pinned SHA-256 and is not used.');
+          return false;
+        }
+        return true;
+      }).map(function (row) {
+        return String(row.pem);
+      });
+    });
+    deviceAnchors = table;
+  }
+  log.debug("Leaving deviceAnchorTable().");
+  return deviceAnchors;
+}
+
+// The anchors a device key attestation of `kind` ('androidKeyAttestation',
+// 'appleAppAttest' or 'tpm') must chain to, as certificateFromDer()
+// answers, and where they came from: `{ anchors, source }`, `source` being
+// 'configured', 'shipped' or 'none'.
+function deviceAttestationAnchors(kind, configuredPem) {
+  log.debug("Entering deviceAttestationAnchors(). " + kind);
+  const configured = certificateBundle(configuredPem).certificates;
+  if (configured.length) {
+    log.debug("Leaving deviceAttestationAnchors(). Configured.");
+    return { anchors: configured, source: 'configured' };
+  }
+  const shipped = DEVICE_ANCHOR_KINDS.indexOf(kind) >= 0
+    ? certificateBundle(deviceAnchorTable()[kind].join('\n')).certificates
+    : [];
+  log.debug("Leaving deviceAttestationAnchors(). " + shipped.length +
+            " shipped.");
+  return { anchors: shipped, source: shipped.length ? 'shipped' : 'none' };
+}
+
+// The shipped set, described for Protocols → Device registration: subject,
+// expiry and pin of each, per kind. Never a certificate's text.
+function describeDeviceAnchors() {
+  log.debug("Entering describeDeviceAnchors().");
+  const raw = require('./pki_device_anchors.json');
+  const usable = deviceAnchorTable();
+  const out = {};
+  DEVICE_ANCHOR_KINDS.forEach(function (kind) {
+    out[kind] = (raw[kind] || []).map(function (row) {
+      return { subject: String(row.subject || ''),
+               notAfter: String(row.notAfter || ''),
+               sha256: String(row.sha256 || ''),
+               used: usable[kind].indexOf(String(row.pem)) >= 0 };
+    });
+  });
+  log.debug("Leaving describeDeviceAnchors().");
+  return out;
+}
+
 // ----- The FIDO Metadata Service's BLOB (#62 P5, 2026-09-22) ----------------
 //
 // FIDO MDS3 (FIDO Metadata Service v3.0, section 3.1.8) publishes one signed
@@ -8140,6 +8233,8 @@ module.exports = {
   checkSshHostCertificate: checkSshHostCertificate,
   awsIidCertificate: awsIidCertificate,
   azureImdsRoots: azureImdsRoots,
+  deviceAttestationAnchors: deviceAttestationAnchors,
+  describeDeviceAnchors: describeDeviceAnchors,
   TIERS: TIERS,
   TIER_IDS: TIER_IDS,
   // A GETTER, so a reader of `pki.MAX_OBJECTS` sees `pki.maxStoredObjects`.

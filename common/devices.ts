@@ -723,6 +723,47 @@ class Devices {
     return found;
   }
 
+  // The device a linked WebAuthn credential id belongs to, or null — what
+  // recognition asks at a sign-in, where the assertion names its credential
+  // by id (phase 2).
+  byCredentialId(credentialId: unknown): Device | null {
+    const { log } = this.deps;
+    log.debug("Entering Devices.byCredentialId().");
+    const wanted = String(credentialId || '');
+    const found = wanted ? this.all().filter(function (one) {
+      return one.keys.some(function (k) {
+        return k.kind === 'webauthn' && k.material &&
+               String(k.material.credentialId || '') === wanted;
+      });
+    })[0] || null : null;
+    log.debug("Leaving Devices.byCredentialId(). " + !!found);
+    return found;
+  }
+
+  // A RECOGNISED device (phase 2): its last use moves, and the application
+  // it was recognised for is linked. Written at most once per
+  // `devices.lastUsedResolutionSeconds` unless an application is new to it,
+  // so a busy device is not a directory write on every token request.
+  // Answers whether anything was written.
+  noteRecognized(device: Device, clientId?: unknown): boolean {
+    const { log, config } = this.deps;
+    log.debug("Entering Devices.noteRecognized(). id=" + device.id);
+    const before = device.applications.length;
+    this.linkApplication(device, clientId);
+    const resolution = Number(config.value(
+      'devices.lastUsedResolutionSeconds')) * 1000;
+    const last = Date.parse(device.lastUsed || '') || 0;
+    const stale = this.deps.now() - last >= resolution;
+    if (!stale && device.applications.length === before) {
+      log.debug("Leaving Devices.noteRecognized(). Recent enough.");
+      return false;
+    }
+    device.lastUsed = this.nowIso();
+    const written = this.write(device);
+    log.debug("Leaving Devices.noteRecognized(). " + written);
+    return written;
+  }
+
   // The device a secret belongs to, or null — compared in constant time.
   bySecret(secret: unknown): Device | null {
     const { log, stsCrypto } = this.deps;
@@ -1756,6 +1797,8 @@ export = {
   listForOwner: slot.forward('listForOwner'),
   byId: slot.forward('byId'),
   bySecret: slot.forward('bySecret'),
+  byCredentialId: slot.forward('byCredentialId'),
+  noteRecognized: slot.forward('noteRecognized'),
   byKeyThumbprint: slot.forward('byKeyThumbprint'),
   ownerOf: slot.forward('ownerOf'),
   issueForSession: slot.forward('issueForSession'),

@@ -304,6 +304,10 @@ import identityAssurance = require('../common/identity_assurance');
 // against `ou=devices`. A library over `credentials.ts`; it requires nothing
 // that requires this file.
 import devices = require('../common/devices');
+// WHICH REGISTERED DEVICE A TOKEN REQUEST CAME FROM (#164 phase 2): a DPoP
+// key, an RFC 8705 certificate or a Native SSO secret the register holds. A
+// library over `devices` and `mtls.js`; it requires nothing of this file.
+import deviceRecognition = require('../common/device_recognition');
 // OPENID CONNECT CIBA (#131): the requests, their approval and the
 // notifications — a library over `common/` and `federation_http`; it reaches
 // this file back only lazily, for a push.
@@ -465,6 +469,7 @@ interface OAuth2ServerDeps {
   claimAttributes: typeof claimAttributes;
   identityAssurance: typeof identityAssurance;
   devices: typeof devices;
+  deviceRecognition: typeof deviceRecognition;
   ciba: typeof ciba;
   grantManagement: typeof grantManagement;
   // OpenID Federation client registration (#134), LAZILY: `oidfed/` is
@@ -1603,6 +1608,7 @@ class OAuth2Server {
       claimAttributes: claimAttributes,
       identityAssurance: identityAssurance,
       devices: devices,
+      deviceRecognition: deviceRecognition,
       ciba: ciba,
       grantManagement: grantManagement,
       federatedRegistration: function (): Json {
@@ -4381,6 +4387,48 @@ class OAuth2Server {
 
   // ASYNCHRONOUS BECAUSE idToken() IS, and for no other reason: everything else
   // it mints is RS256 and stays in this process.
+  // ---------------------------------------------------------------------------
+  // WHICH REGISTERED DEVICE THIS ISSUANCE CAME FROM (#164 decision 1, phase 2,
+  // 2026-09-26): `common/device_recognition.ts`'s fact, or null. The evidence
+  // at a token request is the DPoP proof's key (`jkt`, which is RFC 7638 and
+  // so a device jwk key's thumbprint with no conversion), the RFC 8705 client
+  // certificate on the connection, and a Native SSO device_secret — the one
+  // the second app's exchange presents, or the one the first app's code
+  // grant presented or was just given. Asked only when there is evidence,
+  // because a recognition reads the register. It is carried as
+  // `opts.registered_device` to `checkIssuance()`, `accessToken()` and
+  // `idToken()`, where phase 6's claims and policy read it; `ownerMatches`
+  // says whether the device is the token subject's own. A recogniser that
+  // throws records nothing and refuses nothing.
+  // ---------------------------------------------------------------------------
+  recognizedDeviceFor(opts: Json): Json {
+    const { log, mtls, deviceRecognition } = this.deps;
+    log.debug("Entering OAuth2Server.recognizedDeviceFor().");
+    const o = opts || {};
+    const secret = String(o.native_sso_device_secret ||
+                          o.presented_device_secret || '');
+    const req = o.request || null;
+    if (!o.jkt && !secret && !(req && mtls.peerCertificate(req))) {
+      log.debug("Leaving OAuth2Server.recognizedDeviceFor(). No evidence.");
+      return null;
+    }
+    let fact: Json = null;
+    try {
+      fact = deviceRecognition.recognize({
+        request: req, dpopJkt: o.jkt || '', deviceSecret: secret,
+        clientId: o.client_id || undefined,
+        subject: String((o.user && o.user.username) || o.username || '') });
+    } catch (e) {
+      log.error(this.deps.errorCodes.tag('STS-DEVICE-0029') + 'oauth2: ' +
+                'recognising the device behind a token request threw: ' +
+                ((e && e.stack) || e));
+      fact = null;
+    }
+    log.debug("Leaving OAuth2Server.recognizedDeviceFor(). " +
+              (fact ? fact.id : 'none'));
+    return fact;
+  }
+
   async tokenSet(base: Json, opts: Json): Promise<Json> {
     const { log, randomId, hasScope, mtls, bcp, debuggerAccess,
             scopePolicy } = this.deps;
@@ -4407,6 +4455,14 @@ class OAuth2Server {
     // generations is `parent_refresh_jti`, which is a different relation and is
     // drawn as one at /admin/tokens/credential.
     opts = Object.assign({}, opts, { set_id: randomId(12) });
+    // THE REGISTERED DEVICE, AS A FACT ON THE ISSUANCE (#164 phase 2).
+    // `issue()` at the token endpoint puts it on `opts.registered_device`
+    // before `checkIssuance()`; a door that mints here without going through
+    // it is asked here, so every token set carries the same fact. See
+    // recognizedDeviceFor().
+    if (opts.registered_device === undefined) {
+      opts.registered_device = self.recognizedDeviceFor(opts);
+    }
     // THE SCOPES THIS CLIENT MAY BE ISSUED (#110) — the backstop. The
     // endpoints REFUSE a scope the client did not declare (scopeRefusal());
     // what reaches here undeclared is a grant carrying its scope from earlier
@@ -4609,6 +4665,13 @@ class OAuth2Server {
       if (minted.ok) {
         deviceSecret = minted.secret;
         body.device_secret = minted.secret;
+        // The device this grant just made or re-bound IS the device the
+        // request came from; the ID Token below is minted with the fact.
+        if (!opts.registered_device) {
+          opts.registered_device = self.recognizedDeviceFor(
+            Object.assign({}, opts, { native_sso_device_secret:
+                                        minted.secret }));
+        }
         // Where the realm's session store is the directory's, the device
         // is the record an administrator reads; the log says it happened.
         log.info('oauth2: Native SSO — ' + (minted.reused ? 'device ' +
@@ -11519,6 +11582,13 @@ class OAuth2Server {
       // grant is decided, and a seventh added below inherits the decision
       // without its author having to know it exists. It THROWS on a refusal —
       // see checkIssuance() — which is caught at the foot of this function.
+      // THE REGISTERED DEVICE (#164 phase 2), recognised here — every grant
+      // mints through this closure — and BEFORE the issuance gate, so the
+      // policy phase 6 writes decides on it. A fact; nothing is refused here.
+      if (opts.registered_device === undefined) {
+        opts.registered_device = self.recognizedDeviceFor(
+          Object.assign({ request: req, jkt: dpopJkt }, opts));
+      }
       self.checkIssuance(opts);
       // #34: and the two settings that refuse to hand out a refresh token that
       // is not sender-constrained. Here for the same reason, and reading

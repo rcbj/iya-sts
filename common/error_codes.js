@@ -13319,6 +13319,82 @@ const CODES = [
       'owner enrolled, or the device\'s owner is an application ' +
       '(#164).',
     spec: 'HTTP 400 (API) or a 303 with error=' },
+  { code: 'STS-DEVICE-0016',
+    summary: 'A device enrolment challenge was refused: none was named, it ' +
+      'is ' +
+      'unknown or expired, it was issued to another session or person, or it ' +
+      'was already answered (#164 phase 2).',
+    spec: 'HTTP 400 (JSON) or the page with the sentence' },
+  { code: 'STS-DEVICE-0017',
+    summary: 'A device key proof (a JWS over an enrolment challenge) is ' +
+      'malformed, is signed with an algorithm not accepted, does not verify ' +
+      'under the key in its own header, or carries the wrong typ, nonce, aud ' +
+      'or iat (#164 phase 2).',
+    spec: 'HTTP 400 (JSON) or the page with the sentence' },
+  { code: 'STS-DEVICE-0018',
+    summary: 'An Android Key Attestation on a device key proof did not ' +
+      'verify: the x5c chain, the leaf\'s key, the key attestation ' +
+      'extension, ' +
+      'the attestationChallenge or the security level (#164 phase 2).',
+    spec: 'HTTP 400 (JSON) or the page with the sentence' },
+  { code: 'STS-DEVICE-0019',
+    summary: 'An Apple App Attest attestation object did not verify: its ' +
+      'CBOR, the certificate chain to the App Attestation root, the nonce, ' +
+      'the key id, the app id, the counter or the AAGUID (#164 phase 2).',
+    spec: 'HTTP 400 (JSON) or the page with the sentence' },
+  { code: 'STS-DEVICE-0020',
+    summary: 'A TPM key attestation in a certificate request ' +
+      '(draft-ietf-lamps-csr-attestation, tcg-attest-tpm-certify) did not ' +
+      'verify: the AK chain, the TPMS_ATTEST, its signature, or the ' +
+      'certified ' +
+      'key\'s name and attributes (#164 phase 2).',
+    spec: 'EST 400 / SCEP failInfo badRequest' },
+  { code: 'STS-DEVICE-0021',
+    summary: 'A certificate request\'s id-aa-attestation attribute is ' +
+      'malformed, or there is more than one ' +
+      '(draft-ietf-lamps-csr-attestation ' +
+      'section 4.3) (#164 phase 2).',
+    spec: 'EST 400 / SCEP failInfo badRequest' },
+  { code: 'STS-DEVICE-0022',
+    summary: 'A WebAuthn credential could not be linked to a device: it is ' +
+      'not one the signed-in person enrolled, or the fresh assertion with it ' +
+      'did not verify (#164 phase 2).',
+    spec: 'HTTP 400 (the page with the sentence)' },
+  { code: 'STS-DEVICE-0023',
+    summary: 'A device certificate (the device profile over EST or SCEP) was ' +
+      'refused by the identity rule: the device named is unknown, or it is ' +
+      'not the requester\'s and the requester holds no Admin Write (#164 ' +
+      'phase 2, rule 3ag).',
+    spec: 'EST 403 / SCEP failInfo badRequest' },
+  { code: 'STS-DEVICE-0024',
+    summary: 'Product mode refused a device key presented without a ' +
+      'verifiable attestation (common/mode.js acceptsUnattestedDeviceKeys()) ' +
+      '(#164 decision 9).',
+    spec: 'HTTP 400 (JSON or page) / EST 403 / SCEP failInfo badRequest' },
+  { code: 'STS-DEVICE-0025',
+    summary: 'The device profile was asked for where it is not issued: over ' +
+      'ACME, or as a re-enrollment of a certificate (a device is re-enrolled ' +
+      'with simpleenroll naming its urn:sts:device: name) (#164 phase 2).',
+    spec: 'HTTP 403 / EST 403 / SCEP failInfo badRequest' },
+  { code: 'STS-DEVICE-0026',
+    summary: 'A POST to /portal/devices or /portal/devices/proof was ' +
+      'malformed (#164 phase 2).',
+    spec: 'HTTP 400' },
+  { code: 'STS-DEVICE-0027',
+    summary: 'A shipped device attestation trust anchor ' +
+      '(common/pki_device_anchors.json) did not match its pinned SHA-256 and ' +
+      'was not used (#164 phase 2).',
+    spec: 'none — logged; the anchor set is smaller' },
+  { code: 'STS-DEVICE-0028',
+    summary: 'A device enrolment challenge could not be proved unspent ' +
+      'because the claim store could not be asked, so it was refused (#164 ' +
+      'phase 2).',
+    spec: 'HTTP 503 (JSON) or the page with the sentence' },
+  { code: 'STS-DEVICE-0029',
+    summary: 'Recognising the registered device behind a sign-in or a ' +
+      'token request threw; nothing was recorded and nothing refused ' +
+      '(#164 phase 2).',
+    spec: 'none — logged' },
   // ===== XACML =============================================================
   { code: 'STS-XACML-0001',
     summary: 'A request reached an XACML endpoint while the family is ' +

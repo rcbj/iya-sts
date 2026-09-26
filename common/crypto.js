@@ -6964,6 +6964,128 @@ function androidKeyDescription(extnValue) {
   return out;
 }
 
+// ----- A certificate request's attestation (#164 phase 2, 2026-09-26) ------
+//
+// draft-ietf-lamps-csr-attestation (revision 29, September 2026) section
+// 4.3: a PKCS#10 request carries at most ONE attribute of type
+// id-aa-attestation (1.2.840.113549.1.9.16.2.59) holding exactly one
+//
+//   AttestationBundle ::= SEQUENCE {
+//     attestations SEQUENCE SIZE (1..MAX) OF AttestationStatement,
+//     certs SEQUENCE SIZE (1..MAX) OF LimitedCertChoices OPTIONAL }
+//   AttestationStatement ::= SEQUENCE { type OBJECT IDENTIFIER, stmt ANY }
+//
+// and LimitedCertChoices is a Certificate or an `other [3]`. Revision 29
+// defines NO statement format (section 4.2); the TPM 2.0 one this service
+// verifies is the TCG's `tcg-attest-tpm-certify` (2.23.133.20.1), whose
+// syntax the draft carried in its appendix A.2.3 until revision 21:
+//
+//   Tcg-csr-tpm-certify ::= SEQUENCE {
+//     tpmSAttest OCTET STRING, signature OCTET STRING,
+//     tpmTPublic OCTET STRING OPTIONAL }
+//
+// These answer the structures; `common/device_attestation.ts` verifies them.
+const ID_AA_ATTESTATION = '1.2.840.113549.1.9.16.2.59';
+const TCG_ATTEST_TPM_CERTIFY = '2.23.133.20.1';
+
+// An AttestationBundle's DER as `{ attestations: [{ type, stmt }], certs:
+// [der], otherCerts }` — `stmt` the DER of the statement's value, `certs`
+// the X.509 certificates, `otherCerts` how many `other` formats were carried
+// (none is read). Throws a sentence on anything else.
+function csrAttestationBundle(der) {
+  log.debug("Entering csrAttestationBundle().");
+  const read = berOf(der);
+  const items = read instanceof asn1js.Sequence ? read.valueBlock.value : null;
+  if (!items || items.length < 1 || items.length > 2 ||
+      !(items[0] instanceof asn1js.Sequence)) {
+    log.debug("Leaving csrAttestationBundle(). Not a bundle.");
+    // error-code: none — a parse failure, refused by the caller
+    throw new Error('the id-aa-attestation value is not an AttestationBundle');
+  }
+  const attestations = items[0].valueBlock.value.map(function (one) {
+    const pair = one instanceof asn1js.Sequence ? one.valueBlock.value : [];
+    if (pair.length !== 2 ||
+        !(pair[0] instanceof asn1js.ObjectIdentifier)) {
+      // error-code: none — a parse failure, refused by the caller
+      throw new Error('an AttestationStatement is not { type, stmt }');
+    }
+    return { type: pair[0].valueBlock.toString(),
+             stmt: Buffer.from(pair[1].valueBeforeDecodeView) };
+  });
+  if (!attestations.length) {
+    log.debug("Leaving csrAttestationBundle(). No statement.");
+    // error-code: none — a parse failure, refused by the caller
+    throw new Error('the AttestationBundle carries no attestation ' +
+                    '(SIZE (1..MAX))');
+  }
+  const certs = [];
+  let otherCerts = 0;
+  if (items[1]) {
+    if (!(items[1] instanceof asn1js.Sequence) ||
+        !items[1].valueBlock.value.length) {
+      log.debug("Leaving csrAttestationBundle(). Bad certs.");
+      // error-code: none — a parse failure, refused by the caller
+      throw new Error('the AttestationBundle\'s certs is not a non-empty ' +
+                      'SEQUENCE');
+    }
+    items[1].valueBlock.value.forEach(function (one) {
+      if (one instanceof asn1js.Sequence) {
+        certs.push(Buffer.from(one.valueBeforeDecodeView));
+      } else if (one.idBlock.tagClass === 3 && one.idBlock.tagNumber === 3) {
+        otherCerts++;
+      } else {
+        // error-code: none — a parse failure, refused by the caller
+        throw new Error('a certificate in the AttestationBundle is neither ' +
+                        'a Certificate nor an other format (the draft ' +
+                        'forbids the attribute-certificate choices)');
+      }
+    });
+  }
+  log.debug("Leaving csrAttestationBundle(). " + attestations.length +
+            " statement(s), " + certs.length + " certificate(s).");
+  return { attestations: attestations, certs: certs, otherCerts: otherCerts };
+}
+
+// A TPM2B's contents when `bytes` is exactly one TPM2B (a big-endian size
+// then that many bytes), else `bytes` unchanged. The draft's appendix said
+// the attester sends "TPM2B_ATTEST in binary format" and "TPM2B_PUBLIC"
+// while the signature and the Name are over the contents, so both spellings
+// are read, as WebAuthn's tpm format reads `sig` both ways.
+function tpm2bContents(bytes) {
+  log.debug("Entering tpm2bContents().");
+  const buf = Buffer.from(bytes || []);
+  const sized = buf.length >= 2 && buf.readUInt16BE(0) === buf.length - 2;
+  log.debug("Leaving tpm2bContents(). " + (sized ? 'Sized.' : 'Bare.'));
+  return sized ? buf.subarray(2) : buf;
+}
+
+// Tcg-csr-tpm-certify's DER as `{ tpmSAttest, signature, tpmTPublic }`,
+// each a Buffer (tpmTPublic null when absent), with TPM2B size prefixes
+// taken off. Throws a sentence.
+function tcgTpmCertifyStatement(der) {
+  log.debug("Entering tcgTpmCertifyStatement().");
+  const read = berOf(der);
+  const items = read instanceof asn1js.Sequence ? read.valueBlock.value : [];
+  const octets = items.filter(function (one) {
+    return one instanceof asn1js.OctetString;
+  });
+  if (items.length < 2 || items.length > 3 || octets.length !== items.length) {
+    log.debug("Leaving tcgTpmCertifyStatement(). Not the structure.");
+    // error-code: none — a parse failure, refused by the caller
+    throw new Error('the tcg-attest-tpm-certify statement is not SEQUENCE ' +
+                    '{ tpmSAttest, signature, tpmTPublic OPTIONAL }');
+  }
+  const bytes = function (one) {
+    log.debug("Entering bytes().");
+    log.debug("Leaving bytes().");
+    return Buffer.from(one.valueBlock.valueHexView);
+  };
+  log.debug("Leaving tcgTpmCertifyStatement().");
+  return { tpmSAttest: tpm2bContents(bytes(items[0])),
+           signature: bytes(items[1]),
+           tpmTPublic: items[2] ? tpm2bContents(bytes(items[2])) : null };
+}
+
 // ===========================================================================
 // SECTION 11 — SIGSTORE AND TUF: CANONICAL JSON, THRESHOLD SIGNATURES, THE
 // REKOR SIGNED ENTRY TIMESTAMP AND DSSE (#170, 2026-09-23)
@@ -7790,6 +7912,11 @@ module.exports = {
   fidoAaguidExtension: fidoAaguidExtension,
   appleAttestationNonce: appleAttestationNonce,
   androidKeyDescription: androidKeyDescription,
+  ID_AA_ATTESTATION: ID_AA_ATTESTATION,
+  TCG_ATTEST_TPM_CERTIFY: TCG_ATTEST_TPM_CERTIFY,
+  csrAttestationBundle: csrAttestationBundle,
+  tpm2bContents: tpm2bContents,
+  tcgTpmCertifyStatement: tcgTpmCertifyStatement,
   // --- the algorithm URIs, so that there is one spelling of each in the
   //     process. Taken from the vendored module rather than re-declared.
   DS_NS: xmldsig.DS_NS,

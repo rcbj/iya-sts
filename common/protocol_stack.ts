@@ -245,6 +245,17 @@ class ProtocolStack {
     // #130: the device register (ou=devices), a library over the directory
     // hooks `credentials.ts` carries; Native SSO mints its devices.
     this.build('common/devices', require('./devices'), 'Devices');
+    // #164 phase 2: what a device key's attestation proves
+    // (`device_attestation`), which device a request came from
+    // (`device_recognition`, asked by `authn` and `oauth2` below), and a
+    // person registering their own device by proving a key
+    // (`device_enrolment`, the portal's door). Three libraries (rule 3).
+    this.build('common/device_attestation', require('./device_attestation'),
+               'DeviceAttestation');
+    this.build('common/device_recognition', require('./device_recognition'),
+               'DeviceRecognition');
+    this.build('common/device_enrolment', require('./device_enrolment'),
+               'DeviceEnrolment');
     // #127: a person's identity verifications and the `verified_claims`
     // answer. A library, asked by the authorization server's claims request,
     // the console and API, and the wallet and certificate sign-ins.

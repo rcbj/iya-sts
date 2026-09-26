@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3505** of them, in **39** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3519** of them, in **39** subsystems.
 
 ## Where a code appears
 
@@ -79,7 +79,7 @@ is an ordinary outcome.
 * [Risk scoring (`STS-RISK`)](#sts-risk) — 38
 * [Mail (`STS-MAIL`)](#sts-mail) — 39
 * [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 282
-* [Device register (`STS-DEVICE`)](#sts-device) — 15
+* [Device register (`STS-DEVICE`)](#sts-device) — 29
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 74
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 32
 * [Admin console (`STS-ADMIN`)](#sts-admin) — 198
@@ -3274,6 +3274,20 @@ Raised from: common/devices.ts, admin-ui/devices_admin.ts.
 | `STS-DEVICE-0013` | A POST to /admin/devices or /admin-api/devices named an action that does not exist (#218). | HTTP 400 (API) or a 303 with error= |
 | `STS-DEVICE-0014` | A console session with Admin Read only posted to /admin/devices (#218). | HTTP 303 with error= |
 | `STS-DEVICE-0015` | A WebAuthn key named for a device is not a security key its owner enrolled, or the device's owner is an application (#164). | HTTP 400 (API) or a 303 with error= |
+| `STS-DEVICE-0016` | A device enrolment challenge was refused: none was named, it is unknown or expired, it was issued to another session or person, or it was already answered (#164 phase 2). | HTTP 400 (JSON) or the page with the sentence |
+| `STS-DEVICE-0017` | A device key proof (a JWS over an enrolment challenge) is malformed, is signed with an algorithm not accepted, does not verify under the key in its own header, or carries the wrong typ, nonce, aud or iat (#164 phase 2). | HTTP 400 (JSON) or the page with the sentence |
+| `STS-DEVICE-0018` | An Android Key Attestation on a device key proof did not verify: the x5c chain, the leaf's key, the key attestation extension, the attestationChallenge or the security level (#164 phase 2). | HTTP 400 (JSON) or the page with the sentence |
+| `STS-DEVICE-0019` | An Apple App Attest attestation object did not verify: its CBOR, the certificate chain to the App Attestation root, the nonce, the key id, the app id, the counter or the AAGUID (#164 phase 2). | HTTP 400 (JSON) or the page with the sentence |
+| `STS-DEVICE-0020` | A TPM key attestation in a certificate request (draft-ietf-lamps-csr-attestation, tcg-attest-tpm-certify) did not verify: the AK chain, the TPMS_ATTEST, its signature, or the certified key's name and attributes (#164 phase 2). | EST 400 / SCEP failInfo badRequest |
+| `STS-DEVICE-0021` | A certificate request's id-aa-attestation attribute is malformed, or there is more than one (draft-ietf-lamps-csr-attestation section 4.3) (#164 phase 2). | EST 400 / SCEP failInfo badRequest |
+| `STS-DEVICE-0022` | A WebAuthn credential could not be linked to a device: it is not one the signed-in person enrolled, or the fresh assertion with it did not verify (#164 phase 2). | HTTP 400 (the page with the sentence) |
+| `STS-DEVICE-0023` | A device certificate (the device profile over EST or SCEP) was refused by the identity rule: the device named is unknown, or it is not the requester's and the requester holds no Admin Write (#164 phase 2, rule 3ag). | EST 403 / SCEP failInfo badRequest |
+| `STS-DEVICE-0024` | Product mode refused a device key presented without a verifiable attestation (common/mode.js acceptsUnattestedDeviceKeys()) (#164 decision 9). | HTTP 400 (JSON or page) / EST 403 / SCEP failInfo badRequest |
+| `STS-DEVICE-0025` | The device profile was asked for where it is not issued: over ACME, or as a re-enrollment of a certificate (a device is re-enrolled with simpleenroll naming its urn:sts:device: name) (#164 phase 2). | HTTP 403 / EST 403 / SCEP failInfo badRequest |
+| `STS-DEVICE-0026` | A POST to /portal/devices or /portal/devices/proof was malformed (#164 phase 2). | HTTP 400 |
+| `STS-DEVICE-0027` | A shipped device attestation trust anchor (common/pki_device_anchors.json) did not match its pinned SHA-256 and was not used (#164 phase 2). | none — logged; the anchor set is smaller |
+| `STS-DEVICE-0028` | A device enrolment challenge could not be proved unspent because the claim store could not be asked, so it was refused (#164 phase 2). | HTTP 503 (JSON) or the page with the sentence |
+| `STS-DEVICE-0029` | Recognising the registered device behind a sign-in or a token request threw; nothing was recorded and nothing refused (#164 phase 2). | none — logged |
 
 ## STS-XACML
 
