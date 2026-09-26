@@ -1062,7 +1062,8 @@ and `sts_admin_console` drive both doors over HTTP with a CA they mint and remov
 
 ## THE PROTOCOL POLICY, AND THE BIND ADDRESS
 
-**`protocolOptions()` is where `tls.minVersion` and `tls.ciphers` are stated for every TLS
+**`protocolOptions()` is where `tls.minVersion`, `tls.ciphers` — and since #212
+`tls.groups`, `tls.signatureAlgorithms` and the renegotiation refusal — are stated for every TLS
 socket this process owns** — it rides in `secureContextOptions()`, so every truststore
 change re-applies it to every registered listener (the main port among them),
 `server.js` passes it when creating the main port, and
@@ -1092,6 +1093,86 @@ refusal) and the fatal cipher list. **Its real-handshake assertion that
 2026-09-16**, and is made against LDAPS 636 now — a socket another module
 builds from the same `protocolOptions()`. Mutation-tested against the product
 refusal removed.
+
+## WHAT tlsfuzzer FOUND (2026-09-26, #212)
+
+tlsfuzzer runs against all three listeners that present this module's
+certificate: the main port and LDAPS from `tests/vendored/sts_tlsfuzzer.js`,
+and the debugger's from `tests/tlsfuzzer_debugger.js`. Both run the plan in
+`tests/vendored/tlsfuzzer_kit.js`, which records every exception with its
+reason; `tests/CLAUDE.md` (*THE TLS FUZZER*) says how it runs. It found four
+things in this module's policy, all fixed here.
+
+* **A CLIENT CERTIFICATE ON A BRAINPOOL CURVE CRASHED THE PROCESS.** Node
+  24.16.0 (OpenSSL 3.5.6) dies with SIGSEGV converting a certificate whose EC
+  key is on a curve with no NIST name (brainpool, secp256k1) into the object
+  `getPeerCertificate()` returns. `toLegacyObject()` crashes the same way on
+  its own; the `X509Certificate` accessors do not. The crash happens for
+  such a certificate anywhere in the chain `getPeerCertificate(true)` walks:
+  a P-256 leaf sent with a brainpool issuer is enough. The revocation check
+  (`fromSocket()`) and the path rules walk that chain on the two listeners
+  that ask for a certificate. There are two defences:
+  1. **`tls.signatureAlgorithms` offers no brainpool scheme**, so a brainpool
+     LEAF fails inside OpenSSL. TLS 1.2 already refused the curve ("wrong
+     curve").
+  2. **`refuseUnreadableCertificatesOn()` guards the whole chain.** It is
+     prepended to `secureConnection` on every listener registered through
+     `trustClientCertificatesOn()`, and reads the chain ONCE through
+     `getPeerX509Certificate()`, which is the only safe way. That has a
+     price: after it, node's own `getPeerCertificate(true)` on that socket
+     has no `issuerCertificate` (measured; `tests/revocation_status.js`
+     caught the first version of this guard). So what happens next depends
+     on the chain:
+     * a certificate on an unreadable curve anywhere in it: the connection
+       is closed and `getPeerCertificate` answers `{}`, `STS-TLS-0035`;
+     * otherwise `getPeerCertificate` is REPLACED on the socket with node's
+       own objects (each certificate's `toLegacyObject()`, the same
+       conversion). They are linked the way node links them: the chain sent,
+       then issuers from the listener's anchors, and a self-issued top
+       pointing at itself.
+
+  The SPIFFE gRPC listeners belong to grpc-js, so they get only the first
+  defence, `SpiffeGrpc.READABLE_SIGALGS`. That is the whole of what they
+  need: grpc-js calls `getPeerCertificate()` for `getAuthContext()` WITHOUT
+  `detailed`, which converts the leaf alone, and nothing in `spiffe/` walks
+  the chain.
+  `tests/tls_protocol_policy.js` C runs the crash and the guard in child
+  processes: the leaf, the issuer, and a chain read whole. When node fixes
+  the crash, that file says so, and the guard should be revisited. It has
+  not been reported to node.
+* **`tls.groups`**: the key-exchange groups, as OpenSSL tuples. The three
+  post-quantum hybrids come first, then X25519 and P-256, then X448, P-384
+  and P-521. Node's `auto` offered one hybrid of the three, plus ffdhe2048
+  and ffdhe3072. Across tuples OpenSSL sends a HelloRetryRequest for an
+  earlier tuple the client supports, so a hybrid-capable client that guessed
+  X25519 is moved to the hybrid.
+* **`tls.signatureAlgorithms`**: OpenSSL's list without DSA, SHA-224 and
+  brainpool. Every TLS 1.2 CertificateRequest used to advertise
+  `dsa_sha224`–`dsa_sha512` and both SHA-224 schemes, and so a `dss_sign`
+  certificate type. The CertificateRequest is what this service asks a
+  client certificate to be signed with.
+* **No TLS 1.2 renegotiation** (`SSL_OP_NO_RENEGOTIATION`, unconditional).
+  The main port accepted a client-initiated secure renegotiation; node only
+  counts them (three per ten minutes). Nothing here renegotiates, since a
+  certificate is asked for in the first handshake.
+
+`protocolOptions()` states all four, and `secureContextOptions()` spreads it
+whole. Before this it copied `minVersion` and `ciphers` by name, so a new
+option would have been lost at a listener's first truststore change. The
+debugger's listener is created from it as well.
+
+**What was recorded rather than fixed** is the kit's `WHY` table. Each entry
+is Node/OpenSSL behaviour this service cannot configure, and each is also on
+#212:
+* alert choices that differ from tlsfuzzer's expectations;
+* SNI parsing with no `SNICallback`;
+* no stateful session-ID cache (tickets work);
+* no NewSessionTicket after a PSK resumption;
+* no `psk_ke`;
+* a lazy KeyUpdate answer;
+* OpenSSL checking `legacy_record_version`;
+* the hybrid and compressed-point leniency;
+* no ALPN on LDAPS.
 
 ## THE PROXY PROTOCOL COMES OFF BEFORE THE HANDSHAKE (2026-09-14, #46)
 

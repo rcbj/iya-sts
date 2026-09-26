@@ -11207,8 +11207,8 @@ const CODES = [
     spec: 'UNAUTHENTICATED / PERMISSION_DENIED, as for any unverified caller' },
   // ===== TLS ===============================================================
   { code: 'STS-TLS-0001',
-    summary: 'The service did not start: tls.minVersion or tls.ciphers ' +
-      'cannot build a TLS context.',
+    summary: 'The service did not start: tls.minVersion, tls.ciphers, ' +
+      'tls.groups or tls.signatureAlgorithms cannot build a TLS context.',
     spec: '' },
   { code: 'STS-TLS-0002',
     summary: 'The service did not start: tls.certificateFile and tls.keyFile ' +
@@ -11358,6 +11358,12 @@ const CODES = [
       'unknown_ca) during the handshake. From a browser it almost always ' +
       'means the client does not trust this service\'s Root CA (#225).',
     spec: 'TLS handshake failure (the client closed the connection)' },
+  { code: 'STS-TLS-0035',
+    summary: 'A connection was closed because its client certificate (or ' +
+      'one in its chain) has an EC key on a curve with no NIST name — ' +
+      'brainpool, secp256k1 — which node 24.16.0 crashes converting for ' +
+      'getPeerCertificate() (#212).',
+    spec: 'the connection is closed after the handshake' },
   // ===== VC ================================================================
   { code: 'STS-VC-0001',
     summary: 'An oid4vci encryption setting names no content encryption ' +

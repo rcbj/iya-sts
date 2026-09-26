@@ -268,6 +268,13 @@ function truststoreOpenToAnybody() {
 // suites first whatever a client lists. An empty `tls.ciphers` still means
 // `tls.DEFAULT_CIPHERS`.
 //
+// AND THE GROUPS AND SIGNATURE ALGORITHMS SINCE #212 (2026-09-26):
+// `tls.groups` (node's ecdhCurve) and `tls.signatureAlgorithms` (sigalgs).
+// tlsfuzzer found node's defaults offering one of OpenSSL's three post-quantum
+// hybrid groups and both finite-field ones, and advertising DSA and SHA-224 in
+// every TLS 1.2 CertificateRequest; each row in common/config.js says what
+// its default is instead and why.
+//
 // **A CIPHER LIST THAT MATCHES NOTHING STOPS THE SERVICE HERE**, at require
 // time, naming the setting. Found any later it is a TypeError out of
 // `https.createServer()` in `server.js`, or — worse, through
@@ -285,6 +292,26 @@ function protocolOptions() {
   if (ciphers) {
     options.ciphers = ciphers;
   }
+  // THE GROUPS AND THE SIGNATURE ALGORITHMS (#212, 2026-09-26) — see their
+  // rows in common/config.js. Empty leaves node's own: 'auto' for the
+  // groups, and OpenSSL's list for the signature algorithms.
+  const groups = String(config.value('tls.groups') || '').trim();
+  if (groups) {
+    options.ecdhCurve = groups;
+  }
+  const sigalgs = String(config.value('tls.signatureAlgorithms') || '').trim();
+  if (sigalgs) {
+    options.sigalgs = sigalgs;
+  }
+  // NO TLS 1.2 RENEGOTIATION, IN EITHER DIRECTION (#212, 2026-09-26).
+  // tlsfuzzer's test-renegotiation-disabled found the main port accepting a
+  // client-initiated secure renegotiation (node only counts them, three per
+  // ten minutes, and then drops the socket). Nothing in this service
+  // renegotiates — a client certificate is asked for in the first handshake
+  // — and each renegotiation is a full handshake's CPU spent at the peer's
+  // choosing, so OpenSSL refuses every one with a no_renegotiation warning.
+  // TLS 1.3 has no renegotiation to refuse.
+  options.secureOptions = crypto.constants.SSL_OP_NO_RENEGOTIATION;
   log.debug("Leaving protocolOptions().");
   return options;
 }
@@ -295,11 +322,14 @@ function protocolOptions() {
     tls.createSecureContext(protocolOptions());
   } catch (e) {
     log.fatal(errorCodes.tag('STS-TLS-0001') + 'tls: NOT STARTING. ' +
-              'tls.minVersion / tls.ciphers (STS_TLS_MIN_VERSION / ' +
-              'STS_TLS_CIPHERS) cannot build a TLS ' +
-              'context: ' + e.message + '. An OpenSSL cipher list names ' +
-              'suites such as ECDHE-RSA-AES256-GCM-SHA384, and an empty one ' +
-              'means node\'s default.');
+              'tls.minVersion / tls.ciphers / tls.groups / ' +
+              'tls.signatureAlgorithms (STS_TLS_MIN_VERSION / ' +
+              'STS_TLS_CIPHERS / STS_TLS_GROUPS / STS_TLS_SIGALGS) cannot ' +
+              'build a TLS context: ' + e.message + '. An OpenSSL cipher ' +
+              'list names suites such as ECDHE-RSA-AES256-GCM-SHA384, a ' +
+              'groups list names groups such as X25519MLKEM768:P-256, a ' +
+              'signature list schemes such as rsa_pss_rsae_sha256, and an ' +
+              'empty one means node\'s default.');
     process.exit(1);
   }
   log.debug("Leaving checkProtocolOptions().");
@@ -1437,12 +1467,13 @@ function secureContextOptions() {
     }),
     ca: anchors.map(function (anchor) { return anchor.pem; })
       .concat(issuedClientCertificateAnchor()),
-    // The protocol floor and cipher list — see protocolOptions(). In here so
-    // that a truststore change, which re-applies this whole object, cannot
-    // quietly reset a listener to node's defaults.
-    minVersion: protocolOptions().minVersion,
-    ciphers: protocolOptions().ciphers,
-    honorCipherOrder: true
+    // The protocol floor, the cipher list, the groups and the signature
+    // algorithms — see protocolOptions(). In here so that a truststore
+    // change, which re-applies this whole object, cannot quietly reset a
+    // listener to node's defaults. All of it since #212: the groups and
+    // signature algorithms were added to protocolOptions() alone, and a
+    // listener would have lost them at its first re-application.
+    ...protocolOptions()
   };
 }
 
@@ -2043,6 +2074,229 @@ function adoptServerCertificate(bundle) {
 // ---------------------------------------------------------------------------
 const externalServers = [];
 
+// ---------------------------------------------------------------------------
+// A CLIENT CERTIFICATE NODE CANNOT READ IS REFUSED, AND EVERY READER IS SERVED
+// FROM ONE SAFE READING (#212, 2026-09-26).
+//
+// tlsfuzzer's test-tls13-ecdsa-brainpool-in-certificate-verify took the
+// whole process down: exit 139, SIGSEGV. Node 24.16.0 (OpenSSL 3.5.6)
+// crashes converting an X.509 certificate whose key is on an elliptic curve
+// with no NIST name — brainpoolP256r1/384r1/512r1, secp256k1 — into the
+// object `getPeerCertificate()` returns (`X509Certificate#toLegacyObject()`
+// crashes the same way, standalone; the X509Certificate accessors do not).
+// It crashes for such a certificate ANYWHERE in the chain `getPeerCertificate
+// (true)` walks — a P-256 leaf presented with a brainpool issuer is enough —
+// and the revocation check and the path rules walk it for every connection
+// that presents a certificate. The main port and the debugger ask every
+// connection for one.
+//
+// THE ONE SAFE WAY TO LOOK IS `getPeerX509Certificate()`, AND IT HAS A PRICE
+// OF ITS OWN: once it has been called, a later `getPeerCertificate(true)` on
+// the same socket has no `issuerCertificate` at all (measured on 24.16.0 —
+// the revocation_status suite caught it the first time this guard used it).
+// So this guard reads the chain ONCE, that way, prepended to
+// `secureConnection` so it runs before every other reader, and then:
+//
+//   * a certificate on a curve node cannot read, anywhere in the chain:
+//     `getPeerCertificate` answers node's own "no certificate" ({}), the
+//     connection is closed, `STS-TLS-0035`;
+//   * otherwise `getPeerCertificate(detailed)` is REPLACED on the socket by
+//     the same objects node would have built — each certificate's own
+//     `toLegacyObject()`, which is the same C++ conversion — linked by
+//     `issuerCertificate` exactly as node links them: the chain the client
+//     sent, then issuers found among this listener's trust anchors
+//     (node completes from the context's store), and a self-issued top
+//     pointing at itself.
+//
+// The first defence is `tls.signatureAlgorithms`, whose default offers no
+// brainpool scheme, so a brainpool LEAF fails inside OpenSSL (TLS 1.2 already
+// refuses the curve: "wrong curve"). Only this one covers the chain.
+// ---------------------------------------------------------------------------
+const NODE_READABLE_CURVES = new Set([
+  'prime192v1', 'secp224r1', 'prime256v1', 'secp384r1', 'secp521r1',
+  'sect163k1', 'sect163r2', 'sect233k1', 'sect233r1', 'sect283k1',
+  'sect283r1', 'sect409k1', 'sect409r1', 'sect571k1', 'sect571r1'
+]);
+
+// Why node cannot convert this certificate, or ''.
+function unreadableKey(cert) {
+  log.debug("Entering unreadableKey().");
+  const key = cert.publicKey;
+  if (key.asymmetricKeyType !== 'ec') {
+    log.debug("Leaving unreadableKey(). Not EC.");
+    return '';
+  }
+  const curve = String((key.asymmetricKeyDetails || {}).namedCurve || '');
+  log.debug("Leaving unreadableKey(). " + curve);
+  return NODE_READABLE_CURVES.has(curve) ? ''
+    : 'an EC key on ' + (curve || 'an unnamed curve');
+}
+
+// The trust anchors a listener's context holds, parsed once per PEM.
+const parsedAnchors = new Map();
+function anchorCertificates() {
+  log.debug("Entering anchorCertificates().");
+  const out = [];
+  (secureContextOptions().ca || []).forEach(function (pem) {
+    const text = String(pem);
+    if (!parsedAnchors.has(text)) {
+      let parsed = null;
+      try {
+        parsed = new crypto.X509Certificate(text);
+      } catch (e) {
+        log.debug("Caught in anchorCertificates(): " +
+                  ((e && e.message) || e));
+        // An anchor node cannot parse completes no chain; it is skipped.
+        parsed = null;
+      }
+      parsedAnchors.set(text, parsed);
+    }
+    if (parsedAnchors.get(text)) {
+      out.push(parsedAnchors.get(text));
+    }
+  });
+  log.debug("Leaving anchorCertificates(). " + out.length);
+  return out;
+}
+
+// The peer's chain as X509Certificate objects, leaf first: what the client
+// sent, then issuers from the anchors, stopping at a self-issued top.
+// `selfIssuedTop` says whether the last one issued itself.
+function peerChainOf(leaf) {
+  log.debug("Entering peerChainOf().");
+  const chain = [leaf];
+  const seen = new Set([leaf.fingerprint256]);
+  let next = leaf.issuerCertificate;
+  while (next && chain.length < 16 && !seen.has(next.fingerprint256)) {
+    chain.push(next);
+    seen.add(next.fingerprint256);
+    next = next.issuerCertificate;
+  }
+  let top = chain[chain.length - 1];
+  let selfIssuedTop = top.checkIssued(top);
+  const anchors = selfIssuedTop ? [] : anchorCertificates();
+  while (!selfIssuedTop && chain.length < 16) {
+    const issuer = anchors.find(function (one) {
+      return !seen.has(one.fingerprint256) && top.checkIssued(one);
+    });
+    if (!issuer) {
+      break;
+    }
+    chain.push(issuer);
+    seen.add(issuer.fingerprint256);
+    top = issuer;
+    selfIssuedTop = top.checkIssued(top);
+  }
+  log.debug("Leaving peerChainOf(). " + chain.length);
+  return { chain: chain, selfIssuedTop: selfIssuedTop };
+}
+
+// `getPeerCertificate(detailed)` as node answers it, from the chain above.
+function legacyPeerCertificate(read, detailed) {
+  log.debug("Entering legacyPeerCertificate().");
+  if (!detailed) {
+    log.debug("Leaving legacyPeerCertificate(). Leaf.");
+    return read.chain[0].toLegacyObject();
+  }
+  const objects = read.chain.map(function (one) {
+    return one.toLegacyObject();
+  });
+  objects.forEach(function (object, i) {
+    if (i + 1 < objects.length) {
+      object.issuerCertificate = objects[i + 1];
+    }
+  });
+  if (read.selfIssuedTop) {
+    objects[objects.length - 1].issuerCertificate =
+      objects[objects.length - 1];
+  }
+  log.debug("Leaving legacyPeerCertificate(). " + objects.length);
+  return objects[0];
+}
+
+// The first certificate of the peer's chain node cannot convert, described,
+// or '' — and the chain, for the replacement reader.
+function readPeerChain(socket) {
+  log.debug("Entering readPeerChain().");
+  const leaf = typeof socket.getPeerX509Certificate === 'function'
+    ? socket.getPeerX509Certificate() : undefined;
+  if (!leaf) {
+    log.debug("Leaving readPeerChain(). No certificate.");
+    return null;
+  }
+  const read = peerChainOf(leaf);
+  read.problem = '';
+  read.chain.some(function (cert, depth) {
+    const why = unreadableKey(cert);
+    if (why) {
+      read.problem = (depth ? 'the certificate at depth ' + depth
+                            : 'the leaf') + ' (' +
+        cert.subject.replace(/\n/g, ', ') + ') has ' + why;
+    }
+    return !!why;
+  });
+  log.debug("Leaving readPeerChain(). " + (read.problem || 'readable'));
+  return read;
+}
+
+// Kept for callers that only want the verdict.
+function unreadablePeerCertificate(socket) {
+  log.debug("Entering unreadablePeerCertificate().");
+  const read = readPeerChain(socket);
+  log.debug("Leaving unreadablePeerCertificate().");
+  return read ? read.problem : '';
+}
+
+function refuseUnreadableCertificatesOn(server, label) {
+  log.debug('Entering refuseUnreadableCertificatesOn(). label=' + label);
+  server.prependListener('secureConnection', function (socket) {
+    let read = null;
+    try {
+      read = readPeerChain(socket);
+    } catch (e) {
+      // A chain X509Certificate itself cannot walk is not one this guard
+      // can judge; the socket is left exactly as node made it.
+      log.debug("Caught in refuseUnreadableCertificatesOn(): " +
+                ((e && e.message) || e));
+      read = null;
+    }
+    if (!read) {
+      return;
+    }
+    if (!read.problem) {
+      const memo = {};
+      socket.getPeerCertificate = function (detailed) {
+        log.debug("Entering getPeerCertificate() (read once).");
+        const key = detailed ? 'detailed' : 'leaf';
+        if (!memo[key]) {
+          memo[key] = legacyPeerCertificate(read, !!detailed);
+        }
+        log.debug("Leaving getPeerCertificate() (read once).");
+        return memo[key];
+      };
+      return;
+    }
+    socket.getPeerCertificate = function () {
+      log.debug("Entering getPeerCertificate() (refused).");
+      log.debug("Leaving getPeerCertificate() (refused).");
+      return {};
+    };
+    log.warn(errorCodes.tag('STS-TLS-0035') + 'tls: closed a connection on ' +
+             label + ' from ' + (socket.remoteAddress || 'an unknown ' +
+             'address') + ': ' + read.problem + ', which node cannot read ' +
+             'without crashing the process (#212). Only NIST curves are ' +
+             'read here.');
+    audit.failure('STS-TLS-0035', {
+      protocol: 'TLS', channel: 'tls', target: label,
+      summary: 'a client certificate on a curve node cannot read was ' +
+               'refused: ' + read.problem,
+      outcome: 'refused'
+    });
+    socket.destroy();
+  });
+  log.debug('Leaving refuseUnreadableCertificatesOn().');
+}
+
 function trustClientCertificatesOn(server, label) {
   log.debug('Entering trustClientCertificatesOn(). label=' + label);
   if (!server || typeof server.setSecureContext !== 'function') {
@@ -2061,6 +2315,9 @@ function trustClientCertificatesOn(server, label) {
   }
   externalServers.push({ server: server,
                          label: String(label || 'a listener') });
+  // Every listener that registers here ASKS for a client certificate (the
+  // main port, the debugger), so every one is guarded (#212).
+  refuseUnreadableCertificatesOn(server, String(label || 'a listener'));
   // APPLIED IMMEDIATELY, because anchors may already be loaded — this service
   // can be handed a truststore before the main port binds, and a listener that
   // only picked anchors up on the NEXT change would be one whose behaviour
@@ -3457,9 +3714,13 @@ function description(req) {
       anchorsFile: anchorsFileReport.file || null,
       anchorsFromFile: anchorsFileReport.loaded
     },
-    // `tls.minVersion` and `tls.ciphers`, as every TLS socket applies them.
+    // `tls.minVersion`, `tls.ciphers`, `tls.groups` and
+    // `tls.signatureAlgorithms`, as every TLS socket applies them.
     protocol: { minVersion: protocolOptions().minVersion,
-                ciphers: protocolOptions().ciphers || '(node default)' },
+                ciphers: protocolOptions().ciphers || '(node default)',
+                groups: protocolOptions().ecdhCurve || '(node default)',
+                signatureAlgorithms: protocolOptions().sigalgs ||
+                  '(node default)' },
     // WHAT A PRESENTED CERTIFICATE IS HELD TO BEYOND ITS CHAIN (2026-09-12):
     // the policy in force, how it was decided, where it is and is not
     // consulted, and the one sentence every surface repeats. The verdict for
@@ -4195,6 +4456,9 @@ module.exports = {
   // /tls/trust reaches it too — see the block above
   // trustClientCertificatesOn().
   trustClientCertificatesOn: trustClientCertificatesOn,
+  // #212: the guard, for a TLS listener that does not register above.
+  refuseUnreadableCertificatesOn: refuseUnreadableCertificatesOn,
+  unreadablePeerCertificate: unreadablePeerCertificate,
   // LDAPS 636 and the SPIRE Server API re-key themselves on this (2026-09-21).
   onServerCertificateChange: onServerCertificateChange,
   // What secureContextOptions() would give a listener created elsewhere: the
@@ -4203,7 +4467,8 @@ module.exports = {
   // listeners from the same answer applyAnchors() re-applies to them, rather
   // than assembling a second one that can drift.
   clientTruststoreOptions: secureContextOptions,
-  // `tls.minVersion` / `tls.ciphers` for a TLS listener this module does not
+  // `tls.minVersion` / `tls.ciphers` / `tls.groups` /
+  // `tls.signatureAlgorithms` for a TLS listener this module does not
   // create — LDAPS, which ldapjs builds, and the main port at creation.
   protocolOptions: protocolOptions,
   trustAnchorsFileLoaded: function () {

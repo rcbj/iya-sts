@@ -839,6 +839,14 @@ const JOBS = [
   // exception. `local: true`: this repository's SCIM surface.
   { file: 'sts_scim_conformance.js',     browser: false, local: true,
     timeoutMs: 900000 },
+  // TLSFUZZER (#212, 2026-09-26): every applicable tlsfuzzer script, pinned
+  // and fetched into the tests image by tests/tlsfuzzer/build-tlsfuzzer.sh,
+  // against the main HTTPS port and LDAPS 636 through
+  // tests/tlsfuzzer/sts_adapter.py; every failure fixed or a documented
+  // exception in tlsfuzzer_kit.js. `local: true`: this repository's TLS
+  // listeners and their policy (tls/tls_server.js).
+  { file: 'sts_tlsfuzzer.js',            browser: false, local: true,
+    timeoutMs: 2700000 },
   // THE W3C VERIFIABLE CREDENTIALS AND DID TEST SUITES (#194-#199,
   // 2026-09-26): each Working Group suite, pinned and installed in the tests
   // image by tests/vc-suites/fetch-suites.sh, run against the VC-API test
@@ -1137,6 +1145,11 @@ const LOCAL_HELPERS = [
   // bounded runner that masks secrets, the portal sign-in under a realm, a
   // CRL reader and `openssl req` at run time. Nothing from the service.
   'enroll_clients_kit.js',
+  // tlsfuzzer's PLAN (#212): every script run, not applicable or run as a
+  // refusal, each exception with its reason, and the runner that drives
+  // tests/tlsfuzzer/sts_adapter.py; shared by sts_tlsfuzzer.js and the
+  // in-process tests/tlsfuzzer_debugger.js. Nothing from the service.
+  'tlsfuzzer_kit.js',
   // A registered OAuth client and a PKCE pair, for the jobs that start an
   // authorization request: product mode refuses an unknown client_id and a
   // public client without PKCE (2026-09-18).

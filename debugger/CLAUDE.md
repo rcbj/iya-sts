@@ -121,6 +121,19 @@ than merely unusual** — which would have been an exemption dressed up as a
 refusal. `trustClientCertificatesOn()` was already registered for the leaf
 `build-root` replaces; it now keeps the ANCHORS current too.
 
+**The listener's TLS is the main port's, and tlsfuzzer holds it (#212).**
+`clientTruststoreOptions()` carries `tls_server.js`'s whole `protocolOptions()`:
+- the floor, the ciphers and the groups;
+- the signature algorithms;
+- the renegotiation refusal;
+- through `trustClientCertificatesOn()`, the guard that closes a client
+  certificate node cannot read. A brainpool certificate crashes node 24.16.0
+  in `getPeerCertificate()` (`tls/CLAUDE.md`).
+
+No test stack binds this listener, so `tests/tlsfuzzer_debugger.js` binds it
+over TLS in process, with a stand-in site and the api child's start stubbed,
+and runs the stack job's plan against it.
+
 **A DPoP-bound token presented as a Bearer token is refused, in every mode.**
 The gate had been given RFC 8705's `cnf["x5t#S256"]` check (`STS-DBG-0030`) and
 never RFC 9449's, so a token carrying `cnf.jkt` — a token whose whole point is

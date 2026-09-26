@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3684** of them, in **39** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3685** of them, in **39** subsystems.
 
 ## Where a code appears
 
@@ -73,7 +73,7 @@ is an ordinary outcome.
 * [LDAP directory (`STS-LDAP`)](#sts-ldap) — 84
 * [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 77
 * [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 144
-* [TLS and client certificates (`STS-TLS`)](#sts-tls) — 34
+* [TLS and client certificates (`STS-TLS`)](#sts-tls) — 35
 * [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 108
 * [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 114
 * [Risk scoring (`STS-RISK`)](#sts-risk) — 42
@@ -2737,7 +2737,7 @@ Raised from: tls/.
 
 | Code | What failed | Client sees |
 |---|---|---|
-| `STS-TLS-0001` | The service did not start: tls.minVersion or tls.ciphers cannot build a TLS context. | — |
+| `STS-TLS-0001` | The service did not start: tls.minVersion, tls.ciphers, tls.groups or tls.signatureAlgorithms cannot build a TLS context. | — |
 | `STS-TLS-0002` | The service did not start: tls.certificateFile and tls.keyFile must be set together and only one was. | — |
 | `STS-TLS-0003` | The service did not start: the certificate or key named by tls.certificateFile / tls.keyFile could not be read. | — |
 | `STS-TLS-0004` | The service did not start: tls.certificateFile is not a PEM certificate. | — |
@@ -2771,6 +2771,7 @@ Raised from: tls/.
 | `STS-TLS-0032` | The file named by tls.certificateFile holds self-signed certificates, none of which signs the chain the listener presents, so no trust anchor is taken from it. | — |
 | `STS-TLS-0033` | A socket that presents the listener certificate (LDAPS, the SPIRE Server API) threw while being told the certificate was re-issued; the others were still told, and the main port serves the new one. | — |
 | `STS-TLS-0034` | A TLS client REFUSED this service's certificate: it sent a certificate alert (bad_certificate, unsupported_certificate, certificate_revoked, certificate_expired, certificate_unknown or unknown_ca) during the handshake. From a browser it almost always means the client does not trust this service's Root CA (#225). | TLS handshake failure (the client closed the connection) |
+| `STS-TLS-0035` | A connection was closed because its client certificate (or one in its chain) has an EC key on a curve with no NIST name — brainpool, secp256k1 — which node 24.16.0 crashes converting for getPeerCertificate() (#212). | the connection is closed after the handshake |
 
 ## STS-VC
 
