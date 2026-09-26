@@ -795,6 +795,12 @@ const ACTIONS = [
     label: 'The issuance PEP refused to let this service mint something' },
   { action: 'xacml.access.refused', category: 'authorization',
     label: 'The access PEP refused a request to a gated surface' },
+  // #226: the issuance policy PERMITTED an elevated authentication for an
+  // application risk may never lock out (the console), with no second factor
+  // to step up to. A permit an administrator must hear about.
+  { action: 'xacml.issuance.alarm', category: 'authorization',
+    label: 'The issuance PEP let an elevated risk through, with no factor ' +
+           'to step up to, for an application risk may never lock out' },
   // AND TWO MORE OF THE SAME KIND. `xacml.pep.register` has been written by
   // `xacml/xacml.ts` since phase five and had no row here either, so every
   // remote PEP registration landed in `protocol` — the exact failure the

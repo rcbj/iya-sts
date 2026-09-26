@@ -236,6 +236,17 @@ const RISK_ATTRIBUTE = {
   OBLIGATION: 'urn:sts:xacml:obligation:risk',
   ACTION: 'urn:sts:xacml:risk-action',
   FACTOR: 'urn:sts:xacml:risk-step-up-factor',
+  // A BAG (#226): the step-ups the person COULD answer — `second-factor`
+  // when they hold an authenticator app or a security key, `security-key`
+  // when they hold a key. What lets a policy tell "ask for a factor" from
+  // "there is nothing to ask for", which is the difference between a
+  // step-up and a lockout.
+  HELD: 'urn:sts:xacml:risk-held',
+  // The obligation on a PERMIT (#226) that the policy let an elevated
+  // authentication through for an application risk may never lock out, with
+  // nothing to step up to. The PEP raises the alarm on it: an audit row
+  // (STS-RISK-0038) and a warning in the log.
+  ALARM_OBLIGATION: 'urn:sts:xacml:obligation:risk-alarm',
   // The level the person's standing moved FROM (#62 P4) — the
   // `risk-response` policy's question is about a CHANGE, and a level with
   // nothing to compare it to is the person's first. Absent then.
@@ -473,6 +484,20 @@ const TEMPLATES: TemplateRow[] = [
               'authentication carries the step-up the obligation names. ' +
               'Saying no builds the roles-only policy this was before risk ' +
               'scoring decided anything — assessments are still recorded.' },
+      { name: 'neverLockOut',
+        label: 'Applications risk may step up but never refuse (#226)',
+        dflt: 'sts-admin-console', type: 'string',
+        help: 'Application handles, comma separated. For these, a HIGH or ' +
+              'MEDIUM authentication is never refused on risk: it is asked ' +
+              'for a security key when the person holds one, a second ' +
+              'factor when they hold only that, and PERMITTED WITH AN ' +
+              'ALARM when they hold neither — the one place a step-up the ' +
+              'person cannot answer is not a refusal. The default is the ' +
+              'console, because a console nobody can sign in to is a ' +
+              'cluster nobody can repair: that is how #226 locked every ' +
+              'administrator out on one listed address. `none` puts every ' +
+              'application under the three rules above (an empty answer is ' +
+              'the default, as for every parameter here).' },
       { name: 'refuseEmailFactor',
         label: 'Refuse a session that stands on an emailed code or link (#64)',
         dflt: 'no', type: 'string',
@@ -501,6 +526,11 @@ const TEMPLATES: TemplateRow[] = [
       const decideRisk = B.yes(given.decideRisk, true);
       const refuseEmail = B.yes(given.refuseEmailFactor, false);
       const keySignals = B.listOf(given.keySignals);
+      const neverLockOut = B.listOf(given.neverLockOut === undefined
+        ? 'sts-admin-console' : given.neverLockOut)
+        .filter(function (one: string): boolean {
+          return one.toLowerCase() !== 'none';
+        });
 
       // THE INTERSECTION TEST, and it is a HIGHER-ORDER function because that
       // is the only way XACML expresses "do these two bags share a member".
@@ -586,6 +616,39 @@ const TEMPLATES: TemplateRow[] = [
             return B.value(TYPE.STRING, one);
           }))])
         : null;
+      const held = function (factor: string): any {
+        log.debug("Entering held().");
+        log.debug("Leaving held().");
+        return B.apply(F1 + 'string-is-in', [
+          B.value(TYPE.STRING, factor),
+          B.designator(env, RISK_ATTRIBUTE.HELD, TYPE.STRING)]);
+      };
+      const not = function (expression: any): any {
+        log.debug("Entering not().");
+        log.debug("Leaving not().");
+        return B.apply(F1 + 'not', [expression]);
+      };
+      // THE APPLICATIONS RISK MAY NEVER LOCK OUT (#226), by the resource-id
+      // the PEP sends — the application handle. `null` when there are none,
+      // and then the three rules below are exactly what they were.
+      const protectedApp = neverLockOut.length
+        ? B.apply(F3 + 'any-of-any', [
+          { kind: 'function', functionId: F1 + 'string-equal' },
+          B.designator(model.CATEGORY.RESOURCE, model.ATTRIBUTE.RESOURCE_ID,
+                       TYPE.STRING),
+          B.apply(F1 + 'string-bag', neverLockOut.map(function (one) {
+            return B.value(TYPE.STRING, one);
+          }))])
+        : null;
+      // `condition`, and not for a protected application.
+      const unprotected = function (condition: any): any {
+        log.debug("Entering unprotected().");
+        log.debug("Leaving unprotected().");
+        return protectedApp
+          ? B.apply(F1 + 'and', [condition, not(protectedApp)]) : condition;
+      };
+      const elevated = B.apply(F1 + 'or', [levelIs('HIGH'),
+                                           levelIs('MEDIUM')]);
       const riskRules: any[] = [];
       if (decideRisk) {
         riskRules.push({
@@ -593,8 +656,11 @@ const TEMPLATES: TemplateRow[] = [
           effect: model.EFFECT.DENY,
           description: 'Refuse an authentication whose risk is HIGH, ' +
                        'whatever roles the subject holds and however many ' +
-                       'factors it presented.',
-          target: null, condition: levelIs('HIGH'),
+                       'factors it presented' + (protectedApp
+                         ? ' — except for ' + neverLockOut.join(', ') +
+                           ', which the step-up rules below decide'
+                         : '') + '.',
+          target: null, condition: unprotected(levelIs('HIGH')),
           obligations: obligation('refuse', ''), advice: []
         });
         if (keySignal) {
@@ -605,24 +671,53 @@ const TEMPLATES: TemplateRow[] = [
                          'TLS client, refuse until the authentication used ' +
                          'a SECURITY KEY — the obligation asks for one.',
             target: null,
-            condition: B.apply(F1 + 'and', [levelIs('MEDIUM'), keySignal,
-              B.apply(F1 + 'not', [satisfied('security-key')])]),
+            condition: unprotected(B.apply(F1 + 'and', [levelIs('MEDIUM'),
+              keySignal, not(satisfied('security-key'))])),
             obligations: obligation('step-up', 'security-key'), advice: []
           });
         }
         const secondFactor = [levelIs('MEDIUM'),
-          B.apply(F1 + 'not', [satisfied('second-factor')])];
+          not(satisfied('second-factor'))];
         if (keySignal) {
-          secondFactor.push(B.apply(F1 + 'not', [keySignal]));
+          secondFactor.push(not(keySignal));
         }
         riskRules.push({
           id: options.idBase + ':rule:risk-medium-second-factor',
           effect: model.EFFECT.DENY,
           description: 'At MEDIUM, refuse until the authentication carried ' +
                        'a SECOND FACTOR — the obligation asks for one.',
-          target: null, condition: B.apply(F1 + 'and', secondFactor),
+          target: null,
+          condition: unprotected(B.apply(F1 + 'and', secondFactor)),
           obligations: obligation('step-up', 'second-factor'), advice: []
         });
+        // THE APPLICATIONS RISK MAY NEVER LOCK OUT (#226): a step-up to the
+        // strongest factor the person HOLDS, at HIGH as at MEDIUM, and never
+        // a refusal. Two rules, exclusive by what is held.
+        if (protectedApp) {
+          riskRules.push({
+            id: options.idBase + ':rule:risk-protected-key',
+            effect: model.EFFECT.DENY,
+            description: 'For ' + neverLockOut.join(', ') + ', at HIGH or ' +
+                         'MEDIUM, ask a person who holds a security key ' +
+                         'for it — never a refusal.',
+            target: null,
+            condition: B.apply(F1 + 'and', [protectedApp, elevated,
+              held('security-key'), not(satisfied('security-key'))]),
+            obligations: obligation('step-up', 'security-key'), advice: []
+          });
+          riskRules.push({
+            id: options.idBase + ':rule:risk-protected-second-factor',
+            effect: model.EFFECT.DENY,
+            description: 'For ' + neverLockOut.join(', ') + ', at HIGH or ' +
+                         'MEDIUM, ask a person who holds a second factor ' +
+                         'and no security key for it — never a refusal.',
+            target: null,
+            condition: B.apply(F1 + 'and', [protectedApp, elevated,
+              not(held('security-key')), held('second-factor'),
+              not(satisfied('second-factor'))]),
+            obligations: obligation('step-up', 'second-factor'), advice: []
+          });
+        }
       }
 
       // A SESSION ON AN EMAILED FACTOR (#64), refused when asked to be. No
@@ -678,7 +773,14 @@ const TEMPLATES: TemplateRow[] = [
                               '), a second factor otherwise'
                             : ' — a second factor') + '. The risk rules deny ' +
                           'and override the role rule; an authentication ' +
-                          'with no assessment is decided on roles alone.'
+                          'with no assessment is decided on roles alone.' +
+                          (protectedApp
+                            ? ' ' + neverLockOut.join(', ') + ' is never ' +
+                              'refused on risk: it is stepped up to the ' +
+                              'strongest factor the person holds, and ' +
+                              'permitted with an alarm when they hold none ' +
+                              '(#226).'
+                            : '')
                         : '') ,
         combiningAlgId: decideRisk || refuseEmail
           ? model.RULE_ALG.ORDERED_DENY_OVERRIDES
@@ -691,7 +793,23 @@ const TEMPLATES: TemplateRow[] = [
         // explain.
         target: null,
         variables: {},
-        rules: riskRules.concat([{
+        rules: riskRules.concat(decideRisk && protectedApp ? [{
+          // THE ALARM (#226): a protected application, an elevated risk, and
+          // no factor to ask for. The role rule still decides — this rule
+          // permits exactly what it permits, and adds the obligation that
+          // makes the PEP say so loudly.
+          id: options.idBase + ':rule:risk-protected-alarm',
+          effect: model.EFFECT.PERMIT,
+          description: 'For ' + neverLockOut.join(', ') + ', at HIGH or ' +
+                       'MEDIUM, with no second factor to ask for: permit ' +
+                       'on the roles, and raise the alarm.',
+          target: null,
+          condition: B.apply(F1 + 'and', [protectedApp, elevated,
+            not(held('second-factor')), condition]),
+          obligations: [{ id: RISK_ATTRIBUTE.ALARM_OBLIGATION,
+                          on: model.EFFECT.PERMIT, assignments: [] }],
+          advice: []
+        }] : []).concat([{
           id: options.idBase + ':rule:holds-a-required-role',
           effect: model.EFFECT.PERMIT,
           description: 'Permit when the roles the subject holds and the ' +
