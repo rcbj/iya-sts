@@ -1414,8 +1414,11 @@ class CryptoMetadata {
              introspectionJwt.ENCRYPTION_ALGS],
             ['Request object signature (RFC 9101)',
              applicationRegistry.REQUEST_OBJECT_SIGNING_ALGS],
+            // Narrowed to the ML-KEM and HPKE algs the realm holds a key
+            // for (#82), as discovery is.
             ['Request object decryption (RFC 9101)',
-             applicationRegistry.REQUEST_OBJECT_ENCRYPTION_ALGS],
+             helpers.decryptableJweAlgs(
+               applicationRegistry.REQUEST_OBJECT_ENCRYPTION_ALGS)],
             ['DPoP proof', dpop.SIGNING_ALGS],
             ['Client assertion', clientAuth.SYMMETRIC_METHODS
               .concat(clientAuth.ASYMMETRIC_METHODS)],
@@ -1432,7 +1435,8 @@ class CryptoMetadata {
             // values_supported` never moved, and `tests/vendored/admin_api.js`
             // is what compared the two.
             ['JWE key management (out)', stsCrypto.JWE_ASYMMETRIC_ALGS],
-            ['JWE key management (in)', stsCrypto.JWE_DECRYPT_ALGS],
+            ['JWE key management (in)',
+             helpers.decryptableJweAlgs(stsCrypto.JWE_DECRYPT_ALGS)],
             ['JWE content encryption', Object.keys(stsCrypto.JWE_ENCS)],
             // THE REFRESH-TOKEN ENVELOPE (2026-09-12). The WHOLE table rather
             // than the asymmetric half, because this is the one JWE here
@@ -3013,7 +3017,10 @@ class CryptoMetadata {
         // may use when IT encrypts is decided by holding the recipient's public
         // key, and what it will open is the whole table.
         keyManagementOut: stsCrypto.JWE_ASYMMETRIC_ALGS.slice(0),
-        keyManagementIn: stsCrypto.JWE_DECRYPT_ALGS.slice(0),
+        // What THIS realm will open (#82): the ML-KEM and HPKE algs only
+        // where it holds a key (`keys.encryptionKemAlgs`).
+        keyManagementIn: helpers.decryptableJweAlgs(
+          stsCrypto.JWE_DECRYPT_ALGS),
         contentEncryption: Object.keys(stsCrypto.JWE_ENCS).map(function (enc) {
           const spec = stsCrypto.JWE_ENCS[enc];
           return { enc: enc, bits: spec.bits, mode: spec.mode,
@@ -3093,10 +3100,14 @@ class CryptoMetadata {
   // to a quantum computer in 2035 is a problem in 2035. A KEY AGREEMENT is not:
   // ciphertext captured today can be kept and opened when the machine arrives,
   // which is what "harvest now, decrypt later" names. So the surface that most
-  // needs a post-quantum answer here is the one that has none — no ML-KEM key
-  // establishment happens in this process, in JWE, in XML Encryption or in TLS.
-  // (EST's `/serverkeygen` can GENERATE an ML-KEM key pair for a client since
-  // 2026-09-13; that hands a key over, it agrees none.)
+  // needs a post-quantum answer here is key establishment — and since #82
+  // (2026-09-27) it has one in JWE: ML-KEM (draft-ietf-jose-pqc-kem-05) and
+  // HPKE over ML-KEM and the PQ/T hybrids, X-Wing among them
+  // (draft-reddy-cose-jose-pqc-hybrid-hpke-11), as well as on TLS, whose
+  // hybrid groups `tls.groups` has put first since #212. XML Encryption is
+  // the one that stays classical, because no post-quantum key transport is
+  // defined for it. `keyEstablishment.surfaces` says which, surface by
+  // surface, from the settings in force in the ambient realm.
   //
   // THE THIRD CATEGORY IS THE ONE PEOPLE GET WRONG. Symmetric ciphers and
   // hashes are not broken by Shor's algorithm; Grover's costs a square root,
@@ -3114,6 +3125,127 @@ class CryptoMetadata {
   //   `symmetric`  no public-key cryptography is involved; Grover applies and
   //                the margin is what the key length says
   // ---------------------------------------------------------------------------
+  // -------------------------------------------------------------------------
+  // KEY ESTABLISHMENT, SURFACE BY SURFACE (#82) — read from what is in force
+  // in the ambient realm rather than written down, so the row cannot say
+  // "post-quantum" about a surface an administrator has left classical, or
+  // the reverse. `state` is 'pq' where a post-quantum or PQ/T hybrid key
+  // establishment is IN USE or selectable by a client today, 'optional'
+  // where it is an administrator's opt-in not taken, 'classical' where
+  // there is none to have.
+  // -------------------------------------------------------------------------
+  keyEstablishment() {
+    const { log, stsCrypto, config } = this.deps;
+    log.debug("Entering CryptoMetadata.keyEstablishment().");
+    const pqAlgs = stsCrypto.JWE_POST_QUANTUM_ALGS;
+    const isPq = function (alg: string): boolean {
+      return pqAlgs.indexOf(alg) >= 0;
+    };
+    const held = helpers.kemAlgsConfigured();
+    const heldPq = held.filter(isPq);
+    const vp = [].concat(config.value('oid4vp.responseEncryptionKeyAlgs') ||
+                         []).map(String).filter(isPq);
+    const refreshAlg = String(config.value('oauth2.refreshTokenEncryptionAlg') ||
+                              '');
+    const groups = String(config.value('tls.groups') || '');
+    const tlsPq = /MLKEM/i.test(groups);
+    const surfaces = [
+      { surface: 'JWE this service encrypts TO a client — ID Token, Logout ' +
+                 'Token, UserInfo, JARM, JWT introspection, OID4VCI ' +
+                 'Credential Response', state: 'pq',
+        how: 'A client registers an ML-KEM or HPKE-8 to HPKE-16 `alg` ' +
+             '(`id_token_encrypted_response_alg` and its siblings) and ' +
+             'publishes a matching AKP key — HPKE-10-KE is X-Wing — and ' +
+             'every one of these is encrypted with it. The advertised lists ' +
+             'are the shared JWE table, so nothing to enable here.' },
+      { surface: 'JWE sent TO this realm — encrypted request objects, RFC ' +
+                 '7523 / 7522 assertions, OID4VCI Credential Requests',
+        state: heldPq.length ? 'pq' : 'optional',
+        how: heldPq.length
+          ? 'This realm holds decryption keys for ' + heldPq.join(', ') +
+            ' (`keys.encryptionKemAlgs`), published in its JWKS and ' +
+            'advertised in the decryption lists.'
+          : 'OFF, and by design: `keys.encryptionKemAlgs` is empty, so no ' +
+            'AKP key is in this realm\'s JWKS and no ML-KEM or HPKE alg is ' +
+            'advertised for decryption. An AKP key is a key type many ' +
+            'clients\' JOSE libraries do not parse yet, so publishing one ' +
+            'is an administrator\'s choice (rcbj, #82).' },
+      { surface: 'OID4VP encrypted responses (direct_post.jwt, dc_api.jwt)',
+        state: vp.length ? 'pq' : 'classical',
+        how: vp.length
+          ? 'Each request offers ' + vp.join(', ') + ' (a key made for the ' +
+            'one transaction) ahead of or beside the P-256 ECDH-ES key HAIP ' +
+            'requires, so a wallet that can use it does ' +
+            '(`oid4vp.responseEncryptionKeyAlgs`).'
+          : 'Only ECDH-ES is offered (`oid4vp.responseEncryptionKeyAlgs`).' },
+      { surface: 'Refresh tokens (sealed to this realm itself)',
+        state: isPq(refreshAlg) ? 'pq' : 'optional',
+        how: isPq(refreshAlg)
+          ? 'Sealed with ' + refreshAlg + ' to a key pair derived from the ' +
+            'realm\'s refresh-token secret.'
+          : 'Sealed with ' + refreshAlg + '; any ML-KEM or HPKE-8 to 16 ' +
+            'alg may be chosen in `oauth2.refreshTokenEncryptionAlg`, which ' +
+            'needs no key and changes nothing a client sees.' },
+      { surface: 'TLS — the main port, LDAPS and the debugger\'s listener',
+        state: tlsPq ? 'pq' : 'classical',
+        how: tlsPq
+          ? 'The hybrid groups (X25519MLKEM768, SecP256r1MLKEM768, ' +
+            'SecP384r1MLKEM1024) come first in `tls.groups` (#212), and ' +
+            'the node in the service image — OpenSSL 3.5 — negotiates ' +
+            'them with any client that offers one.'
+          : '`tls.groups` names no ML-KEM hybrid group.' },
+      { surface: 'XML Encryption — SAML assertions, WS-Federation, WS-Trust',
+        state: 'classical',
+        how: 'RSA-OAEP key transport or ECDH-ES key agreement. XML ' +
+             'Encryption 1.1 defines no KEM and no post-quantum key ' +
+             'transport, and no W3C or IETF document has added one — the ' +
+             'CMS answer, RFC 9629\'s KEMRecipientInfo, has no XML ' +
+             'counterpart. This is a gap in the specification stack, not a ' +
+             'setting left off.' }
+    ];
+    const out = {
+      state: 'pq',
+      surfaces: surfaces,
+      mechanisms: stsCrypto.JWE_ALGS
+        .concat(Object.keys(stsCrypto.KEY_TRANSPORTS).map(function (name) {
+          return stsCrypto.KEY_TRANSPORTS[name].scheme + ' (XML ' + name +
+            ')';
+        }))
+        .concat(['TLS key exchange — tls.groups']),
+      postQuantum: pqAlgs.slice(0),
+      hybrid: stsCrypto.JWE_HYBRID_ALGS.slice(0),
+      drafts: {
+        mlKem: 'draft-ietf-jose-pqc-kem-05 — the last revision with JOSE ' +
+               'text; -06 (2026-07-06) is COSE-only. The AKP `priv` is the ' +
+               '64-octet d||z seed -06 corrected -05\'s 32 octets to.',
+        hpke: 'draft-ietf-jose-hpke-encrypt-22 (HPKE-0 to HPKE-7), over ' +
+              'draft-ietf-hpke-hpke; the KEMs of draft-ietf-hpke-pq-05',
+        hybrid: 'draft-reddy-cose-jose-pqc-hybrid-hpke-11 (HPKE-8 to ' +
+                'HPKE-16), an INDIVIDUAL draft that expired on 2026-08-20 ' +
+                'and the only document that names a hybrid JWE alg'
+      },
+      what: 'THIS IS THE HALF THAT MATTERS SOONEST: a signature is checked ' +
+            'when it is presented, so a signature algorithm that falls in ' +
+            '2035 is a problem in 2035, while ciphertext captured today can ' +
+            'be kept and opened when the machine arrives. JWE here has ' +
+            'post-quantum and PQ/T hybrid key establishment — ML-KEM, and ' +
+            'HPKE over ML-KEM or a hybrid (X-Wing is HPKE-10) — and TLS ' +
+            'puts the hybrid groups first. What stays classical is listed ' +
+            'below with its reason, and every one of these JWE algorithms ' +
+            'is from an Internet-Draft.',
+      whatWouldClose: 'XML Encryption needs a specification before it can ' +
+                      'have an implementation. The JWE algorithms become ' +
+                      'standard when their drafts do; until then an ' +
+                      'administrator opts a realm in to publishing a key ' +
+                      'for them, and a client opts in by registering one.'
+    };
+    log.debug("Leaving CryptoMetadata.keyEstablishment(). " +
+              surfaces.filter(function (row) {
+                return row.state === 'pq';
+              }).length + " surface(s) post-quantum.");
+    return out;
+  }
+
   postQuantum() {
     const { log, stsCrypto, pqJose } = this.deps;
     log.debug("Entering CryptoMetadata.postQuantum().");
@@ -3197,29 +3329,7 @@ class CryptoMetadata {
                'the AUTHENTICATOR signs, and COSE registers no post-quantum ' +
                'algorithm that a platform authenticator produces.' }
       ],
-      keyEstablishment: {
-        state: 'classical',
-        mechanisms: stsCrypto.JWE_ALGS
-          .concat(Object.keys(stsCrypto.KEY_TRANSPORTS).map(function (name) {
-            return stsCrypto.KEY_TRANSPORTS[name].scheme + ' (XML ' + name +
-              ')';
-          }))
-          .concat(['TLS key exchange — node\'s OpenSSL defaults']),
-        what: 'EVERY ONE OF THEM IS BROKEN BY SHOR\'S ALGORITHM, and there ' +
-              'is no ML-KEM anywhere in this process — not in JWE, not in ' +
-              'XML Encryption, not on any of the five TLS sockets. THIS IS ' +
-              'THE HALF THAT MATTERS SOONEST: a signature is checked when it ' +
-              'is presented, so a signature algorithm that falls in 2035 is ' +
-              'a problem in 2035, while ciphertext captured today can be ' +
-              'kept and opened when the machine arrives. Nothing this ' +
-              'service encrypts is a real secret, which is why this is a ' +
-              'fidelity gap here and would be a serious one anywhere else.',
-        whatWouldClose: 'draft-ietf-jose-pq-kem would add `ML-KEM` as a JWE ' +
-                        '`alg`, and a hybrid TLS group (X25519MLKEM768) ' +
-                        'needs only an OpenSSL that offers it. Neither is ' +
-                        'here, and this row says so rather than leaving the ' +
-                        'post-quantum signatures above to imply otherwise.'
-      },
+      keyEstablishment: this.keyEstablishment(),
       symmetric: {
         state: 'symmetric',
         what: 'Grover\'s algorithm costs a square root rather than breaking ' +
@@ -3883,13 +3993,35 @@ class CryptoMetadata {
           '</td><td>' + self.prose(row.how) + '</td></tr>';
       }).join('') + '</tbody></table>';
 
-    html += '<h3>Key establishment</h3>' +
-      admin.warn('<strong>Every key establishment mechanism in this process ' +
-                 'is ' +
-        'classical.</strong> ' + self.prose(pq.keyEstablishment.what)) +
-      '<table><tbody><tr><th class="n">Mechanisms</th><td>' +
+    html += '<h3>Key establishment, surface by surface</h3>' +
+      admin.note('<strong>Post-quantum and hybrid key establishment ' +
+                 '(#82).</strong> ' + self.prose(pq.keyEstablishment.what)) +
+      '<table><thead><tr><th class="n">Surface</th><th>State</th><th>How' +
+      '</th></tr></thead><tbody>' +
+      pq.keyEstablishment.surfaces.map(function (row) {
+        return '<tr><td class="n">' + esc(row.surface) + '</td><td>' +
+          (row.state === 'pq'
+            ? '<strong>post-quantum available</strong> ' +
+              pqcBadge.badge({ kind: 'kem', label: 'ML-KEM / HPKE',
+                               standard: 'draft-ietf-jose-pqc-kem-05, ' +
+                                 'draft-reddy-cose-jose-pqc-hybrid-hpke-11' })
+            : row.state === 'optional'
+              ? '<span class="why">post-quantum available, not enabled' +
+                '</span>'
+              : '<span class="why">classical only</span>') +
+          '</td><td>' + self.prose(row.how) + '</td></tr>';
+      }).join('') + '</tbody></table>' +
+      '<table><tbody><tr><th class="n">Post-quantum JWE algorithms</th><td>' +
+      self.chips(pq.keyEstablishment.postQuantum) + '</td></tr>' +
+      '<tr><th class="n">Of which PQ/T hybrid</th><td>' +
+      self.chips(pq.keyEstablishment.hybrid) + '</td></tr>' +
+      '<tr><th class="n">Every mechanism</th><td>' +
       self.chips(pq.keyEstablishment.mechanisms) + '</td></tr>' +
-      '<tr><th class="n">What would close it</th><td>' +
+      '<tr><th class="n">Drafts implemented</th><td>' +
+      self.prose(pq.keyEstablishment.drafts.mlKem) + '<br>' +
+      self.prose(pq.keyEstablishment.drafts.hpke) + '<br>' +
+      self.prose(pq.keyEstablishment.drafts.hybrid) + '</td></tr>' +
+      '<tr><th class="n">What remains</th><td>' +
       self.prose(pq.keyEstablishment.whatWouldClose) +
       '</td></tr></tbody></table>';
     log.debug("Leaving CryptoMetadata.renderPostQuantum().");
@@ -4397,6 +4529,36 @@ class CryptoMetadata {
           'Published at /oauth2/jwks as an AKP JWK.',
           'NOT usable for DPoP: RFC 7638 registers no thumbprint for AKP, so ' +
           'a proof signed with one would verify and bind to nothing.'
+        ]
+      });
+    });
+
+    // THE REALM'S ML-KEM AND HPKE DECRYPTION KEYS (#82), one row per alg
+    // `keys.encryptionKemAlgs` names — none by default. Read off the set, not
+    // made: `/oauth2/jwks` makes them, as it makes the post-quantum signing
+    // keys. No download format: the private half is a seed that has no
+    // PKCS#8 encoding here, and the public half is in the JWKS.
+    const kemHeld = Array.isArray(keys.kemEncKeys) ? keys.kemEncKeys : [];
+    helpers.kemAlgsConfigured().forEach(function (alg) {
+      const made = kemHeld.filter(function (k) {
+        return k.alg === alg;
+      })[0];
+      const described: any = stsCrypto.describeJweKemAlg(alg) || {};
+      rows.push({
+        id: 'sts-kem-' + alg.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
+        label: alg + ' decryption key',
+        alg: alg, kty: made ? made.publicJwk.kty : described.keyType, crv: '',
+        bits: 0,
+        kid: made ? String(made.publicJwk.kid || '') : '',
+        scope: 'realm', realm: realms.currentId(),
+        certifiedBy: null, hasCertificate: false, generated: !!made,
+        formats: [],
+        usedFor: [
+          'Decrypting a request object, an RFC 7523 / 7522 assertion or an ' +
+          'OID4VCI Credential Request a client encrypted with ' + alg + ' (' +
+          described.kem + ', ' + described.spec + ').',
+          'Published at /oauth2/jwks with use "enc" and alg "' + alg + '" ' +
+          '(keys.encryptionKemAlgs).'
         ]
       });
     });

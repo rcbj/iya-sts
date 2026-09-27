@@ -3630,14 +3630,17 @@ function verifyJwsAsync(token, key, opts) {
 // HKDF, SHA3-256 and SHAKE are node's OpenSSL; KMAC256 and TurboSHAKE, which
 // node does not offer, are `@noble/hashes`.
 //
-// **NOT ON THE WORKER POOL, AND THAT WAS MEASURED** (#82's note): a whole
-// ML-KEM-768 JWE — encrypt and decrypt, key expansion from the seed
-// included — costs about 1.3 ms here and an X-Wing one about 3.3 ms, the
-// same order as the RSA-OAEP-256 decryption that has always run on this
-// thread. `worker_pool.js` exists for SLH-DSA signing, which costs SECONDS,
-// and a pool round trip would add its own serialisation and a process hop
-// to each of these for no gain. `tests/jwe_pq_kem.js` measures it and
-// `common/CLAUDE.md` records the figures.
+// **NOT ON THE WORKER POOL, AND THAT WAS MEASURED** (#82's note). A whole
+// JWE — encrypt and decrypt, key expansion from the seed included — costs,
+// on the development machine: RSA-OAEP-256 0.5 ms, ML-KEM-768 1.3 ms,
+// X-Wing (HPKE-10-KE) 3.4 ms, ML-KEM-1024 + P-384 (HPKE-12-KE) 7.4 ms, the
+// hybrids paying for the curve operations beside the lattice. Milliseconds,
+// once per token: `worker_pool.js` exists for SLH-DSA signing, which costs
+// SECONDS, and a pool round trip would add a process hop and the
+// serialisation of a kilobyte-sized key and ciphertext to each of these,
+// while `workers.requestCount` already spreads whole requests across
+// processes. `tests/jwe_pq_kem.js` prints the figures on every run and
+// `common/CLAUDE.md` records the decision.
 // ---------------------------------------------------------------------------
 
 const nobleMlKem = require('@noble/post-quantum/ml-kem.js');
