@@ -576,6 +576,46 @@ async function theApp(t) {
   realms.setPersistObserver(function () {
     position.minted += 1;
   });
+
+  // A MESSAGE THIS NODE SENDS WAITS FOR ITS WRITES (2026-09-27): a Command
+  // Token's callback_token was sent before it committed, the callback
+  // reached the other node, and it was refused 401.
+  {
+    const barrier = require('../cluster/cluster_barrier');
+    position.minted += 1;
+    let sent = false;
+    const waiting = barrier.commitBeforeSending().then(function () {
+      sent = true;
+    });
+    await new Promise(function (resolve) {
+      setImmediate(resolve);
+    });
+    t.check(!sent && commits.length === 1 &&
+            commits[0].target.minted === position.minted,
+            'an outbound message waits for a commit through what this ' +
+            'process has written', JSON.stringify({ sent: sent,
+                                                    commits: commits.length }));
+    commits.shift().resolve([]);
+    await waiting;
+    t.check(sent, 'and goes once it has committed', String(sent));
+    active.value = false;
+    const outside = await barrier.commitBeforeSending();
+    t.check(outside === false && commits.length === 0,
+            'outside active-active it waits for nothing',
+            JSON.stringify({ outside: outside, commits: commits.length }));
+    active.value = true;
+    // The queue asks it after preparing and BEFORE dialling.
+    const src = require('fs').readFileSync(require('path').join(__dirname,
+      '..', 'oauth-oidc', 'outbound_delivery.ts'), 'utf8');
+    const asked = src.indexOf('OutboundDelivery.commitBeforeSending)();');
+    const dialled = src.indexOf('await fedHttp.deliverJson(');
+    const prepared = src.indexOf('prepared = await kind.prepare(row);');
+    t.check(asked > 0 && prepared > 0 && prepared < asked && asked < dialled,
+            'the outbound queue commits after preparing a message and ' +
+            'before dialling', JSON.stringify({ prepared: prepared,
+                                                asked: asked,
+                                                dialled: dialled }));
+  }
   const app = require('../common/app');
   app.get('/test/throughput/read', function (req, res) {
     log.debug("Entering the test read route.");

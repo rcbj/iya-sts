@@ -267,6 +267,53 @@ function holdUntilCommitted(res, arrival) {
   log.debug("Leaving holdUntilCommitted().");
 }
 
+// RULE 2 FOR A MESSAGE THIS NODE SENDS (2026-09-27). What rule 2 does for a
+// response, for an outbound delivery: in active-active mode it resolves once
+// everything this process has written so far has committed. A Command Token
+// carries a `callback_token` minted in memory a moment earlier; sent before
+// that commit, the relying party's callback could reach the OTHER node, whose
+// barrier caught it up to the change log's head — which did not include the
+// token — and was refused 401 (`sts_provider_commands` in the cluster mode).
+// Outside active-active it resolves at once. It never rejects: a commit that
+// fails is logged and the message goes, as a held response does.
+function commitBeforeSending() {
+  log.debug("Entering commitBeforeSending().");
+  if (!active()) {
+    log.debug("Leaving commitBeforeSending(). Not active-active.");
+    return Promise.resolve(false);
+  }
+  const store = persistence();
+  if (typeof store.commitThrough !== 'function' ||
+      typeof store.writeGeneration !== 'function') {
+    log.debug("Leaving commitBeforeSending(). No positioned commit.");
+    return Promise.resolve(false);
+  }
+  const target = store.writeGeneration();
+  log.debug("Leaving commitBeforeSending(). Committing.");
+  return Promise.resolve().then(function () {
+    return store.commitThrough(target);
+  }).then(function (results) {
+    const failed = (results || []).filter(function (one) {
+      return one && one.error;
+    });
+    if (failed.length) {
+      stats.commitFailures += 1;
+      log.error(errorCodes.tag('STS-CLUSTER-0019') + 'cluster barrier: a ' +
+                'message held for this node\'s writes could not commit them (' +
+                failed.map(function (one) { return one.error; }).join('; ') +
+                '); it is sent, and another node may not see them until ' +
+                'the retry lands.');
+    }
+    return true;
+  }, function (e) {
+    stats.commitFailures += 1;
+    log.error(errorCodes.tag('STS-CLUSTER-0019') + 'cluster barrier: the ' +
+              'commit a message was held for failed: ' +
+              ((e && e.message) || e) + '; it is sent anyway.');
+    return true;
+  });
+}
+
 // For common/app.js's realm middleware, which runs above this one.
 function isActive() {
   log.debug("Entering isActive().");
@@ -338,6 +385,7 @@ module.exports = {
   middleware: middleware,
   syncShared: syncShared,
   holdUntilCommitted: holdUntilCommitted,
+  commitBeforeSending: commitBeforeSending,
   callLogStarts: callLogStarts,
   isActive: isActive,
   markSynced: markSynced,

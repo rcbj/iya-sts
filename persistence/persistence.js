@@ -1536,6 +1536,16 @@ function databaseConnection() {
   });
 }
 
+// How many request workers this node runs, protocol and surface: what the
+// postgres pool is sized from (`persistence_postgres.js`, poolMax()).
+function workerCount() {
+  log.debug("Entering workerCount().");
+  const n = Math.max(0, Number(config.value('workers.requestCount')) || 0) +
+            Math.max(0, Number(config.value('workers.surfaceCount')) || 0);
+  log.debug("Leaving workerCount().");
+  return n;
+}
+
 function start() {
   log.debug('Entering start().');
   const chosen = mode();
@@ -1718,7 +1728,8 @@ function openStore(chosen, resolvedUrl) {
       // reaches for nothing, which is what lets a test construct one against
       // any database without this file's settings existing at all.
       ? require('./persistence_postgres').create({
-          url: resolvedUrl, log: log, verifyTls: verifiesDatabaseTls()
+          url: resolvedUrl, log: log, verifyTls: verifiesDatabaseTls(),
+          poolMax: require('./persistence_postgres').poolMax(workerCount())
         })
       : require('./persistence_ldif').create({ dir: dataDir(), log: log });
   } catch (err) {

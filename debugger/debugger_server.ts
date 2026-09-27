@@ -120,7 +120,6 @@ import mtls = require('../oauth-oidc/mtls');
 import dpop = require('../oauth-oidc/dpop');
 import senderConstraints = require('../oauth-oidc/sender_constraints');
 import tlsServer = require('../tls/tls_server');
-import sessionTickets = require('../tls/session_tickets');
 import access = require('./debugger_access');
 import apiProcess = require('./debugger_api_process');
 
@@ -831,9 +830,9 @@ class DebuggerServer {
       // certificate against current, now that it asks for one (#34).
       tlsServer.trustClientCertificatesOn(server, 'the protocol debugger (' +
                                                   port + ')');
-      // One session-ticket key with the other nodes of an active-active
-      // cluster, as the main port and LDAPS (tls/session_tickets.ts).
-      sessionTickets.track(server, 'the protocol debugger (' + port + ')');
+      // NO shared session-ticket key (tls/session_tickets.ts): this
+      // listener asks for a client certificate, and a session resumed on
+      // another node has no remembered chain there — server.js says why.
     }
     // Before TLS, like the main port's — see common/proxy_protocol.ts.
     proxyProtocol.install(server, {

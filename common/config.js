@@ -8471,11 +8471,14 @@ const SETTINGS = [
     label: 'Shared session-ticket key rotation (s)',
     env: 'STS_TLS_SESSION_TICKET_ROTATION_S', type: 'int', dflt: 3600,
     min: 0, max: 604800, runtime: true, perProcess: true,
-    description: 'In an active-active cluster, every node\'s TLS listeners ' +
-                 '(the main port, LDAPS and the debugger\'s) seal session ' +
-                 'tickets under one shared key, so a ticket one node issued ' +
-                 'resumes on another. This is how often, in seconds, the ' +
-                 'tls.ticket-key-rotate job replaces it; the key it replaces ' +
+    description: 'In an active-active cluster, every node\'s LDAPS ' +
+                 'listener seals session tickets under one shared key, so a ' +
+                 'ticket one node issued resumes on another (the main port ' +
+                 'and the debugger\'s keep a key per node: they ask for a ' +
+                 'client certificate, and only the node that saw its chain ' +
+                 'can resume the session). This is how often, in seconds, ' +
+                 'the tls.ticket-key-rotate job replaces it; the key it ' +
+                 'replaces ' +
                  'is deleted, so a resumed session\'s secrets can be ' +
                  'recovered from a captured ticket only while its key ' +
                  'lives, and a client whose ticket is older does a full ' +
@@ -14593,6 +14596,21 @@ const SETTINGS = [
                  'limit of its own — signer rotation, whose post-quantum ' +
                  'keys are slow to make, does — and this is the limit of ' +
                  'every job that does not.' },
+
+  { key: 'scheduler.maxConcurrentRuns', group: 'Scheduler',
+    label: 'Most runs going at once',
+    env: 'STS_SCHEDULER_MAX_CONCURRENT_RUNS', type: 'int', dflt: 2, min: 1,
+    max: 1000, runtime: true, perProcess: true,
+    description: 'How many scheduled or manual runs the leader has going at ' +
+                 'once, across every job and trust realm. A slot is a ' +
+                 'multiple of its interval, so every hourly job in every ' +
+                 'realm is due on the same second; each run holds a ' +
+                 'connection to the store while it claims and works, and ' +
+                 'the postgres store has four. The rest wait, a person\'s ' +
+                 'Run now first, and start as runs end. It is never more ' +
+                 'than one fewer than the pool holds, whatever it is set ' +
+                 'to, so the scheduler cannot take every connection from ' +
+                 'the requests.' },
 
   // -------------------------------------------------------------------------
   // MAIL (#63, 2026-09-22): the one outbound mail channel, `common/mail.ts`.

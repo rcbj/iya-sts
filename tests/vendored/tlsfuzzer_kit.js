@@ -238,9 +238,14 @@ const WHY = {
     "listener presents a certificate over a key of its own " +
     "(tls/CLAUDE.md), and the balancer may put the script's second " +
     "connection on the other node; tlsfuzzer checks that connection's " +
-    "signature against the key the first node presented, so it fails. " +
-    "Session tickets are shared by every node (tls/session_tickets.ts), so " +
-    "a resumption itself succeeds on either" },
+    "signature against the key the first node presented, so it fails" },
+  perNodeTicketKey: { why: "design", reason: "the cluster mode only: the " +
+    "main port keeps a session-ticket key per node, where LDAPS shares one " +
+    "(tls/session_tickets.ts). It asks for a client certificate, and a " +
+    "session resumed on another node has no remembered chain there to " +
+    "walk for revocation (common/revocation_status.js), so a ticket from " +
+    "one node is not accepted by the other and the client makes a full " +
+    "handshake: the script's resumption on the other node fails" },
   cipherOrder: { why: "design", reason: "honorCipherOrder: the SERVER's " +
     "BCP 195 order wins, which puts AES-128-GCM before AES-256-GCM for TLS " +
     "1.2 where the probe expects the client's first choice" }
@@ -466,7 +471,10 @@ const PLAN = [
       ex(/renegotiat/, "no_renegotiation", "renegotiation"),
       ex(/^EMS with session resume/, ["session_id == srv_hello.session_id",
          "server_hello"], "sessionCache"),
-      ex(/TLSv1\.1/, REFUSED_OLD, "oldVersion")] },
+      ex(/TLSv1\.1/, REFUSED_OLD, "oldVersion"),
+      ex(/^resume non-EMS session with EMS extension$/,
+         "Server Key Exchange signature invalid", "perNodeKey",
+         { clustered: true, on: ["main"] })] },
   { script: "test-extended-master-secret-extension-with-client-cert.py",
     on: CR, certificate: "rsa",
     exceptions: [ex("resume with certificate and EMS",
@@ -649,7 +657,9 @@ const PLAN = [
       ex("session resumption - PSK_ONLY", "pre_shared_key", "noPskKe"),
       ex("use TLS 1.2 ticket in TLS 1.3", "decode_error", "ticketAsPsk"),
       ex("use TLS 1.2 ticket in TLS 1.3", "Signature verification failed",
-         "perNodeKey", { clustered: true })] },
+         "perNodeKey", { clustered: true }),
+      ex(/^session resumption( - PSK_WITH_DHE)?$/, "pre_shared_key",
+         "perNodeTicketKey", { clustered: true, on: ["main"] })] },
   { script: "test-tls13-shuffled-extentions.py",
     exceptions: [ex(/^HRR reversed order/, "server_hello",
                     "secondHelloOrder")] },

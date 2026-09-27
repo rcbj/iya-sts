@@ -665,8 +665,12 @@ const JOBS = [
   // hand and was green while every certificate named a port nothing answered
   // on; this one rewrites nothing, and holds each CRL, OCSP answer and
   // caIssuers certificate to RFC 5280, RFC 4516/4523, RFC 5019 and RFC 6960.
+  // A WATCHDOG OF ITS OWN (2026-09-27): it walks EVERY realm the jobs before
+  // it left standing, so its time grows with the suite — 125 s with 44
+  // realms, 250 s with 64 and over 300 s with 68 in the cluster mode, where
+  // it was killed in section F with nothing wrong.
   { file: 'sts_pki_distribution_points.js', browser: false, local: true,
-    reuseConnections: true },
+    reuseConnections: true, timeoutMs: 900000 },
   // THE POSTGRESQL METRICS PAGE (2026-09-11). `local: true` on the first of
   // `tests/CLAUDE.md`'s two questions — it drives `/admin/database` and
   // `/admin-api/database`, and the tree that adds a page to that console is

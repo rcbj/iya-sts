@@ -157,6 +157,9 @@ interface DeliveryDeps {
   claims: Json;
   now: () => number;
   later: (fn: () => void, ms: number) => void;
+  // Resolves once this process's writes so far have committed, where another
+  // node could be asked about them (cluster/cluster_barrier.js).
+  beforeSend?: () => Promise<Json>;
 }
 
 interface ListOptions {
@@ -226,6 +229,15 @@ class OutboundDelivery {
   }
 
   // The real modules, less the kind's own.
+  // Rule 2 of cluster/cluster_barrier.js for a message: resolves once this
+  // process's writes so far have committed (at once outside active-active).
+  // The barrier is required LAZILY, as the rest of the store is from here.
+  static commitBeforeSending(): Promise<Json> {
+    helpers.log.debug("Entering OutboundDelivery.commitBeforeSending().");
+    helpers.log.debug("Leaving OutboundDelivery.commitBeforeSending().");
+    return require('../cluster/cluster_barrier').commitBeforeSending();
+  }
+
   static defaultDeps(): DeliveryDeps {
     helpers.log.debug("Entering OutboundDelivery.defaultDeps().");
     helpers.log.debug("Leaving OutboundDelivery.defaultDeps().");
@@ -236,6 +248,7 @@ class OutboundDelivery {
       errorCodes: require('../common/error_codes'),
       fedHttp: require('../federation/federation_http'),
       claims: require('../cluster/cluster_claims'),
+      beforeSend: OutboundDelivery.commitBeforeSending,
       now: function (): number {
         return Date.now();
       },
@@ -500,6 +513,14 @@ class OutboundDelivery {
       log.debug("Leaving OutboundDelivery.attempt(). Not prepared.");
       return 'dead';
     }
+    // WHAT THE MESSAGE NAMES MUST BE WHERE THE ANSWER MAY LAND. A Command
+    // Token's callback_token, a CIBA notification's request, a Logout
+    // Token's session were written a moment ago in this process; the
+    // recipient may answer through the balancer to the other node, so the
+    // write is committed first (rule 2 of cluster/cluster_barrier.js).
+    // Every owner (back-channel logout, CIBA, provider commands) builds
+    // its own deps, so an absent beforeSend is the barrier, not nothing.
+    await (this.deps.beforeSend || OutboundDelivery.commitBeforeSending)();
     const record = { id: row.clientId };
     record[kind.attribute] = row.uri;
     const options = { timeoutMs: this.setting(kind.settings.timeoutMs),

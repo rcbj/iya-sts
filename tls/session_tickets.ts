@@ -55,6 +55,16 @@
 // tlsfuzzer's different-SNI probe (an exception in
 // `tests/vendored/tlsfuzzer_kit.js`, for the cluster mode only).
 //
+// **ONLY LDAPS SHARES IT.** The main port and the debugger's listener ask
+// for a client certificate, and a resumed session hands the server the LEAF
+// alone: `common/revocation_status.js` walks it with the chain THIS PROCESS
+// remembered from the full handshake. Shared for one day, the key let a
+// session resume on a node that had never seen the chain, and product mode's
+// hard-fail refused certificates that had verified — every remote PEP and
+// XACML caller in the cluster mode. So those two keep a key per node: the
+// other node cannot open the ticket and the client presents its chain again.
+// A listener that asks for no client certificate may call `track()`.
+//
 // A LIBRARY: it registers no route. Built beside `tls/client_hello` in
 // `common/protocol_stack.ts`, before `tls/tls_server` and `ldap/ldap_server`,
 // whose listeners call `track()`.

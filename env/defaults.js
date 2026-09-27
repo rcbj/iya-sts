@@ -1210,12 +1210,13 @@ var config = {
 
   // --- Scheduler -------------------------------------------------------
   scheduler: {
-    enabled: true,    // Run scheduled jobs
-    tickS: 15,        // How often the leader looks for due jobs (seconds)
-    historyDays: 30,  // How long a finished run is kept (days)
-    maxRuns: 5000,    // Most runs kept per realm
-    disabledJobs: "", // Jobs switched off
-    runTimeoutS: 600  // The longest a run may take (seconds)
+    enabled: true,        // Run scheduled jobs
+    tickS: 15,            // How often the leader looks for due jobs (seconds)
+    historyDays: 30,      // How long a finished run is kept (days)
+    maxRuns: 5000,        // Most runs kept per realm
+    disabledJobs: "",     // Jobs switched off
+    runTimeoutS: 600,     // The longest a run may take (seconds)
+    maxConcurrentRuns: 2  // Most runs going at once
   },
 
   // --- Mail ------------------------------------------------------------

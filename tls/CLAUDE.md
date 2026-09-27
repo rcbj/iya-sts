@@ -983,9 +983,20 @@ argument. The short version:
   `connection` listener that calls `setTicketKeys()` before the handshake.
   Every connection, not only on change, because `setSecureContext()` (a
   re-issued certificate, a truststore change) puts a random key back
-  without telling anybody. `server.js`, `ldap_server.js` (LDAPS'
-  `.server`) and `debugger_server.ts` call it. **A new TLS listener owes a
-  `track()` call**, or it resumes only on its own node.
+  without telling anybody. **Only `ldap_server.js` (LDAPS' `.server`) calls
+  it.**
+* **Not on a listener that asks for a client certificate** — the main port
+  and the debugger's. A resumed session hands the server the leaf alone, and
+  `common/revocation_status.js` walks it with the chain THIS PROCESS
+  remembered from the full handshake (`tests/tls_resumed_chain.js`). The
+  first version shared the key on all three, and the cluster mode's XACML
+  jobs went red: the remote PEP's session resumed on the node that had never
+  seen its chain, and product mode's hard-fail refused a certificate that had
+  verified. With a key per node the other node cannot open the ticket, so the
+  client makes a full handshake and presents its chain. tlsfuzzer's main-port
+  resumption probes fail across nodes as they did before, a cluster-only
+  exception (`perNodeTicketKey`). A new TLS listener that asks for no client
+  certificate owes a `track()` call.
 * **Nothing is shared outside active-active.** One node answering (one
   process, request workers where only the front process holds a socket, or
   active-passive) keeps OpenSSL's own keys, which never reach a store. That

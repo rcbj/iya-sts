@@ -198,6 +198,9 @@ interface SchedulerDeps {
   // Cron: the most recent occurrence at or before `ms`, and the next after.
   cronPrev: (expr: string, ms: number) => number | null;
   cronNext: (expr: string, ms: number) => number | null;
+  // How many connections the store's pool holds, or 0 where there is no
+  // pool (the memory store); the runs are kept to fewer than this.
+  storeConnections?: () => number;
   host: string;
   pid: number;
   isRequestWorker: () => boolean;
@@ -270,6 +273,9 @@ class Scheduler {
   private ticking: Promise<void> | null = null;
   // Runs this process is running now: runId -> { fence, realm, timedOut }.
   private readonly inFlight = new Map<string, Json>();
+  // Whether the last tick left a due run waiting for a free place under
+  // scheduler.maxConcurrentRuns, so a run that ends asks for another tick.
+  private waiting = false;
   // Per-process jobs: `jobId|realm` -> the last slot this process ran.
   private readonly processSlots = new Map<string, number>();
   // A quiet job's last recorded outcome and when, per job and realm.
@@ -298,6 +304,18 @@ class Scheduler {
       claims: clusterClaims,
       store: runStore,
       dbNow: Scheduler.databaseNow,
+      storeConnections: function (): number {
+        if (config.value('persistence.mode') !== 'postgres') {
+          return 0;
+        }
+        // LAZILY: the driver is persistence's to load, and a require here
+        // at load time would put it ahead of that module.
+        const workers =
+          Math.max(0, Number(config.value('workers.requestCount')) || 0) +
+          Math.max(0, Number(config.value('workers.surfaceCount')) || 0);
+        return Number(require('../persistence/persistence_postgres')
+          .poolMax(workers)) || 0;
+      },
       now: function (): number {
         return Date.now();
       },
@@ -496,6 +514,27 @@ class Scheduler {
     log.debug("Entering Scheduler.setting(). " + key);
     log.debug("Leaving Scheduler.setting().");
     return Number(config.value(key));
+  }
+
+  // How many cluster runs this leader may have going at once: the setting
+  // (read directly — the row's `min` of 1 bounds it, the root CLAUDE.md's
+  // `|| n` rule), and NEVER EVERY CONNECTION the store's pool holds. Each run
+  // holds one while it claims and works, and a leader whose runs held them
+  // all would leave every request in this process waiting on the store —
+  // which is what 11:00:07 was. So at least one is always left, whatever
+  // the setting says.
+  maxConcurrentRuns(): number {
+    const { log } = this.deps;
+    log.debug("Entering Scheduler.maxConcurrentRuns().");
+    const setting = this.setting('scheduler.maxConcurrentRuns');
+    let n = setting >= 1 ? setting : 1;
+    const pool = this.deps.storeConnections ?
+      Number(this.deps.storeConnections()) || 0 : 0;
+    if (pool > 0) {
+      n = Math.min(n, Math.max(1, pool - 1));
+    }
+    log.debug("Leaving Scheduler.maxConcurrentRuns(). " + n + ".");
+    return n;
   }
 
   private tickMs(): number {
@@ -975,6 +1014,25 @@ class Scheduler {
     }
     const at = this.nowMs();
     const self = this;
+    // A QUEUE, AND AT MOST scheduler.maxConcurrentRuns RUNS AT ONCE
+    // (2026-09-27). A slot is a multiple of the interval, so every hourly job
+    // in every realm falls due on the same second: with sixty-eight realms
+    // the cluster mode's leader asked for some three hundred claims at
+    // 11:00:07, each needing one of the postgres pool's four connections,
+    // and for ninety seconds nothing else on that node could reach the store
+    // — LDAPS timed out, a provider command was never delivered. So a tick
+    // lines up everything due — a person's Run now first, then scheduled
+    // runs oldest-due first — and starts only as many as there is room for.
+    // The rest are not claimed, so they are still due at the next tick, and
+    // a run that ends asks for that tick at once.
+    const line: Json[] = [];
+    this.queuedManualRuns().forEach(function (pair: Json): void {
+      const job = self.job(pair.row.jobId);
+      if (job) {
+        line.push({ job: job, realm: pair.realm, row: pair.row });
+      }
+    });
+    const scheduled: Json[] = [];
     this.clusterJobs().forEach(function (job: JobSpec): void {
       self.realmIdsFor(job).forEach(function (realmId: string): void {
         if (self.offReason(job, realmId)) {
@@ -989,20 +1047,28 @@ class Scheduler {
         if (row && FINAL.indexOf(row.state) >= 0) {
           return;
         }
-        self.attempt(job, realmId, row || {
+        scheduled.push({ job: job, realm: realmId, row: row || {
           runId: runId, kind: 'run', jobId: job.id, realm: realmId,
           slot: slot.slot, dueAt: slot.startsAt, trigger: 'schedule',
           params: null, requestedBy: '', state: 'queued', attempt: 0,
           fenceAt: 0, queuedAt: at
-        });
+        } });
       });
     });
-    this.queuedManualRuns().forEach(function (pair: Json): void {
-      const job = self.job(pair.row.jobId);
-      if (!job) {
+    scheduled.sort(function (a: Json, b: Json): number {
+      return (Number(a.row.dueAt) || 0) - (Number(b.row.dueAt) || 0);
+    });
+    const cap = this.maxConcurrentRuns();
+    this.waiting = false;
+    line.concat(scheduled).forEach(function (one: Json): void {
+      if (self.inFlight.has(one.row.runId)) {
         return;
       }
-      self.attempt(job, pair.realm, pair.row);
+      if (self.inFlight.size >= cap) {
+        self.waiting = true;
+        return;
+      }
+      self.attempt(one.job, one.realm, one.row);
     });
     log.debug("Leaving Scheduler.tickOnce().");
   }
@@ -1146,6 +1212,12 @@ class Scheduler {
     return Promise.race([work, timedOut]).then(function (outcome: Json) {
       clearTimer(timeoutHandle);
       self.inFlight.delete(row.runId);
+      // A place is free: start what the last tick left waiting, now rather
+      // than at the next tick. Only after a run that RAN, so a store that
+      // refuses every claim is not asked again in a loop.
+      if (self.waiting && self.leading) {
+        self.tick();
+      }
       const endedAt = self.nowMs();
       const live = self.storeOf(realmId).get(row.runId);
       if (!live || Number(live.fenceAt) !== fence) {
