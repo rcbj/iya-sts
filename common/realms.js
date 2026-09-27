@@ -1704,7 +1704,95 @@ function built(realm) {
 // or creating the id again (a new row). A process that dies half way through
 // a retirement leaves the realm retiring — refusing sign-ins — until an
 // administrator removes it again, which is the act they had already asked for.
+//
+// **AN INTERRUPTED REMOVAL IS SHOWN, AND FINISHED BY THE SAME ACT (#294).**
+// `retiringState()` says when the mark was set and whether the removal is
+// still IN PROGRESS or was INTERRUPTED, and `/admin/realms`, the realm's own
+// console pages, the sign-in screen's refusal and `GET /admin-api/realms`
+// all draw it. The two are told apart by TIME, which every node can read
+// alike: a `retire()` finishes within `realms.removalDeliveryTimeoutS` of its
+// mark (every phase that waits is bounded by the one deadline, and the
+// announce phase is synchronous), so a mark older than that bound plus
+// `RETIRING_GRACE_MS` belongs to a removal nobody is running any more — on
+// this node or another. A removal running in THIS process is known exactly
+// (`retiringHere`) whatever the clock says.
+//
+// **NO SEPARATE "RESUME" ACTION**, decided on #294: finishing is removing
+// again. `retire()` on an interrupted realm keeps the first mark, ends what
+// is still live (the sessions the dead process ended are gone and are not
+// announced twice), reports the realm's people purged, waits and removes.
+// What cannot be known is which people the dead process had already
+// reported, so a receiver may be told `account-purged` twice about somebody
+// — at least once is the choice, because a person never reported is the
+// silent removal #232 exists to prevent. A second `retire()` while one is
+// still IN PROGRESS is refused (`STS-CORE-0122`): a double-click, or two
+// administrators on two nodes, would otherwise announce everything twice.
 // ---------------------------------------------------------------------------
+
+// The margin, past `realms.removalDeliveryTimeoutS`, after which a mark is
+// taken to belong to a removal that is no longer running: the final
+// `remove()` and its purges, and two nodes' clocks.
+const RETIRING_GRACE_MS = 30000;
+
+// The realms whose `retire()` is running in THIS process.
+const retiringHere = new Set();
+
+// The removal bound, in milliseconds, as `retire()` reads it.
+function removalBoundMs() {
+  log.debug("Entering removalBoundMs().");
+  const boundS = Number(config.value('realms.removalDeliveryTimeoutS'));
+  log.debug("Leaving removalBoundMs().");
+  return Math.max(0, Number.isFinite(boundS) ? boundS : 10) * 1000;
+}
+
+// Null, or what a console page and the API say about a realm being removed:
+// `{ since, sinceIso, inProgress, interrupted, finishesBy, refusing, why,
+// finish }`. `realmOrId` defaults to the ambient realm.
+function retiringState(realmOrId) {
+  log.debug("Entering retiringState().");
+  const id = realmOrId === undefined || realmOrId === null
+    ? currentId()
+    : (typeof realmOrId === 'object' ? String(realmOrId.id || '')
+                                     : String(realmOrId));
+  const realm = realms.get(id);
+  const since = Number(realm && realm.retiringSince) || 0;
+  if (!(since > 0)) {
+    log.debug("Leaving retiringState(). Not retiring.");
+    return null;
+  }
+  const finishesBy = since + removalBoundMs() + RETIRING_GRACE_MS;
+  const inProgress = retiringHere.has(id) || Date.now() < finishesBy;
+  const sinceIso = new Date(since).toISOString();
+  log.debug("Leaving retiringState(). " +
+            (inProgress ? "In progress." : "Interrupted."));
+  return {
+    since: since,
+    sinceIso: sinceIso,
+    inProgress: inProgress,
+    interrupted: !inProgress,
+    finishesBy: finishesBy,
+    refusing: 'every new sign-in and every new token, assertion, ticket, ' +
+              'credential, certificate and SVID in this realm ' +
+              '(STS-CORE-0121); sign-out, revocation, introspection, ' +
+              'UserInfo, metadata and the SSF poll endpoint still answer',
+    why: inProgress
+      ? 'The trust realm "' + id + '" is being removed (the removal ' +
+        'began at ' + sinceIso + '), so nothing new is signed in or ' +
+        'issued in it.'
+      : 'The trust realm "' + id + '" was being removed from ' + sinceIso +
+        ', and that removal was interrupted before it finished — the ' +
+        'process doing it stopped. Nothing new is signed in or issued in ' +
+        'it until an administrator finishes the removal.',
+    finish: inProgress
+      ? 'Wait: the removal finishes by itself by ' +
+        new Date(finishesBy).toISOString() + '.'
+      : 'Remove the realm again — the Remove button on its page under ' +
+        '/admin/realms, or POST /admin-api/realms/remove with {"id": "' +
+        id + '"}, from another realm. That ends what is still live in it, ' +
+        'reports its people purged, and removes it.'
+  };
+}
+
 
 // Whether `realmOrId` (default: the ambient realm) is being retired. Read from
 // the REGISTRY rather than from the ambient object, so a request that entered
@@ -1733,13 +1821,15 @@ function retiringRefusal(realmOrId) {
     ? currentId()
     : (typeof realmOrId === 'object' ? String(realmOrId.id || '')
                                      : String(realmOrId));
-  const realm = realms.get(id);
+  const state = retiringState(id);
   log.debug("Leaving retiringRefusal(). Refused.");
   return errorCodes.mark({
     realm: id,
-    since: Number(realm && realm.retiringSince) || 0,
-    why: 'The trust realm "' + id + '" is being removed, so nothing new is ' +
-         'signed in or issued in it.'
+    since: state ? state.since : 0,
+    interrupted: !!(state && state.interrupted),
+    why: state ? state.why
+               : 'The trust realm "' + id + '" is being removed, so ' +
+                 'nothing new is signed in or issued in it.'
   }, 'STS-CORE-0121');
 }
 
@@ -1801,8 +1891,39 @@ async function retire(id, options) {
     log.debug("Leaving retire(). No such realm.");
     return remove(id);
   }
-  const boundS = Number(config.value('realms.removalDeliveryTimeoutS'));
-  const boundMs = Math.max(0, Number.isFinite(boundS) ? boundS : 10) * 1000;
+  // A REMOVAL ALREADY RUNNING IS NOT STARTED AGAIN (#294): here, or — by
+  // the time its bound allows — on another node. An INTERRUPTED one is
+  // finished by carrying on below; see retiringState().
+  const already = retiringState(realm);
+  if (already && already.inProgress) {
+    log.info(errorCodes.tag('STS-CORE-0122') + 'realms: a second removal ' +
+             'of "' + realm.id + '" was refused: the one begun at ' +
+             already.sinceIso + ' is still in progress.');
+    log.debug("Leaving retire(). Already in progress.");
+    return errorCodes.mark({ ok: false, retiring: already,
+      errors: ['The trust realm "' + realm.id + '" is already being ' +
+               'removed (since ' + already.sinceIso + '). ' +
+               already.finish] }, 'STS-CORE-0122');
+  }
+  if (already) {
+    log.warn(errorCodes.tag('STS-CORE-0123') + 'realms: finishing the ' +
+             'removal of "' + realm.id + '", which was begun at ' +
+             already.sinceIso + ' and interrupted.');
+  }
+  retiringHere.add(realm.id);
+  try {
+    const finished = await retireMarked(realm, o);
+    log.debug("Leaving retire().");
+    return finished;
+  } finally {
+    retiringHere.delete(realm.id);
+  }
+}
+
+// The body of `retire()`, once it has decided a removal may run.
+async function retireMarked(realm, o) {
+  log.debug("Entering retireMarked(). id=" + realm.id);
+  const boundMs = removalBoundMs();
   const ctx = {
     realmId: realm.id,
     deadline: Date.now() + boundMs,
@@ -1894,7 +2015,7 @@ async function retire(id, options) {
   result.retirement = { late: late, failed: failed,
                         undelivered: undelivered,
                         boundSeconds: Math.round(boundMs / 1000) };
-  log.debug("Leaving retire().");
+  log.debug("Leaving retireMarked().");
   return result;
 }
 
@@ -3686,6 +3807,7 @@ module.exports = {
   retire: retire,
   isRetiring: isRetiring,
   retiringRefusal: retiringRefusal,
+  retiringState: retiringState,
   onChange: onChange,
   realmContext: realmContext,
   keyed: keyed,

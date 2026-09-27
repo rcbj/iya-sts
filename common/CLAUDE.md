@@ -2245,6 +2245,31 @@ UserInfo, metadata, JWKS and above all SSF's poll endpoint, which a poll
 receiver must reach during the wait. `tests/realm_retiring.js` holds the
 window open with a hook of its own and asks every door.
 
+**A removal that stopped half way is SHOWN, and finished by the same act
+(#294).** `retiringState()` answers `{ since, sinceIso, inProgress,
+interrupted, finishesBy, refusing, why, finish }`, and it tells the two
+cases apart by TIME, which every node reads alike: a `retire()` ends within
+`realms.removalDeliveryTimeoutS` of its mark (every waiting phase shares the
+one deadline; announce is synchronous), so a mark older than that plus
+`RETIRING_GRACE_MS` (30 s, for the final purge and for clocks) belongs to a
+removal nobody is running; one running in THIS process (`retiringHere`) is
+in progress whatever the clock says. It is drawn on `/admin/realms` (the row
+marked, a block at the top with **Finish removing**), the realm's
+drill-down, a banner on every console page inside the realm
+(`retiringBanner()`), the sign-in screen's refusal (`retiringRefusal().why`)
+and `GET /admin-api/realms` (`retiring` on each row, null when not) — one
+function, so the console and the API cannot disagree (rule 7). An
+interrupted realm restored at start is logged with `STS-CORE-0123`.
+**There is no separate resume action**: removing again keeps the first mark,
+ends what is still live (what the dead process ended is gone and is not
+announced twice), reports the realm's people purged and removes it. Which
+people the dead process had already reported cannot be known, so a receiver
+may be told `account-purged` twice about somebody — at least once, because a
+person never reported is the silent removal #232 exists to prevent. **A
+second `retire()` while one is in progress is refused (`STS-CORE-0122`)**:
+a double-click, or two administrators on two nodes, would otherwise end and
+announce everything twice.
+
 ### `onChange()`: a realm row changed, and it is an EVENT rather than a slot
 
 Added 2026-08-27 for persistence. `onCreate()` and `onRemove()` already covered

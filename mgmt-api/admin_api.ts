@@ -7865,7 +7865,15 @@ class AdminApi {
                      '`kid` of its signing key — two realms showing one kid ' +
                      'would be two names for one authorization server — the ' +
                      'settings it sets, and the four discovery documents a ' +
-                     'client asks for first.\n\n`support` is the part ' +
+                     'client asks for first.\n\n`retiring` is null, or ' +
+                     'says the realm is being REMOVED (#262, #294): ' +
+                     '`since` and `sinceIso`, whether the removal is ' +
+                     '`inProgress` or was `interrupted` (the process doing ' +
+                     'it stopped; every new sign-in and issuance in it is ' +
+                     'refused until it is finished), `refusing`, `why` and ' +
+                     '`finish` — for an interrupted one, POST ' +
+                     '/admin-api/realms/remove again, from another ' +
+                     'realm.\n\n`support` is the part ' +
                      'answered nowhere else: WHICH protocol families a realm ' +
                      'actually separates, which is not a tidy answer. A ' +
                      'realm separates what this service ISSUES and ' +
