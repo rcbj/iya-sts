@@ -246,6 +246,15 @@ class MailUses {
                       String((verdict && verdict.reason) || '') + ')',
                       'STS-MAIL-0035');
       }
+      // THE CODE IS SPENT, so the set shrank: RISC
+      // recovery-information-changed (#235), beside the recovery-activated
+      // this door sends once the link is mailed.
+      accountSignals().recoveryInformationChanged({ username: username,
+        initiatingEntity: 'user', via: 'portal',
+        reasonAdmin: username + ' spent a recovery code on the ' +
+                     'forgot-password form; ' +
+                     String(verdict.remaining) + ' remain.',
+        reasonUser: 'You used one of your recovery codes.' });
     }
     const issued = creds.issuePasswordReset(username);
     if (!issued || !issued.ok) {

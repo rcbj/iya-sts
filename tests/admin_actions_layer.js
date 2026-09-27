@@ -452,6 +452,12 @@ function checkNothingRequiresItEarly(t) {
                    // console, so the require is a cache hit and moves no
                    // route.
                    'admin-ui/mail_admin.ts',
+                   // The device register's three pages (#164, #218), for
+                   // `adminViews`' paging and the gate state only — the
+                   // list's pages, and who registered a device. Required at
+                   // 18q, after the console, so the require is a cache hit
+                   // and moves no route.
+                   'admin-ui/devices_admin.ts',
                    // The key pairs page (#48, 2026-09-22), for the gate
                    // state only — who asked for a rotation. Required LAZILY,
                    // in the request, and the page is 20a, after the console,
@@ -469,6 +475,15 @@ function checkNothingRequiresItEarly(t) {
                    // gate state only — who acted — required LAZILY in the
                    // request; the page is 18n, after the console.
                    'oauth-oidc/claims_providers_admin.ts',
+                   // The Provider Commands and Outbound deliveries pages
+                   // (#151, 2026-09-26), for the gate state only — who
+                   // acted — required LAZILY in the request; the page is
+                   // 18o, after the console.
+                   'oauth-oidc/provider_commands_admin.ts',
+                   // The foreign SSF transmitters page (#153, 2026-09-26),
+                   // for the gate state only — who acted — required LAZILY
+                   // in the request; the page is 18p, after the console.
+                   'ssf/ssf_transmitters_admin.ts',
                    // The composition root (#50, R2), which builds every
                    // converted module's instance — these two layers
                    // included — after the require step that loaded them,

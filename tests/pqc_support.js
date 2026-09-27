@@ -104,14 +104,33 @@ async function inProcess(t) {
   // -------------------------------------------------------------------------
   t.log.info('=== B. a certificate is classified by its key ===');
   // -------------------------------------------------------------------------
+  // HYBRID IS OFF BY DEFAULT since 2026-09-26 (rcbj, e8cadc24), so this
+  // child turns it on before anything builds the Root it asserts about.
+  const hybridOn = require('../common/config')
+    .setOverride('pki.alternativeKeyAlgorithm', 'ml-dsa-87');
+  t.check(hybridOn && hybridOn.ok !== false,
+          'pki.alternativeKeyAlgorithm is set to ml-dsa-87 in this child',
+          JSON.stringify(hybridOn));
   await keystore.start();
   if (!realms.get(REALM)) {
     realms.create({ id: REALM, name: REALM });
   }
   await pki.start({ realmIds: [REALM] });
   await pki.ensureScope(REALM);
-  t.equal(support.ofCertificate(pki.serviceRoot().certificatePem), null,
-          'the RSA Root CA is not marked');
+  // THE ROOT IS HYBRID SINCE #68 (2026-09-26): an RSA key with an ML-DSA-87
+  // alternative key beside it (ITU-T X.509 clause 9.8), so it is marked for
+  // THAT — and a classical leaf under it, which carries the Root chain's
+  // alternative SIGNATURE but no alternative KEY, is the classical control.
+  const rootBadge = support.ofCertificate(pki.serviceRoot().certificatePem);
+  t.check(rootBadge && rootBadge.kind === 'hybrid' &&
+          rootBadge.algorithm === 'ML-DSA-87',
+          'the RSA Root CA is marked HYBRID, for its ML-DSA-87 alternative ' +
+          'key', JSON.stringify(rootBadge));
+  const classicalLeaf = await pki.issueSigningKeyPair(REALM,
+    { identifier: 'badge-classical' });
+  t.equal(support.ofCertificate(classicalLeaf.issued.certificatePem), null,
+          'and an RSA leaf under it is NOT marked: an alternative signature ' +
+          'from its issuer does not make its own key post-quantum');
   const pqAlgs = ['ML-DSA-44', 'ML-DSA-65-ES256'];
   await pki.certifyPqKeys(REALM, pqAlgs.map(function (alg) {
     return { alg: alg,

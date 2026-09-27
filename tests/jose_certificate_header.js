@@ -421,6 +421,22 @@ function childMain() {
          'signer naming no use case makes', named.length + ' / ' +
          unnamed.length);
     config.clearOverride('oauth2.accessTokenCertificateHeader');
+    // #187, HAIP 1.0 sections 6.1 and 6.1.1: a credential's (and a Status
+    // List Token's) x5c leaves the trust anchor out; the access token's,
+    // above, keeps it.
+    config.setOverride('oid4vci.credentialCertificateHeader', 'x5c');
+    const credentialHeader = headerOf(helpers.signJwtAs(fixed, 'RS256', null,
+      { certificateHeader: 'vci-credential' }));
+    note(Array.isArray(credentialHeader.x5c) &&
+         credentialHeader.x5c.join(',') ===
+           pems.map(b64Of).filter(function (one) {
+             return one !== b64Of(rootPem);
+           }).join(',') &&
+         credentialHeader.x5c.indexOf(b64Of(rootPem)) < 0,
+         'C13b. a credential\'s x5c is the same chain WITHOUT the Root ' +
+         '(HAIP 6.1.1: the trust anchor MUST NOT be in it)',
+         (credentialHeader.x5c || []).length + ' of ' + pems.length);
+    config.clearOverride('oid4vci.credentialCertificateHeader');
 
     // ---- a realm ---------------------------------------------------------
     realms.run(realms.get(REALM), function () {

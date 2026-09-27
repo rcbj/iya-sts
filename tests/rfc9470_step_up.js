@@ -443,11 +443,14 @@ function childMain() {
     // --- a. discovery --------------------------------------------------------
     const anon = browser(port);
     let r = await anon.go('GET', '/.well-known/oauth-authorization-server');
-    note(JSON.stringify(r.json.acr_values_supported) === '["0","1","mfa"]',
-         '3a1. RFC 8414 metadata publishes acr_values_supported 0, 1, mfa',
+    // The ladder, then the compliant-device class (#164 phase 6).
+    const PUBLISHED = '["0","1","mfa","urn:sts:acr:compliant-device"]';
+    note(JSON.stringify(r.json.acr_values_supported) === PUBLISHED,
+         '3a1. RFC 8414 metadata publishes acr_values_supported 0, 1, mfa ' +
+         'and the compliant-device class',
          JSON.stringify(r.json.acr_values_supported));
     r = await anon.go('GET', '/.well-known/openid-configuration');
-    note(JSON.stringify(r.json.acr_values_supported) === '["0","1","mfa"]',
+    note(JSON.stringify(r.json.acr_values_supported) === PUBLISHED,
          '3a2. and so does the OpenID Provider Configuration');
 
     // --- b. a one-factor sign-in, and what its token says --------------------

@@ -265,7 +265,7 @@ function plan(t) {
   const listed = /const names = \[([^\]]*)\]/.exec(source);
   const names = listed ? listed[1].replace(/[\s']/g, '').split(',') : [];
   t.equal(names.join(','), jat.OIDC_SCOPES.join(','),
-          '2q. OIDC_SCOPES is exactly the six protocolScopes() reserves');
+          '2q. OIDC_SCOPES is exactly the seven protocolScopes() reserves');
   log.debug("Leaving plan().");
 }
 

@@ -711,9 +711,12 @@ class VcOffers {
             description: 'Type the ' + txCodeValue.length + '-digit code ' +
                 'shown by the issuer.'
           },
-          // `oid4vci.preAuthorizedPollIntervalS`, 5 by default (2026-09-12).
-          interval:
-            Number(config.value('oid4vci.preAuthorizedPollIntervalS')) || 5
+          // No `interval` (#187): the drafts put a polling interval in the
+          // grant; OpenID4VCI 1.0 section 4.1.1 defines pre-authorized_code,
+          // tx_code and authorization_server only, and the OpenID
+          // conformance suite's offer schema flagged it. A wallet waiting on
+          // a deferred credential is told its interval by the Deferred
+          // Credential endpoint.
         }
       };
     } else {
@@ -942,6 +945,14 @@ class VcOffers {
         offerUser = Object.assign({}, userFor(session.user.username),
                                   session.user.sub ? { sub: session.user.sub } :
                                   {});
+        // THE OFFER IS MADE ON THE SESSION'S AUTHORITY, AND CAEP's
+        // `session-presented` SAYS SO (#240). The pre-authorized code minted
+        // below IS the authorization for a credential about this person, and
+        // nobody authenticated for it: the sign-on session this browser
+        // already held was presented and honoured. A same-device offer, and
+        // any offer where the test controls are open, is not made on a
+        // session at all and reports nothing.
+        authn.notePresented(session, 'OpenID4VCI', req);
       }
       const built = this.buildCredentialOffer(req, configurationIds, offerMode,
                                          { user: offerUser });

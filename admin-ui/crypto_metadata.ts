@@ -177,6 +177,8 @@
 import app = require('../common/app');
 import helpers = require('../common/helpers');
 import config = require('../common/config');
+// The signer groups' table (#68), a leaf: the model and the group ids.
+import signerGroups = require('../common/signer_groups');
 // A LEAF, for the key transport AS IN FORCE: `rsa-1_5` is development's
 // (#181), so a product realm's page must not report it in use.
 import mode = require('../common/mode');
@@ -2535,15 +2537,17 @@ class CryptoMetadata {
   // The certificate this realm's JOSE Issuing CA issued over one slot, as a
   // fingerprint. The DEFAULT realm's scope is the empty string, which is what
   // `pki.js` addresses it by.
-  private slotCertificateFingerprint(slot) {
+  private slotCertificateFingerprint(slot, useCase?) {
     const { log, realms, pki } = this.deps;
     const self = this;
     log.debug("Entering CryptoMetadata.slotCertificateFingerprint().");
     let held = null;
     try {
+      // `useCase` is `xml` for the XML signer group's slots (#68); every
+      // other slot this page asks about is the JOSE Issuing CA's.
       held = pki.publishedCertificateFor(
         realms.currentId() === realms.DEFAULT_ID ? '' : realms.currentId(),
-        'jose', slot);
+        useCase || 'jose', slot);
     } catch (e) {
       log.debug("Caught in CryptoMetadata.slotCertificateFingerprint(): " +
                 ((e && e.message) || e));
@@ -2662,6 +2666,20 @@ class CryptoMetadata {
               'whether or not anybody asked for a post-quantum signature. ' +
               'The first JWKS fetch on a realm is what brings them into ' +
               'being.'
+      },
+      // THE SIGNER GROUPS (#68): the realm's model and, where it has made
+      // them, every group key — the classical ones with the ML-DSA key they
+      // share a hybrid certificate with. On this page and in its JSON, one
+      // report for both (rule 7).
+      signerGroups: {
+        model: signerGroups.model(),
+        keys: (keys.signerGroups || []).map(function (one) {
+          return { group: one.group, slot: one.slot, alg: one.alg,
+                   kind: one.kind, kid: one.publicJwk.kid,
+                   pairedSlot: one.pairedSlot || null,
+                   certificateFingerprint: self.slotCertificateFingerprint(
+                     one.slot, one.group === 'xml' ? 'xml' : 'jose') };
+        })
       },
       bbs: {
         cryptosuite: bbs2023.CRYPTOSUITE,
@@ -3475,6 +3493,18 @@ class CryptoMetadata {
           esc(keys.postQuantum.algorithms.length) +
           ' algorithms</td><td><span class="why">not made yet in this realm' +
           '</span></td><td>this realm</td></tr>') +
+      // THE SIGNER GROUPS (#68), one row per key, its hybrid partner named.
+      keys.signerGroups.keys.map(function (one) {
+        return '<tr><td class="n">Signer group <code>' + esc(one.group) +
+          '</code></td><td><code>' + esc(one.alg) + '</code>' +
+          (one.pairedSlot
+            ? ' <span class="why">' + (one.kind === 'pq'
+                ? 'alternative key of ' : 'hybrid with ') +
+              esc(one.pairedSlot) + '</span>'
+            : '') + '</td><td><code>' + esc(one.kid) + '</code>' +
+          self.certificateLink(one.certificateFingerprint) +
+          '</td><td>this realm</td></tr>';
+      }).join('') +
       '<tr><td class="n">BBS key</td><td><code>' +
       esc(keys.bbs.cryptosuite) + '</code> ' + esc(keys.bbs.curve) +
       '</td><td><span class="why">published as publicKeyMultibase</span></td>' +

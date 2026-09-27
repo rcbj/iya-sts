@@ -14,6 +14,8 @@
     - { title: Endpoints, url: /endpoints.html }
     - { title: Trust realms, url: /trust-realms.html }
     - { title: What is not checked, url: /what-is-not-checked.html }
+    - { title: Conformance suites, url: /conformance.html }
+    - { title: Departures from the specifications, url: /spec-departures.html }
     - { title: Accepted tokens, url: /accepted-tokens.html }
     - { title: Token samples, url: /token-samples.html }
     - { title: Error codes, url: /error-codes.html }
@@ -43,12 +45,14 @@
     - { title: Sessions, url: /sessions.html }
     - { title: Signing out, url: /signing-out.html }
     - { title: Risk scoring, url: /risk-scoring.html }
+    - { title: Devices, url: /devices.html }
     - { title: "Mail: reset, verification, notices", url: /mail.html }
 
 - section: Verifiable credentials
   items:
     - { title: OpenID4VCI and status lists, url: /oid4vci.html }
     - { title: OpenID4VP and wallet sign-in, url: /oid4vp.html }
+    - { title: W3C VC-API test endpoints, url: /vc-api.html }
 
 - section: Directory and provisioning
   items:
@@ -80,6 +84,9 @@
     - { title: Admin console, url: /admin-console.html }
     - { title: Applications, url: /applications.html }
     - { title: Management API, url: /management-api.html }
+    - { title: "Configuring OAuth 2.0 grants", url: /configure-oauth2-grants.html }
+    - { title: "Configuring OpenID Connect flows", url: /configure-oidc-flows.html }
+    - { title: "Configuring SAML 2.0 and 1.1", url: /configure-saml.html }
 
 - section: Operating it
   items:

@@ -504,8 +504,9 @@ class GrantManagement {
   }
 
   // Revoke what this realm recorded under `grantId` that `which` selects.
+  // `how` is the act as CAEP reports it (#239; `oauth_grant_signals.ts`).
   private revokeIssued(grantId: string, which: (row: Json) => boolean,
-                       via: string): number {
+                       via: string, how?: Json): number {
     const { log, stats } = this.deps;
     log.debug("Entering GrantManagement.revokeIssued().");
     const jtis: string[] = [];
@@ -516,7 +517,7 @@ class GrantManagement {
     });
     let count = 0;
     jtis.forEach(function (jti: string): void {
-      if (stats.revoke(jti, via)) {
+      if (stats.revoke(jti, via, how)) {
         count += 1;
       }
     });
@@ -539,9 +540,13 @@ class GrantManagement {
       return { ok: false };
     }
     grants.delete(held.id);
+    // WHO ENDED IT, for CAEP (#239): the client's DELETE acts for the person
+    // who granted it (`user`); every other door is the console's or the
+    // management API's (`admin`).
     const revoked = this.revokeIssued(held.id, function (): boolean {
       return true;
-    }, 'grant revoked (' + via + ')');
+    }, 'grant revoked (' + via + ')',
+    { initiatingEntity: via === 'client' ? 'user' : 'admin' });
     try {
       this.deps.audit().record({
         category: via === 'client' ? 'oauth' : 'admin',

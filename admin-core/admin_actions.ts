@@ -185,6 +185,10 @@ import accountSignals = require('../ssf/account_signals');
 // on (2026-09-17, #36 follow-up). Two libraries loaded long before this file,
 // neither of which requires anything back.
 import accountState = require('../common/account_state');
+// A PERSON'S ATTRIBUTES, ONE AT A TIME (#228). A library whose directory is
+// filled through its own slot by `ldap_server.js`, so requiring it here loads
+// no route module.
+import personEditor = require('../ldap/person_editor');
 import identityAssurance = require('../common/identity_assurance');
 import siop = require('../oid4vc/siop');
 import devices = require('../common/devices');
@@ -326,6 +330,9 @@ const USERS_ACTIONS = ['create', 'set-password', 'issue-activation',
                        // The emailed second factor, and the address
                        // (#64, 2026-09-23).
                        'clear-email-factor', 'set-mail',
+                       // The account id a client knows the person by
+                       // (#148, Enterprise Extensions `aud_sub`).
+                       'set-aud-sub',
                        // What an administrator does to somebody's
                        // credentials from their page (2026-09-13).
                        'reset-password', 'issue-password-reset',
@@ -348,7 +355,10 @@ const USERS_ACTIONS = ['create', 'set-password', 'issue-activation',
                        // Devices (#130, 2026-09-23).
                        'remove-device',
                        // CIBA's test control (#131, 2026-09-23).
-                       'answer-ciba-request'];
+                       'answer-ciba-request',
+                       // One attribute of their entry (#228, 2026-09-26).
+                       'set-attribute', 'add-attribute',
+                       'remove-attribute'];
 
 // ---------------------------------------------------------------------------
 // WHAT AN ADMINISTRATOR DOES TO SOMEBODY'S CREDENTIALS FROM THEIR PAGE
@@ -718,6 +728,12 @@ const TRUSTSTORE_ACTIONS = ['add', 'remove'];
 const SPIFFE_ENTRY_ACTIONS = ['create', 'update', 'delete'];
 
 const SPIFFE_AGENT_ACTIONS = ['ban', 'unban', 'delete'];
+// WHAT EVERY TOKEN REVOCATION ON `/admin/tokens` AND `/admin-api/tokens`
+// STATES (#239): an administrator's act, which CAEP's `session-revoked` about
+// the grant it ends reports as `initiating_entity: admin`
+// (`oauth-oidc/oauth_grant_signals.ts`).
+const ADMIN_ACT = Object.freeze({ initiatingEntity: 'admin' });
+
 const SPIFFE_BROKER_ACTIONS = ['set', 'remove'];
 
 // The console names a field the way the record does and the EDITABLE table
@@ -821,6 +837,7 @@ interface AdminActionsDeps {
   signals: typeof signals;
   accountSignals: typeof accountSignals;
   accountState: typeof accountState;
+  personEditor: typeof personEditor;
   identityAssurance: typeof identityAssurance;
   siop: typeof siop;
   devices: typeof devices;
@@ -885,6 +902,7 @@ class AdminActions {
       signals: signals,
       accountSignals: accountSignals,
       accountState: accountState,
+      personEditor: personEditor,
       identityAssurance: identityAssurance,
       siop: siop,
       devices: devices,
@@ -1080,7 +1098,8 @@ class AdminActions {
                               : 'The token with jti ' + found.jti + ' was ' +
                                   'not revoked, so nothing changed.' };
       }
-      const first = stats.revoke(found.jti, 'the admin console');
+      // CAEP's initiating_entity for every revocation on this page (#239).
+      const first = stats.revoke(found.jti, 'the admin console', ADMIN_ACT);
       log.debug("Leaving AdminActions.tokenAction(). Revoked.");
       return { ok: true, jti: found.jti,
                message: (first ? 'Revoked ' :
@@ -1243,7 +1262,8 @@ class AdminActions {
           moved = action === 'restore-set'
             ? stats.restore(member.jti)
             : stats.revoke(member.jti,
-                           'the admin console (the whole set ' + setKey + ')');
+                           'the admin console (the whole set ' + setKey + ')',
+                           ADMIN_ACT);
         }
         if (moved) changed += 1;
       });
@@ -1295,7 +1315,8 @@ class AdminActions {
       }
       const count =
           stats.revokeWhere(function (record) { return record.kind === kind; },
-                                      'the admin console (every ' + kind + ')');
+                                      'the admin console (every ' + kind + ')',
+                            ADMIN_ACT);
       log.debug("Leaving AdminActions.tokenAction(). Revoked " + count +
                 " by kind.");
       return { ok: true, revoked: count,
@@ -1311,7 +1332,7 @@ class AdminActions {
       }
       const count = stats.revokeWhere(function (record) {
         return record.sub === subject || record.username === subject;
-      }, 'the admin console (everything for ' + subject + ')');
+      }, 'the admin console (everything for ' + subject + ')', ADMIN_ACT);
       log.debug("Leaving AdminActions.tokenAction(). Revoked " + count +
                 " for a subject.");
       return { ok: true, revoked: count,
@@ -1335,7 +1356,8 @@ class AdminActions {
       }
       const count = stats.revokeWhere(function (record) {
         return stats.holderKeyOf(record.username, record.sub) === key;
-      }, 'the admin console (everything for the user ' + key + ')');
+      }, 'the admin console (everything for the user ' + key + ')',
+      ADMIN_ACT);
       log.debug("Leaving AdminActions.tokenAction(). Revoked " + count +
                 " for a user.");
       return { ok: true, revoked: count, user: key,
@@ -1346,7 +1368,7 @@ class AdminActions {
 
     if (action === 'revoke-all') {
       const count = stats.revokeWhere(function () { return true; }, 'the ' +
-          'admin console (everything)');
+          'admin console (everything)', ADMIN_ACT);
       log.debug("Leaving AdminActions.tokenAction(). Revoked everything: " +
                 count + ".");
       return { ok: true, revoked: count,
@@ -1405,6 +1427,7 @@ class AdminActions {
     }
     const result = logoutReader.terminate(key, [selected], {
       actor: (opts && opts.actor) || '',
+      initiatingEntity: 'admin',
       by: (opts && opts.by) || 'the sessions page',
       channel: 'http'
     });
@@ -1504,7 +1527,7 @@ class AdminActions {
 
     if (action === 'global') {
       const result = logoutReader.terminate(key, [], {
-        actor: user, channel: 'console',
+        actor: user, channel: 'console', initiatingEntity: 'admin',
         by: 'the admin console at /admin/logout'
       });
       this.mailSessionsEnded(user, result.terminated.length,
@@ -1540,7 +1563,7 @@ class AdminActions {
                                           'out of everything by accident.'] });
       }
       const result = logoutReader.terminate(key, selection, {
-        actor: user, channel: 'console',
+        actor: user, channel: 'console', initiatingEntity: 'admin',
         by: 'the admin console at /admin/logout'
       });
       this.mailSessionsEnded(user, result.terminated.length,
@@ -1890,7 +1913,7 @@ class AdminActions {
                         'session was ended.' };
     }
     const result = logoutReader.terminate(stats.identityKeyOf(who), [], {
-      actor: ctx.actor || who, channel: ctx.via,
+      actor: ctx.actor || who, channel: ctx.via, initiatingEntity: 'admin',
       by: why + ' (' + (ctx.via === 'api' ? '/admin-api/users'
                                            : 'the admin console') + ')'
     });
@@ -1948,8 +1971,11 @@ class AdminActions {
                     'changed when you next sign in.' });
       accountSignals.credentialChangeRequired({ username: who,
         reasonAdmin: 'An administrator reset the password of ' + who + '.' });
-      // THE ADMINISTRATOR'S WORD THAT THIS WAS A COMPROMISE (#146), and the
-      // only automatic source of credential-compromise until #62 scores one.
+      // THE ADMINISTRATOR'S WORD THAT THIS WAS A COMPROMISE (#146). It is
+      // one source of credential-compromise among several: risk scoring's
+      // reaction (#62), and the detectors #231 added — a breached password
+      // at sign-in, a security key's counter going backwards, a certificate
+      // revoked for keyCompromise, the emailed factor's failure limit.
       if (body.compromised === true || body.compromised === 'true' ||
           body.compromised === 'on') {
         accountSignals.credentialCompromised({ username: who,
@@ -2383,7 +2409,10 @@ class AdminActions {
     if (action === 'remove-device') {
       const { devices } = this.deps;
       const id = String(body.id || '').trim();
-      const gone = devices.remove(id, who);
+      // The person's own device, removed BY AN ADMINISTRATOR: the owner
+      // check is `who`'s, and CAEP's initiating_entity is `admin` (#164).
+      const gone = devices.remove(id, who, undefined,
+                                  { initiatingEntity: 'admin' });
       audited('admin.device.removed',
               (gone.ok ? 'removed' : 'could not remove') + ' device ' + id +
               ' of ' + who,
@@ -2410,7 +2439,7 @@ class AdminActions {
       const subject = String(body.subject || '').trim();
       const done = enrolling
         ? siop.enrol(who, subject, body.label, ctx.actor)
-        : siop.remove(who, subject);
+        : siop.remove(who, subject, ctx.actor);
       audited(enrolling ? 'admin.siop.enrolled' : 'admin.siop.removed',
               (done.ok ? '' : 'could not ') +
               (enrolling ? 'enrol ' : 'remove ') + 'the self-issued ' +
@@ -2605,6 +2634,31 @@ class AdminActions {
                message: answer.message };
     }
 
+    // ONE OF A PERSON'S ATTRIBUTES, SET, ADDED TO OR REMOVED FROM (#228).
+    // `ldap/person_editor.ts` decides everything — which attributes, what a
+    // value may be, the audit row — and the directory writes it; this names
+    // the three actions and the person. The same three the application
+    // editor offers, with `-attribute` on each because this resource's other
+    // actions are verbs about the PERSON.
+    if (action === 'set-attribute' || action === 'add-attribute' ||
+        action === 'remove-attribute') {
+      const { personEditor } = this.deps;
+      const who = String(body.user || body.username || '').trim();
+      if (!who) {
+        log.debug("Leaving AdminActions.usersAction(). No person named.");
+        return this.refused('STS-ADMIN-0518', { ok: false, errors: ['Name ' +
+            'the person in `user`.'] });
+      }
+      const result = personEditor.update(who, {
+        attribute: body.attribute,
+        mode: action.slice(0, action.indexOf('-')),
+        value: body.value
+      }, { actor: ctx.actor, via: ctx.via });
+      log.debug("Leaving AdminActions.usersAction(). " + action + " " +
+                (result.ok ? "ok." : "refused."));
+      return this.refusedBy('STS-ADMIN-0819', result);
+    }
+
     // A FEDERATION LINK, MADE OR REMOVED BY AN ADMINISTRATOR (#109).
     if (action === 'federation-link' || action === 'federation-unlink') {
       log.debug("Leaving AdminActions.usersAction(). A federation link.");
@@ -2656,6 +2710,19 @@ class AdminActions {
       });
       const mailed = this.mailedLink('activation', who, issued.token, body,
                                      body.actor, 'the users page');
+      // AN ACTIVATION LINK FOR SOMEBODY WHO ALREADY EXISTS SETS THEIR
+      // CREDENTIALS (#235), as its peer issue-password-reset does, and says
+      // the same two RISC events: recovery-activated and
+      // account-credential-change-required. A person CREATED with an
+      // activation link (the `create` action) is a new account and sends
+      // nothing — RISC has no event for one appearing.
+      accountSignals.credentialChangeRequired({ username: who,
+        reasonAdmin: 'An administrator issued an activation link for ' +
+                     who + '.' });
+      accountSignals.recoveryActivated({ username: who,
+        mailed: !!(mailed && mailed.ok),
+        reasonAdmin: 'An administrator started account recovery for ' + who +
+                     ' with an activation link.' });
       if (mailed && mailed.ok) {
         log.debug("Leaving AdminActions.usersAction(). Mailed.");
         return { ok: true, username: who, expiresAt: issued.expiresAt,
@@ -2879,6 +2946,47 @@ class AdminActions {
         : this.refused('STS-ADMIN-0816', { ok: false, errors: ['There is ' +
             'no person called "' + who + '" in this realm, or the directory ' +
             'would not write the address.'] });
+    }
+
+    // ENTERPRISE EXTENSIONS SECTION 2.3 (#148): the account id a client
+    // knows this person by, sent to that client as the ID Token's `aud_sub`.
+    // An empty value removes it. Learned values arrive with Provider
+    // Commands (#151); this is the administrator's door.
+    if (action === 'set-aud-sub') {
+      const who = String(body.user || body.username || '').trim();
+      const client = String(body.client || body.client_id || '').trim();
+      const value = String(body.value || body.aud_sub || '').trim();
+      if (!who || !client || /\s/.test(client) || value.length > 255 ||
+          /[\u0000-\u001f]/.test(value)) {
+        log.debug("Leaving AdminActions.usersAction(). A malformed aud_sub.");
+        return this.refused('STS-ADMIN-0817', { ok: false, errors: ['Name ' +
+          'the person and the client (a client_id, no spaces), and give an ' +
+          'aud_sub of at most 255 characters with no control characters — ' +
+          'or none, to remove it.'] });
+      }
+      const prefix = client + ' ';
+      const kept = credentials.audSubsOf(who).filter(function (v) {
+        return String(v).indexOf(prefix) !== 0;
+      });
+      const written = credentials.writeAudSubs(who, value
+        ? kept.concat([prefix + value]) : kept);
+      auditLog.record({
+        category: 'admin', action: 'admin.aud-sub.set',
+        actor: ctx.actor, target: who, outcome: written ? 'success'
+                                                        : 'failure',
+        summary: (written ? (value ? 'set' : 'removed') : 'could not set') +
+                 ' the aud_sub of ' + who + ' at ' + client,
+        detail: { username: who, client: client, via: ctx.via } });
+      log.debug("Leaving AdminActions.usersAction(). set-aud-sub " +
+                (written ? "ok." : "refused."));
+      return written
+        ? { ok: true, message: value ? 'The ID Tokens ' + client +
+            ' is issued for ' + who + ' carry aud_sub "' + value + '".'
+                                     : 'The aud_sub of ' + who + ' at ' +
+            client + ' was removed.' }
+        : this.refused('STS-ADMIN-0818', { ok: false, errors: ['There is ' +
+            'no person called "' + who + '" in this realm, or the directory ' +
+            'would not write the aud_sub.'] });
     }
 
     if (action === 'clear-key') {
@@ -5123,6 +5231,12 @@ class AdminActions {
           if (set.ok) {
             credentials.setPasswordResetRequired(seeded.username, true);
             password = generated;
+            // CAEP `credential-change` (#237): a realm this young has no
+            // stream yet, so this is sent nowhere today — and it is sent
+            // through the same funnel as the startup bootstrap, so a stream
+            // made before the next one is told.
+            credentials.noteBootstrapPassword(seeded.username,
+              'when the "' + result.realm.id + '" realm was created');
           } else {
             log.error(errorCodes.tag('STS-ADMIN-0789') + 'admin: the "' +
                       result.realm.id + '" realm\'s bootstrap administrator ' +
@@ -5233,17 +5347,51 @@ class AdminActions {
           'another realm: the switcher at the top of the console sidebar, or ' +
           'the same call under a different prefix.'] });
       }
-      const result = realms.remove(id);
-      if (!result.ok) {
+      // THE ADMINISTRATOR'S REMOVAL RETIRES THE REALM FIRST (#232):
+      // `realms.retire()` ends its sessions through the ordinary path, reports
+      // its people purged and tells its streams, waits (bounded by
+      // realms.removalDeliveryTimeoutS) for that to be delivered, and only
+      // then removes it. So this one action answers a PROMISE; both callers
+      // resolve what they are handed.
+      if (!realms.get(id)) {
+        const refused = realms.remove(id);
         log.debug("Leaving AdminActions.realmsAction(). remove refused.");
-        return this.refusedBy('STS-ADMIN-0562', result);
+        return this.refusedBy('STS-ADMIN-0562', refused);
       }
-      log.debug("Leaving AdminActions.realmsAction(). remove ok.");
-      return { ok: true, realm: id,
-               message: 'The realm "' + id + '" is gone, with its sessions, ' +
-                        'its tokens, its statistics, its audit log and its ' +
-                        'signing key. Nothing was removed from the shared ' +
-                        'directory.' };
+      const self = this;
+      log.debug("Leaving AdminActions.realmsAction(). Retiring.");
+      return realms.retire(id, { initiatingEntity: 'admin' })
+        .then(function (result: any): any {
+          if (!result.ok) {
+            return self.refusedBy('STS-ADMIN-0562', result);
+          }
+          const r = result.retirement || {};
+          const lost = (r.undelivered || []).map(function (one: any): string {
+            return one.count + ' ' + one.what;
+          });
+          // It said "Nothing was removed from the shared directory" until
+          // #232, which contradicted the directory's own purge: a realm's
+          // directory is a store of its own and goes with it, whole.
+          return { ok: true, realm: id, retirement: r,
+                   message: 'The realm "' + id + '" is gone, with its ' +
+                            'directory, its sessions, its tokens, its ' +
+                            'Shared Signals streams, its statistics, its ' +
+                            'audit log and its signing key. Before it went ' +
+                            'its sessions were ended (CAEP session-revoked ' +
+                            'and back-channel Logout Tokens), everybody in ' +
+                            'its directory was reported purged (RISC ' +
+                            'account-purged) and every stream was told ' +
+                            'stream-updated disabled' +
+                            (lost.length || (r.late || []).length
+                              ? '; not everything was delivered within ' +
+                                'realms.removalDeliveryTimeoutS (' +
+                                r.boundSeconds + ' s): ' +
+                                lost.concat((r.late || []).map(
+                                  function (one: string): string {
+                                    return one + ' still waiting';
+                                  })).join(', ') + '.'
+                              : '.') };
+        });
     }
 
     log.debug("Leaving AdminActions.realmsAction(). Unknown action.");

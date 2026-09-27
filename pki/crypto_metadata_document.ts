@@ -216,6 +216,28 @@ class CryptoMetadataDocument {
         current.jwk = null;
         current.publicKeyMultibase = 'u' + Buffer.from(keys.bbsKey.publicKey)
           .toString('base64url');
+      } else if (row.kind === 'group') {
+        // A SIGNER-GROUP CERTIFICATE (#68): its primary key and — rcbj's D5,
+        // stated here because the JWKS publishes the partner bare — the
+        // ML-DSA key certified beside it in subjectAltPublicKeyInfo.
+        const members: Json[] = keys.signerGroups || [];
+        const primary = members.filter(function (one: Json): boolean {
+          return one.slot === row.slot;
+        })[0];
+        const partner = row.pairedSlot
+          ? members.filter(function (one: Json): boolean {
+              return one.slot === row.pairedSlot;
+            })[0] : null;
+        current.group = row.group;
+        current.jwk = row.useCase === 'xml' ? null
+          : ((primary || {}).publicJwk || null);
+        if (partner) {
+          current.alternativeKey = {
+            kid: partner.publicJwk.kid, alg: partner.alg,
+            jwk: row.useCase === 'xml' ? null : partner.publicJwk,
+            certifiedAs: 'subjectAltPublicKeyInfo (ITU-T X.509 clause 9.8)'
+          };
+        }
       } else {
         const list = row.kind === 'pq' ? keys.pqKeys : keys.extraKeys;
         current.jwk = (list[row.index] || {}).publicJwk || null;
@@ -229,6 +251,8 @@ class CryptoMetadataDocument {
         }).map(function (one: Json): Json {
           return {
             kid: one.kid, state: one.role,
+            // Which half of a signer-group pair this is (#68).
+            slot: row.kind === 'group' ? one.slot : undefined,
             createdAt: one.createdAt
               ? new Date(Number(one.createdAt)).toISOString() : null,
             retiredAt: one.retiredAt
@@ -551,10 +575,12 @@ class CryptoMetadataDocument {
     log.debug("Entering CryptoMetadataDocument.signedXml().");
     const xml = this.toXml(m);
     const how = require('../saml/document_settings').signatureOptions();
-    const signer = helpers.STS.xml;
+    // The key for the configured algorithm (#68): `STS.xmlSigner`.
+    const signer = helpers.STS.xmlSigner;
     const id = (/ID="([^"]+)"/.exec(xml) || [])[1];
     const signed = stsCrypto.signXml(xml, {
       privateKeyPem: signer.privateKeyPem,
+      privateKey: signer.privateKey,
       certPem: signer.certPem,
       sigAlg: how.sigAlg, c14nAlg: how.c14nAlg,
       placement: stsCrypto.PLACEMENT.FIRST,

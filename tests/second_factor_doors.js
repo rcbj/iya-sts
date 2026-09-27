@@ -73,6 +73,34 @@ const APPUSER = 'sfd-app-' + STAMP;       // app passwords
 
 let addressCounter = 0;
 
+// A VALUE AS THE APPCONFIG FILE OR THE ENVIRONMENT WOULD GIVE IT (#86). A
+// write through `config.setOverride()` of a value outside the setting's
+// `csvValues` is refused now, so the reader's own defence — dropping a name it
+// does not know — is reached only by a value that arrived by a layer nobody
+// checks on write. `config.value()` is answered for this one key for the
+// length of `fn`, which is exactly that. Every key it is used for is a
+// `csv` row.
+function withReadValue(key, raw, fn) {
+  log.debug("Entering withReadValue().");
+  const was = config.value;
+  // A csv row's parse, done here: `config.parseAs()` runs the same check
+  // the write does and would refuse the value this exists to deliver.
+  const parsed = String(raw).split(',').map(function (part) {
+    return part.trim();
+  }).filter(function (part) {
+    return part.length > 0;
+  });
+  config.value = function (asked) {
+    return asked === key ? parsed : was.apply(config, arguments);
+  };
+  try {
+    log.debug("Leaving withReadValue().");
+    return fn();
+  } finally {
+    config.value = was;
+  }
+}
+
 function withSettings(pairs, fn) {
   log.debug("Entering withSettings().");
   const keys = Object.keys(pairs);
@@ -228,7 +256,10 @@ async function run(t) {
     withEverybodyRequired(function () {
       sameAsWrong(t, PLAIN, 'scim', 'A6. everybody required by the realm');
     });
-    withSettings({ 'authn.passwordAloneDoors': 'ldap,bogus' }, function () {
+    t.check(config.setOverride('authn.passwordAloneDoors', 'ldap,bogus').ok ===
+            false, 'A7. a write naming something that is not a door is ' +
+            'refused (#86)', config.text('authn.passwordAloneDoors'));
+    withReadValue('authn.passwordAloneDoors', 'ldap,bogus', function () {
       const listed = credentials.verify(KEYED, PASSWORD, { door: 'ldap' });
       t.check(listed.ok === true && listed.reason === 'verified',
               'A7. authn.passwordAloneDoors admits the door it lists',

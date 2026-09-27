@@ -41,7 +41,9 @@ const ROOT = path.join(__dirname, '..');
 
 // Runs the served script against one cookie value and asks it `message` from
 // `origin`; answers what it posted back, and where.
-async function askTheIframe(script, cookie, origin, message) {
+// `webCrypto` stands in for the browser's `window.crypto`: node's by default,
+// or (#187) none at all, or one whose digest rejects as HtmlUnit's does.
+async function askTheIframe(script, cookie, origin, message, webCrypto) {
   log.debug("Entering askTheIframe().");
   const answers = [];
   let handler = null;
@@ -51,7 +53,7 @@ async function askTheIframe(script, cookie, origin, message) {
         handler = fn;
       }
     },
-    crypto: nodeCrypto.webcrypto
+    crypto: webCrypto === undefined ? nodeCrypto.webcrypto : webCrypto
   };
   const context = vm.createContext({
     window: window,
@@ -178,6 +180,29 @@ async function library(t) {
   a = await askTheIframe(sm.IFRAME_SCRIPT, cookie, RP, { not: 'a string' });
   t.check(a.text === 'error', '2i. a message that is not a string is error',
           JSON.stringify(a));
+  // #187: the conformance suite's browser has a digest that rejects, and an
+  // insecure context has no Web Crypto at all; the script's own SHA-256
+  // answers both, agreeing with node's over a multi-block, non-ASCII input.
+  const rejecting = { subtle: { digest: function () {
+    return Promise.reject(new Error('not implemented'));
+  } } };
+  const long = 'client-' + 'x'.repeat(150);
+  const longState = stsCrypto.sessionStateHash(long, RP, 'BS\u00e9\u20ac');
+  for (const [label, webCrypto] of [['no Web Crypto', null],
+                                    ['a rejecting digest', rejecting]]) {
+    a = await askTheIframe(sm.IFRAME_SCRIPT, cookie, RP, 'c1 ' + state,
+                           webCrypto);
+    const b = await askTheIframe(sm.IFRAME_SCRIPT, sm.COOKIE + '=BS2', RP,
+                                 'c1 ' + state, webCrypto);
+    const c = await askTheIframe(sm.IFRAME_SCRIPT,
+                                 sm.COOKIE + '=BS\u00e9\u20ac', RP,
+                                 long + ' ' + longState, webCrypto);
+    t.check(a.text === 'unchanged' && b.text === 'changed' &&
+            c.text === 'unchanged',
+            '2j. with ' + label + ' the script\'s own SHA-256 decides, ' +
+            'and agrees with node\'s',
+            JSON.stringify([a, b, c]));
+  }
   log.debug("Leaving library().");
 }
 

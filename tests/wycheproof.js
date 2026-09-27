@@ -1395,13 +1395,24 @@ function inAProductChild(t) {
                                   STS_WYCHEPROOF_DIR: VECTORS,
                                   STS_WYCHEPROOF_ONLY: PRODUCT_FILES }, {
         [CHILD_FLAG]: '1' }),
-      encoding: 'utf8', timeout: 240000, maxBuffer: 64 * 1024 * 1024 });
+      encoding: 'utf8', timeout: 600000, maxBuffer: 64 * 1024 * 1024 });
+  // THE REPORT IS THE LAST LINE THAT IS ONE (2026-09-27), not the last line.
+  // Under the parallel scheduler the child ran beside other files and was
+  // cut off at its old four-minute bound, and the line it left last was a
+  // log record: parsed as the report, it had no `failures`, and the parent
+  // threw rather than saying the child did not finish. The bound is ten
+  // minutes now, and a missing report is reported with the exit and signal.
   let report = null;
-  try {
-    report = JSON.parse(String(run.stdout).trim().split('\n').pop());
-  } catch (e) {
-    log.debug('Caught in inAProductChild(): ' + ((e && e.message) || e));
-    report = null;
+  const lines = String(run.stdout || '').trim().split('\n');
+  for (let i = lines.length - 1; i >= 0 && !report; i--) {
+    try {
+      const one = JSON.parse(lines[i]);
+      if (one && one.product !== undefined && Array.isArray(one.failures)) {
+        report = one;
+      }
+    } catch (e) {
+      log.debug('Caught in inAProductChild(): ' + ((e && e.message) || e));
+    }
   }
   t.check(!!report && report.product === true && report.passed > 0 &&
           report.failures.length === 0,
@@ -1409,7 +1420,9 @@ function inAProductChild(t) {
     'and rsa-1_5 are refused (' +
     (report ? report.passed : 0) + ' file checks)',
     report ? report.failures.slice(0, 10).join('; ')
-           : 'exit ' + run.status + ' ' + String(run.stderr).slice(0, 800));
+           : 'no report: exit ' + run.status + ', signal ' + run.signal +
+             (run.error ? ', ' + run.error.message : '') + ' ' +
+             String(run.stderr).slice(0, 800));
   log.debug('Leaving inAProductChild().');
 }
 
@@ -1481,10 +1494,14 @@ module.exports = {
 if (require.main === module && process.env[CHILD_FLAG]) {
   const childHarness = require('./harness').createHarness('wycheproof-product');
   module.exports.run(childHarness).then(function () {
+    // EXIT ONCE THE REPORT IS WRITTEN (2026-09-27): exiting on the line
+    // after the write lost it in one run, and the parent read a log record
+    // as the report.
     process.stdout.write('\n' + JSON.stringify({
       product: !require('../common/mode').usesBrokenAlgorithms(),
       passed: childHarness.passed(), failures: childHarness.failures() }) +
-      '\n');
-    process.exit(0);
+      '\n', function () {
+      process.exit(0);
+    });
   });
 }

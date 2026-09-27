@@ -60,6 +60,14 @@ type Json = any;
 const PURGE_BATCH = 20000;
 // The prefix a row with no address is kept under; see recordFailure().
 const NO_ADDRESS = '0.0.0.0/0';
+// THE DOOR A REPLAYED ONE-TIME CODE IS RECORDED UNDER (#231). A replay is
+// not a refused password — the code was RIGHT, and was refused only because
+// its step had already been accepted (RFC 6238 section 5.2) — but it is
+// evidence about the person of the same shape: who, from which network,
+// when. So it is a row here, kept, sealed and purged as every other, and
+// `risk/risk_engine.ts` counts rows under this door as the `totp-replay`
+// signal and leaves them OUT of `account-failures` and `network-failures`.
+const TOTP_REPLAY_DOOR = 'a replayed one-time code';
 
 interface RiskFailuresDeps {
   log: { debug(m: string): void; info(m: string): void; warn(m: string): void };
@@ -280,6 +288,7 @@ export = {
   installInstance: (instance: RiskFailures): void => slot.install(instance),
   instanceOrigin: (): string => slot.origin(),
   recordFailure: slot.forward('recordFailure'),
+  TOTP_REPLAY_DOOR: TOTP_REPLAY_DOOR,
   list: slot.forward('list'),
   purge: slot.forward('purge'),
   describe: slot.forward('describe'),

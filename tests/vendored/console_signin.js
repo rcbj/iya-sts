@@ -297,7 +297,7 @@ async function signInToTheConsole(base, user, log, options) {
   const csrf =
     (screenHtml.match(/name="csrf_token" value="([^"]+)"/) || [])[1] || "";
 
-  const signedIn = await hop("/authn/login", {
+  let signedIn = await hop("/authn/login", {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: "authn_id=" + encodeURIComponent(authn) +
@@ -306,6 +306,26 @@ async function signInToTheConsole(base, user, log, options) {
           "&action=login" +
           (csrf ? "&csrf_token=" + encodeURIComponent(csrf) : "")
   });
+  // AN ADMINISTRATOR IS OFFERED A SECOND FACTOR (#246): the authentication
+  // policy's `requireSecondFactorForAdministrators` is `offer` by default, so
+  // an account holding a console role and no second factor is shown the
+  // set-up step instead of being signed in. rcbj: "update tests to just
+  // click ignore for the time being" — the Ignore button finishes the
+  // sign-in on the password, which is what every job here wants.
+  if (signedIn.status === 200) {
+    const offered = await signedIn.text();
+    const setupId = /id="mfa-setup-ignore"/.test(offered)
+      ? (offered.match(/name="mfa_id" value="([^"]+)"/) || [])[1] || "" : "";
+    assert.ok(setupId,
+      "signing in at /authn/login answered 200 and no Ignore button: " +
+      offered.slice(0, 300));
+    signedIn = await hop("/authn/mfa-setup", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: "mfa_id=" + encodeURIComponent(setupId) + "&action=ignore"
+    });
+    say("[console] " + user + " was offered a second factor and ignored it.");
+  }
   assert.ok(cookies.get("sts_session"),
     "signing in at /authn/login should set the sign-on session cookie; the " +
     "reply was " + signedIn.status + ". This service checks no password, so " +

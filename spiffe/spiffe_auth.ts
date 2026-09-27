@@ -156,6 +156,10 @@ import tls = require('../tls/tls_server');
 // LIBRARY that registers no route; it requires `common/pki.js`, which
 // `spiffe_ca.ts` above already requires, so nothing new is loaded here.
 import revocationStatus = require('../common/revocation_status');
+// THE PATH RULES (#201): the synchronous door every one-hop issuer check in
+// this service asks, so an SVID is held to RFC 5280 as every other
+// certificate path is. Already loaded — `revocation_status` requires it.
+import pki = require('../common/pki');
 // WHO IS ON THE OTHER END OF A UNIX SOCKET (#40), asked here since #104 for
 // the SPIRE Server API's socket: in product mode the `local` entity needs the
 // peer's kernel uid. It requires only `helpers` and `config`, so it cannot
@@ -306,6 +310,7 @@ interface SpiffeAuthDeps {
   registry: typeof registry;
   tls: typeof tls;
   revocationStatus: typeof revocationStatus;
+  pki: typeof pki;
   peer: typeof peer;
   // This process's effective uid, or -1 where the platform has none. A
   // function rather than a number so a test can be another process.
@@ -335,6 +340,7 @@ class SpiffeAuth {
       registry: registry,
       tls: tls,
       revocationStatus: revocationStatus,
+      pki: pki,
       peer: peer,
       processUid: function () {
         return typeof process.geteuid === 'function' ? process.geteuid() : -1;
@@ -903,6 +909,29 @@ class SpiffeAuth {
     return out;
   }
 
+  // What X509-SVID section 4.3 asks of a LEAF SVID beyond RFC 5280: cA is
+  // false, keyUsage names digitalSignature and neither keyCertSign nor
+  // cRLSign. `entry` is `pki.certificateFromDer()`'s shape, its facts read by
+  // `pki.pathRuleProblem()` already. '' when it holds.
+  leafSvidProblem(entry) {
+    const { log, pki } = this.deps;
+    log.debug('Entering SpiffeAuth.leafSvidProblem().');
+    const facts = pki.pathFactsOf(entry);
+    let problem = '';
+    if (facts.ca) {
+      problem = 'basicConstraints cA is set';
+    } else if (!facts.keyUsage ||
+               facts.keyUsage.indexOf('digitalSignature') < 0) {
+      problem = 'its keyUsage does not name digitalSignature';
+    } else if (facts.keyUsage.indexOf('keyCertSign') >= 0 ||
+               facts.keyUsage.indexOf('cRLSign') >= 0) {
+      problem = 'its keyUsage names keyCertSign or cRLSign';
+    }
+    log.debug('Leaving SpiffeAuth.leafSvidProblem().' +
+              (problem ? ' ' + problem : ''));
+    return problem;
+  }
+
   verifyPresentedCertificate(certificate, id) {
     const { log, crypto, config, nowSec, spiffeId, revocationStatus, errorCodes,
             ca } = this.deps;
@@ -953,19 +982,42 @@ class SpiffeAuth {
     }
     for (let i = 0; i < authorities.length; i++) {
       const authority = authorities[i];
-      let signed = false;
-      try {
-        signed = leaf.checkIssued(authority.certificate) &&
-                 leaf.verify(authority.certificate.publicKey);
-      } catch (e) {
-        log.debug("Caught in SpiffeAuth.verifyPresentedCertificate(): " +
-                  ((e && e.message) || e));
-        // `verify` throws rather than returning false for a key of the wrong
-        // type, which is the ordinary case when the bundle holds both an EC and
-        // an RSA authority. Not an error: it means this one did not sign it.
-        signed = false;
+      // -------------------------------------------------------------------
+      // ISSUED AND SIGNED BY THIS AUTHORITY, AND THE TWO-CERTIFICATE PATH
+      // HOLDS RFC 5280 (#201). Until then this was node's `checkIssued()`
+      // and `verify()` and nothing else, so an SVID that was itself a CA,
+      // carried a critical extension nothing here implements or broke a
+      // name constraint on the authority was accepted as long as the
+      // signature verified. `pki.verifyIssuedDirectly()` is the one
+      // synchronous door for a one-hop issuer check, and x509-limbo is
+      // driven through it by `tests/x509_limbo.js`. The validity window
+      // was checked above with this surface's own skew and code; it is
+      // asked again there with the same skew, for the authority.
+      // -------------------------------------------------------------------
+      const direct = pki.verifyIssuedDirectly(certificate.raw,
+        [{ certificate: authority.certificate }],
+        { now: now * 1000, skewMs: skew * 1000 });
+      if (!direct.ok && direct.check === 'no-path') continue;
+      if (!direct.ok) {
+        log.debug('Leaving SpiffeAuth.verifyPresentedCertificate(). The ' +
+                  'path breaks a rule.');
+        return { ok: false,
+                 reason: 'The presented SVID was signed by ' +
+                         authority.trustDomain + '\'s authority and its ' +
+                         'path is refused: ' + direct.reason + '.',
+                 errorCode: 'STS-SPIFFE-0144' };
       }
-      if (!signed) continue;
+      // X509-SVID section 4.3's leaf rules: a leaf SVID is not a CA, may not
+      // sign certificates or lists, and must be able to sign.
+      const svidProblem = this.leafSvidProblem(direct.chain[0]);
+      if (svidProblem) {
+        log.debug('Leaving SpiffeAuth.verifyPresentedCertificate(). Not a ' +
+                  'leaf SVID.');
+        return { ok: false,
+                 reason: 'The presented certificate is not a leaf X509-SVID: ' +
+                         svidProblem + ' (X509-SVID section 4.3).',
+                 errorCode: 'STS-SPIFFE-0144' };
+      }
       const claimed = spiffeId.trustDomainOf(id);
       if (claimed !== authority.trustDomain) {
         log.debug('Leaving SpiffeAuth.verifyPresentedCertificate(). Trust ' +

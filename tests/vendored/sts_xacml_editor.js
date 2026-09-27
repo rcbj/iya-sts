@@ -697,8 +697,21 @@ async function signIn(driver, username) {
       By.xpath("//button[@type='submit'] | //input[@type='submit'] | " +
                "//button"));
   await button.click();
+  // An administrator is OFFERED a second factor since #246, on a page drawn
+  // at the same URL; this suite ignores it, as rcbj asked ("just click
+  // ignore for the time being").
   await driver.wait(async function () {
-    return (await driver.getCurrentUrl()).indexOf("/authn/login") < 0;
+    return (await driver.getCurrentUrl()).indexOf("/authn/login") < 0 ||
+      (await driver.findElements(By.id("mfa-setup-ignore"))).length > 0;
+  }, 15000, "signing in as " + username + " showed neither the console nor " +
+            "the offer of a second factor.");
+  const ignore = await driver.findElements(By.id("mfa-setup-ignore"));
+  if (ignore.length) {
+    await ignore[0].click();
+  }
+  await driver.wait(async function () {
+    return (await driver.getCurrentUrl()).indexOf("/authn/login") < 0 &&
+      (await driver.getCurrentUrl()).indexOf("/authn/mfa-setup") < 0;
   }, 15000, "signing in as " + username + " left the browser on the sign-in " +
             "screen. The mock checks no password, so this is a name that was " +
             "typed and a button that was pressed; if it did not open the " +

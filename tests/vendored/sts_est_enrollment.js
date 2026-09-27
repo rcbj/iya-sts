@@ -515,7 +515,8 @@ async function test() {
           });
           assert.ok(!/PRIVATE KEY/.test(view.raw));
           assert.ok(view.body.hierarchy.built);
-          assert.strictEqual(view.body.profiles.length, 9);
+          // /admin/pki's nine and the device profile (#164 phase 2).
+          assert.strictEqual(view.body.profiles.length, 10);
           assert.strictEqual(view.body.refusedProfiles.length, 5);
         });
   const user = await send(realmApi + "/users?user=" +

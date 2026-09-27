@@ -177,6 +177,11 @@ class ProtocolStack {
     // Every module loaded from here on waits for `installInstance()` instead of
     // building its own instance at the end of its load (#50, R2).
     InstanceSlot.deferToRoot();
+    // EVERY TLS CLIENT IN THE PROCESS (#201): RFC 9525's host check and the
+    // path rules under every connection that takes node's default check —
+    // `common/outbound_tls.ts` argues it. First, so nothing below dials out
+    // before it. A library; it registers nothing.
+    require('./outbound_tls').installProcessWide();
     // Which LDAP attributes the four claim sets carry. A LIBRARY — it registers
     // no route, so this line adds nothing to /admin/sts-metadata and its
     // position in the route order is not a position at all. It is required
@@ -245,6 +250,22 @@ class ProtocolStack {
     // #130: the device register (ou=devices), a library over the directory
     // hooks `credentials.ts` carries; Native SSO mints its devices.
     this.build('common/devices', require('./devices'), 'Devices');
+    // #164 phase 2: what a device key's attestation proves
+    // (`device_attestation`), which device a request came from
+    // (`device_recognition`, asked by `authn` and `oauth2` below), and a
+    // person registering their own device by proving a key
+    // (`device_enrolment`, the portal's door). Three libraries (rule 3).
+    this.build('common/device_attestation', require('./device_attestation'),
+               'DeviceAttestation');
+    this.build('common/device_recognition', require('./device_recognition'),
+               'DeviceRecognition');
+    this.build('common/device_enrolment', require('./device_enrolment'),
+               'DeviceEnrolment');
+    // #265: remembered browsers — a device known by a signed and encrypted
+    // cookie. A library, asked by recognition (above), the sign-in screen
+    // and the portal.
+    this.build('common/browser_devices', require('./browser_devices'),
+               'BrowserDevices');
     // #127: a person's identity verifications and the `verified_claims`
     // answer. A library, asked by the authorization server's claims request,
     // the console and API, and the wallet and certificate sign-ins.
@@ -290,6 +311,10 @@ class ProtocolStack {
     require('../ws-trust/wstrust');
     this.build('saml/document_settings', require('../saml/document_settings'),
                'DocumentSettings');
+    // #248: the back channel's TLS certificate as a metadata key. A library;
+    // it reaches `tls/tls_server` lazily, when a document is built.
+    this.build('saml/listener_keys', require('../saml/listener_keys'),
+               'ListenerKeys');
     this.build('saml/saml2', require('../saml/saml2'), 'Saml2Assertions');
     this.build('ws-trust/wstrust', require('../ws-trust/wstrust'), 'WsTrust');
     this.register(app, require('../ws-trust/wstrust'), 'ws-trust/wstrust');
@@ -315,6 +340,11 @@ class ProtocolStack {
                'RealmChooser');
     this.build('ssf/account_signals', require('../ssf/account_signals'),
                'AccountSignals');
+    // #244, #245: what the service's own keys and certificate hierarchy say
+    // over Shared Signals when they move. A library in account_signals's
+    // shape — `ssf.ts` read from the cache, everything else lazily.
+    this.build('ssf/service_signals', require('../ssf/service_signals'),
+               'ServiceSignals');
     this.build('saml/authn_context', require('../saml/authn_context'),
                'AuthnContext');
     this.build('common/inetorgperson', require('./inetorgperson'),
@@ -359,6 +389,9 @@ class ProtocolStack {
     // #131: /portal/ciba, where a person answers a backchannel sign-in.
     this.build('portal/portal_ciba', require('../portal/portal_ciba'),
                'PortalCiba');
+    // #150: /portal/device, where a person enters a device's user code.
+    this.build('portal/portal_device', require('../portal/portal_device'),
+               'PortalDevice');
     // #147: /portal/claim-sources, where a person links a Claims Provider.
     // Its require loads `oauth-oidc/claims_providers` early, which declares a
     // map and nothing else at load; the library is BUILT below with `oauth2`'s
@@ -427,6 +460,12 @@ class ProtocolStack {
     // #131: OpenID Connect CIBA's requests, approvals and notifications — a
     // library whose wire step registers the `oauth2.ciba-sweep` job.
     this.build('oauth-oidc/ciba', require('../oauth-oidc/ciba'), 'Ciba');
+    // #150: RFC 8628's device codes — a library whose wire step registers
+    // the `oauth2.device-code-sweep` job; `oauth2` answers the endpoint and
+    // the grant, and `/portal/device` the person.
+    this.build('oauth-oidc/device_authorization',
+               require('../oauth-oidc/device_authorization'),
+               'DeviceAuthorization');
     // Grant Management (#142): a library `oauth2` reads at every issuance,
     // whose wire step registers the `oauth2.grant-management-purge` job; its
     // routes (/oauth2/grants/{id}) are registered just after `oauth2`'s.
@@ -455,6 +494,12 @@ class ProtocolStack {
     this.build('oauth-oidc/request_object',
                require('../oauth-oidc/request_object'),
                'RequestObject');
+    // OAuth 2.0 Attestation-Based Client Authentication (#229): a library
+    // `client_auth.js` asks at request time and `oauth2` owns the challenge
+    // endpoint of; built before `oauth2`, which reads it.
+    this.build('oauth-oidc/client_attestation',
+               require('../oauth-oidc/client_attestation'),
+               'ClientAttestation');
     this.build('oauth-oidc/par', require('../oauth-oidc/par'),
                'PushedRequests');
     this.build('debugger/debugger_access',
@@ -581,8 +626,21 @@ class ProtocolStack {
     // references them. None requires the issuer or the verifier.
     this.build('oid4vc/vc_status_codec', require('../oid4vc/vc_status_codec'),
                'VcStatusCodec');
+    // #194-#196: the closed JSON-LD loader and RDFC-1.0 the RDFC
+    // cryptosuites canonicalize with, and the VC Data Model's MUSTs. Two
+    // libraries, built before the Data Integrity suites that read them.
+    this.build('oid4vc/vc_jsonld', require('../oid4vc/vc_jsonld'),
+               'VcJsonLd');
+    this.build('oid4vc/vc_data_model', require('../oid4vc/vc_data_model'),
+               'VcDataModel');
+    this.build('oid4vc/vc_ecdsa_sd', require('../oid4vc/vc_ecdsa_sd'),
+               'VcEcdsaSd');
     this.build('oid4vc/vc_data_integrity',
                require('../oid4vc/vc_data_integrity'), 'VcDataIntegrity');
+    // #198: VC-JOSE-COSE's envelopes (vc+jwt, vc+sd-jwt, vc+cose and the vp
+    // forms). A library over the codec, the data model and the suites.
+    this.build('oid4vc/vc_jose_cose', require('../oid4vc/vc_jose_cose'),
+               'VcJoseCose');
     // #129: SIOPv2's relying-party half — the self-issued ID Token's check
     // and the enrolled subjects. A library the verifier, the sign-in, the
     // portal and the console ask; it registers nothing.
@@ -602,6 +660,15 @@ class ProtocolStack {
     this.build('oid4vc/vc_verifier', require('../oid4vc/vc_verifier'),
                'VcVerifier');
     this.register(app, require('../oid4vc/vc_verifier'), 'oid4vc/vc_verifier');
+    // #194-#199: the W3C VC-API test endpoints (/vc-api/*), a TEST CONTROL
+    // over the libraries above — the Data Integrity suites, the status lists
+    // and the data model. After the verifier, whose libraries it reads; it
+    // requires no route module.
+    this.build('oid4vc/vc_did_resolver',
+               require('../oid4vc/vc_did_resolver'), 'VcDidResolver');
+    require('../oid4vc/vc_api');
+    this.build('oid4vc/vc_api', require('../oid4vc/vc_api'), 'VcApi');
+    this.register(app, require('../oid4vc/vc_api'), 'oid4vc/vc_api');
     // -------------------------------------------------------------------------
     // 14a. AND A PRESENTATION AS A SIGN-IN (2026-09-17, #38): /authn/wallet,
     // which turns a verified presentation of a credential this realm issued
@@ -750,6 +817,9 @@ class ProtocolStack {
     this.build('kerberos/krb5_person_keys',
                require('../kerberos/krb5_person_keys'),
                'Krb5PersonKeys');
+    // #228: loaded by the two admin-core layers below, which ask it.
+    this.build('ldap/person_editor', require('../ldap/person_editor'),
+               'PersonEditor');
     this.build('admin-core/admin_actions',
                require('../admin-core/admin_actions'),
                'AdminActions');
@@ -993,6 +1063,16 @@ class ProtocolStack {
                'RiskAdmin');
     this.register(app, require('../admin-ui/risk_admin'),
                   'admin-ui/risk_admin');
+    // 18j-ii. MONITORING → GEOLOCATION (#255, 2026-09-26). 18a's placement
+    // and 18a's reason: the console's shell and the risk libraries above
+    // are loaded, and `mgmt-api/admin_api` requires the page. The map is a
+    // library (`geo_map.ts`, rule 3) built just before it.
+    this.build('admin-ui/geo_map', require('../admin-ui/geo_map'), 'GeoMap');
+    require('../admin-ui/geolocation_admin');
+    this.build('admin-ui/geolocation_admin',
+               require('../admin-ui/geolocation_admin'), 'GeolocationAdmin');
+    this.register(app, require('../admin-ui/geolocation_admin'),
+                  'admin-ui/geolocation_admin');
     // 18k. THE MODE'S PAGE (#181, 2026-09-23). `/admin/mode` — what
     // `global.mode` changes and what is in force in the realm, drawn from
     // `common/mode.js`'s `report()`. 18a's placement and 18a's reason: the
@@ -1033,6 +1113,38 @@ class ProtocolStack {
                'ClaimsProvidersAdmin');
     this.register(app, require('../oauth-oidc/claims_providers_admin'),
                   'oauth-oidc/claims_providers_admin');
+    // 18o. PROVIDER COMMANDS AND OUTBOUND DELIVERIES (#151): /admin/commands
+    // and /admin/deliveries, 18a's placement and 18a's reason. The library
+    // they read (`provider_commands`) is BUILT at 23b-iv, after the
+    // directory, and reached here only through its forwarders at request
+    // time; `mgmt-api/admin_api` reads the API's routes out of
+    // `provider_commands_api`, built below.
+    this.build('oauth-oidc/provider_commands_admin',
+               require('../oauth-oidc/provider_commands_admin'),
+               'ProviderCommandsAdmin');
+    this.register(app, require('../oauth-oidc/provider_commands_admin'),
+                  'oauth-oidc/provider_commands_admin');
+    // 18p. FOREIGN SSF TRANSMITTERS (#153): /admin/ssf/transmitters, 18a's
+    // placement and 18a's reason; the library (built at 23b-v) is reached
+    // through its forwarders at request time only.
+    this.build('ssf/ssf_transmitters_admin',
+               require('../ssf/ssf_transmitters_admin'),
+               'SsfTransmittersAdmin');
+    this.register(app, require('../ssf/ssf_transmitters_admin'),
+                  'ssf/ssf_transmitters_admin');
+
+    // 18q. DEVICES (#164, #218): Directory → Devices, Protocols → Device
+    // registration and Monitoring → Devices, one module for the three. 18a's
+    // placement and 18a's reason: the console's shell, the device register
+    // (built with `credentials` above) and the authorization server (9),
+    // whose `sessionIsLive()` it asks, already loaded, and
+    // `mgmt-api/admin_api` requires it. `/admin/ldap/devices` is
+    // `ldap/ldap_server.js`'s, at 21.
+    require('../admin-ui/devices_admin');
+    this.build('admin-ui/devices_admin', require('../admin-ui/devices_admin'),
+               'DevicesAdmin');
+    this.register(app, require('../admin-ui/devices_admin'),
+                  'admin-ui/devices_admin');
     // The management API: everything that console shows and everything it can
     // change, at /admin-api, over JSON. It must come AFTER admin.js and the
     // order is a dependency rather than a preference — it requires that module
@@ -1060,6 +1172,11 @@ class ProtocolStack {
     this.build('oauth-oidc/claims_providers_api',
                require('../oauth-oidc/claims_providers_api'),
                'ClaimsProvidersApi');
+    this.build('oauth-oidc/provider_commands_api',
+               require('../oauth-oidc/provider_commands_api'),
+               'ProviderCommandsApi');
+    this.build('ssf/ssf_transmitters_api',
+               require('../ssf/ssf_transmitters_api'), 'SsfTransmittersApi');
     this.build('mgmt-api/admin_api', require('../mgmt-api/admin_api'),
                'AdminApi');
     this.register(app, require('../mgmt-api/admin_api'), 'mgmt-api/admin_api');
@@ -1291,6 +1408,24 @@ class ProtocolStack {
     this.build('ssf/ssf_cluster', require('../ssf/ssf_cluster'), 'SsfCluster');
     this.build('ssf/ssf', require('../ssf/ssf'), 'SharedSignals');
     this.register(app, require('../ssf/ssf'), 'ssf/ssf');
+    // 23b-v. FOREIGN TRANSMITTERS (#153): this realm as the receiver of
+    // another identity service's Shared Signals — a library whose wire step
+    // registers the `ssf.foreign-poll` job, and whose one route is the push
+    // endpoint. After the directory (21) and `ssf/ssf`, beside which it
+    // belongs; everything it reaches is reached lazily.
+    this.build('ssf/ssf_transmitters', require('../ssf/ssf_transmitters'),
+               'SsfTransmitters');
+    this.register(app, require('../ssf/ssf_transmitters'),
+                  'ssf/ssf_transmitters');
+    // 23b-vi. AN OAUTH GRANT REVOKED IS A CAEP `session-revoked` (#239): a
+    // library that fills `common/admin_stats.js`'s `setRevocationObserver()`
+    // slot when built and registers no route. Beside `ssf/ssf`, which it
+    // delivers through — lazily, so the order is for a reader, and a
+    // revocation before this line (none happens at load) is simply not
+    // reported.
+    this.build('oauth-oidc/oauth_grant_signals',
+               require('../oauth-oidc/oauth_grant_signals'),
+               'OAuthGrantSignals');
     // 23b-ii. SIGNING KEY ROTATION (#42, 2026-09-22): a library that registers
     // its two scheduler jobs when built and no route. After `ssf/ssf`, whose
     // signingKeyRotated() it calls (lazily, so the order is for a reader).
@@ -1304,6 +1439,21 @@ class ProtocolStack {
     // reaches is reached lazily, so the order is for a reader.
     this.build('kerberos/krb5_krbtgt_rotation',
                require('../kerberos/krb5_krbtgt_rotation'), 'KrbtgtRotation');
+    // 23b-iv. OPENID PROVIDER COMMANDS (#151): the library — Command Tokens
+    // on the shared outbound queue, tenant runs, the account-state register
+    // — whose wire step registers the `oauth2.command-sweep` job and adds it
+    // to the directory's account observers, so it is built after
+    // `ldap/ldap_server` (21); its one route is the callback. Then the mock
+    // relying party's command endpoint (development only).
+    this.build('oauth-oidc/provider_commands',
+               require('../oauth-oidc/provider_commands'),
+               'ProviderCommands');
+    this.register(app, require('../oauth-oidc/provider_commands'),
+                  'oauth-oidc/provider_commands');
+    this.build('oauth-oidc/command_mock_rp',
+               require('../oauth-oidc/command_mock_rp'), 'CommandMockRp');
+    this.register(app, require('../oauth-oidc/command_mock_rp'),
+                  'oauth-oidc/command_mock_rp');
     // -------------------------------------------------------------------------
     // 23c. XACML 3.0 — the PDP, the policy repository, the PIP, the embedded
     // PEPs and the PAP console.

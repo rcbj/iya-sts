@@ -238,6 +238,8 @@ class ProtocolEndpoints {
       '/admin/oid4vp': [
         '/oid4vp/verifier', '/oid4vp/start', '/oid4vp/request/:id',
         '/oid4vp/response', '/oid4vp/result/:state', '/oid4vp/done',
+        // The x509 Client Identifiers (#230), whose settings are here.
+        '/oid4vp/verifier-certificate',
         // The wallet sign-in (#38), whose four settings are on this page.
         '/authn/wallet', '/authn/wallet/wait'
       ].map(route),
@@ -285,6 +287,8 @@ class ProtocolEndpoints {
         '/.well-known/hoba/register'
       ].map(route),
       '/admin/ssf': ['/ssf'].concat(SSF_DELIVERY).map(route),
+      // Foreign transmitters (#153): the push endpoint this realm gives one.
+      '/admin/ssf/transmitters': ['/ssf/transmitters/:id/push'].map(route),
       '/admin/caep': SSF_DELIVERY.map(route),
       '/admin/risc': SSF_DELIVERY.map(route),
       '/admin/federation': ['/federation', '/federation/login/:id',
@@ -298,6 +302,16 @@ class ProtocolEndpoints {
       '/admin/backup-codes': ['/authn/backup-code', '/portal/mfa'].map(route),
       '/admin/webauthn': ['/authn/webauthn', '/portal/keys',
                           '/portal/remove-key'].map(route),
+      // DEVICE REGISTRATION (#164, #218): the doors a device arrives and is
+      // recognised through today — Native SSO's token endpoint and its
+      // revocation of a device_secret, and the owner's own list. Phase 2's
+      // EST, SCEP and portal enrolment add theirs here.
+      '/admin/device-registration': ['/oauth2/token', '/oauth2/revoke',
+                                     '/portal/devices',
+                                     '/portal/devices/challenge',
+                                     '/portal/devices/proof',
+                                     '/.well-known/est/:label/simpleenroll',
+                                     '/enroll/scep'].map(route),
       '/admin/kerberos': [this.socket('kdc'), this.socket('krb5-service'),
                           this.route('/KdcProxy'),
                           this.route('/krb5/principals'),
@@ -357,6 +371,10 @@ class ProtocolEndpoints {
       // ===== Claims Providers endpoints row (#147) =====
       '/admin/claim-providers': [
         '/portal/claim-sources', '/portal/claim-sources/callback'
+      ].map(route),
+      // ===== Provider Commands endpoints row (#151) =====
+      '/admin/commands': [
+        '/oauth2/commands/callback', '/oauth2/commands/mock-rp'
       ].map(route),
       // ===== SCEP endpoints row =====
       '/admin/scep': [

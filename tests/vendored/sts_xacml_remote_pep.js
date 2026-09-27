@@ -2394,22 +2394,28 @@ async function theNudgeIsDelivered(polledMs) {
       new Date(started).toISOString());
   });
 
-  // AND ONLY NOW THE LATENCY. The row above is the deterministic half and it is
-  // asserted FIRST on purpose: a broken nudge must fail on "no nudge was ever
-  // dialled" rather than on a number, because the number is the one assertion
-  // here that a lucky poll can satisfy. This one adds what the row cannot say —
-  // that the delivery actually shortened the wait.
-  check("and the change reached the container in a FRACTION of the polling " +
-        "interval", function () {
-    assert.ok(elapsed < POLL_MS / 4,
-      "the poll interval is " + POLL_MS + "ms and section 4 took " + polledMs +
-      "ms to converge without a nudge. This one took " + elapsed + "ms, and " +
-      "a delivered nudge is TENS of milliseconds — the PDP posts as the " +
-      "store is written and the PEP pulls on the way out of answering 204. A " +
-      "number up in the hundreds means the nudge was recorded as delivered " +
-      "and did not cause THIS convergence: the poll did the work, and a PEP " +
-      "that answers a nudge without acting on it looks identical from every " +
-      "other angle.");
+  // AND ONLY NOW WHICH PULL DID IT. The row above is the deterministic half
+  // and it is asserted FIRST on purpose: a broken nudge must fail on "no
+  // nudge was ever dialled". What the row cannot say is that the delivery
+  // actually CAUSED this convergence rather than a poll racing it.
+  //
+  // THIS WAS A LATENCY UNTIL 2026-09-26 — under a quarter of the poll
+  // interval — and it stopped meaning that when the suite began running jobs
+  // side by side: with the bulk loads beside it the PDP answered the nudged
+  // pull in 2.5s, the nudge had worked, and the number said it had not. So
+  // the PEP now records what asked for the pull that changed its holding
+  // (`sync.js`'s `lastChangeCause`), and that is asserted instead. The
+  // latency is still logged.
+  check("and it was the NUDGE's pull that brought the change in, not a poll",
+        function () {
+    assert.strictEqual(after.holding.lastChangeCause, "nudge",
+      "the PEP records what asked for the pull that last changed its " +
+      "holding, and it says \"" + after.holding.lastChangeCause + "\" (at " +
+      after.holding.lastChangeAt + "). A nudge recorded as delivered whose " +
+      "pull did not bring the change is a PEP that answers a nudge without " +
+      "acting on it, which looks identical from every other angle. This " +
+      "convergence took " + elapsed + "ms against " + polledMs +
+      "ms by polling and a " + POLL_MS + "ms interval." + pepLog());
     log.info("Nudged convergence: " + elapsed + "ms, against " + polledMs +
              "ms by polling and a " + POLL_MS + "ms interval.");
   });

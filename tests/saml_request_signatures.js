@@ -162,6 +162,9 @@ function withSettings(config, pairs, fn) {
 }
 
 // An AuthnRequest. `extra` goes inside the root after the Issuer.
+// A Destination since #190: a SIGNED request names where it was sent
+// (saml-bindings-2.0-os sections 3.4.5.2, 3.5.5.2) and this service refuses
+// one addressed elsewhere; the fake requests arrive at https://idp.test.
 function authnRequest(opts) {
   log.debug("Entering authnRequest().");
   const o = opts || {};
@@ -169,6 +172,7 @@ function authnRequest(opts) {
   return '<samlp:AuthnRequest xmlns:samlp="' + NS_SAMLP + '" ' +
     'xmlns:saml="' + NS_SAML + '" ID="' + (o.id || '_req1') + '" ' +
     'Version="2.0" IssueInstant="' + new Date().toISOString() + '"' +
+    ' Destination="' + (o.destination || 'https://idp.test/saml2/sso') + '"' +
     (o.acs ? ' AssertionConsumerServiceURL="' + o.acs + '"' : '') +
     (o.index !== undefined ? ' AssertionConsumerServiceIndex="' + o.index +
                              '"' : '') +
@@ -183,7 +187,8 @@ function logoutRequest(issuer, id) {
   log.debug("Leaving logoutRequest().");
   return '<samlp:LogoutRequest xmlns:samlp="' + NS_SAMLP + '" ' +
     'xmlns:saml="' + NS_SAML + '" ID="' + (id || '_lo1') + '" ' +
-    'Version="2.0" IssueInstant="' + new Date().toISOString() + '">' +
+    'Version="2.0" IssueInstant="' + new Date().toISOString() + '" ' +
+    'Destination="https://idp.test/saml2/slo">' +
     '<saml:Issuer>' + issuer + '</saml:Issuer>' +
     '<saml:NameID>alice</saml:NameID></samlp:LogoutRequest>';
 }
@@ -680,7 +685,10 @@ function run(t) {
           codeOf(unsignedProd) === 'STS-SAML-0063',
           'PRODUCT, by default: an unsigned request is REFUSED',
           unsignedProd.statusCode + ' ' + codeOf(unsignedProd));
-  t.check(toSignIn(getSso(unsignedRaw)),
+  // A NEW request: the one above has been answered once already, and an
+  // AuthnRequest ID is answered once (#190, STS-SAML-0088).
+  t.check(toSignIn(getSso(redirectQuery(stsCrypto,
+    authnRequest({ issuer: spU, id: '_uE2' }), 'u'))),
           'development, by default: the same request is accepted');
 
   // -------------------------------------------------------------------------

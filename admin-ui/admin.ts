@@ -782,6 +782,11 @@ import krb5Principals = require('../kerberos/krb5_principals');
 // requires only `config`, `bunyan` and zod, so it closes no cycle here and
 // moves nothing in the route order.
 import validation = require('../common/validation');
+// THE CLOSED SETS a console form is held to (#86). A LEAF (rule 3) requiring
+// only `bunyan`; `mgmt-api/admin_api.ts` fills its register at wire time from
+// the OpenAPI table, and the check below reads it. A register both modules
+// require in the ordinary direction, not a slot: neither calls the other.
+import closedSets = require('../common/closed_sets');
 import InstanceSlot = require('../common/instance_slot');
 
 // REQUIRED FOR THE ORDER THEY WERE ALWAYS REQUIRED IN, AND READ NOWHERE HERE
@@ -1247,6 +1252,15 @@ const SECTIONS = [
       // that it is the one family here that runs the OTHER WAY ROUND — this
       // service delivering an event to a receiver that agreed in advance —
       // so there is no family above it whose page it would be a corner of.
+      // FOREIGN TRANSMITTERS (#153, 2026-09-26), beside the transmitter:
+      // the same framework with this realm as the RECEIVER of another
+      // identity service. Drawn by ssf/ssf_transmitters_admin.ts.
+      { path: '/admin/ssf/transmitters', label: 'SSF transmitters',
+        blurb: 'Other identity services whose Shared Signals this realm ' +
+               'receives: each registered by its issuer, its stream there ' +
+               '(poll or push), what arrived and whether it verified, the ' +
+               'person each event named through a federation relationship, ' +
+               'and what the signal-response policy let it do here.' },
       { path: '/admin/ssf', label: 'Shared Signals',
         blurb: 'The <strong>Shared Signals Framework</strong> (OpenID SSF ' +
                '1.0): the streams this transmitter has agreed, who each one ' +
@@ -1288,10 +1302,9 @@ const SECTIONS = [
                'configures this service to act without being asked</strong>: ' +
                'with <code>caep.autoEmit</code> on, a sign-in, a single ' +
                'sign-on and a sign-out each send an event to whoever agreed ' +
-               'to be told. Five of the eight describe things nothing here ' +
-               'does &mdash; no device reports compliance to this service ' +
-               'and no risk engine talks to it &mdash; so this page carries ' +
-               'the form that emits one by hand.' },
+               'to be told. All eight fire on their own (device ' +
+               'compliance since #164), and this page also carries the form ' +
+               'that emits one by hand, on demand.' },
 
       // AND RISC BESIDE IT, for the reason CAEP is beside Shared Signals
       // rather than inside it: they are two specifications answering two
@@ -1360,6 +1373,16 @@ const SECTIONS = [
       // reason: another party this realm is configured to trust, here for
       // claims about a person — OpenID Connect aggregated and distributed
       // claims. Drawn by oauth-oidc/claims_providers_admin.ts.
+      // OPENID PROVIDER COMMANDS (#151, 2026-09-26), beside Claims
+      // Providers for the same reason: another party this realm acts
+      // towards, here telling relying parties what to do with an account.
+      // Drawn by oauth-oidc/provider_commands_admin.ts.
+      { path: '/admin/commands', label: 'Provider Commands',
+        blurb: 'OpenID Provider Commands: each client\'s command_endpoint ' +
+               'and what it supports, sending an account command about a ' +
+               'person or a tenant command about everybody, what each ' +
+               'relying party said about each account, tenant runs, and ' +
+               'the deliveries.' },
       { path: '/admin/claim-providers', label: 'Claims Providers',
         blurb: 'The OpenID Providers this realm fetches claims from for a ' +
                'person who linked one on the portal, passed to a relying ' +
@@ -1465,6 +1488,22 @@ const SECTIONS = [
                'browser was asked about attestation, the resident key or the ' +
                'attachment. Who holds a key is on that person\'s row under ' +
                '<a href="/admin/users">Users</a>.' },
+      // DEVICE REGISTRATION (#164, #218, 2026-09-26): HOW a device comes to
+      // be in the register and how it is recognised — the enrolment
+      // methods, attestation, the MDM feed — and every `devices.*` setting.
+      // Under Protocols because those are the protocol doors a device
+      // arrives through (Native SSO today; EST, SCEP, WebAuthn and JWK
+      // proofs as #164's phase 2 builds them); the register itself is
+      // Directory → Devices, and what it did is Monitoring → Devices.
+      // Drawn by `admin-ui/devices_admin.ts`.
+      { path: '/admin/device-registration', label: 'Device registration',
+        blurb: 'How a phone, a computer or a host comes to be in this ' +
+               'realm\'s device register and how it is recognised again: ' +
+               'each enrolment method and whether it is built, the kinds of ' +
+               'key a device is known by, what attestation means here, and ' +
+               'every <code>devices.*</code> setting &mdash; how many ' +
+               'devices a person or an application may own and how many ' +
+               'keys one device may hold.' },
       // A GROUP OF TWO SINCE 2026-09-13, asked for by rcbj. The two pages were
       // flat siblings — `Kerberos` and `Kerberos principals` — on the argument
       // that a `Kerberos` heading over a `Kerberos` page would say the label
@@ -1769,6 +1808,22 @@ const SECTIONS = [
                'refusing would remove a test case rather than add one — but ' +
                'the redirect URIs and the secret beside it are what RFC 9700 ' +
                'mode judges the next request against.' },
+      // DEVICES (#164, #218, 2026-09-26): the register itself, in Directory
+      // because its store is — every device is an entry under `ou=devices`,
+      // owned by a person or an application entry. A destination, with a
+      // drill-down per device (`?device=`) and a create form on the list,
+      // the way Groups creates from its own list. Drawn by
+      // `admin-ui/devices_admin.ts`; the entries as the directory holds them
+      // are `/admin/ldap/devices` below.
+      { path: '/admin/devices', label: 'Devices',
+        blurb: 'Every phone, computer and host this realm knows, each owned ' +
+               'by ONE person or ONE application: the applications that ' +
+               'used it, the keys it is recognised by (a certificate, a JWK ' +
+               'or DPoP key, a linked WebAuthn credential, and the Native ' +
+               'SSO secret), whether it is attested or self-asserted, its ' +
+               'compliance, and when it was last used. Click one to edit ' +
+               'it, add or remove a key, give it to another owner or remove ' +
+               'it; register one by hand at the foot of the list.' },
       // -------------------------------------------------------------------
       // POLICIES (2026-09-12), asked for by rcbj as *Directory → Policies*,
       // with the password policy as the first kind of policy it configures.
@@ -1950,6 +2005,14 @@ const SECTIONS = [
                    'nothing caches them, so an <code>ldapmodify</code> of ' +
                    '<code>spiffeX509SvidTtl</code> changes the lifetime of ' +
                    'the next SVID the Workload API hands out.' },
+          { path: '/admin/ldap/devices', label: 'Device entries',
+            blurb: 'The device register as the directory holds it: one ' +
+                   'entry per device under <code>ou=devices</code>, every ' +
+                   'attribute on it, and the SCHEMA &mdash; a key, the last ' +
+                   'compliance change and the enrolment are one JSON value ' +
+                   'each, and a client reading an entry over 389 has ' +
+                   'nowhere else to learn what they mean. The Native SSO ' +
+                   'secret\'s hash is withheld here as from every LDAP read.' },
           { path: '/admin/ldap/service', label: 'The directory service',
             blurb: 'The two raw sockets and the store behind them, as they ' +
                    'actually are right now rather than as they are ' +
@@ -2170,6 +2233,18 @@ const SECTIONS = [
                    'are on each stream at ' +
                    '<a href="/admin/ssf">Protocols &rarr; Shared Signals</a>.' }
         ] },
+
+      // OUTBOUND DELIVERIES (#151, 2026-09-26): what this service POSTed to
+      // an address a client registered — Back-Channel Logout Tokens, CIBA
+      // pings and pushes, OpenID Provider Commands — on the one durable
+      // queue, with each kind's dead letters and Retry. Drawn by
+      // oauth-oidc/provider_commands_admin.ts.
+      { path: '/admin/deliveries', label: 'Outbound deliveries',
+        blurb: 'Every Logout Token, CIBA notification and OpenID Provider ' +
+               'Command this realm sent to a relying party, by kind: pending, ' +
+               'sent and <strong>dead</strong> — each dead letter with its ' +
+               'code and the reason, and a Retry that sends it again as a ' +
+               'new generation.' },
 
       // Beside Delegation and not inside it, and the argument is the one both
       // of that page's pictures rest on: every row there is about two
@@ -2463,6 +2538,18 @@ const SECTIONS = [
                'page names; a per-process job has a row per process. ' +
                'Admin Write may run a job now, and on a cluster may ask ' +
                'the leader to hand the scheduler to another node.' },
+      // DEVICES (#164, #218, 2026-09-26): what the register holds, counted
+      // — by owner kind, compliance, attestation and key kind, and the
+      // Native SSO devices bound to a live session against ended ones — and
+      // what happened to it over time: creations, removals and evictions at
+      // a person's bound. Drawn by `admin-ui/devices_admin.ts`.
+      { path: '/admin/devices/monitor', label: 'Devices',
+        blurb: 'The device register counted: how many devices persons and ' +
+               'applications own, how many are compliant, attested, known ' +
+               'by each kind of key, and bound to a live Native SSO sign-in ' +
+               'against ended ones &mdash; and, day by day, how many were ' +
+               'registered, removed, or evicted to make room at a ' +
+               'person\'s bound.' },
       // MAIL (#63, 2026-09-22), after the scheduler: what this service SENT
       // — the outbox, its dead letters, and in development the captured
       // messages. Drawn by `admin-ui/mail_admin.ts` out of `common/mail.ts`;
@@ -2495,6 +2582,17 @@ const SECTIONS = [
                'about their own sign-ins, and &mdash; for this process ' +
                '&mdash; how long an assessment takes and the reactions ' +
                'taken.' },
+      // GEOLOCATION (#255, 2026-09-26), beside the risk pages whose
+      // assessments it counts: `admin-ui/geolocation_admin.ts`.
+      { path: '/admin/geolocation', label: 'Geolocation',
+        blurb: 'Where the realm\'s people signed in from, on a map: the ' +
+               'world with every country shaded by how many people it ' +
+               'counts, then a continent, then a country and its cities. ' +
+               'Live sessions by default, or everybody over the last day, ' +
+               'week or month. Drawn from what risk scoring recorded, so it ' +
+               'needs a geolocation dataset on Monitoring &rarr; Risk; a ' +
+               'place with too few people to be anonymous is shaded and ' +
+               'not numbered.' },
       { path: '/admin/audit', label: 'Audit log',
         blurb: 'What this service was ASKED to do, in the order it was ' +
                'asked, newest first. Every other page here is state; this ' +
@@ -11258,7 +11356,7 @@ class AdminConsole {
       // A warning and not a throw, for the reason every other install here
       // gives.
       log.warn(errorCodes.tag('STS-ADMIN-0014') + 'admin: a set of directory ' +
-               'page views was offered that does not carry all eight ' +
+               'page views was offered that does not carry all nine ' +
                'of ' + DIRECTORY_PAGE_NAMES.join(', ') + '. It ' +
                'is refused whole — a partial set would leave some of ' +
                '/admin-api\'s directory operations answering as though no ' +
@@ -11270,7 +11368,7 @@ class AdminConsole {
     // AND THE READ LAYER, which needs the same thing — see the header of
     // admin-core/admin_views.ts. Still one statement and one writer.
     adminViews.setDirectoryPages(views);
-    log.debug('The eight directory page views were installed; /admin-api ' +
+    log.debug('The nine directory page views were installed; /admin-api ' +
               'mirrors them.');
     log.debug("Leaving AdminConsole.setDirectoryPages().");
   }
@@ -11733,6 +11831,21 @@ class AdminConsole {
           '<input type="hidden" name="user" value="' + this.esc(key) + '">' +
           carryBack + '<div class="formrow"><button class="danger">Turn off ' +
           'their emailed second factor</button></div></form>'
+        : '') +
+      // THE ACCOUNT IDS CLIENTS KNOW THIS PERSON BY (#148): each sent as the
+      // ID Token's `aud_sub` to that client (Enterprise Extensions 2.3).
+      (state.write
+        ? '<div id="aud-sub"><p class="sub">Account ids at clients ' +
+          '(<code>aud_sub</code>): ' + (credentials.audSubsOf(key).map(
+            (v: string) => '<code>' + this.esc(v) + '</code>').join(', ') ||
+            'none') + '</p><form method="post" action="/admin/users">' +
+          '<input type="hidden" name="action" value="set-aud-sub">' +
+          '<input type="hidden" name="user" value="' + this.esc(key) + '">' +
+          carryBack + '<div class="formrow"><label>client_id <input ' +
+          'type="text" name="client" size="24" maxlength="256" required>' +
+          '</label> <label>aud_sub <input type="text" name="value" ' +
+          'size="24" maxlength="255"></label> <button type="submit">Set ' +
+          '(empty removes)</button></div></form></div>'
         : '') +
       (state.write
         ? '<form method="post" action="/admin/users">' +
@@ -12317,8 +12430,9 @@ class AdminConsole {
     const deviceRow = function (one) {
       log.debug("Entering deviceRow().");
       log.debug("Leaving deviceRow().");
-      return '<tr><td>' + self.esc(one.label) + '<br><code>' +
-        self.esc(one.id) + '</code></td><td>' +
+      return '<tr><td><a href="/admin/devices?device=' +
+        encodeURIComponent(one.id) + '">' + self.esc(one.label) +
+        '</a><br><code>' + self.esc(one.id) + '</code></td><td>' +
         (one.applications.length
           ? one.applications.map(function (dn) {
               return '<code>' + self.esc(dn) + '</code>';
@@ -12338,11 +12452,13 @@ class AdminConsole {
           : '') + '</td></tr>';
     };
     const devicesBlock = '<h3>Devices</h3>' +
-      this.note('The phones and computers this person\'s applications run ' +
-                'on, each an entry in <code>ou=devices</code> — made by an ' +
-                'OpenID Connect Native SSO sign-in — linked to the ' +
-                'applications that used it. A live Native SSO secret lets ' +
-                'those apps share one sign-in.') +
+      this.note('The phones and computers this person owns, each an entry ' +
+                'in <code>ou=devices</code> — made by an OpenID Connect ' +
+                'Native SSO sign-in or registered by an administrator — ' +
+                'linked to the applications that used it. A live Native SSO ' +
+                'secret lets those apps share one sign-in. Each device\'s ' +
+                'keys, attestation and compliance are on its own page under ' +
+                '<a href="/admin/devices">Devices</a>.') +
       (deviceView.devices.length
         ? '<table><tr><th>Device</th><th>Applications</th>' +
           '<th>Native SSO</th><th>Last used</th><th></th></tr>' +
@@ -12857,6 +12973,128 @@ class AdminConsole {
     return heading + state + why + form;
   }
 
+  // -------------------------------------------------------------------------
+  // CHANGE THEIR ATTRIBUTES (#228, 2026-09-26): the application page's three
+  // forms, for a person. What may be changed, and every refusal, are
+  // `ldap/person_editor.ts`'s; this draws its answer. The Set select offers
+  // every attribute this entry lets be edited, Add to only the multi-valued
+  // ones, and Remove from only those that hold a value — so a form cannot
+  // offer what the action would refuse for the plainest reason.
+  // -------------------------------------------------------------------------
+  userAttributesSection(key, editor, gate, back) {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering AdminConsole.userAttributesSection(). key=" + key);
+    const heading = '<h2 id="attributes">Change their attributes</h2>';
+    if (!editor) {
+      log.debug("Leaving AdminConsole.userAttributesSection(). No entry.");
+      return heading + this.note('There is no directory entry for this ' +
+        'person here, so there is nothing to change. The section above says ' +
+        'why.');
+    }
+    const usable = editor.attributes.filter(function (row) {
+      return row.editable;
+    });
+    const option = function (row) {
+      log.debug("Entering option(). " + row.name);
+      log.debug("Leaving option().");
+      return '<option value="' + self.esc(row.name) + '">' +
+        self.esc(row.name + ' — ' + row.label +
+                 (row.values.length ? ' (' + row.values.length + ')' : '')) +
+        '</option>';
+    };
+    const form = function (action, label, rows, required, placeholder) {
+      log.debug("Entering form(). " + action);
+      log.debug("Leaving form().");
+      const id = action.slice(0, action.indexOf('-'));
+      return '<form method="post" action="/admin/users">' +
+        '<input type="hidden" name="action" value="' + self.esc(action) + '">' +
+        '<input type="hidden" name="user" value="' + self.esc(key) + '">' +
+        '<input type="hidden" name="from" value="user">' +
+        '<input type="hidden" name="back" value="' + self.esc(back) + '">' +
+        '<div class="formrow"><label for="' + id + 'personattr">' + label +
+        '</label><select id="' + id + 'personattr" name="attribute">' +
+        rows.map(option).join('') + '</select><label for="' + id +
+        'personval">' + (id === 'set' ? 'to' : 'the value') + '</label>' +
+        '<input type="text" id="' + id + 'personval" name="value" size="34"' +
+        (required ? ' required' : '') + ' placeholder="' +
+        self.esc(placeholder) + '"><button type="submit">' +
+        label.split(' ')[0] + '</button></div></form>';
+    };
+    const listing = '<details><summary>What each attribute takes, and what ' +
+      'is not offered</summary>' +
+      '<table><tr><th>Attribute</th><th>Values</th><th>Schema</th>' +
+      '<th>Takes</th></tr>' +
+      editor.attributes.map(function (row) {
+        return '<tr><td><code>' + self.esc(row.name) + '</code> ' +
+          self.esc(row.label) + '</td><td>' + (row.multi ? 'several' : 'one') +
+          (row.must ? ', required' : '') + '</td><td>' + self.esc(row.schema) +
+          '</td><td>' + (row.editable
+            ? self.esc(row.note || 'text')
+            : '<span class="state-none">' + self.esc(row.why) + '</span>') +
+          '</td></tr>';
+      }).join('') + '</table>' +
+      '<table><tr><th>Not offered</th><th>Why</th></tr>' +
+      editor.withheld.map(function (row) {
+        return '<tr><td><code>' + self.esc(row.name) + '</code> ' +
+          self.esc(row.label) + '</td><td>' + self.esc(row.why) + '</td></tr>';
+      }).join('') + '</table></details>';
+    const explain = this.note('These write <code>' + this.esc(editor.dn) +
+      '</code> in place, one attribute at a time, as an ' +
+      '<code>ldapmodify</code> of it would — and the directory tells Shared ' +
+      'Signals of the change as it tells it of a SCIM or LDAP write. ' +
+      '<strong>Set</strong> replaces every value with one (empty clears it); ' +
+      '<strong>Add to</strong> and <strong>Remove from</strong> act on one ' +
+      'value of an attribute that holds several. An identity verification ' +
+      'covers a value only while the entry still holds it, so changing a ' +
+      'verified value lets that verification lapse for it.') +
+      this.note('<strong>What these will not change.</strong> The password ' +
+      'and every other credential (the controls below), the address (its ' +
+      'own form, below, because a write of it is verified), the username ' +
+      'and the attribute the entry is named ' +
+      'by, binary values such as certificates and photographs, group ' +
+      'memberships (<a href="/admin/groups">Groups</a>), and what this ' +
+      'service records about their sign-ins. <code>ldapmodify</code> still ' +
+      'reaches those; the difference between offering an operation and ' +
+      'merely not preventing it is the point.');
+    if (!gate.write) {
+      log.debug("Leaving AdminConsole.userAttributesSection(). Read only.");
+      return heading + explain + this.note('Changing an attribute needs ' +
+        '<strong>Admin Write</strong>.') + listing;
+    }
+    const multi = usable.filter(function (row) {
+      return row.multi;
+    });
+    const held = usable.filter(function (row) {
+      return row.values.length > 0;
+    });
+    log.debug("Leaving AdminConsole.userAttributesSection(). " +
+              usable.length + " editable.");
+    // THE ADDRESS, which the editor withholds: `set-mail` (#64) marks what it
+    // writes VERIFIED and tells the former address, which a generic Set
+    // would not. The action was the management API's alone until #228; a
+    // form here is its console half (rule 7).
+    const current = String(editor.mail || '');
+    const mailForm = '<form method="post" action="/admin/users">' +
+      '<input type="hidden" name="action" value="set-mail">' +
+      '<input type="hidden" name="user" value="' + this.esc(key) + '">' +
+      '<input type="hidden" name="from" value="user">' +
+      '<input type="hidden" name="back" value="' + this.esc(back) + '">' +
+      '<div class="formrow"><label for="personmail">Set the address to' +
+      '</label><input type="email" id="personmail" name="mail" size="34" ' +
+      'required value="' + this.esc(current) + '"><button ' +
+      'type="submit">Set the address</button><span class="sub">Verified, ' +
+      'because an administrator set it; the former address is told.' +
+      '</span></div></form>';
+    return heading + explain +
+      form('set-attribute', 'Set', usable, false, 'empty clears it') +
+      (multi.length
+        ? form('add-attribute', 'Add to', multi, true, '') : '') +
+      (held.length
+        ? form('remove-attribute', 'Remove from', held, true, '') : '') +
+      mailForm + listing;
+  }
+
   userCredentialControlsSection(key, factors, gate, back) {
     const { log } = this.deps;
     const self = this;
@@ -13309,6 +13547,12 @@ class AdminConsole {
       artifactNav.foot +
 
       directory.html +
+
+      // WHAT AN ADMINISTRATOR MAY CHANGE ON THAT ENTRY (#228), directly under
+      // the entry it changes — the application page's Set / Add to / Remove
+      // from, over `ldap/person_editor.ts`'s list.
+      this.userAttributesSection(key, view.attributeEditor, gateStateFor(req),
+                                 back) +
 
       // ---------------------------------------------------------------------
       // AFTER THE DIRECTORY ENTRY AND BEFORE THE TWO SIGN-OUT BUTTONS
@@ -13918,7 +14162,9 @@ class AdminConsole {
     const back = String(body.from || '') === 'user' && who
       ? this.userReturnTo(body, who,
           /^federation-/.test(String(body.action || ''))
-            ? '#federation-links' : '#credential-controls')
+            ? '#federation-links'
+            : (/-attribute$|^set-mail$/.test(String(body.action || ''))
+                ? '#attributes' : '#credential-controls'))
       : '/admin/users' +
         queryWith(this.listViewFromBack('/admin/users', body.back), {});
     // A ONE-TIME SECRET IS ANSWERED WITH A PAGE (2026-09-13): a reset password
@@ -16310,7 +16556,8 @@ class AdminConsole {
     const listView = this.listViewFromBack('/admin/users', body && body.back);
     log.debug("Leaving AdminConsole.userReturnTo().");
     return '/admin/users' + queryWith(listView, { user: String(key) }) +
-           (['#credentials', '#credential-controls'].indexOf(anchor) >= 0
+           (['#credentials', '#credential-controls',
+             '#attributes'].indexOf(anchor) >= 0
              ? anchor : '');
   }
 
@@ -17549,7 +17796,13 @@ class AdminConsole {
     // so a typo is a warning in the log and the service-wide value silently in
     // force, which is the failure a select cannot have.
     const choices = described.type === 'bool' ? ['true', 'false']
-      : (described.type === 'enum' ? (described.enumValues || []) : null);
+      : (described.type === 'enum'
+        // The empty value is the inherit option drawn first, not a second
+        // blank line (#86).
+        ? (described.enumValues || []).filter(function (option) {
+            return option !== '';
+          })
+        : null);
     const control = choices
       ? '<select id="' + this.esc(id) + '" name="field.' +
         this.esc(row.attribute) + '"' +
@@ -17631,7 +17884,13 @@ class AdminConsole {
     // so a typo is a warning in the log and the service-wide value silently in
     // force, which is the failure a select cannot have.
     const choices = described.type === 'bool' ? ['true', 'false']
-      : (described.type === 'enum' ? (described.enumValues || []) : null);
+      : (described.type === 'enum'
+        // The empty value is the inherit option drawn first, not a second
+        // blank line (#86).
+        ? (described.enumValues || []).filter(function (option) {
+            return option !== '';
+          })
+        : null);
     const control = choices
       ? '<select id="' + this.esc(id) + '" name="field.' +
         this.esc(row.attribute) + '"' +
@@ -22004,7 +22263,7 @@ class AdminConsole {
       'and <code>GET /realms</code> answers the same thing to a client that ' +
       'cannot read a console.</p>' +
       this.realmSupportTable() +
-      // The two realms.* rows. `realms.enabled` is the one that makes every
+      // The realms.* rows. `realms.enabled` is the one that makes every
       // prefixed path in this service answer or not, which is worth being able
       // to see beside the list of realms it governs.
       this.configFormsFor('/admin/realms');
@@ -22561,9 +22820,12 @@ class AdminConsole {
         '"' + hint +
         (setting.editable ? '' : ' disabled') + '>' +
         setting.enumValues.map(function (option) {
+          // An enum whose set holds the empty string (#86 made
+          // `pki.signatureAlgorithm` one) draws it as what it means rather
+          // than as a blank line.
           return '<option value="' + self.esc(option) + '"' +
             (option === setting.text ? ' selected' : '') + '>' +
-            self.esc(option) +
+            self.esc(option === '' ? '(empty — the default)' : option) +
                  '</option>';
         }).join('') + '</select>'
       : (setting.type === 'bool'
@@ -22968,9 +23230,12 @@ class AdminConsole {
         '"' + hint +
         '>' +
         (setting.enumValues || []).map(function (option) {
+          // An enum whose set holds the empty string (#86 made
+          // `pki.signatureAlgorithm` one) draws it as what it means rather
+          // than as a blank line.
           return '<option value="' + self.esc(option) + '"' +
             (option === setting.text ? ' selected' : '') + '>' +
-            self.esc(option) +
+            self.esc(option === '' ? '(empty — the default)' : option) +
                  '</option>';
         }).join('') + '</select>'
       : (setting.type === 'bool'
@@ -28148,6 +28413,52 @@ class AdminConsole {
       return next();
     });
 
+    // -------------------------------------------------------------------------
+    // A FORM FIELD OUTSIDE ITS CLOSED SET (#86).
+    //
+    // A console form posts the same `action` as the `/admin-api` operation that
+    // mirrors it, and that operation's request schema declares which fields
+    // take a closed set of values. `mgmt-api/admin_api.ts` registered those in
+    // `common/closed_sets.ts` when it was wired; this holds a POST to them,
+    // after the gate — so a caller who may not write is told that, not
+    // something about a field — and before any handler. Every console page is
+    // registered below this line, so one check covers the pages of every
+    // directory (`ldap_server.js`'s and the `*_admin.ts` modules' included).
+    //
+    // A field an untouched `<select>` left empty is absent; a streamed upload
+    // (#215) is not read here, its fields being in a body nobody has read yet.
+    // A process that never loaded the management API has an empty register,
+    // and this passes everything, which is what it did before #86.
+    // -------------------------------------------------------------------------
+    app.use('/admin', function (req, res, next) {
+      log.debug("Entering the console closed-set check.");
+      if (req.method !== 'POST' || app.isStreamedUpload(req)) {
+        log.debug("Leaving the console closed-set check. Not a form POST.");
+        return next();
+      }
+      const page = ('/admin' + (req.path === '/' ? '' : req.path))
+        .replace(/\/+$/, '');
+      const parsed = parseBody(req);
+      const body = closedSets.formValues(req, parsed);
+      const action = String((parsed && parsed.action) || '');
+      const checked = closedSets.checkForm(page, action, body);
+      if (checked.ok) {
+        log.debug("Leaving the console closed-set check. Accepted.");
+        return next();
+      }
+      log.info('admin console: a POST to ' + page +
+               (action ? ' (' + action + ')' : '') + ' was refused: ' +
+               checked.sentence);
+      errorCodes.mark(res, 'STS-ADMIN-0820');
+      self.refuse(req, res, 400, 'invalid_value',
+                  'That value is not one this control accepts.',
+                  checked.sentence,
+                  { field: checked.field, values: checked.values });
+      log.debug("Leaving the console closed-set check. Refused on \"" +
+                checked.field + "\".");
+      return undefined;
+    });
+
     // =========================================================================
     // THE REDIRECT URI. WHERE THE AUTHORIZATION ENDPOINT SENDS THE BROWSER
     // BACK.
@@ -28281,10 +28592,13 @@ class AdminConsole {
       const rp = oidcRp.sessionFor(req, 'admin');
       const parent = rp ? String(rp.derivedFrom || '') : '';
       const username = rp ? rp.user.username : '';
+      // The person signed THEMSELVES out (#242): the words name the
+      // console, and CAEP's `initiating_entity` is `user` all the same.
       oidcRp.endSessionFor(req, res, 'admin', 'the Sign out button on the ' +
-                                              'admin console');
+                                              'admin console', 'user');
       const signOnEnded = parent
-        ? !!endSessionById(parent, 'the Sign out button on the admin console')
+        ? !!endSessionById(parent, 'the Sign out button on the admin console',
+                           'user')
         : false;
       // AND THE SIGN-ON COOKIE, because `endSessionById()` has no response to
       // clear one on — it is the door /logout uses to end sessions that are not
@@ -35034,50 +35348,66 @@ class AdminConsole {
       });
     });
 
-    app.post('/admin/realms', function (req, res) {
+    app.post('/admin/realms', function (req, res, next) {
       log.debug("Entering the admin trust realms action endpoint.");
       const body = parseBody(req);
-      const result = realmsAction(body);
-      const listView = self.listViewFromBack('/admin/realms', body.back);
-      const id = String(body.id || '').trim();
-      // Back to the realm that was acted on, EXCEPT after a removal — there is
-      // nothing to drill into any more, and a 303 to a drill-down for a realm
-      // that has just gone would answer with this page's own "no such realm"
-      // message, which reads as a failure after an action that succeeded.
-      const back = (id && result.ok !== false &&
-                    String(body.action) !== 'remove')
-        ? '/admin/realms' + queryWith(listView, { realm: id })
-        : '/admin/realms' + queryWith(listView, {});
-      // A NEW REALM'S BOOTSTRAP PASSWORD, ONCE (2026-09-14, #32). Product mode
-      // hands the realm's `admin` a generated password in the create's result,
-      // and a redirect would put it in a query string; so it is drawn on a page
-      // of its own, `/admin/users`' reset arrangement. A JSON caller gets JSON.
-      if (result.ok && result.password &&
-          !/json/i.test(String(req.headers['content-type'] || ''))) {
-        const made = realms.get(result.realm);
-        const realmUrl = self.realmRoot(req) +
-                         (made ? realms.prefixOf(made) : '') +
-                         '/admin';
-        self.respond(req, res, result, 'Realm created', '/admin/realms',
-          '<h2>The "' + self.esc(result.realm) +
-          '" realm\'s administrator, shown once</h2><table ' +
-          'class="key"><tr><th>Username</th><td><code>' +
-          self.esc(result.username) + '</code></td></tr></table>' +
-          '<div class="secret">' + self.esc(result.password) + '</div>' +
-          self.warn('<strong>Note it now.</strong> It is stored as a scrypt ' +
-          'hash and cannot be shown again. It works once, at that realm\'s ' +
-          'sign-in screen, where a new password must be chosen. This account ' +
-          'administers the "' + self.esc(result.realm) +
-          '" realm and nothing else.') +
-          self.note('<a class="btn" href="' + self.esc(back) +
-                    '">Back to the realm</a> ' +
-          '&middot; <a href="' + self.esc(realmUrl) + '">its console</a>'),
-          self.upTo('/admin/realms', 'Realm created', listView));
-        log.debug("Leaving the admin trust realms action endpoint. A " +
-                  "one-time page.");
-        return;
-      }
-      self.respondToAction(req, res, back, result);
+      const answerRealmsAction = function (result) {
+        log.debug("Entering answerRealmsAction().");
+        const listView = self.listViewFromBack('/admin/realms', body.back);
+        const id = String(body.id || '').trim();
+        // Back to the realm that was acted on, EXCEPT after a removal —
+        // there is nothing to drill into any more, and a 303 to a
+        // drill-down for a realm that has just gone would answer with this
+        // page's own "no such realm" message, which reads as a failure after
+        // an action that succeeded.
+        const back = (id && result.ok !== false &&
+                      String(body.action) !== 'remove')
+          ? '/admin/realms' + queryWith(listView, { realm: id })
+          : '/admin/realms' + queryWith(listView, {});
+        // A NEW REALM'S BOOTSTRAP PASSWORD, ONCE (2026-09-14, #32). Product
+        // mode hands the realm's `admin` a generated password in the
+        // create's result, and a redirect would put it in a query string; so
+        // it is drawn on a page of its own, `/admin/users`' reset
+        // arrangement. A JSON caller gets JSON.
+        if (result.ok && result.password &&
+            !/json/i.test(String(req.headers['content-type'] || ''))) {
+          const made = realms.get(result.realm);
+          const realmUrl = self.realmRoot(req) +
+                           (made ? realms.prefixOf(made) : '') +
+                           '/admin';
+          self.respond(req, res, result, 'Realm created', '/admin/realms',
+            '<h2>The "' + self.esc(result.realm) +
+            '" realm\'s administrator, shown once</h2><table ' +
+            'class="key"><tr><th>Username</th><td><code>' +
+            self.esc(result.username) + '</code></td></tr></table>' +
+            '<div class="secret">' + self.esc(result.password) + '</div>' +
+            self.warn('<strong>Note it now.</strong> It is stored as a ' +
+            'scrypt ' +
+            'hash and cannot be shown again. It works once, at that realm\'s ' +
+            'sign-in screen, where a new password must be chosen. This ' +
+            'account ' +
+            'administers the "' + self.esc(result.realm) +
+            '" realm and nothing else.') +
+            self.note('<a class="btn" href="' + self.esc(back) +
+                      '">Back to the realm</a> ' +
+            '&middot; <a href="' + self.esc(realmUrl) + '">its console</a>'),
+            self.upTo('/admin/realms', 'Realm created', listView));
+          log.debug("Leaving answerRealmsAction(). A one-time page.");
+          return;
+        }
+        self.respondToAction(req, res, back, result);
+        log.debug("Leaving answerRealmsAction().");
+      };
+      // A removal answers a promise (#232: the realm is retired first, which
+      // waits a bounded time for what it owes to be delivered); every other
+      // action answers at once. Both are resolved before the page answers.
+      Promise.resolve(realmsAction(body)).then(function (result) {
+        answerRealmsAction(result);
+      }).catch(function (e) {
+        log.debug("Caught in the admin trust realms action endpoint: " +
+                  ((e && e.message) || e));
+        next(e);
+      });
       log.debug("Leaving the admin trust realms action endpoint.");
     });
 
@@ -37680,10 +38010,10 @@ class AdminConsole {
 
         (json.installed
           ? '<h2>Emit one by hand</h2>' +
-            self.note('Five of the eight describe things nothing here does ' +
-            '&mdash; no device reports compliance to this service and no ' +
-            'risk engine talks to it &mdash; so this form is the only way ' +
-            'they are ever produced. The subject is composed from the ' +
+            self.note('Every one of the eight is also sent on its own when ' +
+            'the act it describes happens here (a device\'s compliance ' +
+            'since #164); this form sends one on demand, with the payload ' +
+            'you choose. The subject is composed from the ' +
             'session you pick: SSF\'s <strong>complex</strong> subject, ' +
             'naming the person AND the session, because the person is not ' +
             'revoked and one session of theirs is. Leave the payload empty ' +
@@ -38912,7 +39242,9 @@ class AdminConsole {
         '<div class="formrow"><button class="secondary">Reset</button></div>' +
         '</form>' +
         self.note('It forgets what has been SAID about this account and puts ' +
-        'its state back to where it started. <strong>The directory entry is ' +
+        'its state back to where it started &mdash; except the holder\'s ' +
+        'opt-out choice, which is theirs (RISC section 2.8) and is kept. ' +
+        '<strong>The directory entry is ' +
         'untouched</strong> &mdash; nobody is enabled, disabled or restored, ' +
         'and a control on a monitoring page that did any of those would be a ' +
         'monitoring page with a weapon on it.') +
@@ -39689,6 +40021,9 @@ const SETTING_HOMES = [
   // jobs they switch and the ticks they time.
   { group: 'Scheduler', pages: ['/admin/scheduler'] },
   { group: 'Mail', pages: ['/admin/mail'] },
+  // THE DEVICE REGISTER'S BOUNDS (#218): on the page that says how a device
+  // arrives, beside the enrolment methods those bounds limit.
+  { group: 'Devices', pages: ['/admin/device-registration'] },
   { group: 'SCIM', pages: ['/admin/scim'] },
   // Shared Signals. A page of its own rather than a section of anything, for
   // the reason /admin/federation is ungrouped: SSF is not a variant of another
@@ -40284,8 +40619,11 @@ const CONSOLE_QUERY = vz.looseObject((function () {
     per: bounded(16),
 
     // Which rendering is being asked for; compared against 'json' and 'svg' at
-    // the call sites, so anything else already falls through to HTML.
-    format: bounded(16),
+    // the call sites, so anything else already falls through to HTML. It is
+    // ALSO a filter: /admin/used-assertions filters by the history's formats,
+    // and `attestation-challenge` (#229) is 21 characters, so a bound of 16
+    // made that page's own filter answer 400 (sts_admin_console, 2026-09-26).
+    format: bounded(32),
 
     // The identifiers a drill-down page is reached by: a name in the directory,
     // a realm id, a credential handle. None of them is free text.
@@ -40582,7 +40920,7 @@ let xacmlPages = null;
 // loaded.
 const DIRECTORY_PAGE_NAMES = ['service', 'directory', 'applications',
                               'federations', 'spiffe', 'roles', 'policies',
-                              'peps'];
+                              'peps', 'devices'];
 
 let directoryPages = null;
 

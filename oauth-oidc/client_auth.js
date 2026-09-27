@@ -42,6 +42,12 @@
 //                               (RFC 8705 section 2.1)
 //   self_signed_tls_client_auth the client certificate is the one registered,
 //                               by thumbprint or in its jwks (section 2.2)
+//   attest_jwt_client_auth      a Client Attestation a trusted attester
+//                               signed, and a PoP from the key it binds
+//                               (draft-ietf-oauth-attestation-based-client-
+//                               auth-11, #229)
+//   attest_jwt_client_auth_dpop the same attestation, proved by the DPoP
+//                               proof (that draft's combined mode)
 //
 // All of them are verified. The two shared-secret ones compare in constant
 // time; the two assertion ones do the full RFC 7523 section 3 check
@@ -113,6 +119,15 @@ const samlAssertionGrant = require('./saml_assertion_grant');
 // RFC 8705 section 2.1.2's five subject parameters, read and compared — the one
 // reading the registration door in `common/applications.js` also asks. A leaf.
 const certificateSubject = require('../common/certificate_subject');
+// OAUTH 2.0 ATTESTATION-BASED CLIENT AUTHENTICATION (#229): the two methods
+// whose credential rides in HTTP header fields rather than in the body.
+// `client_attestation.ts` is required LAZILY, in `verify()`: this file is
+// loaded before the composition root runs (`common/cors.js` reaches it through
+// `oauth2_bcp.js`, from `app.js`), and a converted module required that early
+// builds an instance of its own, which the root then cannot install (#50,
+// R2). The two names are spelt here for the same reason.
+const ATTESTATION_METHODS = ['attest_jwt_client_auth',
+                             'attest_jwt_client_auth_dpop'];
 
 // RFC 7523 section 2.2. One value, spelt once, because a client that sends the
 // wrong one is told which is expected rather than being told its assertion is
@@ -152,9 +167,12 @@ const SAML_ASSERTION_TYPE =
 // ---------------------------------------------------------------------------
 const SYMMETRIC_METHODS = ['client_secret_basic', 'client_secret_post',
                            'client_secret_jwt'];
+// The two attestation methods (#229) are asymmetric twice over: the attester
+// signs the attestation, and the client instance proves its own key.
 const ASYMMETRIC_METHODS = ['private_key_jwt', 'saml2_bearer',
                             'tls_client_auth',
-                            'self_signed_tls_client_auth'];
+                            'self_signed_tls_client_auth'].concat(
+                              ATTESTATION_METHODS);
 const METHODS = ['none'].concat(SYMMETRIC_METHODS, ASYMMETRIC_METHODS);
 
 // Which of them RFC 9700 section 2.5 is asking for. Read by the caller that
@@ -1255,6 +1273,27 @@ async function verify(opts) {
     log.debug("Leaving verify(). The SAML assertion verified.");
     return { ok: true, method: method, alg: checked.signatureMethod,
              jti: checked.id };
+  }
+
+  // -------------------------------------------------------------------------
+  // OAUTH 2.0 ATTESTATION-BASED CLIENT AUTHENTICATION (#229,
+  // draft-ietf-oauth-attestation-based-client-auth-11). Nothing in the body:
+  // the attestation and its proof are HTTP header fields, which is why the
+  // request is all this branch hands over. `client_attestation.ts` holds the
+  // whole of sections 4 to 7 and answers once per request, for
+  // `verifiedOnce()`'s reason. `info.issuer` is the audience a PoP must name.
+  // -------------------------------------------------------------------------
+  if (ATTESTATION_METHODS.indexOf(method) >= 0) {
+    const clientAttestation = require('./client_attestation');
+    const checked = await clientAttestation.verifyRequest(info.request, {
+      method: method, clientId: info.clientId, issuer: info.issuer
+    });
+    if (!checked.ok) {
+      log.debug("Leaving verify(). The client attestation was refused.");
+      return checked;
+    }
+    log.debug("Leaving verify(). The client attestation verified.");
+    return { ok: true, method: method, alg: checked.alg, jti: checked.jti };
   }
 
   if (method === 'tls_client_auth' ||

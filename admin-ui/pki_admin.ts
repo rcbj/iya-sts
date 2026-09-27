@@ -103,6 +103,10 @@ import pkiRevocation = require('../common/pki_revocation');
 // CAEP credential-change when a revoked certificate was a PERSON's (#145).
 // A library over `helpers` and `crypto`; the require moves nothing.
 import accountSignals = require('../ssf/account_signals');
+// #244, #245: the fan-out a change to the hierarchy owes the people holding
+// certificates under it, and the SPIFFE authority notice. A library in
+// account_signals's shape (ssf.ts read from the cache); no route, no cycle.
+import serviceSignals = require('../ssf/service_signals');
 import stsCrypto = require('../common/crypto');
 // The pane's model: the field table, the six line grammars, the profile
 // defaults and what an issue does with all of it. A LIBRARY (rule 3) — it
@@ -610,6 +614,36 @@ class PkiAdmin {
     const current = realms.current();
     log.debug("Leaving PkiAdmin.scopeFrom().");
     return (current && current.id) ? current.id : '';
+  }
+
+  // -------------------------------------------------------------------------
+  // WHAT A CHANGE TO THE HIERARCHY OWES THE PEOPLE UNDER IT (#244). Every
+  // act that replaces, renews or removes an authority takes a snapshot of
+  // the person-held certificates it can reach first, and hands it to
+  // `serviceSignals.hierarchyChanged()` once it has succeeded, which decides
+  // per certificate whether it was re-minted (`update`) or orphaned
+  // (`revoke`) and fans the CAEP credential-change out in batches — and
+  // tells a realm whose SPIFFE authority moved (#245). The sentence is for
+  // the answer, so an operator reads what their button did to other people.
+  // -------------------------------------------------------------------------
+  private signalsBefore(scopes: string[], useCaseId?: string): Json {
+    const { log } = this.deps;
+    log.debug('Entering PkiAdmin.signalsBefore().');
+    log.debug('Leaving PkiAdmin.signalsBefore().');
+    return serviceSignals.snapshot(scopes, useCaseId || undefined);
+  }
+
+  private signalsAfter(before: Json, action: string): string {
+    const { log } = this.deps;
+    log.debug('Entering PkiAdmin.signalsAfter(). ' + action);
+    const told = serviceSignals.hierarchyChanged(before,
+      { via: '/admin/pki (' + action + ')' });
+    const people = told.updated + told.revoked;
+    log.debug('Leaving PkiAdmin.signalsAfter(). ' + people + '.');
+    return people ? ' ' + people + ' certificate(s) held by people were ' +
+      'affected — ' + told.updated + ' re-issued, ' + told.revoked +
+      ' orphaned — and each holder\'s Shared Signals receivers are sent a ' +
+      'CAEP credential-change.' : '';
   }
 
   // Rebuild every branch under a Root that has just been replaced, and
@@ -1332,6 +1366,7 @@ class PkiAdmin {
           commonNames[tier] = cn;
         }
       });
+      const signalled = self.signalsBefore([self.scopeFrom({})]);
       const built = await pki.buildChain(undefined, {
         // The FORM wins over the setting and the setting is the default, which
         // is the shape every settings-backed control in this console has. An
@@ -1345,6 +1380,8 @@ class PkiAdmin {
         keyAlg: String(body.keyAlg || '').trim() ||
                 config.value('pki.keyAlgorithm'),
         signatureAlg: String(body.signatureAlg || '').trim(),
+        // Empty is the setting, read by `pki.js`'s algorithmsFrom() (#68).
+        altKeyAlg: String(body.altKeyAlg || '').trim() || undefined,
         organisation: String(body.organisation || '').trim() ||
                       config.value('pki.organisation'),
         country: String(body.country || '').trim(),
@@ -1383,6 +1420,7 @@ class PkiAdmin {
       // rebuild lands is `certify()`'s to catch, and it does.
       // -----------------------------------------------------------------------
       const remint = await self.recertifyScope(self.scopeFrom({}));
+      const toldBuild = self.signalsAfter(signalled, action);
       log.debug('Leaving PkiAdmin.pkiAction(). Built.');
       return { ok: true,
                why: 'A three-tier certificate authority was built for the "' +
@@ -1391,16 +1429,18 @@ class PkiAdmin {
                     'were re-minted from it. Anything else issued from a ' +
                     'PREVIOUS hierarchy now chains to nothing — this service ' +
                     'keeps no copy of what it issued, so none of it can be ' +
-                    'listed.',
+                    'listed.' + toldBuild,
                chain: built.chain };
     }
 
     if (action === 'clear') {
+      const signalled = self.signalsBefore([self.scopeFrom({})]);
       const cleared = pki.clearChain();
       if (!cleared.ok) {
         log.debug('Leaving PkiAdmin.pkiAction(). Nothing to clear.');
         return self.refusedBy(cleared, 'STS-PKI-0105');
       }
+      const toldClear = self.signalsAfter(signalled, action);
       log.debug('Leaving PkiAdmin.pkiAction(). Cleared.');
       return { ok: true,
                why: 'The "' + self.realmLabel() +
@@ -1409,7 +1449,8 @@ class PkiAdmin {
                     'were issued from it and every one of them now chains to ' +
                     'nothing. The key pairs are still on the application ' +
                     'entries and will still SIGN — what stopped is this ' +
-                    'service being able to see that it issued them.' };
+                    'service being able to see that it issued them.' +
+                    toldClear };
     }
 
     if (action === 'issue') {
@@ -1759,8 +1800,10 @@ class PkiAdmin {
     // supplied.
     // =====================================================================
     if (action === 'build-root') {
+      const signalled = self.signalsBefore(self.everyRealmId());
       const built = await pki.buildRoot({
         keyAlg: String(body.keyAlg || '').trim() || undefined,
+        altKeyAlg: String(body.altKeyAlg || '').trim() || undefined,
         commonName: String(body.commonName || '').trim() || undefined,
         organisation: config.value('pki.organisation'),
         years: Number(body.years) > 0 ? Number(body.years) : undefined
@@ -1776,6 +1819,7 @@ class PkiAdmin {
       // right. Rebuilding them here is what makes "replace the Root" mean what
       // the button says.
       const rebuilt = await self.rebuildEveryScope();
+      const toldRoot = self.signalsAfter(signalled, action);
       log.debug('Leaving PkiAdmin.pkiAction(). A new Root.');
       return { ok: true,
                why: 'A new Root CA was built for this service, and ' + rebuilt +
@@ -1784,14 +1828,16 @@ class PkiAdmin {
                     'TRUSTS THIS SERVICE — the new Root is on this page and ' +
                     'at GET /admin-api/pki. The signing keys themselves are ' +
                     'unchanged, so nothing that verifies against the ' +
-                    'published JWKS is affected.',
+                    'published JWKS is affected.' + toldRoot,
                root: built.root };
     }
 
     if (action === 'build-scope') {
       const scope = self.scopeFrom(body);
+      const signalled = self.signalsBefore([scope]);
       const built = await pki.buildScope(scope, {
         keyAlg: String(body.keyAlg || '').trim() || undefined,
+        altKeyAlg: String(body.altKeyAlg || '').trim() || undefined,
         organisation: config.value('pki.organisation'),
         replaceImported: !!body.replaceImported
       });
@@ -1800,23 +1846,26 @@ class PkiAdmin {
         return self.refusedBy(built, 'STS-PKI-0105');
       }
       const again = await self.recertifyScope(scope);
+      const toldScope = self.signalsAfter(signalled, action);
       log.debug('Leaving PkiAdmin.pkiAction(). A branch was built.');
       return { ok: true,
                why: 'That branch was rebuilt — a new Intermediate CA and a ' +
                     'new Issuing CA for every use case under it — and ' +
                     again + ' certificate(s) were re-minted from the new ' +
                     'authorities. The Root is untouched, because every other ' +
-                    'scope hangs from it.' };
+                    'scope hangs from it.' + toldScope };
     }
 
     if (action === 'reissue-use-case') {
       const scope = self.scopeFrom(body);
       const useCaseId = String(body.useCase || '').trim();
+      const signalled = self.signalsBefore([scope], useCaseId);
       const done = await pki.reissueUseCase(scope, useCaseId);
       if (!done.ok) {
         log.debug('Leaving PkiAdmin.pkiAction(). The reissue failed.');
         return self.refusedBy(done, 'STS-PKI-0105');
       }
+      const toldReissue = self.signalsAfter(signalled, action);
       log.debug('Leaving PkiAdmin.pkiAction(). Reissued.');
       return { ok: true,
                why: 'The ' + useCaseId +
@@ -1825,17 +1874,19 @@ class PkiAdmin {
                     done.recertified + ' certificate(s) under it were ' +
                     're-minted from it. Every other use case is untouched, ' +
                     'which is the whole reason each has an authority of its ' +
-                    'own.' };
+                    'own.' + toldReissue };
     }
 
     if (action === 'recertify') {
       const scope = self.scopeFrom(body);
       const useCaseId = String(body.useCase || '').trim();
+      const signalled = self.signalsBefore([scope], useCaseId);
       const done = await pki.recertifyUseCase(scope, useCaseId);
       if (!done.ok) {
         log.debug('Leaving PkiAdmin.pkiAction(). The renewal failed.');
         return self.refusedBy(done, 'STS-PKI-0105');
       }
+      const toldRenew = self.signalsAfter(signalled, action);
       log.debug('Leaving PkiAdmin.pkiAction(). Renewed.');
       return { ok: true,
                why: done.recertified +
@@ -1843,12 +1894,14 @@ class PkiAdmin {
                     ' Issuing CA, with fresh serials and a fresh validity ' +
                     'window. THE KEYS ARE UNTOUCHED — this is a renewal ' +
                     'rather than a regeneration, so nothing that verifies ' +
-                    'against the published keys stops verifying.' };
+                    'against the published keys stops verifying.' +
+                    toldRenew };
     }
 
     if (action === 'import-ca') {
       const scope = self.scopeFrom(body);
       const useCaseId = String(body.useCase || '').trim();
+      const signalled = self.signalsBefore([scope], useCaseId);
       const done = await pki.importCa(scope, useCaseId, {
         certificatePem: String(body.certificatePem || ''),
         privateKeyPem: String(body.privateKeyPem || '')
@@ -1857,8 +1910,9 @@ class PkiAdmin {
         log.debug('Leaving PkiAdmin.pkiAction(). The import was refused.');
         return self.refusedBy(done, 'STS-PKI-0105');
       }
+      const toldImport = self.signalsAfter(signalled, action);
       log.debug('Leaving PkiAdmin.pkiAction(). Imported.');
-      return { ok: true, why: done.why };
+      return { ok: true, why: done.why + toldImport };
     }
 
     if (action === 'pin-key') {
@@ -1953,6 +2007,44 @@ class PkiAdmin {
                          ' of ' + held.identifier + ' (' +
                          done.entry.reason + ').',
             reasonUser: 'A certificate of yours was revoked.' });
+          // REVOKED FOR `keyCompromise` (#231): the key is known to somebody
+          // else, which RISC 1.0 section 2.7 says as `credential-compromise`
+          // beside the CAEP revoke above. A CA's own revocation, and what it
+          // does to the certificates under it, is #244's.
+          if (done.entry.reason === 'keyCompromise') {
+            accountSignals.credentialCompromised({
+              username: held.identifier, credentialType: 'x509',
+              initiatingEntity: 'admin', via: '/admin/pki',
+              reasonAdmin: 'An administrator revoked the certificate ' +
+                           serial + ' of ' + held.identifier + ' because ' +
+                           'its key was compromised.',
+              reasonUser: 'A certificate of yours was revoked because its ' +
+                          'key may be known to somebody else.' });
+          }
+        }
+      }
+      // AN AUTHORITY REVOKED IS EVERY LEAF BENEATH IT (#244). On an
+      // Intermediate's list the serial may be one of the scope's Issuing CAs;
+      // on the Root's, a scope's Intermediate. `caRevoked()` walks down to
+      // every person holding a live certificate there and fans the events
+      // out in batches — `credential-change` (x509, revoke), and RISC
+      // `credential-compromise` too for keyCompromise or cACompromise.
+      let tierNote = '';
+      const caOfList = String(body.ca || '').trim();
+      if (!done.already &&
+          (caOfList === 'intermediate' || caOfList === 'root')) {
+        const reached = serviceSignals.caRevoked(scope, caOfList,
+          done.entry.serialHex, done.entry.reason,
+          { via: '/admin/pki (revoke-certificate)' });
+        if (reached.tier) {
+          tierNote = ' It is ' + (reached.tier === 'issuing-ca'
+            ? 'an Issuing CA' : 'an Intermediate CA') + ', so ' +
+            reached.people + ' certificate(s) held by people beneath it no ' +
+            'longer chain to anything a checking relying party accepts, and ' +
+            'each holder\'s Shared Signals receivers are sent a CAEP ' +
+            'credential-change' +
+            (serviceSignals.COMPROMISE_REASONS.indexOf(done.entry.reason) >= 0
+              ? ' and a RISC credential-compromise' : '') + '.';
         }
       }
       log.debug('Leaving PkiAdmin.pkiAction(). Revoked.');
@@ -1960,13 +2052,13 @@ class PkiAdmin {
                why: done.already
                  ? done.why
                  : 'Certificate ' + done.entry.serialHex + ' is on the "' +
-                   String(body.ca || '') +
+                   caOfList +
                    '" authority\'s revocation list as "' + done.entry.reason +
                    '". Its CRL and its OCSP responder say so from now on. ' +
                    'NOTHING ELSE CHANGED: whoever holds that key still holds ' +
                    'it, the certificate still chains, and this service does ' +
                    'not consult its own lists — so what this buys is that a ' +
-                   'relying party which DOES check can now find out.' };
+                   'relying party which DOES check can now find out.' + tierNote };
     }
 
     if (action === 'release-hold') {
@@ -2006,8 +2098,18 @@ class PkiAdmin {
     // apply-profile, then issue, without keeping its own copy of the form.
     //
     // The MODEL is `common/pki_authoring.ts`. Nothing about a certificate is
-    // decided here.
+    // decided here — including which values its closed fields take (#86).
     // =====================================================================
+    if (['apply-profile', 'generate-keys', 'generate-alt-keys',
+         'issue-certificate', 'use-key', 'export'].indexOf(action) >= 0) {
+      const closedProblem =
+        authoring.closedFieldProblem(authoring.draftFrom(body));
+      if (closedProblem) {
+        log.debug('Leaving PkiAdmin.pkiAction(). A closed field was ' +
+                  'outside its set.');
+        return closedProblem;
+      }
+    }
     if (action === 'apply-profile') {
       const draft = authoring.draftFrom(body);
       const applied = authoring.applyProfile(draft,
@@ -2144,6 +2246,7 @@ class PkiAdmin {
   // THE PAGE.
   // ---------------------------------------------------------------------------
   private chainTable(chain: Json) {
+    const self = this;
     const { log, certificateDialog, pqcBadge, admin, esc } = this.deps;
     log.debug('Entering PkiAdmin.chainTable().');
     if (!chain) {
@@ -2160,7 +2263,8 @@ class PkiAdmin {
         '<td><code>' + esc(tier.keyAlg) + '</code> / <code>' +
           esc(tier.signatureAlg) + '</code>' +
           pqcBadge.badgeFor({ certificatePem: tier.certificatePem,
-                              algorithms: [tier.keyAlg] }) + '</td>' +
+                              algorithms: [tier.keyAlg] }) +
+          self.alternativeNote(tier) + '</td>' +
         '<td><code>' + esc(tier.thumbprint.slice(0, 16)) +
         '&hellip;</code><br>' +
         certificateDialog.link('/admin/pki', tier.thumbprint, 'pki-chain') +
@@ -2203,6 +2307,48 @@ class PkiAdmin {
         (one.id === selected ? ' selected' : '') + '>' + esc(one.label) +
         '</option>';
     }).join('');
+  }
+
+  // The alternative (post-quantum) key a tier holds beside its classical one
+  // (#68, ITU-T X.509 clause 9.8). One labelled select, drawn on all three
+  // build forms, so the console offers what `altKeyAlg` on the three
+  // `/admin-api/pki` actions takes (rule 7).
+  private alternativeField(json: Json, selected: Json) {
+    const { log, esc, admin } = this.deps;
+    log.debug("Entering PkiAdmin.alternativeField().");
+    const chosen = String(selected || '') ||
+                   String(this.deps.config.value('pki.alternativeKeyAlgorithm'));
+    const options = (json.alternativeKeyAlgorithms || []).map(function (id) {
+      return '<option value="' + esc(id) + '"' +
+        (id === chosen ? ' selected' : '') + '>' +
+        esc(id === 'none' ? 'none (classical only)' : id.toUpperCase()) +
+        '</option>';
+    }).join('');
+    log.debug("Leaving PkiAdmin.alternativeField().");
+    return '<label' + admin.tip('The post-quantum key each authority holds ' +
+      'beside its classical one, in the alternative-key extensions of ' +
+      'ITU-T X.509 (2019) clause 9.8. Every certificate the authority ' +
+      'issues is then signed twice, and this service refuses one whose ' +
+      'second signature is wrong or missing. "none" builds a classical-only ' +
+      'authority, which a quantum-capable attacker can forge.') +
+      '>Alternative key <select name="altKeyAlg">' + options +
+      '</select></label> ';
+  }
+
+  // A tier's hybrid half (#68), under its classical algorithms: the key it
+  // holds and the algorithm its own alternative signature was made with.
+  private alternativeNote(tier: Json) {
+    const { log, esc } = this.deps;
+    log.debug("Entering PkiAdmin.alternativeNote().");
+    if (!tier || !tier.altKeyAlg) {
+      log.debug("Leaving PkiAdmin.alternativeNote(). Classical.");
+      return '';
+    }
+    log.debug("Leaving PkiAdmin.alternativeNote().");
+    return '<br><small>alt <code>' + esc(tier.altKeyAlg) + '</code>' +
+      (tier.altSignatureAlg
+        ? ' / signed <code>' + esc(tier.altSignatureAlg) + '</code>'
+        : ' / no alternative signature') + '</small>';
   }
 
   private signatureOptions(json: Json, keyAlg: Json) {
@@ -3282,6 +3428,7 @@ class PkiAdmin {
   // exactly as well and a reader can select text out of.
   // ===========================================================================
   private tierRow(tier: Json, depth: Json, extra?: Json) {
+    const self = this;
     const { log, certificateDialog, pqcBadge, esc } = this.deps;
     log.debug("Entering PkiAdmin.tierRow().");
     if (!tier) {
@@ -3301,7 +3448,8 @@ class PkiAdmin {
       '<td><code>' + esc(tier.keyAlg) + '</code> / <code>' +
         esc(tier.signatureAlg) + '</code>' +
         pqcBadge.badgeFor({ certificatePem: tier.certificatePem,
-                            algorithms: [tier.keyAlg] }) + '</td>' +
+                            algorithms: [tier.keyAlg] }) +
+        self.alternativeNote(tier) + '</td>' +
       '<td><code>' + esc(String(tier.thumbprint).slice(0, 16)) +
       '&hellip;</code><br>' +
       certificateDialog.link('/admin/pki', tier.thumbprint, 'pki-tree') +
@@ -3404,6 +3552,7 @@ class PkiAdmin {
       self.algorithmOptions(json, scope.keyAlg ||
                             config.value('pki.keyAlgorithm')) +
                             '</select></label> ' +
+      self.alternativeField(json, scope.altKeyAlg) +
       '<button type="submit"' +
       admin.tip('Replace this branch: a new Intermediate CA and a new ' +
                 'Issuing CA for every use case under it. The Root is NOT ' +
@@ -3527,6 +3676,9 @@ class PkiAdmin {
       self.algorithmOptions(json, (tree.root && tree.root.keyAlg) ||
                             config.value('pki.keyAlgorithm')) +
                             '</select></label> ' +
+      self.alternativeField(json, tree.root &&
+                            (tree.root.altKeyAlg ||
+                             (tree.rootBuilt ? 'none' : ''))) +
       '<label>Common name <input name="commonName" placeholder="' +
       esc(config.value('pki.organisation')) + ' Root CA"></label> ' +
       '<label>Years <input name="years" size="4" placeholder="20"></label> ' +
@@ -4086,6 +4238,7 @@ class PkiAdmin {
         self.algorithmOptions(json, keyAlg) + '</select></label> ' +
       '<label>Signature algorithm <select name="signatureAlg">' +
         self.signatureOptions(json, keyAlg) + '</select></label> ' +
+      self.alternativeField(json, '') +
       '<label>Organisation (O=) <input name="organisation" value="' +
         esc(config.value('pki.organisation')) + '"></label> <label>Country ' +
       '(C=) <input name="country" size="4" ' +

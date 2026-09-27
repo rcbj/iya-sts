@@ -13,9 +13,10 @@
 //   1. ROTATION IS OFF THE MODE SWITCH. `oauth2.refreshTokenRotation` rotates
 //      with neither mode on, a replayed token is refused, and the family
 //      descended from the original grant is revoked — while the RFC 9700
-//      rules that sit BESIDE rotation (the idle timeout, the client binding,
-//      the scope narrowing) stay behind the mode, because an operator asking
-//      for rotation did not ask for those.
+//      rules that sit BESIDE rotation (the idle timeout, a refresh naming no
+//      client) stay behind the mode, because an operator asking for rotation
+//      did not ask for those. The scope narrowing and a DIFFERENT client's
+//      token are RFC 6749 section 6's own and refused in every mode (#187).
 //   2. AN UNKNOWN CLIENT IS REFUSED RATHER THAN ROTATED. Rotation is
 //      bookkeeping about a chain belonging to a client, so OAuth 2.1 mode
 //      refuses a grant made in a client's own name with no client_id at all,
@@ -120,8 +121,11 @@ function checkRotationIsItsOwnSwitch(t) {
       claims: { jti: 'rrp-jti-3', scope: 'openid' },
       clientId: 'rrp-client', body: { scope: 'openid admin:write' } });
   });
-  t.equal(widened && widened.ok, true,
-          '1g. and so does the scope check');
+  // Since #187 the scope check is RFC 6749 section 6's own MUST and holds in
+  // every mode (tests/oidcc_conformance_findings.js carries the rest).
+  t.equal(widened && widened.errorCode, 'STS-OAUTH-0142',
+          '1g. but the scope check does NOT stay behind it: RFC 6749 section ' +
+          '6 refuses a widened refresh in every mode (#187)');
 
   // In the mode, both of those refuse — the same two calls, one realm along.
   throwaway('rrp-mode', { 'oauth2.rfc9700': 'true' });

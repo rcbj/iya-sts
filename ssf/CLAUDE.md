@@ -526,9 +526,9 @@ signed SET through `accept()`: development observes; the person's own
 console session is ended, once; somebody else's event, an unverified SET
 and an unpermitted event end nothing; and a disabled policy ends nothing.
 
-**Not built: acting on a FOREIGN transmitter's events.** That needs #153
-(this service as a receiver of somebody else's stream), and the same rule
-will bind it.
+**A FOREIGN transmitter's events are acted on since #153** (see *THIS REALM
+AS A RECEIVER*, below), under the same rule: nothing acts unless the SET
+verified, and what it does is the same policy's decision.
 
 ---
 
@@ -574,12 +574,13 @@ was purged on the strength of a message never sent.
 | a person is deleted | `account-purged` | `deletePerson()` and the LDAP delete handler |
 | `pwdAccountLockedTime` appears | `account-disabled`, with `reason` only when an administrator gave one (`hijacking`, `bulk-account`) | every write of the entry: `account_state.ts`'s disable, SCIM `active: false`, an `ldapmodify` |
 | `pwdAccountLockedTime` goes | `account-enabled` | the same |
-| `mail` / `telephoneNumber` / `mobile` moves | `identifier-changed`, the subject the OLD value | the same |
+| any value of `mail` / `telephoneNumber` / `mobile` moves or is removed | `identifier-changed`, the subject the OLD value, `new-value` absent for a removal (#234) | the same |
 | a create or a contact change takes an address another account released within `risc.recycleWindowDays` | `identifier-recycled`, the subject the address | the same, read against the register's `releasedIdentifiers` |
-| a password reset, a reset link | `account-credential-change-required` | the admin doors (`observeAct()`) |
-| a reset link | `recovery-activated` | the admin door |
+| the recovery address (first `mail`, verified or not) added, changed, removed or verified on an UPDATE | `recovery-information-changed`, after any `identifier-changed` (#235) | every write of the entry, `writePersonFlag()`'s of `stsMailVerified` included |
+| a password reset, a reset link, an activation link for somebody who exists (#235) | `account-credential-change-required` | the admin doors (`observeAct()`) |
+| a reset link, an activation link for somebody who exists, a recovery code at sign-in (#235) | `recovery-activated` | the admin door, `authn.ts` `finishBackupCode()` |
 | a reset marked "the credential was compromised" | `credential-compromise` (`password`) | the admin doors |
-| recovery codes cleared, or confirmed on the portal | `recovery-information-changed` | the admin doors, `/portal/mfa` |
+| recovery codes cleared, or confirmed on the portal, or ONE SPENT at sign-in or on the forgot-password form (#235) | `recovery-information-changed` | the admin doors, `/portal/mfa`, `finishBackupCode()`, `mail_uses.ts` `requestReset()` |
 | the account holder opts out, cancels, opts in | `opt-out-initiated`, `opt-out-cancelled`, `opt-in` | `POST /portal/signals` |
 | an opt-out's delay has passed | `opt-out-effective` | the `risc.opt-out-effective` scheduler job |
 
@@ -645,13 +646,68 @@ after delivery, so without the claim a second run of the job would send
 `opt-out-effective` twice (seen).
 
 **Not here:**
-- `credential-compromise` has no detector (#62).
+- ~~`credential-compromise` has no detector (#62).~~ Since #62 risk scoring's
+  reaction sends one, and since #231 (2026-09-26) five detectors do: see
+  *Detected compromises, and the last credentials* below.
 - ~~A person cannot start recovery themselves until there is a mail channel
   (#63).~~ Since #63 (2026-09-22) a person starts it at
   `/portal/forgot-password`, and `recovery-activated` is sent with the person
   as the initiating entity (`common/mail_uses.ts`).
 - The deprecated `sessions-revoked` is by hand only.
-- A received event is not acted on (#153, #117).
+- A received event is acted on only by the console's and portal's own
+  receivers (#62), and by a realm receiving a foreign transmitter (#153).
+
+---
+
+## THE HOLDER'S CHOICE, IDENTIFIERS AS SETS, AND RECOVERY (#233-#235, 2026-09-26)
+
+**A RESET OR CLEAR OF THE REGISTER NEVER MOVES THE OPT STATE (#233).** Until
+then `reset()` put a row back to `opt-in` and `clear()` dropped it, sending
+nothing: a receiver told `opt-out-initiated` or `opt-out-effective` went on
+believing the account was opted out while this transmitter behaved as if it
+had opted in, and a pending opt-out never became effective. Sending
+`opt-out-cancelled` or `opt-in` from the reset was the other mend, and it
+would be an administrator making the holder's section 2.8 choice for them.
+So `reset()` keeps `optOut` and `optOutInitiatedAt`, and `clear()` re-creates
+blank every row not in `opt-in`, keeping both; the job still finds a pending
+one. `tests/risc_register.js` N.
+
+**EVERY VALUE, AS A SET (#234).** `identifierMoves()` read the first `mail` and
+the first of `telephoneNumber` then `mobile`, and wanted an old AND a new one.
+Now each format's values (`mail`; `telephoneNumber` with `mobile`) are a set
+before and after. A value that LEFT is a change, paired with one that arrived
+in the same attribute first and then anywhere in the format; unpaired, it is a
+removal, sent without `new-value` (section 2.5 makes it optional). Every value
+that left is released, a purge releases every value held, and every value that
+ARRIVED is checked for recycling. A number moving between the two phone
+attributes is no change, nor is an address changing case (addresses compare
+case-insensitively). The subject names the value that moved, so
+`moveIdentifier()` moves the row's `email`/`phone` only when that value WAS
+the row's; `followEntry()` then sets them from the entry's first values. An
+absent entry — a create's before, a delete's after — has no moves.
+
+**THE RECOVERY ADDRESS IS READ OFF THE WRITE (#235).** `recoveryChannelActs()`
+takes the channel to be the first `mail` and whether `stsMailVerified` names
+it, because that is what `/portal/forgot-password` mails. Any change of that
+pair on an UPDATE is one `recovery-information-changed` (section 2.10: "a
+recovery email address was added or removed"), after the
+`identifier-changed` a change of address also is. A create, and a second
+address, are not. `ldap_server.js`'s `writePersonFlag()` now hands a write of
+`stsMailVerified` to the account observer, which is how the portal's
+verification link is heard; it did not before. **The other two #235 items are
+door calls through `account_signals.ts`**: a recovery code spent sends
+`recovery-information-changed` (the set shrank) and, at sign-in,
+`recovery-activated` with `mailNotice: false`; an activation link for somebody
+who exists sends `recovery-activated` and
+`account-credential-change-required`, as issue-password-reset does, and one
+issued at create sends nothing. `tests/risc_identifiers_recovery.js`,
+`tests/mail.js` 15f, `tests/vendored/sts_risc_register_recovery.js`.
+
+**AND THE CAP NEVER FORGETS AN OPT-OUT (#260).** `trim()`
+(`risc.maxAccountsTracked`) drops the oldest OPTED-IN row, never a row whose
+holder opted out and never the row just added. When nothing else is left to
+drop, the register stays over its cap and logs `STS-SSF-0130` rather than
+choose whose choice to lose. `tests/risc_register.js` section O.
 
 ---
 
@@ -833,9 +889,12 @@ this service's own receivers filled every worker. The service answered nothing
 for fourteen minutes. rcbj chose all four answers below.
 
 **THE PUSH CAP** (`ssf_http.ts`'s `pushSetGated()`): `ssf.pushConcurrency` (8)
-pushes in flight per PROCESS, the rest waiting in order, at most
-`ssf.pushBacklog` (2000) of them; past that the push is not made and the SET is
-dead-lettered with `STS-SSF-0092`. A retry waits for a slot of its own. The
+pushes in flight per PROCESS, the rest waiting in a queue PER RECEIVER, at
+most `ssf.pushBacklog` (2000) in each; past that the push is not made and the
+SET is dead-lettered with `STS-SSF-0092`. A freed slot goes to the receivers
+in turn (2026-09-27): with one queue for all, a SCIM bulk load's pushes to
+this service's own receivers held up the OpenID conformance suite's
+solicited verification event until the suite gave up. A retry waits for a slot of its own. The
 dispatcher's batch lane (`common/CLAUDE.md`, `request_pool.js`) is the other
 half: the receive endpoints are batch paths.
 
@@ -1196,6 +1255,82 @@ rotate in the same act and are never named: they are published nowhere. An
 emergency rotation also sends CAEP `session-revoked` and RISC
 `sessions-revoked` (#48, P4) — those are about PEOPLE, and this is not.
 
+## THE OTHER KEYS A RELYING PARTY PINS, AS SIBLING URNs (2026-09-26, #245)
+
+`federation-key-rotated`, `spiffe-authority-rotated` and
+`tls-certificate-changed` join `signing-key-rotated` and
+`kerberos-tickets-invalidated` in the `sts` family, and
+`ssf.serviceKeyChanged(kind, notice)` sends them. **They are SIBLING URNs and
+not more units of #42's event, and the reason is the receiver's handling.** A
+stream chooses what it receives BY TYPE, and each type means one action: fetch
+THIS document again (the JWKS, the Entity Configuration, the SPIFFE bundle, the
+listener's anchor). Widening the #42 event would have handed every receiver that
+caches the JWKS three kinds of change it cannot act on. It would have had to
+parse `rotated` to tell them apart, and the event's `jwks_uri` would name the
+wrong document for all three. So each keeps #42's members (`realm`, `rotated` as
+`<unit> <from> -> <to>`, `reason` from the same three words, one `*_uri`,
+`event_timestamp`). SPIFFE adds `trust_domain` and `bundle_changed`, which is
+false for an X.509 authority re-issued under the Root, because the bundle
+publishes the Root. The type `boolean` is new to `checkMember()` for that
+member.
+
+The OWNERS do not require this module. `ssf/service_signals.ts` is a library in
+`account_signals.ts`'s shape: it reads `ssf.ts` from `require.cache`, runs the
+send inside the key's realm (in every realm for the listener, `*`), and never
+throws into the rotation. `oidfed/federation_keys.ts` announces `rotate()` and
+`revoke()`, but not a next key merely published. `spiffe/spiffe_ca.ts`
+announces both rotations, `scheduled` from its job and `requested` otherwise.
+`tls/tls_server.js` announces a listener certificate it REPLACES. The first
+certificate a process takes over its self-signed bootstrap is compared, once
+the port is bound, with the fingerprint the SERVICE last announced, kept in
+`tls.listenerAnnounced`. It is announced with the reason `restarted` when they
+differ (#264, `tls/CLAUDE.md`). That reason belongs to
+`tls-certificate-changed` alone: `keyEventRow()` takes a row's own extra
+reasons as `spec.reasons`.
+`admin-ui/pki_admin.ts` announces a realm whose SPIFFE Issuing CA an act on the
+hierarchy moved. **Not in any setting**: the `sts` family is always offered
+(`supportedEventUris()`), so #86's closed sets needed no new value.
+`kerberos-tickets-invalidated` gained the reason `nothing-retained`: an
+ORDINARY rotation by hand with `krb5.retainedKeyVersions` 0 keeps nothing, and
+until #245 it ended every TGT unannounced (`kerberos/CLAUDE.md`).
+`tests/service_key_signals.js`, `tests/vendored/sts_service_key_signals.js`.
+
+## A CHANGE TO THE CERTIFICATE HIERARCHY TELLS THE PEOPLE UNDER IT (2026-09-26, #244)
+
+`ssf/service_signals.ts` also carries the fan-out that `/admin/pki`'s acts on
+the TIERS owe the people holding leaves. `caRevoked()` handles an Issuing CA or
+Intermediate put on its parent's list: it walks down to every live
+person-held certificate beneath it and sends `revoke`, plus RISC
+`credential-compromise` for `keyCompromise` / `cACompromise`, through
+`accountSignals.credentialCompromised()`, the funnel #231 uses for a leaf.
+`snapshot()` before, and `hierarchyChanged()` after, `build`, `build-root`,
+`build-scope`, `reissue-use-case`, `recertify`, `import-ca` and `clear`, which
+compare per certificate. A slot re-minted from the current tree gets `update`,
+naming the new certificate. Anything else gets `revoke`, naming the old one.
+**What is re-minted is settled from the code, not assumed.** Only the
+register's SLOTS are re-minted (a person's TLS client certificate). The issued
+register (RFC 7523/7522 key pairs, every ACME, EST and SCEP enrolment) never is,
+because this service holds no key for them. A branch rebuild re-certifies only
+the realm's signing keys, so a TLS client certificate is orphaned there. Only
+certificates live under the CURRENT tree count, so a rebuild never re-announces
+what an earlier act orphaned. **The fan-out is batched**: 50 people at a time,
+each batch handed over (into the queue and the push cap) before the next, with
+a turn of the event loop between batches and the console's answer ahead of all
+of it. `tests/ca_hierarchy_signals.js`,
+`tests/vendored/sts_ca_hierarchy_signals.js`.
+
+## A STREAM THIS TRANSMITTER DELETES IS TOLD FIRST (2026-09-26, #245)
+
+`retireStream()`: the console / `/admin-api` delete and
+`ssf.inactivityAction: delete` used to call `streams.removeStream()` directly.
+They now go through `changeStatus(record, 'disabled', reason)`, which transmits
+BEFORE it stops the stream, and only then remove it. SSF 1.0 has no delete
+event, and this is the one notice available. A push is attempted and settled
+before the removal. On a poll stream the SET leaves with the stream, as for any
+disable. An already-disabled stream and this service's own receivers are
+removed without a notice. The receiver's own `DELETE /ssf/stream` sends
+nothing, because it asked.
+
 ## WHAT THIS FAMILY DELIBERATELY DOES NOT DO
 
 Each of these is on `GET /ssf` in the same words, because a mock's omissions are
@@ -1234,14 +1369,21 @@ the half a reader cannot discover from a protocol trace.
   for a directory change to a claim somebody's live tokens carry (#145) and a
   modified GNAP grant, and `risk-level-change` (#62 P4) when a person's risk
   level changes and the `risk-response` policy permits announcing it
-  (`riskAutoEmit()`); `device-compliance-change` describes a thing nothing here
-  does — no device reports compliance to this service (#164) — so it is still
-  emitted only when asked for.
+  (`riskAutoEmit()`), and — since #164 — the device register sends
+  `device-compliance-change`, a device's `risk-level-change` and its
+  credentials' `credential-change` (*A DEVICE'S EVENTS*, below). Every one of
+  CAEP's eight now has an act here.
 * **It does not retry a failed push unless `ssf.pushRetries` says to.** See
   above.
-* **It is not a receiver of anybody else's transmitter** (#153). It discovers
-  no foreign transmitter, creates no stream there, polls none, and fetches no
-  foreign `jwks_uri`, so a SET another party signed never verifies here.
+* **It sends nothing when a realm's authentication policy is TIGHTENED**
+  (#243, 2026-09-26). A live session keeps the `acr` it was established at —
+  that authentication did happen at that level — and CAEP 1.0 has no event
+  for "the level this realm requires went up": `assurance-level-change` says
+  a subject's assurance moved, and it did not. The next sign-in or step-up is
+  held to the new policy.
+* ~~It is not a receiver of anybody else's transmitter~~ — **reversed
+  2026-09-26 (#153)**: a realm registers a foreign transmitter by its issuer
+  and receives from it; see *THIS REALM AS A RECEIVER*, below.
 * **It verifies nothing about a subject.** A stream may name somebody who has
   never been here, which is what a receiver's "I do not know this subject" path
   needs.
@@ -1458,9 +1600,10 @@ administrator credential acts below) and `assurance-level-change` on
 | Act | Event | Where it is noticed |
 |---|---|---|
 | a session is created | `session-established` | `authn.startSession()` |
-| a session is presented and honoured | `session-presented` | `authn.notePresented()`, from `oauth-oidc/oauth2.ts`'s authorization endpoint, `saml2_sso.ts`, `saml11_sso.ts`, `wsfed.ts` and `gnap/gnap_interact.ts` |
+| a session is presented and honoured | `session-presented` | `authn.notePresented()`, from `oauth-oidc/oauth2.ts`'s authorization endpoint and Native SSO exchange, `saml2_sso.ts`, `saml11_sso.ts`, `wsfed.ts`, `gnap/gnap_interact.ts`, `portal/portal_ciba.ts`'s approval and `oid4vc/vc_offers.ts`'s pre-authorized offer (the last three #240) |
 | a session ends | `session-revoked` | `authn.dropSession()`, which every sign-out door reaches |
 | the same person re-authenticates on a session they hold, and `acr` moves | `assurance-level-change` | `authn.reauthenticateSession()`'s `reauthenticated` notice |
+| a person's identity assurance level moves (#243) | `assurance-level-change`, same act | `common/identity_assurance.ts`'s one write, through `account_signals.assuranceChanged()` — *EVERY OTHER DOOR*, below |
 
 **A RE-AUTHENTICATION IS NOT A SESSION EVENT, AND THAT IS WHY THE FOURTH ROW
 EXISTS.** Until 2026-09-14 the same person stepping up in the same browser went
@@ -1477,15 +1620,12 @@ the default for an event emitted BY HAND. `change_direction` comes from
 and this event cannot disagree about which way is up. `authn/CLAUDE.md`, *What
 an authenticated identity is here*, carries the design and the probe.
 
-What remains — token claims change (except for a modified GNAP grant,
-`gnap/gnap_signals.ts`), device compliance change, risk level change, and
-credential changes other than an administrator's — has **no act here that
-could cause it**. No device reports compliance to this service and no risk
-engine talks to it, so an automatic emission of one would be this service
-inventing a fact. They are emitted by hand from `/admin/caep` or
-`POST /admin-api/caep/emit`, and a row in `caep.autoEmitTypes` naming one is
-dropped rather than honoured: honouring it would leave a setting that reads as
-configured and does nothing.
+*(Superseded, in stages: this paragraph said token claims, device compliance,
+risk level and most credential changes had no act here. #145 gave the first
+and last one, #62 the risk level, and #164 device compliance — so every CAEP
+type now fires on its own, and `/admin/caep`'s hand emission is for an event
+on demand. A row in `caep.autoEmitTypes` naming something that is not one of
+`AUTO_ACTS` is still dropped with a warning rather than honoured.)*
 
 **THE FIRST PRESENTATION OF A NEW SESSION IS NOT REPORTED**, and without that
 rule the feature would be noise. Every sign-in here ends with the browser
@@ -1624,6 +1764,38 @@ caller's own words on the context now, and the same phrase reaches
 `reason_admin`, so the two cannot disagree about who ended a session.
 `tests/caep_initiating_entity.js` is the guard, mutation-tested against five
 mutants.
+
+**AND THEN THE WORDS WERE READ THE WRONG WAY ROUND (#242, 2026-09-26).**
+Reading the entity out of the sentence made the console's own Sign out button
+("the Sign out button on the admin console") an ADMINISTRATOR ending the
+session of a person who signed themselves out, with every child it cascaded
+to, and made an emergency key rotation and the risk engine the PERSON. So the
+regex is gone: every door STATES `admin`, `user`, `policy` or `system` —
+`logout.terminate({ initiatingEntity })`, `authn.endSessionById(id, via,
+entity)`, `endEverySessionIn()`, `endRelyingPartySessions()` — and the words
+reach `reason_admin` only. A derived session ends with its parent's entity; a
+door that says nothing is `system` with `STS-AUTHN-0290`. The table of doors
+and their entities is `docs/caep-events.md`'s `session-revoked` section.
+`caep.ts`'s own fallback (`byAdmin`, then `user`) is kept for a notice from
+elsewhere that states nothing; `authn` always states one.
+
+**A REALM BEING REMOVED TELLS ITS RECEIVERS FIRST (#232, 2026-09-26).**
+`retireRealmStreams()` is this family's `realms.onRetire()` deliver hook
+(`common/CLAUDE.md`, *`retire()` and `onRetire()`*): it waits, bounded, for
+the realm's SETs in flight — `transmit()` is now a thin wrapper that counts
+them per realm around `transmitNow()` — so the `session-revoked` and
+`account-purged` the realm's removal caused reach their receivers; counts what
+is still queued (a push not taken, a poll nobody collected); then sends
+`stream-updated` `disabled` on every stream through `changeStatus()`, so the
+event goes before the stop. A poll stream is not waited on: collection is the
+receiver's act. What was not delivered is reported and logged as
+`STS-CORE-0120`, and the queues go with the realm.
+
+**AN ARRIVAL SESSION IS NEVER ANNOUNCED (#242).** `authn.notifySession()`
+drops every notice about a session with `chosen: false` — the anonymous
+tracking row a cookie-less visitor gets at a front door — so its expiry, the
+sweep and a realm's every-session end no longer send a `session-revoked`
+about a session no receiver was ever told was established.
 
 ## PER-RECEIVER STATISTICS, AND THE COUNTER THEY NEEDED (2026-09-04)
 
@@ -1817,8 +1989,200 @@ it by default.
 fingerprint, as CAEP defines the member, and not the header.
 
 **Not here:**
-* `device-compliance-change` has no source (#164).
-* Acting on a RECEIVED event is #153 and #117.
+* `device-compliance-change` is emitted by the device register (#164)
+  whenever a device's compliance changes.
+* Acting on a RECEIVED event: the console's and portal's receivers (#62)
+  and foreign transmitters (#153), a received `device-compliance-change`
+  included (below).
+
+## TOKEN-CLAIMS-CHANGE FROM EVERY OTHER DOOR, AND TO EVERY HOLDER (#238, 2026-09-26)
+
+#145 made the directory's account observer the one input; a claim that came
+from anywhere else could never produce the event. Now:
+
+* **A role** (`ou=roles`) is reported by `ldap_server.js` as an observer
+  notice of its own, `kind: 'roles'`, once per person it moved
+  (`noteRoleChange()`: `putEntry()` — so `roles.write()` and `ldapadd` —
+  `deleteRole()`, and the LDAP modify, delete and rename). **`roles` and
+  `membership` are `SharedSignals.CLAIMS_ONLY_KINDS`**: `directoryChanged()`
+  hands neither to RISC. A `membership` notice carries `rolesMoved` when a
+  role's `roleMemberGroup` names the group, and `claimsChangeFor()` adds the
+  roles claim (`roles.claimFor()`, or `null`) — unless `groups.claimName`
+  equals `roles.claimName`, where the groups claim wins in every token.
+* **`email_verified`** is read off an `updated` notice as `stsMailVerified`
+  against `mail`; `writePersonFlag()` now tells the observer about
+  `stsMailVerified` as it does about the lock.
+* **Doors that are not the directory** — `identity_assurance.ts`
+  (`verified_claims`) and `claims_providers.ts` (`_claim_names` /
+  `_claim_sources`) — go through `account_signals.claimsChanged()` to
+  `emitClaimsChange()`, which is `claimsAutoEmit()` with `kind: 'claims'`.
+  The notice's `claims` may be a FUNCTION, called only after the live-issuance
+  check, so nothing is computed for somebody who holds nothing. A notice may
+  name its `protocol`, `initiatingEntity` and reasons.
+
+**THE FAN-OUT** is `claimsFanOut()`, for a configuration change that moves a
+claim in every holder's tokens: `admin_stats.liveClaimBearers(match)` lists
+each PERSON once with their newest live access token, ID Token or SAML
+assertion the change shaped (the record's claim set is `claimSet` — never
+`setId`, which a token record already carries), and `claimsFor(bearer)` gives
+the moved claims, usually `admin_stats.claimValuesFor()` — what that set would
+carry for that holder and audience now, `null` for gone. Each holder goes
+through `claimsAutoEmit()` with `liveChecked: true` (the listing WAS the
+check; asking again would walk the register once per holder). **It walks in
+slices of `FAN_OUT_SLICE` (100)**, each slice's deliveries awaited and the
+next started on a later turn of the event loop, so requests keep being
+answered and at most one slice queues behind the push cap. That is this
+family's half of the batch lane; `request_pool.js`'s batch lane is about
+inbound requests and is not involved.
+
+The doors that call it, each lazily and never into its write:
+`applications.js` (a permission revoked where grants are enforced, removed
+from its resource, or an allowed scope the policy now refuses: `scope` less
+the value), `admin_stats.setClaimSet()`, `claim_attributes.setSelection()`, a
+`roles.claim*` / `groups.claim*` setting through `config.js`, and a federation
+release list (`federation.js`'s `announceReleaseChange()`) —
+`admin_stats.announceClaimsReshaped()` for the last four. **Not sent:**
+adding a grant or scope (a token carries what was asked for),
+`appRequiredRole` (who may be ISSUED a token, no claim in one), the UserInfo
+set (built per call), and an application's own `client_credentials` tokens,
+whose subject waits on #221.
+
+**IDENTITY ASSURANCE (#243)** — `identity_assurance.ts`'s `store()` is the
+one write for `record()`, `remove()` and `recordAutomatic()`, and announces
+what moved: `verified_claims` when a framework, level or claim moved (not a
+`time`, so a sign-in rewriting its own record says nothing), and the level
+from `assuranceOf()` through `emitIdentityAssuranceChange()`:
+`assurance-level-change` about the PERSON, on the `reauthenticated` act. The
+namespace is `urn:sts:ial` with the verification's own `assurance_level`,
+and `NIST-IAL` only for `nist_800_63A` with IAL1–3 (rcbj's reason for
+`urn:sts:acr`: no mapping onto a conformance nobody assessed). `previous_level`
+only when the namespace stayed; `change_direction` only where the levels are
+ordered.
+
+`tests/caep_claims_doors.js` and `tests/vendored/sts_caep_claims_doors.js`
+hold both.
+
+## THIS REALM AS A RECEIVER OF A FOREIGN TRANSMITTER (2026-09-26, #153)
+
+rcbj's answers were every recommendation: only a transmitter an
+administrator registers; both poll and push; act on session-revoked,
+credential-change and account disabled or enabled; map subjects through a
+federation relationship. `ssf/ssf_transmitters.ts` carries the argument in
+its header. The points a reader of this directory needs:
+
+* **Registration is by ISSUER.** The configuration document is fetched from
+  `/.well-known/ssf-configuration` inserted before the issuer's path (section
+  7), and it must name that issuer, a `jwks_uri` and a
+  `configuration_endpoint`. Every address dialled afterwards comes from that
+  document: stream management, status, subjects, verification and the poll
+  endpoint the stream names. They go through
+  `federation_http.fetchPublished()`, which gained `method`, `headers` and
+  `body` for them. Its bounds are unchanged: internal addresses refused in
+  product mode, the connection pinned, no redirect, a cap. It is the fifteenth
+  row of root CLAUDE.md's "Dial a URL a CALLER supplied" index. It reverses
+  this file's *no create stream on the console* rule for this direction only:
+  there the address would be one a console user typed for us to deliver to,
+  and here it is the transmitter's own.
+* **This realm authenticates to the transmitter** by client credentials at
+  an administrator-named token endpoint (token cached per process, short),
+  or by a pasted bearer. Secrets live in the persisted register, sealed at
+  rest like every minted row, and no page or answer shows them.
+* **Push** is `POST /ssf/transmitters/{id}/push`. The Authorization header
+  this realm gave the transmitter at stream creation is kept as its digest
+  and compared in constant time. **Poll** is the `ssf.foreign-poll` cluster
+  job, per realm. What was received is acknowledged (`ack`) or refused
+  (`setErrs`) on the next request, with one more request after the last
+  round to acknowledge it.
+* **Verification** is done here, not by `ssf_events.verifySet()`, which only
+  knows this realm's keys. The signature is checked against the
+  transmitter's `jwks_uri`, reusing `oauth-oidc/client_jwks.js`'s cache, with
+  the kid named or else each key and the asymmetric algorithms named. Then
+  `typ` must be secevent+jwt, `iss` the transmitter's, and `aud` the
+  stream's. A `jti` is accepted once, and the inbox that holds it is also the
+  history. In product an unverified SET is refused (`invalid_key`). In
+  development it is recorded and acted on in no way.
+* **Reactions** come from the `signal-response` policy, asked with the
+  surface `foreign:<id>`, and there are three new actions:
+  * `signal-end-person-sessions`: a global sign-out of the person here;
+  * `signal-disable-account` (`account_state.setDisabled`, which re-emits
+    RISC to this realm's own receivers);
+  * `signal-enable-account`, only for a lock this transmitter's own event put
+    there (`ssf.foreignLocks`).
+
+  The template's foreign rules require that surface prefix, so the console's
+  and portal's receivers never match them. Development only records what it
+  would do, unless `ssf.actOnSignalsInDevelopment` is on.
+* **Subjects.** An `iss_sub` with the relationship's `fedPeer` is the ONE
+  person whose `federationLink` holds it. An `email` subject is matched only
+  where the relationship sets `fedSignalEmailMatch`, which is off by default:
+  an address is not an identifier. Anything else names nobody, and the SET is
+  recorded. A `complex` subject's `user` member is what is mapped.
+* **CAEP device-compliance-change** goes to `devices.setCompliance()` when
+  the device register offers it (#164). The device is found by the subject's
+  `sub` or a key thumbprint.
+
+## DETECTED COMPROMISES, AND THE LAST CREDENTIALS (#231, #236, #237, 2026-09-26)
+
+**Every row goes through `account_signals.ts`**, so `caep.autoEmitTypes`,
+`risc.autoEmitTypes`, the opt-out gate and each stream's own types and
+subjects hold as for every other act.
+
+**RISC `credential-compromise` from what the service DETECTS (#231):**
+
+| Detector | `credential_type` | Also | Where |
+|---|---|---|---|
+| a password found in a breach at the sign-in screen (`risk.breachCheckAtSignIn`) | `password` | `account-credential-change-required`; once per demand — nothing more while `pwdReset` stands | `authn/authn.ts` |
+| a security key whose signature counter went backwards, every other check passing | `keyCredentialType()` | the person's risk standing HIGH, `authenticator-compromised` (`RiskEngine.noteAuthenticatorCompromise()`) | `credentials.noteKeyCloned()`, from `spendAssertion()` and from the ceremony doors (`authn.ts`, `device_enrolment.ts`) when `clonedKeyVerdict()` says the counter was the one failed check |
+| a leaf certificate revoked for RFC 5280 `keyCompromise` | `x509` | the CAEP revoke it always sent | `tls_client_certificates.revoke()`, `cert_enrollment.revokeEnrolled()`, `/admin/pki`'s `revoke-certificate` (a CA's own revocation is #244's) |
+| the emailed factor turned off at its failure limit | `urn:iya:sts:credential-type:email-otp` | CAEP `delete` by `system`; `mailed: true`, because the factor already mails the person | `mail_factor.noteFailure()` |
+
+**A replayed one-time code is NOT a SET** (rcbj's decision): a person who
+pressed submit twice looks exactly like a replay. It is a risk signal,
+`totp-replay` (`risk/CLAUDE.md`). And where the `risk-response` policy is
+installed and enforced, a cloned key's HIGH standing fires its own
+`risk-credential-compromise` reaction as well, so a receiver may be told
+twice about one key; the direct event is kept so that it does not depend on
+the policy.
+
+**CAEP `credential-change` for the credentials no registered value fits
+(#236).** CAEP 1.0 section 3.3.1's list is open ("or any other credential
+type supported mutually"), and RISC 2.7 takes the same values, so these are
+URNs in this service's namespace, following `devices.ts`'s precedent. Each
+is sent from the one function that writes the credential (#145's rule):
+
+| Credential | `credential_type` | Funnel | `change_type` |
+|---|---|---|---|
+| the emailed second factor (#64) | `urn:iya:sts:credential-type:email-otp` | `mail_factor.optIn()`, `clear()` | create; update (code to link); delete |
+| a SIOPv2 self-issued subject (#129) | `urn:iya:sts:credential-type:self-issued-key` | `siop.enrol()`, `remove()` | create; delete |
+| an ACME EAB key | `urn:iya:sts:credential-type:acme-eab-key` | `cert_enrollment.createEab()`, `deleteEab()` | create; delete |
+| a SCEP challenge password | `password`, `friendly_name` naming it | `createScepChallenge()`, `deleteScepChallenge()` | create; delete |
+| a HOBA key | `urn:iya:sts:credential-type:hoba-key` | `scim_auth.registerHobaKey()` | create; update (the same kid) |
+| a person's Kerberos keys | `urn:iya:sts:credential-type:kerberos-key` | `krb5_person_keys` `derive()`, `clearPersonKeys()`, `dropPreviousPersonKeys()` | create (first key); update (a new password's kvno); revoke (previous versions dropped); delete (cleared) |
+| a device's JWK key, a Native SSO secret (#164) | `...:device-key`, `...:device-secret` | `devices.ts` | above |
+
+A SCEP challenge IS a password; the friendly name keeps it apart from the
+account's own, for a receiver and for the person's "password changed" mail
+(which is sent only for an unnamed `password`). Binding an EAB key and
+redeeming a challenge send nothing: the certificate each produces is
+already `x509`. Only a person's credential is sent. **#86's closed sets name
+no credential type** (`CREDENTIAL_TYPES` is an `openenum`: an unknown value
+is a warning, never a refusal), so nothing there changed.
+
+**AND THE DOORS THAT CHANGED A REGISTERED TYPE SILENTLY (#237):**
+- an LDAP write of a credential attribute is REFUSED, in both modes and for
+  an administrator too (STS-LDAP-0111, `ldap/CLAUDE.md`) — the doors that own
+  those attributes check and signal, and a raw write did neither;
+- an LDAP delete of `userPassword` is `password` `revoke`, and a pre-hashed
+  value kept in development is `create` or `update`;
+- `pwdReset` set over LDAP is RISC `account-credential-change-required`;
+- the CIBA user code is `pin` — create, update, delete (`ciba.setUserCode()`);
+- a bootstrap administrator's password, at startup and when a realm is
+  created, is `password` `create` by `system`
+  (`credentials.noteBootstrapPassword()`); a realm that young has no stream,
+  so it goes nowhere until one exists.
+
+`tests/credential_signals.js` holds every row in process;
+`tests/vendored/sts_credential_signals.js` the ones a wire can reach.
 
 ## A RENAMED ACCOUNT KEEPS ITS RISC ROW (2026-09-14)
 
@@ -1838,3 +2202,68 @@ hold a second factor is refused their own password with the one `STS-SSF-0009`
 `/admin-api` (`admin`) — is a `credential-change` (`password`, `create` or
 `revoke`, the app password's name as `friendly_name`) through
 `account_signals.ts`.
+
+## A DEVICE'S EVENTS (#164 phases 3 and 4, 2026-09-26)
+
+`common/devices.ts` is the device register's FUNNEL — the console, `/admin-api`,
+the MDM feed, the portal, EST and SCEP and Native SSO all change a device
+through it — so it is where a device's events are sent, through
+`account_signals.ts`'s `deviceEvent()` and `sessionsRevoked()` (the same
+`require.cache` arrangement) to `ssf.ts`'s `emitDeviceEvent()` and
+`emitRiscAccountAct()`:
+
+| Act | Event | Notes |
+|---|---|---|
+| compliance changes | CAEP `device-compliance-change` (act `compliance`, the eighth `AUTO_ACTS` row) | CAEP section 3.5.1 has TWO values, so `unknown` is sent as `not-compliant` and an event goes out only when the sent value moves |
+| risk level changes | CAEP `risk-level-change`, `principal` `DEVICE` (act `risk`) | `devices.setRiskLevel()`, which #164 phase 5 calls; a compromise raises it to `HIGH`; `previous_level` only where there was one |
+| a key added, re-issued, removed; a Native SSO secret issued, revoked | CAEP `credential-change` (act `credential`) | `x509`, `fido2-platform`/`fido2-roaming`, and two URNs of our own for a JWK key and a device_secret (#236) |
+| a person's device compromised | RISC `credential-compromise` per kind of credential it held, and `sessions-revoked` | complex subject: the account AND the device |
+| a person's device removed | RISC `sessions-revoked` | the same subject |
+
+**THE DEVICE IS NAMED `iss_sub`**: this realm's issuer and the device's id,
+the form CAEP section 3.5.2's own example uses. The id is unique only within
+the realm that assigned it, which is exactly what an issuer-scoped identifier
+says; `opaque` would say nothing about whose it is, and the
+`urn:sts:device:<id>` a device certificate carries names no issuer either.
+`caep.subjectFor()` names the session events' device the same way (it was
+`opaque` and never filled until #164), from the `registeredDevice` on the
+session's latest authentication event, so a receiver that added the device
+gets its session events too.
+
+**RISC'S SUBJECT IS COMPLEX FOR THESE TWO AND NO OTHER**, and `risc.ts`'s
+subject section still holds: a complex subject on `account-disabled` would
+mean nothing. On `sessions-revoked` the device member is what makes the
+deprecated event TRUE — "all the sessions for the account" becomes every
+session of the account on that device, which is what was ended; each ended
+session also sends CAEP `session-revoked`, which RISC 1.0 section 2.11 points
+at, and `risc.autoEmitTypes` can drop the RISC one. `accountIdOf()` reads a
+complex subject's `user` member so the register still counts the event.
+
+**STREAM SUBJECTS MATCH BY SSF 1.0 SECTION 8.1.3.1** (`complexSubjectsMatch()`
+in `ssf_streams.ts`): a complex subject a receiver ADDED matches an event's
+complex subject when every member both define is identical — and, a condition
+the section's letter omits and all its examples meet, at least one member is
+defined by both. Without it `{ device }` would match every session event of
+every person, none of which names a device.
+
+**What a compromise and a removal CAUSE** — sessions ended, certificates
+revoked, the secret revoked — is `devices.ts`'s header; this directory only
+reports it.
+
+**A PAIRWISE OR EPHEMERAL STREAM OWNER IS TOLD THE DEVICE AS ITS TOKENS ARE
+(#164 phase 6).** `subjectForReceiver()` has rewritten the `user` member to
+the owner client's `sub` since #149. It now rewrites a person's `device` the
+same way, through `pairwise_subjects.deviceIdFor()`:
+* a pairwise client is told the sector-derived id its tokens' `device_id`
+  carries;
+* an ephemeral client is told no device, and the member is dropped;
+* a public client is told the register's id.
+
+An application's device has no `user` member and is sent as it is: pairwise
+subjects protect End-Users. `oauth-oidc/CLAUDE.md` 3bo argues the claim.
+
+**RISK SCORING SETS A DEVICE'S LEVEL** (#164 phase 5): after a sign-in the
+person's own device proved, the device takes that sign-in's level, so the
+`risk-level-change` with principal `DEVICE` above now fires on risk as well
+as on a compromise (`risk/CLAUDE.md`, *The registered device*).
+

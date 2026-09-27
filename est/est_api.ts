@@ -44,6 +44,16 @@ import helpers = require('../common/helpers');
 const { log, parseBody } = helpers;
 import errorCodes = require('../common/error_codes');
 import InstanceSlot = require('../common/instance_slot');
+// The key algorithm ids an enrollment may name (#86): the vendored registry,
+// a leaf that requires nothing of this service.
+import keyMaterial = require('../common/vendored/key_material');
+
+// THE PROFILE IS DELIBERATELY NOT AN ENUM (#86). It is a closed set, and
+// the handler (`common/cert_enrollment.ts`'s checkProfile()) holds it — and
+// says WHY for the five it refuses on purpose: `root-ca` is a trust anchor,
+// and a caller who asked for one needs that sentence, not "not one of the 9
+// values". The validator runs first, so an enum here would replace it; this
+// is the one case #86 found where the handler's refusal is the better one.
 
 const BASE = '/admin-api';
 
@@ -230,7 +240,7 @@ class EstApi {
                 profile: { type: 'string',
                            description: 'One of the nine profiles; ' +
                                         '`est.defaultProfile` when omitted.' },
-                keyAlg: { type: 'string',
+                keyAlg: { type: 'string', enum: keyMaterial.keyAlgIds(),
                           description: 'A key algorithm id from GET ' +
                                        '/admin-api/est `keyAlgorithms`; ' +
                                        'ec-p256 when omitted.' }

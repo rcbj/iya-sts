@@ -1279,14 +1279,19 @@ class Acme {
                                 'acme.certificateLifetimeDays from issuance, ' +
                                 'shortened to the Issuing CA\'s own.');
       }
-      const profileId = body.profile || core.defaultProfile(FAMILY);
-      const profile = core.checkProfile(FAMILY, profileId);
-      if (!profile.ok) {
-        log.debug("Leaving the ACME new-order. Profile refused.");
-        return self.acmeProblem(ctx, 400, 'invalidProfile', 'STS-ACME-0044',
-                                String((profile.errors || [])[0]));
+      // A NAMED profile is checked here, before a single identifier is read,
+      // as it always was. An order naming none has its profile chosen from its
+      // identifiers once they are parsed, below (#252).
+      let profile = null;
+      if (body.profile) {
+        profile = core.checkProfile(FAMILY, body.profile);
+        if (!profile.ok) {
+          log.debug("Leaving the ACME new-order. Profile refused.");
+          return self.acmeProblem(ctx, 400, 'invalidProfile', 'STS-ACME-0044',
+                                  String((profile.errors || [])[0]));
+        }
+        ctx.profile = profile.profile;
       }
-      ctx.profile = profile.profile;
       const resolved = core.resolveEntry(account.entry.kind, account.entry.id);
       if (!resolved.ok) {
         log.debug("Leaving the ACME new-order. The entry is gone.");
@@ -1340,6 +1345,20 @@ class Acme {
                                 ' identifier(s) are of a type ' +
                                 'this server does not issue for.',
                                 { subproblems: unsupported });
+      }
+      // NO PROFILE NAMED: `tls-server` for an order of host names only, the
+      // realm's `acme.defaultProfile` otherwise — the rule is the core's
+      // (`profileForIdentifiers()`, #252), and the choice is checked exactly
+      // as a named one is.
+      if (!profile) {
+        profile = core.checkProfile(FAMILY, core.profileForIdentifiers(FAMILY,
+          identifiers.map(function (one) { return one.type; })));
+        if (!profile.ok) {
+          log.debug("Leaving the ACME new-order. Default profile refused.");
+          return self.acmeProblem(ctx, 400, 'invalidProfile', 'STS-ACME-0044',
+                                  String((profile.errors || [])[0]));
+        }
+        ctx.profile = profile.profile;
       }
       const rejected = [];
       identifiers.forEach(function (identifier) {

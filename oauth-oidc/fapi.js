@@ -113,6 +113,18 @@ const BASELINE_METHODS = ['tls_client_auth', 'self_signed_tls_client_auth',
 const ADVANCED_METHODS = ['tls_client_auth', 'self_signed_tls_client_auth',
                           'private_key_jwt'];
 
+// OAUTH 2.0 ATTESTATION-BASED CLIENT AUTHENTICATION (#229) — which FAPI 2.0
+// section 5.3.2.1 item 6 does not list (it names mTLS and private_key_jwt),
+// and which the OpenID4VC High Assurance Interoperability Profile allows
+// beneath FAPI 2.0 as Wallet Attestation (HAIP 1.0 section 4: "Client
+// authentication: Wallet Attestation as defined in Section 4.4.1 can be
+// used"). So it is added to FAPI 2.0's list only where the realm says it is
+// running HAIP's arrangement (`oauth2.fapiAllowClientAttestation`, off), and
+// never to FAPI 1.0's. Spelt here rather than read from
+// `client_attestation.ts`, which this leaf must not require.
+const ATTESTATION_METHODS = ['attest_jwt_client_auth',
+                             'attest_jwt_client_auth_dpop'];
+
 // Part 2 section 5.2.2 item 2: `code id_token`, or `code` with JARM.
 const ADVANCED_RESPONSE_TYPES = ['code id_token', 'code'];
 
@@ -526,6 +538,22 @@ function enabled() {
   return on;
 }
 
+// The client authentication methods the profile in force allows — every
+// reader asks this, so the three cannot disagree.
+function allowedMethods() {
+  log.debug("Entering allowedMethods().");
+  if (!(advanced() || fapi2())) {
+    log.debug("Leaving allowedMethods(). Baseline.");
+    return BASELINE_METHODS.concat(['none']);
+  }
+  const attestation = fapi2() &&
+    config.value('oauth2.fapiAllowClientAttestation') === true;
+  log.debug("Leaving allowedMethods(). " + (attestation
+    ? 'Advanced, with client attestation.' : 'Advanced.'));
+  return attestation ? ADVANCED_METHODS.concat(ATTESTATION_METHODS)
+                     : ADVANCED_METHODS;
+}
+
 // Whether the FAPI 2.0 Security Profile is in force.
 function fapi2() {
   log.debug("Entering fapi2().");
@@ -687,6 +715,19 @@ function authorizationRefusal(query, context) {
   if (advanced()) {
     const type = responseTypeOf(q.response_type);
     const jarm = JARM_MODES.indexOf(String(q.response_mode || '')) >= 0;
+    // `code` IS a response type this profile allows; with a response mode
+    // that is not JARM, the MODE is what is wrong, so it is invalid_request
+    // rather than unsupported_response_type (#187: the OpenID conformance
+    // suite's ensure-response-mode-query module at PAR, which RFC 9126
+    // section 2.3 answers with invalid_request).
+    if (type === 'code' && !jarm) {
+      log.debug("Leaving authorizationRefusal(). code without JARM.");
+      return refusal('STS-OAUTH-0783', 'invalid_request', 'response-type',
+                     'response_type "code" is allowed only with ' +
+                     'response_mode=jwt (JARM), and this request\'s ' +
+                     'response_mode is "' + String(q.response_mode || '') +
+                     '" (Part 2 section 5.2.2 item 2)');
+    }
     if (!(type === 'code id_token' || (type === 'code' && jarm))) {
       log.debug("Leaving authorizationRefusal(). A response type Advanced " +
                 "does not allow.");
@@ -699,6 +740,24 @@ function authorizationRefusal(query, context) {
                      'with response_mode=jwt (JARM) (Part 2 section 5.2.2 ' +
                      'item 2)');
     }
+  }
+  // A REQUEST NAMING NO SCOPE, under FAPI 1.0 Advanced (#187). Part 2
+  // section 5.2.2 item 10 has the authorization server use only the
+  // parameters of the signed request object, and RFC 6749 section 3.3 lets
+  // it either apply a default or fail a request with no scope. This one
+  // fails it: a signed request whose object names no scope is, far more
+  // often than not, a client that put scope outside the object (section
+  // 5.2.3 item 8), and serving it with a default would grant something the
+  // signed request never asked for. The OpenID conformance suite's
+  // ensure-request-object-without-scope-fails module expects the refusal.
+  if (advanced() && !fapi2() && !String(q.scope || '').trim()) {
+    log.debug("Leaving authorizationRefusal(). No scope.");
+    return refusal('STS-OAUTH-0784', 'invalid_request', 'scope-required',
+                   'the request names no scope; under this profile only ' +
+                   'the parameters of the signed request object are used ' +
+                   '(Part 2 section 5.2.2 item 10), so scope belongs in it, ' +
+                   'and RFC 6749 section 3.3 lets this server refuse a ' +
+                   'request without one rather than apply a default');
   }
   // FAPI 1.0's two parameter rules; FAPI 2.0 leans on PKCE instead.
   if (fapi2()) {
@@ -773,8 +832,7 @@ function clientAuthenticationRefusal(method) {
     log.debug("Leaving clientAuthenticationRefusal(). Nothing to judge.");
     return null;
   }
-  const allowed = (advanced() || fapi2()) ? ADVANCED_METHODS
-                                          : BASELINE_METHODS.concat(['none']);
+  const allowed = allowedMethods();
   if (allowed.indexOf(used) >= 0) {
     log.debug("Leaving clientAuthenticationRefusal(). Allowed.");
     return null;
@@ -831,8 +889,7 @@ function registrationRefusal(metadata) {
   }
   const meta = metadata || {};
   const method = String(meta.token_endpoint_auth_method || '');
-  const methods = (advanced() || fapi2()) ? ADVANCED_METHODS
-                                          : BASELINE_METHODS.concat(['none']);
+  const methods = allowedMethods();
   if (method && methods.indexOf(method) < 0) {
     log.debug("Leaving registrationRefusal(). A method FAPI refuses.");
     return refusal('STS-REG-0174', 'invalid_client_metadata',
@@ -1244,13 +1301,12 @@ function applyToMetadata(metadata) {
     return metadata;
   }
   metadata.code_challenge_methods_supported = ['S256'];
-  const allowedMethods = (advanced() || fapi2()) ? ADVANCED_METHODS
-                                    : BASELINE_METHODS.concat(['none']);
+  const allowedList = allowedMethods();
   const methods = metadata.token_endpoint_auth_methods_supported;
   if (Array.isArray(methods)) {
     metadata.token_endpoint_auth_methods_supported =
       methods.filter(function (one) {
-        return allowedMethods.indexOf(one) >= 0;
+        return allowedList.indexOf(one) >= 0;
       });
   }
   if (advanced() || fapi2()) {

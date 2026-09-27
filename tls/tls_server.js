@@ -268,6 +268,13 @@ function truststoreOpenToAnybody() {
 // suites first whatever a client lists. An empty `tls.ciphers` still means
 // `tls.DEFAULT_CIPHERS`.
 //
+// AND THE GROUPS AND SIGNATURE ALGORITHMS SINCE #212 (2026-09-26):
+// `tls.groups` (node's ecdhCurve) and `tls.signatureAlgorithms` (sigalgs).
+// tlsfuzzer found node's defaults offering one of OpenSSL's three post-quantum
+// hybrid groups and both finite-field ones, and advertising DSA and SHA-224 in
+// every TLS 1.2 CertificateRequest; each row in common/config.js says what
+// its default is instead and why.
+//
 // **A CIPHER LIST THAT MATCHES NOTHING STOPS THE SERVICE HERE**, at require
 // time, naming the setting. Found any later it is a TypeError out of
 // `https.createServer()` in `server.js`, or — worse, through
@@ -285,6 +292,26 @@ function protocolOptions() {
   if (ciphers) {
     options.ciphers = ciphers;
   }
+  // THE GROUPS AND THE SIGNATURE ALGORITHMS (#212, 2026-09-26) — see their
+  // rows in common/config.js. Empty leaves node's own: 'auto' for the
+  // groups, and OpenSSL's list for the signature algorithms.
+  const groups = String(config.value('tls.groups') || '').trim();
+  if (groups) {
+    options.ecdhCurve = groups;
+  }
+  const sigalgs = String(config.value('tls.signatureAlgorithms') || '').trim();
+  if (sigalgs) {
+    options.sigalgs = sigalgs;
+  }
+  // NO TLS 1.2 RENEGOTIATION, IN EITHER DIRECTION (#212, 2026-09-26).
+  // tlsfuzzer's test-renegotiation-disabled found the main port accepting a
+  // client-initiated secure renegotiation (node only counts them, three per
+  // ten minutes, and then drops the socket). Nothing in this service
+  // renegotiates — a client certificate is asked for in the first handshake
+  // — and each renegotiation is a full handshake's CPU spent at the peer's
+  // choosing, so OpenSSL refuses every one with a no_renegotiation warning.
+  // TLS 1.3 has no renegotiation to refuse.
+  options.secureOptions = crypto.constants.SSL_OP_NO_RENEGOTIATION;
   log.debug("Leaving protocolOptions().");
   return options;
 }
@@ -295,11 +322,14 @@ function protocolOptions() {
     tls.createSecureContext(protocolOptions());
   } catch (e) {
     log.fatal(errorCodes.tag('STS-TLS-0001') + 'tls: NOT STARTING. ' +
-              'tls.minVersion / tls.ciphers (STS_TLS_MIN_VERSION / ' +
-              'STS_TLS_CIPHERS) cannot build a TLS ' +
-              'context: ' + e.message + '. An OpenSSL cipher list names ' +
-              'suites such as ECDHE-RSA-AES256-GCM-SHA384, and an empty one ' +
-              'means node\'s default.');
+              'tls.minVersion / tls.ciphers / tls.groups / ' +
+              'tls.signatureAlgorithms (STS_TLS_MIN_VERSION / ' +
+              'STS_TLS_CIPHERS / STS_TLS_GROUPS / STS_TLS_SIGALGS) cannot ' +
+              'build a TLS context: ' + e.message + '. An OpenSSL cipher ' +
+              'list names suites such as ECDHE-RSA-AES256-GCM-SHA384, a ' +
+              'groups list names groups such as X25519MLKEM768:P-256, a ' +
+              'signature list schemes such as rsa_pss_rsae_sha256, and an ' +
+              'empty one means node\'s default.');
     process.exit(1);
   }
   log.debug("Leaving checkProtocolOptions().");
@@ -351,6 +381,53 @@ let listenError = null;
 // own Root, which is the anchor now — see the block above
 // `serverCertificateExtensions()`.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// EVERY LEAF THE MAIN PORT PRESENTS, AS THIS PROCESS KNOWS THEM (#248).
+//
+// The SAML identity provider's metadata publishes the certificate its back
+// channel presents (`saml/listener_keys.ts`), so a service provider can
+// authenticate artifact resolution and the attribute query from metadata
+// alone. That needs the LEAVES, every one — with `tls.certificateAlgorithms`
+// naming two, OpenSSL presents whichever matches what the client offered —
+// and it needs them to be the SOCKET's, which is a different answer in a
+// request worker: a worker was handed the front process's first leaf, and
+// every other entry of SERVER_CERTIFICATES there is a certificate that
+// worker made for itself and nothing presents. So a handed-in process
+// answers the first leaf and the others the front process handed with it
+// (the fork's environment, then every re-issue's bundle), and a process that
+// owns the socket answers what it built. Public material only: no key.
+// ---------------------------------------------------------------------------
+let adoptedExtraCertPems = null;
+
+function handedExtraCertPems() {
+  log.debug("Entering handedExtraCertPems().");
+  if (adoptedExtraCertPems) {
+    log.debug("Leaving handedExtraCertPems(). Adopted.");
+    return adoptedExtraCertPems.slice(0);
+  }
+  const text = process.env.STS_TLS_SERVER_EXTRA_CERTS_PEM || '';
+  const found = String(text).match(
+      /-----BEGIN CERTIFICATE-----[\s\S]*?-----END CERTIFICATE-----/g) || [];
+  log.debug("Leaving handedExtraCertPems(). " + found.length + ".");
+  return found.map(function (one) {
+    return one + '\n';
+  });
+}
+
+function presentedCertificatePems() {
+  log.debug("Entering presentedCertificatePems().");
+  if (SERVER_CERTIFICATE.handedIn) {
+    log.debug("Leaving presentedCertificatePems(). Handed in.");
+    return [SERVER_CERTIFICATE.certPem].concat(handedExtraCertPems());
+  }
+  log.debug("Leaving presentedCertificatePems().");
+  return SERVER_CERTIFICATES.map(function (one) {
+    return one.certPem;
+  }).filter(function (pem) {
+    return !!pem;
+  });
+}
+
 // ---------------------------------------------------------------------------
 // A CERTIFICATE HANDED IN, RATHER THAN ONE MADE HERE (2026-09-07).
 //
@@ -977,6 +1054,9 @@ function serverCertificateExtensions() {
 // what adopting a certificate involves.
 function takeIssuedCertificate(record, certPem, chainPem) {
   log.debug("Entering takeIssuedCertificate(). " + record.algorithm);
+  // What the socket presented until now, for the notice below (#245).
+  const wasFingerprint = record.fingerprint256 || '';
+  const wasIssued = !!record.certPem && record.selfSigned === false;
   record.certPem = certPem;
   // The chain travels with it: without the Issuing CA and the
   // Intermediate a client holding only the Root cannot build a path, and
@@ -1018,12 +1098,182 @@ function takeIssuedCertificate(record, certPem, chainPem) {
   // red in every mode). The log line below said "one anchor covers LDAPS 636"
   // the whole time. The owners of those sockets re-key on this.
   notifyCertificateObservers(record.algorithm);
+  // **AND A RELYING PARTY THAT PINS IT IS TOLD (#245)**: a certificate this
+  // service had ALREADY issued to the listener was replaced — a rebuilt
+  // hierarchy, a reissued TLS Issuing CA — so `tls-certificate-changed` goes
+  // to every realm's streams, the one port serving them all.
+  //
+  // **THE FIRST CERTIFICATE A PROCESS TAKES OVER ITS SELF-SIGNED BOOTSTRAP IS
+  // COMPARED WITH WHAT THE SERVICE LAST ANNOUNCED (#264)**, not ignored: the
+  // listener key is made again at every start, so a restart presents a
+  // certificate a receiver has never seen. At start that comparison waits
+  // for `listen()` — the main port is bound by then, so a receiver that
+  // fetches the certificate at once reaches it; a first certificate taken
+  // AFTER `listen()` (a hierarchy that arrived late) is compared here.
+  if (wasIssued) {
+    if (wasFingerprint && wasFingerprint !== record.fingerprint256) {
+      announceCertificateChange(record.algorithm, wasFingerprint,
+                                record.fingerprint256);
+    }
+    rememberAnnounced(record);
+  } else if (listened) {
+    announceSinceLastStart([record]);
+  }
   log.info('tls: the ' + record.algorithm + ' listener certificate is ' +
            'issued by this service\'s ' +
            'own TLS Issuing CA and chains to its Root — so one anchor ' +
            'covers LDAPS 636, the main port and every token ' +
            'this service signs.');
   log.debug("Leaving takeIssuedCertificate().");
+}
+
+// The Shared Signals notice of a replaced listener certificate (#245).
+// `ssf/service_signals.ts` is required HERE, lazily, and not at the top: this
+// module loads at 20 and Shared Signals at 23b, and the library reads
+// `ssf.ts` from the cache anyway. Never throws into the certificate change,
+// which has happened.
+function announceCertificateChange(algorithm, from, to) {
+  log.debug("Entering announceCertificateChange(). " + algorithm);
+  sendCertificateNotice([{ unit: String(algorithm), from: from, to: to }],
+                        'requested');
+  log.debug("Leaving announceCertificateChange().");
+}
+
+// The one place the notice leaves, for a re-issue and for a start (#264).
+function sendCertificateNotice(rotated, reason) {
+  log.debug("Entering sendCertificateNotice(). " + reason);
+  try {
+    Promise.resolve(require('../ssf/service_signals').keyChanged('tls', '*',
+      { rotated: rotated, reason: reason }))
+      .catch(function (e) {
+        log.debug("Caught in a callback in sendCertificateNotice(): " +
+                  ((e && e.message) || e));
+      });
+  } catch (e) {
+    log.debug("Caught in sendCertificateNotice(): " +
+              ((e && e.message) || e));
+  }
+  log.debug("Leaving sendCertificateNotice().");
+}
+
+// ---------------------------------------------------------------------------
+// WHAT THE SERVICE LAST ANNOUNCED, KEPT ACROSS A RESTART (#264, 2026-09-26).
+//
+// `tls-certificate-changed` was sent only when a certificate the RUNNING
+// process had issued was replaced. The listener key is made again at every
+// start (`makeServerCertificate()`), so a restart presents a certificate
+// nobody was told about, and a receiver that pins it learned nothing.
+//
+// **FOR THE SERVICE, NOT PER NODE — rcbj's rule that no node is ever
+// exposed, and a fact about node identity.** A receiver reaches the
+// service's address and whichever node answers there; it has no notion of a
+// node. And a node cannot remember itself: its membership id is a fresh UUID
+// at every start (`cluster/CLAUDE.md`), and `cluster.nodeName` is stable only
+// where the platform keeps host names. So the record is shared through the
+// store and any node compares against it — #162's arrangement for the
+// process CA. It also catches a node that JOINS and presents a leaf nobody
+// was told of, which a per-node record would have nothing to compare with.
+// **The cost, documented rather than hidden**: every node's start is
+// announced (each has a listener key of its own), and `from` is the
+// certificate the SERVICE last announced, which another live node may still
+// present. A receiver behind a balancer pins the anchor, not a leaf.
+//
+// **KEYED BY THE CERTIFICATE'S ALGORITHM UNIT** (`rsa`, `ml-dsa-65`, …) —
+// the `unit` the event names — holding `{ fingerprint256, at }`. Public
+// fingerprints only. Written whenever the listener takes a certificate this
+// service issued, at start and at every re-issue, so the next start compares
+// with the latest.
+//
+// **IT SURVIVES A RESTART WHEREVER MINTED STATE DOES** — product mode on
+// postgres, a cluster, a dispatched pool (`persistence_minted.js`'s
+// `enabled()`). In `memory` mode, on an `ldif` store and in a
+// single-process development service it does not, so a restart there is not
+// announced; nothing could have been pinned across it, since development
+// builds a new Root at every start.
+//
+// **NEVER RECORDED, NEVER ANNOUNCED**: a self-signed bootstrap certificate (a
+// process with no hierarchy — `selfSigned` is false only on one this service
+// ISSUED), a supplied one (`tls.certificateFile`) and a request worker's
+// handed-in copy (`listenerCertificatesOwned()` excludes both).
+// ---------------------------------------------------------------------------
+const announcedListener = realms.sharedMap({ persist: 'tls.listenerAnnounced',
+                                             scope: 'shared' });
+// Set by `listen()`: from then on a first issued certificate is compared at
+// once rather than left for it.
+let listened = false;
+
+function rememberAnnounced(record) {
+  log.debug("Entering rememberAnnounced(). " + record.algorithm);
+  const unit = String(record.algorithm);
+  const held = announcedListener.get(unit);
+  if (!held || held.fingerprint256 !== record.fingerprint256) {
+    announcedListener.set(unit, { fingerprint256: record.fingerprint256,
+                                  at: new Date().toISOString() });
+  }
+  log.debug("Leaving rememberAnnounced().");
+}
+
+// The units whose issued certificate differs from what the service last
+// announced, as the event's `rotated` rows. A unit with no record is
+// remembered and not announced: nothing was announced for it to differ from
+// (a first start, or a store that keeps nothing across a restart). Remembers
+// every certificate it is shown, so asking twice announces once.
+function listenerChangesSinceAnnounced(records) {
+  log.debug("Entering listenerChangesSinceAnnounced().");
+  const rotated = [];
+  (records || []).forEach(function (record) {
+    if (!record || record.selfSigned !== false || record.handedIn ||
+        record.algorithm === 'supplied' || !record.fingerprint256) {
+      return;
+    }
+    const held = announcedListener.get(String(record.algorithm));
+    const was = (held && held.fingerprint256) || '';
+    if (was && was !== record.fingerprint256) {
+      rotated.push({ unit: String(record.algorithm), from: was,
+                     to: record.fingerprint256 });
+    }
+    rememberAnnounced(record);
+  });
+  log.debug("Leaving listenerChangesSinceAnnounced(). " + rotated.length);
+  return rotated;
+}
+
+// Compare and, when anything moved, send ONE event naming every unit, with
+// the reason `restarted`. Never throws into a start.
+function announceSinceLastStart(records) {
+  log.debug("Entering announceSinceLastStart().");
+  let rotated = [];
+  try {
+    rotated = listenerChangesSinceAnnounced(records);
+  } catch (e) {
+    // The record could not be read or written; the certificate is served
+    // either way, and the next start compares again.
+    log.warn('tls: the listener certificate could not be compared with the ' +
+             'one last announced: ' + ((e && e.message) || e));
+    rotated = [];
+  }
+  if (!rotated.length) {
+    log.debug("Leaving announceSinceLastStart(). Nothing moved.");
+    return 0;
+  }
+  log.info('tls: the listener presents ' + rotated.length + ' certificate(s) ' +
+           'other than the one(s) this service last announced — the key is ' +
+           'made at every start — so tls-certificate-changed goes to every ' +
+           'realm\'s streams, reason "restarted".');
+  sendCertificateNotice(rotated, 'restarted');
+  log.debug("Leaving announceSinceLastStart().");
+  return rotated.length;
+}
+
+// What the store says was last announced, for a page and for the tests.
+function lastAnnouncedListenerCertificates() {
+  log.debug("Entering lastAnnouncedListenerCertificates().");
+  const out = {};
+  announcedListener.forEach(function (value, unit) {
+    out[unit] = Object.assign({}, value);
+  });
+  log.debug("Leaving lastAnnouncedListenerCertificates().");
+  return out;
 }
 
 // ---------------------------------------------------------------------------
@@ -1390,12 +1640,13 @@ function secureContextOptions() {
     }),
     ca: anchors.map(function (anchor) { return anchor.pem; })
       .concat(issuedClientCertificateAnchor()),
-    // The protocol floor and cipher list — see protocolOptions(). In here so
-    // that a truststore change, which re-applies this whole object, cannot
-    // quietly reset a listener to node's defaults.
-    minVersion: protocolOptions().minVersion,
-    ciphers: protocolOptions().ciphers,
-    honorCipherOrder: true
+    // The protocol floor, the cipher list, the groups and the signature
+    // algorithms — see protocolOptions(). In here so that a truststore
+    // change, which re-applies this whole object, cannot quietly reset a
+    // listener to node's defaults. All of it since #212: the groups and
+    // signature algorithms were added to protocolOptions() alone, and a
+    // listener would have lost them at its first re-application.
+    ...protocolOptions()
   };
 }
 
@@ -1919,7 +2170,11 @@ function serverCertificateBundle() {
   return {
     certPem: SERVER_CERTIFICATE.certPem,
     chainPem: (SERVER_CERTIFICATE.chainPem || []).slice(0),
-    anchorPem: trustAnchorPems()[0] || ''
+    anchorPem: trustAnchorPems()[0] || '',
+    // THE OTHER LEAVES THE SOCKET PRESENTS (#248): an ML-DSA certificate
+    // beside the RSA one. Public, like the rest of this bundle; see
+    // presentedCertificatePems().
+    extraCertPems: presentedCertificatePems().slice(1)
   };
 }
 
@@ -1933,6 +2188,9 @@ function adoptServerCertificate(bundle) {
   SERVER_CERTIFICATE.chainPem = (bundle.chainPem || []).slice(0);
   SERVER_CERTIFICATE.handedAnchorPem = bundle.anchorPem || '';
   SERVER_CERTIFICATE.handedIn = true;
+  if (Array.isArray(bundle.extraCertPems)) {
+    adoptedExtraCertPems = bundle.extraCertPems.slice(0);
+  }
   SERVER_CERTIFICATE.selfSigned = !(bundle.chainPem || []).length;
   SERVER_CERTIFICATE.fingerprint256 = fingerprintOf(bundle.certPem);
   try {
@@ -1989,6 +2247,221 @@ function adoptServerCertificate(bundle) {
 // ---------------------------------------------------------------------------
 const externalServers = [];
 
+// ---------------------------------------------------------------------------
+// A CLIENT CERTIFICATE WHOSE EC KEY IS ON A CURVE OUTSIDE THE NIST SET BELOW
+// IS REFUSED, AND EVERY READER IS SERVED FROM ONE READING (#212, 2026-09-26).
+//
+// Certificates whose EC key is on a curve other than the NIST ones listed
+// in ACCEPTED_CLIENT_CURVES are refused before any certificate object is
+// built for the rest of this service to read (a third-party runtime defect
+// found by #212; details are held privately by the maintainer). The rule
+// applies to EVERY certificate in the chain the peer presents and the chain
+// this listener completes from its anchors, because the revocation check and
+// the path rules walk the whole chain for every connection that presents a
+// certificate. The main port and the debugger ask every connection for one.
+//
+// So this guard reads the chain ONCE, as X509Certificate objects, prepended
+// to `secureConnection` so it runs before every other reader, and then:
+//
+//   * a certificate on a curve outside the set, anywhere in the chain:
+//     `getPeerCertificate` answers node's own "no certificate" ({}), the
+//     connection is closed, `STS-TLS-0035`;
+//   * otherwise `getPeerCertificate(detailed)` is REPLACED on the socket by
+//     the same objects node would have built, from that one reading, linked
+//     by `issuerCertificate` exactly as node links them: the chain the
+//     client sent, then issuers found among this listener's trust anchors
+//     (node completes from the context's store), and a self-issued top
+//     pointing at itself. Every reader sees the same chain, whatever order
+//     they ask in.
+//
+// The first line is `tls.signatureAlgorithms`, whose default omits brainpool
+// from the offered signature schemes by policy. Only this guard covers the
+// chain.
+// ---------------------------------------------------------------------------
+const ACCEPTED_CLIENT_CURVES = new Set([
+  'prime192v1', 'secp224r1', 'prime256v1', 'secp384r1', 'secp521r1',
+  'sect163k1', 'sect163r2', 'sect233k1', 'sect233r1', 'sect283k1',
+  'sect283r1', 'sect409k1', 'sect409r1', 'sect571k1', 'sect571r1'
+]);
+
+// Why this certificate's key is refused, or ''.
+function refusedCurveKey(cert) {
+  log.debug("Entering refusedCurveKey().");
+  const key = cert.publicKey;
+  if (key.asymmetricKeyType !== 'ec') {
+    log.debug("Leaving refusedCurveKey(). Not EC.");
+    return '';
+  }
+  const curve = String((key.asymmetricKeyDetails || {}).namedCurve || '');
+  log.debug("Leaving refusedCurveKey(). " + curve);
+  return ACCEPTED_CLIENT_CURVES.has(curve) ? ''
+    : 'an EC key on ' + (curve || 'an unnamed curve');
+}
+
+// The trust anchors a listener's context holds, parsed once per PEM.
+const parsedAnchors = new Map();
+function anchorCertificates() {
+  log.debug("Entering anchorCertificates().");
+  const out = [];
+  (secureContextOptions().ca || []).forEach(function (pem) {
+    const text = String(pem);
+    if (!parsedAnchors.has(text)) {
+      let parsed = null;
+      try {
+        parsed = new crypto.X509Certificate(text);
+      } catch (e) {
+        log.debug("Caught in anchorCertificates(): " +
+                  ((e && e.message) || e));
+        // An anchor node cannot parse completes no chain; it is skipped.
+        parsed = null;
+      }
+      parsedAnchors.set(text, parsed);
+    }
+    if (parsedAnchors.get(text)) {
+      out.push(parsedAnchors.get(text));
+    }
+  });
+  log.debug("Leaving anchorCertificates(). " + out.length);
+  return out;
+}
+
+// The peer's chain as X509Certificate objects, leaf first: what the client
+// sent, then issuers from the anchors, stopping at a self-issued top.
+// `selfIssuedTop` says whether the last one issued itself.
+function peerChainOf(leaf) {
+  log.debug("Entering peerChainOf().");
+  const chain = [leaf];
+  const seen = new Set([leaf.fingerprint256]);
+  let next = leaf.issuerCertificate;
+  while (next && chain.length < 16 && !seen.has(next.fingerprint256)) {
+    chain.push(next);
+    seen.add(next.fingerprint256);
+    next = next.issuerCertificate;
+  }
+  let top = chain[chain.length - 1];
+  let selfIssuedTop = top.checkIssued(top);
+  const anchors = selfIssuedTop ? [] : anchorCertificates();
+  while (!selfIssuedTop && chain.length < 16) {
+    const issuer = anchors.find(function (one) {
+      return !seen.has(one.fingerprint256) && top.checkIssued(one);
+    });
+    if (!issuer) {
+      break;
+    }
+    chain.push(issuer);
+    seen.add(issuer.fingerprint256);
+    top = issuer;
+    selfIssuedTop = top.checkIssued(top);
+  }
+  log.debug("Leaving peerChainOf(). " + chain.length);
+  return { chain: chain, selfIssuedTop: selfIssuedTop };
+}
+
+// `getPeerCertificate(detailed)` as node answers it, from the chain above.
+function legacyPeerCertificate(read, detailed) {
+  log.debug("Entering legacyPeerCertificate().");
+  if (!detailed) {
+    log.debug("Leaving legacyPeerCertificate(). Leaf.");
+    return read.chain[0].toLegacyObject();
+  }
+  const objects = read.chain.map(function (one) {
+    return one.toLegacyObject();
+  });
+  objects.forEach(function (object, i) {
+    if (i + 1 < objects.length) {
+      object.issuerCertificate = objects[i + 1];
+    }
+  });
+  if (read.selfIssuedTop) {
+    objects[objects.length - 1].issuerCertificate =
+      objects[objects.length - 1];
+  }
+  log.debug("Leaving legacyPeerCertificate(). " + objects.length);
+  return objects[0];
+}
+
+// The first certificate of the peer's chain on a refused curve, described,
+// or '' — and the chain, for the replacement reader.
+function readPeerChain(socket) {
+  log.debug("Entering readPeerChain().");
+  const leaf = typeof socket.getPeerX509Certificate === 'function'
+    ? socket.getPeerX509Certificate() : undefined;
+  if (!leaf) {
+    log.debug("Leaving readPeerChain(). No certificate.");
+    return null;
+  }
+  const read = peerChainOf(leaf);
+  read.problem = '';
+  read.chain.some(function (cert, depth) {
+    const why = refusedCurveKey(cert);
+    if (why) {
+      read.problem = (depth ? 'the certificate at depth ' + depth
+                            : 'the leaf') + ' (' +
+        cert.subject.replace(/\n/g, ', ') + ') has ' + why;
+    }
+    return !!why;
+  });
+  log.debug("Leaving readPeerChain(). " + (read.problem || 'accepted'));
+  return read;
+}
+
+// Kept for callers that only want the verdict.
+function nonNistCurvePeerCertificate(socket) {
+  log.debug("Entering nonNistCurvePeerCertificate().");
+  const read = readPeerChain(socket);
+  log.debug("Leaving nonNistCurvePeerCertificate().");
+  return read ? read.problem : '';
+}
+
+function refuseNonNistCurveCertificatesOn(server, label) {
+  log.debug('Entering refuseNonNistCurveCertificatesOn(). label=' + label);
+  server.prependListener('secureConnection', function (socket) {
+    let read = null;
+    try {
+      read = readPeerChain(socket);
+    } catch (e) {
+      // A chain X509Certificate itself cannot walk is not one this guard
+      // can judge; the socket is left exactly as node made it.
+      log.debug("Caught in refuseNonNistCurveCertificatesOn(): " +
+                ((e && e.message) || e));
+      read = null;
+    }
+    if (!read) {
+      return;
+    }
+    if (!read.problem) {
+      const memo = {};
+      socket.getPeerCertificate = function (detailed) {
+        log.debug("Entering getPeerCertificate() (read once).");
+        const key = detailed ? 'detailed' : 'leaf';
+        if (!memo[key]) {
+          memo[key] = legacyPeerCertificate(read, !!detailed);
+        }
+        log.debug("Leaving getPeerCertificate() (read once).");
+        return memo[key];
+      };
+      return;
+    }
+    socket.getPeerCertificate = function () {
+      log.debug("Entering getPeerCertificate() (refused).");
+      log.debug("Leaving getPeerCertificate() (refused).");
+      return {};
+    };
+    log.warn(errorCodes.tag('STS-TLS-0035') + 'tls: closed a connection on ' +
+             label + ' from ' + (socket.remoteAddress || 'an unknown ' +
+             'address') + ': ' + read.problem + '. Only the NIST curves are ' +
+             'accepted in a client certificate chain (#212).');
+    audit.failure('STS-TLS-0035', {
+      protocol: 'TLS', channel: 'tls', target: label,
+      summary: 'a client certificate on a curve outside the NIST set ' +
+               'was refused: ' + read.problem,
+      outcome: 'refused'
+    });
+    socket.destroy();
+  });
+  log.debug('Leaving refuseNonNistCurveCertificatesOn().');
+}
+
 function trustClientCertificatesOn(server, label) {
   log.debug('Entering trustClientCertificatesOn(). label=' + label);
   if (!server || typeof server.setSecureContext !== 'function') {
@@ -2007,6 +2480,9 @@ function trustClientCertificatesOn(server, label) {
   }
   externalServers.push({ server: server,
                          label: String(label || 'a listener') });
+  // Every listener that registers here ASKS for a client certificate (the
+  // main port, the debugger), so every one is guarded (#212).
+  refuseNonNistCurveCertificatesOn(server, String(label || 'a listener'));
   // APPLIED IMMEDIATELY, because anchors may already be loaded — this service
   // can be handed a truststore before the main port binds, and a listener that
   // only picked anchors up on the NEXT change would be one whose behaviour
@@ -3127,6 +3603,114 @@ let anchorsFileReport = { file: '', loaded: 0 };
 // AFTER THE REVOCATION CHECK (2026-09-12), which is why it waits on a promise:
 // a certificate the policy refuses is recorded as a refusal rather than as an
 // authentication. `checkedSocket()` never rejects.
+// ---------------------------------------------------------------------------
+// WHAT OPENSSL VERIFIED, HELD TO THE PATH RULES EVERY OTHER PATH HERE IS
+// (#201).
+//
+// `socket.authorized` is OpenSSL's answer, and every reader of a client
+// certificate on this port reads it — certificate sign-in, RFC 8705, the
+// XACML gate, SCIM, the portal, and the flag the request pool forwards to a
+// worker. x509-limbo found OpenSSL accepting paths `pki.pathRuleProblem()`
+// refuses (a malformed name under a name constraint, a nameConstraints on an
+// end entity, an empty constraint, a root without basicConstraints). So a
+// chain OpenSSL verified is asked those rules here, once per connection,
+// BEFORE any request on it is read — node's HTTP server parses the first
+// request on a later turn than this event — and one that breaks them is
+// reported as unverified: `authorized` false, `authorizationError` naming
+// the rule. It is still thumbprinted and may still bind a token (RFC 8705
+// section 3 binds to the certificate, not to a CA), exactly as a chain
+// OpenSSL refused is. Required lazily: `pki` is loaded after this module.
+// ---------------------------------------------------------------------------
+function holdToPathRules(socket, label) {
+  log.debug('Entering holdToPathRules().');
+  if (!socket || socket.authorized !== true ||
+      typeof socket.getPeerCertificate !== 'function') {
+    log.debug('Leaving holdToPathRules(). Nothing verified.');
+    return null;
+  }
+  let problem = null;
+  try {
+    problem = require('../common/pki')
+      .peerChainProblem(socket.getPeerCertificate(true));
+  } catch (e) {
+    // A defect here must not make an unverified chain look verified, nor a
+    // verified one unverified for a reason nobody can read. OpenSSL's answer
+    // stands and the failure is logged.
+    log.error(errorCodes.tag('STS-PKI-0198') + 'tls: the path rules could ' +
+              'not be asked of a client chain on ' + label + ': ' +
+              ((e && e.message) || e));
+    problem = null;
+  }
+  if (problem) {
+    socket.authorized = false;
+    socket.authorizationError = 'ERR_STS_PATH_RULES: ' + problem.why;
+    log.warn(errorCodes.tag('STS-PKI-0198') + 'tls: a client certificate ' +
+             'chain on ' + label + ' verified with OpenSSL and breaks RFC ' +
+             '5280, so it is treated as unverified: ' + problem.why + '.');
+  }
+  log.debug('Leaving holdToPathRules().' + (problem ? ' Demoted.' : ''));
+  return problem;
+}
+
+// ---------------------------------------------------------------------------
+// WHICH SIDE BROKE A HANDSHAKE, AND WHY (2026-09-26, #225).
+//
+// rcbj signed in to /admin from Chrome on his laptop and the log filled with
+// `ssl/tls alert certificate unknown … SSL alert number 46`, each line saying
+// "this is the handshake itself rather than a certificate being refused" —
+// which sent the diagnosis the wrong way. OpenSSL's `ssl3_read_bytes … alert`
+// means this service RECEIVED the alert: the CLIENT checked this service's
+// certificate and refused it, which from a browser almost always means it
+// does not trust this service's Root. That is a certificate being refused,
+// by the other end.
+//
+// So the failure is classified before it is logged. An alert the peer SENT
+// is read off node's error — its code (`ERR_SSL_SSLV3_ALERT_…`,
+// `ERR_SSL_TLSV1_ALERT_…`) or OpenSSL's `SSL alert number N` on a read — and
+// the alerts of RFC 8446 section 6.2 (and RFC 5246 7.2.2 before it) that are
+// about the certificate the peer was SENT are named as that. Everything else
+// is a handshake that failed for another reason: a version, a cipher, a
+// client that is not speaking TLS. A pure function, exported for
+// tests/tls_handshake_alerts.js.
+// ---------------------------------------------------------------------------
+const CERTIFICATE_ALERTS = {
+  42: 'bad_certificate',
+  43: 'unsupported_certificate',
+  44: 'certificate_revoked',
+  45: 'certificate_expired',
+  46: 'certificate_unknown',
+  48: 'unknown_ca'
+};
+
+function handshakeFailureOf(error) {
+  log.debug('Entering handshakeFailureOf().');
+  const message = String((error && error.message) || '');
+  const code = String((error && error.code) || '');
+  const numbered = /SSL alert number (\d+)/.exec(message);
+  const received = /_read_bytes|read_bytes:/.test(message) ||
+                   /^ERR_SSL_(SSLV3|TLSV1)_ALERT_/.test(code);
+  const alert = numbered ? Number(numbered[1]) : null;
+  const byCode = {
+    ERR_SSL_SSLV3_ALERT_BAD_CERTIFICATE: 42,
+    ERR_SSL_SSLV3_ALERT_UNSUPPORTED_CERTIFICATE: 43,
+    ERR_SSL_SSLV3_ALERT_CERTIFICATE_REVOKED: 44,
+    ERR_SSL_SSLV3_ALERT_CERTIFICATE_EXPIRED: 45,
+    ERR_SSL_SSLV3_ALERT_CERTIFICATE_UNKNOWN: 46,
+    ERR_SSL_TLSV1_ALERT_UNKNOWN_CA: 48
+  };
+  const number = alert !== null ? alert
+    : (byCode[code] !== undefined ? byCode[code] : null);
+  if (received && number !== null && CERTIFICATE_ALERTS[number]) {
+    log.debug('Leaving handshakeFailureOf(). The peer refused the ' +
+              'certificate: ' + CERTIFICATE_ALERTS[number] + '.');
+    return { kind: 'peer-refused-certificate', alert: number,
+             alertName: CERTIFICATE_ALERTS[number] };
+  }
+  log.debug('Leaving handshakeFailureOf(). Another handshake failure.');
+  return { kind: 'handshake', alert: received ? number : null,
+           alertName: null };
+}
+
 function observeConnectionsOn(server, label) {
   log.debug('Entering observeConnectionsOn(). label=' + label);
   if (!server || typeof server.on !== 'function') {
@@ -3139,6 +3723,7 @@ function observeConnectionsOn(server, label) {
     return false;
   }
   server.on('secureConnection', function (socket) {
+    holdToPathRules(socket, label);
     checkedSocket(socket).then(function (revocation) {
       recordClientCertificate(socket, 'optional', revocation);
     });
@@ -3147,8 +3732,10 @@ function observeConnectionsOn(server, label) {
   // a request, so without this it is invisible: the far end sees a closed
   // connection and this log says nothing at all. It is the single most
   // confusing failure in mutual TLS, so it is logged with the reason OpenSSL
-  // gave. On this port a client certificate is never REQUIRED, so what lands
-  // here is a broken handshake rather than a refused credential.
+  // gave. On this port a client certificate is never REQUIRED, so a failure
+  // here is never this service refusing a client's credential — but it may
+  // be the CLIENT refusing THIS service's certificate, which
+  // handshakeFailureOf() tells apart and says so (#225).
   server.on('tlsClientError', function (error, socket) {
     // A PEER THAT CLOSED BEFORE SAYING ANYTHING (2026-09-21) is a load
     // balancer's TCP health check — a connect and a close — or a client that
@@ -3163,11 +3750,32 @@ function observeConnectionsOn(server, label) {
                 'client that gave up.');
       return;
     }
-    log.warn('tls: a handshake failed on ' + label + ' from ' +
-             ((socket && socket.remoteAddress) || 'an unknown address') +
-             ': ' + error.message + '. A client certificate is asked for and ' +
-             'never required here, so this is the handshake itself rather ' +
-             'than a certificate being refused.');
+    const from = (socket && socket.remoteAddress) || 'an unknown address';
+    const failure = handshakeFailureOf(error);
+    if (failure.kind === 'peer-refused-certificate') {
+      log.warn(errorCodes.tag('STS-TLS-0034') + 'tls: the client at ' + from +
+               ' REFUSED this service\'s certificate on ' + label + ' (it ' +
+               'sent the TLS alert ' + failure.alertName + ', ' +
+               failure.alert + '). From a browser this almost always means ' +
+               'it does not trust this service\'s Root CA: install the Root ' +
+               'from GET /tls/server-certificate (the last certificate) in ' +
+               'its trust store, and reach the service by a name in the ' +
+               'certificate (tls.hostnames, tls.ips). OpenSSL said: ' +
+               error.message);
+      audit.failure('STS-TLS-0034', {
+        protocol: 'TLS', channel: 'tls',
+        target: label,
+        summary: 'the client refused this service\'s certificate: TLS ' +
+                 'alert ' + failure.alertName,
+        outcome: 'refused'
+      });
+      return;
+    }
+    log.warn('tls: a handshake failed on ' + label + ' from ' + from + ': ' +
+             error.message + '. A client certificate is asked for and never ' +
+             'required here, and the client sent no alert refusing this ' +
+             'service\'s certificate, so this is the handshake itself — a ' +
+             'version, a cipher, or a client not speaking TLS.');
     audit.failure('STS-TLS-0021', {
       protocol: 'TLS', channel: 'tls',
       target: label,
@@ -3271,9 +3879,13 @@ function description(req) {
       anchorsFile: anchorsFileReport.file || null,
       anchorsFromFile: anchorsFileReport.loaded
     },
-    // `tls.minVersion` and `tls.ciphers`, as every TLS socket applies them.
+    // `tls.minVersion`, `tls.ciphers`, `tls.groups` and
+    // `tls.signatureAlgorithms`, as every TLS socket applies them.
     protocol: { minVersion: protocolOptions().minVersion,
-                ciphers: protocolOptions().ciphers || '(node default)' },
+                ciphers: protocolOptions().ciphers || '(node default)',
+                groups: protocolOptions().ecdhCurve || '(node default)',
+                signatureAlgorithms: protocolOptions().sigalgs ||
+                  '(node default)' },
     // WHAT A PRESENTED CERTIFICATE IS HELD TO BEYOND ITS CHAIN (2026-09-12):
     // the policy in force, how it was decided, where it is and is not
     // consulted, and the one sentence every surface repeats. The verdict for
@@ -3969,6 +4581,11 @@ function listen() {
   // ---------------------------------------------------------------------
   reloadStoredAnchors();
   applyAnchors();
+  // AND A LISTENER CERTIFICATE OTHER THAN THE ONE LAST ANNOUNCED IS
+  // ANNOUNCED (#264), now that the main port is bound — `server.js` calls
+  // this from its listening callback. See `announceSinceLastStart()`.
+  listened = true;
+  announceSinceLastStart(listenerCertificatesOwned());
   log.info('tls: no listener of this module\'s own to bind — the 8443 and ' +
            '9443 listeners were deleted on 2026-09-16 and the main port ' +
            'carries what they did. The client truststore holds ' +
@@ -3985,6 +4602,9 @@ function close() {
 module.exports = {
   listen: listen,
   close: close,
+  // What the service last announced of the listener certificate (#264).
+  lastAnnouncedListenerCertificates: lastAnnouncedListenerCertificates,
+  listenerChangesSinceAnnounced: listenerChangesSinceAnnounced,
   // Exported for tests, which check these without opening a socket.
   splitPemCertificates: splitPemCertificates,
   // The RFC 4514 form of a subject. It now LIVES in common/helpers.js and is
@@ -4009,6 +4629,9 @@ module.exports = {
   // /tls/trust reaches it too — see the block above
   // trustClientCertificatesOn().
   trustClientCertificatesOn: trustClientCertificatesOn,
+  // #212: the guard, for a TLS listener that does not register above.
+  refuseNonNistCurveCertificatesOn: refuseNonNistCurveCertificatesOn,
+  nonNistCurvePeerCertificate: nonNistCurvePeerCertificate,
   // LDAPS 636 and the SPIRE Server API re-key themselves on this (2026-09-21).
   onServerCertificateChange: onServerCertificateChange,
   // What secureContextOptions() would give a listener created elsewhere: the
@@ -4017,7 +4640,8 @@ module.exports = {
   // listeners from the same answer applyAnchors() re-applies to them, rather
   // than assembling a second one that can drift.
   clientTruststoreOptions: secureContextOptions,
-  // `tls.minVersion` / `tls.ciphers` for a TLS listener this module does not
+  // `tls.minVersion` / `tls.ciphers` / `tls.groups` /
+  // `tls.signatureAlgorithms` for a TLS listener this module does not
   // create — LDAPS, which ldapjs builds, and the main port at creation.
   protocolOptions: protocolOptions,
   trustAnchorsFileLoaded: function () {
@@ -4076,6 +4700,8 @@ module.exports = {
   // private (2026-09-13). `serverCertificate()` above answers the FIRST, which
   // is what every existing caller means; an ML-DSA certificate beside it is a
   // leaf of the same TLS Issuing CA now, and this is where that is visible.
+  // Every leaf the main port presents, as the socket presents it (#248).
+  presentedCertificatePems: presentedCertificatePems,
   serverCertificateChains: function () {
     log.debug("Entering serverCertificateChains().");
     log.debug("Leaving serverCertificateChains().");
@@ -4115,5 +4741,10 @@ module.exports = {
   },
   // Installed by `server.js` on the main HTTPS listener: the sighting, and the
   // failed-handshake log that is otherwise invisible.
-  observeConnectionsOn: observeConnectionsOn
+  observeConnectionsOn: observeConnectionsOn,
+  // Exported for tests/tls_handshake_alerts.js (#225).
+  handshakeFailureOf: handshakeFailureOf,
+  // #201: the path rules asked of a chain OpenSSL verified; exported for
+  // tests/x509_limbo.js, which holds the main port's posture to x509-limbo.
+  holdToPathRules: holdToPathRules
 };

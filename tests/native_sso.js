@@ -47,7 +47,7 @@ function run(t) {
   try {
     body(t);
   } finally {
-    config.clearOverride('oauth2.maxDevicesPerPerson');
+    config.clearOverride('devices.maxPerPerson');
   }
   log.debug("Leaving run().");
 }
@@ -109,7 +109,7 @@ function body(t) {
           devices.byId(first.device.id).session === 'sess-2',
           '1c. somebody else\'s secret is ignored: a new device, and the ' +
           'first untouched');
-  config.setOverride('oauth2.maxDevicesPerPerson', 2);
+  config.setOverride('devices.maxPerPerson', 2);
   const second = devices.issueForSession({ username: 'nsso-alice',
     clientId: 'nsso-app-a', sessionId: 'sess-4' });
   const third = devices.issueForSession({ username: 'nsso-alice',
@@ -124,7 +124,7 @@ function body(t) {
           held.indexOf(first.device.id) < 0,
           '1d. at the bound, the device whose session has ended makes room',
           JSON.stringify(held));
-  config.clearOverride('oauth2.maxDevicesPerPerson');
+  config.clearOverride('devices.maxPerPerson');
   t.check(devices.revokeSecret(second.secret) &&
           !devices.bySecret(second.secret) &&
           !!devices.byId(second.device.id),

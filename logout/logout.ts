@@ -472,22 +472,18 @@ class Logout {
           // sign-out that revoked nothing and logged nothing while looking
           // identical.
           //
-          // **THE `via` IS THE CALLER'S OWN WORDS AND THAT IS LOAD-BEARING
-          // SINCE 2026-09-04.** It was the constant below, which meant every
-          // door — a person signing themselves out at /logout, an operator
-          // ending somebody else's session from /admin/logout or
-          // /admin/sessions, a test driving /admin-api — produced the same
-          // sentence. `dropSession()` decides CAEP's `initiating_entity` by
-          // testing that string for `admin` or `console`, so the branch that
-          // says "an ADMINISTRATOR revoked this" was unreachable: every
-          // revocation this service emitted claimed the person had signed
-          // themselves out. That is the one distinction `initiating_entity`
-          // exists to draw, and it was being got wrong in the direction that
-          // matters — a receiver cannot tell a support desk ending a session
-          // from a person leaving. `ctx.by` carries what the door calls itself,
-          // and it is also the sentence that reaches `reason_admin`.
+          // **THE `via` IS THE CALLER'S OWN WORDS, AND WHO ENDED IT IS
+          // STATED BESIDE THEM.** `ctx.by` was a constant until 2026-09-04,
+          // so every door produced one sentence and — while `dropSession()`
+          // read CAEP's `initiating_entity` out of that sentence — every
+          // revocation claimed the person had signed themselves out. Reading
+          // the entity out of the words then got the console's own Sign out
+          // button wrong the other way, so since #242 (2026-09-26) the caller
+          // STATES it (`ctx.initiatingEntity`) and the words only reach
+          // `reason_admin` and the audit row.
           const ended = authn.endSessionById(r.handle,
-            ctx.by || 'the protocol-independent logout');
+            ctx.by || 'the protocol-independent logout',
+            ctx.initiatingEntity);
           log.debug("Leaving terminate().");
           return ended
             ? { ok: true,
@@ -836,10 +832,12 @@ class Logout {
             });
           });
         },
-        terminate: (r) => {
+        terminate: (r, ctx) => {
           log.debug("Entering terminate().");
           const first = stats.revoke(r.handle, 'a protocol-independent ' +
-                                               'logout at /logout');
+                                               'logout at /logout',
+            ctx && ctx.initiatingEntity
+              ? { initiatingEntity: ctx.initiatingEntity } : undefined);
           log.debug("Leaving terminate().");
           return { ok: true,
                    message: first ? 'the token with jti ' + r.handle +
@@ -1458,7 +1456,7 @@ class Logout {
     return rows;
   }
 
-  private contextFor(key?, issuer?, by?) {
+  private contextFor(key?, issuer?, by?, initiatingEntity?) {
     const { log } = this.deps;
     log.debug("Entering Logout.contextFor().");
     log.debug("Leaving Logout.contextFor().");
@@ -1472,6 +1470,10 @@ class Logout {
       // decides CAEP's `initiating_entity`. Empty on the read paths, which do
       // not end anything.
       by: String(by || ''),
+      // AND WHO, in CAEP section 2's words (#242): the caller says, because
+      // `by` is a sentence and reading an entity out of it got the console's
+      // own Sign out button wrong. Empty on the read paths.
+      initiatingEntity: String(initiatingEntity || ''),
       // What a termination accumulates for the page to render afterwards: the
       // front-channel notifications to load in iframes, the WS-Federation
       // cleanup pings, and the SAML LogoutRequests to offer as links. They are
@@ -2057,6 +2059,24 @@ class Logout {
     return result;
   }
 
+  // ---------------------------------------------------------------------------
+  // THE IDS OF EVERYTHING A PERSON HOLDS NOW (#226, 2026-09-26): what a
+  // later `terminate(key, ids)` ends and nothing issued after. Risk scoring
+  // takes it at the moment a sign-in is assessed, before that sign-in's own
+  // session exists, so ending everything on a crossing into HIGH does not
+  // end the session the issuance policy has just decided on the same risk.
+  // Ids only — never the rows, whose `secret` stays in this module.
+  // ---------------------------------------------------------------------------
+  heldIds(key?) {
+    const { log } = this.deps;
+    log.debug("Entering Logout.heldIds(). key=" + key);
+    const ids = this.allRows(this.contextFor(key)).map((r) => {
+      return String(r.id);
+    });
+    log.debug("Leaving Logout.heldIds(). " + ids.length + ".");
+    return ids;
+  }
+
   // Every row, flattened, WITH its secret — the internal form, for terminate().
   // Not exported: `inventoryFor()` is what anything outside this module reads.
   private allRows(ctx?) {
@@ -2122,9 +2142,14 @@ class Logout {
     // Where the back-channel register stood before this act, so the result
     // lists what THIS act queued (2026-09-17, #36).
     const backchannelMark = backchannel.mark();
-    const ctx = this.contextFor(key, options.issuer, options.by);
+    const ctx = this.contextFor(key, options.issuer, options.by,
+                                options.initiatingEntity);
     ctx.base = String(options.base || '');
     ctx.browser = options.browser === true && !!ctx.base;
+    // WHO ENDED IT, IN CAEP's WORDS (#239, #242): `contextFor()` carries the
+    // door's `initiatingEntity`. The session family hands it to
+    // `endSessionById()`, and the token family to `stats.revoke()`, whose
+    // observer reports the grant a revoked token ends.
     const wanted = (selection || []).map(String).filter(Boolean);
     const global = !wanted.length;
     const wantedSet = {};
@@ -2322,6 +2347,21 @@ class Logout {
       result.acrossCluster = acrossCluster;
     }
     log.info('logout: ' + result.message);
+    // OPENID PROVIDER COMMANDS (#151): a GLOBAL sign-out of a person is
+    // `invalidate` at every relying party that supports it. A disable passes
+    // `providerCommand: false` — it sends `suspend`, which invalidates too.
+    // Lazily and never thrown into the sign-out.
+    if (global && options.providerCommand !== false && ctx.key) {
+      try {
+        const found = require.cache[require.resolve(
+          '../oauth-oidc/provider_commands')];
+        if (found) {
+          found.exports.personSignedOut(String(ctx.key));
+        }
+      } catch (e) {
+        log.debug("Caught in Logout.terminate(): " + ((e && e.message) || e));
+      }
+    }
     log.debug("Leaving Logout.terminate(). " + done.length + " ended.");
     return result;
   }
@@ -2661,6 +2701,8 @@ class Logout {
       }).map((r) => { return r.id; }));
     const result = this.terminate(key, selection, {
       issuer: options.issuer, by: options.by, actor: options.by,
+      // The person signed out at the partner (#242).
+      initiatingEntity: options.initiatingEntity || 'user',
       channel: options.channel || 'http' });
     log.debug("Leaving Logout.endPartnerSession(). " +
               result.terminated.length + " ended.");
@@ -2991,6 +3033,10 @@ class Logout {
         // name this service has with the partner — its base URL here.
         base: baseUrlOf(req), browser: true,
         actor: subject.username,
+        // The person's own sign-out, or — only while `logout.anyUser`, a
+        // development test control, is open — somebody else naming them,
+        // which is an operator's act rather than theirs (#242).
+        initiatingEntity: subject.named ? 'admin' : 'user',
         by: subject.named ? '/logout, naming ' +
             subject.username : '/logout, on ' + 'its own session'
       });
@@ -3104,6 +3150,7 @@ export = {
   // than three — rule 7.
   inventoryFor: slot.forward('inventoryFor'),
   terminate: slot.forward('terminate'),
+  heldIds: slot.forward('heldIds'),
   // A federation partner's sign-out (#167): the one session it named, ended
   // through terminate(), and what a browser then has to draw.
   endPartnerSession: slot.forward('endPartnerSession'),

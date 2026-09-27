@@ -63,6 +63,8 @@ const RISK_GROUP = ['riskListDatasets', 'riskListVersions', 'riskBeginVersion',
                     'riskSetFeedback',
                     // Monitoring → Risk Scoring.
                     'riskAssessmentMetrics', 'riskSubjectLevels',
+                    // Monitoring → Geolocation (#255).
+                    'riskGeography',
                     // #215: an import's progress, and the ones a stopped
                     // process left loading.
                     'riskTouchVersion', 'riskAbandonStalled'];
@@ -763,7 +765,8 @@ class RiskStore {
           (!o.subject || row.subject === o.subject) &&
           (!o.nameHmac || row.nameHmac === o.nameHmac) &&
           (!o.prefix || row.addressPrefix === o.prefix) &&
-          (!o.door || row.door === o.door);
+          (!o.door || row.door === o.door) &&
+          (!o.excludeDoor || row.door !== o.excludeDoor);
       }).reverse();
     const offset = Number(o.offset) || 0;
     const limit = Number(o.limit) || 50;
@@ -1033,6 +1036,104 @@ class RiskStore {
       series: Array.from(series.values()) }));
   }
 
+  // -------------------------------------------------------------------------
+  // WHERE A WINDOW'S PEOPLE WERE (#255), for Monitoring → Geolocation: the
+  // assessments since `since`, counted at four levels — the world, each
+  // continent, each country, each city — as DISTINCT PEOPLE (subjects),
+  // sign-ins (the `user` phase) and assessments, with a city's coordinates
+  // and the last time it was seen. People are counted at every level rather
+  // than summed from the one below, because a person seen in two cities is
+  // one person in their country.
+  //
+  // `continents` maps an ISO 3166-1 code to its continent (the page's
+  // Natural Earth table): the store holds a country and no continent, and a
+  // country missing from the map is counted under the continent ''.
+  // `sessionIds`, when given, is LIVE SESSIONS mode: only assessments of
+  // those sessions, and only each session's LATEST — where the person is
+  // now, not everywhere the session has been. An assessment with no subject
+  // counts nowhere.
+  //
+  // The database counts with GROUPING SETS and this process counts its own
+  // rows; both answer `{ rows: [{ level, continent, country, subdivision,
+  // city, people, signIns, assessments, latitude, longitude, lastAt }] }`.
+  // -------------------------------------------------------------------------
+  geography(realm: string, opts: Json, sealing: boolean): Promise<Json> {
+    const { log } = this.deps;
+    log.debug("Entering RiskStore.geography().");
+    const o = opts || {};
+    const continents: Record<string, string> = o.continents || {};
+    const sessionIds: string[] | null = Array.isArray(o.sessionIds)
+      ? o.sessionIds.map(String) : null;
+    if (this.failuresInDatabase(sealing)) {
+      const codes = Object.keys(continents);
+      log.debug("Leaving RiskStore.geography(). Database.");
+      return Promise.resolve(this.driver.riskGeography(realm, {
+        since: Number(o.since) || 0, sessionIds: sessionIds,
+        countries: codes,
+        continents: codes.map(function (c: string): string {
+          return continents[c];
+        }) }));
+    }
+    const since = Number(o.since) || 0;
+    let rows = (this.assessments.get(String(realm || '')) || [])
+      .filter(function (a: Json): boolean {
+        return a.at >= since && !!a.subject;
+      });
+    if (sessionIds) {
+      const wanted = new Set(sessionIds);
+      const latest = new Map<string, Json>();
+      rows.forEach(function (a: Json): void {
+        const sid = String(a.sessionId || '');
+        const held = latest.get(sid);
+        if (wanted.has(sid) && (!held || a.at >= held.at)) {
+          latest.set(sid, a);
+        }
+      });
+      rows = Array.from(latest.values());
+    }
+    const groups = new Map<string, Json>();
+    const count = function (level: string, key: string[], a: Json): void {
+      const id = level + '\u0000' + key.join('\u0000');
+      let g = groups.get(id);
+      if (!g) {
+        g = { level: level, continent: key[0] || '', country: key[1] || '',
+              subdivision: key[2] || '', city: key[3] || '',
+              people: new Set<string>(), signIns: 0, assessments: 0,
+              latSum: 0, lonSum: 0, located: 0, lastAt: 0 };
+        groups.set(id, g);
+      }
+      g.people.add(String(a.subject));
+      g.assessments++;
+      g.signIns += a.phase === 'user' ? 1 : 0;
+      if (typeof a.latitude === 'number' && typeof a.longitude === 'number') {
+        g.latSum += a.latitude;
+        g.lonSum += a.longitude;
+        g.located++;
+      }
+      g.lastAt = Math.max(g.lastAt, Number(a.at) || 0);
+    };
+    rows.forEach(function (a: Json): void {
+      const country = String(a.country || '');
+      const continent = continents[country] || '';
+      count('world', [], a);
+      count('continent', [continent], a);
+      count('country', [continent, country], a);
+      count('city', [continent, country, String(a.subdivision || ''),
+                     String(a.city || '')], a);
+    });
+    log.debug("Leaving RiskStore.geography(). Memory.");
+    return Promise.resolve({
+      rows: Array.from(groups.values()).map(function (g: Json): Json {
+        return { level: g.level, continent: g.continent, country: g.country,
+                 subdivision: g.subdivision, city: g.city,
+                 people: g.people.size, signIns: g.signIns,
+                 assessments: g.assessments,
+                 latitude: g.located ? g.latSum / g.located : null,
+                 longitude: g.located ? g.lonSum / g.located : null,
+                 lastAt: g.lastAt };
+      }) });
+  }
+
   // A score's band, a decade each, for the histogram. The score is a
   // likelihood ratio — 1 is as likely an attacker as the person — and the
   // levels begin at 1 (MEDIUM) and 10 (HIGH) by default, so those are two
@@ -1256,7 +1357,9 @@ class RiskStore {
     return Promise.resolve(true);
   }
 
-  listSubjects(realm: string, opts: Json, sealing: boolean): Promise<Json[]> {
+  // A page of the realm's people by current standing, with the count of
+  // them all (`{ total, rows }`, as `listAssessments()` answers).
+  listSubjects(realm: string, opts: Json, sealing: boolean): Promise<Json> {
     const { log } = this.deps;
     log.debug("Entering RiskStore.listSubjects().");
     if (this.failuresInDatabase(sealing)) {
@@ -1269,10 +1372,14 @@ class RiskStore {
         out.push(Object.assign({}, row));
       });
     out.sort(function (a: Json, b: Json): number {
-      return (b.score - a.score) || (b.updatedAt - a.updatedAt);
+      return (b.score - a.score) || (b.updatedAt - a.updatedAt) ||
+        (a.subject < b.subject ? -1 : a.subject > b.subject ? 1 : 0);
     });
+    const offset = Number((opts || {}).offset) || 0;
+    const limit = Number((opts || {}).limit) || 50;
     log.debug("Leaving RiskStore.listSubjects(). Memory.");
-    return Promise.resolve(out.slice(0, Number((opts || {}).limit) || 50));
+    return Promise.resolve({ total: out.length,
+                             rows: out.slice(offset, offset + limit) });
   }
 
   upsertSessionContext(c: Json, sealing: boolean): Promise<boolean> {
@@ -1448,6 +1555,7 @@ export = {
   upsertSubject: slot.forward('upsertSubject'),
   assessmentMetrics: slot.forward('assessmentMetrics'),
   subjectLevels: slot.forward('subjectLevels'),
+  geography: slot.forward('geography'),
   bandOf: RiskStore.bandOf,
   BANDS: RiskStore.BANDS,
   settleAssessment: slot.forward('settleAssessment'),

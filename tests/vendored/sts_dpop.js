@@ -124,9 +124,11 @@ function newKey(type) {
     // `ext` would travel in the proof header and change the thumbprint input.
     publicJwk: jwk.kty === "RSA"
       ? { kty: jwk.kty, n: jwk.n, e: jwk.e }
-      : (jwk.kty === "OKP"
-          ? { kty: jwk.kty, crv: jwk.crv, x: jwk.x }
-          : { kty: jwk.kty, crv: jwk.crv, x: jwk.x, y: jwk.y })
+      : (jwk.kty === "AKP"
+          ? { kty: jwk.kty, alg: jwk.alg, pub: jwk.pub }
+          : (jwk.kty === "OKP"
+              ? { kty: jwk.kty, crv: jwk.crv, x: jwk.x }
+              : { kty: jwk.kty, crv: jwk.crv, x: jwk.x, y: jwk.y }))
   };
 }
 
@@ -158,7 +160,16 @@ var DPOP_ALGS = {
   ES256K: { gen: ["ec", { namedCurve: "secp256k1" }], hash: "sha256",
             options: { dsaEncoding: "ieee-p1363" }, sigBytes: 64 },
   // RFC 8037: Ed25519 hashes internally, so there is no digest to name.
-  EdDSA: { gen: ["ed25519", null], hash: null, options: {}, sigBytes: 64 }
+  EdDSA: { gen: ["ed25519", null], hash: null, options: {}, sigBytes: 64 },
+  // FIPS 204 ML-DSA, the three the JOSE registry names (kty AKP, RFC 9964,
+  // which also defines the AKP thumbprint members). Pure ML-DSA signs the
+  // message itself, so there is no digest to name.
+  "ML-DSA-44": { gen: ["ml-dsa-44", null], hash: null, options: {},
+                 sigBytes: 2420 },
+  "ML-DSA-65": { gen: ["ml-dsa-65", null], hash: null, options: {},
+                 sigBytes: 3309 },
+  "ML-DSA-87": { gen: ["ml-dsa-87", null], hash: null, options: {},
+                 sigBytes: 4627 }
 };
 
 function jkt(key) {
@@ -166,7 +177,11 @@ function jkt(key) {
   var j = key.publicJwk;
   var canonical = j.kty === "RSA"
     ? JSON.stringify({ e: j.e, kty: j.kty, n: j.n })
-    : JSON.stringify({ crv: j.crv, kty: j.kty, x: j.x, y: j.y });
+    : (j.kty === "AKP"
+        ? JSON.stringify({ alg: j.alg, kty: j.kty, pub: j.pub })
+        : (j.kty === "OKP"
+            ? JSON.stringify({ crv: j.crv, kty: j.kty, x: j.x })
+            : JSON.stringify({ crv: j.crv, kty: j.kty, x: j.x, y: j.y })));
   log.debug("Leaving jkt().");
   return crypto.createHash("sha256").update(canonical,
                            "utf8").digest("base64url");

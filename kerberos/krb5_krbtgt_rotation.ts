@@ -294,11 +294,39 @@ class KrbtgtRotation {
       invalidate: !!o.invalidate, reason: String(o.reason || 'requested'),
       context: { actor: String(o.actor || ''),
                  via: String(o.via || 'scheduler') } });
+    // ANNOUNCED WHENEVER THE KEY THAT SEALED THE LIVE TGTs IS GONE (#245):
+    // the invalidate form, and an ordinary rotation that kept nothing —
+    // `krb5.retainedKeyVersions` 0 turns the schedule off for exactly this
+    // reason, but a rotation by hand still runs, and it ends every TGT in
+    // the realm as surely as the invalidate form does. Only the reason
+    // differs, so a receiver can tell "asked for" from "configured".
     if (done && done.ok && done.invalidated) {
-      this.announce(realmId, done, String(o.reason || 'requested'));
+      this.announce(realmId, done, 'invalidated');
+    } else if (done && done.ok && this.droppedLiveKey(done)) {
+      this.announce(realmId, done, 'nothing-retained');
     }
     log.debug("Leaving KrbtgtRotation.rotate(). ok=" + !!(done && done.ok));
     return done;
+  }
+
+  // Whether a rotation that was not an invalidation still kept nothing of
+  // the key it replaced: there was a previous version, and it is not among
+  // those retained. A realm's first key replaces nothing.
+  private droppedLiveKey(done: Json): boolean {
+    const { log } = this.deps;
+    log.debug("Entering KrbtgtRotation.droppedLiveKey().");
+    const previous = done.previousKvno;
+    if (previous === null || previous === undefined ||
+        !Number.isFinite(Number(previous)) ||
+        Number(previous) === Number(done.kvno)) {
+      log.debug("Leaving KrbtgtRotation.droppedLiveKey(). Nothing replaced.");
+      return false;
+    }
+    const kept = (done.retained || []).some(function (one: Json): boolean {
+      return Number(one && one.kvno) === Number(previous);
+    });
+    log.debug("Leaving KrbtgtRotation.droppedLiveKey(). kept=" + kept);
+    return !kept;
   }
 
   // The Shared Signals event (#169's decision 4). Never lets a failure reach

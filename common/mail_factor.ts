@@ -281,6 +281,10 @@ class MailFactor {
       summary: username + ' now receives an emailed ' + kind + ' as a ' +
                'second factor',
       detail: { kind: kind, via: via } });
+    // A CREDENTIAL CREATED, or changed from a code to a link (#236).
+    this.signalChange(username, status.optedIn
+      ? (status.optedIn === kind ? '' : 'update') : 'create',
+                      kind, actor, via, '');
     log.debug("Leaving MailFactor.optIn(). Stored.");
     return { ok: true, kind: kind };
   }
@@ -303,9 +307,56 @@ class MailFactor {
         summary: username + ' no longer receives an emailed ' + before +
                  ' as a second factor' + (why ? ' (' + why + ')' : ''),
         detail: { kind: '', was: before, via: via, why: why || '' } });
+      this.signalChange(username, 'delete', before, actor, via, why || '');
     }
     log.debug("Leaving MailFactor.clear(). " + written);
     return { ok: written, removed: written, was: before };
+  }
+
+  // -------------------------------------------------------------------------
+  // CAEP `credential-change` FOR THE EMAILED FACTOR (#236, 2026-09-26). This
+  // file is the only way the opt-in is written — the portal, the console and
+  // `/admin-api`, and the failure limit, all come through `optIn()` and
+  // `clear()` — so the event is sent HERE (the #145 rule: at the funnel).
+  // The credential type is this service's own URN: CAEP 1.0 section 3.3.1
+  // has no value for a code sent to an address (`ssf/account_signals.ts`).
+  // Who initiated it is read off the actor: the person themselves, nobody
+  // (this service, at the failure limit), or an administrator. `change` ''
+  // means nothing changed and nothing is sent. Required LAZILY: Shared
+  // Signals' facade is reached at the moment an event is due.
+  // -------------------------------------------------------------------------
+  private signalChange(username: string, change: string, kind: string,
+                       actor: string, via: string, why: string): void {
+    const { log } = this.deps;
+    log.debug("Entering MailFactor.signalChange(). " + change);
+    if (!change) {
+      log.debug("Leaving MailFactor.signalChange(). Nothing changed.");
+      return;
+    }
+    const initiating = !actor ? 'system'
+      : (actor === username ? 'user' : 'admin');
+    const what = 'the emailed ' + kind + ' as a second factor';
+    const verb = change === 'create' ? 'turned on'
+      : (change === 'update' ? 'changed' : 'turned off');
+    try {
+      const signals = require('../ssf/account_signals');
+      signals.credentialChanged({ username: username,
+        credentialType: signals.EMAIL_OTP_CREDENTIAL_TYPE,
+        changeType: change, initiatingEntity: initiating,
+        friendlyName: 'emailed ' + kind, via: via,
+        reasonAdmin: (initiating === 'system' ? 'This service'
+          : (initiating === 'user' ? username : 'An administrator')) + ' ' +
+          verb + ' ' + what + ' for ' + username + (why ? ' (' + why + ')'
+                                                        : '') + '.',
+        reasonUser: 'Your emailed second factor was ' + verb +
+                    (why ? ': ' + why : '') + '.' });
+    } catch (e) {
+      log.debug("Caught in MailFactor.signalChange(): " +
+                ((e && e.message) || e));
+      // No Shared Signals facade in this process: the change is written and
+      // audited, which is what matters; there is nobody to tell.
+    }
+    log.debug("Leaving MailFactor.signalChange().");
   }
 
   // A success clears the count.
@@ -340,6 +391,25 @@ class MailFactor {
     this.clear(username, '', 'failure-limit', failures + ' consecutive ' +
                'failures, the limit');
     this.write(username, 'stsMailFactorFailures', '');
+    // RISC `credential-compromise` (#231): a hundred wrong codes is somebody
+    // other than the person trying to get in. The person is mailed below in
+    // words of this factor's own, so the generic notice is not (`mailed`).
+    try {
+      const signals = require('../ssf/account_signals');
+      signals.credentialCompromised({ username: username,
+        credentialType: signals.EMAIL_OTP_CREDENTIAL_TYPE,
+        initiatingEntity: 'system', mailed: true, via: 'authn',
+        reasonAdmin: failures + ' consecutive failed emailed codes or ' +
+                     'links for ' + username + ' reached the limit of ' +
+                     limit + ', and the factor was turned off.',
+        reasonUser: 'Too many wrong codes or links turned your emailed ' +
+                    'second factor off.' });
+    } catch (e) {
+      log.debug("Caught in MailFactor.noteFailure(): " +
+                ((e && e.message) || e));
+      // No Shared Signals facade in this process: the factor is off, which
+      // is the act that matters.
+    }
     try {
       const mail = this.deps.mail();
       const when = new Date().toISOString();

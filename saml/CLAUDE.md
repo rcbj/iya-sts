@@ -7,7 +7,7 @@ provider for each of them**.
 |---|---|
 | `saml2.ts` | A SAML 2.0 assertion: build, sign, encrypt, and the attribute statement. Registers nothing. |
 | `saml11.ts` | The same for SAML 1.1, whose profile splits a claim URI into a namespace and a name. Registers nothing. |
-| `saml2_sso.ts` | **The SAML 2.0 Web Browser SSO profile**: the Single Sign-On service over both request bindings, the Response over all three, the SOAP Artifact Resolution Service, Single Logout, the per-service-provider metadata, and a mock service provider. **This one registers routes.** |
+| `saml2_sso.ts` | **The SAML 2.0 Web Browser SSO profile**: the Single Sign-On service over both request bindings, the Response over all three, the SOAP Artifact Resolution Service, Single Logout, identity-provider-initiated SSO and the SOAP attribute authority (#189), the per-service-provider metadata, and a mock service provider. **This one registers routes.** |
 | `saml11_sso.ts` | **The SAML 1.1 browser profiles**: the inter-site transfer service, Browser/POST and Browser/Artifact, the SOAP SAML responder behind the second (which is also an attribute authority), the per-relying-party metadata, and a mock relying party. **This one registers routes.** |
 | `sp_metadata.ts` | A service provider's metadata: parsing it (an EntitiesDescriptor aggregate included), fetching it — through `../federation/federation_http.ts`'s outbound policy, product-mode address check included — by an explicit refresh, the Metadata Query Protocol or the BACKGROUND REFRESHER, CONSUMING it (`consume()`, against the realm's trust anchors), and saying how current it is (`freshness()`: fresh, stale, expired). Registers nothing; the refresher is the scheduler job `saml2.sp-metadata-refresh` (#49), which `startRefresher()` registers. What a Metadata Query answer may REGISTER is decided by who started the lookup (#112). |
 | `request_signature.ts` | **Whether a service provider's request is signed by that service provider** (2026-09-17, #37): the verification policy for an AuthnRequest, LogoutRequest or LogoutResponse on the Redirect, POST and POST-SimpleSign bindings, whether a signature may be absent, and who is calling a SOAP responder that hands out an artifact (`authenticateSoapCaller()`). Registers nothing. |
@@ -15,6 +15,7 @@ provider for each of them**.
 | `document_settings.ts` | **The signature algorithm, the canonicalization and `<md:Organization>`** every signed document here asks the configuration for (2026-09-12). Registers nothing. |
 | `return_address.ts` | **Where a response may be delivered**: anything in development, a registered address in product (2026-09-12). Shared with WS-Federation. Registers nothing. |
 | `person_attributes.ts` | **The persona facts an assertion carries**, invented in development and read off the directory entry (or omitted) in product (2026-09-12). Registers nothing. |
+| `listener_keys.ts` | **The certificate the back channel presents, as a metadata key** (#248): every leaf the main port presents — every live cluster node's — as a `use="signing"` KeyDescriptor for both profiles' metadata. Registers nothing; reaches `tls/tls_server.js` lazily. See *THE BACK CHANNEL'S TLS CERTIFICATE IS IN THE METADATA*, at the end. |
 
 ## THE TWO PROFILES ARE SEPARATE IMPLEMENTATIONS, NOT ONE WITH A VERSION FLAG
 
@@ -100,11 +101,15 @@ change was mostly a prose sweep.
   an operator's action, the background refresher's, or an MDQ lookup a request
   STARTS and never waits on, so no sign-in waits on somebody else's web
   server.
-* **No identity-provider-initiated SSO**, no ECP profile and its PAOS binding, no
-  Name Identifier Management, and no Assertion Query and Request profile. PAOS is
-  refused BY NAME rather than quietly answered over HTTP POST — a service
-  provider that asked for PAOS and got a form post would conclude that PAOS
-  worked.
+* ~~**No identity-provider-initiated SSO**~~ **REVERSED 2026-09-24 (#189)**:
+  `/saml2/unsolicited[/{sp}]` sends an unsolicited Response — see *What four
+  independent service providers found*, below. ~~**No Assertion Query and
+  Request profile**~~ **its attribute query is answered since #189**, at
+  `/saml2/aa`, under a release policy (same section).
+* **No ECP profile and its PAOS binding, no Name Identifier Management, and no
+  AuthnQuery or AuthzDecisionQuery.** PAOS is refused BY NAME rather than
+  quietly answered over HTTP POST — a service provider that asked for PAOS and
+  got a form post would conclude that PAOS worked.
 
 **And what `saml11_sso.ts` does not do**, which is a shorter list because most
 of what is missing there is missing from the PROTOCOL rather than from this
@@ -121,9 +126,13 @@ implementation:
   by nothing at all** — in development mode anybody who can reach the port can ask
   for an assertion about anybody, by name. A real attribute authority uses mutual
   TLS and an attribute release policy. Every query is logged saying so. **Product
-  mode refuses both query types outright** (2026-09-12) — not gated on a client
-  certificate, because with no release policy a certificate gate answers any
-  holder of any trusted certificate about anybody.
+  mode refused both query types outright** from 2026-09-12 — not gated on a
+  client certificate, because with no release policy a certificate gate answers
+  any holder of any trusted certificate about anybody — **and since #189 it
+  answers under the release policy that was missing**: a registered relying
+  party, authenticated (a signed Request or its registered certificate at the
+  TLS handshake), asking about a subject it holds a live session for from this
+  service, by the NameIdentifier it was given (`STS-SAML-0039`, `0096`).
 * **No Single Logout, and it is not a gap.** SAML 1.1 has none.
   `session.saml11RelyingParties` is still recorded, and nothing reads it — it is
   there so `/admin/saml11` can show which relying parties hold an assertion
@@ -1230,6 +1239,61 @@ connection) and `tests/vendored/sts_saml_unregistered.js` over HTTP, in a
 product realm and a development realm of one service, with an MDQ responder
 the job serves itself.
 
+## WHAT FOUR INDEPENDENT SERVICE PROVIDERS FOUND (#189–#192, 2026-09-24)
+
+The Shibboleth SP 3, pysaml2, SimpleSAMLphp and Keycloak's SAML broker are
+driven against this directory by four jobs (`tests/CLAUDE.md`, *The SAML
+peers*), in a development and a product realm, with each peer's own log as
+the error source. A round trip between two copies of this service's own
+understanding could not have found any of this. Every fix is held in process
+by `tests/saml_interop_findings.js` (the SimpleSign one by
+`saml_artifact_and_simplesign.js`):
+
+| Found by | What | Where it is fixed |
+|---|---|---|
+| Shibboleth | **HTTP-POST-SimpleSign signed the base64 text** where the binding (section 2.5) signs the RAW XML — in both directions, so it agreed only with itself and Shibboleth refused every SimpleSign Response | `request_signature.ts` `simpleSignOctets()`, `saml2_sso.ts` `simpleSignFields()` |
+| Shibboleth | **SAML 1.1 metadata did not name `urn:mace:shibboleth:1.0`** in the IDPSSODescriptor's protocolSupportEnumeration, so no Shibboleth SP would start a SAML 1.1 sign-in from it | `saml11_sso.ts` (`PROTOCOL_SHIB1`) |
+| Shibboleth | **Shibboleth's request profile spells `target` in lower case**; the Browser/POST form went without a TARGET, which Shibboleth refuses | `saml11_sso.ts` `interSiteTransfer()` |
+| Shibboleth | **The SAML 1.1 profile ignored the shire**: an artifact consumer got a POST form. The shire's registered binding now chooses | `saml11_sso.ts` `profileFor()` |
+| Shibboleth | **No attribute reached a stock attribute map**: SAML 2.0 sent Keycloak's and AD FS's names only, and SAML 1.1 split `urn:mace:dir:attribute-def:uid` into namespace and name. SAML 2.0 now also sends the X.500/LDAP attribute profile's `urn:oid:` names (with FriendlyName); SAML 1.1 sends the whole URN under `urn:mace:shibboleth:1.0:attributeNamespace:uri` | `saml2_sso.ts`, `saml2.ts`, `saml11_sso.ts` `attributesFor()` |
+| Shibboleth | **`<DoNotCacheCondition/>`**, which the Browser/POST profile does not ask for (its single-use policy is the relying party's), is refused by Shibboleth's stock policy — a setting, `saml11.doNotCacheCondition`, **default OFF (decided 2026-09-26 on #189: spec first — the condition is optional and single use is the relying party's; a default kept only for a test is a shim)**. The parent-owned `sts_saml11.js` accepts its absence (rcbj/id-proto-debugger#307) | `saml11_sso.ts`, `common/config.js` |
+| Shibboleth | **No identity-provider-initiated SSO** and **no SAML 2.0 attribute authority** — both now exist (below) | `saml2_sso.ts` |
+| Shibboleth | **An attribute query answer must STRONGLY match the query's Subject** (saml-core 3.3.4), qualifiers included | `attributeQuery()` echoes NameQualifier and SPNameQualifier |
+| pysaml2 | **An AuthnRequest addressed elsewhere, stale, of another Version, or REPLAYED was answered.** Now refused: `STS-SAML-0085` (and a SIGNED request with no Destination, bindings 3.4.5.2/3.5.5.2), `0086`, `0087`, `0088` — the issuer and ID claimed through the cluster's claim store for the freshness window (`saml2.requestTtlMin`), fail-closed `0089`. A LogoutRequest's envelope is held to the same rule | `saml2_sso.ts` `singleSignOn()`, `envelopeProblem()`; `cluster/cluster_claims.js` `claimInProcess()` |
+| SimpleSAMLphp | **An HTTP-Artifact SingleSignOnService was advertised** that no request can arrive on; SimpleSAMLphp reads it literally and sent its AuthnRequest AS an artifact. It is no longer published | `saml2_sso.ts` `metadataFor()` |
+| Keycloak | **A back-channel LogoutRequest ended nothing** and answered Success. It now ends the session its SessionIndex names when that session gave the service provider that NameID; otherwise UnknownPrincipal (`STS-SAML-0090`) and nothing ends | `saml2_sso.ts` `singleLogout()`, `sessionNamedBy()` |
+| Keycloak | **Identity-provider-initiated LogoutRequests went over HTTP-Redirect with only an enveloped signature** — no SigAlg, no Signature. The Redirect binding now strips the XML signature and signs the query string (3.4.4.1), for every message it carries | `saml2_sso.ts` `redirectUrlFor()`, `logoutTargetsFor()` |
+| Keycloak | **They also named the username in the configured format** whatever NameID the service provider had been given; the session now records each service provider's NameID | `issueSignInResponse()`, `logoutTargetsFor()` |
+| (found while fixing the above) | **A LogoutResponse's second-level status (PartialLogout) was computed and never sent** | `buildLogoutResponse()` |
+
+**IDENTITY-PROVIDER-INITIATED SSO** (`/saml2/unsolicited[/{sp}]`,
+saml-profiles-2.0-os 4.1.5): `providerId` (or the path segment), `shire`,
+`target` and `binding`, the Shibboleth identity provider's parameter names.
+Held to what a solicited request is: a registered service provider in
+product, an ACS its consumed metadata or entry registered, the endpoint's own
+binding (never HTTP-Redirect), the issuance policy; `saml2.unsolicitedSso`
+turns it off for a realm. The Response and assertion carry no InResponseTo.
+
+**THE ATTRIBUTE AUTHORITY** (`/saml2/aa[/{sp}]`, an
+AttributeAuthorityDescriptor in the per-SP metadata): the Assertion Query and
+Request profile's AttributeQuery over SOAP. The release policy SAML 1.1 never
+had: the caller authenticated as its Issuer (the artifact resolver's rule);
+the subject one a LIVE SESSION here gave that service provider, by the NameID
+it was given — which is also what makes a transient NameID answerable; the
+issuance policy; and what that sign-in released, narrowed to what the query
+names. No AuthnStatement, no SubjectConfirmation (`attributeQuery` in
+`saml2.ts`). The SAML 1.1 responder's product policy is the same rule.
+
+**Exceptions recorded on the tickets, not fixed here**: a SimpleSAMLphp SP
+cannot use the artifact profile at all (it sends an artifact-ProtocolBinding
+request over the artifact binding and publishes no ArtifactResolutionService
+— #191); ECP is not claimed (#190). ~~SimpleSAMLphp's SOAP client pins the
+back channel's TLS certificate to the metadata's signing keys, which this
+service's listener certificate is not~~ — **decided and built on #248**: the
+metadata carries it now (the next section), so that pin would pass; with the
+artifact profile out of SimpleSAMLphp's reach there is still nothing of its
+to exercise it with.
+
 ## EVERY DOCUMENT HERE IS VALIDATED AGAINST THE PUBLISHED SCHEMAS (#188, 2026-09-24)
 
 `tests/vendored/sts_xml_schema_validation.js` makes both profiles emit
@@ -1245,3 +1309,57 @@ SAML document was a schema's, not the document's: `cm:CryptoMetadataLocation`
 in the metadata's `md:Extensions` (#42) was declared by no schema, and
 `/crypto/metadata.xsd` declares it now. **A new SAML document owes a
 scenario in that job.**
+
+## THE BACK CHANNEL'S TLS CERTIFICATE IS IN THE METADATA (#248, 2026-09-26)
+
+rcbj's decision on #189: **both identity providers' metadata publish the TLS
+certificate the SOAP endpoints present** — the ArtifactResolutionService and
+the AttributeService of SAML 2.0 (`/saml2/ars`, `/saml2/aa`) and the SAML 1.1
+responder, which is both. A service provider that authenticates the
+back-channel peer from metadata — the Shibboleth SP's ExplicitKey engine,
+SimpleSAMLphp's SOAP client — then needs no key handed to it some other way.
+`listener_keys.ts` is the rule and its header the argument; what a reader
+needs before changing it:
+
+* **`use="signing"`, in a KeyDescriptor of its own, LAST in the role.**
+  saml-metadata-2.0-os 2.4.1.1 has two uses and "omitted" means both; a TLS
+  key is not one anybody may encrypt to — nothing here decrypts with it — so
+  omitting `use` would invite an EncryptedID under a key whose holder does not
+  open XML Encryption. TLS server authentication is a signing use of a key and
+  is where every metadata-reading TLS engine looks. Last, so a consumer that
+  takes the first signing certificate for XML signatures still takes the XML
+  key (`tests/vendored/sts_xml_schema_validation.js` is one such consumer).
+* **In BOTH roles**: the IDPSSODescriptor (artifact resolution) and the
+  AttributeAuthorityDescriptor (the attribute query), because a service
+  provider looks up the keys of the role whose endpoint it is calling.
+* **What the cost is**: a consumer that verifies XML signatures against every
+  signing key will accept one made with the listener's key. That key is held by
+  the process that holds the XML key — except a `tls.certificateFile` an
+  operator supplied and shares with something in front of this service, which
+  then holds a key this metadata vouches for.
+* **Which certificates**: every leaf the main port presents
+  (`tls.certificateAlgorithms` may name two, and OpenSSL picks per client), AS
+  THE SOCKET PRESENTS THEM — `tls_server.presentedCertificatePems()`, which in
+  a request worker answers the front process's leaves (the extra ones now
+  travel with the hand-off and each re-issue's bundle) rather than the
+  certificates that worker made for itself; and in a cluster every LIVE node's
+  (`cluster/cluster.js` carries each node's on its membership row's `info`,
+  read back at most a heartbeat behind), because each node presents a leaf of
+  its own and a balancer sends a service provider to any of them. **None when
+  the main port is plain HTTP** (`global.https` off).
+* **It follows the certificate**: nothing is cached, every document asks at
+  request time, so after `build-root` re-issues the listener (`tls/CLAUDE.md`)
+  the next document names the new leaf. A service provider that cached the
+  old document has to fetch it again — which `no-store` already tells it.
+* **Nothing is refused**: a certificate that cannot be read is a document
+  without that key, logged under `STS-SAML-0097`.
+
+**What authenticates the back channel in each peer harness now**: Shibboleth
+from the metadata ALONE — its StaticPKIX engine and the anchor the job handed
+it are gone, the job checks the published key is the one the service
+presents, and a development-realm control strips the key and sees the SP
+refuse to resolve an artifact or run an attribute query. **pysaml2 and
+Keycloak still get the anchor**, as documented exceptions: pysaml2 verifies
+TLS with `requests` against `ca_certs`, Keycloak with its Java truststore, and
+neither reads a metadata key for TLS. Held in process by
+`tests/saml_listener_key.js`.

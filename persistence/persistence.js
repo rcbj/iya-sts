@@ -919,7 +919,12 @@ function realmRows() {
       // as a change (realmChangeOf() has nothing to say about it).
       domain: realm.domain,
       createdAt: realm.createdAt,
-      overrides: realm.overrides || {}
+      overrides: realm.overrides || {},
+      // THE RETIRING MARK (#262): set by `realms.retire()` before it ends
+      // anything, and carried to every other process with the row. Null
+      // for a realm nobody is removing.
+      retiringSince: Number(realm.retiringSince) > 0
+        ? Number(realm.retiringSince) : null
     };
   });
 }
@@ -964,13 +969,17 @@ function realmChangeOf(row, was) {
   });
   const name = row.name !== was.name;
   const description = row.description !== was.description;
-  if (!name && !description && !cleared.length && !Object.keys(set).length) {
+  // ONE-WAY (#262): a mark the shadow lacks is a change; nothing unmarks.
+  const retiring = Number(row.retiringSince) > 0 &&
+    !(Number(was.retiringSince) > 0);
+  if (!name && !description && !retiring && !cleared.length &&
+      !Object.keys(set).length) {
     log.debug("Leaving realmChangeOf(). Unchanged.");
     return null;
   }
   log.debug("Leaving realmChangeOf().");
   return { row: row, name: name, description: description, set: set,
-           cleared: cleared };
+           cleared: cleared, retiring: retiring };
 }
 
 function realmsDelta(removals) {
@@ -1012,6 +1021,9 @@ function advanceRealmShadow(delta) {
     }
     if (change.description) {
       was.description = change.row.description;
+    }
+    if (change.retiring) {
+      was.retiringSince = change.row.retiringSince;
     }
     was.overrides = was.overrides || {};
     change.cleared.forEach(function (key) {
@@ -1481,6 +1493,46 @@ function resolveDatabaseUrl() {
   });
 }
 
+// ---------------------------------------------------------------------------
+// WHETHER THE DATABASE SERVER'S CERTIFICATE IS VERIFIED — one reading of
+// `persistence.databaseTlsRejectUnauthorized`, shared by the pool this
+// process opens, `status()`'s report of it, and `databaseConnection()` below.
+// ---------------------------------------------------------------------------
+function verifiesDatabaseTls() {
+  log.debug("Entering verifiesDatabaseTls().");
+  log.debug("Leaving verifiesDatabaseTls().");
+  return !!config.value('persistence.databaseTlsRejectUnauthorized');
+}
+
+// ---------------------------------------------------------------------------
+// EVERYTHING `persistence_postgres.create()` IS GIVEN TO DIAL THE DATABASE
+// THE WAY THIS SERVICE DOES (#213, 2026-09-26): the connection string with
+// the configured provider's password put back into it (`resolveDatabaseUrl()`
+// above), and whether the server's certificate is verified.
+//
+// **IT EXISTS FOR A PROCESS THAT IS NOT THE SERVICE.** The install-time
+// risk dataset loader (`risk/risk_install.ts`) dialled `STS_DATABASE_URL` as
+// written and nothing else — so against every stack this repository ships,
+// whose URL carries no password because the password is in OpenBao or AWS
+// Secrets Manager, it could not sign in, and it never verified the server's
+// certificate even where the service did. A second copy of the injection
+// would have been the fix that drifts; the loader calls this instead, so the
+// two processes cannot disagree about how a connection is made. The service
+// itself still reaches the same two functions through `start()` and
+// `openStore()`.
+//
+// Rejects exactly as `resolveDatabaseUrl()` does — with the provider's own
+// tagged error when a configured secret cannot be read, and STS-STORE-0005
+// for a string it cannot edit.
+// ---------------------------------------------------------------------------
+function databaseConnection() {
+  log.debug("Entering databaseConnection().");
+  log.debug("Leaving databaseConnection().");
+  return resolveDatabaseUrl().then(function (url) {
+    return { url: url, verifyTls: verifiesDatabaseTls() };
+  });
+}
+
 function start() {
   log.debug('Entering start().');
   const chosen = mode();
@@ -1663,8 +1715,7 @@ function openStore(chosen, resolvedUrl) {
       // reaches for nothing, which is what lets a test construct one against
       // any database without this file's settings existing at all.
       ? require('./persistence_postgres').create({
-          url: resolvedUrl, log: log,
-          verifyTls: !!config.value('persistence.databaseTlsRejectUnauthorized')
+          url: resolvedUrl, log: log, verifyTls: verifiesDatabaseTls()
         })
       : require('./persistence_ldif').create({ dir: dataDir(), log: log });
   } catch (err) {
@@ -1994,8 +2045,11 @@ function restoreRealms(rows, replicated) {
       // `replicated`, so the realm registry does not re-judge a change the
       // process that made it already judged (realms.js,
       // kerberosOverrideProblem()).
+      // `retiringSince` too (#262): another process's `retire()` marked
+      // the realm, and this one must refuse new sign-ins in it as well.
       realms.update(row.id, { name: row.name, description: row.description,
                               overrides: row.overrides || {},
+                              retiringSince: row.retiringSince || null,
                               replicated: true });
       return;
     }
@@ -2025,6 +2079,12 @@ function restoreRealms(rows, replicated) {
     if (row.createdAt) {
       result.realm.createdAt = row.createdAt;
     }
+    // A realm stored RETIRING (#262) — its removal was begun and not
+    // finished, by a process that stopped — stays retiring until an
+    // administrator removes it again.
+    if (Number(row.retiringSince) > 0) {
+      result.realm.retiringSince = Number(row.retiringSince);
+    }
     made++;
   });
   log.debug('Leaving restoreRealms(). ' + made + ' restored.');
@@ -2036,7 +2096,9 @@ function shadowRowOf(row) {
   log.debug("Entering shadowRowOf().");
   log.debug("Leaving shadowRowOf().");
   return JSON.stringify({ name: row.name, description: row.description,
-                          overrides: row.overrides || {} });
+                          overrides: row.overrides || {},
+                          retiringSince: Number(row.retiringSince) > 0
+                            ? Number(row.retiringSince) : null });
 }
 
 // The entries, per realm, replacing what was seeded. A realm the store has
@@ -2375,6 +2437,8 @@ function applyRealmsChange() {
       });
       Object.assign(overrides, mine.set);
       return Object.assign({}, row, {
+        retiringSince: row.retiringSince ||
+          (mine.retiring ? mine.row.retiringSince : null),
         name: mine.name ? mine.row.name : row.name,
         description: mine.description ? mine.row.description
                                       : row.description,
@@ -2721,11 +2785,10 @@ function describeDatabase() {
       passwordSecret: password.configured ? password : undefined,
       sslmode: sslmode || 'not set',
       encrypted: encrypted,
-      verifyCertificate:
-        !!config.value('persistence.databaseTlsRejectUnauthorized'),
+      verifyCertificate: verifiesDatabaseTls(),
       tls: encrypted
         ? ('TLS, sslmode=' + sslmode + '; the server certificate is ' +
-           (config.value('persistence.databaseTlsRejectUnauthorized')
+           (verifiesDatabaseTls()
              ? 'verified against this process\'s trust anchors.'
              : 'NOT verified (persistence.databaseTlsRejectUnauthorized is ' +
                'off), which is the honest setting for the self-signed pair ' +
@@ -2799,6 +2862,23 @@ realms.onChange(function (id, what) {
   directoryChanged();
 });
 
+// A REALM BEING RETIRED IS WRITTEN DOWN BEFORE ANYTHING IS ENDED (#262).
+// `realms.retire()` marks the realm retiring — the change event above has
+// already made the registry dirty — and awaits this, within its bound,
+// before its announce phase: the flush writes the row with `retiring_at` and
+// its change-log row, so every other process and node refuses new sign-ins
+// in the realm (applied through `restoreRealms(…, true)`) before the sessions
+// are ended. With nothing persisted it resolves at once: one process holds
+// the only copy of the mark.
+realms.onRetire({
+  name: 'persistence',
+  mark: function () {
+    log.debug("Entering the persistence retirement mark hook.");
+    log.debug("Leaving the persistence retirement mark hook.");
+    return flush();
+  }
+});
+
 module.exports = {
   // FOR `tests/database_password.js` ONLY, and it is worth saying why a
   // private function is exported at all. The claim this feature makes is that
@@ -2808,6 +2888,10 @@ module.exports = {
   // returns, put through `pg`'s own parser: two implementations meeting, which
   // is the arrangement `tests/webauthn_cross_impl.js` describes.
   resolveDatabaseUrl: resolveDatabaseUrl,
+  // The connection an out-of-process tool dials the database with, made the
+  // way this service makes its own (#213) — see databaseConnection().
+  databaseConnection: databaseConnection,
+  verifiesDatabaseTls: verifiesDatabaseTls,
   MODES: MODES,
   mode: mode,
   activeMode: function () {

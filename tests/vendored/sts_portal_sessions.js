@@ -307,9 +307,15 @@ function signOnIdOf(b) {
   return sidOfCookie(b.jar[SIGN_ON_COOKIE]);
 }
 
-async function liveSessions() {
+// NARROWED WITH `q` AND NEVER READ AS PAGE ONE OF EVERYTHING (2026-09-27).
+// Since the protocol half runs in lanes, other jobs hold live sessions at the
+// same time as this one — more than a page of them — so a session this job
+// made fell off `?per=200` and read as never having existed. `q` matches the
+// session id and the username (admin-ui's /admin/sessions search), which is
+// exactly what every caller here is asking about.
+async function liveSessions(q) {
   log.debug("Entering liveSessions().");
-  const r = await get("/sessions?per=200");
+  const r = await get("/sessions?per=500&q=" + encodeURIComponent(q));
   assert.ok(r.status === 200 && r.body && Array.isArray(r.body.sessions),
     "GET /admin-api/sessions should list sessions; it answered " + r.status +
     " " + String(r.raw).slice(0, 200));
@@ -319,7 +325,7 @@ async function liveSessions() {
 
 async function rowFor(id) {
   log.debug("Entering rowFor().");
-  const rows = await liveSessions();
+  const rows = await liveSessions(id);
   log.debug("Leaving rowFor().");
   return rows.filter(function (row) { return row.sessionId === id; })[0] ||
          null;
@@ -385,7 +391,7 @@ async function revokeConsoleGrants() {
   log.debug("Leaving revokeConsoleGrants().");
 }
 
-async function signInAt(door, who) {
+async function signInAt(door, who, password) {
   log.debug("Entering signInAt(). door=" + door);
   await ensurePerson(who);
   if (/^\/admin(\/|\?|$)/.test(door)) {
@@ -417,8 +423,16 @@ async function signInAt(door, who) {
   assert.ok(authnId, "the sign-in screen carries no authn_id to post back.");
   r = await b.go("POST", "/authn/login",
                  form({ authn_id: authnId, username: who,
-                        password: PASSWORD, action: "login",
+                        password: password || PASSWORD, action: "login",
                         csrf_token: csrfOf(r.text) }));
+  // An administrator is OFFERED a second factor since #246 (the Admin Read
+  // grant above makes `who` one); this job ignores it, as rcbj asked.
+  const offerId = r.status === 200 && /id="mfa-setup-ignore"/.test(r.text)
+    ? (r.text.match(/name="mfa_id" value="([^"]+)"/) || [])[1] || "" : "";
+  if (offerId) {
+    r = await b.go("POST", "/authn/mfa-setup",
+                   form({ mfa_id: offerId, action: "ignore" }));
+  }
   assert.ok(r.status === 303 || r.status === 302,
     "the sign-in form should redirect, got " + r.status + " " +
     String(r.text).slice(0, 200));
@@ -469,7 +483,7 @@ async function follow(b, r, hops) {
 async function theConsoleSignInCreatesASession() {
   log.debug("Entering theConsoleSignInCreatesASession().");
   log.info("=== the admin console: sign in, and the session is listed ===");
-  const before = (await liveSessions()).length;
+  const before = (await liveSessions(OPERATOR)).length;
   const b = await signInAt("/admin/sessions", OPERATOR);
   const id = sessionIdOf(b);
 
@@ -509,7 +523,7 @@ async function theConsoleSignInCreatesASession() {
       assert.strictEqual(row.authenticated, true);
     });
 
-  const after = await liveSessions();
+  const after = await liveSessions(OPERATOR);
   check("THE COUNT WENT UP BY EXACTLY TWO, which is the whole shape of this " +
         "change in one number: an identity provider session and an " +
         "application session, where before there was one row doing both jobs",
@@ -1516,7 +1530,17 @@ async function test() {
   // above.
   const appsBrowser = await theApplicationsPageIsDecidedByThePolicy();
 
-  await signingOutInvalidatesIt(intruder, INTRUDER, PORTAL_DOOR);
+  // THE INTRUDER SIGNS IN AGAIN FIRST (2026-09-27). Section 3 has them change
+  // their own password, which is CAEP credential-change (#231), and the
+  // portal is a Shared Signals receiver whose default signal-response policy
+  // ends that person's sessions on it — so the session section 3 made is
+  // gone by now, correctly. They sign in with the password they chose.
+  const intruderAgain = await signInAt(PORTAL_DOOR, INTRUDER,
+                                       "IntruderChosen123!");
+  log.debug("intruder session before sign-out: " +
+            sessionIdOf(intruder) + " replaced by " +
+            sessionIdOf(intruderAgain));
+  await signingOutInvalidatesIt(intruderAgain, INTRUDER, PORTAL_DOOR);
   await signingOutInvalidatesIt(owner, OWNER, PORTAL_DOOR);
   await signingOutInvalidatesIt(operator, OPERATOR, "/admin/sessions");
 

@@ -1142,12 +1142,14 @@ class SpiffeCa {
     const to = x509 ? Date.parse(x509.notAfter) : NaN;
     if (Number.isFinite(from) && Number.isFinite(to) &&
         now - from >= (to - from) / 2) {
-      out.x509 = String((await this.rotateX509Authority(id)).id || '');
+      out.x509 = String((await this.rotateX509Authority(id, 'scheduled')).id ||
+                        '');
     }
     const jwt = this.jwtList(id)[0];
     const half = Number(config.value('spiffe.caTtl')) * 1000 / 2;
     if (jwt && half > 0 && now - (Number(jwt.createdAt) || now) >= half) {
-      out.jwt = String((await this.rotateJwtAuthority(id)).id || '');
+      out.jwt = String((await this.rotateJwtAuthority(id, 'scheduled')).id ||
+                       '');
     }
     log.debug("Leaving SpiffeCa.rotateDue(). " + JSON.stringify(out));
     return out;
@@ -1487,6 +1489,27 @@ class SpiffeCa {
   // signing, and the two realms disagreeing about who issued it is exactly what
   // a trust domain is for.
   // ---------------------------------------------------------------------------
+  // ---------------------------------------------------------------------------
+  // A REALM BEING REMOVED MINTS NOTHING NEW (#262, 2026-09-26), in both modes:
+  // `realms.retire()` marks it before it announces the removal, and an SVID
+  // minted in the wait would outlive the authority that signed it by
+  // seconds. Thrown, as every other refusal here is; the callers answer it
+  // as a failed mint. `STS-CORE-0121` is logged here.
+  // ---------------------------------------------------------------------------
+  refuseRetiring(what, realmId) {
+    const { log, realms, errorCodes } = this.deps;
+    log.debug("Entering SpiffeCa.refuseRetiring().");
+    const refusal = realms.retiringRefusal(this.realmIdOf(realmId));
+    if (!refusal) {
+      log.debug("Leaving SpiffeCa.refuseRetiring(). Not retiring.");
+      return;
+    }
+    log.info(errorCodes.tag('STS-CORE-0121') + 'spiffe: ' + what +
+             ' was refused. ' + refusal.why);
+    log.debug("Leaving SpiffeCa.refuseRetiring(). Refused.");
+    throw new Error('Cannot mint ' + what + ': ' + refusal.why);
+  }
+
   refuseForeignDomain(what, id, realmId) {
     const { log, spiffeId } = this.deps;
     log.debug("Entering SpiffeCa.refuseForeignDomain().");
@@ -1522,6 +1545,7 @@ class SpiffeCa {
                       parsed.reason);
     }
     this.refuseForeignDomain('an X509-SVID', parsed.id, opts.realm);
+    this.refuseRetiring('an X509-SVID', opts.realm);
     // ---------------------------------------------------------------------
     // **THE TARGET REALM'S KEY TYPE, NOT THE AMBIENT REALM'S (2026-09-12).**
     // This read `config.value('spiffe.x509KeyType')` while minting for
@@ -1597,6 +1621,7 @@ class SpiffeCa {
       throw new Error('Cannot sign a CSR for ' + id + ': ' + parsed.reason);
     }
     this.refuseForeignDomain('an X509-SVID', parsed.id, opts.realm);
+    this.refuseRetiring('an X509-SVID', opts.realm);
     let publicPem;
     try {
       const csr =
@@ -1924,6 +1949,7 @@ class SpiffeCa {
                       parsed.reason);
     }
     this.refuseForeignDomain('a JWT-SVID', parsed.id, opts.realm);
+    this.refuseRetiring('a JWT-SVID', opts.realm);
     const list = (audiences || []).map(function (a) {
       return String(a == null ? '' : a).trim();
     }).filter(Boolean);
@@ -2547,12 +2573,42 @@ class SpiffeCa {
     return this.realmSettings(realmId).retained;
   }
 
-  async rotateX509Authority(realmId?) {
+  // ---------------------------------------------------------------------------
+  // THE SHARED SIGNALS NOTICE OF A ROTATION (#245): `spiffe-authority-rotated`
+  // to every stream of the realm that takes it, naming the authorities that
+  // moved, the trust domain and whether the BUNDLE changed — a workload's
+  // verifier needs to re-fetch only when it did. `ssf/service_signals.ts` is
+  // reached lazily (it reads `ssf.ts` from the cache); a failure never
+  // reaches the rotation, which has happened.
+  // ---------------------------------------------------------------------------
+  announceRotation(realmId: string, rotated: any[], reason: string,
+                   bundleChanged: boolean): void {
+    const { log } = this.deps;
+    log.debug('Entering SpiffeCa.announceRotation().');
+    try {
+      Promise.resolve(require('../ssf/service_signals').keyChanged('spiffe',
+        String(realmId || ''), { rotated: rotated, reason: reason,
+          trustDomain: this.trustDomainOf(realmId),
+          bundleChanged: bundleChanged }))
+        .catch(function (e: any): void {
+          log.debug('Caught in a callback in SpiffeCa.announceRotation(): ' +
+                    ((e && e.message) || e));
+        });
+    } catch (e) {
+      log.debug('Caught in SpiffeCa.announceRotation(): ' +
+                ((e && e.message) || e));
+    }
+    log.debug('Leaving SpiffeCa.announceRotation().');
+  }
+
+  async rotateX509Authority(realmId?, reason?) {
     const { log, pki } = this.deps;
     log.debug('Entering SpiffeCa.rotateX509Authority().');
     const id = this.realmIdOf(realmId);
     await this.ready(id);
+    const why = reason === 'scheduled' ? 'scheduled' : 'requested';
     if (pki.describeIssuer(id, SPIFFE_USE_CASE)) {
+      const was = this.activeX509Authority(id);
       // `reissueUseCase()` supersedes the old authority on its Intermediate's
       // revocation list and re-mints everything that was certified under it —
       // which for SPIFFE is nothing, because `issueUnder()` records nothing. It
@@ -2569,6 +2625,9 @@ class SpiffeCa {
       // Bumping it here would tell every consumer in the trust domain to
       // re-fetch a document that is byte-identical to the one they hold.
       const fresh = this.activeX509Authority(id);
+      this.announceRotation(id, [{ unit: 'x509-authority',
+        from: String((was && was.id) || 'none'), to: String(fresh.id) }],
+        why, false);
       log.info('spiffe: the "' + (id || 'default') + '" realm\'s SPIFFE ' +
                'Issuing CA was re-issued (' + fresh.id + '). The bundle is ' +
                'UNCHANGED — it publishes this service\'s Root, which did not ' +
@@ -2589,10 +2648,14 @@ class SpiffeCa {
     // READ, PREPEND, WRITE BACK — and the write is what makes the rotation the
     // SERVICE's rather than this process's. `x509List()` hands back the
     // memoised array, so it is copied before being changed.
+    const previous = this.x509List(id)[0];
     const kept = [authority].concat(this.x509List(id));
     const dropped = kept.splice(this.retainedAuthorities(id));
     this.setX509List(id, kept);
     this.bumpSequence(id, 'the X.509 authority was rotated');
+    this.announceRotation(id, [{ unit: 'x509-authority',
+      from: String((previous && previous.id) || 'none'),
+      to: String(authority.id) }], why, true);
     log.info('spiffe: a new SELF-SIGNED X.509 authority (' + authority.id +
              ') is now active in "' + (id || 'default') + '"; ' +
              (kept.length - 1) + ' retired one(s) are ' +
@@ -2603,17 +2666,22 @@ class SpiffeCa {
     return this.selfSignedAuthorityFrom(authority);
   }
 
-  async rotateJwtAuthority(realmId?) {
+  async rotateJwtAuthority(realmId?, reason?) {
     const { log } = this.deps;
     log.debug('Entering SpiffeCa.rotateJwtAuthority().');
     const id = this.realmIdOf(realmId);
     await this.ready(id);
     const authority = await this.makeJwtAuthority(this.realmSettings(id)
       .jwtKeyType);
+    const previous = this.jwtList(id)[0];
     const kept = [authority].concat(this.jwtList(id));
     const dropped = kept.splice(this.retainedAuthorities(id));
     this.setJwtList(id, kept);
     this.bumpSequence(id, 'the JWT authority was rotated');
+    this.announceRotation(id, [{ unit: 'jwt-authority',
+      from: String((previous && previous.id) || 'none'),
+      to: String(authority.id) }],
+      reason === 'scheduled' ? 'scheduled' : 'requested', true);
     log.info('spiffe: a new JWT authority (kid ' + authority.id + ') is now ' +
              'active; ' + (kept.length - 1) + ' retired one(s) are ' +
              'still published' +

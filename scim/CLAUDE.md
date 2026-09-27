@@ -408,7 +408,8 @@ through the directory); `tests/vendored/MANIFEST.js` does not copy it. What
 runs here is in-process (`tests/scim_monitor.js`,
 `tests/ssf_spiffe_scim_hardening.js`, `tests/stable_subject.js` section E and
 the cluster jobs named below) plus the `local: true`
-`sts_directory_bulk_load_scim.js`. The rest of this section is what such a test
+`sts_directory_bulk_load_scim.js` and, since #206, `sts_scim_conformance.js`
+— two independent conformance harnesses (see the last section). The rest of this section is what such a test
 has to cover.
 It is plain JSON over HTTP with no browser, no signature and
 no XML, its whole surface is seventeen routes, and the interesting half is
@@ -679,3 +680,78 @@ is refused their own password with the one `STS-SCIM-0037` sentence a wrong
 password gets (the code on the call-log row is `STS-AUTHN-0213`), and uses an
 app password scoped to `scim`; the decision's `note` says so. `authn/CLAUDE.md`
 owns the rule.
+
+## WHAT THE CONFORMANCE HARNESSES FOUND (#206, 2026-09-26)
+
+`tests/vendored/sts_scim_conformance.js` runs python-scim's scim2-tester and
+scim2/test-suite against `/scim/v2` (`tests/CLAUDE.md`, *The SCIM conformance
+harnesses*, has the tools and the exceptions); `tests/scim_conformance_fixes.js`
+holds each fix in process. What they found, and where each fix lives:
+
+* **THE PUBLISHED SCHEMAS PROMISED WHAT THE DIRECTORY CANNOT HOLD.** scimmy's
+  User, EnterpriseUser and Group definitions are RFC 7643's whole schemas, and
+  `nickName`, `locale`, `timezone`, `ims`, `photos`, `entitlements`, `roles`,
+  `x509Certificates`, `name.middleName`, `name.honorificSuffix`, `costCenter`,
+  `manager.displayName` and every `display` and `primary` of a multi-valued
+  member have no row in `scim_map.ts` — each was accepted, answered 201, and
+  gone on the next read. `scim.ts`'s `narrowSchemas()` takes them off the
+  definitions (`NOT_PUBLISHED_*`), so `/Schemas` is the list of what is
+  supported (RFC 7643 section 7) and scimmy's coercion no longer pretends to
+  keep them. **A ROW IN `scim_map.ts` IS HOW ONE COMES BACK**, and it has to
+  come off the list in the same change. `password` stays published: it is
+  `writeOnly`/`returned: never`, and refusing a create that carries one would
+  break provisioning clients for a member nothing reads back.
+* **`type` OFFERS ONLY THE TYPES A ROW STORES** (`CANONICAL_TYPES`): `emails`
+  `work`, `phoneNumbers` `work` and `mobile`, `addresses` `work`. RFC 7643
+  section 2.3.1 lets a provider restrict canonical values; a `home` email was
+  silently dropped and is now refused 400 `invalidValue`. (scimmy's
+  `canonicalValues: []` on `roles.type` and two others meant "nothing
+  allowed" where RFC 7643 section 8.7.1 means "none suggested" — moot while
+  they are unpublished.)
+* **`primary` IS NOT INVENTED.** `toScimUser()` marked the first value of
+  `emails` and `phoneNumbers` primary; nothing stores which value is primary,
+  so a client that sent `primary: false` read back `true`.
+* **THE MANAGER WENT OUT AS A DN.** `userResourceFor()` translated the stored
+  DN to an id at the OBJECT form of the extension, which egress never writes
+  (`egressPath()`), so every manager left as `uid=…,ou=users,…` — the one value
+  a client cannot send back. It reads the namespaced member now and adds the
+  manager's `$ref`.
+* **A GROUP MEMBER CARRIES A `$ref` AND NO `display`** (RFC 7643 section
+  8.7.1's Group schema has no `display`, and the one written was the DN); a
+  group a person is in carries a `$ref` too. Never for a dangling member.
+* **A DUPLICATE VALUE IS STORED ONCE** (`fromScimUser()`), compared without
+  case as `mail` and the phone types compare; an LDAP attribute cannot hold a
+  value twice.
+* **FILTERS HONOUR THE SCHEMA** (`foldFilter()`, `foldValuesAt()`): scimmy's
+  matcher compares every string exactly and orders any two values, so
+  `userName eq "ALICE"` found nobody and `active gt true` answered 200. A
+  `caseExact: false` string is compared folded; ordering a boolean or binary
+  attribute is 400 `invalidFilter` (`STS-SCIM-0082`). The comparison is still
+  scimmy's.
+* **`schemas` IS RETURNED ALWAYS** — `?attributes=userName` sent resources
+  with none (RFC 7644 section 3.9).
+* **`If-Match` ON A WRITE IS 412** (`preconditionRefusal()`, `STS-SCIM-0081`).
+  There are no entity-tags, so no `If-Match` but `*` can be true (RFC 9110
+  section 13.1.1); it used to be ignored, which `sendScim()`'s note already
+  called the worst of the three behaviours.
+* **AN UNKNOWN PATH UNDER `/scim/v2` IS A SCIM 404** (`STS-SCIM-0080`),
+  registered last under the base, per method, and described in
+  `sts_metadata.ts`; it was express's HTML page.
+* **USERS AND GROUPS LEAVE PRUNED** (`forTheWire()`): only the list path took
+  the matcher's padding off, so a Group read or patched by id went out with
+  `"members": []`. The single-resource egress keeps its padding, because
+  scimmy applies a PATCH valuePath to it with the same matcher.
+* **A PATCH ON A WHOLE EXTENSION** (`normalisePatch()`): a value naming its
+  own `schemas` failed inside scimmy ("object is not extensible"), and
+  `remove` of the extension URN failed ("Cannot convert undefined or null to
+  object"); the first loses the redundant `schemas`, the second becomes one
+  `remove` per attribute the extension declares.
+* **`scim.inventOnCreate`** (development mode only, ON by default): off, a
+  SCIM create writes exactly what was sent — no persona, no /admin/vc fill —
+  which is what a client checking its own round trip needs. The job turns it
+  off in its realm.
+
+**WHAT IS STILL NOT DONE, ON PURPOSE**: `active` is always said and so cannot
+be removed (above, *`active` IS THE ACCOUNT'S DISABLED STATE*); there is no
+ETag, now refused rather than ignored; and the members the directory cannot
+hold are unpublished rather than stored.

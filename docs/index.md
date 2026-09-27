@@ -36,6 +36,8 @@ each.
 [Endpoints](endpoints.md) ·
 [Trust realms](trust-realms.md) ·
 [What is not checked](what-is-not-checked.md) ·
+[Conformance suites](conformance.md) ·
+[Departures from the specifications](spec-departures.md) ·
 [Accepted tokens](accepted-tokens.md) ·
 [Token samples](token-samples.md) ·
 [Error codes](error-codes.md)
@@ -46,12 +48,17 @@ do ·
 [Applications](applications.md): the registry of every client, relying party
 and service provider ·
 [Management API](management-api.md): `/admin-api`, every console control
-reachable by a machine with an OAuth 2.0 access token.
+reachable by a machine with an OAuth 2.0 access token ·
+configuration recipes, in the console and through the API, for each
+[OAuth 2.0 grant](configure-oauth2-grants.md),
+[OpenID Connect flow](configure-oidc-flows.md) and
+[SAML 2.0 and SAML 1.1 profile](configure-saml.md).
 
 **Sessions and signals** —
 [Sessions](sessions.md) ·
 [Signing out](signing-out.md) ·
 [Risk scoring](risk-scoring.md) ·
+[Devices](devices.md) ·
 [Mail](mail.md) ·
 [CAEP events](caep-events.md) ·
 [Signals received](signals-received.md)
@@ -85,6 +92,7 @@ documents it.
 | OpenID Federation | `/admin/oidfed` | [OpenID Federation](oidfed.md) |
 | GNAP | `/admin/gnap` | [GNAP](gnap.md) |
 | TOTP MFA, Recovery codes, WebAuthn | `/admin/totp`, `/admin/backup-codes`, `/admin/webauthn` | [Authentication](authentication.md) |
+| Device registration | `/admin/device-registration` | [Devices](devices.md) |
 | Kerberos | `/admin/kerberos`, `/admin/kerberos/principals` | [Kerberos and SPNEGO](kerberos.md) |
 | LDAP / LDAPS | `/admin/ldap` | [LDAP](ldap.md) |
 | WS-Trust | `/admin/wstrust` | [WS-Trust](ws-trust.md) |
@@ -176,6 +184,7 @@ the diagram and a walk through each layer.
 | OpenID4VP 1.0 — a Verifier, and a sign-in with a wallet in any credential format, through the W3C Digital Credentials API | `/oid4vp/verifier`, `/authn/wallet` | [oid4vp](oid4vp.md) |
 | Token Status List and W3C Bitstring Status List — what this issuer publishes about what it issued | `/oid4vci/status-lists*`, `/admin/vc-status` | [oid4vci](oid4vci.md) |
 | W3C DID Core with DIF domain linkage | `/.well-known/did.json` | [oid4vp](oid4vp.md) |
+| The W3C VC-API test endpoints — Data Integrity (RDFC, JCS, ecdsa-sd-2023), VC-JOSE-COSE and DID resolution for the W3C test suites; a development test control | `/vc-api/*` | [vc-api](vc-api.md) |
 | Shared Signals (SSF 1.0) with CAEP and RISC — a transmitter, and a receiver of its own | `/ssf/*`, `/admin/ssf` | [shared-signals](shared-signals.md) |
 | XACML 3.0 and ALFA — a PDP, a policy repository, and the PEPs that decide this service's own issuance | `/xacml/*`, `/admin/xacml` | [xacml](xacml.md) |
 | GNAP (RFC 9635) with RFC 9767 resource server connections | `/gnap/*`, `/admin/gnap` | [gnap](gnap.md) |

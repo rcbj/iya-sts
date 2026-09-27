@@ -127,6 +127,7 @@ import app = require('../common/app');
 // The error-code registry, a leaf. A refusal here is MARKED on the response for
 // the call log and never written into the JSON a caller receives.
 import errorCodes = require('../common/error_codes');
+import lingeringClose = require('../common/lingering_close');
 // Whether a create can race another node's, and the sentence a refused one
 // carries (#46 section 3). A LIBRARY that registers nothing.
 import createClaims = require('../ldap/directory_create_claims');
@@ -214,8 +215,13 @@ import modeAdmin = require('../admin-ui/mode_admin');
 import schedulerAdmin = require('../admin-ui/scheduler_admin');
 // The mail channel's two pages (#63), mirrored below (rule 7).
 import mailAdmin = require('../admin-ui/mail_admin');
+// The device register's three pages (#164, #218), required in the ordinary
+// direction for the reason `mailAdmin` is: built at 18q, before this file.
+import devicesAdmin = require('../admin-ui/devices_admin');
 // Monitoring → Risk (#62): its view and its four actions, rule 7.
 import riskAdmin = require('../admin-ui/risk_admin');
+// Monitoring → Geolocation (#255): its one view, rule 7.
+import geolocationAdmin = require('../admin-ui/geolocation_admin');
 // The embedded protocol debugger's report (2026-09-13). A page module required
 // at 18 like the one above, and it reads the listener's status lazily, so this
 // require moves no route.
@@ -250,6 +256,34 @@ import applications = require('../common/applications');
 // computes them and hands them to the action. A library that registers nothing.
 import resourceMetadata = require('../oauth-oidc/protected_resource_metadata');
 import spec = require('./admin_api_spec');
+// THE CLOSED SETS (#86). A LEAF (rule 3): the refusal sentence this file's
+// enum errors use, the query-parameter check, and the register the console
+// gate reads — filled here at wire time from the same table the document is
+// built from. `admin-ui/admin.ts` requires it too, in the ordinary direction.
+import closedSets = require('../common/closed_sets');
+// THE TABLES FOUR MORE CLOSED SETS ARE READ OFF (#86), so the document's
+// enum is the list the handler checks against rather than a copy of it. All
+// four are libraries that register no route and are already loaded by the
+// time this module is (`risk_admin` at 18j, `mail_admin` at 18l, the console
+// and `admin-core` at 18), so each require is a cache hit: the risk
+// catalogue, the built-in mail messages, the claims an identity-assurance
+// verification may cover, and the federation schema's editable fields.
+import riskDatasets = require('../risk/risk_datasets');
+import mailTemplates = require('../common/mail_templates');
+import identityAssurance = require('../common/identity_assurance');
+import federation = require('../federation/federation');
+// And six LEAVES the filters and the PKI and XACML actions are held to (#86):
+// the audit vocabulary, the delegation register's types, the used-assertion
+// history's formats, the issuance kinds, the ISO 3166 alpha-2 codes and
+// XACML's two Effect values. Each requires `helpers` at most and registers
+// nothing; `xacml_model` is the XACML family's table and loads here earlier
+// than the family does (23c), which moves no route because it has none.
+import audit = require('../common/audit');
+import delegation = require('../common/delegation');
+import usedAssertions = require('../common/used_assertions');
+import issuanceGate = require('../common/issuance_gate');
+import countryCodes = require('../common/country_codes');
+import xacmlModel = require('../xacml/xacml_model');
 
 // ---------------------------------------------------------------------------
 // THE DOCUMENT IS THE VALIDATOR (2026-09-06).
@@ -292,7 +326,10 @@ import addFormatsModule = require('ajv-formats');
 const Ajv: any = AjvModule;
 const addFormats: any = addFormatsModule;
 
-const ajv = new Ajv({ strict: false, allErrors: true, coerceTypes: false });
+// `verbose` so an `enum` error carries the value it refused, which the
+// refusal sentence names (#86).
+const ajv = new Ajv({ strict: false, allErrors: true, coerceTypes: false,
+                      verbose: true });
 addFormats(ajv);
 
 // ---------------------------------------------------------------------------
@@ -316,15 +353,13 @@ addFormats(ajv);
 // verbatim, and this wrapper exists only for the length of the compile.
 // ---------------------------------------------------------------------------
 // ---------------------------------------------------------------------------
-// **WHAT IS ENFORCED IS STRUCTURE. `required` AND `enum` ARE STRIPPED FROM THE
-// COMPILED COPY AND KEPT IN THE DOCUMENT.**
+// **WHAT IS ENFORCED IS STRUCTURE AND THE CLOSED SETS. `required` IS STRIPPED
+// FROM THE COMPILED COPY AND KEPT IN THE DOCUMENT.**
 //
 // The rule is the one this file rests on: *the validator adds the checks
 // nothing else makes, and never duplicates a check the handler already makes
-// better.* Two of the four JSON Schema assertions here fall on each side, and
-// the suite decided it rather than taste.
-//
-// ENFORCED, because nothing else in this service checks them:
+// better.* It was applied on 2026-09-06 and three of the four JSON Schema
+// assertions here fell on the ENFORCED side:
 //
 //   * `additionalProperties: false` — a member the operation does not define.
 //     This is the one that catches the silently ignored field, which is the
@@ -334,28 +369,50 @@ addFormats(ajv);
 //     `label` on the authorization-server create — every one of them a member
 //     the handler never read and the job asserted nothing about.
 //   * `type` — a number or an array where a string belongs.
+//   * `enum` — a value outside the closed set the document declares (#86,
+//     2026-09-26). **It was stripped until then**, on the argument that
+//     `applicationsAction()` refuses an unknown kind by naming the kinds and
+//     that ajv would replace the sentence with "must be equal to one of the
+//     allowed values". Both halves were true and the conclusion was wrong,
+//     because the handler that explains itself was the exception: the #86
+//     audit found closed-set fields that a handler silently ignored, silently
+//     replaced with its default, or STORED. So the enum is enforced here, and
+//     the sentence is `common/closed_sets.ts`'s — the field, the value, how
+//     many values it accepts and every one — which is as good as the kinds
+//     refusal was and is the same words at every door.
 //
-// NOT ENFORCED, because a handler already answers them and says more:
+// NOT ENFORCED, because a handler already answers it and says more:
 //
-//   * `enum` — `applicationsAction()` refuses an unknown kind by NAMING the
-//     kinds and COUNTING them, and `sts_admin_api_operations.js` asserts all
-//     three properties, because that list and the one
-//     `GET /applications/new` publishes are one table read through two doors.
 //   * `required` — `logoutAction()` answers a sign-out with no identity with
-//     *Name the identity ... in `user`*, and the same job asserts that wording
-//     SO THAT A CALLER CAN TELL WHICH REFUSAL IT MET.
+//     *Name the identity ... in `user`*, and `sts_admin_api_operations.js`
+//     asserts that wording SO THAT A CALLER CAN TELL WHICH REFUSAL IT MET.
 //
-// In both cases ajv runs first, so enforcing would replace a sentence a caller
-// can act on with "must be equal to one of the allowed values" — and switch off
-// an assertion in the same stroke. That is the opposite of the point.
-//
-// **Both stay in the published document**, where they are exactly right:
-// documentation of the valid set and the mandatory members. What this decides
-// is only WHICH LAYER refuses, and the answer is the layer that can explain
-// itself. Stripped recursively, because these schemas nest — an array's `items`
-// and a `$ref`'d `ClaimEntry` each carry their own.
+// **An enum is compiled with `""` added to it**, when it does not already
+// hold it, and that is not a loophole: an empty string is how a form — and a
+// form-encoded body copied from the console, which this API takes — says
+// "nothing chosen", and the handlers here treat it as absent. The refusal
+// sentence names the declared set, without it. Stripped recursively, because
+// these schemas nest — an array's `items` and a `$ref`'d `ClaimEntry` each
+// carry their own.
 // ---------------------------------------------------------------------------
-const NOT_ENFORCED_HERE = ['enum', 'required'];
+const NOT_ENFORCED_HERE = ['required'];
+
+// ---------------------------------------------------------------------------
+// THE ONE EXCEPTION TO ENFORCING AN ENUM, AND IT IS MARKED WHERE IT APPLIES.
+//
+// A property carrying `x-refused-by-handler: true` keeps its `enum` in the
+// published document and is NOT held to it here, by the console register or
+// by the query check (`common/closed_sets.ts` skips it too). It is for a
+// handler whose refusal of a value outside the set says something the
+// validator cannot: `spiffe/entries/update`'s `field` refuses a field that
+// records what HAPPENED differently from one that does not exist, and
+// `sts_admin_api_operations.js` asserts the difference, because a caller
+// fixing a request has to know which of the two it met. The marker is a
+// vendor extension (OpenAPI's `x-`), so the document says out loud which
+// sets are the handler's to refuse. A new use needs that argument made for
+// it — "the handler refuses it too" is not one; nearly every handler does.
+// ---------------------------------------------------------------------------
+const REFUSED_BY_HANDLER = 'x-refused-by-handler';
 
 // What `AdminApi` needs from the rest of the service: the modules this file
 // used to reach for itself, passed in so that the composition root can build
@@ -393,6 +450,17 @@ interface AdminApiDeps {
   applications: typeof applications;
   resourceMetadata: typeof resourceMetadata;
   spec: typeof spec;
+  closedSets: typeof closedSets;
+  riskDatasets: typeof riskDatasets;
+  mailTemplates: typeof mailTemplates;
+  identityAssurance: typeof identityAssurance;
+  federation: typeof federation;
+  audit: typeof audit;
+  delegation: typeof delegation;
+  usedAssertions: typeof usedAssertions;
+  issuanceGate: typeof issuanceGate;
+  countryCodes: typeof countryCodes;
+  xacmlModel: typeof xacmlModel;
   realms: typeof realms;
   jwtAccessToken: typeof jwtAccessToken;
   mtls: typeof mtls;
@@ -411,6 +479,8 @@ interface AdminApiDeps {
   loadOauth2MonitorApi(): typeof import('../oauth-oidc/oauth2_monitor_api');
   loadGrantManagementApi(): typeof import('../oauth-oidc/grant_management_api');
   loadClaimsProvidersApi(): typeof import('../oauth-oidc/claims_providers_api');
+  loadProviderCommandsApi(): typeof import('../oauth-oidc/provider_commands_api');
+  loadSsfTransmittersApi(): typeof import('../ssf/ssf_transmitters_api');
 }
 
 type RouteApp = typeof app;
@@ -459,6 +529,17 @@ class AdminApi {
       applications: applications,
       resourceMetadata: resourceMetadata,
       spec: spec,
+      closedSets: closedSets,
+      riskDatasets: riskDatasets,
+      mailTemplates: mailTemplates,
+      identityAssurance: identityAssurance,
+      federation: federation,
+      audit: audit,
+      delegation: delegation,
+      usedAssertions: usedAssertions,
+      issuanceGate: issuanceGate,
+      countryCodes: countryCodes,
+      xacmlModel: xacmlModel,
       realms: realms,
       jwtAccessToken: jwtAccessToken,
       mtls: mtls,
@@ -492,6 +573,12 @@ class AdminApi {
       loadClaimsProvidersApi: function () {
         return require('../oauth-oidc/claims_providers_api');
       },
+      loadProviderCommandsApi: function () {
+        return require('../oauth-oidc/provider_commands_api');
+      },
+      loadSsfTransmittersApi: function () {
+        return require('../ssf/ssf_transmitters_api');
+      },
       loadGrantManagementApi: function () {
         return require('../oauth-oidc/grant_management_api');
       }
@@ -506,6 +593,7 @@ class AdminApi {
     PROTOCOL_SETTINGS_OPERATIONS = instance.buildProtocolSettingsOperations();
     ROUTES = instance.buildRoutes();
     instance.compileRequestSchemas();
+    instance.registerConsoleClosedSets();
     log.info(startupBanner(instance.operationSummaries().length));
     log.debug("Leaving AdminApi.wire().");
   }
@@ -522,9 +610,19 @@ class AdminApi {
       log.debug("Leaving AdminApi.structureOnly().");
       return node;
     }
-    const out = {};
+    const out: any = {};
     Object.keys(node).forEach(function (key) {
       if (NOT_ENFORCED_HERE.indexOf(key) >= 0) {
+        return;
+      }
+      if (key === 'enum' && node[REFUSED_BY_HANDLER] === true) {
+        // The handler refuses this one, in words of its own.
+        return;
+      }
+      if (key === 'enum' && Array.isArray(node.enum)) {
+        // The empty string is absent (see NOT_ENFORCED_HERE's header).
+        out.enum = node.enum.indexOf('') >= 0 ? node.enum.slice()
+                                              : node.enum.concat('');
         return;
       }
       out[key] = self.structureOnly(node[key]);
@@ -596,6 +694,92 @@ class AdminApi {
   }
 
   // ---------------------------------------------------------------------------
+  // THE CONSOLE'S CLOSED SETS, FROM THIS TABLE (#86).
+  //
+  // Every operation here names the console control it is the machine's door
+  // to — `mirrors: 'POST /admin/users and POST /admin/users/new'` — and a
+  // console form posts the SAME `action` the operation is named for (rule 7;
+  // `/permissions/define-permission`'s stutter is that rule showing). So the
+  // enums an action's request schema declares are registered in
+  // `common/closed_sets.ts` under every console page its route mirrors, and
+  // the console gate holds a form POST to them. The console has no copy of
+  // any set: a value this document adds to an enum is accepted on both doors
+  // the moment it is added, and one it removes is refused on both.
+  //
+  // Only a flat field is held there (a form has nothing nested); what a form
+  // spells differently from the API — `leafKeyAlg` for `keyAlg` — is simply
+  // not matched, and is the handler's to refuse. Returns how many controls
+  // hold at least one field.
+  // ---------------------------------------------------------------------------
+  registerConsoleClosedSets() {
+    const { log, spec, closedSets } = this.deps;
+    log.debug("Entering AdminApi.registerConsoleClosedSets().");
+    let held = 0;
+    const pagesOf = function (mirrors) {
+      const pages = [];
+      const re = /POST (\/admin(?:\/[^\s,]*)?)/g;
+      let m;
+      while ((m = re.exec(String(mirrors || ''))) !== null) {
+        pages.push(m[1]);
+      }
+      return pages;
+    };
+    ROUTES.forEach(function (entry) {
+      if (entry.method === 'GET') {
+        return;
+      }
+      // An action may name a control of its own (`source.mirrors` in
+      // `admin_api_spec.ts`), and wins over its route's, as it does in the
+      // document.
+      const rows = (entry.actions || []).map(function (a) {
+        return { action: a.action || '', body: a.requestBody,
+                 pages: pagesOf(a.mirrors || entry.mirrors) };
+      });
+      if (entry.requestBody && !(entry.actions || []).length) {
+        rows.push({ action: '', body: entry.requestBody,
+                    pages: pagesOf(entry.mirrors) });
+      }
+      rows.forEach(function (row) {
+        if (!row.body || !row.pages.length) {
+          return;
+        }
+        const fields = closedSets.collect(row.body, spec.SCHEMAS);
+        if (!fields.length) {
+          return;
+        }
+        row.pages.forEach(function (page) {
+          closedSets.registerConsole(page, row.action, fields);
+        });
+        held = held + 1;
+      });
+    });
+    log.debug("Leaving AdminApi.registerConsoleClosedSets(). " + held +
+              " control(s) hold a closed set.");
+    return held;
+  }
+
+  // ---------------------------------------------------------------------------
+  // A QUERY PARAMETER'S CLOSED SET (#86). The enums an operation's
+  // `parameters` declare `in: query` were published and never checked, so a
+  // filter spelt wrong answered 200 with every row — the answer to a question
+  // nobody asked. Both the route's parameters and its action's are held.
+  // ---------------------------------------------------------------------------
+  checkQueryEnums(entry, req) {
+    const { log, closedSets } = this.deps;
+    log.debug("Entering AdminApi.checkQueryEnums().");
+    const action = String((req.params && req.params.action) || '');
+    const row = (entry.actions || []).filter(function (a) {
+      return a.action === action;
+    })[0];
+    const parameters = (entry.parameters || [])
+      .concat((row && row.parameters) || []);
+    const checked = closedSets.checkQuery(parameters, req.query);
+    log.debug("Leaving AdminApi.checkQueryEnums(). " +
+              (checked.ok ? "Accepted." : "Refused."));
+    return checked;
+  }
+
+  // ---------------------------------------------------------------------------
   // Turn ajv's errors into the `{ ok: false, errors: [...] }` shape every
   // refusal on this API already uses, so a caller parses one thing.
   //
@@ -604,13 +788,22 @@ class AdminApi {
   // beside a body they typed rather than resolving a pointer.
   // ---------------------------------------------------------------------------
   errorsFromAjv(errors) {
-    const { log } = this.deps;
+    const { log, closedSets } = this.deps;
     log.debug("Entering AdminApi.errorsFromAjv().");
     const out = (errors || []).map(function (e) {
       const where = String(e.instancePath || '').replace(/^\//, '')
                                                 .replace(/\//g, '.');
       const missing = e.params && e.params.missingProperty;
       const extra = e.params && e.params.additionalProperty;
+      if (e.keyword === 'enum' && e.params &&
+          Array.isArray(e.params.allowedValues)) {
+        // A value outside a closed set (#86), in the words every door uses.
+        // The `""` the compile added is not part of the declared set.
+        return closedSets.sentence(where || 'the request', e.data,
+          e.params.allowedValues.filter(function (v) {
+            return v !== '';
+          }));
+      }
       if (missing) {
         return '"' + missing + '" is required.';
       }
@@ -1635,6 +1828,13 @@ class AdminApi {
       const type = setting.type === 'bool' ? 'boolean'
           : (setting.type === 'int' ? 'integer' : 'string');
       out[key] = { type: type, description: setting.label || '' };
+      // An `enum` row's set, published (#86). These doors own their body
+      // and `config.js` refuses a value outside it by name; the document
+      // says what that set is, and the console register holds the forms
+      // that post these keys to it.
+      if (setting.type === 'enum' && Array.isArray(setting.enumValues)) {
+        out[key].enum = setting.enumValues.slice();
+      }
     });
     log.debug("Leaving AdminApi.narrowDoorProperties().");
     return out;
@@ -1691,6 +1891,108 @@ class AdminApi {
            'and `ldapmodify` reaches them like every other attribute.\n\n';
   }
 
+  // ---------------------------------------------------------------------------
+  // THE CLOSED SETS THE ROUTE TABLE DECLARES THAT LIVE IN ANOTHER MODULE'S
+  // TABLE (#86). Read once per build of the table, from the constant the
+  // handler checks against, never retyped: a set retyped here is a second
+  // definition, and the #86 audit found three that had gone stale (the
+  // application `kind` filter missing three kinds, `revoke-kind` missing
+  // `gnap_access_token`, `add-value` missing two multi-valued fields).
+  // ---------------------------------------------------------------------------
+  closedLists() {
+    const { log, riskDatasets, mailTemplates, identityAssurance, federation,
+            applications, stats, audit, delegation, usedAssertions,
+            issuanceGate, countryCodes, xacmlModel, pki } = this.deps;
+    log.debug("Entering AdminApi.closedLists().");
+    const namesOf = function (rows) {
+      return rows.map(function (row) {
+        return row.name;
+      });
+    };
+    const kinds = [];
+    stats.ISSUED_FAMILIES.forEach(function (family) {
+      family.kinds.forEach(function (kind) {
+        if (kinds.indexOf(kind) < 0) {
+          kinds.push(kind);
+        }
+      });
+    });
+    const keyAlgs = pki.keyAlgorithms().map(function (one) {
+      return one.id;
+    });
+    const sigAlgs = [];
+    keyAlgs.forEach(function (id) {
+      pki.signatureAlgorithms(id).forEach(function (one) {
+        if (sigAlgs.indexOf(one.id) < 0) {
+          sigAlgs.push(one.id);
+        }
+      });
+    });
+    const out = {
+      // Only a provider this build can import from: an unsupported one's
+      // terms cannot be accepted and nothing can be loaded as it.
+      riskProviders: Object.keys(riskDatasets.PROVIDERS).filter(function (id) {
+        return riskDatasets.PROVIDERS[id].supported !== false;
+      }),
+      riskDatasets: Object.keys(riskDatasets.CATALOGUE),
+      riskFormats: Object.keys(riskDatasets.FORMATS),
+      mailTemplates: mailTemplates.BUILT_IN.map(function (one) {
+        return one.id;
+      }),
+      verifiableClaims: identityAssurance.VERIFIABLE_CLAIMS.slice(),
+      federationSetFields: namesOf(federation.editableFields('set')),
+      federationMultiFields: namesOf(federation.editableFields('multi')),
+      applicationKinds: applications.KIND_IDS.slice(),
+      tokenFamilies: stats.ISSUED_FAMILIES.map(function (family) {
+        return family.family;
+      }),
+      tokenKinds: kinds,
+      revocableKinds: stats.REVOCABLE_KINDS.slice(),
+      applicationSetAttributes: namesOf(applications.editableAttributes('set')),
+      applicationMultiAttributes:
+        namesOf(applications.editableAttributes('multi')),
+      // A key the handler will refuse later for having no signature
+      // algorithm (an ML-KEM one) is still a key algorithm; that refusal
+      // is the handler's, and names why.
+      pkiKeyAlgorithms: keyAlgs,
+      pkiSignatureAlgorithms: sigAlgs,
+      // A CA's alternative (post-quantum) key, #68: `pki.alternativeKeyAlgs()`
+      // and `none` for a classical-only authority — alternativeKeyAlgFrom()'s
+      // own set.
+      pkiAlternativeKeyAlgorithms: pki.alternativeKeyAlgs().concat('none'),
+      pkiUseCases: pki.USE_CASE_IDS.slice(),
+      pkiImportUseCases: ['root'].concat(pki.USE_CASE_IDS),
+      countries: countryCodes.ALPHA2.slice(),
+      auditCategories: audit.CATEGORIES.map(function (one) {
+        return one.category;
+      }),
+      auditActions: audit.ACTIONS.map(function (one) {
+        return one.action;
+      }),
+      auditOutcomes: audit.OUTCOMES.slice(),
+      usedAssertionFormats: Object.keys(usedAssertions.FORMATS),
+      usedAssertionUses: Object.keys(usedAssertions.USES),
+      usedAssertionStates: Object.keys(usedAssertions.STATES),
+      delegationTypes: delegation.TYPES.map(function (one) {
+        return one.type;
+      }),
+      delegationModes: delegation.MODES.map(function (one) {
+        return one.mode;
+      }),
+      delegationOutcomes: delegation.OUTCOMES.slice(),
+      issuanceKinds: issuanceGate.KINDS.slice(),
+      xacmlEffects: Object.keys(xacmlModel.EFFECT).map(function (key) {
+        return xacmlModel.EFFECT[key];
+      }),
+      // CAEP 1.0 section 2's `initiating_entity`, the four values it
+      // defines. `ssf/ssf_events.js` writes the same four into its event
+      // table (not exported); `tests/closed_sets.js` holds the two equal.
+      caepInitiatingEntities: ['admin', 'user', 'policy', 'system']
+    };
+    log.debug("Leaving AdminApi.closedLists().");
+    return out;
+  }
+
   buildRoutes(): any[] {
     const { log, baseUrlOf, config, spec, adminViews, errorCodes,
             encryptionAdmin, databaseAdmin, secretsAdmin, debuggerAdmin,
@@ -1698,9 +2000,11 @@ class AdminApi {
             realms, stats, resourceMetadata, applications, loadGnapConsole, pki,
             pkiAdmin, certificateViews, passwordPolicy, loadAcmeApi, loadEstApi,
             loadScepApi, loadOidfedApi, loadOauth2MonitorApi,
-            loadGrantManagementApi, loadClaimsProvidersApi } = this.deps;
+            loadGrantManagementApi, loadClaimsProvidersApi,
+            loadProviderCommandsApi, loadSsfTransmittersApi } = this.deps;
     const self = this;
     log.debug("Entering AdminApi.buildRoutes().");
+    const closed = this.closedLists();
     const ROUTES: any[] = [
       { method: 'GET', path: BASE, tag: 'Service',
         operationId: 'getIndex',
@@ -2070,24 +2374,45 @@ class AdminApi {
                      'and any `stale` ones left out); and a page of the ' +
                      'realm\'s refused passwords in `failures` — a subject ' +
                      'or a name\'s digest, the door, the network prefix, the ' +
-                     'ASN and the code, never an address.',
+                     'ASN and the code, never an address. A page of the ' +
+                     'realm\'s assessed sign-ins in `assessments` ' +
+                     '(`{ total, rows }`, the last 7 days, newest first) and ' +
+                     'of its people by current standing in `subjects`, ' +
+                     'each with its `assessmentsPaging` / `subjectsPaging`. ' +
+                     'Every row naming a person\'s `subject` also carries ' +
+                     'their `username` (\'\' when the directory no longer ' +
+                     'holds them).',
         mirrors: 'GET /admin/risk',
         parameters: [
-          { name: 'realm', in: 'query', required: false,
-            schema: { type: 'string' },
-            description: 'The realm whose failures and operator lists are ' +
-                         'shown; the default realm when absent.' },
           { name: 'address', in: 'query', required: false,
             schema: { type: 'string' },
             description: 'An IPv4 or IPv6 address to look up.' },
           { name: 'offset', in: 'query', required: false,
             schema: { type: 'integer', minimum: 0 },
-            description: 'Where the page of failures starts.' }
-        ],
-        responseDescription: 'The datasets, the lookup and the failures.',
+            description: 'Where the page of failures starts.' },
+          { name: 'level', in: 'query', required: false,
+            schema: { type: 'string' },
+            description: 'Only the assessments at this level.' },
+          { name: 'subject', in: 'query', required: false,
+            schema: { type: 'string' },
+            description: 'Only this person\'s assessments.' }
+        ].concat(this.pagingParameters().filter(function (one) {
+          return one.name === 'per';
+        })).concat(this.detailPagingParameters([
+          { name: 'assessments',
+            description: 'The sign-ins assessed in the last 7 days, newest ' +
+                         'first, ' + adminViews.DEFAULT_PER_PAGE + ' by ' +
+                         'default.' },
+          { name: 'subjects',
+            description: 'The realm\'s people by current standing, highest ' +
+                         'score first, twenty-five by default.' }
+        ])),
+        responseDescription: 'The datasets, the lookup, the failures, the ' +
+                             'assessments and the standings.',
         responseSchema: { type: 'object',
           description: '`store`, `datasets`, `formats`, `lookup`, ' +
-                       '`failures`.' },
+                       '`failures`, `assessments`, `assessmentsPaging`, ' +
+                       '`subjects`, `subjectsPaging`.' },
         handler: function (req, res) {
           log.debug("Entering the management API risk endpoint.");
           const realmOnly = riskAdmin.realmOnly(req);
@@ -2125,10 +2450,6 @@ class AdminApi {
                      'the breached-password screening.',
         mirrors: 'GET /admin/risk-scoring',
         parameters: [
-          { name: 'realm', in: 'query', required: false,
-            schema: { type: 'string' },
-            description: 'The realm counted; the default realm when ' +
-                         'absent.' },
           { name: 'window', in: 'query', required: false,
             schema: { type: 'string', enum: ['1h', '24h', '7d', '30d'] },
             description: 'How far back the assessments are counted; 24h ' +
@@ -2152,6 +2473,71 @@ class AdminApi {
                                       errors: [String((e && e.message) ||
                                                       e)] });
             log.debug("Leaving the management API risk metrics endpoint. " +
+                      "Failed.");
+          });
+        } },
+
+      // Monitoring → Geolocation (#255): `geolocationAdmin.geoView()`, the
+      // counts the page draws, suppression applied the same way.
+      { method: 'GET', path: BASE + '/geolocation', tag: 'Risk',
+        operationId: 'getGeolocation',
+        summary: 'Where the realm\'s people signed in from',
+        description: 'The realm\'s people counted by place, from what risk ' +
+                     'scoring recorded: the `total` of the place asked ' +
+                     'for (the `world` total beside it), the seven ' +
+                     '`continents`, the `countries` (every one at the ' +
+                     'world level, a continent\'s with `continent`, one with ' +
+                     '`country`) and, with `country`, its `cities` with ' +
+                     'their coordinates. Each place has `people` (distinct, ' +
+                     'counted at that level, never summed), `signIns` and ' +
+                     '`lastAt`. A place with fewer people than ' +
+                     '`minimumCount` (`risk.geoMinimumCount`) has `people` ' +
+                     'and `signIns` null and `suppressed` true, and such a ' +
+                     'city is left out and counted in `hidden`. `unknown` ' +
+                     'is where no dataset placed the address; ' +
+                     '`countryOnly`, in a country, where only its country ' +
+                     'was known. `window` live counts the live sessions ' +
+                     '(`liveSessions`), each at its latest assessment.',
+        mirrors: 'GET /admin/geolocation',
+        parameters: [
+          { name: 'window', in: 'query', required: false,
+            schema: { type: 'string', enum: ['live', '24h', '7d', '30d'] },
+            description: 'Live sessions, or everybody over a span; live ' +
+                         'when absent.' },
+          { name: 'continent', in: 'query', required: false,
+            schema: { type: 'string', enum: ['africa', 'antarctica', 'asia',
+                                             'europe', 'north-america',
+                                             'oceania', 'south-america'] },
+            description: 'One continent\'s countries.' },
+          { name: 'country', in: 'query', required: false,
+            schema: { type: 'string', pattern: '^[A-Za-z]{2}$' },
+            description: 'One country (ISO 3166-1 alpha-2) and its cities.' }
+        ],
+        responseDescription: 'The counts by place.',
+        responseSchema: { type: 'object',
+          description: '`total`, `continents`, `countries`, `cities`, ' +
+                       '`hidden`, `unknown`, `minimumCount`, `datasets`, ' +
+                       '`attributions`.' },
+        handler: function (req, res) {
+          log.debug("Entering the management API geolocation endpoint.");
+          geolocationAdmin.geoView(req.query).then(function (view) {
+            if (!view.ok) {
+              errorCodes.mark(res, 'STS-RISK-0042');
+              self.sendJson(res, 400, { ok: false, errors: view.errors });
+              log.debug("Leaving the management API geolocation endpoint. " +
+                        "Refused.");
+              return;
+            }
+            self.sendJson(res, 200, view);
+            log.debug("Leaving the management API geolocation endpoint.");
+          }).catch(function (e) {
+            log.warn(errorCodes.tag('STS-RISK-0041') + 'geolocation: the ' +
+                     'view failed: ' + ((e && e.message) || e));
+            errorCodes.mark(res, 'STS-RISK-0041');
+            self.sendJson(res, 500, { ok: false,
+                                      errors: [String((e && e.message) ||
+                                                      e)] });
+            log.debug("Leaving the management API geolocation endpoint. " +
                       "Failed.");
           });
         } },
@@ -2193,11 +2579,13 @@ class AdminApi {
         handlerOwnsBody: true,
         parameters: [
           { name: 'dataset', in: 'query', required: true,
-            schema: { type: 'string' },
+            schema: { type: 'string', enum: closed.riskDatasets },
             description: 'The dataset, as GET /admin-api/risk lists them.' },
           { name: 'format', in: 'query', required: true,
-            schema: { type: 'string' },
-            description: 'The format of the file once expanded.' },
+            schema: { type: 'string', enum: closed.riskFormats },
+            description: 'The format of the file once expanded. Each ' +
+                         'dataset takes only some of them, which the ' +
+                         'handler refuses by name.' },
           { name: 'realm', in: 'query', required: false,
             schema: { type: 'string' },
             description: 'The realm, for an operator list only.' },
@@ -2213,7 +2601,7 @@ class AdminApi {
             schema: { type: 'string' },
             description: 'An ISO 8601 date.' },
           { name: 'provider', in: 'query', required: false,
-            schema: { type: 'string' } },
+            schema: { type: 'string', enum: closed.riskProviders } },
           { name: 'licence', in: 'query', required: false,
             schema: { type: 'string' } },
           { name: 'attribution', in: 'query', required: false,
@@ -2222,9 +2610,19 @@ class AdminApi {
             schema: { type: 'string', enum: ['true', 'false'] },
             description: '`false` loads without activating.' },
           { name: 'acceptTerms', in: 'query', required: false,
-            schema: { type: 'string', enum: ['true', 'false'] },
+            // `on` is what the console's checkbox sends, and the handler has
+            // always read it as `true` (`risk/risk_upload.ts`).
+            schema: { type: 'string', enum: ['true', 'false', 'on'] },
             description: 'Accept the provider\'s current terms as part of ' +
-                         'this import.' }
+                         'this import.' },
+          { name: 'overrideSignature', in: 'query', required: false,
+            schema: { type: 'string', enum: ['true', 'false', 'on'] },
+            description: '`fido.mds3` only: load the BLOB even if its ' +
+                         'signature or signing chain does not verify. Its ' +
+                         'contents are then UNAUTHENTICATED; the version is ' +
+                         'recorded with `verification: overridden` and the ' +
+                         'reason, and revocation is not checked. Refused ' +
+                         'for any other dataset.' }
         ],
         requestBodyTypes: ['application/octet-stream', 'application/gzip',
                            'application/zip'],
@@ -2245,7 +2643,7 @@ class AdminApi {
                                   '/admin-api/risk/upload')
             .then(function (answer) {
               if (answer.close) {
-                res.set('Connection', 'close');
+                lingeringClose.arm(req, res);
               }
               if (answer.code) {
                 errorCodes.mark(res, answer.code);
@@ -2257,7 +2655,7 @@ class AdminApi {
               log.warn(errorCodes.tag('STS-RISK-0037') + 'risk: an upload ' +
                        'failed: ' + ((e && e.message) || e));
               errorCodes.mark(res, 'STS-RISK-0037');
-              res.set('Connection', 'close');
+              lingeringClose.arm(req, res);
               self.sendJson(res, 500, { ok: false,
                                         errors: [String((e && e.message) ||
                                                         e)] });
@@ -2308,15 +2706,15 @@ class AdminApi {
             requestBody: {
               type: 'object',
               properties: {
-                dataset: { type: 'string' },
-                format: { type: 'string' },
+                dataset: { type: 'string', enum: closed.riskDatasets },
+                format: { type: 'string', enum: closed.riskFormats },
                 content: { type: 'string' },
                 realm: { type: 'string' },
                 version: { type: 'string' },
                 publishedAt: { type: 'string',
                                description: 'An ISO 8601 date.' },
                 sha256: { type: 'string' },
-                provider: { type: 'string' },
+                provider: { type: 'string', enum: closed.riskProviders },
                 licence: { type: 'string' },
                 attribution: { type: 'string' },
                 activate: { type: 'boolean' },
@@ -2338,7 +2736,8 @@ class AdminApi {
                          'been active before (`superseded`).',
             requestBodyRequired: true,
             requestBody: { type: 'object',
-              properties: { dataset: { type: 'string' },
+              properties: { dataset: { type: 'string',
+                                       enum: closed.riskDatasets },
                             version: { type: 'string' },
                             realm: { type: 'string' } },
               required: ['dataset', 'version'],
@@ -2351,7 +2750,8 @@ class AdminApi {
             description: 'Refused when there is no previous version.',
             requestBodyRequired: true,
             requestBody: { type: 'object',
-              properties: { dataset: { type: 'string' },
+              properties: { dataset: { type: 'string',
+                                       enum: closed.riskDatasets },
                             realm: { type: 'string' } },
               required: ['dataset'],
               examples: [{ dataset: 'asn' }],
@@ -2369,7 +2769,8 @@ class AdminApi {
                          'row for the request names the caller.',
             requestBodyRequired: true,
             requestBody: { type: 'object',
-              properties: { provider: { type: 'string' } },
+              properties: { provider: { type: 'string',
+                                        enum: closed.riskProviders } },
               required: ['provider'],
               examples: [{ provider: 'dbip-lite' }],
               additionalProperties: false },
@@ -2379,7 +2780,8 @@ class AdminApi {
             description: 'Its record stays, as `deleted`.',
             requestBodyRequired: true,
             requestBody: { type: 'object',
-              properties: { dataset: { type: 'string' },
+              properties: { dataset: { type: 'string',
+                                       enum: closed.riskDatasets },
                             version: { type: 'string' },
                             realm: { type: 'string' } },
               required: ['dataset', 'version'],
@@ -2415,7 +2817,7 @@ class AdminApi {
         mirrors: 'GET /admin/mail',
         parameters: [
           { name: 'template', in: 'query', required: false,
-            schema: { type: 'string' },
+            schema: { type: 'string', enum: closed.mailTemplates },
             description: 'A message id, to answer its wording.' },
           { name: 'lang', in: 'query', required: false,
             schema: { type: 'string' },
@@ -2512,7 +2914,7 @@ class AdminApi {
             requestBody: {
               type: 'object',
               properties: {
-                template: { type: 'string',
+                template: { type: 'string', enum: closed.mailTemplates,
                             description: 'The message id.' },
                 lang: { type: 'string', description: 'A BCP 47 tag.' },
                 subject: { type: 'string', description: 'One line.' },
@@ -2537,7 +2939,7 @@ class AdminApi {
             requestBody: {
               type: 'object',
               properties: {
-                template: { type: 'string',
+                template: { type: 'string', enum: closed.mailTemplates,
                             description: 'The message id.' },
                 lang: { type: 'string', description: 'A BCP 47 tag.' }
               },
@@ -2622,6 +3024,447 @@ class AdminApi {
             responseDescription: 'The message, queued again.' }
         ]
       },
+
+      // ---------------------------------------------------------------------
+      // THE DEVICE REGISTER (#164, #218, 2026-09-26). `devicesAdmin`'s
+      // `listView()`, `registrationView()` and `monitorView()` — what the
+      // three pages' `?format=json` answer — and `action()`, the function
+      // the list page's five forms post to. A key is recorded as proven by
+      // nobody and self-asserted whichever door it came through; neither
+      // surface forwards a proof or an attestation from a body.
+      // ---------------------------------------------------------------------
+      { method: 'GET', path: BASE + '/devices', tag: 'Devices',
+        operationId: 'getDevices',
+        summary: 'Every device in this realm, paged and filtered, or one',
+        description: 'Without `device`: `total`, `matched`, the `filter` ' +
+                     'applied, and `devices` — each `id`, `dn`, `owner` ' +
+                     '(a DN), `ownerKind` (`person` or `application`), ' +
+                     '`ownerName`, `label`, `applications` and ' +
+                     '`applicationNames`, `keys` (each `id`, `kind`, ' +
+                     '`thumbprint`, `label`, `added`, `addedBy`, `proof`, ' +
+                     '`attestation`, `material`), `keyKinds`, ' +
+                     '`attestation` (`level`, `format`, `summary`), ' +
+                     '`compliance` and `complianceChange`, `status` and ' +
+                     '`statusChange`, `platform`, `model`, `os`, ' +
+                     '`enrolment`, `nativeSso`, `sessionLive`, `lastUsed`, ' +
+                     '`created` — in `devicesPaging`. **Never a Native SSO ' +
+                     'secret or its hash.** With `device`, that one device ' +
+                     'as `device`, and `found: false` for an id the realm ' +
+                     'does not hold.',
+        mirrors: 'GET /admin/devices',
+        parameters: [
+          { name: 'device', in: 'query', required: false,
+            schema: { type: 'string' }, description: 'One device\'s id.' },
+          { name: 'q', in: 'query', required: false,
+            schema: { type: 'string' },
+            description: 'A substring of the id, the label, the owner\'s ' +
+                         'DN, a key\'s thumbprint or label, the platform, ' +
+                         'model or OS.' },
+          { name: 'ownerKind', in: 'query', required: false,
+            schema: { type: 'string', enum: ['person', 'application'] },
+            description: 'Only devices a person, or an application, owns.' },
+          { name: 'owner', in: 'query', required: false,
+            schema: { type: 'string' },
+            description: 'Only this owner\'s: a username, an application ' +
+                         'identifier (with `ownerKind=application`) or a ' +
+                         'DN.' },
+          { name: 'application', in: 'query', required: false,
+            schema: { type: 'string' },
+            description: 'Only devices this application used.' },
+          { name: 'compliance', in: 'query', required: false,
+            schema: { type: 'string',
+                      enum: ['compliant', 'not-compliant', 'unknown'] },
+            description: 'Only devices in this compliance state.' },
+          { name: 'attestation', in: 'query', required: false,
+            schema: { type: 'string',
+                      enum: ['attested', 'self-asserted'] },
+            description: 'Only attested, or self-asserted, devices.' },
+          { name: 'keyKind', in: 'query', required: false,
+            schema: { type: 'string',
+                      enum: ['x509', 'jwk', 'webauthn', 'native-sso'] },
+            description: 'Only devices recognised by this kind of key.' },
+          { name: 'status', in: 'query', required: false,
+            schema: { type: 'string', enum: ['active', 'compromised'] },
+            description: 'Only active, or compromised, devices.' }
+        ].concat(self.pagingParameters()),
+        responseDescription: 'The page of devices, or one device.',
+        responseSchema: { type: 'object',
+          description: '`total`, `matched`, `filter`, `devices`, `page`, ' +
+                       '`pages`, `perPage`, `devicesPaging` and ' +
+                       '`vocabulary`; or `found`, `id`, `device` and ' +
+                       '`vocabulary` with `device`.' },
+        handler: function (req, res) {
+          log.debug("Entering the management API devices list endpoint.");
+          const json = devicesAdmin.listView(req, req.query);
+          if (req.query && req.query.device !== undefined && !json.found) {
+            errorCodes.mark(res, 'STS-DEVICE-0007');
+          }
+          self.sendJson(res, 200, json);
+          log.debug("Leaving the management API devices list endpoint.");
+        } },
+
+      { method: 'POST', route: BASE + '/devices/:action', tag: 'Devices',
+        mirrors: 'POST /admin/devices',
+        handler: function (req, res) {
+          log.debug("Entering the management API devices action.");
+          const result = devicesAdmin.action(
+            self.withAction(req, parseBody(req)), '',
+            'the management API at /admin-api/devices');
+          if (!result.ok) {
+            errorCodes.mark(res, errorCodes.codeOf(result) ||
+                                 'STS-DEVICE-0013');
+          }
+          self.sendJson(res, result.ok ? 200 : 400, result);
+          log.debug("Leaving the management API devices action.");
+        },
+        actions: [
+          { action: 'create', operationId: 'createDevice',
+            summary: 'Register a device, owned by a person or an application',
+            description: 'A device entry under `ou=devices` owned by ' +
+                         '`owner` — a username, or with `ownerKind` ' +
+                         '`application` an application\'s identifier — ' +
+                         'with an optional `label`, `platform`, `model`, ' +
+                         '`os`, the `applications` that use it, and its ' +
+                         'first keys, either `keys` (each `kind` and ' +
+                         '`value`: a PEM certificate, a public JWK or a ' +
+                         'security key\'s credential id the owner enrolled) ' +
+                         'or one as `keyKind` and `key`. Every key is ' +
+                         'recorded as proven by nobody and self-asserted. ' +
+                         'Refused for an owner the directory does not hold ' +
+                         '(STS-DEVICE-0001), an owner at its bound ' +
+                         '(STS-DEVICE-0002, STS-DEVICE-0003 — nothing is ' +
+                         'removed to make room), a key that is private, ' +
+                         'unreadable (STS-DEVICE-0004) or another ' +
+                         'device\'s (STS-DEVICE-0005).',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                owner: { type: 'string',
+                         description: 'A username, an application ' +
+                                      'identifier or a DN.' },
+                ownerKind: { type: 'string',
+                             enum: ['person', 'application'] },
+                label: { type: 'string', maxLength: 128 },
+                platform: { type: 'string',
+                            description: 'ios, ipados, android, macos, ' +
+                                         'windows, linux, chromeos, other ' +
+                                         'or empty.' },
+                model: { type: 'string', maxLength: 128 },
+                os: { type: 'string', maxLength: 128 },
+                applications: { description: 'Client ids or application ' +
+                                             'identifiers: an array, or ' +
+                                             'one string, comma separated.' },
+                keys: { type: 'array', items: { type: 'object',
+                  properties: {
+                    kind: { type: 'string',
+                            enum: ['x509', 'jwk', 'webauthn'] },
+                    value: { description: 'PEM, JWK (object or JSON) or ' +
+                                          'credential id.' },
+                    label: { type: 'string' } },
+                  additionalProperties: false } },
+                keyKind: { type: 'string',
+                           enum: ['x509', 'jwk', 'webauthn'] },
+                key: { description: 'One key, with keyKind.' },
+                keyLabel: { type: 'string' }
+              },
+              required: ['owner'],
+              examples: [{ owner: 'build-host', ownerKind: 'application',
+                           label: 'Build host 7', platform: 'linux' }],
+              additionalProperties: false
+            },
+            responseDescription: 'The device registered, as `device`.' },
+          { action: 'update', operationId: 'updateDevice',
+            summary: 'Change a device\'s label, owner or description',
+            description: 'Any of `label`, `platform`, `model`, `os`, ' +
+                         '`applications` (the whole list) and a new ' +
+                         '`owner` (with `ownerKind`). A new owner is held ' +
+                         'to its own bound and takes the device WITHOUT its ' +
+                         'Native SSO secret, which was bound to the old ' +
+                         'owner\'s session; its keys go with it. Refused ' +
+                         'for an unknown device (STS-DEVICE-0007).',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                id: { type: 'string', description: 'The device id.' },
+                owner: { type: 'string' },
+                ownerKind: { type: 'string',
+                             enum: ['person', 'application'] },
+                label: { type: 'string', maxLength: 128 },
+                platform: { type: 'string' },
+                model: { type: 'string', maxLength: 128 },
+                os: { type: 'string', maxLength: 128 },
+                applications: { description: 'The whole list, as on ' +
+                                             'create.' }
+              },
+              required: ['id'],
+              examples: [{ id: 'no-such-device', label: 'Kitchen tablet' }],
+              additionalProperties: false
+            },
+            responseDescription: 'The device as saved, and what `changed`.' },
+          { action: 'remove', operationId: 'removeDevice',
+            summary: 'Remove a device',
+            description: 'Deletes the device entry, its keys and any Native ' +
+                         'SSO secret with it. Refused for an unknown device ' +
+                         '(STS-DEVICE-0007).',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                id: { type: 'string', description: 'The device id.' }
+              },
+              required: ['id'],
+              examples: [{ id: 'no-such-device' }],
+              additionalProperties: false
+            },
+            responseDescription: 'Whether it was removed.' },
+          { action: 'add-key', operationId: 'addDeviceKey',
+            summary: 'Add a key a device is recognised by',
+            description: '`kind` `x509` (a PEM certificate; its ' +
+                         'thumbprint is SHA-256 over the ' +
+                         'SubjectPublicKeyInfo), `jwk` (a PUBLIC JWK; RFC ' +
+                         '7638, which is DPoP\'s jkt) or `webauthn` (the ' +
+                         'credential id of a security key the device\'s ' +
+                         'owner enrolled), in `value`. Recorded as proven ' +
+                         'by nobody and self-asserted. Refused for private ' +
+                         'material or an unreadable key (STS-DEVICE-0004), ' +
+                         'a key another device holds (STS-DEVICE-0005), or ' +
+                         'a device at devices.maxKeysPerDevice ' +
+                         '(STS-DEVICE-0006).',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                id: { type: 'string', description: 'The device id.' },
+                kind: { type: 'string', enum: ['x509', 'jwk', 'webauthn'] },
+                value: { description: 'PEM, JWK (object or JSON) or ' +
+                                      'credential id.' },
+                label: { type: 'string', maxLength: 128 }
+              },
+              required: ['id', 'kind', 'value'],
+              examples: [{ id: 'no-such-device', kind: 'jwk',
+                           value: { kty: 'OKP', crv: 'Ed25519',
+                             x: '11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo' },
+                           label: 'app key' }],
+              additionalProperties: false
+            },
+            responseDescription: 'The key added, by its id.' },
+          { action: 'remove-key', operationId: 'removeDeviceKey',
+            summary: 'Remove one of a device\'s keys',
+            description: '`key` is the key\'s id or its thumbprint. Refused ' +
+                         'for an unknown device (STS-DEVICE-0007) or a key ' +
+                         'it does not hold (STS-DEVICE-0008).',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                id: { type: 'string', description: 'The device id.' },
+                key: { type: 'string',
+                       description: 'The key id or thumbprint.' }
+              },
+              required: ['id', 'key'],
+              examples: [{ id: 'no-such-device', key: 'k-none' }],
+              additionalProperties: false
+            },
+            responseDescription: 'Whether the key was removed.' },
+          { action: 'set-compliance', operationId: 'setDeviceCompliance',
+            summary: 'Set a device\'s compliance, as an administrator',
+            description: '`status` is `compliant`, `not-compliant` or ' +
+                         '`unknown` (withdrawing a vouch), with an optional ' +
+                         '`reason`. Recorded with source `admin`. When what ' +
+                         'a receiver can be told moved — CAEP knows ' +
+                         'compliant and not-compliant, and unknown is sent ' +
+                         'as not-compliant — a CAEP device-compliance-change ' +
+                         'goes out, its subject the device and its owner. ' +
+                         'An MDM feed reports through POST ' +
+                         '/admin-api/device-compliance instead, under its ' +
+                         'own scope. Refused for an unknown device ' +
+                         '(STS-DEVICE-0007) or status (STS-DEVICE-0011).',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                id: { type: 'string', description: 'The device id.' },
+                status: { type: 'string',
+                          enum: ['compliant', 'not-compliant', 'unknown'] },
+                reason: { type: 'string', maxLength: 500 }
+              },
+              required: ['id', 'status'],
+              examples: [{ id: 'no-such-device', status: 'compliant',
+                           reason: 'Disk encryption confirmed' }],
+              additionalProperties: false
+            },
+            responseDescription: 'The device, its `previous` and new ' +
+                                 '`status`.' },
+          { action: 'set-status', operationId: 'setDeviceStatus',
+            summary: 'Mark a device compromised, or restore it',
+            description: '`status` `compromised`: every sign-on session one ' +
+                         'of its keys authenticated is ended, its Native ' +
+                         'SSO secret revoked, every certificate this ' +
+                         'service\'s EST or SCEP Issuing CA issued it ' +
+                         'revoked for keyCompromise, its risk level raised ' +
+                         'to HIGH (CAEP risk-level-change, principal ' +
+                         'DEVICE), and for a person\'s device RISC ' +
+                         'credential-compromise and sessions-revoked are ' +
+                         'sent naming the person and the device. `active` ' +
+                         'restores it and puts back the risk level the ' +
+                         'compromise raised; nothing revoked comes back. ' +
+                         'Answers `sessionsEnded` and ' +
+                         '`certificatesRevoked`.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                id: { type: 'string', description: 'The device id.' },
+                status: { type: 'string', enum: ['active', 'compromised'] },
+                reason: { type: 'string', maxLength: 500 }
+              },
+              required: ['id', 'status'],
+              examples: [{ id: 'no-such-device', status: 'compromised',
+                           reason: 'Reported stolen' }],
+              additionalProperties: false
+            },
+            responseDescription: 'The device, and what the compromise ' +
+                                 'ended and revoked.' }
+        ]
+      },
+
+      // ---------------------------------------------------------------------
+      // THE MDM / POSTURE FEED (#164 decision 2, phase 3). Not an
+      // administrator's operation: its token carries `device:compliance`,
+      // a protected scope (#110) issued only to a client that declares it,
+      // and the gate takes that scope — and only that — here
+      // (`isDeviceComplianceFeed()`), so a feed holds nothing else.
+      // ---------------------------------------------------------------------
+      { method: 'POST', path: BASE + DEVICE_COMPLIANCE_PATH, tag: 'Devices',
+        operationId: 'reportDeviceCompliance',
+        summary: 'Report device compliance (an MDM or posture feed)',
+        description: 'One report, or `reports` — up to ' +
+                     'devices.complianceFeedMaxReports of them. Each names ' +
+                     'its device by `id`, by a key `thumbprint` (SHA-256, ' +
+                     'base64url: the SubjectPublicKeyInfo\'s for a ' +
+                     'certificate, RFC 7638 for a JWK; optional `keyKind` ' +
+                     '`x509`, `jwk` or `webauthn`), or by its ' +
+                     '`certificate` (PEM), and says `status` — ' +
+                     '`compliant` or `not-compliant` — and an optional ' +
+                     '`reason`. It sets COMPLIANCE ONLY. Each is recorded ' +
+                     'with source `mdm` and the client as its actor, and a ' +
+                     'change a receiver can be told sends CAEP ' +
+                     'device-compliance-change (`initiating_entity` ' +
+                     '`system`). Every report is answered in `results`, in ' +
+                     'order; one naming no device is refused on its own ' +
+                     '(STS-DEVICE-0007) and the rest still apply. **The ' +
+                     'access token must carry `device:compliance`**, which ' +
+                     'the token endpoint issues only to a client whose ' +
+                     'oauthAllowedScope declares it, in both modes; an ' +
+                     '`admin:write` token is refused here, so a feed\'s ' +
+                     'reports are always a feed\'s.',
+        // NO CONSOLE FORM POSTS AS A FEED, and saying it mirrored the device
+        // page made #86's console gate hold the feed's fields on that page's
+        // forms. An administrator's counterpart is `set-compliance`, which
+        // mirrors the page itself; this line names it without a `POST
+        // /admin…` for `registerConsoleClosedSets()` to read.
+        mirrors: 'no console form — an MDM feed; an administrator uses the ' +
+                 'device page\'s set-compliance',
+        parameters: [],
+        requestBodyRequired: true,
+        requestBody: {
+          type: 'object',
+          properties: {
+            id: { type: 'string' },
+            thumbprint: { type: 'string' },
+            keyKind: { type: 'string', enum: ['x509', 'jwk', 'webauthn'] },
+            certificate: { type: 'string' },
+            status: { type: 'string', enum: ['compliant', 'not-compliant'] },
+            reason: { type: 'string', maxLength: 500 },
+            reports: { type: 'array', items: { type: 'object',
+              properties: {
+                id: { type: 'string' },
+                thumbprint: { type: 'string' },
+                keyKind: { type: 'string',
+                           enum: ['x509', 'jwk', 'webauthn'] },
+                certificate: { type: 'string' },
+                status: { type: 'string',
+                          enum: ['compliant', 'not-compliant'] },
+                reason: { type: 'string', maxLength: 500 } },
+              additionalProperties: false } }
+          },
+          examples: [{ reports: [{ id: 'no-such-device',
+                                   status: 'compliant' }] }],
+          additionalProperties: false
+        },
+        responseDescription: '`applied`, `refused` and `results` — per ' +
+                             'report its `index`, `id`, `ok`, `previous`, ' +
+                             '`status`, `changed` and `signalled`, or its ' +
+                             '`errors`.',
+        responseSchema: { type: 'object',
+          description: '`ok`, `applied`, `refused`, `results`, `message`.' },
+        handler: function (req, res) {
+          log.debug("Entering the management API device compliance feed.");
+          // The feed's client, which the gate verified and left on the
+          // response; '' where the gate is off.
+          const result = devicesAdmin.mdmFeed(parseBody(req),
+            String(res.locals.apiClientId || ''), 'mdm');
+          if (!result.ok) {
+            errorCodes.mark(res, errorCodes.codeOf(result) ||
+                                 'STS-DEVICE-0007');
+          }
+          self.sendJson(res, result.ok ? 200 : 400, result);
+          log.debug("Leaving the management API device compliance feed.");
+        } },
+
+      { method: 'GET', path: BASE + '/devices/monitor', tag: 'Devices',
+        operationId: 'getDevicesMonitor',
+        summary: 'The device register counted, and its events day by day',
+        description: '`counts` — `total`, `keys`, and `byOwnerKind`, ' +
+                     '`byCompliance`, `byAttestation`, `byKeyKind`, ' +
+                     '`byEnrolment`, `byStatus`, and `nativeSso` (`live`, ' +
+                     '`ended`, `none`) — and `timeline`: `days`, one row ' +
+                     'per UTC day (`day`, `created`, `removed`, ' +
+                     '`evicted`), the `totals` over every event kept and ' +
+                     '`since`, the oldest. A removal by an `ldapdelete` on ' +
+                     'the socket is not an event.',
+        mirrors: 'GET /admin/devices/monitor',
+        parameters: [
+          { name: 'days', in: 'query', required: false,
+            schema: { type: 'integer', minimum: 1, maximum: 366 },
+            description: 'How many days the timeline covers; 30 by ' +
+                         'default.' }
+        ],
+        responseDescription: 'The counts and the timeline.',
+        responseSchema: { type: 'object',
+          description: '`counts` and `timeline`.' },
+        handler: function (req, res) {
+          log.debug("Entering the management API devices monitor endpoint.");
+          self.sendJson(res, 200, devicesAdmin.monitorView(req, req.query));
+          log.debug("Leaving the management API devices monitor endpoint.");
+        } },
+
+      { method: 'GET', path: BASE + '/device-registration', tag: 'Devices',
+        operationId: 'getDeviceRegistration',
+        summary: 'How a device is registered and recognised here',
+        description: '`enrolment` — each method (`native-sso`, `admin`, ' +
+                     '`portal`, `est`, `scep`) with `built` and `what` — ' +
+                     'and `recognition`, the same for each kind of key; ' +
+                     'the vocabularies (`ownerKinds`, `keyKinds`, ' +
+                     '`keyProofs`, `attestationLevels`, ' +
+                     '`attestationFormats`, `complianceStates`, ' +
+                     '`complianceSources`), `mdmFeed`, and the Devices ' +
+                     '`settings`.',
+        mirrors: 'GET /admin/device-registration',
+        parameters: [],
+        responseDescription: 'The enrolment methods and the settings.',
+        responseSchema: { type: 'object',
+          description: '`enrolment`, `recognition`, the vocabularies, ' +
+                       '`mdmFeed` and `settings`.' },
+        handler: function (req, res) {
+          log.debug("Entering the management API device registration " +
+                    "endpoint.");
+          self.sendJson(res, 200, devicesAdmin.registrationView(req));
+          log.debug("Leaving the management API device registration " +
+                    "endpoint.");
+        } },
 
       // ---------------------------------------------------------------------
       // THE SCHEDULER (#49, 2026-09-22). `schedulerAdmin.schedulerView()` —
@@ -3520,7 +4363,13 @@ class AdminApi {
             description: 'Only identities that authenticated through this ' +
                          'protocol family. The list\'s `protocols` member ' +
                          'says which values there are; it is read off the ' +
-                         'data, so a family nobody has used is not offered.' }
+                         'data, so a family nobody has used is not offered.' },
+          // Read by the handler and published nowhere until #86.
+          { name: 'factor', in: 'query', required: false,
+            schema: { type: 'string',
+                      enum: ['any', 'totp', 'key', 'none', 'unreadable'] },
+            description: 'Only people holding a second factor of this ' +
+                         'kind, as on GET /admin-api/mfa.' }
         ].concat(this.pagingParameters()).concat(this.detailPagingParameters([
           { name: 'sessions',
             description: 'Sign-on session blocks, which default to ' +
@@ -4177,6 +5026,33 @@ class AdminApi {
             },
             responseDescription: 'Whether a factor was turned off.' },
 
+          { action: 'set-aud-sub', operationId: 'setUserAudSub',
+            summary: 'Record the account id a client knows somebody by',
+            description: 'OpenID Connect Enterprise Extensions section 2.3 ' +
+                         '(#148): the ID Tokens issued for this person to ' +
+                         'this client carry it as `aud_sub`. An empty ' +
+                         '`value` removes it. Audited.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                user: { type: 'string',
+                        description:
+                          'The person, as /admin-api/users names them.' },
+                username: { type: 'string',
+                            description: 'Accepted for `user`.' },
+                client: { type: 'string', maxLength: 256,
+                          description: 'The client_id.' },
+                value: { type: 'string', maxLength: 255,
+                         description: 'The aud_sub; empty removes it.' }
+              },
+              required: ['user', 'client'],
+              examples: [{ user: 'alice', client: 'crm',
+                           value: 'account-4711' }],
+              additionalProperties: false
+            },
+            responseDescription: 'What the ID Token now carries.' },
+
           { action: 'set-mail', operationId: 'setUserMail',
             summary: 'Set somebody\'s email address',
             description: 'Writes `mail` on the person\'s entry and marks it ' +
@@ -4204,6 +5080,140 @@ class AdminApi {
               additionalProperties: false
             },
             responseDescription: 'The address now on the entry, verified.' },
+
+          { action: 'set-attribute', operationId: 'setUserAttribute',
+            summary: 'Replace every value of one of somebody\'s attributes',
+            description: 'One attribute of the person\'s directory entry, ' +
+                         'written in place, as an `ldapmodify` of it ' +
+                         'would be. The ' +
+                         'attributes it takes are the person schema ' +
+                         '(person, organizationalPerson, inetOrgPerson and ' +
+                         'the Identity Assurance claims) and the credential ' +
+                         'catalogue, less what is managed: `userPassword` ' +
+                         '(`set-password`), the binary ones, `uid`, `mail` ' +
+                         '(`set-mail`, which verifies it) and whichever ' +
+                         'attribute names the entry. `attributeEditor` in ' +
+                         'GET /admin-api/users?user= lists them, with what ' +
+                         'each holds and the shape its value must have. A ' +
+                         'change is told to Shared Signals as a SCIM or ' +
+                         'LDAP write of it is.\n\n' +
+                         '**`set` REPLACES** every value with `value`; ' +
+                         'an empty `value` removes the attribute, except ' +
+                         '`cn` and `sn`, which every person must hold.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                user: { type: 'string',
+                        description:
+                          'The person, as /admin-api/users names them.' },
+                username: { type: 'string',
+                            description: 'Accepted for `user`.' },
+                attribute: { type: 'string', maxLength: 64,
+                             description: 'The attribute, as ' +
+                               '`attributeEditor.attributes[].name` in GET ' +
+                               '/admin-api/users?user= names it.' },
+                value: { type: 'string', maxLength: 1024,
+                         description: 'The one value it will hold; ' +
+                                      'empty removes it.' }
+              },
+              required: ['user', 'attribute'],
+              examples: [{ user: 'alice', attribute: 'title',
+                          value: 'Principal Engineer' }],
+              additionalProperties: false
+            },
+            responseDescription: 'The attribute and every value it now ' +
+                                 'holds.' },
+
+          { action: 'add-attribute', operationId: 'addUserAttributeValue',
+            summary: 'Add a value to one of somebody\'s multi-valued ' +
+                     'attributes',
+            description: 'One attribute of the person\'s directory entry, ' +
+                         'written in place, as an `ldapmodify` of it ' +
+                         'would be. The ' +
+                         'attributes it takes are the person schema ' +
+                         '(person, organizationalPerson, inetOrgPerson and ' +
+                         'the Identity Assurance claims) and the credential ' +
+                         'catalogue, less what is managed: `userPassword` ' +
+                         '(`set-password`), the binary ones, `uid`, `mail` ' +
+                         '(`set-mail`, which verifies it) and whichever ' +
+                         'attribute names the entry. `attributeEditor` in ' +
+                         'GET /admin-api/users?user= lists them, with what ' +
+                         'each holds and the shape its value must have. A ' +
+                         'change is told to Shared Signals as a SCIM or ' +
+                         'LDAP write of it is.\n\n' +
+                         '**`add`** appends `value`, and is refused on an ' +
+                         'attribute that holds one value (`displayName`, ' +
+                         '`employeeNumber`, `preferredLanguage`, `c`, ' +
+                         '`schacDateOfBirth`, and this service\'s own ' +
+                         'single-fact attributes) and for a value already ' +
+                         'held.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                user: { type: 'string',
+                        description:
+                          'The person, as /admin-api/users names them.' },
+                username: { type: 'string',
+                            description: 'Accepted for `user`.' },
+                attribute: { type: 'string', maxLength: 64,
+                             description: 'The attribute, as ' +
+                               '`attributeEditor.attributes[].name` in GET ' +
+                               '/admin-api/users?user= names it.' },
+                value: { type: 'string', maxLength: 1024,
+                         description: 'The value to add.' }
+              },
+              required: ['user', 'attribute', 'value'],
+              examples: [{ user: 'alice', attribute: 'mobile',
+                          value: '+46 70 000 00 00' }],
+              additionalProperties: false
+            },
+            responseDescription: 'The attribute and every value it now ' +
+                                 'holds.' },
+
+          { action: 'remove-attribute', operationId: 'removeUserAttributeValue',
+            summary: 'Remove one value from one of somebody\'s attributes',
+            description: 'One attribute of the person\'s directory entry, ' +
+                         'written in place, as an `ldapmodify` of it ' +
+                         'would be. The ' +
+                         'attributes it takes are the person schema ' +
+                         '(person, organizationalPerson, inetOrgPerson and ' +
+                         'the Identity Assurance claims) and the credential ' +
+                         'catalogue, less what is managed: `userPassword` ' +
+                         '(`set-password`), the binary ones, `uid`, `mail` ' +
+                         '(`set-mail`, which verifies it) and whichever ' +
+                         'attribute names the entry. `attributeEditor` in ' +
+                         'GET /admin-api/users?user= lists them, with what ' +
+                         'each holds and the shape its value must have. A ' +
+                         'change is told to Shared Signals as a SCIM or ' +
+                         'LDAP write of it is.\n\n' +
+                         '**`remove`** takes off the value named, compared ' +
+                         'without regard to case; it is refused for a value ' +
+                         'not held and for the last value of `cn` or `sn`.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                user: { type: 'string',
+                        description:
+                          'The person, as /admin-api/users names them.' },
+                username: { type: 'string',
+                            description: 'Accepted for `user`.' },
+                attribute: { type: 'string', maxLength: 64,
+                             description: 'The attribute, as ' +
+                               '`attributeEditor.attributes[].name` in GET ' +
+                               '/admin-api/users?user= names it.' },
+                value: { type: 'string', maxLength: 1024,
+                         description: 'The value to remove.' }
+              },
+              required: ['user', 'attribute', 'value'],
+              examples: [{ user: 'alice', attribute: 'mobile',
+                          value: '+46 70 000 00 00' }],
+              additionalProperties: false
+            },
+            responseDescription: 'The attribute and every value it now ' +
+                                 'holds.' },
 
           // -----------------------------------------------------------------
           // WHAT AN ADMINISTRATOR DOES TO SOMEBODY'S CREDENTIALS (2026-09-13),
@@ -4673,7 +5683,8 @@ class AdminApi {
                                 description: 'The verification element ' +
                                              '(Identity Assurance section ' +
                                              '5.1).' },
-                claims: { type: 'array', items: { type: 'string' },
+                claims: { type: 'array', items: { type: 'string',
+                         enum: closed.verifiableClaims },
                           description: 'The claims it covered, from ' +
                                        'claims_in_verified_claims_supported.' }
               },
@@ -5093,11 +6104,10 @@ class AdminApi {
           log.debug("Entering the management API sessions action endpoint.");
           const body = parseBody(req);
           // `by` REACHES THE EVENT and not only the audit row: the session
-          // family spends it as the `via` it hands `endSessionById()`, and
-          // `dropSession()` decides CAEP's `initiating_entity` by looking for
-          // `admin` or `console` in that string. "the management API" alone
-          // reported a person signing themselves out, which is the one
-          // distinction that member exists to draw.
+          // family spends it as the `via` it hands `endSessionById()`, which
+          // is the sentence in CAEP's `reason_admin`. Who ended it — `admin`
+          // here — is stated by `sessionsAction()` itself since #242, rather
+          // than read out of these words.
           const result = adminActions.sessionsAction(self.withAction(req, body),
             { by: 'the management API at /admin-api/sessions' });
           if (!result.ok) {
@@ -5937,6 +6947,40 @@ class AdminApi {
           log.debug("Leaving the management API directory PEPs endpoint.");
         } },
 
+      // THE DEVICE REGISTER AS THE DIRECTORY HOLDS IT (#164, #218): the
+      // ninth, drawn by `ldap/ldap_server.js` like the other eight.
+      { method: 'GET', path: BASE + '/ldap/devices', tag: 'LDAP',
+        operationId: 'getDirectoryDevices',
+        summary: 'The device register as the directory holds it, and its ' +
+                 'schema',
+        description: 'One entry per device under `ou=devices`, every ' +
+                     'attribute on it, and the SCHEMA `common/devices.ts` ' +
+                     'publishes. A key, the last compliance and status ' +
+                     'change and the enrolment are ONE JSON VALUE each. ' +
+                     '`stsDeviceSecretHash` is withheld, as from every ' +
+                     'LDAP read; every other value is shown as the ' +
+                     'directory holds it. Read-only: the register is ' +
+                     'edited through `/admin-api/devices`.',
+        mirrors: 'GET /admin/ldap/devices',
+        parameters: [
+          { name: 'q', in: 'query', required: false, schema: { type: 'string' },
+            description: 'Substring of the DN or of any value but the ' +
+                         'withheld one.' }
+        ].concat(this.pagingParameters()),
+        responseDescription: 'The page of device entries and the schema.',
+        responseSchema: { type: 'object',
+          description: '`baseDn`, `container`, `count`, `matched`, `shown`, ' +
+                       '`filter`, the paging, `sourceOfTruth`, `schema` and ' +
+                       '`entries`.' },
+        handler: function (req, res) {
+          log.debug("Entering the management API directory devices " +
+                    "endpoint.");
+          self.sendJson(res, 200, adminViews.directoryPageJson('devices',
+                                                               req));
+          log.debug("Leaving the management API directory devices " +
+                    "endpoint.");
+        } },
+
       // LAST OF THE EIGHT, and it is the one that answers about the SOCKETS
       // rather than about what is in the store. It is deliberately not `GET
       // /admin-api/ldap`, which is the SETTINGS: that one says what the ports
@@ -6260,9 +7304,11 @@ class AdminApi {
             description: 'Substring of the person\'s name, case-insensitive.' },
           { name: 'factor', in: 'query', required: false,
             schema: { type: 'string',
-                      enum: ['any', 'totp', 'key', 'none'] },
+                      enum: ['any', 'totp', 'key', 'none', 'unreadable'] },
             description: '`any` is anybody holding a second factor of either ' +
-                         'kind; `none` is the complement of it.' }
+                         'kind; `none` is the complement of it; ' +
+                         '`unreadable` is a factor whose sealed secret this ' +
+                         'service can no longer open.' }
         ].concat(this.pagingParameters()),
         responseDescription:
           'The roster, the counts, and the RFC 6238 settings.',
@@ -6412,11 +7458,11 @@ class AdminApi {
         mirrors: 'GET /admin/tokens',
         parameters: [
           { name: 'family', in: 'query', required: false,
-            schema: { type: 'string' },
+            schema: { type: 'string', enum: closed.tokenFamilies },
             description: 'One protocol family. The reply\'s `families` ' +
                          'member lists them with the kinds in each.' },
           { name: 'kind', in: 'query', required: false,
-            schema: { type: 'string' },
+            schema: { type: 'string', enum: closed.tokenKinds },
             description: 'One kind. ANDed with `family`, so a kind from ' +
                          'another family matches nothing — which is what an ' +
                          'empty list then means.\n\n**EVERY FILTER HERE ' +
@@ -6712,8 +7758,7 @@ class AdminApi {
             requestBody: {
               type: 'object',
               properties: {
-                kind: { type: 'string',
-                        enum: ['access_token', 'id_token', 'refresh_token'] }
+                kind: { type: 'string', enum: closed.revocableKinds }
               },
               required: ['kind'],
               examples: [{ kind: 'access_token' }],
@@ -6866,16 +7911,27 @@ class AdminApi {
 
       { method: 'POST', route: BASE + '/realms/:action', tag: 'Trust realms',
         mirrors: 'POST /admin/realms',
-        handler: function (req, res) {
+        handler: function (req, res, next) {
           log.debug("Entering the management API trust realms action " +
                     "endpoint.");
           const body = parseBody(req);
-          const result = adminActions.realmsAction(self.withAction(req, body));
-          if (!result.ok) {
-            errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-API-0037');
-          }
-          self.sendJson(res, result.ok ? 200 : 400, result);
-          log.debug("Leaving the management API trust realms action endpoint.");
+          // A removal answers a promise (#232: it retires the realm first);
+          // every other action answers at once. Both are resolved here.
+          Promise.resolve(adminActions.realmsAction(self.withAction(req,
+                                                                    body)))
+            .then(function (result) {
+              if (!result.ok) {
+                errorCodes.mark(res, errorCodes.codeOf(result) ||
+                                     'STS-API-0037');
+              }
+              self.sendJson(res, result.ok ? 200 : 400, result);
+              log.debug("Leaving the management API trust realms action " +
+                        "endpoint.");
+            }).catch(function (e) {
+              log.debug("Caught in the management API trust realms action " +
+                        "endpoint: " + ((e && e.message) || e));
+              next(e);
+            });
         },
         actions: [
           { action: 'create', operationId: 'createRealm',
@@ -8351,7 +9407,7 @@ class AdminApi {
               type: 'object',
               properties: {
                 id: { type: 'string', description: 'The relationship.' },
-                field: { type: 'string',
+                field: { type: 'string', enum: closed.federationSetFields,
                          description: 'The attribute name, e.g. `fedSsoUrl`, ' +
                                       '`fedSigningCertificate`, ' +
                                       '`fedClientId`.' },
@@ -8398,7 +9454,7 @@ class AdminApi {
               properties: {
                 id: { type: 'string', description: 'The relationship.' },
                 field: { type: 'string',
-                         enum: ['fedAttributeMap', 'fedRelease', 'description'],
+                         enum: closed.federationMultiFields,
                          description: 'Which list.' },
                 value: { type: 'string', description: 'The value to add.' }
               },
@@ -8421,7 +9477,7 @@ class AdminApi {
               properties: {
                 id: { type: 'string', description: 'The relationship.' },
                 field: { type: 'string',
-                         enum: ['fedAttributeMap', 'fedRelease', 'description'],
+                         enum: closed.federationMultiFields,
                          description: 'Which list.' },
                 value: { type: 'string',
                          description:
@@ -9331,11 +10387,7 @@ class AdminApi {
                          'case-insensitive. Ignored when `application` is ' +
                          'given.' },
           { name: 'kind', in: 'query', required: false,
-            schema: { type: 'string',
-                      enum: ['oauth2-client', 'oidc-relying-party',
-                             'saml2-service-provider', 'saml11-relying-party',
-                             'wsfed-relying-party', 'wstrust-relying-party',
-                             'oid4vp-verifier', 'kerberos-service'] },
+            schema: { type: 'string', enum: closed.applicationKinds },
             description: 'One kind. A record carrying SEVERAL matches on any ' +
                          'of them — an OAuth client that asked for the ' +
                          'openid scope is also a relying party — so these ' +
@@ -9361,7 +10413,7 @@ class AdminApi {
       // WHAT A CREATE MAY SAY, read off the service. Rule 7 asks for an
       // operation per console page and this is /admin/applications/new's — but
       // it earns its place beyond the parity, because what it answers is the
-      // two CLOSED VOCABULARIES `create` validates against: the eight kinds and
+      // two CLOSED VOCABULARIES `create` validates against: the kinds and
       // the fourteen protocol families, each with what it means. A caller that
       // reads this cannot construct a create the service will refuse, which is
       // the property editableAttributes() gives the console's two selects and
@@ -9498,8 +10550,10 @@ class AdminApi {
                                            'here.' },
                 name: { type: 'string',
                         description: 'Optional friendly name.' },
-                kind: { type: 'string',
-                        description: 'Optional, one of the eight. It is a ' +
+                kind: { type: 'string', enum: closed.applicationKinds,
+                        description: 'Optional, one of the kinds GET ' +
+                                     '/admin-api/applications/new lists. It ' +
+                                     'is a ' +
                                      'claim about what this application IS, ' +
                                      'which is why a value the registry does ' +
                                      'not know is refused rather than ' +
@@ -9637,6 +10691,7 @@ class AdminApi {
                                description: 'The identifier, exactly as the ' +
                                             'registry holds it.' },
                 attribute: { type: 'string',
+                             enum: closed.applicationSetAttributes,
                              description: 'One of the editable single-valued ' +
                                           'attributes. GET ' +
                                           '/admin/ldap/applications ' +
@@ -9678,7 +10733,8 @@ class AdminApi {
               type: 'object',
               properties: {
                 application: { type: 'string' },
-                attribute: { type: 'string' },
+                attribute: { type: 'string',
+                             enum: closed.applicationMultiAttributes },
                 value: { type: 'string' }
               },
               required: ['application', 'attribute', 'value'],
@@ -9701,7 +10757,8 @@ class AdminApi {
               type: 'object',
               properties: {
                 application: { type: 'string' },
-                attribute: { type: 'string' },
+                attribute: { type: 'string',
+                             enum: closed.applicationMultiAttributes },
                 value: { type: 'string' }
               },
               required: ['application', 'attribute', 'value'],
@@ -10847,7 +11904,7 @@ class AdminApi {
                                        'AGAINST THE DOCUMENT IT WAS READ ' +
                                        'FROM: remove rule 0 and every path ' +
                                        'naming rule 1 now means rule 0.' },
-                effect: { type: 'string',
+                effect: { type: 'string', enum: closed.xacmlEffects,
                           description: 'Permit or Deny. Defaults to Permit.' }
               },
               required: ['policy'],
@@ -11157,7 +12214,7 @@ class AdminApi {
                                        'naming rule 1 now means rule 0.' },
                 id: { type: 'string',
                           description: 'A new RuleId.' },
-                effect: { type: 'string',
+                effect: { type: 'string', enum: closed.xacmlEffects,
                           description: 'Permit or Deny.' },
                 description: { type: 'string',
                           description: 'The rule\'s own description.' }
@@ -11548,7 +12605,7 @@ class AdminApi {
                                        'AGAINST THE DOCUMENT IT WAS READ ' +
                                        'FROM: remove rule 0 and every path ' +
                                        'naming rule 1 now means rule 0.' },
-                on: { type: 'string',
+                on: { type: 'string', enum: closed.xacmlEffects,
                           description: 'Permit or Deny — the effect this ' +
                                        'fires on. Defaults to Permit. An ' +
                                        'obligation attached to the wrong ' +
@@ -11584,7 +12641,7 @@ class AdminApi {
                                        'AGAINST THE DOCUMENT IT WAS READ ' +
                                        'FROM: remove rule 0 and every path ' +
                                        'naming rule 1 now means rule 0.' },
-                on: { type: 'string',
+                on: { type: 'string', enum: closed.xacmlEffects,
                           description: 'Permit or Deny. Defaults to Permit.' }
               },
               required: ['policy'],
@@ -11618,7 +12675,7 @@ class AdminApi {
                                        'AGAINST THE DOCUMENT IT WAS READ ' +
                                        'FROM: remove rule 0 and every path ' +
                                        'naming rule 1 now means rule 0.' },
-                on: { type: 'string',
+                on: { type: 'string', enum: closed.xacmlEffects,
                           description: 'Permit or Deny. Defaults to Permit.' }
               },
               required: ['policy', 'path'],
@@ -11650,7 +12707,7 @@ class AdminApi {
                                        'AGAINST THE DOCUMENT IT WAS READ ' +
                                        'FROM: remove rule 0 and every path ' +
                                        'naming rule 1 now means rule 0.' },
-                on: { type: 'string',
+                on: { type: 'string', enum: closed.xacmlEffects,
                           description: 'Permit or Deny. Defaults to Permit.' }
               },
               required: ['policy'],
@@ -11687,7 +12744,7 @@ class AdminApi {
                 id: { type: 'string',
                           description:
                             'A new obligation or advice identifier.' },
-                on: { type: 'string',
+                on: { type: 'string', enum: closed.xacmlEffects,
                           description:
                             'Permit or Deny — the effect it fires on.' }
               },
@@ -12870,15 +13927,12 @@ class AdminApi {
                          'person AND the session, because the person is not ' +
                          'revoked and one session of theirs is — and ' +
                          'transmits it on every stream that both delivers ' +
-                         'the type and covers that subject.\n\nFIVE OF THE ' +
-                         'EIGHT ARE ONLY EVER PRODUCED THIS WAY. No device ' +
-                         'reports compliance to this service and no risk ' +
-                         'engine talks to it, so `credential-change`, ' +
-                         '`assurance-level-change`, ' +
-                         '`device-compliance-change`, `risk-level-change` ' +
-                         'and `token-claims-change` have no act here that ' +
-                         'could cause them. The other three fire on their ' +
-                         'own when `caep.autoEmit` is on.\n\nA TYPE NO ' +
+                         'the type and covers that subject.\n\nEVERY ONE ' +
+                         'OF THE EIGHT ALSO FIRES ON ITS OWN when ' +
+                         '`caep.autoEmit` is on — `device-compliance-change` ' +
+                         'since #164, from the device register — so this ' +
+                         'is for an event on demand, about a session and ' +
+                         'with a payload you chose.\n\nA TYPE NO ' +
                          'STREAM TAKES IS NOT AN ERROR. The session\'s ' +
                          'state is still updated and the reply says ' +
                          'nothing was sent, because "the event happened and ' +
@@ -12896,6 +13950,7 @@ class AdminApi {
                   description: 'The event type: a short name such as ' +
                                '`session-revoked`, or the whole URI.' },
                 initiating_entity: { type: 'string',
+                                     enum: closed.caepInitiatingEntities,
                   description: 'admin | user | policy | system. It is the ' +
                                'member that lets a receiver tell "an ' +
                                'administrator revoked this" from "a risk ' +
@@ -13202,9 +14257,12 @@ class AdminApi {
 
           { action: 'reset-account', operationId: 'resetRiscAccount',
             summary: 'Put one account\'s RISC state back to where it started',
-            description: 'Clears the lifecycle, the opt-out state, the ' +
+            description: 'Clears the lifecycle, the ' +
                          'credential standing, the identifier history and ' +
-                         'every counter on one row, keeping the row.\n\nIT ' +
+                         'every counter on one row, keeping the row. The ' +
+                         'opt state (RISC section 2.8) is KEPT: it is the ' +
+                         'account holder\'s choice, and a pending opt-out ' +
+                         'still becomes effective on schedule.\n\nIT ' +
                          'DISABLES AND DELETES NOBODY. This register is a ' +
                          'record of what has been SAID about an account; ' +
                          'resetting it forgets the record. The directory ' +
@@ -13228,7 +14286,10 @@ class AdminApi {
             summary: 'Drop every row in the RISC account register',
             description: 'Forgets what has been said about every account. ' +
                          'Nobody is disabled, nobody is deleted and no ' +
-                         'directory entry is touched.\n\nIt is worth knowing ' +
+                         'directory entry is touched. A row whose holder ' +
+                         'chose anything but opt-in is re-created blank with ' +
+                         'that choice kept (RISC section 2.8).\n\nIt is ' +
+                         'worth knowing ' +
                          'what this throws away: a row for an account that ' +
                          'has been PURGED is the only evidence anywhere in ' +
                          'this service that the account existed and that ' +
@@ -13549,7 +14610,7 @@ class AdminApi {
             requestBody: {
               type: 'object',
               properties: {
-                keyAlg: { type: 'string',
+                keyAlg: { type: 'string', enum: closed.pkiKeyAlgorithms,
                           description: 'One of the ids in `keyAlgorithms` on ' +
                                        'GET /admin-api/pki: rsa-2048, ' +
                                        'rsa-3072, rsa-4096, ec-p256, ' +
@@ -13560,7 +14621,20 @@ class AdminApi {
                                        'and that is what a client library ' +
                                        'has to be able to verify. Defaults ' +
                                        'to `pki.keyAlgorithm`.' },
+                altKeyAlg: { type: 'string',
+                             enum: closed.pkiAlternativeKeyAlgorithms,
+                             description: 'The post-quantum key every ' +
+                                          'authority built here holds ' +
+                                          'beside its classical one ' +
+                                          '(ITU-T X.509 clause 9.8, #68): ' +
+                                          'one of ' +
+                                          '`alternativeKeyAlgorithms` on ' +
+                                          'GET /admin-api/pki, or `none` ' +
+                                          'for a classical-only authority. ' +
+                                          'Defaults to ' +
+                                          '`pki.alternativeKeyAlgorithm`.' },
                 signatureAlg: { type: 'string',
+                                enum: closed.pkiSignatureAlgorithms,
                                 description: 'One of the ids in ' +
                                              '`signatureAlgorithms`. OMIT IT ' +
                                              'for "the right one for the key ' +
@@ -13581,7 +14655,7 @@ class AdminApi {
                                              'when no common name is given. ' +
                                              'Defaults to ' +
                                              '`pki.organisation`.' },
-                country: { type: 'string',
+                country: { type: 'string', enum: closed.countries,
                            description: 'The C=, two letters, optional. It ' +
                                         'is encoded as a PrintableString, ' +
                                         'which is interoperability rather ' +
@@ -13785,7 +14859,7 @@ class AdminApi {
                                            'either way, because a CN is a ' +
                                            'display name and a SAN is the ' +
                                            'machine-readable one.' },
-                keyAlg: { type: 'string',
+                keyAlg: { type: 'string', enum: closed.pkiKeyAlgorithms,
                           description: 'The LEAF\'s key algorithm. Defaults ' +
                                        'to the Issuing CA\'s, which is the ' +
                                        'chain a client library is least ' +
@@ -14237,9 +15311,21 @@ class AdminApi {
             requestBody: {
               type: 'object',
               properties: {
-                keyAlg: { type: 'string',
+                keyAlg: { type: 'string', enum: closed.pkiKeyAlgorithms,
                           description: 'One of the ids in `keyAlgorithms`. ' +
                                        'Defaults to `pki.keyAlgorithm`.' },
+                altKeyAlg: { type: 'string',
+                             enum: closed.pkiAlternativeKeyAlgorithms,
+                             description: 'The post-quantum key every ' +
+                                          'authority built here holds ' +
+                                          'beside its classical one ' +
+                                          '(ITU-T X.509 clause 9.8, #68): ' +
+                                          'one of ' +
+                                          '`alternativeKeyAlgorithms` on ' +
+                                          'GET /admin-api/pki, or `none` ' +
+                                          'for a classical-only authority. ' +
+                                          'Defaults to ' +
+                                          '`pki.alternativeKeyAlgorithm`.' },
                 commonName: { type: 'string',
                               description: 'The Root’s CN. Defaults to the ' +
                                            'organisation followed by "Root ' +
@@ -14278,9 +15364,21 @@ class AdminApi {
                          description:
                            'A realm id, `*process`, or omitted for ' +
                                       'the realm this request arrived in.' },
-                keyAlg: { type: 'string',
+                keyAlg: { type: 'string', enum: closed.pkiKeyAlgorithms,
                           description: 'The key algorithm every CA in this ' +
                                        'branch is generated with.' },
+                altKeyAlg: { type: 'string',
+                             enum: closed.pkiAlternativeKeyAlgorithms,
+                             description: 'The post-quantum key every ' +
+                                          'authority built here holds ' +
+                                          'beside its classical one ' +
+                                          '(ITU-T X.509 clause 9.8, #68): ' +
+                                          'one of ' +
+                                          '`alternativeKeyAlgorithms` on ' +
+                                          'GET /admin-api/pki, or `none` ' +
+                                          'for a classical-only authority. ' +
+                                          'Defaults to ' +
+                                          '`pki.alternativeKeyAlgorithm`.' },
                 replaceImported: { type: 'boolean',
                                    description:
                                      'Replace an imported authority ' +
@@ -14308,7 +15406,7 @@ class AdminApi {
               properties: {
                 scope: { type: 'string',
                          description: 'A realm id or `*process`.' },
-                useCase: { type: 'string',
+                useCase: { type: 'string', enum: closed.pkiUseCases,
                            description: 'One of `jose`, `xml`, `assertions`, ' +
                                         '`spiffe`, `pep-tls` (a realm) or ' +
                                         '`tls` (the process). Asking for one ' +
@@ -14341,7 +15439,7 @@ class AdminApi {
               properties: {
                 scope: { type: 'string',
                          description: 'A realm id or `*process`.' },
-                useCase: { type: 'string',
+                useCase: { type: 'string', enum: closed.pkiUseCases,
                            description: 'The use case to renew.' }
               },
               required: ['useCase'],
@@ -14378,7 +15476,7 @@ class AdminApi {
                 scope: { type: 'string',
                          description: '`*service` for the Root, otherwise a ' +
                                       'realm id or `*process`.' },
-                useCase: { type: 'string',
+                useCase: { type: 'string', enum: closed.pkiImportUseCases,
                            description: '`root`, or one of the use cases.' },
                 certificatePem: { type: 'string',
                                   description: 'The CA certificate.' },
@@ -14415,7 +15513,8 @@ class AdminApi {
               properties: {
                 scope: { type: 'string',
                          description: 'A realm id or `*process`.' },
-                useCase: { type: 'string', description: 'The use case.' },
+                useCase: { type: 'string', enum: closed.pkiUseCases,
+                           description: 'The use case.' },
                 slot: { type: 'string',
                         description: 'The algorithm, as it appears in that ' +
                                      'use case’s certified list — `RS256`, ' +
@@ -15371,13 +16470,11 @@ class AdminApi {
         parameters: [
           { name: 'category', in: 'query', required: false,
             schema: { type: 'string',
-                      enum: ['authentication', 'session', 'directory', 'admin',
-                             'api', 'application', 'protocol', 'spiffe',
-                             'signals', 'authorization', 'service'] },
+                      enum: closed.auditCategories },
             description: 'One of the categories. The reply\'s `categories` ' +
                          'member describes each of them.' },
           { name: 'action', in: 'query', required: false,
-            schema: { type: 'string' },
+            schema: { type: 'string', enum: closed.auditActions },
             description: 'One action. ANDed with `category`, so an action ' +
                          'from another category matches nothing — which is ' +
                          'what an empty list then means. ' +
@@ -15385,7 +16482,7 @@ class AdminApi {
                          'lists every action with the category it belongs ' +
                          'to.' },
           { name: 'outcome', in: 'query', required: false,
-            schema: { type: 'string', enum: ['success', 'refused', 'error'] },
+            schema: { type: 'string', enum: closed.auditOutcomes },
             description: 'Three rather than two on purpose: a `refused` is ' +
                          'this service working correctly and saying no, an ' +
                          '`error` is this service failing, and collapsing ' +
@@ -15534,17 +16631,16 @@ class AdminApi {
             description: 'Substring of the issuer, the `jti` or `ID`, the ' +
                          'client or the subject, case-insensitive.' },
           { name: 'format', in: 'query', required: false,
-            schema: { type: 'string', enum: ['jwt', 'saml'] },
+            schema: { type: 'string', enum: closed.usedAssertionFormats },
             description: '`jwt` (RFC 7523) or `saml` (RFC 7522).' },
           { name: 'use', in: 'query', required: false,
             schema: { type: 'string',
-                      enum: ['client-authentication', 'authorization-grant',
-                             'request-object'] },
+                      enum: closed.usedAssertionUses },
             description: 'What the assertion was accepted AS — ' +
                          '`request-object` is an RFC 9101 request object ' +
                          'whose `jti` was spent (#35).' },
           { name: 'state', in: 'query', required: false,
-            schema: { type: 'string', enum: ['reserved', 'spent'] },
+            schema: { type: 'string', enum: closed.usedAssertionStates },
             description: '`reserved` (its token request has not finished) or ' +
                          '`spent` (tokens were issued).' }
         ].concat(this.pagingParameters()),
@@ -15639,21 +16735,18 @@ class AdminApi {
         parameters: [
           { name: 'type', in: 'query', required: false,
             schema: { type: 'string',
-                      enum: ['krb5-s4u2self', 'krb5-s4u2proxy-classic',
-                             'krb5-s4u2proxy-rbcd', 'krb5-forwarded',
-                             'wstrust-onbehalfof', 'wstrust-actas',
-                             'oauth-impersonation', 'oauth-delegation'] },
+                      enum: closed.delegationTypes },
             description: 'One mechanism. The reply\'s `types` member ' +
                          'describes each of them, with the specification it ' +
                          'comes from and whether this service polices it.' },
           { name: 'mode', in: 'query', required: false,
-            schema: { type: 'string', enum: ['impersonation', 'delegation'] },
+            schema: { type: 'string', enum: closed.delegationModes },
             description: 'The protocol-independent axis: whether what came ' +
                          'out carries the chain. ' +
                          'ANDed with `type`, so a mode ' +
                          'that does not match the mechanism matches nothing.' },
           { name: 'outcome', in: 'query', required: false,
-            schema: { type: 'string', enum: ['issued', 'refused'] },
+            schema: { type: 'string', enum: closed.delegationOutcomes },
             description: 'Two rather than the audit log\'s three: a ' +
                          'delegation is DECIDED rather than ' +
                          'performed, so there is no third ' +
@@ -16297,7 +17390,7 @@ class AdminApi {
             description: 'Whether the subject is a person or a client ' +
                          'authenticating as itself. Defaults to `user`.' },
           { name: 'kind', in: 'query',
-            schema: { type: 'string' },
+            schema: { type: 'string', enum: closed.issuanceKinds },
             description: 'Which issuance. It becomes the XACML `action-id`, ' +
                          'so a policy may permit an access token and refuse ' +
                          'a refresh token. `GET ' +
@@ -17165,8 +18258,10 @@ class AdminApi {
                          'id, the hint or any selector, case-insensitive.' },
           { name: 'origin', in: 'query', required: false,
             schema: { type: 'string',
+                      // `unstated` is what an entry whose origin was never
+                      // recorded carries (`spiffe/spiffe_registry.ts`).
                       enum: ['seed', 'console', 'api', 'grpc', 'auto',
-                             'ldap'] },
+                             'ldap', 'unstated'] },
             description: 'How the entry got here. `auto` is one this service ' +
                          'INVENTED for a workload that matched nothing, ' +
                          'which is the setting `spiffe.autoCreateEntries` — ' +
@@ -17305,6 +18400,11 @@ class AdminApi {
                                 'federatesWith', 'x509SvidTtl', 'jwtSvidTtl',
                                 'hint', 'expiresAt', 'admin', 'downstream',
                                 'storeSvid'],
+                         // The handler tells a field that records what
+                         // HAPPENED from one that does not exist, and a
+                         // caller needs to know which (#86, see
+                         // REFUSED_BY_HANDLER).
+                         'x-refused-by-handler': true,
                          description: 'Which field. Anything else is refused ' +
                                       'naming these.' },
                 value: { type: 'string',
@@ -17585,7 +18685,12 @@ class AdminApi {
       ...loadGrantManagementApi().ROUTES,
       // CLAIMS PROVIDERS (#147): /admin/claim-providers' twin, in the same
       // shape.
-      ...loadClaimsProvidersApi().ROUTES
+      ...loadClaimsProvidersApi().ROUTES,
+      // PROVIDER COMMANDS AND OUTBOUND DELIVERIES (#151): /admin/commands'
+      // and /admin/deliveries' twins, in the same shape.
+      ...loadProviderCommandsApi().ROUTES,
+      // FOREIGN SSF TRANSMITTERS (#153): /admin/ssf/transmitters' twin.
+      ...loadSsfTransmittersApi().ROUTES
     ];
     log.debug("Leaving AdminApi.buildRoutes().");
     return ROUTES;
@@ -17851,6 +18956,17 @@ class AdminApi {
     return accepted;
   }
 
+  // Whether this request is the MDM feed (#164 phase 3), `POST
+  // /admin-api/device-compliance` — `req.path` is below BASE inside the gate.
+  isDeviceComplianceFeed(req) {
+    const { log } = this.deps;
+    log.debug("Entering AdminApi.isDeviceComplianceFeed().");
+    const path = String(req.path || '').replace(/\/+$/, '');
+    log.debug("Leaving AdminApi.isDeviceComplianceFeed().");
+    return req.method === 'POST' && (path === DEVICE_COMPLIANCE_PATH ||
+                                     path === BASE + DEVICE_COMPLIANCE_PATH);
+  }
+
   // The operation a request is, as the CONSOLE path it mirrors and the action
   // it names: `/admin-api/pki/build-root` is a POST of `build-root` to
   // `/admin/pki`, `/admin-api/config/set-many` one of `set-many` to
@@ -17900,9 +19016,12 @@ class AdminApi {
     const { log, realms, scopePolicy } = this.deps;
     log.debug("Entering AdminApi.declaredAdminScopes().");
     const clientId = String(claims.client_id || '');
+    // The device compliance feed's scope (#164) is held to the same rule.
+    const held = scopePolicy.ADMIN_SCOPES
+      .concat([scopePolicy.DEVICE_COMPLIANCE_SCOPE]);
     const undeclared = realms.run(realms.get(tokenRealm), function () {
       return scopes.filter(function (one) {
-        return scopePolicy.ADMIN_SCOPES.indexOf(one) >= 0 &&
+        return held.indexOf(one) >= 0 &&
                !scopePolicy.declares(clientId, one);
       });
     });
@@ -17987,19 +19106,25 @@ class AdminApi {
     log.debug("Entering AdminApi.registerGate().");
     app.use(BASE, function (req, res, next) {
       if (config.value('adminApi.authRequired')) {
-        const scopesWanted =
-          req.method === 'GET' ? 'admin:read' : 'admin:write';
+        // THE ONE OPERATION THAT IS NOT AN ADMINISTRATOR'S (#164 phase 3):
+        // the MDM feed takes `device:compliance` and its role, and nothing
+        // else here takes that scope — see DevicesAdmin.mdmFeed().
+        const mdmFeed = self.isDeviceComplianceFeed(req);
+        const scopesWanted = mdmFeed ? 'device:compliance'
+          : (req.method === 'GET' ? 'admin:read' : 'admin:write');
         const presentation = self.presentedTokenOf(req);
         const presented = presentation.token;
         if (!presented) {
-          errorCodes.mark(res, 'STS-API-0001');
           res.set('WWW-Authenticate',
                   'Bearer realm="' + BASE +
-                  '", scope="admin:read admin:write"');
+                  '", scope="' + (mdmFeed ? scopesWanted
+                                          : 'admin:read admin:write') + '"');
+          errorCodes.mark(res, 'STS-API-0001');
           return self.sendJson(res, 401, { error: 'unauthorized', errors: [
             'This API requires an OAuth 2.0 access token. Ask ' +
             '/oauth2/token for one with `grant_type=client_credentials`, ' +
-            '`scope=admin:read admin:write` and `resource=' +
+            '`scope=' + (mdmFeed ? scopesWanted : 'admin:read admin:write') +
+            '` and `resource=' +
             self.wantedAudience(req) +
             '`, then send it as `Authorization: Bearer`. ' +
             'adminApi.authRequired turns this off.'] });
@@ -18248,8 +19373,7 @@ class AdminApi {
         // does not need is dropped and the call goes on.
         const declared = self.declaredAdminScopes(claims, tokenRealm, carried);
         const scopes = declared.kept;
-        const neededScope = req.method === 'GET' ? 'admin:read' :
-          'admin:write';
+        const neededScope = scopesWanted;
         if (declared.undeclared.indexOf(neededScope) >= 0) {
           errorCodes.mark(res, 'STS-API-0123');
           return self.sendJson(res, 403, { error: 'forbidden', errors: [
@@ -18257,10 +19381,11 @@ class AdminApi {
             'client it was issued to, ' +
             JSON.stringify(claims.client_id || null) + ', does not declare ' +
             'it: a token is honoured here only while its client\'s ' +
-            'oauthAllowedScope lists the admin scope it uses. The seeded ' +
-            'sts-management-api declares both. Declare it on the ' +
-            'application (POST /admin-api/applications/add) or use that ' +
-            'client.'] });
+            'oauthAllowedScope lists the scope it uses. ' + (mdmFeed
+              ? 'Declare device:compliance on the MDM feed\'s application.'
+              : 'The seeded sts-management-api declares both admin ' +
+                'scopes. Declare it on the application (POST ' +
+                '/admin-api/applications/add) or use that client.')] });
         }
         if (tokenRealm !== realms.DEFAULT_ID) {
           const realmRefusal = self.realmTokenRefusal(claims, req);
@@ -18289,7 +19414,8 @@ class AdminApi {
           // encoding "a read needs ADMIN_READ and a write needs ADMIN_WRITE" in
           // XACML. Nothing in this file decides the outcome; it decides the
           // question.
-          requiredRoles: [req.method === 'GET' ? 'ADMIN_READ' : 'ADMIN_WRITE'],
+          requiredRoles: [mdmFeed ? 'DEVICE_COMPLIANCE'
+            : (req.method === 'GET' ? 'ADMIN_READ' : 'ADMIN_WRITE')],
           subject: { name: who, authenticated: true, roles: held,
                      sessionId: null },
           context: { method: req.method, path: req.originalUrl || req.url }
@@ -18303,12 +19429,18 @@ class AdminApi {
             'The access policy refused this request. ' + policy.why +
             ' This token carries the scope(s) ' +
             (scopes.length ? scopes.join(', ') : '(none)') + ', which is the ' +
-            'role(s) ' + (held.length ? held.join(', ') : '(none)') + '. A ' +
-            (req.method === 'GET' ? 'read needs admin:read (ADMIN_READ)'
-                                  : 'write needs admin:write (ADMIN_WRITE)') +
+            'role(s) ' + (held.length ? held.join(', ') : '(none)') + '. ' +
+            (mdmFeed ? 'The device compliance feed needs device:compliance ' +
+                       '(DEVICE_COMPLIANCE), and only that'
+              : 'A ' + (req.method === 'GET'
+                ? 'read needs admin:read (ADMIN_READ)'
+                : 'write needs admin:write (ADMIN_WRITE)')) +
             '. The document is on /admin/xacml and xacml.enforceAccess turns ' +
             'the layer off.'] });
         }
+        // WHO CALLED, for an operation that records its caller (#164: the
+        // MDM feed's reports name the feed's client).
+        res.locals.apiClientId = String(claims.client_id || '');
         return next();
       }
       if (!mode.gatesManagementApi()) {
@@ -18447,12 +19579,25 @@ class AdminApi {
     // OpenAPI document is built from, so an operation cannot acquire a schema
     // without acquiring its enforcement.
     //
-    // A GET is registered exactly as before. Nothing about a query string goes
-    // through here — that is `common/validation.js`'s guard and the per-page
-    // schemas.
+    // A query string's SHAPE is `common/validation.js`'s guard and the
+    // per-page schemas; what goes through here is only its closed sets — a
+    // parameter whose declared `enum` does not hold the value (#86).
     // -------------------------------------------------------------------------
     ROUTES.forEach(function (entry) {
       const path = entry.route || entry.path;
+      // A query parameter outside its declared set is refused before the
+      // handler runs, on a GET and a POST alike (#86).
+      const queryRefused = function (req, res) {
+        const asked = self.checkQueryEnums(entry, req);
+        if (asked.ok) {
+          return false;
+        }
+        log.debug("The management API refused a query parameter against " +
+                  (entry.operationId || path) + "'s declared set.");
+        errorCodes.mark(res, 'STS-API-0124');
+        self.sendJson(res, 400, { ok: false, errors: [asked.sentence] });
+        return true;
+      };
       if (entry.method === 'GET') {
         // A GET that `mirrors` exactly one Protocols page answers that page's
         // endpoints as well, which is rule 7 for the section `respond()` draws
@@ -18464,16 +19609,27 @@ class AdminApi {
                      protocolEndpoints.pages().indexOf(mirrored[1]) >= 0 ?
                      mirrored[1] : null;
         if (!page) {
-          app.get(path, entry.handler);
+          app.get(path, function (req, res) {
+            if (queryRefused(req, res)) {
+              return undefined;
+            }
+            return entry.handler(req, res);
+          });
           return;
         }
         app.get(path, function (req, res) {
+          if (queryRefused(req, res)) {
+            return undefined;
+          }
           res.locals.protocolEndpoints = protocolEndpoints.forPage(req, page);
           return entry.handler(req, res);
         });
         return;
       }
       app.post(path, function (req, res) {
+        if (queryRefused(req, res)) {
+          return undefined;
+        }
         // The route this request matched, so the wrapper can find its schema
         // without re-deriving the path from what express matched.
         req.__adminApiRoute = path;
@@ -18537,6 +19693,9 @@ const APP_VERSION = version.load();
 const VERSION = APP_VERSION.version;
 
 const BASE = '/admin-api';
+// The device compliance feed's path below BASE (#164 phase 3): the one
+// operation whose token carries device:compliance rather than an admin scope.
+const DEVICE_COMPLIANCE_PATH = '/device-compliance';
 // THE ACCESS GATE, armed by `xacml/xacml_access_pep.ts` at 23c. A LEAF
 // (rule 3): with no decider installed `check()` answers "allowed", so a
 // process without the XACML family behaves exactly as this file did before.

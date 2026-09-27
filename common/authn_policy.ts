@@ -256,7 +256,26 @@ const FIELDS: PolicyField[] = ([
           'one (or their entry says stsMfaRequired). `always`: everybody in ' +
           'this realm is, and somebody who holds none is sent to enrol one ' +
           'at their next sign-in. This replaced authn.mfaRequired. There is ' +
-          'no "never": a held factor is always asked for.' }
+          'no "never": a held factor is always asked for.' },
+  // #246 (rcbj, 2026-09-26): whether the people who can change everything
+  // must use a second factor "will vary by organization", so it is this
+  // policy's to say, in the default realm and inherited. `offer` is the
+  // default FOR NOW, at rcbj's word: an administrator with no second factor
+  // is shown the set-up step with an Ignore button, every sign-in.
+  { key: 'requireSecondFactorForAdministrators',
+    attribute: 'stsAuthnRequireSecondFactorForAdministrators',
+    type: 'enum', values: ['if-held', 'offer', 'always'], dflt: 'offer',
+    label: 'Second factor for administrators',
+    what: 'For anybody holding a console role (Admin Read or Admin Write) ' +
+          'who holds no second factor. `offer`: they are shown the step ' +
+          'that sets one up, with an Ignore button, at every sign-in. ' +
+          '`always`: they must set one up before they are signed in — ' +
+          'except the default realm\'s built-in administrator ' +
+          '(admin.bootstrapUsername), who is only ever offered one, so a ' +
+          'service is never left with nobody who can sign in. `if-held`: ' +
+          'as everybody else, by the field above. WEAKER THAN `always`: ' +
+          'an administrator on a password alone is an administrator anyone ' +
+          'with the password is.' }
 ] as PolicyField[]).concat(MECHANISMS.reduce(function (out: PolicyField[], m) {
   (['primary', 'second-factor'] as Role[]).forEach(function (role) {
     const dflt = role === 'primary' ? m.primary : m.secondFactor;
@@ -294,7 +313,32 @@ const FIELDS: PolicyField[] = ([
     label: 'Consecutive failures before a person\'s email factor is turned off',
     what: 'NIST SP 800-63B-4 section 3.2.2 asks for no more than 100. The ' +
           'person, and their administrators, are told, and the person turns ' +
-          'it on again from the portal.' }
+          'it on again from the portal.' },
+  // A REMEMBERED BROWSER MAY STAND IN FOR THE SECOND FACTOR (#265, rcbj):
+  // off by default, for a period an administrator sets per realm (30 days by
+  // default), and never at the admin console or the user portal. It is a
+  // policy of the REALM because it is a statement about which evidence the
+  // realm accepts — the rest of this table's question.
+  { key: 'rememberedBrowserSkipsSecondFactor',
+    attribute: 'stsAuthnRememberedBrowserSkipsSecondFactor', type: 'bool',
+    dflt: false,
+    label: 'A remembered browser may skip the second factor',
+    what: 'OFF BY DEFAULT. On, a person signing in on a browser they chose ' +
+          'to remember is not asked for their second factor again within ' +
+          'the period below of last giving it on that browser. NEVER at the ' +
+          'admin console, the user portal or the protocol debugger; never ' +
+          'for an administrator; never while the sign-in\'s risk is medium ' +
+          'or higher; and the sign-in is then ONE factor to every relying ' +
+          'party — amr ["pwd"] and acr "1", as a password alone — so an ' +
+          'application asking for "mfa" is refused it. The browser is recognised by a ' +
+          'bearer cookie: whoever copies the cookie skips the second factor ' +
+          'too, until the copy is caught.' },
+  { key: 'rememberedBrowserDays', attribute: 'stsAuthnRememberedBrowserDays',
+    type: 'int', dflt: 30, min: 1, max: 400, unit: 'days',
+    label: 'How long a remembered browser skips the second factor',
+    what: 'Counted from the last time the person gave their second factor ' +
+          'on that browser. After it they are asked again, and giving it ' +
+          'starts the period again.' }
 ]);
 
 const FIELD_BY_KEY: Record<string, PolicyField> = {};
@@ -490,13 +534,16 @@ class AuthnPolicy {
                'sign in to this realm — its administrators included. Leave ' +
                'at least one on.');
     }
-    if (values.requireSecondFactor === 'always') {
+    if (values.requireSecondFactor === 'always' ||
+        values.requireSecondFactorForAdministrators === 'always') {
       const anySecond = MECHANISMS.some(function (m) {
         return m.secondFactor !== null &&
                values[fieldKeyOf(m.id, 'second-factor')];
       });
       if (!anySecond) {
-        out.push('A second factor is required of everybody, but no ' +
+        out.push('A second factor is required of ' +
+                 (values.requireSecondFactor === 'always'
+                   ? 'everybody' : 'administrators') + ', but no ' +
                  'mechanism is accepted as one, so nobody could finish ' +
                  'signing in. Turn one on, or require a second factor only ' +
                  'of those who hold one.');
@@ -675,6 +722,34 @@ class AuthnPolicy {
     return String(rules.requireSecondFactor);
   }
 
+  // `if-held`, `offer` or `always` (#246): what an administrator who holds
+  // no second factor meets at sign-in. `credentials.mfaRequirementFor()`
+  // is the one reader that decides with it.
+  requireSecondFactorForAdministrators(profile?: AuthnProfile | null): string {
+    const { log } = this.deps;
+    log.debug("Entering AuthnPolicy.requireSecondFactorForAdministrators().");
+    const rules = profile || this.read(DEFAULT_PROFILE);
+    log.debug("Leaving AuthnPolicy.requireSecondFactorForAdministrators().");
+    return String(rules.requireSecondFactorForAdministrators);
+  }
+
+  // Whether a remembered browser may stand in for the second factor, and for
+  // how many days after the second factor was last given on it (#265). The
+  // one reader that decides with it is `common/browser_devices.ts`'s
+  // `skipsSecondFactor()`, which adds the conditions no realm may relax.
+  rememberedBrowser(profile?: AuthnProfile | null) {
+    const { log } = this.deps;
+    log.debug("Entering AuthnPolicy.rememberedBrowser().");
+    const rules = profile || this.read(DEFAULT_PROFILE);
+    const days = Math.min(400, Math.max(1,
+      Number(rules.rememberedBrowserDays) || 30));
+    log.debug("Leaving AuthnPolicy.rememberedBrowser().");
+    return {
+      skipsSecondFactor: rules.rememberedBrowserSkipsSecondFactor === true,
+      days: days
+    };
+  }
+
   // The email mechanisms' numbers, with the ten-minute bound applied again
   // here — a hand-edited entry is range-checked by `read()`, and this is the
   // line every emailed secret's lifetime is computed from.
@@ -714,7 +789,13 @@ class AuthnPolicy {
       'second factors: ' + names('second-factor'),
       rules.requireSecondFactor === 'always'
         ? 'a second factor is required of everybody'
-        : 'a second factor is required of those who hold one'
+        : 'a second factor is required of those who hold one',
+      rules.requireSecondFactorForAdministrators === 'always'
+        ? 'administrators must set one up (the built-in administrator is ' +
+          'offered one)'
+        : (rules.requireSecondFactorForAdministrators === 'offer'
+          ? 'administrators who hold none are offered one at each sign-in'
+          : 'administrators are asked as everybody else is')
     ];
     const email = MECHANISMS.some((m) => {
       return m.email && (this.allows(m.id, 'primary', rules) ||
@@ -922,7 +1003,10 @@ export = {
   active: slot.forward('active'),
   mailUsable: slot.forward('mailUsable'),
   requireSecondFactor: slot.forward('requireSecondFactor'),
+  requireSecondFactorForAdministrators:
+    slot.forward('requireSecondFactorForAdministrators'),
   emailSettings: slot.forward('emailSettings'),
+  rememberedBrowser: slot.forward('rememberedBrowser'),
   describe: slot.forward('describe'),
   enforced: slot.forward('enforced')
 };

@@ -607,7 +607,9 @@ class Consent {
         });
       }
     }, 'the global consent to ' + leaf + ' was withdrawn' +
-       (actor ? ' by ' + actor : ''));
+       (actor ? ' by ' + actor : ''),
+    // An override is an administrator's (#239): CAEP's `admin`.
+    { initiatingEntity: 'admin' });
     const surface = applications.HOSTED_SURFACE_CLIENT_IDS.indexOf(who) >= 0;
     log.info('consent: "' + who + '" no longer consents "' + leaf + '" for ' +
              'everybody; ' + revoked + ' token(s) issued under it were ' +
@@ -1204,7 +1206,8 @@ class Consent {
   revokeIssuedUnder(asked: { username?: string; clientId: string;
                              scopes: string[];
                              spare?: (holder: string) => boolean },
-                    via: string): number {
+                    via: string,
+                    how?: { initiatingEntity?: string }): number {
     const { log, stats, errorCodes } = this.deps;
     log.debug("Entering Consent.revokeIssuedUnder(). client=" +
               asked.clientId);
@@ -1246,7 +1249,7 @@ class Consent {
         refreshes.push(String(record.jti));
       }
       return true;
-    }, via);
+    }, via, how);
     if (refreshes.length) {
       let grants: GrantBookkeeping | null = null;
       try {
@@ -1265,7 +1268,7 @@ class Consent {
         const family = grants.familyOfRefresh({ jti: jti });
         grants.grantMembersOf(family, jti).forEach(function (member) {
           if (stats.revoke(member, via + ', with the refresh token of its ' +
-                                   'grant')) {
+                                   'grant', how)) {
             count += 1;
           }
         });
@@ -1367,7 +1370,10 @@ class Consent {
       revoked += self.revokeIssuedUnder({ username: key, clientId: client,
                                           scopes: byClient[client] },
         'consent withdrawn' + (actor && actor !== key ? ' by ' + actor
-                                                       : ' by the person'));
+                                                       : ' by the person'),
+        // CAEP's initiating_entity (#239): the person themselves, or
+        // somebody else — an administrator — acting on their entry.
+        { initiatingEntity: actor && actor !== key ? 'admin' : 'user' });
     });
     log.debug("Leaving Consent.withdrawHeld(). " + revoked + " revoked.");
     return { dn: removed.dn || '', revoked: revoked, at: noted.at || '' };

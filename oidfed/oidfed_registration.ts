@@ -322,6 +322,44 @@ class OidfedRegistration {
   }
 
   // -------------------------------------------------------------------------
+  // WHAT A PROOF'S CLAIMS MUST SAY (12.1.1.1, 12.1.1.2), or '' when they say
+  // it. A STATIC utility, because it is asked twice: by verifyProof() when a
+  // relying party registers, and by `oauth-oidc/request_object.ts` on EVERY
+  // later request object from a relying party registered automatically
+  // (#187) — the section lists these claims for the request object itself,
+  // not for the first one, and the OpenID conformance suite's joined-OP plan
+  // sent a second request with no `jti`, no `exp`, a `sub` and more, each of
+  // which was accepted because the client was already registered.
+  // -------------------------------------------------------------------------
+  static proofClaimsProblem(c: Json, kind: string, clientId: string,
+                            opId: string, nowSec: number,
+                            skewS: number): string {
+    helpers.log.debug("Entering OidfedRegistration.proofClaimsProblem().");
+    const claims = c || {};
+    const aud = Array.isArray(claims.aud) && claims.aud.length === 1
+      ? claims.aud[0] : claims.aud;
+    let problem = '';
+    if (aud !== opId) {
+      problem = 'aud must be ' + opId + ' and nothing else';
+    } else if (claims.iss !== clientId) {
+      problem = 'iss must be ' + clientId;
+    } else if (kind === 'request' && claims.client_id !== clientId) {
+      problem = 'client_id must be ' + clientId;
+    } else if (kind === 'request' && claims.sub !== undefined) {
+      problem = 'a request object carries no sub (12.1.1.1)';
+    } else if (kind === 'assertion' && claims.sub !== clientId) {
+      problem = 'sub must be ' + clientId;
+    } else if (typeof claims.jti !== 'string' || !claims.jti) {
+      problem = 'it has no jti';
+    } else if (!Number.isFinite(claims.exp) || claims.exp <= nowSec - skewS) {
+      problem = 'it has no exp, or it has passed';
+    }
+    helpers.log.debug("Leaving OidfedRegistration.proofClaimsProblem(). " +
+                      (problem || 'none'));
+    return problem;
+  }
+
+  // -------------------------------------------------------------------------
   // THE PROOF (12.1.1.1, 12.1.1.2): a request object (`kind` 'request') or a
   // private_key_jwt client assertion (`kind` 'assertion') signed by one of
   // the RP's keys, audienced to THIS OP ALONE, issued by the RP, with a
@@ -368,24 +406,9 @@ class OidfedRegistration {
                          'for its relying party role (12.1.1.1.2).');
     }
     const c = read.claims;
-    const aud = Array.isArray(c.aud) && c.aud.length === 1 ? c.aud[0] : c.aud;
-    const skew = Math.max(0, Number(config.value('oidfed.clockSkewS')));
-    let problem = '';
-    if (aud !== opId) {
-      problem = 'aud must be ' + opId + ' and nothing else';
-    } else if (c.iss !== clientId) {
-      problem = 'iss must be ' + clientId;
-    } else if (kind === 'request' && c.client_id !== clientId) {
-      problem = 'client_id must be ' + clientId;
-    } else if (kind === 'request' && c.sub !== undefined) {
-      problem = 'a request object carries no sub (12.1.1.1)';
-    } else if (kind === 'assertion' && c.sub !== clientId) {
-      problem = 'sub must be ' + clientId;
-    } else if (typeof c.jti !== 'string' || !c.jti) {
-      problem = 'it has no jti';
-    } else if (!Number.isFinite(c.exp) || c.exp <= this.nowSec() - skew) {
-      problem = 'it has no exp, or it has passed';
-    }
+    const problem = OidfedRegistration.proofClaimsProblem(c, kind, clientId,
+      opId, this.nowSec(),
+      Math.max(0, Number(config.value('oidfed.clockSkewS'))));
     if (problem) {
       log.debug("Leaving OidfedRegistration.verifyProof(). " + problem);
       return this.refuse('STS-OIDFED-0054', 'invalid_request', 'the ' + kind +

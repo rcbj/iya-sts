@@ -333,6 +333,46 @@ this process's store while no client can connect to read it. A build without
 the directory says "no directory is loaded", which is a different answer from an
 entry that is not there.
 
+#### Changing a person's attributes
+
+Under the entry, **Change their attributes** offers the three controls the
+[Applications](applications.md) page has: **Set** replaces every value of an
+attribute with one (an empty value removes it), **Add to** appends a value to
+an attribute that holds several, and **Remove from** takes one value off. Each
+writes that one attribute of the entry in place, as an `ldapmodify` would, and
+needs **Admin Write**. `POST /admin-api/users/set-attribute`,
+`/add-attribute` and `/remove-attribute` are the same three, and
+`GET /admin-api/users?user=<name>` publishes the list under
+`attributeEditor`, with what each attribute holds.
+
+**What may be changed** is the person schema — `person`,
+`organizationalPerson`, `inetOrgPerson` and the Identity Assurance claims —
+and the credential catalogue, less what has a door of its own or is not text:
+
+| Not offered | Use instead |
+|---|---|
+| `userPassword` | the password controls on the same page, or `POST /admin-api/users/set-password`, which hashes it |
+| `mail` | **Set the address**, in the same section (`POST /admin-api/users/set-mail`), which marks the address verified and tells the former one |
+| `uid`, and the attribute the entry's DN is named by | nothing: a rename is not an attribute edit |
+| the certificates, photographs, `audio`, `userPKCS12` | an LDAP client: their values are binary |
+| group memberships, credentials, what sign-ins record | Groups, the credential controls |
+
+**What a value must look like.** `cn` and `sn` can never be emptied (RFC 4519
+requires them of every person). An attribute its schema declares single-valued
+— `displayName`, `employeeNumber`, `preferredLanguage`, `c`,
+`schacDateOfBirth`, and this service's own employee status and place of birth
+— is set, never added to. A country is an ISO 3166-1 alpha-2 code (stored
+upper-case), a date of birth a real date (`YYYY-MM-DD` is accepted and stored
+as `YYYYMMDD`), `preferredLanguage` a language range, `labeledURI` an http or
+https URL with an optional label, and `manager`, `secretary` and `seeAlso` a
+DN — checked for its shape only, since this directory keeps no referential
+integrity. No value may hold a line break or exceed 1024 characters.
+
+A change is reported to [Shared Signals](shared-signals.md) as a SCIM or LDAP
+write of the same attribute is. An identity verification covers a value only
+while the entry still holds it, so changing a verified value lets that
+verification lapse for it.
+
 #### Creating a person — `/admin/users/new`
 
 The list page has one control: a name, and a button to **`/admin/users/new`**,
@@ -465,7 +505,13 @@ on the way in. Development mode applies no rule and records the history anyway.
   security key, an authenticator app, a recovery code, a wallet, an emailed
   code or link;
 * whether a second factor is required of everybody
-  (`requireSecondFactor: always`) or of those who hold one (`if-held`).
+  (`requireSecondFactor: always`) or of those who hold one (`if-held`);
+* what an administrator (Admin Read or Admin Write) who holds none meets at
+  sign-in (`requireSecondFactorForAdministrators`): an offer they can
+  **Ignore** (`offer`, the default for now), a requirement (`always`, which
+  the built-in administrator is only ever offered), or nothing more than
+  anybody else (`if-held`). See
+  [Authentication](authentication.md#a-second-factor-for-administrators).
 
 It is `cn=default,ou=authnPolicies`. **A realm with none of its own follows the
 default realm's**, and the built-in defaults apply where neither exists.

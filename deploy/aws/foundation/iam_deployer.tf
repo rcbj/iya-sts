@@ -170,6 +170,84 @@ resource "aws_iam_policy" "workload_boundary" {
 }
 
 # ---------------------------------------------------------------------------
+# THE BOUNDARY THE ECS INFRASTRUCTURE ROLE MUST CARRY (#214).
+#
+# Each environment creates one role that is not a task's: ECS assumes it to
+# create, attach and delete each node's risk dataset upload volume
+# (environment/iam.tf). What that takes — EC2 volume calls and the project key
+# through EC2 — is kept OUT of the workload boundary above, so no container
+# role can ever be given it, and in a ceiling of its own that the deployer may
+# attach only to a role named `mock-sts-env-<environment>-ecs-infra` and pass
+# only to `ecs.amazonaws.com` (below). The environment's own policy narrows it
+# further, to volumes of that environment's cluster; the effective permission
+# is the intersection.
+# ---------------------------------------------------------------------------
+data "aws_iam_policy_document" "ecs_infrastructure_boundary" {
+  statement {
+    sid       = "CreateAndTagOnlyEcsManagedVolumes"
+    actions   = ["ec2:CreateVolume", "ec2:CreateTags"]
+    resources = ["${local.arn.ec2}:volume/*"]
+    condition {
+      test     = "StringEquals"
+      variable = "aws:RequestTag/AmazonECSManaged"
+      values   = ["true"]
+    }
+    condition {
+      test     = "ArnLike"
+      variable = "aws:RequestTag/AmazonECSCreated"
+      values   = ["${local.arn.ecs}:task/${var.name}-*/*"]
+    }
+  }
+  statement {
+    sid       = "DescribeVolumes"
+    actions   = ["ec2:DescribeVolumes", "ec2:DescribeAvailabilityZones"]
+    resources = ["*"]
+  }
+  statement {
+    sid       = "AttachDetachDeleteOnlyEcsManagedVolumes"
+    actions   = ["ec2:AttachVolume", "ec2:DetachVolume", "ec2:DeleteVolume"]
+    resources = ["${local.arn.ec2}:volume/*"]
+    condition {
+      test     = "StringEquals"
+      variable = "aws:ResourceTag/AmazonECSManaged"
+      values   = ["true"]
+    }
+    condition {
+      test     = "ArnLike"
+      variable = "aws:ResourceTag/AmazonECSCreated"
+      values   = ["${local.arn.ecs}:task/${var.name}-*/*"]
+    }
+  }
+  # The Fargate host is in an account that is not this one.
+  statement {
+    sid       = "AttachDetachAtTheFargateHost"
+    actions   = ["ec2:AttachVolume", "ec2:DetachVolume"]
+    resources = ["arn:${local.partition}:ec2:${local.region}:*:instance/*"]
+  }
+  statement {
+    sid       = "DescribeTheProjectKey"
+    actions   = ["kms:DescribeKey"]
+    resources = [aws_kms_key.main.arn]
+  }
+  statement {
+    sid       = "UseTheProjectKeyForEbsThroughEc2"
+    actions   = ["kms:GenerateDataKeyWithoutPlaintext", "kms:CreateGrant"]
+    resources = [aws_kms_key.main.arn]
+    condition {
+      test     = "StringEquals"
+      variable = "kms:ViaService"
+      values   = ["ec2.${local.region}.amazonaws.com"]
+    }
+  }
+}
+
+resource "aws_iam_policy" "ecs_infrastructure_boundary" {
+  name        = "${var.name}-ecs-infrastructure-boundary"
+  description = "The most an environment's ECS infrastructure role (upload volumes) may do"
+  policy      = data.aws_iam_policy_document.ecs_infrastructure_boundary.json
+}
+
+# ---------------------------------------------------------------------------
 # DEPLOY POLICY 1 OF 3: THE NETWORK AND THE LOAD BALANCER.
 # ---------------------------------------------------------------------------
 data "aws_iam_policy_document" "deploy_network" {
@@ -636,6 +714,22 @@ data "aws_iam_policy_document" "deploy_compute" {
     }
   }
 
+  # THE ECS INFRASTRUCTURE ROLE (#214) — one name per environment, and only
+  # with the boundary of its own. The statement above also matches the name,
+  # with the WORKLOAD boundary, which gives such a role nothing it could use.
+  statement {
+    sid = "EcsInfrastructureRoleWriteOnlyWithItsBoundary"
+    actions = [
+      "iam:CreateRole", "iam:PutRolePolicy", "iam:PutRolePermissionsBoundary",
+    ]
+    resources = ["${local.arn.iam_role}/${local.env_role_prefix}*-ecs-infra"]
+    condition {
+      test     = "StringEquals"
+      variable = "iam:PermissionsBoundary"
+      values   = [aws_iam_policy.ecs_infrastructure_boundary.arn]
+    }
+  }
+
   statement {
     sid = "EnvironmentRolesMaintain"
     actions = [
@@ -656,10 +750,43 @@ data "aws_iam_policy_document" "deploy_compute" {
     }
   }
 
+  # ECS itself, not a task, assumes the infrastructure role, and a service
+  # names it in its `volume_configuration` (#214).
   statement {
-    sid       = "ReadTheBoundaryItMustAttach"
-    actions   = ["iam:GetPolicy", "iam:GetPolicyVersion"]
-    resources = [aws_iam_policy.workload_boundary.arn]
+    sid       = "PassTheEcsInfrastructureRoleToEcsOnly"
+    actions   = ["iam:PassRole"]
+    resources = ["${local.arn.iam_role}/${local.env_role_prefix}*-ecs-infra"]
+    condition {
+      test     = "StringEquals"
+      variable = "iam:PassedToService"
+      values   = ["ecs.amazonaws.com"]
+    }
+  }
+
+  # AND NEVER TO A TASK: the statement allowing roles to be passed to
+  # `ecs-tasks.amazonaws.com` matches this name too, and a task running as the
+  # infrastructure role would hold EC2 volume and key permissions no container
+  # needs. Its trust policy names `ecs.amazonaws.com` only, but the deployer
+  # may change a trust policy; this does not depend on it.
+  statement {
+    sid       = "NeverPassTheEcsInfrastructureRoleToATask"
+    effect    = "Deny"
+    actions   = ["iam:PassRole"]
+    resources = ["${local.arn.iam_role}/${local.env_role_prefix}*-ecs-infra"]
+    condition {
+      test     = "StringNotEquals"
+      variable = "iam:PassedToService"
+      values   = ["ecs.amazonaws.com"]
+    }
+  }
+
+  statement {
+    sid     = "ReadTheBoundaryItMustAttach"
+    actions = ["iam:GetPolicy", "iam:GetPolicyVersion"]
+    resources = [
+      aws_iam_policy.workload_boundary.arn,
+      aws_iam_policy.ecs_infrastructure_boundary.arn,
+    ]
   }
 
   # The boundary cannot be taken off a role, by the deployer or through it.

@@ -137,6 +137,18 @@ function differentValue(setting) {
     log.debug("Leaving differentValue().");
     return other === undefined ? now : other;
   }
+  if (setting.type === 'csv' && Array.isArray(setting.csvValues)) {
+    // A list held to a closed set (#86): a suffix would put a name outside
+    // it and be refused, so a DIFFERENT LEGAL list — the current one without
+    // its first entry, or another value from the set.
+    const now = [].concat(config.value(setting.key) || []);
+    const other = now.length > 1 ? now.slice(1)
+      : [setting.csvValues.filter(function (v) {
+          return now.indexOf(v) < 0;
+        })[0] || setting.csvValues[0]];
+    log.debug("Leaving differentValue().");
+    return other.join(',');
+  }
   if (setting.type === 'port' || setting.type === 'int') {
     const now = Number(config.value(setting.key)) || 0;
     const max = setting.max === undefined ? 65535 : setting.max;

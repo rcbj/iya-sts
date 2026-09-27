@@ -836,7 +836,7 @@ function handle(req, res) {
              'up to ' + options.pollIntervalMs + 'ms for the next poll. ' +
              'Nothing in the nudge was read — what changed is discovered by ' +
              'pulling.');
-    sync.pull(options).catch(function (error) {
+    sync.pull(options, 'nudge').catch(function (error) {
       log.warn(tag('STS-XPEP-0010') + 'xacml-pep: the nudged pull failed: ' +
                error.message + '. The scheduled poll will try again.');
     });
@@ -1096,7 +1096,7 @@ async function start() {
   // works, so a PEP started before its PDP — or before the realm it polls
   // exists — converges on a console row the same way it converges on policy.
   await sync.register(options);
-  await sync.pull(options);
+  await sync.pull(options, 'start');
 
   onBackoff('the poll', options.pollIntervalMs, options.backoffMaxMs,
             function pollOnce() {
@@ -1115,7 +1115,7 @@ async function start() {
       log.debug(tag('STS-XPEP-0011') +
                 'xacml-pep: the retried registration threw: ' + error.message);
     }).then(function () {
-      return sync.pull(options);
+      return sync.pull(options, 'poll');
     }).then(function () {
       return sync.state().held.lastPullOk === true;
     }).catch(function (error) {
@@ -1132,7 +1132,7 @@ async function start() {
       // second path to convergence after the nudge and the poll, and it costs
       // one comparison on a beat that was happening anyway.
       if (result.ok && result.current === false) {
-        return sync.pull(options).then(function () {
+        return sync.pull(options, 'heartbeat').then(function () {
           return true;
         });
       }

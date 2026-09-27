@@ -100,8 +100,18 @@ function childMain() {
        'A. a pushed request needs PKCE (item 18)');
     eq(vet({ code_challenge: 'x'.repeat(43), code_challenge_method: 'plain' }),
        'STS-OAUTH-0573', 'A. a challenge that is sent is held to S256');
-    eq(vet({ response_type: 'code' }), 'STS-OAUTH-0582',
-       'A. code without JARM is refused (item 2)');
+    eq(vet({ response_type: 'code' }), 'STS-OAUTH-0783',
+       'A. code without JARM is refused (item 2), invalid_request: the ' +
+       'mode is what is wrong (#187)');
+    eq(adv(function () {
+      return fapi.authorizationRefusal(Object.assign({}, good,
+        { response_type: 'code', response_mode: 'query' })).error;
+    }), 'invalid_request', 'A. as invalid_request, which RFC 9126 section ' +
+       '2.3 answers at PAR (the conformance suite\'s ' +
+       'ensure-response-mode-query)');
+    eq(vet({ scope: '' }), 'STS-OAUTH-0784',
+       'A. a request naming no scope is refused rather than given a ' +
+       'default (#187, ensure-request-object-without-scope-fails)');
     eq(vet({ response_type: 'code', response_mode: 'jwt' }), null,
        'A. code with response_mode=jwt is allowed');
     eq(vet({ response_type: 'id_token code' }), null,

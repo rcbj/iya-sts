@@ -223,6 +223,27 @@ const BUILT_IN = [
       log.debug("Leaving holds().");
       return who.scopes.indexOf('admin:write') >= 0;
     } },
+  // -------------------------------------------------------------------------
+  // THE THIRD COMPUTED FROM A CREDENTIAL (#164 phase 3, 2026-09-26), for the
+  // one `/admin-api` operation that is NOT an administrator's: an MDM or
+  // posture feed reporting device compliance (`POST
+  // /admin-api/device-compliance`). Its token carries `device:compliance`
+  // and nothing else, so the feed can report posture and cannot read the
+  // directory or change anything but a device's compliance — which is the
+  // whole reason it is a scope and a role of its own rather than
+  // `admin:write` (rcbj's decision 2 on #164). Read off the scopes for
+  // ADMIN_WRITE's reason: nobody grants it, the token carries it.
+  // -------------------------------------------------------------------------
+  { name: 'DEVICE_COMPLIANCE',
+    what: 'A caller presenting an access token for the management API that ' +
+          'carries the `device:compliance` scope — an MDM or posture feed. ' +
+          'The device compliance feed, POST /admin-api/device-compliance, ' +
+          'requires it and nothing else on /admin-api accepts it.',
+    holds: function (who) {
+      log.debug("Entering holds().");
+      log.debug("Leaving holds().");
+      return (who.scopes || []).indexOf('device:compliance') >= 0;
+    } },
   { name: 'ALL_APPLICATIONS',
     what: 'Any client, however it turned up.',
     holds: function (who) {

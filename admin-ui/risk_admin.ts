@@ -49,6 +49,7 @@ import admin = require('./admin');
 import adminViews = require('../admin-core/admin_views');
 import helpers = require('../common/helpers');
 import errorCodes = require('../common/error_codes');
+import lingeringClose = require('../common/lingering_close');
 import realms = require('../common/realms');
 import InstanceSlot = require('../common/instance_slot');
 import riskDatasets = require('../risk/risk_datasets');
@@ -90,8 +91,20 @@ const LEVELS = ['HIGH', 'MEDIUM', 'LOW', 'UNSCORED'];
 // What `riskAction()` does, and what each needs.
 const ACTIONS = ['import', 'activate', 'rollback', 'delete', 'accept-terms'];
 
+// EVERY ACTION `/risk` HAS, which is what the unknown-action refusal names
+// (2026-09-26). `upload` (#215) is answered by a route of its own, registered
+// above `/risk/:action`, so `riskAction()` never sees it — but it is still one
+// of this resource's actions, and `tests/vendored/admin_api.js` reads THIS
+// sentence for the console/API parity (rule 7): an action missing from it is
+// invisible to that check. `sts_admin_api_operations.js` compares the sentence
+// with the OpenAPI document and found `upload` missing.
+const NAMED_ACTIONS = ACTIONS.concat(['upload']);
+
 // The failure page's size, and the window it reads.
 const FAILURES_PER_PAGE = 50;
+// The standings table's page size when `per` does not say; the assessments
+// take the console's default.
+const SUBJECTS_PER_PAGE = 25;
 const FAILURE_WINDOW_MS = 7 * 86400000;
 
 interface RiskAdminDeps {
@@ -107,6 +120,7 @@ interface RiskAdminDeps {
   websecurity: typeof websecurity;
   adminScope: typeof adminScope;
   parseBody: typeof helpers.parseBody;
+  nameForSubject: typeof helpers.nameForSubject;
   now(): number;
 }
 
@@ -136,29 +150,85 @@ class RiskAdmin {
       websecurity: websecurity,
       adminScope: adminScope,
       parseBody: helpers.parseBody,
+      nameForSubject: helpers.nameForSubject,
       now: function (): number {
         return Date.now();
       }
     };
   }
 
-  // The realm the failures and the per-realm lists are shown for: the one
-  // named in `?realm=` if it exists, and the default realm otherwise.
-  private realmOf(query: Json): string {
+  // BOTH PAGES ARE PER REALM (2026-09-26, rcbj): the realm shown is the one
+  // the page is drawn in — `/realm/acme/admin/risk` is acme's, the bare
+  // `/admin/risk` the default realm's — and nothing in the request names
+  // another. `?realm=` did until that day, which let the default realm's
+  // console draw any realm's people and made every lookup on the page ask
+  // which realm it was in; another realm's risk is read under its prefix.
+  private realmOf(): string {
     const { log, realms } = this.deps;
     log.debug("Entering RiskAdmin.realmOf().");
-    const asked = String((query && query.realm) || '').trim();
-    const known = asked && (asked === 'default' || realms.get(asked));
     log.debug("Leaving RiskAdmin.realmOf().");
-    // Unnamed, the realm the page is drawn in: `/realm/acme/admin/risk` is
-    // acme's, which is what a realm administrator of acme signs in to.
-    return known ? asked : (realms.currentId() || 'default');
+    return realms.currentId() || 'default';
+  }
+
+  // WHO EACH SUBJECT IS (2026-09-26, rcbj): every person on the page is
+  // stored as their `urn:uuid:` subject, which nobody can read, so each row
+  // that names one gains `username` — the name the directory files them
+  // under, '' when the entry is gone. The directory answers for the ambient
+  // realm, which is the page's (`realmOf()`); once per subject.
+  private nameSubjects(lists: Json[][]): void {
+    const { log, nameForSubject } = this.deps;
+    log.debug("Entering RiskAdmin.nameSubjects().");
+    const known = new Map<string, string>();
+    lists.forEach(function (rows: Json[]): void {
+      (rows || []).forEach(function (row: Json): void {
+        const sub = String(row.subject || '');
+        if (!sub) {
+          return;
+        }
+        if (!known.has(sub)) {
+          known.set(sub, nameForSubject(sub));
+        }
+        row.username = known.get(sub);
+      });
+    });
+    log.debug("Leaving RiskAdmin.nameSubjects(). " + known.size +
+              " subject(s).");
+  }
+
+  // One person in a Who cell: their username linked to their Directory →
+  // Users page in this realm, with the subject under it; the subject alone
+  // when the directory no longer holds them.
+  private whoCell(row: Json): string {
+    const { log, admin, realms } = this.deps;
+    log.debug("Entering RiskAdmin.whoCell().");
+    const subject = '<code>' + admin.esc(row.subject) + '</code>';
+    if (!row.username) {
+      log.debug("Leaving RiskAdmin.whoCell(). No entry.");
+      return subject + '<br><small>(no directory entry)</small>';
+    }
+    const link = realms.href('/admin/users?user=' +
+                             encodeURIComponent(String(row.username)));
+    log.debug("Leaving RiskAdmin.whoCell().");
+    return '<a href="' + admin.esc(link) + '"><strong>' +
+      admin.esc(row.username) + '</strong></a><br><small>' + subject +
+      '</small>';
   }
 
   // -------------------------------------------------------------------------
   // THE VIEW: what `GET /admin/risk?format=json` and `GET /admin-api/risk`
   // both answer. `query.address` adds the lookup; `query.offset` pages the
   // failures.
+  //
+  // THE ASSESSMENTS AND THE STANDINGS ARE PAGED (2026-09-26, rcbj), each on
+  // a parameter of its own — `assessmentsPage`, `subjectsPage` — with `per`
+  // shared, the console's arrangement for a page of several lists
+  // (`pagingOf()`, `pageParamsOf()`), because neither grows under a bound
+  // anybody sets: a row per sign-in for a week, and a row per person ever
+  // assessed. Unlike the other pages' lists these are paged IN THE STORE
+  // (a LIMIT and an OFFSET on postgres), since the whole list is what the
+  // pager exists not to read; so the page asked for is fetched first and,
+  // when it was past the end, the last page is fetched again — the pager
+  // CLAMPS rather than refuses, and the reply says which page it drew.
   // -------------------------------------------------------------------------
   // `realmOnly` is for a realm administrator: the realm's own and nothing
   // of the service's (see the header).
@@ -166,7 +236,7 @@ class RiskAdmin {
     const { log, datasets, failures, engine, now } = this.deps;
     log.debug("Entering RiskAdmin.riskView().");
     const q = query || {};
-    const realm = this.realmOf(q);
+    const realm = this.realmOf();
     const registry = await datasets.registry(realm);
     const offset = Math.max(0, Number(q.offset) || 0);
     const history = await failures.list(realm, {
@@ -176,11 +246,36 @@ class RiskAdmin {
     const lookup = address ? await datasets.lookup(address, realm) : null;
     // `subject` narrows the assessments to one person — the link under the
     // risk badge on their Directory → Users page (#62).
-    const assessed = await engine.view(realm, { level: q.level || '',
-                                               subject: q.subject || '',
-                                               offset: q.aoffset || 0 });
+    const assessmentsOpts = { name: 'assessments', noun: 'assessments' };
+    const subjectsOpts = { name: 'subjects', noun: 'people',
+                           defaultPer: SUBJECTS_PER_PAGE };
+    const unbounded = Number.MAX_SAFE_INTEGER;
+    const fetchPages = function (a: Json, p: Json): Promise<Json> {
+      log.debug("Entering fetchPages().");
+      log.debug("Leaving fetchPages().");
+      return engine.view(realm, { level: q.level || '',
+                                  subject: q.subject || '',
+                                  limit: a.perPage, offset: a.offset,
+                                  subjectsLimit: p.perPage,
+                                  subjectsOffset: p.offset });
+    };
+    let assessed = await fetchPages(
+      adminViews.pagingOf(q, unbounded, assessmentsOpts),
+      adminViews.pagingOf(q, unbounded, subjectsOpts));
+    const assessmentsPaging = adminViews.pagingOf(
+      q, assessed.assessments.total, assessmentsOpts);
+    const subjectsPaging = adminViews.pagingOf(q, assessed.subjectsTotal,
+                                               subjectsOpts);
+    if (assessed.assessments.rows.length === 0 &&
+          assessmentsPaging.total > 0 ||
+        assessed.subjects.length === 0 && subjectsPaging.total > 0) {
+      // A page past the end of either list: the clamped pages, again.
+      assessed = await fetchPages(assessmentsPaging, subjectsPaging);
+    }
+    this.nameSubjects([assessed.assessments.rows, assessed.subjects,
+                       history.rows]);
     log.debug("Leaving RiskAdmin.riskView().");
-    return {
+    const view: Json = {
       realm: realm,
       realmOnly: !!realmOnly,
       store: registry.store,
@@ -197,7 +292,9 @@ class RiskAdmin {
       redistribution: registry.redistribution,
       lookup: lookup,
       assessments: assessed.assessments,
+      assessmentsPaging: adminViews.pagingJson(assessmentsPaging),
       subjects: assessed.subjects,
+      subjectsPaging: adminViews.pagingJson(subjectsPaging),
       signals: assessed.signals,
       assessmentsInDatabase: assessed.inDatabase,
       failures: {
@@ -206,6 +303,13 @@ class RiskAdmin {
         rows: history.rows
       }
     };
+    // What `pageNavPair()` draws from, off the JSON (the scheduler page's
+    // arrangement): it carries the parameter name and the noun.
+    Object.defineProperty(view, 'assessmentsPagingRaw',
+                          { value: assessmentsPaging, enumerable: false });
+    Object.defineProperty(view, 'subjectsPagingRaw',
+                          { value: subjectsPaging, enumerable: false });
+    return view;
   }
 
   // -------------------------------------------------------------------------
@@ -227,8 +331,9 @@ class RiskAdmin {
       return errorCodes.mark({ ok: false, errors: [why] }, 'STS-RISK-0011');
     };
     if (ACTIONS.indexOf(action) < 0) {
-      return refuse('Unknown action "' + action + '". The ' + ACTIONS.length +
-                    ' are: ' + ACTIONS.join(', ') + '.');
+      return refuse('Unknown action "' + action + '". The ' +
+                    NAMED_ACTIONS.length + ' are: ' +
+                    NAMED_ACTIONS.join(', ') + '.');
     }
     if (action === 'accept-terms') {
       const provider = String(b.provider || '').trim();
@@ -292,7 +397,7 @@ class RiskAdmin {
     log.debug("Entering RiskAdmin.metricsView().");
     const q = query || {};
     const name = WINDOWS[String(q.window || '')] ? String(q.window) : '24h';
-    const measured = await engine.metrics(this.realmOf(q), WINDOWS[name]);
+    const measured = await engine.metrics(this.realmOf(), WINDOWS[name]);
     if (realmOnly) {
       // THIS PROCESS's counts are every realm's (see the header).
       delete measured.process;
@@ -477,9 +582,8 @@ class RiskAdmin {
     };
     const windows = m.windows.map(function (w: string): string {
       return w === m.window ? '<strong>' + esc(w) + '</strong>'
-        : '<a href="' + esc(METRICS_PAGE + '?window=' + w + '&realm=' +
-                            encodeURIComponent(m.realm)) + '">' + esc(w) +
-          '</a>';
+        : '<a href="' + esc(METRICS_PAGE + '?window=' + w) + '">' +
+          esc(w) + '</a>';
     }).join(' &middot; ');
     const high = Number(a.byLevel.HIGH) || 0;
     const people = Object.keys(m.standings).reduce(function (s: number,
@@ -717,6 +821,15 @@ class RiskAdmin {
         '<label><input type="checkbox" name="acceptTerms" ' +
         'id="risk-upload-accept"> I have read and accept the provider\'s ' +
         'terms (below), recorded in my name</label><br>') +
+      // THE SIGNATURE OVERRIDE, for the FIDO MDS3 BLOB only: FIDO has
+      // published BLOBs whose signature does not verify, and this loads one
+      // anyway, recorded as `overridden` with the reason, in this
+      // administrator's name (`risk_datasets.importMds()`).
+      '<label><input type="checkbox" name="overrideSignature" ' +
+      'id="risk-upload-override-signature"> FIDO MDS3 only: load the BLOB ' +
+      'even if its signature or signing chain does not verify. <strong>Its ' +
+      'contents are then unauthenticated</strong>; the version is recorded ' +
+      'as <code>overridden</code>, with the reason, in my name</label><br>' +
       '<label>File (<code>.gz</code>, <code>.zip</code> holding one file, ' +
       'or plain text) <input type="file" name="file" id="risk-upload-file" ' +
       'required></label><br><button type="submit" id="risk-upload">' +
@@ -751,7 +864,7 @@ class RiskAdmin {
       '</button></form>';
     const failureRows = view.failures.rows.map(function (f: Json): string {
       return '<tr><td><small>' + esc(self.when(f.at)) + '</small></td><td>' +
-        (f.subject ? '<code>' + esc(f.subject) + '</code>'
+        (f.subject ? self.whoCell(f)
                    : '<small>' + esc(f.name) + '</small>') + '</td><td>' +
         esc(f.door) + '</td><td><code>' + esc(f.prefix) + '</code>' +
         (f.asn ? '<br><small>AS' + f.asn + '</small>' : '') + '</td><td>' +
@@ -800,7 +913,7 @@ class RiskAdmin {
           return '<p class="attribution"><small>' + self.credit(c) +
             '</small></p>';
         }).join('') : '';
-    const assessments = this.assessmentsHtml(view);
+    const assessments = this.assessmentsHtml(req, view);
     log.debug("Leaving RiskAdmin.html().");
     if (view.realmOnly) {
       return tiles + admin.note('This is the <code>' + esc(view.realm) +
@@ -829,10 +942,17 @@ class RiskAdmin {
   // The providers whose data a row shows are credited under the table, as
   // DB-IP's licence asks of every page that displays its results.
   // ---------------------------------------------------------------------------
-  private assessmentsHtml(view: Json): string {
-    const { log, admin } = this.deps;
+  private assessmentsHtml(req: Req, view: Json): string {
+    const { log, admin, adminViews } = this.deps;
     const self = this;
     log.debug("Entering RiskAdmin.assessmentsHtml().");
+    // Each pager carries every other parameter (the realm, the level, the
+    // person, the other list's page) so the reader keeps their place.
+    const params = adminViews.pageParamsOf(req.query);
+    const assessmentsNav = admin.pageNavPair(PAGE, params,
+                                             view.assessmentsPagingRaw);
+    const subjectsNav = admin.pageNavPair(PAGE, params,
+                                          view.subjectsPagingRaw);
     // Called for every value drawn: a hot path, with no Entering/Leaving.
     const esc = function (v: unknown): string {
       return admin.esc(v);
@@ -848,8 +968,22 @@ class RiskAdmin {
       }).map(function (x: Json): string {
         return esc(x.signal) + ' ×' + esc(x.factor);
       }).join(', ');
+      // THE REGISTERED DEVICE (#164 phase 5), from the model's row: its id
+      // linked to its page, how it was recognised, and what the register
+      // said of it at the sign-in.
+      const modelRow = (a.signals || []).filter(function (x: Json) {
+        return x.signal === 'model';
+      })[0] || {};
+      const dev = modelRow.device;
+      const deviceCell = dev ? '<br>registered device <a href="' +
+        esc('/admin/devices?device=' + encodeURIComponent(dev.id)) +
+        '"><code>' + esc(String(dev.id).slice(0, 8)) + '</code></a> (' +
+        esc(dev.via) + ', ' + esc(dev.compliance) + ', ' +
+        esc(dev.attestation) + (dev.status === 'compromised'
+          ? ', <strong>compromised</strong>' : '') +
+        (dev.own ? '' : ', not theirs') + ')' : '';
       return '<tr><td><small>' + esc(self.when(a.at)) + '</small></td><td>' +
-        '<code>' + esc(a.subject) + '</code><br><small>' + esc(a.door) +
+        self.whoCell(a) + '<br><small>' + esc(a.door) +
         '</small></td><td><code>' + esc(a.addressPrefix) + '</code>' +
         (a.asn ? '<br><small>AS' + a.asn + ' ' + esc(a.asOrg) + '</small>'
                : '') + (a.country ? '<br><small>' + esc(a.city ? a.city +
@@ -858,7 +992,7 @@ class RiskAdmin {
         '</td><td><small>' + esc([a.uaFamily, a.uaOs, a.uaPlatform]
           .filter(Boolean).join(' / ') || '—') +
         (a.bot ? ' (automated)' : '') + '<br>' + esc(a.credentialKind) +
-        '</small></td><td class="num">' +
+        deviceCell + '</small></td><td class="num">' +
         esc(Number(a.score).toPrecision(3)) + '</td><td><strong>' +
         esc(a.level) + '</strong></td><td><small>' + (signals || '—') +
         '</small></td><td>' + esc(a.decision) +
@@ -868,7 +1002,7 @@ class RiskAdmin {
           : '') + '</td></tr>';
     }).join('');
     const people = view.subjects.map(function (p: Json): string {
-      return '<tr><td><code>' + esc(p.subject) + '</code></td><td>' +
+      return '<tr><td>' + self.whoCell(p) + '</td><td>' +
         '<strong>' + esc(p.level) + '</strong>' +
         (p.previousLevel && p.previousLevel !== p.level
           ? ' <small>(was ' + esc(p.previousLevel) + ')</small>' : '') +
@@ -887,15 +1021,17 @@ class RiskAdmin {
         ? 'Held in the database.'
         : 'Held in this process: there is no database with a key to seal ' +
           'them under.') + ' ' + view.assessments.total +
-      ' assessment(s).</p><table class="grid" id="risk-assessments"><thead>' +
+      ' assessment(s).</p>' + assessmentsNav.head +
+      '<table class="grid" id="risk-assessments"><thead>' +
       '<tr><th>When</th><th>Who</th><th>Network</th><th>Device</th>' +
       '<th>Score</th><th>Level</th><th>Signals</th><th>Decision</th></tr>' +
       '</thead><tbody>' + (rows || '<tr><td colspan="8">None yet.</td></tr>') +
-      '</tbody></table>' + credit + '<h3>People by current standing</h3>' +
+      '</tbody></table>' + assessmentsNav.foot + credit +
+      '<h3>People by current standing</h3>' + subjectsNav.head +
       '<table class="grid" id="risk-subjects"><thead><tr><th>Who</th>' +
       '<th>Level</th><th>Score</th><th>Why</th><th>Updated</th></tr>' +
       '</thead><tbody>' + (people || '<tr><td colspan="5">None yet.</td>' +
-                          '</tr>') + '</tbody></table>';
+                          '</tr>') + '</tbody></table>' + subjectsNav.foot;
   }
 
   // A provider's credit as its licence asks (`risk_terms.attributionOf()`):
@@ -1078,7 +1214,7 @@ class RiskAdmin {
       log.debug('Entering POST ' + UPLOAD + '.');
       if (!admin.mayWrite(req)) {
         errorCodes.mark(res, 'STS-RISK-0011');
-        res.set('Connection', 'close');
+        lingeringClose.arm(req, res);
         admin.respondToAction(req, res, PAGE, { ok: false, errors: [
           'This console session may read but not write.'] });
         log.debug('Leaving POST ' + UPLOAD + '. Read-only.');
@@ -1089,7 +1225,7 @@ class RiskAdmin {
                                                         true))
         .then(function (answer: Json): void {
           if (answer.close) {
-            res.set('Connection', 'close');
+            lingeringClose.arm(req, res);
           }
           if (answer.code) {
             errorCodes.mark(res, answer.code);
@@ -1108,7 +1244,7 @@ class RiskAdmin {
         }).catch(function (e: Json): void {
           log.warn(errorCodes.tag('STS-RISK-0037') + 'risk: an upload ' +
                    'failed: ' + ((e && e.stack) || e));
-          res.set('Connection', 'close');
+          lingeringClose.arm(req, res);
           admin.respondToAction(req, res, PAGE, errorCodes.mark({
             ok: false, errors: [String((e && e.message) || e)] },
             'STS-RISK-0037'));

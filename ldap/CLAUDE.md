@@ -725,7 +725,44 @@ Connect Native SSO secret and the sign-on session it is good for. The
 container is seeded like the others; `listDeviceEntries()`,
 `writeDeviceEntry()` and `deleteDeviceEntry()` are the store, reached through
 `credentials.deviceStore()`, and `common/devices.ts` decides what an entry
-means. #164 adds the rest of what a device is to these same entries.
+means.
+
+**#164 ADDED THE REST OF WHAT A DEVICE IS TO THESE SAME ENTRIES
+(2026-09-26)**: `owner` may name an APPLICATION entry as well as a person
+(`stsDeviceOwnerKind` says which), and twelve more `stsDevice*` names carry
+the keys (`stsDeviceKey`, one JSON value each, and the derived
+`stsDeviceKeyThumbprint` index), attestation, compliance and status with the
+last change of each, three descriptive labels and the enrolment.
+`common/devices.ts`'s header argues the layout. **None of them is a secret**
+— a key's value is public material — so SECRET_ATTRIBUTES is unchanged and
+still holds only `stsDeviceSecretHash`; `directory_merge.js` merges the keys
+and the index by value (MULTI) and the three JSON records whole (SINGLE). A
+sixth hook, `ownerOf(dn)`, answers who a DN is — `{ kind, name, dn }` for a
+person or an application, null for anything else — so a device's owner is
+named on a page rather than printed as a DN.
+
+**THE DEVICE INDEX (`deviceEntryByIndex()`)** began in phase 3 with `cn`,
+`stsDeviceKeyThumbprint` and `stsDeviceSecretHash`. Phase 6 (2026-09-26)
+added two more:
+* **`stsDeviceCredentialId`**: a linked WebAuthn credential's id, derived
+  from `stsDeviceKey` like the thumbprints, in the attribute list and in
+  MULTI.
+* **`owner`**, for `devices.holdsAny()`.
+
+`owner` is the first indexed value SEVERAL entries share, so the index
+keeps one entry per value. That changed one rule: **a hit that fails its
+validation now rebuilds.** For a one-to-one value, a stale hit could only
+mean the value was gone. For `owner` it may be one device given to someone
+else while a sibling still names the first owner, and answering "none"
+would be wrong, not merely slow. The comment above `DEVICE_INDEXED` argues
+it.
+
+**`GET /admin/ldap/devices` is the NINTH container page** (#218), drawn here
+beside the other eight and handed to `admin.setDirectoryPages()` with them
+(`DIRECTORY_PAGE_NAMES` has nine): the entries attribute by attribute, and
+the schema `devices.SCHEMA` publishes. It withholds `stsDeviceSecretHash`
+from the table and the JSON, as every LDAP read does. The register as the
+console works with it is Directory → Devices (`admin-ui/devices_admin.ts`).
 
 ## `ou=oidfed`: THE OPENID FEDERATION REGISTER (2026-09-23, #132)
 
@@ -1984,6 +2021,15 @@ every reader goes through.
   the requirement (`appRequiredRole`) is on the application entry. And that the
   six built-in roles are in NO container, so an empty `ou=roles` is the ordinary
   state of a service refusing nobody.
+  **A write to it is an account-observer notice** (#238, 2026-09-26):
+  `noteRoleChange()` tells the observer `kind: 'roles'` once per person whose
+  roles claim it moved — a `roleMemberUser` that came or went, a member of a
+  `roleMemberGroup` that came or went, everybody on a create, delete or
+  rename — from `putEntry()`, `deleteRole()` and the LDAP modify, delete and
+  rename; a group's `membership` notice says `rolesMoved` when a role names
+  the group, and `writePersonFlag()` tells it of `stsMailVerified` as of the
+  lock. Shared Signals turns them into `token-claims-change`
+  (`ssf/CLAUDE.md`, *EVERY OTHER DOOR*).
 * **policies** — that a write over LDAP **skips the typechecker**. Every write
   through `/admin/xacml` and `/admin-api/xacml` is statically validated so a
   policy that does not typecheck is refused at write time; an `ldapmodify` of
@@ -2245,9 +2291,20 @@ Both bind `global.host` (the literal `'0.0.0.0'` until 2026-09-12 — wrong in e
 **`ldap.plainListener`** (default on) leaves 389 unbound when off: `whenReady` RESOLVES
 with `port: null`, `listenError` records that it was switched off rather than failed, and
 LDAPS is the only way in. Product mode with it on is WARNED about at startup, because a
-verified simple bind on 389 is a real password in the clear. **LDAPS takes `tls.minVersion`
-and `tls.ciphers`** from `tls_server.js`'s `protocolOptions()`, at construction and again
-in the `setSecureContext()` re-key.
+verified simple bind on 389 is a real password in the clear. **LDAPS takes `tls.minVersion`,
+`tls.ciphers`, `tls.groups` and `tls.signatureAlgorithms`, and refuses renegotiation,**
+from `tls_server.js`'s `protocolOptions()`, at construction and again in the
+`setSecureContext()` re-key.
+
+**tlsfuzzer runs against 636 (#212).** `tests/vendored/sts_tlsfuzzer.js` runs it with the
+main port's plan; `tests/CLAUDE.md` (*THE TLS FUZZER*) has the details. The scripts send
+`GET / HTTP/1.0`, and the adapter swaps it for an LDAP BindRequest of the same length,
+which this listener answers in every mode. Three things differ from the main port, and each
+is in the plan with its reason:
+* no ALPN is negotiated (ldapjs sets none, and no identifier is registered for LDAP);
+* no client certificate is asked for, so the certificate scripts do not apply;
+* the connection stays open after a response, which exposes a malformed closing alert in
+  two scripts. It is answered correctly, with `illegal_parameter`.
 
 `tests/ldap_tls_product_mode.js` holds all of it in child processes (the directory is
 seeded at require time in the mode the process starts in); mutation-tested against the
@@ -2367,6 +2424,67 @@ the person without usable keys until they signed in somewhere else.
 **WHAT IT DOES NOT COVER IS READING**, which is the next two sections. That paragraph
 read *search and compare are unauthorized in both modes* until the same day.
 `tests/directory_write_authorization.js` holds the rule in process.
+
+## A CREDENTIAL IS NOT WRITTEN OVER THE SOCKET, IN EITHER MODE (#237, 2026-09-26)
+
+**An add or modify naming a credential attribute is refused, for every bind,
+administrator included, in development too** — `credentialWriteRefusal()`,
+called beside `operationalWriteRefusal()` in both handlers, answering
+`unwillingToPerform` (53) and recorded `STS-LDAP-0111`, with the door that
+owns the attribute NAMED in the message. The list is
+`CREDENTIAL_ATTRIBUTE_DOORS` (exact names: a security key, an authenticator
+app, recovery codes, app passwords, a HOBA key, a self-issued subject, the
+emailed factor and its failure count, Kerberos keys, a CIBA user code, the
+EAB keys and SCEP challenges of both kinds of entry, an enrolled certificate
+and its server-generated key, a device's secret, key and credential id) and
+`CREDENTIAL_ATTRIBUTE_PREFIXES` (`stsAssertion*`, `stsSamlAssertion*`, a
+person's signing key pair and everything recorded about it).
+
+**WHY REFUSE AND NOT SIGNAL.** Until this date the modify loop applied any
+attribute and only `userPassword` reached `notePasswordWritten()`, so an
+`ldapmodify` of `stsTotpCredential` by an Admin Write bind changed a person's
+credential with no CAEP `credential-change` — and past every check the door
+that owns it makes (an attestation, a hash, a proof of the key, one kid per
+account). Signalling each attribute by its type here was the alternative;
+refusing is smaller and closes the second hole too, which is rcbj's standing
+rule (most secure by default). **In development as well**, because the point
+is where a credential is WRITTEN, not who is trusted to bind; a directory moved
+between instances carries these through the persistence store, never through
+the socket. **`userPassword` is not on the list**: the socket is one of its
+doors, it meets the password policy in `passwordWriteRefusal()`, and it is
+signalled — and since #237 a DELETE of it is `password` `revoke` and a
+pre-hashed value development keeps is `create` or `update`, both of which the
+early return in `passwordWriteRefusal()` used to hide.
+
+**`pwdReset` stays writable by an administrator**, which is how a directory
+tool forces a change; setting it (not already TRUE) now sends RISC
+`account-credential-change-required`, as the console's reset does
+(`notePasswordChangeRequired()`). `ssf/CLAUDE.md` has the whole #237 table.
+
+## A REFUSAL'S TEXT REACHES THE CLIENT (#261, 2026-09-26)
+
+**Every refusal here is written for the client** — `credentialWriteRefusal()`
+names the door, a lockout says when to retry — and until this date none of it
+arrived: node-ldapjs put an error's message in `res.errorMessage`, which
+`@ldapjs/messages`' `LdapResult` reads only as a constructor option, so every
+result was ENCODED with an empty diagnosticMessage (RFC 4511 section 4.1.9)
+and a client saw 53 and nothing else. **The fix is the fork's second change**:
+an `encodeErrorMessage` server option, off by default (upstream's behaviour),
+that copies `errorMessage` into `diagnosticMessage` when the response is ended.
+Both servers are created with it and each is asked whether it took
+(`STS-LDAP-0112`, as `routeAnonymousBinds` is). The fork's client carries what
+arrived as the error's own `diagnosticMessage` property; its `message` is
+unchanged.
+
+**WHAT THE OPTION DOES NOT SEND** is a message that describes this service
+rather than the request: with it on, an uncaught exception in a handler is
+answered `internal error`, and `ldapErrorNamed()` answers a worker's
+unrebuildable error the same way (the original wording stays on the log and
+the `STS-LDAP-0023` audit row). Whoever writes a refusal is writing to the
+client now — the operator's version is `ldapRefusal()`'s summary.
+`tests/ldap_diagnostic_message.js` holds the control, the option and the two
+`createServer()` calls; `tests/vendored/sts_credential_signals.js` asserts over
+LDAPS that the 53 names `/portal/mfa` and `/portal/keys`.
 
 ## HOW A CONNECTION BINDS AND WHAT IT MAY READ, IN PRODUCT MODE (2026-09-12)
 
@@ -2596,6 +2714,20 @@ is what this directory does with it.
   read naively is "the lock was cleared"; the transition is ignored for a
   `deleted:` kind, and `ssf/risc.ts`'s reading of the same attribute answers
   `null` rather than `true` for an entry that is not there.
+* **A DELETE ENDS WHAT THE PERSON HELD (#241, 2026-09-26).** A `deleted:`
+  kind — `deletePerson()` (SCIM's `DELETE`) and the LDAP delete handler, each
+  naming its door — is handed to `account_state.directoryDeleted()`, lazily,
+  as a lock is: every session, token and connection the person held at the
+  delete is ended after the write has been answered (`STS-LDAP-0120` if the
+  hand-off throws). This file said a deleted entry "takes its sessions with it
+  by other means" until then, and nothing did. `consequences: false` skips it
+  for a caller that has ended everything itself — a realm being removed.
+* **A REALM BEING REMOVED PURGES ITS PEOPLE ALOUD (#232).** The realm
+  directory's `realms.onRetire()` announce hook hands every person entry to
+  the account observers as a `deleted:` kind, with its attributes as they
+  were and `consequences: false`, before the store is dropped whole — so a
+  RISC receiver hears `account-purged` for each. The anonymous principal is
+  nobody's account and is skipped.
 * **The KDC reads it through `readPerson()`** — the Kerberos key source's
   hook, which now reports `disabled` — so an AS-REQ is refused before a
   development-mode KDC would create the principal.
@@ -2684,3 +2816,59 @@ hooks to `credentials.setDirectory()` — `readAppPasswords`, `writeAppPasswords
 (`isPersonEntry()` by placement, never a name) — and `stsAppPassword` is on
 `OWN_NAMES`, `SECRET_ATTRIBUTES` (withheld from every read, a verifier like
 `userPassword`) and `persistence/directory_merge.js`'s `SINGLE`.
+
+## `person_editor.ts`: WHAT AN ADMINISTRATOR MAY CHANGE ON A PERSON (#228, 2026-09-26)
+
+The user page's attribute editor (Set, Add to, Remove from), and `POST
+/admin-api/users/set-attribute`, `/add-attribute` and `/remove-attribute`,
+all go through `ldap/person_editor.ts`. The page is argued in `admin-ui/CLAUDE.md`.
+Three things here are this directory's.
+
+* **THE LIST IS THE SCHEMA, MINUS WHAT IS MANAGED.** This was rcbj's choice,
+  2026-09-26. The universe is `common/inetorgperson.ts`'s rows plus the
+  credential catalogue's that are on neither (`schacDateOfBirth`, `c`,
+  `employeeStatus`), computed per call. So a row added to either list is
+  editable with nothing else to change. It is an ALLOWLIST for the reason
+  the socket's write authorization is one. `memberOf` grants console roles,
+  and every `sts*` attribute is a credential. A name on neither list is
+  refused by name (`STS-LDAP-0103`).
+* **FOUR KINDS ARE WITHHELD, EACH WITH THE DOOR TO USE.**
+  * `userPassword` (secret): `set-password` hashes it.
+  * The binary rows.
+  * `uid`: the username, and what `usernameKeysOf()` reads.
+  * `mail`: `set-mail` verifies it (`verifyWrittenMail()`) and tells the
+    former address.
+  * Whichever attribute the entry's RDN is built from (`STS-LDAP-0104`). That
+    is `cn` for an entry a client certificate filed as `cn=<name>`, asked per
+    entry, because an edit would leave the DN and the entry disagreeing.
+
+  One value or several is each RFC's `SINGLE-VALUE`. `cn` and `sn` are never
+  emptied (RFC 4519 3.12's MUST). A country, a date, a language range, an
+  http(s) `labeledURI` and a DN are checked for their shape. A DN's shape
+  only: a manager elsewhere is ordinary, and this directory keeps no
+  referential integrity.
+* **THE WRITE IS `writePersonAttribute()`, IN PLACE, AND NOT `writePerson()`.**
+  `writePerson()` REPLACES the entry through `putEntry()`, which runs every
+  value through `valuesOf()` and so turns it into a string. An edit of a
+  telephone number has no business re-encoding a binary value that shares the
+  entry. So the slot's writer changes the one attribute, as `writePersonFlag()`
+  does. It keeps `modifiedAt` and `modifyTimestamp` in step, calls
+  `touchDirectory(dn)` (persist, replicate), and hands the before and after to
+  `noteAccountChange('updated', …)`. That is the observer a SCIM PATCH and an
+  `ldapmodify` reach, so Shared Signals reads an edit made here as it reads
+  either of those.
+
+  None of the offered attributes feeds the username index (`uid` and the RDN
+  are withheld) or the address verification (`mail` is withheld). That is why
+  the in-place write is safe without `putEntry()`'s index bookkeeping.
+
+**THE SLOT** is `personEditor.setDirectory({ locate, write })`, filled beside
+the group-claims slot and validated whole. `locate(key)` answers a person
+entry only (`isPersonEntry()`), with a snapshot of its attributes and its RDN's
+types. The library cannot require this file: `admin-core/` loads it at 18, and
+this JavaScript module registers `/admin/ldap/*` when required.
+
+`tests/person_attribute_editor.js` covers it in process: the list, every mode,
+every code from `STS-LDAP-0102` to `0109`, the formats, untouched neighbours,
+the observer, the view and the page. `tests/vendored/sts_person_attributes.js`
+covers the API over HTTP in a realm of its own.

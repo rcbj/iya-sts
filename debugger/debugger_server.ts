@@ -815,6 +815,10 @@ class DebuggerServer {
                                          tlsServer.clientTruststoreOptions(),
                                          { requestCert: true,
                                            rejectUnauthorized: false }), app)
+      // `clientTruststoreOptions()` carries `tls_server.js`'s
+      // protocolOptions() — the floor, the ciphers, the groups and the
+      // signature algorithms — so this listener is held to the main port's
+      // policy from its first handshake (#212's tlsfuzzer run drives it).
       : http.createServer(app);
     if (useHttps) {
       // REGISTERED so that a certificate this service replaces at runtime —
@@ -1211,10 +1215,11 @@ class DebuggerServer {
       const parent = String(session.derivedFrom || '');
       const username = session.user.username;
       oidcRp.endSessionFor(req, res, SURFACE,
-                           'the Sign out button on the protocol debugger');
+                           'the Sign out button on the protocol debugger',
+                           'user');
       const signOnEnded = parent
         ? !!authn.endSessionById(parent, 'the Sign out button on the ' +
-                                         'protocol debugger')
+                                         'protocol debugger', 'user')
         : false;
       if (signOnEnded) {
         authn.clearSessionCookie(res);

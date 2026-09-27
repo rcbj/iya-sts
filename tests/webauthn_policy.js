@@ -83,6 +83,34 @@ function withSetting(key, value, fn) {
   }
 }
 
+// A VALUE AS THE APPCONFIG FILE OR THE ENVIRONMENT WOULD GIVE IT (#86). A
+// write through `config.setOverride()` of a value outside the setting's
+// `csvValues` is refused now, so the reader's own defence — dropping a name it
+// does not know — is reached only by a value that arrived by a layer nobody
+// checks on write. `config.value()` is answered for this one key for the
+// length of `fn`, which is exactly that. Every key it is used for is a
+// `csv` row.
+function withReadValue(key, raw, fn) {
+  log.debug("Entering withReadValue().");
+  const was = config.value;
+  // A csv row's parse, done here: `config.parseAs()` runs the same check
+  // the write does and would refuse the value this exists to deliver.
+  const parsed = String(raw).split(',').map(function (part) {
+    return part.trim();
+  }).filter(function (part) {
+    return part.length > 0;
+  });
+  config.value = function (asked) {
+    return asked === key ? parsed : was.apply(config, arguments);
+  };
+  try {
+    log.debug("Leaving withReadValue().");
+    return fn();
+  } finally {
+    config.value = was;
+  }
+}
+
 function aKey(id) {
   log.debug("Entering aKey().");
   log.debug("Leaving aKey().");
@@ -105,7 +133,12 @@ function run(t) {
   }), 'every algorithm offered by default is one the verifier can check',
   policy.algorithmsOffered().join(', '));
 
-  withSetting('webauthn.algorithms', 'ES256,NOSUCHALG,RS256', function () {
+  t.check(config.setOverride('webauthn.algorithms', 'ES256,NOSUCHALG').ok ===
+          false,
+          'A WRITE NAMING AN ALGORITHM THE VERIFIER DOES NOT KNOW IS REFUSED ' +
+          '(#86) — the setting\'s csvValues are the verifier\'s own names',
+          config.text('webauthn.algorithms'));
+  withReadValue('webauthn.algorithms', 'ES256,NOSUCHALG,RS256', function () {
     const offered = policy.algorithmsOffered();
     t.check(offered.indexOf('NOSUCHALG') < 0,
       'AN ALGORITHM THE VERIFIER DOES NOT KNOW IS DROPPED FROM THE OFFER — ' +
@@ -118,7 +151,7 @@ function run(t) {
       'pubKeyCredParams is a preference list', offered.join(', '));
   });
 
-  withSetting('webauthn.algorithms', 'NOSUCHALG,ALSONOT', function () {
+  withReadValue('webauthn.algorithms', 'NOSUCHALG,ALSONOT', function () {
     const offered = policy.algorithmsOffered();
     t.check(offered.length > 0,
       'A SETTING THAT NAMES NOTHING USABLE FALLS BACK RATHER THAN OFFERING ' +
@@ -160,6 +193,55 @@ function run(t) {
     t.check(policy.creationOptions('localhost')
               .authenticatorSelection.authenticatorAttachment === 'cross-platform',
       'and a real preference IS sent');
+  });
+
+  // THE PERSON'S CHOICE ON /portal/keys (2026-09-26): which kind of
+  // authenticator the enrolment asks for, narrowing the request only while
+  // the realm's setting leaves the choice open.
+  withSetting('webauthn.authenticatorAttachment', 'any', function () {
+    withSetting('webauthn.residentKey', 'discouraged', function () {
+      const built = policy.creationOptions('localhost', 'platform')
+        .authenticatorSelection;
+      const carried = policy.creationOptions('localhost', 'roaming')
+        .authenticatorSelection;
+      const neither = policy.creationOptions('localhost', 'bogus')
+        .authenticatorSelection;
+      t.check(built.authenticatorAttachment === 'platform' &&
+              built.residentKey === 'preferred' &&
+              built.requireResidentKey === false,
+        'a key BUILT INTO THIS DEVICE asks for the platform authenticator ' +
+        'and a discoverable credential (preferred), because "discouraged" ' +
+        'is what sends Chrome and Edge to a USB key and never the device',
+        JSON.stringify(built));
+      t.check(carried.authenticatorAttachment === 'cross-platform' &&
+              carried.residentKey === 'discouraged',
+        'a key THEY CARRY asks for a roaming authenticator and keeps the ' +
+        'setting\'s resident-key answer — its slot argument is about them',
+        JSON.stringify(carried));
+      t.check(!Object.prototype.hasOwnProperty
+                .call(neither, 'authenticatorAttachment') &&
+              neither.residentKey === 'discouraged',
+        'an unknown kind is the request as it always was',
+        JSON.stringify(neither));
+      t.check(JSON.stringify(policy.authenticatorKinds()) ===
+              '["platform","roaming"]',
+        'both kinds are offered while the setting is any',
+        JSON.stringify(policy.authenticatorKinds()));
+    });
+    withSetting('webauthn.residentKey', 'required', function () {
+      t.check(policy.creationOptions('localhost', 'platform')
+                .authenticatorSelection.residentKey === 'required',
+        'a setting of REQUIRED is never loosened to preferred');
+    });
+  });
+  withSetting('webauthn.authenticatorAttachment', 'cross-platform',
+              function () {
+    t.check(policy.creationOptions('localhost', 'platform')
+              .authenticatorSelection.authenticatorAttachment ===
+              'cross-platform' &&
+            JSON.stringify(policy.authenticatorKinds()) === '["roaming"]',
+      'a setting that names one wins over the person\'s choice, and the page ' +
+      'is offered only that one');
   });
 
   withSetting('webauthn.residentKey', 'required', function () {

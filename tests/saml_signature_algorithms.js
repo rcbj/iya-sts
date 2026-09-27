@@ -51,12 +51,16 @@ const NS_SAML = 'urn:oasis:names:tc:SAML:2.0:assertion';
 const NS_MD = 'urn:oasis:names:tc:SAML:2.0:metadata';
 const U = kit.URIS;
 
+// A Destination since #190: a SIGNED request names where it was sent
+// (saml-bindings-2.0-os sections 3.4.5.2, 3.5.5.2) and this service refuses
+// one addressed elsewhere; the fake requests arrive at https://idp.test.
 function authnRequest(issuer, id) {
   log.debug("Entering authnRequest().");
   log.debug("Leaving authnRequest().");
   return '<samlp:AuthnRequest xmlns:samlp="' + NS_SAMLP + '" ' +
     'xmlns:saml="' + NS_SAML + '" ID="' + id + '" Version="2.0" ' +
-    'IssueInstant="' + new Date().toISOString() + '">' +
+    'IssueInstant="' + new Date().toISOString() + '" ' +
+    'Destination="https://idp.test/saml2/sso">' +
     '<saml:Issuer>' + issuer + '</saml:Issuer></samlp:AuthnRequest>';
 }
 
@@ -65,7 +69,8 @@ function logoutRequest(issuer, id) {
   log.debug("Leaving logoutRequest().");
   return '<samlp:LogoutRequest xmlns:samlp="' + NS_SAMLP + '" ' +
     'xmlns:saml="' + NS_SAML + '" ID="' + id + '" Version="2.0" ' +
-    'IssueInstant="' + new Date().toISOString() + '">' +
+    'IssueInstant="' + new Date().toISOString() + '" ' +
+    'Destination="https://idp.test/saml2/slo">' +
     '<saml:Issuer>' + issuer + '</saml:Issuer>' +
     '<saml:NameID>alice</saml:NameID></samlp:LogoutRequest>';
 }

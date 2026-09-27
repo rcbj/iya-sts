@@ -530,13 +530,25 @@ function run(t) {
           'away');
   t.equal(fedSp.federatedAmr(['federated', 'pwd']).join(','), 'federated,pwd',
           'and applying it twice changes nothing');
+  // A write naming HS256 is refused since #86 (the row's csvValues are the
+  // asymmetric names), so the reader's own narrowing is reached the way an
+  // unchecked layer — the appconfig file, the environment — would reach it:
+  // `config.value()` answered for this one key.
+  t.equal(config.setOverride('federation.jwtAlgorithms', 'RS256,HS256').ok,
+          false, 'a write adding HS256 to federation.jwtAlgorithms is ' +
+                 'refused (#86)');
+  const readValue = config.value;
+  config.value = function (asked) {
+    return asked === 'federation.jwtAlgorithms' ? ['RS256', 'HS256']
+                                                : readValue.apply(config,
+                                                                  arguments);
+  };
   try {
-    config.setOverride('federation.jwtAlgorithms', 'RS256,HS256');
     t.equal(fedSp.familyAlgorithms('RSA').join(','), 'RS256',
             'federation.jwtAlgorithms narrows the key\'s family and cannot ' +
             'add HS256 to it');
   } finally {
-    config.clearOverride('federation.jwtAlgorithms');
+    config.value = readValue;
   }
   const noPeer = federation.readinessOf({ fedRole: 'service-provider',
                                           fedProtocol: 'saml2',

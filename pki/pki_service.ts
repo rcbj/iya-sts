@@ -29,7 +29,9 @@
 //
 // **AND ON TWO LISTENERS** since 2026-09-13: the main port, and the plain-HTTP
 // revocation listener at the foot of this file, which serves `/pki/` and
-// nothing else and is the address every certificate names.
+// is the address every certificate names — and, since 2026-09-24 (#210),
+// SCEP's `/enroll/scep`, which is message-secured and which the clients it
+// exists for can reach only over plain HTTP (`revocationOnly()`).
 //
 // **`{scope}` IS IN THE PATH AND NOT TAKEN FROM THE REALM PREFIX**, which is
 // the one routing decision here. Every other endpoint in this service reads
@@ -70,6 +72,12 @@ import nodeCrypto = require('crypto');
 import app = require('../common/app');
 import helpers = require('../common/helpers');
 const { log, parseBody } = helpers;
+
+// The SCEP paths the plain-HTTP listener also answers (#210): `/enroll/scep`
+// and everything under it, bare or under a realm's prefix — one or two
+// segments, since `realms.pathSegment` may be empty. The route itself decides
+// what exists; this only chooses which socket may carry it.
+const SCEP_PATH = /^(?:\/[^/]+){0,2}\/enroll\/scep(?:\/|$)/;
 import config = require('../common/config');
 import pki = require('../common/pki');
 import revocation = require('../common/pki_revocation');
@@ -334,8 +342,19 @@ class PkiService {
     // `/healthcheck` too (2026-09-21): the load balancer's HTTP health
     // check on this port (deploy/aws/environment/nlb.tf) — the same route
     // `common/app.js` answers on the main port.
+    //
+    // **AND SCEP SINCE 2026-09-24 (#210)**, in the default realm and under
+    // a realm's prefix. RFC 8894 section 2.1 is HTTP, and the protocol
+    // secures its own messages — signed by the device, enveloped to the RA,
+    // the challenge inside the envelope, the certificate enveloped back — so
+    // `scep/scep.ts` refuses it over no transport in either mode. What it
+    // lacked was a socket that speaks plain HTTP: sscep, the long-standing
+    // independent client, has no TLS at all and refuses an https URL
+    // outright, and so does much of the device firmware SCEP exists for.
+    // Everything else stays on the main port.
     if ((/^\/pki\//.test(path) && path.indexOf('..') < 0) ||
-        path === '/healthcheck') {
+        path === '/healthcheck' ||
+        (SCEP_PATH.test(path) && path.indexOf('..') < 0)) {
       log.debug("Leaving PkiService.revocationOnly(). Handed to the app.");
       app(req, res);
       return;
@@ -345,8 +364,9 @@ class PkiService {
     res.setHeader('Content-Type', 'text/plain; charset=utf-8');
     res.setHeader('Cache-Control', 'no-store');
     res.end('This plain-HTTP listener serves the revocation endpoints under ' +
-            '/pki/, and /healthcheck, and nothing else. Everything else this ' +
-            'service answers is on its main port.\n');
+            '/pki/, SCEP under /enroll/scep, and /healthcheck, and nothing ' +
+            'else. Everything else this service answers is on its main ' +
+            'port.\n');
     log.debug("Leaving PkiService.revocationOnly(). Not a revocation path.");
   }
 

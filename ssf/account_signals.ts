@@ -65,9 +65,16 @@ interface Delivery {
 interface SsfEmitters {
   emitCredentialChange?(notice: object): Delivery | Promise<Delivery>;
   emitRiscAccountAct?(notice: object): Delivery | Promise<Delivery>;
+  emitDeviceEvent?(notice: object): Delivery | Promise<Delivery>;
+  emitClaimsChange?(notice: object): Delivery | Promise<Delivery>;
+  claimsFanOut?(notice: object): Delivery | Promise<Delivery>;
+  emitIdentityAssuranceChange?(notice: object):
+    Delivery | Promise<Delivery>;
 }
 
-type EmitterName = 'emitCredentialChange' | 'emitRiscAccountAct';
+type EmitterName = 'emitCredentialChange' | 'emitRiscAccountAct' |
+                   'emitDeviceEvent' | 'emitClaimsChange' | 'claimsFanOut' |
+                   'emitIdentityAssuranceChange';
 
 interface AccountSignalsDeps {
   log: { debug(m: string): void; warn(m: string): void };
@@ -105,6 +112,40 @@ class AccountSignals {
   static readonly PLATFORM_KEY_CREDENTIAL_TYPE = 'fido2-platform';
   // An authenticator app, in the same vocabulary: CAEP's `app`.
   static readonly TOTP_CREDENTIAL_TYPE = 'app';
+  // -------------------------------------------------------------------------
+  // THE PERSON-HELD CREDENTIALS CAEP 1.0 SECTION 3.3.1 HAS NO VALUE FOR
+  // (#236, 2026-09-26). The member is "one of the following strings, or any
+  // other credential type supported mutually by the Transmitter and the
+  // Receiver", so a value of this service's own is allowed, and a receiver
+  // that does not know it still learns that A credential of the person's
+  // changed. Each is a URN in this service's namespace — the precedent
+  // `common/devices.ts` set for a device key and a Native SSO secret — and
+  // is used only where no registered value is honest:
+  //
+  //   * the emailed second factor (#64): a code or link sent to an address,
+  //     which is neither `phone-sms` nor `app`;
+  //   * a SIOPv2 self-issued subject (#129): a KEY the person proved, not a
+  //     `verifiable-credential`;
+  //   * an ACME External Account Binding key: a MAC key, not a `password`;
+  //   * a HOBA public key registered for SCIM (RFC 7486);
+  //   * a person's Kerberos long-term keys, derived from a password but held
+  //     and replaced on their own.
+  //
+  // A SCEP challenge password is NOT here: it is literally a password, and
+  // goes out as the registered `password` with its name as `friendly_name`.
+  // RISC's `credential-compromise` takes the same values (RISC 1.0 section
+  // 2.7 defines `credential_type` by reference to CAEP's).
+  // -------------------------------------------------------------------------
+  static readonly EMAIL_OTP_CREDENTIAL_TYPE =
+    'urn:iya:sts:credential-type:email-otp';
+  static readonly SELF_ISSUED_KEY_CREDENTIAL_TYPE =
+    'urn:iya:sts:credential-type:self-issued-key';
+  static readonly ACME_EAB_KEY_CREDENTIAL_TYPE =
+    'urn:iya:sts:credential-type:acme-eab-key';
+  static readonly HOBA_KEY_CREDENTIAL_TYPE =
+    'urn:iya:sts:credential-type:hoba-key';
+  static readonly KERBEROS_KEY_CREDENTIAL_TYPE =
+    'urn:iya:sts:credential-type:kerberos-key';
 
   constructor(private readonly deps: AccountSignalsDeps) {
     deps.log.debug('Entering AccountSignals.constructor().');
@@ -238,12 +279,18 @@ class AccountSignals {
   }
 
   // RISC recovery-activated (#146): account recovery was started — an
-  // administrator issued a password-reset link, or (#63) a person asked for
-  // one on the forgot-password form.
+  // administrator issued a password-reset link or (#235) an activation link
+  // for somebody who already exists, (#63) a person asked for one on the
+  // forgot-password form, or (#235) a person signed in with a recovery code.
+  // `mailNotice: false` is the last: the person is at the screen, and is not
+  // mailed about what they just typed.
   recoveryActivated(notice?: object): Promise<Delivery> {
     const { log } = this.deps;
     log.debug('Entering AccountSignals.recoveryActivated().');
-    this.mailNotice('recoveryActivated', notice || {});
+    if ((notice as { mailNotice?: boolean } | undefined)?.mailNotice !==
+        false) {
+      this.mailNotice('recoveryActivated', notice || {});
+    }
     log.debug('Leaving AccountSignals.recoveryActivated().');
     return this.deliver('a RISC recovery-activated', 'emitRiscAccountAct',
                         Object.assign({}, notice || {},
@@ -251,14 +298,21 @@ class AccountSignals {
   }
 
   // RISC credential-compromise (#146): an administrator said a reset was
-  // BECAUSE the credential was compromised. `credentialType` is section 2.7's
-  // required `credential_type`.
+  // BECAUSE the credential was compromised — and, since #231, a detector
+  // found it (a breached password at sign-in, a security key's counter going
+  // backwards, a certificate revoked for keyCompromise, the emailed factor
+  // turned off at its failure limit). `credentialType` is section 2.7's
+  // required `credential_type`. `mailed: true` says the door has already
+  // told the person in words of its own, so the generic notice is not sent
+  // a second time.
   credentialCompromised(notice?: Record<string, any>):
       Promise<Delivery> {
     const { log } = this.deps;
     log.debug('Entering AccountSignals.credentialCompromised().');
     const asked = notice || {};
-    this.mailNotice('credentialCompromised', asked);
+    if (!asked.mailed) {
+      this.mailNotice('credentialCompromised', asked);
+    }
     log.debug('Leaving AccountSignals.credentialCompromised().');
     return this.deliver('a RISC credential-compromise', 'emitRiscAccountAct',
       Object.assign({}, asked, { act: 'credentialCompromise',
@@ -276,8 +330,79 @@ class AccountSignals {
                         Object.assign({}, notice || {}));
   }
 
+  // ---------------------------------------------------------------------
+  // A DEVICE'S EVENTS (#164 phase 4), from `common/devices.ts`, the
+  // register's funnel: CAEP `device-compliance-change`, `risk-level-change`
+  // with principal DEVICE and `credential-change` for a device key or its
+  // Native SSO secret. `notice` is { type, act, deviceId, username (the
+  // owner, where a person), values, initiatingEntity, reasonAdmin,
+  // reasonUser }; `ssf.ts`'s `emitDeviceEvent()` builds the complex subject
+  // and holds it to `caep.autoEmitTypes`. No mail notice: a device's owner
+  // is told by the portal, and a compliance feed must not become mail.
+  // ---------------------------------------------------------------------
+  deviceEvent(notice?: Record<string, any>): Promise<Delivery> {
+    const { log } = this.deps;
+    log.debug('Entering AccountSignals.deviceEvent().');
+    const asked = notice || {};
+    log.debug('Leaving AccountSignals.deviceEvent().');
+    return this.deliver('a CAEP ' + String(asked.type || 'device event') +
+                        ' about a device', 'emitDeviceEvent', asked);
+  }
+
+  // RISC sessions-revoked (#164 phase 4): every session of a person ON ONE
+  // DEVICE was ended — the device compromised or removed. `notice` carries
+  // `deviceId`, which puts the device beside the person in the subject.
+  sessionsRevoked(notice?: Record<string, any>): Promise<Delivery> {
+    const { log } = this.deps;
+    log.debug('Entering AccountSignals.sessionsRevoked().');
+    log.debug('Leaving AccountSignals.sessionsRevoked().');
+    return this.deliver('a RISC sessions-revoked', 'emitRiscAccountAct',
+                        Object.assign({}, notice || {},
+                                      { act: 'sessionsRevoked' }));
+  }
+
+  // ---------------------------------------------------------------------
+  // CAEP token-claims-change FROM A DOOR THAT IS NOT A DIRECTORY ATTRIBUTE
+  // (#238) — identity assurance, a claims provider unlinked. `notice`:
+  // `username`, `claims` (the moved claims with their new values, or a
+  // function answering them, called only if the person holds something
+  // live), and optionally `protocol`, `reasonAdmin`, `reasonUser`.
+  // ---------------------------------------------------------------------
+  claimsChanged(notice?: Record<string, any>): Promise<Delivery> {
+    const { log } = this.deps;
+    log.debug('Entering AccountSignals.claimsChanged().');
+    log.debug('Leaving AccountSignals.claimsChanged().');
+    return this.deliver('a CAEP token-claims-change', 'emitClaimsChange',
+                        notice || {});
+  }
+
+  // CAEP token-claims-change to EVERY holder a configuration change moved
+  // (#238): `match(record)` picks the live artifacts it shaped, and
+  // `claimsFor(bearer)` answers the moved claims for one holder. See
+  // `ssf.ts`'s claimsFanOut(), which walks them in slices.
+  claimsFanOut(notice?: Record<string, any>): Promise<Delivery> {
+    const { log } = this.deps;
+    log.debug('Entering AccountSignals.claimsFanOut().');
+    log.debug('Leaving AccountSignals.claimsFanOut().');
+    return this.deliver('a CAEP token-claims-change fan-out',
+                        'claimsFanOut', notice || {});
+  }
+
+  // CAEP assurance-level-change for a person's IDENTITY assurance (#243):
+  // `username`, `namespace`, `current`, and where known `previous` and
+  // `direction`. `common/identity_assurance.ts` decides all four.
+  assuranceChanged(notice?: Record<string, any>): Promise<Delivery> {
+    const { log } = this.deps;
+    log.debug('Entering AccountSignals.assuranceChanged().');
+    log.debug('Leaving AccountSignals.assuranceChanged().');
+    return this.deliver('a CAEP assurance-level-change',
+                        'emitIdentityAssuranceChange', notice || {});
+  }
+
   // RISC recovery-information-changed: somebody's recovery codes were
-  // cleared.
+  // cleared, confirmed, or (#235) one of them spent — at sign-in or on the
+  // forgot-password form. A recovery ADDRESS added, changed, removed or
+  // verified is read off the directory write by `risc.ts` instead.
   recoveryInformationChanged(notice?: object): Promise<Delivery> {
     const { log } = this.deps;
     log.debug('Entering AccountSignals.recoveryInformationChanged().');
@@ -317,7 +442,18 @@ export = {
   recoveryActivated: slot.forward('recoveryActivated'),
   credentialCompromised: slot.forward('credentialCompromised'),
   optOutMoved: slot.forward('optOutMoved'),
+  deviceEvent: slot.forward('deviceEvent'),
+  sessionsRevoked: slot.forward('sessionsRevoked'),
+  claimsChanged: slot.forward('claimsChanged'),
+  claimsFanOut: slot.forward('claimsFanOut'),
+  assuranceChanged: slot.forward('assuranceChanged'),
   KEY_CREDENTIAL_TYPE: AccountSignals.KEY_CREDENTIAL_TYPE,
   keyCredentialType: AccountSignals.keyCredentialType,
-  TOTP_CREDENTIAL_TYPE: AccountSignals.TOTP_CREDENTIAL_TYPE
+  TOTP_CREDENTIAL_TYPE: AccountSignals.TOTP_CREDENTIAL_TYPE,
+  EMAIL_OTP_CREDENTIAL_TYPE: AccountSignals.EMAIL_OTP_CREDENTIAL_TYPE,
+  SELF_ISSUED_KEY_CREDENTIAL_TYPE:
+    AccountSignals.SELF_ISSUED_KEY_CREDENTIAL_TYPE,
+  ACME_EAB_KEY_CREDENTIAL_TYPE: AccountSignals.ACME_EAB_KEY_CREDENTIAL_TYPE,
+  HOBA_KEY_CREDENTIAL_TYPE: AccountSignals.HOBA_KEY_CREDENTIAL_TYPE,
+  KERBEROS_KEY_CREDENTIAL_TYPE: AccountSignals.KERBEROS_KEY_CREDENTIAL_TYPE
 };

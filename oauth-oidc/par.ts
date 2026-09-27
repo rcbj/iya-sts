@@ -223,6 +223,7 @@ class PushedRequests {
       request_object_alg: record.alg || '',
       request_object_encrypted: record.encrypted || '',
       dpop_jkt: record.dpopJkt || '',
+      attested_jkt: record.attestedJkt || '',
       redirect_uri: String((record.params || {}).redirect_uri || ''),
       redirect_uri_unregistered: !!record.redirectRelaxed,
       response_type: String((record.params || {}).response_type || ''),
@@ -267,6 +268,9 @@ class PushedRequests {
   //   entry.alg, entry.encrypted the request object's, where source is
   //                              'request'
   //   entry.dpopJkt              a DPoP proof's key at the push, or ''
+  //   entry.attestedJkt          the attested client instance key at the
+  //                              push (#229, draft-ietf-oauth-attestation-
+  //                              based-client-auth section 10.4), or ''
   //   entry.redirectRelaxed      whether section 2.4 let the redirect_uri in
   //
   // Answers `{ ok, requestUri, expiresIn }` or a refusal. It is the
@@ -325,6 +329,7 @@ class PushedRequests {
       alg: String(options.alg || ''),
       encrypted: String(options.encrypted || ''),
       dpopJkt: String(options.dpopJkt || ''),
+      attestedJkt: String(options.attestedJkt || ''),
       redirectRelaxed: !!options.redirectRelaxed
     });
     monitor.record(clientId, 'par.pushed');
@@ -444,6 +449,7 @@ class PushedRequests {
         method: record.method || '',
         source: record.source,
         dpopJkt: record.dpopJkt || '',
+        attestedJkt: record.attestedJkt || '',
         redirectUriAuthenticated: !!record.redirectRelaxed,
         expiresAt: record.expiresAt
       }

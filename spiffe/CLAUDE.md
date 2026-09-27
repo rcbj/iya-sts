@@ -333,6 +333,15 @@ that up silently.
      prepend-and-retain machinery and `MAX_RETAINED_AUTHORITIES` exist for the
      SELF-SIGNED path alone now, and `rotateX509Authority()` says which
      mechanism ran rather than reporting the two identically.
+   * **EVERY ROTATION IS ANNOUNCED (#245)**: `announceRotation()` sends
+     `spiffe-authority-rotated` through `ssf/service_signals.ts` (required
+     lazily), with the realm's trust domain and `bundle_changed`. That is false
+     for the PKI-anchored X.509 re-issue (the bundle is the Root) and true for a
+     self-signed or JWT rotation. The reason is `scheduled` from
+     `spiffe.authority-rotation` and `requested` from the console or API. An
+     act on `/admin/pki` that moves the SPIFFE Issuing CA (a reissue, a branch
+     or Root rebuild, an import) is announced by `admin-ui/pki_admin.ts`
+     through the same library.
    * **`trustAnchors` AND `x509Authorities` ARE TWO LISTS AND WERE ONE.** What
      SIGNS an SVID and what a consumer INSTALLS are different certificates now;
      they coincided only because a self-signed authority is both. Every report
@@ -1091,6 +1100,20 @@ why it is that store and not one of this directory's.
 its specification says it MUST NOT — a workload has no root of trust until that
 call gives it one — so there is no subject to decide about and no session to
 record. Only the `server` surface asks.
+
+## A PRESENTED X509-SVID IS HELD TO THE SHARED PATH RULES (#201, 2026-09-24)
+
+`verifyPresentedCertificate()` found its signer with node's `checkIssued()` and
+`verify()` and asked nothing else, so an SVID that was itself a CA, carried a
+critical extension nothing implements or broke a name constraint on the
+authority was accepted whenever the signature verified. It asks
+`pki.verifyIssuedDirectly()` now — the one synchronous one-hop door, holding the
+two-certificate path to `pki.pathRuleProblem()` with this surface's own
+`spiffe.clockSkew` — and then X509-SVID section 4.3's leaf rules
+(`leafSvidProblem()`: cA false, digitalSignature, neither keyCertSign nor
+cRLSign). Either refusal is `STS-SPIFFE-0144`. Still ONE HOP, as argued above:
+this CA signs leaves directly. C2SP x509-limbo is driven through the same door by
+`tests/x509_limbo.js` (`common/CLAUDE.md`, *3w, ONE SET OF PATH RULES*).
 
 ## A PRESENTED X509-SVID IS LOOKED UP IN THE REVOCATION REGISTER (2026-09-12)
 

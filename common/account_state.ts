@@ -67,6 +67,7 @@ type Json = any;
 // What this file needs of the logout family.
 interface LogoutFamily {
   terminate(key?: string, selection?: string[], opts?: Json): Json;
+  heldIds?(key?: string): string[];
 }
 
 interface AccountStateDeps {
@@ -189,6 +190,26 @@ class AccountState {
   // END EVERYTHING THE PERSON HOLDS — step 2 of the header. Answers what the
   // global logout answered, or why nothing could be ended here.
   // -------------------------------------------------------------------------
+  // -------------------------------------------------------------------------
+  // THE IDS OF WHAT A PERSON HOLDS NOW (#226), for an `endEverything()`
+  // later that must end only these — or null where no sign-out module is
+  // loaded in this process, which the caller reads as "cannot say".
+  // -------------------------------------------------------------------------
+  heldBy(who: string): string[] | null {
+    const { log, findLogout } = this.deps;
+    log.debug("Entering AccountState.heldBy(). who=" + who);
+    const logout = findLogout();
+    if (!logout || typeof logout.heldIds !== 'function') {
+      log.debug("Leaving AccountState.heldBy(). No logout family.");
+      return null;
+    }
+    const ids = logout.heldIds(this.keyOf(who));
+    log.debug("Leaving AccountState.heldBy(). " + ids.length + ".");
+    return ids;
+  }
+
+  // `opts.selection`, when given, is the ids to end (`heldBy()`), and
+  // nothing else; absent, EVERYTHING — a global logout.
   endEverything(who: string, opts?: Json): Json {
     const { log, findLogout, errorCodes } = this.deps;
     log.debug("Entering AccountState.endEverything(). who=" + who);
@@ -202,9 +223,16 @@ class AccountState {
     }
     let result: Json = null;
     try {
-      result = logout.terminate(this.keyOf(who), [], {
+      result = logout.terminate(this.keyOf(who),
+                                Array.isArray(o.selection) ? o.selection : [], {
         actor: o.actor || '', channel: o.channel || 'internal',
-        by: o.by || 'the account was disabled by an administrator'
+        by: o.by || 'the account was disabled by an administrator',
+        // WHO ENDED IT, for CAEP's `initiating_entity` (#242): the caller
+        // says, and an administrator's act is the default of this file's
+        // callers — risk scoring says `policy`.
+        initiatingEntity: o.initiatingEntity || 'admin',
+        // The disable's own `suspend` (#151) says it; no `invalidate` too.
+        providerCommand: false
       });
     } catch (e) {
       log.error(errorCodes.tag('STS-AUTHN-0203') + 'account state: ending ' +
@@ -290,6 +318,11 @@ class AccountState {
     const ended = disabled
       ? this.endEverything(name, {
           actor: o.actor || '', channel: o.via || 'http',
+          // `door` names an actor that is not an administrator — risk
+          // scoring, a foreign transmitter's SET — and each of those is a
+          // policy deciding (#242).
+          initiatingEntity: o.initiatingEntity ||
+                            (o.door ? 'policy' : 'admin'),
           by: o.by ? String(o.by)
             : 'the account was disabled by an administrator (' + door + ')' })
       : null;
@@ -363,6 +396,7 @@ class AccountState {
         const ended = c.disabled
           ? self.endEverything(name, {
               channel: 'internal',
+              initiatingEntity: 'admin',
               by: 'the account was disabled by an administrator through ' +
                   'the directory (' + String(c.kind || 'a write') + ')' })
           : null;
@@ -386,6 +420,67 @@ class AccountState {
     });
     log.debug("Leaving AccountState.directoryChanged(). Scheduled.");
   }
+
+  // -------------------------------------------------------------------------
+  // A PERSON WAS DELETED (#241, 2026-09-26) — SCIM's DELETE, an LDAP delete,
+  // anything that reaches the directory's `deletePerson()`. What they held
+  // ends as a disable's does: every sign-on session through `dropSession()`
+  // (CAEP session-revoked, `initiating_entity: admin`, and the back-channel
+  // Logout Tokens), every token and code, every connection. Until #241 the
+  // directory skipped this for a delete on the belief that "a deleted entry
+  // takes its sessions with it by other means"; nothing did, and a deleted
+  // person went on signing in to relying parties until their session ran out.
+  //
+  // **WHAT IS ENDED IS WHAT THEY HELD AT THE MOMENT OF THE DELETE**, read
+  // synchronously here (`heldBy()`, #226's arrangement) and ended after the
+  // write has been answered — so a person made again under the same name in
+  // the meantime keeps what they hold. Where no sign-out module is loaded the
+  // ids cannot be read and everything under the name is ended, as a disable
+  // does. `authn.sessionOf()` is the catch-up for a session this could not
+  // reach: a delete made on another node.
+  // -------------------------------------------------------------------------
+  directoryDeleted(change: Json): void {
+    const { log, later, realms } = this.deps;
+    const self = this;
+    log.debug("Entering AccountState.directoryDeleted().");
+    const c = change || {};
+    const name = String(c.username || '');
+    if (!name || name === 'anonymous') {
+      log.debug("Leaving AccountState.directoryDeleted(). Nobody named.");
+      return;
+    }
+    const realm = realms.get(String(c.realm || '')) || realms.current();
+    const held = realms.run(realm, function (): string[] | null {
+      return self.heldBy(name);
+    });
+    if (held && !held.length) {
+      log.debug("Leaving AccountState.directoryDeleted(). They held " +
+                "nothing.");
+      return;
+    }
+    later(function (): void {
+      if (!realms.get(realm.id)) {
+        // The realm went in the meantime, and its removal ended everything
+        // in it already (`realms.retire()`).
+        return;
+      }
+      realms.run(realm, function (): void {
+        const ended = self.endEverything(name, {
+          channel: 'internal',
+          selection: held || undefined,
+          initiatingEntity: 'admin',
+          by: 'the deletion of the account (' +
+              String(c.door || 'a directory delete') + ')' });
+        log.info('account state: ' + name + ' was deleted; ' +
+                 ended.terminated + ' live item(s) they held were ended' +
+                 (ended.backchannel.length
+                   ? ', with ' + ended.backchannel.length +
+                     ' back-channel Logout Token(s) queued'
+                   : '') + '.');
+      });
+    });
+    log.debug("Leaving AccountState.directoryDeleted(). Scheduled.");
+  }
 }
 
 const slot = new InstanceSlot<AccountState>(
@@ -403,6 +498,8 @@ export = {
   instanceOrigin: (): string => slot.origin(),
   isDisabled: slot.forward('isDisabled'),
   endEverything: slot.forward('endEverything'),
+  heldBy: slot.forward('heldBy'),
   setDisabled: slot.forward('setDisabled'),
-  directoryChanged: slot.forward('directoryChanged')
+  directoryChanged: slot.forward('directoryChanged'),
+  directoryDeleted: slot.forward('directoryDeleted')
 };

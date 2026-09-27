@@ -156,7 +156,9 @@ is one a conforming client must reject. The inserted form behaves like its
   with no scope gets no scope; it is not given `openid`.
 * **The implicit flow** (`id_token`, `id_token token`) requires a `nonce` and
   refuses an `http` redirect URI that is not a loopback address, in every mode
-  (OpenID Connect Core section 3.2.2.1).
+  (OpenID Connect Core section 3.2.2.1). The hybrid `code id_token` and
+  `code id_token token` require a `nonce` too (section 3.3.2.1); `code token`
+  does not.
 * **`id_token_hint`** is verified as an ID Token this authorization server
   issued to the client, with any of its signing algorithms; an expired one is
   still a valid hint, and an encrypted one is refused. If the person signed in
@@ -197,11 +199,14 @@ and puts the bare permission name in `scope`. **A token for an API is for that
 API alone.** The OpenID Connect scopes are left off it, so a client that wants
 UserInfo asks for a separate token.
 
-**A redeemed code is replayed, not refused, outside the compliance modes.** An
-identical repeat of the token request, made while the code would still have been
-valid, gets the same token set back. A different request is refused, and the
-refusal names the field that differs. RFC 9700 mode refuses the repeat and
-revokes what the code bought.
+**A redeemed code is refused if it is presented again, in every mode**, and
+what it bought is revoked (RFC 6749 sections 4.1.2 and 10.5). The refusal says
+when the code was redeemed and by which client, or names the field that differs.
+The old development courtesy — an identical repeat answered with the same token
+set — is still there as `oauth2.codeReplayIdempotent`, off by default and
+ignored in RFC 9700, OAuth 2.1 and FAPI mode. **It is weaker than the
+specification**; turn it on only for a client under test that cannot yet cope
+with the refusal.
 
 RFC 6749 makes a code single use and section 10.5 says a second presentation
 SHOULD invalidate what the first issued. A bare *already-used* refusal is
@@ -211,12 +216,13 @@ client retrying after a bad `code_verifier`, and names none of them. So:
 * **Nothing before redemption consumes the code.** A wrong `redirect_uri`, PKCE
   verifier or `dpop_jkt` binding is refused and the code stays redeemable, so
   the corrected request gets tokens rather than a complaint about reuse.
-* **A redeemed code is idempotent for the rest of its own lifetime**
-  (`oauth2.authorizationCodeTtlS`, five minutes). An identical repeat — same
-  client, `redirect_uri`, PKCE verifier and DPoP key — gets the **same** token
-  set, down to the `jti`. Nothing is minted twice, and a warning is logged
-  each time saying a real authorization server would refuse. This is the one
-  departure from the RFC.
+* **With `oauth2.codeReplayIdempotent` on, a redeemed code is idempotent for
+  the rest of its own lifetime** (`oauth2.authorizationCodeTtlS`, five
+  minutes). An identical repeat — same client, `redirect_uri`, PKCE verifier
+  and DPoP key — gets the **same** token set, down to the `jti`. Nothing is
+  minted twice, and a warning is logged each time saying a real authorization
+  server would refuse. It departs from the RFC, which is why it is off by
+  default.
 * **The refusals say what happened.** A code presented with anything different
   is refused naming the field that differed, when the code was redeemed and by
   which client. A code this service has no record of gets its own message:
@@ -232,8 +238,10 @@ client retrying after a bad `code_verifier`, and names none of them. So:
 Every method in `token_endpoint_auth_methods_supported` is verified when there
 is something to verify against: `client_secret_basic`, `client_secret_post`,
 `client_secret_jwt`, `private_key_jwt`, `tls_client_auth`,
-`self_signed_tls_client_auth`, and `saml2_bearer` (this service's own name for
-RFC 7522 section 2.2, which registers none). `none` declares a public client.
+`self_signed_tls_client_auth`, `attest_jwt_client_auth` and
+`attest_jwt_client_auth_dpop` (below, where the realm trusts a client
+attester), and `saml2_bearer` (this service's own name for RFC 7522 section
+2.2, which registers none). `none` declares a public client.
 A method this service cannot verify is refused rather than waved through. A
 client that registered **`token_endpoint_auth_signing_alg`** has an assertion
 signed with any other algorithm refused `invalid_client`, in every mode (OpenID
@@ -302,6 +310,71 @@ operator also needs to know:
   `STS-PKI-0180..0181`, `STS-ADMIN-0720..0724`, `STS-API-0110` and
   `STS-DBG-0030`; the settings that require a sender constraint add
   `STS-OAUTH-0521..0531`, `STS-API-0120..0121` and `STS-DBG-0031..0032`. See
+  [Error codes](error-codes.md).
+
+#### Attestation-based client authentication (Wallet Attestation)
+
+This is [OAuth 2.0 Attestation-Based Client
+Authentication](https://datatracker.ietf.org/doc/draft-ietf-oauth-attestation-based-client-auth/11/),
+**draft 11**. The OpenID4VC High Assurance Interoperability Profile (HAIP 1.0
+section 4.4.1) calls it Wallet Attestation. A client attester (the wallet's
+backend) signs a **Client Attestation JWT** that binds a key the client
+instance holds (`cnf.jwk`). The instance proves that key on every request.
+Nothing goes in the body: the attestation is the `OAuth-Client-Attestation`
+header field.
+
+* **Two methods.**
+  * `attest_jwt_client_auth` proves the key with an
+    `OAuth-Client-Attestation-PoP` header: a JWT with typ
+    `oauth-client-attestation-pop+jwt`, `aud` the issuer identifier, a `jti`,
+    an `iat` and the current `challenge`.
+  * `attest_jwt_client_auth_dpop` (the "combined mode") proves it with the
+    DPoP proof alone, signed by the attested key. The combined mode works at
+    `/oauth2/token` and `/oauth2/par`, the two endpoints that verify a DPoP
+    proof.
+  * Introspection, revocation and CIBA take the first method.
+  * A registration declares one of the two methods, and the client is held to
+    that method's proof.
+* **Which attesters are trusted** is set per realm:
+  * `oauth2.clientAttestationTrustAnchors` holds PEM trust anchors. An
+    attestation carrying `x5c` must chain to one of them, and its signing
+    certificate may not be self-signed.
+  * `oauth2.clientAttestationTrustedKeys` holds a JWKS of attester keys, used
+    for an attestation without `x5c` and selected by `kid`.
+  * With both empty (the default), the two methods and the
+    `challenge_endpoint` are not advertised. Every attestation is then
+    refused.
+  * Only asymmetric algorithms are accepted, including the post-quantum ones.
+    A MAC-protected attestation is not accepted.
+* **Challenges are required** (`oauth2.clientAttestationChallengeRequired`, on
+  by default).
+  * `POST /oauth2/challenge` answers `{ "attestation_challenge": … }`, with
+    `Cache-Control: no-store`, and with a `DPoP-Nonce` when DPoP nonces are
+    required.
+  * Every response to a request that carried an attestation also carries a
+    fresh challenge in `OAuth-Client-Attestation-Challenge`. Use the most
+    recent one.
+  * Each challenge and each PoP `jti` is good for one successful request. A
+    missing or spent challenge is answered 400 `use_attestation_challenge`
+    with a fresh challenge.
+  * An attestation older than `oauth2.clientAttestationMaxAgeS` is answered
+    400 `use_fresh_attestation`.
+* **`client_id` may be left out** of a token request. The attestation's `sub`
+  names the client. Where the request does name a `client_id`, it must equal
+  the `sub`.
+* **Bound to the client instance.** A refresh token issued on an attestation
+  is redeemed only with an attestation of the same instance key. A code whose
+  authorization request was pushed with an attestation is redeemed only by
+  that instance. Both refusals are `invalid_grant`.
+* **As an additional signal.** A client using another method may send an
+  attestation as well. Where the realm trusts an attester, that attestation is
+  verified and must hold.
+* **Under FAPI 2.0** the two methods are accepted only with
+  `oauth2.fapiAllowClientAttestation` on (HAIP's arrangement). FAPI 1.0 never
+  accepts them.
+* **Not done**: `jku`, a Wallet Attestation's status list, an attester
+  certificate's revocation, and the resource-server half of the draft.
+* **The error codes** are `STS-OAUTH-0720..0751`. See
   [Error codes](error-codes.md).
 
 ### Consent
@@ -499,6 +572,16 @@ Connect Core section 12.2). An ID Token issued on a browser session carries
   JSON array listing every redirect URI; a value an administrator writes on
   the console is not fetched. UserInfo and Logout Tokens name the same
   pairwise `sub` as the ID Token.
+* **Ephemeral subjects** (the Ephemeral Subject Identifier draft, #149): a
+  client registered with `subject_type=ephemeral` is given a random `sub`
+  (160 bits) for each authentication. Everything one sign-in issues it — the
+  ID Token, UserInfo, a refreshed ID Token, the Logout Token — names that
+  one `sub`. The next sign-in gets another, never reused. The mapping is
+  kept only as long as a token or the session of that sign-in can last, and
+  a scheduler job removes it after that. An `id_token_hint` carrying an
+  ephemeral `sub` still names the person while the mapping lasts.
+* **Shared Signals events** sent to a stream a pairwise or ephemeral client
+  owns name that client's `sub` for the person, not the public one.
 
 ### UserInfo and the claims request
 
@@ -566,7 +649,8 @@ never rotated: a later sign-in whose code grant sends it back as
 person and linked to every application that used it. People see theirs on
 `/portal/devices`; administrators on the person's page and at
 `GET /admin-api/users/devices`, and either can remove one. A person holds at
-most `oauth2.maxDevicesPerPerson` (20).
+most `devices.maxPerPerson` (20); the whole register is
+[Devices](devices.md).
 
 **Token exchange reads its token types.** Every RFC 8693 exchange must send
 `subject_token_type` (and `actor_token_type` with an `actor_token`); each
@@ -645,7 +729,10 @@ It is answered from the **identity verifications recorded for the person**:
 
 `value`, `values` and `time.max_age` on the verification and its evidence
 **choose** which record answers; an element no record satisfies is left out
-entirely, and only the members you asked for are returned. A claim is released
+entirely, and only the members you asked for are returned. `value` and
+`values` on a claim inside `verified_claims` are enforced too (section
+5.7.4): a claim that does not match is left out, and an element left with no
+claim is left out whole. On ordinary claims they are still only reported. A claim is released
 as verified only **while the directory still holds the value that was
 verified** — change the entry and the claim drops out of `verified_claims`
 (the ordinary claim carries the new value). A malformed request —
@@ -662,6 +749,122 @@ Discovery publishes `verified_claims_supported`, `trust_frameworks_supported`,
 `documents_check_methods_supported`, `electronic_records_supported` and
 `claims_in_verified_claims_supported`. Aggregated and distributed verified
 claims, and attachments, are not supported.
+
+**A verification recorded or removed is announced over Shared Signals**, to a
+person holding live tokens: CAEP `token-claims-change` carrying the new
+`verified_claims` (frameworks, levels and claims — never evidence), and CAEP
+`assurance-level-change` when their identity assurance level moved, in this
+service's `urn:sts:ial` namespace, or `NIST-IAL` for an `nist_800_63A`
+verification. See [the CAEP events](caep-events.md#assurance-level-change).
+
+### Enterprise Extensions: `session_expiry`, `tenant`, `aud_sub`, `domain_hint`
+
+OpenID Connect Enterprise Extensions 1.0 (#148), in every mode:
+
+* **The ID Token** carries `tenant` (the trust realm's id) and, when it is
+  issued on a sign-on session, `session_expiry`: the session's absolute end.
+  A later sign-in does not extend a session, so a relying party can end its
+  own session no later than this. Where an administrator recorded the
+  account id a client knows the person by (`POST
+  /admin-api/users/set-aud-sub`, or the person's page on the console), the
+  ID Token for that client carries it as `aud_sub`.
+* **`tenant` on an authorization request** must be the realm's own id. One
+  naming another realm is refused with `invalid_request`: a realm is chosen
+  by the path the request is sent to, never by a parameter.
+* **`domain_hint`** is home-realm discovery. A federation relationship whose
+  `fedHomeRealmDomain` lists the domain receives the person's sign-in
+  directly, unless the application names a partner of its own.
+* **Third-party-initiated login** from the portal adds `tenant`,
+  `domain_hint` (the realm's DNS domain) and `target_link_uri` (the
+  application's registered https home page) to `iss` and `login_hint`.
+
+### Signing in a device (RFC 8628)
+
+A television, a console or a command line with no usable browser can sign a
+person in **on another device**. It is **off by default**; turn on
+`oauth2.deviceAuthorization` in the realm.
+
+1. **Register the client** with the grant type
+   `urn:ietf:params:oauth:grant-type:device_code`.
+2. **The device asks** at `POST /oauth2/device_authorization`, authenticating
+   as it would at the token endpoint (a public client sends its `client_id`),
+   with an optional `scope`. It gets a `device_code`, a `user_code` such as
+   `WDJB-MJHT`, `verification_uri` (`/portal/device`),
+   `verification_uri_complete`, `expires_in` and `interval`.
+3. **The person** opens `/portal/device`, types the code (or follows the
+   complete URI), is shown which application asks and for what, and
+   approves or denies. Five codes that match nothing lock the session out
+   for ten minutes.
+4. **The device polls** `POST /oauth2/token` with
+   `grant_type=urn:ietf:params:oauth:grant-type:device_code` and the
+   `device_code`, no faster than `interval`: `authorization_pending`,
+   `slow_down` (the interval grows by five seconds), `expired_token`,
+   `access_denied`, and then the tokens, once.
+
+A DPoP proof on the device request binds the device code to its key; the
+tokens are then issued only to a proof from that key.
+
+### Key-bound ID Tokens (OpenID Connect Key Binding)
+
+A client that asks for the `bound_key` scope gets an ID Token bound to its
+DPoP key, in every mode:
+
+* the authorization request carries `dpop_jkt` and `response_type=code`
+  (otherwise `invalid_request`);
+* the token request's DPoP proof carries `c_s256`, the base64url SHA-256 of
+  the authorization code (or device code);
+* the ID Token carries `cnf.jwk` and the JOSE header `typ: dpop+id_token`;
+* a refresh must carry a proof from the same key, and the renewed ID Token
+  is bound to it;
+* a bound ID Token presented as a token exchange `subject_token` (Native SSO
+  included) needs a DPoP proof from its key.
+
+DPoP keys may be ML-DSA-44, ML-DSA-65 or ML-DSA-87 (`kty: AKP`) as well as
+RSA, EC and OKP.
+
+### OpenID Provider Commands
+
+This service can tell a relying party what to do with an account. It sends
+an OpenID Provider Commands 1.0 (draft 02) Command Token to the
+`command_endpoint` the relying party registered. It is **off by default**;
+turn on `oauth2.providerCommands` in the realm.
+
+1. **Register the client** with `command_endpoint` (https, no fragment), in
+   `POST /oauth2/register`, on `/admin/applications` or through the API.
+2. **Send `metadata`** from Protocols → Provider Commands (`/admin/commands`)
+   or `POST /admin-api/commands/send-tenant`. The answer records what the
+   relying party supports and whether it needs an `aud_sub`.
+3. **Send a command:**
+   * an **account command** about one person: `activate`, `maintain`,
+     `suspend`, `reactivate`, `archive`, `restore`, `delete`, `audit`,
+     `invalidate`, `migrate`, or any of them with `_async`;
+   * a **tenant command** about everybody: `audit_tenant`, `suspend_tenant`,
+     `archive_tenant`, `delete_tenant`, `invalidate_tenant`. These are read
+     as a Server-Sent Events stream.
+
+   Each account state the relying party reports is kept, per relying party.
+4. **Automatic commands** (`oauth2.commandAutomatic`, on while commands are)
+   are sent on these events:
+
+   | Event | Command |
+   |---|---|
+   | a disable | `suspend` |
+   | an enable | `reactivate` |
+   | a directory or SCIM delete | `delete` |
+   | a change to the person or their groups | `maintain` |
+   | an administrator's global sign-out | `invalidate` |
+
+   A command goes only to a relying party that listed it and where the person
+   has an account.
+
+A relying party posts `_async` results, and asks for a fresh `metadata` or
+`audit_tenant`, at `POST /oauth2/commands/callback`, Bearer the
+`callback_token` its command carried. A command that cannot be delivered is
+a dead letter on Monitoring → Outbound deliveries (`/admin/deliveries`),
+beside undelivered Logout Tokens and CIBA notifications, with a Retry.
+
+Command Tokens name an `iss`. Set `global.publicBaseUrl` so an automatic
+command knows its issuer before any command has been sent from the console.
 
 ### Aggregated and distributed claims (Claims Providers)
 
@@ -1331,7 +1534,8 @@ it may not name this service's own protected scopes.
 * `default_max_age` and `default_acr_values` apply unless the request names
   its own `max_age`, or its own `acr_values` or essential `acr`.
 * An `initiate_login_uri` must be `https`. The user portal (`/portal/applications`) shows a
-  **Sign in** link to it, carrying `iss` and `login_hint` (Core section 4).
+  **Sign in** link to it, carrying `iss` and `login_hint` (Core section 4) and
+  Enterprise Extensions' `tenant`, `domain_hint` and `target_link_uri`.
 
 An RFC 7592 update must name the client's own `client_id` and, if it sends a
 `client_secret`, the one it was issued. A registration access token for a
@@ -1380,7 +1584,10 @@ from a script.
     a page with a real button and no script.
   * `post_logout_redirect_uri` is followed only if the client registered it
     exactly, in every mode. Development still follows one for a client that
-    registered none. `state` is returned with it.
+    registered none. `state` is returned with it. A request that names no
+    client at all (neither `id_token_hint` nor `client_id`) is never
+    redirected, in any mode: section 2 says the OP must not redirect unless
+    something confirms the address.
 * **[Front-Channel Logout 1.0](https://openid.net/specs/openid-connect-frontchannel-1_0.html)**:
   every sign-out page renders a hidden iframe per registered
   `frontchannel_logout_uri`, with a visible link beside each one.
@@ -1705,6 +1912,19 @@ on [OAuth security](oauth-security.md#configuration).
 | `oauth2.requestUriCacheS` | `STS_OAUTH2_REQUEST_URI_CACHE_S` | `0` | yes | How long a fetched `request_uri` answer is reused; 0 fetches every time. |
 | `oauth2.requestObjectEncryptionKeyBits` | `STS_OAUTH2_REQUEST_OBJECT_ENCRYPTION_KEY_BITS` | `2048` | yes | The size of the RSA key each realm publishes (`use: enc`) for encrypted request objects. |
 | `oauth2.requestObjectEncryptionCurve` | `STS_OAUTH2_REQUEST_OBJECT_ENCRYPTION_CURVE` | `P-256` | yes | The curve of the EC key each realm publishes for ECDH-ES request object encryption. |
+
+### Client attestation
+
+| Setting | Environment variable | Default | Runtime? | What it does |
+|---|---|---|---|---|
+| `oauth2.clientAttestationTrustAnchors` | `STS_OAUTH2_CLIENT_ATTESTATION_TRUST_ANCHORS` | (empty) | yes | PEM trust anchors for an attestation's `x5c`. |
+| `oauth2.clientAttestationTrustedKeys` | `STS_OAUTH2_CLIENT_ATTESTATION_TRUSTED_KEYS` | (empty) | yes | A JWKS of trusted attester keys. |
+| `oauth2.clientAttestationChallengeRequired` | `STS_OAUTH2_CLIENT_ATTESTATION_CHALLENGE_REQUIRED` | `true` | yes | Require a challenge in every PoP. **Off is weaker and not recommended.** |
+| `oauth2.clientAttestationChallengeTtlS` | `STS_OAUTH2_CLIENT_ATTESTATION_CHALLENGE_TTL_S` | `300` | yes | How long a challenge is accepted. |
+| `oauth2.clientAttestationChallengeCacheSize` | `STS_OAUTH2_CLIENT_ATTESTATION_CHALLENGE_CACHE_SIZE` | `10000` | yes | Unexpired challenges a realm holds; the oldest goes first. |
+| `oauth2.clientAttestationMaxAgeS` | `STS_OAUTH2_CLIENT_ATTESTATION_MAX_AGE_S` | `86400` | yes | The oldest attestation (by `iat`) accepted. |
+| `oauth2.clientAttestationPopMaxAgeS` | `STS_OAUTH2_CLIENT_ATTESTATION_POP_MAX_AGE_S` | `300` | yes | The oldest PoP (by `iat`) accepted. |
+| `oauth2.fapiAllowClientAttestation` | `STS_OAUTH2_FAPI_ALLOW_CLIENT_ATTESTATION` | `false` | yes | Accept the two methods under FAPI 2.0 (HAIP 1.0 section 4). |
 
 ### Pushed authorization requests (RFC 9126)
 

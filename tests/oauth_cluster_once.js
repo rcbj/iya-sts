@@ -595,11 +595,18 @@ function childMain() {
     control = false;
     got = await newCode();
     pair = await Promise.all([redeem(got.code), redeem(got.code)]);
-    note(pair[0].status === 200 && pair[1].status === 200 &&
-         pair[0].json.access_token === pair[1].json.access_token,
+    // Since #187 a code used twice is refused in every mode (RFC 6749
+    // section 4.1.2), so the loser of the race is a refused replay rather
+    // than the old development courtesy's copy of the winner's tokens.
+    const statuses = pair.map(function (r) {
+      return r.status;
+    }).sort();
+    note(statuses[0] === 200 && statuses[1] === 400 &&
+         (pair[0].status === 400 ? pair[0] : pair[1]).json.error ===
+           'invalid_grant',
          '3a2. WITH THE CLAIM, ONE REDEMPTION IS ISSUED and the concurrent ' +
-         'identical one is answered with that same token set (the ' +
-         'development-mode replay relaxation, across the race)',
+         'identical one is refused as the replay it is (RFC 6749 section ' +
+         '4.1.2, in every mode since #187), across the race',
          pair.map(function (r) { return r.status + ' ' +
            String(r.json.access_token || r.text).slice(-12); }).join(' | '));
     const codeAsks = heldBy('oauth.code', got.code);

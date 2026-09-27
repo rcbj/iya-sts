@@ -300,6 +300,10 @@ class SharedSignals {
   static readonly RISC_CONSOLE_ACTIONS: string[] = ['emit', 'reset-account',
                                                     'clear'];
 
+  // SETs being built, signed or pushed now, per realm (#232): what a realm's
+  // removal waits for before its queues are purged. See transmit().
+  private readonly inFlight = new Map<string, number>();
+
   constructor(private readonly deps: SharedSignalsDeps) {
     deps.log.debug('Entering SharedSignals.constructor().');
     deps.log.debug('Leaving SharedSignals.constructor().');
@@ -547,11 +551,110 @@ class SharedSignals {
     return this.deps.helpers.randomId(16);
   }
 
+  // THE SUBJECT AS THIS RECEIVER KNOWS THE PERSON (#149). A stream's owner
+  // is a client, and a client registered for pairwise or ephemeral subjects
+  // was never told the person's public `sub`: an event naming it would name
+  // somebody that client has never heard of, and an ephemeral one would
+  // correlate what the client asked not to. So an `iss_sub` user — the
+  // subject itself or a complex subject's `user` — is rewritten to that
+  // client's `sub` for the session the event names (rcbj's answer on #149).
+  // A public client, and a stream no client owns, get the event unchanged.
+  // The `device` member of a complex subject follows the same rule (#164
+  // phase 6) — `pairwise_subjects.ts`'s `deviceIdFor()`.
+  subjectForReceiver(record: Json, subject: Json): Json {
+    const { log } = this.deps;
+    log.debug('Entering SharedSignals.subjectForReceiver().');
+    const owner = String((record && record.createdBy) || '');
+    if (!subject || !owner) {
+      log.debug('Leaving SharedSignals.subjectForReceiver(). Unchanged.');
+      return subject;
+    }
+    const copy = JSON.parse(JSON.stringify(subject));
+    const user = copy.format === 'complex' ? copy.user : copy;
+    if (!user || user.format !== 'iss_sub' || !user.sub) {
+      log.debug('Leaving SharedSignals.subjectForReceiver(). No iss_sub.');
+      return subject;
+    }
+    const session = copy.format === 'complex' && copy.session
+      ? String(copy.session.id || '') : '';
+    try {
+      const pairwise = require('../oauth-oidc/pairwise_subjects');
+      user.sub = pairwise.subjectFor(owner, String(user.sub), session);
+      // THE PERSON'S DEVICE BY THE SAME RULE (#164 phase 6): the `device_id`
+      // this client's tokens carry — the register's id for a public client,
+      // a sector-derived one for a pairwise client, and NONE for an
+      // ephemeral one, whose events then name the person alone. A device
+      // beside a `user` is a person's; an application's device has no user
+      // member and never reaches here.
+      if (copy.format === 'complex' && copy.device && copy.device.sub) {
+        const told = pairwise.deviceIdFor(owner, String(copy.device.sub),
+                                          true);
+        if (told) {
+          copy.device.sub = told;
+        } else {
+          delete copy.device;
+        }
+      }
+    } catch (e: any) {
+      // A pairwise client with no sector: the event goes with the subject
+      // it was built with, and the log says why.
+      log.debug('Caught in SharedSignals.subjectForReceiver(): ' +
+                ((e && e.message) || e));
+      log.warn('ssf: ' + ((e && e.message) || e));
+      return subject;
+    }
+    log.debug('Leaving SharedSignals.subjectForReceiver().');
+    return copy;
+  }
+
+  // Every SET goes out through here, and while it is being signed and pushed
+  // it is counted as IN FLIGHT in its realm (#232), so a realm being removed
+  // can wait — bounded — for what it has already said to arrive before the
+  // stream and its queue are purged. The work is transmitNow()'s.
   transmit(record: Json, options?: Json): Promise<TransmitReport> {
+    const { log, realms } = this.deps;
+    log.debug('Entering SharedSignals.transmit().');
+    const realmId = realms.currentId();
+    this.inFlight.set(realmId, (this.inFlight.get(realmId) || 0) + 1);
+    const settled = (): void => {
+      log.debug('Entering settled().');
+      this.inFlight.set(realmId,
+                        Math.max(0, (this.inFlight.get(realmId) || 0) - 1));
+      log.debug('Leaving settled().');
+    };
+    let answer: Promise<TransmitReport>;
+    try {
+      answer = Promise.resolve(this.transmitNow(record, options));
+    } catch (e) {
+      log.debug('Caught in SharedSignals.transmit(): ' +
+                ((e && e.message) || e));
+      settled();
+      log.debug('Leaving SharedSignals.transmit(). Threw.');
+      throw e;
+    }
+    log.debug('Leaving SharedSignals.transmit().');
+    return answer.then(function (report) {
+      settled();
+      return report;
+    }, function (e) {
+      settled();
+      throw e;
+    });
+  }
+
+  // How many SETs are in flight in one realm now (#232).
+  inFlightIn(realmId: string): number {
+    const { log } = this.deps;
+    log.debug('Entering SharedSignals.inFlightIn().');
+    log.debug('Leaving SharedSignals.inFlightIn().');
+    return this.inFlight.get(String(realmId || '')) || 0;
+  }
+
+  private transmitNow(record: Json, options?: Json): Promise<TransmitReport> {
     const { log, audit, events, streams, subjects, transport,
             errorCodes } = this.deps;
     const { iso } = this.deps.helpers;
-    log.debug('Entering SharedSignals.transmit(). ' + record.stream_id);
+    log.debug('Entering SharedSignals.transmitNow(). ' + record.stream_id);
     const asked = options || {};
     const uri = String(asked.uri || '');
     // SSF'S OWN TWO EVENTS ARE ABOUT THE PIPE, AND THE SPECIFICATION LETS THE
@@ -563,7 +666,7 @@ class SharedSignals {
     // agreement would make that MUST impossible to keep.
     const pipeEvent = this.isPipeEvent(uri);
     if (!pipeEvent && record.events_delivered.indexOf(uri) < 0) {
-      log.debug('Leaving SharedSignals.transmit(). Not an agreed type.');
+      log.debug('Leaving SharedSignals.transmitNow(). Not an agreed type.');
       return Promise.resolve(this.transmitRefused('STS-SSF-0026', record, uri,
         {
           ok: false, delivered: false, jti: '',
@@ -576,7 +679,7 @@ class SharedSignals {
     // THE OWNER'S ENTRY, asked at the moment of delivery rather than only when
     // the stream was agreed — see ssf_streams.ts's allowedEventsFor().
     if (!pipeEvent && !streams.deliversEvent(record, uri)) {
-      log.debug('Leaving SharedSignals.transmit(). Not allowed by the ' +
+      log.debug('Leaving SharedSignals.transmitNow(). Not allowed by the ' +
                 'owning application.');
       return Promise.resolve(this.transmitRefused('STS-SSF-0081', record, uri,
         {
@@ -590,7 +693,7 @@ class SharedSignals {
     }
     const verdict: Json = events.validateEvent(uri, asked.payload);
     if (!verdict.ok) {
-      log.debug('Leaving SharedSignals.transmit(). The payload is invalid.');
+      log.debug('Leaving SharedSignals.transmitNow(). The payload is invalid.');
       return Promise.resolve(this.transmitRefused('STS-SSF-0027', record, uri,
         {
           ok: false, delivered: false, jti: '',
@@ -614,7 +717,7 @@ class SharedSignals {
     // -----------------------------------------------------------------------
     const row: Json = events.EVENT_BY_URI[uri];
     if (row && row.subject === 'required' && !asked.subject) {
-      log.debug('Leaving SharedSignals.transmit(). No subject on an event ' +
+      log.debug('Leaving SharedSignals.transmitNow(). No subject on an event ' +
                 'that needs one.');
       return Promise.resolve(this.transmitRefused('STS-SSF-0028', record, uri,
         {
@@ -638,7 +741,7 @@ class SharedSignals {
       log.warn('ssf: ' + note);
     });
     if (asked.subject && !streams.streamCoversSubject(record, asked.subject)) {
-      log.debug('Leaving SharedSignals.transmit(). Not a subject on this ' +
+      log.debug('Leaving SharedSignals.transmitNow(). Not a subject on this ' +
                 'stream.');
       return Promise.resolve(this.transmitRefused('STS-SSF-0029', record, uri,
         {
@@ -658,7 +761,7 @@ class SharedSignals {
     // 2026-09-22. It is added here, after the subject-list check above,
     // because "the subject that identifies a stream itself is always
     // implicitly added to the stream".
-    const subject = asked.subject ||
+    const subject = this.subjectForReceiver(record, asked.subject) ||
       (pipeEvent ? { format: 'opaque', id: String(record.stream_id) } : null);
     const claims: Json = events.buildSet({
       issuer: record.iss,
@@ -691,7 +794,7 @@ class SharedSignals {
         why: 'the stream is dead (ssf.deadStreamTimeoutS); it is not pushed ' +
              'to until a probe or an operator revives it',
         errorCode: 'STS-SSF-0096' });
-      log.debug('Leaving SharedSignals.transmit(). The stream is dead; ' +
+      log.debug('Leaving SharedSignals.transmitNow(). The stream is dead; ' +
                 'dead-lettered.');
       return Promise.resolve({ ok: false, delivered: false,
         deadLettered: true, jti: claims.jti, claims: claims,
@@ -701,7 +804,7 @@ class SharedSignals {
              'with POST /admin-api/ssf/revive.' });
     }
 
-    log.debug("Leaving SharedSignals.transmit().");
+    log.debug("Leaving SharedSignals.transmitNow().");
     return events.signSet(claims).then((token): TransmitReport |
                                            Promise<TransmitReport> => {
       // THE RECORD HELD NOW, AND NOT THE ONE READ BEFORE THE SIGNATURE.
@@ -735,7 +838,7 @@ class SharedSignals {
         queuedAt: iso(), deliveredAt: '', counted: false };
       const queued: Json = streams.enqueue(record, entry);
       if (!queued.ok) {
-        log.debug('Leaving SharedSignals.transmit(). Not queued.');
+        log.debug('Leaving SharedSignals.transmitNow(). Not queued.');
         return this.transmitRefused('STS-SSF-0030', record, uri, {
           ok: false, delivered: false, jti: claims.jti, token: token,
           claims: claims,
@@ -754,7 +857,7 @@ class SharedSignals {
       if (record.delivery.method !== streams.DELIVERY_PUSH) {
         streams.note(record, 'queued', 'Queued ' + claims.jti +
           ' for the receiver to poll.');
-        log.debug('Leaving SharedSignals.transmit(). Queued for poll.');
+        log.debug('Leaving SharedSignals.transmitNow(). Queued for poll.');
         return { ok: true, delivered: false, jti: claims.jti, token: token,
           claims: claims,
           why: 'Queued. This is a poll stream, so nothing is sent until the ' +
@@ -782,7 +885,7 @@ class SharedSignals {
         streams.note(record, 'held', 'Held ' + claims.jti + ': the stream ' +
           'is ' + record.status + ', and it is pushed when the stream is ' +
           'enabled again.');
-        log.debug('Leaving SharedSignals.transmit(). Held on a ' +
+        log.debug('Leaving SharedSignals.transmitNow(). Held on a ' +
                   record.status + ' push stream.');
         return { ok: true, delivered: false, held: true, jti: claims.jti,
           token: token, claims: claims,
@@ -797,7 +900,7 @@ class SharedSignals {
       log.error(errorCodes.tag('STS-SSF-0031') +
                 'ssf: a Security Event Token could not be signed: ' +
                 e.message);
-      log.debug('Leaving SharedSignals.transmit(). The signature failed.');
+      log.debug('Leaving SharedSignals.transmitNow(). The signature failed.');
       return this.transmitRefused('STS-SSF-0031', record, uri, {
         ok: false, delivered: false, jti: '',
         why: 'The event could not be signed with ' +
@@ -1036,6 +1139,44 @@ class SharedSignals {
         return { ok: true, errors: [], stream: changed.stream,
                  report: report };
       });
+    });
+  }
+
+  // -------------------------------------------------------------------------
+  // A STREAM THIS TRANSMITTER DELETES, TOLD FIRST (#245). SSF 1.0 has no
+  // event for a deleted stream, and the receiver did not ask for it — the
+  // console, `/admin-api` and `ssf.inactivityAction: delete` are the
+  // transmitter's own doors — so the one notice available is sent first:
+  // `stream-updated` with status `disabled` and the reason, through
+  // `changeStatus()`, which transmits BEFORE it stops the stream (section
+  // 8.1.5). Only then is the stream removed. What that notice can reach is
+  // the delivery's to decide: a push is attempted and settled before the
+  // removal; on a poll stream the SET is queued and leaves with the stream,
+  // as it does for every disable, unless the receiver polls in between. A
+  // stream already disabled was told when it was disabled, and is removed.
+  // The receiver's own `DELETE /ssf/stream` sends nothing: it asked.
+  // Resolves when the stream is gone; never rejects.
+  // -------------------------------------------------------------------------
+  retireStream(record: Json, reason: string): Promise<void> {
+    const { log, streams } = this.deps;
+    log.debug('Entering SharedSignals.retireStream(). ' +
+              (record && record.stream_id));
+    if (!record || !record.stream_id) {
+      log.debug('Leaving SharedSignals.retireStream(). No stream.');
+      return Promise.resolve();
+    }
+    const id = String(record.stream_id);
+    const told = record.status === 'disabled' || streams.isInternal(record)
+      ? Promise.resolve(null)
+      : this.changeStatus(record, 'disabled', reason);
+    log.debug('Leaving SharedSignals.retireStream().');
+    return told.then(function (): void {
+      streams.removeStream(id);
+    }, function (e: Json): void {
+      log.debug('Caught in SharedSignals.retireStream(): ' +
+                ((e && e.message) || e));
+      // The notice failed; the stream goes anyway, which is what was asked.
+      streams.removeStream(id);
     });
   }
 
@@ -1352,13 +1493,17 @@ class SharedSignals {
       if (timeout && idle >= timeout) {
         if (action === 'delete') {
           summary.inactive += 1;
-          streams.removeStream(record.stream_id);
-          this.deps.audit.audit({ action: 'ssf.stream.delete',
-            category: 'signals', protocol: 'SSF', channel: 'internal',
-            target: record.stream_id,
-            summary: 'A Shared Signals stream was deleted after ' + idle +
-              's with no activity from its receiver ' +
-              '(ssf.inactivityTimeoutS)' });
+          work.push(this.retireStream(record, 'No activity from the ' +
+            'receiver for ' + idle + 's; the stream\'s inactivity_timeout ' +
+            'is ' + timeout + 's, and this transmitter deletes such a ' +
+            'stream (ssf.inactivityAction)').then(() => {
+            this.deps.audit.audit({ action: 'ssf.stream.delete',
+              category: 'signals', protocol: 'SSF', channel: 'internal',
+              target: record.stream_id,
+              summary: 'A Shared Signals stream was deleted after ' + idle +
+                's with no activity from its receiver ' +
+                '(ssf.inactivityTimeoutS)' });
+          }));
           return;
         }
         const target = action === 'disable' ? 'disabled' : 'paused';
@@ -1524,7 +1669,8 @@ class SharedSignals {
     const { baseUrlOf } = this.deps.helpers;
     log.debug('Entering SharedSignals.metadata().');
     const base = this.ssfBase(req);
-    const doc = {
+    const critical = this.criticalMembers();
+    const doc: Json = {
       // SSF 1.0 section 7.1, whose example for the final specification is
       // exactly this. It was '1_0-final' until 2026-09-22, a value no version
       // of the specification uses.
@@ -1538,11 +1684,17 @@ class SharedSignals {
       add_subject_endpoint: base + '/subjects/add',
       remove_subject_endpoint: base + '/subjects/remove',
       verification_endpoint: base + '/verify',
-      critical_subject_members: this.criticalMembers(),
       default_subjects: String(config.value('ssf.defaultSubjects') || 'ALL')
         .toUpperCase(),
       authorization_schemes: ssfAuth.schemesForMetadata()
     };
+    // OPTIONAL (section 7.1), and ABSENT rather than an empty array when
+    // `ssf.criticalSubjectMembers` names none (#187): the OpenID conformance
+    // suite's transmitter-metadata module refuses an empty array member, and
+    // an empty list says nothing a missing member does not.
+    if (critical.length) {
+      doc.critical_subject_members = critical;
+    }
     log.debug('Leaving SharedSignals.metadata().');
     return doc;
   }
@@ -2054,7 +2206,11 @@ class SharedSignals {
         summary: 'A subject was added to ' + id,
         detail: { subject: subjects.describeSubject(body.subject),
           verified: body.verified !== false } });
-      res.status(204).set('Cache-Control', 'no-store').end();
+      // SSF 1.0 section 8.1.3.2: an EMPTY "200 OK" — removal is the one of
+      // the two that answers 204 (section 8.1.3.3). It was 204 here too
+      // until the OpenID conformance suite's subject-control module said so
+      // (#187).
+      res.status(200).set('Cache-Control', 'no-store').end();
       log.debug('Leaving POST /ssf/subjects/add.');
     });
 
@@ -2746,6 +2902,12 @@ class SharedSignals {
           'this subject" path needs.',
         'A `verified: true` on an Add Subject request is believed. There is ' +
           'no confirmation step here to skip.',
+        'It sends nothing when a realm\'s authentication policy is ' +
+          'TIGHTENED (Directory → Policies — a second factor required, a ' +
+          'mechanism withdrawn). A live session keeps the level it was ' +
+          'established at, and CAEP 1.0 has no event for "the level this ' +
+          'realm requires went up": assurance-level-change says a ' +
+          'subject\'s assurance moved, and it did not (#243).',
         'Streams are in memory and die with the process, like everything ' +
           'else this service mints — the signing key is regenerated on every ' +
           'start, so a restored queue would be tokens nothing can verify.'
@@ -2911,13 +3073,15 @@ class SharedSignals {
         return this.actionRefused('STS-SSF-0045', 'SSF', name, { ok: false,
           errors: ['No stream with stream_id "' + id + '".'] });
       }
-      streams.removeStream(id);
-      audit.audit({ action: 'ssf.stream.delete', category: 'signals',
-        protocol: 'SSF', channel: 'http', target: id,
-        summary: 'A Shared Signals stream was deleted from the console' });
-      log.debug('Leaving SharedSignals.consoleAction(). Deleted.');
-      return Promise.resolve({ ok: true, message: 'Stream ' + id + ' deleted.',
-        errors: [] });
+      log.debug('Leaving SharedSignals.consoleAction(). Deleting.');
+      return this.retireStream(streams.getStream(id), 'The transmitter\'s ' +
+        'administrator deleted this stream').then(function () {
+        audit.audit({ action: 'ssf.stream.delete', category: 'signals',
+          protocol: 'SSF', channel: 'http', target: id,
+          summary: 'A Shared Signals stream was deleted from the console' });
+        return { ok: true, message: 'Stream ' + id + ' deleted; its ' +
+          'receiver was sent stream-updated (disabled) first.', errors: [] };
+      });
     }
     if (name === 'status') {
       const record: Json = streams.getStream(id);
@@ -3288,7 +3452,8 @@ class SharedSignals {
     const n = notice || {};
     const uri = events.KERBEROS_TICKETS_INVALIDATED;
     const payload = events.EVENT_BY_URI[uri].generate({
-      realm: n.realm, kerberos_realm: n.kerberos_realm, kvno: n.kvno });
+      realm: n.realm, kerberos_realm: n.kerberos_realm, kvno: n.kvno,
+      reason: n.reason });
     const candidates = streams.listStreams().filter((record: Json) => {
       return streams.deliversEvent(record, uri);
     });
@@ -3317,6 +3482,95 @@ class SharedSignals {
       log.error(errorCodes.tag('STS-SSF-0112') + 'ssf: the ' +
                 'kerberos-tickets-invalidated event could not be sent: ' +
                 e.message);
+      return { sent: 0, streams: candidates.length, why: e.message };
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // ANOTHER KEY A RELYING PARTY PINS MOVED (#245) — a realm's OpenID
+  // Federation entity key, its SPIFFE authorities, or the listener
+  // certificate: `federation-key-rotated`, `spiffe-authority-rotated` and
+  // `tls-certificate-changed`, this service's own, beside
+  // `signingKeyRotated()` and in its shape (`ssf_events.js` argues why they
+  // are sibling types rather than more units of that one). To every stream
+  // of the AMBIENT realm that delivers the type; `ssf/service_signals.ts`
+  // enters the realm, and enters each one in turn for the listener, which is
+  // the whole service's. `notice.rotated` is `[{ unit, from, to }]`; the
+  // address a receiver fetches again is built here, from the realm's base.
+  // Never throws, for `signingKeyRotated()`'s reason.
+  // ---------------------------------------------------------------------------
+  serviceKeyChanged(kind: string, notice?: Json): Promise<EmitResult> {
+    const { log, events, streams, errorCodes, helpers, config } = this.deps;
+    log.debug('Entering SharedSignals.serviceKeyChanged(). ' + kind);
+    const kinds: Json = {
+      federation: { uri: events.FEDERATION_KEY_ROTATED,
+                    member: 'entity_configuration_uri',
+                    path: '/.well-known/openid-federation' },
+      spiffe: { uri: events.SPIFFE_AUTHORITY_ROTATED, member: 'bundle_uri',
+                path: String(config.value('spiffe.bundlePath') ||
+                             '/spiffe/bundle') },
+      tls: { uri: events.TLS_CERTIFICATE_CHANGED, member: 'certificate_uri',
+             path: '/tls/server-certificate' }
+    };
+    const chosen = kinds[kind];
+    if (!chosen) {
+      log.debug('Leaving SharedSignals.serviceKeyChanged(). Unknown kind.');
+      return Promise.resolve({ sent: 0, streams: 0,
+                               why: 'no such kind of key: ' + kind });
+    }
+    if (!this.enabled()) {
+      log.debug('Leaving SharedSignals.serviceKeyChanged(). SSF is off.');
+      return Promise.resolve({ sent: 0, streams: 0 });
+    }
+    const n = notice || {};
+    const uri = chosen.uri;
+    let base = '';
+    try {
+      base = helpers.baseUrlOf(null);
+    } catch (e) {
+      // No public base URL outside a request: the address is an optional
+      // member, and the event goes without it.
+      log.debug('Caught in SharedSignals.serviceKeyChanged(): ' +
+                ((e && e.message) || e));
+      base = '';
+    }
+    const values: Json = {
+      realm: n.realm, reason: n.reason,
+      rotated: (n.rotated || []).map(function (r: Json): string {
+        return r.unit + ' ' + r.from + ' -> ' + r.to;
+      }).join(', '),
+      trust_domain: n.trustDomain,
+      bundle_changed: n.bundleChanged
+    };
+    values[chosen.member] = base ? base + chosen.path : '';
+    const payload = events.EVENT_BY_URI[uri].generate(values);
+    const candidates = streams.listStreams().filter((record: Json) => {
+      return streams.deliversEvent(record, uri);
+    });
+    if (!candidates.length) {
+      log.debug('Leaving SharedSignals.serviceKeyChanged(). No stream ' +
+                'takes it.');
+      return Promise.resolve({ sent: 0, streams: 0 });
+    }
+    log.debug('Leaving SharedSignals.serviceKeyChanged().');
+    // ONE `txn` FOR EVERY SET THIS ONE EVENT BECOMES (SSF 1.0 section 4.1.9).
+    const txn = this.newTxn();
+    return Promise.all(candidates.map((record: Json) => {
+      return this.transmit(record, { txn: txn, uri: uri, payload: payload,
+        toe: payload.event_timestamp });
+    })).then((reports) => {
+      const sent = reports.filter((one) => {
+        return one.ok;
+      }).length;
+      log.info('ssf: ' + uri.slice(uri.lastIndexOf(':') + 1) + ' for the "' +
+               payload.realm + '" realm went to ' + sent + ' of ' +
+               candidates.length + ' stream(s).');
+      return { sent: sent, streams: candidates.length, reports: reports };
+    }).catch((e) => {
+      log.debug('Caught in SharedSignals.serviceKeyChanged(): ' +
+                ((e && e.message) || e));
+      log.error(errorCodes.tag('STS-SSF-0123') + 'ssf: the ' + uri +
+                ' event could not be sent: ' + e.message);
       return { sent: 0, streams: candidates.length, why: e.message };
     });
   }
@@ -3661,12 +3915,11 @@ class SharedSignals {
     return report;
   }
 
-  // Emit one CAEP event BY HAND. Two of the eight describe things nothing here
-  // does — no device reports compliance to this service and no risk engine
-  // talks to it — so this is the only way they are ever produced, and it is why
-  // the action exists rather than the page being read-only. (Five are emitted
-  // automatically — `caep.autoEmitTypes` — and `token-claims-change` only by
-  // GNAP, `gnap/gnap_signals.ts`.)
+  // Emit one CAEP event BY HAND, about a session this register tracks. Every
+  // one of the eight is also emitted automatically now — the last two by
+  // risk scoring (#62) and the device register (#164) — so this form exists
+  // for what an automatic emission cannot give a receiver under test: any
+  // type, any payload, on demand, about a session it chose.
   private caepEmit(asked: Json): Promise<Json> {
     const { log, audit, subjects, events, caep, streams } = this.deps;
     log.debug('Entering SharedSignals.caepEmit().');
@@ -3860,7 +4113,9 @@ class SharedSignals {
     const { log } = this.deps;
     log.debug('Entering SharedSignals.directoryChanged().');
     const asked = notice || {};
-    if (asked.kind !== 'membership') {
+    // A ROLE's members (#238) are, like a group's, a change to somebody's
+    // claims that RISC has no reading of.
+    if (SharedSignals.CLAIMS_ONLY_KINDS.indexOf(String(asked.kind)) < 0) {
       this.riscAutoEmit(asked);
     }
     this.claimsAutoEmit(asked);
@@ -3933,6 +4188,174 @@ class SharedSignals {
         : 'The risk this service sees in your sign-ins changed.' });
   }
 
+  // The observer notices that move claims and nothing RISC reads.
+  static readonly CLAIMS_ONLY_KINDS = ['membership', 'roles'];
+
+  // How many holders one turn of the event loop takes in a fan-out. See
+  // claimsFanOut().
+  static readonly FAN_OUT_SLICE = 100;
+
+  // ---------------------------------------------------------------------------
+  // CAEP token-claims-change FROM A DOOR THAT IS NOT A DIRECTORY ATTRIBUTE
+  // (#238): identity assurance (`verified_claims`), a claims provider unlinked
+  // (`_claim_names` / `_claim_sources`). Reached through
+  // `ssf/account_signals.ts`'s claimsChanged(), and sent by the same
+  // claimsAutoEmit() a directory write goes through — the live issuance is
+  // checked first, and `claims` may be a function so that nothing is computed
+  // for a person who holds nothing. Never rejects.
+  // ---------------------------------------------------------------------------
+  emitClaimsChange(notice?: Json): Promise<EmitResult> {
+    const { log } = this.deps;
+    log.debug('Entering SharedSignals.emitClaimsChange().');
+    log.debug('Leaving SharedSignals.emitClaimsChange().');
+    return this.claimsAutoEmit(Object.assign({}, notice || {},
+                                             { kind: 'claims' }));
+  }
+
+  // ---------------------------------------------------------------------------
+  // CAEP token-claims-change TO EVERY HOLDER A CONFIGURATION CHANGE MOVED
+  // (#238): an application's permissions or allowed scopes, a claim set, a
+  // claim setting, a federation release list. One event PER PERSON — a CAEP
+  // subject names a principal, and an application-scoped subject waits on
+  // #221 — to each person holding a live artifact `match` accepts
+  // (`admin_stats.liveClaimBearers()`, which is the live-issuance check), with
+  // the claims `claimsFor(bearer)` answers for their newest such artifact.
+  //
+  // **IN SLICES, SO A LARGE REALM DOES NOT WEDGE ANYTHING.** FAN_OUT_SLICE
+  // holders at a time, each slice's deliveries awaited and the next slice
+  // started on a later turn of the event loop — so requests keep being
+  // answered between slices, and at most one slice's pushes queue behind the
+  // per-process push cap (`ssf.pushConcurrency`) at once. A configuration
+  // change touching ten thousand holders is a background walk, not a stall.
+  //
+  // The cheap questions first, as claimsAutoEmit() asks them: SSF on, the act
+  // chosen, a stream that takes the type — none of which reads a register.
+  // Never rejects.
+  // ---------------------------------------------------------------------------
+  claimsFanOut(notice?: Json): Promise<EmitResult> {
+    const { log, caep, events, streams, stats } = this.deps;
+    log.debug('Entering SharedSignals.claimsFanOut().');
+    const asked = notice || {};
+    if (!this.enabled() || typeof asked.claimsFor !== 'function') {
+      log.debug('Leaving SharedSignals.claimsFanOut(). SSF is off, or ' +
+                'nothing says what moved.');
+      return Promise.resolve({ sent: 0, streams: 0 });
+    }
+    if (caep.autoEmitActs().indexOf('claims') < 0) {
+      log.debug('Leaving SharedSignals.claimsFanOut(). Not an emitted act.');
+      return Promise.resolve({ sent: 0, streams: 0, why: 'not emitted' });
+    }
+    const uri = events.CAEP_PREFIX + 'token-claims-change';
+    if (!streams.listStreams().some(function (record) {
+      return streams.deliversEvent(record, uri);
+    })) {
+      log.debug('Leaving SharedSignals.claimsFanOut(). No stream takes ' +
+                'token-claims-change.');
+      return Promise.resolve({ sent: 0, streams: 0, why: 'no stream' });
+    }
+    const what = String(asked.reasonAdmin || 'A configuration change');
+    let sent = 0;
+    let people = 0;
+    const walk = (bearers: Json[], from: number): Promise<EmitResult> => {
+      if (from >= bearers.length) {
+        log.info('caep: ' + what + ' — token-claims-change went to ' + sent +
+                 ' stream delivery(ies) for ' + people + ' of ' +
+                 bearers.length + ' holder(s).');
+        return Promise.resolve({ sent: sent, streams: people,
+                                 holders: bearers.length });
+      }
+      const slice = bearers.slice(from, from + SharedSignals.FAN_OUT_SLICE);
+      return Promise.all(slice.map((bearer: Json) => {
+        return this.claimsAutoEmit({ kind: 'claims',
+          username: bearer.username, liveChecked: true,
+          claims: function () {
+            return asked.claimsFor(bearer);
+          },
+          protocol: asked.protocol, initiatingEntity: asked.initiatingEntity,
+          reasonAdmin: asked.reasonAdmin, reasonUser: asked.reasonUser });
+      })).then((results: EmitResult[]) => {
+        results.forEach(function (one) {
+          sent += one.sent || 0;
+          people += one.sent ? 1 : 0;
+        });
+        return new Promise(function (resolve) {
+          setImmediate(resolve);
+        });
+      }).then(() => {
+        return walk(bearers, from + SharedSignals.FAN_OUT_SLICE);
+      });
+    };
+    log.debug('Leaving SharedSignals.claimsFanOut(). Walking.');
+    return Promise.resolve().then(() => {
+      return walk(stats.liveClaimBearers(asked.match), 0);
+    }).catch((e) => {
+      log.debug('Caught in SharedSignals.claimsFanOut(): ' +
+                ((e && e.message) || e));
+      log.warn('caep: ' + what + ' — the token-claims-change fan-out ' +
+               'stopped after ' + sent + ' delivery(ies): ' +
+               ((e && e.message) || e));
+      return { sent: sent, streams: people,
+               why: String((e && e.message) || e) };
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // CAEP assurance-level-change FOR A PERSON'S IDENTITY ASSURANCE (#243).
+  //
+  // `common/identity_assurance.ts` decides the level and its namespace — its
+  // own `urn:sts:ial`, or `NIST-IAL` only where the verification's trust
+  // framework is NIST SP 800-63's — and says it here through
+  // `ssf/account_signals.ts`'s assuranceChanged(). `notice`: `username`,
+  // `namespace`, `current`, and where known `previous` and `direction`. The
+  // subject is the PERSON: their identity assurance moved, not a session's.
+  // It rides the same act as the `acr` change (`caep.autoEmitTypes` names
+  // the TYPE, and both are assurance-level-change). Never rejects.
+  // ---------------------------------------------------------------------------
+  emitIdentityAssuranceChange(notice?: Json): Promise<EmitResult> {
+    const { log, caep, subjects } = this.deps;
+    const { subjectForName } = this.deps.helpers;
+    log.debug('Entering SharedSignals.emitIdentityAssuranceChange().');
+    const asked = notice || {};
+    const username = String(asked.username || '');
+    const namespace = String(asked.namespace || '');
+    const current = String(asked.current || '');
+    if (!this.enabled() || !username || !namespace || !current) {
+      log.debug('Leaving SharedSignals.emitIdentityAssuranceChange(). SSF ' +
+                'is off, or nobody or no level is named.');
+      return Promise.resolve({ sent: 0, streams: 0 });
+    }
+    if (caep.autoEmitActs().indexOf('reauthenticated') < 0) {
+      log.info('caep: an assurance-level-change about ' + username + ' was ' +
+               'NOT emitted: caep.enabled, caep.autoEmit or ' +
+               'caep.autoEmitTypes excludes it.');
+      log.debug('Leaving SharedSignals.emitIdentityAssuranceChange(). Not ' +
+                'an emitted act.');
+      return Promise.resolve({ sent: 0, streams: 0, why: 'not emitted' });
+    }
+    const values: Json = { namespace: namespace, current_level: current };
+    if (asked.previous) {
+      values.previous_level = String(asked.previous);
+    }
+    if (asked.direction === 'increase' || asked.direction === 'decrease') {
+      values.change_direction = asked.direction;
+    }
+    log.debug('Leaving SharedSignals.emitIdentityAssuranceChange().');
+    return this.emitProtocolEvent({
+      req: null, protocol: 'Identity assurance',
+      type: 'assurance-level-change',
+      subject: subjects.complexSubject({ user: { format: 'iss_sub',
+        iss: this.issuerFor(null),
+        sub: subjectForName(username) || username } }),
+      values: values,
+      initiatingEntity: String(asked.initiatingEntity || 'admin'),
+      reasonAdmin: String(asked.reasonAdmin || '') ||
+        ('The identity assurance of ' + username + ' went from ' +
+         (values.previous_level || 'an unknown level') + ' to ' + current +
+         ' (' + namespace + ').'),
+      reasonUser: 'The assurance this service holds about your identity ' +
+                  'changed.' });
+  }
+
   claimsAutoEmit(notice?: Json): Promise<EmitResult> {
     const { log, caep, events, streams, stats, subjects } = this.deps;
     const { subjectForName } = this.deps.helpers;
@@ -3967,7 +4390,10 @@ class SharedSignals {
       // over 5,000 SCIM memberships: 11.6 ms each without this feature,
       // 21.8 ms with the order reversed, 10.5 ms in this one).
       const sub = subjectForName(username) || username;
-      if (!stats.holdsLiveIssuance(username, sub)) {
+      // A fan-out has already listed the person from the same register
+      // (claimsFanOut()); asking again would walk it once per holder.
+      if (asked.liveChecked !== true &&
+          !stats.holdsLiveIssuance(username, sub)) {
         log.debug('caep: ' + username + ' holds nothing live, so no ' +
                   'token-claims-change is considered.');
         return { sent: 0, streams: 0, why: 'nothing live' };
@@ -3977,14 +4403,20 @@ class SharedSignals {
         return { sent: 0, streams: 0, why: 'no claim moved' };
       }
       const which = Object.keys(change.claims).join(', ');
+      // A door other than the directory (#238) names itself and says why.
       return this.emitProtocolEvent({
-        req: null, protocol: 'Directory', type: 'token-claims-change',
+        req: null, protocol: String(asked.protocol || 'Directory'),
+        type: 'token-claims-change',
         subject: subjects.complexSubject({ user: { format: 'iss_sub',
           iss: this.issuerFor(null), sub: sub } }),
-        values: change, initiatingEntity: 'admin',
-        reasonAdmin: 'The directory entry of ' + username + ' changed ' +
-                     which + ', which tokens already issued carry.',
-        reasonUser: 'Information about you in tokens already issued ' +
+        values: change,
+        initiatingEntity: String(asked.initiatingEntity || 'admin'),
+        reasonAdmin: asked.reasonAdmin
+          ? String(asked.reasonAdmin) + ' (' + username + ': ' + which + ')'
+          : 'The directory entry of ' + username + ' changed ' + which +
+            ', which tokens already issued carry.',
+        reasonUser: String(asked.reasonUser || '') ||
+                    'Information about you in tokens already issued ' +
                     'changed.' });
     }).catch((e) => {
       log.debug('Caught in SharedSignals.claimsAutoEmit(): ' +
@@ -4127,8 +4559,14 @@ class SharedSignals {
     }
     let due;
     try {
-      due = risc.observeAct(Object.assign({}, notice || {},
-                                          { issuer: this.issuerFor(null) }));
+      // A DEVICE'S ACT (#164 phase 4) names the device beside the account:
+      // `deviceSubject` is built here, where the issuer is known.
+      const asked = notice || {};
+      due = risc.observeAct(Object.assign({}, asked,
+        { issuer: this.issuerFor(null) },
+        asked.deviceId
+          ? { deviceSubject: this.deviceSubjectOf(String(asked.deviceId)) }
+          : {}));
     } catch (e) {
       log.debug('Caught in SharedSignals.emitRiscAccountAct(): ' +
                 ((e && e.message) || e));
@@ -4262,6 +4700,73 @@ class SharedSignals {
                 'about ' + username + ' could not be delivered: ' + e.message);
       return { sent: 0, streams: candidates.length, why: e.message };
     });
+  }
+
+  // ---------------------------------------------------------------------------
+  // A DEVICE'S CAEP EVENTS (#164 phase 4, 2026-09-26), from the device
+  // register's funnel through `ssf/account_signals.ts`: `device-compliance-
+  // change` (act `compliance`), `risk-level-change` with principal DEVICE
+  // (act `risk`) and `credential-change` about a device key or its Native
+  // SSO secret (act `credential`). Each is held to `caep.autoEmitTypes`
+  // through its act, and delivered by `emitProtocolEvent()` like GNAP's.
+  //
+  // **THE SUBJECT IS SSF 1.0 SECTION 3.3's COMPLEX SUBJECT, `device` AND —
+  // WHERE THE OWNER IS A PERSON — `user`.** "All members within a Complex
+  // Subject MUST represent attributes of the same Subject Principal"
+  // (section 3.3.1): the device, and the person it belongs to. The device is
+  // named as CAEP section 3.5.2's own example names one, `iss_sub` with the
+  // device's id as `sub` and this realm's issuer as `iss` — RFC 9493 section
+  // 3.2.3's issuer-scoped identifier, which is what the register's UUID is:
+  // unique only within the realm that assigned it. Not `opaque` (the bare
+  // UUID says nothing about whose it is, and two realms may hold the same
+  // one), and not the `uri` `urn:sts:device:<id>` a device certificate's SAN
+  // carries (that URN names no issuer either — it is scoped by the CA that
+  // signed the certificate, which the SET does not carry). The session
+  // events carry the same `device` member (`caep.subjectFor()`), so a
+  // receiver that added the device to its stream sees both.
+  //
+  // An application's device has no `user`: an application has no CAEP user
+  // subject here (#145), and the device alone is still one principal.
+  // ---------------------------------------------------------------------------
+  deviceSubjectOf(deviceId: string): Json {
+    const { log } = this.deps;
+    log.debug('Entering SharedSignals.deviceSubjectOf().');
+    log.debug('Leaving SharedSignals.deviceSubjectOf().');
+    return { format: 'iss_sub', iss: this.issuerFor(null),
+             sub: String(deviceId) };
+  }
+
+  emitDeviceEvent(asked?: Json): Promise<EmitResult> {
+    const { log, caep, subjects } = this.deps;
+    const { subjectForName } = this.deps.helpers;
+    log.debug('Entering SharedSignals.emitDeviceEvent().');
+    const o = asked || {};
+    const deviceId = String(o.deviceId || '');
+    if (!this.enabled() || !deviceId) {
+      log.debug('Leaving SharedSignals.emitDeviceEvent(). SSF is off or ' +
+                'no device is named.');
+      return Promise.resolve({ sent: 0, streams: 0 });
+    }
+    if (caep.autoEmitActs().indexOf(String(o.act || '')) < 0) {
+      log.info('caep: a ' + String(o.type || 'device event') + ' about ' +
+               'device ' + deviceId + ' was NOT emitted: caep.enabled, ' +
+               'caep.autoEmit or caep.autoEmitTypes excludes it.');
+      log.debug('Leaving SharedSignals.emitDeviceEvent(). Not an emitted ' +
+                'act.');
+      return Promise.resolve({ sent: 0, streams: 0, why: 'not emitted' });
+    }
+    const username = String(o.username || '');
+    const subject = subjects.complexSubject({
+      user: username ? { format: 'iss_sub', iss: this.issuerFor(null),
+                         sub: subjectForName(username) || username } : null,
+      device: this.deviceSubjectOf(deviceId) });
+    log.debug('Leaving SharedSignals.emitDeviceEvent().');
+    return this.emitProtocolEvent({
+      req: null, protocol: 'Device register', type: String(o.type || ''),
+      subject: subject, values: o.values || {},
+      initiatingEntity: String(o.initiatingEntity || 'system'),
+      reasonAdmin: String(o.reasonAdmin || ''),
+      reasonUser: String(o.reasonUser || '') });
   }
 
   // ---------------------------------------------------------------------------
@@ -4627,7 +5132,8 @@ class SharedSignals {
         message: 'The RISC state of account ' + row.accountId + ' was reset. ' +
           'The directory entry is untouched — this page is about what has ' +
           'been SAID about that account, and nobody has been disabled or ' +
-          'deleted.' });
+          'deleted. Its opt state (' + row.optOut + ') is the account ' +
+          'holder\'s choice and was kept (RISC section 2.8, #233).' });
     }
     if (name === 'clear') {
       const gone = risc.clear();
@@ -4635,7 +5141,9 @@ class SharedSignals {
       return Promise.resolve({ ok: true, errors: [],
         message: gone + ' account row(s) dropped. Nothing in the directory ' +
           'changed: this register is a record of what was said, and clearing ' +
-          'it forgets the record rather than deleting anybody.' });
+          'it forgets the record rather than deleting anybody. An account ' +
+          'whose holder opted out keeps that choice (RISC section 2.8, ' +
+          '#233).' });
     }
     // Spelled the way every other action handler here spells it, with the count
     // from the list rather than from a word typed beside it. That sentence is
@@ -4765,7 +5273,101 @@ class SharedSignals {
       actions: SharedSignals.RISC_CONSOLE_ACTIONS,
       eventTypes: this.riscEventTypes.bind(this)
     });
+
+    // A realm being removed tells its receivers before its streams go (#232).
+    // Registered at 23b, after `authn`'s and the directory's hooks, so the
+    // session-revoked and account-purged events they cause are already on
+    // their way when this waits for them.
+    this.deps.realms.onRetire({
+      name: 'ssf',
+      deliver: this.retireRealmStreams.bind(this)
+    });
     log.debug('Leaving SharedSignals.installHooks().');
+  }
+
+  // =========================================================================
+  // A TRUST REALM BEING REMOVED (#232, 2026-09-26) — `realms.retire()`'s
+  // deliver phase, in the realm, after `authn` has ended its sessions and the
+  // directory has reported its people purged.
+  //
+  //   1. Wait (until `ctx.deadline`) for every session end to have won its
+  //      claim and for every SET this realm has in flight to settle — the
+  //      session-revoked and account-purged events those two phases caused.
+  //   2. Count what is still on a queue: a push SET the receiver has not
+  //      taken, a poll SET nobody collected. Those go with the realm, and
+  //      are reported on `ctx.undelivered` (logged as STS-CORE-0120).
+  //   3. Every stream is told `stream-updated` `disabled`, through
+  //      `changeStatus()` — so section 8.1.5's order holds: the event first,
+  //      then the stop — and that push is waited for too.
+  //
+  // A poll receiver can collect only while this lasts; its streams are not
+  // waited on, because collection is the receiver's act and a removal that
+  // waited for it would wait for a receiver that may never come back.
+  // =========================================================================
+  async retireRealmStreams(realmId: string, ctx?: Json): Promise<void> {
+    const { log, streams } = this.deps;
+    log.debug('Entering SharedSignals.retireRealmStreams(). ' + realmId);
+    const c: Json = ctx || {};
+    const deadline = Number(c.deadline) || 0;
+    const authn: Json = this.deps.authn;
+    const pause = function (): Promise<void> {
+      return new Promise(function (resolve) {
+        setTimeout(resolve, 50);
+      });
+    };
+    const settle = async (): Promise<void> => {
+      log.debug('Entering settle().');
+      let quiet = 0;
+      while (Date.now() < deadline && quiet < 2) {
+        const busy = this.inFlightIn(realmId) > 0 ||
+          (typeof authn.pendingEndReports === 'function' &&
+           authn.pendingEndReports() > 0);
+        quiet = busy ? 0 : quiet + 1;
+        await pause();
+      }
+      log.debug('Leaving settle().');
+    };
+    await settle();
+    const all: Json[] = streams.listStreams();
+    let waiting = 0;
+    all.forEach(function (record: Json): void {
+      waiting += streams.queueOf(record).filter(function (entry: Json) {
+        return !streams.isStreamUpdated(entry);
+      }).length;
+    });
+    const reason = 'The trust realm "' + realmId + '" was removed; this ' +
+      'stream, and everything it held, goes with it.';
+    await Promise.all(all.map((record: Json): Promise<Json> => {
+      return this.changeStatus(record, 'disabled', reason)
+        .catch(function (e: Json): Json {
+          log.debug('Caught in SharedSignals.retireRealmStreams(): ' +
+                    ((e && e.message) || e));
+          return null;
+        });
+    }));
+    await settle();
+    let unannounced = 0;
+    all.forEach(function (record: Json): void {
+      const live: Json = streams.getStream(record.stream_id);
+      if (!live) {
+        return;
+      }
+      unannounced += streams.queueOf(live).filter(function (entry: Json) {
+        return streams.isStreamUpdated(entry);
+      }).length;
+    });
+    if (Array.isArray(c.undelivered)) {
+      c.undelivered.push({ what: 'SET(s) on a stream queue (a push not ' +
+                                 'taken, or a poll not collected)',
+                           count: waiting });
+      c.undelivered.push({ what: 'stream-updated SET(s) not delivered',
+                           count: unannounced });
+    }
+    log.info('ssf: the "' + realmId + '" realm is being removed; ' +
+             all.length + ' stream(s) were told stream-updated disabled' +
+             (waiting ? ', and ' + waiting + ' SET(s) were still queued' : '') +
+             '.');
+    log.debug('Leaving SharedSignals.retireRealmStreams().');
   }
 
   // =========================================================================
@@ -4885,6 +5487,9 @@ export = {
   metadata: slot.forward('metadata'),
   description: slot.forward('description'),
   transmit: slot.forward('transmit'),
+  // The subject as a stream owner's client knows the person (#149) and,
+  // since #164 phase 6, their device — for `tests/device_policy.js`.
+  subjectForReceiver: slot.forward('subjectForReceiver'),
   // #144: every status change in section 8.1.5's order, the held-SET drain,
   // and the stream-maintenance job's body.
   changeStatus: slot.forward('changeStatus'),
@@ -4898,6 +5503,7 @@ export = {
   caepAutoEmit: slot.forward('caepAutoEmit'),
   signingKeyRotated: slot.forward('signingKeyRotated'),
   kerberosTicketsInvalidated: slot.forward('kerberosTicketsInvalidated'),
+  serviceKeyChanged: slot.forward('serviceKeyChanged'),
   emitProtocolEvent: slot.forward('emitProtocolEvent'),
   caepReport: slot.forward('caepReport'),
   caepAction: slot.forward('caepAction'),
@@ -4907,6 +5513,14 @@ export = {
   // through `ssf/account_signals.ts`.
   emitRiscAccountAct: slot.forward('emitRiscAccountAct'),
   emitCredentialChange: slot.forward('emitCredentialChange'),
+  // A device's CAEP events (#164 phase 4), through account_signals.ts.
+  emitDeviceEvent: slot.forward('emitDeviceEvent'),
+  // token-claims-change from a door that is not a directory attribute, and
+  // to every holder a configuration change moved; assurance-level-change for
+  // identity assurance (#238, #243), through account_signals.ts.
+  emitClaimsChange: slot.forward('emitClaimsChange'),
+  claimsFanOut: slot.forward('claimsFanOut'),
+  emitIdentityAssuranceChange: slot.forward('emitIdentityAssuranceChange'),
   // A person's risk level changed (#62 P4): `risk/risk_engine.ts` sends it.
   riskAutoEmit: slot.forward('riskAutoEmit'),
   riscReport: slot.forward('riscReport'),

@@ -267,8 +267,10 @@ class SigningRotation {
     const tokens = Number(config.value('signing.rotationIntervalDays')) *
                    DAY_MS;
     // The BBS key signs ldp_vc credentials and nothing else (#49 P5): the
-    // credential interval, never shared with a token signer.
-    if (unit === 'bbs:BBS') {
+    // credential interval, never shared with a token signer. So does the
+    // CREDENTIALS signer group's every unit (#68), which signs credentials,
+    // status lists and nothing a token uses — that is what a group is.
+    if (unit === 'bbs:BBS' || this.isCredentialGroupUnit(unit)) {
       const bbsEvery = Number(config.value(
         'signing.credentialRotationIntervalDays')) * DAY_MS;
       log.debug("Leaving SigningRotation.intervalMs(). " + bbsEvery +
@@ -292,6 +294,15 @@ class SigningRotation {
     return answer;
   }
 
+  // Is this one of the credentials signer group's units (#68)? `jose:` then
+  // the group's slot prefix — `common/signer_groups.js` names the group.
+  private isCredentialGroupUnit(unit: string): boolean {
+    const { log } = this.deps;
+    log.debug("Entering SigningRotation.isCredentialGroupUnit(). " + unit);
+    log.debug("Leaving SigningRotation.isCredentialGroupUnit().");
+    return String(unit || '').indexOf('jose:credentials/') === 0;
+  }
+
   // How long a key goes on verifying after it is retired.
   graceMs(unit: string, keys?: Json): number {
     const { log, config } = this.deps;
@@ -299,8 +310,13 @@ class SigningRotation {
     const setting = Number(config.value('signing.retiredKeyGraceDays')) *
                     DAY_MS;
     let derived = this.longest(TOKEN_LIFETIMES);
-    if (unit === this.credentialUnit(keys) || unit === 'bbs:BBS') {
-      derived = Math.max(derived, this.longest(CREDENTIAL_LIFETIMES));
+    if (unit === this.credentialUnit(keys) || unit === 'bbs:BBS' ||
+        this.isCredentialGroupUnit(unit)) {
+      // Plus an hour: an issued credential's `exp` is rounded UP to the hour
+      // (`oid4vc/vc_issuer.ts` unlinkableTimes(), #187), so it may outlive
+      // its lifetime by as much.
+      derived = Math.max(derived, this.longest(CREDENTIAL_LIFETIMES) +
+                                  3600000);
     }
     const answer = Math.max(setting, derived + SKEW_MS);
     log.debug("Leaving SigningRotation.graceMs(). " + answer + "ms.");
@@ -507,7 +523,7 @@ class SigningRotation {
     }
     let signedOut: Json[] = [];
     if (o.emergency) {
-      signedOut = this.endSessions(realmId);
+      signedOut = this.endSessions(realmId, String(o.requestedBy || ''));
     }
     audit().record({
       action: o.emergency ? 'keys.rotate.emergency' : 'keys.rotate',
@@ -591,12 +607,16 @@ class SigningRotation {
   // Every session of the realm ended (a CAEP session-revoked each, through
   // authn), and a RISC sessions-revoked for every account that had one — the
   // two SSF notices D4 reserves for an emergency.
-  private endSessions(realmId: string): Json[] {
+  // `requestedBy` names the administrator who asked for the rotation, if
+  // one did: CAEP's `initiating_entity` is then `admin`, and `system`
+  // otherwise — a maintenance act nobody in particular initiated (#242).
+  private endSessions(realmId: string, requestedBy?: string): Json[] {
     const { log, authn, ssf, realms } = this.deps;
     log.debug("Entering SigningRotation.endSessions().");
     let ended: Json[] = [];
     try {
-      ended = authn().endEverySessionIn(realmId, 'an emergency key rotation');
+      ended = authn().endEverySessionIn(realmId, 'an emergency key rotation',
+                                        requestedBy ? 'admin' : 'system');
     } catch (e) {
       log.error(errorCodes.tag('STS-KEYS-0064') + 'signing rotation: the ' +
                 'sessions of the "' + realmId + '" realm could not be ended ' +
@@ -862,6 +882,7 @@ class SigningRotation {
           units: Array.isArray(p.units) && p.units.length ? p.units : null,
           emergency: !!p.emergency,
           reason: p.emergency ? 'emergency' : 'requested',
+          requestedBy: ctx.requestedBy || '',
           trigger: ctx.trigger });
       }
     });

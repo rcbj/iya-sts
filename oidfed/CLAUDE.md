@@ -104,6 +104,16 @@ resolves anything.
 `temporarily_unavailable` (STS-OIDFED-0043) until the directory's change log
 brings it the winner's row.
 
+**A rotation and a revocation are announced over Shared Signals (#245).**
+`rotate()` and `revoke()` send `federation-key-rotated` through
+`ssf/service_signals.ts` (the `signals` dep, reached lazily), in the realm. The
+reason is `scheduled` from the job and `requested` by hand. An emergency sends
+`emergency`, naming the next key it revoked. A retired key revoked as
+`compromised` sends `emergency` too. A next key that is only PUBLISHED is not
+announced: it signs nothing yet, and the rotation that promotes it says so. The
+subordinate history (#137) is recorded as before. `ssf/CLAUDE.md` argues the
+sibling URN.
+
 ## Resolution, and the fetches it makes
 
 `trust_chain.ts`'s header is the argument for dialling URLs a caller named. It

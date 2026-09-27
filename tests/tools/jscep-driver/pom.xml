@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  THE jscep DRIVER'S DEPENDENCIES (#250, 2026-09-26), for build.sh and the
+  `enroll-java` stage of tests/Dockerfile. Maven RESOLVES them and nothing
+  else: build.sh copies the runtime jars out with maven-dependency-plugin,
+  holds every one to the sha256 in jars.sha256 (and the directory to exactly
+  that list), and compiles the one source file with javac. jscep 3.0.1 is the
+  latest release (2025-02); its own pom pins Bouncy Castle 1.79, SLF4J
+  2.0.16 and the three Apache Commons jars, and nothing here overrides them —
+  the client under test is jscep as its maintainers ship it.
+  slf4j-simple is the one addition: jscep logs through SLF4J and an
+  application picks the binding; this one prints to stderr, which the job
+  reads for WARN and ERROR lines.
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>net.iyasec.sts.tests</groupId>
+  <artifactId>jscep-driver</artifactId>
+  <version>1</version>
+  <packaging>pom</packaging>
+  <dependencies>
+    <dependency>
+      <groupId>com.google.code.jscep</groupId>
+      <artifactId>jscep</artifactId>
+      <version>3.0.1</version>
+    </dependency>
+    <dependency>
+      <groupId>org.slf4j</groupId>
+      <artifactId>slf4j-simple</artifactId>
+      <version>2.0.16</version>
+    </dependency>
+  </dependencies>
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-dependency-plugin</artifactId>
+        <version>3.8.1</version>
+      </plugin>
+    </plugins>
+  </build>
+</project>

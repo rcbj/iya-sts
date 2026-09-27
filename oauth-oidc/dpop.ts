@@ -176,17 +176,21 @@ const PROOF_TYP = 'dpop+jwt';
 // key both parties would have to know, and never `none` — which is exactly
 // what `JWS_ASYMMETRIC_ALGS` is.
 //
-// NOT THE POST-QUANTUM ONES, and this exclusion is a SPECIFICATION limit
-// rather than anything this service cannot do. DPoP binds a token to a key
-// through `cnf.jkt`, which is the RFC 7638 JWK Thumbprint — and RFC 7638
-// defines the required members for `RSA`, `EC`, `OKP` and `oct` and for
-// nothing else. An ML-DSA or SLH-DSA key is `kty: "AKP"` (RFC 9964), for which
-// no thumbprint is registered, so a proof signed with one would verify
-// perfectly and bind to nothing. The debugger's own dpop.js excludes them for
-// the same reason and says so in the same words.
+// THE THREE ML-DSA ALGORITHMS, AND NO OTHER POST-QUANTUM ONE (#150). DPoP
+// binds a token to a key through `cnf.jkt`, the RFC 7638 JWK Thumbprint, so
+// an algorithm is usable here only where its key type has thumbprint members
+// defined. RFC 9964 defines them for `kty: "AKP"` (`alg`, `kty`, `pub`) and
+// registers ML-DSA-44, ML-DSA-65 and ML-DSA-87 in the JOSE registry, so those
+// three bind exactly as an EC key does. SLH-DSA and the composites are not
+// JOSE-registered algorithms — this service signs them under their draft
+// names — and a proof in one would verify and bind to a name no client could
+// interoperate on, so they stay out until the registry names them. Until
+// #150 every post-quantum algorithm was excluded, for want of a thumbprint.
+const DPOP_PQ_ALGS = Object.freeze(['ML-DSA-44', 'ML-DSA-65', 'ML-DSA-87']);
 const SIGNING_ALGS: string[] = stsCrypto.JWS_ASYMMETRIC_ALGS.filter(
   function (alg) {
-    return stsCrypto.JWS_ALGS[alg].family !== 'pq';
+    return stsCrypto.JWS_ALGS[alg].family !== 'pq' ||
+      DPOP_PQ_ALGS.indexOf(alg) >= 0;
   });
 
 // RFC 9449 section 11.1: the acceptable window for a proof's `iat`. Short,
@@ -833,7 +837,9 @@ class Dpop {
       return fail('STS-OAUTH-0100', 'The DPoP proof header must carry the ' +
                                     'public key as a jwk.');
     }
-    const privateMembers = ['d', 'p', 'q', 'dp', 'dq', 'qi', 'k'].filter(
+    // `priv` is an AKP key's private half (RFC 9964), since #150.
+    const privateMembers = ['d', 'p', 'q', 'dp', 'dq', 'qi', 'k',
+                            'priv'].filter(
       function (m) {
         return jwk[m] !== undefined;
       });
@@ -849,6 +855,15 @@ class Dpop {
                   'The DPoP proof header key (' + jwk.kty +
                   (jwk.crv ? '/' + jwk.crv : '') +
                   ') does not match its alg ' + header.alg + '.');
+    }
+    // RFC 9964: an AKP key names its one algorithm, and it is a thumbprint
+    // member, so a key for another parameter set is another key (#150).
+    if (jwk.kty === 'AKP' && jwk.alg !== header.alg) {
+      log.debug("Leaving Dpop.verifyProof().");
+      return fail('STS-OAUTH-0102',
+                  'The DPoP proof header key is an AKP key for ' +
+                  String(jwk.alg) + ', which does not match its alg ' +
+                  header.alg + '.');
     }
 
     // Check 3: all required claims. Named individually so the client is told

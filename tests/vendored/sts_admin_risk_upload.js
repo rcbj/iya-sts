@@ -137,8 +137,7 @@ async function settled(prefix, realm, version) {
   log.debug("Entering settled(). " + version);
   const deadline = Date.now() + 60000;
   for (;;) {
-    const r = await call("GET", base + prefix + "/admin-api/risk?realm=" +
-                         encodeURIComponent(realm));
+    const r = await call("GET", base + prefix + "/admin-api/risk");
     assert.strictEqual(r.status, 200, "GET /admin-api/risk answered " +
                        r.status + " " + r.text.slice(0, 300));
     const d = r.body.datasets.filter(function (one) {
@@ -147,7 +146,11 @@ async function settled(prefix, realm, version) {
     const v = d.versions.filter(function (one) {
       return one.version === version;
     })[0];
-    if (v && v.state !== "loading") {
+    // `ready` is transient too (2026-09-27): a version is marked loaded and
+    // then activated, two writes, and with request workers a read can land
+    // between them — single-node read one `ready` 10ms before the service
+    // logged it active. Nothing here expects a version to stop at `ready`.
+    if (v && v.state !== "loading" && v.state !== "ready") {
       log.debug("Leaving settled(). " + v.state);
       return { version: v, dataset: d };
     }
@@ -185,8 +188,8 @@ async function theApi() {
     assert.strictEqual(done.version.rowCount, 3000,
                        JSON.stringify(done.version));
   });
-  const look = await call("GET", base + "/admin-api/risk?realm=default" +
-                          "&address=198.18.65.7");
+  const look = await call("GET", base + "/admin-api/risk?" +
+                          "address=198.18.65.7");
   check("a lookup inside it names the list and the version", function () {
     assert.strictEqual(look.status, 200, look.text.slice(0, 300));
     assert.strictEqual(look.body.lookup.datasets[DATASET], r.body.version,

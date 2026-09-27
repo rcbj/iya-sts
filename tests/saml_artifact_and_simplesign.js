@@ -401,10 +401,15 @@ async function run(t) {
     // -----------------------------------------------------------------------
     const ssp = newParty('simplesign', 'saml2-service-provider',
                          [ec.cert.b64]);
-    const simpleForm = function (field, xml, relayState, key, tamper) {
+    // THE SIGNED OCTETS ARE THE RAW XML (the SimpleSign binding, section
+    // 2.5, step 2) — `overBase64` signs the base64 text instead, which is
+    // what this service did until #189 and what no other implementation
+    // verifies.
+    const simpleForm = function (field, xml, relayState, key, tamper,
+                                 overBase64) {
       log.debug("Entering simpleForm().");
       const value = Buffer.from(xml, 'utf8').toString('base64');
-      const octets = field + '=' + value +
+      const octets = field + '=' + (overBase64 ? value : xml) +
         (relayState !== undefined ? '&RelayState=' + relayState : '') +
         '&SigAlg=' + key.uri;
       const form = new URLSearchParams();
@@ -436,7 +441,8 @@ async function run(t) {
     };
     const authn = '<samlp:AuthnRequest xmlns:samlp="' + NS_SAMLP + '" ' +
       'xmlns:saml="' + NS_SAML + '" ID="_ss1" Version="2.0" IssueInstant="' +
-      new Date().toISOString() + '"><saml:Issuer>' + ssp + '</saml:Issuer>' +
+      new Date().toISOString() + '" Destination="https://idp.test/saml2/' +
+      'sso"><saml:Issuer>' + ssp + '</saml:Issuer>' +
       '</samlp:AuthnRequest>';
     const simple = postSimple(ssoPost, '/saml2/sso',
                               simpleForm('SAMLRequest', authn, 'r/s+1', ec));
@@ -458,6 +464,13 @@ async function run(t) {
       simpleForm('SAMLRequest', authn, undefined, other));
     t.equal(codeOf(forged), 'STS-SAML-0061',
             'and one signed by another key is refused');
+    const overBase64 = postSimple(ssoPost, '/saml2/sso',
+      simpleForm('SAMLRequest', authn, 'r/s+1', ec, false, true));
+    t.check(overBase64.statusCode === 403 &&
+            codeOf(overBase64) === 'STS-SAML-0061',
+            'a SimpleSign AuthnRequest signed over the BASE64 text rather ' +
+            'than the raw XML is REFUSED, STS-SAML-0061 (#189)',
+            overBase64.statusCode + ' ' + codeOf(overBase64));
     const repeated = requestSignature.simpleSignOctets(
       { SAMLRequest: 'x', SigAlg: ['a', 'b'], Signature: 'y' },
       'SAMLRequest');
@@ -466,7 +479,8 @@ async function run(t) {
 
     const logout = '<samlp:LogoutRequest xmlns:samlp="' + NS_SAMLP + '" ' +
       'xmlns:saml="' + NS_SAML + '" ID="_sl1" Version="2.0" IssueInstant="' +
-      new Date().toISOString() + '"><saml:Issuer>' + ssp + '</saml:Issuer>' +
+      new Date().toISOString() + '" Destination="https://idp.test/saml2/' +
+      'slo"><saml:Issuer>' + ssp + '</saml:Issuer>' +
       '<saml:NameID>alice</saml:NameID></samlp:LogoutRequest>';
     applications.updateApplication(ssp, {
       attribute: 'samlSingleLogoutService', mode: 'add',
@@ -565,7 +579,7 @@ async function run(t) {
     t.check(!/<ds:Signature\b/.test(responseRoot),
             'with NO enveloped signature on the Response itself',
             responseRoot.slice(0, 300));
-    const octets = 'SAMLResponse=' + responseB64 + '&RelayState=state 1' +
+    const octets = 'SAMLResponse=' + responseXml + '&RelayState=state 1' +
                    '&SigAlg=' + field('SigAlg');
     t.check(stsCrypto.verifyQueryString(octets, {
               signature: field('Signature'), sigAlg: field('SigAlg'),
@@ -573,8 +587,15 @@ async function run(t) {
             !stsCrypto.verifyQueryString(octets.replace('state 1', 'state 2'),
               { signature: field('Signature'), sigAlg: field('SigAlg'),
                 certPem: helpers.STS.xml.certPem }).ok,
-            'and the Signature verifies over the SimpleSign octets with this ' +
-            'service\'s certificate');
+            'and the Signature verifies over the SimpleSign octets — the ' +
+            'RAW XML, not its base64 (#189) — with this service\'s ' +
+            'certificate');
+    t.check(!stsCrypto.verifyQueryString('SAMLResponse=' + responseB64 +
+              '&RelayState=state 1&SigAlg=' + field('SigAlg'), {
+              signature: field('Signature'), sigAlg: field('SigAlg'),
+              certPem: helpers.STS.xml.certPem }).ok,
+            'and NOT over the base64 text, which is what it signed until ' +
+            '#189');
 
     const idpMetadata = direct.metadataFor('https://idp.test', '');
     t.check(new RegExp('<md:SingleSignOnService Binding="' + B_SIMPLESIGN)

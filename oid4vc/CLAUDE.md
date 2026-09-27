@@ -15,8 +15,15 @@ DID Core with DIF domain linkage.
 | `vc_signin.ts` | Signing in with a wallet: `/authn/wallet`, `/authn/wallet/wait`, the Digital Credentials API answer at `/authn/wallet/dc-api` and the one script at `/authn/wallet.js`. |
 | `vc_status.ts` | The status lists every issued credential names, and the check the Verifier makes against them (rule 3as). A library and four routes. |
 | `vc_status_codec.ts` | Their encodings: the compressed byte array, CBOR, COSE_Sign1, the JWT and CWT tokens, and the W3C bitstring (rule 3as). A pure library. |
-| `vc_data_integrity.ts` | The holder's Data Integrity proof on a presentation (`ecdsa-jcs-2019`, `eddsa-jcs-2022`, `mldsa44-jcs-2024`, `slhdsa128-jcs-2024`), `did:jwk` and `did:key` (rule 3at). A pure library — and since 2026-09-22 (#43) also the signer and verifier of a GNAP zcap token's JCS proof (`gnap/token_zcap.ts`), through `signDocument()`, `multikeyOf()` and a caller-supplied `resolveVerificationMethod`. |
+| `vc_data_integrity.ts` | The holder's Data Integrity proof on a presentation (`ecdsa-jcs-2019`, `eddsa-jcs-2022`, `mldsa44-jcs-2024`, `slhdsa128-jcs-2024`), `did:jwk` and `did:key` (rule 3at). A pure library — and since 2026-09-22 (#43) also the signer and verifier of a GNAP zcap token's JCS proof (`gnap/token_zcap.ts`), through `signDocument()`, `multikeyOf()` and a caller-supplied `resolveVerificationMethod`; and since #195/#196 the RDFC suites (`eddsa-rdfc-2022`, `ecdsa-rdfc-2019`), `ecdsa-sd-2023` (through `vc_ecdsa_sd.ts`), proof sets and chains (`verifyAllProofs()`) and the realm's own keys as did:keys (`realmKeyFor()`) — asked for by name, never the default. |
 | `vc_did.ts` | `did:web`, `did:jwk`, and the domain linkage document. |
+| `vc_jsonld.ts` | The CLOSED JSON-LD loader (the contexts in `contexts/` and `../common/vendored/contexts/`, each held to its SHA-256; nothing is fetched) and RDFC-1.0 over it (#194-#196). A library. |
+| `vc_data_model.ts` | The VC Data Model 2.0 and 1.1 MUSTs a credential or presentation is refused for (#194). A library. |
+| `vc_ecdsa_sd.ts` | `ecdsa-sd-2023`: base proofs, derived proofs and their verification, the specification's own steps (#196). A library `vc_data_integrity.ts` dispatches to. |
+| `vc_jose_cose.ts` | VC-JOSE-COSE's envelopes: `vc+jwt`, `vc+sd-jwt`, `vc+cose` and the `vp` forms, secured and verified (#198). A library. |
+| `vc_did_resolver.ts` | DID Core section 7: resolve, resolveRepresentation and dereference for `did:key`, `did:jwk` and this realm's `did:web` (#199). A library. |
+| `vc_api.ts` | The W3C VC-API test endpoints (`/vc-api/*`) over everything above — a TEST CONTROL (#194-#199). *The W3C VC-API adapter* below. |
+| `contexts/` | The JSON-LD contexts `vc_jsonld.ts` answers from, fetched once from their URLs; `vc_jsonld.ts`'s header is their provenance. |
 
 **`vc_configs.ts` and `vc_offers.ts` exist to break require cycles, not to group
 code** — see rule 2 in the root `CLAUDE.md`. The credential configurations are
@@ -454,7 +461,12 @@ sign-out cannot be undone by the token it was meant to cut off.
 * **W3C Bitstring Status List** for the W3C formats, one list per purpose at
   `/oid4vci/status-lists/bitstring/{revocation,suspension}`, each a
   `BitstringStatusListCredential` secured as `application/vc+jwt`, 131,072
-  entries (the specification's minimum).
+  entries (the specification's minimum) — **or, since #197, as JSON-LD with
+  an `eddsa-rdfc-2022` proof** by the realm's Ed25519 key, issued as its
+  did:key, when `Accept` asks for JSON-LD or JSON and not the JWT first
+  (`bitstringFormFor()`): a verifier of embedded-proof credentials reads
+  JSON, not a JWT string, and the W3C suite reads the list exactly so. The
+  JWT stays the default.
 
 **ONE INDEX PER CREDENTIAL, THE SAME IN EVERY LIST**, taken at random (the
 draft's linkability guidance) through a cluster claim, and free again when the
@@ -515,7 +527,11 @@ The response endpoint marks the refusal with `verified.statusErrorCode`
 `oid4vp.statusOptionalIssuers` (empty) — group OID4VP; and
 `oid4vci.statusListTtlS` (300), `oid4vci.statusListLifetimeS` (86400),
 `oid4vci.keyAttestationRequired` (off) and
-`oid4vci.keyAttestationTrustedCertificates` (empty) — group OID4VCI. So
+`oid4vci.keyAttestationTrustedCertificates` (empty) — group OID4VCI. (A key
+attestation's `x5c` leaf is trusted only through `pki.verifyIssuedDirectly()`
+since #201 — issued directly by a trusted attester AND the two-certificate path
+holding RFC 5280, where it was `checkIssued()` and a signature: an expired leaf,
+a CA as the leaf or an unimplemented critical extension vouched for the key.) So
 `/admin/oid4vp`, `/admin/oid4vci` and `/admin-api/config` carry them, and
 `/admin/vc-status` is where the lists themselves are read and changed. **On by default in both modes**: the screen
 offers every mechanism the service supports, and this one signs in only an
@@ -554,7 +570,8 @@ Self-Issued OP); a self-issued subject — a DID or an RFC 9278 JWK thumbprint
 URI — is **ENROLLED on the person's entry** (`stsSelfIssuedSubject`, withheld
 from LDAP reads), by the person or by an administrator; **an unenrolled
 subject is refused in BOTH modes**, so there is no `mode.js` predicate; and a
-signed request may use **all four Client Identifier prefixes**.
+signed request may use **all four Client Identifier prefixes** — six since
+#230 added `x509_san_dns` and `x509_hash` (the section below).
 
 * **The person enrols by PROVING the key.** `/portal/self-issued`'s *Enrol a
   wallet* is `/authn/wallet?siop=1&enrol=1`: `vc_signin.ts` starts a SIOPv2
@@ -592,6 +609,84 @@ signed request may use **all four Client Identifier prefixes**.
 `tests/vendored/sts_siop.js` (local) drives the sign-in, both enrolments, the
 refusals and the bar door's `form_post` over HTTP.
 
+## THE x509 CLIENT IDENTIFIER PREFIXES: `x509_san_dns` AND `x509_hash` (#230, 2026-09-26)
+
+Found by #187: the OIDF `oid4vp-1final-verifier-test-plan` has signed
+variants only for these two, and the Verifier had four other prefixes. Both
+are OpenID4VP 1.0 section 5.9.3. The Request Object is signed with the key of
+a certificate whose chain it carries in `x5c`, and the wallet validates the
+chain to an anchor it trusts. Then `x509_san_dns:<name>` must be a dNSName of
+the leaf, and `x509_hash:<b64url SHA-256 of the leaf's DER>` must be its hash.
+
+* **THE CERTIFICATE IS `common/pki.js`'s `certifyVerifierKey()`** (rules 3w
+  and 3r: new PKI code goes there, never here). It is issued from the realm's
+  JOSE Issuing CA over the realm key `helpers.signJwt()` signs
+  `oid4vp.x509SigningAlgorithm` with (ES256 by default, which HAIP has every
+  wallet accept). The profile is `digital-signature` narrowed to
+  `digitalSignature`, with no EKU and a SAN dNSName. That function's header
+  argues each choice: the realm's key rather than a new one, the JOSE CA
+  rather than a use case of its own, and why not `tls-server`. There is one
+  slot per DNS name, sixteen at most per realm (`STS-PKI-0205`).
+* **ISSUED BEFORE THE BUILD, READ DURING IT.** Issuing a certificate is
+  asynchronous and `buildVpRequest()` is not. So `prepareSignedClientId()`
+  is awaited first by `/oid4vp/start`, by `/authn/wallet` and by the
+  verifier-certificate document. It issues the certificate, or answers the
+  one in place when it is over the same key and more than a day from
+  expiry. `x509Material()` then reads it synchronously and refuses
+  (`STS-VC-0112`) where it is missing or over another key. A rotated realm
+  key is certified again on the next request, and the old certificate is
+  superseded.
+* **`x5c` STOPS BELOW THE ROOT**: it carries the leaf, the Issuing CA and the
+  Intermediate. The Root is the anchor a wallet is configured with. The
+  request carries no `x5u` either (`signX509Request()`, and a
+  `certificate-header: none` exemption). `oid4vp.requestObjectCertificateHeader`
+  would name the realm's other certificate for the same key, so a wallet
+  would be handed two chains that disagree about who the Verifier is.
+* **THE NAME IS THE RESPONSE URI'S HOST, OR THE REQUEST IS NOT BUILT.**
+  Section 5.9.3 has a wallet that does not otherwise trust the Client
+  Identifier require the `response_uri`'s FQDN to be it. A configured
+  `oid4vp.x509DnsName` that is not the host is refused (`STS-VC-0111`), and
+  so is an IP address, rather than sent to be refused by every wallet.
+* **PRODUCT NEVER CERTIFIES A `Host` HEADER** (`mode.certifiesRequestHost()`,
+  `STS-VC-0110`). The name is `oid4vp.x509DnsName`, else the host of a
+  pinned `global.publicBaseUrl`, else (development only) the request's
+  host. The Response URI is built from that same host, so certifying it
+  would hand whoever sent the header a Request Object this realm signed,
+  under a certificate wallets trust, that sends presentations to their
+  host. `x509_hash` needs no name, and signs under a nameless certificate
+  where none can be had, so it works unconfigured in product.
+* **PER REALM OR PER REQUEST.** `oid4vp.clientIdPrefix` is the realm's
+  choice, and `/oid4vp/start?client_id_prefix=` is one request's choice
+  (section 5.9 has the Verifier choose per request). Naming a prefix makes
+  the request signed. The sign-in's Digital Credentials API request is
+  signed under the same certificate.
+* **`GET /oid4vp/verifier-certificate`** is what a wallet, or the
+  conformance suite playing one, is configured from. It gives both Client
+  Identifiers, each with its `x5c` and `trust_anchor_pem`, and is
+  `no-store`. Asking for it certifies the Verifier as a request would. Where
+  no name can be had, `x509_san_dns` is `null` with the refusal.
+* **A RENEWAL KEEPS THE NAME.** `certify()` now records how a leaf was
+  issued (`issuedAs`: profile, keyUsage, extensions), and
+  `recertifyUseCase()` and `recertifyOrphanedSlots()` pass it back. Before
+  this, renewing the JOSE or `pep-tls` Issuing CA's certificates re-minted
+  a named leaf WITHOUT its subjectAltName.
+* **NOT BUILT: a post-quantum signing algorithm.** The Request Object is
+  signed on the request path, and the post-quantum keys sign in the worker
+  pool. The setting's description says so.
+
+`tests/oid4vp_x509_client_id.js` holds this in process.
+`tests/vendored/sts_oid4vp_x509.js` (local) checks each prefix over HTTP as a
+wallet does, using only node's `crypto`, and refuses the mismatches.
+
+**What the conformance driver (#187) sets.** The realm is set as for the
+`redirect_uri` variant. The suite's configuration gets
+`client.client_id` = the bare DNS name for `x509_san_dns` (the suite adds the
+prefix itself) and `client.request_object_trust_anchor_pem` = the
+`trust_anchor_pem` from `/oid4vp/verifier-certificate`. The variant is
+`request_method: request_uri_signed`. The End-User starts at
+`/oid4vp/start?client_id_prefix=<prefix>`. In product mode, also set
+`oid4vp.x509DnsName` to the realm's host.
+
 ## THE 2026-09-12 HARD-CODED-VALUE SWEEP
 
 The literals became `config.js` rows whose `dflt` is the old value, read per
@@ -618,7 +713,14 @@ second catalogue. What is more than a number, and what
   unsigned-in browser through the sign-in screen and refuses a "continue without
   signing in" session. `authn.js` is required inside the handler, because this
   file is a store module `oauth2.js` requires. A same-device offer grants
-  nothing and is not gated.
+  nothing and is not gated. **An offer minted this way is CAEP's
+  `session-presented`** (#240, 2026-09-26): it is made on the session's
+  authority, since the pre-authorized code authorizes a credential about the
+  person and nobody authenticated for it. The page calls
+  `authn.notePresented(session, 'OpenID4VCI', req)`. Development's offer for
+  the fixed test person reads no session and sends nothing, and neither does a
+  same-device offer. `docs/caep-events.md` no longer says that OpenID4VCI is
+  never a session event.
 * **THE `wallet` PARAMETER IS AN OPEN REDIRECT IN PRODUCT** and is refused unless
   it is the configured wallet or listed in `oid4vci.allowedWalletUrls` /
   `oid4vp.allowedWalletUrls` (`mode.acceptsUnregisteredAddresses()`).
@@ -745,3 +847,88 @@ Verifier tries the generation the proof options name first, then the rest.
 `vc_verifier.ts` about the issuer being disclosed already assumed was not
 needed to tell them apart.
 
+
+---
+
+## THE W3C VC-API ADAPTER AND THE W3C SUITES (#194-#199, 2026-09-26)
+
+The Verifiable Credentials and DID Working Groups' own test suites — VC Data
+Model 2.0, Data Integrity EdDSA and ECDSA, Bitstring Status List,
+VC-JOSE-COSE and DID Core — drive an implementation through the W3C CCG
+VC-API: an issuer that secures a credential it is HANDED, verifiers, a
+status change. OpenID4VCI never secures a document a caller wrote and
+OpenID4VP judges a presentation against its own query, so `vc_api.ts` is an
+ADAPTER — and what it adapts to is this directory's machinery, not a copy:
+the cryptosuites are `vc_data_integrity.ts`'s, the keys are the realm key
+set's Ed25519, P-256 and P-384 members (`realmKeyFor()`, named by their
+did:key), a credential's status is an index `vc_status.ts` allocates, and a
+status change is `vc_status.setStatus()` — the act `/admin/vc-status`
+performs, one of the three that DISOWN a credential (*Disowned*, above).
+
+**A TEST CONTROL** (`mode.opensTestControls()`): in a product realm every
+route is a 404 (`STS-VC-0100`). An endpoint that signs whatever it is handed
+with a realm's key is what a conformance suite needs and no deployment
+should expose. **AND AUTHENTICATED ANYWAY**, the way
+`vc-test-suite-implementations` lets a suite authenticate: an OAuth 2.0
+client-credentials token this realm issued, verified and not revoked,
+carrying `vc-api:issue` or `vc-api:verify` — two new PROTECTED scopes
+(`common/scope_policy.ts`), issued only to a client an administrator
+declared them on, re-checked on every call (`STS-VC-0101`).
+
+**NOTHING IS FETCHED, WHICH IS WHY THE RDFC SUITES COULD BE ADDED AT ALL.**
+`vc_data_integrity.ts`'s header argued JCS for the holder proof because an
+RDFC suite needs every `@context` resolved. `vc_jsonld.ts` resolves them
+from the files it ships and refuses every other URL, so a document naming
+an unknown context is refused with the URL named, and a verification method
+must be a `did:key` or `did:jwk` (the adapter's DID resolver likewise
+answers only those and this realm's own `did:web`). The RDFC suites are
+still NOT the default: `SUPPORTED_CRYPTOSUITES` is the JCS four, and the
+sign-in's holder proof asks for no other.
+
+**`ecdsa-sd-2023` IS P-256 ONLY**, because section 3.5.8 fixes a derived
+proof's base signature at 64 bytes and its labels at 32; it is implemented
+from the specification's steps (a derived proof from its base proof is
+byte for byte its Appendix vector — `tests/vc_rdfc_suites.js`), not with
+the Digital Bazaar library the suite derives with, so the two check each
+other (`vendored/bbs2023.js`'s argument, made again).
+
+**WHO SIGNED IT IS A WARNING, NOT A REFUSAL, AT THIS VERIFIER.**
+Verification is that every proof verifies against a key its method's
+controller authorizes (Data Integrity); whether that controller is the
+credential's `issuer` is validation (VCDM 2.0 section 7.2), and the
+specifications' own vectors name an https issuer and sign with a did:key.
+The sign-in door keeps its stricter rule.
+
+### What the suites found, and what changed
+
+| Found by | Defect | Fixed in |
+|---|---|---|
+| VC Data Model 2.0 | a `name` or `description` with `@direction` could not be canonicalized: safe mode refused it as lossy without `rdfDirection: 'i18n-datatype'` | `vc_jsonld.ts` |
+| Data Integrity EdDSA | a proof CHAIN (`previousProof`) was refused outright | `vc_data_integrity.ts` `verifyAllProofs()` |
+| Data Integrity ECDSA | requiring the proof's controller to be the issuer refused the specification's own vectors | `vc_api.ts`, a warning |
+| ecdsa-sd-2023 vectors | jsonld 9 reads rdf-canonize's options from `canonizeOptions`; `canonicalIdMap` passed at the top level was silently ignored, so every label was `undefined` | `vc_jsonld.ts` |
+| VC-JOSE-COSE | `typ` and COSE header 16 are SHOULDs: a missing one was refused, and only a CONTRADICTING one may be | `vc_jose_cose.ts` `kindOf()` |
+| DID Core (fixture generation) | the did:web document published `Multikey` methods under a context that defines neither `Multikey` nor `publicKeyMultibase` | `vc_did.ts` |
+
+The documented exceptions — each a suite fixture disagreeing with a
+specification, recorded with its clause in the job and on the ticket: the
+VC Data Model suite's enveloped presentation carries a `vp` claim
+VC-JOSE-COSE section 1.1.2.1 forbids (#194, three tests); the VC-JOSE-COSE
+suite's "unknown extensions" are defined by the examples context's `@vocab`,
+its presentation fixture expired in 2024 (RFC 7519 section 4.1.4), and two
+presentations carry a credential signed by a key it does not supply or that
+is not a JWS at all (#198, four tests); the DID suite asks an UNSUCCESSFUL
+resolveRepresentation for a contentType and a parseable stream (#199, one).
+
+### Not built
+
+zcap authorization (OAuth only); a Key Binding JWT on an SD-JWT presentation
+is reported, not checked; `ecdsa-sd-2023` over P-384 (see above); DID
+parameters (`service`, `versionId`, …) and any did:web but the realm's own;
+Bitstring Status Lists of the `message` purpose (`statusSize` > 1); the
+bbs-2023 suite at the adapter (no ticket asks for its suite).
+
+`tests/vc_jsonld.js`, `tests/vc_rdfc_suites.js`, `tests/vc_data_model.js`,
+`tests/vc_jose_cose.js` and `tests/vc_api.js` hold the libraries in process;
+the six `tests/vendored/sts_*_suite.js` jobs run the W3C suites
+(`tests/CLAUDE.md`, *The W3C VC and DID suites*).

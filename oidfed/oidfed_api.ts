@@ -339,7 +339,9 @@ class OidfedApi {
             'revokes the current and next keys as compromised; confirm it ' +
             'with confirm: "compromised".',
             { emergency: { type: 'boolean' },
-              confirm: { type: 'string', maxLength: 32 } },
+              // The one word an emergency is confirmed with (#86).
+              confirm: { type: 'string', maxLength: 32,
+                         enum: ['compromised'] } },
             [], {}),
           this.action('revoke-key', 'revokeOidfedKey',
             'Revoke a retired Federation Entity Key',

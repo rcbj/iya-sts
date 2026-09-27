@@ -147,7 +147,13 @@ const FORMATS = {
   // assertion's ID and a request's ID are two namespaces a partner has no
   // reason to keep disjoint — the argument this table makes for `saml`
   // beside `jwt`.
-  'saml-message': 'SAML 2.0 protocol message'
+  'saml-message': 'SAML 2.0 protocol message',
+  // A CHALLENGE THIS SERVICE HANDED OUT (#229), for OAuth 2.0
+  // Attestation-Based Client Authentication (section 6): good for one
+  // request, so spent here like a document. Its own format because it is
+  // not a document anybody signed, and its value is this service's random
+  // string rather than somebody's `jti`.
+  'attestation-challenge': 'OAuth client attestation challenge'
 };
 const USES = {
   'client-authentication': 'client authentication (RFC 7521 section 4.2)',
@@ -168,7 +174,14 @@ const USES = {
   // session the partner never asked about; `federation/federation_slo.ts`
   // spends it the moment it is accepted, whatever it then matched.
   'federated-logout': 'a federation partner\'s sign-out (Back-Channel ' +
-                      'Logout 1.0 Logout Token, SAML 2.0 LogoutRequest)'
+                      'Logout 1.0 Logout Token, SAML 2.0 LogoutRequest)',
+  // A CLIENT ATTESTATION PoP (#229, draft-ietf-oauth-attestation-based-
+  // client-auth section 12.1), keyed by its `jti` under the client
+  // instance key's JWK Thumbprint URI — the instance signs it, so the
+  // instance is its issuer — and the challenge it carried, spent with it.
+  'client-attestation-pop': 'client attestation proof of possession ' +
+                            '(OAuth 2.0 Attestation-Based Client ' +
+                            'Authentication)'
 };
 
 // What a row is, spelt once. Every store hands rows back in this shape.
@@ -914,6 +927,10 @@ function usedAs(existing) {
   if (existing.use === 'request-object') {
     log.debug("Leaving usedAs(). A request object.");
     return ' — as an RFC 9101 request object' + inFlight;
+  }
+  if (existing.use === 'client-attestation-pop') {
+    log.debug("Leaving usedAs(). A client attestation PoP.");
+    return ' — as a client attestation proof of possession' + inFlight;
   }
   return ' — ' + (existing.format === 'saml' ? 'under RFC 7522 section ' +
     (existing.use === 'authorization-grant' ? '2.1' : '2.2')

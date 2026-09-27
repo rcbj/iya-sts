@@ -9,7 +9,7 @@ each column, and why the tables are shaped that way. [Persistence](persistence.m
 covers turning the store on, the compose stack and what survives a restart.
 This page covers only what is in the database.
 
-**Schema version 9**: 26 tables in a schema of their own, `sts`.
+**Schema version 10**: 26 tables in a schema of their own, `sts`.
 
 ## Where the schema is written down
 
@@ -46,6 +46,7 @@ which shape is on disk.
 | 7 | the thirteen `sts_risk_*` tables of risk scoring (#62) |
 | 8 | `sts_risk_terms_acceptances` |
 | 9 | the columns `sts_risk_assessments.feedback` and `.feedback_at` |
+| 10 | the column `sts_realms.retiring_at` (#262) |
 
 ### The application role
 
@@ -148,6 +149,7 @@ so that they match the LDAP attributes byte for byte. A round trip through
 | `created_at` | bigint | milliseconds |
 | `overrides` | jsonb | the realm's own setting values, `{ "oauth2.rfc9700": true, … }` |
 | `domain` | text | the realm's DNS domain, **fixed at creation**, which becomes the directory base `dc=…` (v6) |
+| `retiring_at` | bigint | milliseconds, or NULL: when the realm's removal began. While it is set, every process refuses new sign-ins and issuance in the realm; it is never cleared, because the removal deletes the row (v10, [#262](https://github.com/rcbj/iya-sts/issues/262)) |
 
 The default realm is not a row. Its settings are the process's own.
 
@@ -206,7 +208,7 @@ tests):
 | Family | Handles |
 |---|---|
 | Sign-in | `authn.sessions`, `authn.pending`, `authn.pendingMfa`, `authn.pendingPasswordChange`, `authn.webauthnCredentials`, `credentials.pendingBackupCodes`, `credentials.pendingKeys`, `credentials.pendingTotp`, `spnego.pending`, `oidc_rp.flows` |
-| OAuth / OIDC | `oauth2.authzCodes`, `oauth2.redeemedCodes`, `oauth2.pushedRequests`, `oauth2.backchannelDeliveries`, `oauth2.cibaRequests`, `oauth2.cibaDeliveries`, `oauth2_bcp.refreshTokens`, `oauth2_bcp.refreshFamilies`, `oauth2_bcp.grantTokens`, `oauth2_bcp.transactions`, `oauth2.grants`, `oauth2.grantIssued`, `oauth2_monitor.counters`, `consent_screen.pending`, `authorization_details.consented`, `authorization_servers.profiles`, `dpop.issuedNonces`, `dpop.seenJtis` |
+| OAuth / OIDC | `oauth2.authzCodes`, `oauth2.redeemedCodes`, `oauth2.pushedRequests`, `oauth2.attestationChallenges`, `oauth2.backchannelDeliveries`, `oauth2.cibaRequests`, `oauth2.cibaDeliveries`, `oauth2_bcp.refreshTokens`, `oauth2_bcp.refreshFamilies`, `oauth2_bcp.grantTokens`, `oauth2_bcp.transactions`, `oauth2.grants`, `oauth2.grantIssued`, `oauth2_monitor.counters`, `consent_screen.pending`, `authorization_details.consented`, `authorization_servers.profiles`, `dpop.issuedNonces`, `dpop.seenJtis` |
 | SAML, WS-* and federation | `saml2_sso.artifacts`, `saml2_sso.pendingRequests`, `saml2_sso.spContexts`, `saml2.mdqRefusals`, `saml11_sso.artifacts`, `saml11_sso.assertionsById`, `saml11_sso.pendingFlows`, `wsfed.rpContexts`, `federation_sp.contexts`, `delegation.acts` |
 | Verifiable credentials | `vc_offers.credentialOffers`, `vc_offers.preAuthorizedCodes`, `vc_offers.issuerStates`, `vc_offers.deferredAccessTokens`, `vc_offers.deferredTransactions`, `vc_issuer.vciNonces`, `vc_issuer.notificationIds`, `vc_issuer.lastCredentialRequest`, `vc_issued.credentials`, `vc_status.entries`, `vc_claims.state`, `vc_verifier.vpRequests`, `vc_verifier.vpTransactions`, `vc_verifier_config.state` |
 | GNAP | `gnap.grants`, `gnap.continuations`, `gnap.interactions`, `gnap.tokens`, `gnap.tokenValues`, `gnap.instances`, `gnap.approvers`, `gnap.resources`, `gnap.manageHandles`, `gnap.manageValues`, `gnap.userCodes`, `gnap.userRefs`, `gnap.replay`, `gnap_monitor.counters` |
@@ -216,9 +218,10 @@ tests):
 | SCIM | `scim.digestNonces`, `scim.digestCounts`, `scim.hobaChallenges`, `scim.hobaSeen` |
 | Shared Signals | `ssf_streams.streams`, `ssf_streams.queued`, `ssf_streams.received`, `ssf_streams.deadLetters`, `ssf_receivers.inbox`, `ssf_dead_letter_report.sweeps`, `caep.register`, `risc.register` |
 | Mail | `mail.outbox`, `mail.preferences`, `mail.templates` |
+| Devices | `devices.events` |
 | OpenID Federation | `oidfed.registerGeneration` |
 | Console statistics and audit | `admin_stats.tokens`, `admin_stats.artifacts`, `admin_stats.revokedArtifacts`, `admin_stats.revokedJtis`, `admin_stats.claimSets`, `admin_stats.users`, `admin_stats.calls`, `admin_stats.nums`, `admin_stats.scimCounts`, `claim_attributes.selections`, `xacml_monitor.counters`, `audit.events`, `audit.nums` |
-| Process-wide | `security.rateLimitBuckets`, `ldap.clusterConnections`, `ldap.clusterSignOuts`, `scheduler.runs`, `signing.history` |
+| Process-wide | `security.rateLimitBuckets`, `ldap.clusterConnections`, `ldap.clusterSignOuts`, `scheduler.runs`, `signing.history`, `tls.listenerAnnounced` |
 
 To list them from a running tree:
 `grep -rhoE "persist: *'[^']+'" --include=*.js --include=*.ts . | sort -u`.

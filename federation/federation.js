@@ -875,14 +875,14 @@ const SCHEMA = {
             'OAuth 2.0 one, because what an OAuth 2.0 authorization server ' +
             'will give you is entirely local to it.' },
     { name: 'fedResponseType', kind: 'single', role: 'service-provider',
-      from: 'this register',
+      from: 'this register', enum: ['code', 'id_token'],
       what: 'code (the default) or id_token. `id_token` with form_post is ' +
             'the shape that needs NO back channel and therefore no token ' +
             'endpoint, no client secret and no outbound request — which is ' +
             'the only way to federate with an OIDC partner from a deployment ' +
             'that has no egress at all.' },
     { name: 'fedBinding', kind: 'single', role: 'service-provider',
-      from: 'this register',
+      from: 'this register', enum: ['HTTP-Redirect', 'HTTP-POST'],
       what: 'Which binding the outbound SAML AuthnRequest goes on: ' +
             'HTTP-Redirect (the default, and what every identity provider ' +
             'supports) or HTTP-POST. It says nothing about the response, ' +
@@ -966,6 +966,14 @@ const SCHEMA = {
             'mail where it has one. Compared case-insensitively and ' +
             'exactly: example.com does not admit sub.example.com. Empty: no ' +
             'domain rule.' },
+    { name: 'fedHomeRealmDomain', kind: 'multi', role: 'service-provider',
+      from: 'this register',
+      what: 'HOME-REALM DISCOVERY (#148): an authorization request whose ' +
+            'OpenID Connect Enterprise Extensions `domain_hint` is one of ' +
+            'these goes straight to this partner\'s sign-in, unless the ' +
+            'application names a partner of its own. Compared ' +
+            'case-insensitively and exactly. A routing hint only — who is ' +
+            'ADMITTED is fedSubjectDomain\'s.' },
     { name: 'fedSubjectPattern', kind: 'single', role: 'service-provider',
       from: 'this register',
       what: 'A RULE ON TOP OF THE POLICY: a regular expression the local ' +
@@ -984,6 +992,16 @@ const SCHEMA = {
             'else is true, a valid link included (STS-FED-0093). Turning it ' +
             'on makes this partner\'s signing key a key to the console for ' +
             'every administrator linked to it.' },
+    // --- A PARTNER'S SHARED SIGNALS (#153) ----------------------------------
+    { name: 'fedSignalEmailMatch', kind: 'single',
+      role: 'service-provider', from: 'this register',
+      what: 'LET THIS PARTNER\'S SHARED SIGNALS NAME A PERSON BY MAIL. OFF ' +
+            'by default: a Security Event Token from a transmitter with ' +
+            'this partner\'s issuer names a person by `iss_sub`, through ' +
+            'the person\'s federationLink. On, an `email` subject matches ' +
+            'the one person with that mail address as well — an address ' +
+            'is not an identifier (OpenID Connect Core section 5.7), so ' +
+            'only for a partner whose addresses this realm trusts.' },
     // --- A PARTNER'S SIGN-OUT (#167) ---------------------------------------
     // federation/federation_slo.ts is what reads these, in both directions:
     // the partner telling this service a session ended, and this service
@@ -1260,6 +1278,7 @@ const EDITABLE = {
   fedSubjectPolicy: 'set',
   fedSubjectPattern: 'set',
   fedMayAssertAdministrators: 'set',
+  fedSignalEmailMatch: 'set',
   fedAllowUnsolicited: 'set',
   fedEncryptionKeyType: 'set',
   fedKeyManagementAlgorithm: 'set',
@@ -1276,6 +1295,7 @@ const EDITABLE = {
   fedAttributeMap: 'multi',
   fedSubjectGroup: 'multi',
   fedSubjectDomain: 'multi',
+  fedHomeRealmDomain: 'multi',
   fedRelease: 'multi',
   description: 'multi'
 };
@@ -1600,6 +1620,15 @@ function peopleLinkedBy(value) {
   log.debug("Leaving peopleLinkedBy().");
   return directoryHas('peopleByFederationLink')
     ? directory.peopleByFederationLink(String(value || '')) : [];
+}
+
+// Every person with this mail address (#153), for a foreign transmitter's
+// `email` subject where the relationship allows it.
+function peopleByMail(address) {
+  log.debug("Entering peopleByMail().");
+  log.debug("Leaving peopleByMail().");
+  return directoryHas('peopleByMail')
+    ? directory.peopleByMail(String(address || '')) : [];
 }
 
 function linkedThrough(fedId) {
@@ -2434,6 +2463,100 @@ function releaseFilterFor(context) {
 }
 
 // ---------------------------------------------------------------------------
+// A RELEASE LIST THAT MOVED IS A CLAIM CHANGE FOR EVERY TOKEN ALREADY ISSUED
+// TO ITS APPLICATION (#238).
+//
+// What releaseIndexNow() above takes from one relationship: the application
+// and the names released to it, or null — no policy — for a relationship
+// that is not an enabled identity-provider-side one naming an application
+// with a list. A list edited, an application renamed, a relationship enabled,
+// disabled or deleted each move it, and each moves claims in tokens and
+// assertions that application already holds: a name withheld now is gone
+// (`null`), a name released now appears.
+//
+// So each holder of a live artifact for the application (by `client_id` or
+// by audience, as releaseFilterFor() matches) is sent the names whose
+// released-or-not answer moved — out of everything the set would carry for
+// them unfiltered (`admin_stats.claimNamesFor()`) and both lists — with the
+// value the artifact would carry now. Through `admin_stats.js`'s
+// announceClaimsReshaped(), LAZILY required: this module is required by it
+// (rule 3o), so a plain require would close the cycle. Never throws.
+// ---------------------------------------------------------------------------
+function releasePolicyOf(record) {
+  log.debug("Entering releasePolicyOf().");
+  if (!record || record.fedRole !== 'identity-provider' ||
+      !isEnabled(record)) {
+    log.debug("Leaving releasePolicyOf(). No policy.");
+    return null;
+  }
+  const application = String(record.fedApplication || '').trim();
+  const names = (record.fedRelease || []).map(function (one) {
+    return String(one).trim();
+  }).filter(function (one) {
+    return one !== '';
+  });
+  log.debug("Leaving releasePolicyOf().");
+  return application && names.length
+    ? { application: application, names: names } : null;
+}
+
+function announceReleaseChange(id, before, after) {
+  log.debug("Entering announceReleaseChange(). id=" + id);
+  const applications = [];
+  [before, after].forEach(function (one) {
+    if (one && applications.indexOf(one.application) < 0) {
+      applications.push(one.application);
+    }
+  });
+  applications.forEach(function (application) {
+    const was = before && before.application === application
+      ? new Set(before.names) : null;
+    const now = after && after.application === application
+      ? new Set(after.names) : null;
+    const released = function (list, name) {
+      return !list || list.has(name);
+    };
+    const same = (!was && !now) || (!!was && !!now && was.size === now.size &&
+      Array.from(was).every(function (name) {
+        return now.has(name);
+      }));
+    if (same) {
+      return;
+    }
+    try {
+      const stats = require('../common/admin_stats');
+      stats.announceClaimsReshaped({ sets: stats.ISSUED_CLAIM_SETS,
+        protocol: 'Federation',
+        why: 'The release list of federation relationship "' + id +
+             '" for "' + application + '" changed',
+        match: function (token) {
+          return token.client_id === application ||
+                 String(token.audience || '').split(/\s+/)
+                   .indexOf(application) >= 0;
+        },
+        names: function (bearer) {
+          const candidates = new Set(stats.claimNamesFor(bearer.claimSet,
+                                                         bearer.username));
+          (was || new Set()).forEach(function (name) {
+            candidates.add(name);
+          });
+          (now || new Set()).forEach(function (name) {
+            candidates.add(name);
+          });
+          return Array.from(candidates).filter(function (name) {
+            return released(was, name) !== released(now, name);
+          });
+        } });
+    } catch (e) {
+      log.warn('federation: the release list of ' + id + ' changed and no ' +
+               'token-claims-change could be started for it: ' +
+               ((e && e.message) || e));
+    }
+  });
+  log.debug("Leaving announceReleaseChange().");
+}
+
+// ---------------------------------------------------------------------------
 // WRITING.
 // ---------------------------------------------------------------------------
 function persist(record, why) {
@@ -2577,6 +2700,7 @@ function create(spec) {
     // two above are.
     record.fedSubjectPolicy = DEFAULT_SUBJECT_POLICY;
     record.fedMayAssertAdministrators = boolText(false);
+    record.fedSignalEmailMatch = boolText(false);
     record.fedSignRequest = boolText(false);
     // A PARTNER'S SIGN-OUT (#167): honoured, and signed — the most secure
     // default, and the one a partner that follows its specification meets.
@@ -2726,6 +2850,9 @@ function update(id, change) {
   log.debug('Entering update(). id=' + id + ', field=' +
             (change && change.field));
   const record = get(id);
+  // What the partner's release list was, read before the change is applied
+  // to `record` below (#238).
+  const releaseBefore = releasePolicyOf(record);
   if (!record) {
     log.debug('Leaving update(). No such relationship.');
     actionRefused('STS-FED-0065', id,
@@ -2778,7 +2905,7 @@ function update(id, change) {
   let value = String(info.value == null ? '' : info.value);
   // A DOMAIN IS COMPARED CASE-INSENSITIVELY, so it is stored lower-cased and
   // without the `@` somebody pasting an address would bring (#109).
-  if (field === 'fedSubjectDomain') {
+  if (field === 'fedSubjectDomain' || field === 'fedHomeRealmDomain') {
     value = value.trim().replace(/^@+/, '').toLowerCase();
   }
   const refusal = subjectFieldProblem(field, value) ||
@@ -2789,6 +2916,25 @@ function update(id, change) {
     actionRefused(refusal.code, id, refusal.why);
     log.debug("Leaving update().");
     return { ok: false, errors: [refusal.message] };
+  }
+  // A FIELD WITH A CLOSED SET HOLDS ONE OF ITS VALUES (#86). The rows that
+  // carry an `enum` and no refusal of their own above — `fedAuthnMechanism`,
+  // `fedBinding` and `fedResponseType` — stored whatever was sent, and the
+  // readers then guessed: anything but `HTTP-POST` was the Redirect binding,
+  // anything but `code` was id_token, and an unknown mechanism was merely
+  // "not ready". Empty still clears the field, as it does for every row.
+  if (Array.isArray(row.enum) && value !== '' &&
+      row.enum.indexOf(value) < 0) {
+    log.debug('Leaving update(). Not one of the field\'s values.');
+    actionRefused('STS-FED-0150', id, '"' + value + '" is not one of ' +
+                                      field + '\'s values');
+    log.debug("Leaving update().");
+    return { ok: false,
+             errors: ['"' + field + '" is "' + value + '", which is not one ' +
+                      'of the ' + row.enum.length + ' values it accepts: ' +
+                      row.enum.map(function (v) {
+                        return '"' + v + '"';
+                      }).join(', ') + '.'] };
   }
   const before = row.kind === 'multi' ? (record[field] || []).slice() :
                  record[field];
@@ -2845,6 +2991,7 @@ function update(id, change) {
   if (row.name === 'fedEnabled' || row.name === 'fedAutocreateUsers' ||
       row.name === 'fedUpdateUserAttributes' ||
       row.name === 'fedMayAssertAdministrators' ||
+      row.name === 'fedSignalEmailMatch' ||
       row.name === 'fedSignRequest' || row.name === 'fedAllowUnsolicited' ||
       row.name === 'fedAllowUnencrypted') {
     record[field] = boolText(boolOf(record[field], false));
@@ -2872,6 +3019,7 @@ function update(id, change) {
   }
   forgetReleaseIndexes();
   const stored = get(id);
+  announceReleaseChange(id, releaseBefore, releasePolicyOf(stored));
   const readiness = readinessOf(stored);
   recordChange('federation.update', stored,
                field + ' was changed on the federation relationship ' + id,
@@ -2920,6 +3068,7 @@ function remove(id) {
              errors: ['The directory would not delete ' + record.dn + '.'] };
   }
   forgetReleaseIndexes();
+  announceReleaseChange(id, releasePolicyOf(record), null);
   recordChange('federation.delete', record,
                'the federation relationship ' + id + ' was deleted',
                { dn: record.dn,
@@ -3375,6 +3524,7 @@ module.exports = {
   // The people a partner's subjects are linked to (#109); see their header.
   federatedPerson: federatedPerson,
   peopleLinkedBy: peopleLinkedBy,
+  peopleByMail: peopleByMail,
   linkedThrough: linkedThrough,
   plannedPersonDn: plannedPersonDn,
   writeFederationLink: writeFederationLink,

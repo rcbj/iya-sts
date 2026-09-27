@@ -131,7 +131,9 @@ class PortalCertificatesPage {
                                'delete-challenge', 'revoke'])),
       kid: vz.string().max(600).regex(/^[A-Za-z0-9_-]*$/).optional(),
       id: vz.string().max(600).regex(/^[A-Za-z0-9_-]*$/).optional(),
-      profile: vt.opt(vt.oneOf(deps.core.PROFILE_IDS)),
+      // `device` (#164 phase 2): a SCEP challenge for a device of theirs.
+      profile: vt.opt(vt.oneOf(deps.core.PROFILE_IDS.concat(
+        [deps.core.DEVICE_PROFILE]))),
       serial: vz.string().max(80).regex(/^[0-9A-Fa-f:]*$/).optional(),
       reason: vt.opt(vt.oneOf(REVOCATION_REASONS)),
       csrf_token: vt.opt(vt.token)
@@ -243,6 +245,12 @@ class PortalCertificatesPage {
       'page once and cannot be shown again.</div>' +
       '<table><tr><th>SCEP URL</th><td><code>' +
       esc(base + '/enroll/scep/' + fresh.profile) + '</code></td></tr>' +
+      // The plain-HTTP address too (#210): sscep and most device firmware
+      // speak no TLS, and SCEP secures its own messages.
+      '<tr><th>Plain-HTTP SCEP URL</th><td><code>' +
+      esc(require('../common/pki_revocation').httpBaseInRealm() +
+          '/enroll/scep/' + fresh.profile) +
+      '</code></td></tr>' +
       '<tr><th>Challenge password</th><td><code>' + esc(fresh.challenge) +
       '</code></td></tr><tr><th>Profile</th><td><code>' +
       esc(fresh.profile) + '</code></td></tr><tr><th>Usable until</th><td>' +

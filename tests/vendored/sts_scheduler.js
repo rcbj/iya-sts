@@ -188,38 +188,77 @@ async function consolePost(cookie, path, form) {
 async function thePageAndTheApiAgree(cookie) {
   log.debug("Entering thePageAndTheApiAgree().");
   log.info("=== 1. the page and the API list the same jobs ===");
-  const json = await report();
-  const pageJson = await call("GET", base + "/admin/scheduler?format=json" +
-                              "&per=200", { headers: { Cookie: cookie } });
-  // EVERY PAGE, as report() reads the API's (2026-09-23): a comparison of all
-  // the API's jobs with one page of the console's would fail on a service
-  // with more than 200 job rows, about pages drawing exactly what they should.
-  const pagesOf = Number(((pageJson.body || {}).jobsPaging || {}).pages) || 1;
-  for (let page = 2; page <= pagesOf; page++) {
-    const more = await call("GET", base + "/admin/scheduler?format=json" +
-                            "&per=200&jobsPage=" + page,
+  // THE TWO READINGS ARE TAKEN AGAIN UNTIL THEY AGREE (2026-09-27), at most
+  // five times. Under the parallel scheduler other lanes create realms all
+  // the time, a realm brings jobs of its own, and a paged walk made while
+  // rows are inserted can repeat a row at a page boundary — so the API's
+  // list and the page's, read a moment apart, differ for a reason that is
+  // not this page. On a list that is not moving they are the same, which is
+  // the claim; the rows are de-duplicated and the pair is read again.
+  const unique = function (list) {
+    log.debug("Entering unique().");
+    const seen = {};
+    const out = list.filter(function (x) {
+      if (seen[x]) {
+        return false;
+      }
+      seen[x] = true;
+      return true;
+    }).sort();
+    log.debug("Leaving unique().");
+    return out;
+  };
+  let json = null;
+  let pageJson = null;
+  let html = null;
+  let ids = [];
+  let pageIds = [];
+  for (let attempt = 1; attempt <= 5; attempt++) {
+    json = await report();
+    pageJson = await call("GET", base + "/admin/scheduler?format=json" +
+                                "&per=200", { headers: { Cookie: cookie } });
+    // EVERY PAGE, as report() reads the API's (2026-09-23): a comparison of
+    // all the API's jobs with one page of the console's would fail on a
+    // service with more than 200 job rows, about pages drawing exactly what
+    // they should.
+    const pagesOf = Number(((pageJson.body || {}).jobsPaging || {}).pages) ||
+                    1;
+    for (let page = 2; page <= pagesOf; page++) {
+      const more = await call("GET", base + "/admin/scheduler?format=json" +
+                              "&per=200&jobsPage=" + page,
+                              { headers: { Cookie: cookie } });
+      pageJson.body.jobs = pageJson.body.jobs.concat((more.body || {}).jobs ||
+                                                     []);
+    }
+    // **`per=200` HERE TOO, AND IT IS THE POINT RATHER THAN A CONVENIENCE**
+    // (2026-09-22). The jobs table is PAGED now — `admin-ui/CLAUDE.md`, *every
+    // list that can grow without a bound is paged*; a REALM job has a row per
+    // realm, so a service with fifty realms has fifty rows of each. The check
+    // below asks for a row per job the API lists, so it has to ask for a page
+    // big enough to hold them: without this it failed on `signing.rotate`,
+    // which sorts onto the second page, about a page that was drawing exactly
+    // what it should. The JSON fetch above already asks the same way.
+    html = await call("GET", base + "/admin/scheduler?per=200",
                             { headers: { Cookie: cookie } });
-    pageJson.body.jobs = pageJson.body.jobs.concat((more.body || {}).jobs ||
-                                                   []);
+    for (let page = 2; page <= pagesOf; page++) {
+      const more = await call("GET", base + "/admin/scheduler?per=200" +
+                              "&jobsPage=" + page,
+                              { headers: { Cookie: cookie } });
+      html.text += more.text;
+    }
+    ids = json.jobs.map(function (j) { return j.id + "@" + j.realm; })
+      .sort();
+    ids = unique(ids);
+    pageIds = unique((pageJson.body.jobs || []).map(function (j) {
+      return j.id + "@" + j.realm;
+    }));
+    if (JSON.stringify(ids) === JSON.stringify(pageIds)) {
+      break;
+    }
+    log.info("the API and the page were read while the job list moved " +
+             "(attempt " + attempt + "); reading both again");
+    await new Promise(function (resolve) { setTimeout(resolve, 2000); });
   }
-  // **`per=200` HERE TOO, AND IT IS THE POINT RATHER THAN A CONVENIENCE**
-  // (2026-09-22). The jobs table is PAGED now — `admin-ui/CLAUDE.md`, *every
-  // list that can grow without a bound is paged*; a REALM job has a row per
-  // realm, so a service with fifty realms has fifty rows of each. The check
-  // below asks for a row per job the API lists, so it has to ask for a page
-  // big enough to hold them: without this it failed on `signing.rotate`,
-  // which sorts onto the second page, about a page that was drawing exactly
-  // what it should. The JSON fetch above already asks the same way.
-  const html = await call("GET", base + "/admin/scheduler?per=200",
-                          { headers: { Cookie: cookie } });
-  for (let page = 2; page <= pagesOf; page++) {
-    const more = await call("GET", base + "/admin/scheduler?per=200" +
-                            "&jobsPage=" + page,
-                            { headers: { Cookie: cookie } });
-    html.text += more.text;
-  }
-  const ids = json.jobs.map(function (j) { return j.id + "@" + j.realm; })
-    .sort();
   check("the API lists the two jobs P1 moved and the scheduler's own",
         function () {
           ["authn.session-expiry", "pki.crl-directory-refresh",
@@ -229,9 +268,6 @@ async function thePageAndTheApiAgree(cookie) {
         });
   check("the page's JSON lists exactly the same jobs", function () {
     assert.strictEqual(pageJson.status, 200, "it answered " + pageJson.status);
-    const pageIds = pageJson.body.jobs.map(function (j) {
-      return j.id + "@" + j.realm;
-    }).sort();
     assert.deepStrictEqual(pageIds, ids);
   });
   check("and every job is a row of the drawn page, by id", function () {

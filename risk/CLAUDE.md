@@ -52,6 +52,15 @@ are three classes of asset, and only the first ships:
 | **B. Administrator-supplied datasets** | DB-IP Lite, IPinfo Lite, the Tor exit list, FireHOL lists, FIDO MDS3, Pwned Passwords, MaxMind GeoLite2 | Inputs, never project assets. `PROVIDERS` in `risk_datasets.ts` carries each one's terms, and the page draws them. |
 | **C. Test data** | Every fixture | SYNTHETIC: documentation and reserved address ranges (RFC 5737, 3849, 2544), documentation ASNs (RFC 5398), invented names — each provider's FORMAT, none of its DATA. `tests/no_third_party_datasets.js` fails on a provider's file in the tree. |
 
+**One exception ships, and it is not a provider's data (#255).** Monitoring
+→ Geolocation draws country outlines from Natural Earth, which is in the
+PUBLIC DOMAIN, so no redistributor is bound by anything. It is class A in
+effect, a dependency with no terms, and it sits in
+`admin-ui/natural_earth/`. `admin-ui/CLAUDE.md` (*`/admin/geolocation` is the third drawing*)
+argues it. The page counts what `risk_store.geography()` answers from the
+assessments here, and draws DB-IP's link beside any place a DB-IP version
+gave.
+
 What each provider's terms change here:
 
 * **DB-IP Lite (CC BY 4.0) — a link, not a sentence.** Its licence asks a web
@@ -85,7 +94,7 @@ What each provider's terms change here:
 
 **Pulling the data at install time is `risk_install.ts`.** `node
 risk/risk_install.js --manifest datasets.json --accept-terms
-dbip-lite,tor-project` with `STS_DATABASE_URL` set. A dataset whose provider
+dbip-lite,tor-project`, run in a container of the service's image. A dataset whose provider
 is not named in `--accept-terms` is refused and its terms printed; a URL is
 fetched over HTTPS only, kept as it arrived, and imported exactly as an
 upload is — a `.gz` or `.zip` expanded by `risk_expand.ts` as it is read
@@ -97,6 +106,31 @@ fetched by the `risk.mds-refresh` scheduler job — see *The FIDO metadata*,
 below, and the root `CLAUDE.md`'s row of addresses the service dials. It imports the service's datasets and the
 default realm's lists; another realm's list goes through the console or the
 API, where the realm is known to exist.
+
+**THE LOADER'S DATABASE CONNECTION IS THE SERVICE'S OWN (#213,
+2026-09-26).** It dialled `STS_DATABASE_URL` as written and nothing else, and
+every stack this repository ships keeps the password out of that URL (OpenBao
+in compose, Secrets Manager on AWS) — so on a new deployment's first install,
+the one occasion the loader exists for, it could not sign in, and the only
+way round was the operator reading the secret into `PGPASSWORD`. It also
+never verified the server's certificate where the service did. Now
+`RiskInstall.driverOptions()` asks `persistence.databaseConnection()` — the
+same `resolveDatabaseUrl()` injection and `verifiesDatabaseTls()` the
+service opens its pool with, SHARED rather than copied, so the two cannot
+drift — through `config.js`, which reads the same `CONFIG_FILE` the image
+names. A password in `STS_DATABASE_URL` still works where no provider is
+configured. **"No database named" is not "no URL"**: `persistence.databaseUrl`
+has a development default, so the loader refuses (`STS-RISK-0012`) when
+neither `STS_DATABASE_URL` is set nor `persistence.mode` is postgres, rather
+than dial localhost. A provider configured and unreadable is `STS-RISK-0040`
+and dials nothing. `persistence.js` is required inside `driverOptions()`, not
+at the top, so a test loading the loader for its argument parsing does not
+load the settings graph. **Tests**: `tests/risk_install_connection.js` (in
+process: the injected URL through `pg`'s parser, `verifyTls` followed and
+PASSED to `persistence_postgres.create()`, the two refusals) and
+`run-tests.sh`'s `riskInstallCheck` step, which `docker exec`s the loader
+with no extra environment in every postgres mode (`single-node`, `cluster`)
+against the OpenBao-backed database and imports a synthetic operator list.
 
 ## AN ACCEPTANCE IS RECORDED, AND AN IMPORT NEEDS ONE (2026-09-23)
 
@@ -313,7 +347,7 @@ number of users. It is read BEFORE the sign-in is counted — the notebook's
 order — and moved with one statement, so two nodes never lose a count.
 
 **THE EVALUATORS** are factors on the score, in `SIGNALS`: a Tor exit (×5),
-the reputation list (×5), the operator's deny list (×50) and allow list
+the reputation list (×5), the operator's deny list (×20; ×50 until #226) and allow list
 (×0.2), an automated client (×10), a JA4 this person never signed in with
 (×2), five refused passwords for the person in the last hour (×3), twenty from
 the network (×3). **They are a first calibration and deliberately visible**:
@@ -358,6 +392,7 @@ every token passes through.
 | `urn:sts:xacml:risk-score` | the score (absent for a first sign-in) |
 | `urn:sts:xacml:risk-signal` | a bag of `SIGNALS` keys that fired |
 | `urn:sts:xacml:risk-satisfied` | a bag: `second-factor` (acr `mfa`), `security-key` and `second-factor` (amr `hwk`) |
+| `urn:sts:xacml:risk-held` | a bag (#226): what the person HOLDS — `second-factor` (an app or a key), `security-key` (a key) — from `credentials.mechanismsFor()`, asked by the PEP's `heldFactors` dep |
 
 **THE THREE RULES** are Deny rules ahead of the role rule, under
 ordered-deny-overrides, each carrying the obligation
@@ -369,6 +404,63 @@ how the PEP tells a risk Deny from a role Deny**, which matters twice: the
 risk one is only OBSERVED in development (`mode.observesRiskOnly()`,
 `risk.enforceInDevelopment`) — the PEP asks again without the facts and the
 roles decide — and only a risk Deny can be answered by a step-up.
+
+## #226: THE DAY RISK LOCKED EVERY ADMINISTRATOR OUT (2026-09-25)
+
+**What happened.** With IPinfo, FireHOL-style block lists and Pwned loaded on
+a compose stack, every sign-in to the console and the portal was refused:
+`operator-deny` ×50 on `172.29.0.1`, the Docker bridge, over a model score
+of 0.42 — 21.1, HIGH, and `risk-high` refused the console like anything
+else. A block list carried the bogons (172.16.0.0/12), and every person
+arrives through the bridge from the same address, so the whole population
+was listed at once. rcbj had to wipe the instance; `STS_RISK_ASSESS_SIGN_INS
+=false` would have recovered it and nobody knew. **Three changes, rcbj's
+decisions of 2026-09-26:**
+
+* **`risk.listsMatchSpecialPurpose`** (ON by default: lists mean what they
+  say). Off, `RiskEngine.countedLists()` sets the Tor, reputation and deny
+  lists aside for a loopback, private, link-local or reserved address — the
+  set `federation_http.ts`'s `internalAddressProblem()` refuses to dial, so
+  the service has one list of internal addresses. The allow list is never
+  set aside. The model row of the assessment names what was
+  (`listsSetAside`). The rescore job reads the same function.
+* **A known context caps the ADDRESS evidence at MEDIUM** (`ADDRESS_SIGNALS`:
+  the three raising lists and `network-failures` — what everybody behind one
+  NAT shares). Known means `risk.minimumHistory` earlier sign-ins from this
+  address digest AND this User-Agent fingerprint, counted separately from
+  the person's own history (the two are not a joint count; nothing records
+  the pair, and a new one would start empty). The score is held just under
+  the HIGH line rather than the level relabelled, so score, level and the
+  bands stay one story; the model row says `knownContext` and what was
+  `capped`. `riskOf()` carries `knownContext` so the rescore job caps a list
+  a session gains later. Credential evidence is never capped.
+* **The console is never refused on risk.** `role-issuance`'s `neverLockOut`
+  (default `sts-admin-console`; `none` for no application, since a blank
+  answer is the default) excludes those applications from the three rules
+  and adds two Deny step-ups (a key if the person holds one, else a second
+  factor if they hold one) and a PERMIT rule, ANDed with the role condition,
+  whose obligation `urn:sts:xacml:obligation:risk-alarm` makes the PEP audit
+  `xacml.issuance.alarm` and warn under STS-RISK-0038. **A policy decision,
+  not an `if`**: the PEP only supplies `risk-held` and reads the obligation.
+  It is the one place a step-up the person cannot answer is not a refusal,
+  and it is rcbj's call that a bricked cluster is worse than an alarmed
+  permit. `operator-deny` went from ×50 to ×20 the same day.
+
+**Two more found on rcbj's stack the same day.** (1) The six second-factor
+finishers in `authn.ts` handed `startSession()` no application, so after a
+step-up the policy was asked about `""` and the console's rules never
+matched — see the comment at the gate call in `startSession()`. (2) A
+sign-in that CROSSES into HIGH triggers `risk-end-sessions`, taken a moment
+after the assessment is answered — after the door has started the session
+the policy just permitted on that same risk. It ended that session: the
+`admin` user's alarm-permitted console sign-in lost its authorization code
+150 ms later. So `noteChange()` now takes, for a sign-in (`phase` user), the
+ids of what the person holds IN THE SAME TICK as the assessment
+(`account_state.heldBy()` → `logout.heldIds()`), and the reaction ends only
+those; nothing held means nothing ended (an empty selection is a GLOBAL
+logout to `terminate()`). A session re-assessment or the rescore job still
+ends everything. The alarm is raised on the SESSION decision only, once per
+sign-in, not on every code and token issued on it.
 
 **UNKNOWN NEVER DENIES.** No assessment puts no attribute in the request, and
 every risk rule is then inapplicable: the datasets' rule carried into the
@@ -515,6 +607,25 @@ true of it before a byte is kept:
   upload it is the service, as for any presented chain.
 * **Rollback**: the serial `no` must exceed every BLOB already processed
   (`parameters.mdsNo`), or STS-RISK-0024.
+* **The signature override** (2026-09-26, rcbj: FIDO published a BLOB
+  whose signature does not verify): `overrideSignature` on an UPLOAD, the
+  console's checkbox and the API's query field, never the download job.
+  `pki.verifyFidoMdsBlob()` lets through exactly the anchor, path and
+  signature failures, reading the payload unverified; the JWS shape, the
+  `x5c` and the payload's shape are still required. Revocation is skipped
+  (an unverified chain has none worth asking), the rollback check is not.
+  The version is `verification: overridden` with `signatureOverride` and
+  `signatureOverrideBy` in its parameters, and the audit row and a warning
+  carry STS-RISK-0043. Any other dataset asking for it is STS-RISK-0001.
+  `tests/risk_mds.js` J. **A verified chain whose revocation status cannot be
+  established is overridden too** (the reason says so); a chain the verdict
+  calls REVOKED is refused whatever the override says (K3, K4).
+* **The revocation walk is handed the VERIFIED PATH, anchor included**
+  (`verifyFidoMdsBlob()`'s `chainPems`, 2026-09-26), not the `x5c`. FIDO's
+  `x5c` ends below GlobalSign Root CA - R3, so the walk found the top
+  certificate's issuer "neither held here nor in the chain that was
+  presented", and under hard-fail every genuine BLOB was refused
+  (STS-RISK-0023). `tests/risk_mds.js` K1, K2 shape the `x5c` as FIDO does.
 * **The latest only** (`latestOnly`, FIDO's terms): activating a BLOB
   deletes every older version's rows at once; the version rows stay as the
   record. The shrink check does not apply — the signature is the integrity
@@ -538,6 +649,73 @@ resting on it. `risk-response`'s default `credentialSignals` include it, and
 RISC `credential-compromise` then names a FIDO credential. An unlisted
 model, and the all-zero AAGUID of an authenticator that attests nothing, are
 unknown and decide nothing.
+
+## THE REGISTERED DEVICE (#164 phase 5, 2026-09-26)
+
+rcbj's decision 4 on #164: "full integration with risk scoring". The device
+register (`common/devices.ts`) is a second source of facts about a sign-in,
+beside the datasets, and it enters the engine the way everything else does —
+as SIGNALS on the score — so nothing here decides on it either.
+
+**THE FACT ARRIVES WITH THE SIGN-IN.** `authn.assessSignIn()` recognises the
+device (`device_recognition.recognize()`, through `registeredDeviceFor()`)
+BEFORE it asks the engine, and hands it in as `registeredDevice`; a door that
+assesses after the session hands in the event's. The recognition is
+remembered on the request, so the event built a moment later is the same
+answer and the device's last use moves once. **The gap**: the sign-in
+screen assesses BEFORE its own WebAuthn ceremony (P3's order — the
+assessment decides whether to ask for one), so a linked platform credential
+presented THERE is on the session's event, and so in the policy, the acr and
+the token claims (phase 6), but not in that sign-in's score. A certificate
+on the connection is scored at every door, and a door that assesses after
+its credential (the wallet, federation, a session started directly) scores
+whatever it recognised.
+
+| Signal | Factor | When |
+|---|---|---|
+| `compromised-device` | ×50 | the recognised device is marked compromised — HIGH on its own, as `authenticator-compromised` is |
+| `non-compliant-device` | ×3 | the recognised device is `not-compliant` (evidence: not held back for history) |
+| `unregistered-device` | ×2 | no device of the PERSON'S OWN was recognised — none, or somebody else's — and they have registered one (`devices.holdsAny()`, an index lookup) or `devices.expectRegistered` is on; waits for `risk.minimumHistory` |
+| `compliant-attested-device` | ×0.5 | their own device, compliant, attested |
+| `compliant-device` | ×0.8 | their own device, compliant, self-asserted |
+
+**THE SCOPE OF `unregistered-device` IS THE ARGUMENT.** In a realm where
+nobody has registered anything it would fire on every sign-in and move
+every score by the same factor — calibration noise, not evidence. So it is
+about people who registered a device, or a realm that says it expects
+everybody to; and it is an ABSENCE, which is why it waits for history as
+`new-device` does (a device owner's second sign-in from a laptop would
+otherwise be MEDIUM and asked for a second factor on this alone).
+
+**THE LOWERING FACTORS NEEDED NO NEW MACHINERY**: the score is a likelihood
+ratio times the evaluators' factors, and `operator-allow` (×0.2) already
+lowered it. Two rules keep them honest: a lowering factor alone never makes
+an UNSCORED sign-in scored (`LOWERING_ONLY`), and a compromised device is
+never "compliant".
+
+**THE DEVICE FEATURE.** Where the person's own registered device proved the
+sign-in, the history's `device` feature is `registered:<id>` rather than the
+browser fingerprint (P6), and it is never `new-device`: its key was proven
+theirs at enrolment, which is stronger than any history. `riskOf()` carries
+the id as `device.registered`. Somebody else's device changes nothing about
+the fingerprint path.
+
+**THE DEVICE'S OWN LEVEL** (`setDeviceLevel()`): after a sign-in (phase
+`user`) the person's own device proved, the device takes THAT SIGN-IN'S
+LEVEL through `devices.setRiskLevel(…, { source: 'risk' })`, which sends
+CAEP risk-level-change with principal DEVICE only when the level moves. The
+same level, not a score of its own: the model is one ratio over the whole
+context and nothing in it says which part is the device's; the latest
+sign-in the device proved is the best evidence there is about what is
+happening on it. UNSCORED sets nothing; a compromised device's HIGH is held
+by `setRiskLevel()` itself; a live session's re-assessment sets nothing; a
+device that is somebody else's is not moved by this person. A register that
+will not store it is STS-DEVICE-0036, and the sign-in stands.
+
+Monitoring → Risk draws the device beside the browser on every assessment
+(the model row's `device`, which is a JSON value in both stores, so no
+column moved); Monitoring → Devices draws the levels. `tests/device_risk.js`
+holds all of it.
 
 ## WHAT THE PERSON SAYS ABOUT A SIGN-IN (P6, 2026-09-22)
 
@@ -691,7 +869,43 @@ only**, and **OFF in every test run**: `tests/run.js` and
 
 At sign-in (`risk.breachCheckAtSignIn`), a verified password that is
 breached sets `pwdReset`, and the existing change step asks for a new one,
-saying why.
+saying why. **Since #231 it also sends RISC `credential-compromise`
+(`password`) and `account-credential-change-required`**, once per demand —
+not again while `pwdReset` still stands (`ssf/CLAUDE.md`).
+
+**#237's side finding — "`resetPersonKeytab` ignores the screen's result" —
+is not a defect**: like every door, it awaits `screen()` for the verdict
+`preparePassword()` then reads, so a listed password is refused
+STS-AUTHN-0222 before anything changes. `tests/kerberos_person_keytab.js`
+now shows it with the API stubbed.
+
+## TWO SIGNALS FROM OUTSIDE A SIGN-IN'S OWN EVIDENCE (#231, 2026-09-26)
+
+* **A CLONED SECURITY KEY is `authenticator-compromised`.** A key whose
+  signature counter went backwards, every other check passing (WebAuthn
+  Level 3 section 6.1.1), is refused where it always was; since #231
+  `credentials.noteKeyCloned()` also calls
+  `RiskEngine.noteAuthenticatorCompromise()`, which does what
+  `feedback()`'s "this wasn't me" does — the standing to HIGH at once, the
+  change answered by the `risk-response` policy — with the signal the FIDO
+  metadata already used for a compromised model. A standing that cannot be
+  recorded is STS-RISK-0044; the RISC event is sent regardless. Where the
+  policy is installed and enforced, its `risk-credential-compromise`
+  reaction then tells receivers a second time about the same key; the
+  direct event is kept so that it does not depend on the policy.
+* **A REPLAYED ONE-TIME CODE is `totp-replay` (×2)**, rcbj's decision on
+  #231: RFC 6238 section 5.2 refuses it (STS-AUTHN-0106), and it says too
+  little to be a Security Event Token — a person who pressed submit twice
+  looks exactly like one replaying an observed code. `credentials.ts`
+  records it in the FAILURES register under its own door
+  (`risk_failures.TOTP_REPLAY_DOOR`, 'a replayed one-time code', code
+  STS-AUTHN-0106), which already keeps a row per person and network,
+  sealed where it can be and purged by its job; the engine counts rows
+  under that door within the hour as `totp-replay` at the next assessment
+  and at the `risk.rescore` job, and **leaves them out of
+  `account-failures` and `network-failures`** (`excludeDoor`, in memory
+  and in the postgres query alike), because the code was RIGHT. Monitoring
+  → Risk's failures list shows the rows under that door name.
 
 ## THE REQUIRE ORDER, AND THE TRAP IT HIT
 

@@ -52,7 +52,10 @@ The id becomes a path segment: lower-case letters, digits and hyphens, starting
 with a letter or a digit, at most 31 characters. It may not be `default`, and it
 may not be the first segment of a path this service already serves —
 `GET /admin-api/realms` lists those in `reserved`, read off the live router, so
-the list cannot go stale.
+the list cannot go stale. **Nor may it be an EST label** — a certificate
+profile id such as `tls-server` or `kdc` — because a realm is also reached at
+`/.well-known/est/<id>/…`, the path position EST gives its labels (see
+[EST](est.md), *Reaching a realm through the label*).
 
 ### Its domain
 
@@ -109,6 +112,10 @@ realm cannot build a single URL without it.
   "support": [ "…which families a realm separates, and which are shared…" ]
 }
 ```
+
+Each realm but the default also carries `estLabelUrl`,
+`https://localhost:8081/.well-known/est/acme`: the address of its EST server
+for a client that cannot put a path in front of a well-known URI.
 
 Everything follows from `baseUrl`. Point a client at
 `https://localhost:8081/realm/acme` as its issuer and its discovery, token,
@@ -400,14 +407,15 @@ is process-wide: there is one list of realms in a process, and `remove` refuses
 to remove the realm the call arrived in — the caller would be left talking to a
 prefix that had stopped existing.
 
-## Two settings
+## Three settings
 
 | Setting | Environment variable | Default | What it does |
 |---|---|---|---|
 | `realms.enabled` | `STS_REALMS_ENABLED` | `true` | Whether defined realms answer on their prefixes. Turning it **off** leaves every definition in place and stops the paths working — which is what to reach for when a realm is answering something it should not, since nothing has to be deleted to find out whether a realm is the reason for something. |
 | `realms.pathSegment` | `STS_REALMS_PATH_SEGMENT` | `realm` | The segment in front of a realm id. Set it to the empty string for the bare `/acme/oauth2/token` shape, which is what a client ported from a product that spells it that way expects. |
+| `realms.removalDeliveryTimeoutS` | `STS_REALMS_REMOVAL_DELIVERY_TIMEOUT_S` | `10` | How long removing a realm waits for what it owes its receivers and relying parties to be delivered — see *Removing one*. `0` still sends everything and does not wait. Read in the realm the removal is made from. |
 
-Neither can be set *on* a realm: a realm that could switch realms off would be
+The first two cannot be set *on* a realm: a realm that could switch realms off would be
 doing it from inside the request that found it, and a realm that could move its
 own prefix would be changing the prefix already used to find it.
 
@@ -423,3 +431,38 @@ The realm's **directory subtree goes too** — its people, groups, applications,
 federation relationships and SPIFFE registrations — so `dc=acme,dc=example,dc=com`
 answers `NoSuchObject` afterwards and a realm re-created under that id starts
 with a fresh seeded tree. The default realm cannot be removed at all.
+
+**Before it goes, everybody who was relying on it is told**
+([#232](https://github.com/rcbj/iya-sts/issues/232)). Removing a realm from
+`/admin/realms` or `POST /admin-api/realms/remove`:
+
+1. stops anything NEW from starting in it
+   ([#262](https://github.com/rcbj/iya-sts/issues/262)): from this moment,
+   on every node, a sign-in there is refused, and so is every issuance — a
+   token of any grant, an authorization code, a SAML or WS-Federation
+   assertion, a WS-Trust token, a Kerberos ticket, a GNAP grant, an
+   OpenID4VCI credential, an ACME, EST or SCEP certificate and a SPIFFE SVID
+   (`STS-CORE-0121`; the token endpoint answers `invalid_grant`). A sign-out,
+   a revocation, introspection, UserInfo, metadata and a Shared Signals poll
+   still work, so a receiver can collect what the removal sends it;
+2. ends every session in it the way a sign-out does — a CAEP
+   `session-revoked` (`initiating_entity: admin`) for each, and the
+   back-channel Logout Tokens of the relying parties on it;
+3. reports every person in its directory purged — RISC `account-purged`;
+4. tells every Shared Signals stream `stream-updated` with status `disabled`;
+5. waits, at most `realms.removalDeliveryTimeoutS` seconds, for all of that
+   to be delivered, and only then removes the realm.
+
+What had not been delivered when the wait ran out — a push receiver that did
+not answer, a Logout Token still being retried, a SET on a **poll** stream
+that nobody collected — is logged (`STS-CORE-0120`), listed in the answer's
+`retirement` member, and goes with the realm. A poll receiver can collect
+only while the wait lasts; the removal does not wait for somebody to come
+and poll. On a cluster the node that received the removal does this once:
+the other nodes remove the realm when they learn of it, and say nothing
+again.
+
+The first step is written to the store before anything else happens, so
+every node refuses from then on. If the service stops half way through a
+removal, the realm stays in that state — refusing sign-ins — until you
+remove it again, which finishes the job.

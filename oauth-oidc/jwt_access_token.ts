@@ -129,8 +129,9 @@ const RESOURCE_PATH = '/resource';
 // server and for no other. `oauth2.ts`'s `protocolScopes()` lists the same six
 // as words no application may take over as an audience; the two lists answer
 // different questions and are compared by `tests/rfc9068_access_tokens.js`.
+// Since #150 OpenID Connect Key Binding's `bound_key` is a seventh.
 const OIDC_SCOPES = ['openid', 'profile', 'email', 'address', 'phone',
-                     'offline_access'];
+                     'offline_access', 'bound_key'];
 
 class JwtAccessTokens {
   static readonly TYP = TYP;

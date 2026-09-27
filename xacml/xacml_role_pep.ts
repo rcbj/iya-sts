@@ -146,6 +146,13 @@ interface IssuanceQuestion {
   denyOnly?: boolean;
   delegation?: { intermediary: string; subject: string; target: string;
                  mode: string; protocol: string } | null;
+  // THE REGISTERED DEVICE (#164 phase 6): the recognition fact, brought up
+  // to date by the gate, or null for none; and what the realm requires of
+  // one (`issuance_gate.deviceRequirementOf()`). A question with no
+  // requirement array — a delegation, a caller that went round the gate —
+  // carries no device attribute, and every device rule is inapplicable.
+  device?: any;
+  deviceRequirement?: string[];
 }
 
 // The risk facts, as the gate hands them on.
@@ -170,6 +177,9 @@ interface IssuanceAnswer {
   // The risk rule that denied (#62 P3): `refuse`, or `step-up` with the
   // factor to ask for. `observed` when development let it through.
   risk?: { action: string; factor: string; observed: boolean } | null;
+  // The device rule that denied (#164 phase 6): `compromised` or
+  // `not-compliant`.
+  device?: { refusal: string } | null;
 }
 
 // Which document decides: `policy` when one does, `why` when none can.
@@ -198,8 +208,13 @@ interface XacmlRolePepDeps {
   monitor: { record(asker: string, what: object): unknown };
   pdp: { evaluate(policy: any, request: any, options: object): any };
   pip: { resolverFor(request: any): (designator: any) => any[] };
+  // THE STEP-UPS A PERSON COULD ANSWER (#226), for `RISK.HELD`: what they
+  // hold, not what this authentication carried. Optional, so a test's PEP
+  // built without it sends none — and a policy then reads "holds nothing".
+  heldFactors?: (username: string) => string[];
   templates: { build(id: string, answers: any, options: any): any;
-               ISSUANCE_ATTRIBUTE: Record<string, string> };
+               ISSUANCE_ATTRIBUTE: Record<string, string>;
+               DEVICE_ATTRIBUTE?: Record<string, string> };
 }
 
 const ATTRIBUTE = templates.ISSUANCE_ATTRIBUTE;
@@ -213,6 +228,8 @@ const DELEGATION_ATTRIBUTE = {
   PROTOCOL: 'urn:sts:xacml:delegation-protocol'
 };
 const RISK = templates.RISK_ATTRIBUTE;
+// #164 phase 6: the registered device an issuance came from.
+const DEVICE = templates.DEVICE_ATTRIBUTE;
 // #64: the authentication a session stands on.
 const AUTHN = templates.AUTHN_ATTRIBUTE;
 
@@ -282,7 +299,29 @@ class XacmlRolePep {
       monitor: monitor,
       pdp: pdp,
       pip: pip,
-      templates: templates
+      templates: templates,
+      // `common/credentials.ts` reaches the directory, which is built long
+      // after this module (23c against 21); asked when a decision is made.
+      heldFactors: function heldFactors(username: string): string[] {
+        helpers.log.debug("Entering heldFactors().");
+        const held: string[] = [];
+        try {
+          const m = require('../common/credentials').mechanismsFor(username);
+          if (m.mfaKeys + m.primaryKeys > 0) {
+            held.push('security-key', 'second-factor');
+          } else if (m.totp) {
+            held.push('second-factor');
+          }
+        } catch (e) {
+          // A person whose credentials cannot be read holds nothing this
+          // decision can count on; the policy then treats them as holding
+          // no factor, which for a protected application is the alarm.
+          helpers.log.debug("Caught in heldFactors(): " +
+                            ((e && e.message) || e));
+        }
+        helpers.log.debug("Leaving heldFactors(). " + held.join(', '));
+        return held;
+      }
     };
   }
 
@@ -453,8 +492,10 @@ class XacmlRolePep {
           attributes: [this.attribute(model.ATTRIBUTE.ACTION_ID,
                                       [asked.kind])] },
         { category: model.CATEGORY.ENVIRONMENT, id: null, content: null,
-          attributes: this.riskAttributes(asked.risk)
-            .concat(this.authenticationAttributes(asked.authentication)) }
+          attributes: this.riskAttributes(asked.risk,
+                                          String(asked.subject.name || ''))
+            .concat(this.authenticationAttributes(asked.authentication))
+            .concat(this.deviceAttributes(asked)) }
       ]
     };
     log.debug('Leaving XacmlRolePep.buildRequest().');
@@ -467,8 +508,9 @@ class XacmlRolePep {
   // an empty string would be a level nobody wrote a rule for. The score goes
   // only when there is one — a first sign-in is UNSCORED and has none.
   // -------------------------------------------------------------------------
-  private riskAttributes(risk: RiskFacts | null | undefined): any[] {
-    const { log, model } = this.deps;
+  private riskAttributes(risk: RiskFacts | null | undefined,
+                         username: string): any[] {
+    const { log, model, heldFactors } = this.deps;
     log.debug("Entering XacmlRolePep.riskAttributes().");
     if (!risk || !risk.level) {
       log.debug("Leaving XacmlRolePep.riskAttributes(). No facts.");
@@ -477,7 +519,11 @@ class XacmlRolePep {
     const out = [
       this.attribute(RISK.LEVEL, [risk.level]),
       this.attribute(RISK.SIGNAL, risk.signals || []),
-      this.attribute(RISK.SATISFIED, risk.satisfied || [])
+      this.attribute(RISK.SATISFIED, risk.satisfied || []),
+      // What the person holds (#226) — asked only when there are risk
+      // facts, since no risk rule reads it otherwise.
+      this.attribute(RISK.HELD, heldFactors && username
+        ? heldFactors(username) : [])
     ];
     if (typeof risk.score === 'number' && isFinite(risk.score)) {
       out.push(this.attribute(RISK.SCORE, [risk.score], model.TYPE.DOUBLE));
@@ -511,6 +557,75 @@ class XacmlRolePep {
     return out;
   }
 
+  // -------------------------------------------------------------------------
+  // THE REGISTERED DEVICE AS ENVIRONMENT ATTRIBUTES (#164 decision 3, phase
+  // 6) — `xacml_templates.ts`'s DEVICE_ATTRIBUTE. Sent only where the gate
+  // asked the device question (a requirement array, however empty); then
+  // `recognized` always, the requirement bag always, and the rest only for a
+  // device in hand. Whether it is the subject's OWN is decided here, from
+  // the subject the gate names: a person's device for that person, an
+  // application's for that application (a `client_credentials` grant's
+  // subject is the client).
+  // -------------------------------------------------------------------------
+  private deviceAttributes(asked: IssuanceQuestion): any[] {
+    const { log, model } = this.deps;
+    log.debug("Entering XacmlRolePep.deviceAttributes().");
+    if (!Array.isArray(asked.deviceRequirement)) {
+      log.debug("Leaving XacmlRolePep.deviceAttributes(). Not asked.");
+      return [];
+    }
+    const fact = asked.device || null;
+    const out = [
+      this.attribute(DEVICE.REQUIREMENT, asked.deviceRequirement),
+      this.attribute(DEVICE.RECOGNIZED, [!!fact], model.TYPE.BOOLEAN)
+    ];
+    if (fact) {
+      const subject = asked.subject || {};
+      const ownerKind = subject.kind === 'application' ? 'application'
+                                                       : 'person';
+      const owned = fact.ownerKind === ownerKind && !!subject.name &&
+        String(fact.ownerName || '') === String(subject.name);
+      out.push(
+        this.attribute(DEVICE.ID, [String(fact.id || '')]),
+        this.attribute(DEVICE.VIA, [String(fact.via || '')]),
+        this.attribute(DEVICE.OWNER_MATCHES, [owned], model.TYPE.BOOLEAN),
+        this.attribute(DEVICE.OWNER_KIND, [String(fact.ownerKind || '')]),
+        this.attribute(DEVICE.COMPLIANCE,
+                       [String(fact.compliance || 'unknown')]),
+        this.attribute(DEVICE.ATTESTATION,
+                       [String(fact.attestation || 'self-asserted')]),
+        this.attribute(DEVICE.STATUS, [String(fact.status || 'active')]));
+      if (fact.riskLevel) {
+        out.push(this.attribute(DEVICE.RISK_LEVEL, [String(fact.riskLevel)]));
+      }
+    }
+    log.debug("Leaving XacmlRolePep.deviceAttributes(). " +
+              (fact ? String(fact.id) : 'No device.'));
+    return out;
+  }
+
+  // The device obligation on a Deny, read: which rule refused, or null when
+  // the Deny is not about the device. `not-compliant` when the obligation
+  // names nothing this PEP knows: a device Deny is a refusal either way.
+  private deviceObligationOf(answer: any): string | null {
+    const { log } = this.deps;
+    log.debug("Entering XacmlRolePep.deviceObligationOf().");
+    const found = (answer && answer.obligations || []).filter(function (o) {
+      return o && o.id === DEVICE.OBLIGATION;
+    })[0];
+    if (!found) {
+      log.debug("Leaving XacmlRolePep.deviceObligationOf(). None.");
+      return null;
+    }
+    const hit = (found.assignments || []).filter(function (a) {
+      return a.attributeId === DEVICE.REFUSAL;
+    })[0];
+    const said = hit ? String(hit.lexical !== undefined ? hit.lexical
+                                                        : hit.value) : '';
+    log.debug("Leaving XacmlRolePep.deviceObligationOf(). " + said);
+    return said === 'compromised' ? 'compromised' : 'not-compliant';
+  }
+
   // The risk obligation on a Deny, read: `{ action, factor }`, or null when
   // the Deny is not about risk. The action defaults to `refuse`: an
   // obligation this PEP cannot read is a policy saying no, not a policy
@@ -540,6 +655,46 @@ class XacmlRolePep {
     return { action: action,
              factor: action === 'step-up'
                ? (valueOf(RISK.FACTOR) || 'second-factor') : '' };
+  }
+
+  // -------------------------------------------------------------------------
+  // THE ALARM ON A PERMIT (#226): the policy let an elevated authentication
+  // through for an application risk may never lock out, because the person
+  // holds no factor to step up with. Permitted, as the policy said — and
+  // said loudly, since it is exactly what an attacker holding an
+  // administrator's password would also be let through by. Not on a dry
+  // run, and only where risk is enforced: development observes anyway.
+  // -------------------------------------------------------------------------
+  private raiseAlarm(asked: IssuanceQuestion, answer: any): void {
+    const { log, audit, errorCodes } = this.deps;
+    log.debug("Entering XacmlRolePep.raiseAlarm().");
+    const alarmed = (answer && answer.obligations || []).some(function (o) {
+      return o && o.id === RISK.ALARM_OBLIGATION;
+    });
+    const facts = asked.risk as RiskFacts;
+    // ONCE PER SIGN-IN: the session's decision. Every code and token issued
+    // on that session carries the same facts and is permitted by the same
+    // rule, and six warnings for one sign-in is how an alarm stops being
+    // read.
+    const onSession = asked.kind === this.deps.gate.ISSUANCE.SESSION;
+    if (!alarmed || dryRun || !facts || !facts.enforced || !onSession) {
+      log.debug("Leaving XacmlRolePep.raiseAlarm(). No alarm.");
+      return;
+    }
+    const who = String(asked.subject && asked.subject.name || '');
+    const what = 'The risk of this authentication is ' + facts.level + ' (' +
+      (facts.signals.join(', ') || 'the model') + '), "' +
+      String(asked.application || '') + '" may never be locked out on ' +
+      'risk, and "' + who + '" holds no second factor to step up with: ' +
+      'PERMITTED. Enrol a second factor for them.';
+    audit.audit({
+      action: 'xacml.issuance.alarm', errorCode: 'STS-RISK-0038',
+      actor: who, protocol: 'XACML', outcome: 'success',
+      detail: what + (facts.assessmentId
+        ? ' Assessment ' + facts.assessmentId + '.' : '')
+    });
+    log.warn(errorCodes.tag('STS-RISK-0038') + 'xacml: ' + what);
+    log.debug("Leaving XacmlRolePep.raiseAlarm().");
   }
 
   // -------------------------------------------------------------------------
@@ -653,6 +808,56 @@ class XacmlRolePep {
     });
 
     // -----------------------------------------------------------------------
+    // A DENY ABOUT THE REGISTERED DEVICE (#164 phase 6) — the policy's
+    // device obligation says so. Asked FIRST, because it is final: a risk
+    // Deny may only ask for a step-up, and a device refused after one would
+    // be one refusal made in two steps. Enforced in BOTH modes and even
+    // where the role question was waived — the two rules it comes from are
+    // a compromise and a realm's explicit requirement, neither of which is
+    // about roles or is anything development should observe instead. The
+    // client is told what every failed authentication is told; which rule
+    // refused, and the device, are on the audit row.
+    // -----------------------------------------------------------------------
+    const deviceDeny = answer.decision === model.DECISION.DENY
+      ? this.deviceObligationOf(answer) : null;
+    if (deviceDeny) {
+      const fact = asked.device || null;
+      const code = deviceDeny === 'compromised' ? 'STS-DEVICE-0038'
+                                                : 'STS-DEVICE-0037';
+      const deviceWhy = deviceDeny === 'compromised'
+        ? 'The registered device ' + String(fact && fact.id || '') +
+          ' this came from is marked compromised, and the realm refuses one.'
+        : 'The realm requires a compliant registered device of the ' +
+          'subject\'s own' + ((asked.deviceRequirement || [])
+            .indexOf('attested') >= 0 ? ', attested,' : '') + ' and this ' +
+          (fact ? 'came from device ' + String(fact.id) + ' (' +
+                  String(fact.compliance || 'unknown') + ', ' +
+                  String(fact.attestation || '') + ')'
+                : 'came from no registered device') + '.';
+      if (!dryRun) {
+        audit.audit({
+          action: 'xacml.issuance.refused', errorCode: code,
+          actor: subject.name || '', protocol: 'XACML',
+          detail: 'Deny on the device for ' + (asked.kind || 'an issuance') +
+                  ' to "' + String(asked.application || '') + '": ' +
+                  deviceWhy
+        });
+      }
+      log.info('xacml: ' + (dryRun ? 'a dry run would have REFUSED '
+                                   : 'REFUSED ') +
+               (asked.kind || 'an issuance') + ' for "' +
+               String(asked.application || '') + '" to "' +
+               (subject.name || 'nobody') + '" on the device — ' + deviceWhy);
+      const refusal = this.refused(deviceDeny === 'compromised'
+        ? 'Authentication failed.'
+        : 'A compliant registered device is required.', answer.decision,
+        held, required, answer);
+      refusal.device = { refusal: deviceDeny };
+      log.debug('Leaving XacmlRolePep.decideNow(). Deny on the device.');
+      return refusal;
+    }
+
+    // -----------------------------------------------------------------------
     // A DENY ABOUT RISK (#62 P3) — the policy's risk obligation says so. In
     // product it refuses, and the answer carries what to do about it (a
     // step-up and its factor) for the doors that can. In development it is
@@ -725,6 +930,7 @@ class XacmlRolePep {
     }
 
     if (answer.decision === model.DECISION.PERMIT) {
+      this.raiseAlarm(asked, answer);
       log.debug('Leaving XacmlRolePep.decideNow(). Permit.');
       return this.allowed('The issuance policy permitted it.', held, required,
                           answer);

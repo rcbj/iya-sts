@@ -408,12 +408,19 @@ class ScepCms {
     const node = this.readOne(der);
     const tbs = this.children(node)[0];
     const parts = this.children(tbs);
+    // A VERSION 1 CERTIFICATE HAS SIX TBS FIELDS, NOT SEVEN (#249): no [0]
+    // version, and no extensions. certmonger signs every PKCSReq with such a
+    // self-signed "mini certificate", and while this read demanded seven
+    // fields the certificate was silently dropped from the SignedData's set,
+    // so every certmonger request was refused STS-SCEP-0011 ("0 match").
+    // RFC 8894 section 2.3 asks for a self-signed certificate over the
+    // request's key and names no version; what is checked is that key.
+    const offset = parts.length > 0 && this.isContext(parts[0], 0) ? 1 : 0;
     if (!this.isUniversal(node, 16) || !this.isUniversal(tbs, 16) ||
-        parts.length < 7) {
+        parts.length < offset + 6) {
       log.debug("Leaving ScepCms.describeCertificate(). Not a certificate.");
       return null;
     }
-    const offset = this.isContext(parts[0], 0) ? 1 : 0;
     let x509 = null;
     try {
       x509 = new nodeCrypto.X509Certificate(Buffer.from(der));

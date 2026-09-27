@@ -32,7 +32,8 @@
 // THE SCHEMA, AND THE TWO COLUMN DECISIONS THAT ARE NOT OBVIOUS.
 //
 //   sts_ldap_entries(realm, dn_key, dn, attrs, origin, created_at, modified_at)
-//   sts_realms(id, name, description, created_at, overrides)
+//   sts_realms(id, name, description, created_at, overrides, domain,
+//              retiring_at)
 //   sts_appconfig(key, value)
 //
 // **THE PRIMARY KEY IS (realm, dn_key) AND dn_key IS THE NORMALISED DN.** Not
@@ -141,8 +142,11 @@ const CHANGE_ROWS_PER_STATEMENT = 5000;
 // SCHEMA_COLUMNS below. 7 SINCE 2026-09-22, for the thirteen `sts_risk_*`
 // tables of risk scoring (#62) — see their block in SCHEMA_OBJECTS. 8 SINCE
 // 2026-09-23, for `sts_risk_terms_acceptances`, the record of who accepted
-// which dataset provider's terms (the second licence review on #62).
-const SCHEMA_VERSION = 9;
+// which dataset provider's terms (the second licence review on #62). 10 SINCE
+// 2026-09-26, for `sts_realms.retiring_at` (#262): the mark
+// `realms.retire()` sets before it ends anything, which every process reads
+// to refuse new sign-ins in a realm being removed.
+const SCHEMA_VERSION = 10;
 
 // THE DATABASE'S CLOCK, in the milliseconds every cluster table stores. See the
 // cluster block in SCHEMA_OBJECTS for why no process's own clock is used.
@@ -241,7 +245,8 @@ const SCHEMA_OBJECTS = [
   '  description text,' +
   '  created_at  bigint,' +
   '  overrides   jsonb NOT NULL DEFAULT \'{}\'::jsonb,' +
-  '  domain      text)' },
+  '  domain      text,' +
+  '  retiring_at bigint)' },
   { name: 'sts_appconfig', statement:
   'CREATE TABLE IF NOT EXISTS sts_appconfig (' +
   '  key   text PRIMARY KEY,' +
@@ -800,6 +805,9 @@ const SCHEMA_OBJECTS = [
 const SCHEMA_COLUMNS = [
   { table: 'sts_realms', column: 'domain', statement:
   'ALTER TABLE sts_realms ADD COLUMN IF NOT EXISTS domain text' },
+  // When the realm's removal began (#262, schema version 10), or NULL.
+  { table: 'sts_realms', column: 'retiring_at', statement:
+  'ALTER TABLE sts_realms ADD COLUMN IF NOT EXISTS retiring_at bigint' },
   // What the person said about a sign-in (#62 P6, schema version 9).
   { table: 'sts_risk_assessments', column: 'feedback', statement:
   'ALTER TABLE sts_risk_assessments ADD COLUMN IF NOT EXISTS feedback text ' +
@@ -2117,8 +2125,8 @@ function create(options) {
       log.debug('Entering the postgres driver loadRealms().');
       log.debug("Leaving loadRealms().");
       return pool.query(
-        'SELECT id, name, description, created_at, overrides, domain ' +
-        'FROM sts_realms ' +
+        'SELECT id, name, description, created_at, overrides, domain, ' +
+        'retiring_at FROM sts_realms ' +
         'ORDER BY created_at NULLS FIRST, id'
       ).then(function (result) {
         if (!result.rows.length) {
@@ -2137,7 +2145,10 @@ function create(options) {
             // millisecond count, which does, so it is converted here rather
             // than left as a string for realms.js to be surprised by.
             createdAt: row.created_at === null ? null : Number(row.created_at),
-            overrides: row.overrides || {}
+            overrides: row.overrides || {},
+            // bigint, a string, for created_at's reason (#262).
+            retiringSince: row.retiring_at === null ||
+              row.retiring_at === undefined ? null : Number(row.retiring_at)
           };
         });
       });
@@ -2482,8 +2493,12 @@ function create(options) {
           chain = chain.then(function () {
             return client.query(
               'INSERT INTO sts_realms (id, name, description, created_at, ' +
-              'overrides, domain) VALUES ($1, $2, $3, $4, $5::jsonb, $11) ' +
+              'overrides, domain, retiring_at) VALUES ($1, $2, $3, $4, ' +
+              '$5::jsonb, $11, $12) ' +
               'ON CONFLICT (id) DO UPDATE SET ' +
+              // ONE-WAY (#262): a mark once written stays until the row goes.
+              '  retiring_at = COALESCE(sts_realms.retiring_at, ' +
+              '                         EXCLUDED.retiring_at), ' +
               // FIXED AT CREATION, so the first value written stays.
               '  domain = COALESCE(sts_realms.domain, EXCLUDED.domain), ' +
               '  name = CASE WHEN $6 THEN EXCLUDED.name ' +
@@ -2499,7 +2514,9 @@ function create(options) {
                JSON.stringify(row.overrides || {}), !!one.name,
                !!one.description, (one.cleared || []).map(String),
                JSON.stringify(one.set || {}), !!one.whole,
-               row.domain || null]);
+               row.domain || null,
+               Number(row.retiringSince) > 0 ? Number(row.retiringSince)
+                                             : null]);
           });
         });
         return chain.then(function () {
@@ -4291,16 +4308,20 @@ function create(options) {
       const where = 'WHERE realm = $1 AND at >= $2 ' +
         'AND ($3 = \'\' OR subject = $3) AND ($4 = \'\' OR name_hmac = $4) ' +
         'AND ($5 = \'\' OR address_prefix = $5::cidr) ' +
-        'AND ($6 = \'\' OR door = $6)';
+        'AND ($6 = \'\' OR door = $6) ' +
+        // `excludeDoor` (#231): the password signals leave a replayed
+        // one-time code out (`risk/risk_engine.ts`, TOTP_REPLAY_DOOR).
+        'AND ($7 = \'\' OR door <> $7)';
       const params = [realm || '', Number(o.since) || 0, o.subject || '',
-                      o.nameHmac || '', o.prefix || '', o.door || ''];
+                      o.nameHmac || '', o.prefix || '', o.door || '',
+                      o.excludeDoor || ''];
       log.debug("Leaving riskListFailures().");
       return Promise.all([
         pool.query(
           'SELECT id, realm, at, door, subject, name_hmac, address_sealed, ' +
           'host(address_prefix) || \'/\' || masklen(address_prefix) AS ' +
           'address_prefix, asn, error_code, origin FROM sts_risk_failures ' +
-          where + ' ORDER BY at DESC, id DESC LIMIT $7 OFFSET $8',
+          where + ' ORDER BY at DESC, id DESC LIMIT $8 OFFSET $9',
           params.concat([Number(o.limit) || 50, Number(o.offset) || 0])),
         pool.query('SELECT count(*) AS total FROM sts_risk_failures ' + where,
                    params)
@@ -4576,24 +4597,33 @@ function create(options) {
       });
     },
 
-    // The realm's people by current standing, highest score first.
+    // A page of the realm's people by current standing, highest score
+    // first, with the count of them all — the console pages it (2026-09-26),
+    // because the table has a row for every person ever assessed.
     riskListSubjects: function (realm, opts) {
       log.debug("Entering riskListSubjects(). realm=" + realm);
       const o = opts || {};
       log.debug("Leaving riskListSubjects().");
-      return pool.query(
-        'SELECT subject, score, level, previous_level, reason, ' +
-        'last_assessment, crossed_at, updated_at FROM sts_risk_subjects ' +
-        'WHERE realm = $1 ORDER BY score DESC, updated_at DESC LIMIT $2',
-        [realm || '', Number(o.limit) || 50]
-      ).then(function (r) {
-        return r.rows.map(function (row) {
-          return { subject: row.subject, score: Number(row.score),
-                   level: row.level, previousLevel: row.previous_level,
-                   reason: row.reason, lastAssessment: row.last_assessment,
-                   crossedAt: Number(row.crossed_at) || 0,
-                   updatedAt: Number(row.updated_at) || 0 };
-        });
+      return Promise.all([
+        pool.query(
+          'SELECT subject, score, level, previous_level, reason, ' +
+          'last_assessment, crossed_at, updated_at FROM sts_risk_subjects ' +
+          'WHERE realm = $1 ORDER BY score DESC, updated_at DESC, ' +
+          'subject LIMIT $2 OFFSET $3',
+          [realm || '', Number(o.limit) || 50, Number(o.offset) || 0]),
+        pool.query('SELECT count(*) AS total FROM sts_risk_subjects ' +
+                   'WHERE realm = $1', [realm || ''])
+      ]).then(function (answers) {
+        return {
+          total: Number(answers[1].rows[0].total) || 0,
+          rows: answers[0].rows.map(function (row) {
+            return { subject: row.subject, score: Number(row.score),
+                     level: row.level, previousLevel: row.previous_level,
+                     reason: row.reason, lastAssessment: row.last_assessment,
+                     crossedAt: Number(row.crossed_at) || 0,
+                     updatedAt: Number(row.updated_at) || 0 };
+          })
+        };
       });
     },
 
@@ -4701,6 +4731,68 @@ function create(options) {
           out[row.level || 'UNSCORED'] = Number(row.n);
         });
         return out;
+      });
+    },
+
+    // WHERE A WINDOW'S PEOPLE WERE (#255), for Monitoring → Geolocation —
+    // `risk_store.geography()`'s database half, which argues the counting.
+    // One statement: GROUPING SETS counts distinct people at the world, each
+    // continent, each country and each city, and GROUPING() says which set a
+    // row is (15, 7, 3, 0). The continent is not in the table — the store
+    // holds a country — so the page's code-to-continent table arrives as two
+    // parallel arrays and is joined in; a code missing from it is ''. With
+    // `sessionIds` (live sessions), DISTINCT ON keeps each session's latest
+    // assessment only.
+    riskGeography: function (realm, opts) {
+      log.debug("Entering riskGeography(). realm=" + realm);
+      const o = opts || {};
+      const live = Array.isArray(o.sessionIds);
+      const params = [realm || '', Number(o.since) || 0,
+                      (o.countries || []).map(String),
+                      (o.continents || []).map(String)];
+      if (live) {
+        params.push(o.sessionIds.map(String));
+      }
+      const source = live
+        ? '(SELECT DISTINCT ON (session_id) * FROM sts_risk_assessments ' +
+          'WHERE realm = $1 AND at >= $2 AND subject <> \'\' AND ' +
+          'session_id = ANY($5::text[]) ORDER BY session_id, at DESC)'
+        : '(SELECT * FROM sts_risk_assessments WHERE realm = $1 AND ' +
+          'at >= $2 AND subject <> \'\')';
+      log.debug("Leaving riskGeography().");
+      return pool.query(
+        'WITH m AS (SELECT * FROM unnest($3::text[], $4::text[]) AS ' +
+        'm(country, continent)), a AS (SELECT s.subject, s.phase, ' +
+        's.country, s.subdivision, s.city, s.latitude, s.longitude, s.at, ' +
+        'coalesce(m.continent, \'\') AS continent FROM ' + source + ' AS s ' +
+        'LEFT JOIN m ON m.country = s.country) ' +
+        'SELECT GROUPING(continent, country, subdivision, city) AS g, ' +
+        'continent, country, subdivision, city, ' +
+        'count(DISTINCT subject) AS people, ' +
+        'count(*) FILTER (WHERE phase = \'user\') AS sign_ins, ' +
+        'count(*) AS assessments, avg(latitude) AS latitude, ' +
+        'avg(longitude) AS longitude, max(at) AS last_at FROM a ' +
+        'GROUP BY GROUPING SETS ((), (continent), (continent, country), ' +
+        '(continent, country, subdivision, city))', params
+      ).then(function (r) {
+        const LEVELS = { 15: 'world', 7: 'continent', 3: 'country',
+                         0: 'city' };
+        return {
+          rows: r.rows.map(function (row) {
+            return {
+              level: LEVELS[Number(row.g)] || 'city',
+              continent: row.continent || '', country: row.country || '',
+              subdivision: row.subdivision || '', city: row.city || '',
+              people: Number(row.people) || 0,
+              signIns: Number(row.sign_ins) || 0,
+              assessments: Number(row.assessments) || 0,
+              latitude: row.latitude === null ? null : Number(row.latitude),
+              longitude: row.longitude === null ? null
+                : Number(row.longitude),
+              lastAt: Number(row.last_at) || 0
+            };
+          })
+        };
       });
     },
 

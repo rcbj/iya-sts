@@ -496,8 +496,12 @@ async function theDocumentDescribesTheGate() {
     const wrong = [];
     Object.keys(document.paths || {}).forEach(function (path) {
       Object.keys(document.paths[path]).forEach(function (method) {
-        const wanted = method.toUpperCase() === "GET" ? "admin:read"
-                                                      : "admin:write";
+        // THE ONE EXCEPTION (#164): the MDM feed takes device:compliance,
+        // as the gate's isDeviceComplianceFeed() says.
+        const feed = method.toUpperCase() === "POST" &&
+                     path === "/admin-api/device-compliance";
+        const wanted = feed ? "device:compliance"
+          : (method.toUpperCase() === "GET" ? "admin:read" : "admin:write");
         const security = document.paths[path][method].security || [];
         const named = (security[0] || {}).oauth2 || [];
         if (named.length !== 1 || named[0] !== wanted) {
@@ -508,8 +512,9 @@ async function theDocumentDescribesTheGate() {
     });
     assert.deepStrictEqual(wrong.slice(0, 5), [],
       wrong.length + " operation(s) declare a scope the gate would not ask " +
-      "for. A GET needs admin:read and everything else needs admin:write, " +
-      "which is one line in the middleware this file drives:\n  " +
+      "for. A GET needs admin:read and everything else needs admin:write " +
+      "(but the MDM feed, which needs device:compliance), which is the " +
+      "rule in the middleware this file drives:\n  " +
       wrong.slice(0, 5).join("\n  "));
   });
 

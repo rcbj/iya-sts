@@ -89,6 +89,11 @@ const config = require('./config');
 // (`errorCodes.mark()` on the result), so a reply serialised from it is
 // byte-for-byte what it was.
 const errorCodes = require('./error_codes');
+// The names an EST label may be — the enrollment profiles — for the one path
+// position a realm shares with them (`matchPath()`, #251). A LEAF of data that
+// requires nothing: `cert_enrollment.ts`, where the profiles are decided,
+// requires this file and twenty others, so it could not be required here.
+const enrollmentProfiles = require('./enrollment_profiles');
 
 const log = bunyan.createLogger({ name: 'sts-realms' });
 
@@ -430,8 +435,8 @@ function matchPath(pathname) {
   let head = String(pathname || '');
   if (segment) {
     if (head.indexOf('/' + segment + '/') !== 0) {
-      log.debug("Leaving matchPath().");
-      return null;
+      log.debug("Leaving matchPath(). Asking the EST label position.");
+      return matchEstLabel(head);
     }
     head = head.slice(segment.length + 1);
   }
@@ -440,12 +445,110 @@ function matchPath(pathname) {
   const id = (slash < 0 ? head.slice(1) : head.slice(1, slash));
   const realm = realms.get(id);
   if (!realm) {
-    log.debug("Leaving matchPath().");
-    return null;
+    log.debug("Leaving matchPath(). Asking the EST label position.");
+    return segment ? null : matchEstLabel(String(pathname || ''));
   }
   const rest = slash < 0 ? '/' : head.slice(slash);
   log.debug("Leaving matchPath().");
   return { realm: realm, rest: rest || '/' };
+}
+
+// ---------------------------------------------------------------------------
+// THE SECOND WAY A PATH NAMES A REALM: THE EST LABEL (#251, rcbj's decision
+// on #209, 2026-09-26).
+//
+// RFC 7030's paths are under a WELL-KNOWN URI, which RFC 8615 puts at the root
+// of the origin, and an EST client is configured with a host, a port and at
+// most ONE label: libest's estclient builds
+// `https://host:port/.well-known/est[/<label>]/<operation>` and nothing else,
+// and refuses a label containing a slash. So `/realm/<id>/.well-known/est` —
+// which is where the prefix puts a realm's EST — is a path no RFC 7030 client
+// can be told. The label position can be: `/.well-known/est/<realm>/<op>`
+// enters `<realm>` exactly as `/realm/<realm>/.well-known/est/<op>` does, and
+// `/.well-known/est/<realm>/<label>/<op>` names a profile inside it for a
+// client that can send two segments.
+//
+// **IT IS ENTERED HERE, IN THE ONE PLACE THAT ENTERS A REALM**, by the same
+// middleware (`common/app.js`'s `enterRealm`) that strips the prefix, and the
+// rest is rewritten to `/.well-known/est/<op>` so `est/est.ts` knows nothing
+// about realms — the whole design's trick. A request worker runs the same
+// middleware on the same `originalUrl` and derives the same realm.
+//
+// **A LABEL AND A REALM MAY NOT SHARE A NAME**, and the rule chosen is the
+// refusal rather than a two-segment realm-label pair ONLY, because the pair is
+// what estclient cannot send: a realm reachable by the label form must be
+// nameable by ONE segment, so that segment must mean one thing. So
+// `validateId()` refuses a realm called by an EST label (every enrollment
+// profile, issued or refused — STS-CORE-0107), and a realm that was created
+// with such a name before this rule is never read here: the LABEL reading
+// wins, so no URL that meant a profile yesterday means a realm today. That
+// realm is still reached by its prefix.
+//
+// **ONE REALM OR NONE, NEVER A MIX**: this is asked only when the path does
+// NOT open with the realm prefix. `/realm/a/.well-known/est/b/…` is realm a
+// with a label `b`, and est.ts refuses a label that names a realm
+// (STS-EST-0022) — as it does `/.well-known/est/a/b/…`. A realm is named once.
+//
+// The default realm is never entered this way (it has no prefix to be the
+// equivalent of), and an unknown name is not a realm: it falls through to
+// est.ts, whose answer for a label it does not know is 404.
+// ---------------------------------------------------------------------------
+const EST_BASE = '/.well-known/est/';
+
+function estLabelOf(pathname) {
+  log.debug("Entering estLabelOf().");
+  const path = String(pathname || '');
+  if (path.indexOf(EST_BASE) !== 0) {
+    log.debug("Leaving estLabelOf(). Not an EST path.");
+    return null;
+  }
+  const after = path.slice(EST_BASE.length);
+  const slash = after.indexOf('/');
+  // A label is followed by an operation: `/.well-known/est/<x>` alone is the
+  // unlabelled path's operation `<x>`, not a label.
+  if (slash <= 0) {
+    log.debug("Leaving estLabelOf(). No label.");
+    return null;
+  }
+  log.debug("Leaving estLabelOf().");
+  return { label: after.slice(0, slash), rest: after.slice(slash) };
+}
+
+function isEstLabel(name) {
+  log.debug("Entering isEstLabel().");
+  log.debug("Leaving isEstLabel().");
+  return enrollmentProfiles.EST_LABELS.indexOf(String(name)) >= 0;
+}
+
+function matchEstLabel(pathname) {
+  log.debug("Entering matchEstLabel().");
+  const found = estLabelOf(pathname);
+  if (!found || isEstLabel(found.label)) {
+    log.debug("Leaving matchEstLabel(). Not a realm in the label position.");
+    return null;
+  }
+  const realm = realms.get(found.label);
+  if (!realm) {
+    log.debug("Leaving matchEstLabel(). No such realm.");
+    return null;
+  }
+  log.debug("Leaving matchEstLabel(). Realm " + realm.id + ".");
+  return { realm: realm, rest: EST_BASE.slice(0, -1) + found.rest,
+           form: 'est-label' };
+}
+
+// The label-form address of the ambient realm's EST server, for the pages
+// and documents that show one: `/.well-known/est/<id>`, or null in the
+// default realm (which has no other form) and in a realm whose id is a label.
+function estLabelPath(realm) {
+  log.debug("Entering estLabelPath().");
+  const r = realm || current();
+  if (!r || r.id === DEFAULT_ID || isEstLabel(r.id)) {
+    log.debug("Leaving estLabelPath(). None.");
+    return null;
+  }
+  log.debug("Leaving estLabelPath().");
+  return EST_BASE + r.id;
 }
 
 // ---------------------------------------------------------------------------
@@ -480,6 +583,15 @@ function unknownRealmPath(pathname) {
   }
   const segment = pathSegment();
   let head = String(pathname || '');
+  // The EST label position names a realm too (#251, `matchEstLabel()`), and a
+  // realm created on another node a moment ago is as absent there.
+  const est = estLabelOf(head);
+  if (est && ID_PATTERN.test(est.label) && !isEstLabel(est.label) &&
+      !realms.has(est.label) && est.label !== DEFAULT_ID) {
+    log.debug("Leaving unknownRealmPath(). Possibly a realm not yet here, " +
+              "in the EST label position.");
+    return true;
+  }
   if (segment) {
     if (head.indexOf('/' + segment + '/') !== 0) {
       log.debug("Leaving unknownRealmPath(). No realm prefix.");
@@ -620,6 +732,14 @@ function validateId(id) {
                 'realms.pathSegment is set to, because clearing that setting ' +
                 'would make the realm shadow the endpoint.');
     firstCode(errors, 'STS-CORE-0011');
+  }
+  if (isEstLabel(value)) {
+    errors.push('"' + value + '" is an EST label (a certificate profile), ' +
+                'and /.well-known/est/<realm>/ reaches a realm through the ' +
+                'same path position as /.well-known/est/<label>/ reaches a ' +
+                'profile. A realm may not be called by a label\'s name, so ' +
+                'that one segment always means one thing.');
+    firstCode(errors, 'STS-CORE-0107');
   }
   if (realms.has(value)) {
     errors.push('A realm called "' + value + '" is already defined.');
@@ -1030,6 +1150,14 @@ function update(id, changes) {
       return kerberos;
     }
     realm.overrides = Object.assign({}, spec.overrides);
+  }
+  // THE RETIRING MARK (#262) arrives only on a REPLICATED update — another
+  // process's `retire()` — and only ever SETS it: see `markRetiring()`.
+  if (spec.replicated && Number(spec.retiringSince) > 0 &&
+      !(Number(realm.retiringSince) > 0)) {
+    realm.retiringSince = Number(spec.retiringSince);
+    log.info('realms: "' + realm.id + '" is being removed by another ' +
+             'process; new sign-ins and issuance in it are refused here too.');
   }
   if (spec.name !== undefined) {
     realm.name = String(spec.name).trim() || realm.id;
@@ -1493,6 +1621,281 @@ function built(realm) {
     }
   });
   log.debug("Leaving built(). " + builders.length + " store(s) built.");
+}
+
+// ---------------------------------------------------------------------------
+// BEFORE A REALM GOES, ITS PEOPLE AND ITS RECEIVERS ARE TOLD (#232,
+// 2026-09-26).
+//
+// `remove()` below drops the registry row and runs every store's purge — the
+// directory, the sessions, the SSF streams and their delivery queues — and
+// said nothing to anybody while doing it: no RISC `account-purged` for the
+// people in the realm, no CAEP `session-revoked` and no back-channel Logout
+// Token for a live session, and no `stream-updated` to a receiver whose stream
+// vanished. The purges cannot do it: they run in registration order, the
+// directory's goes early, and a purge that sent an event would be sending it
+// into a delivery queue the next purge empties.
+//
+// So `retire()` is the administrator's door, and it runs two phases of hooks
+// BEFORE `remove()`, each in the realm being removed:
+//
+//   1. **announce** (synchronous, in registration order): every session ended
+//      through the ordinary path (`authn`, `initiating_entity: admin`), and
+//      `account-purged` for every person (`ldap_server`, which hands each to
+//      the account observers without ending anything a second time);
+//   2. **deliver** (asynchronous, in registration order, BOUNDED): the
+//      session ends' cluster claims and the realm's outbound deliveries
+//      settle (`authn`), and the SSF queues drain, every stream is told
+//      `stream-updated` `disabled`, and what was never delivered is counted
+//      (`ssf`).
+//
+// **THE BOUND IS `realms.removalDeliveryTimeoutS`** (10 s), read in the realm
+// the removal is made FROM. A receiver that never answers cannot hold a
+// removal for ever; what did not settle inside it is logged with
+// `STS-CORE-0120`, naming each hook, and the realm goes anyway. 0 announces
+// and does not wait at all.
+//
+// **ONLY THE NODE THAT RECEIVED THE ACT RETIRES.** A removal replicated from
+// another node (`persistence.js`) calls `remove()` alone: the sessions are a
+// shared store, so ending them there ended them for the cluster, and the SETs
+// were sent once, by the node that did it. Tests and restore paths call
+// `remove()` too, and are unchanged.
+// ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// A REALM BEING RETIRED TAKES NOTHING NEW (#262, 2026-09-26).
+//
+// `retire()` below ends every session and announces the realm's going, then
+// waits — up to `realms.removalDeliveryTimeoutS` — for that to be delivered.
+// Until #262 a sign-in made in that window SUCCEEDED: it started a session
+// the announce phase had already walked past, and the purge then dropped it
+// with no `session-revoked` and no Logout Token, which is exactly the silent
+// ending #232 exists to prevent. The same held for a token, an assertion or a
+// certificate issued in the window.
+//
+// So the FIRST thing `retire()` does is mark the realm RETIRING, and while it
+// is, nothing new is started or issued in it, in both modes:
+//
+//   * `common/issuance_gate.js`'s `check()` refuses FIRST, before the disabled
+//     account and before any shortcut — every issuance site asks it: a
+//     session, every token grant, an authorization code, a SAML or
+//     WS-Federation assertion, a WS-Trust token, a Kerberos ticket, a GNAP
+//     grant;
+//   * `authn`'s `startSession()` refuses first as well, because the sign-in
+//     screen asks the gate ahead of time and then passes `gated: true`;
+//   * the three issuers that do not ask the gate ask `retiringRefusal()`
+//     directly: `common/cert_enrollment.ts` (ACME, EST, SCEP), OpenID4VCI's
+//     credential endpoint and the SPIFFE authority's two mints.
+//
+// Every refusal is `STS-CORE-0121`. What is NOT refused is everything that
+// is not new: a sign-out, a revocation, introspection, UserInfo, metadata, a
+// JWKS, and above all SSF's poll endpoint, which a poll receiver must be able
+// to reach during the wait to collect the events the retirement queued.
+//
+// **THE MARK IS ON THE REALM ROW (`retiringSince`, an epoch millisecond)**,
+// because the realm row is what every process already shares in both modes —
+// `persistence.js` writes it to the store and the change log carries it to
+// every other process and node, which apply it through `update()` with
+// `replicated`. A minted store would not do: development mode persists
+// nothing minted. `retire()` then waits (inside the same bound) for the
+// `mark` hooks — `persistence.js`'s is a flush — so the row is written before
+// the first session is ended, and LISTEN/NOTIFY makes the others prompt.
+//
+// **IT IS ONE-WAY.** Nothing clears it but the removal itself (the row goes)
+// or creating the id again (a new row). A process that dies half way through
+// a retirement leaves the realm retiring — refusing sign-ins — until an
+// administrator removes it again, which is the act they had already asked for.
+// ---------------------------------------------------------------------------
+
+// Whether `realmOrId` (default: the ambient realm) is being retired. Read from
+// the REGISTRY rather than from the ambient object, so a request that entered
+// the realm before the mark still sees it.
+function isRetiring(realmOrId) {
+  log.debug("Entering isRetiring().");
+  const id = realmOrId === undefined || realmOrId === null
+    ? currentId()
+    : (typeof realmOrId === 'object' ? String(realmOrId.id || '')
+                                     : String(realmOrId));
+  const realm = realms.get(id);
+  const answer = !!(realm && Number(realm.retiringSince) > 0);
+  log.debug("Leaving isRetiring(). " + answer);
+  return answer;
+}
+
+// Null, or the refusal an issuer sends when the realm (default: the ambient
+// realm) is being retired: `{ realm, since, why }`, marked `STS-CORE-0121`.
+function retiringRefusal(realmOrId) {
+  log.debug("Entering retiringRefusal().");
+  if (!isRetiring(realmOrId)) {
+    log.debug("Leaving retiringRefusal(). Not retiring.");
+    return null;
+  }
+  const id = realmOrId === undefined || realmOrId === null
+    ? currentId()
+    : (typeof realmOrId === 'object' ? String(realmOrId.id || '')
+                                     : String(realmOrId));
+  const realm = realms.get(id);
+  log.debug("Leaving retiringRefusal(). Refused.");
+  return errorCodes.mark({
+    realm: id,
+    since: Number(realm && realm.retiringSince) || 0,
+    why: 'The trust realm "' + id + '" is being removed, so nothing new is ' +
+         'signed in or issued in it.'
+  }, 'STS-CORE-0121');
+}
+
+// Mark `realm` retiring, here and — through the change event — everywhere.
+// Idempotent: a second retirement keeps the first mark.
+function markRetiring(realm) {
+  log.debug("Entering markRetiring(). id=" + realm.id);
+  if (Number(realm.retiringSince) > 0) {
+    log.debug("Leaving markRetiring(). Already retiring.");
+    return;
+  }
+  realm.retiringSince = Date.now();
+  log.info(errorCodes.tag('STS-CORE-0121') + 'realms: "' + realm.id +
+           '" is being removed; new sign-ins and issuance in it are ' +
+           'refused from now on.');
+  changed(realm.id, 'retire');
+  log.debug("Leaving markRetiring().");
+}
+
+const retirers = [];
+
+// `hook`: `{ name, mark?(id, ctx), announce?(id, ctx), deliver?(id, ctx) }`.
+// `mark` is awaited (bounded) after the realm is marked retiring and before
+// anything is announced — `persistence.js` writes the mark down there. `ctx`
+// carries
+// `deadline` (an epoch millisecond), `via` and `initiatingEntity`, and
+// `undelivered`, an array a hook pushes `{ what, count }` onto.
+function onRetire(hook) {
+  log.debug("Entering onRetire().");
+  if (hook && typeof hook === 'object' && hook.name) {
+    retirers.push(hook);
+  }
+  log.debug("Leaving onRetire(). " + retirers.length + " hook(s).");
+}
+
+// A promise that settles after `ms`, or at once for 0 or less.
+function waitMs(ms) {
+  log.debug("Entering waitMs().");
+  log.debug("Leaving waitMs().");
+  return new Promise(function (resolve) {
+    if (!(ms > 0)) {
+      resolve('late');
+      return;
+    }
+    setTimeout(function () {
+      resolve('late');
+    }, ms);
+  });
+}
+
+// Tell everybody, wait (bounded) for it to be delivered, then `remove()`.
+// Resolves `remove()`'s answer with a `retirement` member saying what was
+// announced and what was not delivered; never rejects.
+async function retire(id, options) {
+  log.debug("Entering retire(). id=" + id);
+  const o = options || {};
+  const realm = realms.get(String(id || ''));
+  if (!realm) {
+    log.debug("Leaving retire(). No such realm.");
+    return remove(id);
+  }
+  const boundS = Number(config.value('realms.removalDeliveryTimeoutS'));
+  const boundMs = Math.max(0, Number.isFinite(boundS) ? boundS : 10) * 1000;
+  const ctx = {
+    realmId: realm.id,
+    deadline: Date.now() + boundMs,
+    // Read after "The session was ended at" in CAEP's reason_admin.
+    via: String(o.via || 'the removal of the trust realm "' + realm.id +
+                '"'),
+    initiatingEntity: String(o.initiatingEntity || 'admin'),
+    undelivered: []
+  };
+  const failed = [];
+  const late = [];
+  // FIRST, before anything is announced (#262): from here on no new session
+  // or issuance starts in the realm, so nothing is started that the announce
+  // phase below would walk past. Then the `mark` hooks, awaited within the
+  // bound, so the other processes are told before the sessions are ended.
+  markRetiring(realm);
+  for (let i = 0; i < retirers.length; i++) {
+    const hook = retirers[i];
+    if (typeof hook.mark !== 'function') {
+      continue;
+    }
+    try {
+      const outcome = await Promise.race([
+        Promise.resolve(run(realm, function () {
+          return hook.mark(realm.id, ctx);
+        })).then(function () {
+          return 'done';
+        }),
+        waitMs(ctx.deadline - Date.now())
+      ]);
+      if (outcome === 'late') {
+        late.push(hook.name + ' (mark)');
+      }
+    } catch (e) {
+      failed.push(hook.name + ' (mark): ' + ((e && e.message) || e));
+    }
+  }
+  run(realm, function () {
+    retirers.forEach(function (hook) {
+      if (typeof hook.announce !== 'function') {
+        return;
+      }
+      try {
+        hook.announce(realm.id, ctx);
+      } catch (e) {
+        failed.push(hook.name + ' (announce): ' + ((e && e.message) || e));
+      }
+    });
+  });
+  for (let i = 0; i < retirers.length; i++) {
+    const hook = retirers[i];
+    if (typeof hook.deliver !== 'function') {
+      continue;
+    }
+    try {
+      const outcome = await Promise.race([
+        Promise.resolve(run(realm, function () {
+          return hook.deliver(realm.id, ctx);
+        })).then(function () {
+          return 'done';
+        }),
+        waitMs(ctx.deadline - Date.now())
+      ]);
+      if (outcome === 'late') {
+        late.push(hook.name);
+      }
+    } catch (e) {
+      failed.push(hook.name + ' (deliver): ' + ((e && e.message) || e));
+    }
+  }
+  const undelivered = ctx.undelivered.filter(function (one) {
+    return one && Number(one.count) > 0;
+  });
+  if (failed.length || late.length || undelivered.length) {
+    log.error(errorCodes.tag('STS-CORE-0120') + 'realms: before "' +
+              realm.id + '" was removed, not everything it owed was ' +
+              'delivered within realms.removalDeliveryTimeoutS (' +
+              Math.round(boundMs / 1000) + ' s)' +
+              (late.length ? '; still waiting: ' + late.join(', ') : '') +
+              (undelivered.length ? '; undelivered: ' +
+                undelivered.map(function (one) {
+                  return one.count + ' ' + one.what;
+                }).join(', ') : '') +
+              (failed.length ? '; failed: ' + failed.join('; ') : '') +
+              '. The realm is removed anyway, and what was queued for it ' +
+              'goes with it.');
+  }
+  const result = remove(realm.id);
+  result.retirement = { late: late, failed: failed,
+                        undelivered: undelivered,
+                        boundSeconds: Math.round(boundMs / 1000) };
+  log.debug("Leaving retire().");
+  return result;
 }
 
 function remove(id) {
@@ -3173,8 +3576,12 @@ function realmSupport() {
             'directory: an ACME External Account Binding key, an EST ' +
             'credential and a SCEP challenge are each bound to an entry in ' +
             'one realm, and a certificate another realm issued fails the ' +
-            'Intermediate check. What is shared is EST\'s per-address rate ' +
-            'limit, which is keyed by the client address and not the realm.' },
+            'Intermediate check. EST is reached by the path prefix OR by ' +
+            'naming the realm in the EST label position, ' +
+            '/.well-known/est/<realm>/..., because an EST client cannot ' +
+            'put a path in front of a well-known URI (#251). What is ' +
+            'shared is EST\'s per-address rate limit, which is keyed by ' +
+            'the client address and not the realm.' },
     { family: 'OpenID Federation', state: 'full', by: 'path',
       cards: ['OpenID Federation'],
       note: 'Each realm is a federation entity of its own: its Entity ' +
@@ -3271,8 +3678,14 @@ module.exports = {
   currentPrefix: currentPrefix,
   href: href,
   matchPath: matchPath,
+  estLabelPath: estLabelPath,
+  isEstLabel: isEstLabel,
   onCreate: onCreate,
   onRemove: onRemove,
+  onRetire: onRetire,
+  retire: retire,
+  isRetiring: isRetiring,
+  retiringRefusal: retiringRefusal,
   onChange: onChange,
   realmContext: realmContext,
   keyed: keyed,

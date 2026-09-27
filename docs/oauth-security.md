@@ -38,8 +38,9 @@ runs. On, the authorization flow is held to the whole of RFC 9700 section 2:
   never redirected.
 * **PKCE** is required of every client not known to be confidential, `S256`
   only. A downgrade is refused, and so is a reused challenge or nonce.
-* A **nonce** is required with any `id_token` — hybrid included; OpenID
-  Connect Core already requires one for the implicit flow in every mode — and
+* A **nonce** is required with any `id_token` — OpenID Connect Core already
+  requires one, in every mode, for the implicit flow and for the hybrid
+  `code id_token` and `code id_token token` — and
   no response type that issues an access token from the authorization endpoint
   (the implicit grant) is accepted.
 * **Authorization codes**: a repeated redemption is refused, and everything the

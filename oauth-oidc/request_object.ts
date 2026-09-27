@@ -105,7 +105,8 @@
 //     Core section 6.2: the server MAY cache, and a URI whose content may
 //     change SHOULD carry the base64url SHA-256 of the content as its fragment)
 //     — `oauth2.requestUriCacheS`, 0 (off) by default; a fragment of 43
-//     base64url characters is checked against the content in every mode.
+//     base64url characters is checked against the content in every mode
+//     while `oauth2.requestUriFragmentCheck` is on (the default, #187).
 //   * `response_type` DUPLICATED IN THE QUERY MUST MATCH (OpenID Connect Core
 //     section 6.1, where section 5 of RFC 9101 lets a client duplicate
 //     parameters for backward compatibility) — a different value is refused.
@@ -473,16 +474,39 @@ class RequestObject {
         }
         log.debug("Leaving done().");
       };
+      // THE FEDERATION OUTBOUND POLICY'S TLS (#171, #187): a request_uri is
+      // one of the fetches that borrow it, so `federation.outboundCaFile`
+      // names a private CA the host may chain to and development's
+      // `federation.outboundSkipTlsVerification` is honoured here too. It
+      // dialled with node's store alone until the OpenID conformance suite
+      // registered a request_uri on a host a private CA certifies. Required
+      // lazily: a library, and this file is required from oauth2.ts.
+      const requestOptions: Json = {
+        protocol: target.protocol, hostname: target.hostname,
+        port: target.port || (secure ? 443 : 80),
+        path: target.pathname + target.search, method: 'GET',
+        headers: { 'Accept': MEDIA_TYPE + ', application/jwt;q=0.9',
+                   'User-Agent': version.userAgent('request-uri') },
+        timeout: timeout
+      };
+      if (secure) {
+        const policy = require('../federation/federation_http')
+          .tlsFor(target.origin);
+        if (!policy.ok) {
+          done(self.refusal(policy.errorCode || 'STS-CORE-0104',
+            'invalid_request_uri', 'the request_uri "' + target.href +
+            '" was not fetched: ' + policy.why));
+          return;
+        }
+        requestOptions.rejectUnauthorized = policy.rejectUnauthorized;
+        if (policy.ca) {
+          requestOptions.ca = policy.ca;
+        }
+      }
       let request = null;
       try {
-        request = (secure ? https : http).request({
-          protocol: target.protocol, hostname: target.hostname,
-          port: target.port || (secure ? 443 : 80),
-          path: target.pathname + target.search, method: 'GET',
-          headers: { 'Accept': MEDIA_TYPE + ', application/jwt;q=0.9',
-                     'User-Agent': version.userAgent('request-uri') },
-          timeout: timeout
-        }, function (response) {
+        request = (secure ? https : http).request(requestOptions,
+                                                  function (response) {
           const status = response.statusCode;
           if (status !== 200) {
             response.resume();
@@ -973,8 +997,15 @@ class RequestObject {
   // own and is not read.
   // ---------------------------------------------------------------------------
   fragmentProblem(uri: Json, content: Json): Json {
-    const { nodeCrypto, log } = this.deps;
+    const { nodeCrypto, log, config } = this.deps;
     log.debug("Entering RequestObject.fragmentProblem().");
+    // `oauth2.requestUriFragmentCheck` (#187): the section names the
+    // fragment a cache signal and asks no OP to verify it; this one does
+    // unless a realm says otherwise.
+    if (!config.value('oauth2.requestUriFragmentCheck')) {
+      log.debug("Leaving RequestObject.fragmentProblem(). Not checked.");
+      return '';
+    }
     const text = String(uri || '');
     const hash = text.indexOf('#');
     const fragment = hash >= 0 ? text.slice(hash + 1) : '';
@@ -1202,6 +1233,26 @@ class RequestObject {
         'duplicate a parameter in the query for backward compatibility (RFC ' +
         '9101 section 5), and OpenID Connect Core section 6.1 says ' +
         'response_type MUST then match.');
+    }
+    // OPENID FEDERATION 1.1 SECTION 12.1.1.1, on every request object from a
+    // relying party registered AUTOMATICALLY (#187): `aud` this OP alone,
+    // `iss` and `client_id` the RP, no `sub`, a `jti` and an `exp`. The
+    // registration asked it of the first; the section asks it of each.
+    // Required lazily, for rule 3's reason: a library of `oidfed/`.
+    if (this.deps.applications.federationRegistrationTypeOf(clientId) ===
+        'automatic') {
+      const federated = require('../oidfed/oidfed_registration')
+        .OidfedRegistration.proofClaimsProblem(claims, 'request', clientId,
+          String(options.issuer || ''), Math.floor(Date.now() / 1000),
+          Math.max(0, Number(config.value('oidfed.clockSkewS'))));
+      if (federated) {
+        log.debug("Leaving RequestObject.verifyObject(). OpenID " +
+                  "Federation 12.1.1.1: " + federated + ".");
+        return self.refusal('STS-OIDFED-0067', 'invalid_request_object',
+          'the request object of ' + clientId + ', a relying party ' +
+          'registered automatically through an OpenID Federation: ' +
+          federated + ' (OpenID Federation 1.1 section 12.1.1.1).');
+      }
     }
     const params = self.parametersFrom(claims, query, clientId);
     helpers.logArtifact('RFC 9101 request object',

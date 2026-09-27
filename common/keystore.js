@@ -524,6 +524,49 @@ function deserialiseRequestObjectKeys(blob, nodeCryptoModule) {
 }
 
 // ---------------------------------------------------------------------------
+// THE BROWSER DEVICE KEYS (2026-09-26, #265): the realm's key pair that signs
+// a remembered browser's device token and the key pair it is encrypted to —
+// used for nothing else, so a token can never be minted with a key that signs
+// access tokens and no access token with this one. `sign` is ES256 and `enc`
+// ECDH-ES on P-256: a cookie holds about 4 KB, and a post-quantum signature
+// does not fit in one (`common/browser_devices.ts`).
+// ---------------------------------------------------------------------------
+function serialiseBrowserDeviceKeys(held) {
+  log.debug("Entering serialiseBrowserDeviceKeys().");
+  if (!held || !held.sign || !held.enc) {
+    log.debug("Leaving serialiseBrowserDeviceKeys(). None.");
+    return null;
+  }
+  log.debug("Leaving serialiseBrowserDeviceKeys().");
+  return {
+    sign: { privateKeyPem: held.sign.privateKey.export(
+        { type: 'pkcs8', format: 'pem' }),
+            publicJwk: held.sign.publicJwk },
+    enc: { privateKeyPem: held.enc.privateKey.export(
+        { type: 'pkcs8', format: 'pem' }),
+           publicJwk: held.enc.publicJwk }
+  };
+}
+
+function deserialiseBrowserDeviceKeys(blob, nodeCryptoModule) {
+  log.debug("Entering deserialiseBrowserDeviceKeys().");
+  if (!blob || !blob.sign || !blob.enc || !blob.sign.privateKeyPem ||
+      !blob.enc.privateKeyPem) {
+    log.debug("Leaving deserialiseBrowserDeviceKeys(). None.");
+    return null;
+  }
+  log.debug("Leaving deserialiseBrowserDeviceKeys().");
+  return {
+    sign: { privateKey: nodeCryptoModule.createPrivateKey(
+        blob.sign.privateKeyPem),
+            publicJwk: blob.sign.publicJwk },
+    enc: { privateKey: nodeCryptoModule.createPrivateKey(
+        blob.enc.privateKeyPem),
+           publicJwk: blob.enc.publicJwk }
+  };
+}
+
+// ---------------------------------------------------------------------------
 // THE XML SIGNING KEY (2026-09-22, #42 — the plan's D2). Until then one RSA
 // key signed every JWT AND every XML signature, certified twice (a `jose` leaf
 // and an `xml` leaf) and published with the `jose` one everywhere — so the
@@ -576,6 +619,57 @@ function deserialiseBbsKey(blob) {
   };
 }
 
+// ---------------------------------------------------------------------------
+// THE SIGNER GROUPS (2026-09-26, #68) — `common/signer_groups.js`: per group,
+// an RSA-3072, a P-256 and a P-384 key, three ML-DSA keys and an SLH-DSA key,
+// each a member `{ group, slot, alg, kind, pairedSlot, publicJwk,
+// privateKey }`. A classical private key travels as PKCS#8 PEM (a KeyObject
+// does not survive JSON), a post-quantum one as base64 of the raw bytes
+// `pq_jose.js` signs with — the two encodings `extraKeys` and `pqKeys` use,
+// chosen by `kind` as a standby entry's is. NULL when the realm has made none,
+// which is every realm in the default `per-algorithm` model.
+// ---------------------------------------------------------------------------
+function serialiseSignerGroups(members) {
+  log.debug("Entering serialiseSignerGroups().");
+  if (!members || !members.length) {
+    log.debug("Leaving serialiseSignerGroups(). None.");
+    return null;
+  }
+  log.debug("Leaving serialiseSignerGroups(). " + members.length + ".");
+  return members.map(function (one) {
+    const out = { group: one.group, slot: one.slot, alg: one.alg,
+                  kind: one.kind, pairedSlot: one.pairedSlot || null,
+                  publicJwk: one.publicJwk };
+    if (one.kind === 'pq') {
+      out.privateKey = Buffer.from(one.privateKey).toString('base64');
+    } else {
+      out.privateKeyPem = one.privateKey.export({ type: 'pkcs8',
+                                                  format: 'pem' });
+    }
+    return out;
+  });
+}
+
+function deserialiseSignerGroups(rows, nodeCryptoModule) {
+  log.debug("Entering deserialiseSignerGroups().");
+  if (!rows || !rows.length) {
+    log.debug("Leaving deserialiseSignerGroups(). None.");
+    return null;
+  }
+  log.debug("Leaving deserialiseSignerGroups(). " + rows.length + ".");
+  return rows.map(function (one) {
+    return {
+      group: one.group, slot: one.slot, alg: one.alg, kind: one.kind,
+      pairedSlot: one.pairedSlot || null, publicJwk: one.publicJwk,
+      privateKey: one.kind === 'pq'
+        ? (Buffer.isBuffer(one.privateKey)
+            ? one.privateKey
+            : Buffer.from(String(one.privateKey), 'base64'))
+        : nodeCryptoModule.createPrivateKey(one.privateKeyPem)
+    };
+  });
+}
+
 function deserialiseXmlKey(blob, nodeCryptoModule) {
   log.debug("Entering deserialiseXmlKey().");
   if (!blob || !blob.privateKeyPem || !blob.certB64) {
@@ -610,7 +704,16 @@ function deserialiseXmlKey(blob, nodeCryptoModule) {
 const STANDBY_META = ['unit', 'role', 'alg', 'crv', 'kid', 'kind', 'useCase',
                       'slot', 'createdAt', 'retiredAt', 'retiredUntil',
                       'reason', 'publicJwk', 'certPem', 'certB64',
-                      'publicKeyB64'];
+                      'publicKeyB64', 'group', 'memberKind', 'pairedSlot'];
+
+// Does a standby row's private half travel as raw bytes (base64) — a
+// post-quantum or BBS key, or a signer-group member that is one (#68)?
+function standbyIsRaw(row) {
+  log.debug("Entering standbyIsRaw().");
+  log.debug("Leaving standbyIsRaw().");
+  return row.kind === 'pq' || row.kind === 'bbs' ||
+         (row.kind === 'group' && row.memberKind === 'pq');
+}
 
 function serialiseGenerations(held) {
   log.debug("Entering serialiseGenerations().");
@@ -628,7 +731,7 @@ function serialiseGenerations(held) {
           row[k] = one[k];
         }
       });
-      if (one.kind === 'pq' || one.kind === 'bbs') {
+      if (standbyIsRaw(one)) {
         row.privateKey = Buffer.from(one.privateKey).toString('base64');
       } else if (one.kind === 'rsa') {
         row.privateKeyPem = one.privateKeyPem;
@@ -661,7 +764,7 @@ function deserialiseStandbyEntry(row, nodeCryptoModule) {
       one[k] = row[k];
     }
   });
-  if (row.kind === 'pq' || row.kind === 'bbs') {
+  if (standbyIsRaw(row)) {
     one.privateKey = Buffer.isBuffer(row.privateKey) ? row.privateKey
       : Buffer.from(String(row.privateKey), 'base64');
   } else {
@@ -804,11 +907,15 @@ function serialise(keys) {
     // holding keys of its own would serve a JWKS a client encrypts to and a
     // sibling cannot open.
     requestObjectEncKeys: serialiseRequestObjectKeys(keys.requestObjectEncKeys),
+    // THE BROWSER DEVICE KEYS (#265) — see serialiseBrowserDeviceKeys().
+    browserDeviceKeys: serialiseBrowserDeviceKeys(keys.browserDeviceKeys),
     // THE XML SIGNING KEY AND THE KEY GENERATIONS (2026-09-22, #42) — see
     // serialiseXmlKey() and serialiseGenerations() above.
     xmlKey: serialiseXmlKey(keys.xmlKey),
     // THE BBS KEY (2026-09-22, #49 P5) — see serialiseBbsKey() above.
     bbsKey: serialiseBbsKey(keys.bbsKey),
+    // THE SIGNER GROUPS (2026-09-26, #68) — see serialiseSignerGroups().
+    signerGroups: serialiseSignerGroups(keys.signerGroups),
     generations: serialiseGenerations(keys.generations)
   };
   log.debug('Leaving serialise(). ' + out.extraKeys.length + ' extra key(s).');
@@ -855,8 +962,11 @@ function deserialise(blob, nodeCrypto) {
                                                      nodeCrypto),
     requestObjectEncKeys: deserialiseRequestObjectKeys(
         blob.requestObjectEncKeys, nodeCrypto),
+    browserDeviceKeys: deserialiseBrowserDeviceKeys(blob.browserDeviceKeys,
+                                                    nodeCrypto),
     xmlKey: deserialiseXmlKey(blob.xmlKey, nodeCrypto),
     bbsKey: deserialiseBbsKey(blob.bbsKey),
+    signerGroups: deserialiseSignerGroups(blob.signerGroups, nodeCrypto),
     generations: deserialiseGenerations(blob.generations, nodeCrypto)
   };
   log.debug('Leaving deserialise(). ' + out.extraKeys.length +
@@ -1277,14 +1387,23 @@ function enriches(candidate, held) {
   // And the BBS key, the SIXTH (2026-09-22, #49 P5).
   const bbsHere = candidate.bbsKey ? 1 : 0;
   const bbsThere = held.bbsKey ? 1 : 0;
+  // And the signer groups, the SEVENTH (2026-09-26, #68) — made lazily, as
+  // the post-quantum keys are, so a set gains them after it is shared.
+  const grpHere = (candidate.signerGroups || []).length;
+  const grpThere = (held.signerGroups || []).length;
+  // And the browser device keys, the EIGHTH (2026-09-26, #265).
+  const bdHere = candidate.browserDeviceKeys ? 1 : 0;
+  const bdThere = held.browserDeviceKeys ? 1 : 0;
   if (pqHere < pqThere || vciHere < vciThere || rtHere < rtThere ||
-      roHere < roThere || xmlHere < xmlThere || bbsHere < bbsThere) {
+      roHere < roThere || xmlHere < xmlThere || bbsHere < bbsThere ||
+      grpHere < grpThere || bdHere < bdThere) {
     log.debug("Leaving enriches().");
     return false;
   }
   log.debug("Leaving enriches().");
   return pqHere > pqThere || vciHere > vciThere || rtHere > rtThere ||
-         roHere > roThere || xmlHere > xmlThere || bbsHere > bbsThere;
+         roHere > roThere || xmlHere > xmlThere || bbsHere > bbsThere ||
+         grpHere > grpThere || bdHere > bdThere;
 }
 
 // ---------------------------------------------------------------------------
@@ -1350,6 +1469,21 @@ function requestObjectKeysHeldFor(realmId) {
                                       nodeCrypto);
 }
 
+// The browser device keys some process of this service already made for this
+// realm (#265), or null — `requestObjectKeysHeldFor()`'s question, for
+// `helpers.js`'s browserDeviceKeysFor() backfill.
+function browserDeviceKeysHeldFor(realmId) {
+  log.debug("Entering browserDeviceKeysHeldFor().");
+  const id = String(realmId || '');
+  const fromStore = storedFor(id);
+  const blob = (fromStore && fromStore.browserDeviceKeys)
+    ? fromStore
+    : shared.get(id);
+  log.debug("Leaving browserDeviceKeysHeldFor().");
+  return deserialiseBrowserDeviceKeys(blob && blob.browserDeviceKeys,
+                                      nodeCrypto);
+}
+
 // The XML signing key some process of this service already made for this
 // realm (2026-09-22, #42), or null — `requestObjectKeysHeldFor()`'s question,
 // for `helpers.js`'s xmlKeyFor() backfill.
@@ -1374,7 +1508,74 @@ function bbsKeyHeldFor(realmId) {
   return deserialiseBbsKey(blob && blob.bbsKey);
 }
 
-// The raw blob a realm is held under, for request_pool.js's enrichment test.
+// The realm's signer-group keys (#68), from the store or a sibling, PUBLIC
+// halves only: `{ group, slot, alg, kind, pairedSlot, publicJwk }`. The
+// private halves are `privateMaterialFor().groups`, by kid, on the residency
+// timer — `helpers.js`'s lazy set reads them through a getter.
+function signerGroupsHeldFor(realmId) {
+  log.debug("Entering signerGroupsHeldFor().");
+  const id = String(realmId || '');
+  const fromStore = storedFor(id);
+  const blob = (fromStore && (fromStore.signerGroups || []).length)
+    ? fromStore : shared.get(id);
+  const rows = (blob && blob.signerGroups) || [];
+  log.debug("Leaving signerGroupsHeldFor(). " + rows.length + ".");
+  return rows.length ? rows.map(function (one) {
+    return { group: one.group, slot: one.slot, alg: one.alg, kind: one.kind,
+             pairedSlot: one.pairedSlot || null, publicJwk: one.publicJwk };
+  }) : null;
+}
+
+// ---------------------------------------------------------------------------
+// JOIN THE SIGNER GROUPS TO A REALM'S SET — shared and stored (#68).
+//
+// `publishShared()` treats an offer as an ENRICHMENT only when it is the same
+// set, at the same generation, carrying at least every member the held copy
+// carries. A request worker's own view of a set can lag the held one — in
+// product mode `signing.rotate` mints `next` generations just after a realm
+// is created, and siblings add members — and then its whole-set offer is
+// refused and the groups it just made stay in that worker alone: the
+// single-node run of tests/vendored/sts_signer_groups.js served a JWKS with
+// none of them for three minutes. So what is offered here is the HELD blob
+// plus the groups, to the sibling channel and to the store alike; nothing
+// else about the set is this process's to assert. First generator still
+// wins: a held copy that already carries groups answers false, and the
+// caller certifies nothing.
+// ---------------------------------------------------------------------------
+function joinSignerGroups(realmId, keys) {
+  log.debug("Entering joinSignerGroups(). realm=" + realmId);
+  const id = String(realmId || '');
+  const rows = serialiseSignerGroups(keys && keys.signerGroups);
+  if (!rows) {
+    log.debug("Leaving joinSignerGroups(). Nothing to join.");
+    return false;
+  }
+  const held = shared.get(id);
+  let took;
+  if (!held) {
+    took = publishShared(id, keys);
+  } else if ((held.signerGroups || []).length) {
+    took = false;
+  } else {
+    const candidate = Object.assign({}, held, { signerGroups: rows });
+    shared.set(id, candidate);
+    if (publisher) {
+      publisher(id, candidate);
+    }
+    took = true;
+  }
+  if (took !== false && persists() && store && kek) {
+    const base = storedFor(id);
+    if (!(base && (base.signerGroups || []).length)) {
+      hold(id, base ? Object.assign({}, base, { signerGroups: rows })
+                    : serialise(keys), 'signer groups joined');
+    }
+  }
+  log.debug("Leaving joinSignerGroups(). took=" + took);
+  return took;
+}
+
+// The raw blob a realm is held under, for request_pool.js's enrichment test.// The raw blob a realm is held under, for request_pool.js's enrichment test.
 // `sharedFor()` deserialises; this is the stored form, which is what has to be
 // compared and rebroadcast.
 function sharedBlobFor(realmId) {
@@ -1548,14 +1749,23 @@ function privateMaterialFor(realmId) {
     // THE REQUEST OBJECT ENCRYPTION KEYS — both private keys, parsed and
     // purged on this record's timer. The public halves stay on the set.
     ro: deserialiseRequestObjectKeys(blob.requestObjectEncKeys, nodeCrypto),
+    // THE BROWSER DEVICE KEYS (#265), both private halves, on this timer too.
+    bd: deserialiseBrowserDeviceKeys(blob.browserDeviceKeys, nodeCrypto),
     // THE XML SIGNING KEY AND EVERY STANDBY KEY (2026-09-22, #42), parsed and
     // purged on this record's timer like the rest. A standby key is keyed by
     // its kid: a `next` key signs nothing until it is promoted, and a retired
     // one only decrypts.
     xml: deserialiseXmlKey(blob.xmlKey, nodeCrypto),
     bbs: deserialiseBbsKey(blob.bbsKey),
+    // THE SIGNER GROUPS' PRIVATE HALVES (#68), by kid, on this record's
+    // timer like every other private key here.
+    groups: new Map(),
     standby: new Map()
   };
+  (deserialiseSignerGroups(blob.signerGroups, nodeCrypto) || []).forEach(
+    function (one) {
+      parsed.groups.set(one.publicJwk && one.publicJwk.kid, one.privateKey);
+    });
   ((blob.generations && blob.generations.standby) || []).forEach(
     function (row) {
       parsed.standby.set(row.kid, deserialiseStandbyEntry(row, nodeCrypto));
@@ -2521,13 +2731,18 @@ function pkiSettled(scopeId) {
 // `serialise()`), and the MEMBERS are the parts made lazily and independently.
 // ---------------------------------------------------------------------------
 const KEY_SET_MEMBERS = ['pqKeys', 'vciRequestEncKey', 'refreshTokenEncKeys',
-                         'requestObjectEncKeys', 'xmlKey', 'bbsKey'];
+                         'requestObjectEncKeys', 'xmlKey', 'bbsKey',
+                         'signerGroups', 'browserDeviceKeys'];
+
+// The two ARRAY members, where an empty list is "none" (#68 added the second).
+const LIST_MEMBERS = ['pqKeys', 'signerGroups'];
 
 function hasMember(blob, member) {
   log.debug("Entering hasMember().");
   const value = blob && blob[member];
   log.debug("Leaving hasMember().");
-  return member === 'pqKeys' ? !!(value && value.length) : !!value;
+  return LIST_MEMBERS.indexOf(member) >= 0 ? !!(value && value.length)
+                                           : !!value;
 }
 
 function sameKeySet(a, b) {
@@ -3069,8 +3284,13 @@ module.exports = {
   requestEncryptionKeyHeldFor: requestEncryptionKeyHeldFor,
   refreshTokenKeysHeldFor: refreshTokenKeysHeldFor,
   requestObjectKeysHeldFor: requestObjectKeysHeldFor,
+  browserDeviceKeysHeldFor: browserDeviceKeysHeldFor,
   xmlKeyHeldFor: xmlKeyHeldFor,
   bbsKeyHeldFor: bbsKeyHeldFor,
+  signerGroupsHeldFor: signerGroupsHeldFor,
+  joinSignerGroups: joinSignerGroups,
+  serialiseSignerGroups: serialiseSignerGroups,
+  deserialiseSignerGroups: deserialiseSignerGroups,
   reset: reset,
   setStore: setStore,
   persists: persists,

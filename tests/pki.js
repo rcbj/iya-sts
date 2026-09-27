@@ -87,6 +87,12 @@ async function run(t) {
   // set aside here rather than hunted down there. Nothing is put back: the
   // last section ends with `keystore.reset()`, which every file after this one
   // already meets.
+  // AND A BUILD STILL RUNNING IS WAITED FOR FIRST (2026-09-26): a realm an
+  // earlier file created may still be building its branch — and a Root — in
+  // the background, and one that lands after the set-aside below is the Root
+  // `buildChain()` then reuses (certificate_details + config_realm_layer ahead
+  // of this file did exactly that).
+  await pki.buildsSettled();
   if (keystore.pkiFor(pki.SERVICE_SCOPE)) {
     log.info('pki test: a service Root was left by an earlier file; set ' +
              'aside so the Root asserted below is one this file built.');

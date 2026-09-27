@@ -42,16 +42,60 @@ The vocabularies run over that pipe:
 
 | Vocabulary | Events | About | Emitted on its own when |
 |---|---|---|---|
-| **CAEP** | 8 | a session | someone signs in, uses single sign-on, signs out, a session expires, a person re-authenticates at a different `acr`, any credential of a person changes, a directory change moves a claim of somebody holding live tokens |
-| **RISC** | 14 | an account | a person is deleted, disabled or enabled; a mail address or telephone number changes, or is given to an account after another released it; an administrator resets a password (optionally marking it compromised) or issues a reset link; recovery codes are cleared or confirmed; the account holder opts out or back in on `/portal/signals` |
+| **CAEP** | 8 | a session | someone signs in, uses single sign-on, signs out, a session expires, a person re-authenticates at a different `acr`, any credential of a person changes, a directory change moves a claim of somebody holding live tokens, a registered device's compliance, risk level or credentials change |
+| **RISC** | 14 | an account | a person is deleted, disabled or enabled; any mail address or telephone number changes or is removed, or is given to an account after another released it; the recovery address is added, changed, removed or verified; an administrator resets a password (optionally marking it compromised) or issues a reset or activation link, or sets `pwdReset` over LDAP; recovery codes are cleared, confirmed or used; the account holder opts out or back in on `/portal/signals`; a person's registered device is compromised or removed; this service detects a compromised credential (below) |
 
-The remaining events describe things this service does not observe:
-- CAEP's device compliance: no device reports to it (#164). Risk level has
-  had a source since #62: a person's risk level changing.
-- RISC's deprecated `sessions-revoked`.
-
-You emit those by hand from the console or the management API.
+Since #164 every CAEP and RISC event type has an act here that sends it: a
+registered device's compliance changing (`device-compliance-change`), its risk
+level changing (`risk-level-change`, principal `DEVICE`), its keys and Native
+SSO secret changing (`credential-change`), and a person's device compromised or
+removed (RISC `credential-compromise` and the deprecated `sessions-revoked`,
+with the device beside the person in the subject). [Devices](devices.md) lists
+each. You can still emit any of them by hand from the console or the
+management API.
 [CAEP events](caep-events.md) covers what triggers each CAEP event.
+
+**A compromised credential this service detects is RISC
+`credential-compromise`**
+([#231](https://github.com/rcbj/iya-sts/issues/231)):
+
+| What is detected | `credential_type` | Also sent |
+|---|---|---|
+| a password that signs in and appears in a data breach (`risk.breachCheckAtSignIn`) | `password` | `account-credential-change-required`, once until the password is changed |
+| a security key whose signature counter went backwards (a clone) | `fido2-roaming` or `fido2-platform` | nothing more; the person's risk standing goes to HIGH |
+| a certificate revoked with the reason `keyCompromise` (the portal, an enrollment protocol's revoke, `/admin/pki`) | `x509` | the CAEP `credential-change` revoke |
+| the emailed second factor turned off after too many wrong codes | `urn:iya:sts:credential-type:email-otp` | the CAEP `credential-change` delete |
+
+A one-time code presented twice is **not** an event: someone pressing submit
+twice looks exactly like a replay. It is a risk-scoring signal instead
+(`totp-replay`, see [Risk scoring](risk-scoring.md)).
+
+**Credentials with no CAEP type use this service's own URNs**
+([#236](https://github.com/rcbj/iya-sts/issues/236)). CAEP 1.0 section 3.3.1
+allows any credential type the two parties agree on, and a receiver that does
+not know one still learns that a credential of the person changed:
+
+| Credential | `credential_type` |
+|---|---|
+| the emailed second factor | `urn:iya:sts:credential-type:email-otp` |
+| a SIOPv2 self-issued subject key | `urn:iya:sts:credential-type:self-issued-key` |
+| an ACME External Account Binding key | `urn:iya:sts:credential-type:acme-eab-key` |
+| a HOBA key | `urn:iya:sts:credential-type:hoba-key` |
+| a person's Kerberos keys | `urn:iya:sts:credential-type:kerberos-key` |
+| a device key, a Native SSO device secret | `urn:iya:sts:credential-type:device-key`, `urn:iya:sts:credential-type:device-secret` |
+
+A SCEP challenge password is sent as `password`, with `friendly_name` naming
+it. A CIBA user code is `pin`.
+
+**A credential cannot be written over LDAP**
+([#237](https://github.com/rcbj/iya-sts/issues/237)). An add or modify of a
+security key, an authenticator app, recovery codes, an app password, a
+signing key pair, a HOBA key, a self-issued subject, the emailed factor,
+Kerberos keys, a CIBA user code, an enrollment credential or a device secret
+is refused with `unwillingToPerform` (53), for every bind in both modes, and
+the refusal names the page or endpoint to use instead. Those doors check
+what they store and send the events above. `userPassword` is still written
+over LDAP; deleting it sends `credential-change` `revoke`.
 
 **RISC opt-out (section 2.8) is the account holder's choice.** On
 `/portal/signals` a person can stop sharing security events about their
@@ -60,17 +104,68 @@ everything; and after `risc.optOutDelayHours` a scheduler job sends
 `opt-out-effective`, after which only opt-out events are sent about them.
 They can cancel during the wait, or opt back in afterwards. The wait stops
 somebody who has just taken an account over from silencing it at once.
+**Only the holder moves it**: an administrator's Reset or Clear on the RISC
+register keeps the account's opt state, and a pending opt-out still becomes
+effective on schedule.
+
+**Every value of `mail`, `telephoneNumber` and `mobile` counts.** A second
+address changing, or a `mobile` beside a `telephoneNumber`, is an
+`identifier-changed`; an address removed is one with no `new-value`, and it
+can then be `identifier-recycled` to another account. **The recovery
+address** is the first `mail` value, which `/portal/forgot-password` mails:
+its addition, change, removal or verification is
+`recovery-information-changed` (a change is `identifier-changed` as well).
+A recovery code used is `recovery-information-changed`, and at sign-in
+`recovery-activated` too.
 
 **`account-disabled` carries a `reason` only when an administrator gives one**
 (`hijacking` or `bulk-account`, on the console's disable form or as
 `riscReason` on `/admin-api/users/disable`).
 
-One more event exists, and it belongs to this service rather than to any
-specification: `urn:iya:sts:secevent:event-type:signing-key-rotated`. It goes
-to every stream that asked for it after a signing key rotation, and it names
-the realm, the keys rotated, the reason, and the JWKS and crypto metadata
-addresses. A receiver that does not know the type ignores it, as SSF says it
-should.
+Five more events belong to this service rather than to any specification.
+Each one has no subject, because it is about the issuer rather than about a
+person. A receiver that does not know a type ignores it, as SSF says it should.
+
+| Type (`urn:iya:sts:secevent:event-type:…`) | Sent when | The document to fetch again |
+|---|---|---|
+| `signing-key-rotated` | a realm's signing keys rotate (on the schedule, by hand, or in an emergency) | `jwks_uri`, `crypto_metadata_uri` |
+| `federation-key-rotated` | a realm's OpenID Federation entity key rotates (in an emergency, the current and next keys are revoked), or a retired key is revoked | `entity_configuration_uri` |
+| `spiffe-authority-rotated` | a realm's SPIFFE X.509 or JWT authority is rotated, or the certificate hierarchy under it is rebuilt | `bundle_uri`; `bundle_changed` says whether the bundle itself changed |
+| `tls-certificate-changed` | the certificate the main port presents is re-issued, or the service (or one node of it) starts presenting a certificate other than the one it last announced (`reason: restarted`). Sent to every realm's streams | `certificate_uri` |
+| `kerberos-tickets-invalidated` | a krbtgt rotation keeps no previous version, so every TGT in the realm is refused: "rotate and invalidate" (`reason: invalidated`), or an ordinary rotation with `krb5.retainedKeyVersions` 0 (`reason: nothing-retained`) | none |
+
+The first four share one shape: `realm`, `rotated` as `<unit> <previous> ->
+<new>`, `reason` (`scheduled`, `requested` or `emergency`, and for
+`tls-certificate-changed` also `restarted`), the address above, and
+`event_timestamp`. Each kind of key has its own type so that a receiver
+subscribes only to the keys it pins, and every type it receives means one
+action: fetch that document again. The refresh-token encryption keys are
+never announced, because they are published nowhere.
+
+**The listener's key is made at every start**, so a restart presents a new
+certificate. The service keeps the fingerprint it last announced in its store
+and compares it with the new certificate once the port is bound. If they
+differ, it sends `tls-certificate-changed` with `reason: restarted`, where
+`<previous>` is the certificate it last announced.
+- **Where it works:** only where minted state survives a restart, which is
+  product mode on postgres or a cluster. In `memory` mode, on an `ldif` store
+  and in a single-process development service a restart is not announced.
+  Development builds a new Root at every start anyway.
+- **In a cluster:** the record is the SERVICE's, not a node's. Every node's
+  start is announced, and `<previous>` may be a certificate another node
+  still presents. A receiver behind the balancer should pin the Root, not a
+  leaf.
+- **Never announced:** a self-signed bootstrap certificate or one supplied
+  through `tls.certificateFile`.
+
+**A stream this service deletes is told first.** SSF 1.0 has no event for a
+deleted stream. So when an administrator deletes a stream (on the console or
+through `/admin-api`), or `ssf.inactivityAction: delete` removes one, the
+receiver is first sent `stream-updated` with status `disabled` and the reason,
+and only then is the stream removed. On a push stream the push is attempted
+before the stream goes. On a poll stream the SET leaves with the stream unless
+the receiver polls in between, as with any disable. A receiver that deletes
+its own stream is sent nothing, because it asked.
 
 ### Discovery and stream management
 
@@ -83,7 +178,7 @@ metadata and discovers every endpoint from it:
 | `GET /.well-known/ssf-configuration/realm/{id}` | the same document for a trust realm's transmitter, at the path SSF 1.0 section 7.2 builds from an issuer with a path |
 | `/ssf/stream` | stream management: `POST` creates, `GET` reads, `PUT` and `PATCH` update, `DELETE` deletes |
 | `/ssf/status` | read (`GET`) or change (`POST`) a stream's status |
-| `POST /ssf/subjects/add`, `POST /ssf/subjects/remove` | add or remove a subject |
+| `POST /ssf/subjects/add`, `POST /ssf/subjects/remove` | add (an empty 200) or remove (204) a subject, SSF 1.0 sections 8.1.3.2 and 8.1.3.3 |
 | `POST /ssf/verify` | ask for a verification event |
 | `POST /ssf/poll` | RFC 8936 poll delivery and acknowledgement |
 | `POST /ssf/receive`, `GET /ssf/received` | this service as a **receiver** (below) |
@@ -148,7 +243,9 @@ covers nobody until a subject is added.
 
 ### Push and poll delivery
 
-* **Poll (RFC 8936).** The receiver calls `POST /ssf/poll`, and nothing is
+* **Poll (RFC 8936).** The receiver calls `POST /ssf/poll` — the stream's
+  `delivery.endpoint_url`, which names the stream in its query
+  (`?stream_id=…`), since RFC 8936's poll endpoint is per stream — and nothing is
   dialled. One poll returns at most `ssf.pollMaxEvents` SETs and sets
   `moreAvailable` when more are waiting. An acknowledged SET is never handed
   out again. Until it is acknowledged, it may be returned again, as RFC 8936
@@ -303,8 +400,43 @@ names nothing `ssf.receiveAudiences` lists (`invalid_audience`). Left empty,
 the first means this realm's own transmitter issuer and the second means the
 endpoint's own URL, for example `https://host/ssf/receive`. The console's and
 portal's receivers make the same `typ` and `iss` checks against their own
-streams. This service cannot yet be a receiver of another transmitter's
-streams ([#153](https://github.com/rcbj/iya-sts/issues/153)).
+streams. To receive another transmitter's streams, see *Receiving from
+another identity service*, below.
+
+### Receiving from another identity service
+
+A realm can receive CAEP and RISC events from another identity service's
+transmitter, for people who sign in here through a federation relationship
+with it ([#153](https://github.com/rcbj/iya-sts/issues/153)).
+
+1. **Register it** on Protocols → SSF transmitters (`/admin/ssf/transmitters`)
+   or with `POST /admin-api/ssf/transmitters/add`. You give it an id, its
+   issuer, the federation relationship its subjects are mapped through,
+   `poll` or `push`, and how this realm authenticates to it: client
+   credentials at its token endpoint, or a bearer token. Its
+   `/.well-known/ssf-configuration` and `jwks_uri` are fetched and checked.
+2. **Create the stream** (`create-stream`). A poll stream is polled every
+   `ssf.foreignPollS` seconds. A push stream is given
+   `/ssf/transmitters/{id}/push` and an authorization header only the two
+   services know.
+3. **Link people.** A subject `{format: "iss_sub", iss, sub}` with the
+   relationship's issuer names the person whose federation link holds it. An
+   `email` subject is matched only where the relationship sets
+   `fedSignalEmailMatch`.
+
+A Security Event Token is acted on only if it verified: its signature against
+the transmitter's keys, `typ`, `iss`, the stream's `aud`, and a `jti` never
+seen before. Product mode refuses an unverified one. What it leads to is the
+`signal-response` XACML policy's decision:
+
+| Events | Reaction here |
+|---|---|
+| `session-revoked`, `credential-change`, `sessions-revoked`, `credential-compromise`, `account-purged` | end the person's sessions |
+| `account-disabled` | disable the account |
+| `account-enabled` | enable it again, only if that transmitter disabled it |
+
+Development records what it would do and does nothing unless
+`ssf.actOnSignalsInDevelopment` is on.
 
 ### The console and the portal are registered receivers
 
@@ -349,10 +481,10 @@ specifications, and are honoured in both modes.
 * **There is no console or API control that creates a stream.** A stream
   holds a delivery endpoint that this service will call, and that address may
   only come from a receiver that authenticated at `POST /ssf/stream`.
-* **This service is not a receiver of another transmitter.** It does not
-  discover a foreign transmitter, create a stream there or poll it, and it
-  fetches no foreign `jwks_uri`, so a SET another party signed is never
-  verified here ([#153](https://github.com/rcbj/iya-sts/issues/153)).
+* **A realm receives only from a transmitter an administrator registered**
+  ([#153](https://github.com/rcbj/iya-sts/issues/153)). It never follows a
+  URL a SET or a request names; every address comes from that issuer's own
+  configuration document.
 
 ## Development and product mode
 
@@ -404,7 +536,7 @@ types from what a stream may ask for.
 | `ssf.pushRetries` | `STS_SSF_PUSH_RETRIES` | `0` | yes | How many times a failed push is retried. Only failures that could go differently are retried. |
 | `ssf.pushRetryDelayMs` | `STS_SSF_PUSH_RETRY_DELAY_MS` | `1000` | yes | The wait before a retry, multiplied by the attempt number. |
 | `ssf.pushConcurrency` | `STS_SSF_PUSH_CONCURRENCY` | `8` | yes | How many pushes one process makes at once. `0` removes the cap. |
-| `ssf.pushBacklog` | `STS_SSF_PUSH_BACKLOG` | `2000` | yes | How many pushes may wait for a slot. Past that, the SET is dead-lettered. |
+| `ssf.pushBacklog` | `STS_SSF_PUSH_BACKLOG` | `2000` | yes | How many pushes to one receiver may wait for a slot; each receiver has its own queue and a freed slot goes to them in turn. Past that, the SET is dead-lettered. |
 | `ssf.deadStreamTimeoutS` | `STS_SSF_DEAD_STREAM_TIMEOUT_S` | `300` | yes | How long a push stream has to fail completely before it is declared dead. `0` turns this off. |
 | `ssf.deadLetterRetentionS` | `STS_SSF_DEAD_LETTER_RETENTION_S` | `3600` | yes | How long an undeliverable SET is kept on the dead-letter queue. |
 | `ssf.deadLetterMaxPerStream` | `STS_SSF_DEAD_LETTER_MAX_PER_STREAM` | `1000` | yes | The most dead letters one stream keeps. The oldest is dropped first. |
@@ -465,7 +597,7 @@ types from what a stream may ask for.
 | `risc.reasonLanguage` | `STS_RISC_REASON_LANGUAGE` | `en` | yes | The language tag of the reason members on `credential-compromise`. |
 | `risc.includeReasons` | `STS_RISC_INCLUDE_REASONS` | `true` | yes | Whether `credential-compromise` carries its optional reason members. |
 | `risc.omitEventTimestamp` | `STS_RISC_OMIT_EVENT_TIMESTAMP` | `false` | yes | Deliberate defect: leaves `event_timestamp` off `credential-compromise`. |
-| `risc.maxAccountsTracked` | `STS_RISC_MAX_ACCOUNTS_TRACKED` | `200` | yes | The size of the RISC account register. The oldest row is dropped first. |
+| `risc.maxAccountsTracked` | `STS_RISC_MAX_ACCOUNTS_TRACKED` | `200` | yes | The size of the RISC account register. The oldest opted-in row is dropped first. A row whose holder opted out is never dropped; the register stays over the cap and logs `STS-SSF-0130` instead. |
 | `risc.eventsPerAccount` | `STS_RISC_EVENTS_PER_ACCOUNT` | `25` | yes | How many recent events a register row lists. |
 | `risc.historyPerAccount` | `STS_RISC_HISTORY_PER_ACCOUNT` | `10` | yes | How many credential-compromise and identifier-change records a row keeps. |
 

@@ -132,8 +132,15 @@ constants, because a result is a public certificate and the bound is about the
 store's size. It answers:
 
 * **a retried PKCSReq/RenewalReq** with the same transactionID and the same CSR
-  → the stored certificate, and no second redemption. A different CSR →
-  `STS-SCEP-0037`; a different signer key → `STS-SCEP-0039`.
+  → the stored certificate, and no second redemption. A different signer key →
+  `STS-SCEP-0039`. **A different CSR is a NEW transaction** (#249, #250,
+  2026-09-26; it was `STS-SCEP-0037`, now retired): certmonger and jscep derive
+  the transactionID from the public key, so every request for one key repeats
+  it — a `getcert resubmit`, a jscep renewal that keeps the key — and the
+  refusal lasted as long as the result was held. It gives nothing away: the
+  stored result goes back only for the same request, and a new one is
+  authorized from scratch and replaces it. RFC 8894 section 3.2.1.1 puts the
+  uniqueness on the client.
 * **CertPoll** → the stored certificate, to the same signer key only; an
   unknown transactionID → `badCertId` (`STS-SCEP-0038`).
 
@@ -159,6 +166,16 @@ result.
 A PKCSReq must be signed by a certificate over **the CSR's own key** (RFC 8894
 section 2.3; `STS-SCEP-0034`).
 
+## The `device` profile (#164 phase 2, 2026-09-26)
+
+A challenge password created for the `device` profile (the console, the API
+or `/portal/certificates`) makes a PKCSReq issue a certificate to a DEVICE
+entry through `core.issueForDevice()` (`common/CLAUDE.md`, 3ag's *The
+`device` profile*); the request's `id-aa-attestation` values reach the core
+as `attestations`. A RenewalReq is refused for it (`STS-DEVICE-0025`): the
+renewed certificate is on no person or application entry. The console lists
+it as a tenth profile row.
+
 ## Several nodes: the challenge and the transaction (2026-09-14, #46)
 
 * **A challenge password is claimed** between the peek that proves it right and
@@ -177,6 +194,71 @@ section 2.3; `STS-SCEP-0034`).
   cannot be asked `STS-SCEP-0065`; the claim lives two minutes, so a node that
   died holding it blocks that one transactionID and nothing else.
 
+## What the real clients found (#210, #211, 2026-09-24; #249, #250, 2026-09-26)
+
+* **sscep has no TLS** and refuses an https URL, and SCEP was answered only on
+  the main port. `pki/pki_service.ts`'s plain-HTTP listener now answers
+  `/enroll/scep`, bare and under a realm prefix, beside `/pki/` — nothing else
+  moved there.
+* **sscep POSTs with no Content-Type; micromdm's client with
+  `application/octet-stream`.** Both were 415 `STS-SCEP-0007`; `messageBytes()`
+  takes both (an absent type reads `req.rawBody`, the bytes the text parser
+  kept). Any other declared type is still 415.
+* **sscep renews with a PKCSReq signed by the old certificate** (it has no
+  RenewalReq) and was refused `STS-SCEP-0034`. RFC 8894 section 2.3 notes most
+  implementations keep that form; `pkcsReq()` hands one whose signer this
+  realm issued to `renewalReq()`, with exactly its checks. A foreign signer is
+  still 0034.
+* **The hint could not work**: the https URL, `openssl req` without
+  `prompt=no` (so no challengePassword, `STS-SCEP-0035`), and `-c ca.crt-1`
+  where sscep verifies the RA's CertRep with `-c`. `scep_console.ts` now names
+  the plain URL (`plainUrl` in the answer), writes the subject the certificate
+  will carry, and passes the RA. The job runs it literally.
+* **micromdm's scepclient cannot be issued a certificate, and the service is
+  right.** It builds every pkiMessage with smallstep/pkcs7 v0.1.1's package
+  defaults — single DES-CBC for the envelope, SHA-1 for the signature — reads
+  GetCACaps only to choose POST, and has no flag for either (v2.3.0 and `main`
+  at 9902c1a). Refused `badAlg` (`STS-SCEP-0020`, the SHA-1 signature, first).
+  Documented exception on #211; a legacy-algorithm setting is an open
+  question there, and would be a weaker option behind a setting.
+* **sscep warns when the certificate's subject is not the request's.** The
+  certificate's content comes from the entry, never the CSR (RFC 8894 lets the
+  CA change it), so a request must carry `CN=<entry>, O=<organisation>` (or
+  `CN=<host>, UID=<entry>, O=…`) to see no warning; the hint does.
+* **certmonger signs with a version 1 certificate**, and every request was
+  refused `STS-SCEP-0011` ("0 match"): its self-signed "mini certificate" has
+  no `[0]` version and no extensions — six TBS fields — and
+  `describeCertificate()` demanded seven, so the signer was dropped from the
+  SignedData's set. It reads six now.
+* **A renewal that keeps its key was a first enrollment.** certmonger's
+  `getcert resubmit` and a jscep renewal keeping the key send a PKCSReq
+  signed by the old certificate over the SAME key the request names, and
+  `pkcsReq()` asked the renewal question only when the keys differed (#210's
+  case), so it went on without a challenge and was refused `STS-SCEP-0035`.
+  A signer that is not self-issued is now asked it too (RFC 8894 section 2.3's
+  second case is about the signer, not the key); one this realm did not issue
+  carries on as before.
+* **certmonger and jscep repeat the transactionID** for every request with one
+  key (above, *The transaction store*): a same-key renewal inside the day a
+  result is held was `STS-SCEP-0037`. It is a new transaction now.
+* **certmonger cannot read a FAILURE CertRep — a client defect, the service is
+  right.** RFC 8894 section 3.2: FAILURE and PENDING "will lack any signed
+  content", and certmonger's `cm_pkcs7_verify_signed()` calls
+  `PKCS7_verify()` with no content, which fails "no content". So every
+  refusal shows as `CA_UNREACHABLE` with that ca-error, and certmonger retries
+  it until it is stopped. Sending an empty content instead would be a
+  signed content RFC 8894 says a FAILURE lacks; the code is on the monitor.
+* **certmonger's HTTPS stops at the PKIOperation — a client defect.**
+  `scep-submit` passes `-R` (its CA file) to GetCACaps and GetCACert, and its
+  PKIOperation request to `cm_submit_h_init()` with none (0.79.21, `scep.c`),
+  so libcurl uses the system trust store and fails error 60. Over the plain
+  listener it enrolls, renews and rekeys; `docs/scep.md` tells an operator.
+* **jscep needed nothing else.** It negotiates AES and SHA-512 from GetCACaps,
+  renews with a PKCSReq signed by the old certificate, polls, gets
+  certificates and CRLs, refuses to ask GetNextCACert because it is not
+  offered, and reads every FAILURE; every AES size with SHA-256 and SHA-512
+  enrolls, and DES, DES-EDE3 and SHA-1 are `badAlg`.
+
 ## Documented exceptions
 
 | Not implemented | Why |
@@ -184,7 +266,9 @@ section 2.3; `STS-SCEP-0034`).
 | A non-RSA requester key (ECDSA, EdDSA, ML-DSA, composites, ML-KEM) | The CertRep's certificate is encrypted to the requester with RSA key transport; a non-RSA signer is `STS-SCEP-0025` and a non-RSA CSR `STS-SCEP-0033`, both `badAlg`. **Every one of the nine profiles is issued over SCEP for an RSA key**, and no /admin/pki cryptographic approach but classical RSA reaches SCEP. |
 | PENDING | Nothing is approved by hand. |
 | GetNextCACert | No pre-announced CA rollover; 501, not in GetCACaps. |
-| SHA-1, MD5, DES, DES-EDE3 | Refused `badAlg`. |
+| SHA-1, MD5, DES, DES-EDE3 | Refused `badAlg` — which is why micromdm's scepclient, fixed on SHA-1 and single DES, cannot enroll (above). |
+| A FAILURE CertRep certmonger can read | RFC 8894 section 3.2 sends it with no signed content, and certmonger requires some (above); it reports every refusal as `CA_UNREACHABLE`. A client defect, recorded on #249. |
+| certmonger over HTTPS | Its PKIOperation request ignores `-R` (above). A client defect; the plain listener is the SCEP transport RFC 8894 section 2.1 names. |
 | KeyAgreeRecipientInfo, RSASSA-PSS signers | An RSA RA has no agreement key; PSS signers are refused `badAlg` as an unknown signature algorithm. |
 | `failInfoText` (RFC 8894's human-readable failure) | The reason is an operator's; it is recorded, not sent. |
 | The five CA / OCSP / KDC profiles | Never over an enrollment protocol (`core.REFUSED_PROFILES`); a challenge for one cannot be created. |
@@ -197,6 +281,29 @@ section 2.3; `STS-SCEP-0034`).
   and the API rows' schemas, the failInfo map. Mutants caught: signature always
   verifying, no implicit rejection, a process-wide transaction store, a zod
   schema that drifted from the OpenAPI body.
+* `tests/vendored/sts_scep_sscep.js` — **certnanny's sscep at cb3e539, the real
+  client** (#210), over the plain-HTTP listener: GetCACaps, GetCACert, the
+  `/admin-api` hint run literally by bash, a challenge the person made on
+  `/portal/certificates`, `-R`, GetCert, GetCRL, the historical renewal and the
+  old serial on the CRL, and the refusals (reused, unknown, another realm's RA,
+  3DES, SHA-1). No sscep warning on any success.
+* `tests/vendored/sts_scep_micromdm.js` — **micromdm's scepclient v2.3.0**
+  (#211): its transport over HTTPS and plain HTTP, three ways of choosing the
+  recipient, and the `badAlg` its fixed SHA-1 and DES draw (below), which
+  spends no challenge.
+* `tests/vendored/sts_scep_certmonger.js` — **certmonger 0.79.21** (#249):
+  the daemon started by the job on a private socket, add-scep-ca, a request
+  with the person's portal challenge, CertPoll through its own `scep-submit`
+  and stored GetCertInitial, resubmit and rekey onto the CRL, the refusals
+  (reused, another realm's RA, DES-EDE3 and SHA-1 by editing its CA record)
+  as `CA_UNREACHABLE` plus the monitor's code, and the HTTPS exception.
+* `tests/vendored/sts_scep_jscep.js` — **jscep 3.0.1** through
+  `tests/tools/jscep-driver` (#250): negotiated algorithms, GetCACert with the
+  CA checked against the Intermediate and Root, GetNextCACert refused, enrol,
+  poll, retry, all six AES × SHA-2 combinations, GetCert, GetCRL, renewal
+  keeping and changing the key, the refusals, and HTTPS.
+* `tests/scep_enrollment.js` section 3a — a version 1 signer and a repeated
+  transactionID, in process (mutants: `parts.length < 7`, the 0037 refusal).
 * `tests/vendored/sts_scep_enrollment.js` with `tests/vendored/scep_client.js`
   (forge + node, nothing from here) — over HTTP, ~70 checks, ~70 seconds (it
   waits out a sixty-second challenge). Mutants caught: no URL-profile check, no

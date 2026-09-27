@@ -88,6 +88,9 @@ function icaoNationality(value) {
 
 module.exports = {
   COUNTRY_COUNT: ALPHA3.size,
+  // Every alpha-2 code the table holds, sorted: the closed set a C= in a
+  // certificate authority's name is held to on /admin-api (#86).
+  ALPHA2: Array.from(ALPHA3.keys()).sort(),
   alpha3: alpha3,
   icaoNationality: icaoNationality
 };

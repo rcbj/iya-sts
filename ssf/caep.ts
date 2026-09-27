@@ -104,6 +104,11 @@ import claimAttributes = require('../common/claim_attributes');
 // `fp_ua`'s fingerprint (#145). A leaf library.
 import stsCrypto = require('../common/crypto');
 import groupClaims = require('../common/group_claims');
+// THE ROLES CLAIM (#238): a role written, or a group a role names changing
+// its members, moves it. `common/roles.js` is a leaf over `helpers` and
+// `config`, loaded by `admin_stats.js` long before this file, so the require
+// closes no cycle and moves no route.
+import roles = require('../common/roles');
 
 // One register row. See `blankRow()`.
 interface CaepRow {
@@ -163,16 +168,16 @@ interface CaepRegisterDeps {
   groupClaims: { groupsOf(username: unknown): { enabled?: boolean;
                                                 claim: string;
                                                 values: string[] } };
+  roles: { claimFor(who: Record<string, unknown>):
+             Record<string, string[]> | null };
 }
 
 // The acts this service can actually OBSERVE, and their event types — three
-// at first, six now (the fourth to sixth are marked below). Written as short
-// names because that is what `caep.autoEmitTypes` holds — a setting whose
-// values were 60-character URIs would be a setting nobody could type. The
-// other two CAEP events are things nothing here observes: no device reports
-// compliance to this service (#164 will) and no risk engine talks to it
-// (#62), so they are emitted by hand and a row naming one of them is dropped
-// with a warning rather than producing an event nothing can cause.
+// at first, eight now (the fourth to eighth are marked below), which is
+// every one of CAEP's eight. Written as short names because that is what
+// `caep.autoEmitTypes` holds — a setting whose values were 60-character URIs
+// would be a setting nobody could type. A row naming anything else is
+// dropped with a warning rather than producing an event nothing can cause.
 const AUTO_ACTS: Record<string, string> = {
   established: 'session-established',
   presented: 'session-presented',
@@ -204,7 +209,17 @@ const AUTO_ACTS: Record<string, string> = {
   // the `risk-response` policy permitted announcing it. Its subject names the
   // PERSON (`principal` USER): the standing moved, not one session. `ssf.ts`'s
   // `riskAutoEmit()` sends it.
-  risk: 'risk-level-change'
+  risk: 'risk-level-change',
+  // THE EIGHTH (#164 phase 4, 2026-09-26): a registered device's compliance
+  // CHANGED — set by an administrator, the MDM feed under
+  // `device:compliance`, development's test control, or a registered
+  // foreign transmitter's event (#153). `common/devices.ts`'s
+  // `setCompliance()` is the funnel and `ssf.ts`'s `emitDeviceEvent()`
+  // sends it; the same act
+  // name is not needed for the device's `risk-level-change` (act `risk`) or
+  // its keys' `credential-change` (act `credential`), which ride the acts
+  // above.
+  compliance: 'device-compliance-change'
 };
 
 // THE SCALE THIS SERVICE'S OWN LEVELS ARE ON, and it is deliberately not
@@ -326,6 +341,7 @@ class CaepRegister {
   claimsChangeFor(notice?: Record<string, any> | null):
       { claims: Record<string, any> } | null {
     const { helpers: { log }, claimAttributes, groupClaims } = this.deps;
+    const self = this;
     log.debug("Entering CaepRegister.claimsChangeFor().");
     const asked = notice || {};
     const username = String(asked.username || '');
@@ -333,8 +349,30 @@ class CaepRegister {
       log.debug("Leaving CaepRegister.claimsChangeFor(). Nobody named.");
       return null;
     }
+    // A NOTICE THAT ALREADY SAYS WHICH CLAIMS MOVED (#238): the doors that
+    // are not a directory attribute — identity assurance, a claims provider
+    // unlinked, a fan-out from a configuration change. `claims` is the object
+    // itself, or a function answering it, which is how a fan-out defers the
+    // work until the person is known to hold something live.
+    if (asked.kind === 'claims') {
+      let given: any = asked.claims;
+      if (typeof given === 'function') {
+        given = given();
+      }
+      const out = given && typeof given === 'object' && !Array.isArray(given)
+        ? given : null;
+      log.debug("Leaving CaepRegister.claimsChangeFor(). Given: " +
+                (out ? Object.keys(out).join(', ') || 'nothing' : 'nothing') +
+                ".");
+      return out && Object.keys(out).length ? { claims: out } : null;
+    }
     const claims: Record<string, any> = {};
     let groupsMoved = asked.kind === 'membership';
+    // THE ROLES CLAIM MOVES (#238) when a role naming the person was written
+    // (`roles`), or when a group changed whose name a role's
+    // `roleMemberGroup` carries (`membership` with `rolesMoved`).
+    const rolesMoved = asked.kind === 'roles' ||
+      (asked.kind === 'membership' && asked.rolesMoved === true);
     if (asked.kind === 'updated') {
       const before = asked.before || {};
       const after = asked.after || {};
@@ -359,12 +397,31 @@ class CaepRegister {
       // moves the groups claim exactly as a group's `member` does.
       groupsMoved = JSON.stringify(valuesAt(before, 'memberof')) !==
                     JSON.stringify(valuesAt(after, 'memberof'));
+      // `email_verified` (#238) is not an attribute of its own: it is whether
+      // `stsMailVerified` names the address `mail` holds, which is what
+      // `oauth2.ts`'s emailVerified() reads through the mail channel. Either
+      // half moving can move it — the address changed, or it was proved.
+      const verifiedAt = function (map: Record<string, any>): boolean {
+        const mail = String(valuesAt(map, 'mail')[0] || '').toLowerCase();
+        const proved = String(valuesAt(map, 'stsmailverified')[0] || '')
+          .toLowerCase();
+        return !!mail && mail === proved;
+      };
+      if (verifiedAt(before) !== verifiedAt(after) &&
+          valuesAt(after, 'mail').length) {
+        claims.email_verified = verifiedAt(after);
+      }
     }
+    let groupsClaim = '';
     if (groupsMoved) {
       const groups = groupClaims.groupsOf(username);
       if (groups && groups.enabled !== false && groups.claim) {
         claims[groups.claim] = groups.values.slice(0);
+        groupsClaim = groups.claim;
       }
+    }
+    if (rolesMoved) {
+      self.addRolesClaim(claims, username, groupsClaim);
     }
     if (!Object.keys(claims).length) {
       log.debug("Leaving CaepRegister.claimsChangeFor(). No claim moved.");
@@ -373,6 +430,38 @@ class CaepRegister {
     log.debug("Leaving CaepRegister.claimsChangeFor(). " +
               Object.keys(claims).join(', ') + ".");
     return { claims: claims };
+  }
+
+  // THE ROLES CLAIM AS A TOKEN WOULD CARRY IT NOW (#238), added to `claims`:
+  // `roles.claimFor()`'s own answer, or `null` under the claim's name when the
+  // person holds no configured role any more — the claim is OMITTED from a
+  // token then, and CAEP says a claim that is gone by giving it no value.
+  // Nothing when `roles.claim` is off (no token carries it), and nothing when
+  // the groups claim has the same name: `admin_stats.jwtClaims()` lets the
+  // groups claim win that collision in every token, so it is the one named.
+  private addRolesClaim(claims: Record<string, any>, username: string,
+                        groupsClaim: string): void {
+    const { helpers: { log }, config, groupClaims, roles } = this.deps;
+    log.debug("Entering CaepRegister.addRolesClaim().");
+    if (config.value('roles.claim') === false) {
+      log.debug("Leaving CaepRegister.addRolesClaim(). The claim is off.");
+      return;
+    }
+    const name = String(config.value('roles.claimName') || 'roles');
+    let groupsName = groupsClaim;
+    if (!groupsName) {
+      const groups = groupClaims.groupsOf(username);
+      groupsName = groups && groups.enabled !== false ? groups.claim : '';
+    }
+    if (groupsName && groupsName === name) {
+      log.debug("Leaving CaepRegister.addRolesClaim(). The groups claim " +
+                "has the same name and wins it.");
+      return;
+    }
+    const held = roles.claimFor({ kind: 'user', name: username,
+                                  authenticated: true });
+    claims[name] = held && held[name] ? held[name].slice(0) : null;
+    log.debug("Leaving CaepRegister.addRolesClaim().");
   }
 
   autoEmitActs(): string[] {
@@ -452,8 +541,14 @@ class CaepRegister {
       user: { format: 'iss_sub', iss: String(row.iss || ''),
         sub: String(row.sub || '') },
       session: { format: 'opaque', id: String(row.sessionId || '') },
+      // THE REGISTERED DEVICE THAT AUTHENTICATED THE SESSION (#164 phase 4),
+      // named as the device register's own events name it — `iss_sub`, the
+      // realm's issuer and the device's id (`ssf.ts`'s deviceSubjectOf()
+      // argues the format) — so a receiver that added the device to its
+      // stream is sent the session events of that device too.
       device: row.deviceId
-        ? { format: 'opaque', id: String(row.deviceId) } : null,
+        ? { format: 'iss_sub', iss: String(row.iss || ''),
+            sub: String(row.deviceId) } : null,
       tenant: row.tenant ? { format: 'opaque', id: String(row.tenant) } : null
     });
     log.debug("Leaving CaepRegister.subjectFor(). " +
@@ -882,6 +977,17 @@ class CaepRegister {
     if (asked.issuer && !row.iss) {
       row.iss = String(asked.issuer);
     }
+    // THE DEVICE THE SESSION'S LATEST AUTHENTICATION CAME FROM (#164 phase
+    // 4): `registeredDevice` on its newest event (`authn.registeredDeviceOf()`
+    // reads the same). Read on every act, so a session a later
+    // re-authentication proved from a registered device names it from then
+    // on; one that never did carries no `device` member.
+    const sessionEvents = Array.isArray(session.events) ? session.events : [];
+    const latest = sessionEvents.length
+      ? sessionEvents[sessionEvents.length - 1] : null;
+    if (latest && latest.registeredDevice && latest.registeredDevice.id) {
+      row.deviceId = String(latest.registeredDevice.id);
+    }
     row.updatedAt = iso();
     // A RE-AUTHENTICATION MOVES WHAT THE ROW SAYS THE SESSION IS, whether or
     // not anything goes out — the register follows the ACT, as it does for a
@@ -1157,7 +1263,8 @@ class CaepRegister {
       subjects: subjects,
       stepUp: stepUp,
       claimAttributes: claimAttributes,
-      groupClaims: groupClaims
+      groupClaims: groupClaims,
+      roles: roles
     };
   }
 }

@@ -173,15 +173,22 @@ async function makeCrl(issuer, serials, options) {
       return entry;
     });
   }
+  // A cRLNumber on every list, non-critical: RFC 5280 section 5.2.3 requires
+  // one of every conforming issuer, and the reader refuses a list without it
+  // since #201 (x509-limbo `crl::crlnumber-missing`).
+  const extensions = [
+    new pkijs.Extension({ extnID: '2.5.29.20', critical: false,
+      extnValue: new asn1js.Integer({ value: 1 }).toBER(false) })
+  ];
   if (opts.criticalExtension) {
     // An OID nobody implements. It was the deltaCRLIndicator until delta CRLs
     // became understood, and a test of "an extension this file does not know"
     // must not quietly become a test of one it does.
-    crl.crlExtensions = new pkijs.Extensions({ extensions: [
+    extensions.push(
       new pkijs.Extension({ extnID: '1.3.6.1.4.1.55555.7.1', critical: true,
-        extnValue: new asn1js.Integer({ value: 1 }).toBER(false) })
-    ] });
+        extnValue: new asn1js.Integer({ value: 1 }).toBER(false) }));
   }
+  crl.crlExtensions = new pkijs.Extensions({ extensions: extensions });
   const signer = opts.signWith || issuer;
   const key = await crypto.subtle.importKey('pkcs8', der(signer.key),
     { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' }, false, ['sign']);

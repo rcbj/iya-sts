@@ -205,6 +205,14 @@ async function run(t) {
     .replace(/\s+/g, '');
   t.check(Buffer.from(secondBody, 'base64').equals(certDer),
           'the second part decodes to the certificate bytes');
+  // #209: libest's estclient decodes a part's base64 with OpenSSL 1.1's
+  // base64 BIO, which drops a final line that has no newline — and the CRLF
+  // before a delimiter belongs to the delimiter (RFC 2046 section 5.1.1). So
+  // each part's content must itself end in a line break.
+  t.check([pieces[1], pieces[2]].every(function (piece) {
+    return /[A-Za-z0-9+/=]\r\n\r\n$/.test(piece);
+  }), 'each part\'s base64 ends with a line break of its own, before the ' +
+      'CRLF that belongs to the next delimiter');
   t.check(text.split(/\r\n/).every(function (line) {
     return line.length <= 76;
   }), 'no line is longer than RFC 2045 allows');

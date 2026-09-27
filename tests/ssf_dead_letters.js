@@ -194,6 +194,49 @@ function child() {
          'were delivered', JSON.stringify(settled.map(function (one) {
            return one.status;
          })));
+
+    // C2. FAIR BETWEEN RECEIVERS (2026-09-27): a full queue for one receiver
+    // does not refuse another's push, and the other's is served.
+    const paths = [];
+    const fair = http.createServer(function (req, res) {
+      paths.push(req.url);
+      req.resume();
+      held.push(res);
+    });
+    await new Promise(function (resolve) {
+      fair.listen(0, '127.0.0.1', resolve);
+    });
+    const fairBase = 'http://127.0.0.1:' + fair.address().port;
+    const flood = [1, 2, 3].map(function () {
+      return transport.pushSetGated(fairBase + '/flood', 'a.b.c', {});
+    });
+    const overflow = await transport.pushSetGated(fairBase + '/flood',
+                                                  'a.b.c', {});
+    const other = transport.pushSetGated(fairBase + '/other', 'a.b.c', {});
+    const fairGate = transport.pushGateState();
+    note(!overflow.ok && overflow.errorCode === 'STS-SSF-0092' &&
+         fairGate.active === 2 && fairGate.waiting === 2,
+         'ONE RECEIVER\'S FULL QUEUE REFUSES ITS OWN NEXT PUSH AND NOT ' +
+         'ANOTHER\'S: the other receiver\'s push waits in a queue of its own',
+         JSON.stringify(fairGate));
+    for (let round = 0; round < 4 && paths.length < 4; round++) {
+      await new Promise(function (resolve) { setTimeout(resolve, 150); });
+      held.splice(0).forEach(function (res) {
+        res.statusCode = 202;
+        res.end();
+      });
+    }
+    await new Promise(function (resolve) { setTimeout(resolve, 150); });
+    held.splice(0).forEach(function (res) {
+      res.statusCode = 202;
+      res.end();
+    });
+    const fairSettled = await Promise.all(flood.concat([other]));
+    note(fairSettled.every(function (one) { return one.ok; }) &&
+         paths.filter(function (one) { return one === '/other'; }).length ===
+         1, 'and every one of them is delivered, the other receiver\'s ' +
+         'included', JSON.stringify(paths));
+    fair.close();
     slow.close();
 
     // D. THROUGH transmit(), against a listener that refuses and then accepts.

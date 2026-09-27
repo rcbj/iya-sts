@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+#
+# File: tests/vc-suites/bin/docker
+#
+# ---------------------------------------------------------------------------
+# NOT DOCKER: the one command the W3C VC-JOSE-COSE test suite runs an
+# implementation with, answered by this service (#198, 2026-09-26).
+#
+# That suite's runner (tests/test-util.js, upstream, unedited) executes, per
+# test,
+#
+#   docker compose -f ./implementations/compose.yml run --rm <impl> <fn> \
+#     --input /tests/input/<file> --key /tests/input/<file> \
+#     --feature '<feature>' [--sd '<json>'] --output /tests/output/<file>
+#
+# — each implementation a container image with a CLI. This service is a
+# running server, and the tests image has no Docker daemon (and would not be
+# given one: a job that can start containers can stop the stack). So
+# sts_vc_jose_cose_suite.js puts THIS directory first on the suite's PATH,
+# and this script answers that one command shape by running
+# tests/vc-suites/jose-cose-cli.js, which calls the service's VC-API adapter.
+# The container paths /tests/... are the suite's own tests/ directory
+# (VC_JOSE_COSE_SUITE_DIR). Anything else is refused, loudly: the suite is
+# never allowed to believe it ran a container it did not.
+# ---------------------------------------------------------------------------
+set -euo pipefail
+
+if [ "${1:-}" != "compose" ]; then
+  echo "tests/vc-suites/bin/docker: only 'docker compose ... run' is" \
+       "answered here, not: $*" >&2
+  exit 2
+fi
+shift
+args=()
+seen_run=false
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -f) shift 2 ;;
+    run) seen_run=true; shift ;;
+    --rm) shift ;;
+    *)
+      if [ "${seen_run}" = true ] && [ "${#args[@]}" -eq 0 ] &&
+         [ "${implementation:-}" = "" ]; then
+        implementation="$1"
+        shift
+        continue
+      fi
+      args+=("$1")
+      shift
+      ;;
+  esac
+done
+if [ "${seen_run}" != true ] || [ "${#args[@]}" -eq 0 ]; then
+  echo "tests/vc-suites/bin/docker: not a 'compose run' command" >&2
+  exit 2
+fi
+exec node "$(dirname "$0")/../jose-cose-cli.js" "${args[@]}"

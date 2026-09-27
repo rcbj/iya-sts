@@ -194,6 +194,30 @@ function checkProfiles(t) {
     t.check(core.checkProfile('acme', 'code-signing').ok,
             'and the setting is ACME\'s own, not SCEP\'s');
   });
+  // #252: a request naming no profile, from its identifiers.
+  t.equal(core.profileForIdentifiers('acme', ['dns']), 'tls-server',
+          'a dns-only request naming no profile is tls-server');
+  t.equal(core.profileForIdentifiers('acme', ['dns', 'ip', 'dns']),
+          'tls-server', 'and so is one of dns and ip names');
+  t.equal(core.profileForIdentifiers('acme', ['ip']), 'tls-server',
+          'and an ip-only one');
+  t.equal(core.profileForIdentifiers('acme', ['dns', 'permanent-identifier']),
+          core.defaultProfile('acme'),
+          'a mixed request keeps the realm default');
+  t.equal(core.profileForIdentifiers('acme', ['email']),
+          core.defaultProfile('acme'), 'an email request keeps the default');
+  t.equal(core.profileForIdentifiers('acme', []), core.defaultProfile('acme'),
+          'a request naming nothing keeps the default');
+  withOverride('acme.allowedProfiles', 'tls-client,email', function () {
+    t.equal(core.profileForIdentifiers('acme', ['dns']), 'tls-client',
+            'a realm that disallows tls-server keeps its default for hosts');
+  });
+  withOverride('acme.defaultProfile', 'digital-signature', function () {
+    t.equal(core.profileForIdentifiers('acme', ['dns']), 'tls-server',
+            'a host-only request is tls-server whatever the default is');
+    t.equal(core.profileForIdentifiers('acme', ['permanent-identifier']),
+            'digital-signature', 'and an entry request reads the default');
+  });
   log.debug("Leaving checkProfiles().");
 }
 

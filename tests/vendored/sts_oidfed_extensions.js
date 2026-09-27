@@ -324,9 +324,21 @@ async function test() {
 
   log.info("=== 4. the Entity Collection ===");
   const got = await hop("GET", collection);
-  const mine = got.status === 200 ? got.json.entities.filter(function (e) {
-    return e.entity_id === leafId;
-  })[0] : null;
+  // EVERY PAGE (2026-09-27): the collection is paged, and with other lanes
+  // creating realms beside this job there is more than a page of them, so
+  // this realm's entry may be on a later one. `next` is the pointer.
+  let mine = null;
+  let listed = got;
+  for (let n = 0; n < 50 && listed.status === 200 && !mine; n++) {
+    mine = listed.json.entities.filter(function (e) {
+      return e.entity_id === leafId;
+    })[0] || null;
+    if (mine || !listed.json.next) {
+      break;
+    }
+    listed = await hop("GET", collection + "?from=" +
+                              encodeURIComponent(listed.json.next));
+  }
   check("the throwaway realm is collected with its entity types, and " +
         "last_updated is given", function () {
     assert.strictEqual(got.status, 200, got.text.slice(0, 300));

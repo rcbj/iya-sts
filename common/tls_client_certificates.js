@@ -601,6 +601,17 @@ function revoke(realmId, username, serialHex, reasonId, kind) {
       reasonAdmin: 'A TLS client certificate of ' + username + ' was ' +
                    'revoked (' + reason + ').',
       reasonUser: 'You revoked a TLS client certificate.' });
+    // "SOMEBODY ELSE MAY HAVE THE KEY" (#231): RFC 5280's `keyCompromise` is
+    // a compromise of the credential, which RISC 1.0 section 2.7 says as
+    // `credential-compromise`, beside the CAEP revoke above.
+    if (reason === 'keyCompromise') {
+      accountSignals().credentialCompromised({ username: username,
+        credentialType: 'x509', initiatingEntity: 'user', via: 'portal',
+        reasonAdmin: username + ' revoked a TLS client certificate (serial ' +
+                     mine.serialHex + ') because its key was compromised.',
+        reasonUser: 'You revoked a TLS client certificate because somebody ' +
+                    'else may have its key.' });
+    }
   }
   log.debug("Leaving revoke(). ok=" + !!done.ok);
   return Object.assign({ certificate: mine, reason: reason }, done);

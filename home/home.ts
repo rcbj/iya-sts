@@ -321,7 +321,12 @@ class Home {
             description: realm.description,
             builtin: !!realm.builtin,
             pathPrefix: realms.prefixOf(realm),
-            baseUrl: root + realms.prefixOf(realm)
+            baseUrl: root + realms.prefixOf(realm),
+            // The EST label form (#251): the one address an RFC 7030 client
+            // that takes a host, a port and ONE label can be given for this
+            // realm. Null for the default realm, which has no other form.
+            estLabelUrl: realms.estLabelPath(realm)
+              ? root + realms.estLabelPath(realm) : null
           };
         }),
         // Which protocol families are realm-aware and by what discriminator. It

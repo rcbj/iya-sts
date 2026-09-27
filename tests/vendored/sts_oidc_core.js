@@ -415,7 +415,7 @@ async function test() {
         "values, the address and phone scopes and their claims", function () {
     assert.strictEqual(r.status, 200, r.raw.slice(0, 200));
     assert.deepStrictEqual(r.body.subject_types_supported.slice().sort(),
-                           ["pairwise", "public"]);
+                           ["ephemeral", "pairwise", "public"]);
     ["none", "login", "consent", "select_account"].forEach(function (one) {
       assert.ok(r.body.prompt_values_supported.indexOf(one) >= 0, one);
     });
@@ -510,6 +510,18 @@ async function test() {
   check("THE IMPLICIT FLOW WITHOUT A NONCE IS REFUSED in every mode " +
         "(OIDC Core 3.2.2.1)", function () {
     assert.ok(back && back.params.get("error") === "invalid_request",
+              r.status + " " + r.location);
+  });
+  r = await authorize(alice, { response_type: "code id_token",
+    client_id: plain.client_id, redirect_uri: REDIRECT, scope: "openid",
+    state: "s" });
+  back = atClient(r);
+  check("AND SO IS THE HYBRID code id_token WITHOUT ONE (OIDC Core 3.3.2.1: " +
+        "nonce is REQUIRED when an ID Token comes back from the " +
+        "authorization endpoint; #187, the conformance suite's hybrid plan)",
+        function () {
+    assert.ok(back && back.where === "fragment" &&
+              back.params.get("error") === "invalid_request",
               r.status + " " + r.location);
   });
 

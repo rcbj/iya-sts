@@ -1344,6 +1344,14 @@ const SCHEMA = {
       what: 'CIBA `backchannel_client_notification_endpoint`: the https ' +
             'URL a ping or a push is POSTed to, under the outbound policy. ' +
             'Required for ping and push.' },
+    { name: 'oauthCommandEndpoint', kind: 'single',
+      from: 'POST /oauth2/register, the console, the management API',
+      families: ['oidc'],
+      familyWhy: 'OpenID Provider Commands are sent to OpenID Connect ' +
+                 'relying parties.',
+      what: 'OpenID Provider Commands `command_endpoint` (#151): the https ' +
+            'URL a Command Token is POSTed to, under the outbound policy. ' +
+            'A client with none is sent no command.' },
     { name: 'oauthBackchannelAuthenticationRequestSigningAlg',
       kind: 'single',
       from: 'POST /oauth2/register, the console, the management API',
@@ -1371,7 +1379,10 @@ const SCHEMA = {
             'what an empty value means) gives every client the same `sub`; ' +
             '`pairwise` gives this client one of its own, derived from the ' +
             'person, the sector and a secret every node shares, so two ' +
-            'clients of different sectors cannot correlate one person.' },
+            'clients of different sectors cannot correlate one person; ' +
+            '`ephemeral` (#149) gives it a random one for each ' +
+            'authentication, the same for everything that authentication ' +
+            'issues and never again after.' },
     { name: 'oauthSectorIdentifierUri', kind: 'single',
       from: 'POST /oauth2/register, the console, the management API, or by ' +
             'hand',
@@ -3285,6 +3296,8 @@ const EDITABLE = {
   oauthBackchannelClientNotificationEndpoint: 'set',
   oauthBackchannelAuthenticationRequestSigningAlg: 'set',
   oauthBackchannelUserCodeParameter: 'set',
+  // OpenID Provider Commands (#151).
+  oauthCommandEndpoint: 'set',
   // OIDC Core sections 8 and 9 (#118). One answer each.
   oauthSubjectType: 'set',
   oauthSectorIdentifierUri: 'set',
@@ -4638,7 +4651,9 @@ const ADDRESS_ATTRIBUTES = {
   oauthRedirectUri: 'redirect',
   oauthPostLogoutRedirectUri: 'redirect',
   oauthFrontchannelLogoutUri: 'frontchannel',
-  oauthBackchannelLogoutUri: 'backchannel'
+  oauthBackchannelLogoutUri: 'backchannel',
+  // OpenID Provider Commands (#151): https, no fragment, at every door.
+  oauthCommandEndpoint: 'command'
 };
 
 function addressProblem(attribute, value) {
@@ -4647,6 +4662,13 @@ function addressProblem(attribute, value) {
   if (!kind) {
     log.debug("Leaving addressProblem(). Not an address attribute.");
     return null;
+  }
+  const commandProblem = kind === 'command'
+    ? commandMetadataProblem({ command_endpoint: String(value) }) : null;
+  if (kind === 'command') {
+    log.debug("Leaving addressProblem(). A command endpoint.");
+    return commandProblem ? '"' + value + '" cannot be ' + attribute +
+      ': it must be an https URL with no fragment.' : null;
   }
   const problem = kind === 'frontchannel'
     ? validation.frontchannelUriProblem(String(value))
@@ -5606,6 +5628,56 @@ function cibaOf(clientId) {
   };
 }
 
+// ---------------------------------------------------------------------------
+// OPENID PROVIDER COMMANDS 1.0 (#151): `command_endpoint`, "MUST use the
+// https scheme; MUST NOT include a fragment". STS-REG-0199.
+// ---------------------------------------------------------------------------
+function commandMetadataProblem(values) {
+  log.debug("Entering commandMetadataProblem().");
+  const endpoint = (values || {}).command_endpoint;
+  if (endpoint !== undefined && endpoint !== null && endpoint !== '' &&
+      !/^https:\/\/[^\s#]+$/i.test(String(endpoint))) {
+    log.debug("Leaving commandMetadataProblem(). Not https.");
+    return { errorCode: 'STS-REG-0199', error: 'invalid_client_metadata',
+             member: 'command_endpoint',
+             description: 'command_endpoint: must be an https URL with no ' +
+                          'fragment (OpenID Provider Commands 1.0).' };
+  }
+  log.debug("Leaving commandMetadataProblem(). Nothing refused.");
+  return null;
+}
+
+// The `command_endpoint` a client registered, or ''.
+function commandEndpointOf(clientId) {
+  log.debug("Entering commandEndpointOf().");
+  const who = String(clientId == null ? '' : clientId).trim();
+  const found = who ? (forClientId(who) || get(who)) : null;
+  const fields = (found && found.fields) || {};
+  log.debug("Leaving commandEndpointOf().");
+  return String(valuesOf(fields.oauthCommandEndpoint)[0] || '').trim();
+}
+
+// Every client in the ambient realm that registered a command endpoint:
+// `[{ clientId, name, endpoint }]`.
+function commandClients() {
+  log.debug("Entering commandClients().");
+  const out = [];
+  list().forEach(function (entry) {
+    const fields = (entry && entry.fields) || {};
+    const endpoint = String(valuesOf(fields.oauthCommandEndpoint)[0] || '')
+      .trim();
+    const clientId = String(valuesOf(fields.oauthClientId)[0] ||
+                            entry.identifier || '').trim();
+    if (endpoint && clientId) {
+      out.push({ clientId: clientId,
+                 name: String(valuesOf(fields.appName)[0] || clientId),
+                 endpoint: endpoint });
+    }
+  });
+  log.debug("Leaving commandClients(). " + out.length + ".");
+  return out;
+}
+
 const OIDC_SUBJECT_ATTRIBUTES = {
   subject_type: 'oauthSubjectType',
   sector_identifier_uri: 'oauthSectorIdentifierUri',
@@ -5632,11 +5704,12 @@ function oidcSubjectMetadataProblem(values) {
     text[members[i]] = String(value || '').trim();
   }
   if (text.subject_type &&
-      ['public', 'pairwise'].indexOf(text.subject_type) < 0) {
+      ['public', 'pairwise', 'ephemeral'].indexOf(text.subject_type) < 0) {
     log.debug("Leaving oidcSubjectMetadataProblem(). An unknown type.");
     return refusal('subject_type', '"' + text.subject_type + '" is not ' +
                    'one this service supports; subject_types_supported is ' +
-                   '["public", "pairwise"] (OIDC Core section 8).');
+                   '["public", "pairwise", "ephemeral"] (OIDC Core section ' +
+                   '8; the Ephemeral Subject Identifier draft, #149).');
   }
   if (text.sector_identifier_uri) {
     let parsed = null;
@@ -7675,6 +7748,13 @@ function applyRegistrationFields(record, registration, statement) {
       delete record.fields[CIBA_ATTRIBUTES[member]];
     }
   });
+  // OpenID Provider Commands (#151), the same way.
+  if (String(meta.command_endpoint || '').trim()) {
+    setField(record, 'oauthCommandEndpoint',
+             String(meta.command_endpoint).trim());
+  } else {
+    delete record.fields.oauthCommandEndpoint;
+  }
   if (typeof meta.backchannel_user_code_parameter === 'boolean') {
     setField(record, 'oauthBackchannelUserCodeParameter',
              meta.backchannel_user_code_parameter ? 'TRUE' : 'FALSE');
@@ -7766,6 +7846,7 @@ function register(clientId, registration, options) {
                      pushedAuthorizationMetadataProblem(registration) ||
                      oidcSubjectMetadataProblem(registration) ||
                      cibaMetadataProblem(registration) ||
+                     commandMetadataProblem(registration) ||
                      mtlsMetadataProblem(registration) ||
                      authorizationDetailsMetadataProblem(registration);
   if (uriProblem) {
@@ -7836,6 +7917,7 @@ function updateRegistration(clientId, registration, options) {
                      idTokenEncryptionMetadataProblem(registration) ||
                      requestObjectMetadataProblem(registration) ||
                      pushedAuthorizationMetadataProblem(registration) ||
+                     commandMetadataProblem(registration) ||
                      mtlsMetadataProblem(registration) ||
                      authorizationDetailsMetadataProblem(registration);
   if (uriProblem) {
@@ -7947,6 +8029,20 @@ function federationExpired(fields) {
          !(at > Math.floor(Date.now() / 1000));
 }
 
+// How a client was registered through an OpenID Federation — 'automatic',
+// 'explicit' — or '' for any other client or one whose registration ended
+// (#187: a request object from an automatically registered relying party is
+// held to OpenID Federation 1.1 section 12.1.1.1 on every request).
+function federationRegistrationTypeOf(clientId) {
+  log.debug("Entering federationRegistrationTypeOf().");
+  const loaded = load(clientId);
+  const fields = (loaded.known && loaded.record && loaded.record.fields) || {};
+  const out = fields.appFederationRegistration && !federationExpired(fields)
+    ? String(fields.appFederationRegistration) : '';
+  log.debug("Leaving federationRegistrationTypeOf(). " + (out || 'none'));
+  return out;
+}
+
 // Every application registered through an OpenID Federation, for the job
 // that removes the ones past their expiry and for the console.
 function federatedRegistrations() {
@@ -8037,6 +8133,11 @@ function registrationOf(clientId) {
     document.backchannel_logout_session_required =
       String(fields.oauthBackchannelLogoutSessionRequired)
         .toUpperCase() === 'TRUE';
+  }
+  // OpenID Provider Commands (#151).
+  if (valuesOf(fields.oauthCommandEndpoint)[0]) {
+    document.command_endpoint =
+      String(valuesOf(fields.oauthCommandEndpoint)[0]);
   }
   if (fields.oauthGrantType) document.grant_types = fields.oauthGrantType.slice(
       0);
@@ -9434,11 +9535,108 @@ function updateApplication(identifier, change) {
               editedByHand: true }
   });
   log.info('applications: "' + identifier + '" — ' + what + '.');
+  if (mode === 'remove') {
+    announceScopeRemoval(String(identifier), record, attribute, value);
+  }
   log.debug("Leaving updateApplication(). " + what + ".");
   log.debug("Leaving updateApplication().");
   return { ok: true, changed: true,
            application: viewAfterWrite(identifier, record),
            message: what + '.' };
+}
+
+// ---------------------------------------------------------------------------
+// A SCOPE THAT TOKENS ALREADY ISSUED CARRY, NO LONGER GRANTED (#238) — CAEP
+// token-claims-change to every person holding one, through
+// `ssf/account_signals.ts`'s claimsFanOut(). Three removals move `scope`:
+//
+//   * `oauthDelegatedPermission` on a client: a permission REVOKED from it.
+//     Only where a grant is enforced (`mode.honoursUngrantedPermissions()`,
+//     or `oauth2.delegatedPermissionsEnforced` in development) — otherwise the
+//     next request is issued exactly what the last one was, and nothing any
+//     token carries has changed. The tokens are the client's, audienced to
+//     the permission's base and carrying its name.
+//   * `oauthPermission` on a resource: the permission no longer EXISTS, so no
+//     request names it (forPermission() matches only a defined one) in either
+//     mode. Every client's tokens audienced to the base and carrying the name.
+//   * `oauthAllowedScope` on a client: the scope policy is asked whether it
+//     would still grant it (`scope_policy.ts`'s judge()) — a protected scope
+//     in both modes, any scope in product — and only a scope it now refuses
+//     moved. The client's tokens carrying it.
+//
+// The claim is `scope` as the holder's newest such token carries it, less
+// the value that went. Adding a grant or a scope moves no token already
+// issued — a token carries what was asked for — and `appRequiredRole` changes
+// who may be ISSUED a token, which is no claim in one (#238's decision).
+// LAZILY required, both of them: `scope_policy.ts` requires this module, and
+// the signals library is SSF's. Never throws into the write — and never
+// waits on it: the fan-out runs after this write has returned.
+// ---------------------------------------------------------------------------
+function announceScopeRemoval(identifier, record, attribute, value) {
+  log.debug("Entering announceScopeRemoval(). " + attribute);
+  const has = function (scope, name) {
+    return String(scope || '').split(/\s+/).indexOf(name) >= 0;
+  };
+  const audiences = function (token, base) {
+    return String(token.audience || '').split(/\s+/).indexOf(base) >= 0;
+  };
+  let match = null;
+  let removed = '';
+  try {
+    if (attribute === 'oauthDelegatedPermission') {
+      const enforced = !mode.honoursUngrantedPermissions() ||
+        !!config.value('oauth2.delegatedPermissionsEnforced');
+      const defined = enforced ? forPermission(value) : null;
+      if (defined && defined.baseUri) {
+        removed = defined.name;
+        match = function (token) {
+          return token.claimSet === 'access_token' &&
+                 token.client_id === identifier &&
+                 audiences(token, defined.baseUri) && has(token.scope, removed);
+        };
+      }
+    } else if (attribute === 'oauthPermission') {
+      const base = permissionBaseOf((record.fields || {})
+        .oauthPermissionBaseUri);
+      removed = parsePermissionValue(value).name;
+      if (base && removed) {
+        match = function (token) {
+          return token.claimSet === 'access_token' &&
+                 audiences(token, base) && has(token.scope, removed);
+        };
+      }
+    } else if (attribute === 'oauthAllowedScope') {
+      const judged = require('./scope_policy').judge(value, identifier);
+      if (judged.kept.indexOf(value) < 0) {
+        removed = value;
+        match = function (token) {
+          return token.claimSet === 'access_token' &&
+                 token.client_id === identifier && has(token.scope, removed);
+        };
+      }
+    }
+    if (!match) {
+      log.debug("Leaving announceScopeRemoval(). No issued claim moved.");
+      return;
+    }
+    require('../ssf/account_signals').claimsFanOut({
+      protocol: 'Applications', initiatingEntity: 'admin', match: match,
+      reasonAdmin: '"' + removed + '" is no longer granted through ' +
+                   attribute + ' on "' + identifier + '"',
+      reasonUser: 'A permission that tokens already issued to you carry ' +
+                  'was withdrawn.',
+      claimsFor: function (bearer) {
+        return { scope: String(bearer.record.scope || '').split(/\s+/)
+          .filter(function (one) {
+            return one && one !== removed;
+          }).join(' ') };
+      } });
+  } catch (e) {
+    log.warn('applications: a token-claims-change for the removal of "' +
+             value + '" from ' + attribute + ' on "' + identifier +
+             '" could not be started: ' + ((e && e.message) || e));
+  }
+  log.debug("Leaving announceScopeRemoval().");
 }
 
 // ---------------------------------------------------------------------------
@@ -11847,6 +12045,9 @@ module.exports = {
   requestObjectMetadataProblem: requestObjectMetadataProblem,
   oidcSubjectMetadataProblem: oidcSubjectMetadataProblem,
   cibaMetadataProblem: cibaMetadataProblem,
+  commandMetadataProblem: commandMetadataProblem,
+  commandEndpointOf: commandEndpointOf,
+  commandClients: commandClients,
   cibaOf: cibaOf,
   oidcRegistrationProblem: oidcRegistrationProblem,
   revokeRegistrationAccessToken: revokeRegistrationAccessToken,
@@ -11934,6 +12135,7 @@ module.exports = {
   // OpenID Federation registrations (#134).
   federatedRegistrations: federatedRegistrations,
   federationExpired: federationExpired,
+  federationRegistrationTypeOf: federationRegistrationTypeOf,
   get: get,
   settingFor: settingFor,
   largestSetting: largestSetting,

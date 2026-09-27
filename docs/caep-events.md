@@ -26,11 +26,11 @@ The short version:
 | Event | Emitted by this service on its own? |
 |---|---|
 | `session-established` | **yes** — every sign-in, through every protocol that starts a session |
-| `session-presented` | **yes** — single sign-on, in four browser SSO profiles |
-| `session-revoked` | **yes** — every sign-out, and every expiry |
-| `token-claims-change` | **yes** — a directory change that moves a claim of somebody holding live tokens or assertions, and a modified [GNAP](gnap.md) grant |
+| `session-presented` | **yes** — single sign-on: four browser SSO profiles, a GNAP interaction, a CIBA approval, the Native SSO exchange and a pre-authorized OpenID4VCI offer |
+| `session-revoked` | **yes** — every sign-out, every expiry, and every OAuth 2.0 or GNAP grant revoked |
+| `token-claims-change` | **yes** — a directory change, a role, an identity verification, an address proved, a claims provider unlinked, or a configuration change (permissions, allowed scopes, claim sets, claim settings, a federation release list) that moves a claim of somebody holding live tokens or assertions, and a modified [GNAP](gnap.md) grant |
 | `credential-change` | **yes** — any credential of a person created, changed, revoked or deleted, at every door that changes one |
-| `assurance-level-change` | **yes** — a re-authentication on a held session that moves its `acr` |
+| `assurance-level-change` | **yes** — a re-authentication on a held session that moves its `acr`, and an identity verification recorded or removed that moves a person's identity assurance level |
 | `device-compliance-change` | no — by hand only, until [#164](https://github.com/rcbj/iya-sts/issues/164) gives it a source |
 | `risk-level-change` | **yes** — when a person's risk level changes and the `risk-response` policy permits announcing it ([Risk scoring](risk-scoring.md#when-a-persons-risk-changes)) |
 
@@ -48,7 +48,8 @@ arrived" are the third.
    (default on) and `caep.autoEmitTypes` (default: all seven — the three
    session events, `credential-change`, `assurance-level-change`, which goes
    out when the same person re-authenticates on a session they already hold
-   and its `acr` changes, on the `urn:sts:acr` scale, `token-claims-change`,
+   and its `acr` changes, on the `urn:sts:acr` scale, and when their identity
+   assurance level moves, on `urn:sts:ial` or `NIST-IAL`, `token-claims-change`,
    and `risk-level-change`).
    Naming any other type in
    `autoEmitTypes` is **dropped with a warning** rather than
@@ -78,11 +79,19 @@ and the two other things this service also calls a session — is
 
 **A session that isn't in the register can't be the subject of anything.** The
 register is capped at `caep.maxSessionsTracked` (default 200) and drops the
-oldest. In practice only a **browser sign-on session** ever creates a row — a
-row can also be created by an event naming a session nothing here has held, and
-it is marked as such — so there is nothing to emit about an LDAP bind, a
-Kerberos ticket or a WS-Trust exchange; see *What never produces one* at the
-foot of this page.
+oldest. A row is created by a **session this service starts** — a browser
+sign-on, and also a WS-Trust exchange, a SCIM client and a SPIRE Server API
+caller, each of which is a session here (see *Sessions that are not a browser's*
+at the foot of this page) — or by an event naming a session nothing here has
+held, which is marked as such. There is nothing to emit about an LDAP bind or
+a Kerberos ticket; see *What never produces one*.
+
+**A session nobody signed in to is never announced.** A browser that arrives
+at a protocol's front door with no cookie is given an anonymous tracking
+session (it is how the flow is followed on `/admin/sessions`), and nobody has
+chosen it: it gets no `session-established`, and so its expiry or removal
+sends no `session-revoked` either. When the person signs in, the same row
+becomes their session and is announced from then on.
 
 ## The subject: why it names two things
 
@@ -150,6 +159,9 @@ by construction rather than by six call sites remembering to do it. The callers:
 | A Kerberos ticket spent at `/authn/spnego` — integrated authentication, no screen | `Kerberos v5 (SPNEGO)` |
 | A wallet's presentation, collected at `/authn/wallet/wait` by the browser that started the sign-in | `OpenID4VP (a wallet)` |
 | A federated assertion accepted at `/federation/acs/{id}` — the person signed in at a *foreign* identity provider | `Federation (SAML 2.0)`, and the same for the other four federation protocols |
+| A WS-Trust exchange that signs somebody in | `WS-Trust` and the operation |
+| The first call of a SCIM client, whatever scheme it authenticated with (each call after it is a `session-presented`) | `SCIM` |
+| The first call of a SPIRE Server API caller, keyed by its SPIFFE ID (the same) | `SPIRE Server API` |
 
 A re-authentication is a *new* session and therefore a new
 `session-established`: `prompt=login` at the authorization endpoint, SAML 2.0's
@@ -183,7 +195,10 @@ honoured without a new authentication — which is single sign-on.**
 
 Unlike the other two automatic events, this one has **no funnel**. A
 presentation is something each endpoint decides it is doing, so it fires from
-exactly four call sites, one per browser SSO profile:
+one call site per door — the four browser SSO profiles, and four doors that
+honour a session for a client it was not made for — and from
+`authn.startSession()` when a SCIM client or a SPIRE Server API caller
+presents its credential again (*Sessions that are not a browser's*, below):
 
 | Protocol | Activity | `via` |
 |---|---|---|
@@ -191,8 +206,12 @@ exactly four call sites, one per browser SSO profile:
 | SAML 2.0 | an `AuthnRequest` at `/saml2/sso`, over any of the three bindings, that reaches the answer step on an existing session | `SAML 2.0` |
 | SAML 1.1 | an arrival at the inter-site transfer service carrying a `TARGET`, answered on an existing session | `SAML 1.1` |
 | WS-Federation | a `wsignin1.0` at the passive requestor endpoint answered on an existing session | `WS-Federation` |
+| GNAP | an interaction that meets a live sign-on session and approves without a new authentication | `GNAP` |
+| OpenID Connect CIBA | a person **approving** a backchannel request on `/portal/ciba`: the client is issued tokens on the strength of the session's `acr`, `amr` and `auth_time`, and the tokens are issued ON that session. A denial honours nothing and sends nothing | `OpenID Connect CIBA` |
+| OpenID Connect Native SSO | a second app's token exchange at `/oauth2/token`: it is issued tokens on the sign-on session the first app's ID Token names, with no new authentication. Sent after the tokens are issued, so a refused exchange sends nothing | `OpenID Connect Native SSO` |
+| OpenID4VCI | a **pre-authorized** (cross-device or deferred) Credential Offer made for the signed-in person, where the test controls are closed: the pre-authorized code is the authorization for a credential about them, made on the session's authority. A same-device offer carries no authorization, and development mints the pre-authorized offer for a fixed test person without reading any session, so neither sends it | `OpenID4VCI` |
 
-All four go through `authn.notePresented()`, which is protocol-independent: the
+All of them go through `authn.notePresented()`, which is protocol-independent: the
 event names the **session**, and `via` records which door it came back through.
 
 **The first presentation of a brand-new session is swallowed.** Every sign-in
@@ -250,17 +269,32 @@ through it:
 |---|---|---|
 | `GET /oauth2/logout` — OpenID Connect RP-Initiated Logout | `user` | ended at *the sign-out endpoint for this browser* |
 | `GET\|POST /wsfed?wa=wsignout1.0` — WS-Federation 1.2 section 13.2.4 | `user` | the same |
-| `GET\|POST /saml2/slo` — SAML 2.0 Single Logout | `user` | the same |
+| `GET\|POST /saml2/slo` — SAML 2.0 Single Logout, from the browser or a service provider's back channel | `user` | the same, or *saml2-slo* and the service provider |
 | `GET\|POST /logout` — the protocol-independent sign-out | `user` | ended at *the /logout endpoint* |
+| the **Sign out** button on `/admin`, `/portal` or the protocol debugger — the person signing themselves out, and the sign-on session behind it | `user` | *the Sign out button on the admin console* (or the portal, or the debugger) |
+| a federation partner's own sign-out reaching this service | `user` | *the federation partner …* |
 | `/admin/logout` — an operator signing somebody else out | **`admin`** | ended at *the admin console at /admin/logout* |
 | `/admin/sessions` — the Revoke button on a row | **`admin`** | ended at *the /admin/sessions page* |
 | `POST /admin-api/logout/{global,end}` | **`admin`** | ended at *the admin console at /admin/logout* — it calls the same function that page does |
 | `POST /admin-api/sessions/revoke` | **`admin`** | ended at *the management API at /admin-api/sessions* |
+| an account **disabled** on `/admin/users`, `/admin-api/users/disable`, SCIM `active: false` or an `ldapmodify` of the lock | **`admin`** | *the account was disabled by an administrator …* |
+| a person **deleted** — SCIM `DELETE` or an LDAP delete ([#241](https://github.com/rcbj/iya-sts/issues/241)) | **`admin`** | *the deletion of the account (…)* |
+| a trust realm **removed** — every session in it ([#232](https://github.com/rcbj/iya-sts/issues/232)) | **`admin`** | *the removal of the trust realm "…"* |
+| a federation link removed from a person, or a registered device removed or marked compromised by an administrator | **`admin`** | the act, in words |
+| an **emergency key rotation** — every session of the realm | **`admin`** when an administrator requested it, **`system`** otherwise | *an emergency key rotation* |
+| **risk scoring** ending or disabling a person, and a received SET's signal-response rule | **`policy`** | *the person's risk went to …* |
+| the relying-party session a surface could not renew | **`system`** | *a token renewal that did not complete* |
 | **the session lifetime running out** | **`policy`** | *the session lifetime ran out* |
 
-`initiating_entity` is derived from the phrase the door calls itself by, which
-is also the sentence that reaches `reason_admin` — so the two can never
-disagree about who ended a session.
+`initiating_entity` is **stated by the door that ends the session** — it is
+not read out of the sentence in `reason_admin`. Until
+[#242](https://github.com/rcbj/iya-sts/issues/242) it was: the phrase was
+searched for `admin` or `console`, which made the console's own Sign out button
+an administrator ending the session of a person who signed themselves out, and
+an emergency rotation and the risk engine the person. A session ended by a
+door that says nothing is reported as `system` and logged (`STS-AUTHN-0290`).
+A session derived from another — the console's or the portal's own session —
+ends with its parent's entity.
 
 The last row is the one worth knowing about. An expiry used to be silent: the
 session was deleted with no event, and only *lazily* — when it was next looked
@@ -286,16 +320,69 @@ one, the revocation applies to any session matching **every** part of it at once
 **warning** rather than an error: it is harmless, a receiver should be
 idempotent about it, and that is exactly the thing worth testing.
 
-**One thing it deliberately does not do:** revoking tokens does not end a
-session here, so `POST /admin-api/tokens/revoke-user` and the bulk buttons on
-`/admin/tokens` emit nothing. A session outlives its tokens; ending it is the
-act this event reports.
+**Revoking tokens does not end a SIGN-ON session**, and nothing above
+changes when one is revoked. A grant is a different session, though, and its
+end is reported as one.
 
-**GNAP is the exception, and it is not a contradiction.** A GNAP
-grant is itself a DELEGATED SESSION between a client instance and a resource
-owner — it has a lifetime, a continuation and a revocation of its own — so
-revoking one IS ending a session, and this event says so. Three acts send it,
-each with a complex subject whose `user` is the resource owner and whose
+### A revoked OAuth 2.0 grant (#239)
+
+An OAuth 2.0 grant is a DELEGATED SESSION between a client and the person who
+granted it. It has a lifetime, a renewal (its refresh token) and a revocation
+of its own, so revoking one ends a session, and this event says so. GNAP's
+grants below have always been reported this way. The subject is complex: `user`
+names the person, and `session` is `{"format": "opaque", "id":
+"oauth-grant:<id>"}`. The `<id>` is one of these, in order:
+
+1. the Grant Management `grant_id` the client was handed, if there is one;
+2. otherwise the refresh-token family (its first refresh token's `jti`);
+3. otherwise the token response the grant's tokens came back in.
+
+**One event per grant, not one per token.** A door revokes a grant as a
+refresh token, its family and the access tokens minted beside them, and the
+receiver is told once. Every door goes through the one revocation set, so a
+door added later cannot forget to report.
+
+| Act | `initiating_entity` |
+|---|---|
+| `POST /oauth2/revoke` of a refresh token (the whole grant), or of the access token of a grant that has no refresh token | `user` |
+| Grant Management `DELETE /oauth2/grants/{id}` by the client | `user` |
+| Grant Management *Revoke* on the console or `/admin-api` | `admin` |
+| A consent withdrawn by the person on `/portal/consents` | `user` |
+| A consent withdrawn by an administrator, or a global consent override removed | `admin` |
+| `/admin/tokens` and `/admin-api/tokens` (one token, a set, a kind, a subject, a user, everything) | `admin` |
+| `/logout` ending the person's tokens | `user` |
+| A global logout from the console or `/admin-api` | `admin` |
+| A refresh refused because the consent it stood on is gone | `policy` |
+| **A rotated refresh token replayed** (RFC 9700 section 2.2.2), or **an authorization code redeemed twice** (section 4.5) | `policy`, and a risk signal first (below) |
+| A sign-out revoking the online refresh tokens issued on its session | `system` |
+
+**A replay is also a risk signal.** A refresh token presented after it was
+rotated, or a code redeemed twice, means a copy of the grant's credential is in
+two hands. So the `session-revoked` is preceded by a `risk-level-change` about
+the same grant: `principal: SESSION`, `current_level: HIGH`, and `risk_reason`
+set to `refresh-token-replay` or `authorization-code-replay`. It is sent only
+while `caep.autoEmitTypes` names `risk-level-change`. The person's own risk
+standing still belongs to [risk scoring](risk-scoring.md).
+
+**What is not a grant ending, and sends nothing:**
+- an access token revoked while its grant's refresh token lives (RFC 7009
+  leaves the refresh token alone);
+- a refresh token retired by rotation, since its successor carries the grant
+  on;
+- a refresh refused because its Grant Management grant was merged or replaced;
+- an ID Token;
+- a grant with no person behind it (client credentials).
+
+CIBA's tokens are issued on the sign-on session the person approved on, so
+signing out of that session revokes their refresh token as it does every
+other grant's.
+
+### A revoked GNAP grant
+
+A GNAP grant is itself a DELEGATED SESSION between a client instance and a
+resource owner — it has a lifetime, a continuation and a revocation of its own
+— so revoking one IS ending a session, and this event says so. Three acts send
+it, each with a complex subject whose `user` is the resource owner and whose
 `session.id` names what ended:
 
 | Act | `session.id` |
@@ -319,11 +406,13 @@ as well — `credential-change` when any credential of a person changes,
 `assurance-level-change` when a re-authentication moves a session's `acr`, and
 `token-claims-change` when a directory change moves a claim somebody's live
 tokens carry, or a GNAP grant is modified (see the table at the top) — and a
-fourth, `risk-level-change`, when a person's risk level changes (#62). **No
-device reports compliance to this service**, so `device-compliance-change` is
-by hand only. That is a feature rather than a gap: they are exactly the events a
-receiver is hardest to test against, because in a real deployment they arrive
-from systems you do not control.
+fourth, `risk-level-change`, when a person's risk level changes (#62) or a
+registered device's (#164). **The fifth, `device-compliance-change`, is sent
+since #164** whenever a device's compliance moves — set by an administrator,
+the MDM feed or development's test control ([Devices](devices.md)). Emitting
+by hand is still worth having: these are exactly the events a receiver is
+hardest to test against, because in a real deployment they arrive from systems
+you do not control.
 
 Two doors, one function behind them, so a form and a script produce the same
 bytes:
@@ -386,11 +475,54 @@ somebody left the group that authorises them.
     for one now empty;
   - a group joined or left, or a group renamed, and a person's own `memberOf`:
     the groups claim, with the whole list as it is now.
+  - a **role** given or taken away (`/admin/roles`, `/admin-api/roles`, or an
+    `ldapadd`, `ldapmodify`, `ldapdelete` or rename under `ou=roles`), for
+    each person it named or whose group it named: the roles claim as it is
+    now, or `null` when they hold no configured role any more. A description
+    edited moves nobody;
+  - a group joined or left **that a role names**: the roles claim beside the
+    groups claim;
+  - `email_verified`, when the address is proved (a verification link, a
+    trusted door writing it) or changes;
+  - an **identity verification** recorded, removed or recorded by a sign-in
+    ([Identity Assurance](oauth-oidc.md#verified-claims-openid-connect-for-identity-assurance-10)): `verified_claims` as a token
+    could carry it — each verification's `trust_framework` and
+    `assurance_level` with the claims still current on the entry, **never its
+    evidence**. A sign-in that rewrites its own automatic record with the same
+    claims sends nothing;
+  - a **Claims Provider** unlinked, or removed for everybody who linked it:
+    `_claim_names` and `_claim_sources` with that provider's members `null`.
+    **A source's value is never sent** — it holds a distributed source's access
+    token or another issuer's signed claims.
   The door does not matter: the console, `/admin-api`, SCIM, an `ldapmodify` of
   the person or of a group. A person with nothing live gets no event, because
   it would be about tokens that do not exist. The subject names the person
   (`iss_sub`), since the change is to every token they hold rather than to one
   session.
+- **Sent to every holder** when a CONFIGURATION change moves a claim in
+  tokens already issued — one event per person holding a live artifact it
+  shaped, with the value their newest such artifact would carry now:
+  - a delegated permission revoked from a client (where grants are enforced:
+    product mode, or `oauth2.delegatedPermissionsEnforced`), a permission
+    removed from its resource, or an allowed scope removed that the scope
+    policy now refuses: `scope`, less what went;
+  - a custom claim added, changed or removed, or a directory attribute
+    selected or dropped, on the access-token, ID Token or SAML claim sets;
+  - `roles.claim`, `roles.claimName` and the `groups.claim*` settings: the
+    claim under its old and new name;
+  - a federation partner's release list edited, enabled, disabled or deleted:
+    the claims now released or withheld for that application.
+
+  The holders are walked **in slices of 100**, each slice's deliveries
+  finished before the next starts on a later turn of the event loop, behind
+  the push cap (`ssf.pushConcurrency`) — so a change touching thousands of
+  holders runs in the background and answers requests throughout. Adding a
+  grant or a scope sends nothing (a token carries what was asked for), and so
+  does `appRequiredRole`, which changes who may be issued a token rather than
+  any claim in one. The UserInfo claim set sends nothing: a UserInfo response
+  is built on every call. **An application's own tokens** (a
+  `client_credentials` grant, with no person) are not the subject of these
+  events yet — see [#221](https://github.com/rcbj/iya-sts/issues/221).
 
 ## `credential-change`
 
@@ -422,7 +554,7 @@ session should be allowed to do next.
   | Password | `password` | `/admin/users` and `/admin-api` (set, reset, reset link, a new person), the portal (change, account activation, reset link), a change forced at sign-in, an LDAP add or modify of `userPassword` |
   | Security key | `fido2-platform` or `fido2-roaming`, with `fido2_aaguid` | enrolled at sign-in or on the portal, removed on the portal or the console |
   | Authenticator app | `app` | set up at sign-in, on the portal or at activation; removed on the portal or the console |
-  | Certificate | `x509`, with `x509_issuer` and `x509_serial` | ACME, EST and SCEP issue and revoke, a TLS client certificate, an RFC 7523/7522 signing key pair, a person's certificate revoked on `/admin/pki` |
+  | Certificate | `x509`, with `x509_issuer` and `x509_serial` | ACME, EST and SCEP issue and revoke, a TLS client certificate, an RFC 7523/7522 signing key pair, a person's certificate revoked on `/admin/pki`, and an act on the certificate authority above it (below) |
   | Wallet credential | `verifiable-credential` | issued over OpenID4VCI, disowned by a global sign-out |
 
   A security key is `fido2-platform` when the browser reported a platform
@@ -433,6 +565,29 @@ session should be allowed to do next.
   did it themselves, `admin` when somebody else did, and `system` for a
   certificate superseded by its renewal or a credential disowned by a
   sign-out.
+
+  **An act on the certificate authority reaches every person under it
+  ([#244](https://github.com/rcbj/iya-sts/issues/244)).** When an administrator
+  revokes an Issuing CA or an Intermediate on `/admin/pki`, every person holding
+  a live certificate beneath it is sent `revoke`. When the reason is
+  `keyCompromise` or `cACompromise`, they are also sent RISC
+  `credential-compromise` with `credential_type` `x509`.
+
+  Building a Root, rebuilding a realm's branch, reissuing, renewing or importing
+  an Issuing CA, or removing the realm's authority sends each affected person
+  one of two change types:
+
+  - `update`, naming the new certificate, when this service re-issued it. This
+    applies to a TLS client certificate after a reissue, a renewal or an import.
+  - `revoke`, naming the old certificate, when the certificate now chains to an
+    authority that is gone or revoked. This applies to a signing key pair, to
+    anything enrolled over ACME, EST or SCEP (this service keeps no key to
+    re-issue those from), and to a TLS client certificate after a branch
+    rebuild.
+
+  A certificate that an earlier act already orphaned is not announced again.
+  The events go out in batches, so a realm with thousands of certificates does
+  not flood the queue.
 
 ## `assurance-level-change`
 
@@ -459,6 +614,21 @@ was good for, both lower assurance without anybody signing in again.
   one event about this session has been missed, or two transmitters are talking
   about it.
 - **Default payload:** the configured namespace and `aal2`.
+- **Sent by itself** in two cases:
+  - a re-authentication on a held session moves its `acr`, on this service's
+    own `urn:sts:acr` scale, about the session;
+  - an **identity verification** recorded, removed or recorded by a sign-in
+    moves the person's **identity assurance level**, about the person. The
+    level is the `assurance_level` of their newest verification that states
+    one, carried as recorded in this service's namespace **`urn:sts:ial`** —
+    mapping an arbitrary trust framework onto NIST's levels would claim a
+    conformance nobody assessed. **`NIST-IAL` is used only when that
+    verification's `trust_framework` is `nist_800_63A`** and its level is
+    `IAL1`, `IAL2` or `IAL3`. `urn:sts:ial` has two values of its own:
+    `verified` (verifications stating no level) and `none` (nothing
+    recorded). `previous_level` is sent only when the namespace did not
+    change, and `change_direction` only where the levels have an order
+    (IAL1 < IAL2 < IAL3; `none` < `verified` < a stated level).
 
 ## `device-compliance-change`
 
@@ -520,14 +690,37 @@ there was one, and puts the signals that moved it in `risk_reason`
 
 ---
 
+## Sessions that are not a browser's
+
+Every artifact this service issues is a projection of a session
+(`authn/CLAUDE.md`, *What an authenticated identity is here*), so three
+families that are not a browser start one, through the same
+`authn.startSession()`, and **are** the subject of the session events:
+
+- a **WS-Trust** exchange that signs somebody in starts a session per request
+  (`session-established`), which ends by the sign-out doors above or by
+  expiry (`session-revoked`);
+- a **SCIM** client, whichever of RFC 7644 section 2's schemes it
+  authenticated with, starts one session keyed by the scheme and the
+  principal: `session-established` at its first call, `session-presented` at
+  every call after it, and `session-revoked` when the session expires or is
+  ended;
+- a **SPIRE Server API** caller, keyed by its SPIFFE ID, the same way.
+
+**Where the session has no person as its subject** — a SPIFFE workload, or an
+application's own credential rather than a person's — the event's `user`
+names whatever the directory filed that caller under. What a non-human
+subject should be, and whether such a session should be announced at all, is
+[#221](https://github.com/rcbj/iya-sts/issues/221)'s question (service
+accounts), which is open.
+
 ## What never produces a CAEP event
 
-Only a **browser sign-on session** creates a row in the register, so nothing
-below is ever the subject of a *session* event. That is not an omission — none
-of them is a session in CAEP's sense. The person-level events are different:
-an LDAP password write, a SCIM change to a claim, and an OpenID4VCI issuance do
-send `credential-change` or `token-claims-change` about the PERSON, as the
-sections above say.
+Nothing below is ever the subject of a *session* event. That is not an
+omission — none of them is a session in CAEP's sense. The person-level events
+are different: an LDAP password write, a SCIM change to a claim, and an
+OpenID4VCI issuance do send `credential-change` or `token-claims-change` about
+the PERSON, as the sections above say.
 
 None of these is the subject of a session event:
 
@@ -535,14 +728,28 @@ None of these is the subject of a session event:
   expiring;
 - an **LDAP** bind or unbind, though the connection *is* a session in RFC 4511's
   sense (`/admin/sessions` lists it as one);
-- **WS-Trust**, **SCIM**, **SPIFFE**, **OpenID4VCI** and **OpenID4VP** requests
-  — a presentation at the Verifier's own pages included. A wallet sign-in at
-  `/authn/wallet` is the exception, because it ends in a browser sign-on
-  session like any other door;
-- the **token, refresh, introspection, revocation and UserInfo** endpoints —
-  including revoking every token a person holds;
+- a browser that arrived at a front door and never signed in (its anonymous
+  tracking session is never announced, above);
+- **SPIFFE**'s Workload API, **OpenID4VCI** and **OpenID4VP** requests — a
+  presentation at the Verifier's own pages included. There are two
+  exceptions. A wallet sign-in at `/authn/wallet` ends in a browser sign-on
+  session like any other door. A pre-authorized OpenID4VCI offer made for the
+  signed-in person is `session-presented` (above), because it is made on that
+  session's authority;
+- the **token, refresh, introspection and UserInfo** endpoints. A revoked
+  grant is the exception: it is `session-revoked` about the GRANT (above),
+  never about a sign-on session;
 - reading the **admin console**, which presents the same session on every page
   and reports nothing, because it is not a protocol SSO.
+
+And one change sends **no CAEP event of any kind**: a realm's **authentication
+policy being tightened** (Directory → Policies — a second factor required, a
+mechanism withdrawn). A live session keeps the `acr` it was established at,
+because that authentication did happen at that level, and CAEP 1.0 has no event
+for "the level this realm requires went up": `assurance-level-change` says a
+subject's assurance moved, and it did not. The next sign-in or step-up is held
+to the new policy. `GET /ssf` states this under *What it deliberately does not
+do*.
 
 ## Seeing what happened
 

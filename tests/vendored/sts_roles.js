@@ -518,7 +518,9 @@ async function anUnconfiguredRealmRefusesNobody() {
     // held through a group, and these two are held by any caller whose access
     // token carries `admin:read` or `admin:write`. That is why the count moved
     // by two on a change that added no container and no membership anywhere.
-    assert.strictEqual(register.body.builtIn.length, 10,
+    // DEVICE_COMPLIANCE (#164) is the eleventh: held through the scope
+    // `device:compliance`, the shape of the two admin ones.
+    assert.strictEqual(register.body.builtIn.length, 11,
       "the built-in roles are computed rather than stored, so an empty " +
       "container has them; this realm reports " +
       register.body.builtIn.length + " (" +

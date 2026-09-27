@@ -348,6 +348,25 @@ const SCIM_QUERY_MAX = 4096;
 const SEARCH_REQUEST_URN =
     'urn:ietf:params:scim:api:messages:2.0:SearchRequest';
 
+// THE MEMBERS OF RFC 7643's SCHEMAS THIS DIRECTORY HAS NO PLACE FOR, taken
+// off the published definitions by narrowSchemas() (#206). Each is a member
+// with no row in `scim_map.ts`; adding a row is how one comes back.
+const NOT_PUBLISHED_USER = [
+  'nickName', 'locale', 'timezone', 'ims', 'photos', 'entitlements', 'roles',
+  'x509Certificates', 'name.middleName', 'name.honorificSuffix',
+  'emails.display', 'emails.primary', 'phoneNumbers.display',
+  'phoneNumbers.primary', 'addresses.primary'
+];
+const NOT_PUBLISHED_ENTERPRISE = ['costCenter', 'manager.displayName'];
+
+// The types a multi-valued member may carry: the `type` of each of its rows
+// in `scim_map.ts`, and nothing else. See narrowSchemas().
+const CANONICAL_TYPES: Record<string, string[]> = {
+  'emails.type': ['work'],
+  'phoneNumbers.type': ['work', 'mobile'],
+  'addresses.type': ['work']
+};
+
 // ---------------------------------------------------------------------------
 // REGISTERING A HOBA PUBLIC KEY — RFC 7486 section 7.
 //
@@ -412,6 +431,17 @@ class Scim {
     log.debug("Entering Scim.enabled().");
     log.debug("Leaving Scim.enabled().");
     return config.value('scim.enabled') !== false;
+  }
+
+  // Whether a SCIM create fills in what the client did not send
+  // (`scim.inventOnCreate`, #206). Development mode only: createUser() and
+  // the credential-claim fill both stop at mode.inventsClaimValues() in
+  // product, whatever this answers.
+  private inventOnCreate(): boolean {
+    const { log, config } = this.deps;
+    log.debug("Entering Scim.inventOnCreate().");
+    log.debug("Leaving Scim.inventOnCreate().");
+    return config.value('scim.inventOnCreate') !== false;
   }
 
   private maxResults(): number {
@@ -644,7 +674,8 @@ class Scim {
     // bytes went back and there is no way to know that from the object. It is
     // the same string res.end() is handed below — built once, so the figure on
     // /admin/scim/monitor is the payload rather than an estimate of it.
-    const text = body === undefined ? '' : JSON.stringify(body, null, 2);
+    const text = body === undefined ? '' :
+      JSON.stringify(this.forTheWire(body), null, 2);
     stats.recordScim({ operation: info.operation,
                        resourceType: info.resourceType,
                        status: status, ok: true, scimType: '',
@@ -667,6 +698,41 @@ class Scim {
        .set('Cache-Control', 'no-store')
        .end(text);
     log.debug("Leaving Scim.sendScim(). " + status + ".");
+  }
+
+  // ---------------------------------------------------------------------------
+  // EVERY USER AND GROUP LEAVES PRUNED (#206).
+  //
+  // The egress handlers pad every multi-valued and complex member for
+  // scimmy's filter matcher (scim_map.ts's toScimUser()), and only the LIST
+  // path took the padding off — a single resource keeps it, deliberately,
+  // because scimmy applies a PATCH to what egress returned and a valuePath
+  // like `emails[type eq "work"]` runs the same matcher. So a Group read or
+  // patched by id went out with `"members": []` where a list left the member
+  // out: two answers for one state. RFC 7643 section 2.5 makes them
+  // equivalent, and scim2-tester, reading a removed `members` back, took the
+  // empty array for a removal that had not happened. Pruned HERE, on the way
+  // out, where no matcher is left to need the padding: each User or Group
+  // resource in the body, and nothing else — a discovery document's empty
+  // `subAttributes` or `canonicalValues` is a statement, not padding.
+  // ---------------------------------------------------------------------------
+  private forTheWire(body: unknown): unknown {
+    const { log, scimMap } = this.deps;
+    log.debug("Entering Scim.forTheWire().");
+    const plain: any = JSON.parse(JSON.stringify(body));
+    const isResource = function (one: any): boolean {
+      const type = one && one.meta && one.meta.resourceType;
+      return type === 'User' || type === 'Group';
+    };
+    if (plain && Array.isArray(plain.Resources)) {
+      plain.Resources = plain.Resources.map(function (one: any) {
+        return isResource(one) ? scimMap.prune(one) : one;
+      });
+      log.debug("Leaving Scim.forTheWire(). A list.");
+      return plain;
+    }
+    log.debug("Leaving Scim.forTheWire().");
+    return isResource(plain) ? scimMap.prune(plain) : plain;
   }
 
   // ---------------------------------------------------------------------------
@@ -762,6 +828,12 @@ class Scim {
                       decision.status + ".");
             return undefined;
           }
+          const precondition = this.preconditionRefusal(req);
+          if (precondition) {
+            this.sendScimError(req, res, info, precondition);
+            log.debug("The SCIM handler refused an If-Match.");
+            return undefined;
+          }
           return fn(req, res);
         })
         .catch((ex) => {
@@ -779,6 +851,40 @@ class Scim {
         });
       log.debug("Leaving the SCIM handler (the answer is on its way).");
     };
+  }
+
+  // ---------------------------------------------------------------------------
+  // `If-Match` ON A WRITE, WHICH THIS SERVICE CANNOT SATISFY (#206).
+  //
+  // There is no ETag here (the header says why, and the ServiceProviderConfig
+  // says `etag.supported: false`), and until this a PUT, PATCH or DELETE
+  // carrying `If-Match: W/"3"` was performed anyway — the precondition
+  // ignored, which sendScim()'s own note calls the worst of the three
+  // possible behaviours, because the client believes it was honoured. RFC
+  // 9110 section 13.1.1 decides it: an `If-Match` other than `*` is FALSE
+  // when no current entity-tag matches it, and with no entity-tags nothing
+  // ever does — so the answer is 412, and RFC 7644 section 3.13 asks the same
+  // of a version a service provider does not use. `*` is true for any
+  // resource that exists, which the handler finds out. Asked after the
+  // credential, so an anonymous caller learns nothing from the difference.
+  // ---------------------------------------------------------------------------
+  private preconditionRefusal(req: ScimRequest): any {
+    const { log, SCIMMY } = this.deps;
+    const { coded } = this;
+    log.debug("Entering Scim.preconditionRefusal().");
+    const method = String(req.method || '').toUpperCase();
+    const asked = req.headers && req.headers['if-match'];
+    if (['PUT', 'PATCH', 'DELETE'].indexOf(method) < 0 ||
+        asked === undefined || String(asked).trim() === '*') {
+      log.debug("Leaving Scim.preconditionRefusal(). Nothing to refuse.");
+      return null;
+    }
+    log.debug("Leaving Scim.preconditionRefusal(). Refused.");
+    return coded('STS-SCIM-0081', new SCIMMY.Types.Error(412, null,
+      'This request is conditional on If-Match: ' + String(asked) + ', and ' +
+      'this service keeps no entity-tags (etag.supported is false in the ' +
+      'ServiceProviderConfig), so no version can match it. Nothing was ' +
+      'changed. Send the request without If-Match, or with If-Match: *.'));
   }
 
   // The request body, as SCIM sends it. app.js parses every body as TEXT (one
@@ -984,7 +1090,7 @@ class Scim {
   // on — rather than surfacing as a 500 or, worse, as an empty list that reads
   // as "no such user".
   // ---------------------------------------------------------------------------
-  private applyFilter(filter: any, values: any[]): any[] {
+  private applyFilter(filter: any, values: any[], definition: any): any[] {
     const { log, errorCodes, SCIMMY } = this.deps;
     const { coded } = this;
     log.debug("Entering Scim.applyFilter(). " + values.length +
@@ -993,8 +1099,20 @@ class Scim {
       log.debug("Leaving Scim.applyFilter(). There was no filter.");
       return values;
     }
+    // Refused here, outside the try below, so that its own code survives.
+    const folded = this.foldFilter(filter, definition);
     try {
-      const matched = filter.match(values);
+      const copies = values.map((value, index) => {
+        const copy = JSON.parse(JSON.stringify(value));
+        folded.paths.forEach((path) => {
+          this.foldValuesAt(copy, path);
+        });
+        copy.__scimIndex = index;
+        return copy;
+      });
+      const matched = folded.filter.match(copies).map((copy) => {
+        return values[copy.__scimIndex];
+      });
       log.debug("Leaving Scim.applyFilter(). " + matched.length + " matched.");
       return matched;
     } catch (ex) {
@@ -1008,6 +1126,141 @@ class Scim {
         'This filter could not be evaluated against the resources here: ' +
         ex.message));
     }
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE FILTER, READ AGAINST THE SCHEMA scimmy's MATCHER IGNORES (#206).
+  //
+  // `SCIMMY.Types.Filter#match()` compares every string exactly and orders
+  // any two values of one JavaScript type, whatever the attribute's
+  // definition says. RFC 7644 section 3.4.2.2 makes two things depend on
+  // that definition and scimmy honoured neither, which scim2/test-suite
+  // found:
+  //
+  //   * a comparison of a `caseExact: false` attribute — `userName`, every
+  //     `emails.value`, most of the schema — SHALL ignore case, so
+  //     `userName eq "ALICE"` finds `alice`. It found nobody.
+  //   * `gt`, `ge`, `lt` and `le` on a BOOLEAN or BINARY attribute SHALL be
+  //     refused 400 `invalidFilter`. `active gt true` answered 200.
+  //
+  // The comparison stays scimmy's. What changes is its input: this returns a
+  // copy of the filter whose expected strings are folded to lower case
+  // wherever the attribute is a case-insensitive string, and the paths it
+  // folded, so that applyFilter() folds the same members of each candidate
+  // before matching. An attribute the schema does not declare is left as it
+  // was, compared exactly and never refused here.
+  // ---------------------------------------------------------------------------
+  private foldFilter(filter: any, definition: any):
+      { filter: any; paths: string[][] } {
+    const { log, SCIMMY } = this.deps;
+    const { coded } = this;
+    log.debug("Entering Scim.foldFilter(). " + filter.expression);
+    const paths: string[][] = [];
+    const describe = function (path: string[]): any {
+      try {
+        return definition.attribute(path.join('.'));
+      } catch (e) {
+        log.debug("Caught in Scim.foldFilter(): " + ((e && e.message) || e));
+        return null;
+      }
+    };
+    const leaf = function (path: string[], expression: any[]): any[] {
+      const negated = String(expression[0]).toLowerCase() === 'not';
+      const comparator = String(expression[negated ? 1 : 0]).toLowerCase();
+      const expected = expression[negated ? 2 : 1];
+      const attribute = describe(path);
+      if (!attribute) {
+        return expression;
+      }
+      const type = String(attribute.type);
+      if (['gt', 'ge', 'lt', 'le'].indexOf(comparator) >= 0 &&
+          (type === 'boolean' || type === 'binary')) {
+        throw coded('STS-SCIM-0082', new SCIMMY.Types.Error(400,
+          'invalidFilter', '"' + comparator + '" orders values, and ' +
+          path.join('.') + ' is a ' + type + ' attribute, which has no ' +
+          'order: RFC 7644 section 3.4.2.2 refuses such a comparison.'));
+      }
+      if ((type === 'string' || type === 'reference') &&
+          attribute.config.caseExact !== true &&
+          typeof expected === 'string') {
+        if (!paths.some(function (seen) {
+          return seen.join('.').toLowerCase() ===
+                 path.join('.').toLowerCase();
+        })) {
+          paths.push(path);
+        }
+        const out = expression.slice(0);
+        out[negated ? 2 : 1] = expected.toLowerCase();
+        return out;
+      }
+      return expression;
+    };
+    const isLeaf = function (value: any[]): boolean {
+      return value.length > 0 && typeof value[0] === 'string';
+    };
+    const walk = function (node: any, prefix: string[]): any {
+      const out: Record<string, any> = {};
+      Object.keys(node).forEach(function (key) {
+        const value = node[key];
+        const path = prefix.concat([key]);
+        if (Array.isArray(value) && isLeaf(value)) {
+          out[key] = leaf(path, value);
+        } else if (Array.isArray(value) && value.every(Array.isArray)) {
+          out[key] = value.map(function (one: any[]) {
+            return leaf(path, one);
+          });
+        } else if (Array.isArray(value)) {
+          out[key] = value.map(function (one: any) {
+            return walk(one, path);
+          });
+        } else if (value && typeof value === 'object') {
+          out[key] = walk(value, path);
+        } else {
+          out[key] = value;
+        }
+      });
+      return out;
+    };
+    const expressions = Array.prototype.slice.call(filter).map(
+      function (one: any) {
+        return walk(one, []);
+      });
+    const rebuilt = paths.length
+      ? new SCIMMY.Types.Filter(JSON.parse(JSON.stringify(expressions)))
+      : filter;
+    log.debug("Leaving Scim.foldFilter(). " + paths.length +
+              " case-insensitive path(s).");
+    return { filter: rebuilt, paths: paths };
+  }
+
+  // Every string at `path` in `resource` in lower case, in place, through
+  // arrays on the way — the candidate's half of foldFilter(). Member names
+  // are matched without regard to case, as scimmy's matcher matches them.
+  private foldValuesAt(resource: any, path: string[]): void {
+    const { log } = this.deps;
+    log.debug("Entering Scim.foldValuesAt().");
+    const fold = function (node: any, depth: number): any {
+      if (Array.isArray(node)) {
+        return node.map(function (one) {
+          return fold(one, depth);
+        });
+      }
+      if (depth === path.length) {
+        return typeof node === 'string' ? node.toLowerCase() : node;
+      }
+      if (!node || typeof node !== 'object') {
+        return node;
+      }
+      const key = Object.keys(node).filter(function (name) {
+        return name.toLowerCase() === path[depth].toLowerCase();
+      })[0];
+      if (key !== undefined) {
+        node[key] = fold(node[key], depth + 1);
+      }
+      return node;
+    };
+    fold(resource, 0);
+    log.debug("Leaving Scim.foldValuesAt().");
   }
 
   // ---------------------------------------------------------------------------
@@ -1171,6 +1424,8 @@ class Scim {
     const resource = scimMap.toScimUser(entry, {
       groups: this.groupsOf(entry.dn),
       location: this.locationPrefix(req, 'Users'),
+      locations: { User: this.locationPrefix(req, 'Users'),
+                   Group: this.locationPrefix(req, 'Groups') },
       // WHAT THIS PERSON IS CALLED WHEN THEIR ENTRY HAS NO `uid` — which is an
       // ordinary entry here and not a broken one, since a client certificate's
       // is named `cn=<CN>,ou=users` and carries none. Read through the
@@ -1207,10 +1462,24 @@ class Scim {
         { federationLinks: links });
     }
     // The manager as a SCIM id, where the directory holds the DN (2026-09-14).
-    const extension = resource[scimMap.ENTERPRISE_SCHEMA];
-    if (extension && extension.manager && extension.manager.value) {
-      extension.manager.value =
-        directory.resourceIdOfDn(extension.manager.value);
+    //
+    // **READ AT THE NAMESPACED MEMBER, WHICH IS WHERE toScimUser() WRITES IT
+    // (#206).** This read `resource[ENTERPRISE_SCHEMA].manager` — the object
+    // form — which egress never writes (scim_map.ts's egressPath() argues
+    // why), so the translation never ran and every User with a manager went
+    // out carrying the manager's DN as `manager.value`: the one identifier a
+    // client cannot send back, since an id is what `manager.value` takes.
+    // scim2-tester found it. With the id, the `$ref` RFC 7643 section 4.3
+    // gives the manager: the manager's own resource, where it has one.
+    const managerKey = scimMap.ENTERPRISE_SCHEMA + ':manager';
+    const manager = resource[managerKey];
+    if (manager && manager.value) {
+      const managerDn = manager.value;
+      manager.value = directory.resourceIdOfDn(managerDn);
+      if (directory.readPerson(managerDn)) {
+        manager.$ref = this.locationPrefix(req, 'Users') +
+          encodeURIComponent(manager.value);
+      }
     }
     log.debug("Leaving Scim.userResourceFor().");
     return resource;
@@ -1290,8 +1559,93 @@ class Scim {
         return Object.assign({}, member,
                              { id: directory.resourceIdOfDn(member.dn) });
       }),
-      location: this.locationPrefix(req, 'Groups')
+      location: this.locationPrefix(req, 'Groups'),
+      locations: { User: this.locationPrefix(req, 'Users'),
+                   Group: this.locationPrefix(req, 'Groups') }
     });
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE PUBLISHED SCHEMAS SAY WHAT THE DIRECTORY HOLDS, AND NOTHING MORE
+  // (#206, 2026-09-26).
+  //
+  // scimmy's User, EnterpriseUser and Group definitions are RFC 7643's whole
+  // schemas, and until this they were published unchanged at /Schemas. But
+  // this service stores a User in ONE directory entry through `scim_map.ts`,
+  // and a member with no row there — `nickName`, `locale`, `timezone`,
+  // `ims`, `photos`, `entitlements`, `roles`, `x509Certificates`,
+  // `name.middleName`, `name.honorificSuffix`, `costCenter`, every `display`
+  // and `primary` of a multi-valued member — was ACCEPTED, answered 200 or 201,
+  // and gone on the next read. RFC 7643 section 7 makes /Schemas the list of
+  // what a service provider SUPPORTS, and every one of these was a promise
+  // broken silently; scim2-tester reported each as a value that did not come
+  // back (#206). So each is removed from the published definition, and since
+  // scimmy coerces through the same definition, a client that still sends one
+  // is answered with what is really there rather than told it was kept.
+  //
+  // THREE THINGS ARE NARROWED RATHER THAN REMOVED:
+  //   * `emails.type`, `phoneNumbers.type` and `addresses.type` list ONLY the
+  //     types a row of the mapping stores (`work`; `work` and `mobile`;
+  //     `work`). RFC 7643 section 2.3.1 lets a service provider restrict
+  //     canonical values, and a `home` email was dropped where it is now
+  //     refused 400 invalidValue — the honest answer, since `mail` has no
+  //     type to put `home` in.
+  //   * `roles.type`, `entitlements.type` and `x509Certificates.type` carried
+  //     `canonicalValues: []` in scimmy, which RFC 7643 section 8.7.1 means as
+  //     "none suggested" and scimmy enforces as "nothing allowed" — moot now
+  //     that the three are removed, and the reason not to put them back
+  //     without that fixed.
+  //   * `members.display` is removed from Group: RFC 7643 section 8.7.1's
+  //     Group schema has `value`, `$ref` and `type` and no `display`, and the
+  //     one scimmy added was drawn from the member's DN.
+  //
+  // WHAT IS NOT REMOVED IS `password`, and not because it is stored: it is
+  // `writeOnly` and `returned: never`, so nothing reads it back, and a
+  // provisioning client that sends one must not have its create refused for
+  // it. It is not written (the header says why) — the published schema was
+  // never a promise that it is.
+  //
+  // Idempotent, because a process that loads this module twice (a test, a
+  // worker) would otherwise throw on the second truncate of something
+  // already gone.
+  // ---------------------------------------------------------------------------
+  private narrowSchemas(): void {
+    const { log, SCIMMY } = this.deps;
+    log.debug("Entering Scim.narrowSchemas().");
+    const drop = function (definition: any, path: string): void {
+      let present = true;
+      try {
+        definition.attribute(path);
+      } catch (e) {
+        log.debug("Caught in Scim.narrowSchemas(): " +
+                  ((e && e.message) || e));
+        present = false;
+      }
+      if (present) {
+        definition.truncate(path);
+      }
+    };
+    const user = SCIMMY.Schemas.User.definition;
+    NOT_PUBLISHED_USER.forEach(function (path) {
+      drop(user, path);
+    });
+    Object.keys(CANONICAL_TYPES).forEach(function (path) {
+      user.attribute(path).config.canonicalValues =
+        CANONICAL_TYPES[path].slice(0);
+    });
+    const enterprise = SCIMMY.Schemas.EnterpriseUser.definition;
+    NOT_PUBLISHED_ENTERPRISE.forEach(function (path) {
+      drop(enterprise, path);
+    });
+    drop(SCIMMY.Schemas.Group.definition, 'members.display');
+    // `schemas` IS RETURNED ALWAYS. RFC 7643 section 3 makes it REQUIRED on
+    // every representation of a resource, and scimmy gave it `returned:
+    // default`, so `?attributes=userName` sent resources with no `schemas`
+    // at all (RFC 7644 section 3.9's minimum set; scim2/test-suite).
+    [user, SCIMMY.Schemas.Group.definition].forEach(function (definition) {
+      definition.attribute('schemas').config.returned = 'always';
+    });
+    log.debug("Leaving Scim.narrowSchemas().");
   }
 
   // The two scimmy resources, User and Group, declared with the handlers
@@ -1301,6 +1655,7 @@ class Scim {
     const { log, directory, scimMap, errorCodes, SCIMMY } = this.deps;
     const { coded } = this;
     log.debug("Entering Scim.declareResources().");
+    this.narrowSchemas();
     const claimingIngress = this.claimingIngress.bind(this) as Fn;
     // EXTENDED WITH THE ENTERPRISE USER SCHEMA (RFC 7643 section 4.3), and the
     // extension has to be DECLARED rather than merely mapped. scim_map.ts has
@@ -1342,7 +1697,8 @@ class Scim {
         const all = directory.allPersons().map((entry) => {
           return this.userResourceFor(entry, req);
         });
-        const matched = this.applyFilter(resource.filter, all);
+        const matched = this.applyFilter(resource.filter, all,
+          SCIMMY.Resources.User.schema.definition);
         log.debug("Leaving the SCIM User egress handler. " + matched.length +
                   " of " + all.length + " resource(s).");
         // Pruned only now: the padding exists for the matcher and this is where
@@ -1457,6 +1813,9 @@ class Scim {
             origin: 'scim',
             channel: 'http',
             protocol: 'SCIM',
+            // The persona, only where scim.inventOnCreate asks for it — and
+            // createUser() invents nothing in product mode either way.
+            invent: this.inventOnCreate(),
             // WHO provisioned them. It used to be blank, because nothing at
             // these endpoints authenticated and audit.js's actor resolver reads
             // the browser session — which a provisioning client does not have.
@@ -1557,7 +1916,7 @@ class Scim {
         // populateVcAttributesAt() in ldap/ldap_server.js, which argues why the
         // sweep is still right for the two callers that mean every entry and
         // wrong for every caller that means one.
-        if (!existing) {
+        if (!existing && this.inventOnCreate()) {
           directory.populateVcAttributesAt(dn);
         }
 
@@ -1637,7 +1996,8 @@ class Scim {
         const all = directory.allGroupEntries().map((entry) => {
           return this.groupResourceFor(entry, req);
         });
-        const matched = this.applyFilter(resource.filter, all);
+        const matched = this.applyFilter(resource.filter, all,
+          SCIMMY.Resources.Group.schema.definition);
         log.debug("Leaving the SCIM Group egress handler. " + matched.length +
                   " of " + all.length + " group(s).");
         return matched.map(scimMap.prune);
@@ -2000,12 +2360,93 @@ class Scim {
   // A PATCH that changes nothing returns 204 with no body, which section 3.5.2
   // permits and scimmy signals by resolving to undefined. A client that always
   // parses the response body is exactly what that case is for.
+  // ---------------------------------------------------------------------------
+  // TWO PATCH OPERATIONS ON A WHOLE EXTENSION THAT scimmy CANNOT APPLY, PUT
+  // IN THE SHAPE IT CAN (#206). Nothing else about an operation is touched.
+  //
+  // 1. A VALUE FOR A WHOLE EXTENSION MAY NAME ITS OWN SCHEMA.
+  // `{"op": "add", "path": "urn:…:enterprise:2.0:User", "value":
+  // {"schemas": ["urn:…:enterprise:2.0:User"], "employeeNumber": "42"}}` is
+  // what scim2-models writes for an extension, and scimmy failed it with
+  // "Cannot add property schemas, object is not extensible" — a 400 naming
+  // an internal of the library, for a request whose `schemas` only repeats
+  // the URN the path already names. `schemas` is not an attribute of an
+  // extension (RFC 7643 section 3.3: the extension's attributes are the
+  // container's members), so it is taken off such a value before scimmy
+  // applies the operation; everything else in the value is applied as sent.
+  // A `schemas` naming some OTHER URN is left for scimmy to refuse.
+  //
+  // 2. `{"op": "remove", "path": "urn:…:enterprise:2.0:User"}` — every
+  // attribute of the extension, RFC 7644 section 3.5.2.2 — failed inside
+  // scimmy with "Cannot convert undefined or null to object", because the
+  // resource egress hands it carries an extension's members in their
+  // namespaced form (scim_map.ts's egressPath()) and never under the bare
+  // URN. It is applied as one `remove` per attribute the extension declares,
+  // which scimmy applies correctly and which is what removing the extension
+  // means; an attribute with no value is removed without complaint.
+  // ---------------------------------------------------------------------------
+  private normalisePatch(body: any, Resource: any): any {
+    const { log } = this.deps;
+    log.debug("Entering Scim.normalisePatch().");
+    const operations = body && Array.isArray(body.Operations)
+      ? body.Operations : [];
+    const extensionOf = function (path: string): any {
+      if (!/^urn:/i.test(path)) {
+        return null;
+      }
+      try {
+        const found = Resource.schema.definition.attribute(path);
+        return found && Array.isArray(found.attributes) &&
+          String(found.id || '').toLowerCase() === path.toLowerCase()
+          ? found : null;
+      } catch (e) {
+        log.debug("Caught in Scim.normalisePatch(): " +
+                  ((e && e.message) || e));
+        return null;
+      }
+    };
+    const expanded: any[] = [];
+    operations.forEach(function (op: any) {
+      const target = String((op && op.path) || '');
+      const extension = String((op && op.op) || '').toLowerCase() ===
+        'remove' ? extensionOf(target) : null;
+      if (!extension) {
+        expanded.push(op);
+        return;
+      }
+      extension.attributes.filter(function (attribute: any) {
+        return !attribute.config.shadow;
+      }).forEach(function (attribute: any) {
+        expanded.push({ op: op.op, path: extension.id + ':' + attribute.name });
+      });
+    });
+    if (body && Array.isArray(body.Operations)) {
+      body.Operations = expanded;
+    }
+    expanded.forEach(function (op: any) {
+      const target = String((op && op.path) || '');
+      const value = op && op.value;
+      if (!/^urn:/i.test(target) || !value || typeof value !== 'object' ||
+          Array.isArray(value) || !Array.isArray(value.schemas)) {
+        return;
+      }
+      const names = value.schemas.map(function (one: unknown) {
+        return String(one).toLowerCase();
+      });
+      if (names.length === 1 && names[0] === target.toLowerCase()) {
+        delete value.schemas;
+      }
+    });
+    log.debug("Leaving Scim.normalisePatch().");
+    return body;
+  }
+
   private modifyHandler(type: string, Resource: any): ScimHandler {
     const { log } = this.deps;
     log.debug("Entering Scim.modifyHandler().");
     log.debug("Leaving Scim.modifyHandler().");
     return async (req, res) => {
-      const body = this.scimBody(req);
+      const body = this.normalisePatch(this.scimBody(req), Resource);
       const patched = await new Resource(String(req.params.id),
                                          this.queryParams(req))
         .patch(body, { req: req });
@@ -2710,6 +3151,33 @@ class Scim {
         this.sendScim(req, res, { operation: 'bulk', resourceType: 'Bulk' },
                       200, result);
       }));
+
+    // --- everything else under the base (section 3.12) -----------------------
+    //
+    // A path under /scim/v2 that names no endpoint (#206). It fell through to
+    // express's own 404 — an HTML page, `Cannot GET …` — so a SCIM client
+    // that mistyped a resource type got a body it could not parse where RFC
+    // 7644 section 3.12 promises every error in the Error schema; scim2-tester
+    // checks exactly this with a random URL. REGISTERED LAST UNDER THE BASE,
+    // after every endpoint above, and per method rather than with app.all(),
+    // so that /admin/sts-metadata lists what it answers. Through handle()
+    // like everything else, so it is counted and gated: a caller presenting
+    // a credential that fails is refused as at any other path, and one
+    // presenting nothing is told the path is not an endpoint — which is no
+    // secret, since the endpoints are published.
+    const unknown = this.handle(
+      { operation: 'unknown', resourceType: 'None', need: 'none' },
+      async (req) => {
+        throw coded('STS-SCIM-0080', new SCIMMY.Types.Error(404, null,
+          req.method + ' ' + String(req.path) + ' is not a SCIM endpoint ' +
+          'here. The resource types are at ' + BASE + '/ResourceTypes, and ' +
+          'every endpoint is listed at /scim.'));
+      });
+    app.get(BASE + '/*', unknown);
+    app.post(BASE + '/*', unknown);
+    app.put(BASE + '/*', unknown);
+    app.patch(BASE + '/*', unknown);
+    app.delete(BASE + '/*', unknown);
 
     app.get('/scim', (req, res) => {
       log.debug("Entering GET /scim.");

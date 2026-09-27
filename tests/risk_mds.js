@@ -24,6 +24,14 @@
 //      `authenticator-compromised` and is HIGH.
 //   I. A BLOB SIGNED UNDER ANOTHER ROOT is refused (STS-RISK-0022) and
 //      recorded as a refused version.
+//   J. THE SIGNATURE OVERRIDE (an upload's checkbox): a BLOB whose
+//      signature does not verify is LOADED, recorded `overridden` with the
+//      reason and its revocation unchecked; still refused if not newer, if
+//      its payload is not a BLOB, and for any dataset but fido.mds3.
+//   K. AN x5c ENDING BELOW THE ROOT, as FIDO's does, loads under hard-fail
+//      (the walk is handed the verified path, anchor included); a
+//      revocation status that cannot be established is loaded under the
+//      override, and a REVOKED chain is refused even then.
 // ===========================================================================
 
 delete process.env.CONFIG_FILE;
@@ -81,11 +89,14 @@ function derOf(pem) {
   return String(pem).replace(/-----[^-]+-----/g, '').replace(/\s+/g, '');
 }
 
-// A BLOB: an RS256 JWS over the payload, the chain in x5c.
-function blobOf(h, payload) {
+// A BLOB: an RS256 JWS over the payload, the chain in x5c. `withoutRoot`
+// shapes the x5c as FIDO's is, ending BELOW the root.
+function blobOf(h, payload, withoutRoot) {
   log.debug("Entering blobOf().");
+  const x5c = withoutRoot ? [derOf(h.signerPem)]
+                          : [derOf(h.signerPem), derOf(h.rootPem)];
   const header = Buffer.from(JSON.stringify({ alg: 'RS256', typ: 'JWT',
-    x5c: [derOf(h.signerPem), derOf(h.rootPem)] })).toString('base64url');
+    x5c: x5c })).toString('base64url');
   const body = Buffer.from(JSON.stringify(payload)).toString('base64url');
   const signature = nodeCrypto.sign('sha256', Buffer.from(header + '.' +
                                                           body),
@@ -249,6 +260,117 @@ async function run(t) {
           'and recorded as a refused version, as the rollback was',
           JSON.stringify(foreign.errors));
 
+  // --- J. the signature override ------------------------------------------
+  const forced = blobOf(other, payloadOf(9, now + 30 * DAY));
+  const unforced = await pki.verifyFidoMdsBlob(forced,
+                                               { anchorsPem: fido.rootPem });
+  const forcedCheck = await pki.verifyFidoMdsBlob(forced,
+    { anchorsPem: fido.rootPem, overrideSignature: true });
+  t.check(!unforced.ok && forcedCheck.ok && forcedCheck.payload.no === 9 &&
+          /chain/.test(forcedCheck.overridden),
+          'J1. under the override a BLOB that does not verify is read, and ' +
+          'says why it did not verify', JSON.stringify(forcedCheck.overridden));
+  const tamperedCheck = await pki.verifyFidoMdsBlob(tampered,
+    { anchorsPem: fido.rootPem, overrideSignature: true });
+  t.check(tamperedCheck.ok && /signature/.test(tamperedCheck.overridden),
+          'J2. a bad signature under a good chain is overridden too',
+          tamperedCheck.reason);
+  const notBlob = await pki.verifyFidoMdsBlob(parts[0] + '.' +
+    Buffer.from('{"no":1}').toString('base64url') + '.' + parts[2],
+    { anchorsPem: fido.rootPem, overrideSignature: true });
+  const noChainForced = await pki.verifyFidoMdsBlob(bare,
+    { anchorsPem: fido.rootPem, overrideSignature: true });
+  t.check(!notBlob.ok && !noChainForced.ok,
+          'J3. the override does not admit a payload that is not a BLOB, ' +
+          'nor a token with no x5c', notBlob.reason + ' / ' +
+          noChainForced.reason);
+  const loaded = await riskDatasets.importVersion({ dataset: 'fido.mds3',
+    format: 'fido-mds3-jwt', content: forced, source: 'upload',
+    overrideSignature: true, actor: 'a test' });
+  const loadedRow = (await riskStore.listVersions('', 'fido.mds3'))
+    .filter(function (v) { return v.version === 'no-9'; })[0];
+  t.check(loaded.ok && loaded.activated && /chain/.test(loaded.overridden) &&
+          loadedRow && loadedRow.verification === 'overridden' &&
+          /chain/.test(loadedRow.parameters.signatureOverride) &&
+          loadedRow.parameters.signatureOverrideBy === 'a test' &&
+          /unchecked/.test(loadedRow.parameters.revocation),
+          'J4. imported with the override, the BLOB is active, recorded ' +
+          '`overridden` with its reason and actor, its revocation unchecked',
+          JSON.stringify(loaded) + ' ' + JSON.stringify(loadedRow));
+  const forcedOlder = await riskDatasets.importVersion({ dataset: 'fido.mds3',
+    format: 'fido-mds3-jwt', content: blobOf(other, payloadOf(8, now)),
+    source: 'upload', overrideSignature: true, actor: 'a test' });
+  t.check(!forcedOlder.ok && /serial number is 8/.test(forcedOlder.errors[0]),
+          'J5. the override does not admit a rollback',
+          JSON.stringify(forcedOlder.errors));
+  const wrongDataset = await riskDatasets.importVersion({
+    dataset: 'iplist.tor-exit', format: 'ip-list', content: '192.0.2.1\n',
+    source: 'upload', overrideSignature: true, actor: 'a test' });
+  t.check(!wrongDataset.ok &&
+          /\(fido\.mds3\) only/.test(wrongDataset.errors[0]),
+          'J6. the override is refused for any dataset but fido.mds3 ' +
+          '(STS-RISK-0001)', JSON.stringify(wrongDataset.errors));
+
+  // --- K. an x5c that ends below the root, under hard-fail ----------------
+  const rootless = blobOf(fido, payloadOf(10, now + 30 * DAY), true);
+  const rootlessCheck = await pki.verifyFidoMdsBlob(rootless,
+    { anchorsPem: fido.rootPem });
+  t.check(rootlessCheck.ok && rootlessCheck.chainPems.length === 2 &&
+          derOf(rootlessCheck.chainPems[1]) === derOf(fido.rootPem),
+          'K1. an x5c ending below the root (FIDO\'s shape) verifies, and ' +
+          'the chain handed on is the verified path, the anchor last',
+          rootlessCheck.reason);
+  config.setOverride('pki.revocationCheck', 'hard-fail');
+  const hardFail = await riskDatasets.importVersion({ dataset: 'fido.mds3',
+    format: 'fido-mds3-jwt', content: rootless, source: 'upload' });
+  t.check(hardFail.ok && hardFail.activated && !hardFail.overridden,
+          'K2. under hard-fail such a BLOB is loaded: the revocation walk ' +
+          'ends at the anchor instead of at an issuer nobody presented',
+          JSON.stringify(hardFail));
+  // A revocation verdict this node cannot establish, and one that says
+  // REVOKED — stubbed, because a synthetic chain has nobody to ask.
+  const revocation = require('../common/revocation_status');
+  const realVerdictFor = revocation.verdictFor;
+  let stubbed = { status: 'unknown', refused: true, policy: 'hard-fail',
+                  why: 'a synthetic unknown' };
+  revocation.verdictFor = async function () {
+    return stubbed;
+  };
+  try {
+    const unknownPlain = await riskDatasets.importVersion({
+      dataset: 'fido.mds3', format: 'fido-mds3-jwt',
+      content: blobOf(fido, payloadOf(11, now + 30 * DAY), true),
+      source: 'upload' });
+    const unknownForced = await riskDatasets.importVersion({
+      dataset: 'fido.mds3', format: 'fido-mds3-jwt',
+      content: blobOf(fido, payloadOf(11, now + 30 * DAY), true),
+      source: 'upload', version: 'no-11-forced', overrideSignature: true,
+      actor: 'a test' });
+    const unknownRow = (await riskStore.listVersions('', 'fido.mds3'))
+      .filter(function (v) { return v.version === 'no-11-forced'; })[0];
+    t.check(!unknownPlain.ok && /unknown status/.test(unknownPlain.errors[0]) &&
+            unknownForced.ok && unknownForced.activated &&
+            /revocation status could not be established/
+              .test(unknownForced.overridden) &&
+            unknownRow && unknownRow.verification === 'overridden',
+            'K3. a revocation status that cannot be established refuses ' +
+            'the BLOB, and the override loads it, recorded `overridden`',
+            JSON.stringify(unknownPlain.errors) + ' ' +
+            JSON.stringify(unknownForced));
+    stubbed = { status: 'revoked', refused: true, policy: 'hard-fail',
+                why: 'a synthetic revocation' };
+    const revokedForced = await riskDatasets.importVersion({
+      dataset: 'fido.mds3', format: 'fido-mds3-jwt',
+      content: blobOf(fido, payloadOf(12, now + 30 * DAY), true),
+      source: 'upload', overrideSignature: true, actor: 'a test' });
+    t.check(!revokedForced.ok && /REVOKED/.test(revokedForced.errors[0]),
+            'K4. a signing chain positively REVOKED is refused even under ' +
+            'the override', JSON.stringify(revokedForced.errors));
+  } finally {
+    revocation.verdictFor = realVerdictFor;
+    config.clearOverride('pki.revocationCheck');
+  }
+
   config.clearOverride('risk.mdsTrustAnchors');
   config.clearOverride('risk.mdsStaleGraceDays');
   riskStore.reset();
@@ -261,6 +383,7 @@ module.exports = {
   describe: 'the FIDO Metadata Service (#62 P5) with a synthetic BLOB: an ' +
             'entry as rows, the signature and chain verified, a rollback ' +
             'refused, the latest only, a revoked model found by AAGUID, ' +
-            'staleness past nextUpdate, and a sign-in with such a key HIGH',
+            'staleness past nextUpdate, a sign-in with such a key HIGH, ' +
+            'and the administrator\'s signature override',
   run: run
 };

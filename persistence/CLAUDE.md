@@ -1217,6 +1217,20 @@ says so at length and names both fixes: correct the key, or set
 `keys.source=generated` to accept a new key on every start, which is what
 development mode does.
 
+### A realm being retired is a column of its row (#262, schema version 10)
+
+`sts_realms.retiring_at` is `realms.retire()`'s mark (`common/CLAUDE.md`,
+*`retire()` and `onRetire()`*). It rides the realm row rather than a minted
+store because the realm registry is replicated in BOTH modes and minted state
+only in product. `realmRows()` carries it as `retiringSince`,
+`realmChangeOf()` reports a mark the shadow lacks as `retiring`, the upsert
+writes it with `COALESCE(sts_realms.retiring_at, EXCLUDED.retiring_at)` so no
+write ever clears one, and `restoreRealms()` hands it to a replicated
+`update()` (or sets it on a realm restored at start, whose removal was begun
+and not finished). This module's `realms.onRetire()` hook is a `mark` that
+flushes, so the row and its change-log row are committed before `retire()`
+ends anything. The ldif driver needs nothing: it writes the rows as JSON.
+
 ### The schema version moved to 2
 
 `sts_keys` is the fourth table and the first with a `PRIMARY KEY` that is a realm
@@ -1380,6 +1394,18 @@ a process told where the password lives that carried on with the one in the URL
 would be ignoring the configuration that exists to keep it out of the URL.
 `describeDatabase()` reports WHERE it came from and never what it is, which is
 the Password row on `/admin/persistence`.
+
+**A PROCESS THAT IS NOT THE SERVICE DIALS THE SAME WAY (#213, 2026-09-26).**
+`databaseConnection()` answers `{ url, verifyTls }` — `resolveDatabaseUrl()`
+and `verifiesDatabaseTls()`, the one reading of
+`persistence.databaseTlsRejectUnauthorized` that `openStore()` and
+`describeDatabase()` now use too — for an out-of-process tool to hand
+`persistence_postgres.create()`. Its first caller is the install-time risk
+loader (`risk/risk_install.ts`), which dialled `STS_DATABASE_URL` alone and so
+could not sign in to any shipped stack. **A tool that dials the database
+calls this rather than copying the injection**, because the encoding above is
+exactly the kind of detail a copy gets wrong. Requiring this module does not
+open anything (only `start()` does), so a CLI may load it.
 
 ## THE `ldif` STORE HAD STOPPED WRITING THE DIRECTORY (fixed 2026-09-12)
 

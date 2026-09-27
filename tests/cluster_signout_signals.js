@@ -402,6 +402,65 @@ function childMain() {
            .length === 1,
          '3d. a claim store that cannot be asked still REPORTS the end — a ' +
          'lost notice is worse than a repeated one');
+    // 3e (#242). A claim that REJECTS — or throws before it has a promise —
+    // used to be logged and the report dropped. It is asked again, and the
+    // end is reported once when a later attempt wins.
+    store = sharedStore();
+    claims.reset();
+    notices.length = 0;
+    const realClaim = claims.claim;
+    let refusals = 0;
+    claims.claim = function () {
+      refusals += 1;
+      if (refusals === 1) {
+        return Promise.reject(new Error('the claim rejected'));
+      }
+      if (refusals === 2) {
+        throw new Error('the claim threw');
+      }
+      return realClaim.apply(claims, arguments);
+    };
+    const retried = authn.startSession(noBrowser(), 'css-retried', ['pwd'],
+      '1', 'Test', { key: 'k-css-retried', cookie: false });
+    authn.endSessionById(retried.id, 'a claim that fails twice', 'admin');
+    note(authn.pendingEndReports() === 1,
+         '3e. (while the claim is being asked again, the end is PENDING — ' +
+         'what a realm\'s removal waits for, #232)',
+         authn.pendingEndReports());
+    await new Promise(function (resolve) {
+      setTimeout(resolve, 1200);
+    });
+    claims.claim = realClaim;
+    note(refusals === 3 &&
+         notices.filter(function (id) { return id === retried.id; })
+           .length === 1 && authn.pendingEndReports() === 0,
+         '3f. a claim that rejects, then throws, is asked a third time and ' +
+         'the end is reported ONCE — it used to be logged and lost (#242)',
+         JSON.stringify({ attempts: refusals, pending:
+           authn.pendingEndReports(), notices: notices.filter(function (id) {
+             return id === retried.id;
+           }).length }));
+    notices.length = 0;
+    refusals = 0;
+    claims.claim = function () {
+      refusals += 1;
+      return Promise.reject(new Error('the claim always rejects'));
+    };
+    const neverAsked = authn.startSession(noBrowser(), 'css-never', ['pwd'],
+      '1', 'Test', { key: 'k-css-never', cookie: false });
+    authn.endSessionById(neverAsked.id, 'a claim that always fails',
+                         'admin');
+    await new Promise(function (resolve) {
+      setTimeout(resolve, 1200);
+    });
+    claims.claim = realClaim;
+    note(refusals === 3 &&
+         notices.filter(function (id) { return id === neverAsked.id; })
+           .length === 1,
+         '3g. and one that never answers is reported after the third ' +
+         'attempt, as a store that cannot be asked is: told twice is the ' +
+         'side to err on, never told the one that is not',
+         JSON.stringify({ attempts: refusals }));
     audit.audit = realAudit;
     store = null;
 

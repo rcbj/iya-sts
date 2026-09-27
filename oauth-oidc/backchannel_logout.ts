@@ -123,10 +123,15 @@
 // line per realm per `oauth2.backchannelLogoutSummaryS`, counting what was
 // sent, retried, taken over and dead-lettered (by code) since the last
 // (`STS-OAUTH-0545`). Never a line per attempt.
+//
+// **SINCE #151 THE MACHINERY OF POINTS 3, 4, 5 AND 7 IS
+// `outbound_delivery.ts`**, shared with CIBA's notifications and OpenID
+// Provider Commands: this file supplies the kind — the store, the claim
+// scope, the Logout Token, the audit row, the retry's re-validation — and
+// keeps its own API.
 // ===========================================================================
 
 import nodeCrypto = require('crypto');
-import os = require('os');
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 import config = require('../common/config');
@@ -139,6 +144,7 @@ import cacheRegistry = require('../common/cache_registry');
 import fedHttp = require('../federation/federation_http');
 import clusterClaims = require('../cluster/cluster_claims');
 import idTokenEncryption = require('./id_token_encryption');
+import outbound = require('./outbound_delivery');
 // A leaf: a client's fetched `jwks_uri` key set (#120).
 import clientJwks = require('./client_jwks');
 
@@ -159,16 +165,16 @@ const ATTEMPT_SCOPE = 'oauth2.backchannel-attempt';
 
 // The states a delivery passes through: `pending` until it is `sent` (200 or
 // 204) or `dead` (a final failure, with a code, until an operator retries it).
-const STATES = ['pending', 'sent', 'dead'];
+const STATES = outbound.STATES;
 
 // A token this close to its `exp` is signed again before a retry.
 const EXPIRY_MARGIN_S = 5;
 
-// One delivery — a row of the store. The token IS on it: a Logout Token is
-// not a credential anybody can use to act as the person, it is a statement
-// that a session ended, and a retry after a restart must resend the same one.
-// The store is sealed at rest like every minted row; no page or answer shows
-// it (`view()`).
+// One delivery — a row of the store: `outbound_delivery.ts`'s generic fields
+// and these. The token IS on it: a Logout Token is not a credential anybody
+// can use to act as the person, it is a statement that a session ended, and
+// a retry after a restart must resend the same one. The store is sealed at
+// rest like every minted row; no page or answer shows it (`view()`).
 interface Delivery {
   id: string;
   realm: string;
@@ -237,35 +243,9 @@ interface BackchannelLogoutDeps {
   later: (fn: () => void, ms: number) => void;
 }
 
-// ---------------------------------------------------------------------------
-// WHICH OF TWO COPIES OF A ROW IS NEWER — the store's `mergeRow`, and the
-// same comparison every write in this file makes before it writes. A total
-// order, so the merge is pure and converges: (generation, the attempt number
-// the row is at, the fence of that attempt, final over pending, the last
-// update). Ties keep the STORED copy.
-// ---------------------------------------------------------------------------
-function rankOf(row: Json): number[] {
-  helpers.log.debug("Entering rankOf().");
-  const r = row || {};
-  const at = Math.max(Number(r.attempts) || 0, Number(r.inFlight) || 0);
-  helpers.log.debug("Leaving rankOf().");
-  return [Number(r.generation) || 0, at, Number(r.fenceAt) || 0,
-          r.state === 'pending' ? 0 : 1, Number(r.updatedAt) || 0];
-}
-
-function compareRows(a: Json, b: Json): number {
-  helpers.log.debug("Entering compareRows().");
-  const x = rankOf(a);
-  const y = rankOf(b);
-  for (let i = 0; i < x.length; i++) {
-    if (x[i] !== y[i]) {
-      helpers.log.debug("Leaving compareRows().");
-      return x[i] < y[i] ? -1 : 1;
-    }
-  }
-  helpers.log.debug("Leaving compareRows(). Equal.");
-  return 0;
-}
+// The order of two copies of a row — the library's, exported under the
+// name the tests have always used.
+const compareRows = outbound.compareRows;
 
 // PER TRUST REALM, at its declaration (root CLAUDE.md, trust realms rule 2),
 // PERSISTED (header point 3), TOMBSTONED — a derived id is never
@@ -275,11 +255,7 @@ function compareRows(a: Json, b: Json): number {
 const deliveries = realms.map({
   persist: 'oauth2.backchannelDeliveries',
   tombstone: true,
-  mergeRow: function (mine: Json, theirs: Json): Json {
-    helpers.log.debug("Entering mergeRow().");
-    helpers.log.debug("Leaving mergeRow().");
-    return compareRows(mine, theirs) > 0 ? mine : theirs;
-  }
+  mergeRow: outbound.mergeRow
 });
 
 // Described to `/admin/caches` (#74, rule 3ap) as a REPLAY store, which is
@@ -325,29 +301,87 @@ const plannedCount = cacheRegistry.register({
   }
 });
 
-// This process's name on a row it is sending, for the console.
-const HOLDER = os.hostname() + ':' + process.pid;
-
-// Per realm, what this process did since its last summary line.
-const tallies = new Map<string, Json>();
-
-// When each realm's last summary line was written.
-const lastSummaryAt = new Map<string, number>();
-
-// The sweep's scheduler job (#49 P5): see scheduleSweep().
+// The sweep's scheduler job (#49 P5).
 const SWEEP_JOB = 'oauth2.backchannel-logout-sweep';
-
-// Attempts in flight in this process, and the cap on them.
-let inFlightHere = 0;
 
 class BackchannelLogout {
   static readonly EVENT = EVENT;
   static readonly TOKEN_TYPE = TOKEN_TYPE;
   static readonly STATES = STATES;
   static readonly ATTEMPT_SCOPE = ATTEMPT_SCOPE;
+  // The shared queue, with this file as its kind (#151).
+  private readonly queue: InstanceType<typeof outbound.OutboundDelivery>;
 
   constructor(private readonly deps: BackchannelLogoutDeps) {
     deps.log.debug("Entering BackchannelLogout.constructor().");
+    const self = this;
+    this.queue = new outbound.OutboundDelivery({
+      label: 'back-channel logout',
+      store: deliveries,
+      attemptScope: ATTEMPT_SCOPE,
+      attribute: ADDRESS_ATTRIBUTE,
+      body: 'form',
+      settings: {
+        attempts: 'oauth2.backchannelLogoutAttempts',
+        timeoutMs: 'oauth2.backchannelLogoutTimeoutMs',
+        backoffMs: 'oauth2.backchannelLogoutBackoffMs',
+        leaseMs: 'oauth2.backchannelLogoutLeaseMs',
+        retentionS: 'oauth2.backchannelLogoutRetentionS',
+        maxRows: 'oauth2.backchannelLogoutMaxRows',
+        concurrency: 'oauth2.backchannelLogoutConcurrency',
+        summaryS: 'oauth2.backchannelLogoutSummaryS'
+      },
+      codes: {
+        outboundOff: 'STS-OAUTH-0532', url: 'STS-OAUTH-0533',
+        internal: 'STS-OAUTH-0534', unresolved: 'STS-OAUTH-0535',
+        redirect: 'STS-OAUTH-0540', build: 'STS-OAUTH-0543',
+        timeout: 'STS-OAUTH-0538', network: 'STS-OAUTH-0539',
+        status400: 'STS-OAUTH-0536', status: 'STS-OAUTH-0537',
+        deferred: 'STS-OAUTH-0547', stale: 'STS-OAUTH-0548',
+        summary: 'STS-OAUTH-0545', sweepFailed: 'STS-OAUTH-0549',
+        retry: 'STS-OAUTH-0550'
+      },
+      deadLetterHint: 'Dead letters are listed on /admin/logout and ' +
+        'retried from there.',
+      prepare: function (row: Json): Promise<Json> {
+        return self.prepare(row);
+      },
+      onFinish: function (row: Json, state: string, code: string,
+                          why: string): void {
+        self.audited(row, state, code, why);
+      },
+      onRetry: function (row: Json): Json {
+        return self.refreshForRetry(row);
+      },
+      viewExtra: function (row: Json): Json {
+        return {
+          sessionId: row.sessionId,
+          // What the token names — none of it secret, all of it already in
+          // the ID Token the client holds.
+          iss: row.iss, sub: row.sub, sid: row.sid,
+          sessionRequired: !!row.sessionRequired,
+          via: row.via, trigger: row.trigger || 'sign-out',
+          encrypted: row.encrypted || ''
+        };
+      },
+      searchText: function (row: Json): string {
+        return String(row.sessionId || '') + ' ' + String(row.username || '');
+      },
+      sweepJob: {
+        id: SWEEP_JOB,
+        title: 'Back-channel logout sweep',
+        describe: 'Sends every Logout Token delivery that is due — a retry ' +
+                  'whose backoff has passed, a lease that lapsed, a row ' +
+                  'restored after a restart — and dead-letters any still ' +
+                  'pending past oauth2.backchannelLogoutRetentionS.',
+        owner: 'oauth-oidc/backchannel_logout.ts',
+        everySetting: 'oauth2.backchannelLogoutSweepS'
+      }
+    }, {
+      log: deps.log, config: deps.config, realms: deps.realms,
+      errorCodes: deps.errorCodes, fedHttp: deps.fedHttp,
+      claims: deps.claims, now: deps.now, later: deps.later
+    });
     deps.log.debug("Leaving BackchannelLogout.constructor().");
   }
 
@@ -373,13 +407,7 @@ class BackchannelLogout {
       now: function (): number {
         return Date.now();
       },
-      later: function (fn: () => void, ms: number): void {
-        const timer = setTimeout(fn, Math.max(0, ms));
-        // Never the reason a process that is shutting down stays up.
-        if (timer && typeof timer.unref === 'function') {
-          timer.unref();
-        }
-      }
+      later: outbound.OutboundDelivery.later
     };
   }
 
@@ -400,23 +428,12 @@ class BackchannelLogout {
            !!config.value('oauth2.backchannelLogoutOnExpiry');
   }
 
-  // The numeric tunables, read directly: every one has a `min` on its row.
-  private setting(key: string): number {
-    const { log, config } = this.deps;
-    log.debug("Entering BackchannelLogout.setting(). " + key);
-    log.debug("Leaving BackchannelLogout.setting().");
-    return Number(config.value(key));
-  }
-
-  // How long an attempt's claim lasts: the setting, and never less than one
-  // request's timeout and a second.
+  // How long an attempt's claim lasts.
   leaseMs(): number {
     const { log } = this.deps;
     log.debug("Entering BackchannelLogout.leaseMs().");
-    const lease = Math.max(this.setting('oauth2.backchannelLogoutLeaseMs'),
-      this.setting('oauth2.backchannelLogoutTimeoutMs') + 1000);
-    log.debug("Leaving BackchannelLogout.leaseMs(). " + lease);
-    return lease;
+    log.debug("Leaving BackchannelLogout.leaseMs().");
+    return this.queue.leaseMs();
   }
 
   // A caller reads this before ending something and passes it to
@@ -441,52 +458,6 @@ class BackchannelLogout {
     return digest;
   }
 
-  // A row as the store holds it NOW, in its own realm.
-  private liveRow(realmId: string, id: string): Delivery | null {
-    const { log } = this.deps;
-    log.debug("Entering BackchannelLogout.liveRow().");
-    const held = deliveries.realmMap(realmId).get(id);
-    log.debug("Leaving BackchannelLogout.liveRow(). " + (held ? 'held' :
-                                                        'gone'));
-    return held ? Object.assign({}, held) : null;
-  }
-
-  // WRITE A ROW, unless the store already holds a newer copy — the same
-  // comparison `mergeRow` makes at the flush, made here so this process's own
-  // copy never goes backwards either. Answers the copy that stands.
-  private writeRow(row: Delivery): Delivery {
-    const { log, now } = this.deps;
-    log.debug("Entering BackchannelLogout.writeRow(). " + row.id + " " +
-              row.state);
-    const store = deliveries.realmMap(row.realm);
-    const held = store.get(row.id);
-    row.updatedAt = Math.max(now(), (held && Number(held.updatedAt) + 1) || 0);
-    if (held && compareRows(row, held) < 0) {
-      log.debug("Leaving BackchannelLogout.writeRow(). A newer copy stands.");
-      return Object.assign({}, held);
-    }
-    store.set(row.id, Object.assign({}, row));
-    log.debug("Leaving BackchannelLogout.writeRow().");
-    return row;
-  }
-
-  // What this process did, for the summary line.
-  private tally(realmId: string, what: string, code?: string): void {
-    const { log } = this.deps;
-    log.debug("Entering BackchannelLogout.tally(). " + what);
-    let t = tallies.get(realmId);
-    if (!t) {
-      t = { sent: 0, retried: 0, takenOver: 0, deferred: 0, dead: 0,
-            byCode: {} };
-      tallies.set(realmId, t);
-    }
-    t[what] = (t[what] || 0) + 1;
-    if (code) {
-      t.byCode[code] = (t.byCode[code] || 0) + 1;
-    }
-    log.debug("Leaving BackchannelLogout.tally().");
-  }
-
   // -------------------------------------------------------------------------
   // PLAN: one row per relying party on this session that registered a
   // `backchannel_logout_uri`, written to the store as `pending` and due NOW.
@@ -502,8 +473,7 @@ class BackchannelLogout {
   // a session.
   // -------------------------------------------------------------------------
   plan(session: Json, options?: PlanOptions): Json[] {
-    const { log, applications, validation, errorCodes, realms,
-            now } = this.deps;
+    const { log, applications, validation, errorCodes, realms } = this.deps;
     const self = this;
     log.debug("Entering BackchannelLogout.plan().");
     const opts = options || {};
@@ -531,15 +501,14 @@ class BackchannelLogout {
         }
         const id = self.deliveryIdFor(String(session.id || ''), clientId,
                                       held[clientId] && held[clientId].first);
-        const existing = self.liveRow(realmId, id);
+        const existing = self.queue.liveRow(realmId, id);
         if (existing) {
           plannedCount.hit();
           out.push(self.view(existing));
           return;
         }
         plannedCount.miss();
-        const at = now();
-        let row: Delivery = {
+        const fields = {
           id: id,
           realm: realmId,
           sessionId: String(session.id || ''),
@@ -553,45 +522,32 @@ class BackchannelLogout {
           username: String((session.user && session.user.username) || ''),
           via: String(opts.via || 'a sign-out'),
           trigger: String(opts.trigger || 'sign-out'),
-          state: 'pending',
-          generation: 1,
-          attempts: 0,
-          inFlight: 0,
-          fenceAt: 0,
-          holder: '',
-          status: 0,
-          errorCode: '',
-          why: '',
           jti: '',
           token: '',
           tokenExp: 0,
-          encrypted: '',
-          queuedAt: at,
-          nextAttemptAt: at,
-          lastAttemptAt: 0,
-          finishedAt: 0,
-          updatedAt: at
+          encrypted: ''
         };
         // THE SAME RULE REGISTRATION APPLIES, APPLIED AGAIN WHEN IT IS READ,
         // for `frontchannel_logout.ts`'s reason: `ldapmodify` reaches the
         // attribute without passing registration, the console or the API.
         const stored = validation.backchannelUriProblem(uri);
+        let row: Json = self.queue.queue(fields).row;
         if (stored) {
           log.warn(errorCodes.tag('STS-OAUTH-0544') + 'back-channel ' +
                    'logout: ' + clientId + '\'s stored ' +
                    'backchannel_logout_uri is not sent a Logout Token, ' +
                    'because it ' + stored + '.');
-          row = self.finish(row, 'dead', 'STS-OAUTH-0544',
-                            'the stored backchannel_logout_uri ' + stored +
-                            '. Correct oauthBackchannelLogoutUri on its ' +
-                            'entry and retry.');
+          row = self.queue.finish(row, 'dead', 'STS-OAUTH-0544',
+                                  'the stored backchannel_logout_uri ' +
+                                  stored + '. Correct ' +
+                                  'oauthBackchannelLogoutUri on its entry ' +
+                                  'and retry.');
         } else if (!row.iss) {
-          row = self.finish(row, 'dead', 'STS-OAUTH-0542',
-                            'the session did not record which issuer this ' +
-                            'client\'s ID Token came from, so a Logout ' +
-                            'Token naming the right iss cannot be built');
-        } else {
-          row = self.writeRow(row);
+          row = self.queue.finish(row, 'dead', 'STS-OAUTH-0542',
+                                  'the session did not record which ' +
+                                  'issuer this client\'s ID Token came ' +
+                                  'from, so a Logout Token naming the ' +
+                                  'right iss cannot be built');
         }
         out.push(self.view(row));
       });
@@ -607,26 +563,10 @@ class BackchannelLogout {
     return out;
   }
 
-  // A delivery reaches its final state: the row changes and ONE audit row is
-  // written, `summarised` (header point 7). Answers the row as written.
-  private finish(row: Delivery, state: string, code: string,
-                 why: string): Delivery {
-    const { log, audit, now } = this.deps;
-    log.debug("Entering BackchannelLogout.finish(). " + row.clientId + " -> " +
-              state);
-    row.state = state;
-    row.errorCode = code || '';
-    row.why = why || '';
-    row.finishedAt = now();
-    row.inFlight = 0;
-    row.nextAttemptAt = 0;
-    const written = this.writeRow(row);
-    if (written.state !== state || written.updatedAt !== row.updatedAt) {
-      log.debug("Leaving BackchannelLogout.finish(). A newer copy stood; " +
-                "its writer reports it.");
-      return written;
-    }
-    this.tally(row.realm, state === 'sent' ? 'sent' : 'dead', code);
+  // The ONE audit row a delivery writes when it finishes (header point 7).
+  private audited(row: Json, state: string, code: string, why: string): void {
+    const { log, audit } = this.deps;
+    log.debug("Entering BackchannelLogout.audited(). " + state);
     audit.audit({
       action: 'logout.backchannel',
       outcome: state === 'sent' ? 'success' : 'error',
@@ -656,8 +596,26 @@ class BackchannelLogout {
         encrypted: row.encrypted || 'no'
       }
     });
-    log.debug("Leaving BackchannelLogout.finish().");
-    return written;
+    log.debug("Leaving BackchannelLogout.audited().");
+  }
+
+  // THE BODY: the Logout Token, signed once per generation and again (same
+  // jti) only when it would expire before this attempt reached the relying
+  // party. A signing failure rejects with its code, and the library
+  // dead-letters the row.
+  private async prepare(row: Json): Promise<Json> {
+    const { log, now } = this.deps;
+    log.debug("Entering BackchannelLogout.prepare(). " + row.clientId);
+    if (row.token && Number(row.tokenExp) - EXPIRY_MARGIN_S >
+                     Math.floor(now() / 1000)) {
+      log.debug("Leaving BackchannelLogout.prepare(). The token stands.");
+      return { body: { logout_token: row.token } };
+    }
+    const made = await this.signedToken(row);
+    log.debug("Leaving BackchannelLogout.prepare(). Signed.");
+    return { body: { logout_token: made.token },
+             patch: { token: made.token, tokenExp: made.exp, jti: made.jti,
+                      encrypted: made.encrypted } };
   }
 
   // -------------------------------------------------------------------------
@@ -665,14 +623,14 @@ class BackchannelLogout {
   // token signed again for a retry is the same statement.
   // -------------------------------------------------------------------------
   claimsFor(row: Json): Json {
-    const { log, nowSec, randomId } = this.deps;
+    const { log, nowSec, randomId, config } = this.deps;
     log.debug("Entering BackchannelLogout.claimsFor().");
     const iat = nowSec();
     const claims: Json = {
       iss: row.iss,
       aud: row.clientId,
       iat: iat,
-      exp: iat + this.setting('oauth2.backchannelLogoutTokenTtlS'),
+      exp: iat + Number(config.value('oauth2.backchannelLogoutTokenTtlS')),
       jti: String(row.jti || '') || randomId(16),
       events: {},
       sub: row.sub,
@@ -753,481 +711,105 @@ class BackchannelLogout {
     });
   }
 
-  // How a failed attempt is coded, and whether it is worth another.
-  private classify(result: Json): Json {
+  // ONE ATTEMPT of one delivery, through the shared queue (header point 4).
+  attempt(realmId: string, id: string): Promise<string> {
     const { log } = this.deps;
-    log.debug("Entering BackchannelLogout.classify(). kind=" + result.kind);
-    const status = Number(result.status) || 0;
-    const table = {
-      'outbound-off': ['STS-OAUTH-0532', false],
-      'url': ['STS-OAUTH-0533', false],
-      'attribute': ['STS-OAUTH-0533', false],
-      'internal': ['STS-OAUTH-0534', false],
-      'unresolved': ['STS-OAUTH-0535', false],
-      'redirect': ['STS-OAUTH-0540', false],
-      'build': ['STS-OAUTH-0543', false],
-      'timeout': ['STS-OAUTH-0538', true],
-      'network': ['STS-OAUTH-0539', true]
-    };
-    let answer = null;
-    if (result.kind === 'status') {
-      answer = status === 400
-        ? { code: 'STS-OAUTH-0536', retry: false }
-        : { code: 'STS-OAUTH-0537',
-            retry: status >= 500 || status === 408 || status === 429 };
-    } else {
-      const row = table[result.kind] || ['STS-OAUTH-0539', true];
-      answer = { code: row[0], retry: row[1] };
-    }
-    log.debug("Leaving BackchannelLogout.classify(). " + answer.code +
-              ", retry=" + answer.retry);
-    return answer;
-  }
-
-  // A retry of this process's own, at the row's due time. The sweep would
-  // find it anyway; this is what keeps a short backoff short.
-  private scheduleRetry(realmId: string, id: string, atMs: number): void {
-    const { log, realms, now, later } = this.deps;
-    const self = this;
-    log.debug("Entering BackchannelLogout.scheduleRetry(). " + id);
-    const realm = realms.get(realmId);
-    later(function () {
-      realms.run(realm, function () {
-        return self.attempt(realmId, id).catch(function (e) {
-          log.debug("Caught in BackchannelLogout.scheduleRetry(): " +
-                    ((e && e.message) || e));
-        });
-      });
-    }, atMs - now());
-    log.debug("Leaving BackchannelLogout.scheduleRetry().");
-  }
-
-  // -------------------------------------------------------------------------
-  // ONE ATTEMPT of one delivery, claimed (header point 4). Resolves what
-  // happened — `sent`, `retry`, `dead`, or a reason nothing was done
-  // (`not-due`, `claimed-elsewhere`, `deferred`, `gone`). Never rejects.
-  // -------------------------------------------------------------------------
-  async attempt(realmId: string, id: string): Promise<string> {
-    const { log, claims, fedHttp, now, errorCodes } = this.deps;
     log.debug("Entering BackchannelLogout.attempt(). " + id);
-    const before = this.liveRow(realmId, id);
-    if (!before || before.state !== 'pending') {
-      log.debug("Leaving BackchannelLogout.attempt(). Not pending.");
-      return 'gone';
-    }
-    if (Number(before.nextAttemptAt) > now()) {
-      log.debug("Leaving BackchannelLogout.attempt(). Not due.");
-      return 'not-due';
-    }
-    // The attempt a lapsed lease left unfinished is claimed again under its
-    // own number; otherwise the next one.
-    const n = Number(before.inFlight) || (Number(before.attempts) + 1);
-    const lease = this.leaseMs();
-    const answer: Json = await claims.claim({
-      scope: ATTEMPT_SCOPE,
-      value: id + ':' + before.generation + ':' + n,
-      ttlMs: lease,
-      realm: realmId
-    });
-    if (!answer.ok) {
-      if (answer.reason === 'store') {
-        this.tally(realmId, 'deferred', 'STS-OAUTH-0547');
-      }
-      log.debug("Leaving BackchannelLogout.attempt(). Not claimed (" +
-                answer.reason + ").");
-      return answer.reason === 'store' ? 'deferred' : 'claimed-elsewhere';
-    }
-    // RE-READ UNDER THE CLAIM: another process may have finished it, or an
-    // operator started a new generation, while the claim was being asked.
-    let row = this.liveRow(realmId, id);
-    if (!row || row.state !== 'pending' ||
-        row.generation !== before.generation) {
-      log.debug("Leaving BackchannelLogout.attempt(). It changed under the " +
-                "claim.");
-      return 'gone';
-    }
-    if (Number(row.inFlight) === n && Number(row.fenceAt) > 0) {
-      // A LAPSED LEASE: this attempt was claimed before — by another process,
-      // or this one before a stall — and its outcome never recorded. The claim
-      // just won is proof the earlier one expired.
-      this.tally(realmId, 'takenOver');
-      log.debug("BackchannelLogout.attempt(): taking over attempt " + n +
-                " of " + id + " from " + (row.holder || 'an unnamed holder') +
-                ".");
-    }
-    const startedAt = now();
-    const claimedFence = Number(answer.claimedAt) || startedAt;
-    row.inFlight = n;
-    row.fenceAt = claimedFence;
-    row.holder = HOLDER;
-    row.lastAttemptAt = startedAt;
-    row.nextAttemptAt = startedAt + lease;
-    row = this.writeRow(row);
-    if (row.fenceAt !== claimedFence || row.inFlight !== n) {
-      log.debug("Leaving BackchannelLogout.attempt(). Fenced out before " +
-                "sending.");
-      return 'claimed-elsewhere';
-    }
-    const fence = row.fenceAt;
-    // THE TOKEN: signed once per generation, and again (same jti) only when
-    // it would expire before this attempt reached the relying party.
-    if (!row.token || Number(row.tokenExp) - EXPIRY_MARGIN_S <=
-                      Math.floor(now() / 1000)) {
-      try {
-        const made = await this.signedToken(row);
-        row.token = made.token;
-        row.tokenExp = made.exp;
-        row.jti = made.jti;
-        row.encrypted = made.encrypted;
-        row = this.writeRow(row);
-      } catch (e) {
-        log.debug("Caught in BackchannelLogout.attempt(): " +
-                  ((e && e.message) || e));
-        const current = this.liveRow(realmId, id) || row;
-        if (current.fenceAt === fence) {
-          current.attempts = n;
-          this.finish(current, 'dead',
-                      errorCodes.codeOf(e) || 'STS-OAUTH-0541',
-                      String((e && e.message) || e));
-        }
-        log.debug("Leaving BackchannelLogout.attempt(). Not signed.");
-        return 'dead';
-      }
-    }
-    const record = { id: row.clientId };
-    record[ADDRESS_ATTRIBUTE] = row.uri;
-    let result: Json = null;
-    try {
-      result = await fedHttp.deliverForm(record, ADDRESS_ATTRIBUTE,
-        { logout_token: row.token },
-        { timeoutMs: this.setting('oauth2.backchannelLogoutTimeoutMs') });
-    } catch (e) {
-      log.debug("Caught in BackchannelLogout.attempt(): " +
-                ((e && e.message) || e));
-      result = { ok: false, kind: 'build', status: 0,
-                 why: String((e && e.message) || e) };
-    }
-    // THE OUTCOME, WRITTEN ONLY IF THIS PROCESS STILL HOLDS THE ATTEMPT: a
-    // row whose fence moved was taken over while this one was sending.
-    const current = this.liveRow(realmId, id);
-    if (!current || current.fenceAt !== fence ||
-        current.generation !== row.generation) {
-      log.debug("Leaving BackchannelLogout.attempt(). Fenced out after " +
-                "sending; the process that took over records it.");
-      return 'claimed-elsewhere';
-    }
-    current.attempts = n;
-    current.inFlight = 0;
-    current.status = Number(result.status) || 0;
-    if (result.ok) {
-      this.finish(current, 'sent', '', '');
-      log.debug("Leaving BackchannelLogout.attempt(). Sent.");
-      return 'sent';
-    }
-    const judged = this.classify(result);
-    const attempts = Math.max(1,
-      this.setting('oauth2.backchannelLogoutAttempts'));
-    if (!judged.retry || n >= attempts) {
-      this.finish(current, 'dead', judged.code,
-                  String(result.why || 'it failed') +
-                  (n > 1 ? ' (after ' + n + ' attempts)' : ''));
-      log.debug("Leaving BackchannelLogout.attempt(). Dead.");
-      return 'dead';
-    }
-    const backoff = Math.max(0,
-      this.setting('oauth2.backchannelLogoutBackoffMs')) * Math.pow(2, n - 1);
-    current.errorCode = judged.code;
-    current.why = String(result.why || 'it failed') + ' (attempt ' + n +
-                  '; trying again)';
-    current.nextAttemptAt = now() + backoff;
-    const written = this.writeRow(current);
-    this.tally(realmId, 'retried');
-    this.scheduleRetry(realmId, id, written.nextAttemptAt);
-    log.debug("Leaving BackchannelLogout.attempt(). Retry in " + backoff +
-              "ms.");
-    return 'retry';
+    log.debug("Leaving BackchannelLogout.attempt().");
+    return this.queue.attempt(realmId, id);
   }
 
-  // -------------------------------------------------------------------------
-  // DISPATCH: attempt every planned row that is still pending, now, in the
-  // ambient realm. Returns a promise that settles when each has reached a
-  // final state or been handed to the sweep — for a test to wait on; every
-  // caller in the service ignores it. It never rejects.
-  // -------------------------------------------------------------------------
+  // Attempt every planned row still pending, now. For a test to wait on;
+  // every caller in the service ignores it. It never rejects.
   dispatch(rows: Json[] | null | undefined): Promise<void> {
-    const { log, realms } = this.deps;
-    const self = this;
+    const { log } = this.deps;
     log.debug("Entering BackchannelLogout.dispatch().");
-    const pending = (rows || []).filter(function (row) {
-      return row && row.state === 'pending';
-    });
-    if (!pending.length) {
-      log.debug("Leaving BackchannelLogout.dispatch(). Nothing to send.");
-      return Promise.resolve();
+    log.debug("Leaving BackchannelLogout.dispatch().");
+    return this.queue.dispatch(rows);
+  }
+
+  // Before an operator's retry: the client's CURRENT address, because the
+  // commonest reason to retry is having corrected it, and an issuer.
+  private refreshForRetry(row: Json): Json {
+    const { log, applications, validation } = this.deps;
+    log.debug("Entering BackchannelLogout.refreshForRetry(). " + row.clientId);
+    const client: Json = applications.clientConfigOf(row.clientId) || {};
+    const uri = String(client.backchannel_logout_uri || '');
+    if (!uri || validation.backchannelUriProblem(uri)) {
+      log.debug("Leaving BackchannelLogout.refreshForRetry(). No address.");
+      return { problem: row.clientId + ' has no usable ' +
+        'backchannel_logout_uri now (' +
+        (uri ? validation.backchannelUriProblem(uri) : 'none is registered') +
+        '), so a retry would fail the same way.' };
     }
-    const realmId = realms.currentId();
-    log.debug("Leaving BackchannelLogout.dispatch(). " + pending.length +
-              " to send.");
-    return Promise.all(pending.map(function (row) {
-      return self.attempt(row.realm || realmId, row.id)
-        .catch(function (e) {
-          log.debug("Caught in BackchannelLogout.dispatch(): " +
-                    ((e && e.message) || e));
-          return 'error';
-        });
-    })).then(function () {
-      return undefined;
-    });
+    if (!row.iss) {
+      log.debug("Leaving BackchannelLogout.refreshForRetry(). No issuer.");
+      return { problem: 'The session recorded no issuer for ' + row.clientId +
+        ', so no Logout Token can name the right iss; retrying cannot ' +
+        'change that.' };
+    }
+    log.debug("Leaving BackchannelLogout.refreshForRetry().");
+    return { patch: { uri: uri, sessionRequired:
+                        !!client.backchannel_logout_session_required } };
   }
 
   // -------------------------------------------------------------------------
   // AN OPERATOR'S RETRY OF A DEAD LETTER: a new generation — a new `jti`, a
-  // fresh attempt budget, and the client's CURRENT address, because the
-  // commonest reason to retry is having corrected it. `{ ok, message, row }`
-  // with a code on a refusal. The attempt itself is made at once, by this
-  // process, through the claim like any other.
+  // fresh attempt budget, and the client's CURRENT address. `{ ok, message,
+  // row }` with a code on a refusal. The attempt itself is made at once, by
+  // this process, through the claim like any other.
   // -------------------------------------------------------------------------
   retry(id: string, actor?: string): Json {
-    const { log, realms, applications, validation, errorCodes, audit,
-            now } = this.deps;
+    const { log, audit } = this.deps;
     log.debug("Entering BackchannelLogout.retry(). " + id);
-    const realmId = realms.currentId();
-    const row = this.liveRow(realmId, String(id || ''));
-    if (!row) {
-      log.debug("Leaving BackchannelLogout.retry(). Unknown.");
-      return errorCodes.mark({ ok: false, message: 'There is no back-channel ' +
-        'delivery "' + String(id || '') + '" in this realm; it may have ' +
-        'been removed by retention.' }, 'STS-OAUTH-0550');
+    const done = this.queue.retry(id, actor || '', 'back-channel',
+      { jti: '', token: '', tokenExp: 0, encrypted: '' });
+    if (!done.ok) {
+      log.debug("Leaving BackchannelLogout.retry(). Refused.");
+      return done;
     }
-    if (row.state !== 'dead') {
-      log.debug("Leaving BackchannelLogout.retry(). Not dead.");
-      return errorCodes.mark({ ok: false, message: 'The delivery to ' +
-        row.clientId + ' is ' + row.state + ', not a dead letter; only a ' +
-        'dead letter is retried by hand.' }, 'STS-OAUTH-0550');
-    }
-    const client: Json = applications.clientConfigOf(row.clientId) || {};
-    const uri = String(client.backchannel_logout_uri || '');
-    if (!uri || validation.backchannelUriProblem(uri)) {
-      log.debug("Leaving BackchannelLogout.retry(). No usable address.");
-      return errorCodes.mark({ ok: false, message: row.clientId + ' has no ' +
-        'usable backchannel_logout_uri now (' +
-        (uri ? validation.backchannelUriProblem(uri) : 'none is registered') +
-        '), so a retry would fail the same way.' }, 'STS-OAUTH-0550');
-    }
-    if (!row.iss) {
-      log.debug("Leaving BackchannelLogout.retry(). No issuer.");
-      return errorCodes.mark({ ok: false, message: 'The session recorded no ' +
-        'issuer for ' + row.clientId + ', so no Logout Token can name the ' +
-        'right iss; retrying cannot change that.' }, 'STS-OAUTH-0550');
-    }
-    const at = now();
-    const fresh: Delivery = Object.assign(row, {
-      uri: uri,
-      sessionRequired: !!client.backchannel_logout_session_required,
-      state: 'pending', generation: row.generation + 1, attempts: 0,
-      inFlight: 0, fenceAt: 0, holder: '', status: 0, errorCode: '',
-      why: 'retried by ' + (actor || 'an administrator'),
-      jti: '', token: '', tokenExp: 0, encrypted: '', nextAttemptAt: at,
-      finishedAt: 0, via: row.via
-    });
-    const written = this.writeRow(fresh);
+    const row = done.row;
     audit.audit({
       action: 'logout.backchannel.retry', actor: actor || '',
       protocol: 'OAuth 2.0 / OIDC', channel: 'http', target: row.clientId,
       summary: 'a dead back-channel Logout Token delivery for session ' +
                row.sessionId + ' to ' + row.clientId + ' was retried ' +
-               '(generation ' + written.generation + ')',
-      detail: { delivery: row.id, sessionId: row.sessionId, uri: uri }
+               '(generation ' + row.generation + ')',
+      detail: { delivery: row.id, sessionId: row.sessionId, uri: row.uri }
     });
-    this.dispatch([this.view(written)]);
     log.debug("Leaving BackchannelLogout.retry(). Generation " +
-              written.generation + ".");
-    return { ok: true, row: this.view(written),
+              row.generation + ".");
+    return { ok: true, row: this.view(row),
              message: 'The delivery to ' + row.clientId + ' was queued ' +
                       'again with a new Logout Token; it is sent after this ' +
                       'answer, and the list shows where it got to.' };
   }
 
-  // -------------------------------------------------------------------------
-  // THE SWEEP (header point 3): every realm, the rows that are due, bounded by
-  // `oauth2.backchannelLogoutConcurrency` in flight in this process; then
-  // retention; then the summary line. Resolves `{ attempted, removed }` for a
-  // test. Never rejects.
-  // -------------------------------------------------------------------------
+  // THE SWEEP (header point 3). Resolves `{ attempted, removed, dead }`.
   sweep(): Promise<Json> {
-    const { log, realms, errorCodes } = this.deps;
-    const self = this;
+    const { log } = this.deps;
     log.debug("Entering BackchannelLogout.sweep().");
-    const total = { attempted: 0, removed: 0, dead: 0 };
-    let chain: Promise<unknown> = Promise.resolve();
-    realms.list().forEach(function (realm) {
-      chain = chain.then(function () {
-        return realms.run(realm, function () {
-          return self.sweepRealm(realm.id).then(function (one: Json) {
-            total.attempted += one.attempted;
-            total.removed += one.removed;
-            total.dead += one.dead;
-          });
-        });
-      }).catch(function (e) {
-        log.debug("Caught in BackchannelLogout.sweep(): " +
-                  ((e && e.message) || e));
-        log.error(errorCodes.tag('STS-OAUTH-0549') + 'back-channel logout: ' +
-                  'the delivery sweep failed in the "' + realm.id +
-                  '" realm: ' + ((e && e.message) || e));
-      });
-    });
     log.debug("Leaving BackchannelLogout.sweep().");
-    return chain.then(function () {
-      return total;
-    });
+    return this.queue.sweep();
   }
 
-  private async sweepRealm(realmId: string): Promise<Json> {
-    const { log, now } = this.deps;
-    const self = this;
-    log.debug("Entering BackchannelLogout.sweepRealm(). " + realmId);
-    const at = now();
-    const keepMs = Math.max(1, this.setting(
-      'oauth2.backchannelLogoutRetentionS')) * 1000;
-    const cap = Math.max(1, this.setting('oauth2.backchannelLogoutMaxRows'));
-    const store = deliveries.realmMap(realmId);
-    const due: string[] = [];
-    const finished: Json[] = [];
-    let dead = 0;
-    const stale: Delivery[] = [];
-    store.forEach(function (row: Json, id: string) {
-      if (!row) {
-        return;
-      }
-      if (row.state === 'pending') {
-        if (at - Number(row.queuedAt) > keepMs) {
-          stale.push(Object.assign({}, row));
-        } else if (!(Number(row.nextAttemptAt) > at)) {
-          due.push(id);
-        }
-        return;
-      }
-      finished.push(row);
-    });
-    // NOTHING IS PENDING FOR EVER: a row the retention window passed while
-    // still pending is dead-lettered with the reason.
-    stale.forEach(function (row) {
-      self.finish(row, 'dead', 'STS-OAUTH-0548',
-                  'still unsent ' + Math.round(keepMs / 1000) + ' seconds ' +
-                  'after it was queued (oauth2.backchannelLogoutRetentionS)');
-      dead++;
-    });
-    // Retention, then the cap — oldest finished first.
-    let removed = 0;
-    finished.sort(function (a, b) {
-      return Number(a.queuedAt) - Number(b.queuedAt);
-    });
-    const over = Math.max(0, store.size - cap);
-    finished.forEach(function (row, i) {
-      if (at - Number(row.queuedAt) > keepMs || i < over) {
-        store.delete(row.id);
-        removed++;
-      }
-    });
-    // The attempts, bounded per process.
-    const limit = Math.max(1,
-      this.setting('oauth2.backchannelLogoutConcurrency'));
-    let attempted = 0;
-    const next = function (): Promise<void> {
-      log.debug("Entering next().");
-      const id = due.shift();
-      if (id === undefined || inFlightHere >= limit) {
-        log.debug("Leaving next(). Nothing more this sweep.");
-        return Promise.resolve();
-      }
-      inFlightHere++;
-      attempted++;
-      log.debug("Leaving next().");
-      return self.attempt(realmId, id).catch(function (e) {
-        log.debug("Caught in next(): " + ((e && e.message) || e));
-        return 'error';
-      }).then(function () {
-        inFlightHere--;
-        return next();
-      });
-    };
-    const lanes = [];
-    for (let i = 0; i < limit; i++) {
-      lanes.push(next());
-    }
-    await Promise.all(lanes);
-    this.summarise(realmId);
-    log.debug("Leaving BackchannelLogout.sweepRealm(). " + attempted +
-              " attempted, " + removed + " removed.");
-    return { attempted: attempted, removed: removed, dead: dead };
-  }
-
-  // THE SUMMARY LINE (header point 7), at most once per
-  // `oauth2.backchannelLogoutSummaryS` per realm, and only when something
-  // happened.
+  // THE SUMMARY LINE (header point 7).
   summarise(realmId: string, force?: boolean): string {
-    const { log, errorCodes, now } = this.deps;
+    const { log } = this.deps;
     log.debug("Entering BackchannelLogout.summarise(). " + realmId);
-    const t = tallies.get(realmId);
-    const at = now();
-    const every = Math.max(1, this.setting(
-      'oauth2.backchannelLogoutSummaryS')) * 1000;
-    if (!t || (!force && at - (lastSummaryAt.get(realmId) || 0) < every)) {
-      log.debug("Leaving BackchannelLogout.summarise(). Not due.");
-      return '';
-    }
-    tallies.delete(realmId);
-    lastSummaryAt.set(realmId, at);
-    const codes = Object.keys(t.byCode).sort().map(function (code) {
-      return code + ' ' + t.byCode[code];
-    }).join(', ');
-    const line = 'back-channel logout in the "' + realmId + '" realm since ' +
-      'the last summary: ' + t.sent + ' sent, ' + t.retried + ' retried, ' +
-      t.takenOver + ' taken over from a lapsed lease, ' + t.deferred +
-      ' deferred (claim store unavailable), ' + t.dead + ' dead-lettered' +
-      (codes ? ' (' + codes + ')' : '') + '.';
-    if (t.dead || t.deferred) {
-      log.warn(errorCodes.tag('STS-OAUTH-0545') + line + ' Dead letters are ' +
-               'listed on /admin/logout and retried from there.');
-    } else {
-      log.info(line);
-    }
     log.debug("Leaving BackchannelLogout.summarise().");
-    return line;
+    return this.queue.summarise(realmId, force);
   }
 
   // THE SWEEP IS A SCHEDULER JOB (#49 P5, rcbj's directive of 2026-09-21):
   // `oauth2.backchannel-logout-sweep`, a CLUSTER job — once, on the leader,
-  // every `oauth2.backchannelLogoutSweepS`. It was a timer in every process;
-  // each delivery is a persisted row claimed through a lease, so one sweep
-  // for the cluster finds exactly what every process's sweep found. The
-  // per-delivery retry after a backoff stays where it is, a delay inside one
-  // operation. Registered once per process, by the composition root's wire
-  // step.
+  // every `oauth2.backchannelLogoutSweepS`. Registered once per process, by
+  // the composition root's wire step.
   scheduleSweep(): void {
     const { log } = this.deps;
-    const self = this;
     log.debug("Entering BackchannelLogout.scheduleSweep().");
-    const scheduler = require('../cluster/scheduler');
-    if (scheduler.job(SWEEP_JOB)) {
-      log.debug("Leaving BackchannelLogout.scheduleSweep(). Registered.");
-      return;
-    }
-    scheduler.register({
-      id: SWEEP_JOB,
-      title: 'Back-channel logout sweep',
-      describe: 'Sends every Logout Token delivery that is due — a retry ' +
-                'whose backoff has passed, a lease that lapsed, a row ' +
-                'restored after a restart — and dead-letters any still ' +
-                'pending past oauth2.backchannelLogoutRetentionS.',
-      owner: 'oauth-oidc/backchannel_logout.ts',
-      everySetting: 'oauth2.backchannelLogoutSweepS', everySettingUnit: 's',
-      run: function (): Promise<Json> {
-        return self.sweep();
-      }
-    });
-    log.debug("Leaving BackchannelLogout.scheduleSweep(). On the scheduler.");
+    this.queue.scheduleSweep();
+    log.debug("Leaving BackchannelLogout.scheduleSweep().");
   }
 
   // A row as a caller sees it: a COPY without the token, so a page or a JSON
@@ -1235,27 +817,8 @@ class BackchannelLogout {
   view(row: Json): Json {
     const { log } = this.deps;
     log.debug("Entering BackchannelLogout.view().");
-    const iso = function (ms: unknown): string {
-      log.debug("Entering iso().");
-      log.debug("Leaving iso().");
-      return Number(ms) ? new Date(Number(ms)).toISOString() : '';
-    };
     log.debug("Leaving BackchannelLogout.view().");
-    return {
-      id: row.id, realm: row.realm, sessionId: row.sessionId,
-      clientId: row.clientId, uri: row.uri,
-      // What the token names — none of it secret, all of it already in the
-      // ID Token the client holds.
-      iss: row.iss, sub: row.sub, sid: row.sid,
-      sessionRequired: !!row.sessionRequired, state: row.state,
-      generation: row.generation, attempts: row.attempts,
-      inFlight: !!row.inFlight, holder: row.holder || '',
-      status: row.status, errorCode: row.errorCode, why: row.why,
-      via: row.via, trigger: row.trigger || 'sign-out',
-      encrypted: row.encrypted || '',
-      queuedAt: iso(row.queuedAt), nextAttemptAt: iso(row.nextAttemptAt),
-      lastAttemptAt: iso(row.lastAttemptAt), finishedAt: iso(row.finishedAt)
-    };
+    return this.queue.view(row);
   }
 
   // -------------------------------------------------------------------------
@@ -1265,40 +828,22 @@ class BackchannelLogout {
   // the client, session, address or code.
   // -------------------------------------------------------------------------
   list(options?: ListOptions): Json[] {
-    const { log, realms } = this.deps;
+    const { log } = this.deps;
     const self = this;
     log.debug("Entering BackchannelLogout.list().");
     const o = options || {};
     const ids = Array.isArray(o.sessionIds) ? o.sessionIds.map(String) : null;
-    const since = Number(o.since) || 0;
-    const q = String(o.q || '').toLowerCase();
-    const out: Json[] = [];
-    deliveries.realmMap(realms.currentId()).forEach(function (row: Json) {
-      if (!row) {
-        return;
-      }
-      if (o.state && row.state !== o.state) {
-        return;
-      }
-      if (ids && ids.indexOf(row.sessionId) < 0) {
-        return;
-      }
-      if (since && Number(row.queuedAt) < since) {
-        return;
-      }
-      if (q && [row.clientId, row.sessionId, row.uri, row.errorCode,
-                row.username].join(' ').toLowerCase().indexOf(q) < 0) {
-        return;
-      }
-      out.push(row);
+    const rows = this.queue.rows({
+      state: o.state, since: o.since, q: o.q,
+      where: ids ? function (row: Json): boolean {
+        return ids.indexOf(row.sessionId) >= 0;
+      } : undefined
     });
-    out.sort(function (a, b) {
-      return (Number(b.queuedAt) - Number(a.queuedAt)) ||
-             String(a.id).localeCompare(String(b.id));
-    });
-    log.debug("Leaving BackchannelLogout.list(). " + out.length +
+    log.debug("Leaving BackchannelLogout.list(). " + rows.length +
               " row(s).");
-    return out.map(function (row) { return self.view(row); });
+    return rows.map(function (row) {
+      return self.view(row);
+    });
   }
 
   // The deliveries queued for these sessions since `since` (see `mark()`),
@@ -1325,16 +870,10 @@ class BackchannelLogout {
 
   // How many rows are in each state, in this realm.
   counts(): Json {
-    const { log, realms } = this.deps;
+    const { log } = this.deps;
     log.debug("Entering BackchannelLogout.counts().");
-    const out = { pending: 0, sent: 0, dead: 0 };
-    deliveries.realmMap(realms.currentId()).forEach(function (row: Json) {
-      if (row && out[row.state] !== undefined) {
-        out[row.state]++;
-      }
-    });
     log.debug("Leaving BackchannelLogout.counts().");
-    return out;
+    return this.queue.counts();
   }
 
   // A one-sentence summary of a set of rows, for a result message.

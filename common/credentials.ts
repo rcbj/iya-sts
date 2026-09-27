@@ -203,6 +203,10 @@ interface CredentialsDeps {
   // `persistence/persistence.js`, loaded where it is used — see
   // `sharedStore()`.
   loadPersistence(): typeof import('../persistence/persistence');
+  // #246: the console roles a person holds (`admin-ui/admin_rbac.ts`), loaded
+  // where it is used — the console is built at 18, long after this module,
+  // and requiring it here would close a cycle through the directory.
+  consoleRolesOf(username: string): { read: boolean; write: boolean };
 }
 
 // ===========================================================================
@@ -289,6 +293,47 @@ class Credentials {
       hex.slice(12, 16) + '-' + hex.slice(16, 20) + '-' + hex.slice(20);
   }
 
+  // WHAT KIND OF AUTHENTICATOR ONE STORED KEY IS, IN A PERSON'S WORDS
+  // (2026-09-26). `/portal/keys` draws it beside each key and
+  // `/portal/devices` says with it why a key cannot be linked to a device.
+  // Until then neither page said so: every key enrolled on the portal is
+  // labelled "security key", and a person holding only a YubiKey found the
+  // link form missing with nothing naming the key it had passed over.
+  //
+  // `kind` is `platform`, `roaming` or `unreported`, from the attachment the
+  // browser reported at enrolment (WebAuthn Level 3 section 5.1); a key
+  // enrolled before 2026-09-10, or on a browser that does not say, is
+  // `unreported`. `linkable` is `/portal/devices`' rule: only a ROAMING key
+  // is refused, because it is carried between devices and identifies none —
+  // `device_enrolment.ts`'s `beginLink()` asks this rather than repeating
+  // the test. `name` is the label, with the model the FIDO metadata named
+  // where the attestation chained to it, so a "security key" is findable.
+  static keyKind(key: any): { kind: string; linkable: boolean;
+                              text: string; name: string } {
+    helpers.log.debug("Entering Credentials.keyKind().");
+    const k = key || {};
+    const att = k.attestation || {};
+    const label = String(k.label || 'security key');
+    const name = att.model && att.trusted
+      ? label + ' (' + String(att.model) + ')'
+      : label;
+    const attachment = String(k.attachment || '');
+    if (attachment === 'platform') {
+      helpers.log.debug("Leaving Credentials.keyKind(). Platform.");
+      return { kind: 'platform', linkable: true, name: name,
+               text: 'built into a device' };
+    }
+    if (attachment === 'cross-platform') {
+      helpers.log.debug("Leaving Credentials.keyKind(). Roaming.");
+      return { kind: 'roaming', linkable: false, name: name,
+               text: 'roaming — carried between devices (USB, NFC, ' +
+                     'Bluetooth or another phone)' };
+    }
+    helpers.log.debug("Leaving Credentials.keyKind(). Unreported.");
+    return { kind: 'unreported', linkable: true, name: name,
+             text: 'not reported by your browser' };
+  }
+
   constructor(private readonly deps: CredentialsDeps) {
     deps.log.debug("Entering Credentials.constructor().");
     deps.log.debug("Leaving Credentials.constructor().");
@@ -320,6 +365,34 @@ class Credentials {
       capabilities: capabilities,
       nodeCrypto: function () {
         return require('crypto');
+      },
+      consoleRolesOf: function consoleRolesOf(username: string) {
+        helpers.log.debug("Entering consoleRolesOf().");
+        let held = { read: false, write: false };
+        try {
+          const rbac = require('../admin-ui/admin_rbac');
+          const roles = rbac.rolesOf(username) || {};
+          // MEMBERSHIP OF THE ROSTER'S GROUPS, not `read`/`write`: those are
+          // also true for EVERYBODY while the roster is empty (the console's
+          // open-console rule), and nobody is an administrator for #246 by
+          // a rule that makes everybody one.
+          const groups = Array.isArray(roles.groups) ? roles.groups : [];
+          held = {
+            read: groups.some(function (g: any) {
+              return g.role === 'read' || g.role === 'write';
+            }),
+            write: groups.some(function (g: any) {
+              return g.role === 'write';
+            })
+          };
+        } catch (e) {
+          // No console in this process (a test that loads only this module),
+          // or a directory that cannot answer: nobody is an administrator.
+          helpers.log.debug("Caught in consoleRolesOf(): " +
+                            ((e && e.message) || e));
+        }
+        helpers.log.debug("Leaving consoleRolesOf().");
+        return held;
       },
       loadPersistence: function () {
         return require('../persistence/persistence');
@@ -1630,6 +1703,10 @@ class Credentials {
       log.debug('Leaving Credentials.bootstrap(). The write failed.');
       return { ran: false, why: (written.errors || []).join(' ') };
     }
+    // A PASSWORD CREATED, TOLD AS CAEP `credential-change` (#237) where the
+    // realm has a stream that takes it. A realm with no streams — a fresh
+    // deployment, the usual case — sends nothing, and says so at debug.
+    this.noteBootstrapPassword(username, 'at startup');
     // TWO ANNOUNCEMENTS, AND THE DIFFERENCE IS THE ONE THING THAT MATTERS: a
     // generated password is printed because nothing else holds it, and a
     // supplied one is NOT, because the operator already has it and printing
@@ -2135,6 +2212,9 @@ class Credentials {
                      answer.highest + '. It was REFUSED — a counter that ' +
                      'does not go up is a replay or a CLONED authenticator ' +
                      '(WebAuthn Level 3 section 6.1.1).');
+            this.noteKeyCloned(name, credentialId, 'signature counter ' +
+                               signCount + ', highest recorded ' +
+                               answer.highest);
             return coded('STS-AUTHN-0035', { ok: false, reason: 'counter',
               highest: answer.highest,
               detail: 'the signature counter did not increase (now ' +
@@ -2190,6 +2270,134 @@ class Credentials {
       log.debug("Leaving Credentials.noteKeyUsed().");
       return false;
     }
+  }
+
+  // ---------------------------------------------------------------------------
+  // A BOOTSTRAP ADMINISTRATOR'S PASSWORD (#237, 2026-09-26): the startup
+  // bootstrap above, and a new realm's first administrator
+  // (`admin_actions.ts`). Both set a password the service chose or was
+  // given, and neither passed through a door that signals, so each is a CAEP
+  // `credential-change` `create` initiated by `system` — delivered, like
+  // every other, only to a stream that takes the type and covers the person.
+  // Lazily required, never allowed to undo the write.
+  // ---------------------------------------------------------------------------
+  noteBootstrapPassword(username, when) {
+    const { log } = this.deps;
+    log.debug('Entering Credentials.noteBootstrapPassword().');
+    try {
+      require('../ssf/account_signals').credentialChanged({
+        username: String(username || ''), credentialType: 'password',
+        changeType: 'create', initiatingEntity: 'system', via: 'bootstrap',
+        reasonAdmin: 'The bootstrap administrator ' + username + ' was ' +
+                     'given a password ' + String(when || '') + '.',
+        reasonUser: 'A password was set for your account.' });
+    } catch (e) {
+      log.debug('Caught in Credentials.noteBootstrapPassword(): ' +
+                ((e && e.message) || e));
+      // No Shared Signals facade in this process; the password is set.
+    }
+    log.debug('Leaving Credentials.noteBootstrapPassword().');
+  }
+
+  // ---------------------------------------------------------------------------
+  // A SECURITY KEY FOUND CLONED (#231, 2026-09-26). An assertion whose every
+  // other check passed — the signature over this ceremony's challenge
+  // verified against the enrolled key — presented a signature counter that
+  // did not go up: WebAuthn Level 3 section 6.1.1 says that "signals" a
+  // cloned authenticator. It is refused either way (STS-AUTHN-0035); this
+  // is what the refusal now TELLS:
+  //
+  //   * RISC `credential-compromise` with the key's CAEP type
+  //     (`keyCredentialType()`: `fido2-platform` or `fido2-roaming`),
+  //     through `ssf/account_signals.ts`, so `risc.autoEmitTypes` and the
+  //     opt-out gate hold;
+  //   * the risk engine, as `authenticator-compromised`: the person's
+  //     standing goes to HIGH and the `risk-response` policy answers it.
+  //
+  // Called from `spendAssertion()` (the store's counter, every node's) and
+  // by the doors whose in-ceremony check against the ENTRY's counter was the
+  // only failure (`authn.ts`, `device_enrolment.ts`). The key stays
+  // enrolled: removing it is the person's or an administrator's act, and a
+  // receiver told of the compromise can ask for it. Both are LAZY requires
+  // and neither is awaited; the refusal never waits for them.
+  // ---------------------------------------------------------------------------
+  // Whether an assertion's verdict is THAT evidence: the counter check the
+  // only one that failed, so the signature verified. A counter that did not
+  // go up beside a signature that did not verify says nothing about the key.
+  static clonedKeyVerdict(verdict) {
+    helpers.log.debug('Entering Credentials.clonedKeyVerdict().');
+    const failed = (verdict && verdict.failed) || [];
+    helpers.log.debug('Leaving Credentials.clonedKeyVerdict().');
+    return !!verdict && verdict.ok === false && failed.length === 1 &&
+           failed[0] === 'signature counter advanced';
+  }
+
+  noteKeyCloned(username, credentialId, evidence) {
+    const { log, realms } = this.deps;
+    log.debug('Entering Credentials.noteKeyCloned().');
+    const name = String(username || '').trim();
+    const record = this.keysOf(name).filter((one) => {
+      return one.credentialId === String(credentialId);
+    })[0] || null;
+    const label = record ? String(record.label || '') : '';
+    try {
+      const signals = require('../ssf/account_signals');
+      signals.credentialCompromised({ username: name,
+        credentialType: signals.keyCredentialType(record),
+        initiatingEntity: 'system', via: 'sign-in',
+        reasonAdmin: 'A security key of ' + name + (label ? ' ("' + label +
+                     '")' : '') + ' presented a signature counter that did ' +
+                     'not go up (' + evidence + '): it may have been cloned.',
+        reasonUser: 'A security key of yours may have been copied. Remove ' +
+                    'it and enrol a new one.' });
+    } catch (e) {
+      log.debug('Caught in Credentials.noteKeyCloned(): ' +
+                ((e && e.message) || e));
+      // No Shared Signals facade in this process; the refusal stands.
+    }
+    try {
+      require('../risk/risk_engine').noteAuthenticatorCompromise({
+        realm: realms.currentId(), username: name,
+        subject: helpers.subjectForName(name) || '',
+        evidence: evidence }).catch(function (e) {
+        log.debug('Caught in Credentials.noteKeyCloned(): ' +
+                  ((e && e.message) || e));
+        // noteAuthenticatorCompromise() never rejects; belt and braces.
+      });
+    } catch (e) {
+      log.debug('Caught in Credentials.noteKeyCloned(): ' +
+                ((e && e.message) || e));
+      // No risk engine in this process (a test that loads this file alone).
+    }
+    log.info('credentials: a security key of ' + name + ' presented a ' +
+             'counter that did not go up (' + evidence + '); RISC was told ' +
+             'the key is compromised and risk scoring was given the evidence.');
+    log.debug('Leaving Credentials.noteKeyCloned().');
+  }
+
+  // ---------------------------------------------------------------------------
+  // A ONE-TIME CODE PRESENTED AGAIN (#231, 2026-09-26): its step had already
+  // been accepted (RFC 6238 section 5.2), and it was refused (STS-AUTHN-0106).
+  // rcbj's decision on #231 is that this is a RISK SIGNAL and not a Security
+  // Event Token — a person who pressed submit twice looks exactly like
+  // somebody replaying an observed code — so it is recorded in the failures
+  // register under its own door, which `risk/risk_engine.ts` counts as
+  // `totp-replay` and never as a refused password. Lazy and not awaited.
+  // ---------------------------------------------------------------------------
+  private noteTotpReplay(name) {
+    const { log } = this.deps;
+    log.debug('Entering Credentials.noteTotpReplay().');
+    try {
+      const failures = require('../risk/risk_failures');
+      failures.recordFailure(String(name || ''), failures.TOTP_REPLAY_DOOR,
+                             'STS-AUTHN-0106');
+    } catch (e) {
+      log.debug('Caught in Credentials.noteTotpReplay(): ' +
+                ((e && e.message) || e));
+      // The risk modules are not loaded in this process: nothing to record
+      // into, and the refusal stands.
+    }
+    log.debug('Leaving Credentials.noteTotpReplay().');
   }
 
   removeKey(username, credentialId) {
@@ -2720,6 +2928,9 @@ class Credentials {
     if (verdict.ok === false) {
       log.info('credentials: a code for ' + name + ' was refused (' +
                verdict.reason + ').');
+      if (verdict.reason === 'replay') {
+        this.noteTotpReplay(name);
+      }
       log.debug('Leaving Credentials.totpPrepare(). Refused.');
       return { done: coded(errorCodes.codeOf(verdict) || 'STS-AUTHN-0105',
                    { ok: false, reason: verdict.reason,
@@ -2839,6 +3050,7 @@ class Credentials {
                  ready.verdict.counter + ' and was REFUSED: step ' +
                  answer.highest + ' has already been accepted for this ' +
                  'enrolment, by another node or a request racing this one.');
+        this.noteTotpReplay(name);
         return coded('STS-AUTHN-0106', { ok: false, reason: 'replay',
           counter: ready.verdict.counter,
           detail: 'That code has already been used. Wait for your ' +
@@ -4345,15 +4557,23 @@ class Credentials {
   }
 
   // THE DEVICE REGISTER (#130), for `common/devices.ts`: the directory's
-  // five hooks, each answering nothing (an empty list, false, '') where no
-  // directory is loaded in this process.
+  // seven hooks, each answering nothing (an empty list, false, '', null)
+  // where no directory is loaded in this process — and `hasHook`, which says
+  // whether the loaded directory offers one (#164 phase 3: the index).
   deviceStore(operation: string, args: any[]): any {
     const { log } = this.deps;
     const directory = this.directory;
     log.debug('Entering Credentials.deviceStore(). ' + operation);
+    if (operation === 'hasHook') {
+      const offered = !!directory &&
+        typeof directory[String((args || [])[0])] === 'function';
+      log.debug('Leaving Credentials.deviceStore(). hasHook ' + offered);
+      return offered;
+    }
     const empty = operation === 'listDeviceEntries' ? [] :
       (operation === 'personDnOf' || operation === 'applicationDnOf') ? '' :
-      false;
+      (operation === 'ownerOf' || operation === 'deviceEntryByIndex')
+        ? null : false;
     if (!directory || typeof directory[operation] !== 'function') {
       log.debug('Leaving Credentials.deviceStore(). No store.');
       return empty;
@@ -4398,6 +4618,29 @@ class Credentials {
     const answer = directory[operation].apply(null, args);
     log.debug('Leaving Credentials.claimsAggregationStore().');
     return answer;
+  }
+
+  // A PERSON'S ACCOUNT IDS AT CLIENTS (#148): every `<client_id> <aud_sub>`
+  // value (none where no directory is loaded), and a write of all of them.
+  audSubsOf(username: string): string[] {
+    const { log } = this.deps;
+    const directory = this.directory;
+    log.debug('Entering Credentials.audSubsOf().');
+    const values = directory && typeof directory.readAudSubs === 'function'
+      ? (directory.readAudSubs(String(username || '')) || []) : [];
+    log.debug('Leaving Credentials.audSubsOf().');
+    return values.map(String);
+  }
+
+  writeAudSubs(username: string, values: string[]): boolean {
+    const { log } = this.deps;
+    const directory = this.directory;
+    log.debug('Entering Credentials.writeAudSubs().');
+    const written = !!(directory &&
+      typeof directory.writeAudSubs === 'function' &&
+      directory.writeAudSubs(String(username || ''), values || []));
+    log.debug('Leaving Credentials.writeAudSubs(). ' + written);
+    return written;
   }
 
   // A PERSON'S CIBA USER CODE (#131), for `oauth-oidc/ciba.ts`: the stored
@@ -5098,6 +5341,14 @@ class Credentials {
                         'Remove one first.'] });
     }
     this.sweepPendingKeys();
+    // WHICH KIND OF AUTHENTICATOR WAS ASKED FOR (2026-09-26): `platform` or
+    // `roaming`, from `/portal/keys`' choice, carried like the role so the
+    // armed ceremony asks for what was chosen. A kind the policy does not
+    // offer is dropped rather than refused — `webauthn.authenticatorAttachment`
+    // decides the ceremony either way (`creationOptions()`), so it is a
+    // preference and never a way round the setting.
+    const kind = webauthnPolicy.authenticatorKinds()
+      .indexOf(String(options.kind || '')) >= 0 ? String(options.kind) : '';
     const record = {
       // `require('crypto')` inline, which is what `issueActivation()` below
       // also does: the module-level `crypto` here is this service's OWN
@@ -5106,6 +5357,7 @@ class Credentials {
       username: name,
       challenge: nodeCrypto().randomBytes(32).toString('base64url'),
       role: role,
+      kind: kind,
       label: String(options.label || '').trim(),
       // EVERY key they hold and not only the ones of this role: the point is
       // *this authenticator is already registered here*, which is a fact about
@@ -5115,12 +5367,13 @@ class Credentials {
     };
     pendingKeys.set(name.toLowerCase(), record);
     log.info('credentials: ' + name + ' started enrolling a "' + role +
-             '" security key. ' + record.exclude.length +
+             '" security key' + (kind ? ' (' + kind + ')' : '') + '. ' +
+             record.exclude.length +
              ' authenticator(s) already enrolled are excluded.');
     log.debug('Leaving Credentials.beginKeyEnrolment(). Challenge minted ' +
               'and held.');
     return { ok: true, enrolmentId: record.id, challenge: record.challenge,
-             role: role, exclude: record.exclude.slice(),
+             role: role, kind: kind, exclude: record.exclude.slice(),
              expiresAt: new Date(record.expires).toISOString() };
   }
 
@@ -5891,9 +6144,33 @@ class Credentials {
     // #64: the authentication policy's `requireSecondFactor`, which replaced
     // `authn.mfaRequired`. `always` is the old `true`.
     const byRealm = this.deps.authnPolicy.requireSecondFactor() === 'always';
+    // #246: ADMINISTRATORS, by the same policy's own field — `offer` (the
+    // default for now) shows the set-up step with an Ignore button, `always`
+    // requires it. The default realm's built-in administrator is only ever
+    // OFFERED one: rcbj's "we can offer it, but they can decline", and the
+    // account a service with no other administrator is recovered through.
+    const forAdmins = name
+      ? String(this.deps.authnPolicy.requireSecondFactorForAdministrators())
+      : 'if-held';
+    let byAdministrator = false;
+    let offered = false;
+    if (forAdmins !== 'if-held') {
+      const roles = this.deps.consoleRolesOf(name);
+      if (roles.read || roles.write) {
+        const builtIn = this.deps.realms.currentId() === 'default' &&
+          name === String(config.value('admin.bootstrapUsername') || '')
+            .trim();
+        byAdministrator = forAdmins === 'always' && !builtIn;
+        offered = !byAdministrator;
+      }
+    }
+    const required = byUser || byRealm || byAdministrator;
     log.debug("Leaving Credentials.mfaRequirementFor(). user=" + byUser +
-              ", realm=" + byRealm);
-    return { required: byUser || byRealm, byUser: byUser, byRealm: byRealm };
+              ", realm=" + byRealm + ", administrator=" + byAdministrator +
+              ", offered=" + (offered && !required));
+    return { required: required, byUser: byUser, byRealm: byRealm,
+             byAdministrator: byAdministrator,
+             offered: offered && !required };
   }
 
   setMfaRequired(username, required) {
@@ -6365,6 +6642,8 @@ export = {
   selfIssuedSubjectOwner: slot.forward('selfIssuedSubjectOwner'),
   deviceStore: slot.forward('deviceStore'),
   oidfedStore: slot.forward('oidfedStore'),
+  audSubsOf: slot.forward('audSubsOf'),
+  writeAudSubs: slot.forward('writeAudSubs'),
   claimsAggregationStore: slot.forward('claimsAggregationStore'),
   readCibaUserCode: slot.forward('readCibaUserCode'),
   writeCibaUserCode: slot.forward('writeCibaUserCode'),
@@ -6410,6 +6689,7 @@ export = {
   activationPending: slot.forward('activationPending'),
   WEBAUTHN_ATTRIBUTE: Credentials.WEBAUTHN_ATTRIBUTE,
   ROLES: Credentials.ROLES,
+  keyKind: Credentials.keyKind,
   keysOf: slot.forward('keysOf'),
   addKey: slot.forward('addKey'),
   removeKey: slot.forward('removeKey'),
@@ -6423,6 +6703,8 @@ export = {
   confirmKeyEnrolment: slot.forward('confirmKeyEnrolment'),
   addKeyClaimed: slot.forward('addKeyClaimed'),
   noteKeyUsed: slot.forward('noteKeyUsed'),
+  noteKeyCloned: slot.forward('noteKeyCloned'),
+  noteBootstrapPassword: slot.forward('noteBootstrapPassword'),
   mechanismsFor: slot.forward('mechanismsFor'),
   secondFactorDemand: slot.forward('secondFactorDemand'),
   bootstrap: slot.forward('bootstrap'),

@@ -88,14 +88,36 @@ on a new device scores well above 1.
 |---|---|---|
 | `tor-exit` | ×5 | the address is on the active Tor exit list |
 | `reputation` | ×5 | the address is on the active IP reputation list |
-| `operator-deny` | ×50 | the address is on this realm's operator deny list |
+| `operator-deny` | ×20 | the address is on this realm's operator deny list |
 | `operator-allow` | ×0.2 | the address is on this realm's operator allow list |
 | `automated-client` | ×10 | the User-Agent belongs to an automated client |
 | `new-tls-stack` | ×2 | the connection's TLS client fingerprint (JA4) is one this person has not signed in with before |
 | `new-device` | ×2 | the browser's fingerprint is one this person has not signed in from before (only with `risk.fingerprinting` on) |
 | `account-failures` | ×3 | five or more refused passwords for this person in the last hour |
 | `network-failures` | ×3 | twenty or more refused passwords from this network in the last hour |
-| `authenticator-compromised` | ×50 | the security key's model is reported revoked or compromised in the FIDO metadata |
+| `authenticator-compromised` | ×50 | the security key's model is reported revoked or compromised in the FIDO metadata. A key whose signature counter went backwards (a clone) sets the person's standing to HIGH with this signal at once, and RISC `credential-compromise` is sent |
+| `totp-replay` | ×2 | a one-time code was presented a second time for this person in the last hour. The code is refused, and it is not counted as a refused password. It is not a security event on its own, because somebody who pressed submit twice looks the same |
+
+**Lists and private addresses.** A list matches a loopback, private,
+link-local or reserved address exactly as the list says. FireHOL's level 1
+list includes the bogons: 10.0.0.0/8, 172.16.0.0/12 and 192.168.0.0/16.
+Behind a container bridge, a NAT or a proxy whose address is private, every
+person arrives from the same address, so one listed bogon puts a signal on
+everybody. Turn off `risk.listsMatchSpecialPurpose` (Monitoring → Risk) when
+you test on one machine or run that way. The Tor, reputation and deny lists
+are then set aside for such an address, and the assessment records which
+lists were set aside. The allow list is not affected.
+
+**A known context caps the address evidence at MEDIUM.** A person may have at
+least `risk.minimumHistory` earlier sign-ins from this exact address and this
+browser. For that person, the address signals (`tor-exit`, `reputation`,
+`operator-deny`, `network-failures`) can raise a sign-in to MEDIUM, which asks
+for a step-up, but not to HIGH. The score is held just under the HIGH line,
+and the assessment says what was capped. Evidence about the credential is not
+capped, because a network does not share it: `account-failures`,
+`automated-client`, `authenticator-compromised` and "this wasn't me". The cap
+also bounds how far the `risk.rescore` job can raise that session on a list it
+gains later.
 
 These factors are a first calibration. You can change any of them for a
 realm with `risk.signalFactors`, without a new release. It takes a list of
@@ -151,9 +173,11 @@ person's roles:
 | `urn:sts:xacml:risk-score` | the score (absent for a first sign-in) |
 | `urn:sts:xacml:risk-signal` | every evaluator that fired, such as `tor-exit` |
 | `urn:sts:xacml:risk-satisfied` | the step-ups the authentication already meets: `second-factor`, and `security-key` when a WebAuthn key was used |
+| `urn:sts:xacml:risk-held` | the step-ups the person could answer: `second-factor` if they hold an authenticator app or a security key, and `security-key` if they hold a key |
 
 The built-in policy has three risk rules, ahead of the role rule, and a risk
-Deny overrides a role Permit:
+Deny overrides a role Permit. The console (`sts-admin-console`) is the
+exception, described below.
 
 | Risk | Decision |
 |---|---|
@@ -164,6 +188,30 @@ Deny overrides a role Permit:
 
 **An authentication with no assessment is decided on roles alone.** Nothing
 unknown is ever a reason to refuse.
+
+**The admin console is never refused on risk.** A console that nobody can sign
+in to leaves a cluster that nobody can repair (#226). For the applications
+named by the `role-issuance` template's `neverLockOut` parameter
+(`sts-admin-console` by default), HIGH and MEDIUM ask for a step-up instead:
+
+| The person holds | Decision at HIGH or MEDIUM |
+|---|---|
+| a security key | refused until the authentication used the key |
+| a second factor but no key | refused until the authentication carried a second factor |
+| neither | **permitted on roles, with an alarm**: an `xacml.issuance.alarm` audit record and a warning in the log, both `STS-RISK-0038` |
+
+The alarm is the one place where a step-up the person cannot answer is not a
+refusal. If you see it, enrol a second factor for that administrator and read
+the assessment's signals. An administrator with no second factor is also offered one,
+or required to set one up, by the authentication policy's
+`requireSecondFactorForAdministrators` (#246). When that happens at HIGH or
+MEDIUM it is recorded under `STS-RISK-0039`, because whoever has the password
+could be the one enrolling. Set `neverLockOut` to `none` to put the console
+under the ordinary rules.
+
+**If you are locked out anyway**, for example by an override of the policy,
+start the service with `STS_RISK_ASSESS_SIGN_INS=false`. No sign-in is
+assessed, and every authentication is then decided on roles alone.
 
 **Where a person can act, a step-up is a question, not a refusal:**
 
@@ -331,8 +379,9 @@ ways in:
   expanded as it is read, and nothing expanded is written to disk. See
   [Uploading a file](#uploading-a-file). A short list can also be pasted on
   the same page, or sent as `content` to `POST /admin-api/risk/import`.
-- **At install time, with the loader.** Run it inside the image, with
-  `STS_DATABASE_URL` set:
+- **At install time, with the loader.** Run it inside the image. It
+  connects to the database the way the service does, from the same
+  settings (see step 3 below):
 
   ```bash
   node risk/risk_install.js \
@@ -402,7 +451,8 @@ the file is stored, such as terms nobody has accepted, is the answer itself.
 
 The upload is written to `risk.uploadDirectory` while it is imported, and
 deleted when the import ends. Every stack this repository ships mounts a
-volume there. Give it room for the largest file you will upload, as
+volume there; on AWS it is an encrypted EBS volume per node, created and
+deleted with the node's task ([A cluster in AWS](aws-cluster.md#where-a-risk-dataset-upload-goes)). Give it room for the largest file you will upload, as
 compressed. Several limits apply:
 
 | Setting | Default | What it refuses |
@@ -500,16 +550,17 @@ The service itself dials none of them. On AWS, run the same command as a
 one-off task of the service's task definition, which is on the database's
 network.
 
-> **The database password.** The loader connects with `STS_DATABASE_URL`
-> only. It does not yet read the password from OpenBao or AWS Secrets Manager
-> the way the service does
-> ([#213](https://github.com/rcbj/iya-sts/issues/213)), so on the stacks this
-> repository ships it cannot sign in to the database by itself. Until that is
-> fixed, read the password from your secret store and pass it as
-> `docker exec -e PGPASSWORD=… sts node risk/risk_install.js …`. The
-> container's `STS_DATABASE_URL` carries no password, so the database client
-> uses `PGPASSWORD` instead. Or use the watched directory below, which runs
-> inside the service and uses its connection.
+The loader connects to the database exactly as the service does. It reads
+the same settings: the connection string from `STS_DATABASE_URL` or
+`persistence.databaseUrl`, and the password from
+`persistence.databasePasswordProvider` (OpenBao, AWS Secrets Manager or
+another secret store). It also verifies the database server's certificate
+when `persistence.databaseTlsRejectUnauthorized` is on. So in a container of
+the service's image it needs nothing else: no password on the command line
+and no `PGPASSWORD`. For a throwaway database with no secret store, a
+password written into `STS_DATABASE_URL` still works. If the secret store is
+configured but cannot be read, the loader stops with `STS-RISK-0040` and the
+store's own reason, and imports nothing.
 
 The loader prints one line per dataset, and exits non-zero if any failed.
 Running it again is safe: a version already loaded is skipped.
@@ -564,6 +615,39 @@ names:
   under the same revocation policy as any other presented certificate.
 - **A serial number greater than any BLOB already processed.** An older one
   is a rollback and is refused.
+
+### When FIDO publishes a BLOB that does not verify
+
+It has happened: a BLOB whose signature does not verify under its own
+signing certificate. The download job refuses it (`STS-RISK-0022`) and keeps
+the BLOB you already have. If you have none, or yours has gone stale, you can
+load that BLOB anyway **by uploading it** on Monitoring → Risk with **FIDO
+MDS3 only: load the BLOB even if its signature or signing chain does not
+verify** ticked, or with `overrideSignature=true` on
+`POST /admin-api/risk/upload`.
+
+> **Warning.** An overridden BLOB is unauthenticated: nothing shows it came
+> from FIDO, and its chain's revocation is not checked. A BLOB that marks an
+> authenticator model compromised decides registrations and risk scores, so
+> check where the file came from before you override. Load a BLOB that
+> verifies as soon as FIDO publishes one.
+
+What the override does and does not change:
+
+- It lets through a chain that does not reach the root and a signature that
+  does not verify. A file that is not a JWS with an `x5c` header, or whose
+  payload is not a BLOB, is still refused.
+- It also lets through a chain that verifies but whose revocation status
+  cannot be established when `pki.revocationCheck` is `hard-fail` (product
+  mode's default). A signing chain that is positively **revoked** is still
+  refused (`STS-RISK-0023`), with or without the override.
+- The serial-number check still applies, so an overridden BLOB cannot roll
+  back to an older one, and the next BLOB FIDO publishes replaces it as usual.
+- The version is recorded with verification `overridden`. The reason it did
+  not verify and the administrator who overrode it are kept on the version
+  and the audit row, and a warning is logged (`STS-RISK-0043`).
+- It is refused for every dataset other than `fido.mds3`, and the
+  `risk.mds-refresh` job never uses it.
 
 As FIDO's terms require, **only the latest BLOB is kept**: when a new one
 becomes active, the older one's rows are deleted at once. It stops answering
@@ -703,6 +787,7 @@ kept in step with `common/config.js`.
 | `risk.mediumScorePercent` | `STS_RISK_MEDIUM_SCORE_PERCENT` | `100` | The score, in hundredths, from which a sign-in is MEDIUM. |
 | `risk.highScorePercent` | `STS_RISK_HIGH_SCORE_PERCENT` | `1000` | The score, in hundredths, from which a sign-in is HIGH. |
 | `risk.signalFactors` | `STS_RISK_SIGNAL_FACTORS` | *(empty)* | Factors over the built-in ones, as `signal=factor`, comma-separated. |
+| `risk.listsMatchSpecialPurpose` | `STS_RISK_LISTS_MATCH_SPECIAL_PURPOSE` | `true` | Let the Tor, reputation and deny lists match loopback, private and reserved addresses. Turn off for a service on one machine, or behind a private bridge, NAT or proxy. |
 | `risk.calibrationMediumPercent` | `STS_RISK_CALIBRATION_MEDIUM_PERCENT` | `5` | The share of sign-ins calibration aims to have at MEDIUM or worse. |
 | `risk.calibrationHighPercent` | `STS_RISK_CALIBRATION_HIGH_PERCENT` | `1` | The share of sign-ins calibration aims to have at HIGH. |
 | `risk.recordFailures` | `STS_RISK_RECORD_FAILURES` | `true` | Record every refused password. |
@@ -715,6 +800,7 @@ kept in step with `common/config.js`.
 | `risk.supersededRetentionDays` | `STS_RISK_SUPERSEDED_RETENTION_DAYS` | `30` | How long a superseded version's rows are kept for rollback. |
 | `risk.geoStaleAfterDays` | `STS_RISK_GEO_STALE_AFTER_DAYS` | `45` | Age after which geolocation and ASN data counts for nothing. |
 | `risk.ipListStaleAfterHours` | `STS_RISK_IP_LIST_STALE_AFTER_HOURS` | `24` | Age after which a Tor or reputation list counts for nothing. |
+| `risk.geoMinimumCount` | `STS_RISK_GEO_MINIMUM_COUNT` | `3` | The fewest people a place is numbered with on Monitoring → Geolocation; fewer is shaded and not numbered, and such a city is not drawn. |
 
 ## Design decisions
 
@@ -747,7 +833,17 @@ events it sends. At `HIGH`, each one ends its own sessions for that person
   assessments, people by current standing, a lookup of any address, every
   dataset and its versions, the providers, their terms and who accepted
   them, and the refused passwords. It also shows the data credits and these
-  settings. `?subject=` narrows the assessments to one person.
+  settings. `?subject=` narrows the assessments to one person. The
+  assessments and the standings are paged, each on its own parameter
+  (`assessmentsPage`, `subjectsPage`) with `per` shared, as every other
+  console list is; `GET /admin-api/risk` takes the same parameters and
+  answers `assessmentsPaging` and `subjectsPaging`. Every person is shown
+  by username, linked to their Directory → Users page, with the
+  `urn:uuid:` subject under it; the API's rows carry `username` too.
+- **Both pages are per realm.** Each shows the realm it is opened in:
+  `/admin/risk` is the default realm's, and another realm's risk is at
+  `/realm/<id>/admin/risk` (`/realm/<id>/admin-api/risk` in the API).
+  Nothing in the request names another realm.
 - **A realm's own administrators** see both pages for their realm, at
   `/realm/<id>/admin/risk` and `/realm/<id>/admin/risk-scoring`. They see:
   - the realm's assessments;
@@ -781,6 +877,32 @@ events it sends. At `HIGH`, each one ends its own sessions for that person
   - the breached-password screening counts.
 
   `GET /admin-api/risk/metrics?window=24h` returns the same data as JSON.
+- **Monitoring → Geolocation** (`/admin/geolocation`, #255) draws where
+  the realm's people signed in from, as a map. It starts with the world,
+  each country shaded by how many people it counts and each continent
+  labelled with its total. Select a country to see its continent, and a
+  country on a continent to see its cities, drawn as circles whose area is
+  proportional to the people counted there. Every level is a link, and the
+  map is drawn on the server with no script.
+  - **Live sessions** is the default: the realm's live sessions, each
+    counted where its latest assessment placed it. The other windows count
+    everybody who signed in over the last 24 hours, 7 days or 30 days,
+    wherever they were.
+  - **People are counted at each level, not summed.** A person seen in two
+    cities is one person in their country.
+  - **Small counts are suppressed.** A place with fewer than
+    `risk.geoMinimumCount` people (3) is shaded but carries no number, and
+    such a city is neither drawn nor listed; it is counted in its country's
+    "other cities" line.
+  - It needs a geolocation dataset. Without one, every sign-in is counted
+    under *Location unknown*.
+  - The country outlines are Natural Earth's 1:50m countries, which are in
+    the public domain and ship with the service. They are the one third-party
+    dataset that does.
+
+  `GET /admin-api/geolocation` returns the same counts, with the same
+  suppression. It takes `window` (`live`, `24h`, `7d` or `30d`),
+  `continent` and `country`.
 - **Each person's page under Directory → Users** opens with their current
   risk, drawn large in the level's colour: LOW green, MEDIUM amber, HIGH
   red, grey for someone never assessed. It shows the score, the level it
@@ -791,7 +913,7 @@ events it sends. At `HIGH`, each one ends its own sessions for that person
   `POST /admin-api/risk/import`, `activate`, `rollback`, `delete` and
   `accept-terms`, described in the
   [OpenAPI document](management-api.md).
-- **Error codes** `STS-RISK-0001` to `STS-RISK-0026` are listed on
+- **Error codes** `STS-RISK-0001` to `STS-RISK-0042` are listed on
   [Error codes](error-codes.md).
 
 ## Related

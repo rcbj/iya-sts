@@ -100,7 +100,7 @@ const RESERVE_BYTES = 16 * 1024 * 1024;
 // console's form adds `csrf_token`, which the door checks.
 const FIELDS = ['dataset', 'format', 'realm', 'version', 'sha256',
                 'publishedAt', 'provider', 'licence', 'attribution',
-                'activate', 'acceptTerms'];
+                'activate', 'acceptTerms', 'overrideSignature'];
 
 // The request bodies the API door takes. None of them decides how the file
 // is read — its first bytes do (`risk_expand.ts`) — but a caller naming a
@@ -298,7 +298,7 @@ class RiskUpload {
     return null;
   }
 
-  // The fields as the importer takes them: strings, trimmed, the two flags
+  // The fields as the importer takes them: strings, trimmed, the three flags
   // as the console's checkbox (`on`) or the API's `true`.
   private static importFields(fields: Json): Json {
     log.debug("Entering RiskUpload.importFields().");
@@ -318,7 +318,11 @@ class RiskUpload {
       attribution: f.attribution === undefined ? undefined
                                                : text('attribution'),
       activate: text('activate') !== 'false',
-      acceptTerms: ['true', 'on'].indexOf(text('acceptTerms')) >= 0
+      acceptTerms: ['true', 'on'].indexOf(text('acceptTerms')) >= 0,
+      // An administrator loading a FIDO MDS3 BLOB whose signature does not
+      // verify (`risk_datasets.importMds()`); refused for any other dataset.
+      overrideSignature:
+        ['true', 'on'].indexOf(text('overrideSignature')) >= 0
     };
   }
 

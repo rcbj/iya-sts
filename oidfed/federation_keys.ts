@@ -103,6 +103,9 @@ interface FederationKeysDeps {
   claims: () => Json;
   // The subordinate event log (#137), told when the published set changes.
   events: () => Json;
+  // What a Shared Signals receiver is told when the published set changes
+  // (#245): `ssf/service_signals.ts`, lazily.
+  signals: () => Json;
   now: () => number;
 }
 
@@ -140,6 +143,9 @@ class FederationKeys {
       },
       events: function (): Json {
         return require('./subordinate_events');
+      },
+      signals: function (): Json {
+        return require('../ssf/service_signals');
       },
       now: function (): number {
         return Date.now();
@@ -379,6 +385,9 @@ class FederationKeys {
     let next = rows.filter(function (r: Json): boolean {
       return r.state === 'next';
     })[0];
+    // The next key an emergency revokes with the current one, for the
+    // notice (#245).
+    const revokedNextKid = o.emergency && next ? String(next.kid) : '';
     if (o.emergency && next) {
       next.state = 'retired';
       next.privateKey = '';
@@ -416,6 +425,13 @@ class FederationKeys {
                                     'current and next keys; '
                                   : 'The Federation Entity Key rotated; ') +
                      promoted.kid + ' signs, ' + fresh.kid + ' is next.');
+    this.announce([{ unit: 'federation-entity-key',
+                     from: current ? current.kid : 'none', to: promoted.kid }]
+                    .concat(revokedNextKid
+                      ? [{ unit: 'federation-entity-key',
+                           from: revokedNextKid, to: 'revoked' }] : []),
+                  o.emergency ? 'emergency'
+                    : o.reason === 'scheduled' ? 'scheduled' : 'requested');
     log.debug("Leaving FederationKeys.rotate(). " + promoted.kid +
               " is current.");
     return { ok: true, from: current ? current.kid : '', to: promoted.kid,
@@ -457,6 +473,9 @@ class FederationKeys {
     this.record('oidfed.key-revoked', { kid: kid, reason: why });
     this.keysChanged('The retired key ' + kid + ' was revoked (' + why +
                      ').');
+    this.announce([{ unit: 'federation-entity-key', from: kid,
+                     to: 'revoked' }],
+                  why === 'compromised' ? 'emergency' : 'requested');
     log.debug("Leaving FederationKeys.revoke().");
     return { ok: true, kid: kid, reason: why };
   }
@@ -502,6 +521,31 @@ class FederationKeys {
                ((e && e.message) || e));
     }
     log.debug("Leaving FederationKeys.keysChanged().");
+  }
+
+  // THE SHARED SIGNALS NOTICE (#245): `federation-key-rotated` to every
+  // stream of this realm that takes it, so a party resolving Trust Chains
+  // through it fetches the Entity Configuration now rather than when its
+  // cached copy expires — after an emergency, the keys it holds verify
+  // nothing. A key merely PUBLISHED as next is not announced: nothing it
+  // signs exists yet, and the next rotation says so. Never throws into the
+  // change, which has happened.
+  private announce(rotated: Json[], reason: string): void {
+    const { log, realms } = this.deps;
+    log.debug("Entering FederationKeys.announce().");
+    try {
+      Promise.resolve(this.deps.signals().keyChanged('federation',
+        String(realms.current().id || ''),
+        { rotated: rotated, reason: reason }))
+        .catch(function (e: Json): void {
+          log.debug("Caught in a callback in FederationKeys.announce(): " +
+                    ((e && e.message) || e));
+        });
+    } catch (e: any) {
+      log.debug("Caught in FederationKeys.announce(): " +
+                ((e && e.message) || e));
+    }
+    log.debug("Leaving FederationKeys.announce().");
   }
 
   private record(event: string, detail: Json): void {

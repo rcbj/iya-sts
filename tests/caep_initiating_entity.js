@@ -21,6 +21,15 @@
 // with no symptom anywhere: the event is conforming, the value is a legal one,
 // and only a receiver acting on it would ever notice.
 //
+// **AND THEN THE REGEX WAS WRONG THE OTHER WAY (#242, 2026-09-26).** Reading
+// the entity out of the words made the console's own Sign out button — "the
+// Sign out button on the admin console" — an ADMINISTRATOR ending the session
+// of a person who signed themselves out, and an emergency key rotation and the
+// risk engine the PERSON. So every door now STATES the entity, the words only
+// reach reason_admin, and a door that says nothing is `system` with a warning
+// rather than a guess. Section E is #242's other finding: an arrival session
+// nobody signed in to is never revoked.
+//
 // The second half is the SESSION EXPIRY, which until the same day emitted
 // nothing at all and now emits `policy`. `system` would have been the easy
 // wrong answer — that word is for a maintenance activity, and this is a
@@ -104,15 +113,30 @@ function run(t) {
   // -----------------------------------------------------------------------
   t.log.info('A. the door that ended it decides what the event says');
   // -----------------------------------------------------------------------
+  // Each door STATES who ended the session (#242); the words are only the
+  // sentence in reason_admin. The last three are the ones the regex that used
+  // to read the entity out of the words got wrong.
   const doors = [
-    { by: 'the /logout endpoint', want: 'user',
+    { by: 'the /logout endpoint', entity: 'user', want: 'user',
       what: 'a person signing themselves out at /logout' },
-    { by: 'the admin console at /admin/logout', want: 'admin',
-      what: 'an operator ending somebody else\'s session' },
-    { by: 'the /admin/sessions page', want: 'admin',
+    { by: 'the admin console at /admin/logout', entity: 'admin',
+      want: 'admin', what: 'an operator ending somebody else\'s session' },
+    { by: 'the /admin/sessions page', entity: 'admin', want: 'admin',
       what: 'the Revoke button on /admin/sessions' },
-    { by: 'the management API at /admin-api/sessions', want: 'admin',
-      what: 'POST /admin-api/sessions/revoke' }
+    { by: 'the management API at /admin-api/sessions', entity: 'admin',
+      want: 'admin', what: 'POST /admin-api/sessions/revoke' },
+    { by: 'the Sign out button on the admin console', entity: 'user',
+      want: 'user', what: 'the console\'s own Sign out button, which the ' +
+      'regex called an administrator' },
+    { by: 'an emergency key rotation', entity: 'system', want: 'system',
+      what: 'an emergency key rotation nobody requested by name, which the ' +
+      'regex called the person' },
+    { by: 'the person\'s risk went to HIGH', entity: 'policy',
+      want: 'policy', what: 'the risk engine, which the regex called the ' +
+      'person' },
+    { by: 'the admin console, with no entity said', entity: undefined,
+      want: 'system', what: 'a door that says nothing — never guessed from ' +
+      'its words (STS-AUTHN-0290)' }
   ];
   doors.forEach(function (door, n) {
     const seen = capture();
@@ -120,7 +144,8 @@ function run(t) {
     // The sign-in's own notice is not what this is about.
     seen.length = 0;
     const result = logout.terminate('entity-' + n, ['session:' + session.id],
-                                    { by: door.by });
+                                    { by: door.by,
+                                      initiatingEntity: door.entity });
     t.equal(result.terminated.length, 1,
             door.what + ' really ended the session');
     t.equal(seen.length, 1,
@@ -137,7 +162,8 @@ function run(t) {
   const reasonSession = signIn('entity-reason');
   seenReason.length = 0;
   logout.terminate('entity-reason', ['session:' + reasonSession.id],
-                   { by: 'the admin console at /admin/logout' });
+                   { by: 'the admin console at /admin/logout',
+                     initiatingEntity: 'admin' });
   const due = caep.observe(seenReason[0]);
   t.check(!!due && !!due.payload.reason_admin,
           'the event carries reason_admin');
@@ -200,6 +226,39 @@ function run(t) {
             { session: Object.assign({}, plain.session, { id: 'entity-p2' }),
               byAdmin: true })), 'admin',
           'and byAdmin alone is still "admin"');
+
+  // -----------------------------------------------------------------------
+  t.log.info('E. a session nobody signed in to is never revoked (#242)');
+  // -----------------------------------------------------------------------
+  // `startArrivalSession()` gives a cookie-less visitor at a front door an
+  // anonymous tracking row (`chosen: false`) and tells nobody; its end must
+  // not be the first thing a receiver ever hears about it.
+  const seenArrival = capture();
+  const arrivalCookie = [];
+  const arrival = authn.startArrivalSession({ headers: {} },
+    { set: function (name, value) {
+      arrivalCookie.push(String(value));
+    } }, 'arrival');
+  t.check(!!arrival && arrival.chosen === false,
+          'an arrival session was minted (the probe\'s control)');
+  t.equal(seenArrival.length, 0, 'and minting it told the observer nothing');
+  arrival.expires = Date.now() - 1000;
+  // The lazy expiry, which the sweep shares (`expireSession()`).
+  t.equal(authn.sessionOf({ headers: { cookie:
+    (arrivalCookie[0] || '').split(';')[0] } }), null,
+          'the expired arrival session is not returned');
+  t.equal(seenArrival.filter(function (n) {
+    return n.kind === 'revoked';
+  }).length, 0, 'its expiry sends no session-revoked: it never had a ' +
+          'session-established, and a stream covering everybody would have ' +
+          'been told about every visitor who did not sign in');
+  const arrival2 = authn.startArrivalSession({ headers: {} },
+    { set: function () {} }, 'arrival');
+  authn.endEverySessionIn('default', 'the probe', 'admin');
+  t.equal(seenArrival.filter(function (n) {
+    return n.kind === 'revoked' && n.session && arrival2 &&
+           n.session.id === arrival2.id;
+  }).length, 0, 'nor does ending every session of a realm');
 
   authn.setSessionObserver(function () { return null; });
   log.debug("Leaving run().");

@@ -96,6 +96,7 @@ anything heavier.**
 | `ldap/ldap_server.js` | fills `setDirectory()` at its own require time | the ordinary direction, exactly as `applications.js` |
 | `federation/federation_graph.ts` | the graph `/admin/federation/map` is drawn from | the easiest of them: it registers no route itself, and there is nothing in it this module wants |
 | `federation/federation_sp.ts` | the register the four endpoints serve | the ordinary direction; see 4b |
+| `mgmt-api/admin_api.ts` | the editable fields, as the enums of `set`, `add-value` and `remove-value` (#86) | the ordinary direction: a cache hit at 19, after `admin-core` loaded it |
 
 ### AND IT REQUIRES ONE THING BACK — `common/applications.js`, since 2026-08-26
 
@@ -875,6 +876,18 @@ so nothing downstream would ever report that the name was wrong. Listing them as
 unmapped is what turns a partner's fifteenth claim into a line somebody can act
 on, and mapping it is one form field away.
 
+### Two names for one attribute: values concatenated, each kept once (#189)
+
+Two incoming names that map to one directory attribute have their values
+CONCATENATED — a directory attribute is multi-valued — but **an identical value
+is kept once**, because an LDAP attribute's values are a set (RFC 4512 section
+2.3). It was a blind concatenation until #189 made this service's own identity
+provider send `mail` both as the AD FS claim URI and as the X.500/LDAP profile's
+`urn:oid:0.9.2342.19200300.100.1.3` (Shibboleth reads one, AD FS-configured
+providers the other); a relationship in front of it then wrote `mail: [x, x]`,
+which `tests/vendored/sts_federation_realms.js` caught and
+`tests/saml_interop_findings.js` (section H) now holds.
+
 ### The username is the one mapping that cannot be got wrong quietly
 
 Everything else on the entry is decoration; the username decides WHICH ENTRY.
@@ -919,6 +932,17 @@ release policy", and they must not be the same state: the second is what every
 partner is on the day it is created, and treating it as the first would mean
 registering a partner silently stopped it receiving what it received the day
 before. The console says so where the list is empty, and so does the API.
+
+**A LIST THAT MOVES IS A CLAIM CHANGE FOR TOKENS ALREADY ISSUED (#238,
+2026-09-26).** `update()` and `remove()` compare the relationship's policy
+before and after (`releasePolicyOf()`: an enabled identity-provider-side
+relationship naming an application and a list, or none), and when it moved,
+`announceReleaseChange()` sends CAEP `token-claims-change` to each person
+holding a live artifact for that application — the names whose
+released-or-not answer changed, with what the artifact would carry now —
+through `admin_stats.announceClaimsReshaped()`, lazily (rule 3o: that module
+requires this one). A relationship is created disabled, so `create()` moves
+nothing. `ssf/CLAUDE.md` has the fan-out.
 
 **It applies LAST**, after the three layers that produce claims, because it is a
 filter rather than a source. Applied earlier, a typed claim could lose to an

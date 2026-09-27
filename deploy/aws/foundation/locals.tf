@@ -21,6 +21,7 @@ locals {
     logs         = "arn:${local.partition}:logs:${local.region}:${local.account_id}:log-group"
     rds          = "arn:${local.partition}:rds:${local.region}:${local.account_id}"
     ecs          = "arn:${local.partition}:ecs:${local.region}:${local.account_id}"
+    ec2          = "arn:${local.partition}:ec2:${local.region}:${local.account_id}"
     elb          = "arn:${local.partition}:elasticloadbalancing:${local.region}:${local.account_id}"
     ecr_repo     = "arn:${local.partition}:ecr:${local.region}:${local.account_id}:repository/${var.name}"
     acm          = "arn:${local.partition}:acm:${local.region}:${local.account_id}:certificate/*"

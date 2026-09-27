@@ -502,6 +502,87 @@ async function enrolAt(b, authenticator, role, label) {
 }
 
 // ---------------------------------------------------------------------------
+// 1a. WHERE THE KEY LIVES (2026-09-26), AND A BROWSER THAT HAS NONE BUILT IN.
+//
+// The form asks which kind of authenticator to register. The first version
+// checked "Built into this device" by default and KEPT the pending enrolment
+// when the browser refused — so a browser with nothing built in (Linux
+// Firefox) failed every attempt and could never go back to choose another
+// kind. This asserts the default is the old request, the two kinds reach the
+// ceremony, and a browser's refusal hands the form back.
+// ---------------------------------------------------------------------------
+async function whereTheKeyLives(b) {
+  log.debug("Entering whereTheKeyLives().");
+  log.info("=== /portal/keys asks where the key lives ===");
+  let page = await b.go("GET", "/portal/keys");
+  check("the form offers the three answers, and LET MY BROWSER CHOOSE is " +
+        "the default — the request as it was before the choice existed",
+        function () {
+    assert.ok(/name="kind" value="any" checked/.test(page.text),
+      "the default is not \"any\": " + String(page.text).slice(0, 600));
+    assert.ok(/name="kind" value="platform"/.test(page.text) &&
+              /name="kind" value="roaming"/.test(page.text),
+      "a kind is missing from the form");
+  });
+
+  const asked = {};
+  for (const kind of ["platform", "roaming", "any"]) {
+    page = await b.go("GET", "/portal/keys");
+    const begun = await b.go("POST", "/portal/keys",
+      form({ action: "begin", role: "mfa", kind: kind,
+             csrf_token: csrfOf(page.text) }));
+    assert.strictEqual(begun.status, 303, "arming answered " + begun.status);
+    const armed = await b.go("GET", "/portal/keys");
+    // The attribute is HTML-escaped JSON.
+    const options = JSON.parse((attr(armed.text, "data-options") || "{}")
+      .replace(/&quot;/g, '"').replace(/&#39;/g, "'")
+      .replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&"));
+    asked[kind] = (options.authenticatorSelection || {});
+    if (kind !== "platform") {
+      await b.go("POST", "/portal/keys",
+        form({ action: "cancel", csrf_token: csrfOf(armed.text) }));
+      continue;
+    }
+    // THE BROWSER REFUSES, as one with nothing built in does.
+    const refused = await b.go("POST", "/portal/keys",
+      form({ action: "finish",
+             enrolment_id: hidden(armed.text, "enrolment_id"),
+             credential: JSON.stringify({ error: "NotAllowedError",
+               message: "The operation either timed out or was not " +
+                        "allowed." }),
+             csrf_token: csrfOf(armed.text) }));
+    const after = await b.go("GET", "/portal/keys");
+    check("A BROWSER THAT CANNOT RUN A \"BUILT INTO THIS DEVICE\" CEREMONY " +
+          "gets the form BACK with its error and what to try, rather than " +
+          "the same ceremony re-armed on every reload", function () {
+      assert.strictEqual(refused.status, 400,
+        "it answered " + refused.status);
+      assert.ok(/NotAllowedError/.test(refused.text) &&
+                /no authenticator built into this/.test(refused.text),
+        "the page does not say why or what to try: " +
+        String(refused.text).slice(0, 600));
+      assert.ok(!attr(after.text, "data-challenge") &&
+                /name="action" value="begin"/.test(after.text),
+        "the ceremony is still armed after the browser refused it");
+    });
+  }
+  check("the kind reaches the ceremony: platform with a discoverable " +
+        "credential, cross-platform, and nothing for \"let my browser " +
+        "choose\"", function () {
+    assert.strictEqual(asked.platform.authenticatorAttachment, "platform",
+      JSON.stringify(asked.platform));
+    assert.ok(asked.platform.residentKey === "preferred" ||
+              asked.platform.residentKey === "required",
+      JSON.stringify(asked.platform));
+    assert.strictEqual(asked.roaming.authenticatorAttachment,
+      "cross-platform", JSON.stringify(asked.roaming));
+    assert.ok(!("authenticatorAttachment" in asked.any),
+      JSON.stringify(asked.any));
+  });
+  log.debug("Leaving whereTheKeyLives().");
+}
+
+// ---------------------------------------------------------------------------
 // 1. THE FIRST KEY, AND THE PAGE THAT COULD NOT ENROL ONE.
 // ---------------------------------------------------------------------------
 async function thePortalCanEnrolAKey(first) {
@@ -572,6 +653,8 @@ async function thePortalCanEnrolAKey(first) {
   await b.go("POST", "/portal/keys",
     form({ action: "cancel",
            csrf_token: csrfOf((await b.go("GET", "/portal/keys")).text) }));
+
+  await whereTheKeyLives(b);
 
   const enrolled = await enrolAt(b, first, "mfa", "the one at my desk");
   check("and a real ceremony against it enrols the key", function () {

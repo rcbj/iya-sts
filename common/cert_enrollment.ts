@@ -81,6 +81,7 @@ import applications = require('./applications');
 import audit = require('./audit');
 import config = require('./config');
 import credentials = require('./credentials');
+import enrollmentProfiles = require('./enrollment_profiles');
 import errorCodes = require('./error_codes');
 import keyMaterial = require('./vendored/key_material');
 import keystore = require('./keystore');
@@ -101,6 +102,12 @@ import claims = require('../cluster/cluster_claims');
 import accountSignals = require('../ssf/account_signals');
 import capabilities = require('../cluster/cluster_capabilities');
 import InstanceSlot = require('./instance_slot');
+// A DEVICE AS THE HOLDER (#164 phase 2): the device register, what a
+// request's key attestation proves, and the enrolment counters. Three
+// libraries; none requires this file.
+import devices = require('./devices');
+import deviceAttestation = require('./device_attestation');
+import deviceRecognition = require('./device_recognition');
 
 const FAMILIES = ['acme', 'est', 'scep'];
 
@@ -110,39 +117,14 @@ const FAMILY_LABELS = { acme: 'ACME', est: 'EST', scep: 'SCEP' };
 // THE PROFILES.
 //
 // **NINE ARE ISSUED AND FIVE ARE NOT, AND THE FIVE ARE A DECISION rcbj MADE
-// RATHER THAN A GAP.** /admin/pki offers fourteen because an OPERATOR sitting
-// at that page is the authority; an enrollment protocol hands a certificate to
-// whoever holds a credential, and for five profiles holding the certificate is
-// holding a power over everybody else in the realm. The `why` of each is drawn
-// on every protocol page and returned by every refusal.
+// RATHER THAN A GAP** — the argument is beside the lists, which live in the
+// leaf `./enrollment_profiles` since 2026-09-26 (#251): `common/realms.js`
+// needs the names to keep an EST label and a trust realm apart, and cannot
+// require this module. They are DECIDED here, as before.
 // ---------------------------------------------------------------------------
-const PROFILE_IDS = ['tls-server', 'tls-client', 'tls-server-client',
-                     'digital-signature', 'key-encipherment', 'code-signing',
-                     'email', 'timestamping', 'smartcard-logon'];
+const PROFILE_IDS = enrollmentProfiles.PROFILE_IDS;
 
-const REFUSED_PROFILES = [
-  { id: 'root-ca',
-    why: 'A Root CA is a trust anchor. Its holder could issue a certificate ' +
-         'for anybody and be believed by everything that trusts this ' +
-         'service\'s Root — and it is self-signed, so it would not even ' +
-         'chain to this authority.' },
-  { id: 'intermediate-ca',
-    why: 'An Intermediate CA may sign further CAs. Its holder could build a ' +
-         'branch of this hierarchy nobody operates.' },
-  { id: 'issuing-ca',
-    why: 'An Issuing CA signs certificates. Its holder could issue a ' +
-         'certificate naming any person or application in the realm, which ' +
-         'is exactly the rule this whole module exists to enforce.' },
-  { id: 'ocsp-responder',
-    why: 'An OCSP Responder certificate issued by this realm\'s CA is a ' +
-         'DELEGATED responder (RFC 6960 section 4.2.2.2): its holder could ' +
-         'sign "good" about a certificate this service revoked, and a ' +
-         'relying party would believe it.' },
-  { id: 'kdc',
-    why: 'A Kerberos KDC certificate lets its holder answer PKINIT as the ' +
-         'realm\'s KDC and impersonate it to every client that trusts this ' +
-         'authority.' }
-];
+const REFUSED_PROFILES = enrollmentProfiles.REFUSED_PROFILES;
 
 // What each issued profile REQUIRES of the request or the entry, beyond the
 // identity rule. Drawn on the pages from this table.
@@ -198,6 +180,48 @@ const READ_NAMES = {
 const URN_PREFIX = { person: 'urn:sts:person:',
                      application: 'urn:sts:application:' };
 
+// ---------------------------------------------------------------------------
+// THE `device` PROFILE (#164 decision 6c, phase 2, 2026-09-26).
+//
+// A certificate issued to a DEVICE ENTRY in `ou=devices`, over EST or SCEP —
+// not ACME, which decision 6 does not name, and which proves control of a
+// NAME rather than possession by a machine somebody owns. It is a profile in
+// the enrollment sense and not in /admin/pki's: what goes into the
+// certificate is the `tls-client` leaf's key usage and clientAuth, because a
+// device certificate's one use here is to be presented on the main port and
+// recognised (`common/device_recognition.ts`), and its only name is the
+// device's own URN, `urn:sts:device:<id>` — built from the ENTRY, as every
+// name here is, and never a host name, an address or a person's mail.
+//
+//   * **WHO** (the identity rule): the device's OWNER for their own device,
+//     or a holder of Admin Write for any — `authorizeDevice()`. A request
+//     naming no device makes one, owned by the authenticated entry (or, for
+//     an administrator, by the person or application the request's common
+//     name names, `targetFromRequest()`'s rule), enrolled `est` or `scep`.
+//   * **WHAT IS KEPT**: the certificate is an `x509` key ON THE DEVICE, with
+//     its serial and expiry in the key's material and `proof` the family.
+//     It is not written onto the owner's entry: it names the device, and the
+//     owner holding it is what the device's `owner` says. OCSP and the CRL
+//     know it through `pki.issueEnrolled()`'s record like every enrolled
+//     certificate. A certificate over a key the device ALREADY holds replaces
+//     that key's certificate (a renewal, same key); over a key ANOTHER device
+//     holds, it is refused.
+//   * **ATTESTATION**: the request's id-aa-attestation attribute
+//     (draft-ietf-lamps-csr-attestation), a TPM key attestation, verified by
+//     `device_attestation.csrAttestation()`; product refuses a key without a
+//     verified, anchored one (`mode.acceptsUnattestedDeviceKeys()`).
+//   * **RE-ENROLMENT** is a `simpleenroll` naming the device's URN — EST
+//     `/simplereenroll` and SCEP RenewalReq find the renewed certificate on a
+//     person or application entry, and a device certificate is on neither,
+//     so both are refused for it (STS-DEVICE-0025) with the sentence that
+//     says what to do instead.
+// ---------------------------------------------------------------------------
+const DEVICE_PROFILE = 'device';
+const DEVICE_PROFILE_FAMILIES = ['est', 'scep'];
+const DEVICE_URN_PREFIX = 'urn:sts:device:';
+// What a device certificate's extensions are: /admin/pki's tls-client leaf.
+const DEVICE_CERTIFICATE_PROFILE = 'tls-client';
+
 // A single-use credential per entry is plenty; a list somebody can grow without
 // bound is a list somebody will.
 const MAX_CREDENTIALS_PER_ENTRY = 10;
@@ -235,6 +259,9 @@ interface CertEnrollmentDeps {
   mtls: typeof mtls;
   claims: typeof claims;
   capabilities: typeof capabilities;
+  devices: typeof devices;
+  deviceAttestation: typeof deviceAttestation;
+  deviceRecognition: typeof deviceRecognition;
   // Required when first called, as the JavaScript did: `pki_revocation.js`
   // by `revokeEnrolled()`, and `websecurity.ts` by the throttles
   // (`websecurityModule()`).
@@ -251,6 +278,9 @@ class CertEnrollment {
   static readonly ATTRIBUTES = ATTRIBUTES;
   static readonly SECRET_ATTRIBUTES = SECRET_ATTRIBUTES;
   static readonly URN_PREFIX = URN_PREFIX;
+  static readonly DEVICE_PROFILE = DEVICE_PROFILE;
+  static readonly DEVICE_PROFILE_FAMILIES = DEVICE_PROFILE_FAMILIES;
+  static readonly DEVICE_URN_PREFIX = DEVICE_URN_PREFIX;
   static readonly MAX_CREDENTIALS_PER_ENTRY = MAX_CREDENTIALS_PER_ENTRY;
 
   // THE DIRECTORY SLOT — see `setDirectory()`.
@@ -288,6 +318,9 @@ class CertEnrollment {
       mtls: mtls,
       claims: claims,
       capabilities: capabilities,
+      devices: devices,
+      deviceAttestation: deviceAttestation,
+      deviceRecognition: deviceRecognition,
       loadRevocation: function () {
         return require('./pki_revocation');
       },
@@ -389,7 +422,8 @@ class CertEnrollment {
     const { log } = this.deps;
     log.debug("Entering CertEnrollment.entryUri().");
     log.debug("Leaving CertEnrollment.entryUri().");
-    return URN_PREFIX[entry.kind] + entry.id;
+    return (entry.kind === 'device' ? DEVICE_URN_PREFIX
+                                    : URN_PREFIX[entry.kind]) + entry.id;
   }
 
   entryFromUri(uri) {
@@ -414,8 +448,8 @@ class CertEnrollment {
     const { log } = this.deps;
     log.debug("Entering CertEnrollment.entryLabel().");
     log.debug("Leaving CertEnrollment.entryLabel().");
-    return (entry.kind === 'person' ? 'person' : 'application') + ' "' +
-           entry.id + '"';
+    return (entry.kind === 'person' || entry.kind === 'device'
+      ? entry.kind : 'application') + ' "' + entry.id + '"';
   }
 
   sameEntry(a, b) {
@@ -883,11 +917,14 @@ class CertEnrollment {
     const { log, config } = this.deps;
     log.debug("Entering CertEnrollment.allowedProfiles(). family=" + family);
     const raw = config.value(family + '.allowedProfiles');
+    const known = PROFILE_IDS.concat(
+      DEVICE_PROFILE_FAMILIES.indexOf(String(family)) >= 0
+        ? [DEVICE_PROFILE] : []);
     const listed = (Array.isArray(raw) ? raw : String(raw || '').split(','))
       .map(function (one) { return String(one).trim(); })
-      .filter(function (one) { return PROFILE_IDS.indexOf(one) >= 0; });
+      .filter(function (one) { return known.indexOf(one) >= 0; });
     log.debug("Leaving CertEnrollment.allowedProfiles().");
-    return PROFILE_IDS.filter(function (one) {
+    return known.filter(function (one) {
       return listed.indexOf(one) >= 0;
     });
   }
@@ -906,7 +943,14 @@ class CertEnrollment {
                          'is never issued over an enrollment protocol. ' +
                          refused.why);
     }
-    if (PROFILE_IDS.indexOf(id) < 0) {
+    if (id === DEVICE_PROFILE &&
+        DEVICE_PROFILE_FAMILIES.indexOf(String(family)) < 0) {
+      log.debug("Leaving CertEnrollment.checkProfile(). Device, not here.");
+      return self.refuse('STS-DEVICE-0025', 403, 'The "device" profile is ' +
+                         'issued over EST and SCEP only (#164 decision 6), ' +
+                         'not over ' + FAMILY_LABELS[family] + '.');
+    }
+    if (PROFILE_IDS.indexOf(id) < 0 && id !== DEVICE_PROFILE) {
       log.debug("Leaving CertEnrollment.checkProfile(). Unknown.");
       return self.refuse('STS-ENROLL-0001', 400, '"' + id + '" is not a ' +
                          'certificate profile. The ' + PROFILE_IDS.length +
@@ -928,6 +972,50 @@ class CertEnrollment {
     log.debug("Entering CertEnrollment.defaultProfile().");
     log.debug("Leaving CertEnrollment.defaultProfile().");
     return String(config.value(family + '.defaultProfile') || 'tls-client');
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE PROFILE OF A REQUEST THAT NAMES NONE, FROM WHAT IT ASKS FOR (#252,
+  // rcbj's decision on #207, 2026-09-26).
+  //
+  // `family.defaultProfile` is `tls-client`, and until this was written a bare
+  // `certbot certonly -d www.example.test` was issued a clientAuth-only
+  // certificate — a certificate for a web server that no TLS client will accept
+  // from one. A request whose identifiers are ALL host names (`dns`, and `ip`,
+  // which RFC 8738 makes the same kind of name) is asking for a server
+  // certificate whatever it forgot to say, so it gets `tls-server`.
+  //
+  // THE RULE, WRITTEN DOWN:
+  //   * every identifier `dns` or `ip` (and at least one) → `tls-server`, when
+  //     `family.allowedProfiles` holds it;
+  //   * anything else — a person or application by `permanent-identifier`, an
+  //     `email`, or a MIX of host names and those — → `family.defaultProfile`,
+  //     as before: a mixed order names an entry as well as a host, and which of
+  //     the two it is for is exactly what it did not say;
+  //   * a realm whose `allowedProfiles` leaves `tls-server` out has decided it
+  //     issues no server certificate, so a host-only order there keeps the
+  //     realm default too — the default does not reach past the allowed list;
+  //   * a NAMED profile is never replaced: the caller checks it with
+  //     `checkProfile()` and uses it, and this is not asked.
+  //
+  // Only ACME knows the identifiers before it chooses (an EST or SCEP profile
+  // is chosen by the path or the realm before a CSR is read), so ACME is the
+  // one caller; the rule is here because the profiles are.
+  // ---------------------------------------------------------------------------
+  profileForIdentifiers(family, types) {
+    const { log } = this.deps;
+    log.debug("Entering CertEnrollment.profileForIdentifiers().");
+    const list = Array.isArray(types) ? types.map(String) : [];
+    const hostsOnly = list.length > 0 && list.every(function (one) {
+      return one === 'dns' || one === 'ip';
+    });
+    if (hostsOnly && this.allowedProfiles(family).indexOf('tls-server') >= 0) {
+      log.debug("Leaving CertEnrollment.profileForIdentifiers(). tls-server.");
+      return 'tls-server';
+    }
+    log.debug("Leaving CertEnrollment.profileForIdentifiers(). The realm " +
+              "default.");
+    return this.defaultProfile(family);
   }
 
   // ---------------------------------------------------------------------------
@@ -1059,6 +1147,11 @@ class CertEnrollment {
       // to decide, and exposing them here keeps EST from reading the CSR
       // itself.
       attributeTypes: [],
+      // THE KEY ATTESTATION (#164 phase 2): the DER of each
+      // id-aa-attestation value (draft-ietf-lamps-csr-attestation section
+      // 4.3 — at most one attribute with exactly one value, which the
+      // device profile holds it to), read by `device_attestation.ts`.
+      attestations: [],
       requested: { uris: [], dns: [], ips: [], emails: [], upns: [] }
     };
     try {
@@ -1072,6 +1165,11 @@ class CertEnrollment {
       });
       (csr.attributes || []).forEach(function (attribute) {
         out.attributeTypes.push(String(attribute.type));
+        if (attribute.type === '1.2.840.113549.1.9.16.2.59') {
+          (attribute.values || []).forEach(function (value) {
+            out.attestations.push(Buffer.from(value.toBER(false)));
+          });
+        }
         if (attribute.type === '1.2.840.113549.1.9.7') {
           out.challengePassword =
             self.stringOfAsn1((attribute.values || [])[0]);
@@ -1579,6 +1677,45 @@ class CertEnrollment {
   }
 
   // ---------------------------------------------------------------------------
+  // THE SUBJECT'S NAMING ATTRIBUTES, from the entry and the names it owns.
+  //
+  // **A CERTIFICATE THAT NAMES A HOST HAS THAT HOST AS ITS COMMON NAME, AND
+  // THE ENTRY'S IDENTIFIER AS ITS UID (#207, #208, 2026-09-24).** Until then
+  // every certificate was `CN=<entry id>`, and a server certificate for
+  // `www.example.test` said `CN=alice`. certbot and lego both read a
+  // certificate's names back as its CN plus its dNSNames when they renew —
+  // so every renewal asked for an order naming `alice`, a host nobody
+  // registered, and was refused `rejectedIdentifier`: neither client could
+  // renew a single certificate this service had issued it. The CA/Browser
+  // Forum's rule is the same one (Baseline Requirements 7.1.4.3: a common
+  // name, where present, is one of the subjectAltName values).
+  //
+  // **THE UID IS WHAT KEEPS THE DN NAMING EXACTLY ONE ENTRY.** A host name
+  // may be registered on two entries, and a person's subject DN is written
+  // to `x509subject`, which `ldap/ldap_server.js`'s `locateEntry()` reads to
+  // turn a certificate's DN into an entry. `CN=www.example.test, O=…` alone
+  // would name whichever of the two it met first; with `UID=<entry id>` it
+  // names the one it was issued to. A certificate naming no host keeps
+  // `CN=<entry id>` as before.
+  // ---------------------------------------------------------------------------
+  subjectFor(entry, names) {
+    const { log } = this.deps;
+    log.debug("Entering CertEnrollment.subjectFor().");
+    const host = (names || []).filter(function (one) {
+      return one.kind === 'dns';
+    }).concat((names || []).filter(function (one) {
+      return one.kind === 'ip';
+    }))[0];
+    if (!host) {
+      log.debug("Leaving CertEnrollment.subjectFor(). No host.");
+      return [{ name: 'CN', value: entry.id }];
+    }
+    log.debug("Leaving CertEnrollment.subjectFor(). A host.");
+    return [{ name: 'CN', value: host.value },
+            { name: 'UID', value: entry.id }];
+  }
+
+  // ---------------------------------------------------------------------------
   // ISSUE.
   //
   //   spec.family       'acme' | 'est' | 'scep'
@@ -1604,6 +1741,23 @@ class CertEnrollment {
       log.debug("Leaving CertEnrollment.issue(). Unknown family.");
       return self.refuse('STS-ENROLL-0004', 500, 'Not an enrollment family: ' +
                          family);
+    }
+    // A REALM BEING REMOVED ISSUES NOTHING NEW (#262), in any family or
+    // profile and in both modes — asked before the device door, which is the
+    // other way in. 503: the refusal is about the realm, not the request.
+    const retiring = realms.retiringRefusal();
+    if (retiring) {
+      log.info(errorCodes.tag('STS-CORE-0121') + 'enrollment: a ' +
+               FAMILY_LABELS[family] + ' certificate was refused. ' +
+               retiring.why);
+      log.debug("Leaving CertEnrollment.issue(). The realm is being removed.");
+      return self.refuse('STS-CORE-0121', 503, retiring.why);
+    }
+    // THE DEVICE PROFILE is its own door (#164 phase 2): its holder is a
+    // device entry, not a person or an application. See `issueForDevice()`.
+    if (String(asked.profile || '') === DEVICE_PROFILE) {
+      log.debug("Leaving CertEnrollment.issue(). A device certificate.");
+      return self.issueForDevice(asked);
     }
     const auditRefusal = function (refusal) {
       audit.record({
@@ -1660,8 +1814,8 @@ class CertEnrollment {
         'pki.enrollmentMaxCertificatesPerEntry allows. Revoke one first.'));
     }
     const org = self.organisationOf();
-    const subject = [{ name: 'CN', value: resolved.entry.id },
-                     { name: 'O', value: org.organisation }]
+    const subject = self.subjectFor(resolved.entry, names.names)
+      .concat([{ name: 'O', value: org.organisation }])
       .concat(org.country ? [{ name: 'C', value: org.country }] : []);
     const days = Number(config.value(family + '.certificateLifetimeDays'));
     const issued = await pki.issueEnrolled(realms.currentId(), family, {
@@ -1807,6 +1961,290 @@ class CertEnrollment {
              target: resolved.entry, admin: !!allowed.admin };
   }
 
+  // ---------------------------------------------------------------------------
+  // THE IDENTITY RULE, FOR A DEVICE (#164 phase 2): the device's owner, or a
+  // holder of Admin Write. The owner is read off the device entry, never
+  // from the request.
+  // ---------------------------------------------------------------------------
+  authorizeDevice(principal, device) {
+    const { log, devices } = this.deps;
+    const self = this;
+    log.debug("Entering CertEnrollment.authorizeDevice().");
+    const owner = devices.ownerOf(device.owner) || {};
+    if (principal && principal.hasEntry !== false &&
+        owner.kind === principal.kind &&
+        String(owner.name || '') === String(principal.id || '')) {
+      log.debug("Leaving CertEnrollment.authorizeDevice(). The owner.");
+      return { ok: true, self: true };
+    }
+    if (principal && principal.kind === 'person' && principal.admin === true) {
+      log.debug("Leaving CertEnrollment.authorizeDevice(). An administrator.");
+      return { ok: true, self: false, admin: true };
+    }
+    log.debug("Leaving CertEnrollment.authorizeDevice(). Refused.");
+    return self.refuse('STS-DEVICE-0023', 403, 'A device certificate is ' +
+                       'issued to the device\'s owner, or by a holder of ' +
+                       'Admin Write, and device ' + device.id + ' is not ' +
+                       'the ' + (principal ? self.entryLabel(principal)
+                                           : 'requester') + '\'s.');
+  }
+
+  // The SHA-256 of a SubjectPublicKeyInfo PEM, base64url — the x509 device
+  // key's thumbprint (`crypto.certificateSpkiThumbprint()` over the
+  // certificate that will carry this key), asked before anything is issued.
+  spkiThumbprintOf(publicKeyPem) {
+    const { log, nodeCrypto } = this.deps;
+    log.debug("Entering CertEnrollment.spkiThumbprintOf().");
+    const body = String(publicKeyPem || '').replace(/-----[^-]+-----/g, '')
+      .replace(/\s+/g, '');
+    log.debug("Leaving CertEnrollment.spkiThumbprintOf().");
+    return nodeCrypto.createHash('sha256').update(Buffer.from(body, 'base64'))
+      .digest('base64url');
+  }
+
+  // ---------------------------------------------------------------------------
+  // A CERTIFICATE FOR A DEVICE (the header's `device` profile). `spec` is
+  // `issue()`'s, and `attestations` — the request's id-aa-attestation
+  // values.
+  // ---------------------------------------------------------------------------
+  async issueForDevice(spec) {
+    const { log, audit, config, errorCodes, pki, realms, mode, devices,
+            deviceAttestation, deviceRecognition, nodeCrypto } = this.deps;
+    const self = this;
+    log.debug("Entering CertEnrollment.issueForDevice().");
+    const asked = spec || {};
+    const family = String(asked.family || '');
+    const actor = asked.principal ? String(asked.principal.id) : '';
+    const refused = function (refusal) {
+      log.debug("Entering refused().");
+      audit.record({
+        category: 'protocol', action: 'enrollment.issue.refused',
+        protocol: FAMILY_LABELS[family], outcome: 'failure',
+        errorCode: errorCodes.codeOf(refusal) || 'STS-DEVICE-0023',
+        actor: actor, target: '',
+        summary: 'a device certificate was not issued over ' +
+                 FAMILY_LABELS[family] + ': ' +
+                 String((refusal.errors || [])[0] || '').slice(0, 300),
+        detail: { profile: DEVICE_PROFILE, via: String(asked.via || family) }
+      });
+      log.debug("Leaving refused().");
+      return refusal;
+    };
+    const profile = self.checkProfile(family, DEVICE_PROFILE);
+    if (!profile.ok) {
+      log.debug("Leaving CertEnrollment.issueForDevice(). Profile.");
+      return refused(profile);
+    }
+    if (asked.keySource === 'server') {
+      log.debug("Leaving CertEnrollment.issueForDevice(). A server key.");
+      return refused(self.refuse('STS-DEVICE-0025', 403, 'A device proves ' +
+        'its OWN key: the device profile is not issued over a key this ' +
+        'service generated (/serverkeygen).'));
+    }
+    if (asked.replaces) {
+      log.debug("Leaving CertEnrollment.issueForDevice(). A renewal.");
+      return refused(self.refuse('STS-DEVICE-0025', 403, 'A device ' +
+        'certificate is not re-enrolled: send a simple enrollment for the ' +
+        'device profile whose request names the device\'s ' +
+        DEVICE_URN_PREFIX + '<id>, over the same key or a new one.'));
+    }
+    const bundles = asked.attestations || [];
+    if (bundles.length > 1) {
+      log.debug("Leaving CertEnrollment.issueForDevice(). Two attributes.");
+      return refused(self.refuse('STS-DEVICE-0021', 400, 'The request ' +
+        'carries ' + bundles.length + ' id-aa-attestation values; ' +
+        'draft-ietf-lamps-csr-attestation section 4.3 allows one.'));
+    }
+    const want = asked.requested || {};
+    const deviceIds = (want.uris || []).filter(function (uri) {
+      return String(uri).indexOf(DEVICE_URN_PREFIX) === 0;
+    }).map(function (uri) {
+      return String(uri).slice(DEVICE_URN_PREFIX.length);
+    });
+    const ownerUris = (want.uris || []).filter(function (uri) {
+      return String(uri).indexOf(DEVICE_URN_PREFIX) !== 0;
+    });
+    const other = (want.dns || []).concat(want.ips || [], want.emails || [],
+                                          want.upns || []);
+    if (deviceIds.length > 1 || other.length ||
+        ownerUris.some(function (uri) {
+          return !asked.target || uri !== self.entryUri(asked.target);
+        })) {
+      log.debug("Leaving CertEnrollment.issueForDevice(). Names.");
+      return refused(self.refuse('STS-ENROLL-0050', 403, 'A device ' +
+        'certificate names one thing, the device\'s own ' +
+        DEVICE_URN_PREFIX + '<id>; this request asks for ' +
+        (deviceIds.length > 1 ? deviceIds.length + ' devices'
+          : 'a name the device does not own') + '.'));
+    }
+    let device = null;
+    let owner = null;
+    let admin = false;
+    if (deviceIds.length) {
+      device = devices.byId(deviceIds[0]);
+      if (!device) {
+        log.debug("Leaving CertEnrollment.issueForDevice(). No device.");
+        return refused(self.refuse('STS-DEVICE-0023', 404, 'There is no ' +
+          'device "' + String(deviceIds[0]).slice(0, 64) + '" in this ' +
+          'realm.'));
+      }
+      const allowed = self.authorizeDevice(asked.principal, device);
+      if (!allowed.ok) {
+        log.debug("Leaving CertEnrollment.issueForDevice(). Not theirs.");
+        return refused(allowed);
+      }
+      admin = !!allowed.admin;
+    } else {
+      const target = asked.target;
+      const resolved = self.resolveEntry(target && target.kind,
+                                         target && target.id);
+      if (!resolved.ok) {
+        log.debug("Leaving CertEnrollment.issueForDevice(). No owner.");
+        return refused(resolved);
+      }
+      const allowed = self.authorizeTarget(asked.principal, resolved.entry);
+      if (!allowed.ok) {
+        log.debug("Leaving CertEnrollment.issueForDevice(). Not authorized.");
+        return refused(allowed);
+      }
+      owner = resolved.entry;
+      admin = !!allowed.admin;
+    }
+    const attested = await deviceAttestation.csrAttestation({
+      bundle: bundles[0] || null, publicKeyPem: asked.publicKeyPem });
+    if (!attested.ok) {
+      deviceRecognition.noteAttestationRefused('tcg-tpm2-key');
+      log.debug("Leaving CertEnrollment.issueForDevice(). Attestation.");
+      return refused(errorCodes.mark(Object.assign({ status: 400 },
+        attested, { why: attested.error }),
+        errorCodes.codeOf(attested) || 'STS-DEVICE-0020'));
+    }
+    const level = attested.attestation.level;
+    if (level !== 'attested' && !mode.acceptsUnattestedDeviceKeys()) {
+      deviceRecognition.noteAttestationRefused('unattested');
+      log.debug("Leaving CertEnrollment.issueForDevice(). Unattested.");
+      return refused(self.refuse('STS-DEVICE-0024', 403, 'This realm ' +
+        'certifies a device key only with a TPM key attestation that ' +
+        'verified and chained to devices.tpmTrustAnchors: ' +
+        attested.attestation.summary));
+    }
+    const thumbprint = self.spkiThumbprintOf(asked.publicKeyPem);
+    const holder = devices.byKeyThumbprint(thumbprint, 'x509');
+    if (holder && (!device || holder.id !== device.id)) {
+      log.debug("Leaving CertEnrollment.issueForDevice(). Key taken.");
+      return refused(self.refuse('STS-DEVICE-0005', 409, 'That key is ' +
+        'already registered to device ' + holder.id + ': a key identifies ' +
+        'one device.'));
+    }
+    let created = false;
+    if (!device) {
+      const made = devices.create({ owner: owner.id, ownerKind: owner.kind,
+        method: family, label: 'enrolled over ' + FAMILY_LABELS[family],
+        keys: [] }, actor);
+      if (!made.ok) {
+        log.debug("Leaving CertEnrollment.issueForDevice(). Not created.");
+        return refused(Object.assign({ status: 409 }, made));
+      }
+      device = made.device;
+      created = true;
+    }
+    const org = self.organisationOf();
+    const issued = await pki.issueEnrolled(realms.currentId(), family, {
+      subject: [{ name: 'CN', value: device.id },
+                { name: 'O', value: org.organisation }]
+        .concat(org.country ? [{ name: 'C', value: org.country }] : []),
+      publicKeyPem: asked.publicKeyPem,
+      profile: DEVICE_CERTIFICATE_PROFILE,
+      subjectAltName: [{ kind: 'uri', value: DEVICE_URN_PREFIX + device.id }],
+      days: Number(config.value(family + '.certificateLifetimeDays')),
+      identifier: device.id,
+      subjectKind: 'device',
+      holderSubject: ''
+    });
+    if (!issued.ok) {
+      if (created) {
+        // The device this request made, gone again with nothing issued to
+        // it: not a removal anybody is told about.
+        devices.remove(device.id, undefined, actor, { quiet: true });
+      }
+      log.debug("Leaving CertEnrollment.issueForDevice(). The authority " +
+                "refused.");
+      return refused(self.refuse(errorCodes.codeOf(issued) ||
+        'STS-ENROLL-0042', 503, 'The ' + FAMILY_LABELS[family] +
+        ' Issuing CA could not issue: ' +
+        String((issued.errors || [])[0] || 'unknown reason')));
+    }
+    const renewed = holder ? (holder.keys || []).filter(function (k) {
+      return k.kind === 'x509' && k.thumbprint === thumbprint;
+    })[0] : null;
+    // WHO ACTED, for CAEP's initiating_entity on the credential-change the
+    // register sends (#164 phase 4): an administrator, a person (`user`), or
+    // an application's own workload (`system`).
+    const initiatingEntity = admin ? 'admin'
+      : (asked.principal && asked.principal.kind === 'application')
+        ? 'system' : 'user';
+    if (renewed) {
+      devices.removeKey(device.id, renewed.id, actor,
+                        { renewal: true, initiatingEntity: initiatingEntity });
+    }
+    const added = devices.addKey(device.id, {
+      kind: 'x509', certificate: issued.certificatePem, proof: family,
+      label: FAMILY_LABELS[family] + ' certificate ' +
+             self.normalSerial(issued.serialHex),
+      attestation: attested.attestation }, actor,
+      { renewal: !!renewed, initiatingEntity: initiatingEntity });
+    if (!added.ok) {
+      log.error(errorCodes.tag('STS-DEVICE-0009') + 'cert_enrollment: a ' +
+                'device certificate (serial ' + issued.serialHex + ') was ' +
+                'issued for device ' + device.id + ' and could not be ' +
+                'recorded on it: ' + String((added.errors || [])[0] || ''));
+      return refused(Object.assign({ status: 503 }, added));
+    }
+    deviceRecognition.noteEnrolment(family, level,
+                                    attested.attestation.format);
+    let certThumbprint = '';
+    try {
+      certThumbprint = new nodeCrypto.X509Certificate(issued.certificatePem)
+        .fingerprint256.replace(/:/g, '').toLowerCase();
+    } catch (e) {
+      log.debug("Caught in CertEnrollment.issueForDevice(): " +
+                ((e && e.message) || e));
+    }
+    const target = { kind: 'device', id: device.id };
+    audit.record({
+      category: 'protocol', action: 'enrollment.issue',
+      protocol: FAMILY_LABELS[family], outcome: 'success',
+      actor: actor, target: self.entryUri(target),
+      summary: 'a device certificate was issued over ' +
+               FAMILY_LABELS[family] + ' for device ' + device.id +
+               (created ? ' (registered by this request)' : '') +
+               (admin ? ' by an administrator' : '') + ', ' + level,
+      detail: { serialHex: issued.serialHex, profile: DEVICE_PROFILE,
+                via: String(asked.via || family), attestation: level,
+                format: attested.attestation.format, created: created }
+    });
+    const record = {
+      serialHex: self.normalSerial(issued.serialHex),
+      family: family, profile: DEVICE_PROFILE,
+      subject: String(issued.subject || ''),
+      names: ['uri:' + DEVICE_URN_PREFIX + device.id],
+      thumbprint: certThumbprint, keyAlg: String(asked.keyAlg || ''),
+      notBefore: issued.notBefore, notAfter: issued.notAfter,
+      issuedAt: new Date().toISOString(),
+      requestedBy: asked.principal
+        ? { kind: asked.principal.kind, id: String(asked.principal.id),
+            admin: !!asked.principal.admin } : null,
+      via: String(asked.via || family), keySource: 'client', replaces: null,
+      certificatePem: issued.certificatePem,
+      chainPem: (issued.issuerChainPem || []).slice(),
+      device: device.id, attestation: level
+    };
+    log.debug("Leaving CertEnrollment.issueForDevice(). serial=" +
+              record.serialHex);
+    return { ok: true, record: self.publicRecord(record), target: target,
+             admin: admin, device: device.id, created: created };
+  }
+
   // A key pair generated HERE and certified in one act — EST /serverkeygen and
   // the console's "issue with a server-generated key". The private key is
   // returned ONCE and kept, sealed, on the entry.
@@ -1902,6 +2340,68 @@ class CertEnrollment {
     return null;
   }
 
+  // -------------------------------------------------------------------------
+  // A DEVICE'S CERTIFICATES, REVOKED (#164 phase 4): every x509 key on the
+  // device whose certificate THIS service's EST or SCEP Issuing CA issued —
+  // `proof` `est` or `scep`, the family whose authority signed it — revoked
+  // by that authority for `reason` (an RFC 5280 reason: keyCompromise for a
+  // compromised device, cessationOfOperation for one removed, superseded for
+  // a re-issue). A certificate an administrator typed in (`proof` `admin`)
+  // was issued by somebody else and is not this service's to revoke. The
+  // device profile's certificate is kept on the device entry's key rather
+  // than on a person's entry, so this — not `revokeEnrolled()`, which finds
+  // a certificate by the entry holding it — is the door; it is synchronous
+  // because the revocation register is. Answers one row per certificate:
+  // `{ serialHex, family, ok, already, why }`.
+  // -------------------------------------------------------------------------
+  revokeDeviceCertificates(device, reason, by?) {
+    const { log, audit, realms, loadRevocation } = this.deps;
+    const self = this;
+    log.debug("Entering CertEnrollment.revokeDeviceCertificates().");
+    const keys = ((device && device.keys) || []).filter(function (key) {
+      return key && key.kind === 'x509' && FAMILIES.indexOf(key.proof) >= 0 &&
+             key.proof !== 'acme' && key.material && key.material.serial;
+    });
+    if (!keys.length) {
+      log.debug("Leaving CertEnrollment.revokeDeviceCertificates(). None.");
+      return [];
+    }
+    const revocation = loadRevocation();
+    const out = keys.map(function (key) {
+      const serialHex = self.normalSerial(key.material.serial);
+      const done = revocation.revoke(realms.currentId(), key.proof, {
+        serialHex: serialHex, reason: reason || 'unspecified',
+        subject: String(key.material.subject || ''),
+        note: 'issued over ' + FAMILY_LABELS[key.proof] + ' to ' +
+              DEVICE_URN_PREFIX + String(device.id) +
+              (by ? '; revoked by ' + by : '')
+      });
+      const ok = !!done && done.ok !== false;
+      audit.record({
+        category: 'protocol', action: 'enrollment.revoke',
+        protocol: FAMILY_LABELS[key.proof],
+        outcome: ok ? 'success' : 'failure',
+        errorCode: ok ? undefined : 'STS-DEVICE-0032',
+        actor: String(by || ''),
+        target: DEVICE_URN_PREFIX + String(device.id),
+        summary: (ok ? 'a' : 'could not revoke a') + ' device certificate ' +
+                 (ok ? 'was revoked' : '') + ' (' + (reason || 'unspecified') +
+                 ')',
+        detail: { serialHex: serialHex, family: key.proof,
+                  already: !!(done && done.already) }
+      });
+      return { serialHex: serialHex, family: key.proof, ok: ok,
+               already: !!(done && done.already),
+               why: String((done && (done.why ||
+                                     ((done.errors || [])[0]))) || '') };
+    });
+    log.debug("Leaving CertEnrollment.revokeDeviceCertificates(). " +
+              out.length);
+    return out.filter(function (row) {
+      return row.ok;
+    });
+  }
+
   async revokeEnrolled(serialHex, reason, by?, options?) {
     const { log, audit, errorCodes, realms, loadRevocation } = this.deps;
     const self = this;
@@ -1961,6 +2461,23 @@ class CertEnrollment {
                      FAMILY_LABELS[found.family] + ' was revoked (' +
                      (reason || 'unspecified') + ').',
         reasonUser: 'A certificate of yours was revoked.' });
+      // REVOKED BECAUSE THE KEY IS KNOWN TO SOMEBODY ELSE (#231): RFC 5280
+      // section 5.3.1's `keyCompromise` is a compromise of the credential,
+      // which RISC 1.0 section 2.7 says as `credential-compromise` — beside
+      // the CAEP `credential-change` above, which says only that it went.
+      if (reason === 'keyCompromise') {
+        accountSignals.credentialCompromised({ username: found.entry.id,
+          credentialType: 'x509',
+          initiatingEntity: String(by || '') === String(found.entry.id)
+            ? 'user' : 'admin',
+          via: FAMILY_LABELS[found.family],
+          reasonAdmin: 'A certificate of ' + found.entry.id + ' issued over ' +
+                       FAMILY_LABELS[found.family] + ' (serial ' +
+                       found.record.serialHex + ') was revoked because its ' +
+                       'key was compromised.',
+          reasonUser: 'A certificate of yours was revoked because its key ' +
+                      'may be known to somebody else.' });
+      }
     }
     if (!opts.quiet) {
       audit.record({
@@ -2125,6 +2642,8 @@ class CertEnrollment {
                self.entryLabel(resolved.entry),
       detail: { kid: kid, expiresAt: record.expiresAt }
     });
+    self.signalEnrolmentCredential(resolved.entry, 'eab', 'create',
+                                   record.createdBy, kid);
     log.debug("Leaving CertEnrollment.createEab().");
     return { ok: true, kid: kid, hmacKey: hmacKey, alg: 'HS256',
              expiresAt: record.expiresAt, target: resolved.entry };
@@ -2315,8 +2834,57 @@ class CertEnrollment {
       summary: 'an ACME External Account Binding key was deleted',
       detail: { kid: String(kid) }
     });
+    self.signalEnrolmentCredential(entry, 'eab', 'delete', by, String(kid));
     log.debug("Leaving CertEnrollment.deleteEab().");
     return { ok: true, kid: String(kid), entry: entry };
+  }
+
+  // -------------------------------------------------------------------------
+  // CAEP `credential-change` FOR THE TWO ENROLMENT CREDENTIALS (#236,
+  // 2026-09-26). `createEab()` / `deleteEab()` and `createScepChallenge()` /
+  // `deleteScepChallenge()` are the only writers of the two attributes —
+  // the portal's /portal/certificates, the ACME and SCEP console pages and
+  // `/admin-api` all come here — so the event is sent here (the #145 rule).
+  //
+  //   * an EAB key is a MAC key, not a password a person chose: this
+  //     service's own URN (`ssf/account_signals.ts`);
+  //   * a SCEP challenge password IS a password, so the registered
+  //     `password`, with its name as `friendly_name` so a receiver — and
+  //     the person's mail notice, which is about THE password — can tell it
+  //     from the account's.
+  //
+  // Binding an EAB key to an account and redeeming a challenge send nothing
+  // here: each is followed by the certificate it produced, which `issue()`
+  // already sends as `x509`. Only a PERSON's credential is sent; an
+  // application's has no CAEP subject here. `by` is the actor: the person
+  // themselves is `user`, and anybody else — an unnamed caller of the API
+  // included — `admin`: nothing automatic makes or deletes either.
+  // -------------------------------------------------------------------------
+  private signalEnrolmentCredential(entry, which: 'eab' | 'scep',
+                                    change: string, by, id: string): void {
+    const { log } = this.deps;
+    log.debug("Entering CertEnrollment.signalEnrolmentCredential(). " +
+              which + " " + change);
+    if (!entry || entry.kind !== 'person') {
+      log.debug("Leaving CertEnrollment.signalEnrolmentCredential(). Not " +
+                "a person's.");
+      return;
+    }
+    const actor = String(by || '');
+    const initiating = actor && actor === String(entry.id) ? 'user' : 'admin';
+    const what = which === 'eab' ? 'ACME External Account Binding key'
+                                 : 'SCEP challenge password';
+    accountSignals.credentialChanged({ username: String(entry.id),
+      credentialType: which === 'eab'
+        ? accountSignals.ACME_EAB_KEY_CREDENTIAL_TYPE : 'password',
+      changeType: change, initiatingEntity: initiating,
+      friendlyName: what + ' ' + id,
+      via: which === 'eab' ? FAMILY_LABELS.acme : FAMILY_LABELS.scep,
+      reasonAdmin: 'An ' + what + ' of ' + entry.id + ' was ' +
+                   (change === 'create' ? 'created' : 'deleted') + '.',
+      reasonUser: 'An ' + what + ' of yours was ' +
+                  (change === 'create' ? 'created' : 'deleted') + '.' });
+    log.debug("Leaving CertEnrollment.signalEnrolmentCredential().");
   }
 
   eabsOf(entry) {
@@ -2395,6 +2963,8 @@ class CertEnrollment {
                self.entryLabel(resolved.entry) + ' (' + profile.profile + ')',
       detail: { id: id, profile: profile.profile, expiresAt: record.expiresAt }
     });
+    self.signalEnrolmentCredential(resolved.entry, 'scep', 'create',
+                                   record.createdBy, id);
     log.debug("Leaving CertEnrollment.createScepChallenge().");
     return { ok: true, id: id, challenge: id + '.' + secret,
              profile: profile.profile, expiresAt: record.expiresAt,
@@ -2538,6 +3108,7 @@ class CertEnrollment {
       summary: 'a SCEP challenge password was deleted',
       detail: { id: String(id) }
     });
+    self.signalEnrolmentCredential(entry, 'scep', 'delete', by, String(id));
     log.debug("Leaving CertEnrollment.deleteScepChallenge().");
     return { ok: true, id: String(id), entry: entry };
   }
@@ -3111,6 +3682,9 @@ export = {
   ATTRIBUTES: CertEnrollment.ATTRIBUTES,
   SECRET_ATTRIBUTES: CertEnrollment.SECRET_ATTRIBUTES,
   URN_PREFIX: CertEnrollment.URN_PREFIX,
+  DEVICE_PROFILE: CertEnrollment.DEVICE_PROFILE,
+  DEVICE_PROFILE_FAMILIES: CertEnrollment.DEVICE_PROFILE_FAMILIES,
+  DEVICE_URN_PREFIX: CertEnrollment.DEVICE_URN_PREFIX,
   MAX_CREDENTIALS_PER_ENTRY: CertEnrollment.MAX_CREDENTIALS_PER_ENTRY,
   setDirectory: slot.forward('setDirectory'),
   hasDirectory: slot.forward('hasDirectory'),
@@ -3119,6 +3693,7 @@ export = {
   isKind: slot.forward('isKind'),
   wellFormedId: slot.forward('wellFormedId'),
   entryUri: slot.forward('entryUri'),
+  organisationOf: slot.forward('organisationOf'),
   entryFromUri: slot.forward('entryFromUri'),
   entryLabel: slot.forward('entryLabel'),
   resolveEntry: slot.forward('resolveEntry'),
@@ -3136,6 +3711,7 @@ export = {
   allowedProfiles: slot.forward('allowedProfiles'),
   checkProfile: slot.forward('checkProfile'),
   defaultProfile: slot.forward('defaultProfile'),
+  profileForIdentifiers: slot.forward('profileForIdentifiers'),
   parseCsr: slot.forward('parseCsr'),
   targetFromRequest: slot.forward('targetFromRequest'),
   namesFor: slot.forward('namesFor'),
@@ -3144,6 +3720,7 @@ export = {
   enrolledOf: slot.forward('enrolledOf'),
   findEnrolled: slot.forward('findEnrolled'),
   revokeEnrolled: slot.forward('revokeEnrolled'),
+  revokeDeviceCertificates: slot.forward('revokeDeviceCertificates'),
   serverKeyOf: slot.forward('serverKeyOf'),
   createEab: slot.forward('createEab'),
   findEab: slot.forward('findEab'),

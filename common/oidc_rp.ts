@@ -2647,11 +2647,10 @@ class OidcRelyingParty {
         detail: { sessionId: session.id, surface: surface.id,
                   client_id: surface.clientId, why: why }
       });
-      // `via` deliberately names neither "admin" nor "console":
-      // dropSession() reads those words as an ADMINISTRATOR ending
-      // somebody's session and says so in the CAEP event, and nobody did.
+      // Nobody ended it: the surface could not renew its tokens, so CAEP's
+      // `initiating_entity` is `system` (#242).
       authn.endSessionById(session.id,
-                           'a token renewal that did not complete');
+                           'a token renewal that did not complete', 'system');
     });
     if (res && !res.headersSent) {
       authn.clearSessionCookie(res, surface.cookie);
@@ -2999,8 +2998,8 @@ class OidcRelyingParty {
   // Ending one. The surface's own cookie is cleared and the session goes
   // through `dropSession()` like every other, so the audit row and the CAEP
   // event are the ones every sign-out writes.
-  endSessionFor(req: any, res: any, surfaceId: string, via?: string):
-      boolean {
+  endSessionFor(req: any, res: any, surfaceId: string, via: string,
+                initiatingEntity: string): boolean {
     const { log, authn } = this.deps;
     log.debug('Entering OidcRelyingParty.endSessionFor(). surface=' +
               surfaceId);
@@ -3008,7 +3007,8 @@ class OidcRelyingParty {
     const session = this.sessionFor(req, surfaceId);
     if (session) {
       this.inSessionRealm(surface, function () {
-        authn.endSessionById(session.id, via || 'the ' + surface.label);
+        authn.endSessionById(session.id, via || 'the ' + surface.label,
+                             initiatingEntity);
       });
     }
     authn.clearSessionCookie(res, surface.cookie);

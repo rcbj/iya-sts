@@ -604,9 +604,20 @@ async function preflight(options) {
   log.info("The whole process holds " + everywhere + " entry(ies) across " +
            "every realm, which is what ldap.maxEntries is compared with.");
 
-  const wanted = Math.max(2000,
+  // AND THE HEADROOM IS FLAT AS WELL AS PROPORTIONAL (2026-09-26). Since
+  // the suite runs its jobs in lanes, these loads run BESIDE every other
+  // protocol job rather than after them, and those jobs create people,
+  // applications and realms of their own while a load fills the directory.
+  // Twenty per cent over what this load adds was right while nothing else
+  // wrote; beside the other lanes it ran out, and every job creating an
+  // entry was refused "This directory holds its maximum" — twenty-odd jobs
+  // failing for a ceiling set by a job none of them ran. The ceiling never
+  // goes DOWN either, so a load cannot lower what an earlier one raised.
+  const OTHER_LANES_HEADROOM = 20000;
+  const wanted = Math.max(2000, Number(everywhere && service.body.limits &&
+      service.body.limits.maxEntries) || 0,
       Math.ceil((Math.max(held, everywhere) + SIZES.USERS + SIZES.GROUPS +
-                 SIZES.SAMPLE + 50) * 1.2));
+                 SIZES.SAMPLE + 50) * 1.2) + OTHER_LANES_HEADROOM);
   const raised = await http.postJson(http.api("/config/set"),
                                      { key: "ldap.maxEntries", value: wanted });
   check("the entry ceiling was raised", function () {

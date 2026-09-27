@@ -189,6 +189,10 @@ import audit = require('../common/audit');
 // The client's JA4 TLS fingerprint, for the authentication event (#62 P0). A
 // LIBRARY (rule 3) with library requires only.
 import clientHello = require('../tls/client_hello');
+// WHICH REGISTERED DEVICE PROVED AN AUTHENTICATION (#164 phase 2): a
+// library over the device register that registers nothing and requires
+// nothing of this module's (`common/device_recognition.ts`).
+import deviceRecognition = require('../common/device_recognition');
 // ONE END PER SESSION IN THE CLUSTER (2026-09-14, #46 section 6). A library:
 // it requires `persistence.js` lazily and registers nothing. See
 // sessionEndOnce() below.
@@ -395,6 +399,11 @@ const sessions = realms.map({ persist: 'authn.sessions', tombstone: true,
 // this behaves as the plain Map it replaced. See common/realms.js.
 // authn id -> { returnTo, details, ... }
 const pending = realms.map({ persist: 'authn.pending', retain: 'age' });
+
+// ONE DEVICE RECOGNITION PER REQUEST AND CREDENTIAL (#164 phase 5): see
+// `registeredDeviceFor()`. Keyed WEAKLY by the request object, so it lives
+// exactly as long as the request and needs no sweep.
+const recognitionMemo = new WeakMap<object, Map<string, any>>();
 
 // WebAuthn, IN EITHER OF ITS TWO ROLES. The verifier is ./webauthn — written
 // from the specification and sharing no code with the debugger's own decoder,
@@ -719,6 +728,18 @@ const SESSION_SWEEP_SETTING = 'authn.sessionSweepS';
 // ---------------------------------------------------------------------------
 const SESSION_END_CLAIM_TTL_MS = 60 * 60 * 1000;
 
+// A claim that REJECTS (rather than answering) is asked again this many times
+// in all, the pause growing by this much each time (#242). See
+// sessionEndOnce().
+const SESSION_END_CLAIM_ATTEMPTS = 3;
+const SESSION_END_CLAIM_RETRY_MS = 250;
+
+// Session ends waiting on that claim in this process (#232).
+let endReportsPending = 0;
+
+// CAEP section 2's four words for who ended a session (#242, initiatorOf()).
+const INITIATING_ENTITIES = ['admin', 'user', 'policy', 'system'];
+
 // How many events a session keeps. A `max_age=0` client re-authenticates on
 // every request and a list that grew without bound would be a persisted row
 // that grew without bound. The FIRST event is always kept — it is how the
@@ -779,6 +800,16 @@ const PENDING_ID_QUERY = vz.object({
   authn: vt.opt(vt.base64url)
 });
 
+// Is a second factor required of this person BECAUSE they are an
+// administrator (#246)? Such a requirement is never answered by a remembered
+// browser (#265).
+function requirementForAdministrator(credentials: any, username: string) {
+  helpers.log.debug("Entering requirementForAdministrator().");
+  const requirement = credentials.mfaRequirementFor(username) || {};
+  helpers.log.debug("Leaving requirementForAdministrator().");
+  return !!(requirement.byAdministrator || requirement.offered);
+}
+
 const LOGIN_FORM = vz.object({
   authn_id: vt.opt(vt.base64url),
   // **THE THREE VALUES THE FORM ITSELF DRAWS, AND THE FIRST VERSION OF THIS
@@ -808,6 +839,9 @@ const LOGIN_FORM = vz.object({
   device_fp: vz.string().max(64).regex(/^[A-Za-z0-9]*$/).optional(),
   use_webauthn: vt.opt(vt.flag),
   webauthn_only: vt.opt(vt.flag),
+  // "REMEMBER THIS BROWSER" (#265): a device known by a signed and encrypted
+  // cookie, registered when the session starts (`common/browser_devices.ts`).
+  remember_browser: vt.opt(vt.flag),
   csrf_token: vt.opt(vt.token)
 });
 
@@ -854,7 +888,7 @@ const MFA_SETUP_STYLE = '<style>body{font-family:system-ui,-apple-system,' +
 
 const MFA_SETUP_FORM = vz.object({
   mfa_id: vt.opt(vt.base64url),
-  action: vt.opt(vt.oneOf(['totp', 'webauthn', 'confirm-totp'])),
+  action: vt.opt(vt.oneOf(['totp', 'webauthn', 'confirm-totp', 'ignore'])),
   code: vz.string().max(32).optional(),
   csrf_token: vt.opt(vt.token)
 });
@@ -1047,6 +1081,11 @@ type SessionRow = Record<string, any>;
 interface AuthnDeps {
   accountSignals: typeof accountSignals;
   clientHello: typeof clientHello;
+  deviceRecognition: typeof deviceRecognition;
+  // Remembered browsers (#265), found lazily: that library reaches the
+  // keystore and the device register, which a process loading this file for
+  // one of its helpers has no need of.
+  browserDevices: () => any;
   crypto: typeof crypto;
   stsCrypto: typeof stsCrypto;
   realms: typeof realms;
@@ -1096,6 +1135,10 @@ class Authn {
     return {
       accountSignals: accountSignals,
       clientHello: clientHello,
+      deviceRecognition: deviceRecognition,
+      browserDevices: function () {
+        return require('../common/browser_devices');
+      },
       crypto: crypto,
       stsCrypto: stsCrypto,
       realms: realms,
@@ -1577,8 +1620,23 @@ class Authn {
     // CAEP, the back-channel Logout Tokens) are the ones a sign-out has.
     if (this.sessionAccountDisabled(session)) {
       this.dropSession(id, 'the account was disabled by an administrator',
-                       false, req);
+                       false, req, 'admin');
       log.debug("Leaving Authn.sessionOf(). The account is disabled; the " +
+                "session was ended.");
+      return null;
+    }
+    // A SESSION WHOSE PERSON WAS DELETED IS OVER (#241, 2026-09-26). Deleting
+    // a person ends every session at once, the way disabling does (the
+    // directory hands the delete to `common/account_state.ts`); this is the
+    // catch-up half, for a session that act could not reach — above all a
+    // delete made on ANOTHER node, which reaches this one as a replicated
+    // entry going away and nothing else. Until #241 a missing entry read as
+    // "not disabled", so a deleted person's browser went on signing in to
+    // every relying party until the session ran out.
+    if (this.sessionAccountGone(session)) {
+      this.dropSession(id, 'the deletion of the account', false, req,
+                       'admin');
+      log.debug("Leaving Authn.sessionOf(). The account was deleted; the " +
                 "session was ended.");
       return null;
     }
@@ -1603,6 +1661,31 @@ class Authn {
                                              session.user.username);
     log.debug("Leaving Authn.sessionAccountDisabled(). " + disabled);
     return disabled;
+  }
+
+  // Whether a signed-in session's person has no directory entry any more
+  // (#241). Asked of the SUBJECT, `urn:uuid:<entryUUID>`, and not of the name:
+  // a person deleted and made again under the same name is a new entry with a
+  // new subject, and the old session is still the deleted one's. A session
+  // with no such subject — the anonymous principal before it is chosen, a
+  // keyed API caller, a process with no directory to ask — is never "gone".
+  sessionAccountGone(session) {
+    const { log, helpers } = this.deps;
+    log.debug("Entering Authn.sessionAccountGone().");
+    if (!session || !session.user || session.authenticated === false ||
+        session.chosen === false || session.credentialKey) {
+      log.debug("Leaving Authn.sessionAccountGone(). Not a person's.");
+      return false;
+    }
+    const sub = String(session.user.sub || '');
+    if (!/^urn:uuid:/i.test(sub) || !helpers.hasSubjectResolver()) {
+      log.debug("Leaving Authn.sessionAccountGone(). No subject to ask " +
+                "about.");
+      return false;
+    }
+    const gone = helpers.nameForSubject(sub) === '';
+    log.debug("Leaving Authn.sessionAccountGone(). " + gone);
+    return gone;
   }
 
   // ---------------------------------------------------------------------------
@@ -1966,11 +2049,11 @@ class Authn {
           (realmId && realmId !== realms.currentId())) {
         realms.run(realms.get(ownRealm), function () {
           self.dropSession(id, 'the sign-on session it came from ended', true,
-                           req);
+                           req, 'system');
         });
       } else {
         this.dropSession(id, 'the sign-on session it came from ended', true,
-                         req);
+                         req, 'system');
       }
       log.debug("Leaving Authn.relyingPartySessionOf(). Its parent is gone.");
       return null;
@@ -2491,6 +2574,21 @@ class Authn {
       log.debug("Leaving Authn.notifySession(). Nobody is listening.");
       return;
     }
+    // AN ARRIVAL SESSION IS NOBODY'S AND IS NEVER ANNOUNCED (#242,
+    // 2026-09-26). `startArrivalSession()` mints one for every cookie-less
+    // visitor at a front door and tells nobody, so its END was the first thing
+    // a receiver ever heard of it: a `session-revoked` about a session that
+    // never had a `session-established`, for every visitor who did not sign
+    // in, on every stream covering everybody. Filtered HERE, the one place
+    // every notice passes, for `sessionOf()`'s reason: the expiry, the sweep,
+    // a realm's every-session end and a sign-out are four callers that would
+    // otherwise each have to remember. Once somebody signs in the row is
+    // replaced with `chosen: true` and is announced from then on.
+    if (session.chosen === false) {
+      log.debug("Leaving Authn.notifySession(). An arrival session nobody " +
+                "signed in to; nothing is said about it.");
+      return;
+    }
     try {
       sessionObserver(Object.assign({ kind: kind, session: session },
                                     extra || {}));
@@ -2502,6 +2600,47 @@ class Authn {
                 'was ignored: ' + e.message);
     }
     log.debug("Leaving Authn.notifySession(). " + kind);
+  }
+
+  // ---------------------------------------------------------------------------
+  // WHO ENDED A SESSION, AS THE CALLER SAYS IT (#242, 2026-09-26).
+  //
+  // CAEP section 2's `initiating_entity` was GUESSED: `reportSignOut()` tested
+  // the door's own sentence for `admin` or `console`. So the console's own
+  // Sign out button ("the Sign out button on the admin console") said an
+  // ADMINISTRATOR had ended the session of a person who signed themselves
+  // out, and so did every child it cascaded to; an emergency key rotation and
+  // the risk engine ending everything said the PERSON had. Each caller knows
+  // which it is, so each says it — `admin`, `user`, `policy` or `system` — and
+  // this only checks the word. A caller that says nothing is a defect worth
+  // seeing, and is reported as `system` (nobody in particular) with a
+  // warning, never guessed from the sentence.
+  // ---------------------------------------------------------------------------
+  private initiatorOf(asked, via) {
+    const { log, errorCodes } = this.deps;
+    log.debug("Entering Authn.initiatorOf().");
+    const word = String(asked || '');
+    if (INITIATING_ENTITIES.indexOf(word) >= 0) {
+      log.debug("Leaving Authn.initiatorOf(). " + word);
+      return word;
+    }
+    log.warn(errorCodes.tag('STS-AUTHN-0290') + 'authn: a session was ended ' +
+             '(' + String(via || 'no door named') + ') without saying who ' +
+             'initiated it' + (word ? ' ("' + word + '" is not one of ' +
+             INITIATING_ENTITIES.join(', ') + ')' : '') + '; CAEP ' +
+             'session-revoked says "system".');
+    log.debug("Leaving Authn.initiatorOf(). system");
+    return 'system';
+  }
+
+  // How many session ends are waiting on the cluster claim that decides who
+  // reports them (#232): a realm being removed waits for none to be left
+  // before its stores are purged.
+  pendingEndReports() {
+    const { log } = this.deps;
+    log.debug("Entering Authn.pendingEndReports().");
+    log.debug("Leaving Authn.pendingEndReports(). " + endReportsPending);
+    return endReportsPending;
   }
 
   private sessionEndOnce(id, emit, onLost?) {
@@ -2520,32 +2659,91 @@ class Authn {
                 "inline.");
       return;
     }
-    clusterClaims.claim({ scope: 'authn.session-end', value: String(id),
-                          ttlMs: SESSION_END_CLAIM_TTL_MS })
-      .then(function (answer) {
-        if (answer.ok) {
-          emit();
-          return;
-        }
-        if (answer.reason === 'store') {
-          log.warn(errorCodes.tag('STS-AUTHN-0192') + 'authn: whether ' +
-                   'another process already reported the end of session ' + id +
-                   ' could not be asked (' + (answer.why || '') + '); it is ' +
-                   'reported here, and a receiver may be told twice.');
-          emit();
-          return;
-        }
-        log.debug('sessionEndOnce(): the end of session ' + id + ' was ' +
-                  'already reported by another process.');
-        if (typeof onLost === 'function') {
-          onLost();
-        }
-      }).catch(function (e) {
-        log.error(errorCodes.tag('STS-AUTHN-0192') + 'authn: reporting the ' +
-                  'end of session ' + id + ' failed: ' +
+    // A CLAIM THAT CANNOT BE ASKED IS ASKED AGAIN, AND THEN THE END IS
+    // REPORTED ANYWAY (#242, 2026-09-26). A rejected claim — the store
+    // unreachable for a moment, a driver error — used to be logged and the
+    // report dropped: a receiver told the session was established was told
+    // nothing when it ended. It is tried SESSION_END_CLAIM_ATTEMPTS times with
+    // a growing pause (a retry inside one operation, which the scheduler rule
+    // does not cover), and after the last the report is made here, as the
+    // `store` answer already does: told twice is the side to err on, never
+    // told the one that is not. The report itself runs outside the claim's
+    // chain, so a report that throws is never mistaken for a claim to retry.
+    const self = this;
+    endReportsPending += 1;
+    let settled = false;
+    const finish = function (answer) {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      endReportsPending = Math.max(0, endReportsPending - 1);
+      if (answer.ok) {
+        self.reportEnd(id, emit);
+        return;
+      }
+      if (answer.reason === 'store') {
+        log.warn(errorCodes.tag('STS-AUTHN-0192') + 'authn: whether ' +
+                 'another process already reported the end of session ' + id +
+                 ' could not be asked (' + (answer.why || '') + '); it is ' +
+                 'reported here, and a receiver may be told twice.');
+        self.reportEnd(id, emit);
+        return;
+      }
+      log.debug('sessionEndOnce(): the end of session ' + id + ' was ' +
+                'already reported by another process.');
+      if (typeof onLost === 'function') {
+        onLost();
+      }
+    };
+    const attempt = function (n) {
+      const failed = function (e) {
+        log.debug("Caught in Authn.sessionEndOnce(): " +
                   ((e && e.message) || e));
-      });
+        if (n + 1 < SESSION_END_CLAIM_ATTEMPTS) {
+          setTimeout(function () {
+            attempt(n + 1);
+          }, SESSION_END_CLAIM_RETRY_MS * (n + 1));
+          return;
+        }
+        finish({ ok: false, reason: 'store',
+                 why: 'the claim failed ' + SESSION_END_CLAIM_ATTEMPTS +
+                      ' times: ' + ((e && e.message) || e) });
+      };
+      let asked = null;
+      try {
+        asked = clusterClaims.claim({ scope: 'authn.session-end',
+                                      value: String(id),
+                                      ttlMs: SESSION_END_CLAIM_TTL_MS });
+      } catch (e) {
+        // A claim that throws before it has a promise to reject is the same
+        // failure, and must not take the sign-out down with it.
+        failed(e);
+        return;
+      }
+      Promise.resolve(asked).then(function (answer) {
+        finish(answer || { ok: false, reason: 'store',
+                           why: 'the claim answered nothing' });
+      }, failed);
+    };
+    attempt(0);
     log.debug("Leaving Authn.sessionEndOnce(). Claiming.");
+  }
+
+  // The report of one session's end, which the claim above lets out. A throw
+  // is a defect in the report and is logged, never retried: the claim has
+  // been spent, and trying again would be telling a receiver twice.
+  private reportEnd(id, emit) {
+    const { log, errorCodes } = this.deps;
+    log.debug("Entering Authn.reportEnd(). id=" + id);
+    try {
+      emit();
+    } catch (e) {
+      log.error(errorCodes.tag('STS-AUTHN-0291') + 'authn: reporting the ' +
+                'end of session ' + id + ' failed: ' +
+                ((e && e.message) || e));
+    }
+    log.debug("Leaving Authn.reportEnd().");
   }
 
   // ONE PLACE A SESSION ENDS BY RUNNING OUT, called by the two lazy lookups and
@@ -2872,7 +3070,7 @@ class Authn {
   // plain-HTTP port has no ClientHello — and an empty field is the truth
   // rather than a gap. See `eventContext()`.
   // ---------------------------------------------------------------------------
-  private authenticationEvent(amr, acr, via, extra) {
+  private authenticationEvent(amr, acr, via, extra, username?) {
     const { log, nowSec } = this.deps;
     log.debug("Entering Authn.authenticationEvent().");
     const detail = extra || {};
@@ -2894,8 +3092,130 @@ class Authn {
       authenticated: detail.authenticated !== false,
       authority: authority,
       evidence: detail.key ? String(detail.key) : '',
-      context: this.eventContext(detail)
+      context: this.eventContext(detail),
+      registeredDevice: this.registeredDeviceFor(detail, username)
     };
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE REGISTERED DEVICE THAT PROVED THIS AUTHENTICATION (#164 decision 1,
+  // phase 2, 2026-09-26), or null: a linked WebAuthn credential that
+  // answered, or the client certificate on this connection, recognised by
+  // `common/device_recognition.ts`, which argues what counts. It is recorded
+  // on the EVENT, beside `context`, as `registeredDevice` — `context.device`
+  // is the browser fingerprint (#62 P6), a different thing — so every event
+  // of a session says which device proved it, and later phases (compliance,
+  // risk, policy, CAEP, token claims) read it from the session through
+  // `registeredDeviceOf()`. A compromised device is recognised and says so.
+  // A recogniser that throws records nothing and refuses nothing: a sign-in
+  // is not the place a device register's defect should show.
+  // ---------------------------------------------------------------------------
+  //
+  // `username` (#164 phase 5) is who is signing in, which sets the fact's
+  // `ownerMatches`. ONE RECOGNITION PER REQUEST AND CREDENTIAL: a door that
+  // assesses the sign-in's risk before the session exists (`assessSignIn()`)
+  // asks here, and the session's event asks again a moment later for the
+  // same request — the answer is remembered on the request, so the device's
+  // last use moves once and Monitoring → Devices counts one recognition.
+  // ---------------------------------------------------------------------------
+  private registeredDeviceFor(detail, username?) {
+    const { log, audit, deviceRecognition } = this.deps;
+    log.debug("Entering Authn.registeredDeviceFor().");
+    const given = detail.credential || {};
+    const request = detail.request || audit.currentRequest();
+    const credentialId = given.kind === 'webauthn' ? String(given.id || '')
+                                                   : '';
+    const memoKey = credentialId + '\u0000' + String(username || '');
+    const memo = request && typeof request === 'object'
+      ? recognitionMemo.get(request) : null;
+    if (memo && memo.has(memoKey)) {
+      log.debug("Leaving Authn.registeredDeviceFor(). Already recognised.");
+      return memo.get(memoKey);
+    }
+    let fact = null;
+    try {
+      fact = deviceRecognition.recognize({
+        request: request,
+        webauthnCredentialId: credentialId,
+        subject: username === undefined ? undefined : String(username),
+        clientId: detail.application || undefined });
+      if (request && typeof request === 'object') {
+        const held = memo || new Map();
+        held.set(memoKey, fact);
+        recognitionMemo.set(request, held);
+      }
+    } catch (e) {
+      log.error(this.deps.errorCodes.tag('STS-DEVICE-0029') + 'authn: ' +
+                'recognising the device behind a sign-in threw: ' +
+                ((e && e.stack) || e));
+      fact = null;
+    }
+    log.debug("Leaving Authn.registeredDeviceFor(). " +
+              (fact ? fact.id : 'none'));
+    return fact;
+  }
+
+  // -------------------------------------------------------------------------
+  // THE DEVICE ALONE, PUT TO THE ISSUANCE POLICY (#164 phase 6) for a door
+  // that asked the rest before its credential was complete (`gated`). Asked
+  // only where a device rule could refuse — the realm requires a compliant
+  // device, or this one is compromised and the realm refuses one — so every
+  // other gated sign-in costs nothing new. The role question is waived and
+  // no risk facts are sent: both were asked already, and only a Deny about
+  // the device refuses. True when it refused, with `refusedWith` and
+  // `refusedWhy` on the caller's `detail`, as every refusal here writes.
+  // -------------------------------------------------------------------------
+  private refusedOnDevice(detail, username, via): boolean {
+    const { log, gate, audit } = this.deps;
+    log.debug("Entering Authn.refusedOnDevice().");
+    const requirement = gate.deviceRequirementOf();
+    const fact = this.registeredDeviceFor(detail, username);
+    const matters = requirement.indexOf('compliant') >= 0 ||
+      (!!fact && fact.status === 'compromised' &&
+       requirement.indexOf('not-compromised') >= 0);
+    if (!matters) {
+      log.debug("Leaving Authn.refusedOnDevice(). No device rule applies.");
+      return false;
+    }
+    const answer = gate.check({
+      application: String(detail.application || ''),
+      kind: gate.ISSUANCE.SESSION,
+      subject: { kind: 'user', name: username,
+                 authenticated: detail.authenticated !== false },
+      claims: null, risk: null, rolesWaived: true, device: fact });
+    if (answer.allowed || !answer.device) {
+      log.debug("Leaving Authn.refusedOnDevice(). Allowed.");
+      return false;
+    }
+    const code = answer.device.refusal === 'compromised' ? 'STS-DEVICE-0038'
+                                                         : 'STS-DEVICE-0037';
+    audit.audit({
+      action: 'session.refuse', actor: username, errorCode: code,
+      protocol: via || 'OAuth 2.0 / OIDC', channel: 'http', target: '',
+      summary: 'a session for ' + username + ' was refused on its device ' +
+               'at the ' + (via || 'sign-in') + ' door',
+      detail: { why: answer.why, application: String(detail.application ||
+                                                     ''),
+                device: fact ? String(fact.id) : '',
+                policy: answer.policy || '' } });
+    detail.refusedWith = code;
+    detail.refusedWhy = answer.why;
+    log.info('authn: a session for "' + username + '" was REFUSED on its ' +
+             'device (' + answer.device.refusal + ').');
+    log.debug("Leaving Authn.refusedOnDevice(). Refused.");
+    return true;
+  }
+
+  // The registered device the session's LATEST authentication event
+  // recognised, or null (#164 phase 2). What a later phase reads.
+  registeredDeviceOf(session) {
+    const { log } = this.deps;
+    log.debug("Entering Authn.registeredDeviceOf().");
+    const events = session && Array.isArray(session.events)
+      ? session.events : [];
+    const last = events.length ? events[events.length - 1] : null;
+    log.debug("Leaving Authn.registeredDeviceOf().");
+    return (last && last.registeredDevice) || null;
   }
 
   // ---------------------------------------------------------------------------
@@ -3079,7 +3399,7 @@ class Authn {
       authTime: session.authTime || 0,
       via: session.via || ''
     };
-    const event = this.authenticationEvent(amr, acr, via, extra);
+    const event = this.authenticationEvent(amr, acr, via, extra, username);
     // A row persisted before events existed has none. It is given one standing
     // for the authentication it recorded, so the list is never missing its
     // beginning.
@@ -3241,6 +3561,7 @@ class Authn {
         sessionId: session.id, door: String(via || event.via || ''),
         clientId: String(detail.application || ''),
         context: event.context || {},
+        registeredDevice: event.registeredDevice || null,
         userAgent: String(headers['user-agent'] || '') });
     } catch (e) {
       log.debug("Caught in Authn.assessRisk(): " + ((e && e.message) || e));
@@ -3377,6 +3698,11 @@ class Authn {
       username: String(session.user.username || ''), sessionId: session.id,
       door: 'a live session whose ' + moved.join(' and ') + ' changed',
       clientId: '', context: now, phase: 'session',
+      // What THIS request proves about a registered device (#164 phase 5):
+      // a client certificate on its connection, or nothing — a replayed
+      // cookie proves no device, which is what the device signals then say.
+      registeredDevice: this.registeredDeviceFor({ request: req },
+        String(session.user.username || '')),
       userAgent: String(headers['user-agent'] || '') })
       .then(function (assessment: any): void {
         if (assessment) {
@@ -3451,7 +3777,7 @@ class Authn {
   // ---------------------------------------------------------------------------
   endRelyingPartySessions(surfaceId: string, fromRealm: string,
                           about: (user: any, session?: any) => boolean,
-                          via: string): number {
+                          via: string, initiatingEntity: string): number {
     const { log, realms } = this.deps;
     const self = this;
     log.debug("Entering Authn.endRelyingPartySessions(). " + surfaceId);
@@ -3469,7 +3795,7 @@ class Authn {
     }
     doomed.forEach(function (id: string): void {
       realms.run(realms.get(partition), function () {
-        self.dropSession(id, via, false);
+        self.dropSession(id, via, false, null, initiatingEntity);
       });
     });
     log.debug("Leaving Authn.endRelyingPartySessions(). " + doomed.length +
@@ -3520,6 +3846,10 @@ class Authn {
       username: String(username), sessionId: '',
       door: String(via || ''), clientId: String(d.application || ''),
       context: this.eventContext(d),
+      // THE REGISTERED DEVICE, recognised NOW (#164 phase 5) — before the
+      // session and its event exist, because the risk engine scores it; the
+      // event asks again for the same request and gets this same answer.
+      registeredDevice: this.registeredDeviceFor(d, String(username)),
       userAgent: String(headers['user-agent'] || '') });
     log.debug("Leaving Authn.assessSignIn(). " +
               (assessment ? assessment.level : 'Not assessed.'));
@@ -3592,6 +3922,33 @@ class Authn {
     log.debug("Entering Authn.startSession(). username=" + username + ", acr=" +
               acr);
     const extra = detail || {};
+    // -------------------------------------------------------------------------
+    // A REALM BEING REMOVED STARTS NO SESSION (#262, 2026-09-26), from any
+    // door, in either mode, authenticated or not — before everything below,
+    // the disabled account included. `realms.retire()` has marked the realm
+    // and is ending every session in it; one started now would be dropped by
+    // the purge with no `session-revoked` and no Logout Token. The issuance
+    // gate refuses the same, but the sign-in screen asks it ahead of time and
+    // passes `gated: true`, so this line is what holds for every door.
+    // -------------------------------------------------------------------------
+    const retiring = realms.retiringRefusal();
+    if (retiring) {
+      log.info('authn: a session for "' + username + '" was REFUSED at the ' +
+               (via || 'sign-in') + ' door: ' + retiring.why);
+      audit.audit({
+        action: 'session.refuse', actor: String(username || ''),
+        errorCode: 'STS-CORE-0121',
+        protocol: via || 'OAuth 2.0 / OIDC', channel: 'http', target: '',
+        summary: 'a session for ' + username + ' was refused at the ' +
+                 (via || 'sign-in') + ' door: the realm is being removed',
+        detail: { why: retiring.why,
+                  application: String(extra.application || '') }
+      });
+      extra.refusedWith = 'STS-CORE-0121';
+      extra.refusedWhy = retiring.why;
+      log.debug("Leaving Authn.startSession(). The realm is being removed.");
+      return null;
+    }
     // -------------------------------------------------------------------------
     // A DISABLED ACCOUNT GETS NO SESSION (2026-09-17, #36 follow-up), from any
     // door, in any mode — FIRST, before the browser's previous session is
@@ -3740,7 +4097,7 @@ class Authn {
                  'sign-in is a privilege change and the old session must not ' +
                  'outlive it.');
         this.dropSession(previous, 'replaced by a new sign-in', true,
-                         extra.request);
+                         extra.request, 'user');
       }
     }
     // -------------------------------------------------------------------------
@@ -3784,6 +4141,12 @@ class Authn {
                                           : null;
     let riskDecision = String(extra.riskDecision || 'permit');
     if (extra.gated !== true) {
+      // THE APPLICATION IS THE CALLER'S TO NAME, and every screen's finisher
+      // names `step.authn.application`. Until #226 (2026-09-26) the six
+      // second-factor finishers named none, so after a step-up the policy was
+      // asked about "": the console's `neverLockOut` rules never matched,
+      // and a HIGH console sign-in that had just answered its step-up with a
+      // security key was refused by the ordinary HIGH rule.
       const sessionAnswer = gate.check(Object.assign({
         application: String(extra.application || ''),
         kind: gate.ISSUANCE.SESSION,
@@ -3796,7 +4159,17 @@ class Authn {
           : { amr: (amr || []).map(String), acr: String(acr || ''),
               kinds: extra.credential && extra.credential.kind
                 ? [String(extra.credential.kind)] : [] }
-      }, extra.risk !== undefined && riskEngine
+      }, extra.key
+        // A KEYED API CALLER (SCIM, SPIRE, the management API) is asked no
+        // device question here (#164 phase 6): its credential is presented
+        // per request, and the device rules decide the TOKEN that
+        // credential was issued with, at the token endpoint.
+        ? { deviceDeferred: true }
+        // THE REGISTERED DEVICE THIS SIGN-IN PROVED (#164 phase 6) — the
+        // same recognition the event below records — for the policy's two
+        // device rules.
+        : { device: this.registeredDeviceFor(extra, username) },
+      extra.risk !== undefined && riskEngine
         ? { risk: riskEngine.factsOf(risk, amr, acr,
                                      extra.credential &&
                                      extra.credential.kind
@@ -3850,12 +4223,24 @@ class Authn {
                     application: String(extra.application || ''),
                     policy: sessionAnswer.policy || '' }
         });
-        extra.refusedWith = 'STS-AUTHN-0010';
+        extra.refusedWith = sessionAnswer.device
+          ? (sessionAnswer.device.refusal === 'compromised'
+            ? 'STS-DEVICE-0038' : 'STS-DEVICE-0037')
+          : 'STS-AUTHN-0010';
         extra.refusedWhy = sessionAnswer.why;
         log.debug("Leaving Authn.startSession(). The issuance policy refused " +
                   "it.");
         return null;
       }
+    } else if (!extra.key && this.refusedOnDevice(extra, username, via)) {
+      // THE DEVICE QUESTION A GATED DOOR COULD NOT ASK (#164 phase 6). The
+      // sign-in screen asks the policy BEFORE its credential is complete —
+      // ahead of a WebAuthn ceremony that may be the very key naming the
+      // device — so it leaves the device out (`deviceDeferred`), and the
+      // question is asked here, of the credential the session actually
+      // stands on, about the device alone.
+      log.debug("Leaving Authn.startSession(). Refused on the device.");
+      return null;
     }
 
     // -------------------------------------------------------------------------
@@ -3955,7 +4340,8 @@ class Authn {
     // credential-fingerprint branch above gives about the creation instant.
     // ---------------------------------------------------------------------
     const sessionId = arrived ? arrived.id : randomId(24);
-    const firstEvent = this.authenticationEvent(amr, acr, via, extra);
+    const firstEvent = this.authenticationEvent(amr, acr, via, extra,
+                                                username);
     const authenticatedNow = extra.authenticated !== false;
     // ---------------------------------------------------------------------
     // THE AUTHENTICATION IS RECORDED BEFORE THE SESSION IS BUILT (2026-09-14),
@@ -4254,10 +4640,12 @@ class Authn {
   // WAS, not merely that it is gone, because the lists of relying parties and
   // service providers a federated sign-out has to fan out to live on the object
   // being discarded.
-  private dropSession(id, via, cookiePresented, req?) {
+  private dropSession(id, via, cookiePresented, req?, initiatingEntity?) {
     const { realms, log, stats, bcp } = this.deps;
     const self = this;
     log.debug("Entering Authn.dropSession(). id=" + (id || '(none)'));
+    // WHO ENDED IT, SAID BY THE CALLER (#242). See initiatorOf().
+    const entity = this.initiatorOf(initiatingEntity, via);
     const session = id ? sessions.get(id) : null;
     if (id) sessions.delete(id);
     // -------------------------------------------------------------------------
@@ -4301,9 +4689,11 @@ class Authn {
                  'the sign-on session it was derived from (' + id + ').');
         const endChild = function () {
           log.debug("Entering endChild().");
+          // The child ends for the parent's reason and by the parent's
+          // hand, so it says the parent's initiating entity.
           self.dropSession(child.id,
                            'the sign-on session it was derived from ended (' +
-                           (via || 'unknown door') + ')', false, req);
+                           (via || 'unknown door') + ')', false, req, entity);
           log.debug("Leaving endChild().");
         };
         if (child.realm && child.realm !== realms.currentId()) {
@@ -4360,7 +4750,11 @@ class Authn {
                   .indexOf(clientId) >= 0) &&
                bcp.revokeRefreshOnLogout(clientId);
       }, 'Back-Channel Logout section 2.7: the sign-on session it was ' +
-         'issued on ended');
+         'issued on ended',
+      // The grant each revoked token ends is reported by `stats.revoke()`'s
+      // observer (#239) with the sign-out's own initiating entity (#242), so
+      // a person signing out is `user` there too, not the observer's default.
+      { initiatingEntity: entity });
       if (revoked) {
         log.info('Back-Channel Logout section 2.7: signing out of session ' +
                  id + ' ' +
@@ -4410,13 +4804,13 @@ class Authn {
       const planned = this.planBackchannel(session, via || 'a sign-out',
                                            'sign-out');
       this.sessionEndOnce(session.id, function () {
-        self.reportSignOut(session, id, via, cookiePresented, req);
+        self.reportSignOut(session, id, via, cookiePresented, req, entity);
         self.dispatchBackchannel(planned);
       }, function () {
         self.reportSignOutAlreadyEnded(session, via, cookiePresented);
       });
     } else {
-      this.reportSignOut(null, id, via, cookiePresented, req);
+      this.reportSignOut(null, id, via, cookiePresented, req, entity);
     }
     log.debug("Leaving Authn.dropSession(). " +
               (session ? 'Dropped the session for ' + session.user.username +
@@ -4429,11 +4823,14 @@ class Authn {
   // The event and the audit row for a sign-out — what sessionEndOnce() lets out
   // once for the cluster. Split from dropSession() for that reason only; the
   // order inside is dropSession()'s own, argued there.
-  private reportSignOut(session, id, via, cookiePresented, req) {
+  private reportSignOut(session, id, via, cookiePresented, req, entity) {
     const { log, audit } = this.deps;
     log.debug("Entering Authn.reportSignOut().");
     this.notifySession('revoked', session, { via: via || 'a sign-out endpoint',
-      byAdmin: /admin|console/i.test(String(via || '')),
+      // STATED BY THE CALLER (#242), never read out of `via`: see
+      // initiatorOf(). `byAdmin` is kept for an observer that reads it.
+      initiatingEntity: entity,
+      byAdmin: entity === 'admin',
       // THE REQUEST, WHERE THERE IS ONE, AND IT IS NOT A CONVENIENCE. The
       // observer builds a subject naming the person by ISSUER and subject, and
       // this service's issuer is derived from the request — a sign-out reached
@@ -4520,6 +4917,26 @@ class Authn {
     return out;
   }
 
+  // THE SESSIONS OF THIS REALM THAT `test` ACCEPTS (#189), without the cookie
+  // and without expiring them. For a SAML attribute authority, which is asked
+  // about a subject by the NameID a service provider was GIVEN — a transient
+  // or an emailAddress NameID is not the username, so the question is which
+  // live session gave that service provider that NameID, and nothing but the
+  // session holds the answer.
+  sessionsMatching(test) {
+    const { log } = this.deps;
+    log.debug("Entering Authn.sessionsMatching().");
+    const out = [];
+    sessions.forEach(function (session) {
+      if (test(session)) {
+        out.push(session);
+      }
+    });
+    log.debug("Leaving Authn.sessionsMatching(). " + out.length +
+              " session(s).");
+    return out;
+  }
+
   // One session by its id, without the cookie and without expiring it. Used by
   // /logout to draw a row for a session that is not the caller's; `sessionOf()`
   // stays the function that reads the cookie and sweeps what it finds expired.
@@ -4535,10 +4952,11 @@ class Authn {
   // ended is usually not the one the caller is holding, and clearing the cookie
   // of a browser that is signed in as somebody else would sign the operator out
   // instead of the person they asked about.
-  endSessionById(id, via) {
+  endSessionById(id, via, initiatingEntity?) {
     const { log } = this.deps;
     log.debug("Entering Authn.endSessionById(). id=" + id);
-    const session = this.dropSession(String(id || ''), via, false);
+    const session = this.dropSession(String(id || ''), via, false, null,
+                                     initiatingEntity);
     log.debug("Leaving Authn.endSessionById(). " + (session ? 'Ended.' :
                                                     'There was ' +
         'no such session.'));
@@ -4550,7 +4968,7 @@ class Authn {
   // CAEP session-revoked and the back-channel Logout Tokens of its relying
   // parties. Collected first and ended afterwards, for the sweep's reason.
   // Answers who was signed out, so the caller can tell RISC about accounts.
-  endEverySessionIn(realmId, via) {
+  endEverySessionIn(realmId, via, initiatingEntity?) {
     const { log, realms } = this.deps;
     const self = this;
     log.debug("Entering Authn.endEverySessionIn(). realm=" + realmId);
@@ -4561,20 +4979,95 @@ class Authn {
     if (store) {
       store.forEach(function (session, id) {
         if (session) {
+          // A row nobody signed in to (an arrival session, the anonymous
+          // principal) is ended too, and answers no account: a caller that
+          // tells RISC about the accounts must not tell it about `anonymous`
+          // (#242).
+          const somebody = session.chosen !== false &&
+                           session.authenticated !== false;
           ids.push({ id: id,
-                     username: String((session.user &&
-                                       session.user.username) || '') });
+                     username: somebody
+                       ? String((session.user && session.user.username) ||
+                                '')
+                       : '' });
         }
       });
     }
     const ended = realms.run(realm, function () {
       return ids.filter(function (one) {
-        return !!self.dropSession(one.id, via, false);
+        return !!self.dropSession(one.id, via, false, null,
+                                  initiatingEntity);
       });
     });
     log.debug("Leaving Authn.endEverySessionIn(). " + ended.length +
               " ended.");
     return ended;
+  }
+
+  // ---------------------------------------------------------------------------
+  // A TRUST REALM BEING REMOVED (#232): its sessions end through the ordinary
+  // path before its stores are purged, so each is a `session.end` audit row, a
+  // CAEP session-revoked (`initiating_entity` as the removal says — `admin`)
+  // and its relying parties' back-channel Logout Tokens. Until #232 the
+  // partition was dropped whole and nobody was told. `realms.retire()` calls
+  // this in the realm, in its announce phase.
+  // ---------------------------------------------------------------------------
+  retireRealmSessions(realmId, ctx) {
+    const { log } = this.deps;
+    log.debug("Entering Authn.retireRealmSessions(). realm=" + realmId);
+    const c = ctx || {};
+    const ended = this.endEverySessionIn(realmId,
+      String(c.via || 'the removal of the trust realm'),
+      String(c.initiatingEntity || 'admin'));
+    log.info('authn: the "' + realmId + '" realm is being removed; ' +
+             ended.length + ' session(s) in it were ended first.');
+    log.debug("Leaving Authn.retireRealmSessions(). " + ended.length);
+    return ended.length;
+  }
+
+  // ...and its deliver phase: wait, until `ctx.deadline`, for every session
+  // end to have won its cluster claim (`pendingEndReports()`) and for the
+  // realm's outbound deliveries — the Logout Tokens above, and anything else
+  // queued in `oauth-oidc/outbound_delivery.ts`'s kinds — to leave `pending`.
+  // What is still pending is reported on `ctx.undelivered`. Never rejects.
+  async settleRealmEnds(realmId, ctx) {
+    const { log } = this.deps;
+    log.debug("Entering Authn.settleRealmEnds(). realm=" + realmId);
+    const c = ctx || {};
+    const deadline = Number(c.deadline) || 0;
+    const self = this;
+    const pendingOutbound = function () {
+      let total = 0;
+      try {
+        const report = require('../oauth-oidc/outbound_delivery')
+          .kindReport({ limit: 1 });
+        (report.kinds || []).forEach(function (kind) {
+          total += Number((kind.counts || {}).pending) || 0;
+        });
+      } catch (e) {
+        log.debug("Caught in Authn.settleRealmEnds(): " +
+                  ((e && e.message) || e));
+        total = 0;
+      }
+      return total;
+    };
+    let outbound = pendingOutbound();
+    while (Date.now() < deadline &&
+           (self.pendingEndReports() > 0 || outbound > 0)) {
+      await new Promise(function (resolve) {
+        setTimeout(resolve, 50);
+      });
+      outbound = pendingOutbound();
+    }
+    if (Array.isArray(c.undelivered)) {
+      c.undelivered.push({ what: 'session end(s) still waiting on their ' +
+                                 'claim',
+                           count: self.pendingEndReports() });
+      c.undelivered.push({ what: 'outbound delivery(ies) (back-channel ' +
+                                 'Logout Tokens, CIBA, provider commands)',
+                           count: outbound });
+    }
+    log.debug("Leaving Authn.settleRealmEnds(). " + outbound + " pending.");
   }
 
   // Clear the session cookie on this response, whatever the session it named.
@@ -4645,7 +5138,7 @@ class Authn {
     const presented = !!this.cookiesOf(req)[SESSION_COOKIE];
     const session = this.dropSession(id,
                                      'the sign-out endpoint for this browser',
-                                     presented, req);
+                                     presented, req, 'user');
     this.clearSessionCookie(res);
     log.debug("Leaving Authn.endSession(). " +
               (session ? 'Dropped the session for ' + session.user.username +
@@ -4716,6 +5209,33 @@ class Authn {
   // first thing checked, because every sign-in in this service passes through
   // here.
   // ---------------------------------------------------------------------------
+  // The one usable service-provider relationship whose fedHomeRealmDomain
+  // holds `domainHint` (#148), or null — none, or more than one, which is
+  // not a choice this service makes for the person.
+  private homeRealmFor(domainHint) {
+    const { log, federation } = this.deps;
+    log.debug("Entering Authn.homeRealmFor().");
+    const wanted = String(domainHint || '').trim().toLowerCase();
+    if (!wanted) {
+      log.debug("Leaving Authn.homeRealmFor(). No hint.");
+      return null;
+    }
+    const ids = federation.list().filter(function (r) {
+      return [].concat(r.fedHomeRealmDomain || []).map(function (d) {
+        return String(d).toLowerCase();
+      }).indexOf(wanted) >= 0;
+    }).map(function (r) {
+      return r.fedId;
+    });
+    const resolved = ids.length
+      ? federation.usableServiceProviders(ids, 'A domain_hint')
+      : { usable: [] };
+    log.debug("Leaving Authn.homeRealmFor(). " + resolved.usable.length +
+              " usable.");
+    return resolved.usable.length === 1 ?
+      resolved.usable[0].relationship : null;
+  }
+
   private federationFor(applicationId) {
     const { log, federation, applications, errorCodes } = this.deps;
     log.debug("Entering Authn.federationFor(). application=" +
@@ -5135,6 +5655,22 @@ class Authn {
     // ---------------------------------------------------------------------
     const chosen = this.mechanismFor(opts.application);
     const home = chosen.federation;
+    // ENTERPRISE EXTENSIONS SECTION 3.1 (#148): a `domain_hint` names the
+    // person's home realm, and a relationship whose fedHomeRealmDomain holds
+    // it is where their sign-in happens — asked only when the application
+    // names no partner of its own to go to, which is the more specific
+    // configuration.
+    const hinted = (home && home.relationship && home.auto) ? null :
+      this.homeRealmFor(opts.domainHint);
+    if (hinted) {
+      log.info('authn: domain_hint "' + String(opts.domainHint) + '" names ' +
+               'the home realm of the federation relationship "' +
+               hinted.fedId + '", so this sign-in goes straight there.');
+      log.debug("Leaving Authn.beginAuthentication(). Home realm.");
+      return federation.PATHS.login + '/' + encodeURIComponent(hinted.fedId) +
+        '?returnTo=' + encodeURIComponent(returnTo) +
+        '&application=' + encodeURIComponent(String(opts.application || ''));
+    }
     if (home && home.relationship && home.auto) {
       const target = federation.PATHS.login + '/' +
         encodeURIComponent(home.relationship.fedId) +
@@ -5469,14 +6005,65 @@ class Authn {
   // caller handed `startSession()` (see the block above that function); a
   // caller that passed none gets the disabled check it always had.
   // True when it answered.
+  // A REMEMBERED BROWSER AFTER A SIGN-IN-SCREEN SESSION STARTS (#265): its
+  // token issued again with the next generation, or the browser registered
+  // where the person ticked "Remember this browser", or a copied or
+  // unreadable cookie cleared. Every door on this screen ends in
+  // refusedSession() with the pending record in hand, which is why it is
+  // asked there. It never fails the sign-in.
+  private afterBrowserSignIn(res, record, username, session, detail) {
+    const { log, errorCodes } = this.deps;
+    log.debug("Entering Authn.afterBrowserSignIn().");
+    // NOBODY SIGNED IN: "continue without signing in" leaves a remembered
+    // browser alone rather than reading it as somebody else's cookie.
+    if (username === ANONYMOUS_USERNAME ||
+        (session && session.authenticated === false)) {
+      log.debug("Leaving Authn.afterBrowserSignIn(). Anonymous.");
+      return;
+    }
+    const said = detail || {};
+    const request = said.request || this.deps.audit.currentRequest();
+    try {
+      const bd = this.deps.browserDevices();
+      bd.afterSignIn(request, res, {
+        username: username,
+        recognized: this.registeredDeviceOf(session),
+        secondFactor: bd.hasSecondFactor(session && session.amr),
+        remember: !!(record && record.rememberBrowser)
+      });
+    } catch (e) {
+      log.warn(errorCodes.tag('STS-DEVICE-0045') + 'authn: the remembered ' +
+               'browser could not be settled after a sign-in: ' +
+               ((e && e.message) || e));
+    }
+    log.debug("Leaving Authn.afterBrowserSignIn().");
+  }
+
   private refusedSession(res, base, record, username, started, detail) {
     const { log, accountState, errorCodes } = this.deps;
     log.debug("Entering Authn.refusedSession().");
     if (started) {
+      this.afterBrowserSignIn(res, record, username, started, detail);
       log.debug("Leaving Authn.refusedSession(). Not refused.");
       return false;
     }
     const said = detail || {};
+    // A REMEMBERED BROWSER'S COOKIE THAT CAUSED OR SHARED THE REFUSAL (#265)
+    // — a copy, somebody else's, or a device since marked compromised — is
+    // cleared, so the next attempt from this browser is not refused on it
+    // again. The device stays compromised; only the cookie goes.
+    try {
+      const fact = this.registeredDeviceFor({ request: said.request },
+                                            username);
+      if (fact && fact.via === 'browser-cookie' &&
+          (fact.status === 'compromised' || (fact.browserToken &&
+           (fact.browserToken.replayed || fact.browserToken.foreign)))) {
+        this.deps.browserDevices().clear(res);
+      }
+    } catch (e) {
+      log.debug("Caught in Authn.refusedSession(): " +
+                ((e && e.message) || e));
+    }
     const code = said.refusedWith ||
       (accountState.isDisabled(username) ? 'STS-AUTHN-0201'
                                          : 'STS-AUTHN-0010');
@@ -5720,7 +6307,9 @@ class Authn {
         kind: gate.ISSUANCE.SESSION,
         subject: { kind: 'user', name: username, authenticated: true },
         claims: null,
-        risk: engine.factsOf(risk, outcome.amr || ['pop'], outcome.acr || '1')
+        risk: engine.factsOf(risk, outcome.amr || ['pop'], outcome.acr || '1'),
+        // The session's start asks about the device (#164 phase 6).
+        deviceDeferred: true
       });
       if (!riskAnswer.allowed && riskAnswer.risk &&
           !riskAnswer.risk.observed) {
@@ -5752,8 +6341,10 @@ class Authn {
       kind: gate.ISSUANCE.SESSION,
       subject: { kind: 'user', name: username, authenticated: true },
       claims: null,
-      // The roles alone: the risk was asked above.
-      risk: null
+      // The roles alone: the risk was asked above, and the session's start
+      // asks about the device (#164 phase 6).
+      risk: null,
+      deviceDeferred: true
     });
     if (!roleAnswer.allowed) {
       log.debug("Leaving Authn.beginSecondFactorAfterWallet(). Refused.");
@@ -6013,6 +6604,7 @@ class Authn {
     const amr = this.firstAmrOf(step).concat(
       this.firstAmrOf(step).indexOf('otp') >= 0 ? [] : ['otp']);
     const said = { request: req, risk: step.risk,
+                   application: String(step.authn.application || ''),
                    credential: { kind: 'email-' + kind } };
     const started = this.startSession(res, step.username, amr, 'mfa',
                                       step.authn.protocol, said);
@@ -6497,6 +7089,15 @@ class Authn {
                   '" configures a mechanism this realm has turned off.'
                 : '') + '</label>'
             : '')) +
+      // "REMEMBER THIS BROWSER" (#265), where the realm offers it. Opt-in, a
+      // plain checkbox, and honest about what it is: the cookie is a bearer
+      // credential and the label says so in a sentence.
+      (this.deps.browserDevices().enabled() && !locked
+        ? '<label class="chk"><input type="checkbox" id="remember_browser" ' +
+          'name="remember_browser" value="1"> Remember this browser ' +
+          '<span class="sub">— recognises it next time with a cookie. Do ' +
+          'not tick on a shared computer.</span></label>'
+        : '') +
       '<div class="row"><button type="submit" id="kc-login" name="action" ' +
       'value="login">Sign In</button>' +
       // THE THIRD BUTTON, AND IT IS NOT CANCEL (2026-09-05).
@@ -6861,7 +7462,12 @@ class Authn {
       application: String(record.application || ''),
       kind: gate.ISSUANCE.SESSION,
       subject: { kind: 'user', name: username, authenticated: true },
-      claims: null
+      claims: null,
+      // NOT THE DEVICE, YET (#164 phase 6): the key that may name it — a
+      // passwordless or second-factor WebAuthn ceremony — has not been
+      // presented. The session's start asks about it (`refusedOnDevice()`
+      // for the password-only path, the policy for the rest).
+      deviceDeferred: true
     }, riskEngine ? { risk: riskEngine.factsOf(risk,
       passwordless ? ['hwk'] : ['pwd'], '1') } : {}));
     let riskDecision = 'permit';
@@ -6889,7 +7495,9 @@ class Authn {
                '" at "' + String(record.application) + '". ' + roleAnswer.why);
       log.debug("Leaving the authentication endpoint. The issuance policy " +
                 "refused the session.");
-      errorCodes.mark(res, 'STS-AUTHN-0009');
+      // A realm being removed (#262) is its own code; the policy's is 0009.
+      errorCodes.mark(res, roleAnswer.retiring ? 'STS-CORE-0121'
+                                               : 'STS-AUTHN-0009');
       log.debug("Leaving Authn.finishPasswordSignIn().");
       return this.sendLoginPage(res, this.loginPage(base, record,
                                                     roleAnswer.why));
@@ -6989,10 +7597,46 @@ class Authn {
         'This request needs a security key, and this account holds none. ' +
         'Add one at /portal/keys and sign in again.'));
     }
-    const factor = passwordless || record.forceKey ||
-                   riskFactor === 'security-key'
+    let factor = passwordless || record.forceKey ||
+                 riskFactor === 'security-key'
       ? 'webauthn'
       : (configuredFactor || riskChoice || (secondFactor ? 'webauthn' : ''));
+
+    // ---------------------------------------------------------------------
+    // A REMEMBERED BROWSER IN PLACE OF THE SECOND FACTOR (#265), and ONLY in
+    // place of the person's CONFIGURED one: never one a relying party
+    // demanded (`forceMfa`, `forceKey`), never one risk asked for, never the
+    // security key the person ticked themselves, and never a factor required
+    // of an administrator. `browser_devices.ts`'s `skipsSecondFactor()`
+    // holds the rest — the realm's policy, the browser recognised and
+    // current and theirs, the second factor given on it within the policy's
+    // days, the admin console, portal and debugger excluded, risk below
+    // MEDIUM. The session is then ONE factor (`["pwd"]`, acr 1) and says so.
+    // ---------------------------------------------------------------------
+    let skippedSecondFactor = '';
+    if (factor && factor === configuredFactor && !passwordless &&
+        !secondFactor && !record.forceMfa && !record.forceKey &&
+        !riskFactor && !requirementForAdministrator(credentials, username)) {
+      const answer = this.deps.browserDevices().skipsSecondFactor({
+        fact: this.registeredDeviceFor({ request: req,
+          application: String(record.application || '') }, username),
+        username: username,
+        clientId: String(record.application || ''),
+        riskLevel: risk ? risk.level : '' });
+      if (answer.skip) {
+        skippedSecondFactor = factor;
+        factor = '';
+        audit.audit({
+          action: 'authn.second-factor.skipped', outcome: 'success',
+          actor: username, target: username, channel: 'http',
+          protocol: record.protocol,
+          summary: username + ' was not asked for their ' +
+                   skippedSecondFactor + ': ' + answer.why,
+          detail: { factor: skippedSecondFactor } });
+        log.info('authn: "' + username + '" signs in without their ' +
+                 skippedSecondFactor + ' on a remembered browser.');
+      }
+    }
 
     // ---------------------------------------------------------------------
     // A SECOND FACTOR REQUIRED OF THIS PERSON (2026-09-13) — by their own entry
@@ -7022,7 +7666,7 @@ class Authn {
         'its own is one factor. Sign in with your password; you will be ' +
         'asked for your second factor, or to set one up.'));
     }
-    if (requirement.required && !factor) {
+    if (requirement.required && !factor && !skippedSecondFactor) {
       const offered = this.enrolmentOffered();
       if (!offered.totp && !offered.webauthn) {
         log.warn(errorCodes.tag('STS-AUTHN-0172') +
@@ -7050,22 +7694,70 @@ class Authn {
         // key is chosen, which is then the ordinary ceremony — it registers a
         // key in the `mfa` role for somebody who holds none.
         factor: 'enrol', alternate: '', backup: false, passwordless: false,
-        requiredBy: requirement.byUser ? 'account' : 'realm',
+        requiredBy: requirement.byUser ? 'account'
+          : (requirement.byRealm ? 'realm' : 'administrator'),
+        // The sign-in's assessment (#246): the finisher decides the session
+        // on it, as every other step's does. Until #246 this step carried
+        // none, and an enrolment's session was decided with no risk at all.
+        risk: assessment || undefined,
         expires: Date.now() + this.mfaStepTtlMs()
       });
+      this.noteEnrolmentAtRisk(username, assessment, 'required');
       audit.audit({
         action: 'authn.mfa.enrolment.required', outcome: 'success',
         actor: username, target: username, channel: 'http',
         protocol: record.protocol,
         summary: username + ' holds no second factor and one is required; ' +
                  'asked to set one up before signing in',
-        detail: { requiredBy: requirement.byUser ? 'account' : 'realm' }
+        detail: { requiredBy: requirement.byUser ? 'account'
+          : (requirement.byRealm ? 'realm' : 'administrator') }
       });
       log.info('authn: "' + username + '" holds no second factor and one is ' +
                'required; asking them to set one up.');
       log.debug("Leaving Authn.finishPasswordSignIn(). Enrolment step.");
       return this.sendMfaSetupPage(res, this.mfaSetupPage(setupId, username,
                                                           offered, ''));
+    }
+
+    // ---------------------------------------------------------------------
+    // A SECOND FACTOR OFFERED TO AN ADMINISTRATOR (#246): the authentication
+    // policy's `requireSecondFactorForAdministrators` is `offer` (the default
+    // for now), or `always` for the default realm's built-in administrator.
+    // The same set-up step, minted `optional`, with an Ignore button that
+    // finishes this sign-in on the password — rcbj's "we can offer it, but
+    // they can decline". Offered at every sign-in until one is set up.
+    // Nothing is offered where nothing can be enrolled, and never to a
+    // passwordless sign-in, which is not asked for a second factor.
+    // ---------------------------------------------------------------------
+    const enrolable = requirement.offered && !factor && !passwordless &&
+                      !skippedSecondFactor
+      ? this.enrolmentOffered() : null;
+    if (enrolable && (enrolable.totp || enrolable.webauthn)) {
+      pending.delete(record.id);
+      const offerId = randomId(24);
+      pendingMfa.set(offerId, {
+        authn: record, username: username,
+        challenge: crypto.randomBytes(32).toString('base64url'),
+        factor: 'enrol', alternate: '', backup: false, passwordless: false,
+        requiredBy: 'administrator', optional: true,
+        risk: assessment || undefined, riskDecision: riskDecision,
+        expires: Date.now() + this.mfaStepTtlMs()
+      });
+      this.noteEnrolmentAtRisk(username, assessment, 'offered');
+      audit.audit({
+        action: 'authn.mfa.enrolment.offered', outcome: 'success',
+        actor: username, target: username, channel: 'http',
+        protocol: record.protocol,
+        summary: username + ' holds an administrator role and no second ' +
+                 'factor; offered one before signing in',
+        detail: { requiredBy: 'administrator' }
+      });
+      log.info('authn: "' + username + '" is an administrator with no ' +
+               'second factor; offering to set one up.');
+      log.debug("Leaving Authn.finishPasswordSignIn(). Offered a factor.");
+      return this.sendMfaSetupPage(res, this.mfaSetupPage(offerId, username,
+                                                          enrolable, '',
+                                                          true));
     }
 
     if (factor) {
@@ -7329,9 +8021,39 @@ class Authn {
       '</div></body></html>\n';
   }
 
+  // ENROLMENT AT ELEVATED RISK (#246, rcbj's decision 3): an administrator
+  // with no second factor, signing in at HIGH or MEDIUM, is still sent to the
+  // set-up step — the console is never locked out (#226) — and this is the
+  // alarm that says a factor may be enrolled by whoever holds the password.
+  private noteEnrolmentAtRisk(username, assessment, how) {
+    const { log, audit, errorCodes } = this.deps;
+    log.debug("Entering Authn.noteEnrolmentAtRisk().");
+    const level = assessment ? String(assessment.level || '') : '';
+    if (level !== 'HIGH' && level !== 'MEDIUM') {
+      log.debug("Leaving Authn.noteEnrolmentAtRisk(). Not elevated.");
+      return;
+    }
+    audit.audit({
+      action: 'authn.mfa.enrolment.at-risk', outcome: 'success',
+      errorCode: 'STS-RISK-0039', actor: username, target: username,
+      channel: 'http',
+      summary: username + ' was ' + how + ' a second factor to set up at a ' +
+               'sign-in whose risk is ' + level,
+      detail: { level: level, assessment: String(assessment.id || '') }
+    });
+    log.warn(errorCodes.tag('STS-RISK-0039') + 'authn: "' + username + '" ' +
+             'was ' + how + ' a second factor to set up at a sign-in whose ' +
+             'risk is ' + level + '. Whoever holds the password could enrol ' +
+             'it; confirm with them.');
+    log.debug("Leaving Authn.noteEnrolmentAtRisk().");
+  }
+
   // The choice: an authenticator app or a security key, whichever this realm
   // offers.
-  private mfaSetupPage(setupId, username, offered, error) {
+  // `optional` (#246): the step was OFFERED rather than required — an
+  // administrator under the authentication policy's `offer` — and the page
+  // draws an Ignore button that signs them in on their password alone.
+  private mfaSetupPage(setupId, username, offered, error, optional?) {
     const { log, xmlEscape } = this.deps;
     log.debug('Entering Authn.mfaSetupPage(). username=' + username);
     const button = function (action, label) {
@@ -7344,9 +8066,15 @@ class Authn {
         '</button></form>';
     };
     const html = this.mfaSetupShell('Set up a second factor',
-      '<h1>Set up a second factor</h1><p class="sub">A second factor is ' +
-      'required for <code>' + xmlEscape(username) + '</code>, and you do not ' +
-      'have one yet. Nothing is signed in until one is set up.</p>' +
+      '<h1>Set up a second factor</h1><p class="sub">' + (optional
+        ? 'You hold an administrator role, and <code>' +
+          xmlEscape(username) + '</code> has no second factor yet. ' +
+          'Setting one up now is recommended; you can ignore this and ' +
+          'sign in with your password, and you will be asked again next ' +
+          'time.'
+        : 'A second factor is required for <code>' + xmlEscape(username) +
+          '</code>, and you do not have one yet. Nothing is signed in until ' +
+          'one is set up.') + '</p>' +
       (error ? '<div class="err">' + xmlEscape(error) + '</div>' : '') +
       (offered.totp
         ? '<h2>An authenticator app</h2><p>A six-digit code from an app ' +
@@ -7358,6 +8086,10 @@ class Authn {
         ? '<h2>A security key</h2><p>A hardware key or a passkey on this ' +
           'device, used after your password.</p>' +
           button('webauthn', 'Set up a security key')
+        : '') +
+      (optional
+        ? '<h2>Not now</h2><p>Sign in with your password alone.</p>' +
+          button('ignore', 'Ignore')
         : '') +
       '<div class="meta">This step expires in a few minutes; if it does, ' +
       'sign in again from the application that sent you here.</div>');
@@ -8031,12 +8763,13 @@ class Authn {
     const answered = verdict.answeredBy ||
       { id: verdict.credentialId, aaguid: verdict.aaguid };
     const flags = verdict.flags || {};
-    const said = { request: req, risk: step.risk, credential: {
-      kind: 'webauthn', id: answered.id || '',
-      aaguid: answered.aaguid
-        ? credentials.Credentials.aaguidString(answered.aaguid) : '',
-      backupEligible: typeof flags.be === 'boolean' ? flags.be : undefined,
-      backupState: typeof flags.bs === 'boolean' ? flags.bs : undefined } };
+    const said = { request: req, risk: step.risk,
+      application: String(step.authn.application || ''), credential: {
+        kind: 'webauthn', id: answered.id || '',
+        aaguid: answered.aaguid
+          ? credentials.Credentials.aaguidString(answered.aaguid) : '',
+        backupEligible: typeof flags.be === 'boolean' ? flags.be : undefined,
+        backupState: typeof flags.bs === 'boolean' ? flags.bs : undefined } };
     const started = this.startSession(res, step.username, amr, acr,
                                       step.authn.protocol, said);
     if (this.refusedSession(res, base, step.authn, step.username, started,
@@ -8228,6 +8961,7 @@ class Authn {
     // list.
     const amr = this.firstAmrOf(step).concat(['otp']);
     const said = { request: req, risk: step.risk,
+                   application: String(step.authn.application || ''),
                    credential: { kind: 'totp' } };
     const started = this.startSession(res, step.username, amr, 'mfa',
                                       step.authn.protocol, said);
@@ -8422,6 +9156,24 @@ class Authn {
     logArtifact('recovery code', 'as verified and spent by this server',
                 { username: step.username, remaining: verdict.remaining,
                   total: verdict.total });
+    // A RECOVERY CODE SPENT IS TWO RISC EVENTS (#235, rcbj's decision): the
+    // set shrank, which is recovery-information-changed (section 2.10) on
+    // every use and not only the last; and the code IS the recovery
+    // mechanism being exercised, which is recovery-activated (2.9). Both
+    // through `account_signals.ts`, so `risc.autoEmitTypes` and the opt-out
+    // gate decide them as they do every other act. No mail notice: the
+    // person is signing in, and nothing mailed about a code they just typed
+    // was asked for.
+    this.deps.accountSignals.recoveryInformationChanged({
+      username: step.username, initiatingEntity: 'user', via: 'sign-in',
+      reasonAdmin: step.username + ' spent a recovery code at sign-in; ' +
+                   verdict.remaining + ' of ' + verdict.total + ' remain.',
+      reasonUser: 'You used one of your recovery codes.' });
+    this.deps.accountSignals.recoveryActivated({ username: step.username,
+      initiatingEntity: 'user', via: 'sign-in', mailNotice: false,
+      reasonAdmin: step.username + ' signed in with a recovery code in ' +
+                   'place of their second factor.',
+      reasonUser: 'You signed in with a recovery code.' });
 
     // ---------------------------------------------------------------------
     // WHAT THE SESSION CLAIMS, AND `otp` IS A CHOICE RATHER THAN AN OBVIOUS
@@ -8447,6 +9199,7 @@ class Authn {
     // never a first factor, so `pwd` is always in the list.
     const amr = this.firstAmrOf(step).concat(['otp']);
     const said = { request: req, risk: step.risk,
+                   application: String(step.authn.application || ''),
                    credential: { kind: 'backup-code' } };
     const started = this.startSession(res, step.username, amr, 'mfa',
                                       step.authn.protocol, said);
@@ -8748,7 +9501,9 @@ class Authn {
           kind: gate.ISSUANCE.SESSION,
           subject: { kind: 'user', name: ANONYMOUS_USERNAME,
                      authenticated: false },
-          claims: null
+          claims: null,
+          // Asked at the session's start (#164 phase 6).
+          deviceDeferred: true
         });
         if (!anonRoleAnswer.allowed) {
           log.info('authn: the issuance policy refused an unauthenticated ' +
@@ -8795,6 +9550,10 @@ class Authn {
         return undefined;
       }
 
+      // THE PERSON'S "REMEMBER THIS BROWSER" (#265), carried on the pending
+      // record so that whichever step finishes the sign-in — this one or a
+      // second factor's — registers the browser (refusedSession()).
+      record.rememberBrowser = String(body.remember_browser || '') === '1';
       // A LOCKED RECORD'S NAME IS THE RECORD'S (#109): see
       // beginAuthentication(). Whatever was typed is not read.
       const username = record.lockedUsername ||
@@ -9053,8 +9812,32 @@ class Authn {
           const breach = await require('../common/breached_passwords')
             .screen(String(body.password || ''));
           if (breach.breached) {
+            // THE PASSWORD IS COMPROMISED, AND THE CHANGE IS REQUIRED (#231):
+            // RISC `credential-compromise` (`password`) and
+            // `account-credential-change-required`, through the account
+            // signals funnel, so `risc.autoEmitTypes` and the opt-out gate
+            // hold. Sent once per demand — a person who abandons the change
+            // step and signs in again with the same password is not a
+            // second finding while `pwdReset` still stands.
+            const alreadyRequired =
+              credentials.passwordResetRequired(username);
             credentials.setPasswordResetRequired(username, true);
             breachedAtSignIn = true;
+            if (!alreadyRequired) {
+              this.deps.accountSignals.credentialCompromised({
+                username: username, credentialType: 'password',
+                initiatingEntity: 'system', via: 'sign-in',
+                reasonAdmin: 'The password ' + username + ' signed in with ' +
+                             'has appeared in a data breach; it must be ' +
+                             'changed before the sign-in finishes.',
+                reasonUser: 'The password you signed in with has appeared ' +
+                            'in a data breach. Choose a new one.' });
+              this.deps.accountSignals.credentialChangeRequired({
+                username: username,
+                reasonAdmin: 'The password of ' + username + ' has ' +
+                             'appeared in a data breach and must be ' +
+                             'changed.' });
+            }
             log.info('authn: the password "' + username + '" signed in with ' +
                      'has appeared in a data breach; it must be changed ' +
                      'before the sign-in finishes.');
@@ -9226,7 +10009,7 @@ class Authn {
       }
       log.debug('Leaving the second-factor set-up screen. The choice.');
       return this.sendMfaSetupPage(res, this.mfaSetupPage(
-        setupId, step.username, this.enrolmentOffered(), ''));
+        setupId, step.username, this.enrolmentOffered(), '', !!step.optional));
     });
 
     app.post(MFA_SETUP_PATH, async (req, res) => {
@@ -9262,13 +10045,53 @@ class Authn {
           'with it.');
       }
 
+      // IGNORE (#246): only on a step that was OFFERED. On a required one it
+      // is refused, since skipping would be the requirement not asked.
+      if (action === 'ignore') {
+        if (!step.optional) {
+          errorCodes.mark(res, 'STS-AUTHN-0270');
+          log.debug('Leaving the second-factor set-up endpoint. Ignore on a ' +
+                    'required step.');
+          return this.sendMfaSetupPage(res, this.mfaSetupPage(setupId,
+              step.username, offered,
+            'A second factor is required for this account; it cannot be ' +
+            'ignored.', !!step.optional), 400);
+        }
+        pendingMfa.delete(setupId);
+        audit.audit({
+          action: 'authn.mfa.enrolment.declined', outcome: 'success',
+          actor: step.username, target: step.username, channel: 'http',
+          protocol: step.authn && step.authn.protocol,
+          summary: step.username + ' ignored the offer of a second factor ' +
+                   'and signed in with a password',
+          detail: { requiredBy: step.requiredBy || '' }
+        });
+        // THE PASSWORD SIGN-IN, FINISHED AS `finishPasswordSignIn()` WOULD
+        // HAVE: the issuance policy was asked there, with this assessment,
+        // before the offer was drawn.
+        const said = { request: req, gated: true,
+                       credential: { kind: 'password' },
+                       risk: step.risk,
+                       riskDecision: step.riskDecision };
+        const started = this.startSession(res, step.username, ['pwd'], '1',
+                                          step.authn.protocol, said);
+        if (this.refusedSession(res, base, step.authn, step.username, started,
+                                said)) {
+          log.debug('Leaving the second-factor set-up endpoint. Refused.');
+          return undefined;
+        }
+        this.returnToCaller(res, step.authn, null, null);
+        log.debug('Leaving the second-factor set-up endpoint. Ignored.');
+        return undefined;
+      }
+
       if (action === 'webauthn') {
         if (!offered.webauthn) {
           errorCodes.mark(res, 'STS-AUTHN-0175');
           log.debug('Leaving the second-factor set-up endpoint. Keys are off.');
           return this.sendMfaSetupPage(res, this.mfaSetupPage(setupId,
                                                               step.username,
-            offered, 'Security keys cannot be set up in this realm.'), 400);
+            offered, 'Security keys cannot be set up in this realm.', !!step.optional), 400);
         }
         // THE ORDINARY CEREMONY FROM HERE: a step asking for `webauthn` for a
         // person who holds no `mfa` key draws the registration, and a verified
@@ -9290,7 +10113,7 @@ class Authn {
           log.debug('Leaving the second-factor set-up endpoint. TOTP is off.');
           return this.sendMfaSetupPage(res, this.mfaSetupPage(setupId,
                                                               step.username,
-            offered, 'Authenticator apps cannot be set up in this realm.'),
+            offered, 'Authenticator apps cannot be set up in this realm.', !!step.optional),
             400);
         }
         const begun = credentials.beginTotpEnrolment(step.username,
@@ -9304,7 +10127,7 @@ class Authn {
           return this.sendMfaSetupPage(res, this.mfaSetupPage(setupId,
                                                               step.username,
             offered, ((begun.errors || [])[0]) ||
-            'The authenticator app could not be set up.'), 400);
+            'The authenticator app could not be set up.', !!step.optional), 400);
         }
         step.factor = 'enrol-totp';
         pendingMfa.set(setupId, step);
@@ -9327,7 +10150,7 @@ class Authn {
                   'confirm.');
         return this.sendMfaSetupPage(res, this.mfaSetupPage(setupId,
             step.username, offered,
-          'Choose a second factor to set up first.'), 400);
+          'Choose a second factor to set up first.', !!step.optional), 400);
       }
       const allowed = await websecurity.attemptShared('mfa-code', req,
                                                       step.username);
@@ -9338,7 +10161,7 @@ class Authn {
                                                   allowed.detail);
         return this.sendMfaSetupPage(res, again || this.mfaSetupPage(setupId,
             step.username,
-          offered, allowed.detail), 429);
+          offered, allowed.detail, !!step.optional), 429);
       }
       const confirmed = credentials.confirmTotpEnrolment(step.username,
                                                          String(body.code ||
@@ -9359,7 +10182,7 @@ class Authn {
         return this.sendMfaSetupPage(res, again || this.mfaSetupPage(setupId,
             step.username,
           offered,
-          'That set-up expired before it was confirmed. Start it again.'),
+          'That set-up expired before it was confirmed. Start it again.', !!step.optional),
           400);
       }
       await websecurity.succeededShared('mfa-code', req, step.username);
@@ -9383,6 +10206,7 @@ class Authn {
       // Two factors really were presented: the password, and a code from the
       // app enrolled a moment ago. `otp` and `mfa`, as at `/authn/totp`.
       const said = { request: req, risk: step.risk,
+                     application: String(step.authn.application || ''),
                      credential: { kind: 'totp' } };
       const started = this.startSession(res, step.username,
                                         this.firstAmrOf(step).concat(['otp']),
@@ -9774,6 +10598,14 @@ class Authn {
             requireUserVerification: webauthnPolicy.requireUserVerification(),
             previousSignCount: known.signCount
           });
+          // A CLONE, BY THE ENTRY'S COUNTER (#231): everything else verified
+          // and the counter did not go up. Refused below like any failed
+          // check; `noteKeyCloned()` tells RISC and risk scoring.
+          if (credentials.Credentials.clonedKeyVerdict(verdict)) {
+            credentials.noteKeyCloned(step.username, known.credentialId,
+              'signature counter ' + verdict.signCount + ', last recorded ' +
+              known.signCount);
+          }
           if (verdict.ok) {
             // WHICH KEY ANSWERED, for the authentication event (#62 P0): the
             // stored record, since the assertion names itself only by id.
@@ -10078,6 +10910,7 @@ class Authn {
       // disabled after the wallet step, and a null here returned the browser
       // to a caller that sent it straight back.
       const said = { request: req, risk: step.risk,
+                     application: String(step.authn.application || ''),
                      credential: { kind: 'password' } };
       const started = this.startSession(res, step.username, amr, 'mfa',
                                         step.authn.protocol, said);
@@ -10356,6 +11189,20 @@ scheduler.register({
   }
 });
 
+// A realm's removal ends its sessions first and waits for what that sends
+// (#232; `realms.retire()`). Registered here, at 8 in the require order, so it
+// runs before the directory's and Shared Signals' hooks: the sessions end
+// before the people are purged and the streams are closed.
+realms.onRetire({
+  name: 'authn',
+  announce: function (id: string, ctx: any): void {
+    slot.get().retireRealmSessions(id, ctx);
+  },
+  deliver: function (id: string, ctx: any): Promise<void> {
+    return slot.get().settleRealmEnds(id, ctx);
+  }
+});
+
 // ---------------------------------------------------------------------------
 // What the rest of this service uses.
 //
@@ -10431,6 +11278,7 @@ export = {
   // itself would be a second place to get the handle check wrong.
   sessionStartedAt: slot.forward('sessionStartedAt'),
   signOnFactsFor: slot.forward('signOnFactsFor'),
+  registeredDeviceOf: slot.forward('registeredDeviceOf'),
   cookieSession: slot.forward('cookieSession'),
   MAX_SESSION_EVENTS: MAX_SESSION_EVENTS,
   startArrivalSession: slot.forward('startArrivalSession'),
@@ -10473,9 +11321,13 @@ export = {
   // somewhere else would be a sign-out that revoked nothing and logged nothing,
   // and it would look exactly like this one from the outside.
   sessionsOf: slot.forward('sessionsOf'),
+  // The SAML 2.0 attribute authority's question (#189): which live session
+  // gave a service provider a NameID.
+  sessionsMatching: slot.forward('sessionsMatching'),
   sessionById: slot.forward('sessionById'),
   endSessionById: slot.forward('endSessionById'),
   endEverySessionIn: slot.forward('endEverySessionIn'),
+  pendingEndReports: slot.forward('pendingEndReports'),
   clearSessionCookie: slot.forward('clearSessionCookie'),
   beginAuthentication: slot.forward('beginAuthentication'),
   // THE SIGN-IN SCREEN'S STYLESHEET, for oauth-oidc/consent_screen.ts. A

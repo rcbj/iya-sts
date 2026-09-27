@@ -95,11 +95,20 @@
 #   STS_TEARDOWN_TIMEOUT=600 ./run-tests.sh
 #                                             # the same for every `down` and
 #                                             # `logs` (default 300)
+#   STS_TEST_RISK_INSTALL=0 ./run-tests.sh
+#                                             # skip the install-time risk
+#                                             # loader step in the postgres
+#                                             # modes (#213; riskInstallCheck)
 #   STS_TEST_CONFORMANCE_MODES=memory,single-node ./run-tests.sh
 #                                             # the modes that run the OpenID
 #                                             # conformance suite's FAPI plans
 #                                             # (#176; default `memory`, empty
 #                                             # for none); see below
+#   STS_TEST_SAML_PEERS_MODES=memory ./run-tests.sh
+#                                             # the modes that bring up the four
+#                                             # SAML interoperability peers
+#                                             # (#189-#192; default memory and
+#                                             # single-node, empty for none)
 #
 # ---------------------------------------------------------------------------
 # WHAT THIS RUN LEAVES BEHIND TO BE READ AFTERWARDS.
@@ -177,6 +186,13 @@ STS_LB_CONTAINER_NAME="${STS_LB_CONTAINER_NAME:-sts-docker-tests-lb}"
 STS_CONFORMANCE_MONGO_CONTAINER_NAME="${STS_CONFORMANCE_MONGO_CONTAINER_NAME:-sts-docker-tests-conformance-mongo}"
 STS_CONFORMANCE_SERVER_CONTAINER_NAME="${STS_CONFORMANCE_SERVER_CONTAINER_NAME:-sts-docker-tests-conformance-server}"
 STS_CONFORMANCE_NGINX_CONTAINER_NAME="${STS_CONFORMANCE_NGINX_CONTAINER_NAME:-sts-docker-tests-conformance-nginx}"
+# And the one that mints the suite's listener certificate (#187).
+STS_CONFORMANCE_TLS_CONTAINER_NAME="${STS_CONFORMANCE_TLS_CONTAINER_NAME:-sts-docker-tests-conformance-tls}"
+# The four SAML interoperability peers (#189-#192), named for the same reason.
+STS_SAML_SHIB_CONTAINER_NAME="${STS_SAML_SHIB_CONTAINER_NAME:-sts-docker-tests-saml-shib}"
+STS_SAML_SSP_CONTAINER_NAME="${STS_SAML_SSP_CONTAINER_NAME:-sts-docker-tests-saml-ssp}"
+STS_SAML_PYSAML2_CONTAINER_NAME="${STS_SAML_PYSAML2_CONTAINER_NAME:-sts-docker-tests-saml-pysaml2}"
+STS_SAML_KEYCLOAK_CONTAINER_NAME="${STS_SAML_KEYCLOAK_CONTAINER_NAME:-sts-docker-tests-saml-keycloak}"
 # ---------------------------------------------------------------------------
 # AND THE IMAGE TAGS, WHEN A PROJECT IS NAMED (2026-09-14). A tag is
 # machine-wide like a container name: this launcher builds once and then
@@ -190,6 +206,10 @@ then
   STS_IMAGE="${STS_IMAGE:-rcbj/sts:${COMPOSE_PROJECT}}"
   XACML_PEP_IMAGE="${XACML_PEP_IMAGE:-rcbj/xacml-pep:${COMPOSE_PROJECT}}"
   STS_TESTS_IMAGE="${STS_TESTS_IMAGE:-rcbj/mock-sts-tests:${COMPOSE_PROJECT}}"
+  SAML_SHIB_IMAGE="${SAML_SHIB_IMAGE:-rcbj/sts-saml-shibboleth:${COMPOSE_PROJECT}}"
+  SAML_SSP_IMAGE="${SAML_SSP_IMAGE:-rcbj/sts-saml-simplesamlphp:${COMPOSE_PROJECT}}"
+  SAML_PYSAML2_IMAGE="${SAML_PYSAML2_IMAGE:-rcbj/sts-saml-pysaml2:${COMPOSE_PROJECT}}"
+  SAML_KEYCLOAK_IMAGE="${SAML_KEYCLOAK_IMAGE:-rcbj/sts-saml-keycloak:${COMPOSE_PROJECT}}"
 fi
 # The appconfig layer the SERVICE reads. EMPTY here and resolved after the
 # arguments are parsed, by THE SERVICE'S LOG LEVEL below: which file this stack
@@ -243,11 +263,13 @@ STS_TEARDOWN_TIMEOUT="${STS_TEARDOWN_TIMEOUT:-300}"
 # THE OPENID FOUNDATION'S CONFORMANCE SUITE (#176, 2026-09-24).
 #
 # rcbj's decision on #142: "a job in ./run-tests.sh that fails when a module
-# fails". The job is tests/vendored/sts_fapi_conformance.js; the suite is
-# three containers in docker-compose-run-tests.yml behind the `conformance`
-# compose profile — its server (a JVM), its MongoDB and its nginx — started
-# only in the modes named here, and the job is SKIPPED, with the reason, in
-# every other one.
+# fails". The jobs are tests/vendored/sts_fapi_conformance.js and, since #187,
+# five more — OpenID Connect, Shared Signals, OpenID Federation, OpenID4VCI
+# and OpenID4VP (tests/CLAUDE.md, *The other plans*); the suite is four
+# containers in docker-compose-run-tests.yml behind the `conformance` compose
+# profile — its server (a JVM), its MongoDB, its nginx and the one-shot that
+# mints the nginx a certificate — started only in the modes named here, and
+# the jobs are SKIPPED, with the reason, in every other one.
 #
 #   STS_TEST_CONFORMANCE_MODES   a comma list of modes, in modes.sh's
 #                                spelling (default `memory`); empty runs the
@@ -258,12 +280,45 @@ STS_TEARDOWN_TIMEOUT="${STS_TEARDOWN_TIMEOUT:-300}"
 #                                persisting mode would check the same rules
 #                                over again for sixteen more minutes.
 #   STS_CONFORMANCE_TIMEOUT      seconds ADDED to such a mode's bound (default
-#                                1800). The four plans took about sixteen
-#                                minutes together on 2026-09-24, and the JVM a
-#                                minute to start.
+#                                10800). #176's four plans took about sixteen
+#                                minutes; with #187's the six jobs took about
+#                                two hours and a quarter on 2026-09-24 (the
+#                                OpenID Connect job alone about ninety
+#                                minutes), and the JVM a minute to start.
 # ---------------------------------------------------------------------------
 STS_TEST_CONFORMANCE_MODES="${STS_TEST_CONFORMANCE_MODES-memory}"
-STS_CONFORMANCE_TIMEOUT="${STS_CONFORMANCE_TIMEOUT:-1800}"
+STS_CONFORMANCE_TIMEOUT="${STS_CONFORMANCE_TIMEOUT:-10800}"
+
+# ---------------------------------------------------------------------------
+# THE SAML INTEROPERABILITY PEERS (#189-#192, 2026-09-24).
+#
+# Four independent SAML service providers — the Shibboleth SP 3, pysaml2,
+# SimpleSAMLphp and Keycloak's SAML broker — built from tests/saml-peers/ and
+# brought up behind the `saml-peers` compose profile, each driven by a job of
+# its own (tests/vendored/sts_saml_interop_*.js). tests/CLAUDE.md, *THE SAML
+# PEERS*, argues all of it.
+#
+#   STS_TEST_SAML_PEERS_MODES    a comma list of modes, in modes.sh's
+#                                spelling (default `memory,single-node`, what
+#                                CI's `tests` job runs); empty runs them in
+#                                none. `single-node` because it is the
+#                                deployment the peers stand in for the
+#                                clients of — product mode, postgres, the
+#                                AuthnRequest ID and the artifact claimed
+#                                through the shared store. NOT `cluster` by
+#                                default: that job's budget has no room left
+#                                under the 120-minute ceiling
+#                                tests/teardown_bounds.js holds, and
+#                                `STS_TEST_SAML_PEERS_MODES=cluster
+#                                ./run-tests.sh --modes=cluster` runs them
+#                                there by hand.
+#   STS_SAML_PEERS_TIMEOUT       seconds ADDED to such a mode's bound (default
+#                                900): Keycloak's JVM starts when its job
+#                                hands it the anchor, and the four jobs took
+#                                about four minutes together on 2026-09-24.
+# ---------------------------------------------------------------------------
+STS_TEST_SAML_PEERS_MODES="${STS_TEST_SAML_PEERS_MODES-memory,single-node}"
+STS_SAML_PEERS_TIMEOUT="${STS_SAML_PEERS_TIMEOUT:-900}"
 
 BUILD=1
 KEEP_STACK=0
@@ -748,11 +803,22 @@ COMPOSE_ENV=(
   "STS_CONFORMANCE_MONGO_CONTAINER_NAME=${STS_CONFORMANCE_MONGO_CONTAINER_NAME}"
   "STS_CONFORMANCE_SERVER_CONTAINER_NAME=${STS_CONFORMANCE_SERVER_CONTAINER_NAME}"
   "STS_CONFORMANCE_NGINX_CONTAINER_NAME=${STS_CONFORMANCE_NGINX_CONTAINER_NAME}"
+  "STS_CONFORMANCE_TLS_CONTAINER_NAME=${STS_CONFORMANCE_TLS_CONTAINER_NAME}"
   # The conformance suite's three, pinned above the service's extra
   # addresses (`.11` to `.13`), which docker's allocator cannot see.
   "CONFORMANCE_MONGO_ADDRESS=${STS_NETWORK_PREFIX}.40"
   "CONFORMANCE_SERVER_ADDRESS=${STS_NETWORK_PREFIX}.41"
   "CONFORMANCE_NGINX_ADDRESS=${STS_NETWORK_PREFIX}.42"
+  "CONFORMANCE_TLS_ADDRESS=${STS_NETWORK_PREFIX}.47"
+  "STS_SAML_SHIB_CONTAINER_NAME=${STS_SAML_SHIB_CONTAINER_NAME}"
+  "STS_SAML_SSP_CONTAINER_NAME=${STS_SAML_SSP_CONTAINER_NAME}"
+  "STS_SAML_PYSAML2_CONTAINER_NAME=${STS_SAML_PYSAML2_CONTAINER_NAME}"
+  "STS_SAML_KEYCLOAK_CONTAINER_NAME=${STS_SAML_KEYCLOAK_CONTAINER_NAME}"
+  # The SAML peers' four, above the conformance suite's (#189-#192).
+  "SAML_SHIB_ADDRESS=${STS_NETWORK_PREFIX}.43"
+  "SAML_SSP_ADDRESS=${STS_NETWORK_PREFIX}.44"
+  "SAML_PYSAML2_ADDRESS=${STS_NETWORK_PREFIX}.45"
+  "SAML_KEYCLOAK_ADDRESS=${STS_NETWORK_PREFIX}.46"
   "CONFIG_FILE=${CONFIG_FILE}"
   "STS_TEST_ARGS=${STS_TEST_ARGS}"
   # ---------------------------------------------------------------------
@@ -841,6 +907,14 @@ if [ -n "${STS_TESTS_IMAGE:-}" ];
 then
   COMPOSE_ENV+=("STS_TESTS_IMAGE=${STS_TESTS_IMAGE}")
 fi
+for peerImage in SAML_SHIB_IMAGE SAML_SSP_IMAGE SAML_PYSAML2_IMAGE \
+                 SAML_KEYCLOAK_IMAGE;
+do
+  if [ -n "${!peerImage:-}" ];
+  then
+    COMPOSE_ENV+=("${peerImage}=${!peerImage}")
+  fi
+done
 # ---------------------------------------------------------------------------
 # WHERE THE SERVICE IS, AS THE LAUNCHER'S OWN ONE-SHOT CONTAINERS DIAL IT
 # (2026-09-14). `sts` in every mode but `cluster`, where it is the balancer —
@@ -951,6 +1025,101 @@ captureOneContainerLog()
     "${COMPOSE_FILE_ARGS[@]}" logs --no-color "${service}" \
     > "${dest}" 2>&1 || true
   printf '%-12s %s\n' "${label}:" "${dest}"
+}
+
+# ---------------------------------------------------------------------------
+# THE INSTALL-TIME RISK LOADER, RUN AS AN OPERATOR RUNS IT (#213, 2026-09-26).
+#
+# `risk/risk_install.ts` is an operator's CLI and not a route, so no job can
+# reach it over HTTP: this step is `docker exec <sts> node
+# risk/risk_install.js ...` with NO extra environment, against the stack as it
+# is — in the modes whose store is postgres, where the database password is in
+# OpenBao and the container's `STS_DATABASE_URL` carries none. That is the
+# arrangement the loader could not sign in to before #213, and the only
+# workaround was the operator reading the secret into PGPASSWORD; so the step
+# first asserts the arrangement (no password in the URL, no PGPASSWORD in the
+# container), then imports a SYNTHETIC operator ALLOW list — two addresses in
+# 198.19.213.0/24 (RFC 2544), written into the container at run time, never
+# committed (tests/no_third_party_datasets.js) — and asserts it was imported
+# and that a second run finds it already recorded (the loader is safe to run
+# twice, which is what its header promises). The operator list needs no
+# provider's terms (`--accept-terms operator`) and no network.
+#
+# BEFORE the runner, while the stack is certainly up (a single-node mode's
+# runner stops it on exit). The ALLOW list and TWO rows, both on purpose: the
+# first run imported a hundred rows into the DENY list, and
+# sts_admin_risk.js's five-row deny version was then refused by
+# risk.datasetShrinkLimitPercent — a job's list is compared with the active
+# one. No job imports an allow list, and nothing in the suite signs in from
+# 198.19.213.0/24. Its output is
+# tests/report/<mode>-98-risk-install.log. STS_TEST_RISK_INSTALL=0 skips it.
+# ---------------------------------------------------------------------------
+riskInstallCheck()
+{
+  local mode="$1" container="${STS_CONTAINER_NAME}" url out rc version pass
+  local dest="${CURRENT_DIR}/tests/report/${mode}-98-risk-install.log"
+  local dir="/tmp/sts-risk-install-check"
+  local line='^risk_install: iplist.operator-allow: '
+  mkdir -p "${CURRENT_DIR}/tests/report" 2> /dev/null || true
+  echo ""
+  echo "Mode ${mode}: the install-time risk loader, by docker exec (#213)."
+  url="$(timeout 60 docker exec "${container}" printenv STS_DATABASE_URL \
+         2> /dev/null)"
+  {
+    echo "container: ${container}"
+    echo "STS_DATABASE_URL: ${url}"
+  } > "${dest}"
+  if [ -z "${url}" ] ||
+     grep -Eq '://[^/@:]*:[^@/]*@' <<< "${url}";
+  then
+    echo "  The container's STS_DATABASE_URL is empty or carries a" \
+         "password, so this step would prove nothing; see ${dest}." >&2
+    return 1
+  fi
+  if timeout 60 docker exec "${container}" printenv PGPASSWORD \
+     > /dev/null 2>&1;
+  then
+    echo "  The container has PGPASSWORD set; see ${dest}." >&2
+    return 1
+  fi
+  version="run-tests-$(date -u +%Y%m%dT%H%M%SZ)"
+  # The synthetic list and its manifest, written inside the container.
+  local manifest='{ "datasets": [ { "dataset": "iplist.operator-allow", '
+  manifest+='"format": "ip-list", "file": "'"${dir}"'/synthetic-allow.txt", '
+  manifest+='"version": "'"${version}"'" } ] }'
+  if ! printf '%s\n' "${manifest}" |
+       timeout 60 docker exec -i "${container}" sh -c \
+         "mkdir -p ${dir} && cat > ${dir}/datasets.json &&
+          printf '198.19.213.1\\n198.19.213.2\\n' \
+            > ${dir}/synthetic-allow.txt" \
+         >> "${dest}" 2>&1;
+  then
+    echo "  The synthetic dataset could not be written; see ${dest}." >&2
+    return 1
+  fi
+  for pass in first second;
+  do
+    out="$(timeout 300 docker exec "${container}" node risk/risk_install.js \
+           --manifest "${dir}/datasets.json" --accept-terms operator \
+           --operator "run-tests.sh" 2>&1)"
+    rc=$?
+    printf '%s pass (exit %s):\n%s\n' "${pass}" "${rc}" "${out}" >> "${dest}"
+    if [ "${rc}" -ne 0 ] ||
+       ! grep -q "${line}" <<< "${out}" ||
+       grep -q 'REFUSED' <<< "${out}" ||
+       { [ "${pass}" = "second" ] &&
+         ! grep -q 'already recorded' <<< "${out}"; };
+    then
+      echo "  The loader's ${pass} pass did not import the synthetic list" \
+           "(exit ${rc}); see ${dest}." >&2
+      printf '%s\n' "${out}" | tail -n 5 | sed 's/^/    /' >&2
+      return 1
+    fi
+    echo "  ✓ ${pass} pass: $(grep "${line}" <<< "${out}" | tail -n 1)"
+  done
+  timeout 60 docker exec "${container}" rm -rf "${dir}" > /dev/null 2>&1 ||
+    true
+  return 0
 }
 
 # ---------------------------------------------------------------------------
@@ -1069,9 +1238,29 @@ docker_compose_bounded "${STS_TEARDOWN_TIMEOUT}" \
 # point is to test what is in the working tree and an image is a snapshot of
 # when it was built.
 # ---------------------------------------------------------------------------
+# THE SAML PEERS' IMAGES ARE BUILT WITH THE REST (#189-#192) when any mode
+# this run makes brings them up: `build` builds only the services of the
+# active profiles, and a peer image left to `up` would be built from whatever
+# tree was current the first time and never again.
+BUILD_ENV=(${COMPOSE_ENV[@]+"${COMPOSE_ENV[@]}"})
+for buildMode in "${RUN_MODES[@]}";
+do
+  if printf ',%s,' "${STS_TEST_SAML_PEERS_MODES}" | grep -q ",${buildMode},";
+  then
+    COMPOSE_ENV+=("COMPOSE_PROFILES=saml-peers")
+    break
+  fi
+done
 if [ "${BUILD}" = "1" ];
 then
   echo "Building the service and test images from this working tree..."
+  # The test corpora are a PRIVATE image on ghcr.io (#253); without a login
+  # the build fails on a pull error naming neither. Asked first.
+  if ! tests/tools/corpora-preflight.sh;
+  then
+    echo "Nothing was run." >&2
+    exit 1
+  fi
   if ! docker_compose "${COMPOSE_FILE_ARGS[@]}" build;
   then
     echo "" >&2
@@ -1083,6 +1272,7 @@ else
   echo "tree, and they will answer every request either way. Drop --no-build if"
   echo "a result surprises you."
 fi
+COMPOSE_ENV=(${BUILD_ENV[@]+"${BUILD_ENV[@]}"})
 
 # ---------------------------------------------------------------------------
 # THE SERVICE FIRST, THEN THE CREDENTIAL, THEN EVERYTHING ELSE.
@@ -1535,18 +1725,50 @@ do
   # the job reports every module itself.
   UP_NO_ATTACH=(--no-attach openbao-tls --no-attach openbao-seed
                 --no-attach mailpit-tls --no-attach mailpit)
+  # The profiles this mode brings up, joined once below: compose reads ONE
+  # COMPOSE_PROFILES, and the conformance suite and the SAML peers can both
+  # be on.
+  MODE_PROFILES=()
   if printf ',%s,' "${STS_TEST_CONFORMANCE_MODES}" | grep -q ",${MODE},";
   then
+    MODE_PROFILES+=(conformance)
     MODE_ENV+=(
-      "COMPOSE_PROFILES=conformance"
       "CONFORMANCE_SUITE_URL=https://localhost.emobix.co.uk:8443/"
     )
     UP_NO_ATTACH+=(--no-attach conformance-mongo
                    --no-attach conformance-server
-                   --no-attach conformance-nginx)
+                   --no-attach conformance-nginx
+                   --no-attach conformance-tls)
     STS_MODE_TIMEOUT=$(( STS_MODE_TIMEOUT + STS_CONFORMANCE_TIMEOUT ))
     echo " The OpenID conformance suite runs in this mode (#176); its bound" \
          "is ${STS_MODE_TIMEOUT}s."
+  fi
+
+  # ---- THE SAML PEERS, IN THE MODES THAT RUN THEM (#189-#192) ------------
+  #
+  # The profile starts the four with the runner's `up` (Keycloak then waits
+  # for its job), the URLs tell the jobs they are there, and the mode's bound
+  # grows by what they take. Not attached: each peer's log goes to the shared
+  # volume, where its job reads it, and Keycloak's console is thousands of
+  # lines.
+  if printf ',%s,' "${STS_TEST_SAML_PEERS_MODES}" | grep -q ",${MODE},";
+  then
+    MODE_PROFILES+=(saml-peers)
+    MODE_ENV+=(
+      "SAML_PEER_SHIBBOLETH_URL=http://saml-shib"
+      "SAML_PEER_SSP_URL=http://saml-ssp"
+      "SAML_PEER_PYSAML2_URL=http://saml-pysaml2:8000"
+      "SAML_PEER_KEYCLOAK_URL=http://saml-keycloak:8080"
+    )
+    UP_NO_ATTACH+=(--no-attach saml-shib --no-attach saml-ssp
+                   --no-attach saml-pysaml2 --no-attach saml-keycloak)
+    STS_MODE_TIMEOUT=$(( STS_MODE_TIMEOUT + STS_SAML_PEERS_TIMEOUT ))
+    echo " The SAML interoperability peers run in this mode (#189-#192);" \
+         "its bound is ${STS_MODE_TIMEOUT}s."
+  fi
+  if [ "${#MODE_PROFILES[@]}" -gt 0 ];
+  then
+    MODE_ENV+=("COMPOSE_PROFILES=$(IFS=','; echo "${MODE_PROFILES[*]}")")
   fi
 
   COMPOSE_ENV=(
@@ -1591,6 +1813,20 @@ do
     # established.
     # -----------------------------------------------------------------------
     mintThePepCredential
+
+    # The install-time risk loader against this stack's own database (#213),
+    # before the runner stops the stack. Its failure fails the mode after
+    # the runner has run, so one broken step does not hide the suite.
+    RISK_INSTALL_RC=0
+    if printf '%s\n' "${MODE_ENV[@]}" |
+       grep -qx 'STS_PERSISTENCE_MODE=postgres' &&
+       [ "${STS_TEST_RISK_INSTALL:-1}" = "1" ];
+    then
+      if ! riskInstallCheck "${MODE}";
+      then
+        RISK_INSTALL_RC=1
+      fi
+    fi
 
     # THE ROOT CA AS TEXT, SO THAT sts_xacml_remote_pep.js CAN PUT IT BACK.
     #
@@ -1686,6 +1922,12 @@ do
       then
         MODE_RC=1
       fi
+    fi
+    if [ "${MODE_RC}" -eq 0 ] && [ "${RISK_INSTALL_RC}" -ne 0 ];
+    then
+      echo "Mode ${MODE}: the install-time risk loader step failed" \
+           "(above)." >&2
+      MODE_RC=1
     fi
     # A MODE WHOSE RUNNER WROTE NO REPORT DID NOT PASS, whatever compose
     # returned. The stack stopping before the runner started is exactly the

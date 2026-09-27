@@ -29,7 +29,17 @@ A LIBRARY with six routes on the main app. Nothing here binds anything.
   through `trustClientCertificatesOn()`. It starts EMPTY, and every section
   below about it is unchanged by the deletion.
 * **The sighting.** `observeConnectionsOn()`, which `server.js` installs on the
-  main port.
+  main port — and since #201 the first thing it does with a connection whose
+  chain OpenSSL verified is `holdToPathRules()`: that chain, held to
+  `pki.pathRuleProblem()` (`pki.peerChainProblem()`), and reported UNVERIFIED —
+  `authorized` false, `authorizationError` naming the rule, `STS-PKI-0198` logged
+  — where it breaks them. x509-limbo found OpenSSL accepting such chains (a
+  malformed name under a name constraint among them). It runs on
+  `secureConnection`, a turn before node's HTTP server parses the first request,
+  so every reader of `socket.authorized` — sign-in, RFC 8705, the XACML gate,
+  SCIM, the request pool's forwarded flag — sees the answer. A demoted
+  certificate still binds a token, as any unverified one does (RFC 8705 section
+  3).
 * **The JA4 reader** (`client_hello.ts`, #62 P0) — see *THE CLIENT'S JA4
   FINGERPRINT*, below.
 * **Six routes**, all on the main app and all visible to
@@ -51,6 +61,27 @@ because this file used to be the example of one.** `GET /admin/sts-metadata`
 walks the Express router, so it could never see 8443 or 9443, and this module's
 rows there were the plain-HTTP views with the listeners described in their text.
 Everything this module now answers is a route on the router the page walks.
+
+## A CLIENT REFUSING OUR CERTIFICATE IS NOT "THE HANDSHAKE ITSELF" (2026-09-26, #225)
+
+The main port's `tlsClientError` handler said *"this is the handshake itself
+rather than a certificate being refused"* for EVERY failure. rcbj's Chrome,
+which did not trust the service Root, filled the log with it. But
+`ssl3_read_bytes … alert … SSL alert number 46` means this service RECEIVED
+the alert: the CLIENT refused this service's certificate. The sentence sent
+the diagnosis the wrong way.
+
+`handshakeFailureOf()` now reads the alert the peer sent (node's
+`ERR_SSL_*_ALERT_*` code, or OpenSSL's alert number on a read). The
+certificate alerts (42–46, 48) are logged under `STS-TLS-0034`, naming the
+alert and where to get the Root. Everything else keeps `STS-TLS-0021`.
+
+**node's own TLS client never produces this:** it verifies AFTER the
+handshake and drops the socket, which the server sees as "socket hang up"
+(the health-check path, debug only). Browsers and OpenSSL refuse DURING the
+handshake and send the alert, which is why `tests/tls_handshake_alerts.js`
+drives `openssl s_client`, and against an UNRELATED CA file, because OpenSSL
+will not even connect with an empty one.
 
 ## What moved, what was replaced and what was lost
 
@@ -917,6 +948,78 @@ is `STS-TLS-0033`; a realm whose SPIFFE socket could not be re-keyed is
 `STS-SPIFFE-0114`. **A new socket that presents this certificate owes a
 registration here**, or it has the same bug.
 
+**A REPLACED LISTENER CERTIFICATE IS ANNOUNCED (#245, 2026-09-26).**
+`takeIssuedCertificate()` sends `tls-certificate-changed` through
+`ssf/service_signals.ts` when a certificate this service had ALREADY issued to
+the listener is replaced by a different one (a rebuilt process branch or Root,
+a reissued TLS Issuing CA). It goes to EVERY realm's streams, because one port
+serves them all. The library is required lazily inside
+`announceCertificateChange()`: this module loads at 20 and Shared Signals at
+23b. The first certificate a process takes over its self-signed bootstrap is
+NOT announced at that moment, because nobody could have pinned the bootstrap.
+It is compared with what the SERVICE last announced once the port is bound
+(#264, next section). A worker never announces, because it adopts and never
+certifies. In a cluster each node re-issues its own listener, so each
+announces its own fingerprints.
+
+## A RESTART IS ANNOUNCED TOO: WHAT THE SERVICE LAST ANNOUNCED IS KEPT (2026-09-26, #264)
+
+Until #264, a restart was never announced. The listener KEY is made at every
+start (`makeServerCertificate()`), so even a product restart with the Root
+kept presents a new leaf. A receiver that pinned the old one learned nothing.
+
+**The record.** `tls.listenerAnnounced` is a `realms.sharedMap()`
+(`scope: 'shared'`, `retain: 'keep'`). It is keyed by algorithm unit (`rsa`,
+`ml-dsa-65`, …), the `unit` the event names, and holds
+`{ fingerprint256, at }`. `takeIssuedCertificate()` writes it on every
+re-issue. `listen()` writes it at start. `server.js` calls `listen()` from
+the main port's listening callback, so the socket is bound by then.
+
+**At start.** `listen()` compares every owned, ISSUED certificate
+(`listenerCertificatesOwned()`, `selfSigned === false`) with the record, and
+sends ONE `tls-certificate-changed` for the units that differ, with the new
+reason `restarted`. That reason is for this type only (`ssf_events.js`'s
+`spec.reasons`). `from` is the recorded fingerprint.
+- A unit with no record is recorded and not announced: nothing was announced
+  for it to differ from.
+- A first issued certificate taken AFTER `listen()` (a hierarchy that
+  arrived late) is compared at once, in `takeIssuedCertificate()`.
+- Neither path throws into a start.
+
+**FOR THE SERVICE, NOT PER NODE (rcbj's rule that no node is ever exposed).**
+- A receiver reaches the service's address, whichever node answers there.
+- A node cannot remember itself. Its membership id is a fresh UUID at every
+  start (`cluster/CLAUDE.md`), and `cluster.nodeName` is stable only where
+  the platform keeps host names.
+- So the record is shared through the store and any node compares against
+  it, which is #162's arrangement for the process CA.
+- It also catches a node that JOINS with a leaf nobody was told of.
+- **The cost, stated in `docs/`**: every node's start is announced, because
+  each node has a listener key of its own. `from` is the certificate the
+  SERVICE last announced, which another live node may still present.
+  Receivers behind a balancer should pin the Root.
+
+**It persists only where minted state does**: product mode on postgres, a
+cluster, or a dispatched pool with a real KEK (`persistence_minted.js`'s
+`enabled()`).
+- In `memory` mode, on an `ldif` store and in a single-process development
+  service, the record dies with the process, so a restart is not announced.
+- Development builds a new Root at every start, so nothing could have been
+  pinned across a restart there anyway.
+- An EPHEMERAL KEK run (a development pool) clears every row it finds, so a
+  restart is not announced there either.
+
+**Never recorded, never announced**: a self-signed bootstrap, a supplied
+certificate (`tls.certificateFile`) and a request worker's handed-in copy.
+
+**Tests:**
+- `tests/listener_certificate_restart.js` runs three starts over one stub
+  store, in product mode with a file KEK and persisted keys. The same Root
+  and a new leaf are announced once, from `listen()`. With no store, nothing
+  is announced. A mutant that drops `persist` fails three assertions.
+- `tests/service_key_signals.js` E2–E7 covers the rest in one process.
+- No HTTP job can restart the service it talks to, so none covers this.
+
 **THE EVENT FIRES BEFORE THE REALM BRANCHES ARE REBUILT, AND ITS FIRST RUN
 FOUND TWO OLDER DEFECTS THAT ORDER EXPOSED.** `build-root`'s
 `rebuildEveryScope()` rebuilds the process branch first — which re-issues this
@@ -931,6 +1034,24 @@ the branch AGAIN, leaving two Intermediates of one name and one CRL address
 chain comes from what `issueUnder()` returns, and `common/pki.js`'s
 `repairBranch()` re-asks "is it stale?" inside the build queue. **An observer
 that ISSUES must not assume the realm branches are current when it runs.**
+
+## WHAT THE SOCKET PRESENTS, ASKED FROM ANY PROCESS (2026-09-26, #248)
+
+The SAML identity provider's metadata publishes the certificate its back
+channel presents (`saml/listener_keys.ts`), which needs every LEAF the main
+port presents — with `tls.certificateAlgorithms` naming two, OpenSSL picks
+per client — as the SOCKET presents them. `presentedCertificatePems()` is
+that answer: in a process that owns the socket, every entry of
+`SERVER_CERTIFICATES`; in a handed-in process, the first leaf it was handed
+and **the other leaves handed with it**. Until #248 only the first travelled:
+a worker's other entries were certificates the worker made for itself and
+nothing presents, so a worker would have published an ML-DSA leaf nobody
+serves. The others now travel beside the chain — `STS_TLS_SERVER_EXTRA_CERTS_PEM`
+at the fork (concatenated, public, the chain's argument) and
+`extraCertPems` in every re-issue's `serverCertificateBundle()` — and a
+worker adopts them with the rest. Public material only; no key moves that
+did not already. **In a cluster each node's leaves ride on its membership
+row** (`cluster/CLAUDE.md`), because no node can ask another's socket.
 
 ## THE TRUSTSTORE IS A TEST CONTROL ONLY IN DEVELOPMENT MODE (2026-09-12)
 
@@ -1013,7 +1134,8 @@ and `sts_admin_console` drive both doors over HTTP with a CA they mint and remov
 
 ## THE PROTOCOL POLICY, AND THE BIND ADDRESS
 
-**`protocolOptions()` is where `tls.minVersion` and `tls.ciphers` are stated for every TLS
+**`protocolOptions()` is where `tls.minVersion`, `tls.ciphers` — and since #212
+`tls.groups`, `tls.signatureAlgorithms` and the renegotiation refusal — are stated for every TLS
 socket this process owns** — it rides in `secureContextOptions()`, so every truststore
 change re-applies it to every registered listener (the main port among them),
 `server.js` passes it when creating the main port, and
@@ -1043,6 +1165,79 @@ refusal) and the fatal cipher list. **Its real-handshake assertion that
 2026-09-16**, and is made against LDAPS 636 now — a socket another module
 builds from the same `protocolOptions()`. Mutation-tested against the product
 refusal removed.
+
+## WHAT tlsfuzzer FOUND (2026-09-26, #212)
+
+tlsfuzzer runs against all three listeners that present this module's
+certificate: the main port and LDAPS from `tests/vendored/sts_tlsfuzzer.js`,
+and the debugger's from `tests/tlsfuzzer_debugger.js`. Both run the plan in
+`tests/vendored/tlsfuzzer_kit.js`, which records every exception with its
+reason; `tests/CLAUDE.md` (*THE TLS FUZZER*) says how it runs. It found four
+things in this module's policy, all fixed here.
+
+* **A CLIENT CERTIFICATE ON A CURVE OUTSIDE THE NIST SET IS REFUSED.**
+  Certificates whose EC key is on a curve other than P-256/P-384/P-521 (and
+  the other NIST-named curves `ACCEPTED_CLIENT_CURVES` lists) are refused
+  before any certificate object is built (a third-party runtime defect found
+  by #212; details are held privately by the maintainer). The rule covers
+  every certificate in the chain, not only the leaf, because the revocation
+  check (`fromSocket()`) and the path rules walk that chain on the two
+  listeners that ask for a certificate. There are two defences:
+  1. **`tls.signatureAlgorithms` omits brainpool from the offered signature
+     schemes by policy**, so such a LEAF fails inside OpenSSL.
+  2. **`refuseNonNistCurveCertificatesOn()` guards the whole chain.** It is
+     prepended to `secureConnection` on every listener registered through
+     `trustClientCertificatesOn()`, and reads the chain ONCE, as
+     `X509Certificate` objects. Every later reader is served from that one
+     reading, so they all see the same chain whatever order they ask in
+     (`tests/revocation_status.js` reads the whole chain through it).
+     What happens next depends on the chain:
+     * a certificate on a curve outside the set anywhere in it: the
+       connection is closed and `getPeerCertificate` answers `{}`,
+       `STS-TLS-0035`;
+     * otherwise `getPeerCertificate` is REPLACED on the socket with the
+       objects node would have built. They are linked the way node links
+       them: the chain sent, then issuers from the listener's anchors, and a
+       self-issued top pointing at itself.
+
+  The SPIFFE gRPC listeners belong to grpc-js, so they get the first
+  defence, `SpiffeGrpc.POLICY_SIGALGS`: the same policy list, stated for
+  TLS 1.3. Nothing in `spiffe/` walks the chain.
+  `tests/tls_protocol_policy.js` C holds the guard in a child process: the
+  leaf, the issuer, and a chain read whole.
+* **`tls.groups`**: the key-exchange groups, as OpenSSL tuples. The three
+  post-quantum hybrids come first, then X25519 and P-256, then X448, P-384
+  and P-521. Node's `auto` offered one hybrid of the three, plus ffdhe2048
+  and ffdhe3072. Across tuples OpenSSL sends a HelloRetryRequest for an
+  earlier tuple the client supports, so a hybrid-capable client that guessed
+  X25519 is moved to the hybrid.
+* **`tls.signatureAlgorithms`**: OpenSSL's list without DSA and SHA-224,
+  and with brainpool omitted by policy. Every TLS 1.2 CertificateRequest used to advertise
+  `dsa_sha224`–`dsa_sha512` and both SHA-224 schemes, and so a `dss_sign`
+  certificate type. The CertificateRequest is what this service asks a
+  client certificate to be signed with.
+* **No TLS 1.2 renegotiation** (`SSL_OP_NO_RENEGOTIATION`, unconditional).
+  The main port accepted a client-initiated secure renegotiation; node only
+  counts them (three per ten minutes). Nothing here renegotiates, since a
+  certificate is asked for in the first handshake.
+
+`protocolOptions()` states all four, and `secureContextOptions()` spreads it
+whole. Before this it copied `minVersion` and `ciphers` by name, so a new
+option would have been lost at a listener's first truststore change. The
+debugger's listener is created from it as well.
+
+**What was recorded rather than fixed** is the kit's `WHY` table. Each entry
+is Node/OpenSSL behaviour this service cannot configure, and each is also on
+#212:
+* alert choices that differ from tlsfuzzer's expectations;
+* SNI parsing with no `SNICallback`;
+* no stateful session-ID cache (tickets work);
+* no NewSessionTicket after a PSK resumption;
+* no `psk_ke`;
+* a lazy KeyUpdate answer;
+* OpenSSL checking `legacy_record_version`;
+* the hybrid and compressed-point leniency;
+* no ALPN on LDAPS.
 
 ## THE PROXY PROTOCOL COMES OFF BEFORE THE HANDSHAKE (2026-09-14, #46)
 

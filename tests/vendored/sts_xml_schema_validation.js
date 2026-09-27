@@ -961,6 +961,41 @@ async function saml2(w) {
                    r.status + ")", r.body, "/saml2/ars");
   }
 
+  // IDENTITY-PROVIDER-INITIATED SSO (#189): the unsolicited Response.
+  const unsolicited = await browse(cookies, w.rb + "/saml2/unsolicited?" +
+    "providerId=" + encodeURIComponent(w.sp) + "&shire=" +
+    encodeURIComponent(w.acs) + "&target=uns-" + STAMP, w.person);
+  for (const m of await capturedOne("the unsolicited Response", unsolicited,
+                                    "SAMLResponse", "post")) {
+    await validate(w.mode + " SAML 2.0 unsolicited Response " +
+                   "(identity-provider-initiated)", m.xml, m.from);
+  }
+
+  // THE ATTRIBUTE AUTHORITY (#189): a signed AttributeQuery about the person
+  // this session signed in to w.sp, and the Response over SOAP.
+  const query = signEnveloped(
+    "<samlp:AttributeQuery xmlns:samlp=\"" + NS.samlp + "\" " +
+    "xmlns:saml=\"" + NS.saml + "\" ID=\"" + samlId() + "\" " +
+    "Version=\"2.0\" IssueInstant=\"" + new Date().toISOString() + "\" " +
+    "Destination=\"" + w.rb + "/saml2/aa\"><saml:Issuer>" + w.sp +
+    "</saml:Issuer><saml:Subject><saml:NameID>" + w.person +
+    "</saml:NameID></saml:Subject></samlp:AttributeQuery>",
+    "AttributeQuery", "ID", "Issuer");
+  const aa = await hop(null, w.rb + "/saml2/aa", {
+    method: "POST",
+    body: "<soap:Envelope xmlns:soap=\"" + NS.soap11 + "\"><soap:Body>" +
+          query + "</soap:Body></soap:Envelope>",
+    headers: { "content-type": "text/xml; charset=utf-8",
+               soapaction: "\"\"" } });
+  await check(w.mode + " the attribute authority answers Success",
+              async function () {
+    if (!/status:Success/.test(aa.body)) {
+      throw new Error("HTTP " + aa.status + " " + aa.body.slice(0, 600));
+    }
+  });
+  await validate(w.mode + " SAML 2.0 attribute query Response over SOAP " +
+                 "(HTTP " + aa.status + ")", aa.body, "/saml2/aa");
+
   // SERVICE-PROVIDER-INITIATED LOGOUT: the LogoutResponse.
   const logoutId = samlId();
   const logout = "<samlp:LogoutRequest xmlns:samlp=\"" + NS.samlp + "\" " +

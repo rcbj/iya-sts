@@ -519,13 +519,29 @@ class Scep {
                          'request signed with a different key.',
                          cms.FAIL_INFO.badCertId);
     }
+    // A DIFFERENT REQUEST UNDER A COMPLETED transactionID IS A NEW
+    // TRANSACTION, NOT A REFUSAL (#249, #250). certmonger and jscep both
+    // derive the transactionID from the requester's PUBLIC KEY — the
+    // convention of the drafts RFC 8894 replaced — so every request for the
+    // same key carries the same one: a certmonger `getcert resubmit`, a
+    // jscep renewal that keeps its key. Until 2026-09-26 that was refused
+    // STS-SCEP-0037 for as long as the first result was held (a day), and
+    // certmonger, which cannot read a FAILURE CertRep (scep/CLAUDE.md),
+    // retried it until then. Nothing is given away by answering it instead:
+    // the stored result is only ever handed back for the SAME request, and a
+    // new one is authorized from scratch below — a single-use challenge, or
+    // a signer certificate this realm issued — and replaces the stored
+    // result when it succeeds. RFC 8894 section 3.2.1.1 puts the uniqueness
+    // on the client and says nothing of what a CA does when it is not kept.
+    // STS-SCEP-0037 is retired.
     if (held.csrSha256 !== read.csrSha256) {
-      log.debug("Leaving Scep.replayed(). A different request.");
-      return this.failed('STS-SCEP-0037',
-                         'That transactionID already completed ' +
-                         'for a different certificate ' +
-                         'request. A new request needs ' +
-                         'a new transactionID.', cms.FAIL_INFO.badRequest);
+      log.info("scep: transactionID " +
+               String(message.transactionID).slice(0, 80) +
+               " completed earlier for another request signed with the same " +
+               "key; this request is handled as a new transaction.");
+      log.debug("Leaving Scep.replayed(). A new request under a completed " +
+                "transactionID.");
+      return null;
     }
     log.debug("Leaving Scep.replayed(). The stored result.");
     return { ok: true, replay: true, certificatePem: held.certificatePem,
@@ -542,7 +558,44 @@ class Scep {
       log.debug("Leaving Scep.pkcsReq(). Unreadable.");
       return read.refusal;
     }
-    if (this.spkiSha256(read.csr.publicKeyPem) !== message.signer.spkiSha256) {
+    const sameKey = this.spkiSha256(read.csr.publicKeyPem) ===
+      message.signer.spkiSha256;
+    // **AND WHEN THE KEY IS KEPT (#249, #250, 2026-09-26).** A renewal that
+    // keeps its key — certmonger's `getcert resubmit`, a jscep renewal — is
+    // signed by the certificate being renewed over the SAME key the request
+    // names, so the two-keys test below never saw it: it went on as a first
+    // enrollment and was refused for having no challenge (STS-SCEP-0035).
+    // RFC 8894 section 2.3's second case turns on the SIGNER — "a
+    // certificate issued by the SCEP CA" — not on whether the key changed;
+    // so a signer that is not self-issued is asked the renewal question
+    // too, and one this realm did not issue carries on as before.
+    if (sameKey && message.signer.selfIssued === false) {
+      const keeping = await core.authenticatePresentedCertificate(
+        message.signer.pem, 'scep', { clientAuth: false });
+      if (keeping.ok) {
+        log.debug("Leaving Scep.pkcsReq(). A renewal keeping its key.");
+        return this.renewalReq(ctx);
+      }
+    }
+    if (!sameKey) {
+      // **A PKCSReq SIGNED BY A CERTIFICATE THIS REALM ISSUED IS A RENEWAL
+      // (#210, 2026-09-24).** RFC 8894 section 2.3 names that RenewalReq;
+      // the drafts before it (draft-nourse-scep) renewed with a PKCSReq
+      // signed by the certificate being renewed, and sscep still does — it
+      // has no RenewalReq at all, and `sscep enroll -K old.key -O old.crt`
+      // was refused here STS-SCEP-0034. The section's own note says most
+      // implementations keep to the historical form. So the signer is asked
+      // exactly what a RenewalReq's signer is asked (`signerEntry()`), and a
+      // PKCSReq that passes is handled by `renewalReq()` — the same
+      // authority a RenewalReq already had, and nothing more. A signer this
+      // realm did not issue is still the refusal below.
+      const renewing = await core.authenticatePresentedCertificate(
+        message.signer.pem, 'scep', { clientAuth: false });
+      if (renewing.ok) {
+        log.debug("Leaving Scep.pkcsReq(). A renewal in the historical " +
+                  "form.");
+        return this.renewalReq(ctx);
+      }
       log.debug("Leaving Scep.pkcsReq(). Two keys.");
       return this.failed('STS-SCEP-0034',
                          'The request is signed by a certificate ' +
@@ -613,7 +666,10 @@ class Scep {
       family: 'scep', profile: spent.profile, principal: principal,
       target: target.target, publicKeyPem: read.csr.publicKeyPem,
       requested: read.csr.requested, keySource: 'client',
-      keyAlg: read.csr.keyAlg, via: 'scep'
+      keyAlg: read.csr.keyAlg, via: 'scep',
+      // The request's key attestation, read only by the device profile
+      // (#164 phase 2, `core.issueForDevice()`).
+      attestations: read.csr.attestations
     });
     if (!issued.ok) {
       log.debug("Leaving Scep.pkcsReq(). The core refused.");
@@ -947,7 +1003,24 @@ class Scep {
     if (req.method === 'POST') {
       const type = String(req.headers['content-type'] || '').split(';')[0]
         .trim().toLowerCase();
-      if (type !== 'application/x-pki-message' || !Buffer.isBuffer(req.body)) {
+      // **`application/octet-stream` AND NO CONTENT TYPE AT ALL ARE ACCEPTED
+      // TOO (#210, #211, 2026-09-24).** RFC 8894 section 4.3 names
+      // x-pki-message, and the two independent clients the interop jobs
+      // drive send neither: micromdm's — the SCEP client of the Apple MDM
+      // ecosystem — POSTs every PKIOperation as octet-stream (its own server
+      // accepts it), and sscep sends no Content-Type header whatsoever. The
+      // first two are raw-parsed (`common/app.js`); a body with no type met
+      // the text parser, which keeps the bytes it was sent as `req.rawBody`
+      // before it decodes them, so those are what is read here. Either way
+      // the bytes checked are the bytes sent: what the body IS is decided by
+      // the CMS parse that follows, not by the label, and any OTHER type —
+      // one that says the body is something else — is still 415.
+      const bytes = type === ''
+        ? (Buffer.isBuffer(req.rawBody) ? req.rawBody : Buffer.alloc(0))
+        : req.body;
+      if ((type !== 'application/x-pki-message' &&
+           type !== 'application/octet-stream' && type !== '') ||
+          !Buffer.isBuffer(bytes)) {
         this.record({ operation: operation, outcome: 'refused', status: 415,
                       errorCode: 'STS-SCEP-0007' });
         this.scepError(res, 415, 'STS-SCEP-0007',
@@ -956,17 +1029,17 @@ class Scep {
         log.debug("Leaving Scep.messageBytes(). Content type.");
         return null;
       }
-      if (req.body.length > limit) {
+      if (bytes.length > limit) {
         this.record({ operation: operation, outcome: 'refused', status: 413,
                       errorCode: 'STS-SCEP-0008' });
         this.scepError(res, 413, 'STS-SCEP-0008', 'The message is ' +
-                       req.body.length + ' bytes and scep.maxRequestBytes is ' +
+                       bytes.length + ' bytes and scep.maxRequestBytes is ' +
                        limit + '.');
         log.debug("Leaving Scep.messageBytes(). Too large.");
         return null;
       }
       log.debug("Leaving Scep.messageBytes(). POST.");
-      return req.body;
+      return bytes;
     }
     const text = String(req.query.message || '');
     if (text.length > Math.ceil(limit / 3) * 4 + 4) {
