@@ -1579,7 +1579,7 @@ class RiskEngine {
           selection: before || undefined,
           // A policy decided it (#242): the risk-response rule.
           initiatingEntity: 'policy',
-          by: 'the person\'s risk went to ' + change.level +
+          by: 'the person\'s risk going to ' + change.level +
               (reason ? ' (' + reason + ')' : '') });
       if (ended && ended.ended === false) {
         throw new Error(String(ended.message || 'nothing was ended'));
@@ -1606,8 +1606,8 @@ class RiskEngine {
       const done = lazy('../common/account_state').setDisabled(
         change.username, true, { actor: 'risk scoring', via: 'internal',
           door: 'risk scoring', riscReason: 'hijacking',
-          by: 'risk scoring disabled the account: its risk went to ' +
-              change.level + ' at a score of ' + change.score,
+          by: 'risk scoring disabling the account (its risk went to ' +
+              change.level + ' at a score of ' + change.score + ')',
           reason: 'risk ' + change.level + ' (' + reason + ')' });
       if (!done || !done.ok) {
         throw new Error(((done && done.errors) || ['not disabled']).join(' '));

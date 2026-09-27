@@ -1054,7 +1054,7 @@ class SsfReceivers {
                                            sub: user.sub || '',
                                            mail: user.email || '' });
             },
-            'the ' + surface.label + ' received ' + short + ' (' +
+            'the ' + surface.label + ' receiving ' + short + ' (' +
             entry.jti + ')', 'policy');
           out.push({ event: short, reaction: reaction, ended: ended });
         } catch (e) {

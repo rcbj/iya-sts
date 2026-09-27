@@ -1927,7 +1927,7 @@ async function retireMarked(realm, o) {
   const ctx = {
     realmId: realm.id,
     deadline: Date.now() + boundMs,
-    // Read after "The session was ended at" in CAEP's reason_admin.
+    // Read after "The session was ended by" in CAEP's reason_admin (#294).
     via: String(o.via || 'the removal of the trust realm "' + realm.id +
                 '"'),
     initiatingEntity: String(o.initiatingEntity || 'admin'),

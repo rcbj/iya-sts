@@ -292,7 +292,8 @@ export = class FederationLinks {
         // An administrator's act — the console, the API or an LDAP write is
         // what removes a link (#242).
         if (through && authn.endSessionById(session.id,
-                                            'federation link removed',
+                                            'an administrator removing the ' +
+                                            'federation link it came through',
                                             'admin')) {
           ended += 1;
         }
