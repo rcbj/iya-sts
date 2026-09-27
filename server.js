@@ -674,6 +674,7 @@ const serviceState = require('./common/service_state');
 // once, below, whether this process may start at all. See that file.
 const proxyProtocol = require('./common/proxy_protocol');
 const clientHello = require('./tls/client_hello');
+const sessionTickets = require('./tls/session_tickets');
 
 // ---------------------------------------------------------------------------
 // THIS PROCESS'S STATE, IN THE ONE ORDER THERE IS.
@@ -998,6 +999,10 @@ if (useHttps) {
   // this file requires that module, not the other way round.
   tlsServer.trustClientCertificatesOn(mainServer,
                                       'the main port (' + PORT + ')');
+  // AND ONE SESSION-TICKET KEY WITH THE OTHER NODES of an active-active
+  // cluster, so a ticket one node issued resumes on another behind the
+  // balancer (tls/session_tickets.ts). Outside one it changes nothing.
+  sessionTickets.track(mainServer, 'the main port (' + PORT + ')');
   // AND SO THAT A CLIENT CERTIFICATE PRESENTED HERE IS WRITTEN DOWN
   // (2026-09-16). The sighting hung on the 8443 and 9443 listeners'
   // `secureConnection` until they were deleted, so the main port — where every

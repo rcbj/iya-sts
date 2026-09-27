@@ -962,6 +962,47 @@ It is compared with what the SERVICE last announced once the port is bound
 certifies. In a cluster each node re-issues its own listener, so each
 announces its own fingerprints.
 
+## ONE SESSION-TICKET KEY FOR AN ACTIVE-ACTIVE CLUSTER (2026-09-27)
+
+The cluster mode's tlsfuzzer run (#212) found that TLS resumption behind the
+balancer failed about half the time. OpenSSL seals a session ticket under a
+random key of each TLS context's own, so a ticket node A issued could not be
+opened by node B. `session_tickets.ts` is the fix, and its header is the
+argument. The short version:
+
+* **A key in the store, not in any node.** It is 48 random bytes (what node's
+  `setTicketKeys()` takes), in the persisted, service-wide
+  `tls.sessionTicketKey` store, sealed under the KEK and replicated by the
+  change log.
+* **Rotation deletes the old key.** The cluster job `tls.ticket-key-rotate`
+  replaces the key every `tls.sessionTicketRotationS` (3600 s), and the old
+  key is not kept. That bounds how long a captured ticket can yield a resumed
+  session's secrets, at the cost of one full handshake per client after each
+  rotation.
+* **Applied at every connection.** `track(server, label)` hangs a
+  `connection` listener that calls `setTicketKeys()` before the handshake.
+  Every connection, not only on change, because `setSecureContext()` (a
+  re-issued certificate, a truststore change) puts a random key back
+  without telling anybody. `server.js`, `ldap_server.js` (LDAPS'
+  `.server`) and `debugger_server.ts` call it. **A new TLS listener owes a
+  `track()` call**, or it resumes only on its own node.
+* **Nothing is shared outside active-active.** One node answering (one
+  process, request workers where only the front process holds a socket, or
+  active-passive) keeps OpenSSL's own keys, which never reach a store. That
+  is the stronger arrangement, so the job is off there and `current()`
+  answers null. A listener that held the shared key when sharing turned off
+  is given a fresh random key once.
+* **The listener KEY is still per node.** A client that does a full
+  handshake on one node and checks the other node's signature against the
+  first node's key fails. That is tlsfuzzer's different-SNI probe and the
+  TLS 1.2-ticket-as-PSK probe, both recorded as cluster-only exceptions
+  (`perNodeKey`, `clustered: true`) in `tests/vendored/tlsfuzzer_kit.js`.
+* **Codes.** `STS-TLS-0036` is a key that could not be applied;
+  `STS-TLS-0037` is a stored key that is not 48 bytes.
+
+`tests/session_tickets.js` holds it over real handshakes, with a control for
+each claim.
+
 ## A RESTART IS ANNOUNCED TOO: WHAT THE SERVICE LAST ANNOUNCED IS KEPT (2026-09-26, #264)
 
 Until #264, a restart was never announced. The listener KEY is made at every

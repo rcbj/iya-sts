@@ -8462,6 +8462,29 @@ const SETTINGS = [
                  'handshake (STS-TLS-0035). A list that builds no TLS ' +
                  'context stops the service at startup.' },
 
+  // ONE SESSION-TICKET KEY FOR AN ACTIVE-ACTIVE CLUSTER (2026-09-27): a
+  // ticket one node issued is sealed under a key the other node never saw,
+  // so behind a balancer resumption worked about half the time.
+  // tls/session_tickets.ts argues it. Per process because the key belongs to
+  // the listeners, which belong to no realm.
+  { key: 'tls.sessionTicketRotationS', group: 'TLS',
+    label: 'Shared session-ticket key rotation (s)',
+    env: 'STS_TLS_SESSION_TICKET_ROTATION_S', type: 'int', dflt: 3600,
+    min: 0, max: 604800, runtime: true, perProcess: true,
+    description: 'In an active-active cluster, every node\'s TLS listeners ' +
+                 '(the main port, LDAPS and the debugger\'s) seal session ' +
+                 'tickets under one shared key, so a ticket one node issued ' +
+                 'resumes on another. This is how often, in seconds, the ' +
+                 'tls.ticket-key-rotate job replaces it; the key it replaces ' +
+                 'is deleted, so a resumed session\'s secrets can be ' +
+                 'recovered from a captured ticket only while its key ' +
+                 'lives, and a client whose ticket is older does a full ' +
+                 'handshake. The key is kept in the store, sealed under the ' +
+                 'key-encryption key. 0 turns sharing off, and outside ' +
+                 'active-active mode nothing is shared: one node answering ' +
+                 'resumes on OpenSSL\'s own per-listener keys, which never ' +
+                 'leave the process.' },
+
   { key: 'tls.trustAnchorsFile', group: 'TLS',
     label: 'Client certificate trust anchors file',
     env: 'STS_TLS_TRUST_ANCHORS_FILE', type: 'string', dflt: '',

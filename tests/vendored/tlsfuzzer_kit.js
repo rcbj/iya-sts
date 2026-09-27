@@ -234,6 +234,13 @@ const WHY = {
     "policy, so the handshake fails in OpenSSL, and " +
     "refuseNonNistCurveCertificatesOn() closes any that gets through " +
     "(STS-TLS-0035)" },
+  perNodeKey: { why: "design", reason: "the cluster mode only: each node's " +
+    "listener presents a certificate over a key of its own " +
+    "(tls/CLAUDE.md), and the balancer may put the script's second " +
+    "connection on the other node; tlsfuzzer checks that connection's " +
+    "signature against the key the first node presented, so it fails. " +
+    "Session tickets are shared by every node (tls/session_tickets.ts), so " +
+    "a resumption itself succeeds on either" },
   cipherOrder: { why: "design", reason: "honorCipherOrder: the SERVER's " +
     "BCP 195 order wins, which puts AES-128-GCM before AES-256-GCM for TLS " +
     "1.2 where the probe expects the client's first choice" }
@@ -488,7 +495,10 @@ const PLAN = [
     exceptions: [ex(/^sanity$|^Sanity check, SNI$/, "\"illegal_parameter\"",
                     "levelZeroAlert", { on: ["ldaps"] }),
                  ex(/bad SNI|malformed SNI/, "unrecognized_name",
-                    "sniParse")] },
+                    "sniParse"),
+                 ex("session resume with different SNI",
+                    "Server Key Exchange signature invalid", "perNodeKey",
+                    { clustered: true })] },
   { script: "test-invalid-session-id.py" },
   { script: "test-invalid-version.py" },
   { script: "test-large-hello.py", timeoutMs: 1800000,
@@ -637,7 +647,9 @@ const PLAN = [
       ex(/^session resumption( - PSK_WITH_DHE)?$/, "ApplicationData",
          "noTicketAfterResumption"),
       ex("session resumption - PSK_ONLY", "pre_shared_key", "noPskKe"),
-      ex("use TLS 1.2 ticket in TLS 1.3", "decode_error", "ticketAsPsk")] },
+      ex("use TLS 1.2 ticket in TLS 1.3", "decode_error", "ticketAsPsk"),
+      ex("use TLS 1.2 ticket in TLS 1.3", "Signature verification failed",
+         "perNodeKey", { clustered: true })] },
   { script: "test-tls13-shuffled-extentions.py",
     exceptions: [ex(/^HRR reversed order/, "server_hello",
                     "secondHelloOrder")] },
@@ -707,12 +719,23 @@ function argsFor(entry, listener, target) {
   return argv;
 }
 
-// The exceptions that apply on this listener.
+// Whether the listener is two or more nodes behind a balancer: the cluster
+// mode hands the runner STS_TEST_CLUSTER_NODES
+// (tests/docker-compose-run-tests-cluster.yml).
+function clustered() {
+  log.debug("Entering clustered().");
+  log.debug("Leaving clustered().");
+  return Number(process.env.STS_TEST_CLUSTER_NODES || 1) > 1;
+}
+
+// The exceptions that apply on this listener. One marked `clustered` applies
+// only behind a balancer, so it cannot excuse the same failure on one node.
 function exceptionsFor(entry, listener) {
   log.debug("Entering exceptionsFor().");
   log.debug("Leaving exceptionsFor().");
   return (entry.exceptions || []).filter(function (one) {
-    return !one.on || one.on.indexOf(listener) >= 0;
+    return (!one.on || one.on.indexOf(listener) >= 0) &&
+      (!one.clustered || clustered());
   });
 }
 

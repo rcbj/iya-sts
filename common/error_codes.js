@@ -11534,6 +11534,16 @@ const CODES = [
       'certificates are refused before any certificate object is built ' +
       '(#212).',
     spec: 'the connection is closed after the handshake' },
+  { code: 'STS-TLS-0036',
+    summary: 'The shared session-ticket key of an active-active cluster ' +
+      'could not be applied to a TLS listener; that listener keeps its own ' +
+      'keys, so a ticket it issues resumes only on this node.',
+    spec: 'resumption falls back to a full handshake' },
+  { code: 'STS-TLS-0037',
+    summary: 'The shared session-ticket key held in the store is not the ' +
+      '48 bytes node takes, so the listeners keep their own keys until the ' +
+      'tls.ticket-key-rotate job replaces it.',
+    spec: 'resumption falls back to a full handshake' },
   // ===== VC ================================================================
   { code: 'STS-VC-0001',
     summary: 'An oid4vci encryption setting names no content encryption ' +

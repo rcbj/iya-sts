@@ -596,6 +596,7 @@ next beat. It is the one addition this feature made to `cluster.js`.
 | `oauth2.used-assertion-purge` | cluster, service; a minute, registered at the first claim against a database | `common/used_assertions.js` (P5) |
 | `ldap.connection-mirror-maintenance` | per-process, quiet; socket-holding processes | `ldap/ldap_cluster_connections.ts` (P5) |
 | `federation.encryption-key-retire` | cluster, realm; five minutes, off while `federation.enabled` is off — removes the encryption key a relationship's rotation replaced once `federation.encryptionKeyGraceS` has passed (it stopped decrypting at that instant already) | `federation/federation_encryption.ts` (#168) |
+| `tls.ticket-key-rotate` | cluster, service; `tls.sessionTicketRotationS`, off outside active-active — replaces the TLS session-ticket key every node's listeners share, deleting the old one | `tls/session_tickets.ts`, `tls/CLAUDE.md` |
 | `spiffe.authority-rotation` | cluster, realm; hourly, from each authority's own age, in both modes | `spiffe/spiffe_ca.ts` (D6) |
 | `spiffe.sigstore-tuf-refresh` | cluster, service; `spiffe.dockerSigstoreTufRefreshS` (daily), off while `spiffe.dockerSigstoreTufRootFile` is empty — the sigstore trust root through TUF, a failure keeping the last verified set (#170) | `spiffe/spiffe_sigstore_tuf.ts`, `spiffe/CLAUDE.md` |
 | `caches.eject-expired` | per-process, quiet; every minute — each store's own `eject()` | `admin-ui/caches_admin.ts`, `common/CLAUDE.md` 3ap (P5) |
