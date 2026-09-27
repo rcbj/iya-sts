@@ -14,6 +14,8 @@
     - { title: Endpoints, url: /endpoints.html }
     - { title: Trust realms, url: /trust-realms.html }
     - { title: What is not checked, url: /what-is-not-checked.html }
+    - { title: Conformance suites, url: /conformance.html }
+    - { title: Departures from the specifications, url: /spec-departures.html }
     - { title: Accepted tokens, url: /accepted-tokens.html }
     - { title: Token samples, url: /token-samples.html }
     - { title: Error codes, url: /error-codes.html }

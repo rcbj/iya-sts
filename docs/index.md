@@ -36,6 +36,8 @@ each.
 [Endpoints](endpoints.md) ·
 [Trust realms](trust-realms.md) ·
 [What is not checked](what-is-not-checked.md) ·
+[Conformance suites](conformance.md) ·
+[Departures from the specifications](spec-departures.md) ·
 [Accepted tokens](accepted-tokens.md) ·
 [Token samples](token-samples.md) ·
 [Error codes](error-codes.md)
