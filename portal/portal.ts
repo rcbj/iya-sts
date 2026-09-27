@@ -677,7 +677,7 @@ const REMOVE_KEY_FORM = vz.object({
 const ENROL_KEY_FORM = vz.object({
   action: vt.opt(vt.oneOf(['begin', 'finish', 'cancel'])),
   role: vt.opt(vt.oneOf(['primary', 'mfa'])),
-  kind: vt.opt(vt.oneOf(['platform', 'roaming'])),
+  kind: vt.opt(vt.oneOf(['any', 'platform', 'roaming'])),
   label: vz.string().max(60).optional(),
   enrolment_id: vt.opt(vt.base64url),
   credential: vz.string().max(validation.CAP.TEXT).optional(),
@@ -2512,12 +2512,19 @@ class Portal {
                 'device.']
     };
     log.debug('Leaving Portal.kindChoice().');
+    // "LET MY BROWSER CHOOSE" IS FIRST AND CHECKED: it is the request as it
+    // was before the choice existed, and the one every browser can answer.
+    // Making "Built into this device" the default broke enrolment outright
+    // on a browser with nothing built in (Linux Firefox), 2026-09-26.
     return '<p class="sub"><strong>Where does this key live?</strong></p>' +
-      kinds.map(function (kind, i) {
+      '<label class="chk"><input type="radio" name="kind" value="any" ' +
+      'checked> Let my browser choose <span class="sub">Whatever your ' +
+      'browser offers. To link this device on Devices, choose Built into ' +
+      'this device instead.</span></label>' +
+      kinds.map(function (kind) {
         return '<label class="chk"><input type="radio" name="kind" ' +
-          'value="' + self.esc(kind) + '"' + (i === 0 ? ' checked' : '') +
-          '> ' + self.esc(rows[kind][0]) + ' <span class="sub">' +
-          self.esc(rows[kind][1]) + '</span></label>';
+          'value="' + self.esc(kind) + '"> ' + self.esc(rows[kind][0]) +
+          ' <span class="sub">' + self.esc(rows[kind][1]) + '</span></label>';
       }).join('');
   }
 
@@ -6082,6 +6089,10 @@ class Portal {
         // A PROMISE SINCE 2026-09-14: the write claims the credential id across
         // nodes first (`credentials.addKeyClaimed()`), so two posts of one
         // attestation cannot leave two rows for one key.
+        // WHAT WAS ASKED FOR, read before the answer can drop the pending
+        // enrolment: a browser that could not run the ceremony is told
+        // about the kind it was asked for (below).
+        const asked = (credentials.pendingKeyEnrolmentFor(username) || {}).kind;
         credentials.confirmKeyEnrolment(username,
           String(body.enrolment_id || ''), credential,
           { origin: authn.expectedOriginFor(base, credential),
@@ -6098,10 +6109,28 @@ class Portal {
             });
             log.debug('Leaving POST ' + BASE + '/keys. ' +
                                                'Refused: ' + done.reason);
+            // THE BROWSER COULD NOT RUN THE CEREMONY (2026-09-26): it
+            // declined, timed out, or has no authenticator of the kind asked
+            // for — a browser with nothing built into the device refuses
+            // every "Built into this device" ceremony. Keeping the pending
+            // enrolment re-armed that same ceremony on every reload, so the
+            // person could never go back and choose another kind. It is
+            // abandoned, the form is drawn again, and the sentence says what
+            // to try.
+            let why = (done.errors ||
+                       ['The security key could not be registered.'])[0];
+            if (done.reason === 'browser') {
+              credentials.abandonKeyEnrolment(username);
+              why += asked === 'platform'
+                ? ' This browser may have no authenticator built into this ' +
+                  'device. Choose "A security key I carry" or "Let my ' +
+                  'browser choose", or open this page in the device\'s own ' +
+                  'browser.'
+                : ' Nothing was registered; you can start again below.';
+            }
             errorCodes.mark(res, self.innerCode(done) || 'STS-PORTAL-0036');
             return self.sendKeysPage(res, 400, self.keysPage(session, null,
-              (done.errors || ['The security key could not be registered.'])[0],
-              base));
+              why, base));
           }
           // CAEP credential-change (#145), the key described by what its
           // enrolment recorded: attachment and AAGUID.
