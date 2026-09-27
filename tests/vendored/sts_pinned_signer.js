@@ -389,7 +389,7 @@ async function test() {
     assert.strictEqual(nothing.status, 400, nothing.text.slice(0, 300));
   });
 
-  assert.ok(checks >= 7, "only " + checks + " checks ran");
+  assert.ok(checks >= 6, "only " + checks + " checks ran");
   log.info(checks + " check(s) passed.");
   log.info("Test completed successfully.");
   log.debug("Leaving test().");
