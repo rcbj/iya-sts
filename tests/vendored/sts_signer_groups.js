@@ -283,8 +283,9 @@ async function main() {
   const units = (meta.body.units || []).filter(function (u) {
     return u.kind === "group";
   });
-  check("one unit per group CERTIFICATE — 5 groups x 4", function () {
-    assert.strictEqual(units.length, 20, units.map(function (u) {
+  // Six groups since #265 added browser-devices to #68's five.
+  check("one unit per group CERTIFICATE — 6 groups x 4", function () {
+    assert.strictEqual(units.length, 24, units.map(function (u) {
       return u.unit;
     }).join(", "));
   });
