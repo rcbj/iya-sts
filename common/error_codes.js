@@ -1296,6 +1296,11 @@ const CODES = [
       'renewed because the store did not answer. Not fatal: the claim ' +
       'outlives a short outage and every write checks it.',
     spec: 'none — logged' },
+  { code: 'STS-STORE-0063',
+    summary: 'A minted store journalled a key holding a NUL character, which ' +
+      'PostgreSQL text cannot hold; the row is left out of the write rather ' +
+      'than failing every write after it.',
+    spec: 'none — logged' },
   // ===== CLUSTER ===========================================================
   { code: 'STS-CLUSTER-0001',
     summary: 'A write transaction was refused by the fence: this node\'s ' +

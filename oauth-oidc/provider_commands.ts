@@ -136,6 +136,11 @@ const deliveries = realms.map({ persist: 'oauth2.commandDeliveries',
                                 mergeRow: outbound.mergeRow });
 const accounts = realms.map({ persist: 'oauth2.commandAccounts' });
 const learned = realms.map({ persist: 'oauth2.commandMetadata' });
+// The issuer the realm last used, in a store of its own. It was a row of
+// `learned` under a key beginning with a NUL — chosen so no client_id could
+// meet it — and PostgreSQL text cannot hold a NUL, so in single-node mode
+// every minted flush failed from the first command onward (2026-09-27).
+const issuerLearned = realms.map({ persist: 'oauth2.commandIssuer' });
 const callbacks = realms.map({ persist: 'oauth2.commandCallbacks',
                                retain: 'age' });
 const runs = realms.map({ persist: 'oauth2.tenantCommandRuns' });
@@ -326,7 +331,7 @@ class ProviderCommands {
     const jwtAccessToken = require('./jwt_access_token');
     if (base) {
       const iss = jwtAccessToken.issuerFor(String(base));
-      learned.set('\u0000issuer', { issuer: iss });
+      issuerLearned.set('issuer', { issuer: iss });
       log.debug("Leaving ProviderCommands.issuer(). From the request.");
       return iss;
     }
@@ -336,7 +341,7 @@ class ProviderCommands {
       log.debug("Leaving ProviderCommands.issuer(). Pinned.");
       return jwtAccessToken.issuerFor(pinned + realms.currentPrefix());
     }
-    const remembered = learned.get('\u0000issuer');
+    const remembered = issuerLearned.get('issuer');
     log.debug("Leaving ProviderCommands.issuer(). " +
               (remembered ? 'Remembered.' : 'None.'));
     return remembered ? String(remembered.issuer) : '';

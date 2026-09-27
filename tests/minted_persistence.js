@@ -470,6 +470,53 @@ async function body(t, dir) {
   minted.setDriver(driver, 'postgres');
 
   // -------------------------------------------------------------------------
+  // 5b. A KEY POSTGRESQL CANNOT HOLD IS LEFT OUT, NOT RETRIED FOR EVER
+  //     (2026-09-27).
+  //
+  // A NUL in a text column fails the whole transaction, and a failed flush
+  // puts every key back — so one such key stopped every minted write after
+  // it (a single-node run: 853 failed flushes from the first OpenID Provider
+  // Command onward). The driver here refuses a NUL the way PostgreSQL does.
+  // -------------------------------------------------------------------------
+  t.log.info('=== a key PostgreSQL cannot hold is left out of the write ===');
+  replication.reset();
+  minted.reset();
+  const strict = fakeDriver('process-a');
+  const strictSave = strict.saveMinted;
+  let refusedWrites = 0;
+  strict.saveMinted = function (upserts, deletes) {
+    log.debug("Entering saveMinted().");
+    const bad = upserts.concat(deletes).some(function (row) {
+      return String(row.key).indexOf('\u0000') >= 0;
+    });
+    if (bad) {
+      refusedWrites++;
+      log.debug("Leaving saveMinted().");
+      return Promise.reject(new Error('invalid byte sequence for encoding ' +
+                                      '"UTF8": 0x00'));
+    }
+    log.debug("Leaving saveMinted().");
+    return strictSave(upserts, deletes);
+  };
+  minted.setDriver(strict, 'postgres');
+  const nulKeyed = realms.map({ persist: 'test.nulkey' });
+  nulKeyed.set('\u0000issuer', { issuer: 'https://x.example' });
+  nulKeyed.set('ordinary', { n: 1 });
+  await minted.flush();
+  await minted.flush();
+  t.equal(refusedWrites, 0,
+          'no write carried the NUL key, so the store never refused one');
+  t.check(strict.rows.has('test.nulkey\u0000default\u0000ordinary'),
+          'and the row beside it was written');
+  t.check(nulKeyed.get('\u0000issuer') &&
+          nulKeyed.get('\u0000issuer').issuer === 'https://x.example',
+          'while the NUL-keyed value is still held in memory');
+  nulKeyed.delete('\u0000issuer');
+  nulKeyed.delete('ordinary');
+  minted.reset();
+  minted.setDriver(driver, 'postgres');
+
+  // -------------------------------------------------------------------------
   // 6. RETENTION, PER STORE (2026-09-18). A SHORT-LIVED store's month-old row
   //    is not restored and is deleted; every other store's is kept however
   //    old it is. Until that day every old row of every store went — a
