@@ -4183,8 +4183,11 @@ class FederationSp {
       return this.wsfedMetadata(req, res, record, base, encryption);
     }
     // The XML signing key (#42, D2): what this service signs its outbound
-    // AuthnRequests with.
-    const der = STS.xml.certPem.replace(/-----[^-]+-----/g, '')
+    // AuthnRequests with — the PINNED xml key where the realm signs with one
+    // (#263), since `STS.xmlSigner` is what signs them then.
+    const signer = STS.xmlSigner;
+    const der = (signer && signer.pinned ? signer : STS.xml).certPem
+      .replace(/-----[^-]+-----/g, '')
       .replace(/\s+/g, '');
     const xml = '<?xml version="1.0" encoding="UTF-8"?>\n' +
       '<md:EntityDescriptor xmlns:md="' + NS_MD + '" ' +

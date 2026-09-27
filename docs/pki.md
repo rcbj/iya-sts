@@ -1019,7 +1019,7 @@ that realm SIGNS with for that algorithm, in place of the key it generated:
 | Use case | Slots | What the pinned key signs |
 |---|---|---|
 | `jose` | `RS256` (every RS\* and PS\*), `ES256:P-256`, `ES384:P-384`, `ES512:P-521`, `ES256K:secp256k1`, `EdDSA:Ed25519`, `EdDSA:Ed448`, `ML-DSA-44`, `ML-DSA-65`, `ML-DSA-87`, `SLH-DSA-SHA2-128s`, `SLH-DSA-SHAKE-128s` | ID tokens, access tokens, logout tokens, SETs — every JWS the realm signs with that algorithm |
-| `xml` | `RS256` | SAML 2.0 and 1.1, WS-Federation and WS-Trust signatures, and the signing certificate in their metadata |
+| `xml` | `RS256` | SAML 2.0 and 1.1, WS-Federation and WS-Trust signatures, and the signing certificate in their metadata — **and DECRYPTION**: the same key is the SAML 2.0 metadata's `use="encryption"` key, and it opens what partners encrypt to it (an `EncryptedID` in a LogoutRequest, an encrypted RFC 7522 assertion) |
 
 `tls` and `assertions` are not signer slots and behave as they always have.
 
@@ -1040,6 +1040,17 @@ that realm SIGNS with for that algorithm, in place of the key it generated:
   after `pki.pinnedSignerLeadMinutes` (a day by default) — #42's rule for a
   next key. A `signing-key-rotated` event (reason `requested`) is sent at the
   pin and at the unpin.
+* **An `xml` pin is one key for signing AND encryption**, one certificate,
+  as most identity providers publish. It must suit RSA-OAEP key transport:
+  an operator's certificate whose keyUsage lacks `keyEncipherment` is
+  refused (`STS-PKI-0217`); one this service issues carries it. During the
+  lead the metadata's `use="encryption"` KeyDescriptor offers the pinned
+  certificate beside the generated one, and the pinned key already decrypts;
+  once it signs it is the only one offered, and the generated key goes on
+  decrypting until the pin has been in use for the unit's grace, so
+  anything encrypted to the old certificate in flight still opens. After an
+  unpin the generated key is offered again and the pinned key decrypts
+  through its grace.
 * **The generated key is not thrown away.** It stays published and verifying
   the whole time, so everything it signed before the pin goes on verifying,
   and **Unpin** makes it the signer again at once. The unpinned key goes on

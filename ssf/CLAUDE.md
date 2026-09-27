@@ -1261,7 +1261,9 @@ when the key is PUBLISHED (`pki.pinnedSignerLeadMinutes` before it signs,
 generated key having been published all along. The same URN and not a sibling,
 by #245's own test: the document a receiver fetches again is the same JWKS. A
 pin with the setting off, or an unpin of a pin that never signed, changes no
-signer and sends nothing.
+signer and sends nothing. An `xml` pin is also the realm's decryption key
+(one certificate for both uses), and the one event covers both halves: what
+a receiver does with it — fetch the metadata again — is the same.
 
 ## THE OTHER KEYS A RELYING PARTY PINS, AS SIBLING URNs (2026-09-26, #245)
 

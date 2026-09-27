@@ -13,6 +13,8 @@
 //   3. An ID token from the authorization code flow carries the pinned key's
 //      kid, and VERIFIES AGAINST THE JWKS ENTRY OF THAT KEY, whose x5c holds
 //      the key; the generated key stays published beside it.
+//   3b. An RSA key pinned into the xml slot is the metadata's use="encryption"
+//      KeyDescriptor too (one key for both uses); it is then unpinned.
 //   3a. While it is pinned, turning `pki.pinnedSigners` off is refused (400,
 //      "Unpin first") through `config/set`, `realms/set` and `realms/unset`,
 //      and the pinned key goes on signing.
@@ -370,6 +372,26 @@ async function test() {
     }), generatedKid);
   });
 
+  log.info("=== 3b. an xml pin is the encryption key too ===");
+  const xmlRsa = crypto.generateKeyPairSync("rsa", { modulusLength: 2048 });
+  await ok(api + "/pki/pin-key", { useCase: "xml", slot: "RS256",
+    privateKeyPem: xmlRsa.privateKey.export({ type: "pkcs8",
+                                               format: "pem" }) },
+    "pinned an xml key");
+  const md = await hop(null, "GET", base + "/saml2/metadata");
+  const encCert = (/<md:KeyDescriptor use="encryption">[\s\S]*?<ds:X509Certificate>([^<]+)</
+    .exec(md.text) || [])[1];
+  check("the SAML metadata's use=\"encryption\" KeyDescriptor carries the " +
+        "pinned xml key's certificate", function () {
+    assert.ok(encCert, md.text.slice(0, 400));
+    const cert = new crypto.X509Certificate(Buffer.from(encCert, "base64"));
+    assert.ok(cert.publicKey.export({ type: "spki", format: "der" })
+      .equals(xmlRsa.publicKey.export({ type: "spki", format: "der" })),
+              "the encryption certificate is over another key");
+  });
+  await ok(api + "/pki/unpin-key", { useCase: "xml", slot: "RS256" },
+           "unpinned the xml key");
+
   log.info("=== 3a. the setting cannot be turned off under the pin ===");
   const offInRealm = await hop(null, "POST", api + "/config/set",
     { json: { key: "pki.pinnedSigners", value: false } });
@@ -417,7 +439,7 @@ async function test() {
     assert.strictEqual(offAfter.status, 200, offAfter.text.slice(0, 300));
   });
 
-  assert.ok(checks >= 9, "only " + checks + " checks ran");
+  assert.ok(checks >= 10, "only " + checks + " checks ran");
   log.info(checks + " check(s) passed.");
   log.info("Test completed successfully.");
   log.debug("Leaving test().");

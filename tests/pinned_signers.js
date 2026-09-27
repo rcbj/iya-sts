@@ -35,6 +35,12 @@
 //      it once the grace has passed; an unpin of nothing is STS-PKI-0211.
 //   I. EXPIRY. `signing.retire` warns (STS-PKI-0212) as a pinned certificate
 //      nears its end, and the console model marks it.
+//   X. DECRYPTION. The xml pin is also the key partners encrypt to: an
+//      operator certificate without keyEncipherment is STS-PKI-0217; the SAML
+//      metadata's use="encryption" KeyDescriptor carries it; what is
+//      encrypted to it decrypts; what was encrypted to the generated key
+//      decrypts through the grace and not after; unpinned, the metadata goes
+//      back and the pinned key decrypts through its own grace, then not.
 //   J. CUSTODY. The private key is in the realm's PKI row (the one sealed
 //      under the key-encryption key) and in no public view.
 //
@@ -66,7 +72,11 @@ function childMain() {
   }
   const get = function (port, urlPath) {
     return new Promise(function (resolve) {
-      http.get({ host: '127.0.0.1', port: port, path: urlPath },
+      // A fresh connection each time (`agent: false`): node 24's default
+      // agent keeps sockets alive, and one the server closed after its
+      // keep-alive timeout answers the next request with ECONNRESET.
+      http.get({ host: '127.0.0.1', port: port, path: urlPath,
+                 agent: false },
                function (res) {
         let text = '';
         res.on('data', function (c) { text += c; });
@@ -79,6 +89,8 @@ function childMain() {
           }
           resolve({ status: res.statusCode, text: text, json: json });
         });
+      }).on('error', function (e) {
+        resolve({ status: 0, text: String(e && e.message), json: null });
       });
     });
   };
@@ -230,7 +242,8 @@ function childMain() {
         subjectKeyIdentifier: { present: true }
       }
     }).then(function (made) { return made.pem; });
-    const leafFrom = async function (subjectKey, notBefore, notAfter) {
+    const leafFrom = async function (subjectKey, notBefore, notAfter,
+                                     usages) {
       const made = await x509.issueCertificate({
         subject: [{ name: 'CN', value: 'Operator XML signer' }],
         subjectPublicKey: spkiPem(subjectKey),
@@ -242,7 +255,8 @@ function childMain() {
         extensions: {
           basicConstraints: { present: true, critical: true, ca: false },
           keyUsage: { present: true, critical: true,
-                      usages: ['digitalSignature'] },
+                      usages: usages || ['digitalSignature',
+                                         'keyEncipherment'] },
           subjectKeyIdentifier: { present: true },
           authorityKeyIdentifier: { present: true }
         }
@@ -282,6 +296,17 @@ function childMain() {
     note(!expired.ok && codeOf(expired) === 'STS-PKI-0210',
          'B7. an expired certificate is STS-PKI-0210',
          JSON.stringify(expired));
+    const signOnlyLeaf = await leafFrom(xmlKey.privateKey,
+                                        new Date(Date.now() - 3600000),
+                                        new Date(Date.now() + 86400000),
+                                        ['digitalSignature']);
+    const signOnly = await pki.pinKeyPair(ON, 'xml', 'RS256',
+      { privateKeyPem: pem(xmlKey.privateKey), certificatePem: signOnlyLeaf,
+        chainPem: operatorCaPem });
+    note(!signOnly.ok && codeOf(signOnly) === 'STS-PKI-0217',
+         'B8. an xml certificate whose keyUsage lacks keyEncipherment is ' +
+         'STS-PKI-0217: an xml pin is also the key partners encrypt to',
+         JSON.stringify(signOnly));
 
     // --- C. published ahead of use -------------------------------------------
     const es384 = nodeCrypto.generateKeyPairSync('ec',
@@ -456,6 +481,61 @@ function childMain() {
          'F4. a renewal of the xml Issuing CA leaves the operator\'s ' +
          'certificate and chain alone');
 
+    // --- X. the xml pin is also the decryption key ----------------------------
+    const encryptionCerts = function (text) {
+      const out = [];
+      const re = /<md:KeyDescriptor use="encryption">[\s\S]*?<ds:X509Certificate>([^<]+)</g;
+      let m = re.exec(text);
+      while (m) {
+        out.push(m[1]);
+        m = re.exec(text);
+      }
+      return out;
+    };
+    const secret = '<saml:NameID xmlns:saml="urn:oasis:names:tc:SAML:2.0:' +
+      'assertion">x-' + nodeCrypto.randomBytes(4).toString('hex') +
+      '</saml:NameID>';
+    const opens = function (certPem) {
+      const sealed = stsCrypto.encryptElement(secret, certPem,
+        { keyTransport: 'rsa-oaep', wrapper: 'saml:EncryptedID' });
+      const opened = inRealm(ON, function () {
+        return helpers.decryptOwnElement(sealed);
+      });
+      return !!(opened && opened.ok && opened.xml === secret);
+    };
+    note(JSON.stringify(encryptionCerts(md.text)) ===
+           JSON.stringify([stsCrypto.stripPem(xmlLeaf)]),
+         'X1. the SAML 2.0 metadata\'s use="encryption" KeyDescriptor is ' +
+         'the pinned certificate, alone, once it signs',
+         JSON.stringify(encryptionCerts(md.text)).slice(0, 80));
+    note(opens(xmlLeaf),
+         'X2. something encrypted to the pinned certificate decrypts');
+    note(opens(generatedXmlCert),
+         'X3. and something encrypted to the generated XML certificate ' +
+         'still decrypts, within the grace');
+    const xmlRecord = function () {
+      const row = keystore.pkiFor(ON);
+      return Object.keys(row.certs).map(function (k) {
+        return row.certs[k];
+      }).filter(function (r) {
+        return r.useCase === 'xml' && r.kid === xmlPin.signer.kid;
+      })[0];
+    };
+    const savedUntil = xmlRecord().pinnedSigner.supersedesUntil;
+    xmlRecord().pinnedSigner.supersedesUntil = Date.now() - 1000;
+    note(!opens(generatedXmlCert) && opens(xmlLeaf),
+         'X4. once the grace has passed, the generated key no longer ' +
+         'decrypts; the pinned one does');
+    xmlRecord().pinnedSigner.supersedesUntil = savedUntil;
+    const offMd = await get(port, '/realm/' + OFF + '/saml2/metadata');
+    const offXmlCert = inRealm(OFF, function () {
+      return helpers.STS.xml.certPem;
+    });
+    note(JSON.stringify(encryptionCerts(offMd.text)) ===
+           JSON.stringify([stsCrypto.stripPem(offXmlCert)]),
+         'X5. with the setting off, the encryption KeyDescriptor is the ' +
+         'generated key\'s, as before');
+
     // --- G. rotation skips it --------------------------------------------------
     const keysNow = function () {
       return helpers.stsKeysFor.of(ON);
@@ -627,10 +707,36 @@ function childMain() {
          kidsOf(await jwksOf(ON)).indexOf(joseKid) < 0,
          'H6. past its grace signing.retire drops it, and it leaves the JWKS',
          JSON.stringify(dropped));
-    ['jose:ML-DSA-65', 'xml:RS256'].forEach(function (unit) {
-      const parts = unit.split(':');
-      pki.unpinKeyPair(ON, parts[0], parts[1]);
-    });
+    const xmlUnpin = rotation.unpinSigningKey(ON, 'xml', 'RS256');
+    const mdAfter = await get(port, '/realm/' + ON + '/saml2/metadata');
+    // By KEY: F4's renewal gave the generated key a new certificate.
+    const keyOf = function (b64OrPem) {
+      const der = /BEGIN/.test(b64OrPem) ? b64OrPem
+        : Buffer.from(b64OrPem, 'base64');
+      return new nodeCrypto.X509Certificate(der).publicKey
+        .export({ type: 'spki', format: 'der' }).toString('base64');
+    };
+    const offered = encryptionCerts(mdAfter.text);
+    note(xmlUnpin.ok && offered.length === 1 &&
+         keyOf(offered[0]) === keyOf(generatedXmlCert),
+         'X6. unpinned, the metadata offers the generated key for ' +
+         'encryption again', JSON.stringify(encryptionCerts(mdAfter.text))
+           .slice(0, 120) + ' / ' + stsCrypto.stripPem(generatedXmlCert)
+           .slice(0, 40));
+    note(opens(generatedXmlCert) && opens(xmlLeaf),
+         'X6a. and both the generated key and the unpinned one decrypt, the ' +
+         'latter through its grace',
+         opens(generatedXmlCert) + ' ' + opens(xmlLeaf));
+    note(announced.some(function (n) {
+           return (n.rotated || []).some(function (r) {
+             return r.unit === 'xml:RS256' && r.from === xmlPin.signer.kid;
+           });
+         }), 'X7. the xml unpin — signing and decryption both — is ' +
+             'announced');
+    xmlRecord().pinnedSigner.retiredUntil = Date.now() - 1000;
+    note(!opens(xmlLeaf) && opens(generatedXmlCert),
+         'X8. past its grace the unpinned key no longer decrypts');
+    pki.unpinKeyPair(ON, 'jose', 'ML-DSA-65');
     const offNow = realms.setOverride(ON, 'pki.pinnedSigners', false);
     note(offNow.ok,
          'H7. with nothing live or pending pinned, it can be turned off',

@@ -3485,9 +3485,21 @@ function ownRsaDecryptionKeys(firstUseCase, keySet) {
       return { privateKeyPem: one.privateKeyPem, privateKey: one.privateKey };
     } };
   });
-  log.debug("Leaving ownRsaDecryptionKeys(). " +
-            (currents.length + standby.length) + " key(s).");
-  return currents.concat(standby).map(function (one) {
+  // A PINNED XML KEY DECRYPTS TOO (#263): first while it is published — in its
+  // lead as well as once it signs — and, unpinned, until its grace ends. The
+  // xml keys it displaced stop decrypting once `supersedesUntil` has passed
+  // (its activation plus the unit's grace), so something encrypted to the
+  // old certificate in flight still opens and nothing after that does.
+  const pinned = pinnedDecryptionRows(keys, now);
+  const kept = pinned.displaced
+    ? currents.filter(function (one) {
+      return one.useCase !== 'xml';
+    }) : currents;
+  const all = (firstUseCase === 'jose' ? kept.concat(pinned.rows)
+                                       : pinned.rows.concat(kept))
+    .concat(standby);
+  log.debug("Leaving ownRsaDecryptionKeys(). " + all.length + " key(s).");
+  return all.map(function (one) {
     // `any`: the two accessors are defined below, which the checker cannot see.
     return /** @type {any} */ (Object.defineProperties({
       kid: one.kid, useCase: one.useCase }, {
@@ -3499,6 +3511,69 @@ function ownRsaDecryptionKeys(firstUseCase, keySet) {
       } }
     }));
   });
+}
+
+// The pinned xml keys that decrypt now, as `ownRsaDecryptionKeys()` rows, and
+// whether an active pin has displaced the generated xml keys for good. A
+// pending or active pin counts only where the realm has the setting on; an
+// unpinned one within its grace counts regardless, so turning the setting off
+// afterwards strands nothing encrypted to it.
+function pinnedDecryptionRows(keys, now) {
+  log.debug("Entering pinnedDecryptionRows().");
+  const pki = pkiForPins();
+  if (!pki) {
+    log.debug("Leaving pinnedDecryptionRows(). No certificate authority.");
+    return { rows: [], displaced: false };
+  }
+  const on = pki.pinnedSignersOn(keys.realm);
+  let displaced = false;
+  const rows = pinnedSignersOf(keys, 'xml').filter(function (one) {
+    if (one.role === 'active' && on &&
+        new Date(one.supersedesUntil).getTime() <= now) {
+      displaced = true;
+    }
+    return one.role === 'retired' || on;
+  }).map(function (one) {
+    const kid = one.kid;
+    const realmId = keys.realm;
+    return { useCase: 'xml', kid: kid, get: function () {
+      const key = /** @type {any} */ (pki.pinnedSigningKey(realmId, 'xml',
+                                                           'RS256', kid));
+      return { privateKey: key,
+               privateKeyPem: key ? key.export({ type: 'pkcs8',
+                                                 format: 'pem' }) : '' };
+    } };
+  });
+  log.debug("Leaving pinnedDecryptionRows(). " + rows.length + ".");
+  return { rows: rows, displaced: displaced };
+}
+
+// ---------------------------------------------------------------------------
+// THE CERTIFICATES THIS REALM'S SAML METADATA OFFERS FOR ENCRYPTION (#263):
+// `STS.xml`'s, as always — unless an xml key is pinned where the realm has
+// the setting on. In the pin's lead the pinned certificate is published
+// BESIDE it, ahead of use; once the pin signs it is the only one, and the
+// generated key goes on decrypting through `supersedesUntil`
+// (`ownRsaDecryptionKeys()`). `[{ kid, certPem }]`.
+// ---------------------------------------------------------------------------
+function ownXmlEncryptionCertificates(keySet) {
+  log.debug("Entering ownXmlEncryptionCertificates().");
+  const keys = keySet || stsKeysFor();
+  const generated = { kid: STS.xml.kid, certPem: STS.xml.certPem };
+  const pki = pkiForPins();
+  const pinned = pki && pki.pinnedSignersOn(keys.realm)
+    ? pinnedSignersOf(keys, 'xml').filter(function (one) {
+      return one.role !== 'retired';
+    }) : [];
+  const active = pinned.filter(function (one) {
+    return one.role === 'active';
+  })[0];
+  const out = active ? [{ kid: active.kid, certPem: active.certificatePem }]
+    : [generated].concat(pinned.map(function (one) {
+      return { kid: one.kid, certPem: one.certificatePem };
+    }));
+  log.debug("Leaving ownXmlEncryptionCertificates(). " + out.length + ".");
+  return out;
 }
 
 // ---------------------------------------------------------------------------
@@ -6151,6 +6226,7 @@ module.exports = {
   groupPublishedJwks: groupPublishedJwks,
   xmlSignatureChoice: xmlSignatureChoice,
   ownXmlSigningCertificates: ownXmlSigningCertificates,
+  ownXmlEncryptionCertificates: ownXmlEncryptionCertificates,
   // For tests/signer_groups.js (#68): a token's header, and the public JWK
   // of one of this realm's keys by kid. Neither is a private key.
   peekJoseHeader: peekJoseHeader,

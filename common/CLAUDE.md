@@ -5899,6 +5899,25 @@ the JWKS, and `/crypto/metadata`'s `pinned`, `pinned-pending` and
 `tests/vendored/sts_pinned_signer.js` verifies an ID token against the pinned
 key's JWKS entry over HTTP.
 
+**AN `xml` PIN IS ALSO THE REALM'S DECRYPTION KEY** (rcbj's extension, the
+same day). One key pair and one certificate for both uses, as most identity
+providers publish — a separate decryption pin was the alternative, and it was
+refused because a partner sees one certificate, and two pins would be two
+leads, two graces and two announcements for it. So: the SAML 2.0 IdP
+metadata's `use="encryption"` KeyDescriptor names the pin beside the generated
+key during its lead and alone once it signs
+(`helpers.ownXmlEncryptionCertificates()`); `ownRsaDecryptionKeys()`, which
+every decryption path here goes through (`decryptOwnElement()` for an inbound
+`EncryptedID` and an RFC 7522 assertion, the JWE door for `jose`), tries it
+first — from its publication, and after an unpin until its `retiredUntil`,
+whatever the setting says by then — and drops the generated xml keys only
+once an active pin's `supersedesUntil` (activation plus the unit's grace) has
+passed. The key must suit RSA-OAEP key transport: the xml slot is RSA ≥ 2048,
+an operator's certificate whose keyUsage lacks `keyEncipherment` is
+STS-PKI-0217, and one this service issues carries it. One pin, so one
+`signing-key-rotated` (unit `xml:RS256`) announces both halves: a receiver
+refreshes the metadata either way. `tests/pinned_signers.js` X holds it.
+
 **THE SETTING CANNOT BE TURNED OFF UNDER A LIVE OR PENDING PIN**
 (STS-PKI-0215), because that would change the signer with no
 `signing-key-rotated`. It is not a new mechanism: it is a keyed branch of

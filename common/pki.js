@@ -8621,6 +8621,20 @@ async function pinKeyPair(scopeId, useCaseId, slot, material, options) {
 // that is not ours an orphan). Without one, the key is certified here, as a
 // generated key would be, and is renewed with its Issuing CA.
 //
+// **AN `xml` PIN IS ALSO THE REALM'S DECRYPTION KEY** (rcbj's extension of
+// #263): one key pair, one certificate for both uses, as most identity
+// providers publish — not a second slot, because two pins with two leads,
+// two graces and two announcements would be two lifecycles for what a
+// partner sees as one key. So the SAML 2.0 metadata's use="encryption"
+// KeyDescriptor names the pin from the moment it is published (beside the
+// generated key during the lead, alone once it signs), every decryption path
+// tries it, and the key it displaces goes on DECRYPTING until
+// `supersedesUntil` — the pin's activation plus the unit's grace — so
+// anything encrypted to the old certificate in flight still opens. The key
+// must suit RSA-OAEP key transport: the xml slot is RSA ≥ 2048 already, and
+// an operator's certificate whose keyUsage lacks keyEncipherment is
+// STS-PKI-0217.
+//
 // **THE SLOT IS AN ALGORITHM**, and the key must be the one it names
 // (STS-PKI-0207): an RSA key of at least 2048 bits for RS256 (every RS* and
 // PS* signature), the slot's curve for ES* and EdDSA, and the slot's own
@@ -8936,6 +8950,8 @@ function pinnedSignersFor(scopeId, nowMs) {
       retiredUntil: Number(meta.retiredUntil) > 0
         ? new Date(Number(meta.retiredUntil)).toISOString() : '',
       operatorCertificate: !!meta.operatorCertificate,
+      supersedesUntil: Number(meta.supersedesUntil) > 0
+        ? new Date(Number(meta.supersedesUntil)).toISOString() : '',
       subject: r.subject, serialHex: r.serialHex, notAfter: r.notAfter,
       expired: notAfterMs <= now,
       daysLeft: Math.floor((notAfterMs - now) / 86400000),
@@ -9140,8 +9156,13 @@ async function pinSigner(scopeId, uc, slot, material, options) {
       return config.value('pki.pinnedSignerLeadMinutes');
     })) * 60000;
   }
+  // `supersedesUntil` (the xml unit's DECRYPTION half, see the header): the
+  // key this pin displaces goes on decrypting until the pin has signed — and
+  // been the published encryption key — for a whole grace.
   const meta = { alg: spec.alg, crv: spec.crv, kind: spec.kind,
                  pinnedAt: now, activatesAt: now + leadMs,
+                 supersedesUntil: now + leadMs + Math.max(0,
+                   Number(o.graceMs) || 0),
                  retiredAt: 0, retiredUntil: 0,
                  operatorCertificate: false };
   // THE SAME KEY PINNED AGAIN is not a new signer: refused rather than
@@ -9169,6 +9190,30 @@ async function pinSigner(scopeId, uc, slot, material, options) {
     if (!checked.ok) {
       log.debug("Leaving pinSigner(). The certificate was refused.");
       return checked;
+    }
+    // AN XML PIN ALSO DECRYPTS (see the header): XML Encryption's key
+    // transport here is RSA-OAEP (or RSA 1.5 in development), so a
+    // certificate whose keyUsage leaves out keyEncipherment is one a partner
+    // may refuse to encrypt to — refused rather than published.
+    if (uc.id === 'xml') {
+      let usages = null;
+      try {
+        usages = await keyUsageOf({ pem: certificatePem });
+      } catch (e) {
+        log.debug("Caught in pinSigner(): " + ((e && e.message) || e));
+        usages = null;
+      }
+      if (Array.isArray(usages) && usages.indexOf('keyEncipherment') < 0) {
+        log.debug("Leaving pinSigner(). No keyEncipherment.");
+        return errorCodes.mark({ ok: false,
+                 errors: ['That certificate\'s keyUsage (' + usages.join(', ') +
+                          ') does not include keyEncipherment. A key pinned ' +
+                          'into the xml slot is also the key partners ' +
+                          'ENCRYPT to (the SAML metadata\'s use="encryption" ' +
+                          'KeyDescriptor, RSA-OAEP key transport), so its ' +
+                          'certificate must allow key encipherment as well ' +
+                          'as signatures.'] }, 'STS-PKI-0217');
+      }
     }
     meta.operatorCertificate = true;
     const row = rawRowFor(id) || {};
@@ -9201,6 +9246,11 @@ async function pinSigner(scopeId, uc, slot, material, options) {
       commonName: uc.label + ' (' + slot + ', pinned signing key)',
       publicKeyPem: read.publicKeyPem,
       kid: kid, generationSlot: true,
+      // An xml pin decrypts too, so its certificate says so, as
+      // certifyKeySet()'s for the generated XML key does.
+      keyUsage: uc.id === 'xml'
+        ? ['digitalSignature', 'nonRepudiation', 'keyEncipherment']
+        : undefined,
       pinned: true, privateKeyPem: privateKeyPem,
       publicKeyPemStored: read.publicKeyPem,
       pinnedSigner: meta

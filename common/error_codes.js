@@ -2892,6 +2892,11 @@ const CODES = [
       'pki.pinnedSigners is off there (environment, appconfig or a stored ' +
       'override), so it signs with its generated keys (#263).',
     spec: 'log only (a warning, at start)' },
+  { code: 'STS-PKI-0217',
+    summary: 'A key pair was not pinned into the xml slot: the certificate ' +
+      'supplied with it has a keyUsage without keyEncipherment, and an xml ' +
+      'pin is also the key partners encrypt to (#263).',
+    spec: 'console / /admin-api refusal (HTTP 400)' },
   { code: 'STS-ENROLL-0001',
     summary: 'A certificate request named a profile that is not one of the nine issued over an enrollment protocol.',
     spec: 'the protocol\'s refusal: ACME malformed / badCSR, EST HTTP 400, SCEP failInfo badRequest' },
