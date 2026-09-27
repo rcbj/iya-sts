@@ -605,15 +605,39 @@ async function test() {
     key: deviceKey.privateKey.export({ type: "pkcs8", format: "pem" }),
     cert: certificate.toString() });
   const afterCount = (await read("/devices/monitor")).activity.recognitions;
+  // THE EVIDENCE IS THE DEVICE RECORD, NOT THE MONITOR'S COUNTERS
+  // (2026-09-27). `activity.recognitions` is counted by the process that
+  // answered, so with request workers the token request and the monitor read
+  // land on different workers and the counters say nothing. A recognition
+  // LINKS the client it was for to the device, and that link is written to
+  // the directory, which every process reads — so it is asked of each
+  // device, waiting out replication.
+  const linkedTo = async function (id) {
+    log.debug("Entering linkedTo(). " + id);
+    for (let i = 0; i < 20; i++) {
+      const one = await read("/devices?device=" + encodeURIComponent(id));
+      const apps = ((one.device || {}).applications || []).join(" ")
+        .toLowerCase();
+      if (apps.indexOf(HOST.toLowerCase()) >= 0) {
+        log.debug("Leaving linkedTo(). Linked.");
+        return apps;
+      }
+      await new Promise(function (resolve) { setTimeout(resolve, 500); });
+    }
+    log.debug("Leaving linkedTo(). Not linked.");
+    return "";
+  };
+  const dpopLinked = await linkedTo(dpopDevice.device.id);
+  const estLinked = await linkedTo(deviceId);
+  log.info("recognition counters on the answering process: " +
+           JSON.stringify([before, afterCount]));
   check("a DPoP proof by a registered key, and the EST device certificate " +
         "over mutual TLS, each recognise their device", function () {
     assert.strictEqual(bound.status, 200, boundText.slice(0, 300));
     assert.strictEqual(mutual.status, 200, String(mutual.body)
       .slice(0, 300));
-    assert.ok(afterCount.jwk > before.jwk, JSON.stringify([before,
-                                                           afterCount]));
-    assert.ok(afterCount.x509 > before.x509, JSON.stringify([before,
-                                                             afterCount]));
+    assert.ok(dpopLinked, "the DPoP device was not linked to " + HOST);
+    assert.ok(estLinked, "the EST device was not linked to " + HOST);
   });
 
   log.info("=== 10. product mode refuses an unattested key ===");
