@@ -661,6 +661,12 @@ async function theCredentialsAreNotOnIt(b) {
       "issuing one answered " + issued.status);
   });
 
+  // AND SIGN IN AGAIN, because issuing that link ENDS the portal session
+  // (2026-09-27): an activation link for somebody who already exists is RISC
+  // `account-credential-change-required` (#233), and the portal is a Shared
+  // Signals receiver whose default signal-response policy ends the person's
+  // sessions on it. The password is untouched, so it still signs them in.
+  b = await signIn(OWNER, PROBE_PASSWORD);
   let page = await b.go("GET", "/portal/mfa");
   await b.go("POST", "/portal/mfa",
              form({ action: "start", csrf_token: csrfOf(page.text) }));

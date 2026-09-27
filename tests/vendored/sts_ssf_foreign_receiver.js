@@ -23,13 +23,12 @@
 
 const assert = require("assert");
 const crypto = require("crypto");
-const fs = require("fs");
-const path = require("path");
-const tls = require("tls");
 const { Command, Option } = require("commander");
 const names = require("./random_username.js");
 const registry = require("./sts_applications.js");
-const facts = require("./service_facts.js");
+const fs = require("fs");
+const path = require("path");
+const tls = require("tls");
 const testCa = require("./outbound_test_ca.js");
 
 var appconfig;
@@ -262,15 +261,13 @@ function locked(report, username) {
   });
 }
 
-// BOTH REALMS MUST TRUST THIS SERVICE, because each dials the other's own
-// address, whose certificate is issued under a Root made at start that the
-// service's outbound client does not know. As sts_claims_aggregation.js does:
-// the Root is read off the handshake, published in the directory shared with
-// the service (a file of this job's own), and named as each realm's
-// federation.outboundCaFile and A's ssf.pushCaFile, which product honours
-// (#171). With no shared directory a development service is told to skip
-// verification in the two realms alone; product refuses that (#104), and the
-// job says why.
+// THIS SERVICE'S ROOT AS EACH REALM'S OUTBOUND CA (2026-09-27). The two
+// realms dial each other at this service's own address, whose certificate is
+// this run's own. Product mode refuses to skip verifying it (#171), so the
+// service's Root is published in the shared test-CA directory and named as
+// both realms' federation and push CA — sts_provider_commands.js's
+// arrangement. Without that directory (an AWS target, a hand run) only
+// development may skip verification.
 async function trustThisService(product) {
   log.debug("Entering trustThisService().");
   const where = testCa.caLocation();
@@ -294,16 +291,16 @@ async function trustThisService(product) {
         });
       socket.on("error", reject);
     });
-    const name = "ssf-foreign-receiver-root-" + TAG + ".crt";
-    const served = path.join(path.dirname(where.serviceFile), name);
+    const name = "ssf-foreign-root-" + TAG + ".crt";
     fs.mkdirSync(where.dir, { recursive: true });
     fs.writeFileSync(path.join(where.dir, name), rootPem, { mode: 0o644 });
+    const file = path.join(path.dirname(where.serviceFile), name);
     for (const api of [apiA, apiB]) {
-      await ok(api + "/config/set", { key: "federation.outboundCaFile",
-        value: served }, "named this service's Root as the outbound CA");
+      for (const key of ["federation.outboundCaFile", "ssf.pushCaFile"]) {
+        await ok(api + "/config/set", { key: key, value: file },
+                 "named this service's Root as " + key);
+      }
     }
-    await ok(apiA + "/config/set", { key: "ssf.pushCaFile", value: served },
-             "named this service's Root as A's push CA");
     log.debug("Leaving trustThisService(). CA file.");
     return;
   }
@@ -313,37 +310,32 @@ async function trustThisService(product) {
       key: "federation.outboundSkipTlsVerification", value: true },
       "trusted this run's certificate");
   }
-  await ok(apiA + "/config/set", { key: "ssf.pushSkipTlsVerification",
-    value: true }, "let A's push trust this run's certificate");
   log.debug("Leaving trustThisService(). Verification skipped.");
 }
 
 async function test() {
   log.debug("Entering test().");
-  // PRODUCT NEVER DIALS AN ADDRESS INSIDE ITS OWN NETWORK
-  // (`mode.dialsInternalAddresses()`, federation_http.ts), and every part of
-  // this job is realm B reading realm A's configuration and A pushing to B on
-  // this one service's own address. So the job runs in development and says
-  // why it does not in product, as sts_ciba.js's section 6 does.
-  const product = await facts.isProduct(root + "/admin-api");
-  if (product) {
-    log.info("[skip] product mode will not dial this service's own " +
-             "address, which is internal; the foreign receiver runs in " +
-             "development.");
-    log.info("Test completed successfully.");
-    log.debug("Leaving test(). Product.");
-    return;
-  }
   log.info("=== 0. realm A (the transmitter) and realm B (the receiver) ===");
   for (const id of [REALM_A, REALM_B]) {
+    // In development mode, said rather than inherited (2026-09-27): the two
+    // realms dial each other at this service's own name, a private address,
+    // which product mode never dials.
     await ok(root + "/admin-api/realms/create", { id: id,
-      domain: id + ".example.net", name: "SSF foreign " + id },
+      domain: id + ".example.net", name: "SSF foreign " + id,
+      overrides: { "global.mode": "development" } },
       "created realm " + id);
   }
   // Each dials the other's own address, whose certificate is this run's.
-  await trustThisService(product);
+  await trustThisService(false);
   await ok(apiA + "/config/set", { key: "ssf.pushDelivery", value: true },
            "let A push");
+  // trustThisService() named the Root as ssf.pushCaFile where it could;
+  // without that directory development skips verification instead (product
+  // refuses the skip, #171).
+  if (!testCa.caLocation()) {
+    await ok(apiA + "/config/set", { key: "ssf.pushSkipTlsVerification",
+      value: true }, "let A's push trust this run's certificate");
+  }
   // A's address, pinned, as a deployed transmitter's is: a SET it builds
   // with no request in hand (an emitted event) otherwise names its subject
   // under the listener's address and its token under the request's, and

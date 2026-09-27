@@ -311,7 +311,12 @@ async function test() {
   });
 
   log.info("=== 4. tenant on the request ===");
-  const other = await hop(jar(), "GET",
+  // FROM THE SIGNED-IN BROWSER (2026-09-27). RFC 9700 section 4.11.2, which
+  // product mode implies, shows a refusal as a page rather than redirecting
+  // it while nobody is signed in — so with an empty jar the refusal was a 400
+  // page in the production modes. A session makes it redirectable in every
+  // mode, which is the claim this check makes.
+  const other = await hop(browser, "GET",
     authorizeUrl(client, { tenant: "some-other-realm" }).url);
   const same = await hop(jar(), "GET",
     authorizeUrl(client, { tenant: REALM }).url);
