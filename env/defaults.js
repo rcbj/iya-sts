@@ -478,6 +478,9 @@ var config = {
     personSelfServicePerAddress: 5,             // Self-issued key pairs one address may ask for per window
     personTlsClientCertificateMax: 5,           // TLS client certificates one person may hold
     applicationTlsClientCertificateMax: 5,      // TLS client certificates one application may hold
+    pinnedSigners: false,                       // Sign with a pinned key pair
+    pinnedSignerLeadMinutes: 1440,              // Publish a pinned key this long before it signs (minutes)
+    pinnedSignerExpiryWarningDays: 30,          // Warn this long before a pinned key's certificate expires (days)
     revocationCheck: "auto",                    // Revocation check on a presented certificate
     revocationRequireDistributionPoint: "auto", // Refuse a certificate whose issuer names no CRL and no OCSP responder
     revocationFetchTimeoutMs: 3000,             // CRL fetch timeout (milliseconds)
