@@ -214,6 +214,11 @@ const WHY = {
     "the socket, and on a busy service (other lanes beside it) the close can " +
     "reach the client before the alert does. Passes on a quiet service " +
     "(2026-09-26, memory mode)" },
+  refusalCloseRace: { why: "openssl", reason: "a probe this service " +
+    "refuses (the documented exception beside this one) is refused either " +
+    "way: OpenSSL sends its fatal alert and node closes the socket, and on " +
+    "a busy host the close can reach the client first. Seen on the " +
+    "debugger listener with the suite's other lanes running (2026-09-26)" },
   levelZeroAlert: { why: "tool", reason: "the script's closing alert is " +
     "built with the DESCRIPTION as its level (AlertGenerator(" +
     "close_notify)), so it is sent with level 0; the directory keeps the " +
@@ -434,7 +439,9 @@ const PLAN = [
   { script: "test-ecdsa-in-certificate-verify.py", on: CR,
     certificate: "ec",
     exceptions: [ex(/sha1\+ecdsa/, "illegal_parameter", "sha1Envelope"),
-                 ex(/sha224\+ecdsa/, "handshake_failure", "noSha224")] },
+                 ex(/sha224\+ecdsa/, "handshake_failure", "noSha224"),
+                 ex(/sha224\+ecdsa/, "Unexpected closure from peer",
+                    "refusalCloseRace")] },
   { script: "test-eddsa-in-certificate-verify.py", on: CR,
     certificate: "ed25519" },
   { script: "test-empty-extensions.py" },
