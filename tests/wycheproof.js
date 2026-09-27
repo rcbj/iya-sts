@@ -102,9 +102,10 @@ const ERRATA = {
 // THE FILES NO DOOR APPLIES TO, and why. Matched in order.
 // ---------------------------------------------------------------------------
 const NOT_APPLICABLE = [
-  [/^(aegis|ascon|morus|xchacha20|chacha20|aead_aes_siv|aes_siv|aes_gcm_siv|aes_eax|aes_ccm|aes_gmac|aes_xts|aes_cmac|aes_kwp|c2sp_chunked)/,
-   'crypto.js offers no such cipher or mode: its AEADs are AES-GCM and ' +
-   'RFC 7518 AES-CBC-HMAC, its key wraps RFC 3394 AES-KW'],
+  [/^(aegis|ascon|morus|xchacha20|aead_aes_siv|aes_siv|aes_gcm_siv|aes_eax|aes_ccm|aes_gmac|aes_xts|aes_cmac|aes_kwp|c2sp_chunked)/,
+   'crypto.js offers no such cipher or mode: its AEADs are AES-GCM, ' +
+   'RFC 7518 AES-CBC-HMAC and (HPKE, #82) ChaCha20-Poly1305, its key ' +
+   'wraps RFC 3394 AES-KW'],
   [/^(aria|camellia|seed|sm4)_/, 'crypto.js offers no ARIA, Camellia, SEED ' +
    'or SM4'],
   [/^aes_ff1_/, 'crypto.js does no format-preserving encryption'],
@@ -662,6 +663,21 @@ const APPLICATIONS = [
       return refusesOnThrow(function () {
         return crypto.hpke.mlkemEncapsulationKeyOf(c.set, hex(t.seed))
           .equals(hex(t.ek));
+      });
+    } },
+  { door: 'ChaCha20-Poly1305 (HPKE AEAD 0x0003)',
+    files: /^chacha20_poly1305_test/,
+    group: function () {
+      return {};
+    },
+    run: function (c, t) {
+      return refusesOnThrow(function () {
+        const ct = Buffer.concat([hex(t.ct), hex(t.tag)]);
+        const opened = crypto.hpke.aeadOpen(0x0003, hex(t.key), hex(t.iv),
+                                            hex(t.aad), ct);
+        return opened.equals(hex(t.msg)) &&
+               crypto.hpke.aeadSeal(0x0003, hex(t.key), hex(t.iv),
+                                    hex(t.aad), hex(t.msg)).equals(ct);
       });
     } },
   { door: 'X25519 / X448 (HPKE DHKEM, X-Wing)', files: /^(x25519|x448)_test/,

@@ -1595,12 +1595,50 @@ async function theCryptoReportAgreesWithTheServiceItDescribes() {
         "page that would be worse than not having it. `" + alg + "` is not " +
         "in id_token_signing_alg_values_supported.");
     });
-  assert.strictEqual(pq.keyEstablishment.state, "classical",
-    "and the key establishment half must still report itself as classical. " +
-    "There is no ML-KEM in this process — not in JWE, not in XML Encryption " +
-    "and not on any TLS socket — and the page's whole argument is that the " +
-    "two halves are in different positions. If this ever changes, it is the " +
-    "sentence to change first.");
+  // KEY ESTABLISHMENT HAS A POST-QUANTUM ANSWER SINCE #82 (2026-09-27) —
+  // this assertion said "classical" and named itself the sentence to change
+  // first, and it is. What it holds now is that the page TELLS THE TRUTH,
+  // surface by surface: JWE outward is post-quantum-capable; JWE inward is
+  // an administrator's opt-in, off by default, so it must say so unless
+  // the realm advertises an ML-KEM or HPKE alg for decryption; OID4VP
+  // offers the X-Wing key by default; TLS puts the hybrid groups first; XML
+  // Encryption has no post-quantum key transport to have.
+  const ke = pq.keyEstablishment;
+  const surface = function (prefix) {
+    return (ke.surfaces || []).filter(function (row) {
+      return row.surface.indexOf(prefix) === 0;
+    })[0] || {};
+  };
+  assert.strictEqual(ke.state, "pq",
+    "key establishment reports a post-quantum answer (#82); got " +
+    JSON.stringify(ke.state));
+  assert.strictEqual(surface("JWE this service encrypts TO").state, "pq",
+    "JWE outward is post-quantum-capable: a client registers ML-KEM or a " +
+    "hybrid");
+  const pqInbound = as.body.request_object_encryption_alg_values_supported
+    .filter(function (alg) {
+      return ke.postQuantum.indexOf(alg) >= 0;
+    });
+  assert.strictEqual(surface("JWE sent TO this realm").state,
+    pqInbound.length ? "pq" : "optional",
+    "JWE inward is post-quantum exactly when discovery advertises an ML-KEM " +
+    "or post-quantum HPKE alg for decryption (keys.encryptionKemAlgs, empty " +
+    "by default); advertised: " + JSON.stringify(pqInbound));
+  assert.strictEqual(surface("XML Encryption").state, "classical",
+    "XML Encryption stays classical: no post-quantum key transport is " +
+    "defined for it");
+  assert.ok(ke.postQuantum.indexOf("ML-KEM-768") >= 0 &&
+            ke.hybrid.indexOf("HPKE-10-KE") >= 0 &&
+            ke.hybrid.indexOf("ML-KEM-768") < 0,
+    "the post-quantum list names ML-KEM, and the hybrid list X-Wing " +
+    "(HPKE-10-KE) and not pure ML-KEM; got " + JSON.stringify(ke.hybrid));
+  ke.postQuantum.forEach(function (alg) {
+    assert.ok(oidc.body.userinfo_encryption_alg_values_supported
+                .indexOf(alg) >= 0,
+      "every post-quantum JWE alg the page names is one this service will " +
+      "really encrypt to; `" + alg + "` is not in " +
+      "userinfo_encryption_alg_values_supported");
+  });
 
   log.info("[crypto] OK — " + report.families.length +
            " identity services profiled with no drift, " +

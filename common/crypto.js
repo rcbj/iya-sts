@@ -4306,8 +4306,22 @@ const HPKE_AEADS = {
   0xffff: { name: 'Export-only', cipher: '', Nk: 0, Nn: 0, Nt: 0 }
 };
 
+// The key and nonce sizes are the suite's (Nk, Nn — 96 bits for all three),
+// checked here rather than left to OpenSSL, whose GCM takes any nonce size.
+function hpkeAeadSizes(aead, key, nonce) {
+  log.debug('Entering hpkeAeadSizes(). ' + aead.name);
+  if (Buffer.from(key).length !== aead.Nk ||
+      Buffer.from(nonce).length !== aead.Nn) {
+    log.debug('Leaving hpkeAeadSizes(). Wrong size.');
+    throw new Error(aead.name + ' takes a ' + (aead.Nk * 8) + '-bit key and a ' +
+                    (aead.Nn * 8) + '-bit nonce in HPKE');
+  }
+  log.debug('Leaving hpkeAeadSizes().');
+}
+
 function hpkeAeadSeal(aead, key, nonce, aad, pt) {
   log.debug('Entering hpkeAeadSeal(). ' + aead.name);
+  hpkeAeadSizes(aead, key, nonce);
   const cipher = /** @type {import('crypto').CipherGCM} */ (
     nodeCrypto.createCipheriv(aead.cipher, key, nonce,
                               /** @type {any} */ ({ authTagLength: 16 })));
@@ -4321,6 +4335,7 @@ function hpkeAeadSeal(aead, key, nonce, aad, pt) {
 
 function hpkeAeadOpen(aead, key, nonce, aad, ct) {
   log.debug('Entering hpkeAeadOpen(). ' + aead.name);
+  hpkeAeadSizes(aead, key, nonce);
   const bytes = Buffer.from(ct);
   if (bytes.length < aead.Nt) {
     log.debug('Leaving hpkeAeadOpen(). Shorter than a tag.');
@@ -9734,6 +9749,17 @@ module.exports = {
       return mlkemFromSeed(set, seed).ek;
     },
     montgomeryDh: montgomeryDh,
+    // The suite AEADs, by id, for Wycheproof's ChaCha20-Poly1305 file.
+    aeadSeal: function (aeadId, key, nonce, aad, pt) {
+      log.debug('Entering hpke.aeadSeal().');
+      log.debug('Leaving hpke.aeadSeal().');
+      return hpkeAeadSeal(HPKE_AEADS[aeadId], key, nonce, aad, pt);
+    },
+    aeadOpen: function (aeadId, key, nonce, aad, ct) {
+      log.debug('Entering hpke.aeadOpen().');
+      log.debug('Leaving hpke.aeadOpen().');
+      return hpkeAeadOpen(HPKE_AEADS[aeadId], key, nonce, aad, ct);
+    },
     mlkemJoseKdf: mlkemJoseKdf,
     recipientStructure: joseHpkeRecipientStructure
   },

@@ -593,6 +593,93 @@ external references (this service fetches nothing a signed document names),
 XSLT, and the Decryption Transform. `tests/w3c_xmlsec.js`'s `EXCEPTIONS`
 names each.
 
+## `crypto.js` SECTION 4a: POST-QUANTUM AND HPKE KEY ESTABLISHMENT (#82, 2026-09-27)
+
+**JWE had RSA-OAEP and ECDH-ES only, so every encrypted token this service
+sent was harvest-now-decrypt-later material.** Section 4a of `crypto.js` adds
+two families behind the SAME two functions, `encryptJweCompact()` and
+`decryptJweCompact()`. No second JWE path exists, and a caller reaches the new
+algs by naming them.
+
+* **ML-KEM**, per draft-ietf-jose-pqc-kem-**05**. **-06 (2026-07-06) is
+  COSE-only**; the parent project's `tests/vendored/pqc.js` read -06 and
+  concluded there was no JWE binding. -05 has one: the KEM ciphertext goes in
+  `ek`, and the key comes from KMAC256 over RFC 7518's AlgorithmID ||
+  SuppPubInfo, with PartyU and PartyV left out. It is direct (`ML-KEM-768`)
+  or wraps the CEK (`ML-KEM-768+A192KW`). `priv` is the 64-octet d || z seed
+  that -06 corrected -05's "32-byte seed" to.
+* **HPKE**, per draft-ietf-jose-hpke-encrypt-22 (HPKE-0..7) and
+  draft-reddy-cose-jose-pqc-hybrid-hpke-11 (HPKE-8..16, an expired
+  individual draft and the ONLY document naming a hybrid JWE alg; X-Wing is
+  HPKE-10/11).
+  * The engine follows draft-ietf-hpke-hpke: the DHKEMs, ML-KEM, and
+    hpke-pq-05's three CG-framework hybrids, with HKDF, SHAKE and TurboSHAKE,
+    in mode_base and mode_psk.
+  * **Integrated** (`HPKE-n`) has no `enc` header, and its IV and tag are
+    empty. **Key Encryption** (`HPKE-n-KE`) is an ordinary JWE.
+
+**AN AKP KEY NAMES EXACTLY ONE ALG, AND `kemPublicKeyFor()` IS STRICT ABOUT
+IT.** A key made for `ML-KEM-768` is refused for `ML-KEM-768+A192KW` and for
+`HPKE-15`. That is draft-ietf-cose-dilithium's rule, which both KEM drafts
+apply, and jose-hpke-encrypt-22 section 10.1 argues it. `jweRecipientKeyFits()`
+is the one answer to "which of a client's keys does this alg take", and
+`recipientKey()` in `oauth-oidc/introspection_jwt.ts` asks it. That covers
+every outward encryption: ID and Logout Tokens, UserInfo, JARM and
+introspection. OID4VCI's response checks it directly.
+
+**WHERE THE PRIMITIVES COME FROM.**
+* ML-KEM is `@noble/post-quantum`, because it takes the seed. It does NOT do
+  FIPS 203's encapsulation-key modulus check, so `mlkemCheckEncapsulationKey()`
+  here does it.
+* Curves, AES-GCM, ChaCha20-Poly1305, HKDF and SHA-3 are node's OpenSSL.
+  KMAC256 and TurboSHAKE are `@noble/hashes`.
+* **Not the worker pool, and that was measured.** One encrypt+decrypt costs
+  RSA-OAEP-256 0.5 ms, ML-KEM-768 1.3 ms, X-Wing 3.4 ms, and
+  ML-KEM-1024+P-384 7.4 ms. The pool is for SLH-DSA's seconds.
+  `tests/jwe_pq_kem.js` prints the figures on every run.
+
+**THE REALM'S OWN KEYS ARE OFF BY DEFAULT, BY rcbj'S DECISION ON #82.** An AKP
+key in a JWKS is a key type many clients cannot parse, and some reject the
+whole set.
+* `keys.encryptionKemAlgs` (empty by default) lists the algs a realm holds a
+  decryption key for.
+* `helpers.js`'s `kemEncryptionKeysFor()` makes them lazily, adopting a key a
+  sibling made first.
+* `keystore.js` carries them as a NINTH key-set member, a LIST (`kemEncKeys`).
+  **`decideKeys()` unions that member BY ALG**: a list member was otherwise
+  joined only when the stored blob had none, so an alg added later would never
+  have been written, and would have been regenerated after a restart under a
+  different key.
+* `helpers.decryptableJweAlgs()` narrows every decryption list to the algs
+  held: discovery, registration, the request-object door and the console.
+  **Encrypting to a client needs none of this.**
+
+**THE OTHER TWO DECISIONS.**
+* **OpenID4VP offers the X-Wing key first and the HAIP P-256 ECDH-ES key
+  second** (`oid4vp.responseEncryptionKeyAlgs`, `oid4vc/CLAUDE.md`).
+* **A refresh token's KEM key pair is DERIVED**, from the realm's
+  refresh-token secret through the KEM's own DeriveKeyPair
+  (`deriveJweKemKeyPair()`). That secret is already persisted, sealed, shared
+  and rotated, so the derived pair is too, and nothing new is stored.
+
+**WHAT HOLDS IT TO SOMEBODY ELSE'S ANSWERS** (`tests/jwe_pq_kem.js`,
+`tests/acvp_pqc.js`, `tests/wycheproof.js`):
+* all 13 of hpke-pq-05's suites;
+* the concrete hybrid KEM draft's 30 vectors;
+* the JOSE working group's 14 HPKE JWEs (HPKE-4-KE and HPKE-6-KE are not
+  applicable: -22 removed them);
+* node 24's OpenSSL ML-KEM in both directions;
+* NIST ACVP's encapsulation, seed decapsulation and key-check groups;
+* Wycheproof's `mlkem_*` and `x25519`/`x448` files.
+
+**No draft has a vector for pqc-kem-05's KMAC derivation**, so the test
+rebuilds it from the draft's text. That makes it the construction most likely
+to disagree with another implementation.
+
+**XML Encryption stays classical**: no post-quantum key transport is defined
+for it. **TLS was already post-quantum** by #212's `tls.groups`.
+`/admin/crypto-metadata` says both, surface by surface.
+
 ## `applications.js` GREW A FOURTH ATTRIBUTE ROLE, AND THE NAME IS THE ARGUMENT
 
 `declarationAttributes()` walks the `PROTOCOLS` table for an `identifier`, a

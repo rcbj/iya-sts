@@ -104,13 +104,21 @@ function childMain() {
          JSON.stringify({ origins: payload.expected_origins,
                           mode: payload.response_mode }));
     const jwks = (payload.client_metadata || {}).jwks || { keys: [] };
-    note(jwks.keys.length === 1 && jwks.keys[0].alg === 'ECDH-ES' &&
-         jwks.keys[0].use === 'enc' && !!jwks.keys[0].kid &&
+    // #82: the X-Wing hybrid (HPKE-10-KE, an AKP key) first and the P-256
+    // ECDH-ES key HAIP requires second — `oid4vp.responseEncryptionKeyAlgs`.
+    note(jwks.keys.length === 2 && jwks.keys[0].alg === 'HPKE-10-KE' &&
+         jwks.keys[0].kty === 'AKP' && jwks.keys[1].alg === 'ECDH-ES' &&
+         jwks.keys.every(function (k) {
+           return k.use === 'enc' && !!k.kid;
+         }) && jwks.keys[0].kid !== jwks.keys[1].kid &&
          JSON.stringify(
            payload.client_metadata.encrypted_response_enc_values_supported)
            === JSON.stringify(['A128GCM', 'A256GCM']),
-         '1c. and an encryption key of its own, with the enc values section ' +
-         '8.3 asks for', JSON.stringify(jwks.keys[0] || {}));
+         '1c. and encryption keys of its own — the X-Wing hybrid first, ' +
+         'ECDH-ES second — with the enc values section 8.3 asks for',
+         JSON.stringify(jwks.keys.map(function (k) {
+           return { alg: k.alg, kty: k.kty, kid: k.kid };
+         })));
     note(payload.nonce === one.requestObject.nonce &&
          JSON.stringify(payload.dcql_query) ===
            JSON.stringify(one.requestObject.dcql_query),
@@ -135,6 +143,24 @@ function childMain() {
     await w.inRealm(function () {
       m.authn.endSessionById(session.id, 'the test, tidying up');
     });
+    // AND ENCRYPTED TO THE X-WING KEY (#82): the wallet that can protect the
+    // response against a future quantum adversary signs in the same way.
+    const hybridWho = w.browser();
+    const hybridOne = await w.start(hybridWho, w.pendingSignIn());
+    const hybrid = await w.answerDcApi(hybridWho, hybridOne,
+      w.presentSdJwt(issued.credential, holder, hybridOne.dcPayload.nonce,
+                     dcAud), { keyAlg: 'HPKE-10-KE' });
+    const hybridSession = w.sessionOf(hybridWho);
+    note(hybrid.status === 303 && !!hybridSession &&
+         hybridSession.user.username === 'dc-alice',
+         '2c. an answer encrypted to the X-Wing key (HPKE-10-KE, ' +
+         'draft-reddy-cose-jose-pqc-hybrid-hpke-11) signs in exactly as the ' +
+         'ECDH-ES one does', hybrid.status + ' ' + hybrid.code);
+    if (hybridSession) {
+      await w.inRealm(function () {
+        m.authn.endSessionById(hybridSession.id, 'the test, tidying up');
+      });
+    }
 
     // ==================================================================
     // 3. THE AUDIENCE IS THE ORIGIN, NOT THE CLIENT IDENTIFIER
