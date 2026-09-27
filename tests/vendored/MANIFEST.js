@@ -213,6 +213,12 @@ const CLIENT_SOURCE_DIR = path.join('client', 'src');
 //                      They stay one lane among themselves because each
 //                      raises `ldap.maxEntries` to what it is about to add,
 //                      and two raising at once can lower each other's.
+//                      `conformance` and `conformance-b` hold the OpenID
+//                      conformance plans (about two and a quarter hours one
+//                      after another, the mode's long pole): each plan is a
+//                      throwaway realm of its own against the suite's server,
+//                      with its callback listener on an ephemeral port. The
+//                      OpenID Connect plans, the longest, have a lane alone.
 //   exclusive: true    nothing else in the protocol half runs while this job
 //                      does: every lane drains first, and none starts again
 //                      until it ends. For a job that changes what EVERY other
@@ -973,7 +979,7 @@ const JOBS = [
   // took about sixteen minutes together on 2026-09-24. `local: true`: this
   // repository's authorization server.
   { file: 'sts_fapi_conformance.js',     browser: false, local: true,
-    conformance: true, timeoutMs: 3600000 },
+    conformance: true, timeoutMs: 3600000, lane: 'conformance-b' },
   // THE SAME SUITE, EVERY OTHER PLAN THAT APPLIES (#187, 2026-09-24): the
   // OpenID Provider certification profiles, oidcc-test-plan's client
   // authentication and response-mode variants, and the four logout plans.
@@ -982,26 +988,30 @@ const JOBS = [
   // WARNING as well as a FAILED module. `local: true`: this repository's
   // OpenID Provider.
   { file: 'sts_oidcc_conformance.js',    browser: false, local: true,
-    conformance: true, timeoutMs: 10800000 },
+    conformance: true, timeoutMs: 10800000, lane: 'conformance' },
   // Shared Signals (#187): the transmitter and CAEP interop plans, push and
   // poll, the CAEP events emitted by the job as the module asks for them.
   { file: 'sts_ssf_oidf_conformance.js', browser: false, local: true,
-    conformance: true, timeoutMs: 3600000 },
+    conformance: true, timeoutMs: 3600000,
+    lane: 'conformance-b' },
   // OpenID Federation 1.1 (#187): the deployed-entity plan for a Leaf realm
   // and for the Trust Anchor, and the plan in which the suite plays a whole
   // federation and a realm is the OpenID Provider that joined it.
   { file: 'sts_oidfed_conformance.js',   browser: false, local: true,
-    conformance: true, timeoutMs: 3600000 },
+    conformance: true, timeoutMs: 3600000,
+    lane: 'conformance-b' },
   // OpenID4VCI 1.0 (#187): the issuer plan wallet-initiated, offered and
   // pre-authorized, and the HAIP issuer plan; the job plays the issuer's
   // operator, delivering the offer and the transaction code.
   { file: 'sts_oid4vci_conformance.js',  browser: false, local: true,
-    conformance: true, timeoutMs: 3600000 },
+    conformance: true, timeoutMs: 3600000,
+    lane: 'conformance-b' },
   // OpenID4VP 1.0 (#187): the verifier plan, by direct_post and
   // direct_post.jwt; the job plays the End-User the Verifier sends to the
   // wallet, and makes the suite's issuer key at run time.
   { file: 'sts_oid4vp_conformance.js',   browser: false, local: true,
-    conformance: true, timeoutMs: 3600000 },
+    conformance: true, timeoutMs: 3600000,
+    lane: 'conformance-b' },
   // THE SAML INTEROPERABILITY PEERS (#189-#192, 2026-09-24): four independent
   // SAML service providers, each a second container under the `saml-peers`
   // compose profile (tests/saml-peers/), each driven by a job of its own
