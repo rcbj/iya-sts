@@ -283,10 +283,17 @@ function run(t) {
         const sealed = rt.seal(INNER, null, { alg: alg, enc: enc });
         const header = headerOf(sealed);
         const kind = rt.kindOf(alg);
+        // An ML-KEM or HPKE alg (#82) seals to a key pair derived from the
+        // realm's secret, named by the secret's kid and the alg; an HPKE
+        // Integrated alg carries no `enc` at all.
         const expectedKid = kind === 'secret' ? keys.secretKid :
+                            kind === 'kem' ? rt.kemKeyFor(keys, alg)
+                              .publicJwk.kid :
                             keys[kind].publicJwk.kid;
-        if (header.alg !== alg || header.enc !== enc || header.cty !== 'JWT' ||
-            header.kid !== expectedKid) {
+        const expectedEnc = stsCrypto.isIntegratedJweAlg(alg) ? undefined
+          : enc;
+        if (header.alg !== alg || header.enc !== expectedEnc ||
+            header.cty !== 'JWT' || header.kid !== expectedKid) {
           kidsWrong.push(alg + '/' + enc + ' ' + JSON.stringify(header));
         }
         if (rt.open(sealed) !== INNER) {

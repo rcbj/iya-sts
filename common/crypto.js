@@ -9725,6 +9725,15 @@ module.exports = {
     hybridEncaps: hybridEncaps,
     hybridDecaps: hybridDecaps,
     mlkemCheckEncapsulationKey: mlkemCheckEncapsulationKey,
+    // The encapsulation key of a seed (FIPS 203 KeyGen_internal), and the
+    // X25519 / X448 exchange with RFC 7748's all-zero refusal — for
+    // Wycheproof's ML-KEM keygen and XDH files.
+    mlkemEncapsulationKeyOf: function (set, seed) {
+      log.debug('Entering hpke.mlkemEncapsulationKeyOf().');
+      log.debug('Leaving hpke.mlkemEncapsulationKeyOf().');
+      return mlkemFromSeed(set, seed).ek;
+    },
+    montgomeryDh: montgomeryDh,
     mlkemJoseKdf: mlkemJoseKdf,
     recipientStructure: joseHpkeRecipientStructure
   },
