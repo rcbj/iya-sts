@@ -2560,7 +2560,8 @@ const SETTINGS = [
                  'decryption key for — one key pair per algorithm, ' +
                  'published in the realm\'s JWKS (`use: enc`, with `alg`) ' +
                  'and advertised in `request_object_encryption_alg_values_' +
-                 'supported` and `assertion_encryption_alg_values_supported`, ' +
+                 'supported` and `assertion_encryption_alg_values_' +
+                 'supported`, ' +
                  'so a client can encrypt a request object or an RFC 7523 / ' +
                  '7522 assertion to this realm with post-quantum or PQ/T ' +
                  'hybrid key establishment. HPKE-10-KE is X-Wing ' +
@@ -2571,7 +2572,8 @@ const SETTINGS = [
                  '(draft-ietf-jose-pqc-kem-05, draft-ietf-jose-hpke-' +
                  'encrypt-22, draft-reddy-cose-jose-pqc-hybrid-hpke-11), ' +
                  'and an AKP key in a JWKS is a key type many clients\' JOSE ' +
-                 'libraries do not yet parse — some refuse the whole key set. ' +
+                 'libraries do not yet parse — some refuse the whole key ' +
+                 'set. ' +
                  'Name an algorithm here only where the clients reading this ' +
                  'realm\'s JWKS are known to cope. Removing one stops ' +
                  'publishing and accepting it; naming it again brings back ' +
@@ -9459,7 +9461,8 @@ const SETTINGS = [
                  'so a wallet that can protect the response against a ' +
                  'future quantum adversary does, and the P-256 ECDH-ES key ' +
                  'OpenID4VC HAIP requires second, so every HAIP wallet still ' +
-                 'can. Leaving ECDH-ES out refuses every wallet that has only ' +
+                 'can. Leaving ECDH-ES out refuses every wallet that has ' +
+                 'only ' +
                  'it; an empty list is read as ECDH-ES alone.' },
 
   { key: 'oid4vp.statusListMaxCacheS', group: 'OID4VP',

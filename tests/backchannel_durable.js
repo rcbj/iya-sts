@@ -667,8 +667,8 @@ function childMain() {
          typeof partOf(kemLt, 0).ek === 'string' &&
          partOf(kemLt, 0).kid === 'rp-mlkem' && kemClaims.sid === 'bd-h6',
          'H6. a relying party that registered ML-KEM-768 (#82, ' +
-         'draft-ietf-jose-pqc-kem-05) is sent a Logout Token encrypted to its ' +
-         'AKP key, the KEM ciphertext in `ek`, which decrypts and verifies',
+         'draft-ietf-jose-pqc-kem-05) is sent a Logout Token encrypted to ' +
+         'its AKP key, the KEM ciphertext in `ek`, which decrypts and verifies',
          JSON.stringify([partOf(kemLt, 0).alg, kemClaims]).slice(0, 300));
     const xwLt = (postsTo('/bc/xwing')[0] || {}).token;
     const xwInner = decrypt(xwLt, xwingRp.privateJwk);
@@ -737,7 +737,7 @@ function childMain() {
          'JWT that decrypts with the client\'s key and verifies',
          r.status + ' ' + JSON.stringify([idHeader, idClaims]).slice(0, 400));
 
-    // --- I (#82). post-quantum and hybrid ID Token encryption end to end ------
+    // --- I (#82). post-quantum and hybrid ID Token encryption end to end ---
     note(['ML-KEM-768', 'ML-KEM-768+A192KW', 'HPKE-10', 'HPKE-10-KE']
            .every(function (alg) {
              return disco.id_token_encryption_alg_values_supported
@@ -807,8 +807,8 @@ function childMain() {
     config.setOverride('keys.encryptionKemAlgs',
                        'ML-KEM-768+A192KW,HPKE-10-KE');
     const optedJwks = (await anon.go('GET', '/oauth2/jwks')).json;
-    const optedDisco = (await anon.go('GET',
-                                      '/.well-known/openid-configuration')).json;
+    const optedDisco = (await anon.go(
+      'GET', '/.well-known/openid-configuration')).json;
     const akp = (optedJwks.keys || []).filter(function (k) {
       return k.kty === 'AKP' && k.use === 'enc';
     });

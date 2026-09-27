@@ -240,6 +240,9 @@ function childMain() {
       ['fen-saml', 'fedKeyManagementAlgorithm', 'RSA-OAEP-256',
        'STS-FED-0143'],
       ['fen-saml11', 'fedEncryptionKeyType', 'rsa-3072', 'STS-FED-0143'],
+      // A post-quantum key type (#82) is JOSE only: XML Encryption defines
+      // no post-quantum key transport.
+      ['fen-saml', 'fedEncryptionKeyType', 'x-wing', 'STS-FED-0143'],
       ['fen-saml', 'fedEncryptionKey', '{}', 'STS-FED-0067']
     ];
     // A REFUSED CHANGE TO THE REGISTER carries its code on the audit row and
@@ -376,6 +379,46 @@ function childMain() {
          '5c. a JWE to another key under our kid is 0138, with the one ' +
          'sentence; a kid naming no key held is 0137',
          JSON.stringify([jweWrong.code, jweUnknown.code]));
+
+    // =====================================================================
+    // 5 (#82). A POST-QUANTUM KEY FOR AN OpenID Connect RELATIONSHIP
+    // =====================================================================
+    for (const [keyType, alg] of [['x-wing', 'HPKE-10-KE'],
+                                  ['ml-kem-768', 'ML-KEM-768']]) {
+      const set = await act({ action: 'set', id: 'fen-oidc',
+                              field: 'fedEncryptionKeyType', value: keyType });
+      const rec = get('fen-oidc');
+      const current = federation.currentEncryptionKeyOf(rec);
+      const pqJwk = inSp(function () {
+        return fedEncryption.publicJwkOf(rec);
+      });
+      const view = inSp(function () {
+        return fedEncryption.viewOf(rec);
+      });
+      const opened = decryptJwe(stsCrypto.encryptJweCompact(jws,
+        { jwk: pqJwk, alg: alg, enc: 'A256GCM', cty: 'JWT' }));
+      const classical = decryptJwe(stsCrypto.encryptJweCompact(jws,
+        { jwk: jwk, alg: 'ECDH-ES', enc: 'A256GCM' }));
+      note(set.ok && current && current.keyType === keyType &&
+           current.kem === alg && !current.certificate &&
+           rec.fedKeyManagementAlgorithm === alg &&
+           pqJwk && pqJwk.kty === 'AKP' && pqJwk.alg === alg &&
+           !pqJwk.priv && view.certificatePem === '' &&
+           opened.ok && opened.plaintext === jws &&
+           !classical.ok && classical.code === 'STS-FED-0139',
+           '5d. fedEncryptionKeyType ' + keyType + ' issues an AKP ' + alg +
+           ' key with no certificate, publishes it in the JWKS, decrypts ' +
+           'an ID Token encrypted to it, and accepts nothing else',
+           JSON.stringify([set.errors, current && current.keyType,
+                           rec.fedKeyManagementAlgorithm, opened.why,
+                           classical.code]));
+    }
+    const back = await act({ action: 'set', id: 'fen-oidc',
+                             field: 'fedEncryptionKeyType',
+                             value: 'ec-p256' });
+    note(back.ok && federation.currentEncryptionKeyOf(get('fen-oidc'))
+           .keyType === 'ec-p256',
+         '5e. and it goes back to ec-p256', JSON.stringify(back.errors));
 
     // =====================================================================
     // 6. ROTATION AND THE GRACE PERIOD

@@ -3145,8 +3145,8 @@ class CryptoMetadata {
     const heldPq = held.filter(isPq);
     const vp = [].concat(config.value('oid4vp.responseEncryptionKeyAlgs') ||
                          []).map(String).filter(isPq);
-    const refreshAlg = String(config.value('oauth2.refreshTokenEncryptionAlg') ||
-                              '');
+    const refreshAlg = String(
+      config.value('oauth2.refreshTokenEncryptionAlg') || '');
     const groups = String(config.value('tls.groups') || '');
     const tlsPq = /MLKEM/i.test(groups);
     const surfaces = [

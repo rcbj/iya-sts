@@ -4313,8 +4313,8 @@ function hpkeAeadSizes(aead, key, nonce) {
   if (Buffer.from(key).length !== aead.Nk ||
       Buffer.from(nonce).length !== aead.Nn) {
     log.debug('Leaving hpkeAeadSizes(). Wrong size.');
-    throw new Error(aead.name + ' takes a ' + (aead.Nk * 8) + '-bit key and a ' +
-                    (aead.Nn * 8) + '-bit nonce in HPKE');
+    throw new Error(aead.name + ' takes a ' + (aead.Nk * 8) + '-bit key ' +
+                    'and a ' + (aead.Nn * 8) + '-bit nonce in HPKE');
   }
   log.debug('Leaving hpkeAeadSizes().');
 }
