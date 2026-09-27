@@ -329,8 +329,8 @@ const FIELDS: PolicyField[] = ([
           'admin console, the user portal or the protocol debugger; never ' +
           'for an administrator; never while the sign-in\'s risk is medium ' +
           'or higher; and the sign-in is then ONE factor to every relying ' +
-          'party — no "mfa" in amr, acr urn:sts:acr:remembered-browser — so ' +
-          'an application can refuse it. The browser is recognised by a ' +
+          'party — amr ["pwd"] and acr "1", as a password alone — so an ' +
+          'application asking for "mfa" is refused it. The browser is recognised by a ' +
           'bearer cookie: whoever copies the cookie skips the second factor ' +
           'too, until the copy is caught.' },
   { key: 'rememberedBrowserDays', attribute: 'stsAuthnRememberedBrowserDays',

@@ -89,7 +89,6 @@ type Json = any;
 const TOKEN_TYPE = 'browser-device+jwt';
 const JWE_ALG = 'ECDH-ES+A256KW';
 const JWE_ENC = 'A256GCM';
-const USE_CASE = 'browser-device-token';
 // A cookie's name, value and attributes together may be 4096 bytes in every
 // browser (RFC 6265bis section 5.6); the attributes take about 120.
 const MAX_TOKEN_BYTES = 3900;
@@ -303,10 +302,13 @@ class BrowserDevices {
       iat: now, exp: now + this.lifetimeS()
     };
     const signer = this.deps.signer();
-    const header = Object.assign({ typ: TOKEN_TYPE },
-      this.deps.certificateHeaderFor(USE_CASE, 'ES256', signer.kid));
-    const jws = stsCrypto.signJws(claims, signer.key,
-      { algorithm: 'ES256', kid: signer.kid, header: header });
+    // The use case is written out as a literal so the
+    // certificate-header source check sees which one this signer names.
+    const jws = stsCrypto.signJws(claims, signer.key, {
+      algorithm: 'ES256', keyid: signer.kid,
+      header: Object.assign({ typ: TOKEN_TYPE },
+        this.deps.certificateHeaderFor('browser-device-token', 'ES256',
+                                       signer.kid)) });
     const enc = this.deps.keysFor().enc;
     const jwe = stsCrypto.encryptJweCompact(jws, {
       alg: JWE_ALG, enc: JWE_ENC, jwk: enc.publicJwk, cty: 'JWT',
@@ -514,6 +516,19 @@ class BrowserDevices {
       return errorCodes.mark({ ok: false, acted: 'refused',
         error: 'Remembering browsers is switched off in this realm ' +
                '(devices.browserDevices).' }, 'STS-DEVICE-0044');
+    }
+    // ALREADY REMEMBERED FOR THIS PERSON: the token is issued again rather
+    // than a second device made for one browser.
+    const known = this.recognize(req, username);
+    if (known && known.device && known.flags && !known.flags.replayed &&
+        !known.flags.foreign && known.device.status !== 'compromised') {
+      const again = this.afterSignIn(req, res, {
+        username: username, secondFactor: secondFactor,
+        recognized: { via: 'browser-cookie', id: known.device.id,
+                      status: known.device.status,
+                      browserToken: known.flags } });
+      log.debug("Leaving BrowserDevices.remember(). Already remembered.");
+      return { ok: !!again.ok, acted: 'already', device: known.device.id };
     }
     const nowIso = new Date(this.deps.now()).toISOString();
     const browser = BrowserDevices.browserOf(req && req.headers &&

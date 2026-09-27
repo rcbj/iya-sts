@@ -800,6 +800,16 @@ const PENDING_ID_QUERY = vz.object({
   authn: vt.opt(vt.base64url)
 });
 
+// Is a second factor required of this person BECAUSE they are an
+// administrator (#246)? Such a requirement is never answered by a remembered
+// browser (#265).
+function requirementForAdministrator(credentials: any, username: string) {
+  helpers.log.debug("Entering requirementForAdministrator().");
+  const requirement = credentials.mfaRequirementFor(username) || {};
+  helpers.log.debug("Leaving requirementForAdministrator().");
+  return !!(requirement.byAdministrator || requirement.offered);
+}
+
 const LOGIN_FORM = vz.object({
   authn_id: vt.opt(vt.base64url),
   // **THE THREE VALUES THE FORM ITSELF DRAWS, AND THE FIRST VERSION OF THIS
@@ -829,6 +839,9 @@ const LOGIN_FORM = vz.object({
   device_fp: vz.string().max(64).regex(/^[A-Za-z0-9]*$/).optional(),
   use_webauthn: vt.opt(vt.flag),
   webauthn_only: vt.opt(vt.flag),
+  // "REMEMBER THIS BROWSER" (#265): a device known by a signed and encrypted
+  // cookie, registered when the session starts (`common/browser_devices.ts`).
+  remember_browser: vt.opt(vt.flag),
   csrf_token: vt.opt(vt.token)
 });
 
@@ -1069,6 +1082,10 @@ interface AuthnDeps {
   accountSignals: typeof accountSignals;
   clientHello: typeof clientHello;
   deviceRecognition: typeof deviceRecognition;
+  // Remembered browsers (#265), found lazily: that library reaches the
+  // keystore and the device register, which a process loading this file for
+  // one of its helpers has no need of.
+  browserDevices: () => any;
   crypto: typeof crypto;
   stsCrypto: typeof stsCrypto;
   realms: typeof realms;
@@ -1119,6 +1136,9 @@ class Authn {
       accountSignals: accountSignals,
       clientHello: clientHello,
       deviceRecognition: deviceRecognition,
+      browserDevices: function () {
+        return require('../common/browser_devices');
+      },
       crypto: crypto,
       stsCrypto: stsCrypto,
       realms: realms,
@@ -5985,14 +6005,65 @@ class Authn {
   // caller handed `startSession()` (see the block above that function); a
   // caller that passed none gets the disabled check it always had.
   // True when it answered.
+  // A REMEMBERED BROWSER AFTER A SIGN-IN-SCREEN SESSION STARTS (#265): its
+  // token issued again with the next generation, or the browser registered
+  // where the person ticked "Remember this browser", or a copied or
+  // unreadable cookie cleared. Every door on this screen ends in
+  // refusedSession() with the pending record in hand, which is why it is
+  // asked there. It never fails the sign-in.
+  private afterBrowserSignIn(res, record, username, session, detail) {
+    const { log, errorCodes } = this.deps;
+    log.debug("Entering Authn.afterBrowserSignIn().");
+    // NOBODY SIGNED IN: "continue without signing in" leaves a remembered
+    // browser alone rather than reading it as somebody else's cookie.
+    if (username === ANONYMOUS_USERNAME ||
+        (session && session.authenticated === false)) {
+      log.debug("Leaving Authn.afterBrowserSignIn(). Anonymous.");
+      return;
+    }
+    const said = detail || {};
+    const request = said.request || this.deps.audit.currentRequest();
+    try {
+      const bd = this.deps.browserDevices();
+      bd.afterSignIn(request, res, {
+        username: username,
+        recognized: this.registeredDeviceOf(session),
+        secondFactor: bd.hasSecondFactor(session && session.amr),
+        remember: !!(record && record.rememberBrowser)
+      });
+    } catch (e) {
+      log.warn(errorCodes.tag('STS-DEVICE-0045') + 'authn: the remembered ' +
+               'browser could not be settled after a sign-in: ' +
+               ((e && e.message) || e));
+    }
+    log.debug("Leaving Authn.afterBrowserSignIn().");
+  }
+
   private refusedSession(res, base, record, username, started, detail) {
     const { log, accountState, errorCodes } = this.deps;
     log.debug("Entering Authn.refusedSession().");
     if (started) {
+      this.afterBrowserSignIn(res, record, username, started, detail);
       log.debug("Leaving Authn.refusedSession(). Not refused.");
       return false;
     }
     const said = detail || {};
+    // A REMEMBERED BROWSER'S COOKIE THAT CAUSED OR SHARED THE REFUSAL (#265)
+    // — a copy, somebody else's, or a device since marked compromised — is
+    // cleared, so the next attempt from this browser is not refused on it
+    // again. The device stays compromised; only the cookie goes.
+    try {
+      const fact = this.registeredDeviceFor({ request: said.request },
+                                            username);
+      if (fact && fact.via === 'browser-cookie' &&
+          (fact.status === 'compromised' || (fact.browserToken &&
+           (fact.browserToken.replayed || fact.browserToken.foreign)))) {
+        this.deps.browserDevices().clear(res);
+      }
+    } catch (e) {
+      log.debug("Caught in Authn.refusedSession(): " +
+                ((e && e.message) || e));
+    }
     const code = said.refusedWith ||
       (accountState.isDisabled(username) ? 'STS-AUTHN-0201'
                                          : 'STS-AUTHN-0010');
@@ -7018,6 +7089,15 @@ class Authn {
                   '" configures a mechanism this realm has turned off.'
                 : '') + '</label>'
             : '')) +
+      // "REMEMBER THIS BROWSER" (#265), where the realm offers it. Opt-in, a
+      // plain checkbox, and honest about what it is: the cookie is a bearer
+      // credential and the label says so in a sentence.
+      (this.deps.browserDevices().enabled() && !locked
+        ? '<label class="chk"><input type="checkbox" id="remember_browser" ' +
+          'name="remember_browser" value="1"> Remember this browser ' +
+          '<span class="sub">— recognises it next time with a cookie. Do ' +
+          'not tick on a shared computer.</span></label>'
+        : '') +
       '<div class="row"><button type="submit" id="kc-login" name="action" ' +
       'value="login">Sign In</button>' +
       // THE THIRD BUTTON, AND IT IS NOT CANCEL (2026-09-05).
@@ -7517,10 +7597,46 @@ class Authn {
         'This request needs a security key, and this account holds none. ' +
         'Add one at /portal/keys and sign in again.'));
     }
-    const factor = passwordless || record.forceKey ||
-                   riskFactor === 'security-key'
+    let factor = passwordless || record.forceKey ||
+                 riskFactor === 'security-key'
       ? 'webauthn'
       : (configuredFactor || riskChoice || (secondFactor ? 'webauthn' : ''));
+
+    // ---------------------------------------------------------------------
+    // A REMEMBERED BROWSER IN PLACE OF THE SECOND FACTOR (#265), and ONLY in
+    // place of the person's CONFIGURED one: never one a relying party
+    // demanded (`forceMfa`, `forceKey`), never one risk asked for, never the
+    // security key the person ticked themselves, and never a factor required
+    // of an administrator. `browser_devices.ts`'s `skipsSecondFactor()`
+    // holds the rest — the realm's policy, the browser recognised and
+    // current and theirs, the second factor given on it within the policy's
+    // days, the admin console, portal and debugger excluded, risk below
+    // MEDIUM. The session is then ONE factor (`["pwd"]`, acr 1) and says so.
+    // ---------------------------------------------------------------------
+    let skippedSecondFactor = '';
+    if (factor && factor === configuredFactor && !passwordless &&
+        !secondFactor && !record.forceMfa && !record.forceKey &&
+        !riskFactor && !requirementForAdministrator(credentials, username)) {
+      const answer = this.deps.browserDevices().skipsSecondFactor({
+        fact: this.registeredDeviceFor({ request: req,
+          application: String(record.application || '') }, username),
+        username: username,
+        clientId: String(record.application || ''),
+        riskLevel: risk ? risk.level : '' });
+      if (answer.skip) {
+        skippedSecondFactor = factor;
+        factor = '';
+        audit.audit({
+          action: 'authn.second-factor.skipped', outcome: 'success',
+          actor: username, target: username, channel: 'http',
+          protocol: record.protocol,
+          summary: username + ' was not asked for their ' +
+                   skippedSecondFactor + ': ' + answer.why,
+          detail: { factor: skippedSecondFactor } });
+        log.info('authn: "' + username + '" signs in without their ' +
+                 skippedSecondFactor + ' on a remembered browser.');
+      }
+    }
 
     // ---------------------------------------------------------------------
     // A SECOND FACTOR REQUIRED OF THIS PERSON (2026-09-13) — by their own entry
@@ -7550,7 +7666,7 @@ class Authn {
         'its own is one factor. Sign in with your password; you will be ' +
         'asked for your second factor, or to set one up.'));
     }
-    if (requirement.required && !factor) {
+    if (requirement.required && !factor && !skippedSecondFactor) {
       const offered = this.enrolmentOffered();
       if (!offered.totp && !offered.webauthn) {
         log.warn(errorCodes.tag('STS-AUTHN-0172') +
@@ -7613,7 +7729,8 @@ class Authn {
     // Nothing is offered where nothing can be enrolled, and never to a
     // passwordless sign-in, which is not asked for a second factor.
     // ---------------------------------------------------------------------
-    const enrolable = requirement.offered && !factor && !passwordless
+    const enrolable = requirement.offered && !factor && !passwordless &&
+                      !skippedSecondFactor
       ? this.enrolmentOffered() : null;
     if (enrolable && (enrolable.totp || enrolable.webauthn)) {
       pending.delete(record.id);
@@ -9433,6 +9550,10 @@ class Authn {
         return undefined;
       }
 
+      // THE PERSON'S "REMEMBER THIS BROWSER" (#265), carried on the pending
+      // record so that whichever step finishes the sign-in — this one or a
+      // second factor's — registers the browser (refusedSession()).
+      record.rememberBrowser = String(body.remember_browser || '') === '1';
       // A LOCKED RECORD'S NAME IS THE RECORD'S (#109): see
       // beginAuthentication(). Whatever was typed is not read.
       const username = record.lockedUsername ||

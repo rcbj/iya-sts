@@ -378,7 +378,7 @@ device*. Remove it from `risc.autoEmitTypes` to send only the CAEP events.
 ## Risk scoring
 
 Every sign-in is scored ([Risk scoring](risk-scoring.md)). The device that
-proved the sign-in adds five signals. Each is a factor on the score, and
+proved the sign-in adds up to eight signals. Each is a factor on the score, and
 `risk.signalFactors` can change it:
 
 | Signal | Factor | When |
@@ -388,6 +388,9 @@ proved the sign-in adds five signals. Each is a factor on the score, and
 | `unregistered-device` | ×2 | No device of the person's own was recognised: none at all, or someone else's. |
 | `compliant-attested-device` | ×0.5 | The person's own device, compliant and attested. This lowers the score. |
 | `compliant-device` | ×0.8 | The person's own device, compliant and self-asserted. This lowers it less. |
+| `browser-token-replayed` | ×50 | A remembered browser presented an older token than its device holds: the cookie was copied, and the device is now compromised. This is HIGH on its own. |
+| `browser-token-foreign` | ×2 | The browser carries another person's remembered-browser cookie. |
+| `browser-context-changed` | ×2 | A remembered browser's cookie arrived from a different browser or operating system than it was bound to. |
 
 * **`unregistered-device` is scoped.** It fires only for a person who has
   registered a device, or for anybody while `devices.expectRegistered` is on.

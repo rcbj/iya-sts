@@ -598,7 +598,8 @@ class DevicesAdmin {
       decisions: {
         riskSignals: ['compromised-device', 'non-compliant-device',
                       'unregistered-device', 'compliant-attested-device',
-                      'compliant-device'],
+                      'compliant-device', 'browser-token-replayed',
+                      'browser-token-foreign', 'browser-context-changed'],
         expectRegistered: config.value('devices.expectRegistered') === true,
         refuseCompromised: config.value('devices.refuseCompromised') !==
                            false,

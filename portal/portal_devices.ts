@@ -107,10 +107,12 @@ interface PortalDevicesDeps {
   credentials: Json;
   webauthnPolicy: Json;
   authn: Json;
+  browserDevices: Json;
 }
 
 const ACTIONS = ['remove', 'challenge', 'prove', 'cancel-proof',
-                 'link-begin', 'link-finish', 'link-cancel'];
+                 'link-begin', 'link-finish', 'link-cancel',
+                 'remember-browser'];
 
 class PortalDevicesPage {
   readonly PATH: string;
@@ -304,6 +306,32 @@ class PortalDevicesPage {
       'signs you in.</p>';
   }
 
+  // "REMEMBER THIS BROWSER" (#265): the other way to register the browser
+  // this page is open in — one that works in every browser, and says it is
+  // the weaker kind. A browser already remembered is issued its token again.
+  private rememberBlock(session: Json): string {
+    const { esc, websecurity } = this.ctx;
+    const { browserDevices } = this.deps;
+    this.ctx.log.debug("Entering PortalDevicesPage.rememberBlock().");
+    if (!browserDevices.enabled()) {
+      this.ctx.log.debug("Leaving PortalDevicesPage.rememberBlock(). Off.");
+      return '';
+    }
+    this.ctx.log.debug("Leaving PortalDevicesPage.rememberBlock().");
+    return '<div class="card"><h2>Remember this browser</h2>' +
+      '<p class="sub">Works in any browser: this service puts a signed and ' +
+      'encrypted token in a cookie and recognises the browser by it next ' +
+      'time. It is the WEAKEST kind of device here — anybody who copies the ' +
+      'cookie is this browser until the copy is caught, which ends every ' +
+      'session it holds — so it only stops sign-ins from it looking new, ' +
+      'and never counts as a compliant device. Do not use it on a shared ' +
+      'computer.</p>' +
+      '<form method="post" action="' + esc(this.PATH) + '">' +
+      websecurity.field(session.id) +
+      '<input type="hidden" name="action" value="remember-browser">' +
+      '<button type="submit">Remember this browser</button></form></div>';
+  }
+
   // THE WEBAUTHN LINK block, step one: which credential, and which device.
   private linkBlock(session: Json, held: Json[]): string {
     const { esc, websecurity } = this.ctx;
@@ -443,7 +471,8 @@ class PortalDevicesPage {
       '<div class="card">' + (linking
         ? this.ceremonyBlock(session, linking, base)
         : this.proofBlock(session, held, base + PATH) +
-          this.linkBlock(session, held)) + '</div>';
+          this.linkBlock(session, held)) + '</div>' +
+      this.rememberBlock(session);
     log.debug("Leaving PortalDevicesPage.page().");
     return { html: shell(this.PATH, session, message, error, body),
              ceremony: !!linking };
@@ -554,6 +583,21 @@ class PortalDevicesPage {
                                                base));
     }
     const action = String(body.action || 'remove');
+    if (action === 'remember-browser') {
+      // Not counted as a second factor given on this browser: the portal's
+      // session says nothing about which browser gave it. The next sign-in
+      // here with the second factor starts the skip period (#265).
+      const done = this.deps.browserDevices.remember(req, res, who, false);
+      this.audited(who, 'remember-browser', done, { via: 'portal' });
+      if (!done.ok) {
+        log.debug('Leaving POST ' + PATH + '. Not remembered.');
+        return this.refusedPage(req, res, session, done, 'STS-DEVICE-0044');
+      }
+      log.debug('Leaving POST ' + PATH + '. Remembered.');
+      return this.back(req, res, done.acted === 'already'
+        ? 'This browser is already remembered.'
+        : 'This browser is remembered.');
+    }
     if (action === 'challenge') {
       const issued = deviceEnrolment.issueChallenge({ sessionId: session.id,
         username: who, purpose: 'key' });
@@ -822,7 +866,8 @@ class PortalDevices {
     helpers.log.debug("Leaving PortalDevices.defaultDeps().");
     return { log: helpers.log, devices: devices,
              deviceEnrolment: deviceEnrolment, credentials: credentials,
-             webauthnPolicy: webauthnPolicy, authn: authn };
+             webauthnPolicy: webauthnPolicy, authn: authn,
+             browserDevices: require('../common/browser_devices') };
   }
 
   register(context: PortalContext): { path: string } {

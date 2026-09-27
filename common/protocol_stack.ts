@@ -261,6 +261,11 @@ class ProtocolStack {
                'DeviceRecognition');
     this.build('common/device_enrolment', require('./device_enrolment'),
                'DeviceEnrolment');
+    // #265: remembered browsers — a device known by a signed and encrypted
+    // cookie. A library, asked by recognition (above), the sign-in screen
+    // and the portal.
+    this.build('common/browser_devices', require('./browser_devices'),
+               'BrowserDevices');
     // #127: a person's identity verifications and the `verified_claims`
     // answer. A library, asked by the authorization server's claims request,
     // the console and API, and the wallet and certificate sign-ins.

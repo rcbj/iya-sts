@@ -324,6 +324,8 @@ const ACTIONS = [
     label: 'An administrator with no second factor was offered one' },
   { action: 'authn.mfa.enrolment.declined', category: 'authentication',
     label: 'An administrator ignored the offer and signed in with a password' },
+  { action: 'authn.second-factor.skipped', category: 'authentication',
+    label: 'A remembered browser stood in for the second factor (#265)' },
   { action: 'authn.mfa.enrolment.at-risk', category: 'authentication',
     label: 'A second factor was set up at a sign-in of elevated risk' },
   { action: 'authn.mfa.enrolled', category: 'authentication',
@@ -498,6 +500,8 @@ const ACTIONS = [
   // person's bound, the person's own portal. `common/devices.ts`.
   { action: 'device.create', category: 'directory',
     label: 'A device was registered' },
+  { action: 'device.browser.remembered', category: 'directory',
+    label: 'A person asked for this browser to be remembered (#265)' },
   { action: 'device.update', category: 'directory',
     label: 'A device was changed: its label, owner, applications or status' },
   { action: 'device.delete', category: 'directory',
@@ -1020,6 +1024,9 @@ const ACTIONS = [
     label: 'A certificates form was refused for its CSRF token' },
   { action: 'portal.device.remove', category: 'authentication',
     label: 'A person removed a Native SSO device' },
+  { action: 'portal.device.remember-browser', category: 'authentication',
+    label: 'A person remembered the browser they were using on ' +
+           '/portal/devices (#265)' },
   { action: 'portal.kerberos.keytab', category: 'authentication',
     label: 'A person downloaded their own keytab' },
   { action: 'portal.kerberos.refused', category: 'authentication',

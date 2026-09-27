@@ -3089,6 +3089,18 @@ function candidatesForKid(candidates, headerKid) {
 // ---------------------------------------------------------------------------
 const groupsPendingSaid = new Set();
 
+// Whether a signer group's keys are this realm's GENERAL JOSE keys — the ones
+// published in the JWKS and accepted as a verifier of this realm's own JWTs.
+// Two groups are not: the XML group signs XML, and the browser-devices group
+// (#265) signs only the remembered-browser token, which `browser_devices.ts`
+// reads with keys of its own choosing; publishing it, or accepting it for an
+// access token, would let one kind of token stand in for another.
+function isGeneralJoseGroup(group) {
+  log.debug("Entering isGeneralJoseGroup().");
+  log.debug("Leaving isGeneralJoseGroup().");
+  return group !== 'xml' && group !== 'browser-devices';
+}
+
 function groupMembersOf(keys) {
   log.debug("Entering groupMembersOf().");
   log.debug("Leaving groupMembersOf().");
@@ -3155,7 +3167,7 @@ function groupVerifiersFor(alg) {
   const matches = function (group, memberKind, memberAlg) {
     log.debug("Entering matches().");
     log.debug("Leaving matches().");
-    if (group === 'xml') {
+    if (!isGeneralJoseGroup(group)) {
       return false;
     }
     return spec.family === 'rsa' ? memberKind === 'rsa' : memberAlg === alg;
@@ -3485,7 +3497,7 @@ function allVerificationKeys() {
     // The JWK-shaped generations only: a BBS key (#49 P5) has no JWK and is
     // looked up through bbsGenerations().
     return (one.kind === 'curve' || one.kind === 'pq' ||
-            (one.kind === 'group' && one.group !== 'xml')) &&
+            (one.kind === 'group' && isGeneralJoseGroup(one.group))) &&
            standbyLive(one, now);
   }).map(function (one) {
     return { alg: one.alg, publicJwk: one.publicJwk, role: one.role };
@@ -3502,7 +3514,7 @@ function allVerificationKeysAsync() {
     const now = Date.now();
     return current.concat(standbyOf(keys).filter(function (one) {
       return (one.kind === 'curve' || one.kind === 'pq' ||
-              (one.kind === 'group' && one.group !== 'xml')) &&
+              (one.kind === 'group' && isGeneralJoseGroup(one.group))) &&
              standbyLive(one, now);
     }).map(function (one) {
       return { alg: one.alg, publicJwk: one.publicJwk, role: one.role };
@@ -3532,7 +3544,7 @@ function groupPublishedJwks(keys) {
     return String(pem).replace(/-----[^-]+-----/g, '').replace(/\s+/g, '');
   };
   const out = groupMembersOf(keys).filter(function (one) {
-    return one.group !== 'xml';
+    return isGeneralJoseGroup(one.group);
   }).map(function (one) {
     const jwk = Object.assign({}, one.publicJwk);
     if (!pki || (one.kind === 'pq' && one.pairedSlot)) {
@@ -3557,7 +3569,7 @@ function groupPublishedJwks(keys) {
 function groupJwkEntries(keys) {
   log.debug("Entering groupJwkEntries().");
   const out = groupMembersOf(keys).filter(function (one) {
-    return one.group !== 'xml';
+    return isGeneralJoseGroup(one.group);
   }).map(function (one) {
     return { alg: one.alg, publicJwk: one.publicJwk, role: 'current' };
   });

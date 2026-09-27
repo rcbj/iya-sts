@@ -2214,3 +2214,35 @@ email SHALL NOT be used for out-of-band authentication. Where they are on:
 `startSession()` asks the authentication policy of every door: a mechanism it
 does not accept in the role it answered in gets no session (STS-AUTHN-0268,
 -0269), held second factors excepted by the contract `totp.enabled` kept.
+
+## A REMEMBERED BROWSER, AND THE SECOND FACTOR IT MAY SKIP (#265, 2026-09-26)
+
+The sign-in screen draws a "Remember this browser" checkbox while
+`devices.browserDevices` is on. `afterBrowserSignIn()` then does one of four
+things once a session has started:
+* registers the browser;
+* reissues its token one generation on;
+* clears a copied cookie;
+* clears the cookie of a compromised device.
+
+It skips the anonymous user and an unauthenticated session. **It is not a
+refusal path**: a failure is logged (`STS-DEVICE-0045`), and the sign-in
+stands.
+
+**The skip is the last thing `finishPasswordSignIn()` decides.** The second
+factor is waived only when all of these hold:
+* the factor is the one configured (not forced by `forceMfa` or `forceKey`,
+  not a risk step-up);
+* the person is not an administrator the authentication policy requires one
+  of;
+* `browser_devices.skipsSecondFactor()` agrees. That covers:
+  * the realm's `rememberedBrowserSkipsSecondFactor`;
+  * a readable, current token in the same browser and owned by the person;
+  * a client that is not the console, the portal or the debugger;
+  * a person holding no console role;
+  * risk below MEDIUM;
+  * a second factor last given on that browser within `rememberedBrowserDays`.
+
+A skipped sign-in is ONE factor (`amr ["pwd"]`, acr "1") and is audited as
+`authn.second-factor.skipped`. The cookie is appended AFTER the session
+cookie, because `res.set()` replaces the header.
