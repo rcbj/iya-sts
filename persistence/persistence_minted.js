@@ -186,6 +186,9 @@ let origin = '';
 // BECAUSE NOTHING WAS EVER STORED** — every write in the old shape failed, so
 // there is no row anywhere in the old format to read back.
 // ---------------------------------------------------------------------------
+// The stores already told that a NUL key is kept in memory only.
+const nulKeyWarned = new Set();
+
 function storedKey(row, key) {
   log.debug("Entering storedKey().");
   if (row.merge !== 'own') {
@@ -1060,6 +1063,27 @@ function flush() {
     }
     byRealm.forEach(function (keys, realmId) {
       keys.forEach(function (key) {
+        // A KEY POSTGRESQL CANNOT HOLD IS LEFT OUT (2026-09-27). A NUL in a
+        // text column fails the WHOLE transaction ("invalid byte sequence
+        // for encoding UTF8: 0x00"), the catch below puts every key back on
+        // the journal, and the next flush fails the same way — for ever.
+        // `provider_commands.ts` keyed its remembered issuer '\u0000issuer'
+        // and a single-node run stopped persisting anything minted from the
+        // first command onward: 853 failed flushes, and every job after it
+        // that crossed workers failed. Nothing is lost that could have been
+        // written; the store keeps the value in memory. Said once per store.
+        if (String(key).indexOf('\u0000') >= 0 ||
+            String(realmId).indexOf('\u0000') >= 0) {
+          if (!nulKeyWarned.has(handle)) {
+            nulKeyWarned.add(handle);
+            log.error(errorCodes.tag('STS-STORE-0063') +
+                      'persistence: "' + handle + '" journalled a key ' +
+                      'holding a NUL character; PostgreSQL cannot store it, ' +
+                      'so that row is kept in memory only. Said once per ' +
+                      'store.');
+          }
+          return;
+        }
         const present = row.read(realmId, key);
         if (!present || !present.present) {
           deletes.push({ handle: handle, realm: realmId,

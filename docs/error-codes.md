@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3694** of them, in **39** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3695** of them, in **39** subsystems.
 
 ## Where a code appears
 
@@ -53,7 +53,7 @@ is an ordinary outcome.
 * [PROXY protocol (`STS-PROXY`)](#sts-proxy) — 9
 * [Service core (`STS-CORE`)](#sts-core) — 62
 * [Worker pools (`STS-WORKER`)](#sts-worker) — 43
-* [Persistence and coordination (`STS-STORE`)](#sts-store) — 62
+* [Persistence and coordination (`STS-STORE`)](#sts-store) — 63
 * [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 28
 * [Scheduler (`STS-SCHED`)](#sts-sched) — 16
 * [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 79
@@ -327,6 +327,7 @@ Raised from: persistence/.
 | `STS-STORE-0060` | A process did not take the stable persistence origin for its node name and slot — a live process still held it after the wait, or it has no stable name — and writes under a random origin, so its per-process rows (audit, counters) are read by others as a contribution. | none — logged at startup |
 | `STS-STORE-0061` | A process lost the claim on its persistence origin while running — another process took it — and exits rather than go on refusing every write. | none — logged, then the process exits |
 | `STS-STORE-0062` | The claim on this process's persistence origin could not be renewed because the store did not answer. Not fatal: the claim outlives a short outage and every write checks it. | none — logged |
+| `STS-STORE-0063` | A minted store journalled a key holding a NUL character, which PostgreSQL text cannot hold; the row is left out of the write rather than failing every write after it. | none — logged |
 
 ## STS-CLUSTER
 
