@@ -46,7 +46,11 @@ do ·
 [Applications](applications.md): the registry of every client, relying party
 and service provider ·
 [Management API](management-api.md): `/admin-api`, every console control
-reachable by a machine with an OAuth 2.0 access token.
+reachable by a machine with an OAuth 2.0 access token ·
+configuration recipes, in the console and through the API, for each
+[OAuth 2.0 grant](configure-oauth2-grants.md),
+[OpenID Connect flow](configure-oidc-flows.md) and
+[SAML 2.0 and SAML 1.1 profile](configure-saml.md).
 
 **Sessions and signals** —
 [Sessions](sessions.md) ·
