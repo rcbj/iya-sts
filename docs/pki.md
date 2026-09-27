@@ -334,7 +334,9 @@ rebuild leaves an imported authority alone.
 **Use your own key pair** — per slot, which is a use case and an algorithm
 (`jose` / `ES256:P-256`). With no certificate this service issues one from its
 own authority, so your key chains here exactly as a generated one would; with a
-certificate, the pair is used as you supplied it.
+certificate, the pair is used as you supplied it. Whether the realm then SIGNS
+with it is `pki.pinnedSigners` — see [A pinned key pair as the realm's
+signer](#a-pinned-key-pair-as-the-realms-signer-off-by-default).
 
 ## A branch is built whole, or not at all
 
@@ -990,12 +992,78 @@ The listener certificate, the SPIFFE authorities and the OpenID Federation
 entity keys have events of their own (#245); see
 [Shared Signals](shared-signals.md).
 
-**A key pair cannot be pinned into a slot that certifies a signing key**
-(`STS-PKI-0206`). This service never signs with a pinned key. Pinning into such
-a slot therefore changed no signature. What it did was replace the current
-key's published certificate, so the key's `x5c` disappeared from the JWKS and
-its certificate from the SAML metadata. A slot that no signing key uses can
-still be pinned.
+**With `pki.pinnedSigners` off — the default — a key pair cannot be pinned
+into a slot that certifies a signing key** (`STS-PKI-0206`). The realm does not
+sign with a pinned key then, so such a pin would change no signature. What it
+did, before #245 refused it, was replace the current key's published
+certificate, so the key's `x5c` disappeared from the JWKS and its certificate
+from the SAML metadata. A slot that no signing key uses can still be pinned.
+With the setting on, a pin into a `jose` or `xml` slot is a signer: see the
+next section.
+
+## A pinned key pair as the realm's signer (off by default)
+
+> **Warning: you take over that key's lifecycle.** A pinned signing key is
+> never rotated by `signing.rotate`, and nothing replaces it when its
+> certificate expires: relying parties that check the `x5c` or the metadata
+> certificate refuse what it signs from that moment. The console and the log
+> warn ahead of the end (`pki.pinnedSignerExpiryWarningDays`); pin a renewed
+> key pair before then, or unpin. Leave `pki.pinnedSigners` off unless you
+> need the realm to sign with a key you hold elsewhere — a new installation
+> works with no step because it is off.
+
+`pki.pinnedSigners` (per realm, **off by default**) turns a pin into a `jose`
+or `xml` slot on `/admin/pki` (or `POST /admin-api/pki/pin-key`) into the key
+that realm SIGNS with for that algorithm, in place of the key it generated:
+
+| Use case | Slots | What the pinned key signs |
+|---|---|---|
+| `jose` | `RS256` (every RS\* and PS\*), `ES256:P-256`, `ES384:P-384`, `ES512:P-521`, `ES256K:secp256k1`, `EdDSA:Ed25519`, `EdDSA:Ed448`, `ML-DSA-44`, `ML-DSA-65`, `ML-DSA-87`, `SLH-DSA-SHA2-128s`, `SLH-DSA-SHAKE-128s` | ID tokens, access tokens, logout tokens, SETs — every JWS the realm signs with that algorithm |
+| `xml` | `RS256` | SAML 2.0 and 1.1, WS-Federation and WS-Trust signatures, and the signing certificate in their metadata |
+
+`tls` and `assertions` are not signer slots and behave as they always have.
+
+* **The key must be the slot's** (`STS-PKI-0207`): an RSA key of at least 2048
+  bits for `RS256`, the slot's curve for ES\* and EdDSA, and the slot's own
+  parameter set for ML-DSA and SLH-DSA (a PKCS#8 file carrying the seed). A
+  signer-group slot, a composite post-quantum algorithm, and an `xml` slot
+  other than `RS256` are refused (`STS-PKI-0208`).
+* **Your certificate, or ours.** Without one, the key is certified under the
+  realm's Issuing CA for the use case and renewed with it. With one, it must
+  hold the key and be valid now (`STS-PKI-0210`), and the optional chain —
+  its issuer first — must link (`STS-PKI-0209`); the JWKS `x5c` is then YOUR
+  chain, which need not reach this service's Root, and a renewal never
+  replaces it.
+* **Published ahead of use.** The key is in the JWKS (a `kid` of its own,
+  `sts-pinned-…`, spelt as `keys.kidFormat` says), the SAML and WS-Federation
+  metadata and `/crypto/metadata` from the moment it is pinned, and signs
+  after `pki.pinnedSignerLeadMinutes` (a day by default) — #42's rule for a
+  next key. A `signing-key-rotated` event (reason `requested`) is sent at the
+  pin and at the unpin.
+* **The generated key is not thrown away.** It stays published and verifying
+  the whole time, so everything it signed before the pin goes on verifying,
+  and **Unpin** makes it the signer again at once. The unpinned key goes on
+  verifying what it signed through the same grace a retired generated key has,
+  and `signing.retire` drops it afterwards (superseding the certificate where
+  this service issued it). Unpinning a slot with nothing pinned is
+  `STS-PKI-0211`.
+* **Custody.** The private key is kept in the realm's PKI row, which is sealed
+  under the key-encryption key wherever that outlives the process (product
+  mode), and every node of a cluster reads it from the shared store. No
+  console page or API answer carries it.
+* **Turning the setting off** while a key is pinned makes the generated key
+  sign again with no event; unpin first.
+
+```bash
+# Sign this realm's RS256 tokens with an RSA key you hold (pki.pinnedSigners on).
+curl -sk -X POST -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  https://localhost:8081/admin-api/pki/pin-key \
+  -d "$(jq -n --rawfile k key.pem '{useCase:"jose", slot:"RS256", privateKeyPem:$k}')"
+
+# Go back to the generated key.
+curl -sk -X POST -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  https://localhost:8081/admin-api/pki/unpin-key -d '{"useCase":"jose","slot":"RS256"}'
+```
 
 ## Where the CA private keys live
 
@@ -1333,7 +1401,7 @@ touch the store**, which is the same rule the two buttons follow.
 
 ## Configuration
 
-Thirty-eight `pki.*` settings, in four groups. Two are restart-only
+Forty-two `pki.*` settings, in four groups. Two are restart-only
 (`pki.autoBuild` and `pki.httpPort`); the rest take effect at runtime.
 
 ### The hierarchy
@@ -1354,6 +1422,9 @@ never a certificate that exists.
 | `pki.intermediateLifetimeYears` | `STS_PKI_INTERMEDIATE_LIFETIME_YEARS` | `0` | yes | A new Intermediate CA's lifetime; `0` is the profile's ten years, clamped to the Root's expiry. |
 | `pki.issuingLifetimeYears` | `STS_PKI_ISSUING_LIFETIME_YEARS` | `0` | yes | Each new Issuing CA's lifetime; `0` is the profile's five years, clamped to its Intermediate's expiry. |
 | `pki.maxStoredObjects` | `STS_PKI_MAX_STORED_OBJECTS` | `200` | yes | How many objects the Certificate & Key Configuration pane may keep in one realm; a full store refuses the next one rather than discarding the oldest. |
+| `pki.pinnedSigners` | `STS_PKI_PINNED_SIGNERS` | `false` | yes | **Off by default.** On, a key pinned into a `jose` or `xml` slot is the key this realm signs with for that algorithm. **Warning:** you take over its lifecycle — it is never rotated and ends with its certificate. See [above](#a-pinned-key-pair-as-the-realms-signer-off-by-default). |
+| `pki.pinnedSignerLeadMinutes` | `STS_PKI_PINNED_SIGNER_LEAD_MINUTES` | `1440` | yes | How long a pinned signing key is published before it signs. `0` signs at once, which a relying party holding a cached JWKS refuses until it fetches again. |
+| `pki.pinnedSignerExpiryWarningDays` | `STS_PKI_PINNED_SIGNER_EXPIRY_WARNING_DAYS` | `30` | yes | How far ahead of a pinned key's certificate expiry `/admin/pki` and the log (`STS-PKI-0212`, `STS-PKI-0213` once expired) warn. |
 
 ### Publishing revocation
 

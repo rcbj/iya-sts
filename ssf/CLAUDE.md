@@ -1252,6 +1252,17 @@ rotate in the same act and are never named: they are published nowhere. An
 emergency rotation also sends CAEP `session-revoked` and RISC
 `sessions-revoked` (#48, P4) — those are about PEOPLE, and this is not.
 
+**A PIN IS A ROTATION TOO (2026-09-27, #263).** Where a realm signs with
+pinned keys (`pki.pinnedSigners`), `signing_rotation.ts`'s `pinSigningKey()`
+and `unpinSigningKey()` send the same event with reason `requested`: a pin as
+`<unit> <kid that signed until now> -> <pinned kid>`, sent at the pin, which is
+when the key is PUBLISHED (`pki.pinnedSignerLeadMinutes` before it signs,
+#42's order for a next key); an unpin as `<pinned kid> -> <generated kid>`, the
+generated key having been published all along. The same URN and not a sibling,
+by #245's own test: the document a receiver fetches again is the same JWKS. A
+pin with the setting off, or an unpin of a pin that never signed, changes no
+signer and sends nothing.
+
 ## THE OTHER KEYS A RELYING PARTY PINS, AS SIBLING URNs (2026-09-26, #245)
 
 `federation-key-rotated`, `spiffe-authority-rotated` and

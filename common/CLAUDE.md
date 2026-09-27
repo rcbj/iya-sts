@@ -5832,8 +5832,74 @@ the current key's certificate with a record over another key and no kid.
 the JWKS and its certificate left the SAML metadata, until the next
 re-certification put them back. That is a change to what relying parties pin,
 and no signing-key-rotated announced it. A slot nothing signs from is still
-pinnable. **Left open for rcbj:** making a pinned key an actual signer, which
-this section's slot header ("what signs my ES384") implies was the intent.
+pinnable. **That is still the behaviour with `pki.pinnedSigners` off** — the
+default — and the refusal text now says the setting is the way to sign with a
+key of one's own.
+
+### A PINNED KEY PAIR AS A REAL SIGNER (2026-09-27, #263)
+
+rcbj's decision on the question #245 left open: **a pinned key signs, OFF by
+default** (`pki.pinnedSigners`, per realm), so a new installation signs with
+the keys it generates and needs no step. `pinKeyPair()` hands a `jose` or `xml`
+pin to `pinSigner()` where the scope's realm has it on (read INSIDE that realm,
+because `SCOPED_ACTIONS` may name another). Five decisions:
+
+* **A GENERATION SLOT OF ITS OWN, NEVER THE PLAIN SLOT.** The record lives at
+  `slotKey(useCase, slot, kid)` with `kid` = `sts-pinned-` + the SPKI's
+  SHA-256, and carries `pinnedSigner` (`activatesAt`, `retiredAt`,
+  `retiredUntil`, `operatorCertificate`, the slot's `kind` and `alg`). The
+  generated key keeps its certificate and STAYS published and verifying, so
+  everything it signed before the pin still verifies and an unpin makes it the
+  signer again with nothing new to publish. The obvious design — replace the
+  key set's member — would have stranded every token in flight at the pin and
+  again at the unpin. Being a `certs` slot is what gives the record the cluster
+  merge per slot (`pki_merge.js`) and the row's seal under the key-encryption
+  key, private key included, with no new store.
+* **THE SLOT IS AN ALGORITHM, AND THE KEY MUST BE THE ONE IT NAMES**
+  (`pinnedSlotSpec()`, `readPinnedKey()`): RSA ≥ 2048 for `RS256`, the slot's
+  curve for ES\* and EdDSA, the slot's own ML-DSA or SLH-DSA parameter set
+  (read with the vendored `decodePkcs8()`, which must yield the seed `pq_jose.js`
+  signs with) — `STS-PKI-0207`. Signer-group slots, the composites (whose
+  PKCS#8 encoding is not `pq_jose.js`'s) and an xml slot other than `RS256` are
+  `STS-PKI-0208`.
+* **THE OPERATOR'S CERTIFICATE IS THEIRS.** It must hold the key and be valid
+  now (`STS-PKI-0210`); its chain, issuer first, must link (`STS-PKI-0209`) and
+  is stored as `chainPem`, which is the `x5c`. `operatorCertificate` keeps
+  `recertifyUseCase()` from renewing it and `pki_merge.js`'s `orphanedSlots()`
+  from calling a chain that is not ours an orphan. Without one, `certify()`
+  issues it into the generation slot and a renewal re-issues it THERE
+  (`kid`, `generationSlot`, `pinnedSigner` carried through both recertify
+  paths).
+* **THE KEY IS READ FROM THE ROW PER SIGNATURE** (`pinnedSigningKey()`), not
+  cached: an RSA parse is about half a millisecond, which only a realm that
+  pinned pays, and a cached `KeyObject` would be a decrypted key outliving its
+  use (*WHAT IS RESIDENT*). A key that will not parse logs `STS-PKI-0214` and
+  the generated key signs.
+* **LIFECYCLE IS THE OPERATOR'S; ANNOUNCEMENT IS #42's.** `signing_rotation.ts`
+  wraps both doors (`pinSigningKey()`, `unpinSigningKey()`): the grace an
+  unpinned or replaced pin verifies through is `graceMs()` of its unit, the
+  audit rows are `keys.pin` / `keys.unpin`, and `signing-key-rotated` is sent
+  (`requested`) at the pin — when the key is PUBLISHED, `pki.pinnedSignerLeadMinutes`
+  before it signs — and at the unpin. `signing.rotate` skips a pinned unit
+  (`pinnedUnits()`); `signing.retire` drops an unpinned key past its grace
+  (`dropRetiredPinnedSigners()`, superseding a certificate this service issued)
+  and warns once a day per key as its certificate nears its notAfter
+  (`STS-PKI-0212`, `0213` once expired, `pki.pinnedSignerExpiryWarningDays`).
+
+`helpers.js` is where it SIGNS (*PINNED SIGNERS* block): `pinnedJoseSigner()` first
+in `signingKeyFor()`, its async twin, `ownSignerFor()` and `signJwt()`;
+`pinnedXmlView()` first in `xmlSignatureChoice()`'s RSA view — `STS.xml` stays
+the generated key, because the metadata publishes it for ENCRYPTION too. And
+where it is PUBLISHED and VERIFIED: a `pinned` row in `ownRsaCertificates()`
+(never `current`, which the JWKS reads as the generated key), `ownCandidatesFor()`,
+`allVerificationKeys()`, `publicJwkOfKid()` (so `keys.kidFormat` applies),
+`certificateHeaderFor()` (its slot is `slot@kid`), `pinnedPublishedJwks()` for
+the JWKS, and `/crypto/metadata`'s `pinned`, `pinned-pending` and
+`pinned-retired` states. Turning the setting off while a key is pinned makes
+the generated key sign again with no event — said in the setting's
+description. `tests/pinned_signers.js` holds it, 43 assertions;
+`tests/vendored/sts_pinned_signer.js` verifies an ID token against the pinned
+key's JWKS entry over HTTP.
 
 ### THE PATH CHECK IS WHERE A SECURITY CLAIM RESTS
 
