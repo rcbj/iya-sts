@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+# SPDX-License-Identifier: MIT
+#
 # ---------------------------------------------------------------------------
 # ONE THREE-NODE mock-sts ENVIRONMENT, CREATED AND DESTROYED PER RUN (issue #51).
 #

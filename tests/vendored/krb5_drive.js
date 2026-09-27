@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+// SPDX-License-Identifier: MIT
+//
 // ===========================================================================
 // A REAL AS EXCHANGE AGAINST THE MOCK KDC, OVER MS-KKDCP.
 //

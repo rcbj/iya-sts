@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+// SPDX-License-Identifier: MIT
+//
 // ---------------------------------------------------------------------------
 // MODULES THIS SERVICE LOADS ONLY WHEN A DEPLOYMENT ASKS FOR THEM (#50).
 //

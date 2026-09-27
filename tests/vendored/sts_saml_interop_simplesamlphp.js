@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+// SPDX-License-Identifier: MIT
+//
 // ===========================================================================
 // SIMPLESAMLPHP AS A SAML 2.0 SERVICE PROVIDER AGAINST THIS SERVICE (#191).
 //

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+// SPDX-License-Identifier: MIT
+//
 // ===========================================================================
 // vendor-check.js — is tests/vendored/ still byte-identical to the parent
 // project's tests/, and re-copy it when it is not.

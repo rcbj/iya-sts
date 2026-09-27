@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+// SPDX-License-Identifier: MIT
+
 'use strict';
 // ===========================================================================
 // tests/vc_jose_cose.js — VC-JOSE-COSE ENVELOPES (#198, 2026-09-26).

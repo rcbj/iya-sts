@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+// SPDX-License-Identifier: MIT
+
 'use strict';
 // ===========================================================================
 // tests/vc_rdfc_suites.js — THE RDFC CRYPTOSUITES AND ecdsa-sd-2023

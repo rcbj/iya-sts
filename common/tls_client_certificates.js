@@ -1,4 +1,7 @@
 // @ts-check
+// SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+// SPDX-License-Identifier: MIT
+
 'use strict';
 //
 // common/tls_client_certificates.js — A PERSON'S TLS CLIENT CERTIFICATE, ISSUED

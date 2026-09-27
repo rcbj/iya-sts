@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+// SPDX-FileCopyrightText: 2022 Stephan Wiefling
+// SPDX-License-Identifier: MIT
+
 'use strict';
 //
 // File: risk/risk_model.ts

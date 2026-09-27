@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+// SPDX-License-Identifier: MIT
+//
 // ===========================================================================
 // A FEDERATION PARTNER'S SIGN-OUT, OVER THE NETWORK (#167).
 //

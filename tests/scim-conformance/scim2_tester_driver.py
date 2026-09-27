@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+# SPDX-License-Identifier: MIT
+
 """Run python-scim's scim2-tester against one SCIM base URL, print JSON.
 
 The driver tests/vendored/sts_scim_conformance.js runs (#206). It is this

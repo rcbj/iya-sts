@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+// SPDX-License-Identifier: MIT
+//
 // ===========================================================================
 // tests/tools/natural-earth.js — REGENERATE THE COUNTRY OUTLINES (#255).
 //

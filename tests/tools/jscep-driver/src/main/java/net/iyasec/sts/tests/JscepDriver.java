@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+// SPDX-License-Identifier: MIT
+
 /*
  * JscepDriver — a command line over jscep, the Java SCEP client library, for
  * tests/vendored/sts_scep_jscep.js (#250, 2026-09-26).

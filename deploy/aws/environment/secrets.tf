@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+# SPDX-License-Identifier: MIT
+#
 # ---------------------------------------------------------------------------
 # FOUR SECRETS, GENERATED HERE AND ENCRYPTED WITH THE PROJECT KEY — AND A
 # FIFTH IN PRODUCT MODE.

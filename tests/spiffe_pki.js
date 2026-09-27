@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+// SPDX-License-Identifier: MIT
+//
 // ===========================================================================
 // tests/spiffe_pki.js — THE SPIFFE AUTHORITY IS A LEAF OF THE SERVICE'S OWN
 // ROOT (2026-09-11).

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+// SPDX-License-Identifier: MIT
+//
 // ---------------------------------------------------------------------------
 // A PASSWORD POLICY PROFILE, as `common/password_policy.ts` read() answers it
 // (#50, 2026-09-16): the description of the entry, and then one member per row

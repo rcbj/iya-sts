@@ -1,4 +1,7 @@
 #!/bin/bash
+# SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+# SPDX-License-Identifier: MIT
+#
 # SAMBA, BUILT FOR ITS RAW KERBEROS TESTS (#204).
 #
 # Run in the `samba-krb5` stage of tests/Dockerfile, never on a host. Samba is

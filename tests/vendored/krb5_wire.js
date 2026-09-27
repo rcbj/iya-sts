@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+// SPDX-License-Identifier: MIT
+//
 // ===========================================================================
 // tests/vendored/krb5_wire.js — A KERBEROS CLIENT OVER THE NETWORK, FOR A JOB
 // THAT HAS TO TALK TO THE KDC THE WAY A REAL CLIENT DOES.

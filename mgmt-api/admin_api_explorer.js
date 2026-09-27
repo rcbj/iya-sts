@@ -1,4 +1,6 @@
 // @ts-check
+// SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+// SPDX-License-Identifier: MIT
 //
 // File: admin_api_explorer.js
 //

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+# SPDX-License-Identifier: MIT
+#
 # Stand-alone compose file for the mock STS: `docker compose up --build`.
 #
 # In the project this was extracted from the STS is one service among nine

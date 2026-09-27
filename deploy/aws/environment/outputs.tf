@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+# SPDX-License-Identifier: MIT
+
 output "service_url" {
   description = "The cluster's public address (443 on the NLB, allowed_cidrs only)."
   value       = local.public_base_url

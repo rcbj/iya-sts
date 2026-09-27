@@ -1,4 +1,7 @@
 <?php
+// SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+// SPDX-License-Identifier: MIT
+//
 // THE SIMPLESAMLPHP PEER'S SERVICE PROVIDER (#191): one `saml:SP` auth
 // source. It signs its AuthnRequests and logout messages — what a
 // product-mode realm requires — and insists on an encrypted, signed

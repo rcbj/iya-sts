@@ -162,5 +162,8 @@ new test goes.
 ## Licence
 
 MIT — see [LICENSE.md](LICENSE.md), which also carries the notices for the
-third-party code this repository includes. No third-party dataset is
-distributed.
+third-party code this repository includes and names the four paths that are
+under another licence. Every file declares its copyright and licence in SPDX
+form, and the repository passes `reuse lint`
+([REUSE](https://reuse.software/)). The only third-party dataset distributed is
+Natural Earth's public-domain country outlines.

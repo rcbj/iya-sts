@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+# SPDX-License-Identifier: MIT
+#
 # ---------------------------------------------------------------------------
 # ONE TRUST REALM'S SPIFFE PORTS ON AN ENVIRONMENT'S LOAD BALANCER
 # (2026-09-18). A stack of its own, applied once per realm AFTER the realm

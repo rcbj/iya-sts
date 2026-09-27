@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+// SPDX-License-Identifier: MIT
+//
 // ===========================================================================
 // THE SIX COMPUTED BUILT-IN ROLES, ONE SECTION EACH, IN A THROWAWAY TRUST
 // REALM.

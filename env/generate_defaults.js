@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+// SPDX-License-Identifier: MIT
+//
 // File: env/generate_defaults.js
 //
 // ---------------------------------------------------------------------------
@@ -57,7 +60,10 @@ process.exit = function () {
 const c = require(path.join(ROOT, 'common', 'config.js'));
 process.exit = realExit;
 
-const header = `// File: env/defaults.js
+const header = `// SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+// SPDX-License-Identifier: MIT
+//
+// File: env/defaults.js
 //
 // ---------------------------------------------------------------------------
 // THE DEFAULT APPCONFIG FILE. It is not selected with CONFIG_FILE and is not
