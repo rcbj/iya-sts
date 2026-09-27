@@ -218,7 +218,8 @@ const WHY = {
     "refuses (the documented exception beside this one) is refused either " +
     "way: OpenSSL sends its fatal alert and node closes the socket, and on " +
     "a busy host the close can reach the client first. Seen on the " +
-    "debugger listener with the suite's other lanes running (2026-09-26)" },
+    "debugger listener with the suite's other lanes running, for the " +
+    "SHA-224 probe (2026-09-26) and the SHA-1 one (2026-09-27)" },
   levelZeroAlert: { why: "tool", reason: "the script's closing alert is " +
     "built with the DESCRIPTION as its level (AlertGenerator(" +
     "close_notify)), so it is sent with level 0; the directory keeps the " +
@@ -440,7 +441,7 @@ const PLAN = [
     certificate: "ec",
     exceptions: [ex(/sha1\+ecdsa/, "illegal_parameter", "sha1Envelope"),
                  ex(/sha224\+ecdsa/, "handshake_failure", "noSha224"),
-                 ex(/sha224\+ecdsa/, "Unexpected closure from peer",
+                 ex(/sha(1|224)\+ecdsa/, "Unexpected closure from peer",
                     "refusalCloseRace")] },
   { script: "test-eddsa-in-certificate-verify.py", on: CR,
     certificate: "ed25519" },
