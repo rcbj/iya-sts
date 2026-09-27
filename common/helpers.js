@@ -2710,7 +2710,8 @@ function xmlSignatureChoice() {
   const rsaView = function () {
     log.debug("Entering rsaView().");
     log.debug("Leaving rsaView().");
-    return groupXmlKeyView(keys) || xmlKeyFor(keys);
+    // A pinned XML key first, where the realm signs with one (#263).
+    return pinnedXmlView(keys) || groupXmlKeyView(keys) || xmlKeyFor(keys);
   };
   if (signerGroups.isRsaXmlAlgorithm(asked)) {
     log.debug("Leaving xmlSignatureChoice(). " + asked + ".");
@@ -2967,6 +2968,25 @@ function ownRsaCertificates(useCaseId, keySet) {
     out.push({ kid: one.kid, certPem: held ? held.certificatePem : one.certPem,
                role: one.role, chainPem: held ? held.chainPem.slice() : [] });
   });
+  // THE PINNED RSA KEY OF THIS USE CASE (#263), published from the moment
+  // it is pinned until its grace after an unpin ends. Its role is `pinned`,
+  // never `current` — the JWKS takes every non-current row as an extra key,
+  // and `current` is the generated key's. An XML signer's is put FIRST while
+  // it signs, which is what the SAML metadata's signing KeyDescriptors lead
+  // with.
+  pinnedSignersOf(keys, useCaseId).filter(function (one) {
+    return one.kind === 'rsa';
+  }).forEach(function (one) {
+    const row = { kid: one.kid, certPem: one.certificatePem,
+                  role: 'pinned', pinnedRole: one.role,
+                  chainPem: one.chainPem.slice() };
+    if (useCaseId === 'xml' && one.role === 'active' &&
+        pkiForPins().pinnedSignersOn(keys.realm)) {
+      out.unshift(row);
+    } else {
+      out.push(row);
+    }
+  });
   log.debug("Leaving ownRsaCertificates(). " + out.length + " candidate(s).");
   return out;
 }
@@ -3186,6 +3206,204 @@ function groupVerifiersFor(alg) {
   return out;
 }
 
+// ===========================================================================
+// PINNED SIGNERS (2026-09-27, #263) — a key pair an operator pinned into a
+// `jose` or `xml` slot on /admin/pki, SIGNING in place of the generated key
+// where the realm's `pki.pinnedSigners` is on. The record, its lifecycle and
+// every check on it are `pki.js`'s (`pinSigner()`); what is here is the one
+// thing only this file answers — which key signs — at the points that answer
+// it: `signingKeyFor()` and its asynchronous twin, `ownSignerFor()` and
+// `signJwt()` for JWS, `xmlSignatureChoice()` for XML.
+//
+// **THE GENERATED KEY IS NOT REPLACED IN THE SET, AND THAT IS DELIBERATE.** It
+// stays the unit's current key, published and verifying, so everything it
+// signed before the pin goes on verifying and an unpin makes it the signer
+// again with nothing new to publish. The pinned key is ADDED to what is
+// published and verified — `ownRsaCertificates()`, `ownCandidatesFor()`,
+// `allVerificationKeys()`, `publicJwkOfKid()`, `pinnedPublishedJwks()` — from
+// the moment it is pinned (ahead of its use) until its grace after an unpin
+// ends. `STS.xml`, which the SAML metadata also publishes for ENCRYPTION,
+// stays the generated key: a pinned key signs.
+// ===========================================================================
+function pkiForPins() {
+  log.debug("Entering pkiForPins().");
+  try {
+    log.debug("Leaving pkiForPins().");
+    return require('./pki');
+  } catch (e) {
+    log.debug("Caught in pkiForPins(): " + ((e && e.message) || e));
+    log.debug("Leaving pkiForPins(). No certificate authority here.");
+    return null;
+  }
+}
+
+// Every pinned signer this realm publishes (pending, active, retired within
+// its grace), optionally of one use case.
+function pinnedSignersOf(keys, useCaseId) {
+  log.debug("Entering pinnedSignersOf().");
+  const pki = pkiForPins();
+  const all = pki && keys ? pki.pinnedSignersFor(keys.realm) : [];
+  log.debug("Leaving pinnedSignersOf(). " + all.length + ".");
+  return all.filter(function (one) {
+    return !useCaseId || one.useCase === useCaseId;
+  });
+}
+
+// The `jose` slot an algorithm signs from: `certificateSlotOf()`'s naming.
+function joseSlotForAlg(alg) {
+  log.debug("Entering joseSlotForAlg(). alg=" + alg);
+  const spec = stsCrypto.JWS_ALGS[alg];
+  if (!spec) {
+    log.debug("Leaving joseSlotForAlg(). Unknown.");
+    return '';
+  }
+  if (spec.family === 'rsa') {
+    log.debug("Leaving joseSlotForAlg(). RSA.");
+    return 'RS256';
+  }
+  if (spec.family === 'pq') {
+    log.debug("Leaving joseSlotForAlg(). Post-quantum.");
+    return alg;
+  }
+  const curves = { ES256: 'P-256', ES384: 'P-384', ES512: 'P-521',
+                   ES256K: 'secp256k1' };
+  if (curves[alg]) {
+    log.debug("Leaving joseSlotForAlg(). A curve.");
+    return alg + ':' + curves[alg];
+  }
+  if (alg === 'EdDSA') {
+    log.debug("Leaving joseSlotForAlg(). EdDSA.");
+    return 'EdDSA:' + String(config.value('oauth2.eddsaCurve') || 'Ed25519');
+  }
+  log.debug("Leaving joseSlotForAlg(). None.");
+  return '';
+}
+
+// The pinned key that signs `alg` in the ambient realm now, as a signer
+// (`{ key, kid, slot, pinned }`), or null. `allowPq` is false for the
+// synchronous `signJwt()`, which has never signed a post-quantum algorithm.
+// A pinned key that cannot be read answers null — STS-PKI-0214 is logged by
+// `pki.pinnedSigningKey()` — and the generated key signs, which every
+// verifier holds.
+function pinnedJoseSigner(alg, allowPq) {
+  log.debug("Entering pinnedJoseSigner(). alg=" + alg);
+  const spec = stsCrypto.JWS_ALGS[alg];
+  if (!spec || spec.family === 'hmac' ||
+      (spec.family === 'pq' && !allowPq)) {
+    log.debug("Leaving pinnedJoseSigner(). Not a pinnable algorithm.");
+    return null;
+  }
+  const pki = pkiForPins();
+  const slot = joseSlotForAlg(alg);
+  if (!pki || !slot) {
+    log.debug("Leaving pinnedJoseSigner(). No slot.");
+    return null;
+  }
+  const keys = stsKeysFor();
+  const view = pki.activePinnedSigner(keys.realm, 'jose', slot);
+  if (!view) {
+    log.debug("Leaving pinnedJoseSigner(). Nothing pinned.");
+    return null;
+  }
+  const key = pki.pinnedSigningKey(keys.realm, 'jose', slot, view.kid);
+  if (!key) {
+    log.debug("Leaving pinnedJoseSigner(). Unreadable; the generated key.");
+    return null;
+  }
+  log.debug("Leaving pinnedJoseSigner(). " + view.kid + ".");
+  return { key: key, kid: view.kid, slot: slot, pinned: true };
+}
+
+// The pinned XML signing key as the view an XML signer reads —
+// `xmlKeyView()`'s shape — or null.
+function pinnedXmlView(keys) {
+  log.debug("Entering pinnedXmlView().");
+  const pki = pkiForPins();
+  const view = pki ? pki.activePinnedSigner(keys.realm, 'xml', 'RS256')
+                   : null;
+  if (!view) {
+    log.debug("Leaving pinnedXmlView(). None.");
+    return null;
+  }
+  const realmId = keys.realm;
+  const kid = view.kid;
+  const out = {
+    kid: kid, alg: 'RS256', kind: 'rsa', pinned: true,
+    certPem: view.certificatePem,
+    certB64: stsCrypto.stripPem(view.certificatePem),
+    certChainPem: view.chainPem.slice(),
+    selfSignedCertPem: view.certificatePem,
+    selfSignedCertB64: stsCrypto.stripPem(view.certificatePem)
+  };
+  // Read from the row per use, like `lazyKeySet()`'s getters: nothing here
+  // holds the private key.
+  const privateOf = function () {
+    log.debug("Entering privateOf().");
+    const key = pki.pinnedSigningKey(realmId, 'xml', 'RS256', kid);
+    if (!key) {
+      throw new Error('the "' + realmId + '" realm\'s pinned XML signing ' +
+        'key ' + kid + ' could not be read; see STS-PKI-0214 above.');
+    }
+    log.debug("Leaving privateOf().");
+    return key;
+  };
+  Object.defineProperty(out, 'privateKey', {
+    enumerable: true, configurable: true,
+    get: function () {
+      log.debug("Entering get().");
+      log.debug("Leaving get().");
+      return privateOf();
+    }
+  });
+  Object.defineProperty(out, 'privateKeyPem', {
+    enumerable: true, configurable: true,
+    get: function () {
+      log.debug("Entering get().");
+      log.debug("Leaving get().");
+      // An xml slot is RS256 only (`pki.js`'s pinnedSlotSpec()), so the key
+      // is a KeyObject; `any` for the union the signature declares.
+      return /** @type {any} */ (privateOf())
+        .export({ type: 'pkcs8', format: 'pem' });
+    }
+  });
+  log.debug("Leaving pinnedXmlView(). " + kid + ".");
+  return out;
+}
+
+// The pinned `jose` keys as published JWKs, every one but the RSA key — which
+// the JWKS already takes from `ownRsaCertificates('jose')` — with its
+// certificate and chain in `x5c` (the operator's chain, where they supplied
+// the certificate).
+function pinnedPublishedJwks(keys) {
+  log.debug("Entering pinnedPublishedJwks().");
+  const out = pinnedSignersOf(keys, 'jose').filter(function (one) {
+    return one.kind !== 'rsa' && one.publicJwk;
+  }).map(function (one) {
+    return Object.assign({}, one.publicJwk, {
+      x5c: [stsCrypto.stripPem(one.certificatePem)].concat(
+        one.chainPem.map(function (pem) {
+          return stsCrypto.stripPem(pem);
+        }))
+    });
+  });
+  log.debug("Leaving pinnedPublishedJwks(). " + out.length + ".");
+  return out;
+}
+
+// The pinned view whose kid this is, in the ambient realm, or null.
+function pinnedSignerByKid(kid) {
+  log.debug("Entering pinnedSignerByKid().");
+  if (!kid || String(kid).indexOf('sts-pinned-') !== 0) {
+    log.debug("Leaving pinnedSignerByKid(). Not a pinned kid.");
+    return null;
+  }
+  const found = pinnedSignersOf(stsKeysFor()).filter(function (one) {
+    return one.kid === kid;
+  })[0] || null;
+  log.debug("Leaving pinnedSignerByKid(). " + (found ? 'Found.' : 'None.'));
+  return found;
+}
+
 // ---------------------------------------------------------------------------
 // THIS REALM'S OWN CLASSICAL KEYS, BY ALGORITHM (#139).
 //
@@ -3204,6 +3422,12 @@ function ownSignerFor(alg) {
     log.debug("Leaving ownSignerFor(). Not a classical asymmetric alg.");
     throw new Error('this service does not sign its own tokens with "' + alg +
       '"; it signs them with an RSA or elliptic-curve key of its own.');
+  }
+  // A pinned key where the realm signs with one (#263).
+  const pinned = pinnedJoseSigner(alg, false);
+  if (pinned) {
+    log.debug("Leaving ownSignerFor(). The pinned key.");
+    return pinned;
   }
   if (spec.family === 'rsa') {
     log.debug("Leaving ownSignerFor(). The RSA key.");
@@ -3281,6 +3505,13 @@ function ownCandidatesFor(alg) {
   });
   groupCandidates.forEach(function (one) {
     out.push(one);
+  });
+  // AND EVERY PINNED KEY OF THIS ALGORITHM still published (#263).
+  pinnedSignersOf(keys, 'jose').filter(function (one) {
+    return one.alg === alg && one.kind === 'curve';
+  }).forEach(function (one) {
+    out.push({ kid: one.kid, certPem: one.publicKeyPem,
+               role: 'pinned-' + one.role });
   });
   log.debug("Leaving ownCandidatesFor(). " + out.length + ".");
   return out;
@@ -3443,9 +3674,21 @@ function ownRsaDecryptionKeys(firstUseCase, keySet) {
       return { privateKeyPem: one.privateKeyPem, privateKey: one.privateKey };
     } };
   });
-  log.debug("Leaving ownRsaDecryptionKeys(). " +
-            (currents.length + standby.length) + " key(s).");
-  return currents.concat(standby).map(function (one) {
+  // A PINNED XML KEY DECRYPTS TOO (#263): first while it is published — in its
+  // lead as well as once it signs — and, unpinned, until its grace ends. The
+  // xml keys it displaced stop decrypting once `supersedesUntil` has passed
+  // (its activation plus the unit's grace), so something encrypted to the
+  // old certificate in flight still opens and nothing after that does.
+  const pinned = pinnedDecryptionRows(keys, now);
+  const kept = pinned.displaced
+    ? currents.filter(function (one) {
+      return one.useCase !== 'xml';
+    }) : currents;
+  const all = (firstUseCase === 'jose' ? kept.concat(pinned.rows)
+                                       : pinned.rows.concat(kept))
+    .concat(standby);
+  log.debug("Leaving ownRsaDecryptionKeys(). " + all.length + " key(s).");
+  return all.map(function (one) {
     // `any`: the two accessors are defined below, which the checker cannot see.
     return /** @type {any} */ (Object.defineProperties({
       kid: one.kid, useCase: one.useCase }, {
@@ -3457,6 +3700,69 @@ function ownRsaDecryptionKeys(firstUseCase, keySet) {
       } }
     }));
   });
+}
+
+// The pinned xml keys that decrypt now, as `ownRsaDecryptionKeys()` rows, and
+// whether an active pin has displaced the generated xml keys for good. A
+// pending or active pin counts only where the realm has the setting on; an
+// unpinned one within its grace counts regardless, so turning the setting off
+// afterwards strands nothing encrypted to it.
+function pinnedDecryptionRows(keys, now) {
+  log.debug("Entering pinnedDecryptionRows().");
+  const pki = pkiForPins();
+  if (!pki) {
+    log.debug("Leaving pinnedDecryptionRows(). No certificate authority.");
+    return { rows: [], displaced: false };
+  }
+  const on = pki.pinnedSignersOn(keys.realm);
+  let displaced = false;
+  const rows = pinnedSignersOf(keys, 'xml').filter(function (one) {
+    if (one.role === 'active' && on &&
+        new Date(one.supersedesUntil).getTime() <= now) {
+      displaced = true;
+    }
+    return one.role === 'retired' || on;
+  }).map(function (one) {
+    const kid = one.kid;
+    const realmId = keys.realm;
+    return { useCase: 'xml', kid: kid, get: function () {
+      const key = /** @type {any} */ (pki.pinnedSigningKey(realmId, 'xml',
+                                                           'RS256', kid));
+      return { privateKey: key,
+               privateKeyPem: key ? key.export({ type: 'pkcs8',
+                                                 format: 'pem' }) : '' };
+    } };
+  });
+  log.debug("Leaving pinnedDecryptionRows(). " + rows.length + ".");
+  return { rows: rows, displaced: displaced };
+}
+
+// ---------------------------------------------------------------------------
+// THE CERTIFICATES THIS REALM'S SAML METADATA OFFERS FOR ENCRYPTION (#263):
+// `STS.xml`'s, as always — unless an xml key is pinned where the realm has
+// the setting on. In the pin's lead the pinned certificate is published
+// BESIDE it, ahead of use; once the pin signs it is the only one, and the
+// generated key goes on decrypting through `supersedesUntil`
+// (`ownRsaDecryptionKeys()`). `[{ kid, certPem }]`.
+// ---------------------------------------------------------------------------
+function ownXmlEncryptionCertificates(keySet) {
+  log.debug("Entering ownXmlEncryptionCertificates().");
+  const keys = keySet || stsKeysFor();
+  const generated = { kid: STS.xml.kid, certPem: STS.xml.certPem };
+  const pki = pkiForPins();
+  const pinned = pki && pki.pinnedSignersOn(keys.realm)
+    ? pinnedSignersOf(keys, 'xml').filter(function (one) {
+      return one.role !== 'retired';
+    }) : [];
+  const active = pinned.filter(function (one) {
+    return one.role === 'active';
+  })[0];
+  const out = active ? [{ kid: active.kid, certPem: active.certificatePem }]
+    : [generated].concat(pinned.map(function (one) {
+      return { kid: one.kid, certPem: one.certificatePem };
+    }));
+  log.debug("Leaving ownXmlEncryptionCertificates(). " + out.length + ".");
+  return out;
 }
 
 // ---------------------------------------------------------------------------
@@ -3501,7 +3807,7 @@ function allVerificationKeys() {
            standbyLive(one, now);
   }).map(function (one) {
     return { alg: one.alg, publicJwk: one.publicJwk, role: one.role };
-  })).concat(groupJwkEntries(keys));
+  })).concat(groupJwkEntries(keys)).concat(pinnedJwkEntries(keys));
   log.debug("Leaving allVerificationKeys(). " + out.length + " key(s).");
   return out;
 }
@@ -3518,8 +3824,22 @@ function allVerificationKeysAsync() {
              standbyLive(one, now);
     }).map(function (one) {
       return { alg: one.alg, publicJwk: one.publicJwk, role: one.role };
-    })).concat(groupJwkEntries(keys));
+    })).concat(groupJwkEntries(keys)).concat(pinnedJwkEntries(keys));
   });
+}
+
+// The pinned `jose` keys as `{ alg, publicJwk, role }` rows (#263) — every
+// one but RSA, which the verifiers here find through `ownRsaCertificates()`.
+function pinnedJwkEntries(keys) {
+  log.debug("Entering pinnedJwkEntries().");
+  const out = pinnedSignersOf(keys, 'jose').filter(function (one) {
+    return one.kind !== 'rsa' && one.publicJwk;
+  }).map(function (one) {
+    return { alg: one.alg, publicJwk: one.publicJwk,
+             role: 'pinned-' + one.role };
+  });
+  log.debug("Leaving pinnedJwkEntries(). " + out.length + ".");
+  return out;
 }
 
 // THE JOSE SIGNER GROUPS' KEYS AS PUBLISHED JWKS (#68, rcbj's D5). A
@@ -5249,7 +5569,20 @@ function certificateHeaderFor(useCaseId, alg, kid) {
   }
   const keys = stsKeysFor();
   let signer = null;
-  if (kid === keys.kid) {
+  // A PINNED KEY (#263): its certificate is its own slot's, `slot@kid`,
+  // which is where `jose_certificate_header.js` finds it by that name.
+  const pinnedView = pinnedSignerByKid(kid);
+  if (pinnedView && pinnedView.useCase === 'jose') {
+    const pinnedSpki = pinnedView.publicKeyPem;
+    signer = {
+      realm: keys.realm, slot: pinnedView.slot + '@' + kid, kid: kid,
+      spkiPem: function () {
+        log.debug("Entering spkiPem().");
+        log.debug("Leaving spkiPem(). A pinned key.");
+        return pinnedSpki;
+      }
+    };
+  } else if (kid === keys.kid) {
     signer = {
       realm: keys.realm, slot: 'RS256', kid: kid,
       spkiPem: function () {
@@ -5339,6 +5672,8 @@ function publicJwkOfKid(kid) {
   }
   const entry = (keys.extraKeys || []).concat(keys.pqKeys || [])
     .concat(standbyOf(keys)).concat(groupMembersOf(keys))
+    .concat(kid && String(kid).indexOf('sts-pinned-') === 0
+      ? pinnedSignersOf(keys) : [])
     .filter(function (one) {
       return one && one.publicJwk && one.publicJwk.kid === kid;
     })[0];
@@ -5390,6 +5725,13 @@ function kidNamesKey(headerKid, internalKid) {
 // ---------------------------------------------------------------------------
 function signingKeyFor(alg, useCaseId) {
   log.debug("Entering signingKeyFor(). alg=" + alg);
+  // A PINNED key first, where the realm signs with one (#263): the operator
+  // chose it for this algorithm, over the group key as well.
+  const pinned = pinnedJoseSigner(alg, true);
+  if (pinned) {
+    log.debug("Leaving signingKeyFor(). The pinned key.");
+    return pinned;
+  }
   // A signer-group key first, for a use case in a hybrid-groups realm (#68).
   const grouped = groupSignerFor(useCaseId, alg, true);
   if (grouped) {
@@ -5410,8 +5752,10 @@ function signingKeyForAsync(alg, useCaseId) {
   log.debug("Entering signingKeyForAsync(). alg=" + alg);
   let direct;
   try {
-    // A signer-group key first (#68) — see signingKeyFor().
-    direct = groupSignerFor(useCaseId, alg, true) ||
+    // A pinned key first (#263), then a signer-group key (#68) — see
+    // signingKeyFor().
+    direct = pinnedJoseSigner(alg, true) ||
+             groupSignerFor(useCaseId, alg, true) ||
              signingKeyWithoutList(alg);
   } catch (e) {
     log.debug("Leaving signingKeyForAsync(). Refused.");
@@ -5547,7 +5891,9 @@ function signJwt(payload, context, opts) {
   const alg = String((opts && opts.algorithm) || 'RS256');
   // The use case's signer-group key where the realm is in that model (#68),
   // else the per-algorithm key.
-  const signer = groupSignerFor(opts && opts.certificateHeader, alg, false) ||
+  // A pinned key first where the realm signs with one (#263).
+  const signer = pinnedJoseSigner(alg, false) ||
+                 groupSignerFor(opts && opts.certificateHeader, alg, false) ||
                  ownSignerFor(alg);
   const certificateHeaderMembers = withCertificateHeader(
     (opts && opts.header) || undefined,
@@ -6035,6 +6381,11 @@ module.exports = {
   // check asks, the RSA keys that may decrypt, and the three acts a rotation
   // is made of — see the KEY GENERATIONS block.
   signingUnitsOf: signingUnitsOf,
+  // Pinned signers (#263).
+  pinnedSignersOf: pinnedSignersOf,
+  pinnedPublishedJwks: pinnedPublishedJwks,
+  pinnedJoseSigner: pinnedJoseSigner,
+  joseSlotForAlg: joseSlotForAlg,
   standbyOf: standbyOf,
   ownRsaCertificates: ownRsaCertificates,
   verifyOwnJws: verifyOwnJws,
@@ -6065,6 +6416,7 @@ module.exports = {
   groupPublishedJwks: groupPublishedJwks,
   xmlSignatureChoice: xmlSignatureChoice,
   ownXmlSigningCertificates: ownXmlSigningCertificates,
+  ownXmlEncryptionCertificates: ownXmlEncryptionCertificates,
   // For tests/signer_groups.js (#68): a token's header, and the public JWK
   // of one of this realm's keys by kid. Neither is a private key.
   peekJoseHeader: peekJoseHeader,

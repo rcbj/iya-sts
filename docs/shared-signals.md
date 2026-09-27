@@ -128,7 +128,7 @@ person. A receiver that does not know a type ignores it, as SSF says it should.
 
 | Type (`urn:iya:sts:secevent:event-type:…`) | Sent when | The document to fetch again |
 |---|---|---|
-| `signing-key-rotated` | a realm's signing keys rotate (on the schedule, by hand, or in an emergency) | `jwks_uri`, `crypto_metadata_uri` |
+| `signing-key-rotated` | a realm's signing keys rotate (on the schedule, by hand, or in an emergency), or an operator pins a key pair as the realm's signer for an algorithm or unpins it (`reason: requested`, sent when the pinned key is PUBLISHED, ahead of its use) | `jwks_uri`, `crypto_metadata_uri` |
 | `federation-key-rotated` | a realm's OpenID Federation entity key rotates (in an emergency, the current and next keys are revoked), or a retired key is revoked | `entity_configuration_uri` |
 | `spiffe-authority-rotated` | a realm's SPIFFE X.509 or JWT authority is rotated, or the certificate hierarchy under it is rebuilt | `bundle_uri`; `bundle_changed` says whether the bundle itself changed |
 | `tls-certificate-changed` | the certificate the main port presents is re-issued, or the service (or one node of it) starts presenting a certificate other than the one it last announced (`reason: restarted`). Sent to every realm's streams | `certificate_uri` |

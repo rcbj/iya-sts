@@ -953,6 +953,12 @@ const JOBS = [
   // domain_hint's home-realm discovery. `local: true`: this repository's
   // authorization server and API.
   { file: 'sts_enterprise_extensions.js', browser: false, local: true },
+  // A PINNED KEY PAIR SIGNS THE REALM'S ID TOKENS (#263, 2026-09-27): in a
+  // throwaway realm with pki.pinnedSigners on, an RSA key generated at test
+  // time pinned into jose RS256 through /admin-api signs the ID token, which
+  // verifies against its JWKS entry; unpin restores the generated key.
+  // `local: true`: this repository's PKI, authorization server and API.
+  { file: 'sts_pinned_signer.js', browser: false, local: true },
   // THE EPHEMERAL SUBJECT IDENTIFIER (#149, 2026-09-26): one random `sub`
   // per authentication across the ID Token, UserInfo and a refresh, another
   // for the next, and an id_token_hint mapped back. `local: true`: this

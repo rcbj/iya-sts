@@ -229,6 +229,9 @@ const PKI_ACTIONS = ['build', 'clear', 'issue', 'revoke',
                      // The hierarchy's own, since 2026-09-11.
                      'build-root', 'build-scope', 'reissue-use-case',
                      'recertify', 'import-ca', 'pin-key',
+                     // Its undoing (#263): a pinned signing key retires and
+                     // the generated key signs again.
+                     'unpin-key',
                      // The revocation pane's, since 2026-09-11. NOT named
                      // `revoke` — that is taken, by the control that takes a
                      // key pair off an application's entry, and the two are
@@ -242,7 +245,7 @@ const PKI_ACTIONS = ['build', 'clear', 'issue', 'revoke',
 // hierarchy's `build-root` is NOT here — it is the service's own Root, which
 // belongs to no realm and rebuilds every branch under it on purpose.
 const SCOPED_ACTIONS = ['build-scope', 'reissue-use-case', 'recertify',
-                        'import-ca', 'pin-key',
+                        'import-ca', 'pin-key', 'unpin-key',
                         'revoke-certificate', 'release-hold'];
 
 // The count in the unknown-action sentence, spelt out. It used to index a
@@ -751,6 +754,10 @@ class PkiAdmin {
       revocationNote: report.revocation,
       residency: report.residency,
       encoder: report.encoder,
+      // THE PINNED SIGNING KEYS (#263) of this realm: whether it signs with
+      // them (`pki.pinnedSigners`), and every one still published — pending,
+      // signing, or verifying through its grace — with no private key.
+      pinnedSigners: self.pinnedSignersModel(),
       actions: PKI_ACTIONS.slice(),
       // Every application this realm has, with whatever the issue control put
       // on its entry. It is READ OFF THE ENTRIES rather than out of a register
@@ -1915,20 +1922,41 @@ class PkiAdmin {
       return { ok: true, why: done.why + toldImport };
     }
 
+    // PIN AND UNPIN go through `common/signing_rotation.ts` (#263), which
+    // hands the key to `pki.pinKeyPair()` and — where the realm signs with
+    // pinned keys — computes the grace, writes the audit row and sends
+    // `signing-key-rotated`. Required lazily: it is built after this page.
     if (action === 'pin-key') {
       const scope = self.scopeFrom(body);
-      const done = await pki.pinKeyPair(scope,
-                                        String(body.useCase || '').trim(),
-                                        String(body.slot || '').trim(), {
-        privateKeyPem: String(body.privateKeyPem || ''),
-        certificatePem: String(body.certificatePem || '')
-      });
+      const done = await require('../common/signing_rotation').pinSigningKey(
+        scope, String(body.useCase || '').trim(),
+        String(body.slot || '').trim(), {
+          privateKeyPem: String(body.privateKeyPem || ''),
+          certificatePem: String(body.certificatePem || ''),
+          chainPem: String(body.chainPem || '')
+        }, String(body.requestedBy || ''));
       if (!done.ok) {
         log.debug('Leaving PkiAdmin.pkiAction(). The pin was refused.');
         return self.refusedBy(done, 'STS-PKI-0105');
       }
       log.debug('Leaving PkiAdmin.pkiAction(). Pinned.');
-      return { ok: true, why: done.why };
+      return done.signer
+        ? { ok: true, why: done.why, kid: done.signer.kid,
+            activatesAt: done.signer.activatesAt }
+        : { ok: true, why: done.why };
+    }
+
+    if (action === 'unpin-key') {
+      const scope = self.scopeFrom(body);
+      const done = require('../common/signing_rotation').unpinSigningKey(
+        scope, String(body.useCase || '').trim(),
+        String(body.slot || '').trim(), String(body.requestedBy || ''));
+      if (!done.ok) {
+        log.debug('Leaving PkiAdmin.pkiAction(). The unpin was refused.');
+        return self.refusedBy(done, 'STS-PKI-0105');
+      }
+      log.debug('Leaving PkiAdmin.pkiAction(). Unpinned.');
+      return { ok: true, why: done.why, unpinned: done.unpinned };
     }
 
 
@@ -3531,6 +3559,89 @@ class PkiAdmin {
   // Issuing CA, re-certify what hangs under it, import a CA of your own, or pin
   // a key pair of your own for one slot.
   // ---------------------------------------------------------------------------
+  // ---------------------------------------------------------------------------
+  // THE PINNED SIGNING KEYS (#263): the model `GET /admin-api/pki` carries and
+  // the section this page draws from it. Read in the realm this page is for.
+  // ---------------------------------------------------------------------------
+  pinnedSignersModel() {
+    const { log, pki, config, realms } = this.deps;
+    log.debug("Entering PkiAdmin.pinnedSignersModel().");
+    const realm = String((realms.current() || {}).id || '');
+    const days = Number(config.value('pki.pinnedSignerExpiryWarningDays'));
+    const keys = pki.pinnedSignersFor(realm).map(function (one: Json) {
+      return Object.assign({}, one, {
+        expiringSoon: one.role !== 'retired' && one.daysLeft < days
+      });
+    });
+    log.debug("Leaving PkiAdmin.pinnedSignersModel(). " + keys.length + ".");
+    return { on: !!config.value('pki.pinnedSigners'),
+             leadMinutes: Number(config.value('pki.pinnedSignerLeadMinutes')),
+             warningDays: days, keys: keys };
+  }
+
+  private pinnedSection(json: Json) {
+    const { log, admin, esc } = this.deps;
+    log.debug("Entering PkiAdmin.pinnedSection().");
+    const model = json.pinnedSigners || { on: false, keys: [] };
+    const warnings = model.keys.filter(function (one: Json) {
+      return one.expiringSoon;
+    }).map(function (one: Json) {
+      return admin.warn('The certificate of the pinned <code>' +
+        esc(one.unit) + '</code> signing key <code>' + esc(one.kid) +
+        '</code> ' + (one.expired
+          ? '<strong>has expired</strong> (' + esc(one.notAfter) + '), and ' +
+            'the key still signs. Relying parties that check it refuse ' +
+            'what it signs.'
+          : 'expires on ' + esc(String(one.notAfter).slice(0, 10)) + ' (' +
+            one.daysLeft + ' day(s)).') + ' A pinned key is never rotated: ' +
+        'pin a renewed key pair, or unpin it below.',
+        'A pinned signing key is near the end of its life');
+    }).join('');
+    const rows = model.keys.map(function (one: Json) {
+      return '<tr><td><code>' + esc(one.unit) + '</code></td>' +
+        '<td><code>' + esc(one.kid) + '</code></td>' +
+        '<td>' + esc(one.role === 'active' ? 'signing'
+                      : one.role === 'pending'
+                        ? 'published; signs from ' + one.activatesAt
+                        : 'unpinned; verifies until ' + one.retiredUntil) +
+        '</td>' +
+        '<td>' + esc(String(one.notAfter).slice(0, 10)) +
+          (one.expired ? ' <strong>(expired)</strong>' : '') + '</td>' +
+        '<td>' + (one.operatorCertificate ? 'yours' : 'this realm&rsquo;s ' +
+          esc(one.useCase) + ' Issuing CA') + '</td>' +
+        '<td>' + (one.role === 'retired' ? '' :
+          '<form method="post" action="/admin/pki">' +
+          '<input type="hidden" name="action" value="unpin-key">' +
+          '<input type="hidden" name="useCase" value="' + esc(one.useCase) +
+          '"><input type="hidden" name="slot" value="' + esc(one.slot) +
+          '"><button type="submit"' + admin.tip('Stop signing with this ' +
+            'key. The key this service generated signs again at once — it ' +
+            'was published all along — and this one stays published, ' +
+            'verifying what it signed, through the unit\'s grace. A ' +
+            'signing-key-rotated event is sent.') + '>Unpin</button></form>') +
+        '</td></tr>';
+    }).join('');
+    log.debug("Leaving PkiAdmin.pinnedSection().");
+    return '<h3 id="pki-pinned">Pinned signing keys</h3>' +
+      admin.note(model.on
+        ? '<strong>This realm signs with pinned keys</strong> ' +
+          '(<code>pki.pinnedSigners</code>): a key pair pinned into a ' +
+          '<em>jose</em> or <em>xml</em> slot below is published at once ' +
+          'and signs for that algorithm after <code>' +
+          'pki.pinnedSignerLeadMinutes</code> (' + model.leadMinutes +
+          ' minute(s)). <strong>Its lifecycle is yours</strong>: it is ' +
+          'never rotated, and it ends when its certificate does.'
+        : 'Off in this realm (<code>pki.pinnedSigners</code>): the realm ' +
+          'signs with the keys it generates, and a pin into a slot it signs ' +
+          'from is refused. Turn the setting on to sign with a key pair of ' +
+          'your own &mdash; and take over its lifecycle.') +
+      warnings +
+      (rows ? '<table><thead><tr><th>Unit</th><th>kid</th><th>State</th>' +
+              '<th>Expires</th><th>Certificate</th><th></th></tr></thead>' +
+              '<tbody>' + rows + '</tbody></table>'
+            : '<p><em>Nothing is pinned in this realm.</em></p>');
+  }
+
   private scopeControls(json: Json, scope: Json) {
     const { log, config, admin, esc } = this.deps;
     const self = this;
@@ -3630,6 +3741,10 @@ class PkiAdmin {
               'name="privateKeyPem" rows="3"></textarea></label></div><div ' +
               'class="pki-field"><label>Certificate (PEM, optional)<textarea ' +
               'name="certificatePem" ' +
+              'rows="2"></textarea></label></div><div ' +
+              'class="pki-field"><label>Its chain, leaf&rsquo;s issuer ' +
+              'first (PEM, optional; published as the x5c of a pinned ' +
+              'signing key)<textarea name="chainPem" ' +
               'rows="2"></textarea></label></div><button type="submit">Use ' +
               'this key pair</button></form></details>'
             : '') +
@@ -4563,6 +4678,7 @@ class PkiAdmin {
                     'What this tree is, and where the realm boundary went') +
                   self.treeSection(json) +
                   self.coverageNote(json) +
+                  self.pinnedSection(json) +
                   '<h3>Edit the hierarchy</h3>' +
                   self.rootControls(json) +
                   (json.tree.scopes || []).map(function (scope) {

@@ -364,6 +364,22 @@ read what we send. Nothing equivalent applies in the other direction: this
 service publishes an encryption key in its metadata, and refusing to understand
 a message somebody encrypted to that key would make the key a lie.
 
+**A PINNED XML KEY IS THE KEY PARTNERS ENCRYPT TO (2026-09-27, #263).** Where
+a realm signs with pinned keys (`pki.pinnedSigners`), a key pair pinned into
+the `xml` slot is ONE key for both uses — not a second decryption pin, because
+a partner sees one certificate, and two lifecycles for it would be two leads,
+two graces and two announcements to keep in step. The IdP metadata's
+`use="encryption"` KeyDescriptor comes from
+`helpers.ownXmlEncryptionCertificates()`: the generated XML key's certificate
+as before, the pinned one BESIDE it while the pin is in its publication lead,
+and the pinned one alone once it signs. `decryptOwnElement()` — which every
+inbound `EncryptedID` goes through — tries the pinned key first, and goes on
+opening what was encrypted to the generated key until the pin's
+`supersedesUntil` (activation plus the unit's grace); unpinned, the pinned key
+decrypts until its own grace ends. SAML 1.1 has no encryption construct and
+publishes none. `common/CLAUDE.md` (*A PINNED KEY PAIR AS A REAL SIGNER*) has
+the model; `tests/pinned_signers.js` X holds it.
+
 **SIGNED FIRST, THEN ENCRYPTED.** The signature lives inside the ciphertext, so
 what a service provider verifies is what it decrypted. The other order produces
 a document that verifies without anybody being able to say what was signed.

@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3712** of them, in **39** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3723** of them, in **39** subsystems.
 
 ## Where a code appears
 
@@ -57,7 +57,7 @@ is an ordinary outcome.
 * [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 28
 * [Scheduler (`STS-SCHED`)](#sts-sched) — 16
 * [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 79
-* [Certificate authority (`STS-PKI`)](#sts-pki) — 193
+* [Certificate authority (`STS-PKI`)](#sts-pki) — 204
 * [Certificate enrollment core (`STS-ENROLL`)](#sts-enroll) — 51
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 72
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 26
@@ -682,6 +682,17 @@ Raised from: common/pki.js, common/pki_authoring.ts, common/pki_revocation.js, c
 | `STS-PKI-0204` | The OpenID4VP Verifier's certificate was refused its name or its key: a DNS name a certificate cannot carry, a wildcard (the certificate names one host), or no signing key (#230). | the Verifier's refusal: STS-VC-0112, HTTP 500 at /oid4vp/start |
 | `STS-PKI-0205` | A realm already holds the most OpenID4VP Verifier certificates it keeps (one per DNS name, sixteen), so none was issued for another name — set oid4vp.x509DnsName or pin global.publicBaseUrl (#230). | the Verifier's refusal: STS-VC-0112, HTTP 500 at /oid4vp/start |
 | `STS-PKI-0206` | A key pair was not pinned in a slot that certifies a key the realm signs with: a pinned key does not sign, and the pin would have replaced that key's published certificate (#245). | console / /admin-api refusal (HTTP 400) |
+| `STS-PKI-0207` | A key pair was not pinned as a signer: its key type does not match the slot's algorithm (an RSA key under 2048 bits, a curve other than the slot's, a post-quantum key of another parameter set) (#263). | console / /admin-api refusal (HTTP 400) |
+| `STS-PKI-0208` | A key pair was not pinned as a signer: the slot is not one a pinned key can sign from — a signer-group slot, a composite post-quantum algorithm, or an xml slot other than RS256 (#263). | console / /admin-api refusal (HTTP 400) |
+| `STS-PKI-0209` | A key pair was not pinned as a signer: the certificate chain supplied with it could not be read, or its first certificate did not issue the key's certificate (#263). | console / /admin-api refusal (HTTP 400) |
+| `STS-PKI-0210` | A key pair was not pinned as a signer: the certificate supplied with it is expired or not yet valid, so relying parties would refuse everything it signed (#263). | console / /admin-api refusal (HTTP 400) |
+| `STS-PKI-0211` | An unpin named a slot that holds no pinned key pair (#263). | console / /admin-api refusal (HTTP 400) |
+| `STS-PKI-0212` | A pinned signing key's certificate expires within pki.pinnedSignerExpiryWarningDays; its lifecycle is the operator's (#263). | log only (a warning, once a day) |
+| `STS-PKI-0213` | A pinned signing key's certificate has expired and the key still signs: relying parties that check the x5c or the metadata certificate refuse what it signs until it is unpinned (#263). | log only (an error, once a day) |
+| `STS-PKI-0214` | A pinned signing key could not be read when a signature needed it, so the realm's generated key signed instead (#263). | log only |
+| `STS-PKI-0215` | A write or reset of pki.pinnedSigners was refused: it would turn the setting off in a realm holding a live or pending pinned signing key, which would change the signer with no signing-key-rotated. Unpin first (#263). | console / /admin-api refusal (HTTP 400) |
+| `STS-PKI-0216` | At start, a realm holds pinned signing keys but pki.pinnedSigners is off there (environment, appconfig or a stored override), so it signs with its generated keys (#263). | log only (a warning, at start) |
+| `STS-PKI-0217` | A key pair was not pinned into the xml slot: the certificate supplied with it has a keyUsage without keyEncipherment, and an xml pin is also the key partners encrypt to (#263). | console / /admin-api refusal (HTTP 400) |
 
 ## STS-ENROLL
 

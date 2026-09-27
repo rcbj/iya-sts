@@ -2843,6 +2843,60 @@ const CODES = [
       'realm signs with: a pinned key does not sign, and the pin would have ' +
       'replaced that key\'s published certificate (#245).',
     spec: 'console / /admin-api refusal (HTTP 400)' },
+  { code: 'STS-PKI-0207',
+    summary: 'A key pair was not pinned as a signer: its key type does not ' +
+      'match the slot\'s algorithm (an RSA key under 2048 bits, a curve ' +
+      'other than the slot\'s, a post-quantum key of another parameter ' +
+      'set) (#263).',
+    spec: 'console / /admin-api refusal (HTTP 400)' },
+  { code: 'STS-PKI-0208',
+    summary: 'A key pair was not pinned as a signer: the slot is not one a ' +
+      'pinned key can sign from — a signer-group slot, a composite ' +
+      'post-quantum algorithm, or an xml slot other than RS256 (#263).',
+    spec: 'console / /admin-api refusal (HTTP 400)' },
+  { code: 'STS-PKI-0209',
+    summary: 'A key pair was not pinned as a signer: the certificate chain ' +
+      'supplied with it could not be read, or its first certificate did ' +
+      'not issue the key\'s certificate (#263).',
+    spec: 'console / /admin-api refusal (HTTP 400)' },
+  { code: 'STS-PKI-0210',
+    summary: 'A key pair was not pinned as a signer: the certificate ' +
+      'supplied with it is expired or not yet valid, so relying parties ' +
+      'would refuse everything it signed (#263).',
+    spec: 'console / /admin-api refusal (HTTP 400)' },
+  { code: 'STS-PKI-0211',
+    summary: 'An unpin named a slot that holds no pinned key pair (#263).',
+    spec: 'console / /admin-api refusal (HTTP 400)' },
+  { code: 'STS-PKI-0212',
+    summary: 'A pinned signing key\'s certificate expires within ' +
+      'pki.pinnedSignerExpiryWarningDays; its lifecycle is the operator\'s ' +
+      '(#263).',
+    spec: 'log only (a warning, once a day)' },
+  { code: 'STS-PKI-0213',
+    summary: 'A pinned signing key\'s certificate has expired and the key ' +
+      'still signs: relying parties that check the x5c or the metadata ' +
+      'certificate refuse what it signs until it is unpinned (#263).',
+    spec: 'log only (an error, once a day)' },
+  { code: 'STS-PKI-0214',
+    summary: 'A pinned signing key could not be read when a signature ' +
+      'needed it, so the realm\'s generated key signed instead (#263).',
+    spec: 'log only' },
+  { code: 'STS-PKI-0215',
+    summary: 'A write or reset of pki.pinnedSigners was refused: it would ' +
+      'turn the setting off in a realm holding a live or pending pinned ' +
+      'signing key, which would change the signer with no ' +
+      'signing-key-rotated. Unpin first (#263).',
+    spec: 'console / /admin-api refusal (HTTP 400)' },
+  { code: 'STS-PKI-0216',
+    summary: 'At start, a realm holds pinned signing keys but ' +
+      'pki.pinnedSigners is off there (environment, appconfig or a stored ' +
+      'override), so it signs with its generated keys (#263).',
+    spec: 'log only (a warning, at start)' },
+  { code: 'STS-PKI-0217',
+    summary: 'A key pair was not pinned into the xml slot: the certificate ' +
+      'supplied with it has a keyUsage without keyEncipherment, and an xml ' +
+      'pin is also the key partners encrypt to (#263).',
+    spec: 'console / /admin-api refusal (HTTP 400)' },
   { code: 'STS-ENROLL-0001',
     summary: 'A certificate request named a profile that is not one of the nine issued over an enrollment protocol.',
     spec: 'the protocol\'s refusal: ACME malformed / badCSR, EST HTTP 400, SCEP failInfo badRequest' },

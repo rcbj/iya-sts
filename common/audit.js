@@ -450,6 +450,14 @@ const ACTIONS = [
     label: 'An application\'s client secret has expired' },
   { action: 'keys.retire', category: 'service',
     label: 'Retired signing keys past their grace were dropped' },
+  // A PINNED SIGNING KEY (#263): an operator's key pinned as a realm's signer
+  // for one algorithm, and unpinned. `common/signing_rotation.ts`.
+  { action: 'keys.pin', category: 'admin',
+    label: 'A key pair was pinned as a realm\'s signing key for one ' +
+           'algorithm' },
+  { action: 'keys.unpin', category: 'admin',
+    label: 'A pinned signing key was unpinned; the generated key signs ' +
+           'again' },
 
   // OPENID FEDERATION (#132, 2026-09-23): a realm's Federation Entity Keys
   // (`oidfed/federation_keys.ts`) and its register (`oidfed/oidfed.ts`).
