@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3727** of them, in **39** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3730** of them, in **39** subsystems.
 
 ## Where a code appears
 
@@ -82,8 +82,8 @@ is an ordinary outcome.
 * [Device register (`STS-DEVICE`)](#sts-device) — 45
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 74
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 32
-* [Admin console (`STS-ADMIN`)](#sts-admin) — 199
-* [Management API (`STS-API`)](#sts-api) — 74
+* [Admin console (`STS-ADMIN`)](#sts-admin) — 201
+* [Management API (`STS-API`)](#sts-api) — 75
 * [User portal (`STS-PORTAL`)](#sts-portal) — 75
 * [Sign-out (`STS-LOGOUT`)](#sts-logout) — 7
 * [Registries (`STS-REG`)](#sts-reg) — 132
@@ -3823,6 +3823,8 @@ Raised from: admin-ui/ (except pki_admin.js), admin-core/.
 | `STS-ADMIN-0818` | A set-aud-sub act named a person with no entry in this realm, or the directory would not write it (#148). | none (a console or management API refusal, HTTP 400) |
 | `STS-ADMIN-0819` | set-attribute, add-attribute or remove-attribute was refused and ldap/person_editor.ts named no more specific reason (#228). | HTTP 400 (API) or a 303 with error= |
 | `STS-ADMIN-0820` | A console form POST held a value outside the closed set the mirroring /admin-api operation's enum declares (#86). | HTTP 400 page |
+| `STS-ADMIN-0821` | admin:read or admin:write was asked for on behalf of a person whose console roles in the realm do not authorize it — no Admin Read or Admin Write, not signed in, or the bootstrap administrator before its claim — and was left off the tokens (#302). | none — the token is issued without that scope (RFC 6749 section 3.3) |
+| `STS-ADMIN-0822` | Every scope a person's request asked for was admin:read or admin:write that their console roles do not authorize, so nothing was left to issue (#302). | invalid_scope (RFC 6749 sections 4.1.2.1 and 5.2) |
 
 ## STS-API
 
@@ -3906,6 +3908,7 @@ Raised from: mgmt-api/.
 | `STS-API-0122` | A management API access token was refused because this service has revoked or disowned it, or the person it was issued to has a disabled account. | invalid_token (HTTP 401) |
 | `STS-API-0123` | A management API access token carried the admin scope an operation needs, and the client it was issued to does not declare that scope in its oauthAllowedScope (in the realm that issued it). | HTTP 403 forbidden |
 | `STS-API-0124` | A management API query parameter held a value outside the closed set its operation's enum declares (#86). | HTTP 400 { ok: false, errors } |
+| `STS-API-0125` | A management API access token issued for a PERSON carried the admin scope an operation needs, and that person no longer holds the console role it goes with in the realm that issued it (#302). | HTTP 403 forbidden |
 
 ## STS-PORTAL
 
