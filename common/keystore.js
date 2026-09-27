@@ -524,6 +524,49 @@ function deserialiseRequestObjectKeys(blob, nodeCryptoModule) {
 }
 
 // ---------------------------------------------------------------------------
+// THE BROWSER DEVICE KEYS (2026-09-26, #265): the realm's key pair that signs
+// a remembered browser's device token and the key pair it is encrypted to —
+// used for nothing else, so a token can never be minted with a key that signs
+// access tokens and no access token with this one. `sign` is ES256 and `enc`
+// ECDH-ES on P-256: a cookie holds about 4 KB, and a post-quantum signature
+// does not fit in one (`common/browser_devices.ts`).
+// ---------------------------------------------------------------------------
+function serialiseBrowserDeviceKeys(held) {
+  log.debug("Entering serialiseBrowserDeviceKeys().");
+  if (!held || !held.sign || !held.enc) {
+    log.debug("Leaving serialiseBrowserDeviceKeys(). None.");
+    return null;
+  }
+  log.debug("Leaving serialiseBrowserDeviceKeys().");
+  return {
+    sign: { privateKeyPem: held.sign.privateKey.export(
+        { type: 'pkcs8', format: 'pem' }),
+            publicJwk: held.sign.publicJwk },
+    enc: { privateKeyPem: held.enc.privateKey.export(
+        { type: 'pkcs8', format: 'pem' }),
+           publicJwk: held.enc.publicJwk }
+  };
+}
+
+function deserialiseBrowserDeviceKeys(blob, nodeCryptoModule) {
+  log.debug("Entering deserialiseBrowserDeviceKeys().");
+  if (!blob || !blob.sign || !blob.enc || !blob.sign.privateKeyPem ||
+      !blob.enc.privateKeyPem) {
+    log.debug("Leaving deserialiseBrowserDeviceKeys(). None.");
+    return null;
+  }
+  log.debug("Leaving deserialiseBrowserDeviceKeys().");
+  return {
+    sign: { privateKey: nodeCryptoModule.createPrivateKey(
+        blob.sign.privateKeyPem),
+            publicJwk: blob.sign.publicJwk },
+    enc: { privateKey: nodeCryptoModule.createPrivateKey(
+        blob.enc.privateKeyPem),
+           publicJwk: blob.enc.publicJwk }
+  };
+}
+
+// ---------------------------------------------------------------------------
 // THE XML SIGNING KEY (2026-09-22, #42 — the plan's D2). Until then one RSA
 // key signed every JWT AND every XML signature, certified twice (a `jose` leaf
 // and an `xml` leaf) and published with the `jose` one everywhere — so the
@@ -864,6 +907,8 @@ function serialise(keys) {
     // holding keys of its own would serve a JWKS a client encrypts to and a
     // sibling cannot open.
     requestObjectEncKeys: serialiseRequestObjectKeys(keys.requestObjectEncKeys),
+    // THE BROWSER DEVICE KEYS (#265) — see serialiseBrowserDeviceKeys().
+    browserDeviceKeys: serialiseBrowserDeviceKeys(keys.browserDeviceKeys),
     // THE XML SIGNING KEY AND THE KEY GENERATIONS (2026-09-22, #42) — see
     // serialiseXmlKey() and serialiseGenerations() above.
     xmlKey: serialiseXmlKey(keys.xmlKey),
@@ -917,6 +962,8 @@ function deserialise(blob, nodeCrypto) {
                                                      nodeCrypto),
     requestObjectEncKeys: deserialiseRequestObjectKeys(
         blob.requestObjectEncKeys, nodeCrypto),
+    browserDeviceKeys: deserialiseBrowserDeviceKeys(blob.browserDeviceKeys,
+                                                    nodeCrypto),
     xmlKey: deserialiseXmlKey(blob.xmlKey, nodeCrypto),
     bbsKey: deserialiseBbsKey(blob.bbsKey),
     signerGroups: deserialiseSignerGroups(blob.signerGroups, nodeCrypto),
@@ -1344,16 +1391,19 @@ function enriches(candidate, held) {
   // the post-quantum keys are, so a set gains them after it is shared.
   const grpHere = (candidate.signerGroups || []).length;
   const grpThere = (held.signerGroups || []).length;
+  // And the browser device keys, the EIGHTH (2026-09-26, #265).
+  const bdHere = candidate.browserDeviceKeys ? 1 : 0;
+  const bdThere = held.browserDeviceKeys ? 1 : 0;
   if (pqHere < pqThere || vciHere < vciThere || rtHere < rtThere ||
       roHere < roThere || xmlHere < xmlThere || bbsHere < bbsThere ||
-      grpHere < grpThere) {
+      grpHere < grpThere || bdHere < bdThere) {
     log.debug("Leaving enriches().");
     return false;
   }
   log.debug("Leaving enriches().");
   return pqHere > pqThere || vciHere > vciThere || rtHere > rtThere ||
          roHere > roThere || xmlHere > xmlThere || bbsHere > bbsThere ||
-         grpHere > grpThere;
+         grpHere > grpThere || bdHere > bdThere;
 }
 
 // ---------------------------------------------------------------------------
@@ -1416,6 +1466,21 @@ function requestObjectKeysHeldFor(realmId) {
     : shared.get(id);
   log.debug("Leaving requestObjectKeysHeldFor().");
   return deserialiseRequestObjectKeys(blob && blob.requestObjectEncKeys,
+                                      nodeCrypto);
+}
+
+// The browser device keys some process of this service already made for this
+// realm (#265), or null — `requestObjectKeysHeldFor()`'s question, for
+// `helpers.js`'s browserDeviceKeysFor() backfill.
+function browserDeviceKeysHeldFor(realmId) {
+  log.debug("Entering browserDeviceKeysHeldFor().");
+  const id = String(realmId || '');
+  const fromStore = storedFor(id);
+  const blob = (fromStore && fromStore.browserDeviceKeys)
+    ? fromStore
+    : shared.get(id);
+  log.debug("Leaving browserDeviceKeysHeldFor().");
+  return deserialiseBrowserDeviceKeys(blob && blob.browserDeviceKeys,
                                       nodeCrypto);
 }
 
@@ -1684,6 +1749,8 @@ function privateMaterialFor(realmId) {
     // THE REQUEST OBJECT ENCRYPTION KEYS — both private keys, parsed and
     // purged on this record's timer. The public halves stay on the set.
     ro: deserialiseRequestObjectKeys(blob.requestObjectEncKeys, nodeCrypto),
+    // THE BROWSER DEVICE KEYS (#265), both private halves, on this timer too.
+    bd: deserialiseBrowserDeviceKeys(blob.browserDeviceKeys, nodeCrypto),
     // THE XML SIGNING KEY AND EVERY STANDBY KEY (2026-09-22, #42), parsed and
     // purged on this record's timer like the rest. A standby key is keyed by
     // its kid: a `next` key signs nothing until it is promoted, and a retired
@@ -2665,7 +2732,7 @@ function pkiSettled(scopeId) {
 // ---------------------------------------------------------------------------
 const KEY_SET_MEMBERS = ['pqKeys', 'vciRequestEncKey', 'refreshTokenEncKeys',
                          'requestObjectEncKeys', 'xmlKey', 'bbsKey',
-                         'signerGroups'];
+                         'signerGroups', 'browserDeviceKeys'];
 
 // The two ARRAY members, where an empty list is "none" (#68 added the second).
 const LIST_MEMBERS = ['pqKeys', 'signerGroups'];
@@ -3217,6 +3284,7 @@ module.exports = {
   requestEncryptionKeyHeldFor: requestEncryptionKeyHeldFor,
   refreshTokenKeysHeldFor: refreshTokenKeysHeldFor,
   requestObjectKeysHeldFor: requestObjectKeysHeldFor,
+  browserDeviceKeysHeldFor: browserDeviceKeysHeldFor,
   xmlKeyHeldFor: xmlKeyHeldFor,
   bbsKeyHeldFor: bbsKeyHeldFor,
   signerGroupsHeldFor: signerGroupsHeldFor,

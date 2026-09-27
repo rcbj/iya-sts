@@ -52,6 +52,13 @@
 //                               (withheld from every LDAP read)
 //   stsDeviceSession            the sign-on session that secret is good for
 //   stsDeviceLastUsed           when it was last used, ISO 8601
+//   stsDeviceBrowser            JSON: a REMEMBERED BROWSER's state (#265) —
+//                               the token generation it holds, when that
+//                               generation and the one before were issued,
+//                               the browser it was bound to, and when the
+//                               second factor was last given on it. Its
+//                               presence with no keys makes the device's
+//                               attestation `bearer` (below).
 //
 // **THE KEYS ARE ONE JSON VALUE EACH, NOT A SET OF PARALLEL ATTRIBUTES.** A
 // key is several facts that are true only together — its kind, its
@@ -212,7 +219,11 @@ const KEY_KINDS = ['x509', 'jwk', 'webauthn'];
 const KEY_KIND_FILTERS = KEY_KINDS.concat(['native-sso']);
 const KEY_PROOFS = ['admin', 'webauthn', 'jwk-proof', 'dpop', 'est', 'scep',
                     'mtls'];
-const ATTESTATION_LEVELS = ['attested', 'self-asserted'];
+// `bearer` (#265) is a remembered browser known only by the cookie it
+// carries: it proved no key, so anybody holding a copy of the cookie is it.
+// The LOWEST level, never compliant (setCompliance()), never meets the
+// compliant-device acr. A key added later lifts it to the key's level.
+const ATTESTATION_LEVELS = ['attested', 'self-asserted', 'bearer'];
 // The WebAuthn attestation statement formats (the IANA registry of WebAuthn
 // Level 3 section 8), and the three key attestations decision 7 names for
 // EST/SCEP (TCG TPM 2.0 key attestation) and JWK proofs (Android Key
@@ -223,7 +234,8 @@ const ATTESTATION_FORMATS = ['none', 'packed', 'tpm', 'android-key',
                              'android-key-attestation', 'apple-app-attest'];
 const COMPLIANCE_STATES = ['compliant', 'not-compliant', 'unknown'];
 const COMPLIANCE_SOURCES = ['admin', 'mdm', 'test-control', 'caep'];
-const ENROLMENT_METHODS = ['native-sso', 'admin', 'portal', 'est', 'scep'];
+const ENROLMENT_METHODS = ['native-sso', 'admin', 'portal', 'est', 'scep',
+                           'browser'];
 const STATUSES = ['active', 'compromised'];
 const PLATFORMS = ['ios', 'ipados', 'android', 'macos', 'windows', 'linux',
                    'chromeos', 'other'];
@@ -346,6 +358,7 @@ interface Device {
   session: string;
   lastUsed: string;
   created: string;
+  browser: Json | null;
 }
 
 interface DevicesDeps {
@@ -532,7 +545,8 @@ class Devices {
       label: one('description'),
       applications: (a.stsdeviceapplication || []).map(String),
       keys: keys,
-      attestation: Devices.levelOf(keys),
+      attestation: Devices.levelOf(keys,
+                                   !!Devices.parsed(one('stsdevicebrowser'))),
       compliance: COMPLIANCE_STATES.indexOf(one('stsdevicecompliance')) >= 0
         ? one('stsdevicecompliance') : 'unknown',
       complianceChange: Devices.parsed(one('stsdevicecompliancechange')),
@@ -553,19 +567,25 @@ class Devices {
       secretHash: one('stsdevicesecrethash'),
       session: one('stsdevicesession'),
       lastUsed: one('stsdevicelastused'),
-      created: one('createtimestamp')
+      created: one('createtimestamp'),
+      browser: Devices.parsed(one('stsdevicebrowser'))
     };
   }
 
   // The device's attestation level, from its keys: attested when any key's
-  // attestation was verified, self-asserted otherwise (decision 7).
-  static levelOf(keys: DeviceKey[]): string {
+  // attestation was verified, self-asserted otherwise (decision 7) — and
+  // `bearer` for a remembered browser that holds no key at all (#265).
+  static levelOf(keys: DeviceKey[], rememberedBrowser?: boolean): string {
     helpers.log.debug("Entering Devices.levelOf().");
     const attested = (keys || []).some(function (k) {
       return !!k.attestation && k.attestation.level === 'attested';
     });
     helpers.log.debug("Leaving Devices.levelOf().");
-    return attested ? 'attested' : 'self-asserted';
+    if (attested) {
+      return 'attested';
+    }
+    return rememberedBrowser && !(keys || []).length ? 'bearer'
+                                                    : 'self-asserted';
   }
 
   private write(device: Device): boolean {
@@ -634,6 +654,9 @@ class Devices {
     }
     if (device.riskChange) {
       attributes.stsDeviceRiskChange = [JSON.stringify(device.riskChange)];
+    }
+    if (device.browser) {
+      attributes.stsDeviceBrowser = [JSON.stringify(device.browser)];
     }
     const written = !!this.store('writeDeviceEntry', device.id, attributes);
     log.debug("Leaving Devices.write(). " + written);
@@ -1502,8 +1525,28 @@ class Devices {
       riskLevel: '', riskChange: null, platform: '', model: '', os: '',
       enrolment: enrolment,
       secretHash: '', session: '', lastUsed: enrolment.at,
-      created: enrolment.at
+      created: enrolment.at, browser: null
     };
+  }
+
+  // -------------------------------------------------------------------------
+  // A REMEMBERED BROWSER'S STATE (#265), written by `browser_devices.ts`
+  // every time the token it holds is issued again. Nothing here interprets
+  // it; that module owns what a generation means.
+  // -------------------------------------------------------------------------
+  setBrowserState(id: unknown, state: Json): boolean {
+    const { log } = this.deps;
+    log.debug("Entering Devices.setBrowserState().");
+    const device = this.byId(id);
+    if (!device || !device.browser || !state || typeof state !== 'object') {
+      log.debug("Leaving Devices.setBrowserState(). Not a browser.");
+      return false;
+    }
+    device.browser = JSON.parse(JSON.stringify(state));
+    device.lastUsed = this.nowIso();
+    const written = this.write(device);
+    log.debug("Leaving Devices.setBrowserState(). " + written);
+    return written;
   }
 
   // A device a second app has used (the Native SSO exchange).
@@ -1874,6 +1917,19 @@ class Devices {
     const now = this.nowIso();
     const device = Devices.blank(owner.dn, owner.kind, 'a device',
                                  { method: method, at: now, actor: who });
+    // A REMEMBERED BROWSER (#265) arrives with its state and no keys; no
+    // other method may carry one, so a browser's bearer level cannot be
+    // written onto a device registered some other way.
+    if (method === 'browser') {
+      if (!s.browser || typeof s.browser !== 'object' ||
+          (Array.isArray(s.keys) && s.keys.length)) {
+        log.debug("Leaving Devices.create(). Browser state.");
+        return this.refuse('STS-DEVICE-0044', 'A remembered browser is ' +
+                           'registered with its state and no keys.');
+      }
+      device.browser = JSON.parse(JSON.stringify(s.browser));
+      device.attestation = 'bearer';
+    }
     const described = this.applyDescription(device, s);
     if (described) {
       log.debug("Leaving Devices.create(). Description.");
@@ -2206,6 +2262,16 @@ class Devices {
       return this.refuse('STS-DEVICE-0007', 'There is no device "' +
                          String(id || '') + '" in this realm.');
     }
+    // A BEARER DEVICE IS NEVER COMPLIANT (#265): a remembered browser holds
+    // no key an MDM could have inventoried, so nothing can say it is the
+    // device the MDM checked, and "compliant" is what the policy's
+    // requireCompliantDevice rule and the compliant-device acr rest on.
+    if (wanted === 'compliant' && device.attestation === 'bearer') {
+      log.debug("Leaving Devices.setCompliance(). Bearer.");
+      return this.refuse('STS-DEVICE-0039', 'Device ' + device.id + ' is ' +
+        'known only by a remembered browser\'s cookie, which proves no ' +
+        'key, so it cannot be marked compliant.');
+    }
     const previous = device.compliance;
     const why = String(reason || '').slice(0, 500);
     device.compliance = wanted;
@@ -2476,6 +2542,16 @@ class Devices {
       platform: device.platform, model: device.model, os: device.os,
       enrolment: Object.assign({}, device.enrolment),
       nativeSso: !!device.secretHash,
+      // A remembered browser (#265): whether it is one, and what its state
+      // says a page may show — never the token, which this service keeps no
+      // copy of.
+      rememberedBrowser: device.browser ? {
+        generation: Number(device.browser.gen) || 0,
+        issuedAt: String(device.browser.issuedAt || ''),
+        browser: String((device.browser.context &&
+                         device.browser.context.ua) || ''),
+        secondFactorAt: String(device.browser.mfaAt || '')
+      } : null,
       sessionLive: !!(device.secretHash && device.session && isLive &&
                       isLive(device.session)),
       lastUsed: device.lastUsed, created: device.created
@@ -2534,6 +2610,11 @@ class Devices {
       { name: 'stsDeviceRiskChange', kind: 'single',
         what: 'JSON: the last risk level change — level, previous, at, ' +
               'source (risk, compromise, admin), actor, reason.' },
+      { name: 'stsDeviceBrowser', kind: 'single',
+        what: 'JSON: a remembered browser\'s state (#265) — the token ' +
+              'generation, when it and the one before were issued, the ' +
+              'browser it was bound to, and when the second factor was ' +
+              'last given on it. No token and no secret.' },
       { name: 'stsDevicePlatform', kind: 'single',
         what: 'ios, ipados, android, macos, windows, linux, chromeos or ' +
               'other.' },
@@ -2617,6 +2698,7 @@ export = {
   // THE RISK LEVEL PHASE 5 SETS (#164): setRiskLevel(id, level, reason,
   // { source, actor, initiatingEntity }).
   setRiskLevel: slot.forward('setRiskLevel'),
+  setBrowserState: slot.forward('setBrowserState'),
   counts: slot.forward('counts'),
   events: slot.forward('events'),
   timeline: slot.forward('timeline')

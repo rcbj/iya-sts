@@ -2134,6 +2134,9 @@ const OWN_NAMES = [
   // change of it — what CAEP's risk-level-change with principal DEVICE
   // reports, set by phase 5's risk scoring and by a compromise.
   'stsDeviceRiskLevel', 'stsDeviceRiskChange',
+  // AND A REMEMBERED BROWSER'S STATE (#265): its token generation and the
+  // browser it was bound to, as one JSON value — `common/browser_devices.ts`.
+  'stsDeviceBrowser',
 
   // AND A PERSON'S CIBA USER CODE (#131, 2026-09-23): a secret they set on
   // /portal/ciba that a backchannel authentication request must carry when

@@ -14389,6 +14389,48 @@ const CODES = [
       'on by default) (#164 phase 6).',
     spec: 'the issuance site\'s own refusal, saying only that ' +
       'authentication failed' },
+  { code: 'STS-DEVICE-0039',
+    summary: 'A compliance status of compliant was refused for a device ' +
+      'known only by a remembered browser\'s cookie (attestation bearer): ' +
+      'it holds no key an MDM could have inventoried, so nothing can say ' +
+      'it is the device an MDM checked (#265).',
+    spec: '400 on /admin-api/devices/set-compliance, a refused report in ' +
+      'the MDM feed\'s results' },
+  { code: 'STS-DEVICE-0040',
+    summary: 'A remembered browser\'s cookie could not be read: not a JWE ' +
+      'this realm encrypted, a signature that does not verify against the ' +
+      'realm\'s browser device keys, expired, or claims that are not a ' +
+      'device token. The cookie is cleared and the browser is treated as ' +
+      'unrecognised (#265).',
+    spec: 'none — the sign-in goes on without a remembered device' },
+  { code: 'STS-DEVICE-0041',
+    summary: 'A remembered browser\'s cookie carried an OLDER generation ' +
+      'than the device holds, outside devices.browserReissueGraceSeconds: ' +
+      'the cookie was copied. The device is marked compromised, which ends ' +
+      'every session it holds, and risk scoring sees browser-token-replayed ' +
+      '(#265).',
+    spec: 'none — the sign-in goes on, at HIGH risk, without the device' },
+  { code: 'STS-DEVICE-0042',
+    summary: 'A remembered browser\'s cookie names a device that belongs to ' +
+      'somebody other than the person signing in; it is not their device, ' +
+      'and risk scoring sees browser-token-foreign (#265).',
+    spec: 'none' },
+  { code: 'STS-DEVICE-0043',
+    summary: 'A remembered browser\'s token was not issued: once signed and ' +
+      'encrypted it is larger than a cookie may be (about 4 KB) — ' +
+      'devices.browserTokenCertificateHeader set to x5c or both is the usual ' +
+      'cause (#265).',
+    spec: 'none — the browser is not remembered, and the page says so' },
+  { code: 'STS-DEVICE-0044',
+    summary: 'Remembering a browser was refused: devices.browserDevices is ' +
+      'off in the realm, nobody is signed in, or the person holds their ' +
+      'most devices (#265).',
+    spec: '400 on /portal/devices; the sign-in itself goes on' },
+  { code: 'STS-DEVICE-0045',
+    summary: 'A remembered browser\'s generation and binding could not be ' +
+      'written onto its device entry, so the token it holds was not ' +
+      'issued again (#265).',
+    spec: 'none — the browser keeps the token it has' },
   // ===== XACML =============================================================
   { code: 'STS-XACML-0001',
     summary: 'A request reached an XACML endpoint while the family is ' +

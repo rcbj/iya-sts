@@ -4759,6 +4759,58 @@ const SETTINGS = [
                  'possible. Off, a compromised device is only a risk signal ' +
                  '(compromised-device, x50).' },
 
+  // REMEMBERED BROWSERS (#265): a device a browser proves by a signed and
+  // encrypted cookie rather than a key. `common/browser_devices.ts` argues it.
+  { key: 'devices.browserDevices', group: 'Devices',
+    label: 'Remembered browsers',
+    env: 'STS_DEVICES_BROWSER_DEVICES', type: 'bool', dflt: true,
+    runtime: true,
+    description: 'On — the default — a person may choose "Remember this ' +
+                 'browser" at sign-in or on /portal/devices, and the ' +
+                 'browser is registered as a device recognised by a cookie ' +
+                 'holding a token this realm signed and encrypted with keys ' +
+                 'used for nothing else. **It is a BEARER credential and ' +
+                 'the lowest assurance the register has** (`bearer`, below ' +
+                 '`self-asserted`): anybody who copies the cookie is that ' +
+                 'browser until the copy is caught. So it only ever REMOVES ' +
+                 'suspicion (a remembered browser is not a new or ' +
+                 'unregistered device to risk scoring) and never adds trust ' +
+                 '— it is never compliant, never meets ' +
+                 'urn:sts:acr:compliant-device, and skips a second factor ' +
+                 'only where the authentication policy says so. Off, no ' +
+                 'browser is remembered and a cookie already issued is not ' +
+                 'read.' },
+  { key: 'devices.browserTokenLifetimeDays', group: 'Devices',
+    label: 'Remembered browser cookie lifetime (days)',
+    env: 'STS_DEVICES_BROWSER_TOKEN_LIFETIME_DAYS', type: 'int', dflt: 180,
+    min: 1, max: 400, runtime: true,
+    description: 'How long a remembered browser\'s cookie and the token in ' +
+                 'it live. The token is issued again — with the next ' +
+                 'generation — at every sign-in the browser is recognised ' +
+                 'at, so this is how long a browser may go UNUSED before it ' +
+                 'is forgotten. 400 is the most any browser keeps a cookie ' +
+                 '(RFC 6265bis section 5.6).' },
+  { key: 'devices.browserReissueGraceSeconds', group: 'Devices',
+    label: 'Remembered browser: previous token accepted for (seconds)',
+    env: 'STS_DEVICES_BROWSER_REISSUE_GRACE_SECONDS', type: 'int', dflt: 60,
+    min: 0, max: 600, runtime: true,
+    description: 'For this long after a remembered browser\'s token is ' +
+                 'issued again, the token it replaced is still accepted: two ' +
+                 'tabs signing in at once each carry the older cookie. After ' +
+                 'it, an older token is a COPIED cookie ' +
+                 '(browser-token-replayed): the device is marked ' +
+                 'compromised and every session it holds ends. 0 accepts ' +
+                 'only the newest.' },
+  certificateHeaderSetting('devices.browserTokenCertificateHeader', 'Devices',
+    'STS_DEVICES_BROWSER_TOKEN_CERTIFICATE_HEADER',
+    'Remembered browser token certificate header',
+    'Whether a remembered browser\'s device token names the chain of the ' +
+    'key that signed it. Only this service ever reads the token, and it ' +
+    'travels in a cookie of at most about 4 KB, so `x5c` (several ' +
+    'kilobytes) makes the token too large and it is not issued ' +
+    '(STS-DEVICE-0043). The dedicated key is not a certified leaf and gets ' +
+    'neither; the hybrid-groups `browser-devices` key is.'),
+
   // OPENID CONNECT CIBA (#131). `oauth-oidc/ciba.ts` argues them.
   { key: 'oauth2.deviceAuthorization', group: 'OAuth 2.0 / OIDC',
     label: 'Device authorization grant (RFC 8628)',
