@@ -3569,6 +3569,1386 @@ function verifyJwsAsync(token, key, opts) {
 }
 
 // ===========================================================================
+// SECTION 4a — POST-QUANTUM AND HPKE KEY ESTABLISHMENT FOR JWE (#82,
+// 2026-09-27)
+// ===========================================================================
+//
+// It sits BEFORE section 4 rather than after it because section 4's alg
+// lists (`JWE_ASYMMETRIC_ALGS` and the rest) are built from this section's
+// table when the module loads, and a `const` read before its line throws.
+//
+// ---------------------------------------------------------------------------
+// WHY THIS SECTION EXISTS. Section 4's key management was RSA and ECDH only.
+// A signature is checked when it is presented, so a signature algorithm that
+// falls in 2035 is a problem in 2035. A CIPHERTEXT captured today can be kept
+// and opened then, so every encrypted ID Token, Logout Token, UserInfo
+// response and OID4VP response this service sent was only as safe as a
+// classical key agreement. This section adds two families, and a JWE reaches
+// both through `encryptJweCompact()` and `decryptJweCompact()` above, the
+// same two functions every other `alg` goes through (rule 3r):
+//
+//   ML-KEM-512 / -768 / -1024            draft-ietf-jose-pqc-kem-05, JOSE
+//   ML-KEM-512+A128KW / -768+A192KW /    sections 5.1, 6 and 8: the KEM
+//     -1024+A256KW                       shared secret through KMAC256, used
+//                                        as the CEK (direct) or as an AES Key
+//                                        Wrap key; the KEM ciphertext in `ek`
+//   HPKE-0 .. HPKE-7 (and -KE forms)     draft-ietf-jose-hpke-encrypt-22:
+//                                        HPKE over the classical DHKEMs,
+//                                        Integrated or Key Encryption
+//   HPKE-8 .. HPKE-16 (and -KE forms)    draft-reddy-cose-jose-pqc-hybrid-
+//                                        hpke-11: HPKE over ML-KEM and the
+//                                        PQ/T hybrids of draft-ietf-hpke-pq-05
+//                                        (X-Wing is HPKE-10 and HPKE-11)
+//
+// **EVERY ONE OF THESE IS A DRAFT, AND WHICH TEXT WAS READ IS THE RECORD.**
+//
+//   * pqc-kem: revision -06 (6 July 2026) REMOVED every JOSE section; it is a
+//     COSE document now. -05 (9 December 2025) is the last text that defines
+//     the JWE algorithms, and it is what is implemented, with one deliberate
+//     departure: -05 says an AKP `priv` is "the 32-byte seed", and an ML-KEM
+//     key pair cannot be made from 32 bytes (FIPS 203 KeyGen_internal takes
+//     d AND z). -06 corrected it to the 64-octet d || z, and that is what is
+//     used here. No revision has test vectors.
+//   * The hybrid names are from an INDIVIDUAL draft, -11, which expired on
+//     2026-08-20. It is the only document that names a hybrid JWE `alg` at
+//     all, so it is what is implemented, and the console says so.
+//   * jose-hpke-encrypt-22 removed HPKE-4-KE and HPKE-6-KE (their vectors
+//     are still in the working group's repository; `tests/jwe_pq_kem.js`
+//     classifies them as not applicable for that reason).
+//   * The HPKE core is draft-ietf-hpke-hpke (RFC 9180's successor, which adds
+//     the one-stage KDFs the SHAKE suites need); the KEMs are
+//     draft-ietf-hpke-pq-05, over draft-irtf-cfrg-concrete-hybrid-kems and
+//     draft-irtf-cfrg-hybrid-kems-12. hpke-pq-05's and the concrete draft's
+//     published vectors are what `tests/jwe_pq_kem.js` holds this to.
+//
+// **WHAT RUNS WHERE.** ML-KEM is `@noble/post-quantum` — already a
+// dependency, and the same library `vendored/pqc.js` rests on — because it
+// takes the 64-octet seed the key format is defined in. It does NOT check an
+// encapsulation key (FIPS 203 section 7.2's modulus check), which HPKE-PQ
+// section 3 requires, so `mlkemCheckEncapsulationKey()` below does. The
+// traditional half of every hybrid, every DHKEM, AES-GCM, ChaCha20-Poly1305,
+// HKDF, SHA3-256 and SHAKE are node's OpenSSL; KMAC256 and TurboSHAKE, which
+// node does not offer, are `@noble/hashes`.
+//
+// **NOT ON THE WORKER POOL, AND THAT WAS MEASURED** (#82's note): a whole
+// ML-KEM-768 JWE — encrypt and decrypt, key expansion from the seed
+// included — costs about 1.3 ms here and an X-Wing one about 3.3 ms, the
+// same order as the RSA-OAEP-256 decryption that has always run on this
+// thread. `worker_pool.js` exists for SLH-DSA signing, which costs SECONDS,
+// and a pool round trip would add its own serialisation and a process hop
+// to each of these for no gain. `tests/jwe_pq_kem.js` measures it and
+// `common/CLAUDE.md` records the figures.
+// ---------------------------------------------------------------------------
+
+const nobleMlKem = require('@noble/post-quantum/ml-kem.js');
+const nobleSha3Addons = require('@noble/hashes/sha3-addons');
+
+// ---------------------------------------------------------------------------
+// BYTE HELPERS. `I2OSP(n, w)` is RFC 8017's, big-endian; `lengthPrefixed()`
+// is draft-ietf-hpke-hpke section 3's two-byte length and the bytes.
+// ---------------------------------------------------------------------------
+function i2osp(n, width) {
+  log.debug('Entering i2osp().');
+  const out = Buffer.alloc(width);
+  let v = BigInt(n);
+  for (let i = width - 1; i >= 0; i--) {
+    out[i] = Number(v & 0xffn);
+    v >>= 8n;
+  }
+  if (v !== 0n) {
+    log.debug('Leaving i2osp(). Too wide.');
+    throw new Error('i2osp: ' + n + ' does not fit in ' + width + ' octets');
+  }
+  log.debug('Leaving i2osp().');
+  return out;
+}
+
+function lengthPrefixed(bytes) {
+  log.debug('Entering lengthPrefixed().');
+  const b = Buffer.from(bytes);
+  if (b.length > 65535) {
+    log.debug('Leaving lengthPrefixed(). Too long.');
+    throw new Error('lengthPrefixed: ' + b.length + ' octets is more than ' +
+                    'two octets can count');
+  }
+  log.debug('Leaving lengthPrefixed().');
+  return Buffer.concat([i2osp(b.length, 2), b]);
+}
+
+function shake(bits, input, length) {
+  log.debug('Entering shake(). SHAKE' + bits + ', ' + length + ' octets.');
+  const out = nodeCrypto.createHash('shake' + bits, { outputLength: length })
+    .update(Buffer.from(input)).digest();
+  log.debug('Leaving shake().');
+  return out;
+}
+
+function sha3_256(input) {
+  log.debug('Entering sha3_256().');
+  const out = nodeCrypto.createHash('sha3-256').update(Buffer.from(input))
+    .digest();
+  log.debug('Leaving sha3_256().');
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// ML-KEM, AS THE THREE PARAMETER SETS FIPS 203 DEFINES. `Npk` and `Nct` are
+// the encapsulation key and ciphertext sizes; `k` is the module rank, which
+// the encapsulation key check needs.
+// ---------------------------------------------------------------------------
+const MLKEM_SETS = {
+  'ML-KEM-512': { impl: nobleMlKem.ml_kem512, k: 2, Npk: 800, Nct: 768 },
+  'ML-KEM-768': { impl: nobleMlKem.ml_kem768, k: 3, Npk: 1184, Nct: 1088 },
+  'ML-KEM-1024': { impl: nobleMlKem.ml_kem1024, k: 4, Npk: 1568, Nct: 1568 }
+};
+
+// FIPS 203 section 7.2, "input checking": the encapsulation key is 384k + 32
+// octets, and every one of its 256k twelve-bit coefficients is below q =
+// 3329 (ByteEncode12(ByteDecode12(ek)) == ek). An unreduced key is refused,
+// never encapsulated to: HPKE-PQ section 3 makes it an EncapError, and a
+// sender that encrypts to a malformed key has no idea what it produced.
+function mlkemCheckEncapsulationKey(set, ek) {
+  log.debug('Entering mlkemCheckEncapsulationKey().');
+  const spec = MLKEM_SETS[set];
+  const bytes = Buffer.from(ek);
+  if (!spec || bytes.length !== spec.Npk) {
+    log.debug('Leaving mlkemCheckEncapsulationKey(). Wrong size.');
+    throw new Error('an ' + set + ' encapsulation key is ' +
+                    (spec ? spec.Npk : '?') + ' octets; this one is ' +
+                    bytes.length);
+  }
+  const polyBytes = 384 * spec.k;
+  for (let i = 0; i < polyBytes; i += 3) {
+    const a = bytes[i] | ((bytes[i + 1] & 0x0f) << 8);
+    const b = (bytes[i + 1] >> 4) | (bytes[i + 2] << 4);
+    if (a >= 3329 || b >= 3329) {
+      log.debug('Leaving mlkemCheckEncapsulationKey(). Unreduced.');
+      throw new Error('the ' + set + ' encapsulation key fails FIPS 203 ' +
+                      'section 7.2\'s modulus check: a coefficient is not ' +
+                      'below q = 3329');
+    }
+  }
+  log.debug('Leaving mlkemCheckEncapsulationKey().');
+}
+
+// The key pair from the 64-octet seed d || z (FIPS 203 KeyGen_internal).
+// `dk` is the EXPANDED decapsulation key, which never leaves this section:
+// the seed is the key's only stored form (pqc-kem-06 section 8, HPKE-PQ
+// section 3).
+function mlkemFromSeed(set, seed) {
+  log.debug('Entering mlkemFromSeed(). ' + set);
+  const spec = MLKEM_SETS[set];
+  const bytes = Buffer.from(seed);
+  if (bytes.length !== 64) {
+    log.debug('Leaving mlkemFromSeed(). Wrong seed size.');
+    throw new Error('an ML-KEM private key is the 64-octet seed d || z ' +
+                    '(FIPS 203 KeyGen_internal); this one is ' +
+                    bytes.length + ' octets');
+  }
+  const pair = spec.impl.keygen(new Uint8Array(bytes));
+  log.debug('Leaving mlkemFromSeed().');
+  return { ek: Buffer.from(pair.publicKey), dk: pair.secretKey };
+}
+
+// `randomness`, when given, is FIPS 203's 32-octet m (Encaps_internal) —
+// the deterministic form the published vectors are made with. A caller
+// outside a test never passes it.
+function mlkemEncaps(set, ek, randomness) {
+  log.debug('Entering mlkemEncaps(). ' + set);
+  mlkemCheckEncapsulationKey(set, ek);
+  const spec = MLKEM_SETS[set];
+  const out = randomness
+    ? spec.impl.encapsulate(new Uint8Array(ek), new Uint8Array(randomness))
+    : spec.impl.encapsulate(new Uint8Array(ek));
+  log.debug('Leaving mlkemEncaps().');
+  return { ss: Buffer.from(out.sharedSecret), ct: Buffer.from(out.cipherText) };
+}
+
+function mlkemDecaps(set, seed, ct) {
+  log.debug('Entering mlkemDecaps(). ' + set);
+  const spec = MLKEM_SETS[set];
+  const bytes = Buffer.from(ct);
+  if (bytes.length !== spec.Nct) {
+    log.debug('Leaving mlkemDecaps(). Wrong ciphertext size.');
+    throw new Error('an ' + set + ' ciphertext is ' + spec.Nct +
+                    ' octets; this one is ' + bytes.length);
+  }
+  const keys = mlkemFromSeed(set, seed);
+  const ss = Buffer.from(spec.impl.decapsulate(new Uint8Array(bytes),
+                                               keys.dk));
+  log.debug('Leaving mlkemDecaps().');
+  return ss;
+}
+
+// ---------------------------------------------------------------------------
+// THE ELLIPTIC-CURVE GROUPS, ON NODE'S OPENSSL. The NIST curves as raw
+// big-endian scalars and UNCOMPRESSED points (SEC1), which is how both HPKE
+// and the hybrid KEMs serialise them; X25519 and X448 as RFC 7748's raw
+// octet strings, carried into node as PKCS#8 / SPKI around the raw bytes.
+// ---------------------------------------------------------------------------
+const EC_GROUPS = {
+  'P-256': { node: 'prime256v1', Nsk: 32, Npk: 65, Ndh: 32,
+             order: BigInt('0xffffffff00000000ffffffffffffffffbce6faada7179e' +
+                           '84f3b9cac2fc632551') },
+  'P-384': { node: 'secp384r1', Nsk: 48, Npk: 97, Ndh: 48,
+             order: BigInt('0xffffffffffffffffffffffffffffffffffffffffffffff' +
+                           'ffc7634d81f4372ddf581a0db248b0a77aecec196accc529' +
+                           '73') },
+  'P-521': { node: 'secp521r1', Nsk: 66, Npk: 133, Ndh: 66,
+             order: BigInt('0x01ffffffffffffffffffffffffffffffffffffffffffff' +
+                           'fffffffffffffffffffffa51868783bf2f966b7fcc0148f7' +
+                           '09a5d03bb5c9b8899c47aebb6fb71e91386409') }
+};
+const MONTGOMERY = {
+  X25519: { Nsk: 32, Npk: 32,
+            pkcs8: Buffer.from('302e020100300506032b656e04220420', 'hex'),
+            spki: Buffer.from('302a300506032b656e032100', 'hex') },
+  X448: { Nsk: 56, Npk: 56,
+          pkcs8: Buffer.from('3046020100300506032b656f043a0438', 'hex'),
+          spki: Buffer.from('3042300506032b656f033900', 'hex') }
+};
+
+function os2ip(bytes) {
+  log.debug('Entering os2ip().');
+  const hex = Buffer.from(bytes).toString('hex');
+  log.debug('Leaving os2ip().');
+  return hex ? BigInt('0x' + hex) : 0n;
+}
+
+// The public point of a scalar, uncompressed. createECDH is used rather than
+// a KeyObject because it takes a bare scalar, which is the only form HPKE's
+// DeriveKeyPair and the hybrid KEMs' RandomScalar produce.
+function nistPublic(curve, scalar) {
+  log.debug('Entering nistPublic(). ' + curve);
+  const ecdh = nodeCrypto.createECDH(EC_GROUPS[curve].node);
+  ecdh.setPrivateKey(Buffer.from(scalar));
+  log.debug('Leaving nistPublic().');
+  return ecdh.getPublicKey(null, 'uncompressed');
+}
+
+// The x-coordinate of scalar * point. `computeSecret()` refuses a point that
+// is not on the curve (draft-ietf-hpke-hpke section 7.1.4's partial public
+// key validation) by throwing, and the caller's message says which input.
+function nistDh(curve, scalar, point) {
+  log.debug('Entering nistDh(). ' + curve);
+  const ecdh = nodeCrypto.createECDH(EC_GROUPS[curve].node);
+  ecdh.setPrivateKey(Buffer.from(scalar));
+  const bytes = Buffer.from(point);
+  if (bytes.length !== EC_GROUPS[curve].Npk || bytes[0] !== 0x04) {
+    log.debug('Leaving nistDh(). Not an uncompressed point.');
+    throw new Error('a ' + curve + ' public key here is an uncompressed ' +
+                    'point of ' + EC_GROUPS[curve].Npk + ' octets');
+  }
+  const out = ecdh.computeSecret(bytes);
+  log.debug('Leaving nistDh().');
+  return out;
+}
+
+function montgomeryPrivate(group, sk) {
+  log.debug('Entering montgomeryPrivate(). ' + group);
+  const spec = MONTGOMERY[group];
+  const out = nodeCrypto.createPrivateKey({
+    key: Buffer.concat([spec.pkcs8, Buffer.from(sk)]),
+    format: 'der', type: 'pkcs8' });
+  log.debug('Leaving montgomeryPrivate().');
+  return out;
+}
+
+function montgomeryPublic(group, sk) {
+  log.debug('Entering montgomeryPublic(). ' + group);
+  const der = nodeCrypto.createPublicKey(montgomeryPrivate(group, sk))
+    .export({ type: 'spki', format: 'der' });
+  log.debug('Leaving montgomeryPublic().');
+  return Buffer.from(der).subarray(der.length - MONTGOMERY[group].Npk);
+}
+
+// RFC 7748 section 6: a recipient MUST refuse the all-zero output, which is
+// what a small-order public key produces.
+function montgomeryDh(group, sk, pk) {
+  log.debug('Entering montgomeryDh(). ' + group);
+  const spec = MONTGOMERY[group];
+  const bytes = Buffer.from(pk);
+  if (bytes.length !== spec.Npk) {
+    log.debug('Leaving montgomeryDh(). Wrong size.');
+    throw new Error('an ' + group + ' public key is ' + spec.Npk +
+                    ' octets; this one is ' + bytes.length);
+  }
+  const publicKey = nodeCrypto.createPublicKey({
+    key: Buffer.concat([spec.spki, bytes]), format: 'der', type: 'spki' });
+  const out = nodeCrypto.diffieHellman({
+    privateKey: montgomeryPrivate(group, sk), publicKey: publicKey });
+  if (out.every(function (b) {
+    return b === 0;
+  })) {
+    log.debug('Leaving montgomeryDh(). All-zero output.');
+    throw new Error('the ' + group + ' exchange produced the all-zero ' +
+                    'value, which RFC 7748 section 6 requires refusing ' +
+                    '(a small-order public key)');
+  }
+  log.debug('Leaving montgomeryDh().');
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// HPKE'S KDFs (draft-ietf-hpke-hpke section 7.2, draft-ietf-hpke-pq section
+// 5). The HKDFs are TWO-STAGE (Extract, Expand); the SHAKE and TurboSHAKE
+// XOFs are ONE-STAGE (Derive). Every labelled function below takes the
+// suite_id explicitly — inside a KEM it names the KEM, in the key schedule
+// the whole suite, and a function that picked it up from ambient state would
+// be the place the two got mixed.
+// ---------------------------------------------------------------------------
+const HPKE_KDFS = {
+  0x0001: { name: 'HKDF-SHA256', twoStage: true, hash: 'sha256', Nh: 32 },
+  0x0002: { name: 'HKDF-SHA384', twoStage: true, hash: 'sha384', Nh: 48 },
+  0x0003: { name: 'HKDF-SHA512', twoStage: true, hash: 'sha512', Nh: 64 },
+  0x0010: { name: 'SHAKE128', twoStage: false, xof: 'shake128', Nh: 32 },
+  0x0011: { name: 'SHAKE256', twoStage: false, xof: 'shake256', Nh: 64 },
+  0x0012: { name: 'TurboSHAKE128', twoStage: false, xof: 'turboshake128',
+            Nh: 32 },
+  0x0013: { name: 'TurboSHAKE256', twoStage: false, xof: 'turboshake256',
+            Nh: 64 }
+};
+
+const HPKE_V1 = Buffer.from('HPKE-v1', 'ascii');
+
+function hkdfExtract(kdf, salt, ikm) {
+  log.debug('Entering hkdfExtract(). ' + kdf.name);
+  // RFC 5869: an absent salt is Nh zero octets.
+  const key = salt && salt.length ? Buffer.from(salt) : Buffer.alloc(kdf.Nh);
+  const out = nodeCrypto.createHmac(kdf.hash, key).update(Buffer.from(ikm))
+    .digest();
+  log.debug('Leaving hkdfExtract().');
+  return out;
+}
+
+function hkdfExpand(kdf, prk, info, length) {
+  log.debug('Entering hkdfExpand(). ' + kdf.name + ', ' + length);
+  if (length > 255 * kdf.Nh) {
+    log.debug('Leaving hkdfExpand(). Too long.');
+    throw new Error('HKDF-Expand cannot produce ' + length + ' octets');
+  }
+  const blocks = [];
+  let previous = Buffer.alloc(0);
+  for (let i = 1; Buffer.concat(blocks).length < length; i++) {
+    previous = nodeCrypto.createHmac(kdf.hash, Buffer.from(prk))
+      .update(Buffer.concat([previous, Buffer.from(info), Buffer.from([i])]))
+      .digest();
+    blocks.push(previous);
+  }
+  log.debug('Leaving hkdfExpand().');
+  return Buffer.concat(blocks).subarray(0, length);
+}
+
+function xofDerive(kdf, ikm, length) {
+  log.debug('Entering xofDerive(). ' + kdf.name + ', ' + length);
+  let out;
+  if (kdf.xof === 'shake128' || kdf.xof === 'shake256') {
+    out = shake(kdf.xof === 'shake128' ? 128 : 256, ikm, length);
+  } else {
+    // RFC 9861 TurboSHAKE with the domain separation byte HPKE-PQ section 5
+    // fixes (D = 0x1f).
+    out = Buffer.from(nobleSha3Addons[kdf.xof](new Uint8Array(ikm),
+                                               { D: 0x1f, dkLen: length }));
+  }
+  log.debug('Leaving xofDerive().');
+  return out;
+}
+
+function labeledExtract(kdf, suiteId, salt, label, ikm) {
+  log.debug('Entering labeledExtract(). ' + label);
+  const out = hkdfExtract(kdf, salt, Buffer.concat([
+    HPKE_V1, suiteId, Buffer.from(label, 'ascii'), Buffer.from(ikm)]));
+  log.debug('Leaving labeledExtract().');
+  return out;
+}
+
+function labeledExpand(kdf, suiteId, prk, label, info, length) {
+  log.debug('Entering labeledExpand(). ' + label);
+  const out = hkdfExpand(kdf, prk, Buffer.concat([
+    i2osp(length, 2), HPKE_V1, suiteId, Buffer.from(label, 'ascii'),
+    Buffer.from(info)]), length);
+  log.debug('Leaving labeledExpand().');
+  return out;
+}
+
+function labeledDerive(kdf, suiteId, ikm, label, context, length) {
+  log.debug('Entering labeledDerive(). ' + label);
+  const out = xofDerive(kdf, Buffer.concat([
+    Buffer.from(ikm), HPKE_V1, suiteId,
+    lengthPrefixed(Buffer.from(label, 'ascii')), i2osp(length, 2),
+    Buffer.from(context)]), length);
+  log.debug('Leaving labeledDerive().');
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// THE HYBRID KEMs (draft-irtf-cfrg-hybrid-kems-12's CG framework, as the
+// concrete draft instantiates it): ML-KEM plus a nominal group, SHAKE256 as
+// the PRG that splits one 32-octet seed into both components' seeds, and
+// SHA3-256 over ss_PQ || ss_T || ct_T || ek_T || Label as the C2PRI
+// combiner. MLKEM768-X25519 is X-Wing.
+// ---------------------------------------------------------------------------
+const HYBRID_KEMS = {
+  'MLKEM768-P256': { pq: 'ML-KEM-768', group: 'P-256', Nseed: 128,
+                     Nscalar: 32, Nelem: 65,
+                     label: Buffer.from('MLKEM768-P256', 'ascii') },
+  'MLKEM768-X25519': { pq: 'ML-KEM-768', group: 'X25519', Nseed: 32,
+                       Nscalar: 32, Nelem: 32,
+                       label: Buffer.from('5c2e2f2f5e5c', 'hex') },
+  'MLKEM1024-P384': { pq: 'ML-KEM-1024', group: 'P-384', Nseed: 48,
+                      Nscalar: 48, Nelem: 97,
+                      label: Buffer.from('MLKEM1024-P384', 'ascii') }
+};
+
+// RandomScalar: rejection sampling over Nscalar-octet windows for the NIST
+// curves (concrete-hybrid-kems section 3.1.1), the identity for Curve25519.
+function hybridRandomScalar(h, seed) {
+  log.debug('Entering hybridRandomScalar(). ' + h.group);
+  const bytes = Buffer.from(seed);
+  if (h.group === 'X25519') {
+    log.debug('Leaving hybridRandomScalar(). Identity.');
+    return bytes;
+  }
+  const order = EC_GROUPS[h.group].order;
+  for (let start = 0; start + h.Nscalar <= bytes.length;
+       start += h.Nscalar) {
+    const window = bytes.subarray(start, start + h.Nscalar);
+    const sk = os2ip(window);
+    if (sk !== 0n && sk < order) {
+      log.debug('Leaving hybridRandomScalar().');
+      return Buffer.from(window);
+    }
+  }
+  log.debug('Leaving hybridRandomScalar(). Rejection sampling failed.');
+  throw new Error('RandomScalar: rejection sampling failed for ' + h.group);
+}
+
+function hybridGroupPublic(h, scalar) {
+  log.debug('Entering hybridGroupPublic().');
+  const out = h.group === 'X25519' ? montgomeryPublic('X25519', scalar)
+    : nistPublic(h.group, scalar);
+  log.debug('Leaving hybridGroupPublic().');
+  return out;
+}
+
+function hybridGroupDh(h, scalar, element) {
+  log.debug('Entering hybridGroupDh().');
+  const out = h.group === 'X25519' ? montgomeryDh('X25519', scalar, element)
+    : nistDh(h.group, scalar, element);
+  log.debug('Leaving hybridGroupDh().');
+  return out;
+}
+
+function hybridExpand(name, seed) {
+  log.debug('Entering hybridExpand(). ' + name);
+  const h = HYBRID_KEMS[name];
+  const bytes = Buffer.from(seed);
+  if (bytes.length !== 32) {
+    log.debug('Leaving hybridExpand(). Wrong seed size.');
+    throw new Error('a ' + name + ' private key is a 32-octet seed; this ' +
+                    'one is ' + bytes.length + ' octets');
+  }
+  const full = shake(256, bytes, 64 + h.Nseed);
+  const pq = mlkemFromSeed(h.pq, full.subarray(0, 64));
+  const dkT = hybridRandomScalar(h, full.subarray(64));
+  const ekT = hybridGroupPublic(h, dkT);
+  log.debug('Leaving hybridExpand().');
+  return { h: h, seedPq: full.subarray(0, 64), ekPq: pq.ek, dkT: dkT,
+           ekT: ekT, ek: Buffer.concat([pq.ek, ekT]) };
+}
+
+function hybridCombine(h, ssPq, ssT, ctT, ekT) {
+  log.debug('Entering hybridCombine().');
+  const out = sha3_256(Buffer.concat([ssPq, ssT, ctT, ekT, h.label]));
+  log.debug('Leaving hybridCombine().');
+  return out;
+}
+
+// `randomness`, for the vectors only: the PQ constituent's 32 octets first,
+// then the group's Nseed (hybrid-kems-12 appendix A).
+function hybridEncaps(name, ek, randomness) {
+  log.debug('Entering hybridEncaps(). ' + name);
+  const h = HYBRID_KEMS[name];
+  const pqSpec = MLKEM_SETS[h.pq];
+  const bytes = Buffer.from(ek);
+  if (bytes.length !== pqSpec.Npk + h.Nelem) {
+    log.debug('Leaving hybridEncaps(). Wrong size.');
+    throw new Error('a ' + name + ' encapsulation key is ' +
+                    (pqSpec.Npk + h.Nelem) + ' octets; this one is ' +
+                    bytes.length);
+  }
+  const ekPq = bytes.subarray(0, pqSpec.Npk);
+  const ekT = bytes.subarray(pqSpec.Npk);
+  const rand = randomness ? Buffer.from(randomness) : null;
+  const pq = mlkemEncaps(h.pq, ekPq, rand ? rand.subarray(0, 32) : null);
+  const skE = hybridRandomScalar(h, rand ? rand.subarray(32)
+    : nodeCrypto.randomBytes(h.Nseed));
+  const ctT = hybridGroupPublic(h, skE);
+  const ssT = hybridGroupDh(h, skE, ekT);
+  log.debug('Leaving hybridEncaps().');
+  return { ss: hybridCombine(h, pq.ss, ssT, ctT, ekT),
+           ct: Buffer.concat([pq.ct, ctT]) };
+}
+
+function hybridDecaps(name, seed, ct) {
+  log.debug('Entering hybridDecaps(). ' + name);
+  const keys = hybridExpand(name, seed);
+  const h = keys.h;
+  const pqSpec = MLKEM_SETS[h.pq];
+  const bytes = Buffer.from(ct);
+  if (bytes.length !== pqSpec.Nct + h.Nelem) {
+    log.debug('Leaving hybridDecaps(). Wrong size.');
+    throw new Error('a ' + name + ' ciphertext is ' +
+                    (pqSpec.Nct + h.Nelem) + ' octets; this one is ' +
+                    bytes.length);
+  }
+  const ctT = bytes.subarray(pqSpec.Nct);
+  const ssPq = mlkemDecaps(h.pq, keys.seedPq, bytes.subarray(0, pqSpec.Nct));
+  const ssT = hybridGroupDh(h, keys.dkT, ctT);
+  log.debug('Leaving hybridDecaps().');
+  return hybridCombine(h, ssPq, ssT, ctT, keys.ekT);
+}
+
+// ---------------------------------------------------------------------------
+// HPKE's KEMs (draft-ietf-hpke-hpke section 7.1, draft-ietf-hpke-pq section
+// 8). Each has DeriveKeyPair(ikm) -> { sk, pk } in its SERIALISED forms,
+// Encap(pk, ikmE?) -> { ss, enc } and Decap(enc, sk) -> ss. `ikmE` is the
+// deterministic encapsulation input the vectors carry.
+// ---------------------------------------------------------------------------
+const HPKE_KEMS = {
+  0x0010: { name: 'DHKEM(P-256, HKDF-SHA256)', kind: 'nist', group: 'P-256',
+            kdf: 0x0001, Nsecret: 32, Nenc: 65, Npk: 65, Nsk: 32 },
+  0x0011: { name: 'DHKEM(P-384, HKDF-SHA384)', kind: 'nist', group: 'P-384',
+            kdf: 0x0002, Nsecret: 48, Nenc: 97, Npk: 97, Nsk: 48 },
+  0x0012: { name: 'DHKEM(P-521, HKDF-SHA512)', kind: 'nist', group: 'P-521',
+            kdf: 0x0003, Nsecret: 64, Nenc: 133, Npk: 133, Nsk: 66 },
+  0x0020: { name: 'DHKEM(X25519, HKDF-SHA256)', kind: 'montgomery',
+            group: 'X25519', kdf: 0x0001, Nsecret: 32, Nenc: 32, Npk: 32,
+            Nsk: 32 },
+  0x0021: { name: 'DHKEM(X448, HKDF-SHA512)', kind: 'montgomery',
+            group: 'X448', kdf: 0x0003, Nsecret: 64, Nenc: 56, Npk: 56,
+            Nsk: 56 },
+  0x0040: { name: 'ML-KEM-512', kind: 'mlkem', set: 'ML-KEM-512',
+            Nsecret: 32, Nenc: 768, Npk: 800, Nsk: 64 },
+  0x0041: { name: 'ML-KEM-768', kind: 'mlkem', set: 'ML-KEM-768',
+            Nsecret: 32, Nenc: 1088, Npk: 1184, Nsk: 64 },
+  0x0042: { name: 'ML-KEM-1024', kind: 'mlkem', set: 'ML-KEM-1024',
+            Nsecret: 32, Nenc: 1568, Npk: 1568, Nsk: 64 },
+  0x0050: { name: 'MLKEM768-P256', kind: 'hybrid', hybrid: 'MLKEM768-P256',
+            Nsecret: 32, Nenc: 1153, Npk: 1249, Nsk: 32 },
+  0x0051: { name: 'MLKEM1024-P384', kind: 'hybrid',
+            hybrid: 'MLKEM1024-P384', Nsecret: 32, Nenc: 1665, Npk: 1665,
+            Nsk: 32 },
+  0x647a: { name: 'MLKEM768-X25519', kind: 'hybrid',
+            hybrid: 'MLKEM768-X25519', Nsecret: 32, Nenc: 1120, Npk: 1216,
+            Nsk: 32 }
+};
+
+function kemSuiteId(kemId) {
+  log.debug('Entering kemSuiteId().');
+  log.debug('Leaving kemSuiteId().');
+  return Buffer.concat([Buffer.from('KEM', 'ascii'), i2osp(kemId, 2)]);
+}
+
+function hpkeKem(kemId) {
+  log.debug('Entering hpkeKem(). ' + kemId);
+  const kem = HPKE_KEMS[kemId];
+  if (!kem) {
+    log.debug('Leaving hpkeKem(). Unknown.');
+    throw new Error('no HPKE KEM 0x' + Number(kemId).toString(16));
+  }
+  log.debug('Leaving hpkeKem().');
+  return kem;
+}
+
+// DeriveKeyPair (hpke-hpke section 7.1.3; hpke-pq sections 3 and 4). The
+// ML-KEM and hybrid KEMs derive through SHAKE256 whatever the suite's KDF;
+// a DHKEM through its own HKDF.
+function hpkeDeriveKeyPair(kemId, ikm) {
+  log.debug('Entering hpkeDeriveKeyPair(). ' + kemId);
+  const kem = hpkeKem(kemId);
+  const suiteId = kemSuiteId(kemId);
+  if (kem.kind === 'mlkem' || kem.kind === 'hybrid') {
+    const shake256 = HPKE_KDFS[0x0011];
+    const sk = labeledDerive(shake256, suiteId, ikm, 'DeriveKeyPair', '',
+                             kem.Nsk);
+    const pk = kem.kind === 'mlkem' ? mlkemFromSeed(kem.set, sk).ek
+      : hybridExpand(kem.hybrid, sk).ek;
+    log.debug('Leaving hpkeDeriveKeyPair(). ' + kem.kind);
+    return { sk: sk, pk: pk };
+  }
+  const kdf = HPKE_KDFS[kem.kdf];
+  const prk = labeledExtract(kdf, suiteId, '', 'dkp_prk', ikm);
+  if (kem.kind === 'montgomery') {
+    const sk = labeledExpand(kdf, suiteId, prk, 'sk', '', kem.Nsk);
+    log.debug('Leaving hpkeDeriveKeyPair(). Montgomery.');
+    return { sk: sk, pk: montgomeryPublic(kem.group, sk) };
+  }
+  const group = EC_GROUPS[kem.group];
+  for (let counter = 0; counter < 256; counter++) {
+    const bytes = labeledExpand(kdf, suiteId, prk, 'candidate',
+                                i2osp(counter, 1), kem.Nsk);
+    // The bitmask of section 7.1.3: 0xff for P-256 and P-384, 0x01 for
+    // P-521, whose order is a 521-bit number in 66 octets.
+    bytes[0] = bytes[0] & (kem.group === 'P-521' ? 0x01 : 0xff);
+    const sk = os2ip(bytes);
+    if (sk !== 0n && sk < group.order) {
+      log.debug('Leaving hpkeDeriveKeyPair(). NIST curve.');
+      return { sk: bytes, pk: nistPublic(kem.group, bytes) };
+    }
+  }
+  log.debug('Leaving hpkeDeriveKeyPair(). DeriveKeyPairError.');
+  throw new Error('DeriveKeyPairError: no scalar in 256 candidates');
+}
+
+function hpkeGenerateKeyPair(kemId) {
+  log.debug('Entering hpkeGenerateKeyPair(). ' + kemId);
+  const kem = hpkeKem(kemId);
+  let out;
+  if (kem.kind === 'mlkem' || kem.kind === 'hybrid') {
+    // GenerateKeyPair is KeyGen on a random seed (hpke-pq sections 3, 4;
+    // hybrid-kems-12 section 5.2): the seed IS the private key.
+    const sk = nodeCrypto.randomBytes(kem.Nsk);
+    out = { sk: sk, pk: kem.kind === 'mlkem' ? mlkemFromSeed(kem.set, sk).ek
+      : hybridExpand(kem.hybrid, sk).ek };
+  } else {
+    out = hpkeDeriveKeyPair(kemId, nodeCrypto.randomBytes(kem.Nsk));
+  }
+  log.debug('Leaving hpkeGenerateKeyPair().');
+  return out;
+}
+
+function dhkemExtractAndExpand(kem, suiteId, dh, kemContext) {
+  log.debug('Entering dhkemExtractAndExpand().');
+  const kdf = HPKE_KDFS[kem.kdf];
+  const prk = labeledExtract(kdf, suiteId, '', 'eae_prk', dh);
+  const out = labeledExpand(kdf, suiteId, prk, 'shared_secret', kemContext,
+                            kem.Nsecret);
+  log.debug('Leaving dhkemExtractAndExpand().');
+  return out;
+}
+
+function hpkeEncap(kemId, pkR, ikmE) {
+  log.debug('Entering hpkeEncap(). ' + kemId);
+  const kem = hpkeKem(kemId);
+  const pk = Buffer.from(pkR);
+  if (pk.length !== kem.Npk) {
+    log.debug('Leaving hpkeEncap(). Wrong key size.');
+    throw new Error('a ' + kem.name + ' public key is ' + kem.Npk +
+                    ' octets; this one is ' + pk.length);
+  }
+  if (kem.kind === 'mlkem') {
+    const out = mlkemEncaps(kem.set, pk, ikmE || null);
+    log.debug('Leaving hpkeEncap(). ML-KEM.');
+    return { ss: out.ss, enc: out.ct };
+  }
+  if (kem.kind === 'hybrid') {
+    const out = hybridEncaps(kem.hybrid, pk, ikmE || null);
+    log.debug('Leaving hpkeEncap(). Hybrid.');
+    return { ss: out.ss, enc: out.ct };
+  }
+  const ephemeral = ikmE ? hpkeDeriveKeyPair(kemId, ikmE)
+    : hpkeGenerateKeyPair(kemId);
+  const dh = kem.kind === 'montgomery'
+    ? montgomeryDh(kem.group, ephemeral.sk, pk)
+    : nistDh(kem.group, ephemeral.sk, pk);
+  const enc = ephemeral.pk;
+  const ss = dhkemExtractAndExpand(kem, kemSuiteId(kemId), dh,
+                                   Buffer.concat([enc, pk]));
+  log.debug('Leaving hpkeEncap(). DHKEM.');
+  return { ss: ss, enc: enc };
+}
+
+function hpkeDecap(kemId, enc, skR) {
+  log.debug('Entering hpkeDecap(). ' + kemId);
+  const kem = hpkeKem(kemId);
+  const e = Buffer.from(enc);
+  if (e.length !== kem.Nenc) {
+    log.debug('Leaving hpkeDecap(). Wrong enc size.');
+    throw new Error('a ' + kem.name + ' encapsulated secret is ' + kem.Nenc +
+                    ' octets; this one is ' + e.length);
+  }
+  if (kem.kind === 'mlkem') {
+    const out = mlkemDecaps(kem.set, skR, e);
+    log.debug('Leaving hpkeDecap(). ML-KEM.');
+    return out;
+  }
+  if (kem.kind === 'hybrid') {
+    const out = hybridDecaps(kem.hybrid, skR, e);
+    log.debug('Leaving hpkeDecap(). Hybrid.');
+    return out;
+  }
+  const sk = Buffer.from(skR);
+  const dh = kem.kind === 'montgomery' ? montgomeryDh(kem.group, sk, e)
+    : nistDh(kem.group, sk, e);
+  const pkRm = kem.kind === 'montgomery' ? montgomeryPublic(kem.group, sk)
+    : nistPublic(kem.group, sk);
+  const out = dhkemExtractAndExpand(kem, kemSuiteId(kemId), dh,
+                                    Buffer.concat([e, pkRm]));
+  log.debug('Leaving hpkeDecap(). DHKEM.');
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// HPKE'S AEADs (section 7.3). `ct` is the ciphertext with the 16-octet tag
+// appended, which is HPKE's shape and not JWE's.
+// ---------------------------------------------------------------------------
+const HPKE_AEADS = {
+  0x0001: { name: 'AES-128-GCM', cipher: 'aes-128-gcm', Nk: 16, Nn: 12,
+            Nt: 16 },
+  0x0002: { name: 'AES-256-GCM', cipher: 'aes-256-gcm', Nk: 32, Nn: 12,
+            Nt: 16 },
+  0x0003: { name: 'ChaCha20Poly1305', cipher: 'chacha20-poly1305', Nk: 32,
+            Nn: 12, Nt: 16 },
+  0xffff: { name: 'Export-only', cipher: '', Nk: 0, Nn: 0, Nt: 0 }
+};
+
+function hpkeAeadSeal(aead, key, nonce, aad, pt) {
+  log.debug('Entering hpkeAeadSeal(). ' + aead.name);
+  const cipher = /** @type {import('crypto').CipherGCM} */ (
+    nodeCrypto.createCipheriv(aead.cipher, key, nonce,
+                              /** @type {any} */ ({ authTagLength: 16 })));
+  cipher.setAAD(Buffer.from(aad), /** @type {any} */ (
+    { plaintextLength: Buffer.from(pt).length }));
+  const ct = Buffer.concat([cipher.update(Buffer.from(pt)), cipher.final(),
+                            cipher.getAuthTag()]);
+  log.debug('Leaving hpkeAeadSeal().');
+  return ct;
+}
+
+function hpkeAeadOpen(aead, key, nonce, aad, ct) {
+  log.debug('Entering hpkeAeadOpen(). ' + aead.name);
+  const bytes = Buffer.from(ct);
+  if (bytes.length < aead.Nt) {
+    log.debug('Leaving hpkeAeadOpen(). Shorter than a tag.');
+    throw new Error('an HPKE ciphertext carries a ' + (aead.Nt * 8) +
+                    '-bit tag and this one is ' + bytes.length + ' octets');
+  }
+  const decipher = /** @type {import('crypto').DecipherGCM} */ (
+    nodeCrypto.createDecipheriv(aead.cipher, key, nonce,
+                                /** @type {any} */ ({ authTagLength: 16 })));
+  const body = bytes.subarray(0, bytes.length - aead.Nt);
+  decipher.setAAD(Buffer.from(aad), /** @type {any} */ (
+    { plaintextLength: body.length }));
+  decipher.setAuthTag(bytes.subarray(bytes.length - aead.Nt));
+  const out = Buffer.concat([decipher.update(body), decipher.final()]);
+  log.debug('Leaving hpkeAeadOpen().');
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// THE KEY SCHEDULE AND THE CONTEXT (hpke-hpke sections 5.1 and 5.2), for
+// mode_base and mode_psk — the two modes the successor to RFC 9180 keeps,
+// and the two jose-hpke-encrypt-22 section 4 allows (psk_id present means
+// mode_psk). The context is a small object whose sequence number moves on
+// each seal or open; a JWE uses it once.
+// ---------------------------------------------------------------------------
+const HPKE_MODE_BASE = 0x00;
+const HPKE_MODE_PSK = 0x01;
+
+function hpkeSuiteId(kemId, kdfId, aeadId) {
+  log.debug('Entering hpkeSuiteId().');
+  log.debug('Leaving hpkeSuiteId().');
+  return Buffer.concat([Buffer.from('HPKE', 'ascii'), i2osp(kemId, 2),
+                        i2osp(kdfId, 2), i2osp(aeadId, 2)]);
+}
+
+function hpkeKeySchedule(suite, mode, sharedSecret, info, psk, pskId) {
+  log.debug('Entering hpkeKeySchedule(). mode=' + mode);
+  const kdf = HPKE_KDFS[suite.kdf];
+  const aead = HPKE_AEADS[suite.aead];
+  if (!kdf || !aead) {
+    log.debug('Leaving hpkeKeySchedule(). Unknown suite.');
+    throw new Error('no HPKE KDF 0x' + Number(suite.kdf).toString(16) +
+                    ' or AEAD 0x' + Number(suite.aead).toString(16));
+  }
+  const suiteId = hpkeSuiteId(suite.kem, suite.kdf, suite.aead);
+  const pskBytes = Buffer.from(psk || '');
+  const pskIdBytes = Buffer.from(pskId || '');
+  // VerifyPSKInputs.
+  if ((pskBytes.length > 0) !== (pskIdBytes.length > 0)) {
+    log.debug('Leaving hpkeKeySchedule(). Inconsistent PSK inputs.');
+    throw new Error('HPKE: a PSK and its psk_id go together or not at all');
+  }
+  if (pskBytes.length > 0 && mode === HPKE_MODE_BASE) {
+    throw new Error('HPKE: a PSK was given for mode_base');
+  }
+  if (pskBytes.length === 0 && mode === HPKE_MODE_PSK) {
+    throw new Error('HPKE: mode_psk needs a PSK and a psk_id');
+  }
+  if (mode === HPKE_MODE_PSK && pskBytes.length < 32) {
+    // Section 5.1.2: "The PSK MUST have at least 32 bytes of entropy".
+    throw new Error('HPKE: a PSK is at least 32 octets');
+  }
+  let key;
+  let baseNonce;
+  let exporterSecret;
+  if (kdf.twoStage) {
+    const pskIdHash = labeledExtract(kdf, suiteId, '', 'psk_id_hash',
+                                     pskIdBytes);
+    const infoHash = labeledExtract(kdf, suiteId, '', 'info_hash',
+                                    Buffer.from(info || ''));
+    const context = Buffer.concat([Buffer.from([mode]), pskIdHash,
+                                   infoHash]);
+    const secret = labeledExtract(kdf, suiteId, sharedSecret, 'secret',
+                                  pskBytes);
+    key = labeledExpand(kdf, suiteId, secret, 'key', context, aead.Nk);
+    baseNonce = labeledExpand(kdf, suiteId, secret, 'base_nonce', context,
+                              aead.Nn);
+    exporterSecret = labeledExpand(kdf, suiteId, secret, 'exp', context,
+                                   kdf.Nh);
+  } else {
+    const secrets = Buffer.concat([lengthPrefixed(pskBytes),
+                                   lengthPrefixed(sharedSecret)]);
+    const context = Buffer.concat([Buffer.from([mode]),
+                                   lengthPrefixed(pskIdBytes),
+                                   lengthPrefixed(Buffer.from(info || ''))]);
+    const secret = labeledDerive(kdf, suiteId, secrets, 'secret', context,
+                                 aead.Nk + aead.Nn + kdf.Nh);
+    key = secret.subarray(0, aead.Nk);
+    baseNonce = secret.subarray(aead.Nk, aead.Nk + aead.Nn);
+    exporterSecret = secret.subarray(aead.Nk + aead.Nn);
+  }
+  const context = {
+    key: key, baseNonce: baseNonce, exporterSecret: exporterSecret, seq: 0,
+    nonce: function () {
+      log.debug('Entering hpkeContext.nonce().');
+      const seqBytes = i2osp(this.seq, aead.Nn);
+      const out = Buffer.alloc(aead.Nn);
+      for (let i = 0; i < aead.Nn; i++) {
+        out[i] = baseNonce[i] ^ seqBytes[i];
+      }
+      log.debug('Leaving hpkeContext.nonce().');
+      return out;
+    },
+    seal: function (aad, pt) {
+      log.debug('Entering hpkeContext.seal().');
+      if (aead.Nk === 0) {
+        throw new Error('HPKE: an export-only suite cannot encrypt');
+      }
+      const ct = hpkeAeadSeal(aead, key, this.nonce(), aad, pt);
+      this.seq += 1;
+      log.debug('Leaving hpkeContext.seal().');
+      return ct;
+    },
+    open: function (aad, ct) {
+      log.debug('Entering hpkeContext.open().');
+      if (aead.Nk === 0) {
+        throw new Error('HPKE: an export-only suite cannot decrypt');
+      }
+      const pt = hpkeAeadOpen(aead, key, this.nonce(), aad, ct);
+      this.seq += 1;
+      log.debug('Leaving hpkeContext.open().');
+      return pt;
+    },
+    exportSecret: function (exporterContext, length) {
+      log.debug('Entering hpkeContext.exportSecret().');
+      const out = kdf.twoStage
+        ? labeledExpand(kdf, suiteId, exporterSecret, 'sec',
+                        exporterContext, length)
+        : labeledDerive(kdf, suiteId, exporterSecret, 'sec',
+                        exporterContext, length);
+      log.debug('Leaving hpkeContext.exportSecret().');
+      return out;
+    }
+  };
+  log.debug('Leaving hpkeKeySchedule().');
+  return context;
+}
+
+// SetupS / SetupR for both modes. `opts`: `info`, `psk`, `pskId`, and — for
+// the vectors only — `ikmE`.
+function hpkeSetupSender(suite, pkR, opts) {
+  log.debug('Entering hpkeSetupSender().');
+  const o = opts || {};
+  const encap = hpkeEncap(suite.kem, pkR, o.ikmE || null);
+  const mode = o.psk ? HPKE_MODE_PSK : HPKE_MODE_BASE;
+  const context = hpkeKeySchedule(suite, mode, encap.ss, o.info, o.psk,
+                                  o.pskId);
+  log.debug('Leaving hpkeSetupSender().');
+  return { enc: encap.enc, sharedSecret: encap.ss, context: context };
+}
+
+function hpkeSetupReceiver(suite, enc, skR, opts) {
+  log.debug('Entering hpkeSetupReceiver().');
+  const o = opts || {};
+  const ss = hpkeDecap(suite.kem, enc, skR);
+  const mode = o.psk ? HPKE_MODE_PSK : HPKE_MODE_BASE;
+  const context = hpkeKeySchedule(suite, mode, ss, o.info, o.psk, o.pskId);
+  log.debug('Leaving hpkeSetupReceiver().');
+  return { sharedSecret: ss, context: context };
+}
+
+// ---------------------------------------------------------------------------
+// THE JWE ALGORITHMS. One table, each row saying what it is built from, so
+// that the key checks, the wrap and the unwrap all read the same row.
+//
+//   family 'mlkem'  pqc-kem-05: `set`, and `kwBytes` for the +AxxxKW forms
+//   family 'hpke'   `kem`, `kdf`, `aead`, and `integrated` (no CEK, no
+//                   `enc`) or not (Key Encryption: the CEK is the HPKE
+//                   plaintext)
+//
+// `keyType` is what a recipient's JWK must be: 'AKP' (with `alg` equal to the
+// JWE alg — draft-ietf-cose-dilithium's rule that an AKP key names exactly
+// one algorithm, which pqc-kem-05 section 10 and the hybrid draft section 6
+// both apply to KEM keys), or EC / OKP with the curve jose-hpke-encrypt-22's
+// Table 3 names.
+// ---------------------------------------------------------------------------
+const JWE_PQ_KEM_TABLE = {};
+['ML-KEM-512', 'ML-KEM-768', 'ML-KEM-1024'].forEach(function (set) {
+  JWE_PQ_KEM_TABLE[set] = { family: 'mlkem', set: set, kwBytes: 0,
+                            keyType: 'AKP', postQuantum: true,
+                            hybrid: false,
+                            spec: 'draft-ietf-jose-pqc-kem-05' };
+});
+[['ML-KEM-512+A128KW', 'ML-KEM-512', 16],
+ ['ML-KEM-768+A192KW', 'ML-KEM-768', 24],
+ ['ML-KEM-1024+A256KW', 'ML-KEM-1024', 32]].forEach(function (row) {
+  JWE_PQ_KEM_TABLE[row[0]] = { family: 'mlkem', set: row[1], kwBytes: row[2],
+                               keyType: 'AKP', postQuantum: true,
+                               hybrid: false,
+                               spec: 'draft-ietf-jose-pqc-kem-05' };
+});
+// jose-hpke-encrypt-22 Tables 1 and 2 (the classical suites), and the hybrid
+// draft's section 9.1 (8 to 16). `crv` is the JWK curve for the classical
+// ones; the post-quantum ones are AKP.
+[[0, 0x0010, 0x0001, 0x0001, 'EC', 'P-256', true],
+ [1, 0x0011, 0x0002, 0x0002, 'EC', 'P-384', true],
+ [2, 0x0012, 0x0003, 0x0002, 'EC', 'P-521', true],
+ [3, 0x0020, 0x0001, 0x0001, 'OKP', 'X25519', true],
+ [4, 0x0020, 0x0001, 0x0003, 'OKP', 'X25519', false],
+ [5, 0x0021, 0x0003, 0x0002, 'OKP', 'X448', true],
+ [6, 0x0021, 0x0003, 0x0003, 'OKP', 'X448', false],
+ [7, 0x0010, 0x0001, 0x0002, 'EC', 'P-256', true],
+ [8, 0x0050, 0x0011, 0x0002, 'AKP', '', true],
+ [9, 0x0050, 0x0011, 0x0003, 'AKP', '', true],
+ [10, 0x647a, 0x0011, 0x0002, 'AKP', '', true],
+ [11, 0x647a, 0x0011, 0x0003, 'AKP', '', true],
+ [12, 0x0051, 0x0011, 0x0002, 'AKP', '', true],
+ [13, 0x0051, 0x0011, 0x0003, 'AKP', '', true],
+ [14, 0x0040, 0x0011, 0x0001, 'AKP', '', true],
+ [15, 0x0041, 0x0011, 0x0002, 'AKP', '', true],
+ [16, 0x0042, 0x0011, 0x0002, 'AKP', '', true]].forEach(function (row) {
+  const n = Number(row[0]);
+  const kem = HPKE_KEMS[Number(row[1])];
+  const pq = kem.kind === 'mlkem' || kem.kind === 'hybrid';
+  const base = { family: 'hpke', kem: row[1], kdf: row[2], aead: row[3],
+                 keyType: row[4], crv: row[5], postQuantum: pq,
+                 hybrid: kem.kind === 'hybrid',
+                 spec: n <= 7 ? 'draft-ietf-jose-hpke-encrypt-22'
+                   : 'draft-reddy-cose-jose-pqc-hybrid-hpke-11' };
+  JWE_PQ_KEM_TABLE['HPKE-' + n] = Object.assign({ integrated: true }, base);
+  // HPKE-4-KE and HPKE-6-KE were removed by jose-hpke-encrypt-22 (its
+  // change log: at the request of the responsible AD); column 7 says so.
+  if (row[6]) {
+    JWE_PQ_KEM_TABLE['HPKE-' + n + '-KE'] =
+      Object.assign({ integrated: false }, base);
+  }
+});
+
+const JWE_MLKEM_ALGS = Object.keys(JWE_PQ_KEM_TABLE).filter(function (a) {
+  return JWE_PQ_KEM_TABLE[a].family === 'mlkem';
+});
+const JWE_HPKE_ALGS = Object.keys(JWE_PQ_KEM_TABLE).filter(function (a) {
+  return JWE_PQ_KEM_TABLE[a].family === 'hpke';
+});
+const JWE_HPKE_INTEGRATED_ALGS = JWE_HPKE_ALGS.filter(function (a) {
+  return JWE_PQ_KEM_TABLE[a].integrated;
+});
+// The post-quantum ones: every ML-KEM alg and HPKE-8 to HPKE-16. What the
+// console counts as "post-quantum key establishment" and the PQC badge marks.
+const JWE_POST_QUANTUM_ALGS = Object.keys(JWE_PQ_KEM_TABLE).filter(
+  function (a) {
+    return JWE_PQ_KEM_TABLE[a].postQuantum;
+  });
+const JWE_HYBRID_ALGS = Object.keys(JWE_PQ_KEM_TABLE).filter(function (a) {
+  return JWE_PQ_KEM_TABLE[a].hybrid;
+});
+
+function isIntegratedJweAlg(alg) {
+  log.debug('Entering isIntegratedJweAlg().');
+  const row = JWE_PQ_KEM_TABLE[String(alg)];
+  log.debug('Leaving isIntegratedJweAlg().');
+  return !!(row && row.family === 'hpke' && row.integrated);
+}
+
+// ---------------------------------------------------------------------------
+// A RECIPIENT'S KEY, CHECKED AGAINST THE ALG — the refusal #82's tests ask
+// for ("a key that does not match the alg"). Returns the raw public key
+// octets in the form the KEM takes. An EC or OKP key that carries an `alg`
+// must name this one too (RFC 7517 section 4.4).
+// ---------------------------------------------------------------------------
+function kemPublicKeyFor(alg, jwk) {
+  log.debug('Entering kemPublicKeyFor(). ' + alg);
+  const row = JWE_PQ_KEM_TABLE[alg];
+  const key = jwk && typeof jwk === 'object' ? jwk : {};
+  if (key.kty !== row.keyType) {
+    log.debug('Leaving kemPublicKeyFor(). Wrong kty.');
+    throw new Error('alg "' + alg + '" encrypts to a key of type "' +
+                    row.keyType + '"' + (row.crv ? ' (' + row.crv + ')' : '') +
+                    ' and this key is "' + (key.kty || '(none)') + '"');
+  }
+  if (row.keyType === 'AKP') {
+    if (key.alg !== alg) {
+      log.debug('Leaving kemPublicKeyFor(). AKP names another alg.');
+      throw new Error('an AKP key names exactly one algorithm, and this one ' +
+                      'is for "' + (key.alg || '(none)') + '", not "' + alg +
+                      '"');
+    }
+    const pub = Buffer.from(String(key.pub || ''), 'base64url');
+    const want = row.family === 'mlkem' ? MLKEM_SETS[row.set].Npk
+      : HPKE_KEMS[row.kem].Npk;
+    if (pub.length !== want) {
+      log.debug('Leaving kemPublicKeyFor(). Wrong size.');
+      throw new Error('the AKP key\'s `pub` is ' + pub.length + ' octets ' +
+                      'and "' + alg + '" takes ' + want);
+    }
+    log.debug('Leaving kemPublicKeyFor(). AKP.');
+    return pub;
+  }
+  if (key.alg && key.alg !== alg) {
+    log.debug('Leaving kemPublicKeyFor(). The JWK names another alg.');
+    throw new Error('this key names alg "' + key.alg + '", not "' + alg +
+                    '"');
+  }
+  if (key.crv !== row.crv) {
+    log.debug('Leaving kemPublicKeyFor(). Wrong curve.');
+    throw new Error('alg "' + alg + '" encrypts to a ' + row.crv + ' key ' +
+                    'and this one is "' + (key.crv || '(none)') + '"');
+  }
+  if (row.keyType === 'OKP') {
+    log.debug('Leaving kemPublicKeyFor(). OKP.');
+    return Buffer.from(String(key.x || ''), 'base64url');
+  }
+  const size = EC_GROUPS[row.crv].Nsk;
+  const x = Buffer.from(String(key.x || ''), 'base64url');
+  const y = Buffer.from(String(key.y || ''), 'base64url');
+  if (x.length !== size || y.length !== size) {
+    log.debug('Leaving kemPublicKeyFor(). Bad coordinates.');
+    throw new Error('a ' + row.crv + ' key has ' + size + '-octet x and y');
+  }
+  log.debug('Leaving kemPublicKeyFor(). EC.');
+  return Buffer.concat([Buffer.from([0x04]), x, y]);
+}
+
+// The PRIVATE half, from what a caller holds: an AKP JWK with `priv` (the
+// seed), an EC or OKP JWK with `d`, or a node KeyObject of an EC or
+// Montgomery key. Returns the serialised private key the KEM takes.
+function kemPrivateKeyFor(alg, key) {
+  log.debug('Entering kemPrivateKeyFor(). ' + alg);
+  const row = JWE_PQ_KEM_TABLE[alg];
+  let jwk = key;
+  if (key && typeof key === 'object' && typeof key.export === 'function' &&
+      key.type === 'private') {
+    jwk = key.export({ format: 'jwk' });
+  }
+  if (!jwk || typeof jwk !== 'object') {
+    log.debug('Leaving kemPrivateKeyFor(). None.');
+    throw new Error('alg "' + alg + '" is encrypted to a private key and ' +
+                    'this caller was given none');
+  }
+  if (row.keyType === 'AKP') {
+    if (jwk.kty !== 'AKP' || jwk.alg !== alg || !jwk.priv) {
+      log.debug('Leaving kemPrivateKeyFor(). Not this alg\'s AKP key.');
+      throw new Error('alg "' + alg + '" is decrypted with an AKP key for ' +
+                      'that algorithm, and the key held is ' +
+                      (jwk.kty === 'AKP' ? 'for "' + (jwk.alg || '') + '"'
+                        : 'of type "' + (jwk.kty || '(none)') + '"'));
+    }
+    log.debug('Leaving kemPrivateKeyFor(). AKP.');
+    return Buffer.from(String(jwk.priv), 'base64url');
+  }
+  if (jwk.kty !== row.keyType || jwk.crv !== row.crv || !jwk.d) {
+    log.debug('Leaving kemPrivateKeyFor(). Wrong key.');
+    throw new Error('alg "' + alg + '" is decrypted with a ' + row.crv +
+                    ' private key, and the key held is ' +
+                    (jwk.crv || jwk.kty || '(none)'));
+  }
+  const d = Buffer.from(String(jwk.d), 'base64url');
+  if (row.keyType === 'EC') {
+    // A JWK's d is exactly the curve's size, but a KeyObject's export can
+    // lose a leading zero on the coordinate; pad rather than refuse.
+    const size = EC_GROUPS[row.crv].Nsk;
+    log.debug('Leaving kemPrivateKeyFor(). EC.');
+    return d.length >= size ? d
+      : Buffer.concat([Buffer.alloc(size - d.length), d]);
+  }
+  log.debug('Leaving kemPrivateKeyFor(). OKP.');
+  return d;
+}
+
+// ---------------------------------------------------------------------------
+// pqc-kem-05 SECTION 5.1's KDF: KMAC256(K = SS', X, L, S = "") where X is
+// AlgorithmID || SuppPubInfo from RFC 7518 section 4.6.2 — the same fields
+// section 4's Concat KDF uses, with PartyUInfo and PartyVInfo left out on
+// purpose (the draft: a KEM has no sender authentication, and the
+// recipient is bound by its key). AlgorithmID is the length-prefixed `enc`
+// for direct agreement and the length-prefixed `alg` for key wrapping,
+// exactly as in RFC 7518; SuppPubInfo is the key length in bits.
+// ---------------------------------------------------------------------------
+function mlkemJoseKdf(sharedSecret, algorithmId, keyBytes) {
+  log.debug('Entering mlkemJoseKdf(). ' + algorithmId);
+  const id = Buffer.from(String(algorithmId), 'utf8');
+  const x = Buffer.concat([i2osp(id.length, 4), id, i2osp(keyBytes * 8, 4)]);
+  const out = Buffer.from(nobleSha3Addons.kmac256(
+    new Uint8Array(sharedSecret), new Uint8Array(x),
+    { dkLen: keyBytes, personalization: new Uint8Array(0) }));
+  log.debug('Leaving mlkemJoseKdf().');
+  return out;
+}
+
+// The JOSE-HPKE Recipient_structure (jose-hpke-encrypt-22 section 6.1), the
+// HPKE info for Key Encryption: "JOSE-HPKE rcpt" 0xFF enc 0xFF extra.
+function joseHpkeRecipientStructure(enc, extra) {
+  log.debug('Entering joseHpkeRecipientStructure().');
+  log.debug('Leaving joseHpkeRecipientStructure().');
+  return Buffer.concat([Buffer.from('JOSE-HPKE rcpt', 'ascii'),
+                        Buffer.from([0xff]), Buffer.from(String(enc), 'ascii'),
+                        Buffer.from([0xff]), Buffer.from(extra || '')]);
+}
+
+// The HPKE PSK inputs a caller named (`psk`, `pskId`), for both directions:
+// a psk_id in the header is base64url (jose-hpke-encrypt-22 section 11.2.2).
+function joseHpkePsk(options, header, forEncrypt) {
+  log.debug('Entering joseHpkePsk().');
+  if (forEncrypt) {
+    if (!options.psk) {
+      log.debug('Leaving joseHpkePsk(). Base mode.');
+      return {};
+    }
+    header.psk_id = b64u(Buffer.from(options.pskId || ''));
+    log.debug('Leaving joseHpkePsk(). PSK mode.');
+    return { psk: Buffer.from(options.psk),
+             pskId: Buffer.from(options.pskId || '') };
+  }
+  if (header.psk_id === undefined) {
+    log.debug('Leaving joseHpkePsk(). Base mode.');
+    return {};
+  }
+  const pskId = Buffer.from(String(header.psk_id), 'base64url');
+  const psk = typeof options.psk === 'function' ? options.psk(pskId)
+    : options.psk;
+  if (!psk) {
+    log.debug('Leaving joseHpkePsk(). No PSK for that id.');
+    throw new Error('this JWE names an HPKE pre-shared key (psk_id) and ' +
+                    'this caller holds none for it');
+  }
+  log.debug('Leaving joseHpkePsk(). PSK mode.');
+  return { psk: Buffer.from(psk), pskId: pskId };
+}
+
+// ---------------------------------------------------------------------------
+// THE KEY MANAGEMENT HALF FOR THESE FAMILIES, as `wrapCek()` is for section
+// 4's. Returns { cek, encryptedKey } and writes `ek` (and `psk_id`) into the
+// header. Integrated HPKE is NOT here: it has no CEK, so
+// `encryptJweCompact()` calls `hpkeIntegratedSeal()` instead.
+// ---------------------------------------------------------------------------
+function wrapCekPq(alg, recipientJwk, cek, header, options) {
+  log.debug('Entering wrapCekPq(). ' + alg);
+  const row = JWE_PQ_KEM_TABLE[alg];
+  const pub = kemPublicKeyFor(alg, recipientJwk);
+  if (row.family === 'mlkem') {
+    const out = mlkemEncaps(row.set, pub, null);
+    header.ek = b64u(out.ct);
+    if (!row.kwBytes) {
+      // Direct Key Agreement (pqc-kem-05 section 6.1): the KDF output IS the
+      // CEK, its length the `enc`'s, and the JWE Encrypted Key is empty.
+      log.debug('Leaving wrapCekPq(). ML-KEM direct.');
+      return { cek: mlkemJoseKdf(out.ss, header.enc, cek.length),
+               encryptedKey: Buffer.alloc(0) };
+    }
+    const kek = mlkemJoseKdf(out.ss, alg, row.kwBytes);
+    log.debug('Leaving wrapCekPq(). ML-KEM with key wrapping.');
+    return { cek: cek, encryptedKey: aesKeyWrap(kek, cek) };
+  }
+  const suite = { kem: row.kem, kdf: row.kdf, aead: row.aead };
+  const psk = joseHpkePsk(options || {}, header, true);
+  const sender = hpkeSetupSender(suite, pub, {
+    info: joseHpkeRecipientStructure(header.enc,
+                                     (options && options.recipientExtraInfo) ||
+                                     ''),
+    psk: psk.psk, pskId: psk.pskId });
+  header.ek = b64u(sender.enc);
+  // Section 6: the HPKE aad is empty and the plaintext is the CEK.
+  const wrapped = sender.context.seal(Buffer.alloc(0), cek);
+  log.debug('Leaving wrapCekPq(). HPKE Key Encryption.');
+  return { cek: cek, encryptedKey: wrapped };
+}
+
+function unwrapCekPq(alg, header, encryptedKey, options, spec) {
+  log.debug('Entering unwrapCekPq(). ' + alg);
+  const row = JWE_PQ_KEM_TABLE[alg];
+  if (typeof header.ek !== 'string' || !header.ek) {
+    log.debug('Leaving unwrapCekPq(). No ek.');
+    throw new Error('an "' + alg + '" JWE carries the KEM ciphertext in the ' +
+                    'header as `ek` (' + row.spec + ') and this one has none');
+  }
+  const ek = strictBase64url(header.ek, 'JWE ek');
+  const priv = kemPrivateKeyFor(alg, options.privateKey || options.privateJwk);
+  if (row.family === 'mlkem') {
+    const ss = mlkemDecaps(row.set, priv, ek);
+    if (!row.kwBytes) {
+      if (encryptedKey.length) {
+        log.debug('Leaving unwrapCekPq(). Direct with an encrypted key.');
+        throw new Error('direct key agreement leaves the JWE Encrypted Key ' +
+                        'empty (pqc-kem-05 section 6.1), and this one is not');
+      }
+      if (!spec) {
+        throw new Error('alg "' + alg + '" derives the content key at the ' +
+                        'length `enc` names, and "' + header.enc + '" is ' +
+                        'not one this service knows');
+      }
+      log.debug('Leaving unwrapCekPq(). ML-KEM direct.');
+      return mlkemJoseKdf(ss, header.enc, spec.cekBytes);
+    }
+    const out = aesKeyUnwrap(mlkemJoseKdf(ss, alg, row.kwBytes), encryptedKey);
+    log.debug('Leaving unwrapCekPq(). ML-KEM with key wrapping.');
+    return out;
+  }
+  const psk = joseHpkePsk(options, header, false);
+  const receiver = hpkeSetupReceiver(
+    { kem: row.kem, kdf: row.kdf, aead: row.aead }, ek, priv, {
+      info: joseHpkeRecipientStructure(header.enc,
+                                       options.recipientExtraInfo || ''),
+      psk: psk.psk, pskId: psk.pskId });
+  const out = receiver.context.open(Buffer.alloc(0), encryptedKey);
+  log.debug('Leaving unwrapCekPq(). HPKE Key Encryption.');
+  return out;
+}
+
+// INTEGRATED ENCRYPTION (jose-hpke-encrypt-22 section 5): the plaintext is
+// the HPKE plaintext, the HPKE aad is ASCII(Encoded Protected Header), the
+// JWE Encrypted Key is the encapsulated secret, and the IV and tag are
+// empty. The header is final before this is called — it is the aad.
+function hpkeIntegratedSeal(alg, recipientJwk, headerB64, body, options,
+                            psk) {
+  log.debug('Entering hpkeIntegratedSeal(). ' + alg);
+  const row = JWE_PQ_KEM_TABLE[alg];
+  const pub = kemPublicKeyFor(alg, recipientJwk);
+  const sender = hpkeSetupSender({ kem: row.kem, kdf: row.kdf,
+                                   aead: row.aead }, pub, {
+    info: (options && options.hpkeInfo) || '',
+    psk: psk.psk, pskId: psk.pskId });
+  const ct = sender.context.seal(Buffer.from(headerB64, 'ascii'), body);
+  log.debug('Leaving hpkeIntegratedSeal().');
+  return { encryptedKey: sender.enc, ciphertext: ct };
+}
+
+function hpkeIntegratedOpen(alg, header, headerB64, parts, options) {
+  log.debug('Entering hpkeIntegratedOpen(). ' + alg);
+  const row = JWE_PQ_KEM_TABLE[alg];
+  if (header.enc !== undefined) {
+    log.debug('Leaving hpkeIntegratedOpen(). enc present.');
+    throw new Error('alg "' + alg + '" is HPKE Integrated Encryption, whose ' +
+                    'header MUST NOT carry `enc` (jose-hpke-encrypt-22 ' +
+                    'section 5)');
+  }
+  if (header.ek !== undefined) {
+    log.debug('Leaving hpkeIntegratedOpen(). ek present.');
+    throw new Error('alg "' + alg + '" carries the encapsulated secret as ' +
+                    'the JWE Encrypted Key, and its header MUST NOT carry ' +
+                    '`ek` (jose-hpke-encrypt-22 section 5)');
+  }
+  if (parts[2] !== '' || parts[4] !== '') {
+    log.debug('Leaving hpkeIntegratedOpen(). IV or tag present.');
+    throw new Error('HPKE Integrated Encryption leaves the JWE IV and ' +
+                    'Authentication Tag empty (jose-hpke-encrypt-22 section ' +
+                    '5), and this JWE carries ' +
+                    (parts[2] !== '' ? 'an IV' : 'a tag'));
+  }
+  const priv = kemPrivateKeyFor(alg, options.privateKey || options.privateJwk);
+  const psk = joseHpkePsk(options, header, false);
+  const receiver = hpkeSetupReceiver(
+    { kem: row.kem, kdf: row.kdf, aead: row.aead },
+    Buffer.from(parts[1], 'base64url'), priv, {
+      info: options.hpkeInfo || '', psk: psk.psk, pskId: psk.pskId });
+  const out = receiver.context.open(Buffer.from(headerB64, 'ascii'),
+                                    Buffer.from(parts[3], 'base64url'));
+  log.debug('Leaving hpkeIntegratedOpen().');
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// A KEY PAIR FOR ONE OF THESE ALGS, as JWKs: AKP { alg, pub } and
+// { alg, pub, priv } for the post-quantum rows (priv the seed — 64 octets
+// for ML-KEM, 32 for a hybrid); EC or OKP for the classical HPKE rows. What
+// a realm's opt-in decryption keys and OID4VP's ephemeral keys are made
+// with, so there is one generator (the crypto-pki-in-shared-modules rule).
+// ---------------------------------------------------------------------------
+function generateJweKemKeyPair(alg, kid) {
+  log.debug('Entering generateJweKemKeyPair(). ' + alg);
+  const row = JWE_PQ_KEM_TABLE[String(alg)];
+  if (!row) {
+    log.debug('Leaving generateJweKemKeyPair(). Not one of these algs.');
+    throw new Error('generateJweKemKeyPair: "' + alg + '" is not an ML-KEM ' +
+                    'or HPKE JWE algorithm');
+  }
+  const extra = { use: 'enc', alg: alg };
+  if (kid) {
+    extra.kid = kid;
+  }
+  if (row.keyType === 'AKP') {
+    const sk = nodeCrypto.randomBytes(row.family === 'mlkem' ? 64
+      : HPKE_KEMS[row.kem].Nsk);
+    const pk = row.family === 'mlkem' ? mlkemFromSeed(row.set, sk).ek
+      : (HPKE_KEMS[row.kem].kind === 'mlkem'
+        ? mlkemFromSeed(HPKE_KEMS[row.kem].set, sk).ek
+        : hybridExpand(HPKE_KEMS[row.kem].hybrid, sk).ek);
+    const publicJwk = Object.assign({ kty: 'AKP', pub: b64u(pk) }, extra);
+    log.debug('Leaving generateJweKemKeyPair(). AKP.');
+    return { publicJwk: publicJwk,
+             privateJwk: Object.assign({ priv: b64u(sk) }, publicJwk) };
+  }
+  const pair = row.keyType === 'EC'
+    ? nodeCrypto.generateKeyPairSync('ec',
+                                     { namedCurve: EC_GROUPS[row.crv].node })
+    : nodeCrypto.generateKeyPairSync(
+      /** @type {any} */ (row.crv.toLowerCase()));
+  const priv = pair.privateKey.export({ format: 'jwk' });
+  const pub = pair.publicKey.export({ format: 'jwk' });
+  log.debug('Leaving generateJweKemKeyPair(). ' + row.keyType + '.');
+  return { publicJwk: Object.assign(pub, extra),
+           privateJwk: Object.assign(priv, extra) };
+}
+
+// The public JWK of a private one, for a realm key read back from the store.
+function publicJweKemJwk(privateJwk) {
+  log.debug('Entering publicJweKemJwk().');
+  const out = Object.assign({}, privateJwk || {});
+  delete out.priv;
+  delete out.d;
+  log.debug('Leaving publicJweKemJwk().');
+  return out;
+}
+
+// What the console and the crypto-metadata document say about each alg: the
+// family, the KEM, the KDF, the AEAD and the draft it comes from.
+function describeJweKemAlg(alg) {
+  log.debug('Entering describeJweKemAlg(). ' + alg);
+  const row = JWE_PQ_KEM_TABLE[String(alg)];
+  if (!row) {
+    log.debug('Leaving describeJweKemAlg(). Not one of these.');
+    return null;
+  }
+  if (row.family === 'mlkem') {
+    log.debug('Leaving describeJweKemAlg(). ML-KEM.');
+    return { alg: alg, family: 'ML-KEM', kem: row.set, kdf: 'KMAC256',
+             keyWrap: row.kwBytes ? 'A' + (row.kwBytes * 8) + 'KW' : '',
+             mode: row.kwBytes ? 'Key Agreement with Key Wrapping'
+               : 'Direct Key Agreement',
+             keyType: 'AKP', postQuantum: true, hybrid: false,
+             spec: row.spec };
+  }
+  log.debug('Leaving describeJweKemAlg(). HPKE.');
+  return { alg: alg, family: 'HPKE', kem: HPKE_KEMS[row.kem].name,
+           kdf: HPKE_KDFS[row.kdf].name, aead: HPKE_AEADS[row.aead].name,
+           mode: row.integrated ? 'Integrated Encryption' : 'Key Encryption',
+           keyType: row.keyType + (row.crv ? ' ' + row.crv : ''),
+           postQuantum: row.postQuantum, hybrid: row.hybrid,
+           spec: row.spec };
+}
+
+// ===========================================================================
 // SECTION 4 — JWE (RFC 7516 compact serialization)
 // ===========================================================================
 //
@@ -3672,7 +5052,18 @@ const JWE_SYMMETRIC_ALGS = JWE_AESKW_ALGS.concat(JWE_AESGCMKW_ALGS,
 // JWKS and no shared secret. Advertising the symmetric families there would be
 // a metadata member a client could register and this service would then try to
 // satisfy by deriving a key from the JSON of a public key.
-const JWE_ASYMMETRIC_ALGS = JWE_RSA_ALGS.concat(JWE_ECDH_ALGS);
+//
+// **THE POST-QUANTUM AND HPKE FAMILIES JOINED IT ON 2026-09-27 (#82)** —
+// section 4a's table, all of it: the six ML-KEM algorithms and HPKE-0 to
+// HPKE-16 with their Key Encryption forms. Every one encrypts to a
+// recipient's PUBLIC key, which is this list's whole definition, and a
+// client registers one the way it registers RSA-OAEP-256. What this service
+// can DECRYPT with them is a different question — it needs a key of its own
+// for the alg, and those are an administrator's opt-in per realm (rcbj's
+// decision on #82), so the discovery lists that describe decryption are
+// narrowed to the keys held rather than read from here.
+const JWE_ASYMMETRIC_ALGS = JWE_RSA_ALGS.concat(JWE_ECDH_ALGS, JWE_MLKEM_ALGS,
+                                                JWE_HPKE_ALGS);
 const JWE_ALGS = JWE_ASYMMETRIC_ALGS.concat(JWE_SYMMETRIC_ALGS);
 // **THE SAME LIST, AND THAT IS THE CHANGE.** It was `['RSA-OAEP-256']` on the
 // argument that what arrives here is encrypted to the RSA key this service
@@ -4027,12 +5418,19 @@ function symmetricKek(alg, secret, header, forEncrypt) {
   return bytes;
 }
 
-function wrapCek(alg, recipientJwk, cek, header) {
+function wrapCek(alg, recipientJwk, cek, header, options) {
   log.debug('Entering wrapCek(). alg=' + alg);
   if (JWE_ALGS.indexOf(alg) === -1) {
     log.debug('Leaving wrapCek(). Unknown alg.');
     throw new Error('encryptJweCompact: unsupported alg "' + alg +
       '"; this service encrypts with ' + JWE_ALGS.join(', ') + '.');
+  }
+  // ML-KEM and HPKE Key Encryption (section 4a). Before the symmetric
+  // families and before `createPublicKey()`, which cannot read an AKP key.
+  if (JWE_PQ_KEM_TABLE[alg]) {
+    const out = wrapCekPq(alg, recipientJwk, cek, header, options);
+    log.debug('Leaving wrapCek(). ' + alg + '.');
+    return out;
   }
 
   // ---------------------------------------------------------------------
@@ -4119,6 +5517,15 @@ function encryptJweCompact(plaintext, opts) {
   const options = opts || {};
   log.debug('Entering encryptJweCompact(). alg=' + (options.alg || JWE_ALG) +
             ', enc=' + options.enc);
+  // HPKE INTEGRATED ENCRYPTION HAS NO `enc` (jose-hpke-encrypt-22 section
+  // 5), so it is answered before the `enc` check below — a caller that
+  // passes the `enc` a client registered beside an Integrated alg (OpenID
+  // Connect Registration defaults one) gets it left out, not refused.
+  if (isIntegratedJweAlg(options.alg)) {
+    const out = encryptJweIntegrated(plaintext, options);
+    log.debug('Leaving encryptJweCompact(). HPKE Integrated Encryption.');
+    return out;
+  }
   const spec = JWE_ENCS[options.enc];
   if (!spec) {
     log.debug('Leaving encryptJweCompact(). Unknown enc.');
@@ -4165,7 +5572,7 @@ function encryptJweCompact(plaintext, opts) {
   // header is serialised after it and not before — the AAD has to be the bytes
   // that actually go out, and an epk added after the AAD was taken would make
   // every tag fail at the far end.
-  const wrapped = wrapCek(alg, keyMaterial, random, header);
+  const wrapped = wrapCek(alg, keyMaterial, random, header, options);
   const headerB64 = b64u(Buffer.from(JSON.stringify(header), 'utf8'));
 
   const sealed = sealContent(spec, wrapped.cek, iv,
@@ -4174,6 +5581,44 @@ function encryptJweCompact(plaintext, opts) {
   const compact = [headerB64, b64u(wrapped.encryptedKey), b64u(iv),
                    b64u(sealed.ciphertext), b64u(sealed.tag)].join('.');
   log.debug('Leaving encryptJweCompact(). ' + compact.length + ' characters.');
+  return compact;
+}
+
+// ---------------------------------------------------------------------------
+// HPKE INTEGRATED ENCRYPTION, AS A COMPACT JWE (#82): the header has `alg`
+// and no `enc`; the second segment is the encapsulated secret; the IV and
+// tag segments are EMPTY; the ciphertext is HPKE's (with its tag inside).
+// `zip` works as it does for any other alg — the plaintext is compressed
+// before it is sealed (jose-hpke-encrypt-22 section 7.1, step 12).
+// ---------------------------------------------------------------------------
+function encryptJweIntegrated(plaintext, options) {
+  log.debug('Entering encryptJweIntegrated(). alg=' + options.alg);
+  const header = { alg: options.alg, typ: options.typ || 'JWT' };
+  if (options.cty) {
+    header.cty = options.cty;
+  }
+  let body = Buffer.from(plaintext, 'utf8');
+  if (options.zip !== undefined && options.zip !== null &&
+      options.zip !== '') {
+    if (options.zip !== 'DEF') {
+      log.debug('Leaving encryptJweIntegrated(). Unsupported zip.');
+      throw new Error('encryptJweCompact: unsupported zip "' + options.zip +
+                      '"; this service compresses with DEF only.');
+    }
+    header.zip = 'DEF';
+    body = zlib.deflateRawSync(body);
+  }
+  if (options.jwk && options.jwk.kid) {
+    header.kid = options.jwk.kid;
+  }
+  const psk = joseHpkePsk(options, header, true);
+  const headerB64 = b64u(Buffer.from(JSON.stringify(header), 'utf8'));
+  const sealed = hpkeIntegratedSeal(options.alg, options.jwk, headerB64, body,
+                                    options, psk);
+  const compact = [headerB64, b64u(sealed.encryptedKey), '',
+                   b64u(sealed.ciphertext), ''].join('.');
+  log.debug('Leaving encryptJweIntegrated(). ' + compact.length +
+            ' characters.');
   return compact;
 }
 
@@ -4241,6 +5686,14 @@ function unwrapCek(header, encryptedKey, options, spec) {
     return out;
   }
 
+  // ML-KEM and HPKE Key Encryption (section 4a): the private key is an AKP
+  // JWK (`privateJwk`) or, for the classical HPKE suites, an EC or OKP key.
+  if (JWE_PQ_KEM_TABLE[alg]) {
+    const out = unwrapCekPq(alg, header, encryptedKey, options, spec);
+    log.debug('Leaving unwrapCek(). ' + alg + '.');
+    return out;
+  }
+
   if (!options.privateKey) {
     throw new Error('alg "' + alg + '" is encrypted to a PRIVATE KEY and ' +
       'this caller was given none.');
@@ -4300,7 +5753,13 @@ function unwrapCek(header, encryptedKey, options, spec) {
 // DECRYPT A COMPACT JWE. `opts`:
 //
 //   privateKey    a node KeyObject — RSA for the two RSA-OAEP algorithms, EC
-//                 for the four ECDH-ES ones.
+//                 for the four ECDH-ES ones, EC or X25519/X448 for the
+//                 classical HPKE suites.
+//   privateJwk    a private JWK, for section 4a's algorithms (#82): the AKP
+//                 key (`priv` the seed) an ML-KEM or post-quantum HPKE alg
+//                 is decrypted with, or an EC / OKP JWK for classical HPKE.
+//   psk           HPKE mode_psk only: the pre-shared key, or a function of
+//                 the header's decoded `psk_id` returning it.
 //   secret        the shared key for the symmetric families: a Buffer, an oct
 //                 JWK, or a string whose UTF-8 bytes are the key (which is
 //                 what a `client_secret` is). See secretBytes().
@@ -4366,6 +5825,15 @@ function decryptJweCompact(compact, opts) {
     throw new Error('this endpoint accepts alg ' +
       options.allowedAlg.join(', ') +
       '; the request used "' + header.alg + '".');
+  }
+  // HPKE INTEGRATED ENCRYPTION (#82) has no `enc` and no CEK: after the
+  // alg refusals above and the kid check, it is opened whole by section 4a.
+  // A caller's `allowedEnc` does not apply to it — there is nothing for it
+  // to narrow — and its `allowedAlg` already has.
+  if (isIntegratedJweAlg(header.alg)) {
+    const integrated = decryptJweIntegrated(parts, header, options);
+    log.debug('Leaving decryptJweCompact(). HPKE Integrated Encryption.');
+    return integrated;
   }
   const allowed = options.allowedEnc || Object.keys(JWE_ENCS);
   if (allowed.indexOf(header.enc) === -1) {
@@ -4437,6 +5905,39 @@ function decryptJweCompact(compact, opts) {
       'tag did not verify: ' + e.message);
   }
   log.debug('Leaving decryptJweCompact(). ' + plaintext.length +
+            ' characters.');
+  return { header: header, plaintext: plaintext };
+}
+
+// The Integrated half of `decryptJweCompact()`: the same refusals in the
+// same order as the rest of it (zip, kid, strict segments), then HPKE.
+function decryptJweIntegrated(parts, header, options) {
+  log.debug('Entering decryptJweIntegrated(). alg=' + header.alg);
+  if (header.zip) {
+    log.debug('Leaving decryptJweIntegrated(). Compressed.');
+    throw new Error('this service advertises no zip_values_supported, so a ' +
+      'compressed request cannot be read.');
+  }
+  if (options.expectedKid && header.kid !== options.expectedKid) {
+    log.debug('Leaving decryptJweIntegrated(). Wrong kid.');
+    throw new Error('the JWE kid "' + (header.kid || '(absent)') + '" is not ' +
+      'this service\'s current encryption key "' + options.expectedKid +
+      '". Re-read the metadata.');
+  }
+  for (let i = 1; i < 5; i++) {
+    strictBase64url(parts[i], ['', 'JWE encrypted key', 'JWE IV',
+                               'JWE ciphertext', 'JWE tag'][i]);
+  }
+  let plaintext;
+  try {
+    plaintext = hpkeIntegratedOpen(String(header.alg), header, parts[0],
+                                   parts, options).toString('utf8');
+  } catch (e) {
+    log.debug('Leaving decryptJweIntegrated(). Did not open: ' + e.message);
+    throw new Error('the HPKE Integrated Encryption JWE did not decrypt: ' +
+                    e.message);
+  }
+  log.debug('Leaving decryptJweIntegrated(). ' + plaintext.length +
             ' characters.');
   return { header: header, plaintext: plaintext };
 }
@@ -8098,6 +9599,41 @@ module.exports = {
   JWE_ENCS: JWE_ENCS,
   encryptJweCompact: encryptJweCompact,
   decryptJweCompact: decryptJweCompact,
+  // --- post-quantum and HPKE key establishment (section 4a, #82) ---
+  // The families, each a list of `alg` values: ML-KEM (pqc-kem-05), HPKE
+  // (both drafts), the Integrated subset (no `enc`), the post-quantum subset
+  // (ML-KEM and HPKE-8 to 16) and the PQ/T hybrids.
+  JWE_MLKEM_ALGS: JWE_MLKEM_ALGS,
+  JWE_HPKE_ALGS: JWE_HPKE_ALGS,
+  JWE_HPKE_INTEGRATED_ALGS: JWE_HPKE_INTEGRATED_ALGS,
+  JWE_POST_QUANTUM_ALGS: JWE_POST_QUANTUM_ALGS,
+  JWE_HYBRID_ALGS: JWE_HYBRID_ALGS,
+  isIntegratedJweAlg: isIntegratedJweAlg,
+  describeJweKemAlg: describeJweKemAlg,
+  generateJweKemKeyPair: generateJweKemKeyPair,
+  publicJweKemJwk: publicJweKemJwk,
+  // EXPORTED FOR THE VECTORS: tests/jwe_pq_kem.js holds the KEMs, the key
+  // schedule and the KMAC derivation to draft-ietf-hpke-pq-05's,
+  // draft-irtf-cfrg-concrete-hybrid-kems's and jose-hpke-encrypt-22's
+  // published answers, and a round trip through this file's own encrypt and
+  // decrypt would agree with itself whatever the construction was.
+  hpke: {
+    KEMS: HPKE_KEMS,
+    KDFS: HPKE_KDFS,
+    AEADS: HPKE_AEADS,
+    deriveKeyPair: hpkeDeriveKeyPair,
+    generateKeyPair: hpkeGenerateKeyPair,
+    encap: hpkeEncap,
+    decap: hpkeDecap,
+    setupSender: hpkeSetupSender,
+    setupReceiver: hpkeSetupReceiver,
+    hybridExpand: hybridExpand,
+    hybridEncaps: hybridEncaps,
+    hybridDecaps: hybridDecaps,
+    mlkemCheckEncapsulationKey: mlkemCheckEncapsulationKey,
+    mlkemJoseKdf: mlkemJoseKdf,
+    recipientStructure: joseHpkeRecipientStructure
+  },
   // --- keys, certificates, thumbprints ---
   // Exported for a caller that mints a certificate through neither generator
   // below, so that the one reason a serial is random is written down once.
