@@ -560,41 +560,77 @@ function operatorFor(api) {
   };
 }
 
+// ONE PLAN, prepared, run and judged; answers the lines that are not
+// explained. Several run at once (see test()), so it touches nothing a
+// neighbour reads.
+async function runOnePlan(plan) {
+  log.debug("Entering runOnePlan(). " + plan.key);
+  const lines = [];
+  log.info("=== " + plan.name + " " + JSON.stringify(plan.variant) +
+           " (" + plan.key + ") ===");
+  let ran = null;
+  try {
+    const configuration = await prepare(plan);
+    const realmApi = configuration.realmApi;
+    delete configuration.realmApi;
+    ran = await oidf.runPlan(plan.name, plan.variant, configuration,
+                             plan.key, operatorFor(realmApi));
+  } catch (e) {
+    // One plan that cannot be set up or created is reported with the rest
+    // rather than ending the run.
+    log.error("Caught in runOnePlan(): " + plan.key + ": " +
+              ((e && e.message) || e));
+    lines.push(plan.key + " could not run: " + ((e && e.message) || e));
+    log.debug("Leaving runOnePlan(). It could not run.");
+    return lines;
+  }
+  const judged = oidf.judge(plan.key, ran, EXPECTED, KNOWN_WARNINGS,
+                            KNOWN_FAILURES);
+  log.info("  " + plan.key + ": " + JSON.stringify(judged.counts) +
+           ", plan " + oidf.SUITE + "plan-detail.html?plan=" + ran.planId);
+  judged.unexplained.forEach(function (line) {
+    lines.push(line);
+  });
+  log.debug("Leaving runOnePlan(). " + lines.length + " unexplained.");
+  return lines;
+}
+
 async function test() {
   log.debug("Entering test().");
   await registry.isProduct(root);
   await oidf.waitForSuite();
   const unexpected = [];
-  for (const plan of PLANS) {
-    if (!oidf.selected(plan.key)) {
-      continue;
+  // THE PLANS RUN SEVERAL AT A TIME (2026-09-27). Serially they were 42
+  // minutes and the memory mode's long pole. Each plan is a realm of its own
+  // with its own clients, person and keys, and the suite runs modules of
+  // different plans side by side, so nothing is shared but the suite's
+  // server. CONFORMANCE_PLAN_CONCURRENCY=1 is the old one-at-a-time run.
+  // Results are reported in PLANS order whatever order they finish in.
+  const wanted = PLANS.filter(function (plan) {
+    return oidf.selected(plan.key);
+  });
+  const width = Math.max(1, Math.min(8,
+    Number(process.env.CONFORMANCE_PLAN_CONCURRENCY) || 3));
+  const outcomes = new Array(wanted.length);
+  let next = 0;
+  const worker = async function () {
+    log.debug("Entering worker().");
+    while (next < wanted.length) {
+      const index = next++;
+      outcomes[index] = await runOnePlan(wanted[index]);
     }
-    log.info("=== " + plan.name + " " + JSON.stringify(plan.variant) +
-             " (" + plan.key + ") ===");
-    let ran = null;
-    try {
-      const configuration = await prepare(plan);
-      const realmApi = configuration.realmApi;
-      delete configuration.realmApi;
-      ran = await oidf.runPlan(plan.name, plan.variant, configuration,
-                               plan.key, operatorFor(realmApi));
-    } catch (e) {
-      // One plan that cannot be set up or created is reported with the rest
-      // rather than ending the run.
-      log.error("Caught in test(): " + plan.key + ": " +
-                ((e && e.message) || e));
-      unexpected.push(plan.key + " could not run: " +
-                      ((e && e.message) || e));
-      continue;
-    }
-    const judged = oidf.judge(plan.key, ran, EXPECTED, KNOWN_WARNINGS,
-                              KNOWN_FAILURES);
-    log.info("  " + plan.key + ": " + JSON.stringify(judged.counts) +
-             ", plan " + oidf.SUITE + "plan-detail.html?plan=" + ran.planId);
-    judged.unexplained.forEach(function (line) {
+    log.debug("Leaving worker().");
+  };
+  const workers = [];
+  for (let w = 0; w < width; w++) {
+    workers.push(worker());
+  }
+  await Promise.all(workers);
+  outcomes.forEach(function (lines) {
+    lines.forEach(function (line) {
       unexpected.push(line);
     });
-  }
+  });
   // Every plan runs before the verdict, so one run reports all of them.
   if (unexpected.length) {
     log.error("Unexplained:\n  " + unexpected.join("\n  "));

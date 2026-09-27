@@ -213,12 +213,16 @@ const CLIENT_SOURCE_DIR = path.join('client', 'src');
 //                      They stay one lane among themselves because each
 //                      raises `ldap.maxEntries` to what it is about to add,
 //                      and two raising at once can lower each other's.
-//                      `conformance` and `conformance-b` hold the OpenID
-//                      conformance plans (about two and a quarter hours one
-//                      after another, the mode's long pole): each plan is a
-//                      throwaway realm of its own against the suite's server,
-//                      with its callback listener on an ephemeral port. The
-//                      OpenID Connect plans, the longest, have a lane alone.
+//                      `conformance`, `conformance-fapi` and
+//                      `conformance-b` hold the OpenID conformance plans
+//                      (about two and a quarter hours one after another, the
+//                      memory mode's long pole): each plan is a throwaway
+//                      realm of its own against the suite's server, with its
+//                      callback listener on an ephemeral port. The OpenID
+//                      Connect job (42 min serially, and it runs its plans
+//                      CONFORMANCE_PLAN_CONCURRENCY at a time) and the FAPI
+//                      job (33 min) each have a lane alone; the other four
+//                      (19 min together) share `conformance-b`.
 //   exclusive: true    nothing else in the protocol half runs while this job
 //                      does: every lane drains first, and none starts again
 //                      until it ends. For a job that changes what EVERY other
@@ -979,7 +983,7 @@ const JOBS = [
   // took about sixteen minutes together on 2026-09-24. `local: true`: this
   // repository's authorization server.
   { file: 'sts_fapi_conformance.js',     browser: false, local: true,
-    conformance: true, timeoutMs: 3600000, lane: 'conformance-b' },
+    conformance: true, timeoutMs: 3600000, lane: 'conformance-fapi' },
   // THE SAME SUITE, EVERY OTHER PLAN THAT APPLIES (#187, 2026-09-24): the
   // OpenID Provider certification profiles, oidcc-test-plan's client
   // authentication and response-mode variants, and the four logout plans.

@@ -1112,6 +1112,8 @@ services:
       - CONFORMANCE_SUITE_URL=${CONFORMANCE_SUITE_URL:-}
       - CONFORMANCE_CALLBACK_HOST=${CONFORMANCE_CALLBACK_HOST:-tests}
       - CONFORMANCE_PLANS=${CONFORMANCE_PLANS:-}
+      # How many OpenID Connect plans run at once (default 3; 1 is serial).
+      - CONFORMANCE_PLAN_CONCURRENCY=${CONFORMANCE_PLAN_CONCURRENCY:-}
       # The suite's listener certificate conformance-tls made (#187).
       - CONFORMANCE_SUITE_CA_FILE=${CONFORMANCE_SUITE_CA_FILE:-/run/sts-test/conformance/server.crt}
       # The SAML peers, when the mode brought them up (#189-#192). Empty

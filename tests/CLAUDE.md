@@ -635,9 +635,13 @@ after another. Now:
 * **The protocol jobs run in LANES**, named in `MANIFEST.js` (`lane:`,
   default `main`); lanes run side by side, each serial in manifest order. The
   three bulk loads are lane `bulk`; the OpenID conformance plans are lanes
-  `conformance` (the OpenID Connect plans, alone) and `conformance-b` (the
-  other five) — about 2¼ hours serially, which made them the long pole of
-  the first scheduled memory run (it hit its bound). `main` keeps every
+  `conformance` (the OpenID Connect plans, alone), `conformance-fapi` (the
+  FAPI plans, alone) and `conformance-b` (the other four) — about 2¼ hours
+  serially, which made them the long pole of the first scheduled memory run
+  (it hit its bound; with two lanes it was still 55 minutes, all of it
+  `conformance-b`). The OpenID Connect job also runs its plans
+  `CONFORMANCE_PLAN_CONCURRENCY` at a time (default 3): each is a realm of
+  its own, so they share nothing but the suite's server. `main` keeps every
   browser job, so no two browsers ever run at once.
 * **An `exclusive: true` job is a barrier**: the lanes drain before it and
   wait for it. `admin_api`, `sts_admin_api_operations` and
