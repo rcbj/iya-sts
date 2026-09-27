@@ -889,9 +889,12 @@ this service's own receivers filled every worker. The service answered nothing
 for fourteen minutes. rcbj chose all four answers below.
 
 **THE PUSH CAP** (`ssf_http.ts`'s `pushSetGated()`): `ssf.pushConcurrency` (8)
-pushes in flight per PROCESS, the rest waiting in order, at most
-`ssf.pushBacklog` (2000) of them; past that the push is not made and the SET is
-dead-lettered with `STS-SSF-0092`. A retry waits for a slot of its own. The
+pushes in flight per PROCESS, the rest waiting in a queue PER RECEIVER, at
+most `ssf.pushBacklog` (2000) in each; past that the push is not made and the
+SET is dead-lettered with `STS-SSF-0092`. A freed slot goes to the receivers
+in turn (2026-09-27): with one queue for all, a SCIM bulk load's pushes to
+this service's own receivers held up the OpenID conformance suite's
+solicited verification event until the suite gave up. A retry waits for a slot of its own. The
 dispatcher's batch lane (`common/CLAUDE.md`, `request_pool.js`) is the other
 half: the receive endpoints are batch paths.
 

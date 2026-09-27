@@ -1291,7 +1291,12 @@ class VcVerifier {
     const base = baseUrlOf(req);
     const responseUri = base + '/oid4vp/response';
     const id = randomId(16);
-    const nonce = randomId(18);
+    // 32 bytes (2026-09-27): OID4VP 1.0 section 5.2 asks for a fresh random
+    // number, and the OpenID conformance suite judges one by the Shannon
+    // entropy of its characters. Eighteen bytes (24 characters) is ample
+    // randomness and still fell under that measure now and then by chance
+    // (VP1FinalEnsureMinimumNonceEntropy); 43 characters does not.
+    const nonce = randomId(32);
     const state = randomId(18);
     // SIOPv2 (#129): `id_token` asks for a self-issued ID Token alone,
     // `vp_token id_token` for one beside a presentation, whose holder it must

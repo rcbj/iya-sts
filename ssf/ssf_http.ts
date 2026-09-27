@@ -162,7 +162,12 @@ const SET_MEDIA_TYPE = 'application/secevent+jwt';
 // says.
 // ---------------------------------------------------------------------------
 let pushesActive = 0;
-const pushesWaiting = [];
+// WAITING PUSHES ARE QUEUED PER DESTINATION (2026-09-27), and a freed slot
+// goes to the destinations in turn. The key is the receiver's endpoint; the
+// Map's insertion order is the turn. See `acquirePushSlot()`.
+const pushesWaiting: Map<string, Array<(release: () => void) => void>> =
+  new Map();
+let pushesWaitingCount = 0;
 
 // What a push answers. `url` and `attempts` are added on the way out.
 interface PushResult {
@@ -795,6 +800,16 @@ class SsfHttp {
   // in this process, the rest waiting in order, at most `ssf.pushBacklog` of
   // them.
   //
+  // **FAIR BETWEEN RECEIVERS (2026-09-27).** It was one queue in arrival
+  // order, so a flood toward one receiver held up every other: a SCIM bulk
+  // load in one lane of the suite put ten thousand RISC pushes to this
+  // service's own receivers ahead of the OpenID conformance suite's
+  // solicited verification event, which never arrived in time. Waiting pushes
+  // are queued per destination and a freed slot goes to the destinations in
+  // turn, and `ssf.pushBacklog` bounds each destination's queue, so a flood
+  // can neither delay nor crowd out another receiver's pushes. With one
+  // destination it is the queue it was.
+  //
   // `emitProtocolEvent()` fans one event out to every stream that takes it
   // with `Promise.all()`, and a directory write is two events — so a SCIM
   // bulk load against forty-two push streams asked for eighty-four pushes per
@@ -827,18 +842,30 @@ class SsfHttp {
   }
 
   // Resolves with a release function once a slot is free, or with null when
-  // the backlog is full.
-  private acquirePushSlot(): Promise<(() => void) | null> {
+  // this destination's backlog is full.
+  private acquirePushSlot(destination?: unknown): Promise<(() => void) |
+                                                          null> {
     const { log } = this.deps;
     log.debug("Entering SsfHttp.acquirePushSlot().");
     const cap = this.pushConcurrency();
+    const key = String(destination || '');
     const release = (): void => {
       log.debug("Entering release().");
       pushesActive = Math.max(0, pushesActive - 1);
-      while (pushesWaiting.length && (!this.pushConcurrency() ||
+      while (pushesWaitingCount && (!this.pushConcurrency() ||
              pushesActive < this.pushConcurrency())) {
+        // The destination whose turn it is: the first in the Map, moved to
+        // the end once served, or dropped when its queue is empty.
+        const turn = pushesWaiting.keys().next().value;
+        const queue = pushesWaiting.get(turn);
+        const next = queue.shift();
+        pushesWaiting.delete(turn);
+        if (queue.length) {
+          pushesWaiting.set(turn, queue);
+        }
+        pushesWaitingCount -= 1;
         pushesActive += 1;
-        pushesWaiting.shift()(release);
+        next(release);
       }
       log.debug("Leaving release().");
     };
@@ -847,14 +874,20 @@ class SsfHttp {
       log.debug("Leaving SsfHttp.acquirePushSlot(). A slot at once.");
       return Promise.resolve(release);
     }
-    if (pushesWaiting.length >= this.pushBacklog()) {
+    const queue = pushesWaiting.get(key) || [];
+    if (queue.length >= this.pushBacklog()) {
       log.debug("Leaving SsfHttp.acquirePushSlot(). The backlog is full.");
       return Promise.resolve(null);
     }
     log.debug("Leaving SsfHttp.acquirePushSlot(). Waiting behind " +
-              pushesWaiting.length + ".");
+              queue.length + " for this destination, " + pushesWaitingCount +
+              " in all.");
     return new Promise(function (resolve) {
-      pushesWaiting.push(resolve);
+      queue.push(resolve);
+      if (!pushesWaiting.has(key)) {
+        pushesWaiting.set(key, queue);
+      }
+      pushesWaitingCount += 1;
     });
   }
 
@@ -864,13 +897,15 @@ class SsfHttp {
     const { log } = this.deps;
     log.debug("Entering SsfHttp.pushSetGated().");
     log.debug("Leaving SsfHttp.pushSetGated().");
-    return this.acquirePushSlot().then((release) => {
+    return this.acquirePushSlot(url).then((release) => {
       if (!release) {
+        const queued = (pushesWaiting.get(String(url || '')) || []).length;
         return { ok: false, status: 0, err: '', description: '',
           retryable: false, errorCode: 'STS-SSF-0092',
-          why: 'the push was not made: ' + pushesWaiting.length + ' pushes ' +
-               'were already waiting for one of ' + this.pushConcurrency() +
-               ' slots (ssf.pushConcurrency, ssf.pushBacklog)' };
+          why: 'the push was not made: ' + queued + ' pushes to this ' +
+               'receiver were already waiting for one of ' +
+               this.pushConcurrency() + ' slots (ssf.pushConcurrency, ' +
+               'ssf.pushBacklog)' };
       }
       return this.pushSet(url, token, options).then(function (result) {
         release();
@@ -890,7 +925,7 @@ class SsfHttp {
     const { log } = this.deps;
     log.debug("Entering SsfHttp.pushGateState().");
     log.debug("Leaving SsfHttp.pushGateState().");
-    return { active: pushesActive, waiting: pushesWaiting.length,
+    return { active: pushesActive, waiting: pushesWaitingCount,
              concurrency: this.pushConcurrency(),
              backlog: this.pushBacklog() };
   }

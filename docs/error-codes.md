@@ -2997,7 +2997,7 @@ Raised from: ssf/.
 | `STS-SSF-0081` | A Security Event Token was not transmitted because the application that owns the stream is not allowed that event type (ssfAllowedEvents on its entry). | — |
 | `STS-SSF-0090` | A RISC event about an administrator's act on an account (account-credential-change-required, recovery-information-changed) could not be built or delivered. | — |
 | `STS-SSF-0091` | A CAEP credential-change about a person could not be built, was not a valid event, or could not be delivered. | — |
-| `STS-SSF-0092` | A push was not made because ssf.pushBacklog pushes were already waiting for one of ssf.pushConcurrency slots; the SET was put on the stream's dead-letter queue. | — |
+| `STS-SSF-0092` | A push was not made because ssf.pushBacklog pushes to the same receiver were already waiting for one of ssf.pushConcurrency slots; the SET was put on the stream's dead-letter queue. | — |
 | `STS-SSF-0093` | A push stream was declared dead: its pushes all failed for ssf.deadStreamTimeoutS. Nothing more is pushed to it until a probe or an operator revives it. | — |
 | `STS-SSF-0094` | Security Event Tokens could not be delivered since the last dead-letter sweep and are on dead-letter queues (one summary line per realm per sweep, never one per SET). | — |
 | `STS-SSF-0095` | A stream was asked to be revived and is not dead. | HTTP 400 on /admin-api/ssf/revive |

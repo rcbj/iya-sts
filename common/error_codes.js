@@ -12355,9 +12355,9 @@ const CODES = [
       'was not a valid event, or could not be delivered.',
     spec: '' },
   { code: 'STS-SSF-0092',
-    summary: 'A push was not made because ssf.pushBacklog pushes were already ' +
-      'waiting for one of ssf.pushConcurrency slots; the SET was put on the ' +
-      'stream\'s dead-letter queue.',
+    summary: 'A push was not made because ssf.pushBacklog pushes to the ' +
+      'same receiver were already waiting for one of ssf.pushConcurrency ' +
+      'slots; the SET was put on the stream\'s dead-letter queue.',
     spec: '' },
   { code: 'STS-SSF-0093',
     summary: 'A push stream was declared dead: its pushes all failed for ' +

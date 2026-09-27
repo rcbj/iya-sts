@@ -10900,10 +10900,12 @@ const SETTINGS = [
   { key: 'ssf.pushBacklog', group: 'SSF', label: 'Pushes waiting for a slot',
     env: 'STS_SSF_PUSH_BACKLOG', type: 'int', dflt: 2000, min: 1,
     max: 1000000, runtime: true,
-    description: 'How many pushes may wait for a slot under ' +
-                 'ssf.pushConcurrency. Past it a push is not made: the SET is ' +
-                 'put on the stream\'s dead-letter queue with that reason, ' +
-                 'which bounds the memory a burst can take.' },
+    description: 'How many pushes to ONE receiver may wait for a slot ' +
+                 'under ssf.pushConcurrency; each receiver has a queue of ' +
+                 'its own and a freed slot goes to them in turn, so a flood ' +
+                 'toward one delays no other. Past it a push is not made: ' +
+                 'the SET is put on the stream\'s dead-letter queue with ' +
+                 'that reason, which bounds the memory a burst can take.' },
 
   { key: 'ssf.deadStreamTimeoutS', group: 'SSF',
     label: 'Dead stream timeout (seconds)',
