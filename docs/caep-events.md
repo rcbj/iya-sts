@@ -265,26 +265,32 @@ trusting. Everything else that looks wrong is a warning; this is an error.
 funnel — `authn.dropSession()` — and every sign-out door in the service goes
 through it:
 
-| Activity | `initiating_entity` | `reason_admin` says |
+| Activity | `initiating_entity` | `reason_admin` says *The session was ended by …* |
 |---|---|---|
-| `GET /oauth2/logout` — OpenID Connect RP-Initiated Logout | `user` | ended at *the sign-out endpoint for this browser* |
+| `GET /oauth2/logout` — OpenID Connect RP-Initiated Logout | `user` | *the sign-out endpoint for this browser* |
 | `GET\|POST /wsfed?wa=wsignout1.0` — WS-Federation 1.2 section 13.2.4 | `user` | the same |
-| `GET\|POST /saml2/slo` — SAML 2.0 Single Logout, from the browser or a service provider's back channel | `user` | the same, or *saml2-slo* and the service provider |
-| `GET\|POST /logout` — the protocol-independent sign-out | `user` | ended at *the /logout endpoint* |
+| `GET\|POST /saml2/slo` — SAML 2.0 Single Logout, from the browser or a service provider's back channel | `user` | the same, or *a SAML 2.0 Single Logout request from* the service provider |
+| `GET\|POST /logout` — the protocol-independent sign-out | `user` | *the person's own sign-out at /logout* (or *a /logout request naming …* while the development control `logout.anyUser` is open, `admin`) |
 | the **Sign out** button on `/admin`, `/portal` or the protocol debugger — the person signing themselves out, and the sign-on session behind it | `user` | *the Sign out button on the admin console* (or the portal, or the debugger) |
-| a federation partner's own sign-out reaching this service | `user` | *the federation partner …* |
-| `/admin/logout` — an operator signing somebody else out | **`admin`** | ended at *the admin console at /admin/logout* |
-| `/admin/sessions` — the Revoke button on a row | **`admin`** | ended at *the /admin/sessions page* |
-| `POST /admin-api/logout/{global,end}` | **`admin`** | ended at *the admin console at /admin/logout* — it calls the same function that page does |
-| `POST /admin-api/sessions/revoke` | **`admin`** | ended at *the management API at /admin-api/sessions* |
-| an account **disabled** on `/admin/users`, `/admin-api/users/disable`, SCIM `active: false` or an `ldapmodify` of the lock | **`admin`** | *the account was disabled by an administrator …* |
+| a federation partner's own sign-out reaching this service | `user` | *the federation partner "…" (…)* |
+| a new sign-in in a browser that already held a session | `user` | *a new sign-in in the same browser* |
+| `/admin/logout` — an operator signing somebody else out | **`admin`** | *the admin console at /admin/logout* |
+| `/admin/sessions` — the Revoke button on a row | **`admin`** | *the /admin/sessions page* |
+| `POST /admin-api/logout/{global,end}` | **`admin`** | *the admin console at /admin/logout* — it calls the same function that page does |
+| `POST /admin-api/sessions/revoke` | **`admin`** | *the management API at /admin-api/sessions* |
+| an account **disabled** on `/admin/users`, `/admin-api/users/disable`, SCIM `active: false` or an `ldapmodify` of the lock | **`admin`** | *an administrator disabling the account (…)* |
 | a person **deleted** — SCIM `DELETE` or an LDAP delete ([#241](https://github.com/rcbj/iya-sts/issues/241)) | **`admin`** | *the deletion of the account (…)* |
 | a trust realm **removed** — every session in it ([#232](https://github.com/rcbj/iya-sts/issues/232)) | **`admin`** | *the removal of the trust realm "…"* |
-| a federation link removed from a person, or a registered device removed or marked compromised by an administrator | **`admin`** | the act, in words |
+| a federation link removed from a person | **`admin`** | *an administrator removing the federation link it came through* |
+| a registered device removed or marked compromised | **`admin`** or **`user`** | *an administrator removing device …*, *the owner removing device …*, *an administrator marking device … compromised* |
 | an **emergency key rotation** — every session of the realm | **`admin`** when an administrator requested it, **`system`** otherwise | *an emergency key rotation* |
-| **risk scoring** ending or disabling a person, and a received SET's signal-response rule | **`policy`** | *the person's risk went to …* |
+| **risk scoring** ending or disabling a person | **`policy`** | *the person's risk going to …*, *risk scoring disabling the account (…)* |
+| a received SET's signal-response rule | **`policy`** | *a … Security Event Token from the foreign transmitter …*, or *the admin console receiving …* |
+| the console's or portal's own session, ended with the sign-on session it came from | the parent's | *the end of the sign-on session it was derived from (…)* |
 | the relying-party session a surface could not renew | **`system`** | *a token renewal that did not complete* |
-| **the session lifetime running out** | **`policy`** | *the session lifetime ran out* |
+| **the session lifetime running out** | **`policy`** | its own sentence: *The session lifetime ran out. Nobody signed out …* |
+
+**Every door names what ended the session as a noun phrase** ([#294](https://github.com/rcbj/iya-sts/issues/294)), so `reason_admin` is always one sentence, *The session was ended by …*, and the mail a person gets about it (*… were ended at … by …*) reads the same way. Until then the sentence was *ended at …*, which read for a place and not for an act: *ended at the account was disabled by an administrator*.
 
 `initiating_entity` is **stated by the door that ends the session** — it is
 not read out of the sentence in `reason_admin`. Until

@@ -1619,7 +1619,7 @@ class Authn {
     // the session through dropSession(), so its consequences (the audit row,
     // CAEP, the back-channel Logout Tokens) are the ones a sign-out has.
     if (this.sessionAccountDisabled(session)) {
-      this.dropSession(id, 'the account was disabled by an administrator',
+      this.dropSession(id, 'an administrator disabling the account',
                        false, req, 'admin');
       log.debug("Leaving Authn.sessionOf(). The account is disabled; the " +
                 "session was ended.");
@@ -2048,12 +2048,12 @@ class Authn {
       if (parentRealm !== ownRealm ||
           (realmId && realmId !== realms.currentId())) {
         realms.run(realms.get(ownRealm), function () {
-          self.dropSession(id, 'the sign-on session it came from ended', true,
-                           req, 'system');
+          self.dropSession(id, 'the end of the sign-on session it came ' +
+                           'from', true, req, 'system');
         });
       } else {
-        this.dropSession(id, 'the sign-on session it came from ended', true,
-                         req, 'system');
+        this.dropSession(id, 'the end of the sign-on session it came ' +
+                         'from', true, req, 'system');
       }
       log.debug("Leaving Authn.relyingPartySessionOf(). Its parent is gone.");
       return null;
@@ -4096,7 +4096,7 @@ class Authn {
                  previous + ') because a new sign-in is replacing it. Every ' +
                  'sign-in is a privilege change and the old session must not ' +
                  'outlive it.');
-        this.dropSession(previous, 'replaced by a new sign-in', true,
+        this.dropSession(previous, 'a new sign-in in the same browser', true,
                          extra.request, 'user');
       }
     }
@@ -4692,8 +4692,9 @@ class Authn {
           // The child ends for the parent's reason and by the parent's
           // hand, so it says the parent's initiating entity.
           self.dropSession(child.id,
-                           'the sign-on session it was derived from ended (' +
-                           (via || 'unknown door') + ')', false, req, entity);
+                           'the end of the sign-on session it was derived ' +
+                           'from (' + (via || 'an unknown door') + ')', false,
+                           req, entity);
           log.debug("Leaving endChild().");
         };
         if (child.realm && child.realm !== realms.currentId()) {

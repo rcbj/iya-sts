@@ -1423,6 +1423,10 @@ class RiskEngine {
                    score: risk ? risk.score : null,
                    signals: risk ? risk.signals : [],
                    heldBefore: heldBefore,
+                   // The detector already sent RISC credential-compromise
+                   // about this very evidence (#294; see take()).
+                   compromiseAnnounced: assessment.compromiseAnnounced ===
+                                        true,
                    assessmentId: String(assessment.id || '') })
       .catch(function (e: Json): void {
         log.debug("Caught in RiskEngine.noteChange(): " +
@@ -1462,6 +1466,7 @@ class RiskEngine {
     const taken: string[] = [];
     const observed: string[] = [];
     const failed: string[] = [];
+    const alreadySent: string[] = [];
     for (const reaction of decided.reactions) {
       let claimed = false;
       try {
@@ -1481,6 +1486,22 @@ class RiskEngine {
       if (reaction !== 'risk-announce' && !enforced) {
         observed.push(reaction);
         bump(tally.reactions.observed, reaction);
+        continue;
+      }
+      // ONE SET FOR ONE CLONED KEY (#294). `credentials.noteKeyCloned()`
+      // sends RISC credential-compromise itself, so the event does not
+      // depend on this policy being installed, and then sets the standing
+      // HIGH — which this policy answers with the same event about the same
+      // key. The change says the detector already sent it; the reaction is
+      // then recorded as done rather than done twice. The fact is carried
+      // on the change, not looked up: the detector and this reaction are
+      // one call chain in one process, so there is no window to choose and
+      // no store for another node to disagree with, and the claim above
+      // still makes the reaction once per assessment for the cluster.
+      if (reaction === 'risk-credential-compromise' &&
+          change.compromiseAnnounced === true) {
+        alreadySent.push(reaction);
+        bump(tally.reactions.taken, reaction);
         continue;
       }
       try {
@@ -1507,12 +1528,15 @@ class RiskEngine {
                  (taken.length ? '; taken: ' + taken.join(', ') : '') +
                  (observed.length ? '; observed only: ' +
                                     observed.join(', ') : '') +
+                 (alreadySent.length ? '; already sent by its detector: ' +
+                                       alreadySent.join(', ') : '') +
                  (failed.length ? '; FAILED: ' + failed.join(', ') : ''),
         detail: { level: change.level, previous: change.previousLevel,
                   signals: (change.signals || []).join(', '),
                   assessment: change.assessmentId,
                   policy: String(decided.policy || ''),
-                  permitted: decided.reactions.join(', ') }
+                  permitted: decided.reactions.join(', '),
+                  alreadySent: alreadySent.join(', ') }
       });
     } catch (e) {
       log.debug("Caught in RiskEngine.respond(): " + ((e && e.message) || e));
@@ -1527,7 +1551,7 @@ class RiskEngine {
                                 ')' : '') + '.');
     log.debug("Leaving RiskEngine.respond().");
     return { reactions: decided.reactions, taken: taken, observed: observed,
-             failed: failed };
+             failed: failed, alreadySent: alreadySent };
   }
 
   // One reaction, taken. Throws on failure, which respond() records.
@@ -1555,7 +1579,7 @@ class RiskEngine {
           selection: before || undefined,
           // A policy decided it (#242): the risk-response rule.
           initiatingEntity: 'policy',
-          by: 'the person\'s risk went to ' + change.level +
+          by: 'the person\'s risk going to ' + change.level +
               (reason ? ' (' + reason + ')' : '') });
       if (ended && ended.ended === false) {
         throw new Error(String(ended.message || 'nothing was ended'));
@@ -1582,8 +1606,8 @@ class RiskEngine {
       const done = lazy('../common/account_state').setDisabled(
         change.username, true, { actor: 'risk scoring', via: 'internal',
           door: 'risk scoring', riscReason: 'hijacking',
-          by: 'risk scoring disabled the account: its risk went to ' +
-              change.level + ' at a score of ' + change.score,
+          by: 'risk scoring disabling the account (its risk went to ' +
+              change.level + ' at a score of ' + change.score + ')',
           reason: 'risk ' + change.level + ' (' + reason + ')' });
       if (!done || !done.ok) {
         throw new Error(((done && done.errors) || ['not disabled']).join(' '));
@@ -1942,7 +1966,8 @@ class RiskEngine {
         before ? String(before.level || '') : '',
         { id: id, level: 'HIGH', score: score,
           signals: [{ signal: 'authenticator-compromised',
-                      evidence: String(input.evidence || '') }], at: at });
+                      evidence: String(input.evidence || '') }], at: at,
+        compromiseAnnounced: input.compromiseAnnounced === true });
       log.info('risk: ' + (username || subject) + '\'s standing is HIGH: a ' +
                'security key of theirs is a clone (' +
                String(input.evidence || 'counter went backwards') + ').');

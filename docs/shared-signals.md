@@ -62,7 +62,7 @@ management API.
 | What is detected | `credential_type` | Also sent |
 |---|---|---|
 | a password that signs in and appears in a data breach (`risk.breachCheckAtSignIn`) | `password` | `account-credential-change-required`, once until the password is changed |
-| a security key whose signature counter went backwards (a clone) | `fido2-roaming` or `fido2-platform` | nothing more; the person's risk standing goes to HIGH |
+| a security key whose signature counter went backwards (a clone) | `fido2-roaming` or `fido2-platform` | nothing more; the person's risk standing goes to HIGH. The `risk-response` policy's own credential-compromise reaction to that standing is not sent again, so a receiver gets one event for one key |
 | a certificate revoked with the reason `keyCompromise` (the portal, an enrollment protocol's revoke, `/admin/pki`) | `x509` | the CAEP `credential-change` revoke |
 | the emailed second factor turned off after too many wrong codes | `urn:iya:sts:credential-type:email-otp` | the CAEP `credential-change` delete |
 

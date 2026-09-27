@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3723** of them, in **39** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3725** of them, in **39** subsystems.
 
 ## Where a code appears
 
@@ -51,7 +51,7 @@ is an ordinary outcome.
 
 * [HTTP front door (`STS-HTTP`)](#sts-http) — 18
 * [PROXY protocol (`STS-PROXY`)](#sts-proxy) — 9
-* [Service core (`STS-CORE`)](#sts-core) — 64
+* [Service core (`STS-CORE`)](#sts-core) — 66
 * [Worker pools (`STS-WORKER`)](#sts-worker) — 43
 * [Persistence and coordination (`STS-STORE`)](#sts-store) — 63
 * [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 28
@@ -206,6 +206,8 @@ Raised from: server.js, common/protocol_stack.ts, common/config.js, common/confi
 | `STS-CORE-0108` | The service did not start: a value in the environment, the appconfig file or env/defaults.js fails the check a console or API write of it would (a value outside an enum or a list's csvValues, a number out of bounds, a malformed boolean) — #86. | — |
 | `STS-CORE-0120` | A trust realm was removed (#232) before everything it owed had been delivered within realms.removalDeliveryTimeoutS — session ends still waiting on their claim, back-channel Logout Tokens or SSF events (session-revoked, account-purged, stream-updated) not yet delivered, or a retirement hook that failed. The realm is removed anyway. | none — logged; the removal succeeds |
 | `STS-CORE-0121` | A sign-in or an issuance was refused because its trust realm is being removed (#262): realms.retire() marks the realm retiring before it ends its sessions and announces the removal, and from then on no session, token, authorization code, assertion, ticket, credential, certificate or SVID is started or issued in it, in either mode. Also logged once, as information, when the mark is set. | the protocol's own refusal — invalid_grant at the token endpoint, access_denied at the authorization endpoint, credential_request_denied at OpenID4VCI, a SAML Responder / RequestDenied status, a SOAP fault, a 503 problem at ACME, EST and SCEP, and a refused session at every sign-in door |
+| `STS-CORE-0122` | A trust realm's removal was refused because a removal of it is already in progress (#294): realms.retire() marked it less than realms.removalDeliveryTimeoutS plus a 30-second margin ago, or is running in this process. Starting a second one would end and announce everything twice. Once that time has passed the removal is taken to be interrupted, and removing the realm again finishes it. | none — the console and /admin-api refuse the remove action |
+| `STS-CORE-0123` | A trust realm is stuck half removed (#294): it carries the retiring mark (#262) from longer ago than a removal can take, so the process that was removing it stopped before it finished. Every new sign-in and issuance in it is refused (STS-CORE-0121) until an administrator removes it again, from another realm. Logged when such a realm is restored at start, and when the removal is finished. | none — logged; /admin/realms and GET /admin-api/realms show it |
 
 ## STS-WORKER
 

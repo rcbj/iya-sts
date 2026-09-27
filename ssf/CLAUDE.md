@@ -1792,6 +1792,18 @@ and their entities is `docs/caep-events.md`'s `session-revoked` section.
 `caep.ts`'s own fallback (`byAdmin`, then `user`) is kept for a notice from
 elsewhere that states nothing; `authn` always states one.
 
+**AND THE WORDS ARE A NOUN PHRASE (#294).** `reasonFor()` builds *The session
+was ended by <via>.*, and every door's `via` (or `logout.terminate()`'s `by`)
+names what ended it as a noun phrase — *an administrator disabling the
+account*, *a new sign-in in the same browser*, *the end of the sign-on session
+it came from*, *a SAML 2.0 Single Logout request from <sp>*, *the person's risk
+going to HIGH*. It was *ended at <via>* with half the doors passing a clause
+(*the account was disabled by an administrator*, *replaced by a new sign-in*,
+*saml2-slo <sp>*), which read as no sentence at all. The same phrase finishes
+the mail notice's *… were ended at <when> by <by>*. A new door states a noun
+phrase; `tests/caep_initiating_entity.js` F reads each changed door's
+sentence and scans the callers for a clause.
+
 **A REALM BEING REMOVED TELLS ITS RECEIVERS FIRST (#232, 2026-09-26).**
 `retireRealmStreams()` is this family's `realms.onRetire()` deliver hook
 (`common/CLAUDE.md`, *`retire()` and `onRetire()`*): it waits, bounded, for
@@ -2151,11 +2163,13 @@ subjects hold as for every other act.
 
 **A replayed one-time code is NOT a SET** (rcbj's decision): a person who
 pressed submit twice looks exactly like a replay. It is a risk signal,
-`totp-replay` (`risk/CLAUDE.md`). And where the `risk-response` policy is
-installed and enforced, a cloned key's HIGH standing fires its own
-`risk-credential-compromise` reaction as well, so a receiver may be told
-twice about one key; the direct event is kept so that it does not depend on
-the policy.
+`totp-replay` (`risk/CLAUDE.md`). And **a cloned key is ONE SET (#294)**:
+the direct event is kept so that it does not depend on the `risk-response`
+policy, and where that policy is installed and enforced its own
+`risk-credential-compromise` reaction to the HIGH standing is recorded as
+*already sent by its detector* rather than sent again — the change the
+detector hands the engine carries the fact (`risk/CLAUDE.md`, *Two signals
+from outside a sign-in's own evidence*, argues why that and not a window).
 
 **CAEP `credential-change` for the credentials no registered value fits
 (#236).** CAEP 1.0 section 3.3.1's list is open ("or any other credential

@@ -889,10 +889,20 @@ now shows it with the API stubbed.
   `feedback()`'s "this wasn't me" does — the standing to HIGH at once, the
   change answered by the `risk-response` policy — with the signal the FIDO
   metadata already used for a compromised model. A standing that cannot be
-  recorded is STS-RISK-0044; the RISC event is sent regardless. Where the
-  policy is installed and enforced, its `risk-credential-compromise`
-  reaction then tells receivers a second time about the same key; the
-  direct event is kept so that it does not depend on the policy.
+  recorded is STS-RISK-0044; the RISC event is sent regardless. **One key,
+  one SET (#294):** the direct event is kept so that it does not depend on
+  the policy, and the change it hands the engine says so
+  (`compromiseAnnounced`); where the policy is installed and enforced,
+  `respond()` still CLAIMS its `risk-credential-compromise` reaction and
+  records it as *already sent by its detector* (the `alreadySent` list and
+  the audit row) instead of sending the same event about the same key
+  again. The fact travels on the change rather than being looked up in a
+  window or a store, because the detector and the reaction are one call
+  chain in one process: there is no interval to choose, and nothing for
+  another node to disagree with, while the claim still makes the reaction
+  once per assessment for the cluster. The same signal from the FIDO
+  metadata (a model reported compromised) carries no such fact, and the
+  policy tells receivers as before. `tests/risk_response.js` J.
 * **A REPLAYED ONE-TIME CODE is `totp-replay` (×2)**, rcbj's decision on
   #231: RFC 6238 section 5.2 refuses it (STS-AUTHN-0106), and it says too
   little to be a Security Event Token — a person who pressed submit twice

@@ -1113,7 +1113,14 @@ class CaepRegister {
       text = 'The person re-authenticated at ' + via + ' on a session they ' +
         'already held, and its assurance changed. The session was not ended.';
     } else {
-      text = 'The session was ended at ' + via + '.';
+      // WHAT ENDED IT, as a noun phrase every door states (#294): "the Sign
+      // out button on the user portal", "an administrator disabling the
+      // account", "a SAML 2.0 Single Logout request from <sp>". It said
+      // "ended at" until #294, which read as a sentence for a place and not
+      // for an act — "ended at the account was disabled by an
+      // administrator". The same phrase finishes the mail notice's "were
+      // ended at <when> by <by>", so the two read alike.
+      text = 'The session was ended by ' + via + '.';
     }
     log.debug("Leaving CaepRegister.reasonFor().");
     return text;

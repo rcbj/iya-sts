@@ -24,6 +24,13 @@
 //      answered like everything else, sends no link and tells the address
 //      owner; the right one sends the link, which sets a password.
 //
+// AND WHAT A RISC RECEIVER IS TOLD (#294, for #235), on a poll stream in the
+// realm: following the verification link (section 2) is
+// identifier-changed and recovery-information-changed — and ASKING for the
+// change is neither; a recovery code spent on /portal/forgot-password
+// (section 3) is recovery-information-changed and recovery-activated — and a
+// wrong code is neither.
+//
 // WHERE THERE IS NO CATCHER the job SKIPS: every section needs a transport.
 // ===========================================================================
 
@@ -60,6 +67,11 @@ const REALM = usernameFor("emv").replace(/[^a-z0-9-]/g, "").slice(0, 30);
 const DOMAIN = REALM + ".example.net";
 const PASSWORD = "Emv-" + String(Date.now()).slice(-8) + "-xQ9!pZ";
 const NEW_PASSWORD = "Emv2-" + String(Date.now()).slice(-8) + "-kW4#tR";
+const RISC = "https://schemas.openid.net/secevent/risc/event-type/";
+const POLL = "urn:ietf:rfc:8936";
+// The realm's SSF receiver: a confidential client of its own.
+const RECEIVER = "emv-receiver";
+const RECEIVER_SECRET = "emv-" + String(Date.now()).slice(-8) + "-rx";
 
 let checks = 0;
 let skipped = 0;
@@ -254,6 +266,11 @@ async function person(who, withAddress) {
              credential: "password", password: PASSWORD,
              passwordConfirm: PASSWORD },
            "created " + who);
+  const read = await call("GET", realmBase() + "/admin-api/users?user=" +
+                          encodeURIComponent(who));
+  SUBJECTS[who] = String((read.json && read.json.subject) || "");
+  assert.ok(/^urn:uuid:/.test(SUBJECTS[who]),
+            "no subject for " + who + ": " + read.text.slice(0, 300));
   log.debug("Leaving person().");
   return who + "@" + DOMAIN;
 }
@@ -304,6 +321,117 @@ async function openThePortal() {
              value: realmBase() + "/portal" },
            "registered the realm portal's sign-out address");
   log.debug("Leaving openThePortal().");
+}
+
+// ---------------------------------------------------------------------------
+// THE RISC RECEIVER (#294): a stream in the realm, and what it was sent.
+// ---------------------------------------------------------------------------
+const stream = { id: "", seen: [] };
+// Each person's `sub` (urn:uuid:<entryUUID>), read after they are created:
+// RISC names a person by address where the event is about one, and by
+// issuer and subject otherwise (recovery-information-changed).
+const SUBJECTS = {};
+
+async function receiverToken() {
+  log.debug("Entering receiverToken().");
+  const r = await fetch(realmBase() + "/oauth2/token", { method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: form({ grant_type: "client_credentials", client_id: RECEIVER,
+                 client_secret: RECEIVER_SECRET,
+                 scope: "ssf:read ssf:write" }) });
+  const json = await r.json();
+  assert.ok(json && json.access_token,
+            "a receiver token: " + JSON.stringify(json).slice(0, 300));
+  log.debug("Leaving receiverToken().");
+  return json.access_token;
+}
+
+async function openTheStream() {
+  log.debug("Entering openTheStream().");
+  await ok(realmBase() + "/admin-api/applications/create", {
+    identifier: RECEIVER, kind: "oauth2-client", name: RECEIVER,
+    protocols: ["oauth2", "ssf"],
+    fields: { oauthClientId: [RECEIVER], oauthClientSecret: RECEIVER_SECRET,
+              oauthTokenEndpointAuthMethod: "client_secret_post",
+              oauthAllowedScope: ["ssf:read", "ssf:write"],
+              oauthGrantType: ["client_credentials"] } },
+    "created the RISC receiver's application");
+  const r = await fetch(realmBase() + "/ssf/stream", { method: "POST",
+    headers: { "Content-Type": "application/json",
+               Authorization: "Bearer " + (await receiverToken()) },
+    body: JSON.stringify({ delivery: { method: POLL },
+      events_requested: ["recovery-information-changed",
+                         "recovery-activated", "identifier-changed"]
+        .map(function (t) { return RISC + t; }) }) });
+  const json = await r.json();
+  check("0. a RISC poll stream takes recovery-information-changed, " +
+        "recovery-activated and identifier-changed", function () {
+    assert.strictEqual(r.status, 201, JSON.stringify(json).slice(0, 400));
+  });
+  stream.id = json.stream_id;
+  log.debug("Leaving openTheStream().");
+}
+
+// Every SET waiting on the stream, decoded, acknowledged and kept. A fresh
+// token each time: section 3 moves the realm to product mode mid-job.
+async function drainTheStream() {
+  log.debug("Entering drainTheStream().");
+  const auth = { "Content-Type": "application/json",
+                 Authorization: "Bearer " + (await receiverToken()) };
+  const r = await fetch(realmBase() + "/ssf/poll", { method: "POST",
+    headers: auth, body: JSON.stringify({ stream_id: stream.id,
+      returnImmediately: true, maxEvents: 100 }) });
+  const json = await r.json();
+  assert.strictEqual(r.status, 200, "poll: " +
+                     JSON.stringify(json).slice(0, 300));
+  const sets = json.sets || {};
+  const jtis = Object.keys(sets);
+  if (jtis.length) {
+    await fetch(realmBase() + "/ssf/poll", { method: "POST", headers: auth,
+      body: JSON.stringify({ stream_id: stream.id, ack: jtis,
+                             returnImmediately: true, maxEvents: 0 }) });
+  }
+  jtis.forEach(function (jti) {
+    stream.seen.push(JSON.parse(Buffer.from(String(sets[jti]).split(".")[1],
+                                            "base64url").toString("utf8")));
+  });
+  log.debug("Leaving drainTheStream(). " + jtis.length + " SET(s).");
+}
+
+// A RISC `type` about `who` — by an address (every one of theirs carries the
+// name) or by their subject — among the SETs that arrived since `from`.
+function riscAbout(type, who, from) {
+  log.debug("Entering riscAbout(). " + type);
+  log.debug("Leaving riscAbout().");
+  return stream.seen.slice(from).filter(function (set) {
+    const subject = JSON.stringify((set && set.sub_id) || {});
+    return !!((set && set.events) || {})[RISC + type] &&
+           (subject.indexOf(who) >= 0 ||
+            (!!SUBJECTS[who] && subject.indexOf(SUBJECTS[who]) >= 0));
+  });
+}
+
+// Waits until every type in `types` about `who` has arrived since `from`.
+async function riscArrived(types, who, from) {
+  log.debug("Entering riscArrived().");
+  const got = await until(types.join(", ") + " about " + who,
+    async function () {
+      await drainTheStream();
+      return types.every(function (type) {
+        return riscAbout(type, who, from).length > 0;
+      });
+    }, 15000);
+  log.debug("Leaving riscArrived(). " + !!got);
+  return !!got;
+}
+
+// Lets what is in flight arrive, and reads it: for a check that something
+// was NOT sent.
+async function settle() {
+  log.debug("Entering settle().");
+  await sleep(1500);
+  await drainTheStream();
+  log.debug("Leaving settle().");
 }
 
 async function trustedSources() {
@@ -360,6 +488,13 @@ async function aPersonsOwnChange() {
               r.text.slice(0, 400));
     assert.ok(/Changing to/.test(r.text) && r.text.indexOf(next) >= 0);
   });
+  await settle();
+  const asked = stream.seen.length;
+  check("2. asking for the change tells RISC nothing yet (#235): the " +
+        "address is not the account's", function () {
+    assert.strictEqual(riscAbout("recovery-information-changed", who, 0)
+      .length, 0, JSON.stringify(stream.seen).slice(0, 800));
+  });
   const got = await arrived(next, /Confirm your address/);
   const link = (String(got.message.Text).match(
     /(https?:\/\/\S+\/portal\/verify-email\?\S+)/) || [])[1] || "";
@@ -390,6 +525,13 @@ async function aPersonsOwnChange() {
     body: form(fields) });
   check("2. once", function () {
     assert.strictEqual(again.status, 400);
+  });
+  const verifiedSent = await riscArrived(["identifier-changed",
+    "recovery-information-changed"], who, asked);
+  check("2. following the link is RISC identifier-changed and " +
+        "recovery-information-changed (#235)", function () {
+    assert.ok(verifiedSent, JSON.stringify(stream.seen.slice(asked))
+      .slice(0, 1500));
   });
   const told = await arrived(address, /address of your/, seenOld);
   check("2. and the FORMER address is told it changed", function () {
@@ -444,6 +586,8 @@ async function theRecoveryCodeReset() {
     return (/<div class="ok">([^<]*)<\/div>/.exec(text) || [])[1] || text;
   };
   const seen = await ids(address);
+  await settle();
+  const beforeWrong = stream.seen.length;
   const wrongAddress = await ask({ account: who, address: "x@" + DOMAIN,
                                    code: codes[0] });
   const wrongCode = await ask({ account: who, address: address,
@@ -453,6 +597,15 @@ async function theRecoveryCodeReset() {
         "the address owner", function () {
     assert.ok(notice.id, "no notice");
   });
+  await settle();
+  check("3. and spends nothing: no recovery-information-changed",
+        function () {
+    assert.strictEqual(riscAbout("recovery-information-changed", who,
+                                 beforeWrong).length, 0,
+                       JSON.stringify(stream.seen.slice(beforeWrong))
+                         .slice(0, 800));
+  });
+  const beforeRight = stream.seen.length;
   const right = await ask({ account: who, address: address,
                            code: codes[0] });
   check("3. every combination is answered with the same sentence",
@@ -467,6 +620,14 @@ async function theRecoveryCodeReset() {
         "code as what was presented", function () {
     assert.ok(resetLink, String(reset.message.Text).slice(0, 300));
     assert.ok(/recovery codes/.test(String(reset.message.Text)));
+  });
+  const spentSent = await riscArrived(["recovery-information-changed",
+    "recovery-activated"], who, beforeRight);
+  check("3. the recovery code spent on the form is RISC " +
+        "recovery-information-changed (the set shrank) and " +
+        "recovery-activated (#235)", function () {
+    assert.ok(spentSent, JSON.stringify(stream.seen.slice(beforeRight))
+      .slice(0, 1500));
   });
   const replay = await ask({ account: who, address: address,
                             code: codes[0] });
@@ -514,10 +675,11 @@ async function test() {
              "mail.ratePerCategory": "30", "mail.ratePerRecipient": "30",
              "global.publicBaseUrl": base },
            "pointed the realm's SMTP transport at the catcher");
+  await openTheStream();
   await trustedSources();
   await aPersonsOwnChange();
   await theRecoveryCodeReset();
-  assert.ok(checks >= 19, "only " + checks + " checks ran; a section has " +
+  assert.ok(checks >= 24, "only " + checks + " checks ran; a section has " +
             "stopped being called.");
   log.info(checks + " check(s) passed, " + skipped + " skipped.");
   log.info("Test completed successfully.");

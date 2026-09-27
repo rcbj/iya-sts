@@ -28,7 +28,9 @@
 // risk engine the PERSON. So every door now STATES the entity, the words only
 // reach reason_admin, and a door that says nothing is `system` with a warning
 // rather than a guess. Section E is #242's other finding: an arrival session
-// nobody signed in to is never revoked.
+// nobody signed in to is never revoked. Section F (#294): the words are a
+// noun phrase, so reason_admin is one sentence, "The session was ended by
+// <what ended it>." — for every door.
 //
 // The second half is the SESSION EXPIRY, which until the same day emitted
 // nothing at all and now emits `policy`. `system` would have been the easy
@@ -259,6 +261,80 @@ function run(t) {
     return n.kind === 'revoked' && n.session && arrival2 &&
            n.session.id === arrival2.id;
   }).length, 0, 'nor does ending every session of a realm');
+
+  // -----------------------------------------------------------------------
+  t.log.info('F. every door\'s words read as a sentence in reason_admin ' +
+             '(#294)');
+  // -----------------------------------------------------------------------
+  // `reason_admin` is "The session was ended by <what ended it>.", and the
+  // door states a noun phrase. It was "ended at <via>" with half the doors
+  // passing a clause: "ended at the account was disabled by an
+  // administrator".
+  const reasonOf = function (notice) {
+    const due = caep.observe(notice || {});
+    return due ? String((due.payload.reason_admin || {}).en || '') : '';
+  };
+  const phrases = [
+    'an administrator disabling the account (the admin console)',
+    'the person\'s risk going to HIGH (account-failures)',
+    'the deletion of the account (SCIM DELETE)',
+    'the person\'s own sign-out at /logout'
+  ];
+  phrases.forEach(function (phrase, n) {
+    const seen = capture();
+    const session = signIn('entity-phrase-' + n);
+    seen.length = 0;
+    logout.terminate('entity-phrase-' + n, ['session:' + session.id],
+                     { by: phrase, initiatingEntity: 'admin' });
+    t.equal(reasonOf(seen[0]), 'The session was ended by ' + phrase + '.',
+            'reason_admin is one sentence for "' + phrase + '"');
+  });
+  // A new sign-in replacing another person's session in the same browser.
+  const seenReplace = capture();
+  const replacedCookie = [];
+  authn.startSession({ set: function (name, value) {
+    replacedCookie.push(String(value));
+  }, req: null }, 'entity-replaced', ['pwd'], '1', 'OAuth 2.0 / OIDC');
+  seenReplace.length = 0;
+  authn.startSession({ set: function () {}, req: null }, 'entity-replacer',
+                     ['pwd'], '1', 'OAuth 2.0 / OIDC',
+                     { request: { headers: { cookie:
+                       (replacedCookie[0] || '').split(';')[0] } } });
+  const replacedNotice = seenReplace.filter(function (n) {
+    return n.kind === 'revoked';
+  })[0];
+  t.equal(reasonOf(replacedNotice),
+          'The session was ended by a new sign-in in the same browser.',
+          'the session a new sign-in replaced says so in a sentence');
+  // And the doors that passed a clause pass one no more: the phrases that
+  // were fixed are gone from every caller, and no door's words begin with a
+  // clause's subject and verb.
+  const fs = require('fs');
+  const path = require('path');
+  const ROOT = path.join(__dirname, '..');
+  const callers = ['authn/authn.ts', 'common/account_state.ts',
+    'risk/risk_engine.ts', 'federation/federation_links.ts',
+    'saml/saml2_sso.ts', 'common/devices.ts', 'ssf/ssf_receivers.ts',
+    'logout/logout.ts'];
+  const clauses = [/'the account was disabled/, /'replaced by a new sign-in'/,
+    /'federation link removed'/, /'saml2-slo '/, /it came from ended'/,
+    /derived from ended/, /'the person\\'s risk went to/,
+    /'risk scoring disabled the account/, /removed device '/,
+    /marked device '/,
+    /: 'device ' \+ device\.id \+ ' was marked/,
+    /' received ' \+/,
+    /'\/logout, naming/, /'\/logout, on '/];
+  const clauseHits = [];
+  callers.forEach(function (file) {
+    const text = fs.readFileSync(path.join(ROOT, file), 'utf8');
+    clauses.forEach(function (re) {
+      if (re.test(text)) {
+        clauseHits.push(file + ' ' + re);
+      }
+    });
+  });
+  t.equal(clauseHits.length, 0, 'no door passes one of the clauses #294 ' +
+          'rewrote as a noun phrase', clauseHits.join('; '));
 
   authn.setSessionObserver(function () { return null; });
   log.debug("Leaving run().");

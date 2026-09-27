@@ -25,6 +25,16 @@
 //   7. REVOCATION: /oauth2/revoke takes the device secret away; the device
 //      stays, and is removed through /admin-api.
 //
+// AND WHAT A RECEIVER IS TOLD (#294, for #239/#240), on a poll stream in the
+// realm that takes session-presented and credential-change:
+//   * the first app's device secret is a credential-change `create` whose
+//     credential_type is the device secret's URN;
+//   * the second app's exchange is ONE session-presented naming Native SSO —
+//     the first app's session honoured for a second client, no new
+//     authentication — and a refused exchange presents nothing;
+//   * /oauth2/revoke of the device secret is a credential-change `revoke`
+//     for the same credential type, initiating_entity `user`.
+//
 // OWNED HERE (local: true): this repository's authorization server and its
 // management API.
 // ---------------------------------------------------------------------------
@@ -69,6 +79,13 @@ const EXCHANGE = "urn:ietf:params:oauth:grant-type:token-exchange";
 const ID_TOKEN = "urn:ietf:params:oauth:token-type:id_token";
 const ACCESS = "urn:ietf:params:oauth:token-type:access_token";
 const DEVICE = "urn:openid:params:token-type:device-secret";
+const CAEP = "https://schemas.openid.net/secevent/caep/event-type/";
+const POLL = "urn:ietf:rfc:8936";
+// A device's Native SSO secret as CAEP names it (common/devices.ts).
+const SECRET_TYPE = "urn:iya:sts:credential-type:device-secret";
+// The realm's SSF receiver: a confidential client of its own.
+const RECEIVER = "nsso-receiver";
+const RECEIVER_SECRET = "nsso-" + crypto.randomBytes(12).toString("hex");
 
 // Four public clients: two in one group, one in another, one not enabled.
 const APPS = {
@@ -252,6 +269,80 @@ async function exchange(app, fields) {
   return r;
 }
 
+// A client-credentials token for the receiver, for the stream and the poll.
+async function receiverToken() {
+  log.debug("Entering receiverToken().");
+  const r = await hop(null, "POST", base + "/oauth2/token", { form: {
+    grant_type: "client_credentials", client_id: RECEIVER,
+    client_secret: RECEIVER_SECRET, scope: "ssf:read ssf:write" } });
+  assert.ok(r.json && r.json.access_token,
+            "a receiver token: " + r.text.slice(0, 300));
+  log.debug("Leaving receiverToken().");
+  return r.json.access_token;
+}
+
+// Everything the stream delivered, kept so a later check can count.
+const SEEN = [];
+
+// Every SET waiting on the stream, decoded, acknowledged and kept.
+async function drain(token, streamId) {
+  log.debug("Entering drain().");
+  const auth = { Authorization: "Bearer " + token };
+  const r = await hop(null, "POST", base + "/ssf/poll", { headers: auth,
+    json: { stream_id: streamId, returnImmediately: true, maxEvents: 100 } });
+  assert.strictEqual(r.status, 200, "poll: " + r.text.slice(0, 300));
+  const sets = (r.json && r.json.sets) || {};
+  const jtis = Object.keys(sets);
+  if (jtis.length) {
+    await hop(null, "POST", base + "/ssf/poll", { headers: auth,
+      json: { stream_id: streamId, ack: jtis, returnImmediately: true,
+              maxEvents: 0 } });
+  }
+  jtis.forEach(function (jti) {
+    SEEN.push(payloadOf(sets[jti]));
+  });
+  log.debug("Leaving drain(). " + jtis.length + " SET(s).");
+}
+
+// Waits, polling, until `predicate` is met by a SET that arrived since
+// `from` (an index into SEEN): delivery follows the act on a promise.
+async function waitFor(token, streamId, predicate, from) {
+  log.debug("Entering waitFor().");
+  let hit = null;
+  for (let i = 0; i < 24 && !hit; i++) {
+    await drain(token, streamId);
+    hit = SEEN.slice(from).filter(predicate)[0] || null;
+    if (!hit) {
+      await new Promise(function (r) { setTimeout(r, 250); });
+    }
+  }
+  log.debug("Leaving waitFor(). " + !!hit);
+  return hit;
+}
+
+function eventOf(set, type) {
+  log.debug("Entering eventOf().");
+  log.debug("Leaving eventOf().");
+  return ((set && set.events) || {})[CAEP + type] || null;
+}
+
+function presentedByNativeSso(set) {
+  log.debug("Entering presentedByNativeSso().");
+  const ev = eventOf(set, "session-presented");
+  log.debug("Leaving presentedByNativeSso().");
+  return !!ev && JSON.stringify(ev).indexOf("Native SSO") >= 0;
+}
+
+function secretChanged(changeType) {
+  log.debug("Entering secretChanged().");
+  log.debug("Leaving secretChanged().");
+  return function (set) {
+    const ev = eventOf(set, "credential-change");
+    return !!ev && ev.credential_type === SECRET_TYPE &&
+           ev.change_type === changeType;
+  };
+}
+
 async function devicesOf() {
   log.debug("Entering devicesOf().");
   const r = await hop(null, "GET", api + "/users/devices?user=" +
@@ -282,6 +373,30 @@ async function test() {
     });
   }
   await registry.ensurePerson(base, HOLDER, PASSWORD);
+  await registry.provision(base, {
+    identifier: RECEIVER, name: "Native SSO job receiver",
+    protocols: ["oauth2", "ssf"],
+    fields: { oauthClientId: RECEIVER, oauthClientSecret: RECEIVER_SECRET,
+              oauthTokenEndpointAuthMethod: "client_secret_post",
+              oauthGrantType: ["client_credentials"],
+              oauthAllowedScope: ["ssf:read", "ssf:write"] },
+    why: "the SSF receiver sts_native_sso.js reads its CAEP events with"
+  });
+  const ssfToken = await receiverToken();
+  const stream = await hop(null, "POST", base + "/ssf/stream", {
+    headers: { Authorization: "Bearer " + ssfToken },
+    json: { delivery: { method: POLL },
+            events_requested: [CAEP + "session-presented",
+                               CAEP + "credential-change"] } });
+  check("a poll stream takes session-presented and credential-change",
+        function () {
+    assert.strictEqual(stream.status, 201, stream.text.slice(0, 400));
+    const delivered = stream.json.events_delivered || [];
+    assert.ok(delivered.indexOf(CAEP + "session-presented") >= 0 &&
+              delivered.indexOf(CAEP + "credential-change") >= 0,
+              JSON.stringify(delivered));
+  });
+  const streamId = stream.json.stream_id;
 
   log.info("=== 1. discovery ===");
   let r = await hop(null, "GET", base + "/.well-known/openid-configuration");
@@ -321,7 +436,15 @@ async function test() {
     assert.strictEqual(held[0].sessionLive, true);
   });
 
+  const minted = await waitFor(ssfToken, streamId, secretChanged("create"),
+                               0);
+  check("the device secret is a CAEP credential-change create, its " +
+        "credential_type the device secret's", function () {
+    assert.ok(minted, JSON.stringify(SEEN).slice(0, 1500));
+  });
+
   log.info("=== 3. the second app ===");
+  let mark = SEEN.length;
   const exchanged = await exchange(APPS.second, { subject_token: idToken,
     subject_token_type: ID_TOKEN, actor_token: secret,
     actor_token_type: DEVICE, audience: issuer, scope: "openid" });
@@ -337,6 +460,22 @@ async function test() {
     assert.strictEqual(secondId.aud, APPS.second.id);
     assert.strictEqual(secondId.sub, claims.sub);
   });
+  const presented = await waitFor(ssfToken, streamId, presentedByNativeSso,
+                                  mark);
+  check("the exchange is a CAEP session-presented naming Native SSO " +
+        "(#240): the first app's session honoured for a second client",
+        function () {
+    assert.ok(presented, JSON.stringify(SEEN.slice(mark)).slice(0, 1500));
+    assert.strictEqual(presented.sub_id.format, "complex",
+                       JSON.stringify(presented.sub_id));
+    assert.ok(presented.sub_id.session, JSON.stringify(presented.sub_id));
+  });
+  await new Promise(function (r) { setTimeout(r, 1000); });
+  await drain(ssfToken, streamId);
+  check("and it is ONE event for the one exchange", function () {
+    assert.strictEqual(SEEN.slice(mark).filter(presentedByNativeSso).length,
+                       1, JSON.stringify(SEEN.slice(mark)).slice(0, 1500));
+  });
   held = await devicesOf();
   check("the device now names both applications", function () {
     assert.strictEqual(held.length, 1);
@@ -345,6 +484,7 @@ async function test() {
   });
 
   log.info("=== 4. the refusals ===");
+  mark = SEEN.length;
   const plain = await codeGrant(jar(), APPS.plain, "openid device_sso");
   check("a client not enabled for Native SSO is refused device_sso " +
         "(invalid_scope)", function () {
@@ -378,6 +518,13 @@ async function test() {
     });
   }
 
+  await new Promise(function (r) { setTimeout(r, 1000); });
+  await drain(ssfToken, streamId);
+  check("a refused exchange presents nothing", function () {
+    assert.strictEqual(SEEN.slice(mark).filter(presentedByNativeSso).length,
+                       0, JSON.stringify(SEEN.slice(mark)).slice(0, 1500));
+  });
+
   log.info("=== 5. the same device again ===");
   const again = await codeGrant(jar(), APPS.first, "openid device_sso",
                                 { device_secret: secret });
@@ -408,6 +555,7 @@ async function test() {
   const fresh = await codeGrant(jar(), APPS.first, "openid device_sso",
                                 { device_secret: secret });
   const freshTokens = (fresh.tokens && fresh.tokens.json) || {};
+  mark = SEEN.length;
   const revoked = await hop(null, "POST", base + "/oauth2/revoke", { form: {
     token: secret, client_id: APPS.first.id } });
   const afterRevoke = await exchange(APPS.second, {
@@ -422,6 +570,14 @@ async function test() {
                        afterRevoke.text.slice(0, 300));
     assert.strictEqual(held.length, 1);
     assert.strictEqual(held[0].nativeSso, false);
+  });
+  const taken = await waitFor(ssfToken, streamId, secretChanged("revoke"),
+                              mark);
+  check("the revocation is a CAEP credential-change revoke for the device " +
+        "secret, initiating_entity user", function () {
+    assert.ok(taken, JSON.stringify(SEEN.slice(mark)).slice(0, 1500));
+    assert.strictEqual(eventOf(taken, "credential-change").initiating_entity,
+                       "user");
   });
   // The person's own page, in the browser section 2 signed in: the portal's
   // code flow rides on that sign-on session.
@@ -442,7 +598,7 @@ async function test() {
     assert.strictEqual(held.length, 0, JSON.stringify(held));
   });
 
-  assert.ok(checks >= 15, "only " + checks + " checks ran");
+  assert.ok(checks >= 21, "only " + checks + " checks ran");
   log.info(checks + " check(s) passed.");
   log.info("Test completed successfully.");
   log.debug("Leaving test().");

@@ -826,6 +826,22 @@ const CODES = [
       'credential_request_denied at OpenID4VCI, a SAML Responder / ' +
       'RequestDenied status, a SOAP fault, a 503 problem at ACME, EST ' +
       'and SCEP, and a refused session at every sign-in door' },
+  { code: 'STS-CORE-0122',
+    summary: 'A trust realm\'s removal was refused because a removal of ' +
+      'it is already in progress (#294): realms.retire() marked it less ' +
+      'than realms.removalDeliveryTimeoutS plus a 30-second margin ago, or ' +
+      'is running in this process. Starting a second one would end and ' +
+      'announce everything twice. Once that time has passed the removal is ' +
+      'taken to be interrupted, and removing the realm again finishes it.',
+    spec: 'none — the console and /admin-api refuse the remove action' },
+  { code: 'STS-CORE-0123',
+    summary: 'A trust realm is stuck half removed (#294): it carries the ' +
+      'retiring mark (#262) from longer ago than a removal can take, so the ' +
+      'process that was removing it stopped before it finished. Every new ' +
+      'sign-in and issuance in it is refused (STS-CORE-0121) until an ' +
+      'administrator removes it again, from another realm. Logged when ' +
+      'such a realm is restored at start, and when the removal is finished.',
+    spec: 'none — logged; /admin/realms and GET /admin-api/realms show it' },
   { code: 'STS-WORKER-0001',
     summary: 'The IPC channel to a post-quantum worker process failed, so a ' +
       'job sent to it may not arrive or its answer may not come back.',

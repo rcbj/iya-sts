@@ -2084,6 +2084,15 @@ function restoreRealms(rows, replicated) {
     // administrator removes it again.
     if (Number(row.retiringSince) > 0) {
       result.realm.retiringSince = Number(row.retiringSince);
+      // Said at the start (#294), where an operator reads first: a realm
+      // whose removal outlived its bound was interrupted, and refuses every
+      // sign-in in it until somebody removes it again.
+      const state = realms.retiringState(result.realm);
+      if (state && state.interrupted) {
+        log.warn(errorCodes.tag('STS-CORE-0123') + 'persistence: the ' +
+                 'realm "' + row.id + '" was restored half removed: ' +
+                 state.why + ' ' + state.finish);
+      }
     }
     made++;
   });
