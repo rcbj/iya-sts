@@ -260,6 +260,14 @@ const JOBS = [
   { file: 'sts_admin_api_auth.js',       browser: false, local: true },
   { file: 'sts_admin_api_operations.js', browser: false, local: true,
     exclusive: true },
+  // THE CONSOLE SIGNS IN AT ONCE AFTER THE ROOT IS REPLACED (#296,
+  // 2026-09-27), and again after a second replacement inside the first
+  // re-issue's claim window — the STS-AUTHN-0208 case. Exclusive, because it
+  // replaces the service Root (and so the listener's certificate) twice,
+  // which a job running beside it would see as a TLS failure.
+  // `local: true`: this repository's console, PKI and authorization server.
+  { file: 'sts_console_after_root.js',   browser: false, local: true,
+    exclusive: true },
   // AN HOUR (2026-09-19): it walks every console page in a real browser, and
   // against a three-node cluster across the internet (run-suite.sh testidp)
   // that took longer than the 20-minute default, killed while still passing.
