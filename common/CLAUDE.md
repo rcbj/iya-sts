@@ -7983,7 +7983,15 @@ reach outside it and this is the index of them:
    since #138 (2026-09-22) — `private_key_jwt` with NO client secret: the key
    is issued by the realm's CA on first use and kept, sealed, on the entry
    (`oauth-oidc/CLAUDE.md` 3av). It was `client_secret_basic` with a secret
-   minted per start. **Deleting one takes its surface offline
+   minted per start. **The issuance runs under a cluster claim that is a
+   MUTUAL EXCLUSION and is released when it ends (#296, 2026-09-27)**: it was
+   held for its whole lifetime (twice `oidcRp.backChannelTimeoutS` plus a
+   second), which forbade a second issuance for that long, so a key made
+   unusable inside the window — the Root replaced again — left the next
+   sign-in waiting for a key nobody issued (STS-AUTHN-0208). A waiter now
+   re-claims on each turn, so it takes over from a holder that finished,
+   failed or died. `tests/oidc_rp_surface_key.js` and
+   `tests/vendored/sts_console_after_root.js` hold it. **Deleting one takes its surface offline
    until a restart**, with a refusal that names the entry — which is the seeding
    rule finally having an observable consequence. — *THERE ARE THREE OF THEM
    SINCE 2026-09-06* under `applications.js`, above

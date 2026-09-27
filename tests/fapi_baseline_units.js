@@ -270,6 +270,7 @@ function childMain() {
     const fields = {};
     let issues = 0;
     let claimAnswer = { ok: true };
+    let releases = 0;
     let pkiFails = false;
     const generalized = function (ms) {
       return new Date(ms).toISOString().replace(/[-:T]/g, '')
@@ -336,6 +337,12 @@ function childMain() {
         clusterClaims: {
           claim: async function () {
             return claimAnswer;
+          },
+          // Released when an issuance ends since #296; counted, so the
+          // issuance paths below can say they gave the claim back.
+          release: async function () {
+            releases += 1;
+            return true;
           }
         },
         audit: { audit: function () {} }
@@ -413,6 +420,9 @@ function childMain() {
          fields.oauthAssertionKid === 'surface-3',
          'J. one whose chain the token endpoint would refuse is replaced',
          JSON.stringify(got.answer));
+    note(releases === 3,
+         'J. and every issuance gave the claim back when it ended (#296)',
+         releases + ' release(s)');
 
     Object.keys(fields).forEach(function (name) {
       delete fields[name];

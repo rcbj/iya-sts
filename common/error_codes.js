@@ -4347,7 +4347,8 @@ const CODES = [
     summary: 'A hosted surface\'s key was being issued by another process, ' +
       'and neither the key nor an answer from the claim store arrived in ' +
       'time; the sign-in or renewal stops rather than issuing a second key ' +
-      '(#138).',
+      '(#138). Since #296 the claim is released when an issuance ends, so ' +
+      'this means the issuer is still at work or the store cannot be asked.',
     spec: 'none — a refusal of this service\'s own' },
   { code: 'STS-AUTHN-0209',
     summary: 'A hosted surface\'s application entry declares a token ' +
