@@ -5249,12 +5249,20 @@ function requestObjectMetadataProblem(values) {
   }
   const alg = text.request_object_encryption_alg;
   const enc = text.request_object_encryption_enc;
-  if (alg && REQUEST_OBJECT_ENCRYPTION_ALGS.indexOf(alg) < 0) {
+  // An ML-KEM or HPKE alg is decrypted only where the realm holds a key for
+  // it (#82, `keys.encryptionKemAlgs`), so the list a client may register
+  // from is the realm's, as discovery says.
+  const decryptable = helpers.decryptableJweAlgs(
+    REQUEST_OBJECT_ENCRYPTION_ALGS);
+  if (alg && decryptable.indexOf(alg) < 0) {
     log.debug("Leaving requestObjectMetadataProblem(). Encryption alg.");
     return refusal('request_object_encryption_alg', '"' + alg + '" is not an ' +
       'algorithm this service decrypts a request object with. It decrypts ' +
-      REQUEST_OBJECT_ENCRYPTION_ALGS.join(', ') + ' (see ' +
-      'request_object_encryption_alg_values_supported).');
+      decryptable.join(', ') + ' (see ' +
+      'request_object_encryption_alg_values_supported)' +
+      (stsCrypto.describeJweKemAlg(alg) ? '; an ML-KEM or HPKE algorithm ' +
+        'is decrypted only where the realm holds a key for it ' +
+        '(keys.encryptionKemAlgs)' : '') + '.');
   }
   if (enc && !alg) {
     log.debug("Leaving requestObjectMetadataProblem(). enc without alg.");

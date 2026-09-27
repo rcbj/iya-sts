@@ -710,6 +710,29 @@ const DEVICE_ENROLLMENT_PROFILES = ENROLLMENT_PROFILES.concat(['device']);
 // oid4vc/vc_issuer.ts's IMPLEMENTED_ENC_VALUES, for both OID4VCI rows.
 const OID4VCI_ENC_VALUES = ['A128GCM', 'A256GCM'];
 
+// THE KEM AND HPKE JWE ALGS (#82): `common/crypto.js`'s section 4a table,
+// written out because this file requires nothing in this repository.
+// `tests/jwe_pq_kem.js` holds the two equal. The ML-KEM six are
+// draft-ietf-jose-pqc-kem-05's; HPKE-0 to HPKE-7 (and -KE, less 4-KE and
+// 6-KE) draft-ietf-jose-hpke-encrypt-22's; HPKE-8 to HPKE-16 (and -KE)
+// draft-reddy-cose-jose-pqc-hybrid-hpke-11's.
+const JWE_KEM_ALGS = ['ML-KEM-512', 'ML-KEM-768', 'ML-KEM-1024',
+  'ML-KEM-512+A128KW', 'ML-KEM-768+A192KW', 'ML-KEM-1024+A256KW'].concat(
+  [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16].reduce(
+    function (all, n) {
+      return all.concat(n === 4 || n === 6 ? ['HPKE-' + n]
+        : ['HPKE-' + n, 'HPKE-' + n + '-KE']);
+    }, []));
+
+// The keys an OID4VP encrypted response may be encrypted to (#82): ECDH-ES,
+// and the Key Encryption forms of the KEM table — not HPKE Integrated
+// Encryption, which carries no `enc`, when the request names the `enc`
+// values it accepts (`encrypted_response_enc_values_supported`).
+const OID4VP_RESPONSE_KEY_ALGS = ['ECDH-ES'].concat(
+  JWE_KEM_ALGS.filter(function (alg) {
+    return !/^HPKE-\d+$/.test(alg);
+  }));
+
 // A list of short event-type names, and each again under its URI. The CAEP
 // and RISC readers strip ssf/ssf_events.js's CAEP_PREFIX / RISC_PREFIX before
 // they match, so a whole URI is a spelling they accept.
@@ -2526,6 +2549,33 @@ const SETTINGS = [
                  'algorithm; an algorithm outside the set still signs with ' +
                  'the per-algorithm key. Every key is a key pair of its own; ' +
                  'what the hybrid certificate shares is the certificate.' },
+  // THE REALM'S POST-QUANTUM AND HPKE DECRYPTION KEYS (#82, 2026-09-27).
+  // EMPTY BY DEFAULT, deliberately (rcbj's decision on #82): see the
+  // description. `common/helpers.js`'s kemEncryptionKeysFor() makes them.
+  { key: 'keys.encryptionKemAlgs', group: 'Key material',
+    label: 'Post-quantum / hybrid decryption keys',
+    path: 'keys.encryptionKemAlgs', env: 'STS_KEYS_ENCRYPTION_KEM_ALGS',
+    type: 'csv', dflt: '', runtime: true, csvValues: JWE_KEM_ALGS,
+    description: 'The ML-KEM and HPKE JWE algorithms this realm holds a ' +
+                 'decryption key for — one key pair per algorithm, ' +
+                 'published in the realm\'s JWKS (`use: enc`, with `alg`) ' +
+                 'and advertised in `request_object_encryption_alg_values_' +
+                 'supported` and `assertion_encryption_alg_values_supported`, ' +
+                 'so a client can encrypt a request object or an RFC 7523 / ' +
+                 '7522 assertion to this realm with post-quantum or PQ/T ' +
+                 'hybrid key establishment. HPKE-10-KE is X-Wing ' +
+                 '(ML-KEM-768 + X25519). Encrypting TO a client that ' +
+                 'registered one of these algorithms needs nothing here. ' +
+                 '**Empty by default, and an administrator\'s choice:** ' +
+                 'every one of these algorithms is from an Internet-Draft ' +
+                 '(draft-ietf-jose-pqc-kem-05, draft-ietf-jose-hpke-' +
+                 'encrypt-22, draft-reddy-cose-jose-pqc-hybrid-hpke-11), ' +
+                 'and an AKP key in a JWKS is a key type many clients\' JOSE ' +
+                 'libraries do not yet parse — some refuse the whole key set. ' +
+                 'Name an algorithm here only where the clients reading this ' +
+                 'realm\'s JWKS are known to cope. Removing one stops ' +
+                 'publishing and accepting it; naming it again brings back ' +
+                 'the same key.' },
   { key: 'keys.kidFormat', group: 'Key material',
     label: 'Signed token kid format',
     path: 'keys.kidFormat', env: 'STS_KEYS_KID_FORMAT', type: 'enum',
@@ -6157,11 +6207,13 @@ const SETTINGS = [
   { key: 'oauth2.refreshTokenEncryptionAlg', group: 'OAuth 2.0 / OIDC',
     label: 'Refresh token encryption: key management (alg)',
     env: 'STS_OAUTH2_REFRESH_TOKEN_ENCRYPTION_ALG', type: 'enum',
+    // The ML-KEM and HPKE algs (#82) between the asymmetric and symmetric
+    // families, in `common/crypto.js`'s `JWE_ALGS` order.
     enumValues: ['RSA-OAEP-256', 'RSA-OAEP', 'ECDH-ES', 'ECDH-ES+A128KW',
-                 'ECDH-ES+A192KW', 'ECDH-ES+A256KW', 'A128KW', 'A192KW',
-                 'A256KW',
+                 'ECDH-ES+A192KW', 'ECDH-ES+A256KW'].concat(JWE_KEM_ALGS, [
+                 'A128KW', 'A192KW', 'A256KW',
                  'A128GCMKW', 'A192GCMKW', 'A256GCMKW', 'PBES2-HS256+A128KW',
-                 'PBES2-HS384+A192KW', 'PBES2-HS512+A256KW', 'dir'],
+                 'PBES2-HS384+A192KW', 'PBES2-HS512+A256KW', 'dir']),
     dflt: 'RSA-OAEP-256', runtime: true,
     description: 'The JWE key management algorithm every refresh token is ' +
                  'encrypted under. A refresh token is a signed JWT sealed to ' +
@@ -6171,7 +6223,14 @@ const SETTINGS = [
                  'EC key, and the rest a secret of the realm\'s own. ' +
                  'Changing it affects tokens issued from then on; tokens ' +
                  'already issued still open, because the realm holds a key ' +
-                 'of every kind. RSA1_5 is not offered.' },
+                 'of every kind. RSA1_5 is not offered. The ML-KEM and HPKE ' +
+                 'algorithms (#82 — drafts, see keys.encryptionKemAlgs) ' +
+                 'seal to a key pair DERIVED from the realm\'s secret for ' +
+                 'that algorithm, never published, so choosing one here ' +
+                 'needs no key and changes nothing a client sees; ' +
+                 'HPKE-10-KE (X-Wing) makes a refresh token captured today ' +
+                 'safe against a future quantum adversary as well as a ' +
+                 'classical one.' },
 
   { key: 'oauth2.refreshTokenEncryptionEnc', group: 'OAuth 2.0 / OIDC',
     label: 'Refresh token encryption: content (enc)',
@@ -9382,6 +9441,26 @@ const SETTINGS = [
                  'encrypted (ECDH-ES) to a key only this sign-in holds, so ' +
                  'the page\'s script carries a JWE — or dc_api, in the ' +
                  'clear, for a wallet that cannot encrypt.' },
+
+  // THE KEYS AN ENCRYPTED WALLET RESPONSE MAY BE ENCRYPTED TO (#82). The
+  // default is rcbj's decision on #82: the X-Wing hybrid first, the P-256
+  // ECDH-ES key HAIP requires second.
+  { key: 'oid4vp.responseEncryptionKeyAlgs', group: 'OID4VP',
+    label: 'Encrypted response: key algorithms offered',
+    env: 'OID4VP_RESPONSE_ENCRYPTION_KEY_ALGS', type: 'csv',
+    dflt: 'HPKE-10-KE,ECDH-ES', runtime: true,
+    csvValues: OID4VP_RESPONSE_KEY_ALGS,
+    description: 'The ephemeral keys a direct_post.jwt or dc_api.jwt ' +
+                 'request offers in `client_metadata.jwks`, in order — one ' +
+                 'key per algorithm, made for the one transaction and held ' +
+                 'sealed on it. The wallet encrypts to one it supports. The ' +
+                 'default offers the X-Wing hybrid (HPKE-10-KE, ML-KEM-768 + ' +
+                 'X25519, draft-reddy-cose-jose-pqc-hybrid-hpke-11) first, ' +
+                 'so a wallet that can protect the response against a ' +
+                 'future quantum adversary does, and the P-256 ECDH-ES key ' +
+                 'OpenID4VC HAIP requires second, so every HAIP wallet still ' +
+                 'can. Leaving ECDH-ES out refuses every wallet that has only ' +
+                 'it; an empty list is read as ECDH-ES alone.' },
 
   { key: 'oid4vp.statusListMaxCacheS', group: 'OID4VP',
     label: 'Longest a fetched status list is kept (s)',

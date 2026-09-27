@@ -1922,7 +1922,10 @@ class OAuth2Server {
       // described is a document arriving HERE, and the symmetric families are
       // usable because a client_secret is a shared key. See
       // `oauth-oidc/assertion_grant.js`'s `unwrapAssertion()`.
-      assertion_encryption_alg_values_supported: stsCrypto.JWE_DECRYPT_ALGS,
+      // The ML-KEM and HPKE algs only where the realm holds a key for them
+      // (#82): a client cannot encrypt to a key this realm does not have.
+      assertion_encryption_alg_values_supported:
+        helpers.decryptableJweAlgs(stsCrypto.JWE_DECRYPT_ALGS),
       assertion_encryption_enc_values_supported:
         Object.keys(stsCrypto.JWE_ENCS),
       // RFC 9396. OID4VCI's openid_credential — its other way of saying which
@@ -2010,7 +2013,7 @@ class OAuth2Server {
           mode.acceptsUnsignedRequestObjects() &&
           !config.value('oauth2.requireSignedRequestObject') ? ['none'] : []),
       request_object_encryption_alg_values_supported:
-        applications.REQUEST_OBJECT_ENCRYPTION_ALGS,
+        helpers.decryptableJweAlgs(applications.REQUEST_OBJECT_ENCRYPTION_ALGS),
       request_object_encryption_enc_values_supported:
         applications.REQUEST_OBJECT_ENCRYPTION_ENCS,
       // RFC 9126 SECTION 5 (2026-09-13). The endpoint, and the global policy.
@@ -3222,6 +3225,15 @@ class OAuth2Server {
             const encKeys = requestObjectKeysFor();
             return [encKeys.rsa.publicJwk, encKeys.ec.publicJwk];
           })())
+        // AND THE REALM'S ML-KEM / HPKE DECRYPTION KEYS (#82), after those,
+        // each with `use: "enc"` and the one `alg` it serves — only where
+        // an administrator named the alg in `keys.encryptionKemAlgs`, which
+        // is empty by default: an AKP key is a key type many clients'
+        // libraries do not parse, and a JWKS they cannot read is worse than
+        // one without the key.
+          .concat(helpers.kemEncryptionKeysFor().map(function (one) {
+            return stsCrypto.publicJweKemJwk(one.publicJwk);
+          }))
       }, null, 2));
       log.debug("Leaving OAuth2Server.sendJwks().");
     } catch (e) {

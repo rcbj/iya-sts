@@ -4631,6 +4631,47 @@ function kemPublicKeyFor(alg, jwk) {
   return Buffer.concat([Buffer.from([0x04]), x, y]);
 }
 
+// ---------------------------------------------------------------------------
+// WHICH OF A RECIPIENT'S PUBLISHED KEYS AN `alg` CAN ENCRYPT TO, for every
+// asymmetric JWE alg — the question `recipientKey()` asks of a client's
+// jwks. Section 4's families by `kty`; section 4a's by the whole check above
+// (an AKP key names its alg, an EC or OKP key its curve). `need` is the
+// phrase a refusal uses for what was missing.
+// ---------------------------------------------------------------------------
+function jweRecipientKeyFits(alg, jwk) {
+  log.debug('Entering jweRecipientKeyFits(). ' + alg);
+  if (!jwk || typeof jwk !== 'object') {
+    log.debug('Leaving jweRecipientKeyFits(). No key.');
+    return false;
+  }
+  if (JWE_PQ_KEM_TABLE[alg]) {
+    try {
+      kemPublicKeyFor(alg, jwk);
+    } catch (e) {
+      log.debug('Caught in jweRecipientKeyFits(): ' +
+                ((e && e.message) || e));
+      log.debug('Leaving jweRecipientKeyFits(). Does not fit.');
+      return false;
+    }
+    log.debug('Leaving jweRecipientKeyFits(). Fits.');
+    return true;
+  }
+  log.debug('Leaving jweRecipientKeyFits().');
+  return JWE_ECDH_ALGS.indexOf(alg) >= 0 ? jwk.kty === 'EC'
+    : jwk.kty === 'RSA';
+}
+
+function jweRecipientKeyNeed(alg) {
+  log.debug('Entering jweRecipientKeyNeed(). ' + alg);
+  const row = JWE_PQ_KEM_TABLE[alg];
+  log.debug('Leaving jweRecipientKeyNeed().');
+  if (!row) {
+    return JWE_ECDH_ALGS.indexOf(alg) >= 0 ? 'an EC key' : 'an RSA key';
+  }
+  return row.keyType === 'AKP' ? 'an AKP key whose alg is "' + alg + '"'
+    : 'an ' + row.keyType + ' ' + row.crv + ' key';
+}
+
 // The PRIVATE half, from what a caller holds: an AKP JWK with `priv` (the
 // seed), an EC or OKP JWK with `d`, or a node KeyObject of an EC or
 // Montgomery key. Returns the serialised private key the KEM takes.
@@ -4909,6 +4950,53 @@ function generateJweKemKeyPair(alg, kid) {
   log.debug('Leaving generateJweKemKeyPair(). ' + row.keyType + '.');
   return { publicJwk: Object.assign(pub, extra),
            privateJwk: Object.assign(priv, extra) };
+}
+
+// ---------------------------------------------------------------------------
+// THE SAME KEY PAIR, DERIVED rather than drawn: from input keying material
+// through the KEM's own DeriveKeyPair (draft-ietf-hpke-hpke section 7.1.3,
+// draft-ietf-hpke-pq sections 3 and 4) — for an ML-KEM alg, the HPKE ML-KEM
+// KEM of the same parameter set, whose DeriveKeyPair yields the 64-octet
+// seed. A published KDF, so the derivation is one somebody else can check.
+// For a key a realm only ever encrypts to ITSELF (a refresh token), made
+// from a secret it already holds, sealed, shares and rotates.
+// ---------------------------------------------------------------------------
+const MLKEM_HPKE_KEM = { 'ML-KEM-512': 0x0040, 'ML-KEM-768': 0x0041,
+                         'ML-KEM-1024': 0x0042 };
+
+function deriveJweKemKeyPair(alg, ikm, kid) {
+  log.debug('Entering deriveJweKemKeyPair(). ' + alg);
+  const row = JWE_PQ_KEM_TABLE[String(alg)];
+  if (!row) {
+    log.debug('Leaving deriveJweKemKeyPair(). Not one of these algs.');
+    throw new Error('deriveJweKemKeyPair: "' + alg + '" is not an ML-KEM ' +
+                    'or HPKE JWE algorithm');
+  }
+  const kemId = row.family === 'mlkem' ? MLKEM_HPKE_KEM[row.set] : row.kem;
+  const pair = hpkeDeriveKeyPair(kemId, ikm);
+  const extra = { use: 'enc', alg: alg };
+  if (kid) {
+    extra.kid = kid;
+  }
+  let publicJwk;
+  let privateMembers;
+  if (row.keyType === 'AKP') {
+    publicJwk = Object.assign({ kty: 'AKP', pub: b64u(pair.pk) }, extra);
+    privateMembers = { priv: b64u(pair.sk) };
+  } else if (row.keyType === 'EC') {
+    const size = EC_GROUPS[row.crv].Nsk;
+    publicJwk = Object.assign({
+      kty: 'EC', crv: row.crv, x: b64u(pair.pk.subarray(1, 1 + size)),
+      y: b64u(pair.pk.subarray(1 + size)) }, extra);
+    privateMembers = { d: b64u(pair.sk) };
+  } else {
+    publicJwk = Object.assign({ kty: 'OKP', crv: row.crv,
+                                x: b64u(pair.pk) }, extra);
+    privateMembers = { d: b64u(pair.sk) };
+  }
+  log.debug('Leaving deriveJweKemKeyPair().');
+  return { publicJwk: publicJwk,
+           privateJwk: Object.assign({}, publicJwk, privateMembers) };
 }
 
 // The public JWK of a private one, for a realm key read back from the store.
@@ -9609,8 +9697,11 @@ module.exports = {
   JWE_POST_QUANTUM_ALGS: JWE_POST_QUANTUM_ALGS,
   JWE_HYBRID_ALGS: JWE_HYBRID_ALGS,
   isIntegratedJweAlg: isIntegratedJweAlg,
+  jweRecipientKeyFits: jweRecipientKeyFits,
+  jweRecipientKeyNeed: jweRecipientKeyNeed,
   describeJweKemAlg: describeJweKemAlg,
   generateJweKemKeyPair: generateJweKemKeyPair,
+  deriveJweKemKeyPair: deriveJweKemKeyPair,
   publicJweKemJwk: publicJweKemJwk,
   // EXPORTED FOR THE VECTORS: tests/jwe_pq_kem.js holds the KEMs, the key
   // schedule and the KMAC derivation to draft-ietf-hpke-pq-05's,

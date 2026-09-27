@@ -527,6 +527,33 @@ function deserialiseRequestObjectKeys(blob, nodeCryptoModule) {
 }
 
 // ---------------------------------------------------------------------------
+// THE REALM'S KEM DECRYPTION KEYS (#82, 2026-09-27): one key pair per ML-KEM
+// or HPKE JWE alg the realm's `keys.encryptionKemAlgs` names, each a JWK
+// (AKP with the seed as `priv`, or EC / OKP for the classical HPKE suites)
+// because that is the only form an AKP key has. A LIST member, like the
+// post-quantum signing keys: made lazily as the setting names algs, so a set
+// gains members after it is shared. Empty rather than null for none.
+// ---------------------------------------------------------------------------
+function serialiseKemEncKeys(held) {
+  log.debug("Entering serialiseKemEncKeys().");
+  const out = (Array.isArray(held) ? held : []).filter(function (one) {
+    return one && one.alg && one.privateJwk && one.publicJwk;
+  }).map(function (one) {
+    return { alg: one.alg, privateJwk: one.privateJwk,
+             publicJwk: one.publicJwk };
+  });
+  log.debug("Leaving serialiseKemEncKeys(). " + out.length + " key(s).");
+  return out;
+}
+
+function deserialiseKemEncKeys(blob) {
+  log.debug("Entering deserialiseKemEncKeys().");
+  const out = serialiseKemEncKeys(blob);
+  log.debug("Leaving deserialiseKemEncKeys().");
+  return out.length ? out : null;
+}
+
+// ---------------------------------------------------------------------------
 // THE BROWSER DEVICE KEYS (2026-09-26, #265): the realm's key pair that signs
 // a remembered browser's device token and the key pair it is encrypted to —
 // used for nothing else, so a token can never be minted with a key that signs
@@ -912,6 +939,11 @@ function serialise(keys) {
     requestObjectEncKeys: serialiseRequestObjectKeys(keys.requestObjectEncKeys),
     // THE BROWSER DEVICE KEYS (#265) — see serialiseBrowserDeviceKeys().
     browserDeviceKeys: serialiseBrowserDeviceKeys(keys.browserDeviceKeys),
+    // THE KEM DECRYPTION KEYS (#82) — see serialiseKemEncKeys(). Written down
+    // and shared for the request object keys' reason: their public halves
+    // are PUBLISHED, and a sibling that cannot open what a client encrypted
+    // to the JWKS this process served is a refusal nobody can explain.
+    kemEncKeys: serialiseKemEncKeys(keys.kemEncKeys),
     // THE XML SIGNING KEY AND THE KEY GENERATIONS (2026-09-22, #42) — see
     // serialiseXmlKey() and serialiseGenerations() above.
     xmlKey: serialiseXmlKey(keys.xmlKey),
@@ -967,6 +999,7 @@ function deserialise(blob, nodeCrypto) {
         blob.requestObjectEncKeys, nodeCrypto),
     browserDeviceKeys: deserialiseBrowserDeviceKeys(blob.browserDeviceKeys,
                                                     nodeCrypto),
+    kemEncKeys: deserialiseKemEncKeys(blob.kemEncKeys),
     xmlKey: deserialiseXmlKey(blob.xmlKey, nodeCrypto),
     bbsKey: deserialiseBbsKey(blob.bbsKey),
     signerGroups: deserialiseSignerGroups(blob.signerGroups, nodeCrypto),
@@ -1397,16 +1430,19 @@ function enriches(candidate, held) {
   // And the browser device keys, the EIGHTH (2026-09-26, #265).
   const bdHere = candidate.browserDeviceKeys ? 1 : 0;
   const bdThere = held.browserDeviceKeys ? 1 : 0;
+  // And the KEM decryption keys, the NINTH (#82) — a list, made lazily.
+  const kemHere = (candidate.kemEncKeys || []).length;
+  const kemThere = (held.kemEncKeys || []).length;
   if (pqHere < pqThere || vciHere < vciThere || rtHere < rtThere ||
       roHere < roThere || xmlHere < xmlThere || bbsHere < bbsThere ||
-      grpHere < grpThere || bdHere < bdThere) {
+      grpHere < grpThere || bdHere < bdThere || kemHere < kemThere) {
     log.debug("Leaving enriches().");
     return false;
   }
   log.debug("Leaving enriches().");
   return pqHere > pqThere || vciHere > vciThere || rtHere > rtThere ||
          roHere > roThere || xmlHere > xmlThere || bbsHere > bbsThere ||
-         grpHere > grpThere || bdHere > bdThere;
+         grpHere > grpThere || bdHere > bdThere || kemHere > kemThere;
 }
 
 // ---------------------------------------------------------------------------
@@ -1470,6 +1506,20 @@ function requestObjectKeysHeldFor(realmId) {
   log.debug("Leaving requestObjectKeysHeldFor().");
   return deserialiseRequestObjectKeys(blob && blob.requestObjectEncKeys,
                                       nodeCrypto);
+}
+
+// The KEM decryption keys some process of this service already made for this
+// realm (#82), or null — `requestObjectKeysHeldFor()`'s question, for
+// `helpers.js`'s kemEncryptionKeysFor(). It READS and never makes.
+function kemEncKeysHeldFor(realmId) {
+  log.debug("Entering kemEncKeysHeldFor().");
+  const id = String(realmId || '');
+  const fromStore = storedFor(id);
+  const blob = (fromStore && (fromStore.kemEncKeys || []).length)
+    ? fromStore
+    : shared.get(id);
+  log.debug("Leaving kemEncKeysHeldFor().");
+  return deserialiseKemEncKeys(blob && blob.kemEncKeys);
 }
 
 // The browser device keys some process of this service already made for this
@@ -1754,6 +1804,11 @@ function privateMaterialFor(realmId) {
     ro: deserialiseRequestObjectKeys(blob.requestObjectEncKeys, nodeCrypto),
     // THE BROWSER DEVICE KEYS (#265), both private halves, on this timer too.
     bd: deserialiseBrowserDeviceKeys(blob.browserDeviceKeys, nodeCrypto),
+    // THE KEM DECRYPTION KEYS (#82), private JWKs by kid, on this timer too.
+    kem: new Map((deserialiseKemEncKeys(blob.kemEncKeys) || []).map(
+      function (one) {
+        return [one.publicJwk.kid, one.privateJwk];
+      })),
     // THE XML SIGNING KEY AND EVERY STANDBY KEY (2026-09-22, #42), parsed and
     // purged on this record's timer like the rest. A standby key is keyed by
     // its kid: a `next` key signs nothing until it is promoted, and a retired
@@ -2735,10 +2790,11 @@ function pkiSettled(scopeId) {
 // ---------------------------------------------------------------------------
 const KEY_SET_MEMBERS = ['pqKeys', 'vciRequestEncKey', 'refreshTokenEncKeys',
                          'requestObjectEncKeys', 'xmlKey', 'bbsKey',
-                         'signerGroups', 'browserDeviceKeys'];
+                         'signerGroups', 'browserDeviceKeys', 'kemEncKeys'];
 
-// The two ARRAY members, where an empty list is "none" (#68 added the second).
-const LIST_MEMBERS = ['pqKeys', 'signerGroups'];
+// The ARRAY members, where an empty list is "none" (#68 added the second,
+// #82 the third).
+const LIST_MEMBERS = ['pqKeys', 'signerGroups', 'kemEncKeys'];
 
 function hasMember(blob, member) {
   log.debug("Entering hasMember().");
@@ -2796,6 +2852,23 @@ function decideKeys(stored, offered) {
       added += 1;
     }
   });
+  // THE KEM DECRYPTION KEYS GROW ONE ALG AT A TIME (#82): an administrator
+  // adds an alg to `keys.encryptionKemAlgs` after the set was written, so a
+  // row that already holds some of them must still take a new one. A union
+  // BY ALG, the stored key winning where both hold one — the published key
+  // a client may already have encrypted to is never replaced by a race.
+  if (hasMember(stored, 'kemEncKeys') && hasMember(offered, 'kemEncKeys')) {
+    const have = stored.kemEncKeys.map(function (one) {
+      return one.alg;
+    });
+    const fresh = offered.kemEncKeys.filter(function (one) {
+      return have.indexOf(one.alg) === -1;
+    });
+    if (fresh.length) {
+      joined.kemEncKeys = stored.kemEncKeys.concat(fresh);
+      added += 1;
+    }
+  }
   log.debug("Leaving decideKeys(). " + added + " member(s) added.");
   return { outcome: added ? 'joined' : 'kept', blob: added ? joined : stored,
            write: added > 0 };
@@ -3287,6 +3360,7 @@ module.exports = {
   requestEncryptionKeyHeldFor: requestEncryptionKeyHeldFor,
   refreshTokenKeysHeldFor: refreshTokenKeysHeldFor,
   requestObjectKeysHeldFor: requestObjectKeysHeldFor,
+  kemEncKeysHeldFor: kemEncKeysHeldFor,
   browserDeviceKeysHeldFor: browserDeviceKeysHeldFor,
   xmlKeyHeldFor: xmlKeyHeldFor,
   bbsKeyHeldFor: bbsKeyHeldFor,

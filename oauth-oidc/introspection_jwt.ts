@@ -484,17 +484,23 @@ class IntrospectionJwt {
     // A key marked for encryption if there is one, otherwise the first key of
     // the right type — `use` is optional, and a client that published one key
     // for both purposes has still told us which key it holds.
-    const wantEc = alg.indexOf('ECDH') === 0;
+    //
+    // WHICH KEY FITS IS `common/crypto.js`'s ANSWER (#82): by `kty` for
+    // RSA-OAEP and ECDH-ES as before, and for ML-KEM and HPKE the whole
+    // check — an AKP key must name exactly this alg, an HPKE EC or OKP key
+    // the curve its suite uses — so a client that published an ML-KEM-768
+    // key and registered ML-KEM-1024 is told so here rather than getting a
+    // JWE its key cannot open.
     const candidates = jwks.keys.filter(function (key) {
       if (!key || (key.use && key.use !== 'enc')) {
         return false;
       }
-      return wantEc ? key.kty === 'EC' : key.kty === 'RSA';
+      return stsCrypto.jweRecipientKeyFits(alg, key);
     });
     if (!candidates.length) {
       log.debug("Leaving IntrospectionJwt.recipientKey(). No usable key.");
       throw new Error('This client registered ' + member + '="' + alg +
-        '", which needs ' + (wantEc ? 'an EC' : 'an RSA') + ' key, and ' +
+        '", which needs ' + stsCrypto.jweRecipientKeyNeed(alg) + ', and ' +
         'its jwks has none that can be used for encryption.');
     }
     log.debug("Leaving IntrospectionJwt.recipientKey(). kid=" +
