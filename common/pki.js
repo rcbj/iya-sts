@@ -7527,6 +7527,27 @@ function adoptGenerationCertificate(id, useCaseId, slot, kid, publicKeyPem) {
   }
   const fresh = Object.assign({}, row);
   fresh.certs = Object.assign({}, row.certs);
+  // THE RECORD THE PLAIN SLOT HELD STAYS KNOWN, as `certify()` keeps the one
+  // it replaces (#185). It may be a later certificate over this same key — a
+  // re-certification after the standby was issued — which
+  // `keepDisplacedCertificate()` leaves where it is, because its kid is the
+  // current one; overwritten with no record, its serial left the issued
+  // register and the realm's responder answered `unknown` for a certificate
+  // it had published (tests/signing_rotation.js J1, in the cluster mode).
+  const displaced = row.certs[plainKey];
+  if (displaced && displaced.serialHex &&
+      pkiMerge.normalSerial(displaced.serialHex) !==
+        pkiMerge.normalSerial(own.serialHex)) {
+    const register = (fresh.issuedKeyPairs || []).slice();
+    const wanted = pkiMerge.normalSerial(displaced.serialHex);
+    if (!register.some(function (one) {
+      return one && pkiMerge.normalSerial(one.serialHex) === wanted;
+    })) {
+      register.push(pkiMerge.displacedRecord(useCaseId + ':' + slot,
+                                             displaced));
+      fresh.issuedKeyPairs = register;
+    }
+  }
   fresh.certs[plainKey] = own;
   saveRow(id, fresh);
   log.debug("Leaving adoptGenerationCertificate(). Adopted.");

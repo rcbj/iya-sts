@@ -440,6 +440,43 @@ function childMain() {
                           lost: lost, before: slotsBefore,
                           after: slotsOf() }));
 
+    // J2. THE SAME, WITHOUT THE RACE. J1 failed only when the plain slot had
+    // been re-certified after its key's standby certificate was issued, and
+    // a later certifyKeySet() then ADOPTED the standby record over it,
+    // dropping the newer serial from the register (the cluster mode on
+    // 74c99421). Here that order is made rather than waited for: a fresh
+    // certificate over the current XML key in the plain slot, then
+    // certifyKeySet(), which adopts the generation slot's record.
+    const xmlKey = keysNow().xmlKey || {};
+    const xmlSpec = function (standby) {
+      return {
+        slot: 'RS256', alg: 'RS256', keyAlg: 'rsa-2048', kid: xmlKey.kid,
+        generationSlot: standby, label: 'XML signing (RS256)',
+        commonName: 'XML signing (RS256)',
+        publicKeyPem: require('crypto').createPublicKey(xmlKey.privateKeyPem)
+          .export({ type: 'spki', format: 'pem' }),
+        keyUsage: ['digitalSignature', 'nonRepudiation', 'keyEncipherment']
+      };
+    };
+    // The standby certificate first, as a `next` key has one before it is
+    // promoted; then a newer one in the plain slot.
+    const standby = await pki.certify(scope, 'xml', xmlSpec(true));
+    note(standby.ok, 'J2 precondition: the current XML key is given a ' +
+         'certificate in its own generation slot',
+         JSON.stringify(standby.errors || ''));
+    const recert = await pki.certify(scope, 'xml', xmlSpec(false));
+    const recertSerial = recert.ok && recert.record &&
+      recert.record.serialHex;
+    await pki.certifyKeySet(REALM, keysNow());
+    const adopted = pki.certificateFor(scope, 'xml', 'RS256');
+    note(!!recertSerial && !!adopted &&
+         normal(adopted.serialHex) !== normal(recertSerial) &&
+         revocation.issuedHere(scope, 'xml', recertSerial),
+         'J2. a certificate the plain slot held stays known when the ' +
+         'standby record is adopted over it',
+         JSON.stringify({ recertified: recertSerial,
+                          adopted: adopted && adopted.serialHex }));
+
     require('fs').writeFileSync(OUT, JSON.stringify(findings));
     process.exit(0);
   })().catch(function (e) {
