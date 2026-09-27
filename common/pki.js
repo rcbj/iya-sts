@@ -5947,6 +5947,11 @@ async function certify(scopeId, useCaseId, spec) {
         spec.extensions)) : null
     };
   }
+  // A PINNED SIGNER'S LIFECYCLE (#263) rides on its record through every
+  // re-certification — see `pinSigner()`.
+  if (spec.pinnedSigner) {
+    record.pinnedSigner = Object.assign({}, spec.pinnedSigner);
+  }
   if (spec.pinned && spec.privateKeyPem) {
     // THE ONE RECORD SHAPE WITH A PRIVATE KEY IN IT — see the header. An
     // operator pasted this pair in and this service has nowhere else to keep
@@ -7995,6 +8000,12 @@ async function recertifyUseCase(scopeId, useCaseId) {
   const failed = [];
   for (let i = 0; i < held.length; i++) {
     const was = held[i];
+    // A PINNED SIGNER WITH THE OPERATOR'S OWN CERTIFICATE IS NOT OURS TO
+    // RENEW (#263): its x5c is their chain, and a certificate of ours over
+    // their key would change what relying parties pin behind their back.
+    if (was.pinnedSigner && was.pinnedSigner.operatorCertificate) {
+      continue;
+    }
     // **THE PUBLIC KEY COMES FROM THE CERTIFICATE THAT IS BEING REPLACED**,
     // which is what makes this a renewal rather than a regeneration: the
     // subject key is read back out of the old certificate, so the new one is
@@ -8024,6 +8035,11 @@ async function recertifyUseCase(scopeId, useCaseId) {
       altPublicKeyPem: was.altPublicKeyPem || null,
       pinned: was.pinned, privateKeyPem: was.privateKeyPem,
       publicKeyPemStored: was.publicKeyPem,
+      // A pinned signer (#263) is renewed IN ITS OWN SLOT, lifecycle and
+      // all — the plain slot is the generated key's.
+      pinnedSigner: was.pinnedSigner || undefined,
+      kid: was.pinnedSigner ? was.kid : undefined,
+      generationSlot: !!was.pinnedSigner,
       // And a named leaf keeps its names (#230): see `issuedAs` in certify().
       profile: (was.issuedAs && was.issuedAs.profile) || undefined,
       keyUsage: (was.issuedAs && was.issuedAs.keyUsage) || undefined,
@@ -8114,6 +8130,7 @@ async function recertifyOrphanedSlots(scopeId, slots) {
       keyUsage: usages && usages.length ? usages : undefined,
       pinned: was.pinned, privateKeyPem: was.privateKeyPem,
       publicKeyPemStored: was.publicKeyPem,
+      pinnedSigner: was.pinnedSigner || undefined,
       // A named leaf keeps its names (#230): see `issuedAs` in certify().
       profile: (was.issuedAs && was.issuedAs.profile) || undefined,
       extensions: (was.issuedAs && was.issuedAs.extensions) || undefined
@@ -8424,7 +8441,7 @@ async function importCa(scopeId, useCaseId, material) {
 // use case's Issuing CA, which is what somebody who wants their own key under
 // this service's Root is asking for.
 // ---------------------------------------------------------------------------
-async function pinKeyPair(scopeId, useCaseId, slot, material) {
+async function pinKeyPair(scopeId, useCaseId, slot, material, options) {
   log.debug('Entering pinKeyPair(). scope=' + scopeId + ' use=' + useCaseId +
             ' slot=' + slot);
   const uc = useCase(useCaseId);
@@ -8441,6 +8458,17 @@ async function pinKeyPair(scopeId, useCaseId, slot, material) {
                       'as it appears in the certified list (RS256, ' +
                       'ES256:P-256 and so on).'] }, 'STS-PKI-0042');
   }
+  // **A REAL SIGNER WHERE THE REALM ASKED FOR ONE (2026-09-27, #263).** With
+  // `pki.pinnedSigners` on in the scope's realm, a pin into a `jose` or `xml`
+  // slot is a signing key and goes to `pinSigner()`, which never touches the
+  // plain slot — the generated key keeps its certificate and goes on being
+  // published, so what it signed goes on verifying. Everything below this is
+  // the behaviour with the setting off, unchanged.
+  if (PINNED_SIGNER_USE_CASES.indexOf(uc.id) >= 0 &&
+      pinnedSignersOn(scopeId)) {
+    log.debug("Leaving pinKeyPair(). A pinned signer.");
+    return pinSigner(scopeId, uc, String(slot), material, options);
+  }
   // **A SLOT THAT CERTIFIES A KEY THIS REALM SIGNS WITH IS REFUSED (#245).**
   // Nothing here signs with a pinned key — `pinnedKeyFor()` has no reader in
   // the service — so a pin in such a slot changed no signature. What it DID
@@ -8456,10 +8484,12 @@ async function pinKeyPair(scopeId, useCaseId, slot, material) {
     return errorCodes.mark({ ok: false,
              errors: ['The ' + uc.label + ' slot "' + slot + '" certifies ' +
                       'the key this realm signs with (kid ' + occupied.kid +
-                      '). A pinned key pair is not used to sign, so pinning ' +
-                      'it here would only take that key\'s certificate out ' +
-                      'of the published keys. Rotate the key on /admin/keys ' +
-                      'instead.'] }, 'STS-PKI-0206');
+                      '). With pki.pinnedSigners off in this realm a pinned ' +
+                      'key pair is not used to sign, so pinning it here ' +
+                      'would only take that key\'s certificate out of the ' +
+                      'published keys. Rotate the key on /admin/keys ' +
+                      'instead, or turn pki.pinnedSigners on to sign with ' +
+                      'a key of your own.'] }, 'STS-PKI-0206');
   }
   const privateKeyPem = tidyPem((material || {}).privateKeyPem);
   if (!privateKeyPem) {
@@ -8551,6 +8581,714 @@ async function pinKeyPair(scopeId, useCaseId, slot, material) {
                 ' / ' + slot + ', and it was CERTIFIED under this scope\'s ' +
                 uc.label + ' Issuing CA — so it chains to this service\'s ' +
                 'Root exactly as a key this service generated would.' };
+}
+
+// ===========================================================================
+// A PINNED KEY PAIR AS A REAL SIGNER (2026-09-27, #263).
+//
+// Until this, nothing signed with a pinned key: `pinnedKeyFor()` had no
+// reader, and #245 refused the one harmful case (a pin that replaced the
+// published certificate of the key the realm signs with, STS-PKI-0206).
+// rcbj's decision: make it a signer, OFF by default (`pki.pinnedSigners`,
+// per realm), so a new installation still signs with the keys it generates
+// and needs no step.
+//
+// **THE RECORD IS A GENERATION SLOT OF ITS OWN, NEVER THE PLAIN SLOT.** A
+// pinned signer lives at `slotKey(useCase, slot, kid)` — `jose:ES256:P-256@
+// sts-pinned-…` — beside the generated key's plain slot, which it never
+// touches. So the generated key keeps its certificate and stays PUBLISHED
+// while the pin signs: every token it signed before the pin verifies, and an
+// unpin makes it the signer again at once with nothing new to publish. The
+// slot is the `certs` map's, so the cluster merge takes it per slot like any
+// other certificate (`pki_merge.js`), and it is sealed with the row under
+// the key-encryption key wherever that outlives the process — the private key
+// included, which is the one custody question a pin raises (`keystore.js`,
+// `writePki()`). Every node reads it from the shared store.
+//
+// **`pinnedSigner` ON THE RECORD CARRIES THE LIFECYCLE**: when it was pinned,
+// when it starts signing (`activatesAt`, `pki.pinnedSignerLeadMinutes` after
+// the pin — #42's rule that a key is published before it signs), and, once
+// unpinned or replaced, `retiredAt` and `retiredUntil` — the grace in which
+// it goes on VERIFYING what it signed, after which `signing.retire` drops it
+// (`dropRetiredPinnedSigners()`). No rotation job touches it: the operator
+// owns its lifecycle, and its certificate's notAfter is its end.
+//
+// **WITH THE OPERATOR'S CERTIFICATE, THE `x5c` IS THE OPERATOR'S CHAIN**:
+// `chainPem` holds what they supplied, leaf first and checked to link, and it
+// need not reach this service's Root. `operatorCertificate` marks it, so a
+// re-certification never replaces it with one of ours (`recertifyUseCase()`,
+// and `pki_merge.js`'s orphanedSlots(), which would otherwise call a chain
+// that is not ours an orphan). Without one, the key is certified here, as a
+// generated key would be, and is renewed with its Issuing CA.
+//
+// **THE SLOT IS AN ALGORITHM**, and the key must be the one it names
+// (STS-PKI-0207): an RSA key of at least 2048 bits for RS256 (every RS* and
+// PS* signature), the slot's curve for ES* and EdDSA, and the slot's own
+// parameter set for ML-DSA and SLH-DSA — the post-quantum keys `pq_jose.js`
+// signs with. A signer-group slot (#68), a composite, and an xml slot other
+// than RS256 are refused (STS-PKI-0208): a group key is one half of a hybrid
+// certificate, and the composites' private-key encodings are not the ones
+// `pq_jose.js` signs with.
+// ===========================================================================
+const PINNED_SIGNER_USE_CASES = ['jose', 'xml'];
+const PINNED_KID_PREFIX = 'sts-pinned-';
+const PINNED_CURVE_SLOTS = {
+  'ES256:P-256': { type: 'ec', curve: 'prime256v1', alg: 'ES256',
+                   crv: 'P-256' },
+  'ES384:P-384': { type: 'ec', curve: 'secp384r1', alg: 'ES384',
+                   crv: 'P-384' },
+  'ES512:P-521': { type: 'ec', curve: 'secp521r1', alg: 'ES512',
+                   crv: 'P-521' },
+  'ES256K:secp256k1': { type: 'ec', curve: 'secp256k1', alg: 'ES256K',
+                        crv: 'secp256k1' },
+  'EdDSA:Ed25519': { type: 'ed25519', alg: 'EdDSA', crv: 'Ed25519' },
+  'EdDSA:Ed448': { type: 'ed448', alg: 'EdDSA', crv: 'Ed448' }
+};
+const PINNED_PQ_SLOTS = ['ML-DSA-44', 'ML-DSA-65', 'ML-DSA-87',
+                         'SLH-DSA-SHA2-128s', 'SLH-DSA-SHAKE-128s'];
+const PINNED_RSA_MIN_BITS = 2048;
+
+// Is the setting on in the realm this scope names? Read INSIDE that realm,
+// because the console may act on a realm other than the one the request
+// arrived in (`SCOPED_ACTIONS`). The process branch signs nothing.
+function pinnedSignersOn(scopeId) {
+  log.debug("Entering pinnedSignersOn().");
+  if (scopeKindOf(scopeId) === 'process') {
+    log.debug("Leaving pinnedSignersOn(). The process branch.");
+    return false;
+  }
+  const realm = realms.get(realmIdOf(scopeId));
+  if (!realm) {
+    log.debug("Leaving pinnedSignersOn(). No such realm.");
+    return false;
+  }
+  const on = !!realms.run(realm, function () {
+    return config.value('pki.pinnedSigners');
+  });
+  log.debug("Leaving pinnedSignersOn(). " + on);
+  return on;
+}
+
+// What a slot needs of a pinned key, or a refusal (STS-PKI-0208).
+function pinnedSlotSpec(useCaseId, slot) {
+  log.debug("Entering pinnedSlotSpec(). " + useCaseId + ':' + slot);
+  if (slot === 'RS256') {
+    log.debug("Leaving pinnedSlotSpec(). RSA.");
+    return { kind: 'rsa', alg: 'RS256', crv: '' };
+  }
+  if (useCaseId === 'jose' && PINNED_CURVE_SLOTS[slot]) {
+    const c = PINNED_CURVE_SLOTS[slot];
+    log.debug("Leaving pinnedSlotSpec(). A curve.");
+    return { kind: 'curve', alg: c.alg, crv: c.crv, type: c.type,
+             curve: c.curve || '' };
+  }
+  if (useCaseId === 'jose' && PINNED_PQ_SLOTS.indexOf(slot) >= 0) {
+    log.debug("Leaving pinnedSlotSpec(). Post-quantum.");
+    return { kind: 'pq', alg: slot, crv: '' };
+  }
+  log.debug("Leaving pinnedSlotSpec(). Not a pinnable signer slot.");
+  return errorCodes.mark({ ok: false,
+           errors: ['"' + slot + '" is not a ' + useCaseId + ' slot a pinned ' +
+                    'key can sign from. ' + (useCaseId === 'xml'
+                      ? 'XML is signed with the RS256 slot\'s RSA key.'
+                      : 'The slots are RS256, ' +
+                        Object.keys(PINNED_CURVE_SLOTS).join(', ') + ', ' +
+                        PINNED_PQ_SLOTS.join(', ') + '. A signer-group ' +
+                        'slot is one half of a hybrid certificate and a ' +
+                        'composite\'s private key is not in the encoding ' +
+                        'its signer takes, so neither can be pinned.')] },
+                         'STS-PKI-0208');
+}
+
+// Read the supplied private key as the slot's kind of key. Answers
+// `{ ok, publicKeyPem, spkiDer }` or a refusal (STS-PKI-0039 unreadable,
+// STS-PKI-0207 the wrong kind).
+function readPinnedKey(spec, slot, privateKeyPem) {
+  log.debug("Entering readPinnedKey(). " + slot);
+  const wrong = function (why) {
+    log.debug("Entering wrong().");
+    log.debug("Leaving wrong().");
+    return errorCodes.mark({ ok: false,
+             errors: ['That key cannot sign from the "' + slot + '" slot: ' +
+                      why] }, 'STS-PKI-0207');
+  };
+  if (spec.kind === 'pq') {
+    let parsed = null;
+    try {
+      parsed = pqcX509.decodePkcs8(pemToDer(privateKeyPem));
+    } catch (e) {
+      log.debug("Caught in readPinnedKey(): " + ((e && e.message) || e));
+      log.debug("Leaving readPinnedKey(). Unreadable post-quantum key.");
+      return errorCodes.mark({ ok: false,
+               errors: ['That private key could not be read: ' +
+                        e.message] }, 'STS-PKI-0039');
+    }
+    if (!parsed) {
+      log.debug("Leaving readPinnedKey(). Not a post-quantum key.");
+      return wrong('it is not a post-quantum key, and the slot is ' + slot +
+                   '.');
+    }
+    if (parsed.alg !== spec.alg) {
+      log.debug("Leaving readPinnedKey(). Another parameter set.");
+      return wrong('it is a ' + parsed.alg + ' key, and the slot is ' +
+                   spec.alg + '.');
+    }
+    if (!parsed.priv) {
+      log.debug("Leaving readPinnedKey(). No seed.");
+      return wrong('it carries only the expanded ' + parsed.alg + ' key, ' +
+                   'and the signer here takes the 32-byte seed (RFC 9881 ' +
+                   'section 6\'s seed or both form).');
+    }
+    const pub = pqcX509.publicFromPrivate(parsed.alg, parsed.priv);
+    const publicKeyPem = pqcX509.publicPem(parsed.alg, pub);
+    log.debug("Leaving readPinnedKey(). " + parsed.alg + ".");
+    return { ok: true, publicKeyPem: publicKeyPem,
+             spkiDer: pemToDer(publicKeyPem) };
+  }
+  let key;
+  try {
+    key = nodeCrypto.createPrivateKey(privateKeyPem);
+  } catch (e) {
+    log.debug("Caught in readPinnedKey(): " + ((e && e.message) || e));
+    log.debug("Leaving readPinnedKey(). Unreadable.");
+    return errorCodes.mark({ ok: false,
+             errors: ['That private key could not be read: ' + e.message] },
+                           'STS-PKI-0039');
+  }
+  const type = key.asymmetricKeyType;
+  const details = /** @type {any} */ (key.asymmetricKeyDetails || {});
+  if (spec.kind === 'rsa') {
+    if (type !== 'rsa') {
+      log.debug("Leaving readPinnedKey(). Not RSA.");
+      return wrong('it is a' + (type === 'ec' ? 'n ' : ' ') + type +
+                   ' key, and RS256 signs with an RSA key (rsaEncryption; ' +
+                   'an RSA-PSS-only key cannot sign RS256).');
+    }
+    if (Number(details.modulusLength) < PINNED_RSA_MIN_BITS) {
+      log.debug("Leaving readPinnedKey(). Too small.");
+      return wrong('it is ' + details.modulusLength + ' bits, and an RSA ' +
+                   'signing key here is at least ' + PINNED_RSA_MIN_BITS +
+                   ' (RFC 7518 section 3.3).');
+    }
+  } else if (type !== spec.type ||
+             (spec.type === 'ec' && details.namedCurve !== spec.curve)) {
+    log.debug("Leaving readPinnedKey(). The wrong curve.");
+    return wrong('it is a' + (type === 'ec' ? 'n ' : ' ') + type + ' key' +
+                 (details.namedCurve ? ' on ' + details.namedCurve : '') +
+                 ', and the slot needs ' + spec.alg + ' on ' + spec.crv +
+                 '.');
+  }
+  const publicKey = nodeCrypto.createPublicKey(key);
+  log.debug("Leaving readPinnedKey(). " + type + ".");
+  return { ok: true,
+           publicKeyPem: String(publicKey.export({ type: 'spki',
+                                                   format: 'pem' })),
+           spkiDer: publicKey.export({ type: 'spki', format: 'der' }) };
+}
+
+// The internal `kid` of a pinned key: derived from its SubjectPublicKeyInfo,
+// for `makeStsKeys()`'s reason — a name derived from the key cannot name two
+// keys. `keys.kidFormat` applies on the way out, as for every key here
+// (`helpers.publishedKidFor()`).
+function pinnedKidOf(spkiDer) {
+  log.debug("Entering pinnedKidOf().");
+  log.debug("Leaving pinnedKidOf().");
+  return PINNED_KID_PREFIX + nodeCrypto.createHash('sha256')
+    .update(spkiDer).digest('hex').slice(0, 12);
+}
+
+// The operator's certificate and chain, checked: the certificate holds the
+// key, is valid NOW, and each certificate of the chain issued the one before.
+// Answers `{ ok, chainPem, cert }` or a refusal.
+function checkOperatorCertificate(certificatePem, chainText, spkiDer, nowMs) {
+  log.debug("Entering checkOperatorCertificate().");
+  let cert;
+  try {
+    cert = new nodeCrypto.X509Certificate(certificatePem);
+  } catch (e) {
+    log.debug("Caught in checkOperatorCertificate(): " +
+              ((e && e.message) || e));
+    log.debug("Leaving checkOperatorCertificate(). Unreadable.");
+    return errorCodes.mark({ ok: false,
+             errors: ['That certificate could not be read: ' + e.message] },
+                           'STS-PKI-0038');
+  }
+  let held = null;
+  try {
+    held = certificateSpkiDer(certificatePem);
+  } catch (e) {
+    log.debug("Caught in checkOperatorCertificate(): " +
+              ((e && e.message) || e));
+    held = null;
+  }
+  if (!held || !Buffer.from(held).equals(Buffer.from(spkiDer))) {
+    log.debug("Leaving checkOperatorCertificate(). Another key.");
+    return errorCodes.mark({ ok: false,
+             errors: ['That private key does not belong to that ' +
+                      'certificate.'] }, 'STS-PKI-0040');
+  }
+  const from = new Date(cert.validFrom).getTime();
+  const to = new Date(cert.validTo).getTime();
+  if (!(from <= nowMs && nowMs < to)) {
+    log.debug("Leaving checkOperatorCertificate(). Not valid now.");
+    return errorCodes.mark({ ok: false,
+             errors: ['That certificate is valid from ' + cert.validFrom +
+                      ' to ' + cert.validTo + ', so it is not valid now, ' +
+                      'and a relying party would refuse everything it ' +
+                      'signed.'] }, 'STS-PKI-0210');
+  }
+  const pems = String(chainText || '')
+    .match(/-----BEGIN CERTIFICATE-----[\s\S]*?-----END CERTIFICATE-----/g) ||
+    [];
+  const chain = [];
+  let below = cert;
+  for (let i = 0; i < pems.length; i++) {
+    let one;
+    try {
+      one = new nodeCrypto.X509Certificate(pems[i]);
+    } catch (e) {
+      log.debug("Caught in checkOperatorCertificate(): " +
+                ((e && e.message) || e));
+      log.debug("Leaving checkOperatorCertificate(). Unreadable chain.");
+      return errorCodes.mark({ ok: false,
+               errors: ['Certificate ' + (i + 1) + ' of the chain could not ' +
+                        'be read: ' + e.message] }, 'STS-PKI-0209');
+    }
+    let signed = false;
+    try {
+      signed = below.checkIssued(one) && below.verify(one.publicKey);
+    } catch (e) {
+      // A post-quantum issuer node cannot read: the names must still link.
+      log.debug("Caught in checkOperatorCertificate(): " +
+                ((e && e.message) || e));
+      signed = below.checkIssued(one);
+    }
+    if (!signed) {
+      log.debug("Leaving checkOperatorCertificate(). A broken link.");
+      return errorCodes.mark({ ok: false,
+               errors: ['Certificate ' + (i + 1) + ' of the chain (' +
+                        one.subject.replace(/\n/g, ', ') + ') did not ' +
+                        'issue the certificate before it (' +
+                        below.subject.replace(/\n/g, ', ') + '). The chain ' +
+                        'is published leaf first as the key\'s x5c, so it ' +
+                        'has to link.'] }, 'STS-PKI-0209');
+    }
+    chain.push(tidyPem(pems[i]));
+    below = one;
+  }
+  log.debug("Leaving checkOperatorCertificate(). " + chain.length +
+            " chain certificate(s).");
+  return { ok: true, cert: cert, chainPem: chain };
+}
+
+// Every pinned-signer record of a scope, with its storage key. Internal.
+function pinnedSignerRecords(scopeId) {
+  log.debug("Entering pinnedSignerRecords().");
+  const row = rawRowFor(scopeId);
+  const certs = (row && row.certs) || {};
+  const out = Object.keys(certs).filter(function (key) {
+    return !!(certs[key] && certs[key].pinned && certs[key].pinnedSigner &&
+              certs[key].kid);
+  }).map(function (key) {
+    return { key: key, record: certs[key] };
+  });
+  log.debug("Leaving pinnedSignerRecords(). " + out.length + ".");
+  return out;
+}
+
+// A pinned signer's role at `nowMs`: `pending` (published, not yet signing),
+// `active`, or `retired` (verifying through its grace).
+function pinnedRoleOf(meta, nowMs) {
+  log.debug("Entering pinnedRoleOf().");
+  if (Number(meta.retiredAt) > 0) {
+    log.debug("Leaving pinnedRoleOf(). Retired.");
+    return 'retired';
+  }
+  log.debug("Leaving pinnedRoleOf().");
+  return Number(meta.activatesAt) > nowMs ? 'pending' : 'active';
+}
+
+// ---------------------------------------------------------------------------
+// THE PINNED SIGNERS OF A SCOPE, as views with NO private key: every one still
+// published — pending, active, and retired within its grace — for the JWKS,
+// the metadata, the verifiers and the console. `nowMs` is for tests.
+// ---------------------------------------------------------------------------
+function pinnedSignersFor(scopeId, nowMs) {
+  log.debug("Entering pinnedSignersFor().");
+  const now = Number(nowMs) || Date.now();
+  const out = [];
+  pinnedSignerRecords(realmIdOf(scopeId)).forEach(function (one) {
+    const r = one.record;
+    const meta = r.pinnedSigner;
+    const role = pinnedRoleOf(meta, now);
+    if (role === 'retired' && Number(meta.retiredUntil) <= now) {
+      return;
+    }
+    const notAfterMs = new Date(r.notAfter).getTime();
+    out.push({
+      useCase: r.useCase, slot: r.slot, unit: r.useCase + ':' + r.slot,
+      kid: r.kid, alg: meta.alg, crv: meta.crv || '', kind: meta.kind,
+      role: role,
+      pinnedAt: new Date(Number(meta.pinnedAt) || 0).toISOString(),
+      activatesAt: new Date(Number(meta.activatesAt) || 0).toISOString(),
+      retiredAt: Number(meta.retiredAt) > 0
+        ? new Date(Number(meta.retiredAt)).toISOString() : '',
+      retiredUntil: Number(meta.retiredUntil) > 0
+        ? new Date(Number(meta.retiredUntil)).toISOString() : '',
+      operatorCertificate: !!meta.operatorCertificate,
+      subject: r.subject, serialHex: r.serialHex, notAfter: r.notAfter,
+      expired: notAfterMs <= now,
+      daysLeft: Math.floor((notAfterMs - now) / 86400000),
+      thumbprint: r.thumbprint,
+      certificatePem: r.certificatePem,
+      chainPem: (r.chainPem || []).slice(),
+      publicKeyPem: r.publicKeyPem,
+      publicJwk: pinnedPublicJwk(meta, r.kid, r.publicKeyPem)
+    });
+  });
+  log.debug("Leaving pinnedSignersFor(). " + out.length + ".");
+  return out;
+}
+
+// A pinned key's public JWK, `kid` and `use` set: an AKP JWK (RFC 9964) for a
+// post-quantum key, node's export for the rest. RSA carries no `alg`, for
+// the reason the generated RSA key's JWKS entry has none — it signs every
+// RS* and PS* algorithm.
+function pinnedPublicJwk(meta, kid, publicKeyPem) {
+  log.debug("Entering pinnedPublicJwk(). " + kid);
+  try {
+    if (meta.kind === 'pq') {
+      const spki = pqcX509.decodeSpki(pemToDer(publicKeyPem));
+      log.debug("Leaving pinnedPublicJwk(). AKP.");
+      return { kty: 'AKP', alg: meta.alg, use: 'sig', kid: kid,
+               pub: Buffer.from(spki.pub).toString('base64url') };
+    }
+    const jwk = /** @type {any} */ (nodeCrypto.createPublicKey(publicKeyPem)
+      .export({ format: 'jwk' }));
+    jwk.kid = kid;
+    jwk.use = 'sig';
+    if (meta.kind !== 'rsa') {
+      jwk.alg = meta.alg;
+    }
+    log.debug("Leaving pinnedPublicJwk().");
+    return jwk;
+  } catch (e) {
+    log.debug("Caught in pinnedPublicJwk(): " + ((e && e.message) || e));
+    log.debug("Leaving pinnedPublicJwk(). Unreadable.");
+    return null;
+  }
+}
+
+// The pinned signer that SIGNS for a slot now, or null: on only where the
+// realm's setting is, and only once its publication lead has passed.
+function activePinnedSigner(scopeId, useCaseId, slot, nowMs) {
+  log.debug("Entering activePinnedSigner(). " + useCaseId + ':' + slot);
+  if (!pinnedSignersOn(scopeId)) {
+    log.debug("Leaving activePinnedSigner(). Off in this realm.");
+    return null;
+  }
+  const found = pinnedSignersFor(scopeId, nowMs).filter(function (one) {
+    return one.useCase === useCaseId && one.slot === String(slot) &&
+           one.role === 'active';
+  })[0] || null;
+  log.debug("Leaving activePinnedSigner(). " + (found ? found.kid : 'None.'));
+  return found;
+}
+
+// The SIGNING half of a pinned signer, read from the row each time it is
+// asked for rather than cached: a KeyObject for a classical key, and the
+// seed or raw secret `pq_jose.js` signs with for a post-quantum one. Parsed
+// per signature — an RSA parse is about half a millisecond, which a realm
+// that chose to pin pays, and a copy held here would be a second place a
+// decrypted key outlives the use it was read for (`keystore.js`, WHAT IS
+// RESIDENT). Null where the record has no key or it will not parse.
+function pinnedSigningKey(scopeId, useCaseId, slot, kid) {
+  log.debug("Entering pinnedSigningKey(). " + useCaseId + ':' + slot);
+  const found = certificateFor(realmIdOf(scopeId), useCaseId, slot, kid);
+  if (!found || !found.pinned || !found.pinnedSigner || !found.privateKeyPem) {
+    log.debug("Leaving pinnedSigningKey(). None.");
+    return null;
+  }
+  try {
+    if (found.pinnedSigner.kind === 'pq') {
+      const parsed = pqcX509.decodePkcs8(pemToDer(found.privateKeyPem));
+      log.debug("Leaving pinnedSigningKey(). Post-quantum.");
+      return parsed && parsed.priv ? parsed.priv : null;
+    }
+    log.debug("Leaving pinnedSigningKey(). Classical.");
+    return nodeCrypto.createPrivateKey(found.privateKeyPem);
+  } catch (e) {
+    log.error(errorCodes.tag('STS-PKI-0214') + 'pki: the pinned ' +
+              useCaseId + ' key ' + kid + ' for "' + slot + '" could not be ' +
+              'read: ' + e.message);
+    log.debug("Leaving pinnedSigningKey(). Unreadable.");
+    return null;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// PIN ONE — `pinKeyPair()`'s path when the realm's setting is on. `options`:
+// `graceMs` (how long a pin this REPLACES goes on verifying), `leadMs` (the
+// publication lead; the realm's `pki.pinnedSignerLeadMinutes` otherwise),
+// `nowMs`. Answers `{ ok, why, signer: { unit, kid, activatesAt, replaced } }`.
+// ---------------------------------------------------------------------------
+async function pinSigner(scopeId, uc, slot, material, options) {
+  log.debug('Entering pinSigner(). ' + uc.id + ':' + slot);
+  const o = options || {};
+  const id = realmIdOf(scopeId);
+  const now = Number(o.nowMs) || Date.now();
+  const spec = pinnedSlotSpec(uc.id, slot);
+  if (!spec.kind) {
+    log.debug("Leaving pinSigner(). Not a signer slot.");
+    return spec;
+  }
+  const privateKeyPem = tidyPem((material || {}).privateKeyPem);
+  if (!privateKeyPem) {
+    log.debug("Leaving pinSigner(). No key.");
+    return errorCodes.mark({ ok: false, errors: ['A private key is needed.'] },
+                           'STS-PKI-0043');
+  }
+  const read = readPinnedKey(spec, slot, privateKeyPem);
+  if (!read.ok) {
+    log.debug("Leaving pinSigner(). The key was refused.");
+    return read;
+  }
+  const kid = pinnedKidOf(read.spkiDer);
+  let leadMs = Number(o.leadMs);
+  if (!(leadMs >= 0)) {
+    const realm = realms.get(id);
+    leadMs = Number(realms.run(realm, function () {
+      return config.value('pki.pinnedSignerLeadMinutes');
+    })) * 60000;
+  }
+  const meta = { alg: spec.alg, crv: spec.crv, kind: spec.kind,
+                 pinnedAt: now, activatesAt: now + leadMs,
+                 retiredAt: 0, retiredUntil: 0,
+                 operatorCertificate: false };
+  // THE SAME KEY PINNED AGAIN is not a new signer: refused rather than
+  // written, so its lifecycle is not reset behind the operator's back.
+  const already = pinnedSignerRecords(id).filter(function (one) {
+    return one.record.useCase === uc.id && one.record.slot === slot &&
+           one.record.kid === kid &&
+           pinnedRoleOf(one.record.pinnedSigner, now) !== 'retired';
+  })[0];
+  if (already) {
+    log.debug("Leaving pinSigner(). Already pinned.");
+    return { ok: true, unchanged: true,
+             why: 'That key is already pinned for ' + uc.label + ' / ' +
+                  slot + ' (kid ' + kid + '); nothing changed.',
+             signer: { unit: uc.id + ':' + slot, kid: kid,
+                       activatesAt: new Date(Number(
+                         already.record.pinnedSigner.activatesAt))
+                         .toISOString(), replaced: '' } };
+  }
+  const certificatePem = tidyPem((material || {}).certificatePem);
+  if (certificatePem) {
+    const checked = checkOperatorCertificate(certificatePem,
+                                             (material || {}).chainPem,
+                                             read.spkiDer, now);
+    if (!checked.ok) {
+      log.debug("Leaving pinSigner(). The certificate was refused.");
+      return checked;
+    }
+    meta.operatorCertificate = true;
+    const row = rawRowFor(id) || {};
+    row.certs = Object.assign({}, row.certs || {});
+    row.certs[slotKey(uc.id, slot, kid)] = {
+      slot: slot, useCase: uc.id, scope: id,
+      label: 'your ' + slot + ' signing key', alg: spec.alg,
+      keyAlg: '', signatureAlg: '',
+      subject: checked.cert.subject.replace(/\n/g, ', '),
+      serialHex: checked.cert.serialNumber,
+      notBefore: new Date(checked.cert.validFrom).toISOString(),
+      notAfter: new Date(checked.cert.validTo).toISOString(),
+      certificatePem: certificatePem,
+      chainPem: checked.chainPem,
+      thumbprint: thumbprintOf(certificatePem),
+      subjectPublicKeyPem: read.publicKeyPem,
+      subjectKeyFingerprint: thumbprintOf(read.publicKeyPem),
+      kid: kid,
+      pinned: true,
+      pinnedSigner: meta,
+      privateKeyPem: privateKeyPem,
+      publicKeyPem: read.publicKeyPem,
+      createdAt: now
+    };
+    saveRow(id, row);
+  } else {
+    const made = await certify(id, uc.id, {
+      slot: slot, alg: spec.alg,
+      label: 'your ' + slot + ' signing key',
+      commonName: uc.label + ' (' + slot + ', pinned signing key)',
+      publicKeyPem: read.publicKeyPem,
+      kid: kid, generationSlot: true,
+      pinned: true, privateKeyPem: privateKeyPem,
+      publicKeyPemStored: read.publicKeyPem,
+      pinnedSigner: meta
+    });
+    if (!made.ok) {
+      log.debug("Leaving pinSigner(). The certification failed.");
+      return made;
+    }
+  }
+  // THE PIN IT REPLACES, if there was one, RETIRES: it goes on verifying
+  // what it signed through the grace the caller computed for the unit.
+  const replaced = retirePinnedSigners(id, uc.id, slot, now,
+                                       Number(o.graceMs) || 0, kid);
+  const activates = new Date(meta.activatesAt).toISOString();
+  log.warn('pki: a key pair supplied by an operator is now the ' + uc.label +
+           ' SIGNING key for "' + slot + '" in "' + (id || 'default') +
+           '" (kid ' + kid + '), published now and signing from ' +
+           activates + '. Its lifecycle is the operator\'s: it is not ' +
+           'rotated, and it ends when its certificate does (' +
+           (rawRowFor(id).certs[slotKey(uc.id, slot, kid)] || {}).notAfter +
+           ').');
+  log.debug('Leaving pinSigner(). Pinned ' + kid + '.');
+  return { ok: true,
+           why: 'That key pair is now this realm\'s ' + uc.label + ' ' +
+                'signing key for ' + slot + ' (kid ' + kid + '). It is ' +
+                'published from now and signs from ' + activates + '. ' +
+                (meta.operatorCertificate
+                  ? 'Its x5c is the certificate and chain you supplied, ' +
+                    'which need not chain to this service\'s Root. '
+                  : 'Its certificate was issued under this realm\'s ' +
+                    uc.label + ' Issuing CA. ') +
+                '**ITS LIFECYCLE IS YOURS**: it is never rotated, and ' +
+                'relying parties refuse what it signs once its ' +
+                'certificate expires. Unpin it to sign with the ' +
+                'generated key again.',
+           signer: { unit: uc.id + ':' + slot, kid: kid,
+                     activatesAt: activates,
+                     replaced: replaced.length ? replaced[0] : '' } };
+}
+
+// Retire every live pinned signer of a slot but `keepKid`: it stops signing
+// and verifies until `now + graceMs`. Answers the kids retired.
+function retirePinnedSigners(scopeId, useCaseId, slot, now, graceMs, keepKid) {
+  log.debug("Entering retirePinnedSigners(). " + useCaseId + ':' + slot);
+  const id = realmIdOf(scopeId);
+  const live = pinnedSignerRecords(id).filter(function (one) {
+    return one.record.useCase === useCaseId && one.record.slot === slot &&
+           one.record.kid !== keepKid &&
+           pinnedRoleOf(one.record.pinnedSigner, now) !== 'retired';
+  });
+  if (!live.length) {
+    log.debug("Leaving retirePinnedSigners(). None.");
+    return [];
+  }
+  const row = rawRowFor(id);
+  const fresh = Object.assign({}, row);
+  fresh.certs = Object.assign({}, row.certs);
+  const kids = [];
+  live.forEach(function (one) {
+    const meta = Object.assign({}, one.record.pinnedSigner);
+    // A pin that never signed (still in its lead) needs no grace.
+    const signed = Number(meta.activatesAt) <= now;
+    meta.retiredAt = now;
+    meta.retiredUntil = now + (signed ? Math.max(0, graceMs) : 0);
+    fresh.certs[one.key] = Object.assign({}, one.record,
+                                         { pinnedSigner: meta });
+    kids.push(one.record.kid);
+  });
+  saveRow(id, fresh);
+  log.debug("Leaving retirePinnedSigners(). " + kids.length + ".");
+  return kids;
+}
+
+// ---------------------------------------------------------------------------
+// UNPIN — the generated key signs again at once (it was published all along),
+// and the pinned key retires through `options.graceMs` so what it signed goes
+// on verifying. A slot holding an old-style pin (made with the setting off,
+// in a slot nothing signs from) is simply forgotten, as before. Answers
+// `{ ok, why, unpinned: [kid], signed }` or STS-PKI-0211.
+// ---------------------------------------------------------------------------
+function unpinKeyPair(scopeId, useCaseId, slot, options) {
+  log.debug('Entering unpinKeyPair(). ' + useCaseId + ':' + slot);
+  const o = options || {};
+  const id = realmIdOf(scopeId);
+  const now = Number(o.nowMs) || Date.now();
+  const uc = useCase(useCaseId);
+  if (!uc) {
+    log.debug("Leaving unpinKeyPair(). Unknown use case.");
+    return errorCodes.mark({ ok: false,
+             errors: ['"' + useCaseId + '" is not a use case. They are ' +
+                      USE_CASE_IDS.join(', ') + '.'] }, 'STS-PKI-0022');
+  }
+  const live = pinnedSignerRecords(id).filter(function (one) {
+    return one.record.useCase === uc.id && one.record.slot === String(slot) &&
+           pinnedRoleOf(one.record.pinnedSigner, now) !== 'retired';
+  });
+  if (live.length) {
+    const signed = live.some(function (one) {
+      return pinnedRoleOf(one.record.pinnedSigner, now) === 'active';
+    });
+    const kids = retirePinnedSigners(id, uc.id, String(slot), now,
+                                     Number(o.graceMs) || 0, '');
+    log.warn('pki: the pinned ' + uc.label + ' signing key for "' + slot +
+             '" in "' + (id || 'default') + '" (' + kids.join(', ') +
+             ') was unpinned; the key this service generated signs again.');
+    log.debug("Leaving unpinKeyPair(). Unpinned.");
+    return { ok: true, unpinned: kids, signed: signed,
+             why: 'The pinned key (' + kids.join(', ') + ') no longer ' +
+                  'signs; the ' + uc.label + ' key this service generated ' +
+                  'for ' + slot + ' signs again, and it was published all ' +
+                  'along. ' + (signed
+                    ? 'The pinned key stays published, and goes on ' +
+                      'verifying what it signed, until ' +
+                      new Date(now + (Number(o.graceMs) || 0)).toISOString() +
+                      '.'
+                    : 'It had not started signing, so it is gone at once.') };
+  }
+  const plain = certificateFor(id, uc.id, slot);
+  if (plain && plain.pinned && !plain.pinnedSigner) {
+    const gone = forgetCertificate(id, uc.id, slot);
+    log.debug("Leaving unpinKeyPair(). An old-style pin forgotten.");
+    return gone.ok
+      ? { ok: true, unpinned: [], signed: false,
+          why: 'The key pair pinned in ' + uc.label + ' / ' + slot +
+               ' was removed. Nothing signed with it.' }
+      : gone;
+  }
+  log.debug("Leaving unpinKeyPair(). Nothing pinned.");
+  return errorCodes.mark({ ok: false,
+           errors: ['Nothing is pinned in the ' + uc.label + ' slot "' +
+                    slot + '".'] }, 'STS-PKI-0211');
+}
+
+// Drop every pinned signer whose grace has passed. Answers what was dropped,
+// with its certificate's serial, for `signing.retire` to supersede on its
+// Issuing CA's list where this service issued it.
+function dropRetiredPinnedSigners(scopeId, nowMs) {
+  log.debug("Entering dropRetiredPinnedSigners().");
+  const id = realmIdOf(scopeId);
+  const now = Number(nowMs) || Date.now();
+  const due = pinnedSignerRecords(id).filter(function (one) {
+    const meta = one.record.pinnedSigner;
+    return Number(meta.retiredAt) > 0 && Number(meta.retiredUntil) <= now;
+  });
+  if (!due.length) {
+    log.debug("Leaving dropRetiredPinnedSigners(). None due.");
+    return [];
+  }
+  const row = rawRowFor(id);
+  const fresh = Object.assign({}, row);
+  fresh.certs = Object.assign({}, row.certs);
+  const out = due.map(function (one) {
+    delete fresh.certs[one.key];
+    return { useCase: one.record.useCase, slot: one.record.slot,
+             kid: one.record.kid, serialHex: one.record.serialHex,
+             subject: one.record.subject,
+             operatorCertificate: !!one.record.pinnedSigner
+               .operatorCertificate };
+  });
+  saveRow(id, fresh);
+  log.info('pki: ' + out.length + ' unpinned signing key(s) of "' +
+           (id || 'default') + '" passed their grace and were dropped: ' +
+           out.map(function (one) {
+             return one.kid;
+           }).join(', ') + '.');
+  log.debug("Leaving dropRetiredPinnedSigners(). " + out.length + ".");
+  return out;
 }
 
 // ---------------------------------------------------------------------------
@@ -10777,6 +11515,14 @@ module.exports = {
   recertifyOrphanedSlots: recertifyOrphanedSlots,
   importCa: importCa,
   pinKeyPair: pinKeyPair,
+  // A pinned key pair as a real signer (#263).
+  unpinKeyPair: unpinKeyPair,
+  pinnedSignersOn: pinnedSignersOn,
+  pinnedSignersFor: pinnedSignersFor,
+  activePinnedSigner: activePinnedSigner,
+  pinnedSigningKey: pinnedSigningKey,
+  dropRetiredPinnedSigners: dropRetiredPinnedSigners,
+  PINNED_SIGNER_USE_CASES: PINNED_SIGNER_USE_CASES,
   certificatesFor: certificatesFor,
   issuedKeyPairsFor: issuedKeyPairsFor,
   certificateFor: certificateFor,

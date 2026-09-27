@@ -5434,6 +5434,58 @@ const SETTINGS = [
                  'presenting.' },
 
   // ---------------------------------------------------------------------
+  // A PINNED KEY PAIR AS A REAL SIGNER (2026-09-27, #263). rcbj's decision:
+  // OFF by default, so a new installation signs with the keys it generates
+  // and needs no step to work. On, a key an operator pins into a `jose` or
+  // `xml` slot on /admin/pki becomes the realm's signer for that algorithm,
+  // and its LIFECYCLE IS THE OPERATOR'S: it is never rotated, and it expires
+  // when its certificate does. Per realm (runtime), because what a realm
+  // signs with is per realm. The two rows after it are the publication lead
+  // and the expiry warning, read where they are used.
+  // ---------------------------------------------------------------------
+  { key: 'pki.pinnedSigners', group: 'PKI',
+    label: 'Sign with a pinned key pair',
+    env: 'STS_PKI_PINNED_SIGNERS', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'OFF by default. On, a key pair pinned into a jose or xml ' +
+                 'slot on /admin/pki (or POST /admin-api/pki/pin-key) ' +
+                 'becomes the key this realm signs with for that algorithm, ' +
+                 'in place of the one it generated: ID tokens, access ' +
+                 'tokens, logout tokens and SETs for jose; SAML, ' +
+                 'WS-Federation and WS-Trust signatures for xml. **YOU TAKE ' +
+                 'OVER THAT KEY\'S LIFECYCLE**: a pinned key is never ' +
+                 'rotated by signing.rotate, and when its certificate ' +
+                 'expires relying parties refuse what it signs — the ' +
+                 'console and the log warn ahead of that ' +
+                 '(pki.pinnedSignerExpiryWarningDays). Unpin to go back to ' +
+                 'the generated key. Off, a pin into a slot this realm ' +
+                 'signs from is refused (STS-PKI-0206), and signing is ' +
+                 'exactly as without this setting. Turning it off while a ' +
+                 'key is pinned makes the generated key sign again without ' +
+                 'a signing-key-rotated event; unpin first.' },
+  { key: 'pki.pinnedSignerLeadMinutes', group: 'PKI',
+    label: 'Publish a pinned key this long before it signs (minutes)',
+    env: 'STS_PKI_PINNED_SIGNER_LEAD_MINUTES', type: 'int', dflt: 1440,
+    min: 0, max: 43200, runtime: true,
+    description: 'How long a newly pinned signing key is PUBLISHED — in the ' +
+                 'JWKS, the SAML and WS-Federation metadata and ' +
+                 '/crypto/metadata — before it signs anything, so a relying ' +
+                 'party that refreshes its copy at least this often already ' +
+                 'holds it: #42\'s rule for a next key, applied to a pin. ' +
+                 'A day by default. 0 makes a pin sign at once, which a ' +
+                 'relying party holding a cached JWKS will refuse until it ' +
+                 'fetches again.' },
+  { key: 'pki.pinnedSignerExpiryWarningDays', group: 'PKI',
+    label: 'Warn this long before a pinned key\'s certificate expires (days)',
+    env: 'STS_PKI_PINNED_SIGNER_EXPIRY_WARNING_DAYS', type: 'int', dflt: 30,
+    min: 1, max: 365, runtime: true,
+    description: 'How far ahead of its certificate\'s notAfter a pinned ' +
+                 'signing key is reported: on /admin/pki and in the log ' +
+                 '(STS-PKI-0212, once a day, from the signing.retire job). ' +
+                 'An expired one is logged as STS-PKI-0213 and still signs — ' +
+                 'its lifecycle is the operator\'s — until it is unpinned.' },
+
+  // ---------------------------------------------------------------------
   // REVOCATION, CONSULTED (2026-09-12). Seven rows for
   // `common/revocation_status.js`: the policy, the one rule hard-fail did NOT
   // include until #174 (it is `auto` now, and product includes it), and the
