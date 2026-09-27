@@ -5460,9 +5460,9 @@ const SETTINGS = [
                  '(pki.pinnedSignerExpiryWarningDays). Unpin to go back to ' +
                  'the generated key. Off, a pin into a slot this realm ' +
                  'signs from is refused (STS-PKI-0206), and signing is ' +
-                 'exactly as without this setting. Turning it off while a ' +
-                 'key is pinned makes the generated key sign again without ' +
-                 'a signing-key-rotated event; unpin first.' },
+                 'exactly as without this setting. It cannot be turned off ' +
+                 'while a pinned key is live or pending (STS-PKI-0215): ' +
+                 'unpin first, so the change of signer is announced.' },
   { key: 'pki.pinnedSignerLeadMinutes', group: 'PKI',
     label: 'Publish a pinned key this long before it signs (minutes)',
     env: 'STS_PKI_PINNED_SIGNER_LEAD_MINUTES', type: 'int', dflt: 1440,
@@ -15046,9 +15046,72 @@ function replacedBy(key) {
 // write arrives both modules are loaded, and the require is a cache hit that
 // closes no cycle at load.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// A PINNED SIGNER MAY NOT BE DEMOTED BY A SETTING (#263). Turning
+// `pki.pinnedSigners` off while the realm it lands in holds a live or pending
+// pinned signing key would make the generated key sign again with no
+// `signing-key-rotated` — a change of signer nobody announced. So the write is
+// refused here, beside the mode rule, through the same doors that rule is
+// asked at (`checkWrite()`, `realms.js`'s `modeWriteProblems()`), and a CLEAR
+// that would leave the setting off is asked the same question with the value
+// it would fall back to (`clearOverride()` here, `realms.js`'s
+// `clearOverride()` and `update()`). Not at a start or a replicated change: a
+// stored value is applied where it is read, and `pki.js`'s
+// `reportPinsWithSignersOff()` says so with STS-PKI-0216.
+//
+// `pki.js` is read out of `require.cache` rather than required: this module
+// is the leaf everything else stands on, and a process that never loaded the
+// certificate authority holds no pin to protect.
+// ---------------------------------------------------------------------------
+function pinnedSignerWriteProblem(key, parsed) {
+  log.debug("Entering pinnedSignerWriteProblem().");
+  if (key !== 'pki.pinnedSigners' || parsed !== false) {
+    log.debug("Leaving pinnedSignerWriteProblem(). Not turning it off.");
+    return null;
+  }
+  let pki = null;
+  try {
+    const held = require.cache[require.resolve('./pki')];
+    pki = held ? held.exports : null;
+  } catch (e) {
+    log.debug("Caught in pinnedSignerWriteProblem(): " +
+              ((e && e.message) || e));
+    pki = null;
+  }
+  if (!pki || typeof pki.pinsBlockingSignersOff !== 'function') {
+    log.debug("Leaving pinnedSignerWriteProblem(). No certificate authority.");
+    return null;
+  }
+  const realm = realmFor(key);
+  const pins = pki.pinsBlockingSignersOff(realm ? realm.id : DEFAULT_REALM_ID,
+                                          !realm);
+  if (!pins.length) {
+    log.debug("Leaving pinnedSignerWriteProblem(). Nothing pinned.");
+    return null;
+  }
+  log.debug("Leaving pinnedSignerWriteProblem(). Refused.");
+  return '"pki.pinnedSigners" cannot be turned off while a pinned signing ' +
+    'key is live or pending: ' + pins.map(function (one) {
+      return one.unit + ' ' + one.kid + ' (' + one.realm + ' realm, ' +
+        (one.role === 'active' ? 'signing' : 'published, not yet signing') +
+        ')';
+    }).join(', ') + '. Turning it off would make the generated key sign ' +
+    'again with no signing-key-rotated sent. Unpin first — on /admin/pki, ' +
+    'or POST /admin-api/pki/unpin-key — and then turn it off.';
+}
+
 function modeWriteProblem(key, raw) {
   log.debug("Entering modeWriteProblem(). key=" + key);
   const setting = byKey[key];
+  if (key === 'pki.pinnedSigners' && setting &&
+      !TYPES[setting.type].check(raw, setting)) {
+    const pinned = pinnedSignerWriteProblem(key,
+      TYPES[setting.type].parse(raw, setting));
+    if (pinned) {
+      log.debug("Leaving modeWriteProblem(). A pinned signer is live.");
+      return pinned;
+    }
+  }
   // THE CAPTURE TRANSPORT IN PRODUCT (#63): an enum value, not a true value,
   // so it is asked here by name rather than through `onlyWhile`. A captured
   // message keeps its body, and a password reset link on the console is a
@@ -15099,10 +15162,42 @@ function checkWrite(key, raw, forRealm) {
 function checkWriteCode(key, raw, forRealm) {
   log.debug("Entering checkWriteCode(). key=" + key);
   const code = checkOverrideCode(key, raw, forRealm) ||
-    (modeWriteProblem(key, raw)
-      ? (key === 'mail.transport' ? 'STS-MAIL-0003' : 'STS-CORE-0103') : '');
+    modeWriteCode(key, raw);
   log.debug("Leaving checkWriteCode().");
   return code;
+}
+
+// WHICH CODE `modeWriteProblem()` REFUSED FOR, or '' — the half of
+// `checkWriteCode()` the realm doors (`realms.js`) need on its own.
+function modeWriteCode(key, raw) {
+  log.debug("Entering modeWriteCode(). key=" + key);
+  if (!modeWriteProblem(key, raw)) {
+    log.debug("Leaving modeWriteCode(). Allowed.");
+    return '';
+  }
+  log.debug("Leaving modeWriteCode().");
+  return key === 'mail.transport' ? 'STS-MAIL-0003'
+    : key === 'pki.pinnedSigners' ? 'STS-PKI-0215' : 'STS-CORE-0103';
+}
+
+// What `key` would read, here, once the override in `where` is gone — for a
+// clear that must be asked the question a write is (#263). Synchronous, and
+// the override is put back before this returns.
+function valueWithout(where, key) {
+  log.debug("Entering valueWithout(). key=" + key);
+  const had = Object.prototype.hasOwnProperty.call(where, key);
+  const saved = where[key];
+  delete where[key];
+  let after;
+  try {
+    after = value(key);
+  } finally {
+    if (had) {
+      where[key] = saved;
+    }
+  }
+  log.debug("Leaving valueWithout().");
+  return after;
 }
 
 // The runtime overrides, by key, holding the RAW value a caller supplied. Raw
@@ -15768,6 +15863,13 @@ function clearOverride(key) {
       ' to reset; it is already coming from ' + sourceOf(key) + '.'] },
                            'STS-CORE-0007');
   }
+  // A CLEAR THAT WOULD TURN `pki.pinnedSigners` OFF is refused as the write
+  // would be (#263): see pinnedSignerWriteProblem().
+  const pinned = pinnedSignerWriteProblem(key, valueWithout(where, key));
+  if (pinned) {
+    log.debug("Leaving clearOverride(). A pinned signer is live.");
+    return errorCodes.mark({ ok: false, errors: [pinned] }, 'STS-PKI-0215');
+  }
   const shape = claimShapeBefore(key);
   delete where[key];
   applyLogLevel();
@@ -15793,6 +15895,17 @@ function clearAllOverrides() {
   // setting and this is per realm.
   const realm = realmFor('global.logLevel');
   const where = realm ? realm.overrides : overrides;
+  // THE ONE CLEAR THAT MAY BE REFUSED (#263): the whole reset is refused
+  // rather than done around it, for the all-or-nothing rule of a section.
+  if (Object.prototype.hasOwnProperty.call(where, 'pki.pinnedSigners')) {
+    const pinned = pinnedSignerWriteProblem('pki.pinnedSigners',
+      valueWithout(where, 'pki.pinnedSigners'));
+    if (pinned) {
+      log.debug("Leaving clearAllOverrides(). A pinned signer is live.");
+      return errorCodes.mark({ ok: false, errors: [pinned], cleared: [] },
+                             'STS-PKI-0215');
+    }
+  }
   const keys = Object.keys(where);
   keys.forEach(function (key) { delete where[key]; });
   applyLogLevel();
@@ -16410,6 +16523,7 @@ module.exports = {
   checkOverride: checkOverride,
   checkOverrideCode: checkOverrideCode,
   checkWrite: checkWrite,
+  modeWriteCode: modeWriteCode,
   checkWriteCode: checkWriteCode,
   modeWriteProblem: modeWriteProblem,
   REPLACED_SETTINGS: REPLACED_SETTINGS,

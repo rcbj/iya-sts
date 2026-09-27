@@ -507,6 +507,82 @@ function childMain() {
          JSON.stringify(pki.pinnedSignersFor(ON)).indexOf('PRIVATE KEY') < 0,
          'J2. and no public view carries a private key');
 
+    // --- K. the setting cannot be turned off under a live pin -----------------
+    const config = require(ROOT + '/common/config');
+    const kWrite = inRealm(ON, function () {
+      return config.setOverride('pki.pinnedSigners', 'false');
+    });
+    note(!kWrite.ok && codeOf(kWrite) === 'STS-PKI-0215' &&
+         /Unpin first/.test((kWrite.errors || []).join(' ')),
+         'K1. the config-set door refuses pki.pinnedSigners=false while a ' +
+         'pin is live, STS-PKI-0215, and says to unpin first',
+         JSON.stringify(kWrite));
+    note(inRealm(ON, function () {
+           return config.checkWriteCode('pki.pinnedSigners', false) ===
+                    'STS-PKI-0215' &&
+                  !!config.checkWrite('pki.pinnedSigners', false) &&
+                  config.checkWrite('pki.pinnedSigners', true) === null;
+         }),
+         'K2. checkWrite() — what a console section asks before any write — ' +
+         'refuses off and allows on');
+    const kRealmSet = realms.setOverride(ON, 'pki.pinnedSigners', false);
+    note(!kRealmSet.ok && codeOf(kRealmSet) === 'STS-PKI-0215',
+         'K3. the realm-override door refuses it too',
+         JSON.stringify(kRealmSet));
+    const kClear = realms.clearOverride(ON, 'pki.pinnedSigners');
+    note(!kClear.ok && codeOf(kClear) === 'STS-PKI-0215',
+         'K4. and a clear of the realm\'s override, which would fall back to ' +
+         'the default off', JSON.stringify(kClear));
+    const without = Object.assign({}, realms.get(ON).overrides);
+    delete without['pki.pinnedSigners'];
+    const kUpdate = realms.update(ON, { overrides: without });
+    note(!kUpdate.ok && codeOf(kUpdate) === 'STS-PKI-0215',
+         'K5. and an update whose overrides leave it out',
+         JSON.stringify(kUpdate));
+    const kConsoleReset = inRealm(ON, function () {
+      return config.clearOverride('pki.pinnedSigners');
+    });
+    const kResetAll = inRealm(ON, function () {
+      return config.clearAllOverrides();
+    });
+    note(!kConsoleReset.ok && codeOf(kConsoleReset) === 'STS-PKI-0215' &&
+         !kResetAll.ok && codeOf(kResetAll) === 'STS-PKI-0215',
+         'K6. and the console\'s reset and reset-all');
+    const adminActions = require(ROOT + '/admin-core/admin_actions');
+    const kSetMany = await inRealm(ON, function () {
+      return adminActions.configAction({ action: 'set-many',
+                                         'pki.pinnedSigners': 'false' });
+    });
+    note(kSetMany && kSetMany.ok === false &&
+         codeOf(kSetMany) === 'STS-PKI-0215',
+         'K7. and a console section\'s Save (set-many), with the same code',
+         JSON.stringify(kSetMany));
+    note(inRealm(ON, function () {
+           return config.value('pki.pinnedSigners') === true &&
+                  helpers.signJwt({ sub: 'k' }).length > 0 &&
+                  headerOf(helpers.signJwt({ sub: 'k' })).kid === joseKid;
+         }),
+         'K8. nothing changed: the setting is on and the pinned key signs');
+    const FLIP = 'pinned-flip';
+    realms.create({ id: FLIP, name: 'Pinned then off at start',
+                    overrides: { 'pki.pinnedSigners': true,
+                                 'pki.pinnedSignerLeadMinutes': 0 } });
+    await pki.buildScope(FLIP, {});
+    const flipKey = nodeCrypto.generateKeyPairSync('ec',
+      { namedCurve: 'prime256v1' });
+    const flipPin = await pki.pinKeyPair(FLIP, 'jose', 'ES256:P-256',
+      { privateKeyPem: pem(flipKey.privateKey) });
+    // What a start does: the value arrives from outside every door.
+    realms.get(FLIP).overrides['pki.pinnedSigners'] = false;
+    const reported = pki.reportPinsWithSignersOff([FLIP]);
+    note(flipPin.ok && reported === 1 && inRealm(FLIP, function () {
+           return helpers.signingKeyFor('ES256').kid !==
+                  (flipPin.signer && flipPin.signer.kid);
+         }),
+         'K9. a start that finds pins with the setting off says so ' +
+         '(STS-PKI-0216) and signs with the generated key',
+         JSON.stringify({ reported: reported, pin: flipPin.signer }));
+
     // --- H. unpin ---------------------------------------------------------------
     const beforeUnpin = announced.length;
     const unpinned = await inRealm(ON, function () {
@@ -551,6 +627,14 @@ function childMain() {
          kidsOf(await jwksOf(ON)).indexOf(joseKid) < 0,
          'H6. past its grace signing.retire drops it, and it leaves the JWKS',
          JSON.stringify(dropped));
+    ['jose:ML-DSA-65', 'xml:RS256'].forEach(function (unit) {
+      const parts = unit.split(':');
+      pki.unpinKeyPair(ON, parts[0], parts[1]);
+    });
+    const offNow = realms.setOverride(ON, 'pki.pinnedSigners', false);
+    note(offNow.ok,
+         'H7. with nothing live or pending pinned, it can be turned off',
+         JSON.stringify(offNow));
 
     server.close();
     require('fs').writeFileSync(OUT, JSON.stringify(findings));

@@ -1051,8 +1051,13 @@ that realm SIGNS with for that algorithm, in place of the key it generated:
   under the key-encryption key wherever that outlives the process (product
   mode), and every node of a cluster reads it from the shared store. No
   console page or API answer carries it.
-* **Turning the setting off** while a key is pinned makes the generated key
-  sign again with no event; unpin first.
+* **The setting cannot be turned off while a pinned key is live or pending**
+  (`STS-PKI-0215`, on every door: `/admin/config`, a realm's settings,
+  `POST /admin-api/config/set`, `realms/set`, `realms/unset`, a reset): that
+  would change the signer with no `signing-key-rotated`. Unpin first, then
+  turn it off. A start cannot be refused, so if the environment, the
+  appconfig file or a stored override brings it in off over pinned keys, the
+  realm signs with its generated keys and the log says so (`STS-PKI-0216`).
 
 ```bash
 # Sign this realm's RS256 tokens with an RSA key you hold (pki.pinnedSigners on).
@@ -1422,7 +1427,7 @@ never a certificate that exists.
 | `pki.intermediateLifetimeYears` | `STS_PKI_INTERMEDIATE_LIFETIME_YEARS` | `0` | yes | A new Intermediate CA's lifetime; `0` is the profile's ten years, clamped to the Root's expiry. |
 | `pki.issuingLifetimeYears` | `STS_PKI_ISSUING_LIFETIME_YEARS` | `0` | yes | Each new Issuing CA's lifetime; `0` is the profile's five years, clamped to its Intermediate's expiry. |
 | `pki.maxStoredObjects` | `STS_PKI_MAX_STORED_OBJECTS` | `200` | yes | How many objects the Certificate & Key Configuration pane may keep in one realm; a full store refuses the next one rather than discarding the oldest. |
-| `pki.pinnedSigners` | `STS_PKI_PINNED_SIGNERS` | `false` | yes | **Off by default.** On, a key pinned into a `jose` or `xml` slot is the key this realm signs with for that algorithm. **Warning:** you take over its lifecycle — it is never rotated and ends with its certificate. See [above](#a-pinned-key-pair-as-the-realms-signer-off-by-default). |
+| `pki.pinnedSigners` | `STS_PKI_PINNED_SIGNERS` | `false` | yes | **Off by default.** On, a key pinned into a `jose` or `xml` slot is the key this realm signs with for that algorithm. **Warning:** you take over its lifecycle — it is never rotated and ends with its certificate. It cannot be turned off while a pinned key is live or pending (`STS-PKI-0215`): unpin first. See [above](#a-pinned-key-pair-as-the-realms-signer-off-by-default). |
 | `pki.pinnedSignerLeadMinutes` | `STS_PKI_PINNED_SIGNER_LEAD_MINUTES` | `1440` | yes | How long a pinned signing key is published before it signs. `0` signs at once, which a relying party holding a cached JWKS refuses until it fetches again. |
 | `pki.pinnedSignerExpiryWarningDays` | `STS_PKI_PINNED_SIGNER_EXPIRY_WARNING_DAYS` | `30` | yes | How far ahead of a pinned key's certificate expiry `/admin/pki` and the log (`STS-PKI-0212`, `STS-PKI-0213` once expired) warn. |
 

@@ -1058,7 +1058,7 @@ function create(spec) {
     if (modeErrors.length) {
       log.debug("Leaving create(). Refused by the realm's mode.");
       return errorCodes.mark({ ok: false, errors: modeErrors },
-                             'STS-CORE-0103');
+                             errorCodes.codeOf(modeErrors) || 'STS-CORE-0103');
     }
     const kerberos = refusedForKerberos(id, Object.assign(
       seededNames(id, domain), (spec || {}).overrides || {}), {});
@@ -1138,9 +1138,15 @@ function update(id, changes) {
     // of these alone (#171).
     const modeErrors = spec.replicated ? [] :
       modeWriteProblems({ id: realm.id, overrides: {} }, spec.overrides);
-    if (modeErrors.length) {
+    // And an override of pki.pinnedSigners this update takes away (#263).
+    const pinnedErrors = spec.replicated ? [] :
+      pinnedSignerClearProblems(realm, spec.overrides);
+    if (modeErrors.length || pinnedErrors.length) {
       log.debug("Leaving update(). Refused by the realm's mode.");
-      return errorCodes.mark({ ok: false, errors: modeErrors },
+      return errorCodes.mark({ ok: false,
+                               errors: modeErrors.concat(pinnedErrors) },
+                             errorCodes.codeOf(modeErrors) ||
+                             errorCodes.codeOf(pinnedErrors) ||
                              'STS-CORE-0103');
     }
     const kerberos = spec.replicated ? null :
@@ -1280,7 +1286,7 @@ function setOverride(id, key, raw) {
   if (modeProblem.length) {
     log.debug("Leaving setOverride(). Refused by the realm's mode.");
     return errorCodes.mark({ ok: false, errors: modeProblem },
-                           'STS-CORE-0103');
+                           errorCodes.codeOf(modeProblem) || 'STS-CORE-0103');
   }
   const after = Object.assign({}, realm.overrides);
   after[key] = raw;
@@ -1315,6 +1321,12 @@ function clearOverride(id, key) {
   }
   const after = Object.assign({}, realm.overrides);
   delete after[key];
+  const pinned = pinnedSignerClearProblems(realm, after);
+  if (pinned.length) {
+    log.debug("Leaving clearOverride(). A pinned signer is live.");
+    return errorCodes.mark({ ok: false, errors: pinned },
+                           errorCodes.codeOf(pinned) || 'STS-PKI-0215');
+  }
   const kerberos = refusedForKerberos(realm.id, after, realm.overrides);
   if (kerberos) {
     log.debug("Leaving clearOverride(). Refused for its Kerberos settings.");
@@ -1347,10 +1359,42 @@ function modeWriteProblems(realm, overrides) {
       const problem = config.modeWriteProblem(key, overrides[key]);
       if (problem) {
         errors.push(problem);
+        // The code config.js gives the same refusal — STS-CORE-0103 for the
+        // mode, STS-PKI-0215 for a pinned signer (#263), STS-MAIL-0003 for
+        // the capture transport — so a realm door and a process door name
+        // one refusal alike.
+        firstCode(errors, config.modeWriteCode(key, overrides[key]));
       }
     });
   });
   log.debug("Leaving modeWriteProblems(). " + errors.length);
+  return errors;
+}
+
+// A REALM OVERRIDE OF `pki.pinnedSigners` TAKEN AWAY (#263) — a clear, or an
+// update whose overrides no longer carry it — asked what a write of the value
+// it falls back to would be asked, with the realm as it will be ambient. See
+// config.js's pinnedSignerWriteProblem().
+function pinnedSignerClearProblems(realm, after) {
+  log.debug("Entering pinnedSignerClearProblems().");
+  const key = 'pki.pinnedSigners';
+  if (!Object.prototype.hasOwnProperty.call(realm.overrides || {}, key) ||
+      Object.prototype.hasOwnProperty.call(after || {}, key)) {
+    log.debug("Leaving pinnedSignerClearProblems(). Not taken away.");
+    return [];
+  }
+  const candidate = Object.assign({}, realm, { candidate: true,
+    overrides: Object.assign({}, after || {}) });
+  const errors = [];
+  run(candidate, function () {
+    const fallsBackTo = String(config.value(key));
+    const problem = config.modeWriteProblem(key, fallsBackTo);
+    if (problem) {
+      errors.push(problem);
+      firstCode(errors, config.modeWriteCode(key, fallsBackTo));
+    }
+  });
+  log.debug("Leaving pinnedSignerClearProblems(). " + errors.length);
   return errors;
 }
 

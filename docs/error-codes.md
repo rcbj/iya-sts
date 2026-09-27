@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3713** of them, in **39** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3715** of them, in **39** subsystems.
 
 ## Where a code appears
 
@@ -57,7 +57,7 @@ is an ordinary outcome.
 * [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 28
 * [Scheduler (`STS-SCHED`)](#sts-sched) — 16
 * [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 79
-* [Certificate authority (`STS-PKI`)](#sts-pki) — 201
+* [Certificate authority (`STS-PKI`)](#sts-pki) — 203
 * [Certificate enrollment core (`STS-ENROLL`)](#sts-enroll) — 51
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 72
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 26
@@ -690,6 +690,8 @@ Raised from: common/pki.js, common/pki_authoring.ts, common/pki_revocation.js, c
 | `STS-PKI-0212` | A pinned signing key's certificate expires within pki.pinnedSignerExpiryWarningDays; its lifecycle is the operator's (#263). | log only (a warning, once a day) |
 | `STS-PKI-0213` | A pinned signing key's certificate has expired and the key still signs: relying parties that check the x5c or the metadata certificate refuse what it signs until it is unpinned (#263). | log only (an error, once a day) |
 | `STS-PKI-0214` | A pinned signing key could not be read when a signature needed it, so the realm's generated key signed instead (#263). | log only |
+| `STS-PKI-0215` | A write or reset of pki.pinnedSigners was refused: it would turn the setting off in a realm holding a live or pending pinned signing key, which would change the signer with no signing-key-rotated. Unpin first (#263). | console / /admin-api refusal (HTTP 400) |
+| `STS-PKI-0216` | At start, a realm holds pinned signing keys but pki.pinnedSigners is off there (environment, appconfig or a stored override), so it signs with its generated keys (#263). | log only (a warning, at start) |
 
 ## STS-ENROLL
 

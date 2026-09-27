@@ -8950,6 +8950,85 @@ function pinnedSignersFor(scopeId, nowMs) {
   return out;
 }
 
+// ---------------------------------------------------------------------------
+// THE PINS A WRITE OF `pki.pinnedSigners=false` WOULD SILENTLY DEMOTE (#263,
+// the coordinator's follow-up). Turning the setting off while a realm holds a
+// live or pending pin would make the generated key sign again with no
+// `signing-key-rotated`, which is a change of signer nobody announced — so
+// every door that can turn it off REFUSES instead (`config.js`'s
+// `modeWriteProblem()`, STS-PKI-0215), and asks this. `realmId` is the realm
+// the write lands in; `processWide` is a write to the service as a whole,
+// which reaches the default realm and every realm that does not set the
+// setting itself. Only a realm where the setting is ON now counts: writing
+// "off" where it is already off changes no signer. Answers
+// `[{ realm, unit, kid, role }]`.
+// ---------------------------------------------------------------------------
+function pinsBlockingSignersOff(realmId, processWide) {
+  log.debug("Entering pinsBlockingSignersOff(). realm=" + realmId);
+  const ids = [];
+  if (processWide) {
+    realms.list().forEach(function (realm) {
+      const own = Object.prototype.hasOwnProperty.call(realm.overrides || {},
+                                                       'pki.pinnedSigners');
+      if (realm.id === realms.DEFAULT_ID || !own) {
+        ids.push(realm.id === realms.DEFAULT_ID ? '' : realm.id);
+      }
+    });
+  } else {
+    ids.push(realmId === realms.DEFAULT_ID ? '' : String(realmId || ''));
+  }
+  const out = [];
+  ids.forEach(function (id) {
+    if (!pinnedSignersOn(id)) {
+      return;
+    }
+    pinnedSignersFor(id).filter(function (one) {
+      return one.role !== 'retired';
+    }).forEach(function (one) {
+      out.push({ realm: id || realms.DEFAULT_ID, unit: one.unit,
+                 kid: one.kid, role: one.role });
+    });
+  });
+  log.debug("Leaving pinsBlockingSignersOff(). " + out.length + ".");
+  return out;
+}
+
+// AT START, a write cannot be refused: `pki.pinnedSigners` may arrive off from
+// the environment or the appconfig file over a store that holds pins. The
+// realm then signs with its generated keys — pinnedSignersOn() says no — and
+// this says so once per realm, with a code, so the change of signer is at
+// least on the record (STS-PKI-0216). The pins are left where they are: an
+// operator turning the setting back on gets them back.
+function reportPinsWithSignersOff(realmIds) {
+  log.debug("Entering reportPinsWithSignersOff().");
+  let said = 0;
+  (realmIds || []).forEach(function (raw) {
+    const id = String(raw || '');
+    if (scopeKindOf(id) === 'process' || !realms.get(realmIdOf(id)) ||
+        pinnedSignersOn(id)) {
+      return;
+    }
+    const held = pinnedSignersFor(id).filter(function (one) {
+      return one.role !== 'retired';
+    });
+    if (!held.length) {
+      return;
+    }
+    said += 1;
+    log.warn(errorCodes.tag('STS-PKI-0216') + 'pki: the "' +
+             (id || 'default') + '" realm holds ' + held.length +
+             ' pinned signing key(s) (' + held.map(function (one) {
+               return one.unit + ' ' + one.kid;
+             }).join(', ') + ') but pki.pinnedSigners is OFF there at this ' +
+             'start (the environment, the appconfig file or a stored ' +
+             'override), so it signs with its GENERATED keys, and no ' +
+             'signing-key-rotated was sent. Turn pki.pinnedSigners on to sign ' +
+             'with them again, or unpin them on /admin/pki.');
+  });
+  log.debug("Leaving reportPinsWithSignersOff(). " + said + " realm(s).");
+  return said;
+}
+
 // A pinned key's public JWK, `kid` and `use` set: an AKP JWK (RFC 9964) for a
 // post-quantum key, node's export for the rest. RSA carries no `alg`, for
 // the reason the generated RSA key's JWKS entry has none — it signs every
@@ -9460,6 +9539,7 @@ async function start(opts) {
              'built at startup and this service\'s own keys are self-signed ' +
              'until somebody presses Build on /admin/pki. That is what this ' +
              'service did before 2026-09-11.');
+    reportPinsWithSignersOff([''].concat(options.realmIds || []));
     log.debug('Leaving pki.start(). Switched off.');
     return { ok: true, built: false };
   }
@@ -9602,6 +9682,7 @@ async function start(opts) {
               'directory: ' + e.message + '. The HTTP distribution point ' +
               'still answers; the LDAP one does not.');
   }
+  reportPinsWithSignersOff(realmIds);
   log.debug('Leaving pki.start(). ' + branches + ' realm branch(es), ' +
             certified + ' key(s) certified.');
   return { ok: true, built: true, branches: branches, certified: certified };
@@ -11522,6 +11603,8 @@ module.exports = {
   activePinnedSigner: activePinnedSigner,
   pinnedSigningKey: pinnedSigningKey,
   dropRetiredPinnedSigners: dropRetiredPinnedSigners,
+  pinsBlockingSignersOff: pinsBlockingSignersOff,
+  reportPinsWithSignersOff: reportPinsWithSignersOff,
   PINNED_SIGNER_USE_CASES: PINNED_SIGNER_USE_CASES,
   certificatesFor: certificatesFor,
   issuedKeyPairsFor: issuedKeyPairsFor,

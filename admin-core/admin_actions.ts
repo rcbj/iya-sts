@@ -5450,16 +5450,24 @@ class AdminActions {
       // `checkWrite()` since #171, so a value the realm's mode does not allow
       // (a TLS-verification skip in product) is refused here, before any.
       const errors = [];
+      // The first refusal's own code (#263: STS-PKI-0215 for a pinned
+      // signer), as `setOverride()` would have marked it.
+      let firstRefusal = '';
       wanted.forEach(function (key) {
         const problem = config.checkWrite(key, body[key]);
-        if (problem) errors.push(problem);
+        if (problem) {
+          errors.push(problem);
+          firstRefusal = firstRefusal ||
+                         config.checkWriteCode(key, body[key]);
+        }
       });
       if (errors.length) {
         log.debug("Leaving AdminActions.configAction(). set-many refused: " +
                   errors.length +
             " " +
             "problem(s).");
-        return this.refused('STS-ADMIN-0564', { ok: false, errors: errors });
+        return this.refused(firstRefusal || 'STS-ADMIN-0564',
+                            { ok: false, errors: errors });
       }
       const changed = [];
       wanted.forEach(function (key) {
@@ -5499,6 +5507,12 @@ class AdminActions {
 
     if (action === 'reset-all') {
       const result = config.clearAllOverrides();
+      // Refused when the reset would turn pki.pinnedSigners off under a live
+      // pinned signer (#263, STS-PKI-0215).
+      if (!result.ok) {
+        log.debug("Leaving AdminActions.configAction(). reset-all refused.");
+        return this.refusedBy('STS-ADMIN-0564', result);
+      }
       log.debug("Leaving AdminActions.configAction(). reset-all ok.");
       return { ok: true, cleared: result.cleared,
                message: result.cleared.length

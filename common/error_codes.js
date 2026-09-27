@@ -2881,6 +2881,17 @@ const CODES = [
     summary: 'A pinned signing key could not be read when a signature ' +
       'needed it, so the realm\'s generated key signed instead (#263).',
     spec: 'log only' },
+  { code: 'STS-PKI-0215',
+    summary: 'A write or reset of pki.pinnedSigners was refused: it would ' +
+      'turn the setting off in a realm holding a live or pending pinned ' +
+      'signing key, which would change the signer with no ' +
+      'signing-key-rotated. Unpin first (#263).',
+    spec: 'console / /admin-api refusal (HTTP 400)' },
+  { code: 'STS-PKI-0216',
+    summary: 'At start, a realm holds pinned signing keys but ' +
+      'pki.pinnedSigners is off there (environment, appconfig or a stored ' +
+      'override), so it signs with its generated keys (#263).',
+    spec: 'log only (a warning, at start)' },
   { code: 'STS-ENROLL-0001',
     summary: 'A certificate request named a profile that is not one of the nine issued over an enrollment protocol.',
     spec: 'the protocol\'s refusal: ACME malformed / badCSR, EST HTTP 400, SCEP failInfo badRequest' },

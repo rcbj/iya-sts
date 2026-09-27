@@ -13,9 +13,12 @@
 //   3. An ID token from the authorization code flow carries the pinned key's
 //      kid, and VERIFIES AGAINST THE JWKS ENTRY OF THAT KEY, whose x5c holds
 //      the key; the generated key stays published beside it.
+//   3a. While it is pinned, turning `pki.pinnedSigners` off is refused (400,
+//      "Unpin first") through `config/set`, `realms/set` and `realms/unset`,
+//      and the pinned key goes on signing.
 //   4. `POST /admin-api/pki/unpin-key` restores the generated key: the next
 //      ID token carries its kid, and the pinned key stays in the JWKS through
-//      its grace.
+//      its grace; the setting can then be turned off.
 //
 // The key material is generated at test time and never written anywhere.
 //
@@ -367,6 +370,26 @@ async function test() {
     }), generatedKid);
   });
 
+  log.info("=== 3a. the setting cannot be turned off under the pin ===");
+  const offInRealm = await hop(null, "POST", api + "/config/set",
+    { json: { key: "pki.pinnedSigners", value: false } });
+  const offOnRealm = await hop(null, "POST", root + "/admin-api/realms/set",
+    { json: { id: REALM, key: "pki.pinnedSigners", value: false } });
+  const offCleared = await hop(null, "POST", root + "/admin-api/realms/unset",
+    { json: { id: REALM, key: "pki.pinnedSigners" } });
+  check("turning pki.pinnedSigners off is refused while the pin is live, " +
+        "through config/set, realms/set and realms/unset, saying to unpin " +
+        "first", function () {
+    [offInRealm, offOnRealm, offCleared].forEach(function (r) {
+      assert.strictEqual(r.status, 400, r.text.slice(0, 300));
+      assert.ok(/[Uu]npin first/.test(r.text), r.text.slice(0, 300));
+    });
+  });
+  const stillPinned = await idTokenFor(browser, client);
+  check("and the pinned key still signs", function () {
+    assert.strictEqual(headerOf(stillPinned).kid, pinnedKid);
+  });
+
   log.info("=== 4. unpinned: the generated key signs again ===");
   await ok(api + "/pki/unpin-key", { useCase: "jose", slot: "RS256" },
            "unpinned the key");
@@ -388,8 +411,13 @@ async function test() {
   check("an unpin with nothing pinned is refused", function () {
     assert.strictEqual(nothing.status, 400, nothing.text.slice(0, 300));
   });
+  const offAfter = await hop(null, "POST", api + "/config/set",
+    { json: { key: "pki.pinnedSigners", value: false } });
+  check("with nothing pinned, the setting can be turned off", function () {
+    assert.strictEqual(offAfter.status, 200, offAfter.text.slice(0, 300));
+  });
 
-  assert.ok(checks >= 6, "only " + checks + " checks ran");
+  assert.ok(checks >= 9, "only " + checks + " checks ran");
   log.info(checks + " check(s) passed.");
   log.info("Test completed successfully.");
   log.debug("Leaving test().");

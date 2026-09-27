@@ -5895,11 +5895,33 @@ where it is PUBLISHED and VERIFIED: a `pinned` row in `ownRsaCertificates()`
 `allVerificationKeys()`, `publicJwkOfKid()` (so `keys.kidFormat` applies),
 `certificateHeaderFor()` (its slot is `slot@kid`), `pinnedPublishedJwks()` for
 the JWKS, and `/crypto/metadata`'s `pinned`, `pinned-pending` and
-`pinned-retired` states. Turning the setting off while a key is pinned makes
-the generated key sign again with no event — said in the setting's
-description. `tests/pinned_signers.js` holds it, 43 assertions;
+`pinned-retired` states. `tests/pinned_signers.js` holds it;
 `tests/vendored/sts_pinned_signer.js` verifies an ID token against the pinned
 key's JWKS entry over HTTP.
+
+**THE SETTING CANNOT BE TURNED OFF UNDER A LIVE OR PENDING PIN**
+(STS-PKI-0215), because that would change the signer with no
+`signing-key-rotated`. It is not a new mechanism: it is a keyed branch of
+`config.js`'s `modeWriteProblem()`, `mail.transport`'s arrangement, so it is
+asked wherever the mode rule is — `checkWrite()` and `setOverride()` (the
+console's set and set-many, `POST /admin-api/config/set`) and `realms.js`'s
+`modeWriteProblems()` (a realm's create, update and set) — and
+`modeWriteCode()` gives the realm doors the same code the process doors give.
+A CLEAR is asked with the value it would fall back to: `config.js`'s
+`clearOverride()` and `clearAllOverrides()` (the console's reset and
+reset-all; the latter's caller now honours a refusal), and `realms.js`'s
+`clearOverride()` and an `update()` whose overrides leave the key out
+(`pinnedSignerClearProblems()`). The pins a write would demote are
+`pki.js`'s `pinsBlockingSignersOff()`: the realm the write lands in, or — for a
+process-wide write — the default realm and every realm without an override of
+its own, counting only realms where the setting is on now. `config.js` reads
+`pki.js` out of `require.cache`, so a process that never loaded the authority
+has nothing to protect and loads nothing. **A START CANNOT BE REFUSED**: the
+environment, the appconfig file, a stored override or a replicated change may
+bring the setting in off over a store holding pins; the realm then signs with
+its generated keys and `pki.start()` says so per realm with STS-PKI-0216
+(`reportPinsWithSignersOff()`), leaving the pins for the setting to be turned
+back on.
 
 ### THE PATH CHECK IS WHERE A SECURITY CLAIM RESTS
 
