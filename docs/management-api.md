@@ -265,6 +265,22 @@ withdrawing the declaration cuts off tokens already issued. The seeded
 administrator may declare them on another client with
 `POST /admin-api/applications/add`. A dynamic registration may not.
 
+**A token issued for a person is also held to that person's console roles**
+(#302). When a person signs in through a client that declares the scopes (by
+the authorization code flow, a refresh, a token exchange or another grant), they
+get `admin:read` only if they hold Admin Read in the realm issuing the token.
+They get `admin:write` only if they hold Admin Write. A scope their roles do
+not cover is left off the token, and the token response's `scope` says what was
+issued. If nothing else was requested, the request is refused with
+`invalid_scope`. While the console is still open to everybody (in development,
+before the bootstrap administrator's first sign-in), everybody is issued both.
+The bootstrap administrator is issued neither until that first sign-in to
+`/admin` with its password. A `client_credentials` token for
+`sts-management-api` is unaffected: the client is the subject, and declaring the
+scopes is what authorizes it. The API checks again on every call. A token
+issued for a person whose role has since been revoked is refused with 403
+(`STS-API-0125`), even before it expires.
+
 A realm's token is tried only under that realm's prefix. It must carry the
 realm's issuer and audience. The token is then
 refused whatever the console refuses the realm's administrators

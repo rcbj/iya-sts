@@ -144,6 +144,9 @@ import stsCrypto = require('../common/crypto');
 import roles = require('../common/roles');
 // WHICH CLIENTS MAY HOLD `admin:*` (#110) — the gate asks it of every token.
 import scopePolicy = require('../common/scope_policy');
+// WHICH PEOPLE MAY STILL USE `admin:*` (#302) — the gate asks it of every
+// person's token, against the roster as it is now. A library (rule 3).
+import adminScopeAccess = require('./admin_scope_access');
 // The password policy's FIELD TABLE, which the request schema of
 // `save-password-policy` is generated from — for `narrowDoorProperties()`'s
 // reason: a hand-written list of what an operation accepts is a second
@@ -431,6 +434,7 @@ interface AdminApiDeps {
   stsCrypto: typeof stsCrypto;
   roles: typeof roles;
   scopePolicy: typeof scopePolicy;
+  adminScopeAccess: typeof adminScopeAccess;
   passwordPolicy: typeof passwordPolicy;
   admin: typeof admin;
   adminScope: typeof adminScope;
@@ -510,6 +514,7 @@ class AdminApi {
       stsCrypto: stsCrypto,
       roles: roles,
       scopePolicy: scopePolicy,
+      adminScopeAccess: adminScopeAccess,
       passwordPolicy: passwordPolicy,
       admin: admin,
       adminScope: adminScope,
@@ -19160,7 +19165,7 @@ class AdminApi {
   registerGate(app: RouteApp): void {
     const { log, config, errorCodes, realms, STS, stsCrypto, jwtAccessToken,
             mtls, dpop, senderConstraints, roles, accessGate, mode, adminViews,
-            parseBody, adminScope } = this.deps;
+            parseBody, adminScope, adminScopeAccess } = this.deps;
     const self = this;
     log.debug("Entering AdminApi.registerGate().");
     app.use(BASE, function (req, res, next) {
@@ -19431,7 +19436,15 @@ class AdminApi {
         // one the client does not declare; an undeclared scope the operation
         // does not need is dropped and the call goes on.
         const declared = self.declaredAdminScopes(claims, tokenRealm, carried);
-        const scopes = declared.kept;
+        // A PERSON MUST STILL HOLD THE CONSOLE ROLE THE SCOPE GOES WITH
+        // (#302), asked of the roster as it is now, in the realm that issued
+        // the token — so a role revoked after the token was minted stops
+        // working at once rather than when the token expires. A client's
+        // own token passes through; the declaration above is its question.
+        // See `mgmt-api/admin_scope_access.ts`.
+        const rechecked = adminScopeAccess.recheck(claims, declared.kept,
+                                                   tokenRealm);
+        const scopes = rechecked.kept;
         const neededScope = scopesWanted;
         if (declared.undeclared.indexOf(neededScope) >= 0) {
           errorCodes.mark(res, 'STS-API-0123');
@@ -19445,6 +19458,16 @@ class AdminApi {
               : 'The seeded sts-management-api declares both admin ' +
                 'scopes. Declare it on the application (POST ' +
                 '/admin-api/applications/add) or use that client.')] });
+        }
+        if (rechecked.withdrawn.indexOf(neededScope) >= 0) {
+          errorCodes.mark(res, 'STS-API-0125');
+          return self.sendJson(res, 403, { error: 'forbidden', errors: [
+            'This access token carries "' + neededScope + '", and it was ' +
+            'issued for a person who no longer holds the console role that ' +
+            'scope goes with: ' + rechecked.why + '. A person\'s token is ' +
+            'honoured here only while their console roles authorize the ' +
+            'scope it uses. Grant the role on /admin/rbac (or POST ' +
+            '/admin-api/rbac/grant) and ask for a new token.'] });
         }
         if (tokenRealm !== realms.DEFAULT_ID) {
           const realmRefusal = self.realmTokenRefusal(claims, req);
