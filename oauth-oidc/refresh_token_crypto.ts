@@ -516,6 +516,7 @@ export = {
     slot.install(instance),
   instanceOrigin: (): string => slot.origin(),
   kindOf: slot.forward('kindOf'),
+  kemKeyFor: slot.forward('kemKeyFor'),
   symmetricBytes: slot.forward('symmetricBytes'),
   symmetricKeyFor: slot.forward('symmetricKeyFor'),
   configured: slot.forward('configured'),
