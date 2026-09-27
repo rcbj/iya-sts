@@ -1,4 +1,7 @@
 #!/usr/bin/python3
+# SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+# SPDX-License-Identifier: MIT
+#
 # ===========================================================================
 # THE SHIBBOLETH PEER'S CONTROL SERVER (#189).
 #

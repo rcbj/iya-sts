@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+// SPDX-License-Identifier: MIT
+
 'use strict';
 // ===========================================================================
 // THE CERTIFICATE THE SAML BACK CHANNEL PRESENTS, AS A METADATA KEY (#248).

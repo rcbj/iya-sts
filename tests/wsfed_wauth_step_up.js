@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+// SPDX-License-Identifier: MIT
+
 'use strict';
 //
 // File: wsfed_wauth_step_up.js

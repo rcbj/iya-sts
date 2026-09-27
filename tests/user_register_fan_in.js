@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+// SPDX-License-Identifier: MIT
+
 'use strict';
 //
 // File: user_register_fan_in.js

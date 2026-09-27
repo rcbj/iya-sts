@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+# SPDX-License-Identifier: MIT
+#
 # docker-compose-run-tests.yml — THE WHOLE SUITE, IN CONTAINERS.
 #
 # Seven services on a private bridge network: `sts`, this repository built

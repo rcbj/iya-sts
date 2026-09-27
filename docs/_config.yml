@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+# SPDX-License-Identifier: MIT
+#
 # Jekyll configuration for the iya-sts documentation site.
 #
 # GitHub's own Pages workflow builds this directory — see

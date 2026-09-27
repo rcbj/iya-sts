@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+// SPDX-License-Identifier: MIT
+//
 // ===========================================================================
 // sts_directory_bulk_load_scim.js — FIVE THOUSAND PEOPLE, FIFTY GROUPS AND
 // FIVE THOUSAND MEMBERSHIPS, ALL OF IT THROUGH SCIM 2.0.

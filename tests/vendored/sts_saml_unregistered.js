@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+// SPDX-License-Identifier: MIT
+//
 // ===========================================================================
 // WHAT A SAML SERVICE PROVIDER NOBODY REGISTERED CAN CAUSE, OVER HTTP (#112).
 //

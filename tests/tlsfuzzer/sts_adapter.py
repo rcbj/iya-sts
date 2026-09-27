@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+# SPDX-License-Identifier: MIT
+#
 # File: sts_adapter.py
 #
 # Runs ONE unmodified tlsfuzzer script against one of this service's TLS

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+# SPDX-License-Identifier: MIT
+
 """Run Samba's raw Kerberos KDC tests against one KDC, print JSON (#204).
 
 The driver tests/vendored/sts_kerberos_samba.js runs. It is this

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+# SPDX-License-Identifier: MIT
+#
 # iya-sts, the mock STS: every protocol family README.md lists, in one small Node
 # service. See README.md.
 #

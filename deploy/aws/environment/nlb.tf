@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+# SPDX-License-Identifier: MIT
+#
 # ---------------------------------------------------------------------------
 # THE PUBLIC FRONT DOOR: AN NLB, 443 → 8081 AND TWO MORE PORTS, TLS PASSED
 # THROUGH. locals.tf's `published_ports` lists them and says which job needs

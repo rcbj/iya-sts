@@ -20,17 +20,65 @@ SOFTWARE.
 
 ---
 
-## One subtree is not MIT
+## What is not MIT
 
-`xacml/conformance/` holds the OASIS XACML 3.0 conformance test suite, taken
-from [`authzforce/core`](https://github.com/authzforce/core) and **licensed
-under Apache-2.0**, not under the MIT licence above. Its own `LICENSE` file
-sits beside it and `xacml/conformance/PROVENANCE.md` records the full chain —
-OASIS XACML TC, then AT&T (April 2014, MIT), then AuthzForce — together with
-the one link in that chain that public sources do not establish.
+Four things in this repository were written by somebody else and keep their
+own licences. `REUSE.toml` declares each of them in machine-readable form and
+`LICENSES/` holds the texts:
 
-Nothing else in this repository is affected. The MIT licence above covers every
-other file.
+| Path | From | Licence |
+|---|---|---|
+| `xacml/conformance/` | The OASIS XACML 3.0 conformance test suite, taken from [`authzforce/core`](https://github.com/authzforce/core). `xacml/conformance/PROVENANCE.md` records the full chain — OASIS XACML TC, then AT&T (April 2014, MIT), then AuthzForce — together with the one link in that chain that public sources do not establish. Its own `LICENSE` file sits beside it. | Apache-2.0 |
+| `spiffe/protos/` | The SPIRE API SDK's protobuf definitions, the SPIFFE Workload API and the SPIFFE Broker API, copied verbatim. | Apache-2.0 |
+| `common/vendored/contexts/credentials_v1.json`, `credentials_v2.json` | The W3C Verifiable Credentials JSON-LD contexts. | W3C Software and Document License |
+| `admin-ui/natural_earth/` | Country outlines derived from Natural Earth's 1:50m Admin 0 – Countries by `tests/tools/natural-earth.js`. | Public domain |
+
+The MIT licence above covers every other file. The rest of `common/vendored/`,
+the eight Kerberos codec files in `kerberos/` and the non-`local` jobs in
+`tests/vendored/` are byte-identical copies of the parent project's files. They
+have the same owner and the same licence, and carry no header because they may
+not be edited here.
+
+## How each file says so
+
+Every source file this repository owns starts with two
+[SPDX](https://spdx.dev/) lines. They come after a `#!` line or
+`// @ts-check` where the file has one:
+
+```
+// SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+// SPDX-License-Identifier: MIT
+```
+
+Files that cannot carry a comment (JSON, Markdown, data), the copies above,
+and the third-party trees are covered by `REUSE.toml`. Together they meet the
+[REUSE specification](https://reuse.software/), and `reuse lint` passes.
+`tests/copyright_notices.js` fails when a source file this repository owns
+lacks the two lines, when a file that may not be edited here was given them,
+or when `REUSE.toml` names a licence with no text in `LICENSES/` or a
+third-party path that no longer exists. `env/generate_defaults.js` writes the
+lines into `env/defaults.js`.
+
+## Runtime dependencies in the service image
+
+The service image installs the npm packages in `package.json`'s
+`dependencies`. Each carries its own licence in its `node_modules/`
+directory:
+
+| Licence | Packages |
+|---|---|
+| MIT | @dagrejs/dagre, @fingerprintjs/fingerprintjs, @noble/curves, @noble/hashes, @noble/post-quantum, @xmldom/xmldom, ajv, ajv-formats, body-parser, bowser, bunyan, busboy, cors, croner, express, jsonwebtoken, ldapjs (the `node-ldapjs` submodule, fork `rcbj/node-ldapjs`), pg, qrcode, scimmy, xml-crypto, yauzl, zod |
+| MIT-0 | nodemailer |
+| BSD-3-Clause | @digitalbazaar/bbs-signatures, @digitalbazaar/ed25519-signature-2020, @digitalbazaar/ed25519-verification-key-2020, @digitalbazaar/security-context, @digitalbazaar/zcap, asn1js, jsonld, jsonld-signatures, macaroon, pkijs |
+| Apache-2.0 | @biscuit-auth/biscuit-wasm, @grpc/grpc-js, @grpc/proto-loader |
+| BSD-3-Clause OR GPL-2.0 | node-forge, used under BSD-3-Clause |
+| Unlicense | isbot |
+
+Their transitive dependencies, and the optional cloud SDKs under
+`peerDependencies`, carry their licences the same way. The test suite's
+tools, corpora and conformance suites are fetched or built into the TESTS
+image only. None of them is in the service image or committed here, and
+`tests/CLAUDE.md` names each one's pin and licence.
 
 ---
 
@@ -145,7 +193,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### Third-party datasets are not distributed
+### Risk-scoring datasets are not distributed
 
 Risk scoring (issue #62) reads geolocation, ASN, Tor exit, IP reputation, FIDO
 metadata and breached-password data. **None of it is part of this repository,

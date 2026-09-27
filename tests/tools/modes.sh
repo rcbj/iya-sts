@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+# SPDX-License-Identifier: MIT
+#
 # shellcheck shell=bash
 # ===========================================================================
 # tests/tools/modes.sh — THE CONFIGURATIONS THE SUITE IS RUN IN: THREE, AND A

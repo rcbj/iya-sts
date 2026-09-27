@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+# SPDX-License-Identifier: MIT
+
 locals {
   account_id = data.aws_caller_identity.current.account_id
   partition  = data.aws_partition.current.partition

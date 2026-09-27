@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+# SPDX-License-Identifier: MIT
+#
 # ---------------------------------------------------------------------------
 # A TRUST REALM'S TWO SPIFFE PORTS, PUBLISHED ON THE ENVIRONMENT'S NLB
 # (2026-09-18) — the Workload API and the SPIRE Server API, each on the same

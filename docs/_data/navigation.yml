@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+# SPDX-License-Identifier: MIT
+#
 # The left-hand navigation of the documentation site, drawn by
 # _includes/sidebar.html on every page, in place of `header_pages` in
 # _config.yml, because twenty-six links across the top of every page are not

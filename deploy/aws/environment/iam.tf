@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+# SPDX-License-Identifier: MIT
+#
 # ---------------------------------------------------------------------------
 # THE TWO ROLES A NODE'S TASK RUNS WITH, EACH WITH THE LEAST IT NEEDS.
 #

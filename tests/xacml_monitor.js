@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+// SPDX-License-Identifier: MIT
+
 'use strict';
 
 // This file's own logger, for the Entering/Leaving lines and the handled

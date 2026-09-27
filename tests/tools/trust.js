@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+// SPDX-License-Identifier: MIT
+//
 // tests/tools/trust.js — how a test run comes to trust the mock's certificate.
 //
 // ---------------------------------------------------------------------------

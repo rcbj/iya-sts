@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+# SPDX-License-Identifier: MIT
+#
 # ---------------------------------------------------------------------------
 # THE SUITE'S CALLBACK TASK FOR ONE RUN AGAINST AN ENVIRONMENT (2026-09-18).
 # Created and destroyed by deploy/aws/run-suite.sh around each run; main.tf

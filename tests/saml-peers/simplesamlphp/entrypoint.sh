@@ -1,4 +1,7 @@
 #!/bin/bash
+# SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+# SPDX-License-Identifier: MIT
+#
 # ===========================================================================
 # THE SIMPLESAMLPHP PEER'S START (#191): the SP's key pair and the secret
 # salt, made now; the log directory on the volume the job reads; Apache.

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+# SPDX-License-Identifier: MIT
+#
 # ---------------------------------------------------------------------------
 # THREE SECURITY GROUPS, EACH ACCEPTING ONLY THE ONE BEFORE IT — and a fourth,
 # the suite runner's, which accepts only the nodes (below).

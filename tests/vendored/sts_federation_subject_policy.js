@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+// SPDX-License-Identifier: MIT
+//
 // ===========================================================================
 // WHICH PEOPLE A FEDERATION PARTNER MAY ASSERT, OVER THE NETWORK (#109).
 //

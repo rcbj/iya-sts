@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+# SPDX-License-Identifier: MIT
+#
 # ===========================================================================
 # THE SHIBBOLETH SERVICE PROVIDER 3 AS AN INTEROPERABILITY PEER (#189).
 #

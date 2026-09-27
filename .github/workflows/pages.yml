@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+# SPDX-License-Identifier: MIT
+#
 # Builds docs/ as a Jekyll site and deploys it to GitHub Pages.
 #
 # WHY THIS SHAPE. The parent project (rcbj/oauth2-oidc-debugger) has no Pages
