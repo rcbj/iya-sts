@@ -2340,6 +2340,12 @@ class Credentials {
       return one.credentialId === String(credentialId);
     })[0] || null;
     const label = record ? String(record.label || '') : '';
+    // WHETHER THE DIRECT EVENT WENT TO THE FUNNEL (#294): the risk engine is
+    // told, so the `risk-response` policy's own credential-compromise
+    // reaction to the HIGH standing below does not send a second SET about
+    // the same key. Both come from this one call in this one process, so
+    // the fact travels on the change itself and needs no shared state.
+    let announced = false;
     try {
       const signals = require('../ssf/account_signals');
       signals.credentialCompromised({ username: name,
@@ -2350,6 +2356,7 @@ class Credentials {
                      'not go up (' + evidence + '): it may have been cloned.',
         reasonUser: 'A security key of yours may have been copied. Remove ' +
                     'it and enrol a new one.' });
+      announced = true;
     } catch (e) {
       log.debug('Caught in Credentials.noteKeyCloned(): ' +
                 ((e && e.message) || e));
@@ -2359,7 +2366,8 @@ class Credentials {
       require('../risk/risk_engine').noteAuthenticatorCompromise({
         realm: realms.currentId(), username: name,
         subject: helpers.subjectForName(name) || '',
-        evidence: evidence }).catch(function (e) {
+        evidence: evidence, compromiseAnnounced: announced })
+        .catch(function (e) {
         log.debug('Caught in Credentials.noteKeyCloned(): ' +
                   ((e && e.message) || e));
         // noteAuthenticatorCompromise() never rejects; belt and braces.

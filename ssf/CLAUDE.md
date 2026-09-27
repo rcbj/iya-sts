@@ -2135,11 +2135,13 @@ subjects hold as for every other act.
 
 **A replayed one-time code is NOT a SET** (rcbj's decision): a person who
 pressed submit twice looks exactly like a replay. It is a risk signal,
-`totp-replay` (`risk/CLAUDE.md`). And where the `risk-response` policy is
-installed and enforced, a cloned key's HIGH standing fires its own
-`risk-credential-compromise` reaction as well, so a receiver may be told
-twice about one key; the direct event is kept so that it does not depend on
-the policy.
+`totp-replay` (`risk/CLAUDE.md`). And **a cloned key is ONE SET (#294)**:
+the direct event is kept so that it does not depend on the `risk-response`
+policy, and where that policy is installed and enforced its own
+`risk-credential-compromise` reaction to the HIGH standing is recorded as
+*already sent by its detector* rather than sent again — the change the
+detector hands the engine carries the fact (`risk/CLAUDE.md`, *Two signals
+from outside a sign-in's own evidence*, argues why that and not a window).
 
 **CAEP `credential-change` for the credentials no registered value fits
 (#236).** CAEP 1.0 section 3.3.1's list is open ("or any other credential
