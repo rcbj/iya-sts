@@ -225,7 +225,9 @@ async function run(t) {
   const responseBody = oauthSource.slice(oauthSource.indexOf(
     'async issueAuthorizationResponse('), oauthSource.indexOf(
     'async issueAuthorizationResponse(') + 3000);
-  t.check(/const scope = debuggerAccess\.narrowScope\(/.test(responseBody),
+  // `let` since #302, which narrows the admin scopes after it.
+  t.check(/\b(?:const|let) scope = debuggerAccess\.narrowScope\(/
+            .test(responseBody),
           'and the authorization endpoint narrows before a code carries it');
 
   // -------------------------------------------------------------------------
