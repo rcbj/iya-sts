@@ -353,9 +353,26 @@ async function test() {
   const other = await hop("GET", collection + "?trust_anchor=" +
     encodeURIComponent("https://elsewhere.example.test"));
   const bogus = await hop("GET", collection + "?entity_claims=secret");
-  const posted = await hop("POST", collection, { formText:
-    "entity_type=openid_provider&entity_type=openid_relying_party" +
-    "&entity_claims=entity_types" });
+  // The POST is paged as the GET is (see EVERY PAGE above): with other
+  // lanes creating realms beside this job, this realm's entry may be on a
+  // later page, so the `next` pointer is followed with the same form.
+  const form = "entity_type=openid_provider&entity_type=openid_relying_party" +
+    "&entity_claims=entity_types";
+  const posted = await hop("POST", collection, { formText: form });
+  const postedEntities = [];
+  let postPage = posted;
+  for (let n = 0; n < 50 && postPage.status === 200; n++) {
+    postPage.json.entities.forEach(function (e) {
+      postedEntities.push(e);
+    });
+    if (!postPage.json.next || postedEntities.some(function (e) {
+      return e.entity_id === leafId;
+    })) {
+      break;
+    }
+    postPage = await hop("POST", collection, { formText: form + "&from=" +
+      encodeURIComponent(postPage.json.next) });
+  }
   check("another trust_anchor is 404 invalid_trust_anchor, an unknown " +
         "claim 400 unsupported_claim; a POST with a repeated entity_type " +
         "is answered", function () {
@@ -364,10 +381,11 @@ async function test() {
     assert.strictEqual(bogus.status, 400);
     assert.strictEqual(bogus.json.error, "unsupported_claim");
     assert.strictEqual(posted.status, 200, posted.text.slice(0, 300));
-    assert.ok(posted.json.entities.some(function (e) {
+    assert.ok(postedEntities.some(function (e) {
       return e.entity_id === leafId;
-    }));
-    posted.json.entities.forEach(function (e) {
+    }), "the realm is not in the POST's pages: " +
+        posted.text.slice(0, 300));
+    postedEntities.forEach(function (e) {
       assert.deepStrictEqual(Object.keys(e).sort(),
                              ["entity_id", "entity_types"]);
     });
