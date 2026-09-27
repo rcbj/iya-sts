@@ -320,8 +320,13 @@ function dpopProof(pair, url) {
 async function test() {
   log.debug("Entering test().");
   log.info("=== 0. a throwaway realm " + REALM + " ===");
+  // IN DEVELOPMENT MODE, SAID RATHER THAN INHERITED (2026-09-27): most
+  // sections expect a self-asserted key to be accepted, and a realm created
+  // with no mode takes the PROCESS's — product in the single-node and
+  // cluster modes. Sections 10 and 13 put it in product themselves.
   await ok(root + "/admin-api/realms/create", { id: REALM,
-    domain: REALM + ".example.net", name: "Devices " + STAMP },
+    domain: REALM + ".example.net", name: "Devices " + STAMP,
+    overrides: { "global.mode": "development" } },
     "created the realm");
   await registry.provision(base, {
     identifier: HOST, name: "Device job host", protocols: ["oauth2"],
@@ -626,7 +631,8 @@ async function test() {
                             again.json.audience) }), "application/json")
       : again;
   } finally {
-    await ok(api + "/config/reset", { key: "global.mode" },
+    await ok(api + "/config/set", { key: "global.mode",
+                                     value: "development" },
              "put this realm back in development mode");
   }
   check("product refuses a key proof with no attestation", function () {
@@ -828,7 +834,8 @@ async function test() {
     productControl = await hop("POST", base + "/devices/test/compliance", {
       id: laptop.device.id, status: "compliant" });
   } finally {
-    await ok(api + "/config/reset", { key: "global.mode" },
+    await ok(api + "/config/set", { key: "global.mode",
+                                     value: "development" },
              "put this realm back in development mode");
   }
   check("product refuses the test control", function () {

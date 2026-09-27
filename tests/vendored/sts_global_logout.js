@@ -925,7 +925,10 @@ async function issuedFor(username) {
 
 async function liveSessionsFor(username) {
   log.debug("Entering liveSessionsFor().");
-  const r = await fetch(api("/sessions?per=500"));
+  // `q` narrows on the server: other lanes hold sessions at the same time,
+  // so page one of everything need not hold this person's.
+  const r = await fetch(api("/sessions?per=500&q=" +
+                            encodeURIComponent(username)));
   const body = await r.json();
   const rows = body.sessions || body.rows || [];
   const key = String(username).toLowerCase();

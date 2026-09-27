@@ -26,6 +26,10 @@ const crypto = require("crypto");
 const { Command, Option } = require("commander");
 const names = require("./random_username.js");
 const registry = require("./sts_applications.js");
+const fs = require("fs");
+const path = require("path");
+const tls = require("tls");
+const testCa = require("./outbound_test_ca.js");
 
 var appconfig;
 let appconfigProblem = null;
@@ -257,24 +261,81 @@ function locked(report, username) {
   });
 }
 
-async function test() {
-  log.debug("Entering test().");
-  log.info("=== 0. realm A (the transmitter) and realm B (the receiver) ===");
-  for (const id of [REALM_A, REALM_B]) {
-    await ok(root + "/admin-api/realms/create", { id: id,
-      domain: id + ".example.net", name: "SSF foreign " + id },
-      "created realm " + id);
+// THIS SERVICE'S ROOT AS EACH REALM'S OUTBOUND CA (2026-09-27). The two
+// realms dial each other at this service's own address, whose certificate is
+// this run's own. Product mode refuses to skip verifying it (#171), so the
+// service's Root is published in the shared test-CA directory and named as
+// both realms' federation and push CA — sts_provider_commands.js's
+// arrangement. Without that directory (an AWS target, a hand run) only
+// development may skip verification.
+async function trustThisService(product) {
+  log.debug("Entering trustThisService().");
+  const where = testCa.caLocation();
+  if (where) {
+    const target = new URL(root);
+    const rootPem = await new Promise(function (resolve, reject) {
+      const socket = tls.connect({ host: target.hostname,
+        port: Number(target.port || 443), servername: target.hostname,
+        rejectUnauthorized: false }, function () {
+          let cert = socket.getPeerCertificate(true);
+          while (cert && cert.issuerCertificate &&
+                 cert.issuerCertificate !== cert &&
+                 cert.issuerCertificate.fingerprint256 !==
+                   cert.fingerprint256) {
+            cert = cert.issuerCertificate;
+          }
+          socket.end();
+          resolve("-----BEGIN CERTIFICATE-----\n" +
+            cert.raw.toString("base64").match(/.{1,64}/g).join("\n") +
+            "\n-----END CERTIFICATE-----\n");
+        });
+      socket.on("error", reject);
+    });
+    const name = "ssf-foreign-root-" + TAG + ".crt";
+    fs.mkdirSync(where.dir, { recursive: true });
+    fs.writeFileSync(path.join(where.dir, name), rootPem, { mode: 0o644 });
+    const file = path.join(path.dirname(where.serviceFile), name);
+    for (const api of [apiA, apiB]) {
+      for (const key of ["federation.outboundCaFile", "ssf.pushCaFile"]) {
+        await ok(api + "/config/set", { key: key, value: file },
+                 "named this service's Root as " + key);
+      }
+    }
+    log.debug("Leaving trustThisService(). CA file.");
+    return;
   }
-  // Each dials the other's own address, whose certificate is this run's.
+  assert.ok(!product, testCa.skipReason());
   for (const api of [apiA, apiB]) {
     await ok(api + "/config/set", {
       key: "federation.outboundSkipTlsVerification", value: true },
       "trusted this run's certificate");
   }
+  log.debug("Leaving trustThisService(). Verification skipped.");
+}
+
+async function test() {
+  log.debug("Entering test().");
+  log.info("=== 0. realm A (the transmitter) and realm B (the receiver) ===");
+  for (const id of [REALM_A, REALM_B]) {
+    // In development mode, said rather than inherited (2026-09-27): the two
+    // realms dial each other at this service's own name, a private address,
+    // which product mode never dials.
+    await ok(root + "/admin-api/realms/create", { id: id,
+      domain: id + ".example.net", name: "SSF foreign " + id,
+      overrides: { "global.mode": "development" } },
+      "created realm " + id);
+  }
+  // Each dials the other's own address, whose certificate is this run's.
+  await trustThisService(false);
   await ok(apiA + "/config/set", { key: "ssf.pushDelivery", value: true },
            "let A push");
-  await ok(apiA + "/config/set", { key: "ssf.pushSkipTlsVerification",
-    value: true }, "let A's push trust this run's certificate");
+  // trustThisService() named the Root as ssf.pushCaFile where it could;
+  // without that directory development skips verification instead (product
+  // refuses the skip, #171).
+  if (!testCa.caLocation()) {
+    await ok(apiA + "/config/set", { key: "ssf.pushSkipTlsVerification",
+      value: true }, "let A's push trust this run's certificate");
+  }
   // A's address, pinned, as a deployed transmitter's is: a SET it builds
   // with no request in hand (an emitted event) otherwise names its subject
   // under the listener's address and its token under the request's, and

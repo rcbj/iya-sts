@@ -307,9 +307,15 @@ function signOnIdOf(b) {
   return sidOfCookie(b.jar[SIGN_ON_COOKIE]);
 }
 
-async function liveSessions() {
+// NARROWED WITH `q` AND NEVER READ AS PAGE ONE OF EVERYTHING (2026-09-27).
+// Since the protocol half runs in lanes, other jobs hold live sessions at the
+// same time as this one — more than a page of them — so a session this job
+// made fell off `?per=200` and read as never having existed. `q` matches the
+// session id and the username (admin-ui's /admin/sessions search), which is
+// exactly what every caller here is asking about.
+async function liveSessions(q) {
   log.debug("Entering liveSessions().");
-  const r = await get("/sessions?per=200");
+  const r = await get("/sessions?per=500&q=" + encodeURIComponent(q));
   assert.ok(r.status === 200 && r.body && Array.isArray(r.body.sessions),
     "GET /admin-api/sessions should list sessions; it answered " + r.status +
     " " + String(r.raw).slice(0, 200));
@@ -319,7 +325,7 @@ async function liveSessions() {
 
 async function rowFor(id) {
   log.debug("Entering rowFor().");
-  const rows = await liveSessions();
+  const rows = await liveSessions(id);
   log.debug("Leaving rowFor().");
   return rows.filter(function (row) { return row.sessionId === id; })[0] ||
          null;
@@ -477,7 +483,7 @@ async function follow(b, r, hops) {
 async function theConsoleSignInCreatesASession() {
   log.debug("Entering theConsoleSignInCreatesASession().");
   log.info("=== the admin console: sign in, and the session is listed ===");
-  const before = (await liveSessions()).length;
+  const before = (await liveSessions(OPERATOR)).length;
   const b = await signInAt("/admin/sessions", OPERATOR);
   const id = sessionIdOf(b);
 
@@ -517,7 +523,7 @@ async function theConsoleSignInCreatesASession() {
       assert.strictEqual(row.authenticated, true);
     });
 
-  const after = await liveSessions();
+  const after = await liveSessions(OPERATOR);
   check("THE COUNT WENT UP BY EXACTLY TWO, which is the whole shape of this " +
         "change in one number: an identity provider session and an " +
         "application session, where before there was one row doing both jobs",

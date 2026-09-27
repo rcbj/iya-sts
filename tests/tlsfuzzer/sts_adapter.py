@@ -97,6 +97,21 @@ def main():
     from tlslite.extensions import SignatureAlgorithmsExtension, \
         SupportedGroupsExtension
 
+    # A REPLY IS WAITED FOR LONGER THAN tlsfuzzer's FIVE SECONDS
+    # (2026-09-27). Every script builds `Connect(host, port)` with that
+    # module's default, and under the suite's parallel lanes a busy service
+    # took longer than five seconds over a handshake now and then — a
+    # "Timeout when waiting for peer message" on a probe that passes alone,
+    # in a different script each run. The documented exceptions that expect
+    # a timeout still get one, later. STS_TLSFUZZER_TIMEOUT_S overrides.
+    wait = float(os.environ.get('STS_TLSFUZZER_TIMEOUT_S') or 15)
+    original_connect_init = fuzz_messages.Connect.__init__
+
+    def connect_init(self, hostname, port, version=(3, 0), timeout=5):
+        original_connect_init(self, hostname, port, version,
+                              max(timeout, wait))
+    fuzz_messages.Connect.__init__ = connect_init
+
     current = {'state': None, 'request': False, 'key_exchange': False}
 
     original_init = fuzz_runner.Runner.__init__

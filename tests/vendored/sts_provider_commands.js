@@ -28,7 +28,6 @@ const registry = require("./sts_applications.js");
 const fs = require("fs");
 const path = require("path");
 const tls = require("tls");
-const facts = require("./service_facts.js");
 const testCa = require("./outbound_test_ca.js");
 
 var appconfig;
@@ -292,8 +291,14 @@ async function trustThisService(product) {
 async function test() {
   log.debug("Entering test().");
   log.info("=== 0. a throwaway realm " + REALM + " ===");
+  // IN DEVELOPMENT MODE, SAID RATHER THAN INHERITED (2026-09-27). The mock
+  // relying party is this service, reached by its own name — a private
+  // address — and product mode never dials inside its own network. A realm
+  // created with no mode takes the process's, which is product in the
+  // single-node and cluster modes.
   await ok(root + "/admin-api/realms/create", { id: REALM,
-    domain: REALM + ".example.net", name: "Provider commands " + TAG },
+    domain: REALM + ".example.net", name: "Provider commands " + TAG,
+    overrides: { "global.mode": "development" } },
     "created the realm");
   await ok(api + "/config/set", { key: "oauth2.openRegistration",
                                   value: true }, "opened registration");
@@ -305,7 +310,7 @@ async function test() {
   // whose certificate is this run's own. Product mode refuses to skip that
   // verification (#171), so the service's Root is named as the realm's
   // outbound CA instead: sts_claims_aggregation.js's arrangement.
-  await trustThisService(await facts.isProduct(root + "/admin-api"));
+  await trustThisService(false);
   await registry.ensurePerson(base, PERSON, PASSWORD);
 
   log.info("=== 1. registration ===");

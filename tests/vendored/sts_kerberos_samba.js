@@ -296,8 +296,24 @@ async function setUp(k) {
   // The two principals the profiles name are made on first sight: an AS
   // exchange for the account, a TGS exchange for the host.
   const tcp = wire.tcpTransport(k.kdcHost, k.kdcPort);
-  const account = await wire.asExchange(tcp, KREALM, ACCOUNT,
-                                        { password: k.password });
+  // THE REALM REACHES THE KDC BY REPLICATION WHERE THERE ARE WORKERS
+  // (2026-09-27). The create above is answered by a request worker, and the
+  // KDC's socket is the front process's, which learns the realm through the
+  // change log — so in the production modes the first AS-REQ can arrive
+  // before it has, and is answered KDC_ERR_WRONG_REALM (68). That is the
+  // realm not there YET; it is asked again, for up to thirty seconds.
+  let account = null;
+  const until = Date.now() + 30000;
+  for (;;) {
+    account = await wire.asExchange(tcp, KREALM, ACCOUNT,
+                                    { password: k.password });
+    const err = account && !account.tgt && account.first &&
+      account.first.error;
+    if (!(err && err.code === 68) || Date.now() > until) {
+      break;
+    }
+    await new Promise(function (resolve) { setTimeout(resolve, 500); });
+  }
   check("the development realm " + KREALM + " answers on TCP " +
         k.kdcPort + " and issues " + ACCOUNT + " a TGT", function () {
     assert.ok(account.tgt, JSON.stringify(account.second ||
