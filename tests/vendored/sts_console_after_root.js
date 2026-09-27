@@ -79,14 +79,28 @@ function check(what, fn) {
   log.debug("Leaving check().");
 }
 
-// The program a child runs: one console sign-in and one console read, with
-// the answer on stdout as JSON. It is data here, and runs in the child.
+// The program a child runs: either one `build-root` (CAR_ACTION=root), or one
+// console sign-in and one console read, with the answer on stdout as JSON.
+// It is data here, and runs in the child. The build-root is a child's too,
+// because after the first replacement this process's own trust store no
+// longer holds the anchor the listener serves.
 const CHILD = [
   "const consoleSignIn = require(process.env.CAR_SIGNIN);",
   "const started = Date.now();",
   "(async function () {",
   "  const out = { ok: false };",
   "  try {",
+  "    if (process.env.CAR_ACTION === 'root') {",
+  "      const r = await fetch(process.env.CAR_BASE +",
+  "        '/admin-api/pki/build-root', { method: 'POST',",
+  "        headers: { 'Content-Type': 'application/json' }, body: '{}' });",
+  "      out.status = r.status;",
+  "      out.ok = r.status === 200;",
+  "      out.why = out.ok ? '' : (await r.text()).slice(0, 300);",
+  "      out.ms = Date.now() - started;",
+  "      process.stdout.write(JSON.stringify(out));",
+  "      return;",
+  "    }",
   "    const cookie = await consoleSignIn.signInToTheConsole(",
   "      process.env.CAR_BASE, process.env.CAR_USER, null,",
   "      { grant: 'read' });",
@@ -104,7 +118,7 @@ const CHILD = [
 
 // Sign in from a child that trusts `anchorPem` (and whatever this process
 // trusts already). Answers `{ ok, status, ms, why }`.
-function signInTrusting(anchorPem, step) {
+function signInTrusting(anchorPem, step, action) {
   log.debug("Entering signInTrusting(). " + step);
   const file = path.join(os.tmpdir(), "sts-console-after-root-" +
                          process.pid + "-" + step + ".pem");
@@ -116,7 +130,7 @@ function signInTrusting(anchorPem, step) {
     env: Object.assign({}, process.env, {
       NODE_EXTRA_CA_CERTS: file,
       CAR_SIGNIN: path.join(__dirname, "console_signin.js"),
-      CAR_BASE: base, CAR_USER: CONSOLE_USER
+      CAR_BASE: base, CAR_USER: CONSOLE_USER, CAR_ACTION: action || ""
     }),
     encoding: "utf8", timeout: 60000
   });
@@ -138,15 +152,11 @@ function signInTrusting(anchorPem, step) {
   return answer;
 }
 
-async function replaceTheRoot() {
+async function replaceTheRoot(step) {
   log.debug("Entering replaceTheRoot().");
-  const r = await fetch(base + "/admin-api/pki/build-root", {
-    method: "POST", headers: { "Content-Type": "application/json" },
-    body: "{}"
-  });
-  const text = await r.text();
-  assert.strictEqual(r.status, 200, "POST /admin-api/pki/build-root " +
-                     "answered " + r.status + " " + text.slice(0, 300));
+  const answer = signInTrusting(await anchorNow(), step + "-root", "root");
+  assert.ok(answer && answer.ok, "POST /admin-api/pki/build-root failed: " +
+            JSON.stringify(answer));
   log.debug("Leaving replaceTheRoot().");
 }
 
@@ -177,13 +187,13 @@ async function test() {
            "the console signs in");
 
   log.info("=== 2. the Root replaced, and the console at once ===");
-  await replaceTheRoot();
+  await replaceTheRoot("first");
   signedIn(signInTrusting(await anchorNow(), "first"),
            "the console signs in at once after the Root is replaced — its " +
            "key re-issued under the new branch");
 
   log.info("=== 3. replaced again inside the first re-issue's window ===");
-  await replaceTheRoot();
+  await replaceTheRoot("second");
   signedIn(signInTrusting(await anchorNow(), "second"),
            "and again at once after a SECOND replacement, inside the first " +
            "re-issue's claim window (the STS-AUTHN-0208 case)");
