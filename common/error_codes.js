@@ -15841,6 +15841,18 @@ const CODES = [
     summary: 'A console form POST held a value outside the closed set the ' +
       'mirroring /admin-api operation\'s enum declares (#86).',
     spec: 'HTTP 400 page' },
+  { code: 'STS-ADMIN-0821',
+    summary: 'admin:read or admin:write was asked for on behalf of a person ' +
+      'whose console roles in the realm do not authorize it — no Admin ' +
+      'Read or Admin Write, not signed in, or the bootstrap administrator ' +
+      'before its claim — and was left off the tokens (#302).',
+    spec: 'none — the token is issued without that scope (RFC 6749 ' +
+      'section 3.3)' },
+  { code: 'STS-ADMIN-0822',
+    summary: 'Every scope a person\'s request asked for was admin:read or ' +
+      'admin:write that their console roles do not authorize, so nothing ' +
+      'was left to issue (#302).',
+    spec: 'invalid_scope (RFC 6749 sections 4.1.2.1 and 5.2)' },
   { code: 'STS-API-0001',
     summary: 'A management API request carried no Bearer access token while ' +
       'adminApi.authRequired is on.',
@@ -16189,6 +16201,11 @@ const CODES = [
     summary: 'A management API query parameter held a value outside the ' +
       'closed set its operation\'s enum declares (#86).',
     spec: 'HTTP 400 { ok: false, errors }' },
+  { code: 'STS-API-0125',
+    summary: 'A management API access token issued for a PERSON carried the ' +
+      'admin scope an operation needs, and that person no longer holds the ' +
+      'console role it goes with in the realm that issued it (#302).',
+    spec: 'HTTP 403 forbidden' },
   { code: 'STS-PORTAL-0001',
     summary: 'A user portal request\'s query string or form body did not ' +
       'match the shape its route accepts, and was refused before ' +

@@ -513,6 +513,29 @@ the action needs — so what this surface demands is stated where every other
 access decision in this service is stated, and `admin_api.ts` decides the
 QUESTION rather than the outcome.
 
+**WHO MAY BE ISSUED THOSE SCOPES IS ASKED AT ISSUANCE, SINCE 2026-09-27
+(#302, part A of #88).** Until then the only question was the CLIENT's —
+does it declare them (#110) — so a client registered with `admin:write` on
+the code flow handed Admin Write to anybody who signed in through it: the
+scope was the authorization. Now `admin_scope_access.ts` narrows them, for a
+PERSON, to what that person's console roles in the realm authorize —
+`admin:read` with Admin Read, `admin:write` with Admin Write — at the
+authorization endpoint and again in `oauth2.ts`'s `tokenSet()`, the backstop
+every grant mints through. Narrowed and audited (`STS-ADMIN-0821`), refused
+`invalid_scope` only when nothing else was asked for (`STS-ADMIN-0822`). The
+open console is honoured (the API is its machine door, rule 7); the
+bootstrap administrator before its claim is not (#103). **An application on
+`client_credentials` is not asked yet**: the client declaring the scopes is
+still what authorizes them, and `sts-management-api` is the machine door
+every launcher uses — #303 moves both kinds of principal onto a role →
+permission relation. The file's header argues each choice. **AND ON EVERY
+CALL**: the gate hands a person's token to `recheck()` beside the client
+declaration, against the roster as it is now in the realm that issued the
+token, so a role revoked after a token was minted stops working at once
+(403, `STS-API-0125`) rather than when the token expires — the debugger's
+gate does the same. A client's own token (`sub` equal to `client_id`, or
+`urn:sts:client:<id>`) is not asked.
+
 **THE AUDIENCE DEFAULTS TO THIS API'S BASE URL SINCE 2026-09-13, AND THE GATE
 ACCEPTS TWO AT THAT DEFAULT.** `adminApi.audience` was `''`, meaning
 *`/admin-api` under the host the request arrived on* — correct, and a blank box

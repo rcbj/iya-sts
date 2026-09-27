@@ -338,6 +338,11 @@ import gate = require('../common/issuance_gate');
 // `common/helpers.js`, `common/realms.js` — so it
 // cannot move a route or close a cycle. See `debugger/debugger_access.ts`.
 import debuggerAccess = require('../debugger/debugger_access');
+// WHO MAY BE ISSUED admin:read AND admin:write (#302, part A of #88): the
+// person's console roles, asked at the two places the debugger permission is
+// narrowed. A library (rule 3) requiring only libraries — the same ones as
+// `debugger_access.ts`. See `mgmt-api/admin_scope_access.ts`.
+import adminScopeAccess = require('../mgmt-api/admin_scope_access');
 // WHICH SCOPES A CLIENT MAY BE ISSUED (#110, 2026-09-22). A library (rule 3)
 // requiring only libraries this module already requires. See
 // `common/scope_policy.ts` and scopeRefusal() below.
@@ -488,6 +493,7 @@ interface OAuth2ServerDeps {
   usedAssertions: typeof usedAssertions;
   gate: typeof gate;
   debuggerAccess: typeof debuggerAccess;
+  adminScopeAccess: typeof adminScopeAccess;
   scopePolicy: typeof scopePolicy;
   delegationPolicy: typeof delegationPolicy;
   credentials: typeof credentials;
@@ -1641,6 +1647,7 @@ class OAuth2Server {
       usedAssertions: usedAssertions,
       gate: gate,
       debuggerAccess: debuggerAccess,
+      adminScopeAccess: adminScopeAccess,
       scopePolicy: scopePolicy,
       delegationPolicy: delegationPolicy,
       credentials: credentials,
@@ -4647,7 +4654,7 @@ class OAuth2Server {
 
   async tokenSet(base: Json, opts: Json): Promise<Json> {
     const { log, randomId, hasScope, mtls, bcp, debuggerAccess,
-            scopePolicy } = this.deps;
+            adminScopeAccess, scopePolicy, errorCodes } = this.deps;
     const self = this;
     log.debug("Entering OAuth2Server.tokenSet(). scope=" +
               (opts.scope || '(none)'));
@@ -4703,6 +4710,28 @@ class OAuth2Server {
       opts.scope = debuggerAccess.narrowScope(opts.scope,
         self.issuanceSubjectOf(opts),
         { clientId: opts.client_id, grant: opts.grant });
+    }
+    // admin:read AND admin:write GO WITH THE PERSON'S CONSOLE ROLES (#302),
+    // here for the debugger permission's reason: every grant mints through
+    // this function, so a refresh after a role was revoked, a token exchange,
+    // a password or assertion grant cannot carry them for somebody the
+    // roster does not authorize. Narrowed, and refused `invalid_scope` only
+    // when nothing is left (#88 decision 2) — carried out as RFC 9068's
+    // refusal is, so the token endpoint's one wrapper answers it. An
+    // application's scope is untouched until #303.
+    // See `mgmt-api/admin_scope_access.ts`.
+    if (adminScopeAccess.asksForAdminScope(opts.scope)) {
+      const narrowed = adminScopeAccess.narrowScope(opts.scope,
+        self.issuanceSubjectOf(opts),
+        { clientId: opts.client_id, grant: opts.grant });
+      if (narrowed.emptied) {
+        log.debug("Leaving OAuth2Server.tokenSet(). Nothing but admin " +
+                  "scopes the person may not hold was asked for.");
+        throw new AccessTokenRefused(log, errorCodes.mark(
+          { error: 'invalid_scope', description: narrowed.why },
+          'STS-ADMIN-0822'));
+      }
+      opts.scope = narrowed.scope;
     }
     // A SCOPE NAMING ANOTHER APPLICATION BECOMES THE AUDIENCE — see
     // audienceScopes(). Here rather than inside accessToken(),
@@ -6688,7 +6717,7 @@ class OAuth2Server {
                                    issuedAcr?: Json): Promise<any> {
     const { log, logArtifact, randomId, hasScope, bcp, oauth21, frontchannel,
             applications, errorCodes, par, gate, debuggerAccess,
-            clusterClaims, requestObject } = this.deps;
+            adminScopeAccess, clusterClaims, requestObject } = this.deps;
     const self = this;
     log.debug("Entering OAuth2Server.issueAuthorizationResponse().");
     // Everything minted below is this authorization server's, so the base it is
@@ -6715,11 +6744,14 @@ class OAuth2Server {
     // made a plain OAuth request an OpenID Connect one it had not asked to be.
     // And `offline_access` is kept only where OIDC Core section 11 allows it —
     // see offlineAccessScope().
-    const scope = debuggerAccess.narrowScope(
+    // `let`, because admin:read and admin:write come off below (#302), after
+    // the client's own refusals have seen them.
+    const person = { kind: 'user', name: user.username,
+                     authenticated: !authInfo ||
+                                    authInfo.authenticated !== false };
+    let scope = debuggerAccess.narrowScope(
       self.offlineAccessScope(String(query.scope || ''), query, types, user),
-      { kind: 'user', name: user.username,
-        authenticated: !authInfo || authInfo.authenticated !== false },
-      { clientId: query.client_id, grant: 'authorization_code' });
+      person, { clientId: query.client_id, grant: 'authorization_code' });
     const out: Json = {};
     const parsedDetails = self.parseAuthorizationDetails(
       query.authorization_details, { clientId: query.client_id, req: req });
@@ -6797,6 +6829,29 @@ class OAuth2Server {
         { error: 'invalid_scope', error_description: scopeProblem.description },
         self.usesFragment(types, query.response_mode),
         query.response_mode);
+    }
+
+    // admin:read AND admin:write GO WITH THIS PERSON'S CONSOLE ROLES (#302,
+    // part A of #88). After the two refusals above, because a client that
+    // may not ask for them is the client's problem and is told so first;
+    // before a code carries them, so the consent screen and the code say
+    // what will be issued. Narrowed, and refused `invalid_scope` only when
+    // nothing is left (#88 decision 2). tokenSet() asks again, as the
+    // backstop. See `mgmt-api/admin_scope_access.ts`.
+    if (adminScopeAccess.asksForAdminScope(scope)) {
+      const narrowed = adminScopeAccess.narrowScope(scope, person,
+        { clientId: query.client_id, grant: 'authorization_code' });
+      if (narrowed.emptied) {
+        log.debug("Leaving OAuth2Server.issueAuthorizationResponse(). " +
+                  "Nothing but admin scopes the person may not hold was " +
+                  "asked for.");
+        errorCodes.mark(res, 'STS-ADMIN-0822');
+        return self.redirectBack(res, base, redirectUri, query.state,
+          { error: 'invalid_scope', error_description: narrowed.why },
+          self.usesFragment(types, query.response_mode),
+          query.response_mode);
+      }
+      scope = narrowed.scope;
     }
 
     // RFC 9068 SECTION 3, refused here for the reason the two blocks above are:
