@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+// SPDX-License-Identifier: MIT
+//
 // ===========================================================================
 // A PARTNER'S ENCRYPTED ASSERTION OR ID TOKEN, OVER THE NETWORK (#168).
 //

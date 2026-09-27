@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+# SPDX-License-Identifier: MIT
+
 output "realm" {
   description = "The realm these ports belong to."
   value       = var.realm

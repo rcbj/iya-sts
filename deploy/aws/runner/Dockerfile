@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+# SPDX-License-Identifier: MIT
+#
 # ---------------------------------------------------------------------------
 # THE SUITE RUNNER FOR AN AWS ENVIRONMENT (issue #51): the tests image, plus
 # the one package the task needs that the tests image does not carry — the S3

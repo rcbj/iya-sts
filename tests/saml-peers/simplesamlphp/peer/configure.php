@@ -1,4 +1,7 @@
 <?php
+// SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+// SPDX-License-Identifier: MIT
+//
 // POST {"idpMetadata": "<md:EntityDescriptor …>", "append": bool,
 // "ssoBinding": optional}: the
 // identity provider this

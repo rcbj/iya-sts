@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+# SPDX-License-Identifier: MIT
+#
 # tests/Dockerfile — THE TEST RUNNER AS A CONTAINER.
 #
 # This is the image `docker-compose-run-tests.yml` builds for the `tests`

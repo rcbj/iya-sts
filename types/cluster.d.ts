@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+// SPDX-License-Identifier: MIT
+//
 // ---------------------------------------------------------------------------
 // THE RESULT SHAPES OF `cluster/` (#50, 2026-09-16).
 //

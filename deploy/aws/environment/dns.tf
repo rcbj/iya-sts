@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+# SPDX-License-Identifier: MIT
+#
 # ---------------------------------------------------------------------------
 # A PUBLIC NAME AND A PUBLIC CERTIFICATE, WHEN `public_hostname` IS SET.
 #

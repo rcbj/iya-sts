@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+# SPDX-License-Identifier: MIT
+#
 # ---------------------------------------------------------------------------
 # THE TERRAFORM AND SUITE-LAUNCHER IMAGE FOR THE AWS CLUSTER (issue #51).
 #

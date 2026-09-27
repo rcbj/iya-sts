@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+# SPDX-License-Identifier: MIT
+#
 # Builds the mock STS container image.
 #
 # On every push to main (which is what a merged pull request is) and on demand

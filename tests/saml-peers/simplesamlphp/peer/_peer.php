@@ -1,4 +1,7 @@
 <?php
+// SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+// SPDX-License-Identifier: MIT
+//
 // What the four /peer pages share (#191): SimpleSAMLphp's bootstrap, and a
 // JSON answer.
 require_once '/var/simplesamlphp/public/_include.php';

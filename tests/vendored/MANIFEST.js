@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+// SPDX-License-Identifier: MIT
+
 const path = require('path');
 
 // This file's own logger, for the Entering/Leaving lines and the handled

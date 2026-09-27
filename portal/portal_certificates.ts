@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+// SPDX-License-Identifier: MIT
+
 'use strict';
 //
 // portal/portal_certificates.ts — /portal/certificates, WHERE A PERSON GETS

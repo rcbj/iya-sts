@@ -1,0 +1,70 @@
+# SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+# SPDX-License-Identifier: MIT
+#
+# Copyright and licensing of every file in this repository, in the format of
+# the REUSE specification 3.2 (https://reuse.software/spec-3.2/).
+#
+# Source files this repository owns carry the two SPDX lines in their own
+# header, and tests/copyright_notices.js fails when one does not. This file
+# covers what cannot carry a comment (JSON, Markdown, XML, data, images),
+# the vendored copies that may not be edited here, and the third-party
+# material. When several annotations match a file, the LAST one wins, so the
+# catch-all is first and every third-party path comes after it.
+#
+# LICENSE.md says where each third-party item came from.
+
+version = 1
+
+# Everything this project wrote, including the byte-identical copies of the
+# parent project's files (common/vendored/, the eight Kerberos codec files,
+# the non-local tests/vendored/ jobs), which have the same owner and
+# licence and may not be edited here to carry a header.
+[[annotations]]
+path = "**"
+precedence = "closest"
+SPDX-FileCopyrightText = "2026 Iya CyberSecurity Solutions, LLC"
+SPDX-License-Identifier = "MIT"
+
+# The OASIS XACML conformance suite, as adapted by AT&T and then AuthzForce
+# (OW2). Apache-2.0. xacml/conformance/PROVENANCE.md is the record.
+[[annotations]]
+path = [
+  "xacml/conformance/mandatory/**",
+  "xacml/conformance/optional/**",
+  "xacml/conformance/unsupported/**",
+  "xacml/conformance/ConformanceTests.html",
+  "xacml/conformance/UPSTREAM-README.md",
+  "xacml/conformance/LICENSE",
+]
+precedence = "override"
+SPDX-FileCopyrightText = [
+  "2014 AT&T Intellectual Property",
+  "AuthzForce contributors (OW2)",
+]
+SPDX-License-Identifier = "Apache-2.0"
+
+# The SPIRE API SDK's protobuf definitions, the SPIFFE Workload API and the
+# SPIFFE Broker API, copied verbatim. Apache-2.0.
+[[annotations]]
+path = "spiffe/protos/**"
+precedence = "override"
+SPDX-FileCopyrightText = "The SPIFFE Authors"
+SPDX-License-Identifier = "Apache-2.0"
+
+# The W3C Verifiable Credentials JSON-LD contexts, served from a closed
+# loader rather than fetched.
+[[annotations]]
+path = [
+  "common/vendored/contexts/credentials_v1.json",
+  "common/vendored/contexts/credentials_v2.json",
+]
+precedence = "override"
+SPDX-FileCopyrightText = "World Wide Web Consortium (W3C)"
+SPDX-License-Identifier = "W3C-20150513"
+
+# Country outlines derived from Natural Earth, which is public domain.
+[[annotations]]
+path = "admin-ui/natural_earth/**"
+precedence = "override"
+SPDX-FileCopyrightText = "Natural Earth (public domain)"
+SPDX-License-Identifier = "LicenseRef-NaturalEarth-PublicDomain"

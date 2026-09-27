@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+# SPDX-License-Identifier: MIT
+#
 # ---------------------------------------------------------------------------
 # THE SUITE'S CALLBACK HALF, IN THE ENVIRONMENT'S VPC, FOR THE LENGTH OF ONE
 # RUN (2026-09-18).

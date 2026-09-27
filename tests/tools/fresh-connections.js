@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+// SPDX-License-Identifier: MIT
+
 'use strict';
 // ===========================================================================
 // tests/tools/fresh-connections.js — A NEW CONNECTION FOR EVERY REQUEST A JOB

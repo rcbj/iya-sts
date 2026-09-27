@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+// SPDX-License-Identifier: MIT
+//
 // Configuration for the containerized test stack
 // (docker-compose-run-tests.yml).
 //

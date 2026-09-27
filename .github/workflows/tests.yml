@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+# SPDX-License-Identifier: MIT
+#
 # Runs this repository's whole test suite, in containers — THREE TIMES, in
 # three jobs that do not depend on each other: the plain suite, the same suite
 # with coverage collected, and the suite in the `cluster` mode (two nodes behind

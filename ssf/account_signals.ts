@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+// SPDX-License-Identifier: MIT
+
 'use strict';
 // ---------------------------------------------------------------------------
 // ssf/account_signals.ts — WHAT A CREDENTIAL CHANGE SAYS OVER SHARED SIGNALS,

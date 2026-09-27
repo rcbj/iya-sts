@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+# SPDX-License-Identifier: MIT
+
 output "cluster" {
   description = "The ECS cluster the task runs in."
   value       = local.env.ecs_cluster

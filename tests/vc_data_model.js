@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+// SPDX-License-Identifier: MIT
+
 'use strict';
 // ===========================================================================
 // tests/vc_data_model.js — THE VC DATA MODEL'S MUSTs (#194, 2026-09-26).

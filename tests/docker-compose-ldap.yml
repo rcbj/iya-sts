@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+# SPDX-License-Identifier: MIT
+#
 # tests/docker-compose-ldap.yml — THE DIRECTORY'S OWN SOCKET, PUBLISHED FOR THE
 # TEST STACK AND FOR NOTHING ELSE.
 #

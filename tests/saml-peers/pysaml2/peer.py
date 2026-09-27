@@ -1,4 +1,7 @@
 #!/usr/local/bin/python3
+# SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+# SPDX-License-Identifier: MIT
+#
 # ===========================================================================
 # PYSAML2 AS A SCRIPTED SAML 2.0 SERVICE PROVIDER (#190).
 #

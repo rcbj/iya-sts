@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+// SPDX-License-Identifier: MIT
+//
 // ===========================================================================
 // FEDERATION OVER THE NETWORK, BETWEEN TWO TRUST REALMS OF ONE SERVICE.
 //

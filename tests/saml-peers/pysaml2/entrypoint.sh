@@ -1,4 +1,7 @@
 #!/bin/bash
+# SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+# SPDX-License-Identifier: MIT
+#
 # THE PYSAML2 PEER'S START (#190): its key pair, made now; its log on the
 # volume the job reads; the SP.
 set -euo pipefail

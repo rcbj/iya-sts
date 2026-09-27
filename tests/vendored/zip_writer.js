@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+// SPDX-License-Identifier: MIT
+//
 // ===========================================================================
 // zip_writer.js — A ZIP ARCHIVE, BUILT BY THIS SUITE'S OWN CODE (#215).
 //

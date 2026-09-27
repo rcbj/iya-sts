@@ -1,4 +1,6 @@
 #!/bin/bash
+# SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+# SPDX-License-Identifier: MIT
 #
 # run-coverage.sh — run the suite with code-coverage collection enabled and
 # render the report.

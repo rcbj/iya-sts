@@ -1,0 +1,13 @@
+Natural Earth — public domain
+
+Natural Earth data is in the public domain. The Terms of Use on
+https://www.naturalearthdata.com/about/terms-of-use/ state that all versions
+of Natural Earth raster and vector map data found on that website are in the
+public domain, that they may be used in any manner, including modifying the
+content and design, electronic dissemination and offset printing, and that
+no permission is needed to use them.
+
+The data in admin-ui/natural_earth/ is derived from the 1:50m Admin 0 –
+Countries dataset by tests/tools/natural-earth.js, which pins the upstream
+file by SHA-256 and commit. Crediting "Made with Natural Earth" is not
+required; this project does it anyway.

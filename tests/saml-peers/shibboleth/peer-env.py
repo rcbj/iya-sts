@@ -1,4 +1,7 @@
 #!/usr/bin/python3
+# SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+# SPDX-License-Identifier: MIT
+#
 # The one page of the Shibboleth peer behind mod_shib (#189): what mod_shib
 # put in the environment for this session, as JSON, so the job can assert the
 # attributes, the NameID and the identity provider without scraping HTML.

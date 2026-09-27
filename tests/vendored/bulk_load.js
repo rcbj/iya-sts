@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+// SPDX-License-Identifier: MIT
+//
 // ===========================================================================
 // bulk_load.js — WHAT THE THREE BULK-LOAD JOBS SHARE, WHICH IS EVERYTHING
 // EXCEPT THE DOOR.

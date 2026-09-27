@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+// SPDX-License-Identifier: MIT
+
 'use strict';
 // ---------------------------------------------------------------------------
 // ssf/service_signals.ts — WHAT THIS SERVICE'S OWN KEYS AND AUTHORITIES SAY

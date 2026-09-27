@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+// SPDX-License-Identifier: MIT
+//
 // ===========================================================================
 // sts_realm_administrators.js — A TRUST REALM'S OWN ADMINISTRATORS, OVER HTTP.
 //

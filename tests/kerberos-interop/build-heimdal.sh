@@ -1,4 +1,7 @@
 #!/bin/bash
+# SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+# SPDX-License-Identifier: MIT
+#
 # HEIMDAL'S CLIENT TOOLS, AND A curl ON HEIMDAL'S GSSAPI (#205).
 #
 # Run in the `heimdal` stage of tests/Dockerfile, never on a host. Heimdal is

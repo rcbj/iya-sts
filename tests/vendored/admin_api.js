@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+// SPDX-License-Identifier: MIT
+//
 // File: admin_api.js
 //
 // The mock STS's MANAGEMENT API at /admin-api — the /admin console's whole

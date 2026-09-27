@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+// SPDX-License-Identifier: MIT
+
 'use strict';
 // ===========================================================================
 // tests/vc_api.js — THE VC-API TEST ADAPTER'S GATE, AND DID RESOLUTION

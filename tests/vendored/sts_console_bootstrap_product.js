@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+// SPDX-License-Identifier: MIT
+//
 // ===========================================================================
 // sts_console_bootstrap_product.js — THE CONSOLE BEFORE ITS BOOTSTRAP
 // ADMINISTRATOR ARRIVES, OVER HTTP, IN BOTH MODES (2026-09-22, #103).

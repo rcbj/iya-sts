@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+# SPDX-License-Identifier: MIT
 #
 # tests/tools/compose.sh — how this repository's launchers talk to docker.
 #

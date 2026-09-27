@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+// SPDX-License-Identifier: MIT
+//
 // ===========================================================================
 // tests/tools/container-smoke.js — SIGN IN TO THE CONSOLE AND READ
 // /admin/sts-metadata, FOR THE BUILD-CONTAINER WORKFLOW'S SMOKE TEST.

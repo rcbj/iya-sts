@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+// SPDX-License-Identifier: MIT
+
 'use strict';
 // ===========================================================================
 // tests/vc_jsonld.js — THE CLOSED JSON-LD LOADER AND RDFC-1.0 (#194-#196,

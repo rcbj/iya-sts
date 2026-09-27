@@ -1,4 +1,7 @@
 <?php
+// SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+// SPDX-License-Identifier: MIT
+//
 // The identity provider(s) this peer trusts: what /peer/configure.php parsed
 // from the metadata the job handed it, with SimpleSAMLphp's own SAMLParser.
 $f = '/var/simplesamlphp-peer/idp-remote.json';

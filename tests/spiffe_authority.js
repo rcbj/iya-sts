@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+// SPDX-License-Identifier: MIT
+//
 // ===========================================================================
 // tests/spiffe_authority.js — THE SPIFFE CERTIFICATE AUTHORITY IS THE
 // SERVICE'S AND NOT ONE PROCESS'S (2026-09-08).
