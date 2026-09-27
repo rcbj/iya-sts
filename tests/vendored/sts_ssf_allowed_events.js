@@ -322,7 +322,19 @@ async function test() {
 
   log.info("=== 4. SSF's own verification event is always allowed ===");
   r = await limited.verify(limitedStream);
-  got = await limited.drain(limitedStream);
+  // SSF 1.0 section 8.1.4 has the verification event transmitted
+  // asynchronously, after the 204. One immediate poll therefore races it,
+  // and lost in the cluster mode, where the verification and the poll can
+  // be answered by different nodes. Poll until it arrives, for ten seconds.
+  got = [];
+  for (let i = 0; i < 20 && got.indexOf(VERIFICATION) < 0; i++) {
+    if (i > 0) {
+      await new Promise(function (done) {
+        setTimeout(done, 500);
+      });
+    }
+    got = got.concat(await limited.drain(limitedStream));
+  }
   check("a verification event reaches a stream whose entry names only caep " +
         "(SSF's own events are always allowed)",
         function () {
