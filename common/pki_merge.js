@@ -483,6 +483,12 @@ function orphanedSlots(row) {
   const issuing = (row && row.issuing) || {};
   const out = Object.keys(certs).filter(function (slot) {
     const record = certs[slot];
+    // A pinned signer's operator-supplied chain is not this service's, and
+    // is not an orphan for being signed by somebody else (#263).
+    if (record && record.pinnedSigner &&
+        record.pinnedSigner.operatorCertificate) {
+      return false;
+    }
     const ca = record && issuing[record.useCase];
     const signer = record && Array.isArray(record.chainPem)
       ? record.chainPem[0] : '';

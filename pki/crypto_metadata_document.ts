@@ -271,6 +271,26 @@ class CryptoMetadataDocument {
                                             one.kid, one.certPem || '')
           };
         });
+      // A KEY AN OPERATOR PINNED FOR THIS UNIT (#263), published from the
+      // pin until its grace after an unpin ends: `pinned` while it signs,
+      // `pinned-pending` in its publication lead, `pinned-retired` in its
+      // grace. Its certificate is its own slot's, the operator's where they
+      // supplied one.
+      helpers.pinnedSignersOf(keys, row.useCase)
+        .filter(function (one: Json): boolean {
+          return one.slot === row.slot;
+        }).forEach(function (one: Json): void {
+          standby.push({
+            kid: one.kid,
+            state: one.role === 'active' ? 'pinned' : 'pinned-' + one.role,
+            createdAt: one.pinnedAt,
+            retiredAt: one.retiredAt || null,
+            retiredUntil: one.retiredUntil || null,
+            jwk: row.useCase === 'xml' ? null : one.publicJwk,
+            certificate: self.certificateOf(scope, row.useCase, row.slot,
+                                            one.kid, one.certificatePem)
+          });
+        });
       return {
         unit: row.unit, useCase: row.useCase, alg: row.alg,
         crv: row.crv || null, kind: row.kind,
@@ -537,6 +557,9 @@ class CryptoMetadataDocument {
       '<xs:attribute name="state" use="required"><xs:simpleType>' +
       '<xs:restriction base="xs:string"><xs:enumeration value="current"/>' +
       '<xs:enumeration value="next"/><xs:enumeration value="retired"/>' +
+      '<xs:enumeration value="pinned"/>' +
+      '<xs:enumeration value="pinned-pending"/>' +
+      '<xs:enumeration value="pinned-retired"/>' +
       '</xs:restriction></xs:simpleType></xs:attribute>' +
       '</xs:complexType></xs:element></xs:sequence>' +
       '<xs:attribute name="id" type="xs:string" use="required"/>' +

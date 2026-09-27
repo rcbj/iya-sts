@@ -4695,7 +4695,8 @@ class Saml2Sso {
       const back = this.sessionNamedBy(spEntityId, sessionIndex, nameId);
       if (back.session) {
         session = this.deps.authn.endSessionById(
-          back.session.id, 'saml2-slo ' + spEntityId, 'user');
+          back.session.id, 'a SAML 2.0 Single Logout request from ' +
+          spEntityId, 'user');
         log.info('saml2: the back-channel LogoutRequest from "' +
                  spEntityId + '" ended the session it named (' +
                  sessionIndex + ').');
@@ -4972,9 +4973,15 @@ class Saml2Sso {
             '</ds:X509Data></ds:KeyInfo></md:KeyDescriptor>';
         }).join('');
       }
-      return '<md:KeyDescriptor use="' + use + '"><ds:KeyInfo xmlns:ds="' +
-        NS_DS + '"><ds:X509Data><ds:X509Certificate>' + STS.xml.certB64 +
-        '</ds:X509Certificate></ds:X509Data></ds:KeyInfo></md:KeyDescriptor>';
+      // ENCRYPTION: the realm's XML key — or, where an xml key is PINNED
+      // (#263), that key: beside the generated one during its lead, alone
+      // once it signs (helpers.ownXmlEncryptionCertificates()).
+      return helpers.ownXmlEncryptionCertificates().map(function (one: any) {
+        return '<md:KeyDescriptor use="' + use + '"><ds:KeyInfo xmlns:ds="' +
+          NS_DS + '"><ds:X509Data><ds:X509Certificate>' +
+          stsCrypto.stripPem(one.certPem) + '</ds:X509Certificate>' +
+          '</ds:X509Data></ds:KeyInfo></md:KeyDescriptor>';
+      }).join('');
     };
 
     const service = function (element, binding, location, extra?) {

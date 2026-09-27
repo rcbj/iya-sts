@@ -3206,7 +3206,13 @@ class OAuth2Server {
           // THE SIGNER GROUPS' KEYS (#68), after every per-algorithm key so
           // `keys[0]` stays the RSA key — classical ones with their hybrid
           // certificate in `x5c`, a partnered ML-DSA key bare (D5).
-          .concat(helpers.groupPublishedJwks(STS)))
+          .concat(helpers.groupPublishedJwks(STS))
+          // THE PINNED KEYS (#263) — a key an operator pinned as this
+          // realm's signer for an algorithm, published from the pin (ahead
+          // of its use) until its grace after an unpin ends, with its x5c.
+          // A pinned RSA key is already above, as a non-current row of
+          // `ownRsaCertificates('jose')`.
+          .concat(helpers.pinnedPublishedJwks(STS)))
         // THE REQUEST OBJECT ENCRYPTION KEYS (RFC 9101 section 6.1,
         // 2026-09-13), LAST — after every signing key, for the ordering rule
         // above — and marked `use: "enc"`, which is what tells a client these

@@ -122,6 +122,10 @@ interface SigningRotationDeps {
 }
 
 class SigningRotation {
+  // The pinned keys warned about today (#263), `scope|kid` to the day number,
+  // so the hourly `signing.retire` says it once a day. As many entries as
+  // there are pinned keys near their end.
+  private readonly pinWarned = new Map<string, number>();
   static readonly ROTATE_JOB = ROTATE_JOB;
   static readonly ROTATE_NOW_JOB = ROTATE_NOW_JOB;
   static readonly RETIRE_JOB = RETIRE_JOB;
@@ -222,6 +226,11 @@ class SigningRotation {
       log.debug("Caught in SigningRotation.unitForAlg(): " +
                 ((e && e.message) || e));
       kid = '';
+    }
+    // A PINNED key (#263) is no unit of the set; the unit is its slot's.
+    if (kid.indexOf('sts-pinned-') === 0) {
+      log.debug("Leaving SigningRotation.unitForAlg(). A pinned key.");
+      return 'jose:' + helpers.joseSlotForAlg(alg);
     }
     const byKid = units.filter(function (u: Json): boolean {
       return !!kid && u.kid === kid;
@@ -414,7 +423,14 @@ class SigningRotation {
     const lacking: string[] = [];
     const due: string[] = [];
     const self = this;
+    // A UNIT AN OPERATOR PINNED (#263) is exempt while the pin signs or is
+    // about to: its lifecycle is theirs, and a promotion under it would
+    // announce a rotation of a key the realm is not signing with.
+    const pinned = this.pinnedUnits(String(keys.realm || realmId));
     helpers.signingUnitsOf(keys).forEach(function (u: Json): void {
+      if (pinned.indexOf(u.unit) >= 0) {
+        return;
+      }
       const next = helpers.standbyOf(keys, u.unit)
         .filter(function (one: Json): boolean {
           return one.role === 'next';
@@ -828,10 +844,229 @@ class SigningRotation {
     if ((done.dropped || []).length) {
       this.noteHistory(realmId, 'dropped past its grace');
     }
+    const pins = this.retirePinned(realmId, scope, now);
     log.debug("Leaving SigningRotation.retireDue(). " +
               (done.dropped || []).length + " dropped.");
     return { dropped: (done.dropped || []).length, superseded: superseded,
-             generation: done.generation };
+             generation: done.generation, pinnedDropped: pins.dropped,
+             pinnedWarned: pins.warned };
+  }
+
+  // ---------------------------------------------------------------------------
+  // PINNED SIGNING KEYS (2026-09-27, #263). An operator's key pinned into a
+  // `jose` or `xml` slot signs for the realm where `pki.pinnedSigners` is on;
+  // the record and every check on it are `pki.js`'s (`pinSigner()`). What is
+  // here is what a rotation has: the grace an unpinned key verifies through
+  // (`graceMs()` of its unit, as a retired generated key), the audit row, the
+  // `signing-key-rotated` event, and — in `signing.retire` — the drop of an
+  // unpinned key past its grace and the warning as a pinned certificate
+  // nears its end. A pinned key is NEVER rotated: its lifecycle is the
+  // operator's.
+  // ---------------------------------------------------------------------------
+  private pinnedUnits(scope: string): string[] {
+    const { log, pki } = this.deps;
+    log.debug("Entering SigningRotation.pinnedUnits().");
+    let out: string[] = [];
+    try {
+      if (pki().pinnedSignersOn(scope)) {
+        out = pki().pinnedSignersFor(scope)
+          .filter(function (one: Json): boolean {
+            return one.role !== 'retired';
+          }).map(function (one: Json): string {
+            return one.unit;
+          });
+      }
+    } catch (e) {
+      // No certificate authority here: nothing is pinned.
+      log.debug("Caught in SigningRotation.pinnedUnits(): " +
+                ((e && e.message) || e));
+      out = [];
+    }
+    log.debug("Leaving SigningRotation.pinnedUnits(). " + out.length + ".");
+    return out;
+  }
+
+  // The kid a unit signs with now: its active pin, or the generated key.
+  private signerKidOf(scope: string, unit: string): string {
+    const { log, helpers, pki } = this.deps;
+    log.debug("Entering SigningRotation.signerKidOf(). " + unit);
+    const pinned = pki().pinnedSignersFor(scope)
+      .filter(function (one: Json): boolean {
+        return one.unit === unit && one.role === 'active';
+      })[0];
+    if (pinned && pki().pinnedSignersOn(scope)) {
+      log.debug("Leaving SigningRotation.signerKidOf(). Pinned.");
+      return pinned.kid;
+    }
+    const generated = helpers.signingUnitsOf(helpers.stsKeysFor.of(scope))
+      .filter(function (u: Json): boolean {
+        return u.unit === unit;
+      })[0];
+    log.debug("Leaving SigningRotation.signerKidOf().");
+    return generated ? String(generated.kid) : '';
+  }
+
+  // PIN — `/admin/pki`'s and `POST /admin-api/pki/pin-key`'s act. With the
+  // realm's setting off this is `pki.pinKeyPair()` as it always was; on,
+  // a pin into a signer slot is announced as a rotation `requested`.
+  async pinSigningKey(scopeId: string, useCaseId: string, slot: string,
+                      material: Json, requestedBy?: string): Promise<Json> {
+    const { log, pki, audit, realms } = this.deps;
+    log.debug("Entering SigningRotation.pinSigningKey(). " + useCaseId + ':' +
+              slot);
+    const unit = String(useCaseId) + ':' + String(slot);
+    const scope = String(scopeId || '') ||
+                  String((realms.current() || {}).id || '');
+    let from = '';
+    let graceMs = 0;
+    const signer = pki().PINNED_SIGNER_USE_CASES.indexOf(useCaseId) >= 0 &&
+                   pki().pinnedSignersOn(scope);
+    if (signer) {
+      from = this.signerKidOf(scope, unit);
+      graceMs = this.graceMs(unit);
+    }
+    const done = await pki().pinKeyPair(scope, useCaseId, slot, material,
+                                        { graceMs: graceMs });
+    if (!done.ok || !done.signer || done.unchanged) {
+      log.debug("Leaving SigningRotation.pinSigningKey(). " +
+                (done.ok ? 'Nothing to announce.' : 'Refused.'));
+      return done;
+    }
+    audit().record({
+      action: 'keys.pin', protocol: 'Keys', channel: 'admin',
+      outcome: 'success', realm: scope, username: requestedBy || '',
+      summary: 'A key pair was pinned as the "' + scope + '" realm\'s ' +
+               unit + ' signing key (' + done.signer.kid + '), signing from ' +
+               done.signer.activatesAt,
+      detail: { unit: unit, kid: done.signer.kid, from: from,
+                replaced: done.signer.replaced,
+                activatesAt: done.signer.activatesAt }
+    });
+    // ANNOUNCED AT THE PIN, which is when the key is PUBLISHED — ahead of
+    // its use by `pki.pinnedSignerLeadMinutes`, #42's order for a next key.
+    this.announce(scope, [{ unit: unit, from: from, to: done.signer.kid }],
+                  'requested');
+    log.debug("Leaving SigningRotation.pinSigningKey(). Pinned.");
+    return done;
+  }
+
+  // UNPIN — the generated key signs again (it was published all along), and
+  // the pinned key verifies through its unit's grace.
+  unpinSigningKey(scopeId: string, useCaseId: string, slot: string,
+                  requestedBy?: string): Json {
+    const { log, pki, audit, realms } = this.deps;
+    log.debug("Entering SigningRotation.unpinSigningKey(). " + useCaseId +
+              ':' + slot);
+    const unit = String(useCaseId) + ':' + String(slot);
+    const scope = String(scopeId || '') ||
+                  String((realms.current() || {}).id || '');
+    const done = pki().unpinKeyPair(scope, useCaseId, slot,
+                                    { graceMs: this.graceMs(unit) });
+    if (!done.ok || !(done.unpinned || []).length) {
+      log.debug("Leaving SigningRotation.unpinSigningKey(). " +
+                (done.ok ? 'An old-style pin.' : 'Refused.'));
+      return done;
+    }
+    audit().record({
+      action: 'keys.unpin', protocol: 'Keys', channel: 'admin',
+      outcome: 'success', realm: scope, username: requestedBy || '',
+      summary: 'The pinned ' + unit + ' signing key of the "' + scope +
+               '" realm (' + done.unpinned.join(', ') + ') was unpinned',
+      detail: { unit: unit, unpinned: done.unpinned, signed: done.signed }
+    });
+    if (done.signed && pki().pinnedSignersOn(scope)) {
+      this.announce(scope, [{ unit: unit, from: done.unpinned[0],
+                              to: this.signerKidOf(scope, unit) }],
+                    'requested');
+    }
+    log.debug("Leaving SigningRotation.unpinSigningKey(). Unpinned.");
+    return done;
+  }
+
+  // In `signing.retire`: drop each unpinned key past its grace (superseding
+  // the certificate this service issued it, as for a generated key), and
+  // warn — once a day per key — about a pinned certificate near or past its
+  // notAfter (STS-PKI-0212, STS-PKI-0213).
+  private retirePinned(realmId: string, scope: string, now: number): Json {
+    const { log, pki, revocation, audit, config, realms, errorCodes } =
+      this.deps;
+    log.debug("Entering SigningRotation.retirePinned().");
+    let dropped: Json[] = [];
+    let warned = 0;
+    try {
+      dropped = pki().dropRetiredPinnedSigners(scope, now);
+    } catch (e) {
+      log.debug("Caught in SigningRotation.retirePinned(): " +
+                ((e && e.message) || e));
+      dropped = [];
+    }
+    dropped.filter(function (one: Json): boolean {
+      return !one.operatorCertificate && !!one.serialHex;
+    }).forEach(function (one: Json): void {
+      try {
+        revocation().revoke(scope, one.useCase, {
+          serialHex: one.serialHex, reason: 'superseded',
+          subject: one.subject || '',
+          note: 'the unpinned ' + one.useCase + ':' + one.slot + ' key ' +
+                one.kid + ' passed its grace and was dropped'
+        });
+      } catch (e) {
+        log.debug("Caught in a callback in SigningRotation.retirePinned(): " +
+                  ((e && e.message) || e));
+      }
+    });
+    if (dropped.length) {
+      audit().record({
+        action: 'keys.retire', protocol: 'Keys', channel: 'scheduler',
+        outcome: 'success', realm: realmId,
+        summary: dropped.length + ' unpinned signing key(s) of the "' +
+                 realmId + '" realm dropped after their grace',
+        detail: { pinnedDropped: dropped }
+      });
+    }
+    const realm = realms.get(realmId) || realms.get(realms.DEFAULT_ID);
+    const days = Number(realms.run(realm, function (): Json {
+      return config.value('pki.pinnedSignerExpiryWarningDays');
+    }));
+    const today = Math.floor(now / DAY_MS);
+    const self = this;
+    let views: Json[] = [];
+    try {
+      views = pki().pinnedSignersFor(scope, now);
+    } catch (e) {
+      log.debug("Caught in SigningRotation.retirePinned(): " +
+                ((e && e.message) || e));
+      views = [];
+    }
+    views.filter(function (one: Json): boolean {
+      return one.role !== 'retired' && one.daysLeft < days;
+    }).forEach(function (one: Json): void {
+      const said = scope + '|' + one.kid;
+      if (self.pinWarned.get(said) === today) {
+        return;
+      }
+      self.pinWarned.set(said, today);
+      warned++;
+      if (one.expired) {
+        log.error(errorCodes.tag('STS-PKI-0213') + 'signing rotation: the ' +
+                  'certificate of the pinned ' + one.unit + ' signing key ' +
+                  one.kid + ' of the "' + scope + '" realm EXPIRED at ' +
+                  one.notAfter + ', and the key still signs. Relying ' +
+                  'parties that check it refuse what it signs. Its ' +
+                  'lifecycle is yours: pin a renewed key, or unpin it on ' +
+                  '/admin/pki.');
+      } else {
+        log.warn(errorCodes.tag('STS-PKI-0212') + 'signing rotation: the ' +
+                 'certificate of the pinned ' + one.unit + ' signing key ' +
+                 one.kid + ' of the "' + scope + '" realm expires at ' +
+                 one.notAfter + ' (' + one.daysLeft + ' day(s)). It is ' +
+                 'never rotated: pin a renewed key before then, or unpin ' +
+                 'it on /admin/pki.');
+      }
+    });
+    log.debug("Leaving SigningRotation.retirePinned(). " + dropped.length +
+              " dropped, " + warned + " warned.");
+    return { dropped: dropped.length, warned: warned };
   }
 
   // The two jobs, registered once per process.
@@ -962,5 +1197,7 @@ export = {
   offReason: slot.forward('offReason'),
   refreshGraceMs: slot.forward('refreshGraceMs'),
   requestRotation: slot.forward('requestRotation'),
-  rotationView: slot.forward('rotationView')
+  rotationView: slot.forward('rotationView'),
+  pinSigningKey: slot.forward('pinSigningKey'),
+  unpinSigningKey: slot.forward('unpinSigningKey')
 };

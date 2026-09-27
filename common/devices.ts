@@ -1310,9 +1310,9 @@ class Devices {
       device.status === 'compromised' ? 'keyCompromise'
                                       : 'cessationOfOperation', actor);
     const ended = this.endSessionsFrom(device, entity === 'admin'
-      ? 'an administrator removed device ' + device.id
-      : (entity === 'user' ? 'the owner removed device ' + device.id
-                           : 'device ' + device.id + ' was removed'), entity);
+      ? 'an administrator removing device ' + device.id
+      : (entity === 'user' ? 'the owner removing device ' + device.id
+                           : 'the removal of device ' + device.id), entity);
     device.keys.forEach((key) => {
       this.credentialChanged(device, 'delete', key, opts, fallback, why);
     });
@@ -2415,8 +2415,8 @@ class Devices {
     }
     const revoked = this.revokeCertificates(device, 'keyCompromise', actor);
     const ended = this.endSessionsFrom(device, entity === 'admin'
-      ? 'an administrator marked device ' + device.id + ' compromised'
-      : 'device ' + device.id + ' was marked compromised', entity);
+      ? 'an administrator marking device ' + device.id + ' compromised'
+      : 'device ' + device.id + ' being marked compromised', entity);
     this.setRiskLevel(device.id, 'HIGH', 'DEVICE_COMPROMISED',
                       { source: 'compromise', actor: actor,
                         initiatingEntity: entity,

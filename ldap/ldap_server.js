@@ -295,6 +295,9 @@ const adminViews = require('../admin-core/admin_views');
 // by path within a group — and the line over there is for the next reader
 // rather than for the page.
 const tlsServer = require('../tls/tls_server');
+// The shared session-ticket key of an active-active cluster; a library,
+// built before this module (tls/session_tickets.ts).
+const sessionTickets = require('../tls/session_tickets');
 // WHICH attributes a person's entry should carry so that the credentials this
 // service issues have something to say, and what to invent for them. Another
 // plain require and not a third inversion, for the same reasons as
@@ -10907,6 +10910,9 @@ if (serverCertificate && serverCertificate.certPem &&
     certificate: serverCertificate.certPem,
     key: serverCertificate.privateKeyPem
   }, tlsProtocolOptions()));
+  // A ticket another node issued resumes here too, in an active-active
+  // cluster (tls/session_tickets.ts); outside one this changes nothing.
+  sessionTickets.track(secureServer.server, 'LDAPS (' + LDAPS_PORT + ')');
 } else {
   tlsListenError = 'there was no server certificate at startup';
   log.warn(errorCodes.tag('STS-LDAP-0029') +

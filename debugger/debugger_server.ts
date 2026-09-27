@@ -830,6 +830,9 @@ class DebuggerServer {
       // certificate against current, now that it asks for one (#34).
       tlsServer.trustClientCertificatesOn(server, 'the protocol debugger (' +
                                                   port + ')');
+      // NO shared session-ticket key (tls/session_tickets.ts): this
+      // listener asks for a client certificate, and a session resumed on
+      // another node has no remembered chain there — server.js says why.
     }
     // Before TLS, like the main port's — see common/proxy_protocol.ts.
     proxyProtocol.install(server, {

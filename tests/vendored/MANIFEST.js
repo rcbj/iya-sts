@@ -260,6 +260,14 @@ const JOBS = [
   { file: 'sts_admin_api_auth.js',       browser: false, local: true },
   { file: 'sts_admin_api_operations.js', browser: false, local: true,
     exclusive: true },
+  // THE CONSOLE SIGNS IN AT ONCE AFTER THE ROOT IS REPLACED (#296,
+  // 2026-09-27), and again after a second replacement inside the first
+  // re-issue's claim window — the STS-AUTHN-0208 case. Exclusive, because it
+  // replaces the service Root (and so the listener's certificate) twice,
+  // which a job running beside it would see as a TLS failure.
+  // `local: true`: this repository's console, PKI and authorization server.
+  { file: 'sts_console_after_root.js',   browser: false, local: true,
+    exclusive: true },
   // AN HOUR (2026-09-19): it walks every console page in a real browser, and
   // against a three-node cluster across the internet (run-suite.sh testidp)
   // that took longer than the 20-minute default, killed while still passing.
@@ -657,8 +665,12 @@ const JOBS = [
   // hand and was green while every certificate named a port nothing answered
   // on; this one rewrites nothing, and holds each CRL, OCSP answer and
   // caIssuers certificate to RFC 5280, RFC 4516/4523, RFC 5019 and RFC 6960.
+  // A WATCHDOG OF ITS OWN (2026-09-27): it walks EVERY realm the jobs before
+  // it left standing, so its time grows with the suite — 125 s with 44
+  // realms, 250 s with 64 and over 300 s with 68 in the cluster mode, where
+  // it was killed in section F with nothing wrong.
   { file: 'sts_pki_distribution_points.js', browser: false, local: true,
-    reuseConnections: true },
+    reuseConnections: true, timeoutMs: 900000 },
   // THE POSTGRESQL METRICS PAGE (2026-09-11). `local: true` on the first of
   // `tests/CLAUDE.md`'s two questions — it drives `/admin/database` and
   // `/admin-api/database`, and the tree that adds a page to that console is
@@ -956,6 +968,12 @@ const JOBS = [
   // domain_hint's home-realm discovery. `local: true`: this repository's
   // authorization server and API.
   { file: 'sts_enterprise_extensions.js', browser: false, local: true },
+  // A PINNED KEY PAIR SIGNS THE REALM'S ID TOKENS (#263, 2026-09-27): in a
+  // throwaway realm with pki.pinnedSigners on, an RSA key generated at test
+  // time pinned into jose RS256 through /admin-api signs the ID token, which
+  // verifies against its JWKS entry; unpin restores the generated key.
+  // `local: true`: this repository's PKI, authorization server and API.
+  { file: 'sts_pinned_signer.js', browser: false, local: true },
   // THE EPHEMERAL SUBJECT IDENTIFIER (#149, 2026-09-26): one random `sub`
   // per authentication across the ID Token, UserInfo and a refresh, another
   // for the next, and an id_token_hint mapped back. `local: true`: this

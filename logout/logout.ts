@@ -3040,8 +3040,9 @@ class Logout {
         // development test control, is open — somebody else naming them,
         // which is an operator's act rather than theirs (#242).
         initiatingEntity: subject.named ? 'admin' : 'user',
-        by: subject.named ? '/logout, naming ' +
-            subject.username : '/logout, on ' + 'its own session'
+        // A noun phrase (#294): it finishes CAEP's "ended by …".
+        by: subject.named ? 'a /logout request naming ' +
+            subject.username : 'the person\'s own sign-out at /logout'
       });
       // Did the caller's own session go? Only then is the cookie cleared. It is
       // checked against what was actually ENDED rather than against the scope,

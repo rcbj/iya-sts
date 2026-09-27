@@ -1671,9 +1671,11 @@ class WsTrust {
     const { log, STS } = this.deps;
     log.debug("Entering the STS certificate endpoint.");
     // The XML signing key's certificate (#42, D2): what signs the SAML
-    // assertions this STS issues.
+    // assertions this STS issues — a PINNED key's where the realm signs with
+    // one (#263).
+    const signer = STS.xmlSigner;
     res.type('text/plain').set('Cache-Control', 'no-store')
-       .send(STS.xml.certPem);
+       .send(signer && signer.pinned ? signer.certPem : STS.xml.certPem);
     log.debug("Leaving the STS certificate endpoint.");
   }
 

@@ -466,3 +466,28 @@ The first step is written to the store before anything else happens, so
 every node refuses from then on. If the service stops half way through a
 removal, the realm stays in that state — refusing sign-ins — until you
 remove it again, which finishes the job.
+
+**A removal that stopped half way is visible.** Once a realm has been in
+that state for longer than a removal can take
+(`realms.removalDeliveryTimeoutS` plus 30 seconds), it is shown as
+*removal interrupted*:
+
+- on **Trust realms** (`/admin/realms`), the row is marked, and a block at
+  the top says when the removal began and what is refused, with a **Finish
+  removing** button;
+- on the realm's own page there, the same block;
+- on every console page inside the realm, a banner;
+- on the sign-in screen, the refusal says the removal was interrupted;
+- in `GET /admin-api/realms`, each row has a `retiring` member (`null` when
+  the realm is not being removed) with `since`, `sinceIso`, `inProgress`,
+  `interrupted`, `refusing`, `why` and `finish`. The service also logs
+  `STS-CORE-0123` when it starts with such a realm.
+
+To finish, remove the realm again from another realm: the button, or `POST
+/admin-api/realms/remove` with `{"id": "<realm>"}`. It ends whatever is
+still live, reports the realm's people purged and removes it. A receiver may
+be told `account-purged` a second time about somebody the interrupted
+removal had already reported; the service cannot know who that was, and
+telling somebody twice is better than not at all. While a removal is still
+**in progress**, removing the realm again is refused (`STS-CORE-0122`), so a
+second click does not announce everything twice.

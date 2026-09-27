@@ -428,6 +428,7 @@ refusal of an application's certificate — is the same in both modes. See
 | `tls.selfSignedKeyBits` | `STS_TLS_SELF_SIGNED_KEY_BITS` | `2048` | no | The RSA key size of the listener certificate made at startup. |
 | `tls.selfSignedValidityYears` | `STS_TLS_SELF_SIGNED_YEARS` | `2` | no | How long that certificate is valid. |
 | `tls.selfSignedOrganization` | `STS_TLS_SELF_SIGNED_ORGANIZATION` | `sts` | no | The O= of its subject. |
+| `tls.sessionTicketRotationS` | `STS_TLS_SESSION_TICKET_ROTATION_S` | `3600` | yes | In an active-active cluster, how often the session-ticket key every node's LDAPS listener shares is replaced (the old key is deleted); `0` shares nothing. Outside active-active nothing is shared. |
 | `global.trustProxy` | `STS_TRUST_PROXY` | `false` | yes | Believe `X-Forwarded-Proto` and `X-Forwarded-Host` from a TLS-terminating proxy. |
 | `global.trustedProxies` | `STS_TRUSTED_PROXIES` | *(empty)* | yes | The addresses or CIDRs forwarded headers — and PROXY protocol headers — are believed from. |
 | `global.proxyProtocol` | `STS_PROXY_PROTOCOL` | `off` | no | `v2` expects a PROXY protocol v2 header on every TCP listener, read before TLS. |
@@ -477,6 +478,21 @@ is changed: on `/admin/tls` (or `/admin/config` for `global.*`), through
   certificate every other caller relies on.
 * **No certificate is ever read from a header.** A forwarded certificate is one
   anybody can forge, so client certificates require TLS passthrough.
+* **One LDAPS session-ticket key for the whole cluster, and none outside
+  one.** Behind a balancer that picks a node per connection, a ticket sealed
+  under one node's own key cannot be opened on the other, so resumption
+  worked about half the time. In active-active mode the nodes' LDAPS
+  listeners share one key, kept
+  sealed in the store and replaced every `tls.sessionTicketRotationS` by the
+  `tls.ticket-key-rotate` job; the old key is deleted, which bounds how long a
+  resumed session's secrets can be recovered from a captured ticket. Anywhere
+  else each listener keeps OpenSSL's own keys, which never leave the process.
+  Each node still presents its own listener key, so a client that checks a
+  second node's handshake against the first node's key fails; resumption
+  does not care. The main port and the debugger's listener keep a key per
+  node, because they ask for a client certificate and a resumed session
+  carries only the leaf: the node that resumes it must be the one that saw
+  the whole chain, to check it for revocation.
 * **The serial is random.** A constant serial made Firefox refuse the port after
   a restart with an error no "accept the risk" could get past.
 

@@ -629,6 +629,89 @@ async function run(t) {
   }
 
   // -------------------------------------------------------------------------
+  t.log.info('=== M. a queue, and a cap on runs going at once ===');
+  {
+    // Twelve hourly jobs in three realms fall due on the same second —
+    // what 11:00:07 was in the cluster mode (2026-09-27). Each run holds
+    // until the test releases it.
+    const w = kit.world({ clustered: false, realmIds: ['default', 'acme',
+                                                       'beta'],
+                          settings: { 'scheduler.maxConcurrentRuns': 3 } });
+    const node = w.node('solo');
+    let going = 0;
+    let most = 0;
+    let done = 0;
+    const waiting = [];
+    const order = [];
+    const hold = function (ctx) {
+      going++;
+      most = Math.max(most, going);
+      order.push(ctx.trigger);
+      return new Promise(function (resolve) {
+        waiting.push(function () {
+          going--;
+          done++;
+          resolve('ok');
+        });
+      });
+    };
+    for (let i = 0; i < 4; i++) {
+      node.scheduler.register(baseJob({ id: 'test.hourly-' + i,
+        scope: 'realm', everyMs: function () { return HOUR; }, run: hold }));
+    }
+    node.scheduler.register(baseJob({ id: 'test.asked', manualOnly: true,
+      everyMs: undefined, run: hold }));
+    node.scheduler.start('front');
+    await w.advance(10000);
+    t.check(going === 3 && most === 3,
+            'twelve runs due at once: three start, the cap',
+            JSON.stringify({ going: going, most: most }));
+    const asked = node.scheduler.requestRun('test.asked', {});
+    await w.advance(10000);
+    t.check(going === 3, 'a tick with no free place starts nothing more',
+            String(going));
+    waiting.shift()();
+    await kit.settle(20);
+    t.check(going === 3 && done === 1,
+            'a run that ends starts the next at once, not at the next tick',
+            JSON.stringify({ going: going, done: done }));
+    t.check(asked.ok && order[3] === 'manual',
+            'and the one it starts is the person\'s Run now, ahead of the ' +
+            'scheduled runs already waiting', JSON.stringify(order));
+    while (waiting.length) {
+      waiting.shift()();
+      await kit.settle(20);
+    }
+    t.check(done === 13 && most === 3,
+            'every run is made in the end, never more than three at once',
+            JSON.stringify({ done: done, most: most }));
+
+    const pooled = kit.world({ clustered: false, storeConnections: 4,
+                               settings: { 'scheduler.maxConcurrentRuns':
+                                           50 } });
+    const small = pooled.node('solo');
+    t.equal(small.scheduler.maxConcurrentRuns(), 3,
+            'with a pool of four the cap is three whatever the setting ' +
+            'says: one connection is always left for the requests');
+    pooled.storeConnections = 1;
+    t.equal(small.scheduler.maxConcurrentRuns(), 1,
+            'and never below one');
+    pooled.storeConnections = 0;
+    pooled.settings['scheduler.maxConcurrentRuns'] = 2;
+    t.equal(small.scheduler.maxConcurrentRuns(), 2,
+            'with no pool the setting is the cap');
+    // The pool is twice the node's request workers, never under four — the
+    // size a node's processes open, and what the cap above is taken from.
+    const poolMax = require(ROOT + '/persistence/persistence_postgres')
+      .poolMax;
+    t.check(poolMax(0) === 4 && poolMax(1) === 4 && poolMax(2) === 4 &&
+            poolMax(4) === 8 && poolMax(12) === 24,
+            'the postgres pool is twice the request workers, at least four',
+            JSON.stringify([poolMax(0), poolMax(1), poolMax(2), poolMax(4),
+                            poolMax(12)]));
+  }
+
+  // -------------------------------------------------------------------------
   t.log.info('=== K. the real module ===');
   {
     const mod = require(ROOT + '/cluster/scheduler');

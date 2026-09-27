@@ -45,8 +45,13 @@
 # `./run-tests.sh`'s own two wall clocks and this job's `timeout-minutes`
 # and asserts the second is above the sum of the first — which is a claim about
 # two files, one of which is a CI definition. `pages.yml` and
-# `build-container.yml` stay out, because nothing asserts anything about them.
+# `build-container.yml` stayed out until the image mirror made it a subject too.
 !.github/workflows/tests.yml
+# AND THE IMAGE MIRROR (2026-09-27): tests/image_mirror_coverage.js holds the
+# list, the compose files, every Dockerfile and build-container.yml's named
+# contexts to each other. The service Dockerfile removes .github whole.
+!.github/image-mirror.txt
+!.github/workflows/build-container.yml
 CLAUDE.md
 **/CLAUDE.md
 COVERAGE.md

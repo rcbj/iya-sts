@@ -998,6 +998,15 @@ if (useHttps) {
   // this file requires that module, not the other way round.
   tlsServer.trustClientCertificatesOn(mainServer,
                                       'the main port (' + PORT + ')');
+  // NOT ONE SESSION-TICKET KEY WITH THE OTHER NODES, although LDAPS has one
+  // (tls/session_tickets.ts). This port asks for a client certificate, and a
+  // resumed session hands the server the LEAF alone:
+  // common/revocation_status.js walks it with the chain this PROCESS
+  // remembered from the full handshake. A ticket resumed on another node
+  // finds no chain there, and product mode's hard-fail refuses a certificate
+  // that verified (the remote PEP, every XACML caller, in the cluster mode).
+  // With a key per node the other node cannot open the ticket, so the client
+  // makes a full handshake and presents its chain.
   // AND SO THAT A CLIENT CERTIFICATE PRESENTED HERE IS WRITTEN DOWN
   // (2026-09-16). The sighting hung on the 8443 and 9443 listeners'
   // `secureConnection` until they were deleted, so the main port — where every

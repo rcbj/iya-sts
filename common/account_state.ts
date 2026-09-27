@@ -229,7 +229,7 @@ class AccountState {
       result = logout.terminate(this.keyOf(who),
                                 Array.isArray(o.selection) ? o.selection : [], {
         actor: o.actor || '', channel: o.channel || 'internal',
-        by: o.by || 'the account was disabled by an administrator',
+        by: o.by || 'an administrator disabling the account',
         // WHO ENDED IT, for CAEP's `initiating_entity` (#242): the caller
         // says, and an administrator's act is the default of this file's
         // callers — risk scoring says `policy`.
@@ -326,8 +326,12 @@ class AccountState {
           // policy deciding (#242).
           initiatingEntity: o.initiatingEntity ||
                             (o.door ? 'policy' : 'admin'),
+          // A noun phrase naming the act (#294): it finishes CAEP's
+          // "The session was ended by …" and the mail's "… by …".
           by: o.by ? String(o.by)
-            : 'the account was disabled by an administrator (' + door + ')' })
+            : (o.door ? door + ' disabling the account'
+                      : 'an administrator disabling the account (' + door +
+                        ')') })
       : null;
     audit.audit({
       action: disabled ? 'account.disable' : 'account.enable',
@@ -400,8 +404,8 @@ class AccountState {
           ? self.endEverything(name, {
               channel: 'internal',
               initiatingEntity: 'admin',
-              by: 'the account was disabled by an administrator through ' +
-                  'the directory (' + String(c.kind || 'a write') + ')' })
+              by: 'an administrator disabling the account through the ' +
+                  'directory (' + String(c.kind || 'a write') + ')' })
           : null;
         audit.audit({
           action: c.disabled ? 'account.disable' : 'account.enable',

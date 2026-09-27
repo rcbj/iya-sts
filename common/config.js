@@ -5489,6 +5489,58 @@ const SETTINGS = [
                  'presenting.' },
 
   // ---------------------------------------------------------------------
+  // A PINNED KEY PAIR AS A REAL SIGNER (2026-09-27, #263). rcbj's decision:
+  // OFF by default, so a new installation signs with the keys it generates
+  // and needs no step to work. On, a key an operator pins into a `jose` or
+  // `xml` slot on /admin/pki becomes the realm's signer for that algorithm,
+  // and its LIFECYCLE IS THE OPERATOR'S: it is never rotated, and it expires
+  // when its certificate does. Per realm (runtime), because what a realm
+  // signs with is per realm. The two rows after it are the publication lead
+  // and the expiry warning, read where they are used.
+  // ---------------------------------------------------------------------
+  { key: 'pki.pinnedSigners', group: 'PKI',
+    label: 'Sign with a pinned key pair',
+    env: 'STS_PKI_PINNED_SIGNERS', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'OFF by default. On, a key pair pinned into a jose or xml ' +
+                 'slot on /admin/pki (or POST /admin-api/pki/pin-key) ' +
+                 'becomes the key this realm signs with for that algorithm, ' +
+                 'in place of the one it generated: ID tokens, access ' +
+                 'tokens, logout tokens and SETs for jose; SAML, ' +
+                 'WS-Federation and WS-Trust signatures for xml. **YOU TAKE ' +
+                 'OVER THAT KEY\'S LIFECYCLE**: a pinned key is never ' +
+                 'rotated by signing.rotate, and when its certificate ' +
+                 'expires relying parties refuse what it signs — the ' +
+                 'console and the log warn ahead of that ' +
+                 '(pki.pinnedSignerExpiryWarningDays). Unpin to go back to ' +
+                 'the generated key. Off, a pin into a slot this realm ' +
+                 'signs from is refused (STS-PKI-0206), and signing is ' +
+                 'exactly as without this setting. It cannot be turned off ' +
+                 'while a pinned key is live or pending (STS-PKI-0215): ' +
+                 'unpin first, so the change of signer is announced.' },
+  { key: 'pki.pinnedSignerLeadMinutes', group: 'PKI',
+    label: 'Publish a pinned key this long before it signs (minutes)',
+    env: 'STS_PKI_PINNED_SIGNER_LEAD_MINUTES', type: 'int', dflt: 1440,
+    min: 0, max: 43200, runtime: true,
+    description: 'How long a newly pinned signing key is PUBLISHED — in the ' +
+                 'JWKS, the SAML and WS-Federation metadata and ' +
+                 '/crypto/metadata — before it signs anything, so a relying ' +
+                 'party that refreshes its copy at least this often already ' +
+                 'holds it: #42\'s rule for a next key, applied to a pin. ' +
+                 'A day by default. 0 makes a pin sign at once, which a ' +
+                 'relying party holding a cached JWKS will refuse until it ' +
+                 'fetches again.' },
+  { key: 'pki.pinnedSignerExpiryWarningDays', group: 'PKI',
+    label: 'Warn this long before a pinned key\'s certificate expires (days)',
+    env: 'STS_PKI_PINNED_SIGNER_EXPIRY_WARNING_DAYS', type: 'int', dflt: 30,
+    min: 1, max: 365, runtime: true,
+    description: 'How far ahead of its certificate\'s notAfter a pinned ' +
+                 'signing key is reported: on /admin/pki and in the log ' +
+                 '(STS-PKI-0212, once a day, from the signing.retire job). ' +
+                 'An expired one is logged as STS-PKI-0213 and still signs — ' +
+                 'its lifecycle is the operator\'s — until it is unpinned.' },
+
+  // ---------------------------------------------------------------------
   // REVOCATION, CONSULTED (2026-09-12). Seven rows for
   // `common/revocation_status.js`: the policy, the one rule hard-fail did NOT
   // include until #174 (it is `auto` now, and product includes it), and the
@@ -8409,6 +8461,32 @@ const SETTINGS = [
                  'other than the NIST ones is then still closed after the ' +
                  'handshake (STS-TLS-0035). A list that builds no TLS ' +
                  'context stops the service at startup.' },
+
+  // ONE SESSION-TICKET KEY FOR AN ACTIVE-ACTIVE CLUSTER (2026-09-27): a
+  // ticket one node issued is sealed under a key the other node never saw,
+  // so behind a balancer resumption worked about half the time.
+  // tls/session_tickets.ts argues it. Per process because the key belongs to
+  // the listeners, which belong to no realm.
+  { key: 'tls.sessionTicketRotationS', group: 'TLS',
+    label: 'Shared session-ticket key rotation (s)',
+    env: 'STS_TLS_SESSION_TICKET_ROTATION_S', type: 'int', dflt: 3600,
+    min: 0, max: 604800, runtime: true, perProcess: true,
+    description: 'In an active-active cluster, every node\'s LDAPS ' +
+                 'listener seals session tickets under one shared key, so a ' +
+                 'ticket one node issued resumes on another (the main port ' +
+                 'and the debugger\'s keep a key per node: they ask for a ' +
+                 'client certificate, and only the node that saw its chain ' +
+                 'can resume the session). This is how often, in seconds, ' +
+                 'the tls.ticket-key-rotate job replaces it; the key it ' +
+                 'replaces ' +
+                 'is deleted, so a resumed session\'s secrets can be ' +
+                 'recovered from a captured ticket only while its key ' +
+                 'lives, and a client whose ticket is older does a full ' +
+                 'handshake. The key is kept in the store, sealed under the ' +
+                 'key-encryption key. 0 turns sharing off, and outside ' +
+                 'active-active mode nothing is shared: one node answering ' +
+                 'resumes on OpenSSL\'s own per-listener keys, which never ' +
+                 'leave the process.' },
 
   { key: 'tls.trustAnchorsFile', group: 'TLS',
     label: 'Client certificate trust anchors file',
@@ -14519,6 +14597,21 @@ const SETTINGS = [
                  'keys are slow to make, does — and this is the limit of ' +
                  'every job that does not.' },
 
+  { key: 'scheduler.maxConcurrentRuns', group: 'Scheduler',
+    label: 'Most runs going at once',
+    env: 'STS_SCHEDULER_MAX_CONCURRENT_RUNS', type: 'int', dflt: 2, min: 1,
+    max: 1000, runtime: true, perProcess: true,
+    description: 'How many scheduled or manual runs the leader has going at ' +
+                 'once, across every job and trust realm. A slot is a ' +
+                 'multiple of its interval, so every hourly job in every ' +
+                 'realm is due on the same second; each run holds a ' +
+                 'connection to the store while it claims and works, and ' +
+                 'the postgres store has four. The rest wait, a person\'s ' +
+                 'Run now first, and start as runs end. It is never more ' +
+                 'than one fewer than the pool holds, whatever it is set ' +
+                 'to, so the scheduler cannot take every connection from ' +
+                 'the requests.' },
+
   // -------------------------------------------------------------------------
   // MAIL (#63, 2026-09-22): the one outbound mail channel, `common/mail.ts`.
   //
@@ -15051,9 +15144,72 @@ function replacedBy(key) {
 // write arrives both modules are loaded, and the require is a cache hit that
 // closes no cycle at load.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// A PINNED SIGNER MAY NOT BE DEMOTED BY A SETTING (#263). Turning
+// `pki.pinnedSigners` off while the realm it lands in holds a live or pending
+// pinned signing key would make the generated key sign again with no
+// `signing-key-rotated` — a change of signer nobody announced. So the write is
+// refused here, beside the mode rule, through the same doors that rule is
+// asked at (`checkWrite()`, `realms.js`'s `modeWriteProblems()`), and a CLEAR
+// that would leave the setting off is asked the same question with the value
+// it would fall back to (`clearOverride()` here, `realms.js`'s
+// `clearOverride()` and `update()`). Not at a start or a replicated change: a
+// stored value is applied where it is read, and `pki.js`'s
+// `reportPinsWithSignersOff()` says so with STS-PKI-0216.
+//
+// `pki.js` is read out of `require.cache` rather than required: this module
+// is the leaf everything else stands on, and a process that never loaded the
+// certificate authority holds no pin to protect.
+// ---------------------------------------------------------------------------
+function pinnedSignerWriteProblem(key, parsed) {
+  log.debug("Entering pinnedSignerWriteProblem().");
+  if (key !== 'pki.pinnedSigners' || parsed !== false) {
+    log.debug("Leaving pinnedSignerWriteProblem(). Not turning it off.");
+    return null;
+  }
+  let pki = null;
+  try {
+    const held = require.cache[require.resolve('./pki')];
+    pki = held ? held.exports : null;
+  } catch (e) {
+    log.debug("Caught in pinnedSignerWriteProblem(): " +
+              ((e && e.message) || e));
+    pki = null;
+  }
+  if (!pki || typeof pki.pinsBlockingSignersOff !== 'function') {
+    log.debug("Leaving pinnedSignerWriteProblem(). No certificate authority.");
+    return null;
+  }
+  const realm = realmFor(key);
+  const pins = pki.pinsBlockingSignersOff(realm ? realm.id : DEFAULT_REALM_ID,
+                                          !realm);
+  if (!pins.length) {
+    log.debug("Leaving pinnedSignerWriteProblem(). Nothing pinned.");
+    return null;
+  }
+  log.debug("Leaving pinnedSignerWriteProblem(). Refused.");
+  return '"pki.pinnedSigners" cannot be turned off while a pinned signing ' +
+    'key is live or pending: ' + pins.map(function (one) {
+      return one.unit + ' ' + one.kid + ' (' + one.realm + ' realm, ' +
+        (one.role === 'active' ? 'signing' : 'published, not yet signing') +
+        ')';
+    }).join(', ') + '. Turning it off would make the generated key sign ' +
+    'again with no signing-key-rotated sent. Unpin first — on /admin/pki, ' +
+    'or POST /admin-api/pki/unpin-key — and then turn it off.';
+}
+
 function modeWriteProblem(key, raw) {
   log.debug("Entering modeWriteProblem(). key=" + key);
   const setting = byKey[key];
+  if (key === 'pki.pinnedSigners' && setting &&
+      !TYPES[setting.type].check(raw, setting)) {
+    const pinned = pinnedSignerWriteProblem(key,
+      TYPES[setting.type].parse(raw, setting));
+    if (pinned) {
+      log.debug("Leaving modeWriteProblem(). A pinned signer is live.");
+      return pinned;
+    }
+  }
   // THE CAPTURE TRANSPORT IN PRODUCT (#63): an enum value, not a true value,
   // so it is asked here by name rather than through `onlyWhile`. A captured
   // message keeps its body, and a password reset link on the console is a
@@ -15104,10 +15260,42 @@ function checkWrite(key, raw, forRealm) {
 function checkWriteCode(key, raw, forRealm) {
   log.debug("Entering checkWriteCode(). key=" + key);
   const code = checkOverrideCode(key, raw, forRealm) ||
-    (modeWriteProblem(key, raw)
-      ? (key === 'mail.transport' ? 'STS-MAIL-0003' : 'STS-CORE-0103') : '');
+    modeWriteCode(key, raw);
   log.debug("Leaving checkWriteCode().");
   return code;
+}
+
+// WHICH CODE `modeWriteProblem()` REFUSED FOR, or '' — the half of
+// `checkWriteCode()` the realm doors (`realms.js`) need on its own.
+function modeWriteCode(key, raw) {
+  log.debug("Entering modeWriteCode(). key=" + key);
+  if (!modeWriteProblem(key, raw)) {
+    log.debug("Leaving modeWriteCode(). Allowed.");
+    return '';
+  }
+  log.debug("Leaving modeWriteCode().");
+  return key === 'mail.transport' ? 'STS-MAIL-0003'
+    : key === 'pki.pinnedSigners' ? 'STS-PKI-0215' : 'STS-CORE-0103';
+}
+
+// What `key` would read, here, once the override in `where` is gone — for a
+// clear that must be asked the question a write is (#263). Synchronous, and
+// the override is put back before this returns.
+function valueWithout(where, key) {
+  log.debug("Entering valueWithout(). key=" + key);
+  const had = Object.prototype.hasOwnProperty.call(where, key);
+  const saved = where[key];
+  delete where[key];
+  let after;
+  try {
+    after = value(key);
+  } finally {
+    if (had) {
+      where[key] = saved;
+    }
+  }
+  log.debug("Leaving valueWithout().");
+  return after;
 }
 
 // The runtime overrides, by key, holding the RAW value a caller supplied. Raw
@@ -15773,6 +15961,13 @@ function clearOverride(key) {
       ' to reset; it is already coming from ' + sourceOf(key) + '.'] },
                            'STS-CORE-0007');
   }
+  // A CLEAR THAT WOULD TURN `pki.pinnedSigners` OFF is refused as the write
+  // would be (#263): see pinnedSignerWriteProblem().
+  const pinned = pinnedSignerWriteProblem(key, valueWithout(where, key));
+  if (pinned) {
+    log.debug("Leaving clearOverride(). A pinned signer is live.");
+    return errorCodes.mark({ ok: false, errors: [pinned] }, 'STS-PKI-0215');
+  }
   const shape = claimShapeBefore(key);
   delete where[key];
   applyLogLevel();
@@ -15798,6 +15993,17 @@ function clearAllOverrides() {
   // setting and this is per realm.
   const realm = realmFor('global.logLevel');
   const where = realm ? realm.overrides : overrides;
+  // THE ONE CLEAR THAT MAY BE REFUSED (#263): the whole reset is refused
+  // rather than done around it, for the all-or-nothing rule of a section.
+  if (Object.prototype.hasOwnProperty.call(where, 'pki.pinnedSigners')) {
+    const pinned = pinnedSignerWriteProblem('pki.pinnedSigners',
+      valueWithout(where, 'pki.pinnedSigners'));
+    if (pinned) {
+      log.debug("Leaving clearAllOverrides(). A pinned signer is live.");
+      return errorCodes.mark({ ok: false, errors: [pinned], cleared: [] },
+                             'STS-PKI-0215');
+    }
+  }
   const keys = Object.keys(where);
   keys.forEach(function (key) { delete where[key]; });
   applyLogLevel();
@@ -16415,6 +16621,7 @@ module.exports = {
   checkOverride: checkOverride,
   checkOverrideCode: checkOverrideCode,
   checkWrite: checkWrite,
+  modeWriteCode: modeWriteCode,
   checkWriteCode: checkWriteCode,
   modeWriteProblem: modeWriteProblem,
   REPLACED_SETTINGS: REPLACED_SETTINGS,

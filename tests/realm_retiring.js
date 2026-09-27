@@ -35,6 +35,12 @@
 //   B. the mark crosses processes as a REPLICATED realm update only, and is
 //      one-way: an ordinary update cannot set it, and a second mark does not
 //      move the first.
+//   D. a removal INTERRUPTED (#294): a mark older than the removal's bound
+//      reads as interrupted — on the sign-in refusal, on GET
+//      /admin-api/realms, on /admin/realms (list and drill-down, with the
+//      button that finishes it) and on every console page inside the realm —
+//      and the Remove action again finishes it; a second removal while one
+//      is still running is refused (STS-CORE-0122, A8c).
 //   C. over a PostgreSQL double: `persistence.js` writes the mark
 //      (`retiring_at`) and its change-log row BEFORE the realm's row is
 //      deleted, and a row another node marked is applied here, so this
@@ -251,6 +257,16 @@ function stackChild() {
          'A8b. (a control: it mints one in another realm)',
          JSON.stringify(svidB).slice(0, 300));
 
+    // A second removal while this one is still running (#294).
+    const inProgress = realms.retiringState('rtg-a');
+    const twice = await realms.retire('rtg-a');
+    note(inProgress && inProgress.inProgress && !inProgress.interrupted &&
+         twice.ok === false && errorCodes.codeOf(twice) === 'STS-CORE-0122' &&
+         realms.get('rtg-a'),
+         'A8c. the realm reports its removal IN PROGRESS, and a second ' +
+         'removal while it runs is refused with STS-CORE-0122 (#294)',
+         JSON.stringify({ state: inProgress, twice: twice }).slice(0, 600));
+
     letGo();
     const done = await retiring;
     note(done.ok && !realms.get('rtg-a') && !realms.isRetiring('rtg-a'),
@@ -276,6 +292,76 @@ function stackChild() {
     realms.create({ id: 'rtg-c', name: 'rtg-c again' });
     note(!realms.isRetiring('rtg-c'),
          'B4. the same id defined again is a new realm, not retiring');
+
+    // --- D. a removal INTERRUPTED (#294) --------------------------------
+    // A process that died mid-removal leaves the mark behind; another
+    // process reads it as a replicated realm row. An hour old is past any
+    // removal's bound, so nobody is running it any more.
+    const admin = require(ROOT + '/admin-ui/admin');
+    const adminViews = require(ROOT + '/admin-core/admin_views');
+    const adminActions = require(ROOT + '/admin-core/admin_actions');
+    const fakeReq = function (query) {
+      return { query: query || {}, headers: { host: '127.0.0.1' },
+               method: 'GET', path: '/admin/realms', url: '/admin/realms',
+               protocol: 'http', get: function () { return ''; } };
+    };
+    realms.create({ id: 'rtg-d', name: 'rtg-d' });
+    const hourAgo = Date.now() - 3600 * 1000;
+    realms.update('rtg-d', { retiringSince: hourAgo, replicated: true });
+    const stuck = realms.retiringState('rtg-d');
+    note(stuck && stuck.interrupted && !stuck.inProgress &&
+         stuck.since === hourAgo && /interrupted/.test(stuck.why) &&
+         /Remove the realm again/.test(stuck.finish),
+         'D1. a mark older than the removal bound reads as an INTERRUPTED ' +
+         'removal: when it began, why, and how to finish it',
+         JSON.stringify(stuck));
+    const refusedD = signIn('rtg-d');
+    note(refusedD.session === null &&
+         /interrupted/.test(String(refusedD.detail.refusedWhy)),
+         'D2. a sign-in there is still refused, and the refusal (what the ' +
+         'sign-in screen shows) says the removal was interrupted',
+         JSON.stringify(refusedD.detail));
+    const apiView = adminViews.realmsJson(fakeReq());
+    const rowD = apiView.realms.filter(function (one) {
+      return one.id === 'rtg-d';
+    })[0];
+    const rowB = apiView.realms.filter(function (one) {
+      return one.id === 'rtg-b';
+    })[0];
+    note(rowD && rowD.retiring && rowD.retiring.interrupted === true &&
+         rowD.retiring.sinceIso === new Date(hourAgo).toISOString() &&
+         /admin-api\/realms\/remove/.test(rowD.retiring.finish) &&
+         rowB && rowB.retiring === null,
+         'D3. GET /admin-api/realms (the same realmsJson the console ' +
+         'answers ?format=json with) carries `retiring` on the stuck realm ' +
+         'and null on the others', JSON.stringify(rowD && rowD.retiring));
+    const listPage = admin.realmsView(fakeReq());
+    const detailPage = admin.realmsView(fakeReq({ realm: 'rtg-d' }));
+    note(/removal interrupted/.test(listPage.inner) &&
+         /Finish removing rtg-d/.test(listPage.inner) &&
+         /Finish removing rtg-d/.test(detailPage.inner) &&
+         detailPage.json.retiring && detailPage.json.retiring.interrupted,
+         'D4. /admin/realms marks the row and offers the action that ' +
+         'finishes the removal, on the list and on the realm\'s own page',
+         (listPage.inner.match(/removal interrupted[^<]*/) || [''])[0]);
+    const shell = inRealm('rtg-d', function () {
+      return admin.page('Anything', '/admin', '<p>x</p>', null, null,
+                        fakeReq());
+    });
+    const shellB = inRealm('rtg-b', function () {
+      return admin.page('Anything', '/admin', '<p>x</p>', null, null,
+                        fakeReq());
+    });
+    note(/stuck half way through its removal/.test(String(shell)) &&
+         !/half way through its removal|being removed/.test(String(shellB)),
+         'D5. every console page inside the stuck realm says so, and a page ' +
+         'in another realm does not');
+    const finished = await adminActions.realmsAction({ action: 'remove',
+                                                       id: 'rtg-d' });
+    note(finished && finished.ok && !realms.get('rtg-d'),
+         'D6. the Remove action again (POST /admin/realms or ' +
+         '/admin-api/realms/remove) finishes the interrupted removal',
+         JSON.stringify(finished).slice(0, 400));
 
     server.close();
     require('fs').writeFileSync(OUT, JSON.stringify(findings));

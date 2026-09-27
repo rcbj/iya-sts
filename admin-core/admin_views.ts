@@ -1760,6 +1760,11 @@ class AdminViews {
       domain: realms.domainOf(realm),
       baseDn: realms.baseDnOf(realm),
       builtin: !!realm.builtin,
+      // A REALM BEING REMOVED (#262, #294): null, or when the mark was set,
+      // whether the removal is still in progress or was INTERRUPTED (the
+      // process doing it stopped), what that refuses and how to finish it.
+      // `common/realms.js`'s retiringState() is the one place that decides.
+      retiring: realms.retiringState(realm),
       pathPrefix: prefix,
       baseUrl: base,
       // The kid of the realm's signing key. It is the one fact on this page

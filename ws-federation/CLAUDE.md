@@ -157,6 +157,19 @@ is the whole mechanism. See the root `CLAUDE.md`.
 
 `tests/saml_family_hardcoded.js` sections A, H and I pin these.
 
+## A pinned xml key signs here too (2026-09-27, #263)
+
+Where a realm signs with pinned keys (`pki.pinnedSigners`), a key pinned into
+the `xml` slot signs this family's tokens through `STS.xmlSigner`, and the
+federation metadata's `use="signing"` KeyDescriptors carry it (from
+`helpers.ownXmlSigningCertificates()`, ahead of its use). The same pin is the
+realm's XML DECRYPTION key, but this family decrypts nothing with
+`STS.xml`: the WS-Federation metadata publishes no `use="encryption"`
+KeyDescriptor, and a partner's encrypted token is decrypted with the
+relationship's own key (`federation/CLAUDE.md`, #168). WS-Trust's `/sts/cert`
+serves the pinned certificate while it signs. `common/CLAUDE.md` has the
+model.
+
 ## What no test covers yet
 
 `tests/saml_family_hardcoded.js` pins the 2026-09-12 changes above, and

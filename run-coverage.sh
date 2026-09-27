@@ -362,6 +362,12 @@ else
   if [ "${BUILD}" = "1" ];
   then
     echo "Building the tests image from this working tree..."
+    # The corpora and every base image are PRIVATE on ghcr.io (#253, and the
+    # image mirror since 2026-09-27); a missing login is said in a sentence.
+    if ! tests/tools/corpora-preflight.sh;
+    then
+      exit 1
+    fi
     if ! docker_compose -f "${COMPOSE_FILE}" build tests;
     then
       echo "The tests image would not build; nothing was measured." >&2

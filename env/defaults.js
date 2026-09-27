@@ -485,6 +485,9 @@ var config = {
     personSelfServicePerAddress: 5,             // Self-issued key pairs one address may ask for per window
     personTlsClientCertificateMax: 5,           // TLS client certificates one person may hold
     applicationTlsClientCertificateMax: 5,      // TLS client certificates one application may hold
+    pinnedSigners: false,                       // Sign with a pinned key pair
+    pinnedSignerLeadMinutes: 1440,              // Publish a pinned key this long before it signs (minutes)
+    pinnedSignerExpiryWarningDays: 30,          // Warn this long before a pinned key's certificate expires (days)
     revocationCheck: "auto",                    // Revocation check on a presented certificate
     revocationRequireDistributionPoint: "auto", // Refuse a certificate whose issuer names no CRL and no OCSP responder
     revocationFetchTimeoutMs: 3000,             // CRL fetch timeout (milliseconds)
@@ -682,6 +685,7 @@ var config = {
     ciphers: "TLS_AES_256_GCM_SHA384:TLS_AES_128_GCM_SHA256:TLS_CHACHA20_POLY1305_SHA256:ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384",                                                                                                 // TLS cipher list; restart to apply
     groups: "X25519MLKEM768:SecP256r1MLKEM768:SecP384r1MLKEM1024 / X25519:P-256 / X448:P-384:P-521",                                                                                                                                                                                                           // TLS key-exchange groups; restart to apply
     signatureAlgorithms: "mldsa65:mldsa87:mldsa44:ecdsa_secp256r1_sha256:ecdsa_secp384r1_sha384:ecdsa_secp521r1_sha512:ed25519:ed448:rsa_pss_pss_sha256:rsa_pss_pss_sha384:rsa_pss_pss_sha512:rsa_pss_rsae_sha256:rsa_pss_rsae_sha384:rsa_pss_rsae_sha512:rsa_pkcs1_sha256:rsa_pkcs1_sha384:rsa_pkcs1_sha512", // TLS signature algorithms; restart to apply
+    sessionTicketRotationS: 3600,                                                                                                                                                                                                                                                                              // Shared session-ticket key rotation (s)
     trustAnchorsFile: "",                                                                                                                                                                                                                                                                                      // Client certificate trust anchors file; restart to apply
     selfSignedKeyBits: 2048,                                                                                                                                                                                                                                                                                   // Self-signed certificate RSA key size; restart to apply
     selfSignedValidityYears: 2,                                                                                                                                                                                                                                                                                // Self-signed certificate validity (years); restart to apply
@@ -1206,12 +1210,13 @@ var config = {
 
   // --- Scheduler -------------------------------------------------------
   scheduler: {
-    enabled: true,    // Run scheduled jobs
-    tickS: 15,        // How often the leader looks for due jobs (seconds)
-    historyDays: 30,  // How long a finished run is kept (days)
-    maxRuns: 5000,    // Most runs kept per realm
-    disabledJobs: "", // Jobs switched off
-    runTimeoutS: 600  // The longest a run may take (seconds)
+    enabled: true,        // Run scheduled jobs
+    tickS: 15,            // How often the leader looks for due jobs (seconds)
+    historyDays: 30,      // How long a finished run is kept (days)
+    maxRuns: 5000,        // Most runs kept per realm
+    disabledJobs: "",     // Jobs switched off
+    runTimeoutS: 600,     // The longest a run may take (seconds)
+    maxConcurrentRuns: 2  // Most runs going at once
   },
 
   // --- Mail ------------------------------------------------------------

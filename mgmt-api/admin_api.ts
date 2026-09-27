@@ -7868,7 +7868,15 @@ class AdminApi {
                      '`kid` of its signing key — two realms showing one kid ' +
                      'would be two names for one authorization server — the ' +
                      'settings it sets, and the four discovery documents a ' +
-                     'client asks for first.\n\n`support` is the part ' +
+                     'client asks for first.\n\n`retiring` is null, or ' +
+                     'says the realm is being REMOVED (#262, #294): ' +
+                     '`since` and `sinceIso`, whether the removal is ' +
+                     '`inProgress` or was `interrupted` (the process doing ' +
+                     'it stopped; every new sign-in and issuance in it is ' +
+                     'refused until it is finished), `refusing`, `why` and ' +
+                     '`finish` — for an interrupted one, POST ' +
+                     '/admin-api/realms/remove again, from another ' +
+                     'realm.\n\n`support` is the part ' +
                      'answered nowhere else: WHICH protocol families a realm ' +
                      'actually separates, which is not a tidy answer. A ' +
                      'realm separates what this service ISSUES and ' +
@@ -15509,7 +15517,18 @@ class AdminApi {
                          'hierarchy is asking for. **WITH a certificate** ' +
                          'the pair is used as supplied and chains wherever ' +
                          'that certificate chains, which is the other ' +
-                         'thing somebody might mean.',
+                         'thing somebody might mean.\n\n**AS A SIGNER ' +
+                         '(#263)**: where the realm\'s `pki.pinnedSigners` ' +
+                         'is on (it is OFF by default), a pin into a `jose` ' +
+                         'or `xml` slot becomes the key the realm SIGNS with ' +
+                         'for that algorithm. It is published at once and ' +
+                         'signs after `pki.pinnedSignerLeadMinutes`; a ' +
+                         '`signing-key-rotated` event is sent; the key must ' +
+                         'be of the slot\'s type (STS-PKI-0207 — ML-DSA and ' +
+                         'SLH-DSA slots included); and **its lifecycle is ' +
+                         'yours**: it is never rotated and ends with its ' +
+                         'certificate. With the setting off, a pin into a ' +
+                         'slot the realm signs from is refused.',
             requestBodyRequired: true,
             requestBody: {
               type: 'object',
@@ -15527,7 +15546,15 @@ class AdminApi {
                 certificatePem: { type: 'string',
                                   description: 'Optional. Omit it and this ' +
                                                'service issues one from its ' +
-                                               'own authority.' }
+                                               'own authority.' },
+                chainPem: { type: 'string',
+                            description: 'Optional, with `certificatePem`: ' +
+                                         'the certificates above it, the ' +
+                                         'one that issued it first. A ' +
+                                         'pinned signing key publishes ' +
+                                         'them as its `x5c`; each must ' +
+                                         'have issued the one before ' +
+                                         '(STS-PKI-0209).' }
               },
               required: ['useCase', 'slot', 'privateKeyPem'],
               examples: [{ scope: '', useCase: 'jose', slot: 'ES256:P-256',
@@ -15536,6 +15563,35 @@ class AdminApi {
             responseDescription: 'What this service will now use for that ' +
                                  'slot, and whether it chains to this ' +
                                  'service’s Root or to yours.' },
+
+          { action: 'unpin-key', operationId: 'unpinPkiKeyPair',
+            summary: 'Stop using a pinned key pair for one slot',
+            description: 'The undoing of `pin-key` (#263). For a pinned ' +
+                         'SIGNING key the key this service generated signs ' +
+                         'again at once — it was published all along — and ' +
+                         'the pinned key stays published, verifying what ' +
+                         'it signed, through its unit\'s grace ' +
+                         '(`signing.retire` drops it then). A ' +
+                         '`signing-key-rotated` event is sent. A slot ' +
+                         'holding a pin that never signed is simply ' +
+                         'cleared. Nothing pinned in the slot is ' +
+                         'STS-PKI-0211.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                scope: { type: 'string',
+                         description: 'A realm id; empty for this realm.' },
+                useCase: { type: 'string', enum: closed.pkiUseCases,
+                           description: 'The use case.' },
+                slot: { type: 'string',
+                        description: 'The slot the key was pinned in.' }
+              },
+              required: ['useCase', 'slot'],
+              examples: [{ scope: '', useCase: 'jose', slot: 'ES256:P-256' }],
+              additionalProperties: false },
+            responseDescription: 'Which pinned key stopped signing, and ' +
+                                 'until when it goes on verifying.' },
 
           // ---------------------------------------------------------------
           // THE REVOCATION PANE'S TWO, SINCE 2026-09-11.

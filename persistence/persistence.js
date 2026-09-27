@@ -1536,6 +1536,16 @@ function databaseConnection() {
   });
 }
 
+// How many request workers this node runs, protocol and surface: what the
+// postgres pool is sized from (`persistence_postgres.js`, poolMax()).
+function workerCount() {
+  log.debug("Entering workerCount().");
+  const n = Math.max(0, Number(config.value('workers.requestCount')) || 0) +
+            Math.max(0, Number(config.value('workers.surfaceCount')) || 0);
+  log.debug("Leaving workerCount().");
+  return n;
+}
+
 function start() {
   log.debug('Entering start().');
   const chosen = mode();
@@ -1718,7 +1728,8 @@ function openStore(chosen, resolvedUrl) {
       // reaches for nothing, which is what lets a test construct one against
       // any database without this file's settings existing at all.
       ? require('./persistence_postgres').create({
-          url: resolvedUrl, log: log, verifyTls: verifiesDatabaseTls()
+          url: resolvedUrl, log: log, verifyTls: verifiesDatabaseTls(),
+          poolMax: require('./persistence_postgres').poolMax(workerCount())
         })
       : require('./persistence_ldif').create({ dir: dataDir(), log: log });
   } catch (err) {
@@ -2087,6 +2098,15 @@ function restoreRealms(rows, replicated) {
     // administrator removes it again.
     if (Number(row.retiringSince) > 0) {
       result.realm.retiringSince = Number(row.retiringSince);
+      // Said at the start (#294), where an operator reads first: a realm
+      // whose removal outlived its bound was interrupted, and refuses every
+      // sign-in in it until somebody removes it again.
+      const state = realms.retiringState(result.realm);
+      if (state && state.interrupted) {
+        log.warn(errorCodes.tag('STS-CORE-0123') + 'persistence: the ' +
+                 'realm "' + row.id + '" was restored half removed: ' +
+                 state.why + ' ' + state.finish);
+      }
     }
     made++;
   });

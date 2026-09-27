@@ -1061,7 +1061,7 @@ function create(spec) {
     if (modeErrors.length) {
       log.debug("Leaving create(). Refused by the realm's mode.");
       return errorCodes.mark({ ok: false, errors: modeErrors },
-                             'STS-CORE-0103');
+                             errorCodes.codeOf(modeErrors) || 'STS-CORE-0103');
     }
     const kerberos = refusedForKerberos(id, Object.assign(
       seededNames(id, domain), (spec || {}).overrides || {}), {});
@@ -1141,9 +1141,15 @@ function update(id, changes) {
     // of these alone (#171).
     const modeErrors = spec.replicated ? [] :
       modeWriteProblems({ id: realm.id, overrides: {} }, spec.overrides);
-    if (modeErrors.length) {
+    // And an override of pki.pinnedSigners this update takes away (#263).
+    const pinnedErrors = spec.replicated ? [] :
+      pinnedSignerClearProblems(realm, spec.overrides);
+    if (modeErrors.length || pinnedErrors.length) {
       log.debug("Leaving update(). Refused by the realm's mode.");
-      return errorCodes.mark({ ok: false, errors: modeErrors },
+      return errorCodes.mark({ ok: false,
+                               errors: modeErrors.concat(pinnedErrors) },
+                             errorCodes.codeOf(modeErrors) ||
+                             errorCodes.codeOf(pinnedErrors) ||
                              'STS-CORE-0103');
     }
     const kerberos = spec.replicated ? null :
@@ -1283,7 +1289,7 @@ function setOverride(id, key, raw) {
   if (modeProblem.length) {
     log.debug("Leaving setOverride(). Refused by the realm's mode.");
     return errorCodes.mark({ ok: false, errors: modeProblem },
-                           'STS-CORE-0103');
+                           errorCodes.codeOf(modeProblem) || 'STS-CORE-0103');
   }
   const after = Object.assign({}, realm.overrides);
   after[key] = raw;
@@ -1318,6 +1324,12 @@ function clearOverride(id, key) {
   }
   const after = Object.assign({}, realm.overrides);
   delete after[key];
+  const pinned = pinnedSignerClearProblems(realm, after);
+  if (pinned.length) {
+    log.debug("Leaving clearOverride(). A pinned signer is live.");
+    return errorCodes.mark({ ok: false, errors: pinned },
+                           errorCodes.codeOf(pinned) || 'STS-PKI-0215');
+  }
   const kerberos = refusedForKerberos(realm.id, after, realm.overrides);
   if (kerberos) {
     log.debug("Leaving clearOverride(). Refused for its Kerberos settings.");
@@ -1350,10 +1362,42 @@ function modeWriteProblems(realm, overrides) {
       const problem = config.modeWriteProblem(key, overrides[key]);
       if (problem) {
         errors.push(problem);
+        // The code config.js gives the same refusal — STS-CORE-0103 for the
+        // mode, STS-PKI-0215 for a pinned signer (#263), STS-MAIL-0003 for
+        // the capture transport — so a realm door and a process door name
+        // one refusal alike.
+        firstCode(errors, config.modeWriteCode(key, overrides[key]));
       }
     });
   });
   log.debug("Leaving modeWriteProblems(). " + errors.length);
+  return errors;
+}
+
+// A REALM OVERRIDE OF `pki.pinnedSigners` TAKEN AWAY (#263) — a clear, or an
+// update whose overrides no longer carry it — asked what a write of the value
+// it falls back to would be asked, with the realm as it will be ambient. See
+// config.js's pinnedSignerWriteProblem().
+function pinnedSignerClearProblems(realm, after) {
+  log.debug("Entering pinnedSignerClearProblems().");
+  const key = 'pki.pinnedSigners';
+  if (!Object.prototype.hasOwnProperty.call(realm.overrides || {}, key) ||
+      Object.prototype.hasOwnProperty.call(after || {}, key)) {
+    log.debug("Leaving pinnedSignerClearProblems(). Not taken away.");
+    return [];
+  }
+  const candidate = Object.assign({}, realm, { candidate: true,
+    overrides: Object.assign({}, after || {}) });
+  const errors = [];
+  run(candidate, function () {
+    const fallsBackTo = String(config.value(key));
+    const problem = config.modeWriteProblem(key, fallsBackTo);
+    if (problem) {
+      errors.push(problem);
+      firstCode(errors, config.modeWriteCode(key, fallsBackTo));
+    }
+  });
+  log.debug("Leaving pinnedSignerClearProblems(). " + errors.length);
   return errors;
 }
 
@@ -1707,7 +1751,95 @@ function built(realm) {
 // or creating the id again (a new row). A process that dies half way through
 // a retirement leaves the realm retiring — refusing sign-ins — until an
 // administrator removes it again, which is the act they had already asked for.
+//
+// **AN INTERRUPTED REMOVAL IS SHOWN, AND FINISHED BY THE SAME ACT (#294).**
+// `retiringState()` says when the mark was set and whether the removal is
+// still IN PROGRESS or was INTERRUPTED, and `/admin/realms`, the realm's own
+// console pages, the sign-in screen's refusal and `GET /admin-api/realms`
+// all draw it. The two are told apart by TIME, which every node can read
+// alike: a `retire()` finishes within `realms.removalDeliveryTimeoutS` of its
+// mark (every phase that waits is bounded by the one deadline, and the
+// announce phase is synchronous), so a mark older than that bound plus
+// `RETIRING_GRACE_MS` belongs to a removal nobody is running any more — on
+// this node or another. A removal running in THIS process is known exactly
+// (`retiringHere`) whatever the clock says.
+//
+// **NO SEPARATE "RESUME" ACTION**, decided on #294: finishing is removing
+// again. `retire()` on an interrupted realm keeps the first mark, ends what
+// is still live (the sessions the dead process ended are gone and are not
+// announced twice), reports the realm's people purged, waits and removes.
+// What cannot be known is which people the dead process had already
+// reported, so a receiver may be told `account-purged` twice about somebody
+// — at least once is the choice, because a person never reported is the
+// silent removal #232 exists to prevent. A second `retire()` while one is
+// still IN PROGRESS is refused (`STS-CORE-0122`): a double-click, or two
+// administrators on two nodes, would otherwise announce everything twice.
 // ---------------------------------------------------------------------------
+
+// The margin, past `realms.removalDeliveryTimeoutS`, after which a mark is
+// taken to belong to a removal that is no longer running: the final
+// `remove()` and its purges, and two nodes' clocks.
+const RETIRING_GRACE_MS = 30000;
+
+// The realms whose `retire()` is running in THIS process.
+const retiringHere = new Set();
+
+// The removal bound, in milliseconds, as `retire()` reads it.
+function removalBoundMs() {
+  log.debug("Entering removalBoundMs().");
+  const boundS = Number(config.value('realms.removalDeliveryTimeoutS'));
+  log.debug("Leaving removalBoundMs().");
+  return Math.max(0, Number.isFinite(boundS) ? boundS : 10) * 1000;
+}
+
+// Null, or what a console page and the API say about a realm being removed:
+// `{ since, sinceIso, inProgress, interrupted, finishesBy, refusing, why,
+// finish }`. `realmOrId` defaults to the ambient realm.
+function retiringState(realmOrId) {
+  log.debug("Entering retiringState().");
+  const id = realmOrId === undefined || realmOrId === null
+    ? currentId()
+    : (typeof realmOrId === 'object' ? String(realmOrId.id || '')
+                                     : String(realmOrId));
+  const realm = realms.get(id);
+  const since = Number(realm && realm.retiringSince) || 0;
+  if (!(since > 0)) {
+    log.debug("Leaving retiringState(). Not retiring.");
+    return null;
+  }
+  const finishesBy = since + removalBoundMs() + RETIRING_GRACE_MS;
+  const inProgress = retiringHere.has(id) || Date.now() < finishesBy;
+  const sinceIso = new Date(since).toISOString();
+  log.debug("Leaving retiringState(). " +
+            (inProgress ? "In progress." : "Interrupted."));
+  return {
+    since: since,
+    sinceIso: sinceIso,
+    inProgress: inProgress,
+    interrupted: !inProgress,
+    finishesBy: finishesBy,
+    refusing: 'every new sign-in and every new token, assertion, ticket, ' +
+              'credential, certificate and SVID in this realm ' +
+              '(STS-CORE-0121); sign-out, revocation, introspection, ' +
+              'UserInfo, metadata and the SSF poll endpoint still answer',
+    why: inProgress
+      ? 'The trust realm "' + id + '" is being removed (the removal ' +
+        'began at ' + sinceIso + '), so nothing new is signed in or ' +
+        'issued in it.'
+      : 'The trust realm "' + id + '" was being removed from ' + sinceIso +
+        ', and that removal was interrupted before it finished — the ' +
+        'process doing it stopped. Nothing new is signed in or issued in ' +
+        'it until an administrator finishes the removal.',
+    finish: inProgress
+      ? 'Wait: the removal finishes by itself by ' +
+        new Date(finishesBy).toISOString() + '.'
+      : 'Remove the realm again — the Remove button on its page under ' +
+        '/admin/realms, or POST /admin-api/realms/remove with {"id": "' +
+        id + '"}, from another realm. That ends what is still live in it, ' +
+        'reports its people purged, and removes it.'
+  };
+}
+
 
 // Whether `realmOrId` (default: the ambient realm) is being retired. Read from
 // the REGISTRY rather than from the ambient object, so a request that entered
@@ -1736,13 +1868,15 @@ function retiringRefusal(realmOrId) {
     ? currentId()
     : (typeof realmOrId === 'object' ? String(realmOrId.id || '')
                                      : String(realmOrId));
-  const realm = realms.get(id);
+  const state = retiringState(id);
   log.debug("Leaving retiringRefusal(). Refused.");
   return errorCodes.mark({
     realm: id,
-    since: Number(realm && realm.retiringSince) || 0,
-    why: 'The trust realm "' + id + '" is being removed, so nothing new is ' +
-         'signed in or issued in it.'
+    since: state ? state.since : 0,
+    interrupted: !!(state && state.interrupted),
+    why: state ? state.why
+               : 'The trust realm "' + id + '" is being removed, so ' +
+                 'nothing new is signed in or issued in it.'
   }, 'STS-CORE-0121');
 }
 
@@ -1804,12 +1938,43 @@ async function retire(id, options) {
     log.debug("Leaving retire(). No such realm.");
     return remove(id);
   }
-  const boundS = Number(config.value('realms.removalDeliveryTimeoutS'));
-  const boundMs = Math.max(0, Number.isFinite(boundS) ? boundS : 10) * 1000;
+  // A REMOVAL ALREADY RUNNING IS NOT STARTED AGAIN (#294): here, or — by
+  // the time its bound allows — on another node. An INTERRUPTED one is
+  // finished by carrying on below; see retiringState().
+  const already = retiringState(realm);
+  if (already && already.inProgress) {
+    log.info(errorCodes.tag('STS-CORE-0122') + 'realms: a second removal ' +
+             'of "' + realm.id + '" was refused: the one begun at ' +
+             already.sinceIso + ' is still in progress.');
+    log.debug("Leaving retire(). Already in progress.");
+    return errorCodes.mark({ ok: false, retiring: already,
+      errors: ['The trust realm "' + realm.id + '" is already being ' +
+               'removed (since ' + already.sinceIso + '). ' +
+               already.finish] }, 'STS-CORE-0122');
+  }
+  if (already) {
+    log.warn(errorCodes.tag('STS-CORE-0123') + 'realms: finishing the ' +
+             'removal of "' + realm.id + '", which was begun at ' +
+             already.sinceIso + ' and interrupted.');
+  }
+  retiringHere.add(realm.id);
+  try {
+    const finished = await retireMarked(realm, o);
+    log.debug("Leaving retire().");
+    return finished;
+  } finally {
+    retiringHere.delete(realm.id);
+  }
+}
+
+// The body of `retire()`, once it has decided a removal may run.
+async function retireMarked(realm, o) {
+  log.debug("Entering retireMarked(). id=" + realm.id);
+  const boundMs = removalBoundMs();
   const ctx = {
     realmId: realm.id,
     deadline: Date.now() + boundMs,
-    // Read after "The session was ended at" in CAEP's reason_admin.
+    // Read after "The session was ended by" in CAEP's reason_admin (#294).
     via: String(o.via || 'the removal of the trust realm "' + realm.id +
                 '"'),
     initiatingEntity: String(o.initiatingEntity || 'admin'),
@@ -1897,7 +2062,7 @@ async function retire(id, options) {
   result.retirement = { late: late, failed: failed,
                         undelivered: undelivered,
                         boundSeconds: Math.round(boundMs / 1000) };
-  log.debug("Leaving retire().");
+  log.debug("Leaving retireMarked().");
   return result;
 }
 
@@ -3689,6 +3854,7 @@ module.exports = {
   retire: retire,
   isRetiring: isRetiring,
   retiringRefusal: retiringRefusal,
+  retiringState: retiringState,
   onChange: onChange,
   realmContext: realmContext,
   keyed: keyed,

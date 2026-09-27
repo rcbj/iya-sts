@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3712** of them, in **39** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3727** of them, in **39** subsystems.
 
 ## Where a code appears
 
@@ -51,13 +51,13 @@ is an ordinary outcome.
 
 * [HTTP front door (`STS-HTTP`)](#sts-http) — 18
 * [PROXY protocol (`STS-PROXY`)](#sts-proxy) — 9
-* [Service core (`STS-CORE`)](#sts-core) — 64
+* [Service core (`STS-CORE`)](#sts-core) — 66
 * [Worker pools (`STS-WORKER`)](#sts-worker) — 43
 * [Persistence and coordination (`STS-STORE`)](#sts-store) — 63
 * [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 28
 * [Scheduler (`STS-SCHED`)](#sts-sched) — 16
 * [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 79
-* [Certificate authority (`STS-PKI`)](#sts-pki) — 193
+* [Certificate authority (`STS-PKI`)](#sts-pki) — 204
 * [Certificate enrollment core (`STS-ENROLL`)](#sts-enroll) — 51
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 72
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 26
@@ -73,7 +73,7 @@ is an ordinary outcome.
 * [LDAP directory (`STS-LDAP`)](#sts-ldap) — 87
 * [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 77
 * [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 144
-* [TLS and client certificates (`STS-TLS`)](#sts-tls) — 35
+* [TLS and client certificates (`STS-TLS`)](#sts-tls) — 37
 * [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 110
 * [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 116
 * [Risk scoring (`STS-RISK`)](#sts-risk) — 44
@@ -206,6 +206,8 @@ Raised from: server.js, common/protocol_stack.ts, common/config.js, common/confi
 | `STS-CORE-0108` | The service did not start: a value in the environment, the appconfig file or env/defaults.js fails the check a console or API write of it would (a value outside an enum or a list's csvValues, a number out of bounds, a malformed boolean) — #86. | — |
 | `STS-CORE-0120` | A trust realm was removed (#232) before everything it owed had been delivered within realms.removalDeliveryTimeoutS — session ends still waiting on their claim, back-channel Logout Tokens or SSF events (session-revoked, account-purged, stream-updated) not yet delivered, or a retirement hook that failed. The realm is removed anyway. | none — logged; the removal succeeds |
 | `STS-CORE-0121` | A sign-in or an issuance was refused because its trust realm is being removed (#262): realms.retire() marks the realm retiring before it ends its sessions and announces the removal, and from then on no session, token, authorization code, assertion, ticket, credential, certificate or SVID is started or issued in it, in either mode. Also logged once, as information, when the mark is set. | the protocol's own refusal — invalid_grant at the token endpoint, access_denied at the authorization endpoint, credential_request_denied at OpenID4VCI, a SAML Responder / RequestDenied status, a SOAP fault, a 503 problem at ACME, EST and SCEP, and a refused session at every sign-in door |
+| `STS-CORE-0122` | A trust realm's removal was refused because a removal of it is already in progress (#294): realms.retire() marked it less than realms.removalDeliveryTimeoutS plus a 30-second margin ago, or is running in this process. Starting a second one would end and announce everything twice. Once that time has passed the removal is taken to be interrupted, and removing the realm again finishes it. | none — the console and /admin-api refuse the remove action |
+| `STS-CORE-0123` | A trust realm is stuck half removed (#294): it carries the retiring mark (#262) from longer ago than a removal can take, so the process that was removing it stopped before it finished. Every new sign-in and issuance in it is refused (STS-CORE-0121) until an administrator removes it again, from another realm. Logged when such a realm is restored at start, and when the removal is finished. | none — logged; /admin/realms and GET /admin-api/realms show it |
 
 ## STS-WORKER
 
@@ -682,6 +684,17 @@ Raised from: common/pki.js, common/pki_authoring.ts, common/pki_revocation.js, c
 | `STS-PKI-0204` | The OpenID4VP Verifier's certificate was refused its name or its key: a DNS name a certificate cannot carry, a wildcard (the certificate names one host), or no signing key (#230). | the Verifier's refusal: STS-VC-0112, HTTP 500 at /oid4vp/start |
 | `STS-PKI-0205` | A realm already holds the most OpenID4VP Verifier certificates it keeps (one per DNS name, sixteen), so none was issued for another name — set oid4vp.x509DnsName or pin global.publicBaseUrl (#230). | the Verifier's refusal: STS-VC-0112, HTTP 500 at /oid4vp/start |
 | `STS-PKI-0206` | A key pair was not pinned in a slot that certifies a key the realm signs with: a pinned key does not sign, and the pin would have replaced that key's published certificate (#245). | console / /admin-api refusal (HTTP 400) |
+| `STS-PKI-0207` | A key pair was not pinned as a signer: its key type does not match the slot's algorithm (an RSA key under 2048 bits, a curve other than the slot's, a post-quantum key of another parameter set) (#263). | console / /admin-api refusal (HTTP 400) |
+| `STS-PKI-0208` | A key pair was not pinned as a signer: the slot is not one a pinned key can sign from — a signer-group slot, a composite post-quantum algorithm, or an xml slot other than RS256 (#263). | console / /admin-api refusal (HTTP 400) |
+| `STS-PKI-0209` | A key pair was not pinned as a signer: the certificate chain supplied with it could not be read, or its first certificate did not issue the key's certificate (#263). | console / /admin-api refusal (HTTP 400) |
+| `STS-PKI-0210` | A key pair was not pinned as a signer: the certificate supplied with it is expired or not yet valid, so relying parties would refuse everything it signed (#263). | console / /admin-api refusal (HTTP 400) |
+| `STS-PKI-0211` | An unpin named a slot that holds no pinned key pair (#263). | console / /admin-api refusal (HTTP 400) |
+| `STS-PKI-0212` | A pinned signing key's certificate expires within pki.pinnedSignerExpiryWarningDays; its lifecycle is the operator's (#263). | log only (a warning, once a day) |
+| `STS-PKI-0213` | A pinned signing key's certificate has expired and the key still signs: relying parties that check the x5c or the metadata certificate refuse what it signs until it is unpinned (#263). | log only (an error, once a day) |
+| `STS-PKI-0214` | A pinned signing key could not be read when a signature needed it, so the realm's generated key signed instead (#263). | log only |
+| `STS-PKI-0215` | A write or reset of pki.pinnedSigners was refused: it would turn the setting off in a realm holding a live or pending pinned signing key, which would change the signer with no signing-key-rotated. Unpin first (#263). | console / /admin-api refusal (HTTP 400) |
+| `STS-PKI-0216` | At start, a realm holds pinned signing keys but pki.pinnedSigners is off there (environment, appconfig or a stored override), so it signs with its generated keys (#263). | log only (a warning, at start) |
+| `STS-PKI-0217` | A key pair was not pinned into the xml slot: the certificate supplied with it has a keyUsage without keyEncipherment, and an xml pin is also the key partners encrypt to (#263). | console / /admin-api refusal (HTTP 400) |
 
 ## STS-ENROLL
 
@@ -1109,7 +1122,7 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0205` | The product-mode bootstrap was given a password through admin.bootstrapPassword that the password policy refuses, so no bootstrap account was created and nobody can sign in. It is NOT replaced with a generated one: the operator set it so that the only way in would not be in a log, and generating one would put a working credential there and leave theirs not working. | none — logged, and the service starts with nobody able to sign in |
 | `STS-AUTHN-0206` | Product mode: a passwordless sign-in named a person who holds no security key that signs in on its own, and the sign-in screen does not enrol one — enrolling there would give the account to whoever claimed the name first. A primary key is added on /portal/keys, by an activation link or by an operator. Development enrols on first use (mode.enrolsKeysOnFirstUse()). | none — the sign-in screen is drawn again with the reason |
 | `STS-AUTHN-0207` | A hosted surface (the console, the portal or the embedded debugger) could not get the key it signs its private_key_jwt client assertion with: this realm has no certificate authority to issue one, the issue failed, or the key could not be written onto the surface's application entry. The surface cannot authenticate at the token endpoint, so the sign-in or renewal stops (#138). | RFC 7523 section 2.2; OIDC Core section 9 |
-| `STS-AUTHN-0208` | A hosted surface's key was being issued by another process, and neither the key nor an answer from the claim store arrived in time; the sign-in or renewal stops rather than issuing a second key (#138). | none — a refusal of this service's own |
+| `STS-AUTHN-0208` | A hosted surface's key was being issued by another process, and neither the key nor an answer from the claim store arrived in time; the sign-in or renewal stops rather than issuing a second key (#138). Since #296 the claim is released when an issuance ends, so this means the issuer is still at work or the store cannot be asked. | none — a refusal of this service's own |
 | `STS-AUTHN-0209` | A hosted surface's application entry declares a token endpoint authentication method the surface does not implement. It implements private_key_jwt, and client_secret_basic or client_secret_post for an entry an operator set so (#138). | RFC 7591 section 2 |
 | `STS-AUTHN-0210` | A hosted surface refused the JWT-secured authorization response (JARM) it was sent back with: not a signed JWT, a key the realm's JWKS does not hold, a signature that does not verify, or the wrong issuer, audience or expiry (#139). | the console's, portal's or debugger's sign-in refusal page |
 | `STS-AUTHN-0211` | Under FAPI 1.0 Advanced, a hosted surface could not push its signed authorization request to /oauth2/par, so its sign-in could not start (#139). | the console's, portal's or debugger's sign-in refusal page |
@@ -2786,6 +2799,8 @@ Raised from: tls/.
 | `STS-TLS-0033` | A socket that presents the listener certificate (LDAPS, the SPIRE Server API) threw while being told the certificate was re-issued; the others were still told, and the main port serves the new one. | — |
 | `STS-TLS-0034` | A TLS client REFUSED this service's certificate: it sent a certificate alert (bad_certificate, unsupported_certificate, certificate_revoked, certificate_expired, certificate_unknown or unknown_ca) during the handshake. From a browser it almost always means the client does not trust this service's Root CA (#225). | TLS handshake failure (the client closed the connection) |
 | `STS-TLS-0035` | A connection was closed because its client certificate (or one in its chain) has an EC key on a curve outside the NIST set (P-256, P-384, P-521 and the other NIST-named curves); such certificates are refused before any certificate object is built (#212). | the connection is closed after the handshake |
+| `STS-TLS-0036` | The shared session-ticket key of an active-active cluster could not be applied to a TLS listener; that listener keeps its own keys, so a ticket it issues resumes only on this node. | resumption falls back to a full handshake |
+| `STS-TLS-0037` | The shared session-ticket key held in the store is not the 48 bytes node takes, so the listeners keep their own keys until the tls.ticket-key-rotate job replaces it. | resumption falls back to a full handshake |
 
 ## STS-VC
 

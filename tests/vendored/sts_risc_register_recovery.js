@@ -29,9 +29,10 @@
 //      and recovery-activated.
 //
 // The recovery code spent on /portal/forgot-password and the portal's
-// verification link are in process (`tests/mail.js` 15f,
-// `tests/risc_identifiers_recovery.js` B3 and B6): both need a mail catcher
-// this job does not.
+// verification link need a mail catcher this job does not:
+// `sts_email_verification.js` holds both over HTTP (#294), and
+// `tests/mail.js` 15f and `tests/risc_identifiers_recovery.js` B3 and B6 in
+// process.
 //
 // OWNED HERE (local: true): this repository's own transmitter, portal and
 // sign-in.

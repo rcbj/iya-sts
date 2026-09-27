@@ -425,6 +425,11 @@ const JWKS_PATH = '/oauth2/jwks';
 //   CLAIM, because two nodes issuing at once would each write a key and the
 //   loser's sign-in would sign with a key the entry no longer holds. The
 //   node that loses the claim waits for the winner's key to reach the entry.
+//   **The claim is RELEASED when the issuance ends (#296)**, and a waiter
+//   that finds no usable key takes the claim again rather than only
+//   re-reading: held for its lifetime, it forbade a second issuance for
+//   ~21 s, and a Root replaced twice inside that window failed the next
+//   sign-in with STS-AUTHN-0208 (see `surfaceKey()`).
 // * **The assertion** is RFC 7523 section 3's: `iss` and `sub` the client,
 //   `aud` the ISSUER this back-channel request will be answered as — OAuth
 //   2.1 mode requires it as the sole value, and every other mode accepts it
@@ -1820,6 +1825,24 @@ class OidcRelyingParty {
 
   // The surface's signing key, issued if the entry holds none it can use.
   // See "HOW A SURFACE AUTHENTICATES" above the paths.
+  //
+  // **THE CLAIM IS A MUTUAL EXCLUSION, SO IT IS RELEASED WHEN THE ISSUANCE
+  // ENDS (2026-09-27, #296).** It was taken for `waitMs` and never given
+  // back, which made it a "no second key for this long" rule rather than
+  // "one issuer at a time". The two are the same until the key just issued
+  // stops being usable inside that window — which is exactly what replacing
+  // the Root does: the console signs in (a key is issued, the claim held for
+  // ~21 s), `POST /admin-api/pki/build-root` rebuilds every branch, and the
+  // next sign-in finds the new key's chain refused, is told the claim is
+  // `used`, and waits the whole window for a key nobody is issuing
+  // (STS-AUTHN-0208). In memory mode `sts_metadata` straight after
+  // `sts_admin_api_operations` was that sequence.
+  //
+  // So the issuer releases the claim in a `finally`, and a waiter that finds
+  // no usable key tries to TAKE the claim again on each turn rather than only
+  // re-reading the entry: if the holder finished (or failed, or died and its
+  // claim expired) without leaving a usable key, the waiter becomes the
+  // issuer instead of timing out.
   private async surfaceKey(surface: Surface): Promise<any> {
     const { log, realms, clusterClaims, errorCodes } = this.deps;
     log.debug("Entering OidcRelyingParty.surfaceKey(). " + surface.clientId);
@@ -1830,27 +1853,41 @@ class OidcRelyingParty {
     }
     const realmId = realms.currentId();
     const waitMs = this.backChannelTimeoutMs() * 2 + 1000;
-    const answer = await clusterClaims.claim({
-      scope: 'oidc_rp.surface-key', realm: realmId,
-      value: surface.clientId, ttlMs: waitMs
-    });
-    if (answer.ok) {
-      const issued = await this.issueSurfaceKey(surface, realmId);
-      log.debug("Leaving OidcRelyingParty.surfaceKey(). Issued here.");
-      return issued;
-    }
-    if (answer.reason === 'used') {
-      const until = Date.now() + waitMs;
-      while (Date.now() < until) {
-        await new Promise(function (resolve) {
-          setTimeout(resolve, 200);
-        });
-        const arrived = await this.usableSurfaceKey(surface);
-        if (arrived) {
-          log.debug("Leaving OidcRelyingParty.surfaceKey(). Issued by " +
-                    "another process.");
-          return arrived;
+    const until = Date.now() + waitMs;
+    let answer: any = null;
+    for (;;) {
+      answer = await clusterClaims.claim({
+        scope: 'oidc_rp.surface-key', realm: realmId,
+        value: surface.clientId, ttlMs: waitMs
+      });
+      if (answer.ok) {
+        try {
+          // Asked again with the claim held: the process that held it last
+          // may have stored a usable key between our read and our claim.
+          const arrivedMeanwhile = await this.usableSurfaceKey(surface);
+          if (arrivedMeanwhile) {
+            log.debug("Leaving OidcRelyingParty.surfaceKey(). Issued by " +
+                      "another process just before the claim.");
+            return arrivedMeanwhile;
+          }
+          const issued = await this.issueSurfaceKey(surface, realmId);
+          log.debug("Leaving OidcRelyingParty.surfaceKey(). Issued here.");
+          return issued;
+        } finally {
+          await clusterClaims.release(answer.handle);
         }
+      }
+      if (answer.reason !== 'used' || Date.now() >= until) {
+        break;
+      }
+      await new Promise(function (resolve) {
+        setTimeout(resolve, 200);
+      });
+      const arrived = await this.usableSurfaceKey(surface);
+      if (arrived) {
+        log.debug("Leaving OidcRelyingParty.surfaceKey(). Issued by " +
+                  "another process.");
+        return arrived;
       }
     }
     log.error(errorCodes.tag('STS-AUTHN-0208') + 'oidc_rp: the ' +

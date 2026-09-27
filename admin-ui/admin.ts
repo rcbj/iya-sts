@@ -5157,6 +5157,7 @@ class AdminConsole {
         this.userMenu(req, gate) +
         '</div></div>' +
       this.trailBar(active, up, title) + this.gateBanner(gate) +
+      this.retiringBanner() +
       this.withDerivedTips(inner) +
       '<div class="meta">' +
       // The one sentence drawn at the foot of EVERY page in this console, which
@@ -22158,6 +22159,10 @@ class AdminConsole {
              self.esc(row.id) +
         '</code></a>' +
         (row.builtin ? ' <span class="why">built in</span>' : '') +
+        (row.retiring
+          ? ' <span class="none">' + (row.retiring.interrupted
+              ? 'removal interrupted' : 'being removed') + '</span>'
+          : '') +
         '</td><td>' + self.esc(row.name) + '</td>' +
         '<td><code>' + self.esc(row.domain) + '</code></td>' +
         '<td><code>' + self.esc(row.pathPrefix || '/') + '</code></td>' +
@@ -22168,10 +22173,21 @@ class AdminConsole {
     const carryBack = '<input type="hidden" name="back" value="' +
       this.esc(queryWith(listView, {})) + '">';
 
+    // THE REALMS BEING REMOVED (#294), above everything else on the page:
+    // an interrupted one refuses every sign-in in it until somebody finishes
+    // the removal, and nothing else in this console says so.
+    const retiringRows = json.realms.filter(function (row) {
+      return !!row.retiring;
+    });
+    const retiringBlock = retiringRows.map(function (row) {
+      return self.retiringNotice(row, carryBack);
+    }).join('');
+
     const inner =
       '<p class="sub">' + realms.count() + ' realm(s). Everything under a ' +
       'realm\'s prefix is that realm; everything under no prefix is the ' +
       'default one.</p>' +
+      retiringBlock +
       REALMS_CAVEAT +
 
       // `realms.active()` IS FALSE FOR TWO DIFFERENT REASONS AND THIS USED TO
@@ -22328,6 +22344,7 @@ class AdminConsole {
        '</p>' :
        '') +
 
+      (json.retiring ? this.retiringNotice(json, carryBack) : '') +
       (inRealm
         ? '<div class="ok">You are reading this console ' +
           '<strong>inside</strong> this realm. Every settings form in this ' +
@@ -22413,6 +22430,67 @@ class AdminConsole {
 
     log.debug("Leaving AdminConsole.realmDetailPage().");
     return { json: json, inner: inner };
+  }
+
+  // A REALM BEING REMOVED (#262, #294), as a console block: when it began,
+  // what it refuses, and — for an INTERRUPTED removal — the button that
+  // finishes it, which is the Remove action again (realms.js argues why
+  // there is no other). `row` is `realmJson()`'s shape. Drawn on
+  // /admin/realms and on the realm's own drill-down; `retiringBanner()` is
+  // the line on every other page of the realm.
+  retiringNotice(row, carryBack) {
+    const { log, realms } = this.deps;
+    log.debug("Entering AdminConsole.retiringNotice(). realm=" + row.id);
+    const state = row.retiring;
+    const fromHere = realms.currentId() !== row.id;
+    const button = state.interrupted && fromHere
+      ? '<form method="post" action="/admin/realms">' + carryBack +
+        '<input type="hidden" name="action" value="remove">' +
+        '<input type="hidden" name="id" value="' + this.esc(row.id) + '">' +
+        '<button type="submit" class="danger">Finish removing ' +
+        this.esc(row.id) + '</button></form>'
+      : '';
+    const html = (state.interrupted ? this.warn.bind(this)
+                                    : this.note.bind(this))(
+      '<strong>The realm <code>' + this.esc(row.id) + '</code> ' +
+      (state.interrupted ? 'was being removed, and the removal was ' +
+                           'interrupted' : 'is being removed') +
+      '.</strong> ' + this.esc(state.why) + ' Refused: ' +
+      this.esc(state.refusing) + '. ' + this.esc(state.finish) +
+      (state.interrupted && !fromHere
+        ? ' You are reading this console inside it, so do it from another ' +
+          'realm: the switcher at the top of the sidebar.'
+        : '')) + button;
+    log.debug("Leaving AdminConsole.retiringNotice().");
+    return html;
+  }
+
+  // The one line every console page of a realm being removed carries (#294),
+  // pointing at the page that says the rest.
+  retiringBanner() {
+    const { log, realms } = this.deps;
+    log.debug("Entering AdminConsole.retiringBanner().");
+    let state = null;
+    try {
+      state = realms.retiringState();
+    } catch (e) {
+      log.debug("Caught in AdminConsole.retiringBanner(): " +
+                ((e && e.message) || e));
+      // No realm registry answering (a page drawn outside a request); a
+      // banner about a realm nobody can name is no banner.
+      state = null;
+    }
+    if (!state) {
+      log.debug("Leaving AdminConsole.retiringBanner(). Not retiring.");
+      return '';
+    }
+    log.debug("Leaving AdminConsole.retiringBanner().");
+    return this.warn('<strong>This realm is ' +
+      (state.interrupted ? 'stuck half way through its removal'
+                         : 'being removed') + '.</strong> ' +
+      this.esc(state.why) + ' <a href="/admin/realms?realm=' +
+      encodeURIComponent(realms.currentId()) + '">Its page</a> says what ' +
+      'is refused and how to finish.');
   }
 
   realmsView(req) {
@@ -42865,6 +42943,10 @@ const consoleExports = {
   // table and `SECTIONS` disagree about. See above respond().
   protocolEndpointDrift: slot.forward('protocolEndpointDrift'),
   page: slot.forward('page'),
+  // /admin/realms, list and drill-down, as the route draws it: read by
+  // tests/realm_retiring.js, which has no console session to reach the page
+  // over HTTP with, to see a realm stuck half removed (#294).
+  realmsView: slot.forward('realmsView'),
   // AND FOR A SECOND MODULE SINCE THE XACML WORK: `xacml/xacml_admin.ts`
   // draws the /admin/xacml pages (four then, six now) the way
   // `ldap/ldap_server.js` draws its (then five, now eight). Those two helpers

@@ -72,8 +72,13 @@ function world(options) {
       'scheduler.historyDays': 30,
       'scheduler.maxRuns': 5000,
       'scheduler.disabledJobs': '',
-      'scheduler.runTimeoutS': 600
+      'scheduler.runTimeoutS': 600,
+      // Unbounded unless a section says otherwise: the sections before M
+      // are about other things, and several keep a run going on purpose.
+      'scheduler.maxConcurrentRuns': 1000
     }, o.settings || {}),
+    // The store's pool, for the cap (0: no pool, as the memory store).
+    storeConnections: Number(o.storeConnections) || 0,
     realmIds: o.realmIds || ['default', 'acme'],
     claimsDown: false
   };
@@ -225,6 +230,7 @@ function world(options) {
       clearTimer: function (t) { if (t) { t.cleared = true; } },
       cronPrev: Scheduler.cronPrev,
       cronNext: Scheduler.cronNext,
+      storeConnections: function () { return w.storeConnections; },
       host: 'host-' + name,
       pid: node.pid,
       isRequestWorker: function () { return !!no.worker; }

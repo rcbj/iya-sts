@@ -785,6 +785,12 @@ class ProtocolStack {
     // installed on the main port by `server.js` and read by `authn/`.
     this.build('tls/client_hello', require('../tls/client_hello'),
                'ClientHello');
+    // The shared session-ticket key of an active-active cluster: a library
+    // that registers its scheduler job when built and no route. Before
+    // `tls/tls_server` (20) and `ldap/ldap_server` (21), whose listeners —
+    // with the main port's and the debugger's — call its `track()`.
+    this.build('tls/session_tickets', require('../tls/session_tickets'),
+               'SessionTickets');
     this.build('pki/pki_service', require('../pki/pki_service'), 'PkiService');
     this.register(app, require('../pki/pki_service'), 'pki/pki_service');
     // 17c. THE PUBLIC CRYPTO METADATA DOCUMENT (#42, 2026-09-22):

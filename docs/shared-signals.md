@@ -62,7 +62,7 @@ management API.
 | What is detected | `credential_type` | Also sent |
 |---|---|---|
 | a password that signs in and appears in a data breach (`risk.breachCheckAtSignIn`) | `password` | `account-credential-change-required`, once until the password is changed |
-| a security key whose signature counter went backwards (a clone) | `fido2-roaming` or `fido2-platform` | nothing more; the person's risk standing goes to HIGH |
+| a security key whose signature counter went backwards (a clone) | `fido2-roaming` or `fido2-platform` | nothing more; the person's risk standing goes to HIGH. The `risk-response` policy's own credential-compromise reaction to that standing is not sent again, so a receiver gets one event for one key |
 | a certificate revoked with the reason `keyCompromise` (the portal, an enrollment protocol's revoke, `/admin/pki`) | `x509` | the CAEP `credential-change` revoke |
 | the emailed second factor turned off after too many wrong codes | `urn:iya:sts:credential-type:email-otp` | the CAEP `credential-change` delete |
 
@@ -128,7 +128,7 @@ person. A receiver that does not know a type ignores it, as SSF says it should.
 
 | Type (`urn:iya:sts:secevent:event-type:…`) | Sent when | The document to fetch again |
 |---|---|---|
-| `signing-key-rotated` | a realm's signing keys rotate (on the schedule, by hand, or in an emergency) | `jwks_uri`, `crypto_metadata_uri` |
+| `signing-key-rotated` | a realm's signing keys rotate (on the schedule, by hand, or in an emergency), or an operator pins a key pair as the realm's signer for an algorithm or unpins it (`reason: requested`, sent when the pinned key is PUBLISHED, ahead of its use) | `jwks_uri`, `crypto_metadata_uri` |
 | `federation-key-rotated` | a realm's OpenID Federation entity key rotates (in an emergency, the current and next keys are revoked), or a retired key is revoked | `entity_configuration_uri` |
 | `spiffe-authority-rotated` | a realm's SPIFFE X.509 or JWT authority is rotated, or the certificate hierarchy under it is rebuilt | `bundle_uri`; `bundle_changed` says whether the bundle itself changed |
 | `tls-certificate-changed` | the certificate the main port presents is re-issued, or the service (or one node of it) starts presenting a certificate other than the one it last announced (`reason: restarted`). Sent to every realm's streams | `certificate_uri` |

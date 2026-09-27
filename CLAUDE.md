@@ -973,6 +973,11 @@ because single-node and multi-node differ in too much to read one failure;
 mode runs every job, both halves; an AWS target runs the protocol half only,
 because the in-process files cannot be pointed at a URL.
 
+**Every image the test stack pulls or builds FROM is a private copy on ghcr.io
+(2026-09-27)**: `.github/image-mirror.txt`, and `tests/CLAUDE.md`, *EVERY
+IMAGE THE STACK PULLS OR BUILDS FROM*. `docker login ghcr.io` is needed, as
+for the corpora image.
+
 **`npm test` refuses on a checkout since #50** (the TypeScript is compiled
 only inside an image), so `./docker-npm-test.sh` builds the tests image and
 runs it there. **`./local-run-tests.sh` was removed on 2026-09-16**: it ran

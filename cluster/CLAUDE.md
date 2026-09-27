@@ -338,6 +338,19 @@ a transaction under every read in the service, which is cost 2 again. Its row
 commits within one flush and reaches the other node's next pull; it is the one
 row rule 2 does not promise, and `cluster_barrier.js` argues why.
 
+**Rule 2 holds for a MESSAGE this node sends, too (2026-09-27).** Rule 2 only
+held a RESPONSE. An outbound delivery (`oauth-oidc/outbound_delivery.ts`:
+provider commands, CIBA ping and push, back-channel logout) was sent as soon
+as it was prepared. So a Command Token's `callback_token`, minted a moment
+earlier, could reach the relying party before it committed. The answer came
+back through the balancer to the other node, which caught up to a head that
+did not include it, and the callback was refused 401. The mock relying party
+answers in process on whichever node the balancer chose, so
+`sts_provider_commands` failed in the cluster mode whenever that was the other
+node. The queue now waits for `cluster_barrier.commitBeforeSending()` after
+preparing a message and before dialling. `tests/cluster_barrier_throughput.js`
+section 5 holds it.
+
 **A decision counted is not a write either (2026-09-15).** The XACML monitor's
 counters were journalled only when created, so each node's page added its live
 tally to the other's frozen row and `sts_portal_sessions` read two totals for
@@ -499,6 +512,23 @@ A registration missing a member is refused WHOLE and thrown
 (`STS-SCHED-0009`). A setting of 0 for an interval means OFF, and the page
 says so; it is never read with `|| n`.
 
+**A QUEUE, AND A CAP ON RUNS GOING AT ONCE (2026-09-27).** A slot is a
+multiple of its interval, so every hourly job in every realm falls due on the
+same second. In the cluster mode, with 68 realms, the leader asked for about
+three hundred claims at 11:00:07. Each needed one of the postgres pool's four
+connections (`persistence_postgres.js`'s pool, four then; `poolMax()`
+since, twice the node's request workers and at least four), so for ninety
+seconds
+nothing else on that node reached the store: LDAPS timed out and a provider
+command was never delivered. Now each tick lines up everything due, a
+person's Run now first and then scheduled runs oldest-due first. It starts
+at most `scheduler.maxConcurrentRuns` (2). What waits is not claimed, so it is
+still due at the next tick, and a run that ends asks for that tick at once.
+**The cap is never more than one fewer than the pool holds**, whatever the
+setting says (`maxConcurrentRuns()`), so the scheduler cannot take every
+connection from the requests. `tests/scheduler.js` section M holds it; the
+mutant that drops the tick after a run ends fails three assertions.
+
 **EVERY PROCESS MUST REGISTER THE SAME JOBS (2026-09-22).** A registration is
 the owner's load-time call, so a job registered LAZILY — at a process's first
 claim, first count, first assertion — is listed by the processes that have
@@ -596,6 +626,7 @@ next beat. It is the one addition this feature made to `cluster.js`.
 | `oauth2.used-assertion-purge` | cluster, service; a minute, registered at the first claim against a database | `common/used_assertions.js` (P5) |
 | `ldap.connection-mirror-maintenance` | per-process, quiet; socket-holding processes | `ldap/ldap_cluster_connections.ts` (P5) |
 | `federation.encryption-key-retire` | cluster, realm; five minutes, off while `federation.enabled` is off — removes the encryption key a relationship's rotation replaced once `federation.encryptionKeyGraceS` has passed (it stopped decrypting at that instant already) | `federation/federation_encryption.ts` (#168) |
+| `tls.ticket-key-rotate` | cluster, service; `tls.sessionTicketRotationS`, off outside active-active — replaces the TLS session-ticket key every node's LDAPS listener shares (not the main port's or the debugger's: they ask for client certificates), deleting the old one | `tls/session_tickets.ts`, `tls/CLAUDE.md` |
 | `spiffe.authority-rotation` | cluster, realm; hourly, from each authority's own age, in both modes | `spiffe/spiffe_ca.ts` (D6) |
 | `spiffe.sigstore-tuf-refresh` | cluster, service; `spiffe.dockerSigstoreTufRefreshS` (daily), off while `spiffe.dockerSigstoreTufRootFile` is empty — the sigstore trust root through TUF, a failure keeping the last verified set (#170) | `spiffe/spiffe_sigstore_tuf.ts`, `spiffe/CLAUDE.md` |
 | `caches.eject-expired` | per-process, quiet; every minute — each store's own `eject()` | `admin-ui/caches_admin.ts`, `common/CLAUDE.md` 3ap (P5) |

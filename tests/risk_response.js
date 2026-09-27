@@ -38,6 +38,10 @@
 //      moves nothing, from another low-risk session lowers the standing;
 //      "this wasn't me" puts it at HIGH and ends every session; a sign-in is
 //      answered once, and only by its own person.
+//   J. ONE SET FOR ONE CLONED KEY (#294): the detector's own RISC
+//      credential-compromise, and the policy's reaction to the HIGH standing
+//      it sets recorded as already sent rather than sent again; the same
+//      signal from the FIDO metadata is still told by the policy.
 //
 // In a child process, for `risk_decisions.js`'s reason. Every list is
 // synthetic; the one address on them is the loopback.
@@ -356,6 +360,52 @@ function childMain() {
       assessmentId: third.assessment.id, verdict: 'denied',
       fromSessionId: 'x', fromSessionLevel: 'LOW' });
     note(!stranger.ok, 'I5. nobody answers for somebody else\'s sign-in');
+
+    // --- J. one SET for one cloned key (#294) -------------------------------
+    // The detector sends RISC credential-compromise itself and sets the
+    // standing HIGH; the policy's own credential-compromise reaction to that
+    // change must not send a second one. The funnel is counted.
+    const accountSignals = require(ROOT + '/ssf/account_signals');
+    const credentials = require(ROOT + '/common/credentials');
+    const realCompromised = accountSignals.credentialCompromised;
+    const sent = [];
+    accountSignals.credentialCompromised = function (n) {
+      sent.push(n);
+      return Promise.resolve({ ok: true });
+    };
+    ldap.createUser('rr-erin', { invent: false });
+    const erinSub = helpers.subjectForName('rr-erin');
+    await signIn('rr-erin', CHROME);
+    credentials.noteKeyCloned('rr-erin', 'rr-no-such-key',
+                              'signature counter 3 after 7');
+    await new Promise(function (r) { setTimeout(r, 400); });
+    const erinStanding = await riskStore.subjectOf('default', erinSub, false);
+    note(sent.length === 1 && erinStanding && erinStanding.level === 'HIGH' &&
+         !authn.sessionsOf('rr-erin').length,
+         'J1. a cloned key sends ONE credential-compromise: the policy still ' +
+         'answers the HIGH standing (the session is ended) and does not ' +
+         'send the event again', sent.length + ' ' +
+         JSON.stringify(erinStanding));
+    const byModel = await riskEngine.respond({ realm: 'default',
+      subject: erinSub, username: 'rr-erin', level: 'HIGH',
+      previousLevel: 'LOW', score: 20,
+      signals: ['authenticator-compromised'], assessmentId: 'rr-j2' });
+    note(byModel.taken.indexOf('risk-credential-compromise') >= 0 &&
+         sent.length === 2,
+         'J2. the same signal from the FIDO metadata (no detector sent ' +
+         'anything) is still told by the policy', sent.length + ' ' +
+         JSON.stringify(byModel));
+    const byClone = await riskEngine.respond({ realm: 'default',
+      subject: erinSub, username: 'rr-erin', level: 'HIGH',
+      previousLevel: 'LOW', score: 20, compromiseAnnounced: true,
+      signals: ['authenticator-compromised'], assessmentId: 'rr-j3' });
+    note(byClone.alreadySent.indexOf('risk-credential-compromise') >= 0 &&
+         byClone.taken.indexOf('risk-credential-compromise') < 0 &&
+         sent.length === 2,
+         'J3. a change that says its detector sent the event is recorded as ' +
+         'already sent, and nothing more goes out', sent.length + ' ' +
+         JSON.stringify(byClone));
+    accountSignals.credentialCompromised = realCompromised;
 
     require('fs').writeFileSync(OUT, JSON.stringify(findings));
     process.exit(0);

@@ -127,6 +127,33 @@ const directoryMerge = require('./directory_merge');
 // driver provides are provided at the foot of this file.
 const capabilities = require('../cluster/cluster_capabilities');
 
+// HOW MANY CONNECTIONS EACH PROCESS'S POOL HOLDS (2026-09-27): twice the
+// number of request workers a node runs (workers.requestCount plus
+// workers.surfaceCount), and never fewer than four. It was four everywhere,
+// and at 11:00:07 in the cluster mode the front process — which alone runs
+// the scheduler, LDAPS, Kerberos and every path never sent to a worker —
+// had all four taken and every other caller refused after the pool's five
+// second wait. `persistence.js` computes it from the two settings and hands
+// it to create() (this module reads no setting); every process of a node
+// therefore holds the same size.
+//
+// **WHAT IT COSTS THE SERVER**: each process opens up to this many, plus its
+// LISTEN connection, so a node holds up to (1 + workers) * (poolMax() + 1).
+// The local cluster mode — two nodes of one front process and four workers
+// — is 2 * 5 * 9 = 90, which is why the test stacks' postgres runs with
+// max_connections=200. A deployment sizes the server's max_connections for
+// its own node and worker counts. Idle connections are closed after 30 s,
+// so this is the ceiling under load, not the steady state.
+const POOL_FLOOR = 4;
+
+// A PURE FUNCTION of the node's request-worker count, so the scheduler's cap
+// (cluster/scheduler.ts, maxConcurrentRuns()) and the pool agree. No log
+// line: this module's logger arrives with create().
+function poolMax(workers) {
+  const n = Math.max(0, Number(workers) || 0);
+  return Math.max(POOL_FLOOR, 2 * n);
+}
+
 // A CHANNEL NAME AND A SCHEMA VERSION, both spelt once here.
 const CHANNEL = 'sts_ldap_change';
 // How many change-log rows go in one INSERT. Four bind parameters a row, and
@@ -1372,7 +1399,8 @@ function create(options) {
     // Small on purpose. Every query this driver makes is on the flush path,
     // there is one flush at a time by construction (persistence.js serialises
     // them), and a mock does not need a connection per core.
-    max: 4,
+    max: Number(options.poolMax) > 0 ? Number(options.poolMax)
+      : POOL_FLOOR,
     // A mock must not hang waiting for a database that is not there: the
     // failure has to arrive as a logged error and a service that keeps
     // answering, which needs the connection attempt to give up.
@@ -5211,5 +5239,6 @@ module.exports = {
   SCHEMA: SCHEMA,
   SCHEMA_OBJECTS: SCHEMA_OBJECTS,
   SCHEMA_COLUMNS: SCHEMA_COLUMNS,
-  SCHEMA_VERSION: SCHEMA_VERSION
+  SCHEMA_VERSION: SCHEMA_VERSION,
+  poolMax: poolMax
 };

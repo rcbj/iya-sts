@@ -1682,6 +1682,34 @@ which walks down to the leaves. A LEAF's revoke keeps its own
 `credential-change` above it. The argument, and what is re-minted versus
 orphaned, is in `ssf/CLAUDE.md`.
 
+### PINNED SIGNING KEYS: A SECTION, AN UNPIN, AND A CHAIN FIELD (2026-09-27, #263)
+
+With `pki.pinnedSigners` on in the realm, the *Use your own key pair* form on a
+`jose` or `xml` row pins the realm's SIGNER for that slot (`common/CLAUDE.md`,
+*A PINNED KEY PAIR AS A REAL SIGNER*). The page gained three things, and
+`GET /admin-api/pki` the same model, because they are one function
+(`pkiJson()`'s `pinnedSigners`, from `pinnedSignersModel()`):
+
+* **A *Pinned signing keys* section** under the tree: whether the realm signs
+  with pinned keys, and each key still published — signing, published and not
+  yet signing (with the time it starts), or unpinned and verifying until its
+  grace ends — with its expiry and whose certificate it is. **A key within
+  `pki.pinnedSignerExpiryWarningDays` of its notAfter is a `warn()` at the top
+  of the section**, because its lifecycle is the operator's and nothing here
+  will replace it; the same warning is logged by `signing.retire`.
+* **An Unpin button per key**, posting `unpin-key` — a new member of
+  `PKI_ACTIONS` and `SCOPED_ACTIONS`, declared in `/admin-api`'s operations
+  (rule 7). The generated key signs again at once; the pinned one verifies
+  through its grace.
+* **A chain field on the pin form**, the issuer of the supplied certificate
+  first: a pinned signer's `x5c` is the operator's chain.
+
+`pin-key` and `unpin-key` go through `common/signing_rotation.ts`
+(`pinSigningKey()`, `unpinSigningKey()`), required lazily because it is built
+after this page (23b-ii); that is where the audit row and the
+`signing-key-rotated` event are. With the setting off `pin-key` is the old
+act, and a pin into a live slot is still `STS-PKI-0206`.
+
 ### IT SHOWS ONE REALM'S AUTHORITIES, AND FOR A DAY IT SHOWED EVERY REALM'S (2026-09-11)
 
 The page draws the **Root**, the **process branch** and **this realm's

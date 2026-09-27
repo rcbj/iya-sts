@@ -88,6 +88,47 @@
 # ignores the line; that warning is the entire cost.
 version: '2.4'
 
+# ---------------------------------------------------------------------------
+# EVERY IMAGE THIS STACK PULLS COMES FROM ghcr.io, AND SO DOES EVERY IMAGE IT
+# BUILDS FROM (2026-09-27, the parent project's b71e078 arrangement).
+#
+# Third-party images are PRIVATE copies under ${IMAGE_MIRROR} (default
+# ghcr.io/rcbj/iya-sts/mirror), made by .github/workflows/mirror-images.yml
+# from the list in .github/image-mirror.txt. Two mechanisms, both here:
+#
+#   * `image:` on a service that is only run names the mirror directly.
+#   * a base image in a Dockerfile's FROM is REDIRECTED by the build's
+#     `additional_contexts`: BuildKit resolves `FROM ubuntu:latest` against a
+#     named context called `ubuntu` before it goes to any registry, so every
+#     stage, intermediate ones included, is built from the mirror.
+#     (`ubuntu`, not `ubuntu:latest`: BuildKit drops `:latest` when it looks
+#     a name up.) It needs `docker compose` v2 and BuildKit, which the
+#     launchers use; the old `docker-compose` v1 ignores it.
+#
+# The images built here are named under ${IMAGE_REGISTRY} (default
+# ghcr.io/rcbj/iya-sts) with tag ${IMAGE_TAG} (default `latest`; the
+# launcher's is the compose project); tests.yml pushes them after a run.
+# Locally nothing is pushed, but the pulls need `docker login ghcr.io` with a
+# token that can read packages — tests/tools/corpora-preflight.sh checks it
+# first and says so.
+#
+# tests/image_mirror_coverage.js fails when a FROM or an `image:` here is not
+# covered, because an uncovered one does not fail: it quietly pulls from an
+# upstream registry again.
+# ---------------------------------------------------------------------------
+x-mirror-contexts: &mirror-contexts
+  ubuntu: docker-image://${IMAGE_MIRROR:-ghcr.io/rcbj/iya-sts/mirror}/ubuntu:latest
+  "node:24.16.0-bookworm-slim": docker-image://${IMAGE_MIRROR:-ghcr.io/rcbj/iya-sts/mirror}/node:24.16.0-bookworm-slim
+  "node:24.16.0-bookworm": docker-image://${IMAGE_MIRROR:-ghcr.io/rcbj/iya-sts/mirror}/node:24.16.0-bookworm
+  "node:22-alpine": docker-image://${IMAGE_MIRROR:-ghcr.io/rcbj/iya-sts/mirror}/node:22-alpine
+  "golang:1.26.8-bookworm": docker-image://${IMAGE_MIRROR:-ghcr.io/rcbj/iya-sts/mirror}/golang:1.26.8-bookworm
+  "golang:1.26": docker-image://${IMAGE_MIRROR:-ghcr.io/rcbj/iya-sts/mirror}/golang:1.26
+  "maven:3.9.16-eclipse-temurin-21-noble": docker-image://${IMAGE_MIRROR:-ghcr.io/rcbj/iya-sts/mirror}/maven:3.9.16-eclipse-temurin-21-noble
+  "python:3.12-slim-bookworm": docker-image://${IMAGE_MIRROR:-ghcr.io/rcbj/iya-sts/mirror}/python:3.12-slim-bookworm
+  "php:8.3-apache": docker-image://${IMAGE_MIRROR:-ghcr.io/rcbj/iya-sts/mirror}/php:8.3-apache
+  "rockylinux/rockylinux:9": docker-image://${IMAGE_MIRROR:-ghcr.io/rcbj/iya-sts/mirror}/rockylinux/rockylinux:9
+  "quay.io/keycloak/keycloak:26.6.4": docker-image://${IMAGE_MIRROR:-ghcr.io/rcbj/iya-sts/mirror}/keycloak/keycloak:26.6.4
+
 services:
   # ---------------------------------------------------------------------------
   # THE STORE THE TWO PERSISTING MODES RUN ON (2026-09-09).
@@ -128,7 +169,7 @@ services:
     # scripts below are bash, which the alpine variant does not ship. The
     # major-version-specific data directory that file warns about cannot bite
     # here, because there is no volume to carry an older cluster in.
-    image: postgres:18
+    image: ${IMAGE_MIRROR:-ghcr.io/rcbj/iya-sts/mirror}/postgres:18
     environment:
       # The bootstrap superuser: what initdb creates, what the healthcheck
       # probes with, and what runs postgres/schema.sql. The service dials as
@@ -159,6 +200,7 @@ services:
     command: >
       bash -c '/usr/local/bin/generate-tls.sh &&
       exec docker-entrypoint.sh postgres
+      -c max_connections=200
       -c ssl=on
       -c ssl_cert_file=/var/lib/postgresql/tls/server.crt
       -c ssl_key_file=/var/lib/postgresql/tls/server.key'
@@ -202,9 +244,11 @@ services:
   # ===========================================================================
   openbao-tls:
     container_name: ${STS_BAO_TLS_CONTAINER_NAME:-sts-docker-tests-openbao-tls}
-    image: ${STS_IMAGE:-rcbj/sts}
+    image: ${STS_IMAGE:-${IMAGE_REGISTRY:-ghcr.io/rcbj/iya-sts}/sts:${IMAGE_TAG:-latest}}
     build:
       context: .
+      # Every FROM from the ghcr.io mirror (x-mirror-contexts, above).
+      additional_contexts: *mirror-contexts
     restart: "no"
     environment:
       - STS_BAO_TLS_DIR=/openbao/file/tls
@@ -218,7 +262,7 @@ services:
   openbao:
     container_name: ${STS_BAO_CONTAINER_NAME:-sts-docker-tests-openbao}
     hostname: openbao
-    image: openbao/openbao:${OPENBAO_TAG:-latest}
+    image: ${IMAGE_MIRROR:-ghcr.io/rcbj/iya-sts/mirror}/openbao/openbao:${OPENBAO_TAG:-latest}
     depends_on:
       openbao-tls:
         condition: service_completed_successfully
@@ -240,9 +284,11 @@ services:
 
   openbao-seed:
     container_name: ${STS_BAO_SEED_CONTAINER_NAME:-sts-docker-tests-openbao-seed}
-    image: ${STS_IMAGE:-rcbj/sts}
+    image: ${STS_IMAGE:-${IMAGE_REGISTRY:-ghcr.io/rcbj/iya-sts}/sts:${IMAGE_TAG:-latest}}
     build:
       context: .
+      # Every FROM from the ghcr.io mirror (x-mirror-contexts, above).
+      additional_contexts: *mirror-contexts
     restart: "no"
     depends_on:
       openbao:
@@ -276,9 +322,11 @@ services:
   # ===========================================================================
   mailpit-tls:
     container_name: ${STS_MAILPIT_TLS_CONTAINER_NAME:-sts-docker-tests-mailpit-tls}
-    image: ${STS_IMAGE:-rcbj/sts}
+    image: ${STS_IMAGE:-${IMAGE_REGISTRY:-ghcr.io/rcbj/iya-sts}/sts:${IMAGE_TAG:-latest}}
     build:
       context: .
+      # Every FROM from the ghcr.io mirror (x-mirror-contexts, above).
+      additional_contexts: *mirror-contexts
     restart: "no"
     environment:
       - STS_BAO_TLS_DIR=/run/sts-test/mailpit
@@ -292,7 +340,7 @@ services:
   mailpit:
     container_name: ${STS_MAILPIT_CONTAINER_NAME:-sts-docker-tests-mailpit}
     hostname: mailpit
-    image: axllent/mailpit:${MAILPIT_TAG:-latest}
+    image: ${IMAGE_MIRROR:-ghcr.io/rcbj/iya-sts/mirror}/axllent/mailpit:${MAILPIT_TAG:-latest}
     depends_on:
       mailpit-tls:
         condition: service_completed_successfully
@@ -318,7 +366,7 @@ services:
     hostname: sts
     # A TAG OF ITS OWN WHEN A RUN NAMES ONE (2026-09-14): an image tag is
     # machine-wide, as docker-compose.yml's `sts` argues. Unset is unchanged.
-    image: ${STS_IMAGE:-rcbj/sts}
+    image: ${STS_IMAGE:-${IMAGE_REGISTRY:-ghcr.io/rcbj/iya-sts}/sts:${IMAGE_TAG:-latest}}
     # ---------------------------------------------------------------------
     # THE SECONDARY ADDRESSES THE PER-REALM SPIFFE LISTENERS BIND
     # (2026-09-12), and the reason this stack needs them as much as
@@ -352,6 +400,8 @@ services:
       # SERVICE image carries no tests because the root Dockerfile removes
       # them; see that file and tests/Dockerfile.
       context: .
+      # Every FROM from the ghcr.io mirror (x-mirror-contexts, above).
+      additional_contexts: *mirror-contexts
       # THE BUILD'S IDENTITY, both optional and both empty by default — the
       # same two arguments docker-compose.yml passes, and that file carries the
       # argument for them. They are here so that a CI run of this stack can
@@ -659,7 +709,7 @@ services:
     # The name the tests container dials AND the name the service nudges. Both
     # resolve on this bridge and neither is published anywhere.
     hostname: xacml-pep
-    image: ${XACML_PEP_IMAGE:-rcbj/xacml-pep}
+    image: ${XACML_PEP_IMAGE:-${IMAGE_REGISTRY:-ghcr.io/rcbj/iya-sts}/xacml-pep:${IMAGE_TAG:-latest}}
     build:
       # The repository root, because xacml-pep/Dockerfile copies the seven
       # engine modules out of xacml/ at build time — so this image cannot drift
@@ -668,6 +718,8 @@ services:
       # makes this stack able to catch a module added to engine.js and not to
       # that Dockerfile: the container dies at load and the job says so.
       context: .
+      # Every FROM from the ghcr.io mirror (x-mirror-contexts, above).
+      additional_contexts: *mirror-contexts
       dockerfile: xacml-pep/Dockerfile
       # THE BUILD'S IDENTITY, exactly as the sts service above takes it. Pass
       # the SAME BUILD_NUMBER to both to say the PDP and this PEP are one
@@ -785,7 +837,7 @@ services:
   # -------------------------------------------------------------------------
   conformance-mongo:
     container_name: ${STS_CONFORMANCE_MONGO_CONTAINER_NAME:-sts-docker-tests-conformance-mongo}
-    image: mongo:${CONFORMANCE_MONGO_TAG:-6.0.13}
+    image: ${IMAGE_MIRROR:-ghcr.io/rcbj/iya-sts/mirror}/mongo:${CONFORMANCE_MONGO_TAG:-6.0.13}
     profiles: ["conformance"]
     networks:
       default:
@@ -795,7 +847,7 @@ services:
 
   conformance-server:
     container_name: ${STS_CONFORMANCE_SERVER_CONTAINER_NAME:-sts-docker-tests-conformance-server}
-    image: registry.gitlab.com/openid/conformance-suite:${CONFORMANCE_SUITE_TAG:-release-v5.3.1}
+    image: ${IMAGE_MIRROR:-ghcr.io/rcbj/iya-sts/mirror}/openid/conformance-suite:${CONFORMANCE_SUITE_TAG:-release-v5.3.1}
     profiles: ["conformance"]
     depends_on:
       conformance-mongo:
@@ -831,7 +883,7 @@ services:
   # their own calls to. Nothing is committed.
   conformance-tls:
     container_name: ${STS_CONFORMANCE_TLS_CONTAINER_NAME:-sts-docker-tests-conformance-tls}
-    image: ${STS_IMAGE:-rcbj/sts}
+    image: ${STS_IMAGE:-${IMAGE_REGISTRY:-ghcr.io/rcbj/iya-sts}/sts:${IMAGE_TAG:-latest}}
     profiles: ["conformance"]
     restart: "no"
     # Pinned with the suite's three (.40 to .42), for their reason: a
@@ -853,7 +905,7 @@ services:
 
   conformance-nginx:
     container_name: ${STS_CONFORMANCE_NGINX_CONTAINER_NAME:-sts-docker-tests-conformance-nginx}
-    image: registry.gitlab.com/openid/conformance-suite/nginx:${CONFORMANCE_SUITE_TAG:-release-v5.3.1}
+    image: ${IMAGE_MIRROR:-ghcr.io/rcbj/iya-sts/mirror}/openid/conformance-suite/nginx:${CONFORMANCE_SUITE_TAG:-release-v5.3.1}
     profiles: ["conformance"]
     depends_on:
       conformance-server:
@@ -900,9 +952,11 @@ services:
   # -------------------------------------------------------------------------
   saml-shib:
     container_name: ${STS_SAML_SHIB_CONTAINER_NAME:-sts-docker-tests-saml-shib}
-    image: ${SAML_SHIB_IMAGE:-rcbj/sts-saml-shibboleth}
+    image: ${SAML_SHIB_IMAGE:-${IMAGE_REGISTRY:-ghcr.io/rcbj/iya-sts}/sts-saml-shibboleth:${IMAGE_TAG:-latest}}
     build:
       context: tests/saml-peers/shibboleth
+      # Every FROM from the ghcr.io mirror (x-mirror-contexts, above).
+      additional_contexts: *mirror-contexts
     profiles: ["saml-peers"]
     environment:
       - SAML_PEER_HOST=saml-shib
@@ -915,9 +969,11 @@ services:
 
   saml-ssp:
     container_name: ${STS_SAML_SSP_CONTAINER_NAME:-sts-docker-tests-saml-ssp}
-    image: ${SAML_SSP_IMAGE:-rcbj/sts-saml-simplesamlphp}
+    image: ${SAML_SSP_IMAGE:-${IMAGE_REGISTRY:-ghcr.io/rcbj/iya-sts}/sts-saml-simplesamlphp:${IMAGE_TAG:-latest}}
     build:
       context: tests/saml-peers/simplesamlphp
+      # Every FROM from the ghcr.io mirror (x-mirror-contexts, above).
+      additional_contexts: *mirror-contexts
     profiles: ["saml-peers"]
     environment:
       - SAML_PEER_HOST=saml-ssp
@@ -930,9 +986,11 @@ services:
 
   saml-pysaml2:
     container_name: ${STS_SAML_PYSAML2_CONTAINER_NAME:-sts-docker-tests-saml-pysaml2}
-    image: ${SAML_PYSAML2_IMAGE:-rcbj/sts-saml-pysaml2}
+    image: ${SAML_PYSAML2_IMAGE:-${IMAGE_REGISTRY:-ghcr.io/rcbj/iya-sts}/sts-saml-pysaml2:${IMAGE_TAG:-latest}}
     build:
       context: tests/saml-peers/pysaml2
+      # Every FROM from the ghcr.io mirror (x-mirror-contexts, above).
+      additional_contexts: *mirror-contexts
     profiles: ["saml-peers"]
     environment:
       - SAML_PEER_HOST=saml-pysaml2
@@ -949,9 +1007,11 @@ services:
   # POSTs) is handed over by the job — tests/saml-peers/keycloak/entrypoint.sh.
   saml-keycloak:
     container_name: ${STS_SAML_KEYCLOAK_CONTAINER_NAME:-sts-docker-tests-saml-keycloak}
-    image: ${SAML_KEYCLOAK_IMAGE:-rcbj/sts-saml-keycloak}
+    image: ${SAML_KEYCLOAK_IMAGE:-${IMAGE_REGISTRY:-ghcr.io/rcbj/iya-sts}/sts-saml-keycloak:${IMAGE_TAG:-latest}}
     build:
       context: tests/saml-peers/keycloak
+      # Every FROM from the ghcr.io mirror (x-mirror-contexts, above).
+      additional_contexts: *mirror-contexts
     profiles: ["saml-peers"]
     environment:
       - SAML_PEER_HOST=saml-keycloak
@@ -964,13 +1024,15 @@ services:
 
   tests:
     container_name: ${STS_TESTS_CONTAINER_NAME:-mock-sts-test-runner}
-    image: ${STS_TESTS_IMAGE:-rcbj/mock-sts-tests}
+    image: ${STS_TESTS_IMAGE:-${IMAGE_REGISTRY:-ghcr.io/rcbj/iya-sts}/mock-sts-tests:${IMAGE_TAG:-latest}}
     build:
       # The same context as the service, with the root .dockerignore deciding
       # what is in it — see tests/Dockerfile's header for why the two images
       # share one ignore file and the service image removes what it must not
       # carry.
       context: .
+      # Every FROM from the ghcr.io mirror (x-mirror-contexts, above).
+      additional_contexts: *mirror-contexts
       dockerfile: tests/Dockerfile
     environment:
       # Where the service is. The image defaults this to the same value; both

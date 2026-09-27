@@ -1712,7 +1712,7 @@ Fired by `POST /logout`.
       "event_timestamp": 1790110536,
       "initiating_entity": "user",
       "reason_admin": {
-        "en": "The session was ended at /logout, on its own session."
+        "en": "The session was ended by the person's own sign-out at /logout."
       },
       "reason_user": {
         "en": "You have been signed out."
