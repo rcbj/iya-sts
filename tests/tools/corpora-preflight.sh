@@ -18,6 +18,12 @@
 #
 # Present locally (a digest already pulled) costs nothing; otherwise one
 # `docker pull`, which is what the build would have done anyway.
+#
+# AND THE IMAGE MIRROR (2026-09-27). Every third-party image the test stack
+# pulls or builds FROM is a private copy under ghcr.io/rcbj/iya-sts/mirror
+# (.github/image-mirror.txt). The same login reads it, so one manifest
+# request for one of its images is asked here too; a mirror that has not been
+# filled yet says so rather than failing the build on "denied".
 # ---------------------------------------------------------------------------
 set -euo pipefail
 
@@ -26,6 +32,25 @@ cd "$(dirname "$0")/../.."
 image="$(sed -n 's/^ARG STS_CORPORA_IMAGE=//p' tests/Dockerfile | head -1)"
 if [ -z "${image}" ]; then
   echo "corpora-preflight: tests/Dockerfile names no STS_CORPORA_IMAGE." >&2
+  exit 1
+fi
+mirror="${IMAGE_MIRROR:-ghcr.io/rcbj/iya-sts/mirror}"
+probe="${mirror}/ubuntu:latest"
+if ! docker manifest inspect "${probe}" >/dev/null 2>&1; then
+  cat >&2 <<EOF
+corpora-preflight: cannot read the image mirror
+  ${probe}
+Every third-party image the test stack pulls or builds FROM is a PRIVATE
+copy under ${mirror} (.github/image-mirror.txt). Log this machine in with a
+token that can read packages, then run again:
+
+  gh auth refresh -h github.com -s read:packages
+  gh auth token | docker login ghcr.io -u <your GitHub user> --password-stdin
+
+If the login works and the image is missing, the mirror has not been filled:
+run the "Mirror Images" workflow, or .github/scripts/mirror-images.sh missing
+(which needs write:packages).
+EOF
   exit 1
 fi
 if docker image inspect "${image}" >/dev/null 2>&1; then

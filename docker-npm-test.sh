@@ -30,7 +30,11 @@ echo "docker-npm-test.sh: building ${TAG} from tests/Dockerfile"
 # The test corpora are a PRIVATE image on ghcr.io (#253); a missing login is
 # said in a sentence rather than as a pull error.
 tests/tools/corpora-preflight.sh
-docker build -f tests/Dockerfile -t "${TAG}" .
+# Every FROM from the ghcr.io mirror, as docker-compose-run-tests.yml's
+# x-mirror-contexts does for a build compose runs (.github/image-mirror.txt).
+# shellcheck disable=SC2046
+docker build $(tests/tools/mirror-contexts.sh) -f tests/Dockerfile \
+  -t "${TAG}" .
 
 echo "docker-npm-test.sh: npm test $*"
 exec docker run --rm "${TAG}" npm test -- "$@"

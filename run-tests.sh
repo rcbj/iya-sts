@@ -198,21 +198,35 @@ STS_SAML_KEYCLOAK_CONTAINER_NAME="${STS_SAML_KEYCLOAK_CONTAINER_NAME:-sts-docker
 # ---------------------------------------------------------------------------
 # AND THE IMAGE TAGS, WHEN A PROJECT IS NAMED (2026-09-14). A tag is
 # machine-wide like a container name: this launcher builds once and then
-# `up`s each mode from whatever `rcbj/sts` points at by then, so another
-# checkout building that name mid-run changed the code under the remaining
-# modes with every job still green. A named project builds its own tags; an
-# unnamed run keeps the compose files' names.
+# `up`s each mode from whatever the sts image name points at by then, so
+# another checkout building that name mid-run changed the code under the
+# remaining modes with every job still green. A named project builds its own
+# tags.
+#
+# THE NAMES ARE UNDER ghcr.io SINCE 2026-09-27 (IMAGE_REGISTRY, default
+# ghcr.io/rcbj/iya-sts): tests.yml pushes what a run built
+# (.github/scripts/push-stack-images.sh). The tag is IMAGE_TAG when set (CI
+# sets the commit), the named project otherwise, and `latest` for an unnamed
+# local run — the compose files' own default. Always set, because the
+# one-shot containers below name STS_IMAGE directly.
 # ---------------------------------------------------------------------------
-if [ -n "${STS_DOCKER_TEST_PROJECT:-}" ];
+IMAGE_REGISTRY="${IMAGE_REGISTRY:-ghcr.io/rcbj/iya-sts}"
+if [ -n "${IMAGE_TAG:-}" ];
 then
-  STS_IMAGE="${STS_IMAGE:-rcbj/sts:${COMPOSE_PROJECT}}"
-  XACML_PEP_IMAGE="${XACML_PEP_IMAGE:-rcbj/xacml-pep:${COMPOSE_PROJECT}}"
-  STS_TESTS_IMAGE="${STS_TESTS_IMAGE:-rcbj/mock-sts-tests:${COMPOSE_PROJECT}}"
-  SAML_SHIB_IMAGE="${SAML_SHIB_IMAGE:-rcbj/sts-saml-shibboleth:${COMPOSE_PROJECT}}"
-  SAML_SSP_IMAGE="${SAML_SSP_IMAGE:-rcbj/sts-saml-simplesamlphp:${COMPOSE_PROJECT}}"
-  SAML_PYSAML2_IMAGE="${SAML_PYSAML2_IMAGE:-rcbj/sts-saml-pysaml2:${COMPOSE_PROJECT}}"
-  SAML_KEYCLOAK_IMAGE="${SAML_KEYCLOAK_IMAGE:-rcbj/sts-saml-keycloak:${COMPOSE_PROJECT}}"
+  imageTag="${IMAGE_TAG}"
+elif [ -n "${STS_DOCKER_TEST_PROJECT:-}" ];
+then
+  imageTag="${COMPOSE_PROJECT}"
+else
+  imageTag="latest"
 fi
+STS_IMAGE="${STS_IMAGE:-${IMAGE_REGISTRY}/sts:${imageTag}}"
+XACML_PEP_IMAGE="${XACML_PEP_IMAGE:-${IMAGE_REGISTRY}/xacml-pep:${imageTag}}"
+STS_TESTS_IMAGE="${STS_TESTS_IMAGE:-${IMAGE_REGISTRY}/mock-sts-tests:${imageTag}}"
+SAML_SHIB_IMAGE="${SAML_SHIB_IMAGE:-${IMAGE_REGISTRY}/sts-saml-shibboleth:${imageTag}}"
+SAML_SSP_IMAGE="${SAML_SSP_IMAGE:-${IMAGE_REGISTRY}/sts-saml-simplesamlphp:${imageTag}}"
+SAML_PYSAML2_IMAGE="${SAML_PYSAML2_IMAGE:-${IMAGE_REGISTRY}/sts-saml-pysaml2:${imageTag}}"
+SAML_KEYCLOAK_IMAGE="${SAML_KEYCLOAK_IMAGE:-${IMAGE_REGISTRY}/sts-saml-keycloak:${imageTag}}"
 # The appconfig layer the SERVICE reads. EMPTY here and resolved after the
 # arguments are parsed, by THE SERVICE'S LOG LEVEL below: which file this stack
 # wants is decided by the level, because the candidates differ in nothing else.
@@ -909,6 +923,12 @@ if [ -n "${STS_TESTS_IMAGE:-}" ];
 then
   COMPOSE_ENV+=("STS_TESTS_IMAGE=${STS_TESTS_IMAGE}")
 fi
+# Where the third-party images come from (the ghcr.io mirror): forwarded
+# only when set, so the compose files' default stands otherwise.
+if [ -n "${IMAGE_MIRROR:-}" ];
+then
+  COMPOSE_ENV+=("IMAGE_MIRROR=${IMAGE_MIRROR}")
+fi
 for peerImage in SAML_SHIB_IMAGE SAML_SSP_IMAGE SAML_PYSAML2_IMAGE \
                  SAML_KEYCLOAK_IMAGE;
 do
@@ -1155,7 +1175,7 @@ schedulerTakeover()
               -v "${CURRENT_DIR}:/repo:ro"
               -e "STS_ADMIN_API_TOKEN=${STS_ADMIN_API_TOKEN:-}"
               -e NODE_PATH=/usr/src/sts/node_modules
-              -w /usr/src/sts "${STS_IMAGE:-rcbj/sts}"
+              -w /usr/src/sts "${STS_IMAGE}"
               node /repo/tests/tools/scheduler-takeover.js)
   mkdir -p "${CURRENT_DIR}/tests/report" 2> /dev/null || true
   echo ""
@@ -1354,7 +1374,7 @@ mintAdminApiToken()
        -e "STS_ADMIN_API_CLIENT_SECRET=${ADMIN_API_CLIENT_SECRET}" \
        -e NODE_PATH=/usr/src/sts/node_modules \
        -w /usr/src/sts \
-       "${STS_IMAGE:-rcbj/sts}" \
+       "${STS_IMAGE}" \
        node /repo/tests/tools/admin-api-token.js \
          "$(serviceUrl)" \
        2>&1)";
@@ -1429,7 +1449,7 @@ mintThePepCredential()
        -e NODE_PATH=/usr/src/sts/node_modules \
        -e "STS_ADMIN_API_TOKEN=${STS_ADMIN_API_TOKEN:-}" \
        -w /usr/src/sts \
-       "${STS_IMAGE:-rcbj/sts}" \
+       "${STS_IMAGE}" \
        sh -c '
          # THE SERVICE'"'"'S OWN CERTIFICATE FIRST (2026-09-21). The gated
          # door VERIFIES the connection, because it carries the token, and

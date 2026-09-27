@@ -1146,6 +1146,7 @@ Two rules that are not optional here:
 | `cache_eject.js` | **Expired cache and replay-store entries ejected by a scheduler job** (#49 P5): `ejectExpired()` calls each ejector once, sums and counts evictions, survives one that throws, refuses a non-function `eject`; exactly the twenty-four expiring stores eject (the Logout Token deliveries and decrypted keys deliberately not); `caches.eject-expired` is quiet and per-process; through ACME's and GNAP's own doors a live entry is kept and an expired one is gone. Two mutants caught on 2026-09-22 (an ejector that deletes a live entry, one that deletes nothing). |
 | `client_secret_rotation.js` | **Client-secret rotation and expiry** (#49 P5): `rotate-secret` keeps the old secret authenticating through `oauth2.clientSecretOverlapS` and no longer (the time alone refuses it; the daily sweep then clears it), `regenerate-secret` still ends it at once; an expired secret refused in product (`STS-OAUTH-0558`) and accepted in development; the sweep's expiring and expired lists with their audit rows; the daily job registered per realm. Three mutants caught on 2026-09-22. |
 | `no_periodic_timers.js` | **Anything periodic is a scheduler job, enforced** (#49; T4): every `setInterval`, and every `setTimeout` in a function that re-arms itself, outside `cluster/scheduler.ts` is on its `ALLOWED` list with the job it becomes or the reason it is permanent; a new one fails, and an entry whose timer has gone fails too, so the list only shrinks. Reads statements, not lines. **Mutant, caught (2026-09-22):** a `setInterval` added to `common/helpers.js`. |
+| `image_mirror_coverage.js` | **EVERY IMAGE THE TEST STACK PULLS OR BUILDS FROM IS ON THE ghcr.io MIRROR** (2026-09-27). Checks: every `image:` in the test compose file and the cluster overlay is the mirror, with a path `.github/image-mirror.txt` lists, or is one of this repository's own images under `IMAGE_REGISTRY`; every `x-mirror-contexts` entry points at a listed path; every `build:` carries the contexts; every external `FROM` in a Dockerfile compose builds has a context, apart from the corpora image, which is already on ghcr.io; the corpora Dockerfile's `FROM`s are listed; `build-container.yml` redirects every `FROM` of the service Dockerfile; and `push-stack-images.sh` pushes exactly the images `run-tests.sh` names. Five mutants, all caught: a build without the contexts, a `FROM` moved to an unlisted tag, an `image:` straight from Docker Hub, `build-container.yml` missing a context, and a built image not pushed |
 | `copyright_notices.js` | **EVERY SOURCE FILE THIS REPOSITORY OWNS CARRIES ITS SPDX LINES** (2026-09-27). Walks the tree (the tests image has no `.git`) and fails on: a source file of a comment-carrying type this repository owns without the SPDX copyright line naming Iya CyberSecurity Solutions, LLC and the SPDX licence line naming MIT in its first eight lines; a header on a file that may not be edited here (`common/vendored/`, the eight Kerberos codec copies, the non-`local` `tests/vendored/` jobs from `MANIFEST.js`, `spiffe/protos/`, `xacml/conformance/`, `admin-ui/natural_earth/`); a licence `REUSE.toml` names with no text in `LICENSES/`; and a third-party path in `REUSE.toml` that matches no file. A compiled `x.js` beside an `x.ts` is skipped. `reuse lint` is the whole-repository check, run by hand. Three mutants (a header removed, one added to a Kerberos copy, a path and a licence renamed in `REUSE.toml`), all caught |
 | `random_values.js` | **Random values from node's generator, drawn uniformly** (#65): `common/crypto.js` section 13's `randomString()` over GNAP's 31-character alphabet against a chi-square bound, **with the old `byte % 31` computed beside it as the control** — a distribution test that cannot fail the code it replaced asserts nothing; the refusals (under 128 bits, a repeated character); `genId()`'s shape; the service's source read, comments and strings blanked, for `Math.random(`, forge's generator, `pseudoRandomBytes`, forge's envelope and key encryption, a random byte taken modulo anything or scaled by 256, an integer read from a buffer taken modulo anything, a require of a second random-value package, and an RSA encrypt or decrypt handed a forge scheme name; **the tests' own files (the parent's copies excepted) for `Math.random(`**, because CodeQL follows a test's value into the service and reported sixteen alerts on `ldap/ldap_server.js` that way; the detector against twenty-five shapes, found and ignored; **node's `randomBytes` watched while forge draws, signs and encrypts** (the second pass: `forge.random` had left the call sites and not the library); `rsa-oaep-mgf1p` and `rsa-1_5` wrapped through `publicEncrypt()` and unwrapped by forge, an independent RSA; the password generator's distribution with its excluded characters never drawn; and no second random-value package in `package.json`. No allow list. |
 
@@ -3573,3 +3574,55 @@ w3.org answered 429 for an hour and no run could start.
   says so in a sentence rather than as a pull error. CI logs in with
   `GITHUB_TOKEN` under `packages: read` (`tests.yml`, `aws-cluster.yml`), and
   the package grants this repository access.
+
+## EVERY IMAGE THE STACK PULLS OR BUILDS FROM IS A PRIVATE MIRROR ON GHCR.IO (2026-09-27)
+
+rcbj asked for the parent project's arrangement (its b71e078, after a reset
+connection to auth.docker.io killed a scheduled run in three seconds). Every
+third-party image the test stack runs, and every base image a Dockerfile it
+builds names in a `FROM`, is a private copy under
+`ghcr.io/rcbj/iya-sts/mirror/`. That covers Docker Hub, quay.io and
+registry.gitlab.com.
+
+* **The list** is `.github/image-mirror.txt`: the upstream reference and its
+  mirror path, one per line.
+* **The copies** are made by `.github/scripts/mirror-images.sh`, with
+  `docker buildx imagetools create`, which copies every platform. Two things
+  run it:
+  * the `mirror` job at the top of `tests.yml`, in `missing` mode, before
+    anything is built;
+  * `.github/workflows/mirror-images.yml`, weekly in `refresh` mode or by
+    hand. It also fails if any mirror package has become public.
+* **An `image:`** in `docker-compose-run-tests.yml` and the cluster overlay
+  names `${IMAGE_MIRROR:-ghcr.io/rcbj/iya-sts/mirror}/<path>`.
+* **A `FROM`** is redirected by a named build context, which BuildKit
+  consults before any registry:
+  * compose builds use `x-mirror-contexts`, applied to every `build:` as
+    `additional_contexts`;
+  * `docker-npm-test.sh` and `tests/tools/build-corpora-image.sh` use
+    `tests/tools/mirror-contexts.sh`, which prints the list as
+    `--build-context` flags;
+  * `build-container.yml` has its own `build-contexts`.
+  The context is called `ubuntu`, not `ubuntu:latest`, because BuildKit drops
+  `:latest` when it looks a name up. This needs BuildKit, which this machine
+  and the runners both have.
+* **What the stack builds** is named `ghcr.io/rcbj/iya-sts/<name>:<tag>` by
+  `run-tests.sh` (`IMAGE_REGISTRY`). The tag is `IMAGE_TAG`, then the named
+  compose project, then `latest`. `tests.yml`'s `tests` job pushes the images
+  with `.github/scripts/push-stack-images.sh`, under the commit and the
+  branch. It does not push from a pull request.
+* **The login** is the one the corpora image already needs:
+  `tests/tools/corpora-preflight.sh` probes the mirror as well. It says what
+  to run if the machine is not logged in, or if the mirror has not been filled.
+* **`tests/image_mirror_coverage.js`** fails when a `FROM` or an `image:` is
+  not covered. That matters because an uncovered one does not fail: it quietly
+  pulls from Docker Hub again. **Add a new base image to the list in the same
+  commit that introduces it.**
+* **Not covered: `deploy/aws/`'s images.** Their bases are on
+  `public.ecr.aws`, and `aws-cluster.yml` pushes them to the account's own
+  ECR.
+* **Not covered either: source downloads inside a build.** Samba,
+  Heimdal, libest, sscep, certmonger, tlsfuzzer and the rest are fetched
+  inside `tests/Dockerfile`, and on 2026-09-27 a cold build died on a 504 from
+  download.samba.org. The mirror does not change that; only a warm layer cache
+  or a pushed tests image does.

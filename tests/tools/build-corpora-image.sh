@@ -41,9 +41,12 @@ fi
 
 stamp="$(date -u +%Y%m%d)-$(git rev-parse --short HEAD)"
 echo "build-corpora-image: building ${REPO}:${stamp}"
-# --network=host: this machine's docker has no BuildKit and its bridge has
-# failed builds before (npm "Exit handler never called").
-docker build --network=host -f tests/corpora/Dockerfile \
+# --network=host: this machine's bridge has failed builds before (npm "Exit
+# handler never called"). Its FROM comes from the ghcr.io mirror
+# (tests/tools/mirror-contexts.sh, .github/image-mirror.txt).
+# shellcheck disable=SC2046
+docker build --network=host $(tests/tools/mirror-contexts.sh) \
+  -f tests/corpora/Dockerfile \
   --label "org.opencontainers.image.source=https://github.com/rcbj/iya-sts" \
   --label "org.opencontainers.image.description=iya-sts third-party test corpora (private: carries published test private keys)" \
   -t "${REPO}:${stamp}" -t "${REPO}:latest" .
