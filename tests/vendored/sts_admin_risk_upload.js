@@ -146,7 +146,11 @@ async function settled(prefix, realm, version) {
     const v = d.versions.filter(function (one) {
       return one.version === version;
     })[0];
-    if (v && v.state !== "loading") {
+    // `ready` is transient too (2026-09-27): a version is marked loaded and
+    // then activated, two writes, and with request workers a read can land
+    // between them — single-node read one `ready` 10ms before the service
+    // logged it active. Nothing here expects a version to stop at `ready`.
+    if (v && v.state !== "loading" && v.state !== "ready") {
       log.debug("Leaving settled(). " + v.state);
       return { version: v, dataset: d };
     }
