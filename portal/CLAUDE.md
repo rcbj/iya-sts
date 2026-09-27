@@ -1323,7 +1323,14 @@ security key I carry* (cross-platform), carried on the pending enrolment as
 kinds `webauthn.authenticatorAttachment` allows are drawn
 (`authenticatorKinds()`); a setting naming one wins over the choice. The kind is
 a REQUEST to the browser like every other ceremony option and nothing checks
-what came back — the recorded attachment is what Devices reads.
+what came back — the recorded attachment is what Devices reads. **The default
+is a third answer, *Let my browser choose*** (`kind=any`, the request as it
+was), and **a ceremony the browser could not run abandons the pending
+enrolment** and draws the form again with the browser's error: the first
+version defaulted to *Built into this device* and kept the enrolment armed, so
+Linux Firefox — which has nothing built in — could register no key at all and
+never get back to the choice. `tests/vendored/sts_portal_backup_keys.js`
+section 1a holds both.
 
 **THE LINK STEP IS A SCRIPTED PAGE, AND ITS OWN ROW IN THE ROOT TABLE.** A
 fresh assertion is `navigator.credentials.get()` and no markup makes it, which
