@@ -266,6 +266,11 @@ async function person(who, withAddress) {
              credential: "password", password: PASSWORD,
              passwordConfirm: PASSWORD },
            "created " + who);
+  const read = await call("GET", realmBase() + "/admin-api/users?user=" +
+                          encodeURIComponent(who));
+  SUBJECTS[who] = String((read.json && read.json.subject) || "");
+  assert.ok(/^urn:uuid:/.test(SUBJECTS[who]),
+            "no subject for " + who + ": " + read.text.slice(0, 300));
   log.debug("Leaving person().");
   return who + "@" + DOMAIN;
 }
@@ -322,6 +327,10 @@ async function openThePortal() {
 // THE RISC RECEIVER (#294): a stream in the realm, and what it was sent.
 // ---------------------------------------------------------------------------
 const stream = { id: "", seen: [] };
+// Each person's `sub` (urn:uuid:<entryUUID>), read after they are created:
+// RISC names a person by address where the event is about one, and by
+// issuer and subject otherwise (recovery-information-changed).
+const SUBJECTS = {};
 
 async function receiverToken() {
   log.debug("Entering receiverToken().");
@@ -389,14 +398,16 @@ async function drainTheStream() {
   log.debug("Leaving drainTheStream(). " + jtis.length + " SET(s).");
 }
 
-// A RISC `type` about `who` (whose addresses all carry the name) among the
-// SETs that arrived since `from`.
+// A RISC `type` about `who` — by an address (every one of theirs carries the
+// name) or by their subject — among the SETs that arrived since `from`.
 function riscAbout(type, who, from) {
   log.debug("Entering riscAbout(). " + type);
   log.debug("Leaving riscAbout().");
   return stream.seen.slice(from).filter(function (set) {
+    const subject = JSON.stringify((set && set.sub_id) || {});
     return !!((set && set.events) || {})[RISC + type] &&
-           JSON.stringify(set.sub_id || {}).indexOf(who) >= 0;
+           (subject.indexOf(who) >= 0 ||
+            (!!SUBJECTS[who] && subject.indexOf(SUBJECTS[who]) >= 0));
   });
 }
 
