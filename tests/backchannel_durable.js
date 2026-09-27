@@ -147,6 +147,7 @@ function childMain() {
     const authn = require(ROOT + '/authn/authn');
     const realms = require(ROOT + '/common/realms');
     const stsCrypto = require(ROOT + '/common/crypto');
+    const helpers = require(ROOT + '/common/helpers');
     const backchannel = require(ROOT + '/oauth-oidc/backchannel_logout');
     const adminActions = require(ROOT + '/admin-core/admin_actions');
     const adminViews = require(ROOT + '/admin-core/admin_views');
@@ -571,13 +572,28 @@ function childMain() {
                { id_token_signed_response_alg: 'ML-DSA-65',
                  jwks: { keys: [ecJwk] },
                  id_token_encrypted_response_alg: 'ECDH-ES+A256KW' });
+    // POST-QUANTUM AND HYBRID KEY ESTABLISHMENT (#82): a relying party
+    // whose key is ML-KEM-768, and one whose key is X-Wing under HPKE
+    // Integrated Encryption — the Logout Token goes through the same
+    // `protect()` as the ID Token.
+    const kemRp = stsCrypto.generateJweKemKeyPair('ML-KEM-768', 'rp-mlkem');
+    const xwingRp = stsCrypto.generateJweKemKeyPair('HPKE-10', 'rp-xwing');
+    registered('bd-mlkem', '/bc/mlkem',
+               { jwks: { keys: [kemRp.publicJwk] },
+                 id_token_encrypted_response_alg: 'ML-KEM-768',
+                 id_token_encrypted_response_enc: 'A256GCM' });
+    registered('bd-xwing', '/bc/xwing',
+               { jwks: { keys: [xwingRp.publicJwk] },
+                 id_token_encrypted_response_alg: 'HPKE-10' });
     since = backchannel.mark();
     for (const pair of [['bd-h1', 'bd-es256'], ['bd-h2', 'bd-mldsa'],
-                        ['bd-h3', 'bd-enc'], ['bd-h4', 'bd-encpq']]) {
+                        ['bd-h3', 'bd-enc'], ['bd-h4', 'bd-encpq'],
+                        ['bd-h6', 'bd-mlkem'], ['bd-h7', 'bd-xwing']]) {
       await backchannel.dispatch(backchannel.plan(
         sessionFor(pair[0], pair[1]), { via: 'H' }));
     }
-    for (const sid of ['bd-h1', 'bd-h2', 'bd-h3', 'bd-h4']) {
+    for (const sid of ['bd-h1', 'bd-h2', 'bd-h3', 'bd-h4', 'bd-h6',
+                       'bd-h7']) {
       await settled(sid, since, 1);
     }
     const verifyWith = async function (token, alg) {
@@ -606,9 +622,11 @@ function childMain() {
          'that verifies with the published AKP key', JSON.stringify(pqClaims));
     const decrypt = function (jwe, privateKey) {
       try {
-        const out = stsCrypto.decryptJweCompact(jwe, {
-          privateKey: privateKey,
-          allowedEnc: Object.keys(stsCrypto.JWE_ENCS) });
+        // A KeyObject for RSA and ECDH-ES; an AKP JWK for ML-KEM and HPKE.
+        const out = stsCrypto.decryptJweCompact(jwe, Object.assign({
+          allowedEnc: Object.keys(stsCrypto.JWE_ENCS) },
+          privateKey && privateKey.kty ? { privateJwk: privateKey }
+            : { privateKey: privateKey }));
         return String(out.plaintext || out);
       } catch (e) {
         return 'ERROR ' + e.message;
@@ -641,6 +659,26 @@ function childMain() {
     note(rows[0] && rows[0].encrypted === 'RSA-OAEP-256 A256GCM',
          'H5. the delivery row says it was encrypted, and with what',
          JSON.stringify(rows[0]));
+    const kemLt = (postsTo('/bc/mlkem')[0] || {}).token;
+    const kemInner = decrypt(kemLt, kemRp.privateJwk);
+    const kemClaims = await verifyWith(kemInner, 'RS256');
+    note(partOf(kemLt, 0).alg === 'ML-KEM-768' &&
+         partOf(kemLt, 0).enc === 'A256GCM' &&
+         typeof partOf(kemLt, 0).ek === 'string' &&
+         partOf(kemLt, 0).kid === 'rp-mlkem' && kemClaims.sid === 'bd-h6',
+         'H6. a relying party that registered ML-KEM-768 (#82, ' +
+         'draft-ietf-jose-pqc-kem-05) is sent a Logout Token encrypted to its ' +
+         'AKP key, the KEM ciphertext in `ek`, which decrypts and verifies',
+         JSON.stringify([partOf(kemLt, 0).alg, kemClaims]).slice(0, 300));
+    const xwLt = (postsTo('/bc/xwing')[0] || {}).token;
+    const xwInner = decrypt(xwLt, xwingRp.privateJwk);
+    const xwClaims = await verifyWith(xwInner, 'RS256');
+    note(partOf(xwLt, 0).alg === 'HPKE-10' &&
+         partOf(xwLt, 0).enc === undefined &&
+         String(xwLt).split('.')[2] === '' && xwClaims.sid === 'bd-h7',
+         'H7. and one that registered HPKE-10 — X-Wing, HPKE Integrated ' +
+         'Encryption, no `enc` — is sent one that decrypts and verifies',
+         JSON.stringify([partOf(xwLt, 0), xwClaims]).slice(0, 300));
 
     // --- I. ID Token encryption end to end ---------------------------------------
     const anon = browser(port);
@@ -698,6 +736,117 @@ function childMain() {
          'I6. the token endpoint returns an ENCRYPTED id_token — a Nested ' +
          'JWT that decrypts with the client\'s key and verifies',
          r.status + ' ' + JSON.stringify([idHeader, idClaims]).slice(0, 400));
+
+    // --- I (#82). post-quantum and hybrid ID Token encryption end to end ------
+    note(['ML-KEM-768', 'ML-KEM-768+A192KW', 'HPKE-10', 'HPKE-10-KE']
+           .every(function (alg) {
+             return disco.id_token_encryption_alg_values_supported
+               .indexOf(alg) >= 0 &&
+               disco.userinfo_encryption_alg_values_supported
+                 .indexOf(alg) >= 0;
+           }) &&
+         disco.request_object_encryption_alg_values_supported
+           .filter(function (alg) {
+             return !!stsCrypto.describeJweKemAlg(alg);
+           }).length === 0,
+         'I7. discovery advertises ML-KEM and X-Wing for encrypting TO a ' +
+         'client, and none for decrypting a request object — the realm ' +
+         'holds no such key until keys.encryptionKemAlgs names one',
+         JSON.stringify(disco.request_object_encryption_alg_values_supported));
+    const kem768 = stsCrypto.generateJweKemKeyPair('ML-KEM-768', 'c-mlkem');
+    r = await reg({ jwks: { keys: [kem768.publicJwk] },
+                    id_token_encrypted_response_alg: 'ML-KEM-1024' });
+    note(r.status === 400 && r.json.error === 'invalid_client_metadata',
+         'I8. an ML-KEM-1024 registration whose only key is an ML-KEM-768 ' +
+         'AKP key is refused: an AKP key names exactly one alg',
+         r.status + ' ' + r.text.slice(0, 240));
+    const tryIdToken = async function (alg, enc, pair, username) {
+      const members = { jwks: { keys: [pair.publicJwk] },
+                        id_token_encrypted_response_alg: alg };
+      if (enc) {
+        members.id_token_encrypted_response_enc = enc;
+      }
+      const made = await reg(members);
+      if (made.status !== 201) {
+        return { error: made.status + ' ' + made.text.slice(0, 200) };
+      }
+      const got = await authorize(browser(port), made.json.client_id,
+                                  username, made.json.client_secret);
+      const token = String(got.json.id_token || '');
+      const inside = decrypt(token, pair.privateJwk);
+      return { header: partOf(token, 0), parts: token.split('.').length,
+               claims: await verifyWith(inside, 'RS256'),
+               client: made.json.client_id };
+    };
+    const viaKem = await tryIdToken('ML-KEM-768', 'A256GCM', kem768,
+                                    'bd-kem-user');
+    note(viaKem.parts === 5 && viaKem.header.alg === 'ML-KEM-768' &&
+         viaKem.header.enc === 'A256GCM' && viaKem.claims.aud === viaKem.client,
+         'I9. a client that registered ML-KEM-768 gets an ID Token encrypted ' +
+         'with it, which decrypts with its AKP key and verifies',
+         JSON.stringify(viaKem).slice(0, 400));
+    const viaXwingKe = await tryIdToken('HPKE-10-KE', '',
+      stsCrypto.generateJweKemKeyPair('HPKE-10-KE', 'c-xwing-ke'),
+      'bd-xwke-user');
+    note(viaXwingKe.parts === 5 && viaXwingKe.header.alg === 'HPKE-10-KE' &&
+         viaXwingKe.header.enc === 'A128CBC-HS256' &&
+         viaXwingKe.claims.aud === viaXwingKe.client,
+         'I10. and one that registered HPKE-10-KE — the X-Wing hybrid, Key ' +
+         'Encryption, enc defaulting to A128CBC-HS256 — gets one too',
+         JSON.stringify(viaXwingKe).slice(0, 400));
+    const viaXwing = await tryIdToken('HPKE-10', 'A256GCM',
+      stsCrypto.generateJweKemKeyPair('HPKE-10', 'c-xwing'), 'bd-xw-user');
+    note(viaXwing.parts === 5 && viaXwing.header.alg === 'HPKE-10' &&
+         viaXwing.header.enc === undefined &&
+         viaXwing.claims.aud === viaXwing.client,
+         'I11. and HPKE-10 (Integrated) carries no enc even where the client ' +
+         'registered one, and decrypts', JSON.stringify(viaXwing).slice(0,
+                                                                        400));
+
+    // --- the realm's own KEM keys: an administrator's opt-in (#82) ----------
+    config.setOverride('keys.encryptionKemAlgs',
+                       'ML-KEM-768+A192KW,HPKE-10-KE');
+    const optedJwks = (await anon.go('GET', '/oauth2/jwks')).json;
+    const optedDisco = (await anon.go('GET',
+                                      '/.well-known/openid-configuration')).json;
+    const akp = (optedJwks.keys || []).filter(function (k) {
+      return k.kty === 'AKP' && k.use === 'enc';
+    });
+    note(akp.length === 2 && akp[0].alg === 'ML-KEM-768+A192KW' &&
+         akp[1].alg === 'HPKE-10-KE' && !akp[0].priv && !akp[1].priv &&
+         ['ML-KEM-768+A192KW', 'HPKE-10-KE'].every(function (alg) {
+           return optedDisco.request_object_encryption_alg_values_supported
+             .indexOf(alg) >= 0 &&
+             optedDisco.assertion_encryption_alg_values_supported
+               .indexOf(alg) >= 0;
+         }),
+         'I12. naming ML-KEM-768+A192KW and HPKE-10-KE in ' +
+         'keys.encryptionKemAlgs publishes an AKP decryption key for each ' +
+         '(public half only) and advertises both for request objects and ' +
+         'assertions', JSON.stringify(akp.map(function (k) {
+           return { alg: k.alg, kid: k.kid };
+         })));
+    // A request object encrypted to the realm's X-Wing key opens with the
+    // realm's own key, and a second fetch publishes the SAME key.
+    const heldKey = helpers.kemDecryptionKeyFor('HPKE-10-KE');
+    const opened = decrypt(stsCrypto.encryptJweCompact('{"probe":1}',
+      { alg: 'HPKE-10-KE', enc: 'A256GCM', jwk: akp[1] }),
+      heldKey && heldKey.privateJwk);
+    const refetched = (await anon.go('GET', '/oauth2/jwks')).json.keys
+      .filter(function (k) {
+        return k.alg === 'HPKE-10-KE';
+      })[0] || {};
+    note(opened === '{"probe":1}' && refetched.kid === akp[1].kid &&
+         refetched.pub === akp[1].pub,
+         'I13. a JWE encrypted to the published X-Wing key opens with the ' +
+         'realm\'s held key, and the published key is stable across fetches',
+         opened.slice(0, 200));
+    config.clearOverride('keys.encryptionKemAlgs');
+    const withdrawn = (await anon.go('GET', '/oauth2/jwks')).json;
+    note(!(withdrawn.keys || []).some(function (k) {
+           return k.kty === 'AKP' && k.use === 'enc';
+         }),
+         'I14. and emptying the setting withdraws them from the JWKS', '');
 
     // --- J. expiry ----------------------------------------------------------
     client('bd-exp', '/bc/exp');
