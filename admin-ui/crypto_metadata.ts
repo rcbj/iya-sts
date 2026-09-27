@@ -3170,6 +3170,30 @@ class CryptoMetadata {
             'advertised for decryption. An AKP key is a key type many ' +
             'clients\' JOSE libraries do not parse yet, so publishing one ' +
             'is an administrator\'s choice (rcbj, #82).' },
+      (function () {
+        // A federation relationship's own key (#82): read lazily — the
+        // register is loaded long before this page, and a require here at
+        // the top would say nothing the require order does not.
+        const fed = require('../federation/federation');
+        const pqRels = fed.inRole('service-provider').filter(function (r) {
+          return fed.JOSE_ONLY_KEY_TYPES.indexOf(
+            fed.encryptionPolicyOf(r).keyType) >= 0;
+        }).map(function (r) {
+          return r.fedId;
+        });
+        return {
+          surface: 'Federation — an OpenID Connect partner\'s ID Token ' +
+                   'encrypted to a relationship\'s key',
+          state: pqRels.length ? 'pq' : 'optional',
+          how: pqRels.length
+            ? pqRels.join(', ') + ' hold an x-wing or ml-kem-768 key ' +
+              '(fedEncryptionKeyType), published in the relationship\'s ' +
+              'JWKS.'
+            : 'Per relationship: fedEncryptionKeyType x-wing (HPKE-10-KE) ' +
+              'or ml-kem-768 on an OpenID Connect relationship. None has ' +
+              'one; SAML 2.0 and WS-Federation cannot (XML Encryption).'
+        };
+      })(),
       { surface: 'OID4VP encrypted responses (direct_post.jwt, dc_api.jwt)',
         state: vp.length ? 'pq' : 'classical',
         how: vp.length

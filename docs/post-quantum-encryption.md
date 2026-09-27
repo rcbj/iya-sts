@@ -105,6 +105,22 @@ The keys are persisted and sealed, and shared with every node like the realm's
 other keys. Removing an algorithm from the list stops the realm publishing and
 accepting it. Adding the algorithm back restores the same key.
 
+## Federation relationships
+
+An OpenID Connect federation relationship in which this service is the
+service provider can hold a post-quantum key, so a partner can encrypt its ID
+Tokens with one. Set `fedEncryptionKeyType` to one of:
+
+* **`x-wing`**: HPKE-10-KE, the ML-KEM-768 + X25519 hybrid;
+* **`ml-kem-768`**: ML-KEM-768.
+
+The key is published in the relationship's JWKS. It has **no certificate**,
+because no X.509 profile exists for an X-Wing key. Rotation and the grace
+period work exactly as they do for an RSA or EC key.
+
+SAML 2.0 and WS-Federation relationships cannot use these key types: their
+assertions use XML Encryption, which has no post-quantum option.
+
 ## OpenID4VP wallet responses
 
 A `direct_post.jwt` or `dc_api.jwt` request offers one ephemeral key per
@@ -135,8 +151,8 @@ changes.
 ## What the service reports about itself
 
 * `/admin/crypto-metadata` → *Key establishment, surface by surface* shows each
-  surface's state (JWE out, JWE in, OID4VP, refresh tokens, TLS, XML
-  Encryption), read from the settings in force in the realm.
+  surface's state (JWE out, JWE in, federation, OID4VP, refresh tokens, TLS,
+  XML Encryption), read from the settings in force in the realm.
 * `/admin/keys` lists the realm's post-quantum decryption keys with the
   **PQC KEM** badge.
 * `GET /admin-api/crypto-metadata` returns the same information as JSON.

@@ -128,7 +128,7 @@
 # what was verified when the image was built; tests/tools/build-corpora-image.sh
 # rebuilds it after a pin changes and rewrites this line.
 # ---------------------------------------------------------------------------
-ARG STS_CORPORA_IMAGE=ghcr.io/rcbj/iya-sts-test-corpora@sha256:ef3797760cc8b1bc414ffcc9130aadd132e9a2f8bc0f950c75275ebbb3b92838
+ARG STS_CORPORA_IMAGE=ghcr.io/rcbj/iya-sts-test-corpora@sha256:321c40d09ab6cf8a246ba2d8ac0841ea65982e3817eec1a3bb77995d50a200a9
 FROM ${STS_CORPORA_IMAGE} AS corpora
 
 FROM golang:1.26.8-bookworm AS enroll-go
