@@ -23,6 +23,9 @@
 //                                                          thumbprint
 //   native-sso  a Native SSO device_secret                 the device the
 //                                                          secret's hash is on
+//   browser-    a remembered browser's cookie (#265)       the device the
+//   cookie                                                 token names, known
+//                                                          by no key at all
 //
 // It answers a FACT — `{ id, via, keyId, owner, ownerKind, ownerName,
 // status, attestation, compliance, chainVerified, at }` — or null, and it
@@ -51,7 +54,9 @@
 //     and somebody said it should no longer be believed.
 //   * **ONE DEVICE, CHOSEN IN ORDER OF STRENGTH**: x509 (a handshake), then
 //     webauthn (a signature over a challenge this service chose), then jwk (a
-//     proof the client made), then native-sso (a bearer secret). Evidence
+//     proof the client made), then native-sso (a bearer secret), then
+//     browser-cookie (a bearer token in a cookie, #265 — the weakest, and a
+//     fact that also says what is odd about the token: `browserToken`). Evidence
 //     naming a SECOND device is kept as `conflict: [ids]` rather than
 //     dropped: two of one person's devices in one request is odd, and a
 //     later phase's policy is where odd is judged.
@@ -81,7 +86,7 @@ import mtls = require('../oauth-oidc/mtls');
 
 type Json = any;
 
-const VIAS = ['x509', 'webauthn', 'jwk', 'native-sso'];
+const VIAS = ['x509', 'webauthn', 'jwk', 'native-sso', 'browser-cookie'];
 
 // Per realm at the declaration (common/CLAUDE.md), NOT persisted: counters
 // of this process — recognitions by via, enrolments by method, attestation
@@ -95,6 +100,7 @@ interface DeviceRecognitionDeps {
   devices: typeof devices;
   mtls: typeof mtls;
   stsCrypto: typeof stsCrypto;
+  browserDevices: () => Json;
   now: () => number;
 }
 
@@ -110,7 +116,14 @@ class DeviceRecognition {
     helpers.log.debug("Entering DeviceRecognition.defaultDeps().");
     helpers.log.debug("Leaving DeviceRecognition.defaultDeps().");
     return { log: helpers.log, devices: devices, mtls: mtls,
-             stsCrypto: stsCrypto, now: Date.now };
+             stsCrypto: stsCrypto,
+             // Found lazily: `browser_devices.ts` reaches the keystore and the
+             // authentication policy, which this file has no need to load for
+             // a request that carries no cookie.
+             browserDevices: function (): Json {
+               return require('./browser_devices');
+             },
+             now: Date.now };
   }
 
   // One counter, `table` then `key`, bumped in this realm.
@@ -211,6 +224,18 @@ class DeviceRecognition {
         found.push({ device: device, via: 'native-sso', key: null });
       }
     }
+    // A REMEMBERED BROWSER (#265), last because it proves nothing: a copy of
+    // its cookie is the browser. Asked only of a request that carries one.
+    // `browser_devices.ts` marks a device compromised when the token is a
+    // copy, which is why the caller asks once per request.
+    if (e.request && this.deps.browserDevices) {
+      const browser = this.deps.browserDevices().recognize(e.request,
+                                                          e.subject);
+      if (browser && browser.device) {
+        found.push({ device: browser.device, via: 'browser-cookie',
+                     key: null, browserToken: browser.flags });
+      }
+    }
     if (!found.length) {
       log.debug("Leaving DeviceRecognition.recognize(). No device.");
       return null;
@@ -237,6 +262,9 @@ class DeviceRecognition {
       chainVerified: first.via === 'x509' ? !!first.chainVerified : undefined,
       at: new Date(this.deps.now()).toISOString()
     };
+    if (first.via === 'browser-cookie') {
+      fact.browserToken = Object.assign({}, first.browserToken);
+    }
     if (e.subject !== undefined) {
       fact.ownerMatches = first.device.ownerKind === 'person' &&
         String(owner.name || '') === String(e.subject || '');

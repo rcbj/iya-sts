@@ -212,7 +212,12 @@ const USE_CASES = [
   { id: 'gnap-access-token', setting: 'gnap.accessTokenCertificateHeader',
     label: 'GNAP JWT access tokens',
     where: 'gnap/gnap_tokens.ts, the jwt-signed format and the JWS inside ' +
-           'jwt-encrypted' }
+           'jwt-encrypted' },
+  { id: 'browser-device-token',
+    setting: 'devices.browserTokenCertificateHeader',
+    label: 'Remembered browser device tokens',
+    where: 'common/browser_devices.ts mint(), the JWS inside the JWE a ' +
+           'remembered browser carries in its cookie' }
 ];
 
 const USE_CASE_IDS = USE_CASES.map(function (one) { return one.id; });

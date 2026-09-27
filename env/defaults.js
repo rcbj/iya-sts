@@ -451,7 +451,11 @@ var config = {
     expectRegistered: false,                            // Expect every person to sign in from a registered device
     requireCompliantDevice: false,                      // Require a compliant registered device
     compliantDeviceAttested: false,                     // A compliant device must also be attested
-    refuseCompromised: true                             // Refuse a compromised device
+    refuseCompromised: true,                            // Refuse a compromised device
+    browserDevices: true,                               // Remembered browsers
+    browserTokenLifetimeDays: 180,                      // Remembered browser cookie lifetime (days)
+    browserReissueGraceSeconds: 60,                     // Remembered browser: previous token accepted for (seconds)
+    browserTokenCertificateHeader: "x5u"                // Remembered browser token certificate header
   },
 
   // --- PKI -------------------------------------------------------------

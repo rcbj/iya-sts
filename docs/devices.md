@@ -65,6 +65,7 @@ says the same from the running build, and is the one to trust.
 | An administrator | yes | **Directory → Devices** (`/admin/devices`) or `POST /admin-api/devices/create`, owned by a person or an application, with keys typed by value. A key added this way is recorded as proven by nobody and self-asserted. |
 | The owner, on the portal | yes | `/portal/devices`: proving a key (below), or linking a WebAuthn platform credential enrolled on `/portal/keys` with a fresh assertion. |
 | EST and SCEP | yes | A certificate from the `device` profile, issued to the device entry. |
+| A remembered browser | yes (#265) | "Remember this browser" at sign-in or on `/portal/devices`: a device known by a signed and encrypted cookie, in any browser. The lowest assurance the register has — [below](#remembered-browsers). |
 
 A person sees their devices on `/portal/devices` and can remove one.
 
@@ -115,6 +116,7 @@ Presenting any key a device holds identifies it:
 | a linked WebAuthn credential | a sign-in |
 | a DPoP proof whose key (`jkt`) is a device's jwk key | the token endpoint |
 | the Native SSO `device_secret` | the token endpoint |
+| a remembered browser's cookie (`browser-cookie`) | a sign-in — the weakest evidence, used only when nothing else names a device |
 
 The recognised device is recorded on the sign-in's authentication event and
 on the token issuance. Risk scoring, the issuance policy, the acr and the
@@ -126,6 +128,128 @@ used later: at the next token request on that session, and for the acr. So a
 device an MDM reports not compliant, or an administrator marks compromised,
 counts as such for everything issued afterwards on sessions it already
 proved. A device removed since counts as no device.
+
+## Remembered browsers
+
+The register above recognises a device by a key it proved: a WebAuthn platform
+credential, a DPoP key, a client certificate or a Native SSO secret. A general
+browser often can prove none of these. Linux Firefox, for example, has no
+built-in authenticator at all. A **remembered browser** works in every
+browser, and it is deliberately weaker: the browser carries a token in a
+cookie rather than proving a key. Whoever holds a copy of the cookie *is* that
+browser until the copy is caught. Everything about how the rest of the service
+treats it follows from that.
+
+### How a browser is remembered
+
+1. The person ticks **Remember this browser** on the sign-in screen, or
+   presses the button on `/portal/devices` while signed in. Nothing is
+   remembered unless they ask.
+2. When the session starts, a device is registered for them:
+   - enrolment method `browser`;
+   - named after the browser, for example `Firefox on Linux`;
+   - attestation level **`bearer`**, which is below `self-asserted`;
+   - no keys.
+3. The browser is sent a cookie holding the device token:
+   - `HttpOnly`, `SameSite=Lax` and `Path=/`;
+   - `Secure` with a `__Host-` prefix when the service is on HTTPS;
+   - one cookie per trust realm.
+
+   It lasts `devices.browserTokenLifetimeDays` (180 days), and each time the
+   browser is used the clock starts again. Page scripts cannot read it.
+
+### What the token is
+
+A nested JWT that only this service ever reads:
+
+- **Signed** (JWS, ES256, `typ: browser-device+jwt`) with a key pair used for
+  nothing else:
+  - in the `per-algorithm` signer model, the realm's dedicated browser-device
+    signing key;
+  - in `hybrid-groups`, the ES256 key of the `browser-devices` signer group,
+    whose certificate is hybrid with an ML-DSA-44 partner like every group's.
+- **Encrypted** (JWE, ECDH-ES+A256KW with A256GCM) to the realm's own
+  browser-device encryption key. Encryption keeps the device id and the owner
+  out of anybody's cookie jar. The signature is what makes the token trusted.
+- **Claims:**
+  - `iss` and `aud`: `urn:sts:browser-device:<realm>`;
+  - `sub`: the device id;
+  - `owner`: the username;
+  - `gen`: the generation, which goes up by one at every sign-in;
+  - `jti`, `iat` and `exp`.
+- **Classical keys, deliberately.** A cookie holds about 4 KB, and a
+  post-quantum signature does not fit in one. A token that would be too large
+  is not issued (`STS-DEVICE-0043`). The usual cause is setting
+  `devices.browserTokenCertificateHeader` to `x5c`.
+
+Both key pairs are members of the realm's key set. They are sealed at rest in
+product mode, shared by every request worker and node, and added to a key set
+that was stored before they existed. Neither is published.
+
+### How it is recognised, and how a copy is caught
+
+At a sign-in, the cookie is decrypted, its signature and claims are checked,
+and the device it names is looked up. Recognition makes the browser the
+person's **own recognised device**. Beyond that, what the token tells the rest
+of the service depends on the generation:
+
+| Case | What happens |
+|---|---|
+| **Current** generation | The token is issued again with `gen + 1` after the sign-in, so the cookie rotates on every use. |
+| **One behind**, within `devices.browserReissueGraceSeconds` (60) | Accepted as a second tab that signed in at the same moment. |
+| **Older** than that | The cookie was **copied**. The device is marked **compromised**, which ends every session it holds, and the cookie is cleared (`STS-DEVICE-0041`). |
+| Names **somebody else's** device | Not treated as this person's device (`STS-DEVICE-0042`). |
+| Presented by a **different browser family or OS** than it was bound to | Recorded as a changed context. |
+| **Unreadable** or expired | Cleared, and the browser is treated as unrecognised (`STS-DEVICE-0040`). |
+
+### What it counts for
+
+A remembered browser can only **remove** suspicion. It never **adds** trust:
+
+- **Risk scoring:** a sign-in from the person's own remembered browser is
+  neither `new-device` nor `unregistered-device`. It never earns the
+  compliant-device signals that lower risk.
+  - A copied cookie is `browser-token-replayed`.
+  - Someone else's cookie is `browser-token-foreign`.
+  - A changed browser is `browser-context-changed`.
+- **Compliance:** a `bearer` device cannot be marked compliant, by an
+  administrator or by an MDM feed (`STS-DEVICE-0039`). So it never satisfies
+  `devices.requireCompliantDevice` and never meets
+  `urn:sts:acr:compliant-device`.
+- **The issuance policy** sees `via: browser-cookie` and attestation `bearer`
+  like any other device fact, so a rule can tell it apart.
+- **If the person later links a real key to it**, the device takes that key's
+  level.
+
+### Skipping the second factor
+
+An administrator may let a remembered browser stand in for the second factor.
+This is in the realm's authentication policy on **Directory → Policies**:
+
+- **A remembered browser may skip the second factor**: off by default.
+- **How long a remembered browser skips the second factor**: 30 days by
+  default, from the last time the second factor was given *on that browser*.
+
+Even with the policy on, the second factor is still asked for when any of
+these is true:
+
+- the sign-in is for the **admin console**, the **user portal** or the
+  **protocol debugger**;
+- the person holds a **console role** (Admin Read or Admin Write);
+- the sign-in's **risk** is MEDIUM or higher;
+- the cookie was copied, belongs to someone else, is presented by a different
+  browser, or names a compromised device;
+- a relying party **demanded** a second factor (`acr_values`, `wauth`), a
+  security key was demanded, or risk scoring asked for a step-up.
+
+When it is skipped, the session is **one factor**: `amr ["pwd"]` and acr `1`,
+exactly as for a person who has no second factor. A relying party that needs
+two factors asks for them and always gets them.
+
+**The warning:** anyone who copies the cookie skips the second factor too,
+until the copy is caught. The copy is caught the next time either browser
+signs in after the other, and that ends every session the device holds. Only
+turn the skip on where that trade is acceptable.
 
 ## Compliance
 
@@ -254,7 +378,7 @@ device*. Remove it from `risc.autoEmitTypes` to send only the CAEP events.
 ## Risk scoring
 
 Every sign-in is scored ([Risk scoring](risk-scoring.md)). The device that
-proved the sign-in adds five signals. Each is a factor on the score, and
+proved the sign-in adds up to eight signals. Each is a factor on the score, and
 `risk.signalFactors` can change it:
 
 | Signal | Factor | When |
@@ -264,6 +388,9 @@ proved the sign-in adds five signals. Each is a factor on the score, and
 | `unregistered-device` | ×2 | No device of the person's own was recognised: none at all, or someone else's. |
 | `compliant-attested-device` | ×0.5 | The person's own device, compliant and attested. This lowers the score. |
 | `compliant-device` | ×0.8 | The person's own device, compliant and self-asserted. This lowers it less. |
+| `browser-token-replayed` | ×50 | A remembered browser presented an older token than its device holds: the cookie was copied, and the device is now compromised. This is HIGH on its own. |
+| `browser-token-foreign` | ×2 | The browser carries another person's remembered-browser cookie. |
+| `browser-context-changed` | ×2 | A remembered browser's cookie arrived from a different browser or operating system than it was bound to. |
 
 * **`unregistered-device` is scoped.** It fires only for a person who has
   registered a device, or for anybody while `devices.expectRegistered` is on.
@@ -428,6 +555,10 @@ Drawn on **Protocols → Device registration**; the live source is that page and
 | `devices.lastUsedResolutionSeconds` | `STS_DEVICES_LAST_USED_RESOLUTION_SECONDS` | `60` | yes | How often a recognised device's last use is written. |
 | `devices.expectRegistered` | `STS_DEVICES_EXPECT_REGISTERED` | `false` | yes | Makes `unregistered-device` fire for anybody, not only people who registered a device. |
 | `devices.refuseCompromised` | `STS_DEVICES_REFUSE_COMPROMISED` | `true` | yes | Refuses anything asked for from a compromised device. |
+| `devices.browserDevices` | `STS_DEVICES_BROWSER_DEVICES` | `true` | yes | Offers "Remember this browser" and reads the cookie. Off: no browser is remembered and a cookie already issued is not read. |
+| `devices.browserTokenLifetimeDays` | `STS_DEVICES_BROWSER_TOKEN_LIFETIME_DAYS` | `180` | yes | How long a remembered browser may go unused before it is forgotten (1–400). |
+| `devices.browserReissueGraceSeconds` | `STS_DEVICES_BROWSER_REISSUE_GRACE_SECONDS` | `60` | yes | How long the previous token is still accepted after a reissue (two tabs); older is a copied cookie. |
+| `devices.browserTokenCertificateHeader` | `STS_DEVICES_BROWSER_TOKEN_CERTIFICATE_HEADER` | `x5u` | yes | The certificate header on the signed token. `x5c` and `both` make it too large for a cookie. |
 | `devices.requireCompliantDevice` | `STS_DEVICES_REQUIRE_COMPLIANT_DEVICE` | `false` | yes | Requires the subject's own compliant registered device. The console and the portal are exempt. |
 | `devices.compliantDeviceAttested` | `STS_DEVICES_COMPLIANT_DEVICE_ATTESTED` | `false` | yes | A compliant device must also be attested, both for the rule above and for the acr. |
 

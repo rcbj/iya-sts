@@ -15,7 +15,8 @@
 // algorithms, and a separate key pair per USE**, "collapsing by signing algo,
 // not use case". His answers, recorded on the ticket:
 //
-//   D2  five coarse groups — the rows of GROUPS below;
+//   D2  five coarse groups — the rows of GROUPS below (a sixth, #265's
+//       remembered browsers, joined for rcbj's "both key pair modes");
 //   D3  in each group, three HYBRID certificates, each binding a classical
 //       key and an ML-DSA key (ITU-T X.509 (2019) clause 9.8, approach #1 of
 //       his article), plus one plain SLH-DSA certificate — PAIRS below;
@@ -68,6 +69,12 @@ const GROUPS = [
     useCases: ['ssf-set'] },
   { id: 'wstrust-gnap', label: 'WS-Trust JWTs and GNAP access tokens',
     pkiUseCase: 'jose', useCases: ['wstrust-jwt', 'gnap-access-token'] },
+  // A REMEMBERED BROWSER'S DEVICE TOKEN (#265, rcbj: a key pair for that
+  // purpose alone, in both signer models). Only its ES256 member signs — a
+  // cookie cannot hold a post-quantum signature — and its certificate is
+  // hybrid with the ML-DSA-44 partner, as every group's is.
+  { id: 'browser-devices', label: 'Remembered browser device tokens',
+    pkiUseCase: 'jose', useCases: ['browser-device-token'] },
   { id: 'xml', label: 'XML signatures (SAML, WS-Federation, WS-Trust)',
     pkiUseCase: 'xml', useCases: [] }
 ];

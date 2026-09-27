@@ -65,10 +65,10 @@ async function inProcess(t) {
   const pki = require('../common/pki');
   const x509 = require('../common/vendored/x509');
 
-  t.log.info('=== A. the table: five groups, every JOSE use in one ===');
+  t.log.info('=== A. the table: six groups, every JOSE use in one ===');
   t.equal(signerGroups.GROUP_IDS.join(','),
-          'tokens,credentials,events,wstrust-gnap,xml',
-          'the five groups of rcbj\'s D2');
+          'tokens,credentials,events,wstrust-gnap,browser-devices,xml',
+          'the five groups of rcbj\'s D2, and #265\'s remembered browsers');
   const homes = {};
   signerGroups.GROUPS.forEach(function (grp) {
     grp.useCases.forEach(function (uc) {
@@ -129,12 +129,12 @@ async function inProcess(t) {
   t.equal(none, null, 'the default realm, in the default model, makes no ' +
           'group keys — a realm that never asks holds none');
 
-  t.log.info('=== C. a hybrid-groups realm makes 35 keys ===');
+  t.log.info('=== C. a hybrid-groups realm makes 42 keys ===');
   const keys = helpers.stsKeysFor.of(REALM);
   t.equal(keys.realm, REALM, 'the fixture is a real realm\'s key set');
   const members = await helpers.warmSignerGroups(REALM);
-  t.equal((members || []).length, 35,
-          'five groups of seven keys: three classical, three ML-DSA, one ' +
+  t.equal((members || []).length, 42,
+          'six groups of seven keys: three classical, three ML-DSA, one ' +
           'SLH-DSA — every one a key pair of its own');
   const kids = (members || []).map(function (one) {
     return one.publicJwk.kid;
@@ -151,7 +151,7 @@ async function inProcess(t) {
   })[0];
   t.equal(rsa && Buffer.from(rsa.publicJwk.n, 'base64url').length * 8, 3072,
           'the RSA member is RSA-3072');
-  t.equal(keys.signerGroups && keys.signerGroups.length, 35,
+  t.equal(keys.signerGroups && keys.signerGroups.length, 42,
           'and the members are ON the realm\'s key set');
 
   t.log.info('=== D. four certificates per group, three of them hybrid ===');
@@ -238,7 +238,7 @@ async function inProcess(t) {
 
   t.log.info('=== E. the set carries the groups through the keystore ===');
   const blob = keystore.serialise(keys);
-  t.equal((blob.signerGroups || []).length, 35,
+  t.equal((blob.signerGroups || []).length, 42,
           'serialise() writes every member');
   t.check(blob.signerGroups.every(function (one) {
             return one.kind === 'pq' ? typeof one.privateKey === 'string'
@@ -361,7 +361,21 @@ async function whichKeySigns(t, m) {
     return m.helpers.groupPublishedJwks(m.helpers.stsKeysFor.of(REALM));
   });
   t.equal(jwks.length, 28, 'four JOSE groups of seven keys — the XML ' +
-          'group\'s keys are not JOSE keys and are not published here');
+          'group\'s keys are not JOSE keys, and the browser-devices ' +
+          'group\'s (#265) sign only a token this service reads itself, so ' +
+          'neither is published here');
+  t.check(!jwks.some(function (jwk) {
+    return /^sts-g-browser-devices-/.test(String(jwk.kid));
+  }), 'no browser-devices key is in the JWKS');
+  const verifierKids = inRealm(function () {
+    return m.helpers.groupJwkEntries(m.helpers.stsKeysFor.of(REALM))
+      .map(function (one) {
+        return String(one.publicJwk && one.publicJwk.kid);
+      });
+  });
+  t.check(!verifierKids.some(function (kid) {
+    return /^sts-g-browser-devices-/.test(kid);
+  }), 'and none verifies this realm\'s ordinary JWTs');
   const members = m.helpers.stsKeysFor.of(REALM).signerGroups;
   const byKid = {};
   members.forEach(function (one) {
@@ -464,8 +478,8 @@ async function rotation(t, m, inRealm, kidOf) {
     .filter(function (row) {
       return row.kind === 'group';
     });
-  t.equal(units.length, 20,
-          'one rotation unit per group CERTIFICATE (5 groups x 4), not per ' +
+  t.equal(units.length, 24,
+          'one rotation unit per group CERTIFICATE (6 groups x 4), not per ' +
           'key: a new key in either half is a new certificate');
   const before = m.helpers.stsKeysFor.of(REALM).signerGroups;
   const kidAt = function (members, slot) {
@@ -646,8 +660,8 @@ async function xmlAlgorithms(t, m, inRealm) {
 
 module.exports = {
   name: 'signer_groups',
-  describe: 'The signer groups (#68): five groups, every JOSE use in exactly ' +
-            'one; a hybrid-groups realm makes 35 key pairs lazily and a ' +
+  describe: 'The signer groups (#68): six groups, every JOSE use in exactly ' +
+            'one; a hybrid-groups realm makes 42 key pairs lazily and a ' +
             'per-algorithm one none; each classical key is certified with ' +
             'its ML-DSA partner in subjectAltPublicKeyInfo and SLH-DSA ' +
             'alone, under the group\'s Issuing CA, verifying as hybrid; and ' +

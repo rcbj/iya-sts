@@ -542,6 +542,46 @@ function makeRequestObjectEncryptionKeys(madeRsa) {
   return out;
 }
 
+// ---------------------------------------------------------------------------
+// THE BROWSER DEVICE KEYS (2026-09-26, #265): a signing key pair (ES256) and
+// an encryption key pair (ECDH-ES on P-256) used for ONE thing — the device
+// token a remembered browser carries in a cookie (`common/browser_devices.ts`).
+// Dedicated so that no other token can be minted with them and they sign no
+// other token. Classical and small ON PURPOSE: a cookie holds about 4 KB, and
+// an ML-DSA signature alone is 2.4 KB before base64 and the JWE around it.
+// In the `hybrid-groups` signer model the `browser-devices` group's ES256 key
+// signs instead (`browserDeviceSigner()`); the encryption key is this one in
+// both models. Never published: this service is the only party that reads
+// the token, so nobody else needs either public half.
+// ---------------------------------------------------------------------------
+function browserDeviceJwkOf(privateKey, use) {
+  log.debug("Entering browserDeviceJwkOf().");
+  const publicJwk = crypto.createPublicKey(privateKey)
+                          .export({ format: 'jwk' });
+  const thumbprint = stsCrypto.jwkThumbprint(publicJwk, { truncate: 16 });
+  log.debug("Leaving browserDeviceJwkOf().");
+  return Object.assign({}, publicJwk, {
+    kid: 'sts-bd-' + use + '-' + thumbprint,
+    use: use,
+    alg: use === 'sig' ? 'ES256' : 'ECDH-ES+A256KW'
+  });
+}
+
+function makeBrowserDeviceKeys() {
+  log.debug("Entering makeBrowserDeviceKeys().");
+  const sign = crypto.generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
+  const enc = crypto.generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
+  const out = {
+    sign: { privateKey: sign.privateKey,
+            publicJwk: browserDeviceJwkOf(sign.privateKey, 'sig') },
+    enc: { privateKey: enc.privateKey,
+           publicJwk: browserDeviceJwkOf(enc.privateKey, 'enc') }
+  };
+  log.debug("Leaving makeBrowserDeviceKeys(). kids=" + out.sign.publicJwk.kid +
+            ", " + out.enc.publicJwk.kid);
+  return out;
+}
+
 // The RSA size a member of the key set is made at, read in the realm the set
 // is for. ONE reading for the synchronous maker and the asynchronous one, so a
 // set prepared off the loop is the size a set made on it would have been.
@@ -733,6 +773,9 @@ function makeStsKeys(made) {
     // THE REQUEST OBJECT ENCRYPTION KEYS (RFC 9101), made with the set for the
     // same reason — see makeRequestObjectEncryptionKeys().
     requestObjectEncKeys: makeRequestObjectEncryptionKeys(pre.requestObject),
+    // THE BROWSER DEVICE KEYS (#265), made with the set for the same reason —
+    // see makeBrowserDeviceKeys().
+    browserDeviceKeys: makeBrowserDeviceKeys(),
     // THE XML SIGNING KEY (2026-09-22, #42, D2), a member made with the set for
     // the reason the others are: the set is what the key channel agrees and
     // the keystore seals. See makeRsaSigningKey(). Its view — the certificate
@@ -822,6 +865,12 @@ function plainKeySet(realmId, stored) {
   // object a client encrypted to the JWKS a sibling served.
   if (stored.requestObjectEncKeys) {
     set.requestObjectEncKeys = stored.requestObjectEncKeys;
+  }
+  // AND THE BROWSER DEVICE KEYS (#265): dropped here, this process would seal
+  // device tokens no sibling can open, and a remembered browser would be
+  // forgotten by every other worker.
+  if (stored.browserDeviceKeys) {
+    set.browserDeviceKeys = stored.browserDeviceKeys;
   }
   // AND THE XML SIGNING KEY AND THE KEY GENERATIONS (2026-09-22, #42), for
   // the same reason: dropped here, this process would sign XML with a key of
@@ -1579,6 +1628,65 @@ function lazyKeySet(realmId, stored) {
     set: function (made) {
       log.debug("Entering set().");
       roGenerated = made || null;
+      log.debug("Leaving set().");
+    }
+  });
+  // ---------------------------------------------------------------------
+  // **THE BROWSER DEVICE KEYS (#265)**, the request object keys' arrangement:
+  // the public halves resident, both private keys getters over the keystore.
+  // ---------------------------------------------------------------------
+  const bdStored = stored.browserDeviceKeys || null;
+  const bdPublic = bdStored && bdStored.sign && bdStored.enc
+    ? { sign: bdStored.sign.publicJwk, enc: bdStored.enc.publicJwk }
+    : null;
+  let bdGenerated = null;
+  const bdHeld = function (part) {
+    log.debug("Entering bdHeld().");
+    const held = keystore.privateMaterialFor(realmId);
+    if (!held || !held.bd) {
+      throw new Error('the "' + realmId + '" realm\'s browser device ' +
+        part + ' is held encrypted and could not be decrypted; see the ' +
+        'keystore errors above.');
+    }
+    log.debug("Leaving bdHeld().");
+    return held.bd;
+  };
+  Object.defineProperty(set, 'browserDeviceKeys', {
+    enumerable: true, configurable: true,
+    get: function () {
+      log.debug("Entering get().");
+      if (bdGenerated) {
+        log.debug("Leaving get().");
+        return bdGenerated;
+      }
+      if (!bdPublic) {
+        log.debug("Leaving get().");
+        return undefined;
+      }
+      const view = { sign: { publicJwk: bdPublic.sign },
+                     enc: { publicJwk: bdPublic.enc } };
+      Object.defineProperty(view.sign, 'privateKey', {
+        enumerable: true, configurable: true,
+        get: function () {
+          log.debug("Entering get().");
+          log.debug("Leaving get().");
+          return bdHeld('signing key').sign.privateKey;
+        }
+      });
+      Object.defineProperty(view.enc, 'privateKey', {
+        enumerable: true, configurable: true,
+        get: function () {
+          log.debug("Entering get().");
+          log.debug("Leaving get().");
+          return bdHeld('encryption key').enc.privateKey;
+        }
+      });
+      log.debug("Leaving get().");
+      return view;
+    },
+    set: function (made) {
+      log.debug("Entering set().");
+      bdGenerated = made || null;
       log.debug("Leaving set().");
     }
   });
@@ -2377,6 +2485,75 @@ function requestObjectKeysFor(keySet) {
 }
 
 // ---------------------------------------------------------------------------
+// THE BROWSER DEVICE KEYS FOR A KEY SET, BACKFILLED WHERE THE SET WAS WRITTEN
+// BEFORE THEY EXISTED (#265) — `requestObjectKeysFor()` step for step.
+// ---------------------------------------------------------------------------
+function browserDeviceKeysFor(keySet) {
+  log.debug("Entering browserDeviceKeysFor().");
+  const keys = keySet || stsKeysFor();
+  const present = keys.browserDeviceKeys;
+  if (present && present.sign && present.sign.publicJwk) {
+    log.debug("Leaving browserDeviceKeysFor(). On the set.");
+    return present;
+  }
+  const realmId = String(keys.realm || realms.currentId());
+  const held = keystore.browserDeviceKeysHeldFor(realmId);
+  if (held) {
+    keys.browserDeviceKeys = held;
+    log.debug("Leaving browserDeviceKeysFor(). Already made by this service.");
+    return held;
+  }
+  const made = makeBrowserDeviceKeys();
+  keys.browserDeviceKeys = made;
+  log.info('Browser device keys were added to the "' + realmId + '" realm\'s ' +
+           'key set, which was written by a build from before they joined ' +
+           'it: ' + made.sign.publicJwk.kid + ', ' + made.enc.publicJwk.kid +
+           '.');
+  keystore.remember(realmId, keys);
+  keystore.publishShared(realmId, keys);
+  log.debug("Leaving browserDeviceKeysFor(). Backfilled.");
+  return keys.browserDeviceKeys || made;
+}
+
+// ---------------------------------------------------------------------------
+// WHICH KEY SIGNS A BROWSER DEVICE TOKEN (#265): the `browser-devices` signer
+// group's ES256 key in a `hybrid-groups` realm, and the realm's dedicated
+// browser device key otherwise — and while that group's keys are still being
+// made. NEVER a key that signs anything else, which is why this does not go
+// through `signingKeyFor()` and its per-algorithm fallback.
+// ---------------------------------------------------------------------------
+function browserDeviceSigner(keySet) {
+  log.debug("Entering browserDeviceSigner().");
+  const grouped = groupSignerFor('browser-device-token', 'ES256', false);
+  if (grouped) {
+    log.debug("Leaving browserDeviceSigner(). Group " + grouped.slot + ".");
+    return { key: grouped.key, kid: grouped.kid, via: 'group' };
+  }
+  const own = browserDeviceKeysFor(keySet);
+  log.debug("Leaving browserDeviceSigner(). Dedicated key.");
+  return { key: own.sign.privateKey, kid: own.sign.publicJwk.kid,
+           via: 'dedicated' };
+}
+
+// Every key that may have signed a browser device token this realm still
+// accepts: the dedicated key, and the `browser-devices` group's ES256 keys
+// whatever the model is NOW (a realm switched back keeps verifying what it
+// issued). By kid.
+function browserDeviceVerifiers(keySet) {
+  log.debug("Entering browserDeviceVerifiers().");
+  const out = new Map();
+  const own = browserDeviceKeysFor(keySet);
+  out.set(own.sign.publicJwk.kid, own.sign.publicJwk);
+  groupMembersOf(keySet || stsKeysFor()).forEach(function (one) {
+    if (one.group === 'browser-devices' && one.alg === 'ES256') {
+      out.set(one.publicJwk.kid, one.publicJwk);
+    }
+  });
+  log.debug("Leaving browserDeviceVerifiers(). " + out.size + " key(s).");
+  return out;
+}
+
+// ---------------------------------------------------------------------------
 // THE XML SIGNING KEY OF A KEY SET (2026-09-22, #42, D2), BACKFILLED WHERE THE
 // SET WAS WRITTEN BEFORE IT EXISTED — `requestObjectKeysFor()` step for step.
 // What every XML signer and verifier here asks for, through `STS.xml`.
@@ -2912,6 +3089,18 @@ function candidatesForKid(candidates, headerKid) {
 // ---------------------------------------------------------------------------
 const groupsPendingSaid = new Set();
 
+// Whether a signer group's keys are this realm's GENERAL JOSE keys — the ones
+// published in the JWKS and accepted as a verifier of this realm's own JWTs.
+// Two groups are not: the XML group signs XML, and the browser-devices group
+// (#265) signs only the remembered-browser token, which `browser_devices.ts`
+// reads with keys of its own choosing; publishing it, or accepting it for an
+// access token, would let one kind of token stand in for another.
+function isGeneralJoseGroup(group) {
+  log.debug("Entering isGeneralJoseGroup().");
+  log.debug("Leaving isGeneralJoseGroup().");
+  return group !== 'xml' && group !== 'browser-devices';
+}
+
 function groupMembersOf(keys) {
   log.debug("Entering groupMembersOf().");
   log.debug("Leaving groupMembersOf().");
@@ -2978,7 +3167,7 @@ function groupVerifiersFor(alg) {
   const matches = function (group, memberKind, memberAlg) {
     log.debug("Entering matches().");
     log.debug("Leaving matches().");
-    if (group === 'xml') {
+    if (!isGeneralJoseGroup(group)) {
       return false;
     }
     return spec.family === 'rsa' ? memberKind === 'rsa' : memberAlg === alg;
@@ -3308,7 +3497,7 @@ function allVerificationKeys() {
     // The JWK-shaped generations only: a BBS key (#49 P5) has no JWK and is
     // looked up through bbsGenerations().
     return (one.kind === 'curve' || one.kind === 'pq' ||
-            (one.kind === 'group' && one.group !== 'xml')) &&
+            (one.kind === 'group' && isGeneralJoseGroup(one.group))) &&
            standbyLive(one, now);
   }).map(function (one) {
     return { alg: one.alg, publicJwk: one.publicJwk, role: one.role };
@@ -3325,7 +3514,7 @@ function allVerificationKeysAsync() {
     const now = Date.now();
     return current.concat(standbyOf(keys).filter(function (one) {
       return (one.kind === 'curve' || one.kind === 'pq' ||
-              (one.kind === 'group' && one.group !== 'xml')) &&
+              (one.kind === 'group' && isGeneralJoseGroup(one.group))) &&
              standbyLive(one, now);
     }).map(function (one) {
       return { alg: one.alg, publicJwk: one.publicJwk, role: one.role };
@@ -3355,7 +3544,7 @@ function groupPublishedJwks(keys) {
     return String(pem).replace(/-----[^-]+-----/g, '').replace(/\s+/g, '');
   };
   const out = groupMembersOf(keys).filter(function (one) {
-    return one.group !== 'xml';
+    return isGeneralJoseGroup(one.group);
   }).map(function (one) {
     const jwk = Object.assign({}, one.publicJwk);
     if (!pki || (one.kind === 'pq' && one.pairedSlot)) {
@@ -3380,7 +3569,7 @@ function groupPublishedJwks(keys) {
 function groupJwkEntries(keys) {
   log.debug("Entering groupJwkEntries().");
   const out = groupMembersOf(keys).filter(function (one) {
-    return one.group !== 'xml';
+    return isGeneralJoseGroup(one.group);
   }).map(function (one) {
     return { alg: one.alg, publicJwk: one.publicJwk, role: 'current' };
   });
@@ -3579,6 +3768,7 @@ function plainCopyOf(keys, overrides) {
     vciRequestEncKey: keys.vciRequestEncKey,
     refreshTokenEncKeys: keys.refreshTokenEncKeys,
     requestObjectEncKeys: keys.requestObjectEncKeys,
+    browserDeviceKeys: keys.browserDeviceKeys,
     xmlKey: keys.xmlKey ? {
       privateKeyPem: keys.xmlKey.privateKeyPem,
       selfSignedCertPem: keys.xmlKey.selfSignedCertPem,
@@ -5948,6 +6138,9 @@ module.exports = {
   rotateRefreshTokenKeys: rotateRefreshTokenKeys,
   retiredRefreshTokenKeysFor: retiredRefreshTokenKeysFor,
   requestObjectKeysFor: requestObjectKeysFor,
+  browserDeviceKeysFor: browserDeviceKeysFor,
+  browserDeviceSigner: browserDeviceSigner,
+  browserDeviceVerifiers: browserDeviceVerifiers,
   makeRefreshTokenEncryptionKeys: makeRefreshTokenEncryptionKeys,
   requestEncryptionJwkOf: requestEncryptionJwkOf,
   VCI_REQUEST_ENC_ALG: VCI_REQUEST_ENC_ALG,

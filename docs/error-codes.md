@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3705** of them, in **39** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3712** of them, in **39** subsystems.
 
 ## Where a code appears
 
@@ -79,7 +79,7 @@ is an ordinary outcome.
 * [Risk scoring (`STS-RISK`)](#sts-risk) — 44
 * [Mail (`STS-MAIL`)](#sts-mail) — 39
 * [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 282
-* [Device register (`STS-DEVICE`)](#sts-device) — 38
+* [Device register (`STS-DEVICE`)](#sts-device) — 45
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 74
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 32
 * [Admin console (`STS-ADMIN`)](#sts-admin) — 199
@@ -3469,6 +3469,13 @@ Raised from: common/devices.ts, admin-ui/devices_admin.ts.
 | `STS-DEVICE-0036` | Risk scoring could not set the risk level of the registered device that proved a sign-in: the device register refused or did not store it (#164 phase 5). The sign-in stands and the device keeps the level it had. | none — logged as a warning |
 | `STS-DEVICE-0037` | An issuance was refused by the issuance policy's device-required rule: the realm requires a compliant registered device (devices.requireCompliantDevice) and this did not come from the subject's own (or an application's) compliant, uncompromised device — attested too where devices.compliantDeviceAttested says so (#164 phase 6). | the issuance site's own refusal — access_denied, a SOAP fault, a SAML status — whose description says a compliant registered device is required |
 | `STS-DEVICE-0038` | An issuance was refused by the issuance policy's device-compromised rule: it came from a registered device marked compromised, and the realm refuses one (devices.refuseCompromised, on by default) (#164 phase 6). | the issuance site's own refusal, saying only that authentication failed |
+| `STS-DEVICE-0039` | A compliance status of compliant was refused for a device known only by a remembered browser's cookie (attestation bearer): it holds no key an MDM could have inventoried, so nothing can say it is the device an MDM checked (#265). | 400 on /admin-api/devices/set-compliance, a refused report in the MDM feed's results |
+| `STS-DEVICE-0040` | A remembered browser's cookie could not be read: not a JWE this realm encrypted, a signature that does not verify against the realm's browser device keys, expired, or claims that are not a device token. The cookie is cleared and the browser is treated as unrecognised (#265). | none — the sign-in goes on without a remembered device |
+| `STS-DEVICE-0041` | A remembered browser's cookie carried an OLDER generation than the device holds, outside devices.browserReissueGraceSeconds: the cookie was copied. The device is marked compromised, which ends every session it holds, and risk scoring sees browser-token-replayed (#265). | none — the sign-in goes on, at HIGH risk, without the device |
+| `STS-DEVICE-0042` | A remembered browser's cookie names a device that belongs to somebody other than the person signing in; it is not their device, and risk scoring sees browser-token-foreign (#265). | none |
+| `STS-DEVICE-0043` | A remembered browser's token was not issued: once signed and encrypted it is larger than a cookie may be (about 4 KB) — devices.browserTokenCertificateHeader set to x5c or both is the usual cause (#265). | none — the browser is not remembered, and the page says so |
+| `STS-DEVICE-0044` | Remembering a browser was refused: devices.browserDevices is off in the realm, nobody is signed in, or the person holds their most devices (#265). | 400 on /portal/devices; the sign-in itself goes on |
+| `STS-DEVICE-0045` | A remembered browser's generation and binding could not be written onto its device entry, so the token it holds was not issued again (#265). | none — the browser keeps the token it has |
 
 ## STS-XACML
 

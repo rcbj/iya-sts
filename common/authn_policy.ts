@@ -313,7 +313,32 @@ const FIELDS: PolicyField[] = ([
     label: 'Consecutive failures before a person\'s email factor is turned off',
     what: 'NIST SP 800-63B-4 section 3.2.2 asks for no more than 100. The ' +
           'person, and their administrators, are told, and the person turns ' +
-          'it on again from the portal.' }
+          'it on again from the portal.' },
+  // A REMEMBERED BROWSER MAY STAND IN FOR THE SECOND FACTOR (#265, rcbj):
+  // off by default, for a period an administrator sets per realm (30 days by
+  // default), and never at the admin console or the user portal. It is a
+  // policy of the REALM because it is a statement about which evidence the
+  // realm accepts — the rest of this table's question.
+  { key: 'rememberedBrowserSkipsSecondFactor',
+    attribute: 'stsAuthnRememberedBrowserSkipsSecondFactor', type: 'bool',
+    dflt: false,
+    label: 'A remembered browser may skip the second factor',
+    what: 'OFF BY DEFAULT. On, a person signing in on a browser they chose ' +
+          'to remember is not asked for their second factor again within ' +
+          'the period below of last giving it on that browser. NEVER at the ' +
+          'admin console, the user portal or the protocol debugger; never ' +
+          'for an administrator; never while the sign-in\'s risk is medium ' +
+          'or higher; and the sign-in is then ONE factor to every relying ' +
+          'party — amr ["pwd"] and acr "1", as a password alone — so an ' +
+          'application asking for "mfa" is refused it. The browser is recognised by a ' +
+          'bearer cookie: whoever copies the cookie skips the second factor ' +
+          'too, until the copy is caught.' },
+  { key: 'rememberedBrowserDays', attribute: 'stsAuthnRememberedBrowserDays',
+    type: 'int', dflt: 30, min: 1, max: 400, unit: 'days',
+    label: 'How long a remembered browser skips the second factor',
+    what: 'Counted from the last time the person gave their second factor ' +
+          'on that browser. After it they are asked again, and giving it ' +
+          'starts the period again.' }
 ]);
 
 const FIELD_BY_KEY: Record<string, PolicyField> = {};
@@ -708,6 +733,23 @@ class AuthnPolicy {
     return String(rules.requireSecondFactorForAdministrators);
   }
 
+  // Whether a remembered browser may stand in for the second factor, and for
+  // how many days after the second factor was last given on it (#265). The
+  // one reader that decides with it is `common/browser_devices.ts`'s
+  // `skipsSecondFactor()`, which adds the conditions no realm may relax.
+  rememberedBrowser(profile?: AuthnProfile | null) {
+    const { log } = this.deps;
+    log.debug("Entering AuthnPolicy.rememberedBrowser().");
+    const rules = profile || this.read(DEFAULT_PROFILE);
+    const days = Math.min(400, Math.max(1,
+      Number(rules.rememberedBrowserDays) || 30));
+    log.debug("Leaving AuthnPolicy.rememberedBrowser().");
+    return {
+      skipsSecondFactor: rules.rememberedBrowserSkipsSecondFactor === true,
+      days: days
+    };
+  }
+
   // The email mechanisms' numbers, with the ten-minute bound applied again
   // here — a hand-edited entry is range-checked by `read()`, and this is the
   // line every emailed secret's lifetime is computed from.
@@ -964,6 +1006,7 @@ export = {
   requireSecondFactorForAdministrators:
     slot.forward('requireSecondFactorForAdministrators'),
   emailSettings: slot.forward('emailSettings'),
+  rememberedBrowser: slot.forward('rememberedBrowser'),
   describe: slot.forward('describe'),
   enforced: slot.forward('enforced')
 };

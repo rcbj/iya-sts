@@ -173,6 +173,18 @@ const SIGNALS: Record<string, Json> = {
   'compromised-device': { factor: 50,
     what: 'the registered device that proved the sign-in is marked ' +
           'compromised' },
+  // A REMEMBERED BROWSER'S COOKIE (#265) — a bearer token, so what is odd
+  // about it is evidence. A copy is as bad as a compromised device (it made
+  // one); somebody else's cookie, or the cookie in another browser than it
+  // was bound to, is doubled like an unregistered device.
+  'browser-token-replayed': { factor: 50,
+    what: 'a remembered browser presented an older token than its device ' +
+          'holds: the cookie was copied, and the device is now compromised' },
+  'browser-token-foreign': { factor: 2,
+    what: 'the browser carries another person\'s remembered-browser cookie' },
+  'browser-context-changed': { factor: 2,
+    what: 'a remembered browser\'s cookie arrived from a different browser ' +
+          'or operating system than it was bound to' },
   'non-compliant-device': { factor: 3,
     what: 'the registered device that proved the sign-in is not compliant' },
   'unregistered-device': { factor: 2,
@@ -1120,10 +1132,21 @@ class RiskEngine {
     const username = String(input.username || '');
     const own = RiskEngine.ownDevice(registered, username);
     const compromised = !!registered && registered.status === 'compromised';
-    if (compromised) {
+    const token = registered && registered.via === 'browser-cookie'
+      ? (registered.browserToken || {}) : null;
+    if (token && token.replayed) {
+      // The copy is what compromised it: one signal, not two for one act.
+      add('browser-token-replayed', String(registered.id));
+    } else if (compromised) {
       add('compromised-device', String(registered.id));
     } else if (registered && registered.compliance === 'not-compliant') {
       add('non-compliant-device', String(registered.id));
+    }
+    if (token && token.foreign) {
+      add('browser-token-foreign', String(registered.id));
+    }
+    if (token && token.contextChanged && !token.replayed) {
+      add('browser-context-changed', String(registered.id));
     }
     if (!own && enough && this.expectsDevice(username)) {
       add('unregistered-device', registered

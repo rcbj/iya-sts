@@ -8878,6 +8878,50 @@ each argued there:
   * `listForOwner()` still walks. It wants every device an owner has, and
     its callers are pages and a Native SSO grant.
 
+### Remembered browsers (#265, 2026-09-26): `browser_devices.ts`
+
+Registration that works in every browser. The mechanisms above need a key a
+browser will not give a web page. **A remembered browser is weaker, and every
+surface says so.** It is a device whose only credential is a BEARER cookie. The
+design, and the user-facing account, are in `docs/devices.md` under
+*Remembered browsers*. rcbj's decisions:
+* an HttpOnly cookie;
+* an opt-in "Remember this browser" checkbox;
+* skipping the second factor only by realm policy, never at the console,
+  the portal or the debugger.
+
+What this directory owns:
+
+* **THE TOKEN.** A JWS (`typ: browser-device+jwt`, ES256) nested in a JWE
+  (`ECDH-ES+A256KW`, `A256GCM`), to the realm's own encryption key. The
+  claims are the device, the owner and a GENERATION. The keys are a
+  key-set member of their own (`browserDeviceKeys`, the RFC 9101 keys'
+  path member for member: serialise, `enriches()`, `privateMaterialFor().bd`,
+  backfill). In a `hybrid-groups` realm the `browser-devices` signer group
+  signs, with its ES256 key only: a cookie holds about 4 KB, and no
+  post-quantum signature fits in that.
+* **NEITHER KIND OF KEY IS A GENERAL JOSE KEY.** `helpers.browserDeviceSigner()`
+  never falls back to a per-algorithm key. `isGeneralJoseGroup()` keeps the
+  group out of the JWKS and out of every verifier of this realm's ordinary
+  JWTs, as the XML group is kept out. Otherwise one kind of token could stand
+  in for another.
+* **COPY DETECTION IS THE GENERATION.** Every sign-in reissues the token at
+  gen+1. A token one generation old is accepted within
+  `devices.browserReissueGraceSeconds`. Anything else is a copy, and the
+  device is marked COMPROMISED (`STS-DEVICE-0041`, CAEP and RISC through
+  `setStatus()`). The next sign-in clears the cookie so the victim is not
+  refused on it again.
+* **ATTESTATION `bearer`** (a level below `self-asserted`). Such a device is
+  never compliant (`STS-DEVICE-0039`) and never earns a lowering risk signal.
+  Three signals raise risk instead (`risk/CLAUDE.md`).
+* **THE SKIP** is `skipsSecondFactor()`, asked by `authn.ts` only after
+  every other reason to ask has been ruled out. The session is then ONE
+  factor: `amr ["pwd"]`, acr "1".
+
+`tests/browser_devices.js` covers it end to end. Its first run found that the
+signer passed `kid` where `signJws()` reads `keyid`, so no cookie had ever
+been readable.
+
 ## Several nodes: second factors, links, enrollment credentials and the bootstrap (2026-09-14, #46)
 
 Issue #46 sections 2 and 8. Every value here was spent by reading an entry (or
