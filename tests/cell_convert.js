@@ -29,6 +29,13 @@
 //      each with its code, and nothing changes.
 //   6. The SQL is built from the table map: every write an upsert on the
 //      primary key, timestamps as UTC text, and the driver's dial options.
+//   7. The one-off task it runs as in AWS (deploy/aws, the `cell-convert`
+//      container): no TLS files, STS_CLUSTER_NODE_NAME=convert, and a risk
+//      upload directory with no volume behind it. The command line, run as
+//      that task in a child process against a database that is not there,
+//      binds no listener, creates no risk upload directory, and fails with
+//      its own code — it reaches the store only through its own pool, so it
+//      joins no cluster and holds no claim.
 // ---------------------------------------------------------------------------
 
 delete process.env.CONFIG_FILE;
@@ -621,6 +628,72 @@ async function statements(t) {
   log.debug("Leaving statements().");
 }
 
+// 7. The AWS one-off task's environment. A child process, because the
+// command line reads its settings at load; a preload records any listen()
+// and any directory created, and the database refuses the connection.
+async function asTheConvertTask(t) {
+  log.debug("Entering asTheConvertTask().");
+  const fs = require('fs');
+  const os = require('os');
+  const path = require('path');
+  const childProcess = require('child_process');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cell-convert-task-'));
+  const marks = path.join(dir, 'marks.log');
+  const hook = path.join(dir, 'hook.js');
+  fs.writeFileSync(hook, [
+    '"use strict";',
+    'const fs = require("fs");',
+    'const net = require("net");',
+    'const mark = function (what) {',
+    '  fs.appendFileSync(' + JSON.stringify(marks) + ', what + "\\n");',
+    '};',
+    'const listen = net.Server.prototype.listen;',
+    'net.Server.prototype.listen = function () {',
+    '  mark("listen " + JSON.stringify(arguments[0]));',
+    '  return listen.apply(this, arguments);',
+    '};',
+    'const mkdir = fs.mkdirSync;',
+    'fs.mkdirSync = function (p) {',
+    '  mark("mkdir " + p);',
+    '  return mkdir.apply(this, arguments);',
+    '};'
+  ].join('\n'));
+  const kek = path.join(dir, 'kek');
+  fs.writeFileSync(kek, require('crypto').randomBytes(32).toString('hex'));
+  const riskDir = path.join(dir, 'risk-uploads-not-mounted');
+  const env = Object.assign({}, process.env, {
+    STS_MODE: 'product', STS_PERSISTENCE_MODE: 'postgres',
+    STS_KEYS_SOURCE: 'persisted', STS_KEYS_KEK_PROVIDER: 'file',
+    STS_KEYS_KEK_REF: kek, STS_CELL_ID: 'usw2', STS_CELL_JURISDICTION: 'us',
+    STS_PUBLIC_BASE_URL: 'https://sts.example.test',
+    STS_DATABASE_URL: 'postgres://sts_app:x@127.0.0.1:1/sts',
+    STS_GLOBAL_DATABASE_URL: 'postgres://sts_app:x@127.0.0.1:1/sts',
+    STS_DATABASE_PASSWORD_PROVIDER: 'none',
+    STS_GLOBAL_DATABASE_PASSWORD_PROVIDER: 'none',
+    STS_CLUSTER_NODE_NAME: 'convert', STS_RISK_UPLOAD_DIRECTORY: riskDir,
+    NODE_OPTIONS: '--require ' + hook
+  });
+  delete env.CONFIG_FILE;
+  delete env.STS_TLS_CERT_FILE;
+  delete env.STS_TLS_KEY_FILE;
+  const run = childProcess.spawnSync(process.execPath,
+    [path.join(__dirname, '..', 'persistence', 'cell_convert.js'),
+     '--dry-run'], { env: env, encoding: 'utf8', timeout: 120000 });
+  const said = String(run.stdout || '') + String(run.stderr || '');
+  const marked = fs.existsSync(marks) ? fs.readFileSync(marks, 'utf8') : '';
+  t.equal(run.status, 1, 'as the convert task, against no database, the ' +
+          'tool exits 1', said.slice(-600));
+  t.check(/STS-CELL-0208/.test(said), 'with its own code for a database ' +
+          'it could not read', said.slice(-600));
+  t.check(!/^listen /m.test(marked), 'it binds no listener', marked);
+  t.check(!fs.existsSync(riskDir) && marked.indexOf(riskDir) < 0,
+          'and never touches the risk upload directory', marked);
+  t.check(!/STS-TLS-|STS_TLS_CERT_FILE/.test(said),
+          'and asks for no TLS file');
+  fs.rmSync(dir, { recursive: true, force: true });
+  log.debug("Leaving asTheConvertTask().");
+}
+
 async function run(t) {
   log.debug("Entering run().");
   const converted = await split(t);
@@ -629,6 +702,7 @@ async function run(t) {
   await failures(t);
   await refusals(t);
   await statements(t);
+  await asTheConvertTask(t);
   log.debug("Leaving run().");
 }
 

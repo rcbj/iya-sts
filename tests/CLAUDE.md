@@ -3628,6 +3628,52 @@ containers. It writes the same `report/cells/` as an entry-A run. The
 default, `a`, is what the mode always did. The service log of cell B is
 `logs/00-mock-sts-service-cell-b.log`.
 
+### The conversion rehearsal: a single-cell store becomes cell A (2026-09-28)
+
+**`tests/tools/rehearse-cell-conversion.sh [--no-build] [--keep]` is NOT a
+job and no launcher runs it**: it rehearses `persistence/cell_convert.js`
+(`persistence/CLAUDE.md`, *Converting a single-cell store*) against real
+PostgreSQL, the way `testidp` became cell `usw2` of `testidpna`, on the
+`cells` mode's own compose files:
+
+1. It brings up the base stack's `sts` as a single-cell service with this
+   mode's settings (product, postgres, no workers) and seeds it through
+   `tests/tools/rehearse-cell-conversion.js seed`, which runs in the tests
+   image: a realm, clients, people, a group, sign-ins good and bad and a
+   SYNTHETIC operator deny list. It counts the people and every `sts_risk_*`
+   table in SQL.
+2. It stops `sts`, and the cells layer's `postgres-global` and cell keys
+   come up beside the database it left. That database has no volume and
+   lives in its container, which is never recreated; the script checks.
+3. It runs the tool as a one-off container of the cells layer's `sts`, which
+   is cell A's own definition: a dry run and a re-run must change nothing
+   (table digests in both databases), and the conversion must keep the
+   risk counts, people and key rows exactly.
+4. It starts both cells and runs `verify` with the trust anchor saved in
+   step 1: every key id recorded still published at both cells (the set
+   may GROW — a cell pre-publishes a next post-quantum generation, as a
+   restart would) and a pre-conversion ID token verifying at both, every
+   person signing in at A, one person per realm starting at B and
+   restarted at A through the backfilled index, the risk history, and
+   nobody homed at B.
+
+The tool runs as the AWS one-off task runs it (`STS_CLUSTER_NODE_NAME=
+convert`, no TLS files, a risk upload directory with nothing behind it), and
+the cluster tables of both databases — membership, leases, claims, change
+readers, the change log — are digested either side of its three runs and
+must not move. **Its first run found a cells defect**: every cell but the
+first bootstrapped a second `admin` of its own (STS-CELL-0020), fixed in
+`server.js`'s `bootstrapHomedElsewhere()`; the "nobody homed at B" check
+holds it.
+
+**It is isolated the way a second launcher run must be**: project `f98c`,
+subnet `172.30.97.0/24`, every `*_CONTAINER_NAME` prefixed `f98c-`
+(`STS_TEST_POSTGRES_CONTAINER_NAME`, the mail catcher's two and the PEP's
+included, which `run-tests.sh` leaves at their defaults), images tagged
+`f98c`. It refuses to start beside an `f98c-*` container or a network on
+that subnet, and tears down only its own project. Its record is
+`tests/report/f98c-rehearsal/`.
+
 ## APPLICATION CREDENTIALS: THE PAIR, AND THE SPLIT (2026-09-13)
 
 | File | Where | What it can see |
