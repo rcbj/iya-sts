@@ -1630,6 +1630,7 @@ const CODES = [
     summary: 'A federation partner\'s sign-out could not reach every cell; ' +
       'sessions held in a cell not reached last until they end by ' +
       'themselves, and the partner is told where its protocol allows.',
+    spec: '' },
   // GNAP between cells (#98, group D: 0160-0179).
   { code: 'STS-CELL-0160',
     summary: 'A GNAP continuation for a grant that moved to another cell ' +
