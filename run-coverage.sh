@@ -494,6 +494,9 @@ else
     # certificate there and names the same path in a `…CaFile` setting.
     -e OUTBOUND_TEST_CA_DIR=/tmp/sts-test-ca
     -e OUTBOUND_TEST_CA_FILE=/tmp/sts-test-ca/outbound-test-ca.crt
+    # AND THE ATTRIBUTE SOURCES' DATABASE (#94): the compose file names the
+    # stack's postgres, which this run does not start; empty, the job skips.
+    -e STS_TEST_ATTRIBUTE_DB_URL=
     # THE MEMORY MODE'S KEYS (2026-09-27): the throwaway service is a
     # development process with no key-encryption key, and `keys.source` left
     # at `auto` follows the AMBIENT realm's mode — so in a product-mode realm a

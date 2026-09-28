@@ -46,6 +46,7 @@
 // nothing that registers one. `ldap_server.js` fills its directory slot.
 // ---------------------------------------------------------------------------
 
+import nodeCrypto = require('crypto');
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 import config = require('../common/config');
@@ -573,7 +574,13 @@ class AttributeSources {
     const { log, drivers, now } = this.deps;
     log.debug("Entering AttributeSources.lookup(). " + source.id);
     const realmId = realms.current().id;
-    const cacheKey = realmId + '\n' + source.id + '\n' + key;
+    // THE DEFINITION IS IN THE KEY: forget() empties this process's rows
+    // when a source changes, and every OTHER process (a request worker,
+    // another node) holds its own — so a row read under the old definition
+    // must not be reachable under the new one anywhere.
+    const cacheKey = realmId + '\n' + source.id + '\n' + key + '\n' +
+      nodeCrypto.createHash('sha256').update(JSON.stringify(source))
+        .digest('base64url');
     const held = cached ? lookups.get(cacheKey) : undefined;
     if (held && now() - held.at <= CACHE_MS) {
       lookupCount.hit();

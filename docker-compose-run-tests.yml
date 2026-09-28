@@ -1121,6 +1121,13 @@ services:
       # volume, mounted into `sts` at the same place.
       - OUTBOUND_TEST_CA_DIR=${OUTBOUND_TEST_CA_DIR:-/run/sts-test}
       - OUTBOUND_TEST_CA_FILE=${OUTBOUND_TEST_CA_FILE:-/run/sts-test/outbound-test-ca.crt}
+      # THE DATABASE AN ATTRIBUTE SOURCE IS TESTED AGAINST (#94): the
+      # stack's own postgres, as its superuser, which
+      # `tests/vendored/sts_attribute_sources.js` creates a database, a
+      # read-only role and a table of its own in — never the service's
+      # schema. `-` rather than `:-`, so an EMPTY value (./run-coverage.sh,
+      # which has no postgres) skips the job instead of dialling nothing.
+      - STS_TEST_ATTRIBUTE_DB_URL=${STS_TEST_ATTRIBUTE_DB_URL-postgres://sts:sts@postgres:5432/sts}
       # THE MAIL CATCHER (#63): where `tests/vendored/sts_mail.js` reads what
       # arrived, and where it tells the service to deliver — the host, the
       # port and the catcher's certificate AS THE SERVICE SEES IT.

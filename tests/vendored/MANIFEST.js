@@ -1136,6 +1136,12 @@ const JOBS = [
   // A person's attributes set, added to and removed from through
   // /admin-api (#228), in a realm of its own.
   { file: 'sts_person_attributes.js',    browser: false, local: true },
+  // Attribute sources against the stack's real PostgreSQL (#94): a
+  // database, a read-only role and a table of the job's own, TLS verified
+  // against the source's own chain, the password read from a shared file,
+  // a sign-in carrying the attribute claim, and refuse on failure. Skips
+  // without STS_TEST_ATTRIBUTE_DB_URL or a shared directory.
+  { file: 'sts_attribute_sources.js',    browser: false, local: true },
   // OAuth 2.0 Attestation-Based Client Authentication (#229): a client
   // attester made at run time, the challenge endpoint, PAR, the code and
   // refresh token bound to the client instance, the DPoP combined mode and
