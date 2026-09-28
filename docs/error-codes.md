@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3765** of them, in **40** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3773** of them, in **40** subsystems.
 
 ## Where a code appears
 
@@ -55,7 +55,7 @@ is an ordinary outcome.
 * [Worker pools (`STS-WORKER`)](#sts-worker) — 43
 * [Persistence and coordination (`STS-STORE`)](#sts-store) — 63
 * [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 28
-* [Cells and residency (`STS-CELL`)](#sts-cell) — 19
+* [Cells and residency (`STS-CELL`)](#sts-cell) — 27
 * [Scheduler (`STS-SCHED`)](#sts-sched) — 16
 * [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 79
 * [Certificate authority (`STS-PKI`)](#sts-pki) — 204
@@ -383,6 +383,7 @@ Raised from: common/cells.ts, common/cell_*.ts, persistence/tiers.js, persistenc
 | `STS-CELL-0002` | cells.id is set and persistence.globalDatabaseUrl is empty, or the store is not postgres; a cell keeps its global rows in the global database, so the service does not start. | — |
 | `STS-CELL-0003` | A multi-cell deployment in product mode has no cell key-encryption key (keys.cellKekProvider is none), so one cell's rows would open in every other; the service does not start. | — |
 | `STS-CELL-0004` | A service deployed as cells does not persist its signing keys or has no operator key-encryption key, so its cells would sign with different keys and could not open each other's global rows; the service does not start. | — |
+| `STS-CELL-0005` | A service deployed as cells has no global.publicBaseUrl, so a cell would build addresses from the name a request reached it by; the service does not start. | — |
 | `STS-CELL-0010` | The global tier database password was read and is empty; the service does not start. | — |
 | `STS-CELL-0011` | The cell key-encryption key has no location of its own, or names the service key's; it has no fallback, so the service does not start. | — |
 | `STS-CELL-0012` | The cell key-encryption key is the same key as the service key-encryption key; the service does not start. | — |
@@ -398,6 +399,13 @@ Raised from: common/cells.ts, common/cell_*.ts, persistence/tiers.js, persistenc
 | `STS-CELL-0036` | An inter-cell operation failed, at this cell for another's call or at another cell for this one's. | — |
 | `STS-CELL-0040` | The routing index could not be read while finding a person's home cell; the request is served here as if the person were unknown. | — |
 | `STS-CELL-0041` | A pushed authorization request could not be handed to the home cell of a flow restarting there; the flow restarts without it. | — |
+| `STS-CELL-0050` | A change made in this cell to a projected person could not be sent to their home cell; it is held here only until the session ends. | — |
+| `STS-CELL-0051` | The cells holding a projection of a changed person could not be told; each finds out at its next check against home. | — |
+| `STS-CELL-0052` | A session could not be exported to the cell a relayed request came from; it stays at home and the browser stays pinned there. | — |
+| `STS-CELL-0053` | What this cell held for a person homed elsewhere could not be ended when their home said to. | — |
+| `STS-CELL-0054` | Another cell sent a change to an attribute of a person homed here that no other cell may write (a credential, the name, the entryUUID, memberOf); refused. | — |
+| `STS-CELL-0055` | A cell holding a person's exported session could not be told to end it; it finds out at its next check against home. | — |
+| `STS-CELL-0056` | The home cell of a projected person could not be reached to confirm the account; refused fail-closed, or allowed within cells.failOpenGraceS when cells.homeUnreachable is fail-open. | — |
 
 ## STS-SCHED
 

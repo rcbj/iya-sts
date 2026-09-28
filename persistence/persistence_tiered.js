@@ -155,6 +155,13 @@ function create(options) {
   const indexed = new Map();
   let conflicts = 0;
   let lastConflict = '';
+  // WHAT `common/cell_sessions.ts` IS TOLD (#98 D4): a write to a PROJECTED
+  // entry, which is sent home and never written here, and a person homed here
+  // written, which may have to reach the cells holding a projection of them.
+  // Installed late, by that module, because it is built long after this
+  // driver; until then a projected row is still never written here.
+  let cellHooks = { projectionWrite: null, personWritten: null };
+  let projectionWrites = 0;
 
   function idOf(realm, key) {
     log.debug("Entering idOf().");
@@ -176,8 +183,16 @@ function create(options) {
     const toCell = { upserts: [], deletes: [],
                      removedRealms: change.removedRealms || [] };
     const groups = new Map();
+    const projected = [];
     (change.upserts || []).forEach(function (row) {
       const attrs = (row.entry && row.entry.attributes) || {};
+      // A PROJECTED PERSON IS NEVER WRITTEN HERE (#98): their home holds the
+      // entry, and a change made here to the copy is sent there.
+      if (String((row.entry && row.entry.origin) || '')
+            .indexOf('projection') === 0) {
+        projected.push(row);
+        return;
+      }
       const tier = tiers.directoryTierOf(row.key, attrs);
       if (tier === 'global') {
         toGlobal.upserts.push(row);
@@ -227,7 +242,8 @@ function create(options) {
       }
     });
     log.debug("Leaving splitChange().");
-    return { toGlobal: toGlobal, toCell: toCell, groups: groups };
+    return { toGlobal: toGlobal, toCell: toCell, groups: groups,
+             projected: projected };
   }
 
   // The outcomes of the two halves of a group, as one outcome about the
@@ -379,6 +395,40 @@ function create(options) {
     });
   }
 
+  // The two hooks, after a flush landed. Neither is awaited — each owns its
+  // own retries and its own failures (`cell_sessions.ts`), and a flush must
+  // not wait on another region.
+  function tellCellHooks(split) {
+    log.debug("Entering tellCellHooks().");
+    if (typeof cellHooks.projectionWrite === 'function') {
+      split.projected.forEach(function (row) {
+        projectionWrites += 1;
+        try {
+          cellHooks.projectionWrite(row.realm, row.key, row.entry, row.base);
+        } catch (e) {
+          log.warn(errorCodes.tag('STS-CELL-0050') + 'cells: a write to a ' +
+                   'projected entry could not be sent home: ' +
+                   ((e && e.message) || e));
+        }
+      });
+    }
+    if (typeof cellHooks.personWritten === 'function') {
+      (split.toCell.upserts || []).forEach(function (row) {
+        if (!tiers.isPersonDn(row.key)) {
+          return;
+        }
+        try {
+          cellHooks.personWritten(row.realm, row.key, row.entry);
+        } catch (e) {
+          log.warn(errorCodes.tag('STS-CELL-0051') + 'cells: the cells ' +
+                   'holding a projection of a changed person could not be ' +
+                   'told: ' + ((e && e.message) || e));
+        }
+      });
+    }
+    log.debug("Leaving tellCellHooks().");
+  }
+
   // Every person a load or read brought in, recorded as already indexed —
   // they were claimed when they were created, in this cell or before a
   // restart of it.
@@ -527,6 +577,7 @@ function create(options) {
     return globalDriver.saveDirectory(split.toGlobal).then(function (g) {
       return cellDriver.saveDirectory(split.toCell).then(function (c) {
         return indexPeople(split.toCell).then(function () {
+          tellCellHooks(split);
           return { outcomes: joinOutcomes(split, g && g.outcomes,
                                           c && c.outcomes) };
         });
@@ -702,7 +753,19 @@ function create(options) {
     log.debug("Entering tiered routingStatus().");
     log.debug("Leaving tiered routingStatus().");
     return { indexed: indexed.size, conflicts: conflicts,
-             lastConflict: lastConflict || null };
+             lastConflict: lastConflict || null,
+             projectionWrites: projectionWrites };
+  };
+  // Installed by `common/cell_sessions.ts` (#98 D4).
+  driver.setCellHooks = function (hooks) {
+    log.debug("Entering tiered setCellHooks().");
+    cellHooks = {
+      projectionWrite: hooks && typeof hooks.projectionWrite === 'function'
+        ? hooks.projectionWrite : null,
+      personWritten: hooks && typeof hooks.personWritten === 'function'
+        ? hooks.personWritten : null
+    };
+    log.debug("Leaving tiered setCellHooks().");
   };
 
   log.debug("Leaving create().");

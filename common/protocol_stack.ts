@@ -1468,6 +1468,14 @@ class ProtocolStack {
     this.build('oauth-oidc/oauth_grant_signals',
                require('../oauth-oidc/oauth_grant_signals'),
                'OAuthGrantSignals');
+    // 23b-vii. A SESSION HELD AWAY FROM ITS PERSON'S HOME (#98): a library,
+    // loaded by `app.js` for its middleware long before this line, whose
+    // install() registers its operations on the inter-cell channel and no
+    // route. After `ssf/ssf` and the grant signals, beside which it belongs
+    // for a reader — everything it reaches (the session store, the directory,
+    // the sign-out) it reaches lazily, and in single-cell mode no operation it
+    // registers is ever called.
+    require('./cell_sessions').install();
     // 23b-ii. SIGNING KEY ROTATION (#42, 2026-09-22): a library that registers
     // its two scheduler jobs when built and no route. After `ssf/ssf`, whose
     // signingKeyRotated() it calls (lazily, so the order is for a reader).

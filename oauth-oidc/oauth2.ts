@@ -114,6 +114,9 @@ import stsCrypto = require('../common/crypto');
 import cellLocator = require('../common/cell_locator');
 // WHICH CELL SERVES A BACK-CHANNEL REQUEST (#98 D10). A library.
 import cellPlacement = require('../common/cell_placement');
+// HOME'S AUTHORITY OVER A PERSON WHOSE SESSION IS HELD HERE (#98 D6). A
+// library.
+import cellSessions = require('../common/cell_sessions');
 import app = require('../common/app');
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
@@ -13324,6 +13327,17 @@ class OAuth2Server {
                                'The refresh token is not ' +
                                'valid: ' + e.message);
       }
+      // A PERSON HOMED IN ANOTHER CELL IS CONFIRMED THERE FIRST (#98 D6):
+      // their session was exported here, and a refresh is one of the acts
+      // home is always asked about — a disable or a password change made
+      // there must stop it here. Fail-closed by default.
+      const homeSays = await cellSessions.confirmSubject(
+        realms.currentId(), String(claims.username || ''), true);
+      if (!homeSays.ok) {
+        errorCodes.mark(res, 'STS-CELL-0056');
+        log.debug("Leaving OAuth2Server.tokenGrant(). Home refused.");
+        return self.oauthError(res, 400, 'invalid_grant', homeSays.why);
+      }
       // RFC 9700 section 2.2.2, ABOVE the revocation check and deliberately so.
       // Rotation revokes the token it retires, so a replayed one is also a
       // revoked one — and answering it with "the refresh token was revoked"
@@ -14639,6 +14653,17 @@ class OAuth2Server {
         log.debug("Leaving OAuth2Server.tokenGrant(). The subject_token is " +
                   "not its declared type.");
         return self.oauthError(res, 400, 'invalid_request', subjectMismatch);
+      }
+      // A PERSON HOMED IN ANOTHER CELL IS CONFIRMED THERE FIRST (#98 D6),
+      // for the refresh grant's reason.
+      if (subjectVerified && subject && subject.username) {
+        const homeSays = await cellSessions.confirmSubject(
+          realms.currentId(), String(subject.username), true);
+        if (!homeSays.ok) {
+          errorCodes.mark(res, 'STS-CELL-0056');
+          log.debug("Leaving OAuth2Server.tokenGrant(). Home refused.");
+          return self.oauthError(res, 400, 'invalid_grant', homeSays.why);
+        }
       }
       // Key Binding section 7 (#150), whether or not it verified: a token
       // that names a key is held to it.

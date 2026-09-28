@@ -88,6 +88,13 @@ class CellRouting {
   // lazily for rule 3e's reason.
   private residentHere(realmId: string, kind: string, value: string): boolean {
     log.debug("Entering CellRouting.residentHere().");
+    // A PROJECTION IS NOT A RESIDENT (#98 D4): a person whose session was
+    // exported here is in the directory and is homed elsewhere, and a
+    // sign-in or a step-up for them still restarts at home.
+    if (require('./cell_sessions').isProjected(realmId, kind, value)) {
+      log.debug("Leaving CellRouting.residentHere(). A projection.");
+      return false;
+    }
     let found = false;
     try {
       const helpers = require('./helpers');

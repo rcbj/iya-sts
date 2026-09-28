@@ -1766,6 +1766,16 @@ function checkCells(chosen) {
                     'persistence.globalDatabaseReadUrl to this cell\'s ' +
                     'replica.');
   }
+  // EVERY ADDRESS THE SERVICE PUBLISHES IS THE SERVICE'S (STS-CELL-0005):
+  // a relayed request reaches the owning cell under the peer's private name,
+  // so an address built from the request would name a cell — which nothing
+  // here may ever publish.
+  if (!String(config.value('global.publicBaseUrl') || '').trim()) {
+    throw new Error(errorCodes.tag('STS-CELL-0005') + 'cells.id is "' +
+                    cells.id() + '" and global.publicBaseUrl is empty. Every ' +
+                    'issuer and address a cell publishes must be the ' +
+                    'service\'s public name, whichever cell built it.');
+  }
   if (!keystore.persists() || !secrets.configuredFor(secrets.KEK)) {
     throw new Error(errorCodes.tag('STS-CELL-0004') + 'cells.id is "' +
                     cells.id() + '" and ' + (!keystore.persists()
@@ -1960,6 +1970,23 @@ function openStore(chosen, resolvedUrl, globalUrls) {
           return keystore.keyedDigest('cell-routing', String(realmId) +
                                       '\n' + String(kind) + '\n' +
                                       String(value));
+        }
+      });
+      // WHAT A CELL'S SESSIONS MODULE IS TOLD (#98 D4): reached lazily at
+      // each call, because `common/cell_sessions.ts` is built with the
+      // protocol stack, long after this store is opened.
+      driver.setCellHooks({
+        projectionWrite: function (realmId, key, entry, base) {
+          log.debug("Entering projectionWrite().");
+          require('../common/cell_sessions').onProjectionWrite(realmId, key,
+                                                               entry, base);
+          log.debug("Leaving projectionWrite().");
+        },
+        personWritten: function (realmId, key, entry) {
+          log.debug("Entering personWritten().");
+          require('../common/cell_sessions').onPersonWritten(realmId, key,
+                                                             entry);
+          log.debug("Leaving personWritten().");
         }
       });
       log.info('persistence: this is cell "' + cells.id() + '" (' +
@@ -3205,6 +3232,75 @@ realms.onRetire({
  * coordinates several processes through its change log.
  * @namespace
  */
+// ---------------------------------------------------------------------------
+// A PROJECTED ENTRY (#98 D4, D9): a credential-free copy of a person homed in
+// another cell, held here for as long as a session of theirs is, and put into
+// the in-memory directory WITHOUT becoming something this store writes. It
+// goes in as a replicated entry does — `restoring` set, so no journal entry —
+// and the shadow is set to it, so no flush diffs it into a row. A later
+// LOCAL write to it (a consent recorded, say) does diff, and the tiered
+// driver sends that home instead of writing it here (`projectionWrite`).
+// `common/cell_sessions.ts` is the one caller.
+// ---------------------------------------------------------------------------
+/**
+ * Puts a projected entry into the directory without persisting it.
+ *
+ * @param realmId - the realm
+ * @param key - the entry's normalised DN
+ * @param row - `{ dn, attributes, origin }`
+ * @returns true when it was applied
+ */
+function materializeEntry(realmId, key, row) {
+  log.debug("Entering materializeEntry().");
+  if (!directory || typeof directory.applyEntry !== 'function') {
+    log.debug("Leaving materializeEntry(). No directory.");
+    return false;
+  }
+  const was = restoring;
+  restoring = true;
+  try {
+    directory.applyEntry(realmId, key, row);
+  } finally {
+    restoring = was;
+  }
+  const rows = shadow.get(realmId) || new Map();
+  const stored = entryAt(realmId, key);
+  if (stored) {
+    rows.set(key, JSON.stringify(stored));
+  }
+  shadow.set(realmId, rows);
+  log.debug("Leaving materializeEntry().");
+  return true;
+}
+
+/**
+ * Takes a projected entry out of the directory without writing a delete.
+ *
+ * @param realmId - the realm
+ * @param key - the entry's normalised DN
+ * @returns true when it was removed
+ */
+function dematerializeEntry(realmId, key) {
+  log.debug("Entering dematerializeEntry().");
+  if (!directory || typeof directory.removeEntry !== 'function') {
+    log.debug("Leaving dematerializeEntry(). No directory.");
+    return false;
+  }
+  const was = restoring;
+  restoring = true;
+  try {
+    directory.removeEntry(realmId, key);
+  } finally {
+    restoring = was;
+  }
+  const rows = shadow.get(realmId);
+  if (rows) {
+    rows.delete(key);
+  }
+  log.debug("Leaving dematerializeEntry().");
+  return true;
+}
+
 // THE STORE ITSELF, for a module that asks a question of a driver method no
 // wrapper here exposes — the routing index (`common/cell_routing.ts`) and
 // `/admin/cells` (#98). Null until `start()` has opened one.
@@ -3216,6 +3312,8 @@ function currentDriver() {
 
 module.exports = {
   currentDriver: currentDriver,
+  materializeEntry: materializeEntry,
+  dematerializeEntry: dematerializeEntry,
   // FOR `tests/database_password.js` ONLY, and it is worth saying why a
   // private function is exported at all. The claim this feature makes is that
   // a password read from a secret store REACHES THE CONNECTION STRING — and

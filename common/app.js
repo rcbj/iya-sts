@@ -425,6 +425,15 @@ app.use(requestPool.middleware({ enterRealm: enterRealm }));
 app.use(clusterBarrier.middleware());
 
 // ---------------------------------------------------------------------------
+// A SESSION EXPORTED TO THE CELL A TRAVELLER IS REACHING (#98 D4), where the
+// transfer policy permits holding it there. Below the barrier, in the process
+// that serves the request, because it reads the session store; a no-op for
+// everything but a request another cell relayed here.
+// `common/cell_sessions.ts` argues it.
+// ---------------------------------------------------------------------------
+app.use(require('./cell_sessions').middleware());
+
+// ---------------------------------------------------------------------------
 // AND THE REQUEST'S REALM'S KEY SET, MADE OFF THE EVENT LOOP BEFORE A HANDLER
 // READS IT (2026-09-14, #46).
 //

@@ -1494,6 +1494,11 @@ const CODES = [
       'different keys and could not open each other\'s global rows; the ' +
       'service does not start.',
     spec: '' },
+  { code: 'STS-CELL-0005',
+    summary: 'A service deployed as cells has no global.publicBaseUrl, so a ' +
+      'cell would build addresses from the name a request reached it by; ' +
+      'the service does not start.',
+    spec: '' },
   { code: 'STS-CELL-0010',
     summary: 'The global tier database password was read and is empty; the ' +
       'service does not start.',
@@ -1562,6 +1567,37 @@ const CODES = [
   { code: 'STS-CELL-0041',
     summary: 'A pushed authorization request could not be handed to the home ' +
       'cell of a flow restarting there; the flow restarts without it.',
+    spec: '' },
+  { code: 'STS-CELL-0050',
+    summary: 'A change made in this cell to a projected person could not be ' +
+      'sent to their home cell; it is held here only until the session ' +
+      'ends.',
+    spec: '' },
+  { code: 'STS-CELL-0051',
+    summary: 'The cells holding a projection of a changed person could not ' +
+      'be told; each finds out at its next check against home.',
+    spec: '' },
+  { code: 'STS-CELL-0052',
+    summary: 'A session could not be exported to the cell a relayed request ' +
+      'came from; it stays at home and the browser stays pinned there.',
+    spec: '' },
+  { code: 'STS-CELL-0053',
+    summary: 'What this cell held for a person homed elsewhere could not be ' +
+      'ended when their home said to.',
+    spec: '' },
+  { code: 'STS-CELL-0054',
+    summary: 'Another cell sent a change to an attribute of a person homed ' +
+      'here that no other cell may write (a credential, the name, the ' +
+      'entryUUID, memberOf); refused.',
+    spec: '' },
+  { code: 'STS-CELL-0055',
+    summary: 'A cell holding a person\'s exported session could not be told ' +
+      'to end it; it finds out at its next check against home.',
+    spec: '' },
+  { code: 'STS-CELL-0056',
+    summary: 'The home cell of a projected person could not be reached to ' +
+      'confirm the account; refused fail-closed, or allowed within ' +
+      'cells.failOpenGraceS when cells.homeUnreachable is fail-open.',
     spec: '' },
   // ===== SCHED =============================================================
   { code: 'STS-SCHED-0001',
