@@ -249,7 +249,11 @@ var config = {
     kekField: "value",               // Vault secret field; restart to apply
     kekToken: "",                    // Vault token; restart to apply
     storeProbeTimeoutMs: 5000,       // Secret store probe timeout (ms)
-    kekRegion: ""                    // AWS region; restart to apply
+    kekRegion: "",                   // AWS region; restart to apply
+    cellKekProvider: "none",         // Where the cell key-encryption key is read from; restart to apply
+    cellKekRef: "",                  // The cell key-encryption key's location; restart to apply
+    cellKekField: "",                // The field the cell key is in; restart to apply
+    cellKekRegion: ""                // AWS region of the cell key; restart to apply
   },
 
   // --- Global ----------------------------------------------------------
@@ -1171,25 +1175,31 @@ var config = {
 
   // --- Persistence -----------------------------------------------------
   persistence: {
-    mode: "memory",                                       // Persistence mode; restart to apply
-    metricsTimeoutMs: 5000,                               // Database metrics statement timeout (ms)
-    dataDir: "./data",                                    // Data directory; restart to apply
-    databaseUrl: "postgres://sts:sts@localhost:5432/sts", // Database connection string; restart to apply
-    databasePasswordProvider: "none",                     // Where the database password is read from; restart to apply
-    databasePasswordRef: "",                              // The database password's location; restart to apply
-    databasePasswordField: "databasePassword",            // The field the password is in; restart to apply
-    databasePasswordVault: "",                            // Vault or Key Vault URL for the database password; restart to apply
-    databasePasswordRegion: "",                           // AWS region for the database password; restart to apply
-    databasePasswordToken: "",                            // Vault token for the database password; restart to apply
-    databaseTlsRejectUnauthorized: false,                 // Verify the database certificate; restart to apply
-    writeDelay: 1500,                                     // Write delay (ms)
-    realms: true,                                         // Persist the realm registry; restart to apply
-    appconfig: true,                                      // Persist runtime setting changes; restart to apply
-    minted: true,                                         // Persist sessions, tokens and the audit log; restart to apply
-    mintedRetention: 604800000,                           // Minted state retention (ms)
-    coordinate: true,                                     // Coordinate with other processes; restart to apply
-    pollInterval: 5000,                                   // Change poll interval (ms)
-    changeLogRetentionS: 3600                             // Change log retention (s)
+    mode: "memory",                                        // Persistence mode; restart to apply
+    metricsTimeoutMs: 5000,                                // Database metrics statement timeout (ms)
+    dataDir: "./data",                                     // Data directory; restart to apply
+    databaseUrl: "postgres://sts:sts@localhost:5432/sts",  // Database connection string; restart to apply
+    databasePasswordProvider: "none",                      // Where the database password is read from; restart to apply
+    databasePasswordRef: "",                               // The database password's location; restart to apply
+    databasePasswordField: "databasePassword",             // The field the password is in; restart to apply
+    databasePasswordVault: "",                             // Vault or Key Vault URL for the database password; restart to apply
+    databasePasswordRegion: "",                            // AWS region for the database password; restart to apply
+    databasePasswordToken: "",                             // Vault token for the database password; restart to apply
+    databaseTlsRejectUnauthorized: false,                  // Verify the database certificate; restart to apply
+    globalDatabaseUrl: "",                                 // Global tier database (writer); restart to apply
+    globalDatabaseReadUrl: "",                             // Global tier database (this cell's replica); restart to apply
+    globalDatabasePasswordProvider: "none",                // Where the global database password is read from; restart to apply
+    globalDatabasePasswordRef: "",                         // The global database password's location; restart to apply
+    globalDatabasePasswordField: "globalDatabasePassword", // The field the global database password is in; restart to apply
+    globalDatabasePasswordRegion: "",                      // AWS region of the global database password; restart to apply
+    writeDelay: 1500,                                      // Write delay (ms)
+    realms: true,                                          // Persist the realm registry; restart to apply
+    appconfig: true,                                       // Persist runtime setting changes; restart to apply
+    minted: true,                                          // Persist sessions, tokens and the audit log; restart to apply
+    mintedRetention: 604800000,                            // Minted state retention (ms)
+    coordinate: true,                                      // Coordinate with other processes; restart to apply
+    pollInterval: 5000,                                    // Change poll interval (ms)
+    changeLogRetentionS: 3600                              // Change log retention (s)
   },
 
   // --- Cluster ---------------------------------------------------------
@@ -1199,6 +1209,22 @@ var config = {
     heartbeatMs: 2000,             // Heartbeat interval (ms); restart to apply
     nodeTtlMs: 30000,              // Node lifetime (ms); restart to apply
     acceptMissingCapabilities: ""  // Capabilities accepted as missing; restart to apply
+  },
+
+  // --- Cells -----------------------------------------------------------
+  cells: {
+    id: "",                         // This cell; restart to apply
+    jurisdiction: "",               // This cell's jurisdiction; restart to apply
+    peers: "",                      // The other cells; restart to apply
+    port: 8446,                     // Inter-cell port; restart to apply
+    relayTimeoutMs: 10000,          // Inter-cell request timeout (ms)
+    homeUnreachable: "fail-closed", // When a person's home cell cannot be reached
+    failOpenGraceS: 900,            // Fail-open grace (s)
+    subjectCheckS: 60,              // Subject state check interval (s)
+    homeCell: "",                   // Default home cell for new people
+    jurisdictions: "",              // Jurisdictions people may be homed in
+    permittedTransfers: "",         // Transfers this realm permits
+    hardGeofence: false             // Refuse rather than relay
   },
 
   // --- Signing keys ----------------------------------------------------

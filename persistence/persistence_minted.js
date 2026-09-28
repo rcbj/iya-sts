@@ -129,6 +129,9 @@ const config = require('../common/config');
 const mode = require('../common/mode');
 const keystore = require('../common/keystore');
 const realms = require('../common/realms');
+// WHICH TIER A STORE IS IN (#98): the cell tier is sealed under the cell's
+// own key. A LEAF with no requires of this service.
+const tiers = require('./tiers');
 // THE FAN-IN FOR `merge: 'own'` STORES. A LIBRARY, like this one, and required
 // in the ordinary direction: it does not require this file back.
 const replication = require('./persistence_replication');
@@ -1167,7 +1170,8 @@ function flush() {
         }
         let body = null;
         try {
-          body = keystore.seal(JSON.stringify(present.value), 'minted-rows');
+          body = keystore.seal(JSON.stringify(present.value), 'minted-rows',
+                               tierOfHandle(handle));
         } catch (e) {
           // A value with a cycle in it, or a BigInt. Counted and skipped:
           // failing the whole transaction because one store holds something
@@ -1392,6 +1396,18 @@ function flushThrough(target) {
 // back — through the scheduler job `persistence.tombstone-purge`. 0 keeps
 // them with everything else.
 // ---------------------------------------------------------------------------
+// THE TIER A ROW IS SEALED FOR (#98). A handle `tiers.js` has not classified
+// is sealed as CELL — the tier that keeps it where it was made — and the
+// refusal that makes an unclassified store an error is `tests/cell_tiers.js`,
+// at build time, rather than a flush that fails in production.
+function tierOfHandle(handle) {
+  log.debug("Entering tierOfHandle().");
+  const out = tiers.isClassified(handle) ? tiers.mintedTierOf(handle)
+                                         : 'cell';
+  log.debug("Leaving tierOfHandle().");
+  return out;
+}
+
 function mergerFor(row, handle, key, mine) {
   log.debug("Entering mergerFor().");
   log.debug("Leaving mergerFor().");
@@ -1405,7 +1421,8 @@ function mergerFor(row, handle, key, mine) {
         return null;
       }
       const merged = row.mergeRow(mine, JSON.parse(text));
-      return keystore.seal(JSON.stringify(merged), 'minted-rows');
+      return keystore.seal(JSON.stringify(merged), 'minted-rows',
+                           tierOfHandle(handle));
     } catch (e) {
       log.warn(errorCodes.tag('STS-STORE-0056') + 'persistence: the "' +
                handle + '" row under "' + key + '" could not be merged with ' +

@@ -220,6 +220,57 @@ const DATABASE_PASSWORD = {
 };
 
 // ---------------------------------------------------------------------------
+// THE GLOBAL TIER'S DATABASE PASSWORD AND THE CELL KEY (#98, 2026-09-28).
+//
+// A service of several cells has TWO databases per cell — the cell's own and
+// the global tier's replica — and a key of its own for what the cell stores
+// (`persistence/CLAUDE.md`, *Tiers*). The password is shaped exactly like the
+// database password, with the key's location as its fallback.
+//
+// **THE CELL KEY HAS NO FALLBACK, AND THAT IS THE POINT OF IT.** It exists so
+// that one cell's rows opened anywhere else open nothing; a descriptor that
+// fell back to the service key's location would read the SERVICE key under a
+// second name, and the residency it is for would be a label. So an empty
+// location with a provider set is refused (`readCellKek()`), and a location
+// equal to the service key's is refused too.
+// ---------------------------------------------------------------------------
+/**
+ * The global tier database password's descriptor (#98), with the
+ * key-encryption key's location and store as the fallback.
+ */
+const GLOBAL_DATABASE_PASSWORD = {
+  id: 'global-database-password',
+  label: 'the global tier database password',
+  provider: 'persistence.globalDatabasePasswordProvider',
+  file: 'persistence.globalDatabasePasswordRef',
+  ref: 'persistence.globalDatabasePasswordRef',
+  field: 'persistence.globalDatabasePasswordField',
+  defaultField: 'globalDatabasePassword',
+  fallbackRef: KEK,
+  vault: null,
+  region: 'persistence.globalDatabasePasswordRegion',
+  token: null
+};
+
+/**
+ * The cell key-encryption key's descriptor (#98): its own provider, location,
+ * field and region, and NO fallback location.
+ */
+const CELL_KEK = {
+  id: 'cell-kek',
+  label: 'the cell key-encryption key',
+  provider: 'keys.cellKekProvider',
+  file: 'keys.cellKekRef',
+  ref: 'keys.cellKekRef',
+  field: 'keys.cellKekField',
+  defaultField: '',
+  fallbackRef: null,
+  vault: null,
+  region: 'keys.cellKekRegion',
+  token: null
+};
+
+// ---------------------------------------------------------------------------
 // THE MAIL CHANNEL'S FOUR SECRETS (#63, 2026-09-22), shaped exactly like the
 // database password: a provider, one location row, a field, and the KEY's
 // location, vault, region and token when their own are empty — so one JSON
@@ -1048,6 +1099,86 @@ async function readDatabasePassword() {
   log.debug('Leaving readDatabasePassword(). ' + text.length +
             ' character(s).');
   return text;
+}
+
+// ---------------------------------------------------------------------------
+// THE GLOBAL TIER'S PASSWORD (#98): the database password's rule, for the
+// second database. `null` when no provider is configured.
+// ---------------------------------------------------------------------------
+/**
+ * Reads the global tier database password from its configured provider,
+ * decoded as text and trimmed.
+ *
+ * @returns the password, or null when no provider is configured
+ * @throws an Error when the read fails or finds an empty value
+ */
+async function readGlobalDatabasePassword() {
+  log.debug('Entering readGlobalDatabasePassword().');
+  if (!configuredFor(GLOBAL_DATABASE_PASSWORD)) {
+    log.debug('Leaving readGlobalDatabasePassword(). Not configured.');
+    return null;
+  }
+  const value = await read(GLOBAL_DATABASE_PASSWORD);
+  const text = (Buffer.isBuffer(value) ? value.toString('utf8')
+                                       : String(value == null ? '' :
+                                                value)).trim();
+  if (!text) {
+    throw new Error(errorCodes.tag('STS-CELL-0010') +
+                    GLOBAL_DATABASE_PASSWORD.provider + ' is "' +
+                    config.value(GLOBAL_DATABASE_PASSWORD.provider) +
+                    '" and what it read is empty. This service will not ' +
+                    'dial the global tier with an empty password.');
+  }
+  log.debug('Leaving readGlobalDatabasePassword(). ' + text.length +
+            ' character(s).');
+  return text;
+}
+
+// ---------------------------------------------------------------------------
+// THE CELL KEY (#98). `null` when `keys.cellKekProvider` is `none`, which
+// means the cell tier is sealed under the service key — single-cell mode, a
+// test, or a development deployment. Refused, rather than read, when the
+// location is empty or is the service key's own: either would hand back the
+// service key under the cell key's name (see the descriptor).
+// ---------------------------------------------------------------------------
+/**
+ * Reads this cell's key-encryption key.
+ *
+ * @returns the key as the provider returned it, or null when
+ *   `keys.cellKekProvider` is `none`
+ * @throws an Error (STS-CELL-0011) when its location is empty or is the
+ *   service key's, or the provider's error when the read fails
+ */
+async function readCellKek() {
+  log.debug('Entering readCellKek().');
+  if (!configuredFor(CELL_KEK)) {
+    log.debug('Leaving readCellKek(). Not configured.');
+    return null;
+  }
+  const provider = String(config.value(CELL_KEK.provider) || '');
+  const serviceProvider = String(config.value(KEK.provider) || '');
+  // The service key's location is `keys.kekFile` for a file and
+  // `keys.kekRef` otherwise (see KEK); the cell key has one row for both.
+  const own = locationOf(CELL_KEK, provider === 'file' ? 'file' : 'ref');
+  const service = locationOf(KEK, serviceProvider === 'file' ? 'file'
+                                                             : 'ref');
+  if (!own.where) {
+    throw new Error(errorCodes.tag('STS-CELL-0011') + CELL_KEK.provider +
+                    ' is "' + provider + '" and keys.cellKekRef is empty. ' +
+                    'The cell key has no fallback location: falling back ' +
+                    'would read the service key under the cell key\'s name.');
+  }
+  if (provider === serviceProvider && own.where === service.where &&
+      String(config.value(CELL_KEK.field) || '') ===
+      String(config.value(KEK.field) || '')) {
+    throw new Error(errorCodes.tag('STS-CELL-0011') + 'keys.cellKekRef ' +
+                    'names the same secret as the service key-encryption ' +
+                    'key. A cell key that IS the service key keeps nothing ' +
+                    'in its cell.');
+  }
+  const value = await read(CELL_KEK);
+  log.debug('Leaving readCellKek().');
+  return value;
 }
 
 // ---------------------------------------------------------------------------
@@ -2187,7 +2318,8 @@ const MAIL_SECRETS = [MAIL_SMTP_PASSWORD, MAIL_DKIM_KEY,
  * Every secret this service reads: the key-encryption key, the database
  * password and the four mail secrets.
  */
-const SECRETS = [KEK, DATABASE_PASSWORD].concat(MAIL_SECRETS);
+const SECRETS = [KEK, DATABASE_PASSWORD, GLOBAL_DATABASE_PASSWORD, CELL_KEK]
+  .concat(MAIL_SECRETS);
 
 // Which store a secret lives in, as a key that is equal for two secrets in the
 // same place. The location is part of it for `file` — two mounted files are
@@ -2394,6 +2526,11 @@ module.exports = {
   // rules directly — they are the part of this file with no other way in.
   KEK: KEK,
   DATABASE_PASSWORD: DATABASE_PASSWORD,
+  // The global tier's password and the cell key (#98).
+  GLOBAL_DATABASE_PASSWORD: GLOBAL_DATABASE_PASSWORD,
+  CELL_KEK: CELL_KEK,
+  readGlobalDatabasePassword: readGlobalDatabasePassword,
+  readCellKek: readCellKek,
   // The mail channel's four (#63), and the one reader they share.
   MAIL_SMTP_PASSWORD: MAIL_SMTP_PASSWORD,
   MAIL_DKIM_KEY: MAIL_DKIM_KEY,

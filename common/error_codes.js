@@ -178,6 +178,19 @@ const SUBSYSTEMS = [
           'front of active-passive and active-active mode, atomic claims, ' +
           'the secrets every node shares, and the barrier that makes a ' +
           'request see what other nodes committed before it arrived.' },
+  // CELLS (#98, 2026-09-28): its own subsystem rather than CLUSTER's or
+  // STORE's, because a code here is about WHERE — which cell holds a person
+  // or an artifact, whether it may be held here, and the channel between
+  // cells — and an operator reading one wants the cell map, not a membership
+  // table or a flush.
+  { id: 'CELL', label: 'Cells and residency',
+    where: 'common/cells.ts, common/cell_*.ts, persistence/tiers.js, ' +
+           'persistence/persistence_tiered.js, admin-ui/cells_admin.ts',
+    what: 'One service deployed as several cells in several jurisdictions: ' +
+          'the global and cell tiers of the store, the routing index that ' +
+          'says where a person is homed, the inter-cell channel, relaying a ' +
+          'request to the cell that owns it, the sealed locators, the ' +
+          'transfer decisions and the revocations pushed between cells.' },
   // THE SCHEDULER (2026-09-22, #49): its own subsystem rather than CLUSTER's,
   // because a code here is about a JOB — which one, on which node, and what
   // became of its run — and an operator reading `STS-SCHED-0001` on a run row
@@ -1458,6 +1471,55 @@ const CODES = [
     summary: 'Standing down from a lease early failed in the store; the ' +
       'lease expires on its own within one node lifetime, and this node does ' +
       'not renew it.',
+    spec: '' },
+  // ===== CELL ==============================================================
+  { code: 'STS-CELL-0001',
+    summary: 'The cell settings are inconsistent (an id without a ' +
+      'jurisdiction, a malformed cells.peers, a peer with this cell\'s id, ' +
+      'or a cell id that is not [a-z0-9]{1,16}); the service does not start.',
+    spec: '' },
+  { code: 'STS-CELL-0002',
+    summary: 'cells.id is set and persistence.globalDatabaseUrl is empty, or ' +
+      'the store is not postgres; a cell keeps its global rows in the ' +
+      'global database, so the service does not start.',
+    spec: '' },
+  { code: 'STS-CELL-0003',
+    summary: 'A multi-cell deployment in product mode has no cell ' +
+      'key-encryption key (keys.cellKekProvider is none), so one cell\'s ' +
+      'rows would open in every other; the service does not start.',
+    spec: '' },
+  { code: 'STS-CELL-0004',
+    summary: 'A service deployed as cells does not persist its signing keys ' +
+      'or has no operator key-encryption key, so its cells would sign with ' +
+      'different keys and could not open each other\'s global rows; the ' +
+      'service does not start.',
+    spec: '' },
+  { code: 'STS-CELL-0010',
+    summary: 'The global tier database password was read and is empty; the ' +
+      'service does not start.',
+    spec: '' },
+  { code: 'STS-CELL-0011',
+    summary: 'The cell key-encryption key has no location of its own, or ' +
+      'names the service key\'s; it has no fallback, so the service does ' +
+      'not start.',
+    spec: '' },
+  { code: 'STS-CELL-0012',
+    summary: 'The cell key-encryption key is the same key as the service ' +
+      'key-encryption key; the service does not start.',
+    spec: '' },
+  { code: 'STS-CELL-0020',
+    summary: 'A person was written in this cell whose login name or ' +
+      'entryUUID the routing index already places in another cell (a ' +
+      'creation raced the index check); sign-in routing will not find the ' +
+      'copy here.',
+    spec: '' },
+  { code: 'STS-CELL-0021',
+    summary: 'The routing index could not be updated at a directory flush; ' +
+      'it is retried at the next write of the same person.',
+    spec: '' },
+  { code: 'STS-CELL-0022',
+    summary: 'Group membership rows in this cell belong to a group the ' +
+      'global tier no longer has; they are not restored.',
     spec: '' },
   // ===== SCHED =============================================================
   { code: 'STS-SCHED-0001',
