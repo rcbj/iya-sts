@@ -6165,7 +6165,8 @@ class Authn {
       log.debug("Leaving Authn.beginAuthentication(). Home realm.");
       return federation.PATHS.login + '/' + encodeURIComponent(hinted.fedId) +
         '?returnTo=' + encodeURIComponent(returnTo) +
-        '&application=' + encodeURIComponent(String(opts.application || ''));
+        '&application=' + encodeURIComponent(String(opts.application || '')) +
+        this.restartParameter(returnTo);
     }
     if (home && home.relationship && home.auto) {
       const target = federation.PATHS.login + '/' +
@@ -6181,7 +6182,8 @@ class Authn {
         // where it is spent: the parameter rides on an endpoint anybody can
         // reach, so what makes it safe to write down is that recordUse() checks
         // the pair against the live register rather than believing this.
-        '&application=' + encodeURIComponent(String(opts.application || ''));
+        '&application=' + encodeURIComponent(String(opts.application || '')) +
+        this.restartParameter(returnTo);
       log.info('authn: "' + String(opts.application) + '" authenticates ' +
                'through the federation relationship "' +
                home.relationship.fedId +
@@ -7286,6 +7288,12 @@ class Authn {
       log.debug("Leaving Authn.pendingFor(). It had expired.");
       return null;
     }
+    // A RESTART-ONLY RECORD (#98 D9, restartParameter()) is not a sign-in
+    // anybody may continue: it holds where a flow started and nothing else.
+    if (record.restartOnly) {
+      log.debug("Leaving Authn.pendingFor(). A restart-only record.");
+      return null;
+    }
     log.debug("Leaving Authn.pendingFor(). Found it.");
     return record;
   }
@@ -7410,11 +7418,19 @@ class Authn {
     const forApplication = String(application || '')
       ? '&application=' + encodeURIComponent(String(application))
       : '';
+    // AND THIS RECORD'S ID, in a service deployed as cells (#98 D9): a
+    // partner may assert a person homed in another cell, and the assertion
+    // consumer then restarts THIS flow there from the start the record
+    // holds (`restartPendingAtHome()`). It names a record and carries
+    // nothing else; single-cell mode adds nothing.
+    const forRestart = cells.isMulti() && record && record.id
+      ? '&authn=' + encodeURIComponent(String(record.id)) : '';
     const html = '<div class="fed"><p>' + blurb + '</p>' +
       options.map(function (one) {
         return '<a class="fedbtn" href="/federation/login/' +
           encodeURIComponent(one.id) +
-          '?returnTo=' + back + forApplication + '">' + xmlEscape(one.label) +
+          '?returnTo=' + back + forApplication + forRestart + '">' +
+          xmlEscape(one.label) +
           '<span>' + xmlEscape(one.protocolLabel) +
           (one.peer ? ' · ' + xmlEscape(one.peer) : '') + '</span></a>';
       }).join('') + '</div>';
@@ -7912,6 +7928,89 @@ class Authn {
     log.debug("Entering Authn.restartAtHome(). home=" + home);
     const origin = record.restart;
     pending.delete(record.id);
+    log.debug("Leaving Authn.restartAtHome().");
+    return this.sendHome(req, res, origin, home);
+  }
+
+  // ---------------------------------------------------------------------------
+  // WHERE A FLOW SENT STRAIGHT TO A PARTNER STARTED (#98 D9). Home realm
+  // discovery by configuration or by `domain_hint` sends the browser to a
+  // federation partner without drawing this screen, so there is no pending
+  // record — and the assertion consumer may find the person homed in another
+  // cell and have to restart the flow there. In a service deployed as cells
+  // this mints a RESTART-ONLY record (`restartOnly`: `pendingFor()` refuses
+  // it, so nobody can continue a sign-in on it) holding `restartOrigin()`,
+  // and answers the `&authn=` parameter naming it. Single-cell mode mints
+  // nothing and answers ''.
+  // ---------------------------------------------------------------------------
+  private restartParameter(returnTo: string): string {
+    const { log, randomId } = this.deps;
+    log.debug("Entering Authn.restartParameter().");
+    const restart = cells.isMulti() ? this.restartOrigin() : null;
+    if (!restart) {
+      log.debug("Leaving Authn.restartParameter(). Nothing to record.");
+      return '';
+    }
+    const id = randomId(18);
+    pending.set(id, { id: id, restartOnly: true, restart: restart,
+                      returnTo: returnTo,
+                      expires: Date.now() + this.pendingTtlMs() });
+    log.debug("Leaving Authn.restartParameter().");
+    return '&authn=' + encodeURIComponent(id);
+  }
+
+  /**
+   * Restarts, at the person's home cell, the sign-in flow a pending record
+   * names — for a door that found the person's home only after the sign-in
+   * screen let them through (federation's assertion consumer, #98 D9). The
+   * record is spent; with no such record the browser is sent to `fallback`,
+   * a path on this service, pinned home all the same.
+   *
+   * @param req - the request that found the home
+   * @param res - the response
+   * @param pendingId - the pending record the flow's sign-in screen held
+   * @param fallback - where to send the browser when there is no record
+   * @param home - the person's home cell
+   * @returns a promise settled when the answer is sent
+   */
+  async restartPendingAtHome(req, res, pendingId: string, fallback: string,
+                             home: string): Promise<void> {
+    const { log } = this.deps;
+    log.debug("Entering Authn.restartPendingAtHome(). home=" + home);
+    const held = pendingId ? pending.get(String(pendingId)) : null;
+    const record = held && held.expires >= Date.now() ? held : null;
+    if (held && !record) {
+      pending.delete(held.id);
+    }
+    if (record && record.restart) {
+      log.debug("Leaving Authn.restartPendingAtHome(). The flow's start.");
+      return this.restartAtHome(req, res, record, home);
+    }
+    if (record) {
+      pending.delete(record.id);
+    }
+    const url = /^\/(?!\/)/.test(String(fallback || ''))
+      ? String(fallback) : realms.currentPrefix() + '/';
+    log.debug("Leaving Authn.restartPendingAtHome(). The return address.");
+    return this.sendHome(req, res, { method: 'GET', url: url, form: null },
+                         home);
+  }
+
+  /**
+   * Pins a browser to its person's home cell and sends it to the start of a
+   * flow: a redirect for a GET start, a re-post from a page with a real
+   * button for a POST one. A pushed request the start names is handed home
+   * first.
+   *
+   * @param req - the request
+   * @param res - the response
+   * @param origin - `{ method, url, form }`, as `restartOrigin()` records it
+   * @param home - the person's home cell
+   * @returns a promise settled when the answer is sent
+   */
+  private async sendHome(req, res, origin, home: string): Promise<void> {
+    const { log } = this.deps;
+    log.debug("Entering Authn.sendHome(). home=" + home);
     const realmId = realms.currentId();
     // A pushed request the start names goes home first.
     const named = String(origin && origin.url && /request_uri=([^&]+)/
@@ -7935,7 +8034,7 @@ class Authn {
              'its flow (#98 D9).');
     res.set('Cache-Control', 'no-store');
     if (!origin || origin.method !== 'POST' || !origin.form) {
-      log.debug("Leaving Authn.restartAtHome(). A redirect.");
+      log.debug("Leaving Authn.sendHome(). A redirect.");
       res.redirect(303, origin ? origin.url : realms.currentPrefix() + '/');
       return;
     }
@@ -7950,7 +8049,7 @@ class Authn {
       return '<input type="hidden" name="' + esc(k) + '" value="' +
         esc(origin.form[k]) + '">';
     }).join('');
-    log.debug("Leaving Authn.restartAtHome(). A re-post.");
+    log.debug("Leaving Authn.sendHome(). A re-post.");
     res.status(200).type('html').send(
       '<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">' +
       '<title>Continue signing in</title></head><body>' +
@@ -12165,6 +12264,11 @@ export = {
   pendingEndReports: slot.forward('pendingEndReports'),
   clearSessionCookie: slot.forward('clearSessionCookie'),
   beginAuthentication: slot.forward('beginAuthentication'),
+  /**
+   * Forwards to `Authn.restartPendingAtHome()`: restarts a pending sign-in's
+   * flow at the person's home cell (#98 D9).
+   */
+  restartPendingAtHome: slot.forward('restartPendingAtHome'),
   // THE SIGN-IN SCREEN'S STYLESHEET, for oauth-oidc/consent_screen.ts. A
   // person meets that screen and this one seconds apart in one flow, so two
   // hand-maintained copies would drift into looking like two services. It is

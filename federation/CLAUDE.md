@@ -1653,12 +1653,24 @@ revocation push is the design's section 5, not built yet. WS-Federation's
 confirmed cleanup is bound to the session in THIS browser, which the edge has
 already placed, and needs nothing more.
 
-**NOT HANDLED HERE, for the parent session**: a partner asserting a person
-homed in another cell. The subject decision (`federation_map.ts`,
-`federation_links.ts`) reads this cell's directory, which does not hold that
-person, so the ACS treats them as unknown — provisioning or refusing by the
-relationship's rules — rather than finishing the sign-in at their home. It
-needs the same restart-at-home the sign-in screen has (D9), keyed on the
-decided username, with the context handed over as `adopt-pushed-request`
-hands a pushed request. Held in process by `tests/cell_saml_federation.js`.
+**A PARTNER ASSERTING A PERSON HOMED IN ANOTHER CELL RESTARTS THE FLOW
+THERE (D9)** — `completeSignIn()`, before `subjectDecision()`, which reads
+this cell's directory: residents, and projections of people homed elsewhere
+that are not residents. `homeOfSubject()` finds the home the way the
+decision would find the person: the person a local federationLink names (a
+projection's home from the routing index); with no local holder, a RESIDENT
+of another cell carrying the link (`federation-link-home`, asked of every
+peer, because the index keeps names and entryUUIDs and not links); then the
+names the policy would sign in or create (the mapped username under
+any-existing and link-at-first-sign-in, the namespaced name under every
+policy that creates one) from the index. A home elsewhere is answered by
+`authn.restartPendingAtHome()`: the browser is pinned home and sent back to
+where the flow started — the sign-in screen's pending record, whose id rides
+on the partner button (`&authn=`, multi-cell only), or a RESTART-ONLY record
+home realm discovery mints when it goes straight to the partner — so home
+re-runs the flow and the partner, holding its own sign-on session, answers
+again at home's consumer. The verified assertion is dropped unused; nothing
+about the person is written, carried or provisioned in the flow's cell, and
+a link-at-first-sign-in happens at home. A peer that cannot be asked about a
+link is skipped (`STS-CELL-0123`). Held in process by `tests/cell_saml_federation.js`.
 

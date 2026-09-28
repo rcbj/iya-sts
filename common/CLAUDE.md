@@ -9800,7 +9800,7 @@ Its three rules (an empty form or query value is absent, case is exact, an
 enum inside an alternative is ajv's) are argued in its header; the design is
 `mgmt-api/CLAUDE.md`'s *Every closed set is held, at every door*.
 
-## 3bx. Cells: `cells.ts`, `cell_channel.ts`, `cell_locator.ts`, `cell_routing.ts`, `cell_placement.ts`, `cell_sessions.ts` (#98, 2026-09-28)
+## 3bx. Cells: `cells.ts`, `cell_channel.ts`, `cell_locator.ts`, `cell_routing.ts`, `cell_placement.ts`, `cell_sessions.ts`, `cell_attributes.ts` (#98, 2026-09-28)
 
 **One logical service can be deployed as CELLS** — a copy of the whole stack
 per cloud region, each with its own postgres, each in one legal JURISDICTION.
@@ -9824,6 +9824,7 @@ has to travel with something a client holds, it is a KEYED TAG
 | `cell_routing.ts` | Where a person is homed: resident here (and not a projection), or the global routing index by keyed digest. `claimName()` is the creation's first step. |
 | `cell_placement.ts` | The placement table `ROWS` — a row per route prefix, `local`, `affinity`, `selector`, `artifact`, `bearer` or `handler`, each with its reason — the `sts_cell` affinity cookie that pins a browser (per realm, keyed tags), the edge middleware `app.js` runs above the request pool before any body is read, and the helpers a handler calls with the parsed body (`relayIfElsewhere()`, `relayToHome()`). On a browser row the pin wins over an artifact's tag. `tests/cell_placement.js` holds every route to a row and every handler row to a module that asks. |
 | `cell_sessions.ts` | A session held away from home (D4, D6): exported (copied) from home to the cell a relayed request came from when the transfer policy's `holdDecision()` permits, with a credential-free PROJECTION of the person (`memberOf` from home's groups) held sealed under the visiting cell's key and materialized into every process's directory without becoming a row; a write to it sent home (`projection-write`, credentials refused); home pushing `revoke-subject` / `refresh-projection` and the visiting cell asking `subject-state` before a refresh or exchange and after `cells.subjectCheckS`. A projection never counts as a resident. |
+| `cell_attributes.ts` | `fetch-attributes` (#98 section 5): a cell serving a token ABOUT a person homed elsewhere — a WS-Trust OnBehalfOf / ActAs served at its requester's home — asks their home, which answers `cell_sessions.ts`'s credential-free projection only when `cell_transfer.ts`'s `releaseDecision()` (purpose `attributes`) permits; no decision available is a refusal. The projection is held in this process's directory for ONE synchronous call (`withPerson()`) and never stored. Home refusing (`STS-CELL-0124`) or unreachable (`STS-CELL-0125`) refuses the token (D6). |
 
 **D9, THE TRAVELLER'S SIGN-IN, IS `authn.ts`'s** (`restartAtHome()`): the
 login form asks the routing index for the typed name before anything is
@@ -9831,7 +9832,9 @@ verified, and a person homed elsewhere is pinned to home and sent back to
 where the flow started — the request as it arrived, a POST re-posted from a
 page with a button, or the hosted surface's root — with a pushed
 authorization request handed home first. Nothing personal crosses; the typed
-password is never read at the visiting cell.
+password is never read at the visiting cell. The same restart is how federation's
+assertion consumer sends home a partner's assertion about a person homed
+elsewhere (`restartPendingAtHome()`, `federation/CLAUDE.md`).
 
 **THE TRANSFER, SERVE AND RELEASE DECISIONS ARE POLICY**, asked of the
 issuance policy through `cell_transfer.ts` — the facts are attributes and the
