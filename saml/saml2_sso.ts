@@ -189,6 +189,12 @@ import requestSignature = require('./request_signature');
 // The audit log, for the one row per checked request signature (#37). A leaf
 // that requires nothing that reaches back here.
 import audit = require('../common/audit');
+// WHERE A BACK-CHANNEL REQUEST IS ANSWERED IN A SERVICE DEPLOYED AS CELLS
+// (#98 D10): the artifact's tag, the cell holding a query's session, and the
+// relay. Libraries that register no route.
+import samlCells = require('./saml_cells');
+import cellPlacement = require('../common/cell_placement');
+import cells = require('../common/cells');
 // The session, from the service that owns it. This profile starts none of its
 // own: `beginAuthentication()` sends the browser to authn.js's screen and back.
 import authn = require('../authn/authn');
@@ -2474,6 +2480,9 @@ class Saml2Sso {
   //                   identity providers can tell whose artifact it is holding
   //                   without asking anybody
   //   MessageHandle   twenty random bytes, and the only part that is a secret
+  //                   — in a service deployed as cells (#98 D10) its last
+  //                   four are the minting cell's keyed tag, which is how
+  //                   `/saml2/ars` at another cell finds it (`saml_cells.ts`)
   //
   // The whole 44 bytes are base64, which is what travels in `SAMLart`.
   private mintArtifact(idpEntityId, endpointIndex) {
@@ -2486,7 +2495,7 @@ class Saml2Sso {
     const sourceId = crypto.createHash('sha1')
                            .update(String(idpEntityId), 'utf8')
                            .digest();
-    const handle = crypto.randomBytes(20);
+    const handle = samlCells.stampHandle(crypto.randomBytes(20));
     const artifact = Buffer.concat([header, sourceId,
                                     handle]).toString('base64');
     log.debug("Leaving Saml2Sso.mintArtifact(). " + artifact.length +
@@ -3663,9 +3672,8 @@ class Saml2Sso {
   // no AuthnStatement (`attributeQuery` in saml2.ts).
   // ---------------------------------------------------------------------------
   private attributeQuery(req, res) {
-    const { audit, errorCodes, gate, mode, validation } = this.deps;
+    const { audit, errorCodes, mode, validation } = this.deps;
     const { firstByLocal, log, logArtifact, textByLocal } = this.deps.helpers;
-    const { buildSamlAssertion } = this.deps.saml2;
     const self = this;
     log.debug("Entering Saml2Sso.attributeQuery().");
     const scoped = this.entityIdFromSegment(req.params.sp);
@@ -3741,9 +3749,40 @@ class Saml2Sso {
       return answer(envelopeProblem.errorCode, STATUS_REQUESTER, '',
                     envelopeProblem.why, '');
     }
+    // THE CELL THAT HOLDS THE SESSION (#98 D10), before the caller is
+    // authenticated: the query is answered only about the subject of a live
+    // session that gave this service provider that NameID, and that session
+    // is held in one cell — this one, asked first, or a peer
+    // (`saml_cells.ts`, which argues why the person's home is not the
+    // question). Single-cell mode goes straight on, as it always did.
+    if (!cells.isMulti() || req.stsCellRelay) {
+      log.debug("Leaving Saml2Sso.attributeQuery(). Answering here.");
+      return this.answerAttributeQuery(req, res, query, spEntityId, answer);
+    }
+    const namedEl = firstByLocal(query, 'NameID');
+    const named = namedEl ? String(namedEl.textContent || '').trim() : '';
+    log.debug("Leaving Saml2Sso.attributeQuery(). Finding the session.");
+    return samlCells.sessionHolder(req, 'saml2', spEntityId, named)
+      .then(function (holder: string) {
+        if (cellPlacement.relayToCell(req, res, holder,
+                                      'a SAML 2.0 attribute query')) {
+          return undefined;
+        }
+        return self.answerAttributeQuery(req, res, query, spEntityId,
+                                         answer);
+      });
+  }
+
+  // The attribute query, once it is known to be answered HERE: the caller,
+  // the session, the issuance policy and the answer (see attributeQuery()).
+  private answerAttributeQuery(req, res, query, spEntityId, answer) {
+    const { gate, mode } = this.deps;
+    const { firstByLocal, log } = this.deps.helpers;
+    const { buildSamlAssertion } = this.deps.saml2;
+    log.debug("Entering Saml2Sso.answerAttributeQuery().");
     const caller = this.authenticateQueryCaller(req, query, spEntityId);
     if (caller.refuse) {
-      log.debug("Leaving Saml2Sso.attributeQuery(). The caller.");
+      log.debug("Leaving Saml2Sso.answerAttributeQuery(). The caller.");
       return answer(caller.errorCode || 'STS-SAML-0077', STATUS_REQUESTER,
                     'urn:oasis:names:tc:SAML:2.0:status:RequestDenied',
                     caller.why, '');
@@ -3764,7 +3803,7 @@ class Saml2Sso {
       log.info('saml2: an AttributeQuery from "' + spEntityId + '" named "' +
                nameId + '", which no live session here gave it; ' +
                'UnknownPrincipal.');
-      log.debug("Leaving Saml2Sso.attributeQuery(). Unknown principal.");
+      log.debug("Leaving Saml2Sso.answerAttributeQuery(). Unknown principal.");
       return answer('STS-SAML-0094', STATUS_REQUESTER,
                     STATUS_UNKNOWN_PRINCIPAL,
                     'no session here gave this service provider that NameID ' +
@@ -3782,7 +3821,8 @@ class Saml2Sso {
       session: session
     });
     if (!roleAnswer.allowed) {
-      log.debug("Leaving Saml2Sso.attributeQuery(). The issuance policy.");
+      log.debug("Leaving Saml2Sso.answerAttributeQuery(). The issuance " +
+                "policy.");
       return answer(roleAnswer.retiring ? 'STS-CORE-0121'
                                         : 'STS-SAML-0010',
                     STATUS_RESPONDER,
@@ -3830,7 +3870,8 @@ class Saml2Sso {
                         'assertion')
       : { xml: built, encrypted: false };
     if (wantsEncryption && !sealed.encrypted && !mode.sendsWeakerThanAsked()) {
-      log.debug("Leaving Saml2Sso.attributeQuery(). Encryption impossible.");
+      log.debug("Leaving Saml2Sso.answerAttributeQuery(). Encryption " +
+                "impossible.");
       return answer('STS-SAML-0011', STATUS_RESPONDER, '',
                     'the assertion for this service provider is to be ' +
                     'encrypted and could not be (' + (sealed.why ||
@@ -3839,7 +3880,7 @@ class Saml2Sso {
     log.info('saml2: answered an AttributeQuery from "' + spEntityId +
              '" about ' + nameId + ' with ' + released.length +
              ' attribute(s).');
-    log.debug("Leaving Saml2Sso.attributeQuery(). Answered.");
+    log.debug("Leaving Saml2Sso.answerAttributeQuery(). Answered.");
     return answer('', STATUS_SUCCESS, '', '', sealed.xml);
   }
 
@@ -4134,6 +4175,17 @@ class Saml2Sso {
       return answer(STATUS_REQUESTER, 'the ArtifactResolve carries no ' +
                                       '<samlp:Artifact>.',
                     '', inResponseTo);
+    }
+    // MINTED IN ANOTHER CELL (#98 D10): the whole ArtifactResolve goes to
+    // the cell whose tag its MessageHandle carries, before the caller is
+    // authenticated or anything is spent — the artifact, its one-shot claim
+    // and the service provider's view of it are all that cell's.
+    if (cellPlacement.relayToCell(req, res, samlCells.artifactCell(artifact,
+                                                                   44),
+                                  'a SAML 2.0 artifact')) {
+      log.debug("Leaving Saml2Sso.resolveArtifact(). Relayed to the cell " +
+                "that minted it.");
+      return undefined;
     }
     const held = artifacts.get(artifact);
     if (held) {

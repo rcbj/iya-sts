@@ -238,7 +238,9 @@ const ROWS: Row[] = [
     segment: 3, why: 'a link handle is found where it was minted (D10)' },
   { prefix: '/federation/backchannel-logout', strategy: 'handler',
     handler: 'federation/federation_slo.ts',
-    why: 'a partner\'s sign-out may end sessions in every cell' },
+    why: 'a partner\'s sign-out may end sessions in every cell: served ' +
+         'where it arrives, and fanned out to every peer ' +
+         '(federation-partner-signout)' },
   // --- SCIM, SSF, XACML ---
   { prefix: '/scim', strategy: 'handler', handler: 'scim/scim.ts',
     why: 'a resource is written where its person is homed; a list answers ' +
@@ -700,6 +702,31 @@ class CellPlacement {
   }
 
   /**
+   * Relays a request to a cell the handler found itself — an artifact whose
+   * layout cannot carry an appended tag (`cellLocator.elsewhereBytes()`), or
+   * the cell that answered that it holds what the request names.
+   *
+   * @param req - the request, its body parsed
+   * @param res - the response
+   * @param cellId - the cell, or '' to serve here
+   * @param reason - what it is, for the log
+   * @returns true when the request was relayed (the handler must stop)
+   */
+  relayToCell(req: any, res: any, cellId: string, reason: string): boolean {
+    log.debug("Entering CellPlacement.relayToCell().");
+    if (!cells.isMulti() || req.stsCellRelay || !cellId ||
+        cellId === cells.id() || !cells.get(cellId)) {
+      log.debug("Leaving CellPlacement.relayToCell(). Here.");
+      return false;
+    }
+    this.relayed += 1;
+    require('./cell_channel').relay(req, res, cellId, {
+      reason: reason, body: CellPlacement.serialisedBody(req) });
+    log.debug("Leaving CellPlacement.relayToCell(). Relayed.");
+    return true;
+  }
+
+  /**
    * Relays a request about a person to their home cell when that is another
    * cell.
    *
@@ -771,6 +798,8 @@ export = {
   relayIfElsewhere: (req: any, res: any, value: string,
                      reason: string): boolean =>
     placement.relayIfElsewhere(req, res, value, reason),
+  relayToCell: (req: any, res: any, cellId: string, reason: string): boolean =>
+    placement.relayToCell(req, res, cellId, reason),
   relayToHome: (req: any, res: any, realmId: string, kind: string,
                 value: string, reason: string): Promise<boolean> =>
     placement.relayToHome(req, res, realmId, kind, value, reason),
