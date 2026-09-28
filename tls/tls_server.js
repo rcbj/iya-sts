@@ -4307,13 +4307,37 @@ app.get('/tls/sign-in', function (req, res) {
         return;
       }
       const persistence = require('../persistence/persistence');
-      Promise.all([persistence.flush(), persistence.flushMinted()])
-        .then(send, function (e) {
-          // The store's own failure is reported by persistence.js; the answer
-          // goes out, and a worker catches up on the change log's own clock.
-          log.debug('Caught in GET /tls/sign-in: ' + ((e && e.message) || e));
-          send();
+      const flushAndSend = function () {
+        Promise.all([persistence.flush(), persistence.flushMinted()])
+          .then(send, function (e) {
+            // The store's own failure is reported by persistence.js; the
+            // answer goes out, and a worker catches up on the change log's
+            // own clock.
+            log.debug('Caught in GET /tls/sign-in: ' +
+                      ((e && e.message) || e));
+            send();
+          });
+      };
+      // THE ATTRIBUTE SOURCES A SIGN-IN READS (#94), in the realm the session
+      // is in — the certificate's, which need not be this request's — before
+      // the answer goes. A refusing source that failed ended the session:
+      // the answer says so, with the refusal's status.
+      const sessionRealm = realms.get(session.realm);
+      const settle = function () {
+        authn.afterSignIn(res, flushAndSend, function (why) {
+          answer.signedIn = false;
+          answer.session = { started: false, why: why };
+          // error-code: none — afterSignIn() marked STS-ATTR-0012 on `res`
+          res.status(403).type('application/json')
+             .send(JSON.stringify(answer));
+          log.debug('Leaving GET /tls/sign-in. An attribute source refused.');
         });
+      };
+      if (sessionRealm) {
+        realms.run(sessionRealm, settle);
+      } else {
+        settle();
+      }
     });
   });
 });

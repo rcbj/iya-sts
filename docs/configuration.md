@@ -2405,6 +2405,19 @@ owned by a person or by an application, and the keys each is recognised by.
 | `devices.compliantDeviceAttested` | `STS_DEVICES_COMPLIANT_DEVICE_ATTESTED` | `false` | yes | On, a device counts as a compliant registered device — for the rule above and for the `urn:sts:acr:compliant-device` acr — only when it is also attested. |
 | `devices.refuseCompromised` | `STS_DEVICES_REFUSE_COMPROMISED` | `true` | yes | ON BY DEFAULT. The issuance policy refuses anything asked for from a registered device marked compromised, for every application (STS-DEVICE-0038). Off, a compromised device is only a risk signal. |
 
+### Attribute sources
+
+The operators' SQL databases a realm reads people's attributes from, onto
+their directory entries (#94). The sources themselves are a register, drawn
+and edited on Directory → **Attribute sources** (`/admin/attribute-sources`);
+these two settings bound them. [Attribute sources](attribute-sources.md) is
+the guide.
+
+| Setting | Environment | Default | Change while running | What it does |
+|---|---|---|---|---|
+| `attributeSources.hostPatterns` | `STS_ATTRIBUTE_SOURCES_HOST_PATTERNS` | *(empty)* | yes | The database hosts this realm's sources may connect to, comma-separated, `*` for any run of characters. **Empty allows any host**, and a realm administrator manages their realm's sources, so an empty list lets them make this service connect to any host its network reaches. Only a service administrator may change it. |
+| `attributeSources.refreshBatch` | `STS_ATTRIBUTE_SOURCES_REFRESH_BATCH` | `200` | yes | How many people each source reads per run of the scheduled refresh. |
+
 ### Mail
 
 The one outbound mail channel (#63): the transport this service sends through,

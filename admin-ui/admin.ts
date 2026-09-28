@@ -1844,6 +1844,15 @@ const SECTIONS = [
                'compliance, and when it was last used. Click one to edit ' +
                'it, add or remove a key, give it to another owner or remove ' +
                'it; register one by hand at the foot of the list.' },
+      // ATTRIBUTE SOURCES (#94): in Directory because what they write is
+      // on people's directory entries, and the register is `ou=
+      // attributesources` in this realm's directory.
+      { path: '/admin/attribute-sources', label: 'Attribute sources',
+        blurb: 'The SQL databases this realm reads people\'s attributes ' +
+               'from, onto their entries: each source\'s database, the row ' +
+               'it reads and the columns it writes, when it reads (at ' +
+               'sign-in, once, on a schedule, on demand) and what a ' +
+               'failure does, with its status, a test and a read-now.' },
       // -------------------------------------------------------------------
       // POLICIES (2026-09-12), asked for by rcbj as *Directory → Policies*,
       // with the password policy as the first kind of policy it configures.
@@ -43522,6 +43531,7 @@ const SETTING_HOMES = [
   // jobs they switch and the ticks they time.
   { group: 'Scheduler', pages: ['/admin/scheduler'] },
   { group: 'Mail', pages: ['/admin/mail'] },
+  { group: 'Attribute sources', pages: ['/admin/attribute-sources'] },
   // THE DEVICE REGISTER'S BOUNDS (#218): on the page that says how a device
   // arrives, beside the enrolment methods those bounds limit.
   { group: 'Devices', pages: ['/admin/device-registration'] },

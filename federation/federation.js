@@ -3338,7 +3338,8 @@ function attributeMapProblem(value) {
 // ---------------------------------------------------------------------------
 const UNMAPPED_CAP = 50;
 const UNMAPPED_REFRESH_MS = 60 * 60 * 1000;
-const unmappedSeen = realms.map({ persist: 'federation.unmapped' });
+const unmappedSeen = realms.map({ persist: 'federation.unmapped',
+                                 retain: 'age' });
 
 /**
  * Records the names a partner sent that were not written, for the console.

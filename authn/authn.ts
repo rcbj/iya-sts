@@ -4999,10 +4999,89 @@ class Authn {
                             context: extra.risk &&
                                      extra.risk.sessionContext });
     this.assessRisk(session, firstEvent, via, extra);
+    // THE SESSION THIS RESPONSE STARTED (#94), for afterSignIn(): the
+    // attribute sources read at sign-in are read between here and the
+    // browser being sent back, which is before the first artifact. Not for
+    // a keyed caller (SCIM, SPIRE), which is no person and has no browser.
+    if (res && res.locals && !extra.key) {
+      res.locals.stsStartedSession = {
+        id: sessionId, username: String((user && user.username) ||
+                                        username) };
+    }
     log.debug("Leaving Authn.startSession(). " + username +
               " is signed in (amr " +
               (amr || []).join(',') + ").");
     return session;
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE SIGN-IN'S LAST STEP: THE ATTRIBUTE SOURCES (#94).
+  //
+  // A source whose mode is `sign-in` — or `once`, for a person it has not
+  // read — is read AFTER the session exists (a first-time person has no
+  // entry until startSession() made one) and BEFORE the browser is sent
+  // back, which is before any artifact: every door here hands off with a
+  // redirect, and the code, the ID Token or the assertion is minted on the
+  // next request. So every door that leaves through returnToCaller() is
+  // covered, and federation's and the certificate sign-in's own redirects
+  // call this too.
+  //
+  // `go()` sends the browser on. A source that could not be read and says
+  // `refuse` ENDS the session just started (initiated by `policy`) and calls
+  // `refuse(why)` instead; any other failure proceeds, with what the entry
+  // already holds — `attribute_sources.ts` has logged and coded it.
+  // ---------------------------------------------------------------------------
+  /**
+   * Reads the attribute sources a sign-in reads, then sends the browser on,
+   * or ends the session and refuses when a refusing source failed.
+   *
+   * @param res - the response whose startSession() made a session
+   * @param go - sends the browser on
+   * @param refuse - answers the refusal, given why
+   */
+  afterSignIn(res, go: () => void, refuse: (why: string) => void): void {
+    const { log, errorCodes } = this.deps;
+    const self = this;
+    log.debug("Entering Authn.afterSignIn().");
+    const started = res && res.locals ? res.locals.stsStartedSession : null;
+    if (!started || !started.username) {
+      log.debug("Leaving Authn.afterSignIn(). No session was started.");
+      go();
+      return;
+    }
+    delete res.locals.stsStartedSession;
+    let sources: any = null;
+    try {
+      sources = require('../attribute-sources/attribute_sources');
+    } catch (e) {
+      log.debug("Caught in Authn.afterSignIn(): " + ((e && e.message) || e));
+      // No attribute sources in this process: nothing is read at sign-in.
+      sources = null;
+    }
+    if (!sources || typeof sources.refreshAtSignIn !== 'function') {
+      log.debug("Leaving Authn.afterSignIn(). No attribute sources.");
+      go();
+      return;
+    }
+    Promise.resolve().then(function () {
+      return sources.refreshAtSignIn(started.username);
+    }).then(function (outcome) {
+      if (outcome && outcome.refused) {
+        errorCodes.mark(res, 'STS-ATTR-0012');
+        self.dropSession(started.id, 'an attribute source at sign-in', true,
+                         res.req, 'policy');
+        refuse(String(outcome.why || 'An attribute source could not be ' +
+                                     'read.'));
+        return;
+      }
+      go();
+    }, function (e) {
+      log.debug("Caught in Authn.afterSignIn(): " + ((e && e.message) || e));
+      // A failure outside any one source's policy — the register itself —
+      // costs the refresh and never the sign-in.
+      go();
+    });
+    log.debug("Leaving Authn.afterSignIn(). Reading the sources.");
   }
 
   // ---------------------------------------------------------------------------
@@ -6597,10 +6676,23 @@ class Authn {
     // WebAuthn step both leave through here, so there is one place where this
     // is decided rather than two that could come to differ.
     // ---------------------------------------------------------------------
-    res.redirect(303, target);
-    log.debug("Leaving Authn.returnToCaller(). Sent the browser to " + target +
-              " " +
-        "with a 303.");
+    //
+    // A SUCCESSFUL SIGN-IN READS ITS ATTRIBUTE SOURCES FIRST (#94), and a
+    // refusing source that failed turns the success into the caller's own
+    // access_denied — the same refusal a cancelled sign-in sends back.
+    if (error) {
+      res.redirect(303, target);
+    } else {
+      const self = this;
+      this.afterSignIn(res, function () {
+        res.redirect(303, target);
+      }, function (why) {
+        // error-code: none — afterSignIn() marked STS-ATTR-0012 on `res`
+        self.returnToCaller(res, record, 'access_denied', why);
+      });
+    }
+    log.debug("Leaving Authn.returnToCaller(). Sending the browser to " +
+              target + " with a 303.");
   }
 
   // ---------------------------------------------------------------------------
@@ -11979,6 +12071,7 @@ export = {
   sessionsMatching: slot.forward('sessionsMatching'),
   sessionById: slot.forward('sessionById'),
   endSessionById: slot.forward('endSessionById'),
+  afterSignIn: slot.forward('afterSignIn'),
   endEverySessionIn: slot.forward('endEverySessionIn'),
   pendingEndReports: slot.forward('pendingEndReports'),
   clearSessionCookie: slot.forward('clearSessionCookie'),

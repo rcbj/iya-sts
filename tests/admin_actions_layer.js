@@ -478,6 +478,10 @@ function checkNothingRequiresItEarly(t) {
                    // gate state only — who acted — required LAZILY in the
                    // request; the page is 18n, after the console.
                    'oauth-oidc/claims_providers_admin.ts',
+                   // The attribute sources page (#94), for the gate state
+                   // only — who acted — required LAZILY in the request; the
+                   // page is 18r, after the console.
+                   'attribute-sources/attribute_sources_admin.ts',
                    // The Provider Commands and Outbound deliveries pages
                    // (#151, 2026-09-26), for the gate state only — who
                    // acted — required LAZILY in the request; the page is

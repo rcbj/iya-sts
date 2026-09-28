@@ -2117,22 +2117,35 @@ class FederationSp {
              mapped.unmapped.length + ' unmapped. Session ' + session.id + '.');
 
     const returnTo = result.returnTo || '';
-    if (returnTo) {
-      // 303, for the reason `authn.js`'s returnToCaller() gives at length: this
-      // may follow a POST carrying an assertion, and 302's behaviour after a
-      // POST is historically ambiguous where 303's is defined.
-      res.redirect(303, returnTo);
-      log.debug("Leaving FederationSp.startFederatedSession(). Sent them on to " +
-                returnTo + '.');
-      return;
-    }
-    res.type('html').set('Cache-Control', 'no-store').send(
-      this.page('Signed in',
-                this.signedInPage(record,
-                                  Object.assign({}, mapped,
-                                                { username: username }),
-                                  result, session)));
-    log.debug("Leaving FederationSp.startFederatedSession(). Drew the result page.");
+    const self = this;
+    // THE ATTRIBUTE SOURCES A SIGN-IN READS (#94), after the partner's
+    // attributes are on the entry and before the browser goes on — so a
+    // source's column wins over a partner's value for an attribute both
+    // name, and a refusing source that failed is this relationship's
+    // refusal page rather than a session.
+    this.deps.authn.afterSignIn(res, function (): void {
+      if (returnTo) {
+        // 303, for the reason `authn.js`'s returnToCaller() gives at length:
+        // this may follow a POST carrying an assertion, and 302's behaviour
+        // after a POST is historically ambiguous where 303's is defined.
+        res.redirect(303, returnTo);
+        return;
+      }
+      res.type('html').set('Cache-Control', 'no-store').send(
+        self.page('Signed in',
+                  self.signedInPage(record,
+                                    Object.assign({}, mapped,
+                                                  { username: username }),
+                                    result, session)));
+    }, function (why: string): void {
+      // error-code: none — afterSignIn() marked STS-ATTR-0012 on `res`
+      self.refuse(res, record, 403, 'An attribute source refused the sign-in',
+                  why + ' This realm\'s attribute source says a sign-in it ' +
+                  'cannot read is refused, and the session was ended.');
+    });
+    log.debug("Leaving FederationSp.startFederatedSession(). " +
+              (returnTo ? "Sending them on to " + returnTo + "."
+                        : "Drawing the result page."));
   }
 
   // ---------------------------------------------------------------------------

@@ -6137,6 +6137,17 @@ const ENDPOINTS: EndpointEntry[] = [
           'the picture), the Kerberos policy, and `delegationPolicy` — the ' +
           'WS-Trust and token-exchange one, paged as GET ' +
           '/admin-api/delegation/policy pages it.' },
+  { path: '/admin/attribute-sources', group: 'Admin',
+    name: 'Attribute sources', specs: [],
+    what: 'NON-SPEC PAGE (#94). The SQL databases this realm reads people\'s ' +
+          'attributes from, onto their directory entries: each source\'s ' +
+          'database, the one row it reads (a table or view, the key column ' +
+          'and the person\'s attribute it matches), the columns it writes ' +
+          'onto which attributes, when it reads — at sign-in, once, on a ' +
+          'schedule, on demand — and what a failure does, with its status. ' +
+          'Add, change, test (read one row, write nothing), read everyone ' +
+          'now, read one person now, remove. TLS always verified; the ' +
+          'password read from where the source names, never stored.' },
   { path: '/admin/roles', group: 'Admin', name: 'Roles',
     // XACML because the decision is a XACML one, and rfc6749/oidc/saml because
     // those are the issuances a role gates. NOT the delegation page's four:
@@ -8376,6 +8387,16 @@ const ENDPOINTS: EndpointEntry[] = [
           'not revoke the grants naming it — they become dangling, because ' +
           'tidying them would be one call writing to entries it did not ' +
           'name.' },
+  { path: '/admin-api/attribute-sources', group: 'Management API',
+    name: 'Attribute sources', specs: ['openapi'],
+    what: 'NON-SPEC (#94). What GET /admin/attribute-sources draws, out of ' +
+          'the same call: every source with its status, and the rules a ' +
+          'definition is held to. Never a password.' },
+  { path: '/admin-api/attribute-sources/:action', group: 'Management API',
+    name: 'Change the attribute sources', specs: ['openapi'],
+    what: 'NON-SPEC (#94). add-source, update-source, remove-source, ' +
+          'test-source, refresh-source and refresh-person: the console\'s ' +
+          'six acts, each audited.' },
   { path: '/admin-api/roles', group: 'Management API', name: 'Roles',
     specs: ['openapi', 'xacml30'],
     what: 'NON-SPEC. The role register, both relations. `roles` is ' +

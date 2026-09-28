@@ -41,6 +41,7 @@
     "jsonld": "^9.0.0",
     "jsonld-signatures": "^11.6.0",
     "jsonwebtoken": "^9.0.2",
+    "knex": "^3.3.0",
     "ldapjs": "file:node-ldapjs",
     "macaroon": "^3.0.4",
     "node-forge": "^1.3.1",
@@ -98,9 +99,21 @@
     "dbus-next": "^0.10.2",
     "@aws-sdk/client-sesv2": "^3.0.0",
     "@azure/communication-email": "^1.0.0",
-    "@googleapis/gmail": "^22.0.0"
+    "@googleapis/gmail": "^22.0.0",
+    "mysql2": "^3.0.0",
+    "tedious": "^20.0.0",
+    "oracledb": "^7.0.0"
   },
   "peerDependenciesMeta": {
+    "mysql2": {
+      "optional": true
+    },
+    "tedious": {
+      "optional": true
+    },
+    "oracledb": {
+      "optional": true
+    },
     "@aws-sdk/client-secrets-manager": {
       "optional": true
     },

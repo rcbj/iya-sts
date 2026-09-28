@@ -14728,6 +14728,32 @@ const SETTINGS = [
                  'to, so the scheduler cannot take every connection from ' +
                  'the requests.' },
 
+  // ATTRIBUTE SOURCES (#94): the operators' SQL databases a realm reads
+  // people's attributes from. The sources themselves are a register
+  // (`ou=attributesources`, /admin/attribute-sources); these two bound them.
+  { key: 'attributeSources.hostPatterns', group: 'Attribute sources',
+    label: 'Hosts an attribute source may name',
+    env: 'STS_ATTRIBUTE_SOURCES_HOST_PATTERNS', type: 'csv', dflt: '',
+    runtime: true,
+    description: 'The database hosts this realm\'s attribute sources may ' +
+                 'connect to, comma-separated, * matching any run of ' +
+                 'characters (db.example.com, *.hr.example.com). EMPTY, the ' +
+                 'default, allows ANY HOST — and a realm administrator ' +
+                 'manages their realm\'s sources, so an empty list lets a ' +
+                 'realm administrator make this service connect to any host ' +
+                 'its network reaches, internal ones included. Set it for ' +
+                 'every realm whose administrators you do not trust with ' +
+                 'that. Only a service administrator may change it; a ' +
+                 'source already stored is checked again when it is next ' +
+                 'changed.' },
+  { key: 'attributeSources.refreshBatch', group: 'Attribute sources',
+    label: 'People per scheduled refresh',
+    env: 'STS_ATTRIBUTE_SOURCES_REFRESH_BATCH', type: 'int', dflt: 200,
+    min: 1, max: 5000, runtime: true,
+    description: 'How many people each attribute source reads per run of ' +
+                 'the scheduled refresh (attribute-sources.refresh, every ' +
+                 'minute), picking up after the last one next time. Larger ' +
+                 'finishes a pass sooner and holds a node longer per run.' },
   // -------------------------------------------------------------------------
   // MAIL (#63, 2026-09-22): the one outbound mail channel, `common/mail.ts`.
   //
