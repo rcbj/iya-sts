@@ -1816,3 +1816,16 @@ Beside it, `xacml.issuance.refused` had never been in `audit.js`'s `ACTIONS`
 table, so every one of them landed in the `protocol` category — findable by name
 and invisible to anybody filtering the audit log for AUTHORIZATION, which is the
 one filter somebody investigating a refusal reaches for. Both are registered now.
+
+## CELLS: `POST /xacml/pip` IS ANSWERED WHERE ITS SUBJECT IS HOMED (#98, 2026-09-28)
+
+What the PIP hands out is a named person's directory attributes, and a person's
+entry exists only in their home cell. So the handler reads the query's
+`subject-id` leniently (`pipSubjectKey()`: a `urn:uuid:` subject by its
+entryUUID, a DN by its RDN value, anything else as a login name) and relays a
+query about somebody homed elsewhere WHOLE — **before** the identity is read,
+the rate limit counted and the access policy asked, so the home cell counts it,
+checks the PEP's certificate (the channel forwards the client certificate and
+shims the socket, `common/cell_channel.ts`) and writes the `xacml.pip.query`
+audit row. A query that does not parse, or names nobody the routing index
+knows, is answered where it arrived, as before. Single-cell mode does not look.

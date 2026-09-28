@@ -235,6 +235,11 @@ const identityAssurance = require('../common/identity_assurance');
 // the ambient realm. A LEAF this module's closure already holds (`app.js` and
 // `helpers.js` both require it).
 const realms = require('../common/realms');
+// WHICH CELL SIGNS A CERTIFICATE'S HOLDER IN (#98): the cell map and the
+// placement helper. Libraries that register nothing; their own requires of
+// the channel and the routing index are lazy.
+const cells = require('../common/cells');
+const cellPlacement = require('../common/cell_placement');
 
 // ---------------------------------------------------------------------------
 // THE TRUSTSTORE IS THE PROCESS'S, SO THE MODE THAT GUARDS IT IS TOO.
@@ -4257,6 +4262,95 @@ app.get('/tls', function (req, res) {
 // ---------------------------------------------------------------------------
 app.get('/tls/sign-in', function (req, res) {
   log.debug('Entering GET /tls/sign-in.');
+  // WHICH CELL SIGNS THE HOLDER IN (#98 D10), BEFORE the revocation check,
+  // the identity gate and the session: a session is started where its person
+  // is homed. `placeCertificateSignIn()` argues it; single-cell mode answers
+  // at once and the rest runs exactly as it did.
+  placeCertificateSignIn(req, res).then(function (relayed) {
+    if (relayed) {
+      log.debug('Leaving GET /tls/sign-in. Relayed to the home cell.');
+      return;
+    }
+    answerCertificateSignIn(req, res);
+    log.debug('Leaving GET /tls/sign-in.');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// A CERTIFICATE SIGN-IN IS ANSWERED IN ITS PERSON'S HOME CELL (#98 D10,
+// 2026-09-28).
+//
+// The certificate names its holder — the `urn:sts:person:` name this
+// service's own authority wrote (`tls_client_certificates.js`), else the
+// common name, else the subject, exactly as `startCertificateSessionIn()`
+// reads it — and a session for somebody is started where their entry is. So
+// a holder homed in another cell is sent there WHOLE, in the realm the
+// certificate names. THE CERTIFICATE GOES WITH IT: the channel forwards the
+// client's certificate and its chain as the front process hands one to a
+// request worker, and the receiving cell shims the socket so
+// `getPeerCertificate()` answers with the CLIENT's and `authorized` with this
+// handshake's verdict (`cell_channel.ts`, *what a relayed request carries*).
+// The home cell then runs the whole door — the revocation check
+// (`revocation_status.fromSocket()` reads the forwarded `issuerChain`, as it
+// does in a worker), the identity gate, the issuance policy — and starts the
+// session, which pins the browser to it (`authn.startSession()`).
+//
+// **A BROWSER ALREADY HOLDING A SESSION HERE IS ANSWERED HERE**: this route's
+// rule is one session per browser, and sending it home would start a second
+// one there for somebody this cell already signed in. The placement table
+// honours a pinned browser's cell before this handler runs (`browser: true`).
+//
+// **ONLY A VERIFIED CERTIFICATE IS PLACED.** Nothing else starts a session,
+// so anything else is answered here with what it is, as it always was.
+// ---------------------------------------------------------------------------
+function placeCertificateSignIn(req, res) {
+  log.debug('Entering placeCertificateSignIn().');
+  if (!cells.isMulti() || req.stsCellRelay || !req.socket ||
+      req.socket.authorized !== true) {
+    log.debug('Leaving placeCertificateSignIn(). Here.');
+    return Promise.resolve(false);
+  }
+  const identity = issuedIdentityOf(req.socket);
+  let name = '';
+  let held = false;
+  try {
+    const cert = req.socket.getPeerCertificate();
+    const common = cert && cert.subject && cert.subject.CN
+      ? String(Array.isArray(cert.subject.CN) ? cert.subject.CN[0] :
+               cert.subject.CN)
+      : '';
+    name = (identity && identity.accepted && identity.username) || common ||
+           (cert && cert.subject ? dnRfc4514(cert.subject) : '');
+    held = !!inCertificateRealm(identity, function () {
+      return authn.sessionOf(req);
+    });
+  } catch (e) {
+    log.debug('Caught in placeCertificateSignIn(): ' +
+              ((e && e.message) || e));
+    name = '';
+  }
+  // An application's certificate signs nobody in; it is answered here.
+  if (!name || held || (identity && identity.kind === 'application')) {
+    log.debug('Leaving placeCertificateSignIn(). Here.');
+    return Promise.resolve(false);
+  }
+  const realmId = identity && identity.accepted && identity.realm
+    ? String(identity.realm) : realms.currentId();
+  log.debug('Leaving placeCertificateSignIn(). Asking where ' + name +
+            ' is homed.');
+  return cellPlacement.relayToHome(req, res, realmId, 'name', name,
+                                   'tls-sign-in')
+    .catch(function (e) {
+      // A lookup that failed is served here, as an unknown holder is.
+      log.debug('Caught in placeCertificateSignIn(): ' +
+                ((e && e.message) || e));
+      return false;
+    });
+}
+
+// The certificate sign-in, once it is known to be answered here.
+function answerCertificateSignIn(req, res) {
+  log.debug('Entering answerCertificateSignIn().');
   clusterBarrier.middleware()(req, res, function () {
     checkedSocket(req.socket).then(function (revocation) {
       const identity = issuedIdentityOf(req.socket);
@@ -4316,7 +4410,8 @@ app.get('/tls/sign-in', function (req, res) {
         });
     });
   });
-});
+  log.debug('Leaving answerCertificateSignIn().');
+}
 
 app.get('/tls/server-certificate', function (req, res) {
   log.debug('Entering GET /tls/server-certificate.');
