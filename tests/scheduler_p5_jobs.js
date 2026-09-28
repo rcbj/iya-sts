@@ -82,6 +82,22 @@ function childMain() {
            JSON.stringify(job && { kind: job.kind, owner: job.owner,
                                    quiet: !!job.quiet }));
     });
+    // REGISTERED BY THE STACK ITSELF, IN EVERY PROCESS (2026-09-28): the two
+    // cluster jobs that were known only to a process that had recorded a
+    // token or flushed minted state — so the leader's front process, which
+    // under dispatch often had done neither, might never run them, and the
+    // console's two doors listed different jobs (sts_scheduler, cluster, CI
+    // run 36380417724). Asked before this child records or flushes anything.
+    [['oauth2.expired-token-purge', 'common/admin_stats.js'],
+     ['persistence.tombstone-purge', 'persistence/persistence_minted.js']]
+      .forEach(function (row) {
+        const job = scheduler.job(row[0]);
+        note(job && (job.kind || 'cluster') === 'cluster' &&
+             job.owner === row[1],
+             'A. ' + row[0] + ' is registered when the stack loads, as a ' +
+             'cluster job of ' + row[1] + ', before its first use',
+             JSON.stringify(job && { kind: job.kind, owner: job.owner }));
+      });
     const spiffeJob = scheduler.job('spiffe.authority-rotation');
     note(spiffeJob && spiffeJob.scope === 'realm',
          'A. and the SPIFFE rotation is per realm');
@@ -199,8 +215,8 @@ function childMain() {
     const purgeJob = scheduler.job('oauth2.expired-token-purge');
     note(purgeJob && (purgeJob.kind || 'cluster') === 'cluster' &&
          purgeJob.owner === 'common/admin_stats.js',
-         'D1. the tracked-token purge is a cluster job, registered at the ' +
-         'first token recorded');
+         'D1. the tracked-token purge is a cluster job, and a token ' +
+         'recorded registers it no second time');
     const soon = stats.purgeExpiredTokens(Date.now() + (skewS + 1) * 1000);
     const listed = function () {
       return JSON.stringify(stats.tokenList ? stats.tokenList() : '');
