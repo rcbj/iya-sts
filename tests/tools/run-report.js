@@ -236,6 +236,14 @@ const service = require('./service');
 const trust = require('./trust');
 const manifest = require('../vendored/MANIFEST.js');
 const coverage = require('./coverage-report');
+
+// A JOB THAT DECLINES TO RUN says so on a line of its own and exits with
+// this code: `tests/vendored/expectation.js`'s declineToRun(), whose two
+// constants these must match (it is a vendored helper, so it is read rather
+// than required here: a require would run nothing, but the rule for that
+// directory is to take nothing from it that a job does not).
+const SELF_SKIP_EXIT = 42;
+const SELF_SKIP_MARKER = '===== SELF-SKIP: ';
 const adminApiToken = require('./admin-api-token');
 
 const { testFiles } = require('../run');
@@ -659,6 +667,9 @@ function runJob(job, opts) {
     // parse. Each job's own log file gets its bytes exactly as they came.
     let echoed = '';
     const assertions = [];
+    // The reason a job gave for declining to run, off its SELF_SKIP_MARKER
+    // line; see where the status is decided.
+    let selfSkip = null;
     function onData(chunk) {
       log.debug("Entering onData().");
       const text = chunk.toString();
@@ -680,6 +691,9 @@ function runJob(job, opts) {
         const a = assertionOf(line);
         if (a) {
           assertions.push(a);
+        }
+        if (line.indexOf(SELF_SKIP_MARKER) === 0) {
+          selfSkip = line.slice(SELF_SKIP_MARKER.length).trim();
         }
       });
       log.debug("Leaving onData().");
@@ -753,6 +767,16 @@ function runJob(job, opts) {
       if (timedOut) {
         failures.push('the job did not finish within ' + jobTimeoutMs +
                       'ms and was killed');
+      } else if (code === SELF_SKIP_EXIT && selfSkip !== null &&
+                 !failures.length) {
+        // A JOB THAT DECLINED TO RUN (2026-09-28): the parent project's
+        // convention, `expectation.js`'s declineToRun() — a marker line
+        // with the reason, then exit 42 — which the jobs copied from there
+        // use for a prerequisite this run does not have (Samba's raw tests
+        // need the KDC on port 88; the coverage run's is on a port of its
+        // own). It was counted as a failure here, which it is not. Both the
+        // marker AND the code are required, so neither alone can hide one.
+        log.warn(job.name + ' declined to run: ' + selfSkip);
       } else if (code !== 0 && !failures.length) {
         // The exit code is the only evidence there is: a parent-project job
         // reports through `assert` rather than through this repository's
@@ -763,12 +787,15 @@ function runJob(job, opts) {
       stream.end('\n# exit code ' + code + (signal ? ' (' + signal + ')' : '') +
                  ' after ' + ms + 'ms\n');
       log.debug('Leaving runJob(). ' + job.name + ' exited ' + code + '.');
+      const declined = !timedOut && code === SELF_SKIP_EXIT &&
+        selfSkip !== null && !failures.length;
       resolve(Object.assign({}, job, {
-        status: (code === 0 && !timedOut && !failures.length) ? 'passed'
-                                                             : 'failed',
+        status: declined ? 'skipped'
+          : (code === 0 && !timedOut && !failures.length) ? 'passed'
+                                                          : 'failed',
         ms: ms, code: code, signal: signal || null,
         assertions: assertions, failures: failures
-      }));
+      }, declined ? { why: selfSkip } : {}));
     });
   });
 }

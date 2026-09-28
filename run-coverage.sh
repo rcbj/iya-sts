@@ -456,6 +456,15 @@ else
     # run that cannot start one. A skip is honest here; a timeout against a
     # container nobody started is not.
     -e XACML_PEP_URL=
+    # AND THE MAIL CATCHER'S, THE FOURTH OF THE SAME KIND (2026-09-28): the
+    # compose file defaults `MAILPIT_API_URL=http://mailpit:8025` for
+    # ./run-tests.sh, which starts that container; `--no-deps` starts none,
+    # so sts_mail, sts_email_factor and sts_email_verification fetched a host
+    # that does not exist and failed with `fetch failed` in every coverage
+    # run. Emptied, each takes the path it already has for a stack with no
+    # catcher: the sections that read a delivered message are SKIPPED and
+    # say so, and the rest still run.
+    -e MAILPIT_API_URL=
     # AND THE DIRECTORY'S SOCKET, WHICH IS THE THIRD OF EXACTLY THE SAME KIND
     # AND WAS FOUND THE SAME WAY — two red jobs in a run that had never got
     # this far before.
