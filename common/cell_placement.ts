@@ -98,7 +98,9 @@ const ROWS: Row[] = [
          'same in every cell' },
   { prefix: '/.well-known/est', strategy: 'handler',
     handler: 'est/est.ts',
-    why: 'an EST enrollment is for an entry, served where it is homed' },
+    why: 'an EST enrollment is served where the person its Basic name or ' +
+         'client certificate names is homed; cacerts and csrattrs are the ' +
+         'same in every cell' },
   { prefix: '/pki', strategy: 'local',
     why: 'the certificate authority is the global tier\'s' },
   { prefix: '/crypto', strategy: 'local',
@@ -310,7 +312,10 @@ const ROWS: Row[] = [
     why: 'the resource checks a token its minting cell holds' },
   // --- certificate enrollment ---
   { prefix: '/enroll', strategy: 'handler', handler: 'acme/acme.ts',
-    why: 'an enrollment is for an entry, served where it is homed' },
+    why: 'an ACME request names its account by its kid, a new account its ' +
+         'entry by its External Account Binding key, and a revocation by ' +
+         'certificate key the entry the certificate names — each served ' +
+         'where that is held' },
   { prefix: '/enroll/acme/directory', strategy: 'local',
     why: 'the same directory in every cell' },
   { prefix: '/enroll/acme/new-nonce', strategy: 'local',
@@ -325,10 +330,16 @@ const ROWS: Row[] = [
     why: 'a challenge is found where it was created (D10)' },
   { prefix: '/enroll/acme/cert', strategy: 'artifact', segment: 4,
     why: 'a certificate is found where it was issued (D10)' },
-  { prefix: '/enroll/acme/renewal-info', strategy: 'local',
-    why: 'renewal information is computed from the certificate itself' },
+  { prefix: '/enroll/acme/renewal-info', strategy: 'handler',
+    handler: 'acme/acme.ts',
+    why: 'RFC 9773\'s certificate identifier (AKI and serial) names no ' +
+         'cell, and the certificate it is looked up in is the issuing ' +
+         'cell\'s (acme.certificates); every other cell is asked and the ' +
+         'request relayed to the one that holds it' },
   { prefix: '/enroll/scep', strategy: 'handler', handler: 'scep/scep.ts',
-    why: 'a SCEP challenge names the entry it was issued for' }
+    why: 'a PKIOperation is served where the entry its signer or its ' +
+         'challenge names is held; GetCACaps and GetCACert are the same in ' +
+         'every cell' }
 ];
 
 // The rows, longest prefix first, so the first match is the most specific.
@@ -647,7 +658,21 @@ class CellPlacement {
     const type = String((req.headers && req.headers['content-type']) || '')
       .toLowerCase();
     let out: Buffer;
-    if (Buffer.isBuffer(body)) {
+    // THE BYTES ON THE WIRE WIN WHEN THE TEXT PARSER KEPT THEM (`app.js`
+    // keeps `req.rawBody` beside the decoded string). A body decoded as UTF-8
+    // is not reversible in general, and a binary body that arrived with no
+    // Content-Type at all — sscep's SCEP PKIOperation does exactly that —
+    // reaches a handler only as that string: re-encoding it would relay
+    // bytes the client never sent, and the owning cell would refuse a
+    // correct signature. And a GET or HEAD sends no body, whatever an
+    // empty parse left on `req.body`.
+    const method = String(req.method || 'GET').toUpperCase();
+    if (Buffer.isBuffer(req.rawBody)) {
+      out = req.rawBody;
+    } else if ((method === 'GET' || method === 'HEAD') &&
+               !Buffer.isBuffer(body) && typeof body !== 'string') {
+      out = Buffer.alloc(0);
+    } else if (Buffer.isBuffer(body)) {
       out = body;
     } else if (typeof body === 'string') {
       out = Buffer.from(body, 'utf8');

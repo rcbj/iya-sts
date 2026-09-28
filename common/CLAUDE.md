@@ -8775,6 +8775,23 @@ entry's credential however well it verifies.
 `/pki/ocsp` answers `good` and the CRL can list it. A branch built before the use
 cases existed is topped up by `ensureScope()`.
 
+**IN A SERVICE DEPLOYED AS CELLS (#98 D10, 2026-09-28), THE TWO CREDENTIALS
+NAME THEIR CELL AND A CERTIFICATE ITS ENTRY.** `credentialId()` appends
+`cell_locator.ts`'s twelve-character tag after the sixteen hex digits
+(`entryOfCredentialId()` accepts it or nothing), so the enrollment families
+can send an ACME newAccount or a SCEP PKCSReq to the cell that minted its
+credential before anything is verified — for a person they use the person's
+home instead, which is where it was minted and where the entry is; the tag
+is what places an APPLICATION's, whose entry is global and whose binding
+claim is one cell's. `entryNamedByCertificate()` reads the one entry a
+certificate's urn:sts: SAN names WITHOUT verifying it, for the same purpose:
+it chooses only where `authenticatePresentedCertificate()` then runs. Every
+write onto an entry here happens in the cell that serves the request, which
+after that placement is the entry's home; a person not resident in the
+serving cell is `STS-ENROLL-0012` from `resolveEntry()`, never a write in
+the wrong cell. `acme/`, `est/` and `scep/`'s `CLAUDE.md` have where each
+request goes, and EST's one exception.
+
 `tests/cert_enrollment.js` holds it in process — 238 assertions; fifteen mutants,
 fourteen caught and one recorded as EQUIVALENT (the canonical-base64url check in
 `entryOfCredentialId()`, which the exact kid comparison makes unobservable). Two

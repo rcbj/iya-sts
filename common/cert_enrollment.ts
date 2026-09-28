@@ -105,6 +105,10 @@ import claims = require('../cluster/cluster_claims');
 import accountSignals = require('../ssf/account_signals');
 import capabilities = require('../cluster/cluster_capabilities');
 import InstanceSlot = require('./instance_slot');
+// Which cell minted a credential (#98 D10): a keyed tag appended to an EAB
+// key id and a SCEP challenge id. A leaf library; stamps nothing in a
+// single-cell service.
+import cellLocator = require('./cell_locator');
 // A DEVICE AS THE HOLDER (#164 phase 2): the device register, what a
 // request's key attestation proves, and the enrolment counters. Three
 // libraries; none requires this file.
@@ -304,6 +308,7 @@ interface CertEnrollmentDeps {
   devices: typeof devices;
   deviceAttestation: typeof deviceAttestation;
   deviceRecognition: typeof deviceRecognition;
+  cellLocator: typeof cellLocator;
   // Required when first called, as the JavaScript did: `pki_revocation.js`
   // by `revokeEnrolled()`, and `websecurity.ts` by the throttles
   // (`websecurityModule()`).
@@ -417,6 +422,7 @@ class CertEnrollment {
       devices: devices,
       deviceAttestation: deviceAttestation,
       deviceRecognition: deviceRecognition,
+      cellLocator: cellLocator,
       loadRevocation: function () {
         return require('./pki_revocation');
       },
@@ -595,6 +601,48 @@ class CertEnrollment {
     });
     log.debug("Leaving CertEnrollment.entryFromUri().");
     return found;
+  }
+
+  // THE ENTRY A CERTIFICATE NAMES, READ AND NOT BELIEVED (#98 D10). Where a
+  // request is served in a service deployed as cells is decided before it is
+  // authenticated — a credential is verified, a claim spent and a certificate
+  // written only in the cell that holds the entry — so the enrollment
+  // families need the entry a presented certificate's `urn:sts:`
+  // subjectAltName names without verifying anything: it chooses only WHERE
+  // `authenticatePresentedCertificate()` then asks the three real questions.
+  /**
+   * Reads the one person or application a certificate's `urn:sts:`
+   * subjectAltName names, without verifying the certificate.
+   *
+   * @param certificate - the certificate, as PEM or DER
+   * @returns the entry's `kind` and `id`, or null when it names none or
+   *   several, or cannot be read
+   */
+  entryNamedByCertificate(certificate) {
+    const { nodeCrypto, log } = this.deps;
+    const self = this;
+    log.debug("Entering CertEnrollment.entryNamedByCertificate().");
+    let cert = null;
+    try {
+      cert = certificate ? new nodeCrypto.X509Certificate(certificate) : null;
+    } catch (e) {
+      log.debug("Caught in CertEnrollment.entryNamedByCertificate(): " +
+                ((e && e.message) || e));
+      cert = null;
+    }
+    const named = String((cert && cert.subjectAltName) || '').split(/,\s*/)
+      .filter(function (one) {
+        return one.indexOf('URI:') === 0;
+      })
+      .map(function (one) {
+        return self.entryFromUri(one.slice(4));
+      })
+      .filter(function (one) {
+        return !!one;
+      });
+    log.debug("Leaving CertEnrollment.entryNamedByCertificate(). " +
+              named.length);
+    return named.length === 1 ? named[0] : null;
   }
 
   /**
@@ -2909,21 +2957,38 @@ class CertEnrollment {
   // the portal, an administrator on the console or the API), shown once, and
   // spent once.
   // ---------------------------------------------------------------------------
+  //
+  // **AND, IN A SERVICE DEPLOYED AS CELLS, THE CELL THAT MINTED IT (#98
+  // D10).** The random part carries `cell_locator.ts`'s keyed tag — twelve
+  // base64url characters after the sixteen hex digits, nothing a reader can
+  // map to a cell — so an ACME newAccount or a SCEP PKCSReq presented at
+  // another cell is relayed to the one that minted the credential before
+  // anything is verified or spent there. A PERSON's credential is placed by
+  // their home instead (the entry the identifier names, through the routing
+  // index), which is where it was minted and where it still is if they are
+  // ever re-homed; the tag is what places an APPLICATION's, whose entry is
+  // the global tier's and whose binding claim (`bindEabOnce()`,
+  // `redeemScepChallengeOnce()`) is held in one cell. A single-cell service
+  // appends nothing, so its identifiers are what they always were.
   credentialId(prefix, entry) {
-    const { nodeCrypto, log } = this.deps;
+    const { nodeCrypto, log, cellLocator } = this.deps;
     log.debug("Entering CertEnrollment.credentialId().");
     log.debug("Leaving CertEnrollment.credentialId().");
     return prefix + '-' + (entry.kind === 'person' ? 'p' : 'a') + '-' +
            Buffer.from(entry.id, 'utf8').toString('base64url') + '-' +
-           nodeCrypto.randomBytes(8).toString('hex');
+           cellLocator.stamp(nodeCrypto.randomBytes(8).toString('hex'));
   }
 
   entryOfCredentialId(prefix, id) {
-    const { log } = this.deps;
+    const { log, cellLocator } = this.deps;
     const self = this;
     log.debug("Entering CertEnrollment.entryOfCredentialId().");
+    // The random part, and the cell's tag after it when there is one (see
+    // `credentialId()`); the tag is `cell_locator.TAG_LENGTH` characters.
     const match = new RegExp('^' + prefix + '-([pa])-([A-Za-z0-9_-]{1,400})-' +
-                             '([0-9a-f]{16})$').exec(String(id || ''));
+                             '([0-9a-f]{16})(?:[A-Za-z0-9_-]{' +
+                             cellLocator.TAG_LENGTH + '})?$')
+      .exec(String(id || ''));
     if (!match) {
       log.debug("Leaving CertEnrollment.entryOfCredentialId(). Malformed.");
       return null;
@@ -4306,6 +4371,8 @@ export = {
   entryUri: slot.forward('entryUri'),
   organisationOf: slot.forward('organisationOf'),
   entryFromUri: slot.forward('entryFromUri'),
+  entryNamedByCertificate: slot.forward('entryNamedByCertificate'),
+  entryOfCredentialId: slot.forward('entryOfCredentialId'),
   entryLabel: slot.forward('entryLabel'),
   resolveEntry: slot.forward('resolveEntry'),
   normalHostName: slot.forward('normalHostName'),
