@@ -120,20 +120,25 @@ function helpers(t) {
           'the longest prefix wins over /scim');
   t.equal(placement.rowFor('/.well-known/est/simpleenroll').strategy,
           'handler', 'EST under .well-known is an enrollment, not metadata');
-  const form = placement.serialisedBody({
+  const form = placement.serialisedBody({ method: 'POST',
     headers: { 'content-type': 'application/x-www-form-urlencoded' },
     body: { grant_type: 'authorization_code', code: 'abc', scope: ['a', 'b'] }
   }).toString('utf8');
   t.equal(form, 'grant_type=authorization_code&code=abc&scope=a&scope=b',
           'a parsed form is re-serialised as a form');
-  const json = placement.serialisedBody({
+  const json = placement.serialisedBody({ method: 'POST',
     headers: { 'content-type': 'application/json' }, body: { a: 1 }
   }).toString('utf8');
   t.equal(json, '{"a":1}', 'a parsed JSON body is re-serialised as JSON');
-  const raw = placement.serialisedBody({
+  const raw = placement.serialisedBody({ method: 'POST',
     headers: { 'content-type': 'text/xml' }, body: '<x/>'
   }).toString('utf8');
   t.equal(raw, '<x/>', 'a text body is sent as it came');
+  t.equal(placement.serialisedBody({ method: 'POST', body: { a: 1 },
+    rawBody: Buffer.from('{ "a" : 1 }') }).toString('utf8'), '{ "a" : 1 }',
+          'the bytes as they arrived win over a re-serialisation');
+  t.equal(placement.serialisedBody({ method: 'GET', body: {} }).length, 0,
+          'a GET sends no body');
   log.debug("Leaving helpers().");
 }
 

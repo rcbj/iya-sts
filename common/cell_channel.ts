@@ -44,6 +44,14 @@
 // would otherwise be a certificate every mTLS door here would read as the
 // caller's.
 //
+// **AND THE HOST IT ADDRESSED, IN THE HOST HEADER** (2026-09-28): the peer is
+// DIALLED by its private name — the TLS server name its leaf is checked
+// against — but the Host header is the host the client addressed, so a
+// signature over `@authority` or `@target-uri`, a DPoP `htu` and every
+// address the owning cell builds come out as they would have at the cell the
+// client reached. `relay()` argues why that widens nothing the owning cell
+// trusts.
+//
 // **ONE HOP.** A relayed request is never relayed again: a cell that is asked
 // to serve something it does not own answers it as best it can rather than
 // sending it on, because two cells that each believe the other owns a request
@@ -89,6 +97,10 @@ const H_PEER_AUTHORIZED = 'x-sts-peer-authorized';
 const H_CLIENT_HELLO = 'x-sts-tls-client-hello';
 const INTERNAL_HEADERS = [H_FROM, H_CLIENT, H_HOPS, H_REASON, H_PEER_CERT,
                           H_PEER_AUTHORIZED, H_CLIENT_HELLO];
+// The forwarding headers a client may have sent. A relay replaces them with
+// what the sending cell understood (relay()), so they are never copied.
+const FORWARDING_HEADERS = ['forwarded', 'x-forwarded-for', 'x-forwarded-host',
+                            'x-forwarded-proto', 'x-forwarded-port'];
 // Hop-by-hop headers (RFC 9110 section 7.6.1), never forwarded.
 const HOP_BY_HOP = ['connection', 'keep-alive', 'proxy-connection',
                     'transfer-encoding', 'te', 'trailer', 'upgrade',
@@ -700,8 +712,10 @@ class CellChannel {
               port: Number(target.port) || 443,
               method: method,
               path: path,
-              headers: Object.assign({}, headers,
-                                     { host: target.host }),
+              // The peer's private name is the TLS server name above, and
+              // the Host header unless the caller names one: a relayed
+              // request carries the host the CLIENT addressed (relay()).
+              headers: Object.assign({ host: target.host }, headers),
               key: leaf.keyPem,
               cert: [leaf.certPem].concat(leaf.chainPem).join('\n'),
               ca: [self.rootPem()],
@@ -830,7 +844,8 @@ class CellChannel {
     Object.keys(req.headers || {}).forEach(function (name) {
       const lower = name.toLowerCase();
       if (HOP_BY_HOP.indexOf(lower) >= 0 ||
-          INTERNAL_HEADERS.indexOf(lower) >= 0 || lower === 'host') {
+          INTERNAL_HEADERS.indexOf(lower) >= 0 || lower === 'host' ||
+          FORWARDING_HEADERS.indexOf(lower) >= 0) {
         return;
       }
       headers[lower] = req.headers[name];
@@ -853,9 +868,38 @@ class CellChannel {
     if (hello) {
       headers[H_CLIENT_HELLO] = hello;
     }
-    // The host the client asked for, which the owning cell builds its
-    // addresses from where `global.publicBaseUrl` does not decide them.
-    headers['x-forwarded-host'] = String(req.headers.host || '');
+    // THE HOST AND SCHEME THE CLIENT ADDRESSED, AS THIS CELL UNDERSTOOD
+    // THEM (#98, 2026-09-28) — in the Host header itself, not only in
+    // `x-forwarded-host`. The owning cell builds its own addresses from them
+    // (`helpers.baseUrlOf()`) wherever `global.publicBaseUrl` does not pin
+    // them, and so does every check that compares a signed URI with the one
+    // the request arrived at: a GNAP HTTP message signature covering
+    // `@authority` or `@target-uri` (RFC 9421 section 2.2), a DPoP proof's
+    // `htu`, a JWS request's `uri`. Until this change the Host header was the
+    // PEER'S PRIVATE NAME and only `x-forwarded-host` carried the client's —
+    // which the owning cell believes only where `global.trustProxy` is on
+    // and the sending node is a trusted proxy, i.e. almost never — so a
+    // relayed signed request was verified against an authority the client
+    // never saw, and refused. The private name is still what is DIALLED and
+    // what the peer's certificate is checked against: it is the TLS server
+    // name (`dial()`), and the Host header plays no part in either.
+    //
+    // WHAT THE OWNING CELL TRUSTS IS NOT WIDENED. The value is not the raw
+    // header the client sent but `helpers.forwardedFrom()`'s answer here —
+    // the header, or a forwarded host only where THIS cell believes its
+    // proxy — so the owning cell sees exactly what it would have seen had
+    // the client reached it directly through the same balancer. The client's
+    // own `x-forwarded-*` and `forwarded` headers are dropped above and the
+    // two forwarded headers are rewritten to the same answer, so a receiving
+    // cell that does believe forwarded headers from a peer (trustProxy on
+    // with no ranges named) reads the same host, never one a client chose
+    // behind this cell's back. And where `global.publicBaseUrl` is set — as
+    // product mode requires of a deployed service — neither header decides
+    // any address at all: the pinned base does, in every cell alike.
+    const understood = require('./helpers').forwardedFrom(req);
+    headers.host = String(understood.host || req.headers.host || '');
+    headers['x-forwarded-host'] = headers.host;
+    headers['x-forwarded-proto'] = String(understood.proto || 'https');
     let body: Buffer | null = null;
     if (o.body !== undefined) {
       body = Buffer.isBuffer(o.body) ? o.body : Buffer.from(String(o.body));

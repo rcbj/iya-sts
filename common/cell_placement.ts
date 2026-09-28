@@ -296,26 +296,48 @@ const ROWS: Row[] = [
   { prefix: '/oid4vp/response', strategy: 'handler',
     handler: 'oid4vc/vc_verifier.ts',
     why: 'a wallet\'s direct_post names its transaction in the body' },
-  // --- GNAP ---
-  { prefix: '/gnap', strategy: 'handler', handler: 'gnap/gnap.ts',
-    why: 'a grant request may name its subject; everything after it is ' +
-         'found by its handle' },
+  // --- GNAP --- (`gnap/gnap_cells.ts` argues each row)
+  { prefix: '/gnap', strategy: 'handler', handler: 'gnap/gnap_cells.ts',
+    why: 'a grant request is placed by the instance, token or person it ' +
+         'names — read from the body — and served where it arrives when it ' +
+         'names none' },
   { prefix: '/gnap/keys', strategy: 'local',
     why: 'the key set is the global tier\'s' },
-  { prefix: '/gnap/continue', strategy: 'artifact', segment: 3,
-    why: 'a continuation is found where it was minted (D10)' },
+  { prefix: '/gnap/zcap', strategy: 'local',
+    why: 'the ZCAP controller document publishes the global tier\'s keys' },
+  { prefix: '/gnap/continue', strategy: 'handler',
+    handler: 'gnap/gnap_cells.ts',
+    why: 'the grant\'s cell by its tag — or, for a grant that moved to its ' +
+         'resource owner\'s cell, that cell, which the tag cannot say' },
   { prefix: '/gnap/token', strategy: 'artifact', segment: 3,
-    why: 'a token handle is found where it was minted (D10)' },
+    why: 'a management handle is found where it was minted (D10)' },
   { prefix: '/gnap/interact', strategy: 'artifact', browser: true,
-    segment: 3, why: 'an interaction is found where it was minted (D10)' },
+    segment: 3, why: 'an interaction is found where it was minted (D10); ' +
+    'a browser pinned elsewhere pulls the grant there (gnap_cells.ts)' },
   { prefix: '/gnap/app', strategy: 'artifact', browser: true, segment: 3,
-    why: 'an interaction is found where it was minted (D10)' },
+    why: 'an interaction is found where it was minted (D10); a browser ' +
+         'pinned elsewhere pulls the grant there (gnap_cells.ts)' },
   { prefix: '/gnap/approve', strategy: 'artifact', browser: true,
-    segment: 3, why: 'an interaction is found where it was minted (D10)' },
-  { prefix: '/gnap/resource', strategy: 'bearer',
-    why: 'the resource checks a token its minting cell holds' },
-  { prefix: '/gnap/rs', strategy: 'bearer',
-    why: 'the resource checks a token its minting cell holds' },
+    segment: 3, why: 'an interaction is found where it was minted (D10); ' +
+    'a browser pinned elsewhere — signed in at home (D9) — pulls the ' +
+    'grant there (gnap_cells.ts)' },
+  { prefix: '/gnap/code', strategy: 'handler',
+    handler: 'gnap/gnap_cells.ts',
+    why: 'a user code is typed by a person and carries no tag; the cell ' +
+         'holding it is asked of the others — by the cell the code ARRIVES ' +
+         'at, so not a browser row: a pinned browser relayed to its pin ' +
+         'could not be relayed on to the holder' },
+  { prefix: '/gnap/introspect', strategy: 'handler',
+    handler: 'gnap/gnap_cells.ts',
+    why: 'the token in the body is answered by the cell holding it' },
+  { prefix: '/gnap/resource', strategy: 'handler',
+    handler: 'gnap/gnap_cells.ts',
+    why: 'a registration carries no token: the resource set is the global ' +
+         'tier\'s, and a resource server naming itself by an instance ' +
+         'identifier is served where that instance is held' },
+  { prefix: '/gnap/rs', strategy: 'handler', handler: 'gnap/gnap_cells.ts',
+    why: 'the token\'s cell: a jwt-signed token\'s jti carries the tag, ' +
+         'and the four formats that hide it are asked of the other cells' },
   // --- certificate enrollment ---
   { prefix: '/enroll', strategy: 'handler', handler: 'acme/acme.ts',
     why: 'an ACME request names its account by its kid, a new account its ' +
@@ -703,16 +725,18 @@ class CellPlacement {
     const type = String((req.headers && req.headers['content-type']) || '')
       .toLowerCase();
     let out: Buffer;
-    // THE BYTES ON THE WIRE WIN WHEN THE TEXT PARSER KEPT THEM (`app.js`
-    // keeps `req.rawBody` beside the decoded string). A body decoded as UTF-8
-    // is not reversible in general, and a binary body that arrived with no
-    // Content-Type at all — sscep's SCEP PKIOperation does exactly that —
-    // reaches a handler only as that string: re-encoding it would relay
-    // bytes the client never sent, and the owning cell would refuse a
-    // correct signature. And a GET or HEAD sends no body, whatever an
-    // empty parse left on `req.body`.
-    const method = String(req.method || 'GET').toUpperCase();
-    if (Buffer.isBuffer(req.rawBody)) {
+    // THE BYTES ON THE WIRE WIN WHEN THE PARSER KEPT THEM (`app.js` keeps
+    // `req.rawBody` beside every body it reads). A re-serialisation is only
+    // the same REQUEST, not the same bytes: a GNAP `Content-Digest` or
+    // detached JWS (RFC 9635 section 7.3) covers the bytes, and
+    // `JSON.stringify()` of the parsed object is not them; a body decoded as
+    // UTF-8 is not reversible in general, and a binary body with no
+    // Content-Type at all — sscep's SCEP PKIOperation — reaches a handler
+    // only as that string. Either way the owning cell would refuse a correct
+    // signature. And a GET or HEAD sends no body, whatever an empty parse left
+    // on `req.body`.
+    const method = String((req && req.method) || 'GET').toUpperCase();
+    if (req && Buffer.isBuffer(req.rawBody)) {
       out = req.rawBody;
     } else if ((method === 'GET' || method === 'HEAD') &&
                !Buffer.isBuffer(body) && typeof body !== 'string') {

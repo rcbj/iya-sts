@@ -1630,6 +1630,38 @@ const CODES = [
     summary: 'A federation partner\'s sign-out could not reach every cell; ' +
       'sessions held in a cell not reached last until they end by ' +
       'themselves, and the partner is told where its protocol allows.',
+  // GNAP between cells (#98, group D: 0160-0179).
+  { code: 'STS-CELL-0160',
+    summary: 'A GNAP continuation for a grant that moved to another cell ' +
+      'reached the cell it moved from by way of a third cell, and a relayed ' +
+      'request is not relayed again; answered 503 too_fast so the client ' +
+      'tries again once every cell knows where the grant went.',
+    spec: 'RFC 9635 section 5' },
+  { code: 'STS-CELL-0161',
+    summary: 'The cell that minted a GNAP grant did not hand it to the cell ' +
+      'the resource owner\'s browser is pinned to — it had issued tokens, ' +
+      'was no longer waiting, or was not held there; the browser is told ' +
+      'nothing is waiting.',
+    spec: '' },
+  { code: 'STS-CELL-0162',
+    summary: 'A GNAP grant waiting at an interaction handle could not be ' +
+      'fetched from the cell that minted it; the browser pinned here is ' +
+      'told nothing is waiting.',
+    spec: '' },
+  { code: 'STS-CELL-0163',
+    summary: 'Another cell could not be asked whether it holds a GNAP access ' +
+      'token, user code or user reference; the request is served here as ' +
+      'if no cell did.',
+    spec: '' },
+  { code: 'STS-CELL-0164',
+    summary: 'Another cell could not be told that a GNAP grant moved; a ' +
+      'continuation it receives goes to the minting cell by the grant\'s ' +
+      'tag and is forwarded from there.',
+    spec: '' },
+  { code: 'STS-CELL-0165',
+    summary: 'A GNAP inter-cell operation was malformed: an unknown realm, ' +
+      'an unknown kind, or a grant handed to no other cell; the calling ' +
+      'cell is answered with a failure.',
     spec: '' },
   // ===== SCHED =============================================================
   { code: 'STS-SCHED-0001',
