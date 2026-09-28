@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3810** of them, in **40** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3813** of them, in **40** subsystems.
 
 ## Where a code appears
 
@@ -55,7 +55,7 @@ is an ordinary outcome.
 * [Worker pools (`STS-WORKER`)](#sts-worker) — 43
 * [Persistence and coordination (`STS-STORE`)](#sts-store) — 63
 * [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 28
-* [Cells and residency (`STS-CELL`)](#sts-cell) — 64
+* [Cells and residency (`STS-CELL`)](#sts-cell) — 67
 * [Scheduler (`STS-SCHED`)](#sts-sched) — 16
 * [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 79
 * [Certificate authority (`STS-PKI`)](#sts-pki) — 204
@@ -424,6 +424,9 @@ Raised from: common/cells.ts, common/cell_*.ts, persistence/tiers.js, persistenc
 | `STS-CELL-0120` | Two cells' short keyed tags collide, so a SAML artifact whose handle carries one is served where it arrives rather than relayed to either. | — |
 | `STS-CELL-0121` | A cell could not be asked whether it holds the session a SAML attribute or authentication query names; the query is answered without it. | — |
 | `STS-CELL-0122` | A federation partner's sign-out could not reach every cell; sessions held in a cell not reached last until they end by themselves, and the partner is told where its protocol allows. | — |
+| `STS-CELL-0123` | A cell could not be asked whether a person homed there carries a federation partner's link; the partner's subject is decided without it. | — |
+| `STS-CELL-0124` | A person's home cell did not release their attributes to the cell serving a token about them (the transfer policy refused, or no policy was available); the token is refused. | — |
+| `STS-CELL-0125` | A person's home cell could not be reached for their attributes; a token about them is refused (fail-closed, D6). | — |
 | `STS-CELL-0160` | A GNAP continuation for a grant that moved to another cell reached the cell it moved from by way of a third cell, and a relayed request is not relayed again; answered 503 too_fast so the client tries again once every cell knows where the grant went. | RFC 9635 section 5 |
 | `STS-CELL-0161` | The cell that minted a GNAP grant did not hand it to the cell the resource owner's browser is pinned to — it had issued tokens, was no longer waiting, or was not held there; the browser is told nothing is waiting. | — |
 | `STS-CELL-0162` | A GNAP grant waiting at an interaction handle could not be fetched from the cell that minted it; the browser pinned here is told nothing is waiting. | — |
