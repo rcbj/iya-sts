@@ -1086,6 +1086,8 @@ const ACTIONS = [
     label: 'A role was created' },
   { action: 'roles.delete', category: 'admin',
     label: 'A role was deleted' },
+  { action: 'roles.describe', category: 'admin',
+    label: 'A role\'s description, display name or member types were set' },
   { action: 'saml2.authnrequest', category: 'protocol',
     label: 'A SAML 2.0 AuthnRequest was refused' },
   { action: 'saml2.artifact.resolve', category: 'protocol',

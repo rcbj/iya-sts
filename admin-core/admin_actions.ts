@@ -4742,6 +4742,16 @@ class AdminActions {
     // right-looking thing into the wrong place — here, a role called `alice`.
     const member = String(body.member || '').trim();
     const description = String(body.description || '');
+    // WHO MAY HOLD IT AND WHAT PEOPLE CALL IT (#93). Read as given — a list,
+    // or a comma- or space-separated string from a form — and checked by
+    // `roles.write()`, the one place a role's members are known. `undefined`
+    // where the body does not name them, so describe-role keeps what the role
+    // has rather than clearing it for a caller that sent only a description.
+    const memberTypes = body.memberTypes === undefined ? undefined
+      : (Array.isArray(body.memberTypes) ? body.memberTypes.map(String)
+        : String(body.memberTypes).split(/[\s,]+/).filter(Boolean));
+    const displayName = body.displayName === undefined ? undefined
+      : String(body.displayName).trim();
 
     if (action === 'create-role') {
       // AN APPLICATION'S OWN ROLE (#310, rcbj's decisions on #88's
@@ -4780,7 +4790,9 @@ class AdminActions {
                                           'again.'] });
       }
       const result = roles.write(fullName, { description: description,
-                                             application: forApplication });
+                                             application: forApplication,
+                                             displayName: displayName || '',
+                                             memberTypes: memberTypes || [] });
       if (result.ok) {
         auditLog.audit({ action: 'roles.create', actor: actor,
                       target: fullName, protocol: 'XACML', channel: 'http',
@@ -4847,8 +4859,21 @@ class AdminActions {
       const result = roles.write(name, {
         description: description, users: row.users, groups: row.groups,
         applications: row.applications, permissions: row.permissions,
-        application: row.application
+        application: row.application,
+        displayName: displayName === undefined ? row.displayName : displayName,
+        memberTypes: memberTypes === undefined ? row.memberTypes : memberTypes
       });
+      if (result.ok) {
+        // Audited since #93: who may hold a role is an authorization fact.
+        auditLog.audit({ action: 'roles.describe', actor: actor, target: name,
+                         protocol: 'XACML', channel: 'http',
+                         detail: 'described the role "' + name + '"' +
+                                 (memberTypes === undefined ? ''
+                                   : '; it may be held by ' +
+                                     (memberTypes.length
+                                       ? memberTypes.join(' and ')
+                                       : 'users and applications')) });
+      }
       log.debug("Leaving AdminActions.rolesAction(). describe-role " +
                 (result.ok ? 'ok.' : 'refused.'));
       return result.ok ? result
@@ -4938,7 +4963,8 @@ class AdminActions {
       const result = roles.write(name, {
         description: row.description, users: held.users, groups: held.groups,
         applications: held.applications, permissions: row.permissions,
-        application: row.application
+        application: row.application, displayName: row.displayName,
+        memberTypes: row.memberTypes
       });
       if (!result.ok) {
         log.debug("Leaving AdminActions.rolesAction(). The write was refused.");
@@ -5056,7 +5082,8 @@ class AdminActions {
       const result = roles.write(name, {
         description: row.description, users: row.users, groups: row.groups,
         applications: row.applications, permissions: permissions,
-        application: row.application
+        application: row.application, displayName: row.displayName,
+        memberTypes: row.memberTypes
       });
       if (!result.ok) {
         log.debug("Leaving AdminActions.rolesAction(). The write was refused.");

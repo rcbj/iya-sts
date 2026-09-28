@@ -14911,6 +14911,20 @@ const CODES = [
       '<role>@<application>, or used a native or built-in role\'s name for ' +
       'one (#310).',
     spec: 'none (a console or management API refusal, HTTP 400)' },
+  { code: 'STS-XACML-0081',
+    summary: 'A role write named a member type that is not user or ' +
+      'application (#93).',
+    spec: 'none (a console or management API refusal, HTTP 400)' },
+  { code: 'STS-XACML-0082',
+    summary: 'A role write gave the role a member of a kind its member ' +
+      'types exclude: a person or group on an applications-only role, or ' +
+      'an application on a people-only one (#93).',
+    spec: 'none (a console or management API refusal, HTTP 400)' },
+  { code: 'STS-XACML-0083',
+    summary: 'A role write tried to restrict a console role (ADMIN_READ, ' +
+      'ADMIN_WRITE) to one member type; it holds people and applications ' +
+      'both (#93).',
+    spec: 'none (a console or management API refusal, HTTP 400)' },
   // ===== XPEP ==============================================================
   { code: 'STS-XPEP-0001',
     summary: 'The error-code registry could not be loaded from ./error_codes ' +
