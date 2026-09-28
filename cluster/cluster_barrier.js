@@ -88,6 +88,13 @@ function active() {
 }
 
 // One barrier for every request that arrived before it started.
+/**
+ * Pulls the change log until this process has applied everything committed
+ * before the call; every caller arriving before the pull starts shares it.
+ *
+ * @returns a promise of the `syncNow()` answer, or `{ caughtUp: false,
+ *   error }`; it never rejects
+ */
 function syncShared() {
   log.debug("Entering syncShared().");
   if (pending && !pending.started) {
@@ -167,6 +174,12 @@ function syncShared() {
 // ---------------------------------------------------------------------------
 const CALL_LOG = Symbol('sts.clusterBarrier.callLog');
 
+/**
+ * Records the store's write position before `common/app.js` writes the call
+ * log's rows, so those rows can be told apart from the request's own writes.
+ *
+ * @param res - the response, if this barrier holds it
+ */
 function callLogStarts(res) {
   log.debug("Entering callLogStarts().");
   if (!res || !res[ARRIVAL]) {
@@ -178,6 +191,13 @@ function callLogStarts(res) {
   log.debug("Leaving callLogStarts().");
 }
 
+/**
+ * Says whether the call-log row just recorded is a refusal, which holds the
+ * response for that row's commit.
+ *
+ * @param res - the response
+ * @param refused - true for a refusal
+ */
 function callLogRecorded(res, refused) {
   log.debug("Entering callLogRecorded().");
   if (res && res[CALL_LOG]) {
@@ -206,6 +226,15 @@ function mintedWrites(position) {
   return (Number(position.minted) || 0) - (Number(position.observed) || 0);
 }
 
+/**
+ * Wraps `res.end()` so that a response whose request wrote anything is sent
+ * only once those writes have committed; one that wrote nothing is sent at
+ * once, and a failed commit is logged and the response sent anyway.
+ *
+ * @param res - the response
+ * @param arrival - the store's write position when the request arrived, or
+ *   null for a persistence module without positions
+ */
 function holdUntilCommitted(res, arrival) {
   log.debug("Entering holdUntilCommitted().");
   const end = res.end;
@@ -276,6 +305,13 @@ function holdUntilCommitted(res, arrival) {
 // token — and was refused 401 (`sts_provider_commands` in the cluster mode).
 // Outside active-active it resolves at once. It never rejects: a commit that
 // fails is logged and the message goes, as a held response does.
+/**
+ * Waits, in active-active mode, until everything this process has written so
+ * far has committed, so an outbound message cannot reach another node first.
+ *
+ * @returns a promise of true when a commit was waited for, false outside
+ *   active-active mode; it never rejects
+ */
 function commitBeforeSending() {
   log.debug("Entering commitBeforeSending().");
   if (!active()) {
@@ -315,6 +351,11 @@ function commitBeforeSending() {
 }
 
 // For common/app.js's realm middleware, which runs above this one.
+/**
+ * Says whether the barrier applies: active-active mode with clustering on.
+ *
+ * @returns true when requests are held to the barrier
+ */
 function isActive() {
   log.debug("Entering isActive().");
   log.debug("Leaving isActive().");
@@ -324,6 +365,13 @@ function isActive() {
 // That middleware caught this request up already: rule 1 is met by the barrier
 // it ran — it started after the request arrived — so this one does not run
 // another.
+/**
+ * Records that a request has already been caught up (by the realm middleware),
+ * so the barrier does not run another pull for it.
+ *
+ * @param req - the request
+ * @param answer - the pull's answer
+ */
 function markSynced(req, answer) {
   log.debug("Entering markSynced().");
   if (req) {
@@ -332,6 +380,13 @@ function markSynced(req, answer) {
   log.debug("Leaving markSynced().");
 }
 
+/**
+ * Builds the express middleware that applies both rules to every request in
+ * active-active mode: catch up with the change log before serving, and hold
+ * the answer until the request's writes commit.
+ *
+ * @returns the middleware
+ */
 function middleware() {
   log.debug("Entering middleware().");
   log.debug("Leaving middleware().");
@@ -368,6 +423,11 @@ function middleware() {
   };
 }
 
+/**
+ * Reports the barrier's counters for `/admin/cluster`.
+ *
+ * @returns whether it is active, the counts, and the mean wait and hold times
+ */
 function report() {
   log.debug("Entering report().");
   log.debug("Leaving report().");
@@ -381,6 +441,14 @@ function report() {
 // At require time; see cluster.js's note on why a capability is the code.
 capabilities.provide('cluster.read-barrier');
 
+/**
+ * Read-your-write between nodes (#46): in active-active mode a request is
+ * served only after its node has applied everything committed before it
+ * arrived, and answered only once its own writes have committed.
+ *
+ * Installed by `common/app.js` below the request pool's middleware.
+ * @namespace
+ */
 module.exports = {
   middleware: middleware,
   syncShared: syncShared,

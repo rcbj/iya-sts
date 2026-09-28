@@ -132,6 +132,10 @@ interface ClusterSecretsDeps {
 // the arrangement `acme/acme_jws.ts` and `ssf/ssf_receivers.ts` already had
 // for one container; this module only changes WHERE the front process's value
 // comes from.
+/**
+ * The secrets every node must agree on, by name: the bytes to generate, the
+ * environment variable that overrides the value, and what it keys.
+ */
 const DECLARED: Record<string, DeclaredSecret> = {
   'csrf': { bytes: 32, env: 'STS_CSRF_SECRET',
     what: 'The key a form\'s CSRF token is MACed with ' +
@@ -162,11 +166,26 @@ const values: Map<string, HeldSecret> = new Map();
 // own per-process value from one an operator set.
 const generatedHere: Set<string> = new Set();
 
+/**
+ * The secrets every node must agree on (#46): generated once for the whole
+ * store, sealed under the key-encryption key, and read by every process
+ * before it serves; a per-process value where nothing can be shared.
+ */
 class ClusterSecrets {
+  /**
+   * The declared secrets; see the module-level DECLARED.
+   */
   static readonly DECLARED = DECLARED;
 
   private started = false;
 
+  /**
+   * Builds the instance from its dependencies.
+   *
+   * @param deps - the logger, the error-code table, the environment, a
+   *   random-bytes source, and lazy loaders for the shared store and the
+   *   active-active check
+   */
   constructor(private readonly deps: ClusterSecretsDeps) {
     deps.log.debug("Entering ClusterSecrets.constructor().");
     deps.log.debug("Leaving ClusterSecrets.constructor().");
@@ -174,6 +193,11 @@ class ClusterSecrets {
 
   // What the composition root passes: the modules the load-time instance
   // was built from before R2.
+  /**
+   * Returns the dependencies the composition root builds the instance from.
+   *
+   * @returns the default dependencies
+   */
   static defaultDeps(): ClusterSecretsDeps {
     log.debug("Entering ClusterSecrets.defaultDeps().");
     log.debug("Leaving ClusterSecrets.defaultDeps().");
@@ -189,6 +213,11 @@ class ClusterSecrets {
 
   // The persistence store to share through, required LAZILY: the default
   // `clusterStore` in `defaultDeps()`.
+  /**
+   * Returns the persistence store's cluster functions, required lazily.
+   *
+   * @returns the store, or null when none is open
+   */
   static persistenceClusterStore(): SharedSecretStore | null | undefined {
     log.debug("Entering ClusterSecrets.persistenceClusterStore().");
     const persistence = require('../persistence/persistence');
@@ -197,6 +226,11 @@ class ClusterSecrets {
   }
 
   // Is this node active-active? `cluster.js` is required LAZILY, as it was.
+  /**
+   * Says whether this node is active-active, requiring `cluster.js` lazily.
+   *
+   * @returns true in active-active mode
+   */
   static clusterIsActiveActive(): boolean {
     log.debug("Entering ClusterSecrets.clusterIsActiveActive().");
     const cluster = require('./cluster');
@@ -260,6 +294,14 @@ class ClusterSecrets {
 
   // THE SECRET'S TEXT, synchronously. See the header for what it is before
   // start().
+  /**
+   * Returns a secret's text, synchronously: the shared value once started, and
+   * a per-process random value (or the environment's) before.
+   *
+   * @param name - a name in DECLARED
+   * @returns the secret's text
+   * @throws Error when the name is not declared
+   */
   text(name: string): string {
     const { log } = this.deps;
     log.debug("Entering ClusterSecrets.text(). name=" + name);
@@ -269,6 +311,12 @@ class ClusterSecrets {
   }
 
   // THE SECRET AS KEY BYTES.
+  /**
+   * Returns a secret as key bytes, the UTF-8 of text().
+   *
+   * @param name - a name in DECLARED
+   * @returns the key bytes
+   */
   get(name: string): Buffer {
     const { log } = this.deps;
     log.debug("Entering ClusterSecrets.get(). name=" + name);
@@ -277,6 +325,12 @@ class ClusterSecrets {
   }
 
   // Where a secret's value came from, for /admin/cluster. Never the value.
+  /**
+   * Reports where each secret's value came from, for `/admin/cluster`; never
+   * the value.
+   *
+   * @returns whether start() ran, and each secret's name, purpose and source
+   */
   describe(): { started: boolean;
                 secrets: { name: string; what: string; source: string }[] } {
     const { log } = this.deps;
@@ -311,6 +365,18 @@ class ClusterSecrets {
   // that refuses every other node's forms, and that is the failure this module
   // exists to remove.
   // -------------------------------------------------------------------------
+  /**
+   * Reads every declared secret from the shared store, offering a fresh sealed
+   * value first so the store keeps the first offer; a worker inherits its
+   * front process's values through the environment, and an operator's
+   * environment variable wins.
+   *
+   * Without a shared store or a key-encryption key the values stay per process,
+   * except in active-active mode, where that is refused.
+   * @param keystore - the open keystore that seals and opens the stored values
+   * @returns a promise of `{ shared, names }`, or `{ shared: false }`; it
+   *   rejects on any failure on a store that can share
+   */
   start(keystore?: SecretsKeystore | null): Promise<any> {
     const { log, errorCodes, env, randomBytes } = this.deps;
     log.debug("Entering ClusterSecrets.start().");
@@ -431,6 +497,10 @@ class ClusterSecrets {
   }
 
   // For tests: forgets every value and every variable this module wrote.
+  /**
+   * Forgets every value and every environment variable this module wrote. For
+   * tests.
+   */
   reset(): void {
     const { log, env } = this.deps;
     log.debug("Entering ClusterSecrets.reset().");
@@ -471,9 +541,22 @@ const slot = new InstanceSlot<ClusterSecrets>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * The secrets every node must agree on (#46), shared through the store.
+ *
+ * The exports other than `ClusterSecrets` forward to the instance the
+ * composition root installs.
+ * @namespace
+ */
 export = {
   ClusterSecrets: ClusterSecrets,
+  /**
+   * Installs the instance the composition root built.
+   */
   installInstance: (instance: ClusterSecrets): void => slot.install(instance),
+  /**
+   * Says where the installed instance came from.
+   */
   instanceOrigin: (): string => slot.origin(),
   DECLARED: ClusterSecrets.DECLARED,
   get: slot.forward('get'),
