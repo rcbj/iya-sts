@@ -34,8 +34,9 @@
 # ---------------------------------------------------------------------------
 
 locals {
-  prefix      = "${var.name}-${var.environment}"
-  role_prefix = "${var.name}-env-${var.environment}"
+  # A cell's names carry the cell (#98, ../environment/locals.tf).
+  prefix      = var.cell != "" ? "${var.name}-${var.environment}-${var.cell}" : "${var.name}-${var.environment}"
+  role_prefix = var.cell != "" ? "${var.name}-env-${var.environment}-${var.cell}" : "${var.name}-env-${var.environment}"
   env         = data.terraform_remote_state.environment.outputs
   ecr_url     = data.aws_ecr_repository.main.repository_url
 
@@ -57,7 +58,7 @@ locals {
     options = {
       awslogs-group         = local.env.container_log_group
       awslogs-region        = var.aws_region
-      awslogs-stream-prefix = "${var.environment}-callbacks"
+      awslogs-stream-prefix = var.cell != "" ? "${var.environment}-${var.cell}-callbacks" : "${var.environment}-callbacks"
     }
   }
 }
@@ -67,9 +68,11 @@ locals {
 data "terraform_remote_state" "environment" {
   backend = "s3"
   config = {
-    region = var.aws_region
+    # The BUCKET's region, and the cell's own state in a multi-cell
+    # environment (#98).
+    region = var.state_region
     bucket = "${var.name}-terraform-state-${data.aws_caller_identity.current.account_id}"
-    key    = "environment/${var.environment}.tfstate"
+    key    = var.cell != "" ? "environment/${var.environment}/${var.cell}.tfstate" : "environment/${var.environment}.tfstate"
   }
 }
 

@@ -8,11 +8,11 @@ provider "aws" {
   # resources — security-group rules among them — that carry it. Realm is
   # what tells one realm's rules and target groups from another's.
   default_tags {
-    tags = {
+    tags = merge({
       Project     = "STS"
       Environment = var.environment
       Realm       = var.realm
-    }
+    }, var.cell != "" ? { Cell = var.cell } : {})
   }
 }
 
