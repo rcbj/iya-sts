@@ -538,7 +538,13 @@ const JOBS = [
   { file: 'sts_jws_verification.js',     browser: false },
   { file: 'sts_route_inputs.js',         browser: false, local: true },
   { file: 'sts_global_logout.js',        browser: false, local: true },
-  { file: 'sts_metadata.js',             browser: false, local: true },
+  // A WATCHDOG OF ITS OWN (2026-09-27): it calls all 766 method/path pairs
+  // and follows every link, and in the cluster mode it runs beside the bulk
+  // loads' lane on two nodes and one postgres — 25 s on 09-24, before the
+  // lanes, then 101 s, 138 s and over 300 s, killed with nothing wrong.
+  // Single-node stays under 30 s.
+  { file: 'sts_metadata.js',             browser: false, local: true,
+    timeoutMs: 900000 },
   // THE DOCUMENTS THEMSELVES, as opposed to the index that lists them
   // (2026-09-10). `sts_metadata.js` drives /admin/sts-metadata and signs
   // into the console to do it; this one holds every metadata document the

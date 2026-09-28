@@ -558,7 +558,12 @@ const PLAN = [
   { script: "test-session-ticket-resumption.py",
     args: ["--no-new-ticket-on-resumption"],
     exceptions: [ex(/renegotiation/, "no_renegotiation",
-                    "renegotiation")] },
+                    "renegotiation"),
+                 // The other node cannot open the ticket, so it makes a full
+                 // handshake and issues a new one (or signs with its own key).
+                 ex(/^session resumption/, ["session_ticket",
+                    "Server Key Exchange signature invalid"],
+                    "perNodeTicketKey", { clustered: true, on: ["main"] })] },
   { script: "test-sig-algs.py",
     exceptions: [ex(/^rsa_pss_pss_sha\d+ only$/, "handshake_failure",
                     "rsaKey")] },
