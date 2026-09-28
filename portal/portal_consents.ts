@@ -345,12 +345,29 @@ class PortalConsentsPage {
   }
 }
 
+/**
+ * The portal page at /portal/consents: where a person sees what each
+ * application may ask for on their behalf and takes it back (#172).
+ *
+ * Its routes are registered by `register()`, which `portal.ts` calls at the one
+ * point in its body where the route order is right.
+ */
 class PortalConsents {
+  /**
+   * Builds the page's module over its dependencies.
+   *
+   * @param deps - the modules the page reads and writes through
+   */
   constructor(private readonly deps: PortalConsentsDeps) {
     deps.log.debug("Entering PortalConsents.constructor().");
     deps.log.debug("Leaving PortalConsents.constructor().");
   }
 
+  /**
+   * Returns the dependencies the composition root passes.
+   *
+   * @returns the production dependency set
+   */
   static defaultDeps(): PortalConsentsDeps {
     helpers.log.debug("Entering PortalConsents.defaultDeps().");
     helpers.log.debug("Leaving PortalConsents.defaultDeps().");
@@ -369,6 +386,13 @@ class PortalConsents {
     };
   }
 
+  /**
+   * Registers the page's routes on the portal's app.
+   *
+   * @param context - what the portal shares with its pages: the app, `BASE`,
+   *   the logger, the page shell, the sign-in check and the refusal helpers
+   * @returns the page's path
+   */
   register(context: PortalContext): { path: string } {
     context.log.debug("Entering PortalConsents.register().");
     const page = new PortalConsentsPage(this.deps, context);
@@ -386,6 +410,10 @@ const slot = new InstanceSlot<PortalConsents>(
 
 slot.buildNowUnlessDeferred();
 
+/**
+ * The portal page at /portal/consents, registered by `portal.ts`.
+ * @namespace
+ */
 export = {
   PortalConsents: PortalConsents,
   installInstance: (instance: PortalConsents): void => slot.install(instance),

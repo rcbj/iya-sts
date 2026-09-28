@@ -113,6 +113,10 @@ interface Fresh {
   expiresAt?: unknown;
 }
 
+/**
+ * The RFC 5280 revocation reasons a person may give when revoking their own
+ * certificate.
+ */
 const REVOCATION_REASONS = ['unspecified', 'keyCompromise',
                             'affiliationChanged', 'superseded',
                             'cessationOfOperation'];
@@ -614,9 +618,24 @@ class PortalCertificatesPage {
   }
 }
 
+/**
+ * The portal page at /portal/certificates: where a person gets what ACME and
+ * SCEP need to issue them a certificate, and sees what they were issued.
+ *
+ * Its routes are registered by `register()`, which `portal.ts` calls at the one
+ * point in its body where the route order is right.
+ */
 class PortalCertificates {
+  /**
+   * The revocation reasons a person may give for their own certificate.
+   */
   static readonly REVOCATION_REASONS = REVOCATION_REASONS;
 
+  /**
+   * Builds the page's module over its dependencies.
+   *
+   * @param deps - the modules the page reads and writes through
+   */
   constructor(private readonly deps: PortalCertificatesDeps) {
     deps.log.debug("Entering PortalCertificates.constructor().");
     deps.log.debug("Leaving PortalCertificates.constructor().");
@@ -624,6 +643,11 @@ class PortalCertificates {
 
   // What the composition root passes, from the real modules — what
   // loading this module passed before #50's R2.
+  /**
+   * Returns the dependencies the composition root passes.
+   *
+   * @returns the production dependency set
+   */
   static defaultDeps(): PortalCertificatesDeps {
     helpers.log.debug("Entering PortalCertificates.defaultDeps().");
     helpers.log.debug("Leaving PortalCertificates.defaultDeps().");
@@ -637,6 +661,13 @@ class PortalCertificates {
 
   // The portal's call, at the one point in its body where the route order is
   // right. Answers the page's path.
+  /**
+   * Registers the page's routes on the portal's app.
+   *
+   * @param context - what the portal shares with its pages: the app, `BASE`,
+   *   the logger, the page shell, the sign-in check and the refusal helpers
+   * @returns the page's path
+   */
   register(context: PortalContext): { path: string } {
     context.log.debug("Entering PortalCertificates.register().");
     const page = new PortalCertificatesPage(this.deps, context);
@@ -664,6 +695,10 @@ const slot = new InstanceSlot<PortalCertificates>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * The portal page at /portal/certificates, registered by `portal.ts`.
+ * @namespace
+ */
 export = {
   PortalCertificates: PortalCertificates,
   installInstance: (instance: PortalCertificates): void =>
