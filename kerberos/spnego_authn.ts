@@ -160,6 +160,9 @@ const checksTable = spnegoPage.checksTable;
 // The path, from the module that owns `/authn/*`. Imported rather than spelled
 // again here: `authn.js` builds a redirect to it and draws a button pointing at
 // it, and a string spelled in two files is a string that drifts.
+/**
+ * The path of the SPNEGO sign-in, `authn`'s `SPNEGO_PATH`.
+ */
 const SPNEGO_PATH = authn.SPNEGO_PATH;
 
 // What the console and the audit log call a sign-in that came through here. It
@@ -188,7 +191,16 @@ interface SpnegoAuthnDeps {
 
 type RouteApp = typeof app;
 
+/**
+ * SPNEGO as a way of signing in: the Negotiate handshake at `/authn/spnego`,
+ * ending in the session every protocol family reads.
+ */
 class SpnegoAuthn {
+  /**
+   * Builds the sign-in over the given dependencies.
+   *
+   * @param deps - the modules it uses
+   */
   constructor(private readonly deps: SpnegoAuthnDeps) {
     deps.log.debug("Entering SpnegoAuthn.constructor().");
     deps.log.debug("Leaving SpnegoAuthn.constructor().");
@@ -196,6 +208,12 @@ class SpnegoAuthn {
 
   // What the composition root passes, from the real modules — what
   // loading this module passed before #50's R2.
+  /**
+   * Returns the dependencies the composition root passes, from the real
+   * modules.
+   *
+   * @returns the dependencies
+   */
   static defaultDeps(): SpnegoAuthnDeps {
     helpers.log.debug("Entering SpnegoAuthn.defaultDeps().");
     helpers.log.debug("Leaving SpnegoAuthn.defaultDeps().");
@@ -246,6 +264,13 @@ class SpnegoAuthn {
   // a service principal signing in is unusual but not wrong and the components
   // ARE the name.
   // ---------------------------------------------------------------------------
+  /**
+   * Returns the username a session is for, from the principal a ticket named:
+   * the realm is stripped only when it is this KDC's own, case-sensitively.
+   *
+   * @param clientPrincipal - the client principal, `name@REALM`
+   * @returns the username
+   */
   usernameFor(clientPrincipal) {
     const { log, principals } = this.deps;
     log.debug('Entering SpnegoAuthn.usernameFor(). principal=' +
@@ -318,6 +343,17 @@ class SpnegoAuthn {
   // `ownRealm` is false for a ticket from a foreign realm and its indicators
   // count for nothing.
   // ---------------------------------------------------------------------------
+  /**
+   * Derives the session's `amr` and `acr` from a ticket's own flags and
+   * authentication indicators: `pwd` for pre-authent, `hwk` for hw-authent,
+   * `otp` for the RFC 8129 indicator from this realm; `mfa` only for two.
+   *
+   * @param ticketFlags - the ticket's flag names
+   * @param indicators - the ticket's authentication indicators
+   * @param ownRealm - false for a ticket from a foreign realm, whose indicators
+   *   count for nothing
+   * @returns `{ amr, acr, method, password, hardware, otp }`
+   */
   factorsFor(ticketFlags, indicators?, ownRealm?) {
     const { log } = this.deps;
     log.debug('Entering SpnegoAuthn.factorsFor(). flags=' +
@@ -366,6 +402,11 @@ class SpnegoAuthn {
   // Is this door open at all? A function rather than a constant, because the
   // setting is settable at runtime and a value read at require time would be
   // the one the process started with.
+  /**
+   * Says whether the SPNEGO sign-in is on (`krb5.spnegoAuthentication`).
+   *
+   * @returns whether it is
+   */
   enabled() {
     const { log, config } = this.deps;
     log.debug("Entering SpnegoAuthn.enabled().");
@@ -378,6 +419,12 @@ class SpnegoAuthn {
   // there is no pending record, because there is then nothing to fall back
   // INTO: a person who came to this URL directly was not in the middle of
   // anything.
+  /**
+   * Returns the link back to the password screen for a pending sign-in.
+   *
+   * @param record - the pending sign-in record, or null
+   * @returns the HTML
+   */
   fallbackHtml(record) {
     const { log, xmlEscape, authn } = this.deps;
     log.debug('Entering SpnegoAuthn.fallbackHtml().');
@@ -401,6 +448,12 @@ class SpnegoAuthn {
     return html;
   }
 
+  /**
+   * Returns a table of the service principal name, the realm and the hosts the
+   * acceptor answers for.
+   *
+   * @returns the HTML
+   */
   spnFacts() {
     const { log, xmlEscape, exchange, principals } = this.deps;
     log.debug('Entering SpnegoAuthn.spnFacts().');
@@ -429,6 +482,16 @@ class SpnegoAuthn {
   // `returnTo`, and has to — the browser leaves this origin there and comes
   // back to a different endpoint. This one never leaves.)
   // ---------------------------------------------------------------------------
+  /**
+   * Handles `GET /authn/spnego`: the Negotiate handshake, and on an accepted
+   * ticket a session and the return to the interrupted flow.
+   *
+   * Answers 403 when the sign-in is off.
+   *
+   * @param req - the request
+   * @param res - the response
+   * @returns a promise that settles once the response is written
+   */
   async handleSignIn(req, res) {
     const { log, authn, errorCodes, page, exchange, SPNEGO_PATH, xmlEscape,
             checksTable, principals, spnego } = this.deps;
@@ -664,6 +727,11 @@ class SpnegoAuthn {
   // root (`common/protocol_stack.ts`) calls this, through the module's
   // `registerRoutes(app)`, at the point the first of them used to be
   // registered, so the route order is unchanged (rule 1).
+  /**
+   * Registers `GET /authn/spnego`.
+   *
+   * @param app - the express app
+   */
   registerRoutes(app: RouteApp): void {
     const { log, SPNEGO_PATH, errorCodes, page, xmlEscape } = this.deps;
     const self = this;
@@ -727,13 +795,42 @@ const BROWSER_NOTE =
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * SPNEGO as a way of signing in: a Kerberos ticket over HTTP, turned into the
+ * session every protocol family in this service reads.
+ *
+ * @namespace
+ */
 export = {
+  /**
+   * Forwards to `SpnegoAuthn.registerRoutes()` on the installed instance.
+   */
   registerRoutes: slot.forward('registerRoutes'),
   SpnegoAuthn: SpnegoAuthn,
+  /**
+   * Installs the instance the composition root built, which the facades below
+   * forward to.
+   *
+   * @param instance - the instance to install
+   */
   installInstance: (instance: SpnegoAuthn): void => slot.install(instance),
+  /**
+   * Says whether the installed instance came from the root or the default.
+   *
+   * @returns `root`, `default` or `none`
+   */
   instanceOrigin: (): string => slot.origin(),
   SPNEGO_PATH: SPNEGO_PATH,
+  /**
+   * Forwards to `SpnegoAuthn.enabled()` on the installed instance.
+   */
   enabled: slot.forward('enabled'),
+  /**
+   * Forwards to `SpnegoAuthn.usernameFor()` on the installed instance.
+   */
   usernameFor: slot.forward('usernameFor'),
+  /**
+   * Forwards to `SpnegoAuthn.factorsFor()` on the installed instance.
+   */
   factorsFor: slot.forward('factorsFor')
 };
