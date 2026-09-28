@@ -498,10 +498,24 @@ async function anUnconfiguredRealmRefusesNobody() {
       "GET /admin-api/roles should answer 200; it answered " +
       register.status);
   });
-  check("a new realm has no configured role", function () {
-    assert.strictEqual(register.body.roles.length, 0,
-      "a realm's ou=roles starts empty; this one holds " +
-      JSON.stringify(register.body.roles.map(function (r) { return r.name; })));
+  check("a new realm holds exactly the two console roles", function () {
+    // #303: ADMIN_READ and ADMIN_WRITE are CONFIGURED roles seeded into every
+    // realm, each held by the realm's own management API client and
+    // authorizing its admin scope. Nothing else is seeded.
+    const names = register.body.roles.map(function (r) { return r.name; });
+    assert.strictEqual(JSON.stringify(names.slice().sort()),
+      JSON.stringify(["ADMIN_READ", "ADMIN_WRITE"]),
+      "a realm's ou=roles starts with the two console roles; this one holds " +
+      JSON.stringify(names));
+    register.body.roles.forEach(function (row) {
+      assert.ok(row.console === true &&
+                row.applications.indexOf("sts-management-api") >= 0 &&
+                row.permissions.length === 1 &&
+                row.permissions[0] === (row.name === "ADMIN_READ"
+                  ? "admin:read" : "admin:write"),
+                "each is a console role held by sts-management-api and " +
+                "authorizing its own scope: " + JSON.stringify(row));
+    });
   });
   check("and the built-in ones are there anyway", function () {
     // TEN SINCE 2026-09-09: eight until ADMIN_READ and ADMIN_WRITE arrived
@@ -523,7 +537,12 @@ async function anUnconfiguredRealmRefusesNobody() {
     // by two on a change that added no container and no membership anywhere.
     // DEVICE_COMPLIANCE (#164) is the eleventh: held through the scope
     // `device:compliance`, the shape of the two admin ones.
-    assert.strictEqual(register.body.builtIn.length, 11,
+    //
+    // NINE SINCE #303 (2026-09-27): ADMIN_READ and ADMIN_WRITE stopped being
+    // read off a scope and became configured roles authorizing it — a scope
+    // is a request, and #88 is the rule that it never grants authorization
+    // by itself. They are asserted above, among the configured ones.
+    assert.strictEqual(register.body.builtIn.length, 9,
       "the built-in roles are computed rather than stored, so an empty " +
       "container has them; this realm reports " +
       register.body.builtIn.length + " (" +

@@ -243,6 +243,16 @@ remote PIP is *no PIP*, reported on `GET /`, rather than a PEP that stops
 deciding. Same rule `sync.js` follows about a failed pull: this component
 enforces with what it has.
 
+**ROLES COME FROM THE PIP TOO (#303).** A policy naming `urn:sts:xacml:role`
+gets the subject's configured roles from the PDP — the roles this service
+would issue for — so a request about a subject with no scopes (a SAML
+assertion's person, a Kerberos principal) is decided on roles without the
+caller asserting any. `/protected?subject=payroll-worker&subjectKind=application`
+says the subject is an APPLICATION: `pep.js` asserts
+`urn:sts:xacml:subject-kind` (once — it is not a directory attribute, so not
+under both spellings) and `pip.js` forwards it in the PIP query, because the
+same name could be a person holding different roles.
+
 **`PEP_PIP=false` reaches the same state on purpose**, and so does a container
 with no client certificate — the endpoint requires a verified one whose subject
 holds `REMOTE_PEPS`. So the no-PIP deployment is a CONFIGURATION rather than a

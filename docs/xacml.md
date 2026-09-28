@@ -121,6 +121,19 @@ nothing has to be configured first. An attribute that is missing gives an
 **empty bag**, never an error and never an invented value. `employeeType` is
 answered under its bare name and under `urn:sts:xacml:attribute:employeeType`.
 
+**It also answers the subject's roles** (#303). A designator for
+`urn:sts:xacml:role` returns the configured roles the subject holds in the
+realm: roles held directly, through a group, or as an application, plus
+`ADMIN_READ` and `ADMIN_WRITE` for a person on the console roster. This is the
+same answer the service uses when it issues tokens. That lets a policy decide
+on roles for a subject that came with no scopes: a person named in a SAML
+assertion, a Kerberos principal, or a client ID. Built-in roles such as
+`ALL_AUTHENTICATED_USERS` are not returned, because they describe the request
+rather than the subject; the PEP asserts those itself. If the subject is an
+application, send `urn:sts:xacml:subject-kind` with the value `application`
+in the access-subject category, because the same name could be a person. The
+remote PEP sends it when `/protected` is called with `subjectKind=application`.
+
 **`POST /xacml/pip`** makes the same PIP available over HTTP, so that a remote
 PEP decides with the same attributes the embedded PDP would use. The request
 and the response are both **XACML's own XML**, inside a two-element envelope:

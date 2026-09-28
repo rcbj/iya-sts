@@ -508,12 +508,11 @@ class ProtocolStack {
     this.build('debugger/debugger_access',
                require('../debugger/debugger_access'),
                'DebuggerAccess');
-    // Who may be issued admin:read and admin:write (#302): the person's
-    // console roles. A library `oauth2` reads, built before it for the
-    // debugger permission's reason.
-    this.build('mgmt-api/admin_scope_access',
-               require('../mgmt-api/admin_scope_access'),
-               'AdminScopeAccess');
+    // A gated permission goes with the subject's roles (#302, #303). A
+    // library `oauth2`, the management API's gate and the XACML PIP read,
+    // built before the first of them for the debugger permission's reason.
+    this.build('common/role_permissions',
+               require('./role_permissions'), 'RolePermissions');
     this.build('oauth-oidc/oauth2', require('../oauth-oidc/oauth2'),
                'OAuth2Server');
     // The Credential Offer pages BEFORE the authorization server's own routes,

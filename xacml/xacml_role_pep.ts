@@ -471,7 +471,12 @@ class XacmlRolePep {
     const subjectAttributes = [
       this.attribute(model.ATTRIBUTE.SUBJECT_ID, [asked.subject.name || '']),
       this.attribute(ATTRIBUTE.ROLE, held),
-      this.attribute(ATTRIBUTE.TOKEN_ROLE, fromToken)
+      this.attribute(ATTRIBUTE.TOKEN_ROLE, fromToken),
+      // #303: person or application, so a policy can tell them apart by more
+      // than which built-in role matched.
+      this.attribute(ATTRIBUTE.SUBJECT_KIND,
+                     [asked.subject && asked.subject.kind === 'application'
+                        ? 'application' : 'user'])
     ];
     const request = {
       returnPolicyIdList: true,

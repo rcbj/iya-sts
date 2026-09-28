@@ -586,7 +586,8 @@ const CONSENT_ACTIONS = ['grant-global-consent', 'revoke-global-consent',
 // to check that every console action has an /admin-api operation, so a list
 // that is short by one turns the parity check off for that action.
 const ROLE_ACTIONS = ['create-role', 'delete-role', 'add-member',
-                      'remove-member', 'describe-role'];
+                      'remove-member', 'describe-role', 'add-permission',
+                      'remove-permission'];
 
 // The three kinds of thing that can hold a role, in one table because four
 // places have to agree about them — the two member actions, the console's
@@ -4508,7 +4509,7 @@ class AdminActions {
       // this file that would be silent and total.
       const result = roles.write(name, {
         description: description, users: row.users, groups: row.groups,
-        applications: row.applications
+        applications: row.applications, permissions: row.permissions
       });
       log.debug("Leaving AdminActions.rolesAction(). describe-role " +
                 (result.ok ? 'ok.' : 'refused.'));
@@ -4598,7 +4599,7 @@ class AdminActions {
       }
       const result = roles.write(name, {
         description: row.description, users: held.users, groups: held.groups,
-        applications: held.applications
+        applications: held.applications, permissions: row.permissions
       });
       if (!result.ok) {
         log.debug("Leaving AdminActions.rolesAction(). The write was refused.");
@@ -4616,6 +4617,119 @@ class AdminActions {
                message: action === 'add-member'
                  ? '"' + member + '" now holds "' + name + '".'
                  : '"' + member + '" no longer holds "' + name + '".' };
+    }
+
+    // -------------------------------------------------------------------------
+    // WHAT A ROLE AUTHORIZES (#303, part B of #88). `rolePermission` on the
+    // role entry names the permissions a holder may be ISSUED, by the full
+    // identifier a client asks for — a resource's `oauthPermissionBaseUri`
+    // followed by the name. The same ordering rule as a delegated grant
+    // (`applications.js`): a permission must be DEFINED before a role can
+    // authorize it, so a typo cannot become a role authorizing nothing that
+    // looks as if it authorized something. It matters only where the
+    // resource GATES the permission (`oauthRoleGatedPermission`); the reply
+    // says when it does not, because a role authorizing an ungated
+    // permission changes nothing yet. A console role's permission is fixed,
+    // and a native one (`admin:read`, `admin:write`) is authorized by those
+    // two roles alone — see `common/roles.js`.
+    // -------------------------------------------------------------------------
+    if (action === 'add-permission' || action === 'remove-permission') {
+      const permission = String(body.permission || '').trim();
+      const row = roles.read(name);
+      if (!row) {
+        log.debug("Leaving AdminActions.rolesAction(). No such role.");
+        return this.refused(roles.isBuiltIn(name) ? 'STS-ADMIN-0546'
+                                                  : 'STS-ADMIN-0543',
+          { ok: false, errors: [roles.isBuiltIn(name)
+            ? '"' + name + '" is a BUILT-IN role. It is computed from the ' +
+              'context of each decision and authorizes nothing by itself.'
+            : 'There is no role called "' + name + '". Create it first.'] });
+      }
+      if (row.console) {
+        log.debug("Leaving AdminActions.rolesAction(). A console role.");
+        return this.refused('STS-ADMIN-0823', { ok: false, errors: ['"' +
+          name + '" is one of the two console roles, and what it authorizes ' +
+          'is fixed: ' + row.permissions.join(', ') + '. A role authorizing ' +
+          'anything else would make the management API\'s roles mean ' +
+          'something the console\'s do not.'] });
+      }
+      if (!permission) {
+        log.debug("Leaving AdminActions.rolesAction(). No permission named.");
+        return this.refused('STS-ADMIN-0824', { ok: false, errors: [
+          '`permission` names what the role authorizes: the full ' +
+          'identifier a client asks for, the resource\'s ' +
+          'oauthPermissionBaseUri followed by the permission name ' +
+          '(https://api.example/write).'] });
+      }
+      const at = row.permissions.indexOf(permission);
+      let gated = null;
+      if (action === 'add-permission') {
+        if (roles.isConsoleRole(name) || roles.CONSOLE_ROLES.some(
+          function (one) { return one.permission === permission; })) {
+          log.debug("Leaving AdminActions.rolesAction(). A native " +
+                    "permission.");
+          return this.refused('STS-ADMIN-0825', { ok: false, errors: ['"' +
+            permission + '" is a native permission of this service and is ' +
+            'authorized by ' + roles.CONSOLE_ROLES.map(function (one) {
+              return one.name;
+            }).join(' and ') + ' alone. Put the application in one of those ' +
+            'roles, or grant the person the console role on /admin/rbac.'] });
+        }
+        gated = applications.roleGatingFor(permission);
+        if (!gated) {
+          log.debug("Leaving AdminActions.rolesAction(). Not a defined " +
+                    "permission.");
+          return this.refused('STS-ADMIN-0826', { ok: false, errors: [
+            'No application in this realm defines the permission "' +
+            permission + '", and a permission must be DEFINED before a ' +
+            'role can authorize it. Give the resource application an ' +
+            'oauthPermissionBaseUri and an oauthPermission, then name the ' +
+            'two joined together.'] });
+        }
+        if (at >= 0) {
+          log.debug("Leaving AdminActions.rolesAction(). Already there.");
+          return this.refused('STS-ADMIN-0827', { ok: false, errors: ['"' +
+            name + '" already authorizes "' + permission + '".'] });
+        }
+      } else if (at < 0) {
+        log.debug("Leaving AdminActions.rolesAction(). Not there.");
+        return this.refused('STS-ADMIN-0828', { ok: false, errors: ['"' +
+          name + '" does not authorize "' + permission + '".'] });
+      }
+      const permissions = row.permissions.slice();
+      if (action === 'add-permission') {
+        permissions.push(permission);
+      } else {
+        permissions.splice(at, 1);
+      }
+      const result = roles.write(name, {
+        description: row.description, users: row.users, groups: row.groups,
+        applications: row.applications, permissions: permissions
+      });
+      if (!result.ok) {
+        log.debug("Leaving AdminActions.rolesAction(). The write was refused.");
+        return this.refused(this.innerCode(result) || 'STS-ADMIN-0542',
+                            { ok: false, errors: [result.why] });
+      }
+      auditLog.audit({
+        action: action === 'add-permission' ? 'roles.authorize'
+                                             : 'roles.unauthorize',
+        actor: actor, target: permission, protocol: 'XACML', channel: 'http',
+        detail: 'the role "' + name + '" ' + (action === 'add-permission'
+          ? 'now authorizes' : 'no longer authorizes') + ' "' + permission +
+          '"' });
+      const notGated = !!(gated && !gated.gated);
+      log.debug("Leaving AdminActions.rolesAction(). " + action + " ok.");
+      return { ok: true, role: name, permission: permission,
+               gated: gated ? gated.gated : undefined,
+               message: action === 'add-permission'
+                 ? '"' + name + '" now authorizes "' + permission + '".' +
+                   (notGated ? ' Its resource application, ' +
+                     gated.identifier + ', does not gate it yet ' +
+                     '(oauthRoleGatedPermission), so it is still issued to ' +
+                     'anybody who may ask for it until it does.' : '')
+                 : '"' + name + '" no longer authorizes "' + permission +
+                   '".' };
     }
 
     log.debug("Leaving AdminActions.rolesAction(). Unknown action.");

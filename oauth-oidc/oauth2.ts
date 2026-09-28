@@ -338,11 +338,12 @@ import gate = require('../common/issuance_gate');
 // `common/helpers.js`, `common/realms.js` — so it
 // cannot move a route or close a cycle. See `debugger/debugger_access.ts`.
 import debuggerAccess = require('../debugger/debugger_access');
-// WHO MAY BE ISSUED admin:read AND admin:write (#302, part A of #88): the
-// person's console roles, asked at the two places the debugger permission is
-// narrowed. A library (rule 3) requiring only libraries — the same ones as
-// `debugger_access.ts`. See `mgmt-api/admin_scope_access.ts`.
-import adminScopeAccess = require('../mgmt-api/admin_scope_access');
+// A GATED PERMISSION IS ISSUED ONLY TO A SUBJECT HOLDING A ROLE THAT
+// AUTHORIZES IT (#302, #303 — parts A and B of #88): admin:read and
+// admin:write always, an application permission where its resource opts in.
+// Asked at the two places the debugger permission is narrowed. A library
+// (rule 3) requiring only libraries. See `common/role_permissions.ts`.
+import rolePermissions = require('../common/role_permissions');
 // WHICH SCOPES A CLIENT MAY BE ISSUED (#110, 2026-09-22). A library (rule 3)
 // requiring only libraries this module already requires. See
 // `common/scope_policy.ts` and scopeRefusal() below.
@@ -493,7 +494,7 @@ interface OAuth2ServerDeps {
   usedAssertions: typeof usedAssertions;
   gate: typeof gate;
   debuggerAccess: typeof debuggerAccess;
-  adminScopeAccess: typeof adminScopeAccess;
+  rolePermissions: typeof rolePermissions;
   scopePolicy: typeof scopePolicy;
   delegationPolicy: typeof delegationPolicy;
   credentials: typeof credentials;
@@ -1647,7 +1648,7 @@ class OAuth2Server {
       usedAssertions: usedAssertions,
       gate: gate,
       debuggerAccess: debuggerAccess,
-      adminScopeAccess: adminScopeAccess,
+      rolePermissions: rolePermissions,
       scopePolicy: scopePolicy,
       delegationPolicy: delegationPolicy,
       credentials: credentials,
@@ -4654,7 +4655,7 @@ class OAuth2Server {
 
   async tokenSet(base: Json, opts: Json): Promise<Json> {
     const { log, randomId, hasScope, mtls, bcp, debuggerAccess,
-            adminScopeAccess, scopePolicy, errorCodes } = this.deps;
+            rolePermissions, scopePolicy, errorCodes } = this.deps;
     const self = this;
     log.debug("Entering OAuth2Server.tokenSet(). scope=" +
               (opts.scope || '(none)'));
@@ -4711,22 +4712,21 @@ class OAuth2Server {
         self.issuanceSubjectOf(opts),
         { clientId: opts.client_id, grant: opts.grant });
     }
-    // admin:read AND admin:write GO WITH THE PERSON'S CONSOLE ROLES (#302),
-    // here for the debugger permission's reason: every grant mints through
-    // this function, so a refresh after a role was revoked, a token exchange,
-    // a password or assertion grant cannot carry them for somebody the
-    // roster does not authorize. Narrowed, and refused `invalid_scope` only
-    // when nothing is left (#88 decision 2) — carried out as RFC 9068's
-    // refusal is, so the token endpoint's one wrapper answers it. An
-    // application's scope is untouched until #303.
-    // See `mgmt-api/admin_scope_access.ts`.
-    if (adminScopeAccess.asksForAdminScope(opts.scope)) {
-      const narrowed = adminScopeAccess.narrowScope(opts.scope,
+    // A GATED PERMISSION GOES WITH THE SUBJECT'S ROLES (#302, #303), here for
+    // the debugger permission's reason: every grant mints through this
+    // function, so a refresh after a role was revoked, a token exchange, a
+    // password, assertion or client_credentials grant cannot carry one for a
+    // subject — person or application — no role authorizes. Narrowed, and
+    // refused `invalid_scope` only when nothing is left (#88 decision 2) —
+    // carried out as RFC 9068's refusal is, so the token endpoint's one
+    // wrapper answers it. See `common/role_permissions.ts`.
+    if (rolePermissions.asksForGated(opts.scope)) {
+      const narrowed = rolePermissions.narrowScope(opts.scope,
         self.issuanceSubjectOf(opts),
         { clientId: opts.client_id, grant: opts.grant });
       if (narrowed.emptied) {
-        log.debug("Leaving OAuth2Server.tokenSet(). Nothing but admin " +
-                  "scopes the person may not hold was asked for.");
+        log.debug("Leaving OAuth2Server.tokenSet(). Nothing but gated " +
+                  "permissions the subject may not hold was asked for.");
         throw new AccessTokenRefused(log, errorCodes.mark(
           { error: 'invalid_scope', description: narrowed.why },
           'STS-ADMIN-0822'));
@@ -6717,7 +6717,7 @@ class OAuth2Server {
                                    issuedAcr?: Json): Promise<any> {
     const { log, logArtifact, randomId, hasScope, bcp, oauth21, frontchannel,
             applications, errorCodes, par, gate, debuggerAccess,
-            adminScopeAccess, clusterClaims, requestObject } = this.deps;
+            rolePermissions, clusterClaims, requestObject } = this.deps;
     const self = this;
     log.debug("Entering OAuth2Server.issueAuthorizationResponse().");
     // Everything minted below is this authorization server's, so the base it is
@@ -6744,8 +6744,8 @@ class OAuth2Server {
     // made a plain OAuth request an OpenID Connect one it had not asked to be.
     // And `offline_access` is kept only where OIDC Core section 11 allows it —
     // see offlineAccessScope().
-    // `let`, because admin:read and admin:write come off below (#302), after
-    // the client's own refusals have seen them.
+    // `let`, because a gated permission comes off below (#302, #303), after
+    // the client's own refusals have seen it.
     const person = { kind: 'user', name: user.username,
                      authenticated: !authInfo ||
                                     authInfo.authenticated !== false };
@@ -6831,20 +6831,20 @@ class OAuth2Server {
         query.response_mode);
     }
 
-    // admin:read AND admin:write GO WITH THIS PERSON'S CONSOLE ROLES (#302,
-    // part A of #88). After the two refusals above, because a client that
-    // may not ask for them is the client's problem and is told so first;
-    // before a code carries them, so the consent screen and the code say
-    // what will be issued. Narrowed, and refused `invalid_scope` only when
-    // nothing is left (#88 decision 2). tokenSet() asks again, as the
-    // backstop. See `mgmt-api/admin_scope_access.ts`.
-    if (adminScopeAccess.asksForAdminScope(scope)) {
-      const narrowed = adminScopeAccess.narrowScope(scope, person,
+    // A GATED PERMISSION GOES WITH THIS PERSON'S ROLES (#302, #303). After
+    // the two refusals above, because a client that may not ask for one is
+    // the client's problem and is told so first; before a code carries it,
+    // so the consent screen and the code say what will be issued. Narrowed,
+    // and refused `invalid_scope` only when nothing is left (#88 decision 2).
+    // tokenSet() asks again, as the backstop. See
+    // `common/role_permissions.ts`.
+    if (rolePermissions.asksForGated(scope)) {
+      const narrowed = rolePermissions.narrowScope(scope, person,
         { clientId: query.client_id, grant: 'authorization_code' });
       if (narrowed.emptied) {
         log.debug("Leaving OAuth2Server.issueAuthorizationResponse(). " +
-                  "Nothing but admin scopes the person may not hold was " +
-                  "asked for.");
+                  "Nothing but gated permissions the person may not hold " +
+                  "was asked for.");
         errorCodes.mark(res, 'STS-ADMIN-0822');
         return self.redirectBack(res, base, redirectUri, query.state,
           { error: 'invalid_scope', error_description: narrowed.why },

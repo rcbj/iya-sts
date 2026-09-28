@@ -20555,6 +20555,14 @@ class AdminConsole {
       if (!list.length) {
         return '<td><span class="state-none">none</span></td>';
       }
+      // A CONSOLE ROLE'S PEOPLE AND GROUPS ARE THE ROSTER'S (#303): drawn,
+      // with the door that changes them, and no Remove button here.
+      if (one.console && kindRow.kind !== 'application') {
+        return '<td>' + list.map(function (member) {
+          return '<div><code>' + self.esc(member) + '</code></div>';
+        }).join('') + '<span class="sub">set on <a href="/admin/rbac">Admin ' +
+          'roles</a></span></td>';
+      }
       return '<td>' + list.map(function (member) {
         return '<div><code>' + self.esc(member) + '</code> ' +
           '<form method="post" action="/admin/roles" class="inline">' +
@@ -20567,17 +20575,37 @@ class AdminConsole {
           '"><button type="submit" class="danger">Remove</button></form></div>';
       }).join('') + '</td>';
     }).join('');
+    // WHAT THE ROLE AUTHORIZES (#303), each removable unless the role is a
+    // console role, whose permission is fixed.
+    const permissions = (one.permissions || []).length
+      ? '<td>' + one.permissions.map(function (permission) {
+          return '<div><code>' + self.esc(permission) + '</code>' +
+            (one.console ? '' :
+              ' <form method="post" action="/admin/roles" class="inline">' +
+              self.rolesBack(listView) +
+              '<input type="hidden" name="action" value="remove-permission">' +
+              '<input type="hidden" name="role" value="' +
+              self.esc(one.name) + '"><input type="hidden" ' +
+              'name="permission" value="' + self.esc(permission) + '">' +
+              '<button type="submit" class="danger">Remove</button>' +
+              '</form>') + '</div>';
+        }).join('') + '</td>'
+      : '<td><span class="state-none">none</span></td>';
     log.debug("Leaving AdminConsole.roleRow().");
     return '<tr><td class="who"><code>' + this.esc(one.name) + '</code>' +
+      (one.console ? ' <span class="sub">console role</span>' : '') +
       (one.description ? '<br><span class="sub">' + this.esc(one.description) +
                          '</span>' : '') +
-      '</td>' + members +
-      '<td class="act"><form method="post" action="/admin/roles">' +
-        this.rolesBack(listView) +
-        '<input type="hidden" name="action" value="delete-role">' +
-        '<input type="hidden" name="role" value="' + this.esc(one.name) + '">' +
-        '<button type="submit" class="danger">Delete</button>' +
-      '</form></td></tr>';
+      '</td>' + members + permissions +
+      '<td class="act">' + (one.console
+        ? '<span class="sub">kept in every realm</span>'
+        : '<form method="post" action="/admin/roles">' +
+          this.rolesBack(listView) +
+          '<input type="hidden" name="action" value="delete-role">' +
+          '<input type="hidden" name="role" value="' + this.esc(one.name) +
+          '">' +
+          '<button type="submit" class="danger">Delete</button>' +
+          '</form>') + '</td></tr>';
   }
 
   // ---------------------------------------------------------------------------
@@ -34308,7 +34336,12 @@ class AdminConsole {
         'make, they live in <code>' +
         self.esc(register.container || 'ou=roles') + '</code>, and what they ' +
         'grant is being issued something. <strong>It is not <a ' +
-        'href="/admin/groups">Groups</a> either</strong>: a group still ' +
+        'href="/admin/groups">Groups</a> either</strong>. <strong>The two ' +
+        'meet in one place since #303</strong>: <code>ADMIN_READ</code> and ' +
+        '<code>ADMIN_WRITE</code> below are roles over those two groups, ' +
+        'authorizing the management API\'s <code>admin:read</code> and ' +
+        '<code>admin:write</code>. People hold them through Admin roles; an ' +
+        'application is added to them here. And a group still ' +
         'grants nothing on its own, and that sentence is still true ' +
         'everywhere it is written. What changed is that a role may NAME a ' +
         'group &mdash; so adding somebody to <code>cn=developers</code> can ' +
@@ -34341,7 +34374,8 @@ class AdminConsole {
           'and it is what <code>npm test</code> and the parent project\'s ' +
           'in-process Kerberos jobs run as.')) +
 
-        '<h3 id="built-in">The six built-in roles</h3>' +
+        '<h3 id="built-in">The ' + register.builtIn.length +
+        ' built-in roles</h3>' +
         self.note('<strong>Computed, in no container, and not ' +
         'editable.</strong> Every one of them is answered from the CONTEXT ' +
         'of the decision being made rather than from a store, so they have ' +
@@ -34386,12 +34420,12 @@ class AdminConsole {
         ROLE_MEMBER_KINDS.map(function (one) {
           return '<th>Held by ' + self.esc(one.label) + '</th>';
         }).join('') +
-        '<th></th></tr></thead><tbody>' +
+        '<th>Authorizes</th><th></th></tr></thead><tbody>' +
         (rolePage.shown.length
           ? rolePage.shown.map(function (one) { return self.roleRow(one,
               listView); })
                           .join('')
-          : '<tr><td colspan="5"><span class="state-none">' +
+          : '<tr><td colspan="6"><span class="state-none">' +
             (q ? 'No role matches &ldquo;' + self.esc(q) + '&rdquo;.'
                : 'No role has been made. Every application therefore ' +
                  'requires ' +
@@ -34479,6 +34513,45 @@ class AdminConsole {
         '<datalist id="role-member-apps">' + applicationOptions +
         '</datalist><button type="submit"' +
           (register.roles.length ? '' : ' disabled') + '>Add</button>' +
+        '</div></form>' +
+
+        // WHAT A ROLE AUTHORIZES (#303, part B of #88).
+        '<h3 id="authorizes">Let a role authorize a permission</h3>' +
+        self.note('<strong>A scope is a request; a role is what authorizes ' +
+        'it.</strong> A permission its resource application GATES ' +
+        '(<code>oauthRoleGatedPermission</code> on the application\'s page) ' +
+        'is issued only to a person or an application holding a role that ' +
+        'names it here, and is left off the token otherwise &mdash; and a ' +
+        'request asking for nothing else is refused ' +
+        '<code>invalid_scope</code>. Name the permission as a client asks ' +
+        'for it: the resource\'s <code>oauthPermissionBaseUri</code> ' +
+        'followed by the name. It must be defined first. ' +
+        '<code>admin:read</code> and <code>admin:write</code> are this ' +
+        'service\'s own and are authorized by the console roles ' +
+        '<code>ADMIN_READ</code> and <code>ADMIN_WRITE</code> alone: a person ' +
+        'holds those through <a href="/admin/rbac">Admin roles</a>, and an ' +
+        'application by being added to them above.') +
+        '<form method="post" action="/admin/roles">' +
+        self.rolesBack(listView) +
+        '<input type="hidden" name="from" value="authorizes">' +
+        '<input type="hidden" name="action" value="add-permission">' +
+        '<div class="formrow">' +
+        '<label>Role <select name="role" required>' +
+        register.roles.filter(function (one) {
+          return !one.console;
+        }).map(function (one) {
+          return '<option value="' + self.esc(one.name) + '">' +
+                 self.esc(one.name) + '</option>';
+        }).join('') + '</select></label>' +
+        '<label>Permission <input type="text" name="permission" size="50" ' +
+        'list="role-permission-ids" required></label>' +
+        '<datalist id="role-permission-ids">' + register.permissionIds
+          .map(function (id) {
+            return '<option value="' + self.esc(id) + '">';
+          }).join('') + '</datalist>' +
+        '<button type="submit"' +
+          (register.roles.some(function (one) { return !one.console; })
+            ? '' : ' disabled') + '>Authorize</button>' +
         '</div></form>' +
 
         '<h3 id="requiring">What requires a role</h3>' +
@@ -34694,8 +34767,8 @@ class AdminConsole {
         // request body is an open redirect and one carrying a newline is a
         // header injection. The worst a hand-written value can reach is another
         // heading on this same page.
-        (['built-in', 'roles', 'create', 'member', 'requiring', 'preview',
-          'policy', 'claim'].indexOf(String(body.from || '')) >= 0
+        (['built-in', 'roles', 'create', 'member', 'authorizes', 'requiring',
+          'preview', 'policy', 'claim'].indexOf(String(body.from || '')) >= 0
            ? '#' + String(body.from) : '#roles');
       self.respondToAction(req, res, back, result);
       log.debug("Leaving the admin roles action endpoint.");
