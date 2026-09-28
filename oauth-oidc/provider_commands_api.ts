@@ -43,12 +43,28 @@ const ACCOUNT_ENUM = ACCOUNT_COMMANDS.concat(ACCOUNT_COMMANDS.map(
 const TENANT_ENUM = ['metadata', 'audit_tenant', 'suspend_tenant',
                      'archive_tenant', 'delete_tenant', 'invalidate_tenant'];
 
+/**
+ * The `/admin-api/commands` and `/admin-api/deliveries` operations: what each
+ * console page draws and each page's acts, through the console's own functions.
+ */
 class ProviderCommandsApi {
+  /**
+   * Builds the module from its dependencies.
+   *
+   * @param deps - the logger, body parser, base URL reader, error codes and
+   *   lazy loaders of the command module and the outbound queue
+   */
   constructor(private readonly deps: ProviderCommandsApiDeps) {
     deps.log.debug("Entering ProviderCommandsApi.constructor().");
     deps.log.debug("Leaving ProviderCommandsApi.constructor().");
   }
 
+  /**
+   * Returns the dependencies built from this module's own imports, with the
+   * modules it serves loaded lazily.
+   *
+   * @returns the default dependency set
+   */
   static defaultDeps(): ProviderCommandsApiDeps {
     helpers.log.debug("Entering ProviderCommandsApi.defaultDeps().");
     helpers.log.debug("Leaving ProviderCommandsApi.defaultDeps().");
@@ -64,12 +80,24 @@ class ProviderCommandsApi {
     };
   }
 
+  /**
+   * Builds the route table for the installed instance.
+   *
+   * @param instance - the instance installed
+   */
   static wire(instance: ProviderCommandsApi): void {
     helpers.log.debug("Entering ProviderCommandsApi.wire().");
     routes = instance.buildRoutes();
     helpers.log.debug("Leaving ProviderCommandsApi.wire().");
   }
 
+  /**
+   * Sends a JSON body with `Cache-Control: no-store`.
+   *
+   * @param res - the response
+   * @param status - the HTTP status
+   * @param body - the body, serialised with indentation
+   */
   sendJson(res: Res, status: number, body: Json): void {
     const { log } = this.deps;
     log.debug("Entering ProviderCommandsApi.sendJson(). status=" + status);
@@ -81,6 +109,12 @@ class ProviderCommandsApi {
     log.debug("Leaving ProviderCommandsApi.sendJson().");
   }
 
+  /**
+   * Builds the operations' route table, each row carrying its OpenAPI
+   * description and its handler.
+   *
+   * @returns the route rows
+   */
   buildRoutes(): Json[] {
     const { log, parseBody, errorCodes, loadCommands, loadOutbound,
             baseUrlOf } = this.deps;
@@ -264,11 +298,34 @@ const slot = new InstanceSlot<ProviderCommandsApi>(
 
 slot.buildNowUnlessDeferred();
 
+/**
+ * The OpenID Provider Commands and outbound delivery operations of `/admin-api`
+ * (#151).
+ *
+ * It registers no route: the management API spreads `ROUTES` into its table.
+ *
+ * @namespace
+ */
 export = {
   ProviderCommandsApi: ProviderCommandsApi,
+  /**
+   * Installs the instance the composition root built, and runs its wiring.
+   * Refused once an instance is installed or a default built.
+   *
+   * @param instance - the instance every facade here forwards to
+   */
   installInstance: (instance: ProviderCommandsApi): void =>
     slot.install(instance),
+  /**
+   * Tells where the instance in use came from.
+   *
+   * @returns `root`, `default` or `none`
+   */
   instanceOrigin: (): string => slot.origin(),
+  /**
+   * The installed instance's route table, which `mgmt-api/admin_api.ts` spreads
+   * into its own.
+   */
   get ROUTES(): Json[] {
     helpers.log.debug("Entering ROUTES().");
     slot.get();

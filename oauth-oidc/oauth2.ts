@@ -815,6 +815,10 @@ class IssuanceRefused extends Error {
 
 // The two members section 5.5 defines. `userinfo` is the one this service acts
 // on at the endpoint below; `id_token` is honoured where idToken() is built.
+/**
+ * The two members of an OpenID Connect Core 5.5 claims request: `userinfo` and
+ * `id_token`.
+ */
 const CLAIMS_REQUEST_MEMBERS = ['userinfo', 'id_token'];
 
 // RFC 8693 SECTION 3's TOKEN TYPES, AS THIS SERVICE READS THEM (#130). A
@@ -847,6 +851,10 @@ const MAX_REQUESTED_CLAIMS = 64;
 // also carries `sub` and `username`, neither of which a client may displace or
 // ask for by name — `sub` is the subject identifier the whole response is about
 // and `username` is not an OIDC claim at all.
+/**
+ * The claims this service invents from the username, the fallback for a
+ * requested claim the directory cannot produce.
+ */
 const PERSONA_CLAIMS = ['name', 'given_name', 'family_name',
                         'preferred_username',
                         'email', 'email_verified'];
@@ -1280,6 +1288,10 @@ const USERINFO_EC_ALGS = ['ES256', 'ES384', 'ES512', 'ES256K', 'EdDSA'];
 const USERINFO_PQ_ALGS = stsCrypto.JWS_SIGNING_ALGS.filter(function (alg) {
   return stsCrypto.JWS_ALGS[alg].family === 'pq';
 });
+/**
+ * The algorithms a signed UserInfo response may use: the shared table, the HMAC
+ * family and `none`.
+ */
 const USERINFO_SIGNING_ALGS = USERINFO_RSA_ALGS
   .concat(USERINFO_EC_ALGS)
   .concat(USERINFO_PQ_ALGS)
@@ -1292,6 +1304,10 @@ const USERINFO_SIGNING_ALGS = USERINFO_RSA_ALGS
 // than a subset, and `none` is absent because an unsigned ID Token is not
 // something this service will produce: the ID Token is the one artifact whose
 // whole purpose is to be verified.
+/**
+ * The algorithms an ID Token may be signed with: the whole shared table, and
+ * never `none`.
+ */
 const ID_TOKEN_SIGNING_ALGS = stsCrypto.JWS_SIGNING_ALGS;
 
 // The algorithms `helpers.signJwt()` signs with this realm's own RSA or curve
@@ -1544,7 +1560,18 @@ const REGISTERED_CLIENT_PARAMS = vz.object({
   client_id: vt.identifier
 });
 
+/**
+ * The OAuth 2.0 authorization server and OpenID provider: every endpoint the
+ * RFC 8414 metadata advertises, and the token, ID Token and claims builders
+ * other families share.
+ */
 class OAuth2Server {
+  /**
+   * Builds the server from its dependencies.
+   *
+   * @param deps - the helpers, settings, registers, crypto and the protocol
+   *   libraries this class reads
+   */
   constructor(private readonly deps: OAuth2ServerDeps) {
     deps.log.debug("Entering OAuth2Server.constructor().");
     deps.log.debug("Leaving OAuth2Server.constructor().");
@@ -1552,6 +1579,11 @@ class OAuth2Server {
 
   // What the composition root passes: the deps the module built its
   // own instance from before R2, from the same imports.
+  /**
+   * Returns the dependencies built from this module's own imports.
+   *
+   * @returns the default dependency set
+   */
   static defaultDeps(): OAuth2ServerDeps {
     helpers.log.debug("Entering OAuth2Server.defaultDeps().");
     helpers.log.debug("Leaving OAuth2Server.defaultDeps().");
@@ -1666,6 +1698,16 @@ class OAuth2Server {
   // hundred. The helper's own behaviour is untouched and every other module
   // that uses it is unaffected; outside that mode the description is passed
   // as written.
+  /**
+   * Sends an OAuth error body, with the `error_description` held to RFC 6749's
+   * character set.
+   *
+   * @param res - the response
+   * @param status - the HTTP status
+   * @param error - the OAuth error code
+   * @param description - the `error_description`
+   * @returns what the helper returns
+   */
   // error-code: none — the wrapper's definition, not a call to it.
   oauthError(res: Res, status: number, error: string,
              description?: string): unknown {
@@ -1748,6 +1790,13 @@ class OAuth2Server {
   // — a second copy there would be two answers to what this service's issuer
   // is.
   // ---------------------------------------------------------------------------
+  /**
+   * Returns the issuer identifier of the authorization server at a base URL,
+   * through `jwt_access_token.issuerFor()`.
+   *
+   * @param base - the authorization server's base URL
+   * @returns the issuer
+   */
   issuerOf(base: string): string {
     const { log, jwtAccessToken } = this.deps;
     log.debug("Entering OAuth2Server.issuerOf().");
@@ -1761,6 +1810,14 @@ class OAuth2Server {
   // profile, then merge the profile onto the result again: harmless today and
   // exactly the kind of thing that stops being harmless when a member is
   // computed from another.
+  /**
+   * Builds the RFC 8414 metadata document for the authorization server the
+   * request selected.
+   *
+   * @param req - the request
+   * @param raw - true to build the document without applying the profile
+   * @returns the metadata document
+   */
   asMetadata(req: Req, raw?: boolean): Json {
     const { log, baseUrlOf, authorizationServers, config, assertionGrant,
             samlAssertionGrant, stsCrypto, richAuthorization, clientAuth,
@@ -2163,6 +2220,13 @@ class OAuth2Server {
   // function guessing from the URL.
   // GET /oauth2/fapi and /{id}/oauth2/fapi (#138): fapi.js's report, and
   // which authorization server it is about.
+  /**
+   * Answers `GET /oauth2/fapi`: `fapi.js`'s report, and which authorization
+   * server it is about.
+   *
+   * @param req - the request
+   * @param res - the response
+   */
   fapiReport(req: Req, res: Res): void {
     const { log, fapi } = this.deps;
     log.debug("Entering OAuth2Server.fapiReport().");
@@ -2192,6 +2256,13 @@ class OAuth2Server {
   // default rather than used: this is the server's own signature, and nothing
   // a client did asked for it.
   // -------------------------------------------------------------------------
+  /**
+   * Returns the algorithm access and refresh tokens are signed with: the named
+   * authorization server's, the setting, the FAPI default, then RS256.
+   *
+   * @param req - the request, for its authorization server
+   * @returns the algorithm
+   */
   accessTokenAlg(req?: Req): string {
     const { log, config, fapi, authorizationServers } = this.deps;
     log.debug("Entering OAuth2Server.accessTokenAlg().");
@@ -2215,6 +2286,12 @@ class OAuth2Server {
 
   // The claims of a compact JWS, UNVERIFIED — read only to REFUSE by (a FAPI
   // 2.0 timestamp), never to grant anything. {} when unreadable.
+  /**
+   * Reads a compact JWS's claims unverified, only ever to refuse by.
+   *
+   * @param jws - the compact JWS
+   * @returns the claims, or {} when unreadable
+   */
   unverifiedClaimsOf(jws: Json): Json {
     const { log } = this.deps;
     log.debug("Entering OAuth2Server.unverifiedClaimsOf().");
@@ -2234,6 +2311,13 @@ class OAuth2Server {
 
   // The `alg` of a compact JWS's protected header, or '' when it cannot be
   // read. Read BEFORE verification, to refuse by algorithm.
+  /**
+   * Reads a compact JWS's header `alg` before verification, to refuse by
+   * algorithm.
+   *
+   * @param jws - the compact JWS
+   * @returns the `alg`, or ''
+   */
   headerAlgOf(jws: Json): string {
     const { log } = this.deps;
     log.debug("Entering OAuth2Server.headerAlgOf().");
@@ -2252,6 +2336,12 @@ class OAuth2Server {
     return alg;
   }
 
+  /**
+   * Returns the FAPI profile a named authorization server sets for itself.
+   *
+   * @param profileId - the authorization server's id
+   * @returns the profile, or ''
+   */
   fapiOf(profileId: string): string {
     const { log, authorizationServers } = this.deps;
     log.debug("Entering OAuth2Server.fapiOf().");
@@ -2401,6 +2491,13 @@ class OAuth2Server {
   // 404 with no server created: a document claiming an issuer nothing issues
   // from is what Discovery section 4.3 tells a client to refuse.
   // -------------------------------------------------------------------------
+  /**
+   * Parses the path a discovery request names into a realm and an authorization
+   * server: `[realm/<id>][/<server>]`.
+   *
+   * @param raw - the path
+   * @returns `{ realm, server }`, or null when it names nothing
+   */
   issuerPathTarget(raw: unknown): Json {
     const { log, realms, authorizationServers } = this.deps;
     log.debug("Entering OAuth2Server.issuerPathTarget().");
@@ -2469,6 +2566,14 @@ class OAuth2Server {
   // public issuer URL with no credential behind it, so this is the one place
   // `common/cors.js`'s allowlist is overruled, on purpose.
   // -------------------------------------------------------------------------
+  /**
+   * Resolves an RFC 7033 WebFinger `resource` to the realm whose issuer it
+   * names, by path or by the realm's domain.
+   *
+   * @param req - the request
+   * @param resource - the `resource` parameter
+   * @returns `{ realm }`, `{ malformed: true }`, or {} when it names none
+   */
   webfingerTarget(req: Req, resource: string): Json {
     const { log, realms, baseUrlOf } = this.deps;
     log.debug("Entering OAuth2Server.webfingerTarget().");
@@ -2630,6 +2735,15 @@ class OAuth2Server {
   // issuer's — because the two documents are fetched by different clients
   // (common/jose_certificate_header.js).
   // ---------------------------------------------------------------------------
+  /**
+   * Signs a published metadata document as RFC 8414's `signed_metadata`.
+   *
+   * @param claims - the document's members
+   * @param issuer - the issuer
+   * @param lifetimeS - how long the signature is good for, in seconds
+   * @param useCase - whose `x5c` or `x5u` setting applies
+   * @returns the signed JWT
+   */
   signPublishedDocument(claims: Json, issuer: string, lifetimeS: number,
                         useCase: string): string {
     const { stsCrypto, log, STS, nowSec, signingKeyFor,
@@ -3046,6 +3160,13 @@ class OAuth2Server {
   // Federation for OpenID Connect 1.1, 5.1.2 and 5.1.3). Unsigned — the
   // Entity Configuration is their signature — and the default authorization
   // server's, whose `issuer` is the realm's Entity Identifier.
+  /**
+   * Returns this realm's protocol metadata as an OpenID Federation entity
+   * carries it, unsigned.
+   *
+   * @param req - the request
+   * @returns `{ openid_provider, oauth_authorization_server }`
+   */
   federationMetadata(req: Req): Json {
     const { log } = this.deps;
     log.debug("Entering OAuth2Server.federationMetadata().");
@@ -3350,6 +3471,12 @@ class OAuth2Server {
     return config.value('oauth2.clockSkewS');
   }
 
+  /**
+   * Returns an authorization code's lifetime, from its setting capped by OAuth
+   * 2.1 mode and FAPI 2.0.
+   *
+   * @returns the lifetime, in milliseconds
+   */
   authCodeTtlMs(): Json {
     const { log, config, oauth21 } = this.deps;
     log.debug("Entering OAuth2Server.authCodeTtlMs().");
@@ -3619,6 +3746,16 @@ class OAuth2Server {
              grantRefresh: !!(opts && opts.grant_family) };
   }
 
+  /**
+   * Mints an RFC 9068 access token for a grant, with its audience, scope and
+   * sender constraint, and records it with the token registry.
+   *
+   * @param base - the authorization server's base URL
+   * @param opts - the grant's facts: `client_id`, `username` or `user`,
+   *   `scope`, `audience`, `jkt`, `authorization_details`, `claims`, `acr`,
+   *   `amr`, `auth_time`, `act`, `grant`, `request` and the rest
+   * @returns the signed token
+   */
   accessToken(base: Json, opts: Json): Json {
     const { log, nowSec, randomId, signJwt, userFor, mtls, stats,
             jwtAccessToken } = this.deps;
@@ -3978,6 +4115,15 @@ class OAuth2Server {
   // named. `pairwise_subjects.ts` decides.
   // `sessionId` is the authentication an ephemeral subject belongs to
   // (#149); a public or pairwise client ignores it.
+  /**
+   * Returns the `sub` a client is told for a person: public, pairwise or
+   * ephemeral, as `pairwise_subjects.ts` decides.
+   *
+   * @param clientId - the client
+   * @param localSub - the person's public subject
+   * @param sessionId - the authentication an ephemeral subject belongs to
+   * @returns the client-facing `sub`
+   */
   subjectFor(clientId: Json, localSub: Json, sessionId?: Json): Json {
     const { log, pairwiseSubjects } = this.deps;
     log.debug("Entering OAuth2Server.subjectFor().");
@@ -4007,6 +4153,13 @@ class OAuth2Server {
   //     for an ephemeral one, because a device id correlates exactly as a
   //     `sub` does.
   // -------------------------------------------------------------------------
+  /**
+   * Returns the `device_id` claim for a token: the registered device's id, by
+   * the same subject rule as `sub`, when the device is the subject's own.
+   *
+   * @param opts - `client_id`, `registered_device` and `session_id`
+   * @returns the claim's value, or '' to omit it
+   */
   deviceIdClaimFor(opts: Json): string {
     const { log, deviceRecognition, pairwiseSubjects, authn } = this.deps;
     log.debug("Entering OAuth2Server.deviceIdClaimFor().");
@@ -4052,6 +4205,17 @@ class OAuth2Server {
   // issued for it is ONLINE: it ends with the sign-on session (see the
   // refresh grant). It was advertised and ignored until this date.
   // -------------------------------------------------------------------------
+  /**
+   * Keeps `offline_access` in a grant only where the request qualifies and the
+   * person consented; otherwise the scope comes off and the refresh token is
+   * online.
+   *
+   * @param scope - the scope granted
+   * @param query - the authorization request
+   * @param types - the response types
+   * @param user - the person
+   * @returns the scope
+   */
   offlineAccessScope(scope: Json, query: Json, types: Json, user: Json): Json {
     const { log, hasScope, consent } = this.deps;
     log.debug("Entering OAuth2Server.offlineAccessScope().");
@@ -4102,6 +4266,14 @@ class OAuth2Server {
   // rest — the same order UserInfo has always used for `profile` and `email`,
   // now for every claim of all four scopes. A claim neither holds is absent.
   // -------------------------------------------------------------------------
+  /**
+   * Returns the claims of the OpenID Connect scopes granted (section 5.4): the
+   * person object first, then the directory entry.
+   *
+   * @param user - the person
+   * @param scope - the scope granted
+   * @returns the claims
+   */
   scopeClaimsOf(user: Json, scope: Json): Json {
     const { log, hasScope, claimAttributes, errorCodes } = this.deps;
     log.debug("Entering OAuth2Server.scopeClaimsOf().");
@@ -4175,6 +4347,17 @@ class OAuth2Server {
   // The RS256 default below does not go near the pool and is not deferred: it
   // is microseconds, and it is the branch that records the token in the
   // console's count.
+  /**
+   * Mints an ID Token for a client, with the claims its scope and claims
+   * request ask for, signed by its registered algorithm (on the worker pool
+   * where slow) and encrypted where it registered that.
+   *
+   * @param base - the authorization server's base URL
+   * @param opts - the grant's facts: `client_id`, `username` or `user`,
+   *   `nonce`, `scope`, `claims`, `acr`, `amr`, `auth_time`, `session_id`,
+   *   `code`, `access_token`, `state` and the rest
+   * @returns a promise of the ID Token
+   */
   async idToken(base: Json, opts: Json): Promise<Json> {
     const { log, nowSec, randomId, signJwt, signJwtAsAsync, userFor, stats,
             config, frontchannel, backchannel, applications,
@@ -4589,6 +4772,13 @@ class OAuth2Server {
 
   // `exp` - `iat` of a JWT this service just signed, or `fallback` when it
   // cannot be read.
+  /**
+   * Returns `exp` minus `iat` of a JWT this service just signed.
+   *
+   * @param token - the JWT
+   * @param fallback - what to answer when it cannot be read
+   * @returns the lifetime, in seconds
+   */
   lifetimeOf(token: string, fallback: number): number {
     const { log } = this.deps;
     log.debug("Entering OAuth2Server.lifetimeOf().");
@@ -4625,6 +4815,15 @@ class OAuth2Server {
   // says whether the device is the token subject's own. A recogniser that
   // throws records nothing and refuses nothing.
   // ---------------------------------------------------------------------------
+  /**
+   * Recognises the registered device a token request carries evidence of, for
+   * the issuance policy and the device claims. A recogniser that throws refuses
+   * nothing.
+   *
+   * @param opts - `client_id`, `username` or `user`, `jkt`, the device secrets
+   *   and `request`
+   * @returns the recognised device's facts, with `ownerMatches`, or null
+   */
   recognizedDeviceFor(opts: Json): Json {
     const { log, mtls, deviceRecognition } = this.deps;
     log.debug("Entering OAuth2Server.recognizedDeviceFor().");
@@ -4653,6 +4852,17 @@ class OAuth2Server {
     return fact;
   }
 
+  /**
+   * Mints the token response for a grant: the access token, and where the grant
+   * calls for them a refresh token and an ID Token, through the one funnel
+   * every grant uses.
+   *
+   * @param base - the authorization server's base URL
+   * @param opts - the grant's facts, `withRefresh` among them
+   * @returns a promise of the token response body
+   * @throws an `AccessTokenRefused` when the audience plan or a sender
+   *   constraint refuses the request
+   */
   async tokenSet(base: Json, opts: Json): Promise<Json> {
     const { log, randomId, hasScope, mtls, bcp, debuggerAccess,
             rolePermissions, scopePolicy, errorCodes } = this.deps;
@@ -4995,6 +5205,14 @@ class OAuth2Server {
   // value is the fix, and the array test has to be explicit because a string is
   // iterable too and appending it per character is a worse bug than the one
   // being fixed.
+  /**
+   * Rebuilds a query string without some members, appending each value of a
+   * repeated parameter.
+   *
+   * @param query - the parsed query
+   * @param omit - the names to leave out
+   * @returns the query string
+   */
   queryString(query: Json, omit: Json): Json {
     const { log } = this.deps;
     log.debug("Entering OAuth2Server.queryString().");
@@ -5039,6 +5257,14 @@ class OAuth2Server {
   // Absent is not empty: `{ claims: null }` means the wallet expressed no
   // preference and gets everything, which is what every authorization made
   // before this member existed did.
+  /**
+   * Parses the `claims` member of an OpenID4VCI authorization detail against
+   * what the credential configuration advertises.
+   *
+   * @param raw - the member
+   * @param configId - the credential configuration id
+   * @returns `{ claims }` (null when absent), or `{ error }`
+   */
   parseClaimsDescriptions(raw: Json, configId: Json): Json {
     const { log, vciFormatOf, vcClaims } = this.deps;
     log.debug("Entering OAuth2Server.parseClaimsDescriptions(). " +
@@ -5121,6 +5347,12 @@ class OAuth2Server {
     return { claims: out };
   }
 
+  /**
+   * Returns how many individual claims one claims request may name
+   * (`oauth2.maxRequestedClaims`).
+   *
+   * @returns the limit
+   */
   maxRequestedClaims(): Json {
     const { log, config } = this.deps;
     log.debug("Entering OAuth2Server.maxRequestedClaims().");
@@ -5135,6 +5367,15 @@ class OAuth2Server {
   // `essential`, `value` and `values`, and any member not understood MUST be
   // ignored — so unknown members are dropped here rather than refused, which is
   // the one place in this parser that section says to be permissive.
+  /**
+   * Parses one individual claim request (section 5.5.1), dropping members it
+   * does not understand.
+   *
+   * @param member - `userinfo` or `id_token`
+   * @param name - the claim name
+   * @param raw - the request: null, or an object
+   * @returns `{ entry }`, or `{ error }`
+   */
   parseIndividualClaimRequest(member: Json, name: Json, raw: Json): Json {
     const { log } = this.deps;
     log.debug("Entering OAuth2Server.parseIndividualClaimRequest().");
@@ -5185,6 +5426,13 @@ class OAuth2Server {
   // parameter at all is a client that has never heard of the section. Both
   // behave the same today and they are still different facts, and the one that
   // is recorded on the token is the one the client actually sent.
+  /**
+   * Parses an OpenID Connect Core 5.5 claims request.
+   *
+   * @param raw - the `claims` parameter
+   * @returns `{ claims, ignored }` (claims null when the parameter was not
+   *   sent), or `{ error }`
+   */
   parseClaimsRequest(raw: Json): Json {
     const { log, identityAssurance } = this.deps;
     const self = this;
@@ -5317,6 +5565,15 @@ class OAuth2Server {
   // holds `bound_key` needs a DPoP proof whose `c_s256` is the base64url
   // SHA-256 of the code it redeems (the authorization code, or the device
   // code). Null when it holds, or when `bound_key` was not granted.
+  /**
+   * Refuses a grant holding `bound_key` whose DPoP proof's `c_s256` is not the
+   * hash of the code it redeems (OpenID Connect Key Binding).
+   *
+   * @param scope - the scope granted
+   * @param code - the authorization or device code
+   * @param proof - the verified DPoP proof
+   * @returns null, or a refusal
+   */
   boundKeyProofRefusal(scope: Json, code: string, proof: Json): Json {
     const { log } = this.deps;
     log.debug("Entering OAuth2Server.boundKeyProofRefusal().");
@@ -5351,6 +5608,14 @@ class OAuth2Server {
   // the token is not bound. Asked where an ID Token is a CREDENTIAL — the
   // token exchange grant, Native SSO's included — and not where it is a hint
   // (`id_token_hint`), which names a person who is then asked in person.
+  /**
+   * Refuses a bound ID Token presented as a credential without a DPoP proof
+   * from its key (OpenID Connect Key Binding section 7).
+   *
+   * @param claims - the ID Token's claims
+   * @param dpopJkt - the thumbprint of the request's verified DPoP proof
+   * @returns null, or a refusal
+   */
   boundIdTokenRefusal(claims: Json, dpopJkt: string): Json {
     const { log, stsCrypto } = this.deps;
     log.debug("Entering OAuth2Server.boundIdTokenRefusal().");
@@ -5382,6 +5647,11 @@ class OAuth2Server {
 
   // The Claims Provider library (#147), loaded when first asked: it reads
   // the directory and the outbound policy, which load around this module.
+  /**
+   * Returns the Claims Provider library, loaded when first asked.
+   *
+   * @returns the library
+   */
   claimsProviders(): Json {
     this.deps.log.debug("Entering OAuth2Server.claimsProviders().");
     this.deps.log.debug("Leaving OAuth2Server.claimsProviders().");
@@ -5391,6 +5661,13 @@ class OAuth2Server {
   // The `aud_sub` an administrator recorded for this person at this client
   // (#148), or ''. One value per client on the person's entry,
   // `<client_id> <aud_sub>`.
+  /**
+   * Returns the `aud_sub` an administrator recorded for a person at a client.
+   *
+   * @param username - the person
+   * @param clientId - the client
+   * @returns the `aud_sub`, or ''
+   */
   audSubFor(username: Json, clientId: Json): string {
     const { log } = this.deps;
     log.debug("Entering OAuth2Server.audSubFor().");
@@ -5403,6 +5680,14 @@ class OAuth2Server {
     return found ? String(found).slice(prefix.length) : '';
   }
 
+  /**
+   * Lists the claim names one member of a parsed claims request asks for, in
+   * the client's order.
+   *
+   * @param request - the parsed claims request
+   * @param member - `userinfo` or `id_token`
+   * @returns the names
+   */
   requestedClaimNames(request: Json, member: Json): Json {
     const { log } = this.deps;
     log.debug("Entering OAuth2Server.requestedClaimNames().");
@@ -5424,6 +5709,12 @@ class OAuth2Server {
   // subjects for anybody and refuses nothing, for `authn.startSession()`'s
   // reason.
   // ---------------------------------------------------------------------------
+  /**
+   * Returns the person a direct grant is for, from the directory.
+   *
+   * @param username - the person
+   * @returns the person, or null where the directory holds nobody
+   */
   provisionedPerson(username: Json): Json {
     const { log, userFor, hasSubjectResolver } = this.deps;
     log.debug("Entering OAuth2Server.provisionedPerson().");
@@ -5442,6 +5733,13 @@ class OAuth2Server {
   // deleted and re-created under the same name, which is a different subject —
   // is nobody, and the refresh is refused. A refresh token whose subject is not
   // a person's (a client's, an exchange's) is minted as it always was.
+  /**
+   * Returns the person a refresh token's next generation is minted for, found
+   * by the token's subject rather than its username.
+   *
+   * @param claims - the refresh token's claims
+   * @returns the person, or null when the subject is nobody now
+   */
   refreshedPerson(claims: Json): Json {
     const { log, userFor, nameForSubject, hasSubjectResolver,
             LEGACY_SUBJECT_PREFIX } = this.deps;
@@ -5472,6 +5770,14 @@ class OAuth2Server {
   // Whether `email` is the address this person verified (#63) — read through
   // the mail channel's view of the entry, LAZILY: that module is a library
   // this one must not load early. `false` whenever it cannot be said.
+  /**
+   * Tells whether an address is the one this person verified, read through the
+   * mail channel.
+   *
+   * @param username - the person
+   * @param email - the address
+   * @returns true when it is verified
+   */
   emailVerified(username: string, email: string): boolean {
     const { log } = this.deps;
     log.debug("Entering OAuth2Server.emailVerified().");
@@ -5489,6 +5795,13 @@ class OAuth2Server {
     return verified;
   }
 
+  /**
+   * Fills a person object's missing claims from the directory entry, where this
+   * mode does not invent claim values.
+   *
+   * @param user - the person object
+   * @returns the completed person object
+   */
   personFromDirectory(user: Json): Json {
     const { log, mode, errorCodes, claimAttributes } = this.deps;
     const self = this;
@@ -5545,6 +5858,13 @@ class OAuth2Server {
   // `Object.assign(configured, payload)` copies an undefined member too, and a
   // protocol claim that is merely absent would erase a configured claim of the
   // same name that should have survived.
+  /**
+   * Copies an object without its `undefined` members, so a merge cannot erase a
+   * configured claim.
+   *
+   * @param object - the object
+   * @returns the copy
+   */
   definedOnly(object: Json): Json {
     const { log } = this.deps;
     log.debug("Entering OAuth2Server.definedOnly().");
@@ -5589,6 +5909,16 @@ class OAuth2Server {
   // persona. The mismatch is reported instead, which is what a client's error
   // path is for.
   // ---------------------------------------------------------------------------
+  /**
+   * Returns the claims one member of a claims request asks for, for a person;
+   * `value` and `values` are checked and reported, not honoured.
+   *
+   * @param request - the parsed claims request
+   * @param member - `userinfo` or `id_token`
+   * @param username - the person's username
+   * @param user - the person
+   * @returns the claims
+   */
   requestedClaimsOf(request: Json, member: Json, username: Json, user: Json)
     : Json {
     const { log, claimAttributes, identityAssurance } = this.deps;
@@ -5705,6 +6035,14 @@ class OAuth2Server {
   // of `authorization_details.parse()`: it names a credential_configuration_id
   // this issuer offers, and its `claims` selection is one the metadata
   // advertises. `{ entry }`, or a refusal carrying STS-OAUTH-0153.
+  /**
+   * Checks one `openid_credential` authorization detail (OID4VCI section
+   * 5.1.1): a configuration this issuer offers, and a claims selection it
+   * advertises.
+   *
+   * @param d - the detail
+   * @returns `{ entry }`, or a refusal carrying STS-OAUTH-0153
+   */
   vciAuthorizationDetail(d: Json): Json {
     const { log, VCI_CONFIGS, VCI_CONFIG_ID, errorCodes } = this.deps;
     const self = this;
@@ -5747,6 +6085,15 @@ class OAuth2Server {
   // invalid_authorization_details. Unreadable JSON is not silently dropped, for
   // the reason the type check is not: a client that sent nonsense should be
   // told.
+  /**
+   * Parses a request's `authorization_details` (RFC 9396), against the types
+   * the client and the selected authorization server allow.
+   *
+   * @param raw - the parameter
+   * @param context - `clientId` and `req`
+   * @returns `{ details }` (null when none were sent), or `{ error }` marked
+   *   with its code
+   */
   parseAuthorizationDetails(raw: Json, context?: Json): Json {
     const { log, applications, errorCodes, richAuthorization } = this.deps;
     const self = this;
@@ -5809,6 +6156,12 @@ class OAuth2Server {
   // A request that names none is unaffected and gets the default audience,
   // which is what keeps this invisible to every existing caller.
   // ---------------------------------------------------------------------------
+  /**
+   * Parses a request's RFC 8707 `resource` parameters.
+   *
+   * @param raw - the parameter, one value or several
+   * @returns `{ resources }`, or `{ error }`
+   */
   parseResourceIndicators(raw: Json): Json {
     const { log } = this.deps;
     log.debug("Entering OAuth2Server.parseResourceIndicators().");
@@ -5916,6 +6269,12 @@ class OAuth2Server {
   // A list written here would have gone stale the first time `scim.scopeRead`
   // was set from /admin/config, and the symptom would have been a token quietly
   // audienced to whatever an application had registered that name as.
+  /**
+   * Returns the scope values this service's protocols define, computed from the
+   * settings and the credential configurations.
+   *
+   * @returns the scope names
+   */
   protocolScopes(): Json {
     const { log, VCI_CONFIGS, config } = this.deps;
     log.debug("Entering OAuth2Server.protocolScopes().");
@@ -5947,6 +6306,13 @@ class OAuth2Server {
   // naming. Returns the scope string to put ON the access token and the
   // audiences to address it to; `audiences` is empty for every request that
   // names none, and the caller then changes nothing.
+  /**
+   * Splits a scope list into the scopes it is and the audiences it names.
+   *
+   * @param scope - the requested scope
+   * @param clientId - the client
+   * @returns `{ scope, audiences, matched, permissions, ... }`
+   */
   audienceScopes(scope: Json, clientId: Json): Json {
     const { log, logArtifact, applications, delegation } = this.deps;
     const self = this;
@@ -6133,6 +6499,14 @@ class OAuth2Server {
   // than invalidating what is outstanding, which is what makes it safe to turn
   // on while something is running.
   // ---------------------------------------------------------------------------
+  /**
+   * Refuses a request for a delegated permission the client does not hold,
+   * where the setting requires one. A grant already issued is not re-judged.
+   *
+   * @param scope - the requested scope
+   * @param clientId - the client
+   * @returns '' to allow, or the refusal's description
+   */
   permissionRefusal(scope: Json, clientId: Json): Json {
     const { log, config, applications, delegation, mode } = this.deps;
     const self = this;
@@ -6209,6 +6583,11 @@ class OAuth2Server {
   // resource servers' own re-check (`scopePolicy.declares()`) does for the
   // tokens already out.
   // ---------------------------------------------------------------------------
+  /**
+   * Returns the OpenID4VCI scopes the credential configurations define.
+   *
+   * @returns the scope names
+   */
   credentialScopes(): string[] {
     const { log, VCI_CONFIGS } = this.deps;
     log.debug("Entering OAuth2Server.credentialScopes().");
@@ -6225,6 +6604,12 @@ class OAuth2Server {
 
   // This service's own protected scopes — `common/scope_policy.ts` reads
   // each resource server's own settings for them.
+  /**
+   * Returns this service's own protected scopes, as `scope_policy.ts` reads
+   * them.
+   *
+   * @returns the scope names
+   */
   protectedScopes(): string[] {
     const { log, scopePolicy } = this.deps;
     log.debug("Entering OAuth2Server.protectedScopes().");
@@ -6243,6 +6628,12 @@ class OAuth2Server {
   // `invalid_request` — section 2.2.2's error for a request whose tokens this
   // server will not take.
   // ---------------------------------------------------------------------------
+  /**
+   * Checks an RFC 8693 token exchange's token types (section 2.1).
+   *
+   * @param body - the token request body
+   * @returns null, or `{ code, description }` for an `invalid_request`
+   */
   exchangeTypeProblem(body: Json): Json {
     const { log } = this.deps;
     log.debug("Entering OAuth2Server.exchangeTypeProblem().");
@@ -6291,6 +6682,13 @@ class OAuth2Server {
   // the `Bearer` claim), `refresh_token` (encrypted, or `Refresh` once
   // opened), `id_token` (an OpenID Connect ID Token, which carries no `typ`
   // claim since #118), or `jwt` for anything else signed here.
+  /**
+   * Tells what a token this realm issued is.
+   *
+   * @param token - the token
+   * @param claims - its claims
+   * @returns `access_token`, `refresh_token`, `id_token` or `jwt`
+   */
   ownTokenKind(token: Json, claims: Json): string {
     const { log, refreshTokenCrypto } = this.deps;
     log.debug("Entering OAuth2Server.ownTokenKind().");
@@ -6322,6 +6720,14 @@ class OAuth2Server {
   // Whether a token of `kind` may be exchanged as `declaredType`: '' when it
   // may, the sentence of an `invalid_request` when not. `jwt` takes any
   // signed token — a refresh token is an encrypted one, not a JWT.
+  /**
+   * Tells whether a token of a kind may be exchanged as the type declared.
+   *
+   * @param declaredType - the declared token type
+   * @param kind - `ownTokenKind()`'s answer
+   * @param which - `subject_token` or `actor_token`, named in the sentence
+   * @returns '' when it may, or the sentence of an `invalid_request`
+   */
   kindProblem(declaredType: string, kind: string, which: string): string {
     const { log } = this.deps;
     log.debug("Entering OAuth2Server.kindProblem().");
@@ -6360,6 +6766,14 @@ class OAuth2Server {
   // the rest; the device records that the second app used it; the secret
   // comes back as it went in (never rotated).
   // ---------------------------------------------------------------------------
+  /**
+   * Performs OpenID Connect Native SSO's token exchange (#130): an ID Token and
+   * a device secret for tokens issued into the device's session.
+   *
+   * @param ctx - the exchange's context: `req`, `dpopJkt`, `issue` and
+   *   `respond`
+   * @returns a promise of what `respond()` answers
+   */
   async nativeSsoExchange(ctx: Json): Promise<Json> {
     const { log, errorCodes, applications, devices, stats, authn,
             stsCrypto } = this.deps;
@@ -6475,6 +6889,14 @@ class OAuth2Server {
   // still that person's? Native SSO's device_secret is good for exactly as
   // long as the answer is yes (#130): a sign-out, an expiry, a disabled
   // account or SSF session-revoked all end it with nothing else to do.
+  /**
+   * Tells whether a sign-on session is still live and, where a username is
+   * given, still that person's.
+   *
+   * @param sid - the session id
+   * @param username - the person
+   * @returns true when it is
+   */
   sessionIsLive(sid: Json, username?: Json): boolean {
     const { log, authn } = this.deps;
     log.debug("Entering OAuth2Server.sessionIsLive().");
@@ -6487,6 +6909,13 @@ class OAuth2Server {
     return live;
   }
 
+  /**
+   * Refuses a scope the client may not be issued, under `scope_policy.ts`.
+   *
+   * @param scope - the requested scope
+   * @param clientId - the client
+   * @returns null, or the refusal
+   */
   scopeRefusal(scope: Json, clientId: Json): Json {
     const { log, scopePolicy } = this.deps;
     log.debug("Entering OAuth2Server.scopeRefusal().");
@@ -6516,6 +6945,13 @@ class OAuth2Server {
   // It CANNOT THROW, for the reason the whole of `delegation.record()` is
   // wrapped: a token this endpoint has already issued must not be failed by a
   // console page.
+  /**
+   * Returns the jti of a token this endpoint issued, opening an encrypted
+   * refresh token. Never throws.
+   *
+   * @param token - the token
+   * @returns the jti, or ''
+   */
   jtiOf(token: Json): Json {
     const { log, jsonFromB64u, errorCodes, refreshTokenCrypto } = this.deps;
     log.debug("Entering OAuth2Server.jtiOf().");
@@ -6561,6 +6997,12 @@ class OAuth2Server {
   // in one place because there are now four of them — a single-element array is
   // a shape some libraries read differently from a string, so the ordinary case
   // stays a string.
+  /**
+   * Shapes an `aud` claim: one value as a string, several as a list.
+   *
+   * @param list - the audiences
+   * @returns the claim's value
+   */
   audienceClaim(list: Json): Json {
     const { log } = this.deps;
     log.debug("Entering OAuth2Server.audienceClaim().");
@@ -6604,6 +7046,12 @@ class OAuth2Server {
   // ---------------------------------------------------------------------------
 
   // An `aud`-shaped value — undefined, one string, or a list — as a list.
+  /**
+   * Reads an `aud`-shaped value as a list.
+   *
+   * @param value - undefined, one string or a list
+   * @returns the list
+   */
   audienceList(value: Json): Json {
     const { log } = this.deps;
     log.debug("Entering OAuth2Server.audienceList().");
@@ -6615,6 +7063,17 @@ class OAuth2Server {
     return (Array.isArray(value) ? value : [value]).map(String);
   }
 
+  /**
+   * Plans an access token's audiences and scope from the request, through
+   * `jwt_access_token.audiencePlan()`.
+   *
+   * @param base - the authorization server's base URL
+   * @param scope - the requested scope
+   * @param clientId - the client
+   * @param explicit - the audiences the request named
+   * @param details - the authorization details
+   * @returns the plan, with its refusal where there is one
+   */
   accessTokenPlan(base: Json, scope: Json, clientId: Json, explicit: Json,
                   details: Json): Json {
     const { log, jwtAccessToken, richAuthorization } = this.deps;
@@ -6711,6 +7170,19 @@ class OAuth2Server {
   // `issuedAcr` is RFC 9470 section 5's: the requested acr value the session
   // met, which is what the code, the ID Token and the access token carry in
   // place of the session's own. Absent where nothing was requested.
+  /**
+   * Builds the authorization response for a signed-in person and sends it back
+   * to the client: the code, and in the implicit and hybrid flows the tokens.
+   *
+   * @param req - the request
+   * @param res - the response
+   * @param query - the authorization request
+   * @param user - the person
+   * @param authTime - when they authenticated
+   * @param authInfo - the authentication's facts
+   * @param issuedAcr - the requested acr value the session met (RFC 9470)
+   * @returns a promise that settles once the response is sent
+   */
   async issueAuthorizationResponse(req: Req, res: Res, query: Json,
                                    user: Json, authTime: Json,
                                    authInfo: Json,
@@ -7337,6 +7809,14 @@ class OAuth2Server {
     log.debug("Leaving OAuth2Server.issueAuthorizationResponse().");
   }
 
+  /**
+   * Sends a `response_mode=form_post` page: the fields as hidden inputs, a real
+   * submit button, and the one script that submits it.
+   *
+   * @param res - the response
+   * @param redirectUri - the redirect URI
+   * @param fields - the response fields
+   */
   formPostResponse(res: Res, redirectUri: Json, fields: Json): Json {
     const { app, log, xmlEscape } = this.deps;
     log.debug("Entering OAuth2Server.formPostResponse(). fields=" +
@@ -7397,6 +7877,16 @@ class OAuth2Server {
   // redirect cannot differ — including WHERE the parameters go (#118): an
   // error from an implicit or hybrid request is in the fragment, as its
   // success would have been, and the link used to put it in the query.
+  /**
+   * Builds the URL a redirect would go to, by `redirectBack()`'s rules.
+   *
+   * @param base - the authorization server's base URL
+   * @param redirectUri - the redirect URI
+   * @param state - the `state`
+   * @param params - the response parameters
+   * @param fragment - true to put them in the fragment
+   * @returns the URL
+   */
   redirectTarget(base: Json, redirectUri: Json, state: Json, params: Json,
                  fragment?: Json): Json {
     const { log, oauth21 } = this.deps;
@@ -7435,6 +7925,14 @@ class OAuth2Server {
   // submitted itself would be an automatic redirect with an extra page in front
   // of it.
   // ---------------------------------------------------------------------------
+  /**
+   * Sends the page shown instead of a redirect a person must decide on: the
+   * error, and a plain link to the client.
+   *
+   * @param res - the response
+   * @param info - `error`, `description`, `why`, `clientId`, `redirectUri`,
+   *   `state`, `target` and `form`
+   */
   sendRedirectInterstitial(res: Res, info: Json): Json {
     const { log, xmlEscape } = this.deps;
     log.debug("Entering OAuth2Server.sendRedirectInterstitial(). error=" +
@@ -7502,6 +8000,14 @@ class OAuth2Server {
   // the query. `form_post` is redirectBack()'s own branch and never reaches
   // here.
   // -------------------------------------------------------------------------
+  /**
+   * Tells whether a response goes in the fragment: when asked for, and for a
+   * response type that can carry a token.
+   *
+   * @param types - the response types
+   * @param responseMode - the `response_mode`
+   * @returns true for the fragment
+   */
   usesFragment(types: Json, responseMode?: Json): boolean {
     const { log } = this.deps;
     log.debug("Entering OAuth2Server.usesFragment().");
@@ -7520,6 +8026,12 @@ class OAuth2Server {
 
   // The OP iframe and its script while Session Management is off (#121): a
   // 404 that says why. The caller has marked STS-OAUTH-0601.
+  /**
+   * Answers the OP iframe or its script while Session Management is off: a 404
+   * that says why.
+   *
+   * @param res - the response
+   */
   sessionManagementOff(res: Res): Json {
     const { log } = this.deps;
     log.debug("Entering OAuth2Server.sessionManagementOff().");
@@ -7540,6 +8052,13 @@ class OAuth2Server {
   // ---------------------------------------------------------------------------
   // The same, as the fields of a link (the interstitial's): `{}` or
   // `{ session_state }`.
+  /**
+   * Returns `session_state` as the fields of a link.
+   *
+   * @param res - the response of the authorization request
+   * @param redirectUri - the redirect URI
+   * @returns `{ session_state }`, or {}
+   */
   sessionStateField(res: Res, redirectUri: Json): Json {
     const { log } = this.deps;
     log.debug("Entering OAuth2Server.sessionStateField().");
@@ -7548,6 +8067,14 @@ class OAuth2Server {
     return found ? { session_state: found.value } : {};
   }
 
+  /**
+   * Computes `session_state` for the authorization response on `res`, writing
+   * the OP browser state beside it.
+   *
+   * @param res - the response of the authorization request
+   * @param redirectUri - the redirect URI
+   * @returns `{ value }`, or null where none is owed
+   */
   sessionStateOf(res: Res, redirectUri: Json): Json {
     const { log, sessionOf } = this.deps;
     log.debug("Entering OAuth2Server.sessionStateOf().");
@@ -7570,6 +8097,19 @@ class OAuth2Server {
     return { value: value };
   }
 
+  /**
+   * Sends an authorization response to the client by its response mode: a
+   * redirect with the query or fragment, a form post, or JARM.
+   *
+   * @param res - the response
+   * @param base - the authorization server's base URL
+   * @param redirectUri - the redirect URI
+   * @param state - the `state`
+   * @param params - the response parameters
+   * @param fragment - true to use the fragment
+   * @param mode - the response mode
+   * @returns what the chosen sender returns
+   */
   redirectBack(res: Res, base: Json, redirectUri: Json, state: Json,
                params: Json, fragment?: Json, mode?: Json): any {
     const { log, oauth21 } = this.deps;
@@ -7626,6 +8166,16 @@ class OAuth2Server {
   // can no longer honour — is answered here as a 400 rather than sent
   // unsecured: a client that asked for JARM reads nothing else.
   // ---------------------------------------------------------------------------
+  /**
+   * Builds a JARM response for the request's client.
+   *
+   * @param res - the response, carrying the request's client and response type
+   * @param issuer - the issuer
+   * @param redirectUri - the redirect URI
+   * @param fields - the response fields
+   * @param mode - the JARM response mode
+   * @returns a promise of `{ formPost, response, url }`
+   */
   jarmUrl(res: Res, issuer: Json, redirectUri: Json, fields: Json,
           mode: string): Promise<Json> {
     const { log, applications, jarm } = this.deps;
@@ -7648,6 +8198,17 @@ class OAuth2Server {
       });
   }
 
+  /**
+   * Sends a JARM response, as a redirect or a form post; one that cannot be
+   * made is answered as a 400 rather than sent unsecured.
+   *
+   * @param res - the response
+   * @param issuer - the issuer
+   * @param redirectUri - the redirect URI
+   * @param fields - the response fields
+   * @param mode - the JARM response mode
+   * @returns a promise that settles once it is sent
+   */
   jarmRedirect(res: Res, issuer: Json, redirectUri: Json, fields: Json,
                mode: string): Promise<void> {
     const { log, errorCodes } = this.deps;
@@ -9808,6 +10369,13 @@ class OAuth2Server {
   // admin_stats.js's identityKeyOf() so that `alice` and `alice@REALM` are one
   // person — the same normalisation every other door in this service uses.
   // ---------------------------------------------------------------------------
+  /**
+   * Lists the outstanding authorization codes issued for a person, from both
+   * stores, for the protocol-independent logout.
+   *
+   * @param key - the person's username
+   * @returns rows describing each code
+   */
   outstandingCodesFor(key: Json): Json {
     const { log, stats } = this.deps;
     log.debug("Entering OAuth2Server.outstandingCodesFor(). key=" + key);
@@ -9842,6 +10410,12 @@ class OAuth2Server {
   // End one code. Both stores, for the reason above. Returns whether there was
   // anything to end, so a caller can report "already gone" rather than claiming
   // a revocation it did not perform.
+  /**
+   * Ends one authorization code in both stores.
+   *
+   * @param code - the code
+   * @returns true when there was anything to end
+   */
   dropCode(code: Json): Json {
     const { log } = this.deps;
     log.debug("Entering OAuth2Server.dropCode().");
@@ -16384,6 +16958,13 @@ class OAuth2Server {
   // issuance policy asked as for every grant, then the one token funnel, with
   // the ID Token naming the request. For `ciba.ts`, which reaches this file
   // lazily.
+  /**
+   * Mints a CIBA push's tokens when the person approves (section 10.3.1).
+   *
+   * @param record - the approved CIBA request
+   * @returns a promise of the token response body
+   * @throws an Error when the person is gone or the issuance policy refuses
+   */
   async cibaPushTokens(record: Json): Promise<Json> {
     const { log } = this.deps;
     log.debug("Entering OAuth2Server.cibaPushTokens().");
@@ -16674,6 +17255,12 @@ class OAuth2Server {
   // One function, read by the endpoint AND by the metadata, so the two cannot
   // disagree about whether the endpoint exists.
   // ---------------------------------------------------------------------------
+  /**
+   * Tells whether dynamic client registration is open: in development, or by
+   * `oauth2.openRegistration`.
+   *
+   * @returns true when it is open
+   */
   registrationOpen(): Json {
     const { log, mode, config } = this.deps;
     log.debug("Entering OAuth2Server.registrationOpen().");
@@ -16689,6 +17276,12 @@ class OAuth2Server {
   // a statement is still advertised — RFC 7591 section 3 is exactly that client
   // finding the endpoint in the metadata and bringing its statement.
   // ---------------------------------------------------------------------------
+  /**
+   * Tells whether anybody may register at all: open, or closed with the door a
+   * trusted software statement goes through.
+   *
+   * @returns true when the endpoint is advertised
+   */
   registrationReachable(): Json {
     const { log, softwareStatement } = this.deps;
     const self = this;
@@ -16740,6 +17333,13 @@ class OAuth2Server {
   // client assertion's `sub`, and the `client_id` claim of a presented access
   // token (UserInfo has no other). Chooses what is fetched and nothing else.
   // -------------------------------------------------------------------------
+  /**
+   * Lists every client a request names, unverified, to choose which keys to
+   * prefetch.
+   *
+   * @param req - the request
+   * @returns the client_ids
+   */
   presentedClientIdsOf(req: Req): string[] {
     const { log } = this.deps;
     log.debug("Entering OAuth2Server.presentedClientIdsOf().");
@@ -16806,6 +17406,13 @@ class OAuth2Server {
   // dialled first. A failed fetch refuses nothing by itself — the key check
   // that needed it does, naming the fetch.
   // -------------------------------------------------------------------------
+  /**
+   * Fetches a registration's `jwks_uri` before the key checks read it, where it
+   * asks for an encrypted response.
+   *
+   * @param metadata - the registration metadata
+   * @returns a promise that settles when the fetch has
+   */
   async prefetchRegisteredKeys(metadata: Json): Promise<void> {
     const { log } = this.deps;
     log.debug("Entering OAuth2Server.prefetchRegisteredKeys().");
@@ -16836,6 +17443,13 @@ class OAuth2Server {
   // authorization_code, `response_types` code, `application_type` web. The
   // grant and response types are what the endpoints then hold the client to.
   // -------------------------------------------------------------------------
+  /**
+   * Applies the registration defaults RFC 7591 and OpenID Connect Registration
+   * name, so they are stored and returned.
+   *
+   * @param metadata - the registration metadata
+   * @returns the metadata with the defaults
+   */
   withRegistrationDefaults(metadata: Json): Json {
     const { log, applications } = this.deps;
     log.debug("Entering OAuth2Server.withRegistrationDefaults().");
@@ -16982,6 +17596,18 @@ class OAuth2Server {
   // record }` or `{ ok: false, error, description, code }` in RFC 7591's
   // vocabulary.
   // -------------------------------------------------------------------------
+  /**
+   * Registers a client through an OpenID Federation (#134), held to the checks
+   * an RFC 7591 registration is.
+   *
+   * @param req - the request
+   * @param clientId - the client's Entity Identifier
+   * @param metadata - its resolved metadata
+   * @param federation - `type`, `expiresAt` and `trustAnchor`
+   * @param options - the registration's options
+   * @returns a promise of `{ ok: true, record }`, or `{ ok: false, error,
+   *   description, code }`
+   */
   async registerFederatedClient(req: Req, clientId: string, metadata: Json,
                                 federation: Json,
                                 options?: Json): Promise<Json> {
@@ -17517,6 +18143,12 @@ class OAuth2Server {
   // `register()` calls is the route order, and within a module the
   // registration order is).
   // -------------------------------------------------------------------------
+  /**
+   * Registers every route and middleware of the authorization server, in the
+   * order the module always registered them.
+   *
+   * @param app - the express app
+   */
   registerRoutes(app: any): void {
     const self = this;
     const { crypto, realms, forge, jwt, stsCrypto, log, logArtifact, STS,
@@ -18084,10 +18716,29 @@ capabilities.provide('oauth.codes-once');
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * The OAuth 2.0 authorization server and OpenID provider.
+ *
+ * The composition root builds the instance and calls `registerRoutes()`; the
+ * functions here forward to it, for the modules that share its builders.
+ *
+ * @namespace
+ */
 export = {
   registerRoutes: slot.forward('registerRoutes'),
   OAuth2Server: OAuth2Server,
+  /**
+   * Installs the instance the composition root built, and runs its wiring.
+   * Refused once an instance is installed or a default built.
+   *
+   * @param instance - the instance every facade here forwards to
+   */
   installInstance: (instance: OAuth2Server): void => slot.install(instance),
+  /**
+   * Tells where the instance in use came from.
+   *
+   * @returns `root`, `default` or `none`
+   */
   instanceOrigin: (): string => slot.origin(),
   asMetadata: slot.forward('asMetadata'),
   registerFederatedClient: slot.forward('registerFederatedClient'),
@@ -18164,6 +18815,10 @@ export = {
   // A GETTER, so a reader holding this module sees
   // `oauth2.maxRequestedClaims` as it is now rather than the default it was
   // at require time.
+  /**
+   * How many individual claims one claims request may name, read from the
+   * setting now.
+   */
   get MAX_REQUESTED_CLAIMS() {
     helpers.log.debug("Entering MAX_REQUESTED_CLAIMS().");
     helpers.log.debug("Leaving MAX_REQUESTED_CLAIMS().");

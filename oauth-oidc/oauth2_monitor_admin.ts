@@ -90,7 +90,17 @@ const PAGE = consoleModel.PAGE_PATH;
 const BACK_PARAMS = ['state', 'client_id', 'per', 'page', 'clientsPage',
                      'stepUpClientsPage'];
 
+/**
+ * The console page `/admin/oauth2/monitor`: what the authorization server has
+ * done, per client, drawn from one call to `oauth2_monitor_console.ts`.
+ */
 class OAuth2MonitorAdmin {
+  /**
+   * Builds the page from its dependencies.
+   *
+   * @param deps - the logger, body parser, error codes, console shell, escaper
+   *   and the page's view model
+   */
   constructor(private readonly deps: OAuth2MonitorAdminDeps) {
     deps.log.debug("Entering OAuth2MonitorAdmin.constructor().");
     deps.log.debug("Leaving OAuth2MonitorAdmin.constructor().");
@@ -98,6 +108,11 @@ class OAuth2MonitorAdmin {
 
   // What the composition root passes: the deps the module built its
   // own instance from before R2, from the same imports.
+  /**
+   * Returns the dependencies built from this module's own imports.
+   *
+   * @returns the default dependency set
+   */
   static defaultDeps(): OAuth2MonitorAdminDeps {
     helpers.log.debug("Entering OAuth2MonitorAdmin.defaultDeps().");
     helpers.log.debug("Leaving OAuth2MonitorAdmin.defaultDeps().");
@@ -474,6 +489,12 @@ class OAuth2MonitorAdmin {
       '<h3>Errors returned, all clients</h3>' + self.errorsHtml(section.errors);
   }
 
+  /**
+   * Registers `GET` and `POST /admin/oauth2/monitor`: the page, and its
+   * Withdraw control.
+   *
+   * @param app - the express app
+   */
   registerRoutes(app: { get: Function; post: Function }): void {
     const { log, parseBody, errorCodes, admin, esc,
             consoleModel } = this.deps;
@@ -576,10 +597,28 @@ const slot = new InstanceSlot<OAuth2MonitorAdmin>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * The console page Monitoring -> OAuth 2.0 / OIDC activity.
+ *
+ * The composition root builds the instance and calls `registerRoutes()`.
+ *
+ * @namespace
+ */
 export = {
   registerRoutes: slot.forward('registerRoutes'),
   OAuth2MonitorAdmin: OAuth2MonitorAdmin,
+  /**
+   * Installs the instance the composition root built, and runs its wiring.
+   * Refused once an instance is installed or a default built.
+   *
+   * @param instance - the instance every facade here forwards to
+   */
   installInstance: (instance: OAuth2MonitorAdmin): void =>
     slot.install(instance),
+  /**
+   * Tells where the instance in use came from.
+   *
+   * @returns `root`, `default` or `none`
+   */
   instanceOrigin: (): string => slot.origin()
 };

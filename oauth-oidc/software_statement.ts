@@ -160,11 +160,32 @@ const SERVER_MEMBERS = ['client_id', 'client_secret', 'client_id_issued_at',
 const INVALID = 'invalid_software_statement';
 const UNAPPROVED = 'unapproved_software_statement';
 
+/**
+ * RFC 7591 section 2.3's software statement: verifying one presented at
+ * registration, applying it to the registration, and issuing one as this realm.
+ */
 class SoftwareStatement {
+  /**
+   * The `typ` header a software statement must carry.
+   */
   static readonly TYPE = TYPE;
+  /**
+   * RFC 7519's registered claims, which describe the statement and are never
+   * copied into the registration.
+   */
   static readonly JWT_CLAIMS = JWT_CLAIMS;
+  /**
+   * The members the server assigns, which a statement cannot choose.
+   */
   static readonly SERVER_MEMBERS = SERVER_MEMBERS;
 
+  /**
+   * Builds the module from its dependencies.
+   *
+   * @param deps - the settings, crypto, PKI, application registry, validation,
+   *   error codes, revocation status, signer, clock and other modules this
+   *   class reads
+   */
   constructor(private readonly deps: SoftwareStatementDeps) {
     deps.log.debug("Entering SoftwareStatement.constructor().");
     deps.log.debug("Leaving SoftwareStatement.constructor().");
@@ -172,6 +193,11 @@ class SoftwareStatement {
 
   // What the composition root passes: the deps the module built its
   // own instance from before R2, from the same imports.
+  /**
+   * Returns the dependencies built from this module's own imports.
+   *
+   * @returns the default dependency set
+   */
   static defaultDeps(): SoftwareStatementDeps {
     helpers.log.debug("Entering SoftwareStatement.defaultDeps().");
     helpers.log.debug("Leaving SoftwareStatement.defaultDeps().");
@@ -194,6 +220,12 @@ class SoftwareStatement {
     };
   }
 
+  /**
+   * Tells whether a statement must come from a trusted issuer to be accepted
+   * (`oauth2.softwareStatementRequireTrustedIssuer`, on unless set false).
+   *
+   * @returns true when a trusted issuer is required
+   */
   requiresTrustedIssuer(): Json {
     const { config, log } = this.deps;
     log.debug("Entering SoftwareStatement.requiresTrustedIssuer().");
@@ -202,6 +234,12 @@ class SoftwareStatement {
       false;
   }
 
+  /**
+   * Tells whether a trusted statement admits a registration the endpoint would
+   * otherwise refuse (`oauth2.softwareStatementOpensRegistration`).
+   *
+   * @returns true when it does
+   */
   opensRegistration(): Json {
     const { config, log } = this.deps;
     log.debug("Entering SoftwareStatement.opensRegistration().");
@@ -209,6 +247,12 @@ class SoftwareStatement {
     return config.value('oauth2.softwareStatementOpensRegistration') !== false;
   }
 
+  /**
+   * Tells whether every registration must carry a statement
+   * (`oauth2.softwareStatementRequired`).
+   *
+   * @returns true when one is required
+   */
   required(): Json {
     const { config, log } = this.deps;
     log.debug("Entering SoftwareStatement.required().");
@@ -216,6 +260,11 @@ class SoftwareStatement {
     return config.value('oauth2.softwareStatementRequired') === true;
   }
 
+  /**
+   * Returns the lifetime of a statement this realm issues.
+   *
+   * @returns the seconds, or 0 for no expiry
+   */
   issuedLifetimeSeconds(): Json {
     const { config, log } = this.deps;
     log.debug("Entering SoftwareStatement.issuedLifetimeSeconds().");
@@ -247,6 +296,12 @@ class SoftwareStatement {
   // entries declaring one issuer is a configuration somebody should see, and
   // the console shows the declaration on both.
   // ---------------------------------------------------------------------------
+  /**
+   * Returns the application that declared an issuer, the first in list order.
+   *
+   * @param iss - the statement's issuer
+   * @returns the application entry, or null
+   */
   declaringApplication(iss: Json): Json {
     const { applications, log } = this.deps;
     log.debug("Entering SoftwareStatement.declaringApplication(). iss=" + iss);
@@ -382,6 +437,15 @@ class SoftwareStatement {
   // `assertion_grant.verify()`'s order for its reason: the unverified `iss` is
   // read only to find candidate keys.
   // ---------------------------------------------------------------------------
+  /**
+   * Verifies one statement, its signature before any claim is believed.
+   *
+   * @param statement - the statement JWT
+   * @param opts - `base`, the address the request arrived on
+   * @returns a promise of `{ ok: true, trusted, issuer, issuerKind, publisher,
+   *   metadata, ... }`, or a refusal carrying `error`, `description` and
+   *   `errorCode`
+   */
   async verify(statement: Json, opts: Json): Promise<Json> {
     const { stsCrypto, pki, errorCodes, revocationStatus, validation, log, STS,
             nowSec, assertionGrant, jwtAccessToken } = this.deps;
@@ -684,6 +748,16 @@ class SoftwareStatement {
   // statement string itself kept unmodified for section 3.2.1's response.
   // `statement` is null when the document carried none.
   // ---------------------------------------------------------------------------
+  /**
+   * Applies a registration document's statement: its claims over the JSON when
+   * trusted, the JSON over them when not. Used by registration and by RFC
+   * 7592's PUT.
+   *
+   * @param document - the registration document
+   * @param opts - the verification options, as for `verify()`
+   * @returns a promise of `{ ok: true, metadata, statement, ... }`, statement
+   *   null when the document carried none, or a refusal
+   */
   async resolve(document: Json, opts: Json): Promise<Json> {
     const { log } = this.deps;
     const self = this;
@@ -748,6 +822,17 @@ class SoftwareStatement {
   // carry a TRUSTED statement from the SAME issuer. `facts` is the entry's
   // record of how it registered (`applications.softwareStatementFactsOf()`).
   // ---------------------------------------------------------------------------
+  /**
+   * Refuses an update that would replace a registration a trusted statement
+   * admitted, unless it carries a trusted statement from the same issuer, while
+   * the endpoint is closed.
+   *
+   * @param facts - how the entry registered
+   * @param resolved - `resolve()`'s answer for the update
+   * @param open - whether the endpoint admits a registration without a
+   *   statement
+   * @returns null, or a refusal
+   */
   updateProblem(facts: Json, resolved: Json, open: Json): Json {
     const { log } = this.deps;
     const self = this;
@@ -794,6 +879,15 @@ class SoftwareStatement {
   // able to register a `client_credentials` client should be issued a statement
   // whose `grant_types` says so.
   // ---------------------------------------------------------------------------
+  /**
+   * Issues a statement as this realm for a publisher and writes it onto the
+   * publisher's entry.
+   *
+   * @param opts - `identifier` (the publisher), `metadata` (what the statement
+   *   fixes) and `base`, the address whose issuer becomes `iss`
+   * @returns `{ ok: true, softwareStatement, claims, ... }`, or `{ ok: false,
+   *   ... }` carrying its code
+   */
   issue(opts: Json): Json {
     const { errorCodes, applications, validation, log, signJwtAs, nowSec,
             randomId, jwtAccessToken } = this.deps;
@@ -938,6 +1032,13 @@ class SoftwareStatement {
   // whether it still verifies under this realm's key now. Synchronous and
   // never throws — a page is drawing it.
   // ---------------------------------------------------------------------------
+  /**
+   * Describes the statement on an entry for the console: its claims, and
+   * whether it still verifies under this realm's key. Never throws.
+   *
+   * @param statement - the statement JWT
+   * @returns the description
+   */
   describe(statement: Json): Json {
     const { nodeCrypto, stsCrypto, log, STS } = this.deps;
     const self = this;
@@ -993,10 +1094,29 @@ const slot = new InstanceSlot<SoftwareStatement>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * RFC 7591 section 2.3 software statements.
+ *
+ * A library that registers no route. The composition root builds the instance;
+ * each function here forwards to it.
+ *
+ * @namespace
+ */
 export = {
   SoftwareStatement: SoftwareStatement,
+  /**
+   * Installs the instance the composition root built, and runs its wiring.
+   * Refused once an instance is installed or a default built.
+   *
+   * @param instance - the instance every facade here forwards to
+   */
   installInstance: (instance: SoftwareStatement): void =>
     slot.install(instance),
+  /**
+   * Tells where the instance in use came from.
+   *
+   * @returns `root`, `default` or `none`
+   */
   instanceOrigin: (): string => slot.origin(),
   TYPE: SoftwareStatement.TYPE,
   JWT_CLAIMS: SoftwareStatement.JWT_CLAIMS,

@@ -130,7 +130,17 @@ interface Notification {
   why: string;
 }
 
+/**
+ * OpenID Connect Front-Channel Logout 1.0: the relying parties a session signed
+ * into, and the hidden iframes a sign-out page loads to tell each one.
+ */
 class FrontchannelLogout {
+  /**
+   * Builds the module from its dependencies.
+   *
+   * @param deps - the logger, settings, app, application registry, validation,
+   *   error codes and escaping this class reads, and a lazy loader of `authn`
+   */
   constructor(private readonly deps: FrontchannelLogoutDeps) {
     deps.log.debug("Entering FrontchannelLogout.constructor().");
     deps.log.debug("Leaving FrontchannelLogout.constructor().");
@@ -138,6 +148,11 @@ class FrontchannelLogout {
 
   // What the composition root passes: the deps the module built its
   // own instance from before R2, from the same imports.
+  /**
+   * Returns the dependencies built from this module's own imports.
+   *
+   * @returns the default dependency set
+   */
   static defaultDeps(): FrontchannelLogoutDeps {
     helpers.log.debug("Entering FrontchannelLogout.defaultDeps().");
     helpers.log.debug("Leaving FrontchannelLogout.defaultDeps().");
@@ -158,6 +173,12 @@ class FrontchannelLogout {
   // Is the feature on at all? Read per call rather than captured at require
   // time, which is what `runtime: true` on the setting claims — a `const`
   // here is the one thing /admin/config could not change.
+  /**
+   * Tells whether front-channel logout is on (`oauth2.frontchannelLogout`),
+   * read per call.
+   *
+   * @returns true when it is on
+   */
   enabled(): boolean {
     const { log, config } = this.deps;
     log.debug("Entering FrontchannelLogout.enabled().");
@@ -187,6 +208,18 @@ class FrontchannelLogout {
   // a Logout Token must name the one the relying party trusts — and `sub`.
   // Both are kept on the row, the latest winning, because a client served by
   // one authorization server is served by it every time.
+  /**
+   * Records on the session that it signed into a client, when an authorization
+   * response goes out.
+   *
+   * Never throws: a bookkeeping failure must not stop a client getting its
+   * code.
+   *
+   * @param session - the sign-on session
+   * @param clientId - the client answered
+   * @param facts - `iss` and `sub` as the client's ID Token names them, which
+   *   Back-Channel Logout needs later
+   */
   noteClient(session: Json, clientId: string, facts?: Json): void {
     const { log, loadAuthn } = this.deps;
     log.debug("Entering FrontchannelLogout.noteClient().");
@@ -228,6 +261,12 @@ class FrontchannelLogout {
   // Read straight off the session, so a caller holding a session it is about
   // to discard still gets the list — which is the whole reason `endSession()`
   // and `endSessionById()` RETURN the session rather than a boolean.
+  /**
+   * Lists every client a session signed into, in the order first seen.
+   *
+   * @param session - the sign-on session, which may be one being discarded
+   * @returns the client_ids
+   */
   clientsOf(session: Json): string[] {
     const { log } = this.deps;
     log.debug("Entering FrontchannelLogout.clientsOf().");
@@ -258,6 +297,15 @@ class FrontchannelLogout {
   // caller supplies, is used only for a client recorded before the issuer
   // was (a session from before 2026-09-17, #36).
   // -------------------------------------------------------------------------
+  /**
+   * Builds one notification row per client the session signed into, including
+   * those with no `frontchannel_logout_uri`, reported with `uri: ''`.
+   *
+   * @param session - the session being ended
+   * @param issuer - the sign-out's issuer, used only for a client recorded
+   *   without one
+   * @returns the notification rows
+   */
   notificationsFor(session: Json, issuer: string): Notification[] {
     const { log, applications, validation, errorCodes } = this.deps;
     log.debug("Entering FrontchannelLogout.notificationsFor(). issuer=" +
@@ -359,6 +407,13 @@ class FrontchannelLogout {
   // the policy rather than widening it: the iframe then does not load, which
   // is the safe direction, and the row beside it still shows the URL so the
   // failure is visible rather than silent.
+  /**
+   * Returns the distinct origins of the notifications that will load, which
+   * `frame-src` has to allow. An unparseable URI is dropped.
+   *
+   * @param notifications - the rows `notificationsFor()` built
+   * @returns the origins
+   */
   frameOriginsOf(notifications: Notification[]): string[] {
     const { log } = this.deps;
     log.debug("Entering FrontchannelLogout.frameOriginsOf().");
@@ -393,6 +448,13 @@ class FrontchannelLogout {
   // `app.contentSecurityPolicy()`, which re-adds `frame-ancestors` and
   // `base-uri` whatever this asks for — a caller cannot drop them, and this
   // one must not want to.
+  /**
+   * Builds the Content-Security-Policy for a page carrying these iframes,
+   * through `app.contentSecurityPolicy()` so the framing clauses stay.
+   *
+   * @param notifications - the rows `notificationsFor()` built
+   * @returns the header value
+   */
   contentSecurityPolicyFor(notifications: Notification[]): string {
     const { log, app } = this.deps;
     log.debug("Entering FrontchannelLogout.contentSecurityPolicyFor().");
@@ -419,6 +481,13 @@ class FrontchannelLogout {
   // reading out the plumbing. The LINKS are the accessible half and carry the
   // same URLs.
   // -------------------------------------------------------------------------
+  /**
+   * Renders the fan-out as HTML for the caller's own page: hidden iframes, and
+   * the same URLs as visible links.
+   *
+   * @param notifications - the rows `notificationsFor()` built
+   * @returns the HTML fragment
+   */
   render(notifications: Notification[]): string {
     const { log, xmlEscape } = this.deps;
     log.debug("Entering FrontchannelLogout.render(). " +
@@ -490,10 +559,29 @@ const slot = new InstanceSlot<FrontchannelLogout>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * OpenID Connect Front-Channel Logout 1.0, shared by every sign-out page.
+ *
+ * A library that registers no route. The composition root builds the instance;
+ * each function here forwards to it.
+ *
+ * @namespace
+ */
 export = {
   FrontchannelLogout: FrontchannelLogout,
+  /**
+   * Installs the instance the composition root built, and runs its wiring.
+   * Refused once an instance is installed or a default built.
+   *
+   * @param instance - the instance every facade here forwards to
+   */
   installInstance: (instance: FrontchannelLogout): void =>
     slot.install(instance),
+  /**
+   * Tells where the instance in use came from.
+   *
+   * @returns `root`, `default` or `none`
+   */
   instanceOrigin: (): string => slot.origin(),
   enabled: slot.forward('enabled'),
   noteClient: slot.forward('noteClient'),

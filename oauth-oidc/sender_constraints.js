@@ -93,6 +93,10 @@ const CERTIFICATE_CLIENT_METHODS = ['tls_client_auth',
 // configured to meet whatever the realm it points at requires.
 // `tests/sender_constraints.js` checks this list against `oidc_rp.js`'s own,
 // so a surface added there cannot quietly acquire an exemption.
+/**
+ * The hosted relying parties the mutual-TLS refresh setting steps aside for:
+ * the console and the portal.
+ */
 const MTLS_EXEMPT_CLIENTS = ['sts-admin-console', 'sts-user-portal'];
 
 // ---------------------------------------------------------------------------
@@ -115,6 +119,13 @@ const MTLS_EXEMPT_CLIENTS = ['sts-admin-console', 'sts-user-portal'];
 // allows public clients now. Rotation is the limb that asks nothing of the
 // client, which is the right one to require of an application that cannot keep
 // a secret either.
+/**
+ * Tells whether refresh tokens must rotate: in RFC 9700, OAuth 2.1, FAPI or
+ * product mode, or by `oauth2.refreshTokenRotation`; under FAPI 2.0 only by
+ * that setting.
+ *
+ * @returns true when rotation is required
+ */
 function rotationRequired() {
   log.debug("Entering rotationRequired().");
   // FAPI 2.0 section 5.3.2.1 item 9 (#140): no rotation "except in
@@ -135,6 +146,11 @@ function rotationRequired() {
 // Which of the three turned it on, for the console page and the two compliance
 // reports. A mode is named ahead of the setting, because a mode cannot be
 // turned off by the setting and a reader who saw the setting named would try.
+/**
+ * Names what turned rotation on, a mode ahead of the setting.
+ *
+ * @returns the source, or null when rotation is off
+ */
 function rotationSource() {
   log.debug("Entering rotationSource().");
   if (fapi.forbidsRotation()) {
@@ -170,6 +186,12 @@ function rotationSource() {
   return null;
 }
 
+/**
+ * Tells whether a refresh token must be bound to a DPoP key
+ * (`oauth2.refreshTokenRequireDpop`).
+ *
+ * @returns true when it must
+ */
 function refreshDpopRequired() {
   log.debug("Entering refreshDpopRequired().");
   const answer = !!config.value('oauth2.refreshTokenRequireDpop');
@@ -177,6 +199,12 @@ function refreshDpopRequired() {
   return answer;
 }
 
+/**
+ * Tells whether a refresh token must be bound to a client certificate
+ * (`oauth2.refreshTokenRequireMtls`).
+ *
+ * @returns true when it must
+ */
 function refreshMtlsRequired() {
   log.debug("Entering refreshMtlsRequired().");
   const answer = !!config.value('oauth2.refreshTokenRequireMtls');
@@ -184,6 +212,12 @@ function refreshMtlsRequired() {
   return answer;
 }
 
+/**
+ * Tells whether an access token must be DPoP-bound at a resource
+ * (`oauth2.accessTokenRequireDpop`).
+ *
+ * @returns true when it must
+ */
 function accessTokenDpopRequired() {
   log.debug("Entering accessTokenDpopRequired().");
   const answer = !!config.value('oauth2.accessTokenRequireDpop');
@@ -191,6 +225,12 @@ function accessTokenDpopRequired() {
   return answer;
 }
 
+/**
+ * Tells whether an access token must be certificate-bound at a resource
+ * (`oauth2.accessTokenRequireMtls`).
+ *
+ * @returns true when it must
+ */
 function accessTokenMtlsRequired() {
   log.debug("Entering accessTokenMtlsRequired().");
   const answer = !!config.value('oauth2.accessTokenRequireMtls');
@@ -200,6 +240,11 @@ function accessTokenMtlsRequired() {
 
 // Is any of the four refusals on? The console page and the two reports ask
 // this to decide whether to draw the warning block at all.
+/**
+ * Tells whether any of the four sender-constraint refusals is on.
+ *
+ * @returns true when one is
+ */
 function anythingRequired() {
   log.debug("Entering anythingRequired().");
   const answer = refreshDpopRequired() || refreshMtlsRequired() ||
@@ -236,6 +281,14 @@ function refusal(errorCode, error, setting, description) {
 // DPoP setting — `common/oidc_rp.ts` carries proofs of its own since
 // 2026-09-15, which is the whole reason that half was built.
 // ---------------------------------------------------------------------------
+/**
+ * Refuses to mint a refresh token the settings require to be bound, when the
+ * request cannot bind it. Asked once per token request.
+ *
+ * @param opts - `grant`, `dpopJkt`, `certificate`, `certificateVerified`,
+ *   `mtlsAvailable` and `exempt`
+ * @returns null, or `{ ok: false, errorCode, error, setting, description }`
+ */
 function refreshIssuanceRefusal(opts) {
   log.debug("Entering refreshIssuanceRefusal().");
   const o = opts || {};
@@ -286,6 +339,14 @@ function refreshIssuanceRefusal(opts) {
 // own, and the operator who turned this setting on would have been told the
 // tokens were constrained when the first use of a stolen one constrained it.
 // ---------------------------------------------------------------------------
+/**
+ * Refuses an unbound refresh token the settings require to be bound, after the
+ * ordinary binding checks.
+ *
+ * @param opts - `tokenJkt`, `tokenThumbprint`, `provedJkt`, `certificate`,
+ *   `certificateVerified`, `mtlsAvailable`, `exempt` and `section`
+ * @returns null, or `{ ok: false, errorCode, error, setting, description }`
+ */
 function refreshRedemptionRefusal(opts) {
   log.debug("Entering refreshRedemptionRefusal().");
   const o = opts || {};
@@ -360,6 +421,14 @@ function refreshRedemptionRefusal(opts) {
 // a client be tested against the refusal, and it is stated on /admin/oauth2 so
 // that nobody reads the 401 as a bug in the issuer.
 // ---------------------------------------------------------------------------
+/**
+ * Refuses, at a resource, an access token the settings require to be
+ * sender-constrained and that is not, whoever issued it.
+ *
+ * @param opts - `where`, `boundJkt`, `proofOk`, `boundThumbprint`,
+ *   `certificate`, `certificateMatches` and `mtlsAvailable`
+ * @returns null, or `{ ok: false, errorCode, error, setting, description }`
+ */
 function accessTokenRefusal(opts) {
   log.debug("Entering accessTokenRefusal().");
   const o = opts || {};
@@ -418,6 +487,12 @@ function accessTokenRefusal(opts) {
 // Whether this client is one of the two hosted relying parties the mutual TLS
 // refresh setting steps aside for. Asked by the token endpoint, and published
 // on /admin/oauth2 so the exemption is never something a reader has to find.
+/**
+ * Tells whether a client is one the mutual-TLS refresh setting steps aside for.
+ *
+ * @param clientId - the client
+ * @returns true when it is exempt
+ */
 function mtlsExemptClient(clientId) {
   log.debug("Entering mtlsExemptClient().");
   const answer = MTLS_EXEMPT_CLIENTS.indexOf(String(clientId || '')) >= 0;
@@ -428,6 +503,12 @@ function mtlsExemptClient(clientId) {
 // Whether a client authentication method is one of RFC 8705's, which is what
 // section 7.1 turns on. The caller has the method; this keeps the list in one
 // place.
+/**
+ * Tells whether a client authentication method is one of RFC 8705's.
+ *
+ * @param method - the method
+ * @returns true when it is
+ */
 function certificateClientMethod(method) {
   log.debug("Entering certificateClientMethod().");
   const answer = CERTIFICATE_CLIENT_METHODS.indexOf(String(method || '')) >= 0;
@@ -438,6 +519,12 @@ function certificateClientMethod(method) {
 // What `GET /oauth2/rfc9700`, `GET /oauth2/oauth21` and /admin/oauth2 publish
 // about these five. One reader, so the console and the two reports cannot
 // disagree about what is on.
+/**
+ * Describes the five sender-constraint settings as `GET /oauth2/rfc9700`, `GET
+ * /oauth2/oauth21` and `/admin/oauth2` publish them.
+ *
+ * @returns the description
+ */
 function state() {
   log.debug("Entering state().");
   const answer = {
@@ -463,6 +550,12 @@ function state() {
   return answer;
 }
 
+/**
+ * Sender constraints beyond what OAuth 2.1 or RFC 9700 require (#34): refresh
+ * token rotation and the four DPoP and mutual-TLS requirements.
+ *
+ * @namespace
+ */
 module.exports = {
   MTLS_EXEMPT_CLIENTS,
   mtlsExemptClient,

@@ -44,7 +44,13 @@ import clusterClaims = require('../cluster/cluster_claims');
 
 type Json = any;
 
+/**
+ * The device code grant type the token endpoint accepts.
+ */
 const GRANT_TYPE = 'urn:ietf:params:oauth:grant-type:device_code';
+/**
+ * The scheduler job id that expires and drops device codes.
+ */
 const SWEEP_JOB = 'oauth2.device-code-sweep';
 const REDEEM_SCOPE = 'oauth.device';
 const RETENTION_MS = 60 * 60 * 1000;
@@ -60,15 +66,35 @@ interface DeviceDeps {
   now: () => number;
 }
 
+/**
+ * RFC 8628, the OAuth 2.0 Device Authorization Grant (#150): device codes, user
+ * codes, the person's answer on `/portal/device`, and the polling.
+ */
 class DeviceAuthorization {
+  /**
+   * The device code grant type the token endpoint accepts.
+   */
   static readonly GRANT_TYPE = GRANT_TYPE;
+  /**
+   * The scheduler job id that expires and drops device codes.
+   */
   static readonly SWEEP_JOB = SWEEP_JOB;
 
+  /**
+   * Builds the module from its dependencies.
+   *
+   * @param deps - the logger, settings, cluster claims, scheduler and clock
+   */
   constructor(private readonly deps: DeviceDeps) {
     deps.log.debug("Entering DeviceAuthorization.constructor().");
     deps.log.debug("Leaving DeviceAuthorization.constructor().");
   }
 
+  /**
+   * Returns the dependencies built from this module's own imports.
+   *
+   * @returns the default dependency set
+   */
   static defaultDeps(): DeviceDeps {
     helpers.log.debug("Entering DeviceAuthorization.defaultDeps().");
     helpers.log.debug("Leaving DeviceAuthorization.defaultDeps().");
@@ -83,6 +109,12 @@ class DeviceAuthorization {
     };
   }
 
+  /**
+   * Tells whether the device flow is on in the realm
+   * (`oauth2.deviceAuthorization`, off by default).
+   *
+   * @returns true when it is on
+   */
   enabled(): boolean {
     this.deps.log.debug("Entering DeviceAuthorization.enabled().");
     this.deps.log.debug("Leaving DeviceAuthorization.enabled().");
@@ -90,6 +122,13 @@ class DeviceAuthorization {
   }
 
   // `abcd-efgh`, `ABCDEFGH` and ` abcdefgh ` are one code (section 6.1).
+  /**
+   * Normalises a typed user code: case, spaces and hyphens ignored (section
+   * 6.1).
+   *
+   * @param userCode - the code as typed
+   * @returns the normalised code
+   */
   static normalize(userCode: Json): string {
     helpers.log.debug("Entering DeviceAuthorization.normalize().");
     helpers.log.debug("Leaving DeviceAuthorization.normalize().");
@@ -114,6 +153,16 @@ class DeviceAuthorization {
   }
 
   // Section 3.1/3.2: a new device authorization for `clientId`.
+  /**
+   * Creates a device authorization for a client: a 256-bit device code and an
+   * eight-character user code (sections 3.1 and 3.2).
+   *
+   * @param clientId - the client asking
+   * @param clientName - its name, shown on the approval page
+   * @param scope - the scope requested
+   * @param dpopJkt - the DPoP key thumbprint the request was bound to, or ''
+   * @returns the new record
+   */
   create(clientId: string, clientName: string, scope: string,
          dpopJkt: string): Json {
     const { log, config, now } = this.deps;
@@ -139,6 +188,12 @@ class DeviceAuthorization {
   }
 
   // The pending request a person's typed user code names, or null.
+  /**
+   * Finds the pending request a typed user code names.
+   *
+   * @param typed - the user code as typed
+   * @returns the pending record, or null
+   */
   byUserCode(typed: Json): Json {
     const { log, now } = this.deps;
     log.debug("Entering DeviceAuthorization.byUserCode().");
@@ -152,6 +207,15 @@ class DeviceAuthorization {
   }
 
   // The person's answer on /portal/device, with what their session proved.
+  /**
+   * Records a person's approval or denial on `/portal/device`.
+   *
+   * @param typed - the user code as typed
+   * @param username - the person answering
+   * @param approve - true to approve, false to deny
+   * @param approval - what the person's session proved
+   * @returns `{ ok: true, record }`, or `{ ok: false, why }`
+   */
   answer(typed: Json, username: string, approve: boolean,
          approval: Json): Json {
     const { log, now } = this.deps;
@@ -174,6 +238,15 @@ class DeviceAuthorization {
 
   // Section 3.5: what a poll finds — pending, slow_down, approved, denied,
   // expired, redeemed or unknown — with the interval enforced.
+  /**
+   * Tells a polling device the state of its request, with the interval enforced
+   * (section 3.5).
+   *
+   * @param deviceCode - the device code
+   * @param clientId - the client polling
+   * @returns the state (`pending`, `slow_down`, `approved`, `denied`,
+   *   `expired`, `redeemed` or `unknown`) and the record
+   */
   poll(deviceCode: Json, clientId: Json): Json {
     const { log, now } = this.deps;
     log.debug("Entering DeviceAuthorization.poll().");
@@ -206,6 +279,13 @@ class DeviceAuthorization {
   }
 
   // One token response per approval, cluster-wide.
+  /**
+   * Claims an approved request's one token response, cluster-wide, and marks it
+   * redeemed.
+   *
+   * @param record - the approved record
+   * @returns a promise of true when this caller won the claim
+   */
   async redeem(record: Json): Promise<boolean> {
     const { log, claims, now } = this.deps;
     log.debug("Entering DeviceAuthorization.redeem().");
@@ -225,6 +305,12 @@ class DeviceAuthorization {
 
   // The scheduler job (#49): expire what nobody answered and drop what
   // finished an hour ago.
+  /**
+   * Expires what nobody answered and drops what finished an hour ago. The
+   * scheduler job's body.
+   *
+   * @returns `{ summary }` for the scheduler
+   */
   sweep(): Json {
     const { log, now } = this.deps;
     log.debug("Entering DeviceAuthorization.sweep().");
@@ -256,6 +342,9 @@ class DeviceAuthorization {
              ' row(s) removed' };
   }
 
+  /**
+   * Registers the sweep job on the scheduler, once.
+   */
   scheduleJobs(): void {
     const { log, scheduler } = this.deps;
     const self = this;
@@ -296,10 +385,29 @@ const slot = new InstanceSlot<DeviceAuthorization>(
 
 slot.buildNowUnlessDeferred();
 
+/**
+ * RFC 8628, the OAuth 2.0 Device Authorization Grant.
+ *
+ * A library that registers no route. The composition root builds the instance;
+ * each function here forwards to it.
+ *
+ * @namespace
+ */
 export = {
   DeviceAuthorization: DeviceAuthorization,
+  /**
+   * Installs the instance the composition root built, and runs its wiring.
+   * Refused once an instance is installed or a default built.
+   *
+   * @param instance - the instance every facade here forwards to
+   */
   installInstance: (instance: DeviceAuthorization): void =>
     slot.install(instance),
+  /**
+   * Tells where the instance in use came from.
+   *
+   * @returns `root`, `default` or `none`
+   */
   instanceOrigin: (): string => slot.origin(),
   GRANT_TYPE: GRANT_TYPE,
   SWEEP_JOB: SWEEP_JOB,

@@ -105,10 +105,28 @@ const DEFAULT_ENC = 'A256GCM';
 // stretched to before PBKDF2 stretches it again.
 const PBES2_PASSWORD_BYTES = 32;
 
+/**
+ * Seals every refresh token, a signed JWT, as a compact JWE to its own realm
+ * (RFC 7519 section 11.2), and opens one again for the refresh grant.
+ */
 class RefreshTokenCrypto {
+  /**
+   * The key-management algorithm used when the setting names none this service
+   * performs.
+   */
   static readonly DEFAULT_ALG = DEFAULT_ALG;
+  /**
+   * The content encryption used when the setting names none this service
+   * performs.
+   */
   static readonly DEFAULT_ENC = DEFAULT_ENC;
 
+  /**
+   * Builds the module from its dependencies.
+   *
+   * @param deps - the logger, realm key reader, settings, crypto module and
+   *   error codes this class reads
+   */
   constructor(private readonly deps: RefreshTokenCryptoDeps) {
     deps.log.debug("Entering RefreshTokenCrypto.constructor().");
     deps.log.debug("Leaving RefreshTokenCrypto.constructor().");
@@ -116,6 +134,11 @@ class RefreshTokenCrypto {
 
   // What the composition root passes: the deps the module built its
   // own instance from before R2, from the same imports.
+  /**
+   * Returns the dependencies built from this module's own imports.
+   *
+   * @returns the default dependency set
+   */
   static defaultDeps(): RefreshTokenCryptoDeps {
     helpers.log.debug("Entering RefreshTokenCrypto.defaultDeps().");
     helpers.log.debug("Leaving RefreshTokenCrypto.defaultDeps().");
@@ -143,6 +166,12 @@ class RefreshTokenCrypto {
   }
 
   // Which of the realm's three keys an algorithm uses.
+  /**
+   * Tells which of the realm's three keys an algorithm uses.
+   *
+   * @param alg - a JWE key-management algorithm
+   * @returns `rsa`, `ec` or `secret`
+   */
   kindOf(alg: string): string {
     const { log } = this.deps;
     log.debug("Entering RefreshTokenCrypto.kindOf().");
@@ -159,6 +188,13 @@ class RefreshTokenCrypto {
   }
 
   // The key size a symmetric (alg, enc) pair needs, in bytes.
+  /**
+   * Returns the key size a symmetric algorithm pair needs.
+   *
+   * @param alg - the key-management algorithm
+   * @param enc - the content encryption
+   * @returns the size in bytes
+   */
   symmetricBytes(alg: string, enc: string): number {
     const { log, stsCrypto } = this.deps;
     log.debug('Entering RefreshTokenCrypto.symmetricBytes(). alg=' + alg +
@@ -193,6 +229,15 @@ class RefreshTokenCrypto {
   // The realm secret narrowed to one (alg, enc) pair. HKDF rather than a
   // slice, so two algorithms never share key bytes and the derivation is
   // one-way.
+  /**
+   * Derives, by HKDF-SHA256, the key one symmetric algorithm pair uses from the
+   * realm's secret.
+   *
+   * @param secret - the realm's refresh-token secret
+   * @param alg - the key-management algorithm
+   * @param enc - the content encryption
+   * @returns the derived key
+   */
   symmetricKeyFor(secret: Json, alg: string, enc: string): Buffer {
     const { log } = this.deps;
     log.debug("Entering RefreshTokenCrypto.symmetricKeyFor().");
@@ -210,6 +255,12 @@ class RefreshTokenCrypto {
   // table's own enum already refuses one at every door, so this is reached
   // only by a hand-edited store, and a service that stopped issuing refresh
   // tokens over it would be the tail wagging the dog.
+  /**
+   * Returns the configured algorithm pair, falling back to the default with a
+   * log line for a value no table performs.
+   *
+   * @returns `{ alg, enc }`
+   */
   configured(): Choice {
     const { log, config, stsCrypto, errorCodes } = this.deps;
     log.debug('Entering RefreshTokenCrypto.configured().');
@@ -239,6 +290,12 @@ class RefreshTokenCrypto {
   }
 
   // Compact JWE: five dot-separated parts. A compact JWS has three.
+  /**
+   * Tells whether a token is a compact JWE (five parts) rather than a JWS.
+   *
+   * @param token - the presented token
+   * @returns true for a compact JWE
+   */
   isEncrypted(token: unknown): boolean {
     const { log } = this.deps;
     log.debug("Entering RefreshTokenCrypto.isEncrypted().");
@@ -254,6 +311,15 @@ class RefreshTokenCrypto {
   // that could not be sealed must not go out in the clear, and the token
   // endpoint answers a throw as a server error.
   // -------------------------------------------------------------------------
+  /**
+   * Encrypts a signed refresh token to the ambient realm.
+   *
+   * @param jws - the signed refresh token
+   * @param keySet - the realm's key set, where the caller already has it
+   * @param choice - the algorithm pair to use instead of the configured one
+   * @returns the compact JWE
+   * @throws an Error marked STS-OAUTH-0240 when the token cannot be sealed
+   */
   seal(jws: string, keySet?: Json, choice?: Choice): string {
     const { log, refreshTokenKeysFor, stsCrypto, errorCodes } = this.deps;
     log.debug('Entering RefreshTokenCrypto.seal().');
@@ -299,6 +365,17 @@ class RefreshTokenCrypto {
   // the `error_description` the refresh grant sends — it names the condition
   // and never a key.
   // -------------------------------------------------------------------------
+  /**
+   * Decrypts a refresh token to the signed JWT inside it, which the caller then
+   * verifies. It does not verify.
+   *
+   * @param token - the presented refresh token
+   * @param keySet - the realm's key set, where the caller already has it
+   * @returns the inner JWS
+   * @throws an Error with its code marked, whose message is fit for the refresh
+   *   grant's `error_description`, for a token that is not encrypted or will
+   *   not open
+   */
   open(token: unknown, keySet?: Json): string {
     const { log, refreshTokenKeysFor, stsCrypto, errorCodes } = this.deps;
     log.debug('Entering RefreshTokenCrypto.open().');
@@ -407,6 +484,13 @@ class RefreshTokenCrypto {
   // verifying — for the two places that read a jti back off a token set they
   // minted a moment ago. Answers null rather than throwing.
   // -------------------------------------------------------------------------
+  /**
+   * Reads the claims of a token this service has just issued, encrypted or not,
+   * without verifying.
+   *
+   * @param token - a token from a token set minted a moment ago
+   * @returns the claims, or null
+   */
   claimsOfIssued(token: unknown): Json | null {
     const { log } = this.deps;
     log.debug('Entering RefreshTokenCrypto.claimsOfIssued().');
@@ -429,6 +513,13 @@ class RefreshTokenCrypto {
   }
 
   // What is in force, for the crypto report and the console. No key material.
+  /**
+   * Describes what is in force for the crypto report and the console, with no
+   * key material.
+   *
+   * @param keySet - the realm's key set, where the caller already has it
+   * @returns the algorithm pair, the choices and the key ids
+   */
   describe(keySet?: Json): Json {
     const { log, refreshTokenKeysFor, stsCrypto } = this.deps;
     log.debug("Entering RefreshTokenCrypto.describe().");
@@ -466,10 +557,29 @@ const slot = new InstanceSlot<RefreshTokenCrypto>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * Refresh-token encryption: a signed JWT sealed as a JWE to its own realm.
+ *
+ * A library that registers no route. The composition root builds the instance;
+ * each function here forwards to it.
+ *
+ * @namespace
+ */
 export = {
   RefreshTokenCrypto: RefreshTokenCrypto,
+  /**
+   * Installs the instance the composition root built, and runs its wiring.
+   * Refused once an instance is installed or a default built.
+   *
+   * @param instance - the instance every facade here forwards to
+   */
   installInstance: (instance: RefreshTokenCrypto): void =>
     slot.install(instance),
+  /**
+   * Tells where the instance in use came from.
+   *
+   * @returns `root`, `default` or `none`
+   */
   instanceOrigin: (): string => slot.origin(),
   kindOf: slot.forward('kindOf'),
   symmetricBytes: slot.forward('symmetricBytes'),

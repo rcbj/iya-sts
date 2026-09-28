@@ -396,11 +396,31 @@ const issuedNoncesCount = cacheRegistry.register({
   }
 });
 
+/**
+ * The server's half of RFC 9449 DPoP: the proof check, the nonce, the JWK
+ * thumbprint, and the Bearer-or-DPoP check every protected endpoint shares.
+ */
 class Dpop {
+  /**
+   * The `typ` header a DPoP proof must carry.
+   */
   static readonly PROOF_TYP = PROOF_TYP;
+  /**
+   * The asymmetric algorithms a proof may be signed with.
+   */
   static readonly SIGNING_ALGS = SIGNING_ALGS;
+  /**
+   * The default allowance, in seconds, between a proof's `iat` and now.
+   */
   static readonly IAT_SKEW_SECONDS = IAT_SKEW_SECONDS;
 
+  /**
+   * Builds the module from its dependencies.
+   *
+   * @param deps - the logger, settings, crypto module, base64url and JSON
+   *   readers, clock, cluster claims, capability register and the other modules
+   *   this class reads
+   */
   constructor(private readonly deps: DpopDeps) {
     deps.log.debug("Entering Dpop.constructor().");
     deps.log.debug("Leaving Dpop.constructor().");
@@ -408,6 +428,11 @@ class Dpop {
 
   // What the composition root passes: the deps the module built its
   // own instance from before R2, from the same imports.
+  /**
+   * Returns the dependencies built from this module's own imports.
+   *
+   * @returns the default dependency set
+   */
   static defaultDeps(): DpopDeps {
     helpers.log.debug("Entering Dpop.defaultDeps().");
     helpers.log.debug("Leaving Dpop.defaultDeps().");
@@ -437,6 +462,12 @@ class Dpop {
 
   // The work loading this module did with its own instance before R2,
   // run once for whichever instance is installed.
+  /**
+   * Declares the cluster capability this module provides, once for the
+   * installed instance.
+   *
+   * @param instance - the instance installed
+   */
   static wire(instance: Dpop): void {
     helpers.log.debug("Entering Dpop.wire().");
     instance.provideCapability();
@@ -477,6 +508,12 @@ class Dpop {
     return jti;
   }
 
+  /**
+   * Returns the middleware that reserves a proof's `jti` across the cluster on
+   * arrival, which `verifyProof()` then consults.
+   *
+   * @returns the express middleware
+   */
   proofClaims(): (req: Req, res: Res, next: () => void) => void {
     const { log, clusterClaims } = this.deps;
     const self = this;
@@ -544,6 +581,14 @@ class Dpop {
   // default's value, and the management API's own job asserts that a row
   // nobody meant to override does not say that — so the failure would land on
   // a different file.
+  /**
+   * Turns DPoP nonces on or off in the realm it is called in, clearing the
+   * override when the value is the default.
+   *
+   * @param on - true to require nonces
+   * @returns what is now in force
+   * @throws the setting's own refusal
+   */
   setNonceMode(on: unknown): boolean {
     const { log, config } = this.deps;
     log.debug('Entering Dpop.setNonceMode(). on=' + on);
@@ -563,6 +608,11 @@ class Dpop {
     return this.nonceModeOn();
   }
 
+  /**
+   * Tells whether DPoP nonces are required (`oauth2.dpopNonceRequired`).
+   *
+   * @returns true when they are
+   */
   nonceModeOn(): boolean {
     const { log, config } = this.deps;
     log.debug("Entering Dpop.nonceModeOn().");
@@ -570,6 +620,11 @@ class Dpop {
     return config.value('oauth2.dpopNonceRequired') === true;
   }
 
+  /**
+   * Issues a fresh nonce, evicting the oldest at the cache bound.
+   *
+   * @returns the nonce
+   */
   issueNonce(): string {
     const { log, randomId, nowSec, config } = this.deps;
     log.debug('Entering Dpop.issueNonce().');
@@ -598,6 +653,12 @@ class Dpop {
     log.debug("Leaving Dpop.pruneNonces().");
   }
 
+  /**
+   * Tells whether a nonce is one this service issued and has not expired.
+   *
+   * @param nonce - the proof's `nonce`
+   * @returns true when it is current
+   */
   nonceIsCurrent(nonce: unknown): boolean {
     const { log } = this.deps;
     log.debug('Entering Dpop.nonceIsCurrent().');
@@ -638,6 +699,13 @@ class Dpop {
   // BYTE against a value the client computed from the same key, so a
   // truncation here would be a binding that accepts a prefix collision.
   // -------------------------------------------------------------------------
+  /**
+   * Computes a JWK's RFC 7638 thumbprint, never truncated: the value that
+   * becomes `cnf.jkt`.
+   *
+   * @param jwk - the public key
+   * @returns the base64url thumbprint
+   */
   thumbprint(jwk: Json): string {
     const { log, stsCrypto } = this.deps;
     log.debug('Entering Dpop.thumbprint().');
@@ -647,6 +715,12 @@ class Dpop {
   }
 
   // `ath`, RFC 9449 section 4.2: base64url(SHA-256(ASCII(access token))).
+  /**
+   * Computes `ath` (section 4.2): the base64url SHA-256 of an access token.
+   *
+   * @param accessToken - the access token
+   * @returns the `ath` value
+   */
   athOf(accessToken: unknown): string {
     const { log, b64u } = this.deps;
     log.debug("Entering Dpop.athOf().");
@@ -681,6 +755,13 @@ class Dpop {
   // name; the refusal in check 9 says so, and names the setting, because a
   // proof refused for a reason nobody can see is an afternoon.
   // -------------------------------------------------------------------------
+  /**
+   * Returns the `htu` a proof sent to this request must name: what the socket
+   * saw, or the forwarded address only where `global.trustProxy` is on.
+   *
+   * @param req - the request
+   * @returns the expected `htu`
+   */
   htuOf(req: Req): string {
     const { log, forwardedFrom } = this.deps;
     log.debug('Entering Dpop.htuOf().');
@@ -706,6 +787,12 @@ class Dpop {
     return htu;
   }
 
+  /**
+   * Normalises an `htu` for comparison, without its query and fragment.
+   *
+   * @param value - the URL
+   * @returns the normalised URL, or the value as text when it does not parse
+   */
   normalizeHtu(value: unknown): string {
     const { log } = this.deps;
     log.debug('Entering Dpop.normalizeHtu(). value=' + value);
@@ -743,6 +830,16 @@ class Dpop {
   // in a 401 WWW-Authenticate, and this module has no business knowing which
   // of the two it is serving.
   // -------------------------------------------------------------------------
+  /**
+   * Makes the twelve checks of a DPoP proof. It never sends a response: the
+   * caller decides how a refusal is answered.
+   *
+   * @param rawHeader - the `DPoP` header
+   * @param opts - `htm`, `htu`, `req`, and where a token is presented,
+   *   `accessToken` and `expectedJkt`
+   * @returns `{ ok: true, jkt, jwk, claims }`, or `{ ok: false, error,
+   *   description, needNonce, errorCode }`
+   */
   verifyProof(rawHeader: unknown, opts?: Json): Json {
     const { log, jsonFromB64u, stsCrypto, trustProxy, nowSec,
             config } = this.deps;
@@ -1081,6 +1178,12 @@ class Dpop {
   // The confirmation a token carries, if any. RFC 9449 section 6.1 puts it in
   // `cnf.jkt`; a token without one is a Bearer token and must be presented as
   // one.
+  /**
+   * Returns the confirmation key thumbprint a token carries in `cnf.jkt`.
+   *
+   * @param claims - the token's claims
+   * @returns the thumbprint, or '' for a Bearer token
+   */
   jktOf(claims: Json): string {
     const { log } = this.deps;
     log.debug("Entering Dpop.jktOf().");
@@ -1090,6 +1193,11 @@ class Dpop {
   }
 
   // For tests and for /admin/sts-metadata: what this server will accept.
+  /**
+   * Describes what this server accepts, for tests and `/admin/sts-metadata`.
+   *
+   * @returns the algorithms, nonce settings and cache sizes
+   */
   state(): Json {
     const { log } = this.deps;
     log.debug("Entering Dpop.state().");
@@ -1108,6 +1216,9 @@ class Dpop {
   // said process-wide here long after it stopped being), so a test asserting
   // "a fresh proof is accepted" after asserting "a replayed one is refused"
   // needs a way to forget.
+  /**
+   * Forgets every remembered proof in the realm. For tests.
+   */
   forgetProofs(): void {
     const { log } = this.deps;
     log.debug('Entering Dpop.forgetProofs(). ' + seenJtis.size +
@@ -1175,6 +1286,18 @@ class Dpop {
   //                   reading its claims unverified
   //   stepUp          the requirement, in `step_up.ts`'s shape
   // -------------------------------------------------------------------------
+  /**
+   * Checks the access token on a protected endpoint, Bearer or DPoP, and sends
+   * the refusal itself when it fails; a step-up challenge is asked last.
+   *
+   * @param req - the request
+   * @param res - the response, which a refusal is sent on
+   * @param where - the endpoint, named in the log and refusals
+   * @param options - `audience`, `requireVerified` and `stepUp`, which only RFC
+   *   9470's stand-in resource passes
+   * @returns `{ accessToken, claims, scheme, jkt, verified, dpop }`, or null
+   *   once a refusal has been sent
+   */
   presentedAccessToken(req: Req, res: Res, where?: string,
                        options?: Json): Json | null {
     const { log, errorCodes, vciError, stsCrypto, STS, jsonFromB64u,
@@ -1536,6 +1659,9 @@ class Dpop {
   // #46: a proof's jti is reserved across the cluster on arrival and refused
   // by `verifyProof()` when another request holds it; the nonce needs nothing
   // (see above `PROOF_CLAIM`). At require time — see cluster/CLAUDE.md.
+  /**
+   * Declares the `oauth.dpop-jti` cluster capability.
+   */
   provideCapability(): void {
     const { log, capabilities } = this.deps;
     log.debug("Entering Dpop.provideCapability().");
@@ -1562,9 +1688,28 @@ const slot = new InstanceSlot<Dpop>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * RFC 9449 DPoP, the server's half.
+ *
+ * A library that registers no route. The composition root builds the instance;
+ * each function here forwards to it.
+ *
+ * @namespace
+ */
 export = {
   Dpop: Dpop,
+  /**
+   * Installs the instance the composition root built, and runs its wiring.
+   * Refused once an instance is installed or a default built.
+   *
+   * @param instance - the instance every facade here forwards to
+   */
   installInstance: (instance: Dpop): void => slot.install(instance),
+  /**
+   * Tells where the instance in use came from.
+   *
+   * @returns `root`, `default` or `none`
+   */
   instanceOrigin: (): string => slot.origin(),
   PROOF_TYP: Dpop.PROOF_TYP,
   SIGNING_ALGS: Dpop.SIGNING_ALGS,

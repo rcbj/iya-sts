@@ -52,6 +52,9 @@ type Json = any;
 type Req = import('express').Request;
 type Res = import('express').Response;
 
+/**
+ * The mock relying party's command endpoint path.
+ */
 const MOCK_PATH = '/oauth2/commands/mock-rp';
 
 // Per realm: the mock's accounts, `jti`s seen, and its test knobs' counters.
@@ -94,14 +97,33 @@ interface MockDeps {
   commands: () => Json;
 }
 
+/**
+ * A mock relying party's command endpoint for OpenID Provider Commands (#151,
+ * non-spec): it checks each Command Token as a relying party must and keeps an
+ * account state per client and subject.
+ */
 class CommandMockRp {
+  /**
+   * The mock relying party's command endpoint path.
+   */
   static readonly MOCK_PATH = MOCK_PATH;
 
+  /**
+   * Builds the mock from its dependencies.
+   *
+   * @param deps - the logger, realms, mode, error codes, clock and a lazy
+   *   loader of the provider commands module
+   */
   constructor(private readonly deps: MockDeps) {
     deps.log.debug("Entering CommandMockRp.constructor().");
     deps.log.debug("Leaving CommandMockRp.constructor().");
   }
 
+  /**
+   * Returns the dependencies built from this module's own imports.
+   *
+   * @returns the default dependency set
+   */
   static defaultDeps(): MockDeps {
     helpers.log.debug("Entering CommandMockRp.defaultDeps().");
     helpers.log.debug("Leaving CommandMockRp.defaultDeps().");
@@ -116,6 +138,14 @@ class CommandMockRp {
   }
 
   // The aud_sub this mock gives an account: stable, and not the sub.
+  /**
+   * Returns the `aud_sub` this mock gives an account: stable, and not the
+   * `sub`.
+   *
+   * @param clientId - the relying party's client_id
+   * @param sub - the account's subject
+   * @returns the `aud_sub`
+   */
   static audSubOf(clientId: string, sub: string): string {
     helpers.log.debug("Entering CommandMockRp.audSubOf().");
     helpers.log.debug("Leaving CommandMockRp.audSubOf().");
@@ -384,6 +414,12 @@ class CommandMockRp {
   }
 
   // The mock's accounts, for a test to read.
+  /**
+   * Lists the mock's accounts for one client, for a test.
+   *
+   * @param clientId - the relying party's client_id
+   * @returns `{ sub, state, claims }` rows
+   */
   accountsOf(clientId: string): Json[] {
     const { log } = this.deps;
     log.debug("Entering CommandMockRp.accountsOf().");
@@ -397,6 +433,12 @@ class CommandMockRp {
     return out;
   }
 
+  /**
+   * Registers `POST /oauth2/commands/mock-rp`, the endpoint, and `GET` of the
+   * same path, the accounts it holds (a development test control).
+   *
+   * @param app - the express app
+   */
   registerRoutes(app: Json): void {
     const { log } = this.deps;
     const self = this;
@@ -426,9 +468,28 @@ const slot = new InstanceSlot<CommandMockRp>(
 
 slot.buildNowUnlessDeferred();
 
+/**
+ * A mock relying party's command endpoint, which makes OpenID Provider Commands
+ * testable from one service.
+ *
+ * The composition root builds the instance and calls `registerRoutes()`.
+ *
+ * @namespace
+ */
 export = {
   CommandMockRp: CommandMockRp,
+  /**
+   * Installs the instance the composition root built, and runs its wiring.
+   * Refused once an instance is installed or a default built.
+   *
+   * @param instance - the instance every facade here forwards to
+   */
   installInstance: (instance: CommandMockRp): void => slot.install(instance),
+  /**
+   * Tells where the instance in use came from.
+   *
+   * @returns `root`, `default` or `none`
+   */
   instanceOrigin: (): string => slot.origin(),
   MOCK_PATH: MOCK_PATH,
   audSubOf: CommandMockRp.audSubOf,

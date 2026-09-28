@@ -52,6 +52,9 @@ const realms = require('../common/realms');
 const cacheRegistry = require('../common/cache_registry');
 const errorCodes = require('../common/error_codes');
 
+/**
+ * The most key sets the per-realm cache holds.
+ */
 const MAX_CACHED_KEY_SETS = 256;
 
 // realm -> uri -> { jwks, fetchedAt, until }
@@ -95,6 +98,12 @@ const keySetCount = cacheRegistry.register({
 });
 
 // The key set a still-fresh fetch of `uri` answered, or null.
+/**
+ * Returns the key set a still-fresh fetch of a `jwks_uri` answered.
+ *
+ * @param uri - the `jwks_uri`
+ * @returns the key set, or null
+ */
 function cachedKeys(uri) {
   log.debug("Entering cachedKeys().");
   const held = uri ? keySets.get(String(uri)) : null;
@@ -117,6 +126,14 @@ function hasKid(jwks, kid) {
 
 // Fetches `uri` unless a fresh copy answers (and holds `kid`, where one is
 // named). Never rejects: `{ ok, jwks, why }`.
+/**
+ * Fetches a `jwks_uri` under the outbound policy, unless a fresh copy answers
+ * and holds the `kid` named. Never rejects.
+ *
+ * @param uri - the `jwks_uri`
+ * @param kid - the key id needed, or ''
+ * @returns a promise of `{ ok, jwks, why }`
+ */
 function ensure(uri, kid) {
   log.debug("Entering ensure(). " + uri);
   const key = String(uri || '');
@@ -184,6 +201,16 @@ const ENCRYPTION_MEMBERS = ['id_token_encrypted_response_alg',
 // response. The verifiers fetch for themselves (`ensurePartyKeys()` in
 // `assertion_grant.js`), so this dials nothing for a client that asked for
 // no encryption. Never rejects.
+/**
+ * Prefetches the `jwks_uri` of a client an endpoint is about to encrypt a
+ * response to, where it registered one, no inline `jwks` and an encrypted
+ * response. Never rejects.
+ *
+ * @param clientId - the client
+ * @param kid - the key id needed, or ''
+ * @returns a promise of `ensure()`'s answer, or of null when nothing was
+ *   fetched
+ */
 function ensureFor(clientId, kid) {
   log.debug("Entering ensureFor().");
   if (!clientId) {
@@ -211,6 +238,13 @@ function ensureFor(clientId, kid) {
 
 // The `kid` in a compact JWS's protected header, or '' — read UNVERIFIED, and
 // only to choose whether to fetch again.
+/**
+ * Reads the `kid` in a compact JWS's protected header, unverified, only to
+ * choose whether to fetch again.
+ *
+ * @param jws - the compact JWS
+ * @returns the `kid`, or ''
+ */
 function kidOf(jws) {
   log.debug("Entering kidOf().");
   let kid = '';
@@ -227,6 +261,15 @@ function kidOf(jws) {
   return kid;
 }
 
+/**
+ * A client's registered `jwks_uri`, fetched under the outbound policy and
+ * cached per realm (#120).
+ *
+ * The readers of client keys are synchronous, so each endpoint that may need
+ * them prefetches with `ensureFor()`.
+ *
+ * @namespace
+ */
 module.exports = {
   MAX_CACHED_KEY_SETS: MAX_CACHED_KEY_SETS,
   cachedKeys: cachedKeys,

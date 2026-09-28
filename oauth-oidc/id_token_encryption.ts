@@ -108,17 +108,41 @@ const DEFAULT_ENC = applications.ID_TOKEN_DEFAULT_ENC;
 // The member a refusal names.
 const ALG_MEMBER = 'id_token_encrypted_response_alg';
 
+/**
+ * OpenID Connect Core section 10.2's encrypted ID Token, a signed JWT encrypted
+ * to the client's own key; Logout Tokens are encrypted the same way.
+ */
 class IdTokenEncryption {
+  /**
+   * The key-management algorithms discovery advertises for ID Tokens.
+   */
   static readonly ALGS = ALGS;
+  /**
+   * The content encryptions discovery advertises for ID Tokens.
+   */
   static readonly ENCS = ENCS;
+  /**
+   * The content encryption used when a client registers an `alg` and no `enc`.
+   */
   static readonly DEFAULT_ENC = DEFAULT_ENC;
 
+  /**
+   * Builds the module from its dependencies.
+   *
+   * @param deps - the logger, crypto module, application registry, error codes
+   *   and the introspection module whose key choice this reuses
+   */
   constructor(private readonly deps: IdTokenEncryptionDeps) {
     deps.log.debug("Entering IdTokenEncryption.constructor().");
     deps.log.debug("Leaving IdTokenEncryption.constructor().");
   }
 
   // What the composition root passes, from the real modules.
+  /**
+   * Returns the dependencies built from the real modules.
+   *
+   * @returns the default dependency set
+   */
   static defaultDeps(): IdTokenEncryptionDeps {
     helpers.log.debug("Entering IdTokenEncryption.defaultDeps().");
     helpers.log.debug("Leaving IdTokenEncryption.defaultDeps().");
@@ -136,6 +160,14 @@ class IdTokenEncryption {
   // applied. `{ ok: true }` with no `alg` is "not encrypted", which is every
   // client that registered neither member.
   // -------------------------------------------------------------------------
+  /**
+   * Reads what a client registered for its ID Tokens, with the default `enc`
+   * applied.
+   *
+   * @param registered - the client's registration
+   * @returns `{ ok: true, alg, enc }`, `{ ok: true }` with no `alg` for a
+   *   client that is not encrypted to, or `{ ok: false, description }`
+   */
   protectionFor(registered: Json): Protection {
     const { log, applications } = this.deps;
     log.debug("Entering IdTokenEncryption.protectionFor().");
@@ -164,6 +196,13 @@ class IdTokenEncryption {
   // and `applications.js` cannot require it without a cycle. Null, or an RFC
   // 7591 section 3.2.2 refusal with its code.
   // -------------------------------------------------------------------------
+  /**
+   * Tells whether a registration that asks for encryption has a key to encrypt
+   * to.
+   *
+   * @param metadata - the registration metadata
+   * @returns null, or an RFC 7591 section 3.2.2 refusal carrying its code
+   */
   registrationKeyProblem(metadata: Json): Json {
     const { log, introspectionJwt, errorCodes } = this.deps;
     log.debug("Entering IdTokenEncryption.registrationKeyProblem().");
@@ -203,6 +242,17 @@ class IdTokenEncryption {
   //
   // Throws with a sentence fit for an error_description or a dead letter.
   // -------------------------------------------------------------------------
+  /**
+   * Encrypts a signed token to the client that registered it, or hands it back
+   * unchanged when nothing was registered.
+   *
+   * @param signed - the signed token
+   * @param registered - the client's registration
+   * @param typ - the inner token's type, repeated on the outer header
+   * @returns `{ token, encrypted, alg, enc }`
+   * @throws an Error with a sentence fit for an error_description or a dead
+   *   letter
+   */
   protect(signed: string, registered: Json, typ?: string): Json {
     const { log, stsCrypto, introspectionJwt, errorCodes } = this.deps;
     log.debug("Entering IdTokenEncryption.protect().");
@@ -254,10 +304,29 @@ const slot = new InstanceSlot<IdTokenEncryption>(
 // Standalone, build the default now, as loading a module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * Encrypted ID Tokens and Logout Tokens (OpenID Connect Core section 10.2).
+ *
+ * A library that registers no route. The composition root builds the instance;
+ * each function here forwards to it.
+ *
+ * @namespace
+ */
 export = {
   IdTokenEncryption: IdTokenEncryption,
+  /**
+   * Installs the instance the composition root built, and runs its wiring.
+   * Refused once an instance is installed or a default built.
+   *
+   * @param instance - the instance every facade here forwards to
+   */
   installInstance: (instance: IdTokenEncryption): void =>
     slot.install(instance),
+  /**
+   * Tells where the instance in use came from.
+   *
+   * @returns `root`, `default` or `none`
+   */
   instanceOrigin: (): string => slot.origin(),
   ALGS: IdTokenEncryption.ALGS,
   ENCS: IdTokenEncryption.ENCS,

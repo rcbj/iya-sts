@@ -156,7 +156,14 @@ const { log, STS } = require('../common/helpers');
 // RFC 7522 section 2.1 and section 2.2. One value each, spelt once, because a
 // caller that sends the wrong one is told which is expected rather than being
 // told its assertion is invalid.
+/**
+ * The SAML 2.0 bearer grant type (RFC 7522 section 2.1).
+ */
 const GRANT_TYPE = 'urn:ietf:params:oauth:grant-type:saml2-bearer';
+/**
+ * The `client_assertion_type` of a SAML client assertion (RFC 7522 section
+ * 2.2).
+ */
 const ASSERTION_TYPE =
     'urn:ietf:params:oauth:client-assertion-type:saml2-bearer';
 // RFC 7521 section 4.2's error code, which is `invalid_grant` for section 2.1
@@ -168,6 +175,9 @@ const GRANT_ERROR = 'invalid_grant';
 
 // SAML 2.0 core, section 2.4.1.1. The one confirmation method this profile
 // names (RFC 7522 section 3 item 5).
+/**
+ * The one subject confirmation method this profile names.
+ */
 const BEARER = 'urn:oasis:names:tc:SAML:2.0:cm:bearer';
 // SAML core section 2.5.1. The condition types this service RECOGNISES —
 // anything else makes the assertion Invalid rather than being ignored, which
@@ -209,18 +219,35 @@ function skewSeconds() {
   return Number(config.value('oauth2.clientAssertionSkewS')) || 0;
 }
 
+/**
+ * Tells whether the SAML 2.0 bearer grant is on (`oauth2.saml2BearerGrant`, on
+ * unless set false).
+ *
+ * @returns true when it is on
+ */
 function enabled() {
   log.debug("Entering enabled().");
   log.debug("Leaving enabled().");
   return config.value('oauth2.saml2BearerGrant') !== false;
 }
 
+/**
+ * Tells whether an assertion's `<Issuer>` must be declared on an entry
+ * (`oauth2.saml2BearerRequireRegisteredIssuer`, on unless set false).
+ *
+ * @returns true when it must
+ */
 function requiresRegisteredIssuer() {
   log.debug("Entering requiresRegisteredIssuer().");
   log.debug("Leaving requiresRegisteredIssuer().");
   return config.value('oauth2.saml2BearerRequireRegisteredIssuer') !== false;
 }
 
+/**
+ * Returns the longest lifetime an assertion may claim.
+ *
+ * @returns the seconds, or 0 for no limit
+ */
 function maxLifetimeSeconds() {
   log.debug("Entering maxLifetimeSeconds().");
   const seconds = Number(config.value('oauth2.saml2BearerMaxLifetimeS'));
@@ -243,6 +270,13 @@ function maxLifetimeSeconds() {
 // told apart after the fact. They are told apart BEFORE: `-` or `_` says
 // base64url, `+` or `/` says standard, and neither says it does not matter.
 // ---------------------------------------------------------------------------
+/**
+ * Decodes the `assertion` parameter, telling base64url from standard base64
+ * before decoding.
+ *
+ * @param presented - the parameter as presented
+ * @returns `{ ok: true, xml }`, or `{ ok: false, why }`
+ */
 function decode(presented) {
   log.debug('Entering decode().');
   const text = String(presented || '').trim();
@@ -376,6 +410,14 @@ function decryptIfNeeded(xml) {
 // certificates — which is the same single exception `assertion_grant.js`
 // makes and for the same reason.
 // ---------------------------------------------------------------------------
+/**
+ * Reads a SAML 2.0 `<Assertion>` into its parts without deciding anything;
+ * nothing read is believed until the signature has verified.
+ *
+ * @param xml - the assertion's XML
+ * @returns the parts (`id`, `issuer`, `subject`, `confirmations`, `audiences`,
+ *   `attributes`, `signed` and the rest), or `{ ok: false, why }`
+ */
 function read(xml) {
   log.debug('Entering read().');
   let doc = null;
@@ -577,6 +619,13 @@ function thumbprintOf(pem) {
 // blocks in one value, because a party rotating a certificate holds two for as
 // long as assertions signed by the old one are still in flight.
 // ---------------------------------------------------------------------------
+/**
+ * Returns the certificates a party registered to sign assertions with, several
+ * where it is rotating.
+ *
+ * @param fields - the party's entry
+ * @returns `{ certificates, problems }`
+ */
 function certificatesForParty(fields) {
   log.debug('Entering certificatesForParty().');
   const found = [];
@@ -738,6 +787,17 @@ function refuse(code, description) {
 // Subject the client_id, and the certificates come from the caller (which
 // already holds the client's entry) rather than from an issuer lookup.
 // ---------------------------------------------------------------------------
+/**
+ * Verifies a SAML assertion as an authorization grant (RFC 7522 section 3), or
+ * as client authentication (section 2.2) where `clientId` is set; the signature
+ * first, then section 3's checks in order.
+ *
+ * @param opts - `assertion`, `audiences`, `requestingClientId`, `scope` and
+ *   `request`, and for client authentication `clientId`,
+ *   `registeredCertificate`, `issuedCertificate` and `issuedCertificateChain`
+ * @returns a promise of `{ ok: true, issuer, subject, nameIdFormat,
+ *   application, ... }`, or `{ ok: false, errorCode, error, description }`
+ */
 async function verify(opts) {
   log.debug('Entering verify().');
   const options = opts || {};
@@ -1389,6 +1449,9 @@ async function verify(opts) {
 // twelve, because a SAML assertion keeps its protocol furniture in ELEMENTS
 // rather than in the attribute statement. `scope` is the only one that
 // overlaps at all.
+/**
+ * The attribute names never copied from an assertion onto an issued token.
+ */
 const PROTOCOL_ATTRIBUTES = ['scope'];
 
 // ---------------------------------------------------------------------------
@@ -1400,6 +1463,13 @@ const PROTOCOL_ATTRIBUTES = ['scope'];
 // is what every SAML-to-JWT bridge does and is what a relying party expects —
 // `"department": ["engineering"]` in a token reads as a bug.
 // ---------------------------------------------------------------------------
+/**
+ * Returns an assertion's attributes as claims to carry onto the issued token: a
+ * single value as a string, several as a list.
+ *
+ * @param attributes - the verified assertion's attributes
+ * @returns the claims
+ */
 function extraClaimsFrom(attributes) {
   log.debug('Entering extraClaimsFrom().');
   const out = {};
@@ -1415,6 +1485,12 @@ function extraClaimsFrom(attributes) {
   return out;
 }
 
+/**
+ * RFC 7522: a SAML 2.0 assertion as an authorization grant or as client
+ * authentication.
+ *
+ * @namespace
+ */
 module.exports = {
   GRANT_TYPE: GRANT_TYPE,
   ASSERTION_TYPE: ASSERTION_TYPE,
@@ -1430,6 +1506,12 @@ module.exports = {
   extraClaimsFrom: extraClaimsFrom,
   // For the pages that report how many assertions are being remembered: the
   // realm's used-assertion history, shared with both RFC 7523 halves.
+  /**
+   * Counts the assertions the realm's used-assertion history remembers, shared
+   * with the JWT profile and client authentication.
+   *
+   * @returns the count
+   */
   assertionsRemembered: function () {
     log.debug("Entering assertionsRemembered().");
     log.debug("Leaving assertionsRemembered().");

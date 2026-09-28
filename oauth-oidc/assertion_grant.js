@@ -163,6 +163,9 @@ const config = require('../common/config');
 const { log, STS } = require('../common/helpers');
 
 // RFC 7523 section 2.1. One value, spelt once.
+/**
+ * The JWT bearer grant type (RFC 7523 section 2.1).
+ */
 const GRANT_TYPE = 'urn:ietf:params:oauth:grant-type:jwt-bearer';
 // RFC 7521 section 4.2's error code for a bad assertion, which is
 // `invalid_grant` for section 2.1 and `invalid_client` for section 2.2 — the
@@ -208,18 +211,35 @@ function skewSeconds() {
   return config.value('oauth2.clientAssertionSkewS');
 }
 
+/**
+ * Tells whether the JWT bearer grant is on (`oauth2.jwtBearerGrant`, on unless
+ * set false).
+ *
+ * @returns true when it is on
+ */
 function enabled() {
   log.debug("Entering enabled().");
   log.debug("Leaving enabled().");
   return config.value('oauth2.jwtBearerGrant') !== false;
 }
 
+/**
+ * Tells whether an assertion's issuer must be declared on an entry
+ * (`oauth2.jwtBearerRequireRegisteredIssuer`, on unless set false).
+ *
+ * @returns true when it must
+ */
 function requiresRegisteredIssuer() {
   log.debug("Entering requiresRegisteredIssuer().");
   log.debug("Leaving requiresRegisteredIssuer().");
   return config.value('oauth2.jwtBearerRequireRegisteredIssuer') !== false;
 }
 
+/**
+ * Returns the longest lifetime an assertion may claim.
+ *
+ * @returns the seconds, or 0 for no limit
+ */
 function maxLifetimeSeconds() {
   log.debug("Entering maxLifetimeSeconds().");
   const seconds = Number(config.value('oauth2.jwtBearerMaxLifetimeS'));
@@ -237,6 +257,13 @@ function maxLifetimeSeconds() {
 // needs to be told which, and an exception here would surface at the token
 // endpoint as a 500 with nothing in it about keys.
 // ---------------------------------------------------------------------------
+/**
+ * Reads a registered JWKS as a list of verification keys, refusing a malformed
+ * one rather than throwing.
+ *
+ * @param jwksText - the registered JWKS, as text
+ * @returns `{ keys }`, or `{ errorCode, error }`
+ */
 function keysFrom(jwksText) {
   log.debug('Entering keysFrom().');
   let document = null;
@@ -318,6 +345,15 @@ function keysFrom(jwksText) {
 // several stacks omit it and the specification's own word is "MUST" about
 // emitting it rather than about refusing one without it.
 // ---------------------------------------------------------------------------
+/**
+ * Decrypts an assertion that arrived as a JWE to the JWS inside it, with its
+ * `cty` checked; a JWS passes through.
+ *
+ * @param presented - the assertion as presented
+ * @param opts - `secret`, a client secret for a symmetric JWE
+ * @returns `{ ok: true, jws, encrypted, ... }`, or `{ ok: false, errorCode,
+ *   description }`
+ */
 function unwrapAssertion(presented, opts) {
   log.debug('Entering unwrapAssertion().');
   const options = opts || {};
@@ -524,6 +560,15 @@ function unwrapAssertion(presented, opts) {
 // `oauthAssertionJwks` somebody put on a person — and that is precisely the
 // crossing the two attribute sets exist to prevent, made once here instead of
 // being hoped for.
+/**
+ * Returns the keys a party may sign with: a person's from `stsAssertionJwks` on
+ * their entry, an application's from `oauthAssertionJwks`, its `jwks` or its
+ * fetched `jwks_uri`.
+ *
+ * @param fields - the party's entry
+ * @param kind - `person` or `application`
+ * @returns `{ keys, problems, ... }`
+ */
 function keysForParty(fields, kind) {
   log.debug('Entering keysForParty(). kind=' + (kind || 'application'));
   const found = [];
@@ -578,6 +623,15 @@ function keysForParty(fields, kind) {
 // `jwks`, so that `keysForParty()` finds the keys. `kid` is the one the
 // document names, which fetches again when the cached set lacks it. Never
 // rejects.
+/**
+ * Prefetches an application's `jwks_uri` under the outbound policy where it
+ * registered one and no `jwks`. Never rejects.
+ *
+ * @param fields - the party's entry
+ * @param kind - `person` or `application`
+ * @param kid - the key id the assertion names
+ * @returns a promise of the fetch's answer, or of null when nothing was fetched
+ */
 async function ensurePartyKeys(fields, kind, kid) {
   log.debug('Entering ensurePartyKeys().');
   if (String(kind) === 'person' || !fields || !fields.oauthJwksUri ||
@@ -685,6 +739,14 @@ function issuerEntry(iss) {
 // key pair by `/admin/pki` can present its certificate instead of registering
 // a JWKS, and this service can tell that it issued it.
 // ---------------------------------------------------------------------------
+/**
+ * Returns the key an `x5c` header carries, only after the chain has been shown
+ * to reach this realm's own Root CA.
+ *
+ * @param header - the assertion's protected header
+ * @returns a promise of `{ key, subject, subjectKind, subjectName, thumbprint
+ *   }`, null for no `x5c`, or `{ errorCode, error }`
+ */
 async function keyFromChain(header) {
   log.debug('Entering keyFromChain().');
   const chain = Array.isArray(header && header.x5c) ? header.x5c : [];
@@ -803,6 +865,16 @@ async function keyFromChain(header) {
 // nothing is decided on it, and every check below runs on claims that a
 // signature has already vouched for.
 // ---------------------------------------------------------------------------
+/**
+ * Verifies a JWT assertion as an authorization grant (RFC 7523 section 3), its
+ * signature before any claim is believed, and claims its `jti` in the
+ * used-assertion history as the last check.
+ *
+ * @param opts - `assertion`, `audiences`, `clientSecret`, `requestingClientId`,
+ *   `scope` and `request`
+ * @returns a promise of `{ ok: true, issuer, subject, claims, ... }`, or `{ ok:
+ *   false, errorCode, error, description }`
+ */
 async function verify(opts) {
   log.debug('Entering verify().');
   const options = opts || {};
@@ -1364,9 +1436,19 @@ async function verify(opts) {
 // endpoint decides for itself — an `exp` copied off an assertion would produce
 // a token that expires when the assertion did, which is a token lifetime set
 // by whoever signed the assertion.
+/**
+ * The claims never copied from an assertion onto an issued token.
+ */
 const PROTOCOL_CLAIMS = ['iss', 'sub', 'aud', 'exp', 'nbf', 'iat', 'jti',
                          'scope', 'cnf', 'typ', 'azp', 'client_id'];
 
+/**
+ * Returns an assertion's claims other than `PROTOCOL_CLAIMS`, to carry onto the
+ * issued token.
+ *
+ * @param claims - the assertion's verified claims
+ * @returns the claims to carry
+ */
 function extraClaimsFrom(claims) {
   log.debug('Entering extraClaimsFrom().');
   const out = {};
@@ -1380,6 +1462,12 @@ function extraClaimsFrom(claims) {
   return out;
 }
 
+/**
+ * RFC 7521 and RFC 7523: a JWT assertion as an authorization grant, and the key
+ * reading `client_auth.js` shares for JWT client authentication.
+ *
+ * @namespace
+ */
 module.exports = {
   GRANT_TYPE: GRANT_TYPE,
   PROTOCOL_CLAIMS: PROTOCOL_CLAIMS,
@@ -1408,6 +1496,12 @@ module.exports = {
   // For the pages that report how many assertions are being remembered: the
   // realm's used-assertion history, which this grant shares with client
   // authentication and with RFC 7522.
+  /**
+   * Counts the assertions the realm's used-assertion history remembers, shared
+   * with both grant profiles and client authentication.
+   *
+   * @returns the count
+   */
   assertionsRemembered: function () {
     log.debug("Entering assertionsRemembered().");
     log.debug("Leaving assertionsRemembered().");

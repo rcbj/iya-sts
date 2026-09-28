@@ -91,20 +91,41 @@ type Json = any;
 type Req = import('express').Request;
 type Res = import('express').Response;
 
+/**
+ * The `typ` header of a Command Token.
+ */
 const TOKEN_TYPE = 'command+jwt';
 const ADDRESS_ATTRIBUTE = 'oauthCommandEndpoint';
 const ATTEMPT_SCOPE = 'oauth2.command-attempt';
+/**
+ * The scheduler job id that sweeps command deliveries.
+ */
 const SWEEP_JOB = 'oauth2.command-sweep';
+/**
+ * The path a relying party posts an asynchronous command's result to.
+ */
 const CALLBACK_PATH = '/oauth2/commands/callback';
 
 // Section 6, the account commands.
+/**
+ * The account commands (section 6), each also with an `_async` variant.
+ */
 const ACCOUNT_COMMANDS = Object.freeze(['activate', 'maintain', 'suspend',
   'reactivate', 'archive', 'restore', 'delete', 'audit', 'invalidate',
   'migrate']);
 // Section 7: `metadata` answers JSON, the rest a stream.
+/**
+ * The tenant commands whose answer is a Server-Sent Events stream.
+ */
 const STREAM_COMMANDS = Object.freeze(['audit_tenant', 'suspend_tenant',
   'archive_tenant', 'delete_tenant', 'invalidate_tenant']);
+/**
+ * The tenant commands (section 7): `metadata`, and the stream commands.
+ */
 const TENANT_COMMANDS = Object.freeze(['metadata'].concat(STREAM_COMMANDS));
+/**
+ * The account states a relying party may report.
+ */
 const STATES = Object.freeze(['unknown', 'active', 'suspended', 'archived']);
 
 // The standard claims an `activate` or `maintain` carries (section 6.1: "the
@@ -172,15 +193,47 @@ interface ProviderCommandsDeps {
   directory: () => Json;
 }
 
+/**
+ * OpenID Provider Commands 1.0 (#151): Command Tokens posted to relying
+ * parties' `command_endpoint`s, about one account or the whole tenant, with the
+ * account-state register, the callbacks, the tenant runs and the automatic
+ * commands the directory's events send.
+ */
 class ProviderCommands {
+  /**
+   * The `typ` header of a Command Token.
+   */
   static readonly TOKEN_TYPE = TOKEN_TYPE;
+  /**
+   * The account commands.
+   */
   static readonly ACCOUNT_COMMANDS = ACCOUNT_COMMANDS;
+  /**
+   * The tenant commands.
+   */
   static readonly TENANT_COMMANDS = TENANT_COMMANDS;
+  /**
+   * The tenant commands whose answer is a stream.
+   */
   static readonly STREAM_COMMANDS = STREAM_COMMANDS;
+  /**
+   * The account states a relying party may report.
+   */
   static readonly STATES = STATES;
+  /**
+   * The path of the asynchronous command callback.
+   */
   static readonly CALLBACK_PATH = CALLBACK_PATH;
   private readonly outbox: InstanceType<typeof outbound.OutboundDelivery>;
 
+  /**
+   * Builds the module from its dependencies, with its deliveries as a kind of
+   * the shared outbound queue.
+   *
+   * @param deps - the logger, settings, realms, application registry, error
+   *   codes, audit log, signer, outbound HTTP, cluster claims, clock and the
+   *   other modules this class reads
+   */
   constructor(private readonly deps: ProviderCommandsDeps) {
     deps.log.debug("Entering ProviderCommands.constructor().");
     const self = this;
@@ -261,6 +314,11 @@ class ProviderCommands {
     deps.log.debug("Leaving ProviderCommands.constructor().");
   }
 
+  /**
+   * Returns the dependencies built from this module's own imports.
+   *
+   * @returns the default dependency set
+   */
   static defaultDeps(): ProviderCommandsDeps {
     helpers.log.debug("Entering ProviderCommands.defaultDeps().");
     helpers.log.debug("Leaving ProviderCommands.defaultDeps().");
@@ -295,6 +353,11 @@ class ProviderCommands {
     };
   }
 
+  /**
+   * Tells whether OpenID Provider Commands are on (`oauth2.providerCommands`).
+   *
+   * @returns true when they are
+   */
   enabled(): boolean {
     const { log, config } = this.deps;
     log.debug("Entering ProviderCommands.enabled().");
@@ -309,6 +372,12 @@ class ProviderCommands {
     return Number(config.value(key));
   }
 
+  /**
+   * Tells whether a command, with or without `_async`, is an account command.
+   *
+   * @param command - the command
+   * @returns true for an account command
+   */
   static isAccountCommand(command: string): boolean {
     helpers.log.debug("Entering ProviderCommands.isAccountCommand().");
     const base = String(command || '').replace(/_async$/, '');
@@ -317,6 +386,12 @@ class ProviderCommands {
   }
 
   // The digest a callback token is stored under.
+  /**
+   * Returns the digest a callback token is stored under.
+   *
+   * @param token - the callback token
+   * @returns the digest
+   */
   static digest(token: string): string {
     helpers.log.debug("Entering ProviderCommands.digest().");
     helpers.log.debug("Leaving ProviderCommands.digest().");
@@ -328,6 +403,13 @@ class ProviderCommands {
   // THE ISSUER (header point 6). `base`, when a request gave one, decides
   // and is remembered for the realm.
   // -------------------------------------------------------------------------
+  /**
+   * Returns the issuer Command Tokens name; a request's base decides it and is
+   * remembered for the realm.
+   *
+   * @param base - the request's base URL
+   * @returns the issuer
+   */
   issuer(base?: string): string {
     const { log, config } = this.deps;
     log.debug("Entering ProviderCommands.issuer().");
@@ -354,6 +436,14 @@ class ProviderCommands {
   // ephemeral subject (#149) names one authentication, not an account, so a
   // client that registered it is sent no account command (''), and a
   // person with no entry has no subject ('').
+  /**
+   * Returns the `sub` a client knows a person by, public or pairwise.
+   *
+   * @param clientId - the relying party
+   * @param username - the person
+   * @returns the `sub`, or '' for an ephemeral-subject client or a person with
+   *   no entry
+   */
   subjectFor(clientId: string, username: string): string {
     const { log, applications } = this.deps;
     log.debug("Entering ProviderCommands.subjectFor(). " + clientId);
@@ -378,6 +468,12 @@ class ProviderCommands {
 
   // What a client said it supports (from `metadata`), or null when it has
   // not been asked.
+  /**
+   * Returns what a client said it supports, from its `metadata` answer.
+   *
+   * @param clientId - the relying party
+   * @returns what it said, or null when it has not been asked
+   */
   learnedFor(clientId: string): Json {
     const { log } = this.deps;
     log.debug("Entering ProviderCommands.learnedFor(). " + clientId);
@@ -387,6 +483,13 @@ class ProviderCommands {
   }
 
   // The register row for (client, sub), or null.
+  /**
+   * Returns the account-state register's row for a client and subject.
+   *
+   * @param clientId - the relying party
+   * @param sub - the subject
+   * @returns the row, or null
+   */
   accountFor(clientId: string, sub: string): Json {
     const { log } = this.deps;
     log.debug("Entering ProviderCommands.accountFor().");
@@ -465,6 +568,12 @@ class ProviderCommands {
   }
 
   // What this service tells a relying party in `metadata` (section 7.1).
+  /**
+   * Returns what this service tells a relying party in `metadata` (section
+   * 7.1).
+   *
+   * @returns the metadata
+   */
   opMetadata(): Json {
     const { log, realms } = this.deps;
     log.debug("Entering ProviderCommands.opMetadata().");
@@ -517,6 +626,12 @@ class ProviderCommands {
   // `authentication_provider` only in `migrate`, the account's claims in
   // `activate` and `maintain`, and never `nonce`.
   // -------------------------------------------------------------------------
+  /**
+   * Builds a Command Token's claims (section 5).
+   *
+   * @param row - the delivery row
+   * @returns the claims
+   */
   claimsFor(row: Json): Json {
     const { log, nowSec, randomId } = this.deps;
     log.debug("Entering ProviderCommands.claimsFor(). " + row.command);
@@ -565,6 +680,14 @@ class ProviderCommands {
   }
 
   // Signed like the client's ID Token (section 9), `typ: command+jwt`.
+  /**
+   * Signs a Command Token as the client's ID Token is signed (section 9).
+   *
+   * @param row - the delivery row
+   * @returns a promise of the signed token and its facts
+   * @throws an Error with its code marked when the client's algorithm cannot be
+   *   used
+   */
   async signedToken(row: Json): Promise<Json> {
     const { log, applications, signJwtAsAsync, errorCodes } = this.deps;
     log.debug("Entering ProviderCommands.signedToken(). " + row.clientId);
@@ -722,6 +845,17 @@ class ProviderCommands {
   // `{ ok: false, message }` with its code. `opts.base` is the request's
   // base (the issuer), `opts.actor`, `opts.trigger` for the console.
   // -------------------------------------------------------------------------
+  /**
+   * Sends one command to one relying party: an account command about a person,
+   * or `metadata`.
+   *
+   * @param clientId - the relying party
+   * @param command - the command
+   * @param username - the person, for an account command
+   * @param opts - `base` (the issuer), `actor` and `trigger`
+   * @returns `{ ok: true, row, message }`, or `{ ok: false, message }` with its
+   *   code
+   */
   send(clientId: string, command: string, username: string,
        opts?: Json): Json {
     const { log, applications, errorCodes, realms } = this.deps;
@@ -809,6 +943,15 @@ class ProviderCommands {
   // A TENANT COMMAND WHOSE ANSWER IS A STREAM (section 7): a run row, then
   // the stream read in the background. `{ ok, run }` or a refusal.
   // -------------------------------------------------------------------------
+  /**
+   * Starts a tenant command whose answer is a stream: a run row, then the
+   * stream read in the background.
+   *
+   * @param clientId - the relying party
+   * @param command - the tenant command
+   * @param opts - `base`, `actor` and `trigger`
+   * @returns `{ ok: true, run }`, or a refusal
+   */
   startTenant(clientId: string, command: string, opts?: Json): Json {
     const { log, applications, errorCodes, realms, now, randomId,
             audit } = this.deps;
@@ -872,6 +1015,12 @@ class ProviderCommands {
   }
 
   // THE STREAM of one run, resumed with Last-Event-ID when it drops.
+  /**
+   * Reads one run's stream, resuming with `Last-Event-ID` when it drops.
+   *
+   * @param id - the run id
+   * @returns a promise of the run's outcome
+   */
   async executeRun(id: string): Promise<Json> {
     const { log, fedHttp, now, signJwtAsAsync, applications,
             errorCodes } = this.deps;
@@ -1019,6 +1168,12 @@ class ProviderCommands {
     log.debug("Leaving ProviderCommands.onStreamEvent().");
   }
 
+  /**
+   * Returns a run as the console and the API show it.
+   *
+   * @param run - the run row
+   * @returns the view
+   */
   runView(run: Json): Json {
     const { log } = this.deps;
     log.debug("Entering ProviderCommands.runView().");
@@ -1041,6 +1196,15 @@ class ProviderCommands {
   // THE CALLBACK (section 6.2 and 7.1): Bearer a `callback_token`, a JSON
   // body. `{ status, error?, description?, challenge? }` for the route.
   // -------------------------------------------------------------------------
+  /**
+   * Accepts an asynchronous command's callback (sections 6.2 and 7.1): a
+   * `callback_token` as Bearer and a JSON body.
+   *
+   * @param bearer - the presented callback token
+   * @param body - the callback's JSON body
+   * @param base - the request's base URL
+   * @returns `{ status, error, description, challenge }` for the route
+   */
   acceptCallback(bearer: string, body: Json, base?: string): Json {
     const { log, now } = this.deps;
     log.debug("Entering ProviderCommands.acceptCallback().");
@@ -1127,6 +1291,11 @@ class ProviderCommands {
     return undefined;
   }
 
+  /**
+   * Registers `POST /oauth2/commands/callback`.
+   *
+   * @param app - the express app
+   */
   registerRoutes(app: Json): void {
     const { log } = this.deps;
     const self = this;
@@ -1142,6 +1311,15 @@ class ProviderCommands {
   // relying party that supports it and where the person has an account.
   // Never throws: it is called from inside a directory write.
   // -------------------------------------------------------------------------
+  /**
+   * Sends a command about a person to every relying party that supports it and
+   * holds an account for them. Never throws.
+   *
+   * @param username - the person
+   * @param command - the command
+   * @param trigger - what caused it
+   * @returns how many were sent
+   */
   automatic(username: string, command: string, trigger: string): number {
     const { log, config, applications } = this.deps;
     const self = this;
@@ -1217,6 +1395,13 @@ class ProviderCommands {
   // `suspend`, a lock cleared `reactivate`, a delete `delete`, any other
   // change to the person, their groups or their roles (the `roles` kind,
   // #238) `maintain`.
+  /**
+   * Turns a directory event into an automatic command: a lock set `suspend`, a
+   * lock cleared `reactivate`, a delete `delete`, and a change to what an
+   * account's claims come from `maintain`.
+   *
+   * @param change - the directory's account event
+   */
   directoryChanged(change: Json): void {
     const { log, realms } = this.deps;
     const self = this;
@@ -1264,6 +1449,9 @@ class ProviderCommands {
   // Become one of the directory's account observers (`addAccountObserver`,
   // beside Shared Signals'). Built after `ldap/ldap_server` (21), whose
   // module is found in the cache and never required from here.
+  /**
+   * Registers this module as one of the directory's account observers.
+   */
   observeDirectory(): void {
     const { log } = this.deps;
     const self = this;
@@ -1283,6 +1471,14 @@ class ProviderCommands {
   // bookkeeping to the entry (the password policy's counters, a last-seen
   // time), and `maintain` on every sign-in would be noise to every relying
   // party; so only the attributes the account's claims come from count.
+  /**
+   * Tells whether an attribute a relying party could hold changed, ignoring
+   * sign-in bookkeeping.
+   *
+   * @param before - the entry before
+   * @param after - the entry after
+   * @returns true when it changed
+   */
   static profileChanged(before: Json, after: Json): boolean {
     helpers.log.debug("Entering ProviderCommands.profileChanged().");
     const names = ['cn', 'sn', 'givenName', 'displayName', 'mail', 'uid',
@@ -1310,6 +1506,11 @@ class ProviderCommands {
   }
 
   // An administrator's global sign-out of a person: `invalidate`.
+  /**
+   * Sends `invalidate` about a person an administrator signed out globally.
+   *
+   * @param username - the person
+   */
   personSignedOut(username: string): void {
     const { log } = this.deps;
     log.debug("Entering ProviderCommands.personSignedOut().");
@@ -1351,6 +1552,9 @@ class ProviderCommands {
     return { callbacksAndRunsDropped: dropped };
   }
 
+  /**
+   * Registers the command delivery sweep job.
+   */
   scheduleSweep(): void {
     const { log } = this.deps;
     log.debug("Entering ProviderCommands.scheduleSweep().");
@@ -1358,6 +1562,11 @@ class ProviderCommands {
     log.debug("Leaving ProviderCommands.scheduleSweep().");
   }
 
+  /**
+   * Runs the shared queue's sweep for command deliveries.
+   *
+   * @returns a promise of the sweep's totals
+   */
   sweep(): Promise<Json> {
     const { log } = this.deps;
     log.debug("Entering ProviderCommands.sweep().");
@@ -1365,6 +1574,13 @@ class ProviderCommands {
     return this.outbox.sweep();
   }
 
+  /**
+   * Queues a dead command delivery again, for an operator, with a new token.
+   *
+   * @param id - the delivery id
+   * @param actor - who retried it
+   * @returns `{ ok: true, row, message }`, or the queue's refusal
+   */
   retryDelivery(id: string, actor?: string): Json {
     const { log } = this.deps;
     log.debug("Entering ProviderCommands.retryDelivery(). " + id);
@@ -1383,6 +1599,14 @@ class ProviderCommands {
   // `send-account` (clientId, username, command), `send-tenant` (clientId,
   // command) and `retry-delivery` (delivery). `ctx` is `{ actor, base }`.
   // -------------------------------------------------------------------------
+  /**
+   * Performs the console's and the API's acts: `send-account`, `send-tenant`
+   * and `retry-delivery`.
+   *
+   * @param body - the posted body
+   * @param ctx - `actor` and `base`
+   * @returns the act's result
+   */
   act(body: Json, ctx: Json): Json {
     const { log, errorCodes } = this.deps;
     log.debug("Entering ProviderCommands.act().");
@@ -1420,6 +1644,13 @@ class ProviderCommands {
   // WHAT THE CONSOLE AND /admin-api SHOW: every client with a command
   // endpoint and what it said, the register, the deliveries and the runs.
   // -------------------------------------------------------------------------
+  /**
+   * Reports every client with a command endpoint and what it said, the
+   * account-state register, the deliveries and the runs.
+   *
+   * @param options - the filters, such as `q` and `state`
+   * @returns the report
+   */
   report(options?: Json): Json {
     const { log, applications, config } = this.deps;
     const self = this;
@@ -1473,6 +1704,12 @@ class ProviderCommands {
     return out;
   }
 
+  /**
+   * Lists the shared queue's command rows.
+   *
+   * @param options - the queue's list options
+   * @returns the delivery views
+   */
   deliveryRows(options?: Json): Json[] {
     const { log } = this.deps;
     const self = this;
@@ -1483,6 +1720,11 @@ class ProviderCommands {
     });
   }
 
+  /**
+   * Counts the shared queue's command rows by state.
+   *
+   * @returns the counts
+   */
   deliveryCounts(): Json {
     const { log } = this.deps;
     log.debug("Entering ProviderCommands.deliveryCounts().");
@@ -1506,10 +1748,29 @@ const slot = new InstanceSlot<ProviderCommands>(
 
 slot.buildNowUnlessDeferred();
 
+/**
+ * OpenID Provider Commands 1.0: this service telling its relying parties what
+ * to do with an account.
+ *
+ * The composition root builds the instance and calls `registerRoutes()`.
+ *
+ * @namespace
+ */
 export = {
   ProviderCommands: ProviderCommands,
+  /**
+   * Installs the instance the composition root built, and runs its wiring.
+   * Refused once an instance is installed or a default built.
+   *
+   * @param instance - the instance every facade here forwards to
+   */
   installInstance: (instance: ProviderCommands): void =>
     slot.install(instance),
+  /**
+   * Tells where the instance in use came from.
+   *
+   * @returns `root`, `default` or `none`
+   */
   instanceOrigin: (): string => slot.origin(),
   TOKEN_TYPE: TOKEN_TYPE,
   ACCOUNT_COMMANDS: ACCOUNT_COMMANDS,

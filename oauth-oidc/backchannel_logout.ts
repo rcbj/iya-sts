@@ -248,6 +248,9 @@ interface BackchannelLogoutDeps {
 
 // The order of two copies of a row — the library's, exported under the
 // name the tests have always used.
+/**
+ * Orders two copies of a delivery row: the shared outbound queue's rule.
+ */
 const compareRows = outbound.compareRows;
 
 // PER TRUST REALM, at its declaration (root CLAUDE.md, trust realms rule 2),
@@ -307,14 +310,39 @@ const plannedCount = cacheRegistry.register({
 // The sweep's scheduler job (#49 P5).
 const SWEEP_JOB = 'oauth2.backchannel-logout-sweep';
 
+/**
+ * OpenID Connect Back-Channel Logout 1.0 (#36): a signed Logout Token POSTed to
+ * each relying party of a session that ends or expires, each delivery a durable
+ * row of the shared outbound queue.
+ */
 class BackchannelLogout {
+  /**
+   * The event member a Logout Token carries (section 2.4).
+   */
   static readonly EVENT = EVENT;
+  /**
+   * The `typ` header of a Logout Token.
+   */
   static readonly TOKEN_TYPE = TOKEN_TYPE;
+  /**
+   * The states a delivery passes through: `pending`, `sent` and `dead`.
+   */
   static readonly STATES = STATES;
+  /**
+   * The cluster claim scope an attempt is spent under.
+   */
   static readonly ATTEMPT_SCOPE = ATTEMPT_SCOPE;
   // The shared queue, with this file as its kind (#151).
   private readonly queue: InstanceType<typeof outbound.OutboundDelivery>;
 
+  /**
+   * Builds the module from its dependencies, with its deliveries as a kind of
+   * the shared outbound queue.
+   *
+   * @param deps - the logger, settings, realms, application registry,
+   *   validation, error codes, audit log, signer, outbound HTTP, cluster
+   *   claims, ID Token encryption, clock and a retry timer
+   */
   constructor(private readonly deps: BackchannelLogoutDeps) {
     deps.log.debug("Entering BackchannelLogout.constructor().");
     const self = this;
@@ -389,6 +417,11 @@ class BackchannelLogout {
   }
 
   // What the composition root passes, from the real modules.
+  /**
+   * Returns the dependencies built from the real modules.
+   *
+   * @returns the default dependency set
+   */
   static defaultDeps(): BackchannelLogoutDeps {
     helpers.log.debug("Entering BackchannelLogout.defaultDeps().");
     helpers.log.debug("Leaving BackchannelLogout.defaultDeps().");
@@ -415,6 +448,11 @@ class BackchannelLogout {
   }
 
   // Is the feature on? Per call, which is what `runtime: true` promises.
+  /**
+   * Tells whether back-channel logout is on, read per call.
+   *
+   * @returns true when it is on
+   */
   enabled(): boolean {
     const { log, config } = this.deps;
     log.debug("Entering BackchannelLogout.enabled().");
@@ -423,6 +461,11 @@ class BackchannelLogout {
   }
 
   // Whether an EXPIRED session sends too (header point 2).
+  /**
+   * Tells whether an expired session sends Logout Tokens too.
+   *
+   * @returns true when it does
+   */
   onExpiry(): boolean {
     const { log, config } = this.deps;
     log.debug("Entering BackchannelLogout.onExpiry().");
@@ -432,6 +475,11 @@ class BackchannelLogout {
   }
 
   // How long an attempt's claim lasts.
+  /**
+   * Returns how long an attempt's claim lasts.
+   *
+   * @returns the lease, in milliseconds
+   */
   leaseMs(): number {
     const { log } = this.deps;
     log.debug("Entering BackchannelLogout.leaseMs().");
@@ -441,6 +489,12 @@ class BackchannelLogout {
 
   // A caller reads this before ending something and passes it to
   // `deliveriesFor()` afterwards, so it is shown what THIS act queued.
+  /**
+   * Returns the current time, for a caller to pass to `deliveriesFor()` after
+   * ending something so it is shown what that act queued.
+   *
+   * @returns the time, in milliseconds
+   */
   mark(): number {
     const { log, now } = this.deps;
     log.debug("Entering BackchannelLogout.mark().");
@@ -450,6 +504,15 @@ class BackchannelLogout {
   }
 
   // The derived id of header point 4.
+  /**
+   * Derives a delivery's id from the session, the client and the session's
+   * first sign-on, so every node plans the same row.
+   *
+   * @param sessionId - the session
+   * @param clientId - the relying party
+   * @param first - when the session began
+   * @returns the delivery id
+   */
   deliveryIdFor(sessionId: string, clientId: string, first: unknown): string {
     const { log } = this.deps;
     log.debug("Entering BackchannelLogout.deliveryIdFor().");
@@ -475,6 +538,15 @@ class BackchannelLogout {
   // (header point 4). It cannot throw: it is called from the middle of ending
   // a session.
   // -------------------------------------------------------------------------
+  /**
+   * Writes one pending row per relying party on the session that registered a
+   * `backchannel_logout_uri`; one that cannot be sent is dead-lettered at once
+   * and one already stored is left alone. Never throws.
+   *
+   * @param session - the session being ended
+   * @param options - `via`, `clients`, `issuer` and `trigger`
+   * @returns the rows
+   */
   plan(session: Json, options?: PlanOptions): Json[] {
     const { log, applications, validation, errorCodes, realms } = this.deps;
     const self = this;
@@ -625,6 +697,12 @@ class BackchannelLogout {
   // THE LOGOUT TOKEN'S CLAIMS — header point 6. `jti` is the row's, so a
   // token signed again for a retry is the same statement.
   // -------------------------------------------------------------------------
+  /**
+   * Builds a Logout Token's claims, with the row's `jti`.
+   *
+   * @param row - the delivery row
+   * @returns the claims
+   */
   claimsFor(row: Json): Json {
     const { log, nowSec, randomId, config } = this.deps;
     log.debug("Entering BackchannelLogout.claimsFor().");
@@ -653,6 +731,14 @@ class BackchannelLogout {
   // The token, signed like the client's ID Token and encrypted like it.
   // Resolves `{ token, exp, jti, encrypted }`, or rejects with a sentence
   // carrying its code.
+  /**
+   * Signs a Logout Token as the client's ID Token is signed, and encrypts it
+   * the same way.
+   *
+   * @param row - the delivery row
+   * @returns a promise of `{ token, exp, jti, encrypted }`; it rejects with a
+   *   sentence carrying its code
+   */
   async signedToken(row: Json): Promise<Json> {
     const { log, applications, signJwtAsAsync, errorCodes,
             idTokenEncryption } = this.deps;
@@ -705,6 +791,12 @@ class BackchannelLogout {
   }
 
   // Kept for the tests and for a caller that wants the wire value only.
+  /**
+   * Returns only the wire value of a row's Logout Token.
+   *
+   * @param row - the delivery row
+   * @returns a promise of the token
+   */
   logoutToken(row: Json): Promise<string> {
     const { log } = this.deps;
     log.debug("Entering BackchannelLogout.logoutToken(). " + row.clientId);
@@ -715,6 +807,13 @@ class BackchannelLogout {
   }
 
   // ONE ATTEMPT of one delivery, through the shared queue (header point 4).
+  /**
+   * Makes one attempt of one delivery, through the shared queue.
+   *
+   * @param realmId - the realm
+   * @param id - the delivery id
+   * @returns a promise of the attempt's outcome
+   */
   attempt(realmId: string, id: string): Promise<string> {
     const { log } = this.deps;
     log.debug("Entering BackchannelLogout.attempt(). " + id);
@@ -724,6 +823,12 @@ class BackchannelLogout {
 
   // Attempt every planned row still pending, now. For a test to wait on;
   // every caller in the service ignores it. It never rejects.
+  /**
+   * Attempts every planned row still pending, now. Never rejects.
+   *
+   * @param rows - the rows `plan()` wrote
+   * @returns a promise that settles when every attempt has
+   */
   dispatch(rows: Json[] | null | undefined): Promise<void> {
     const { log } = this.deps;
     log.debug("Entering BackchannelLogout.dispatch().");
@@ -762,6 +867,14 @@ class BackchannelLogout {
   // row }` with a code on a refusal. The attempt itself is made at once, by
   // this process, through the claim like any other.
   // -------------------------------------------------------------------------
+  /**
+   * Queues a dead letter again, for an operator: a new `jti`, a fresh attempt
+   * budget and the client's current address, attempted at once.
+   *
+   * @param id - the delivery id
+   * @param actor - who retried it
+   * @returns `{ ok, message, row }`, with a code on a refusal
+   */
   retry(id: string, actor?: string): Json {
     const { log, audit } = this.deps;
     log.debug("Entering BackchannelLogout.retry(). " + id);
@@ -789,6 +902,11 @@ class BackchannelLogout {
   }
 
   // THE SWEEP (header point 3). Resolves `{ attempted, removed, dead }`.
+  /**
+   * Runs the shared queue's sweep for this kind.
+   *
+   * @returns a promise of `{ attempted, removed, dead }`
+   */
   sweep(): Promise<Json> {
     const { log } = this.deps;
     log.debug("Entering BackchannelLogout.sweep().");
@@ -797,6 +915,13 @@ class BackchannelLogout {
   }
 
   // THE SUMMARY LINE (header point 7).
+  /**
+   * Returns the periodic summary line for a realm.
+   *
+   * @param realmId - the realm
+   * @param force - true to write it even when nothing changed
+   * @returns the line
+   */
   summarise(realmId: string, force?: boolean): string {
     const { log } = this.deps;
     log.debug("Entering BackchannelLogout.summarise(). " + realmId);
@@ -808,6 +933,9 @@ class BackchannelLogout {
   // `oauth2.backchannel-logout-sweep`, a CLUSTER job — once, on the leader,
   // every `oauth2.backchannelLogoutSweepS`. Registered once per process, by
   // the composition root's wire step.
+  /**
+   * Registers the `oauth2.backchannel-logout-sweep` cluster job.
+   */
   scheduleSweep(): void {
     const { log } = this.deps;
     log.debug("Entering BackchannelLogout.scheduleSweep().");
@@ -817,6 +945,12 @@ class BackchannelLogout {
 
   // A row as a caller sees it: a COPY without the token, so a page or a JSON
   // answer cannot change the store and never carries a Logout Token.
+  /**
+   * Returns a copy of a row without its token, for a page or a JSON answer.
+   *
+   * @param row - the delivery row
+   * @returns the view
+   */
   view(row: Json): Json {
     const { log } = this.deps;
     log.debug("Entering BackchannelLogout.view().");
@@ -830,6 +964,12 @@ class BackchannelLogout {
   // `sessionIds` and `since` to what one act queued, `q` to a substring of
   // the client, session, address or code.
   // -------------------------------------------------------------------------
+  /**
+   * Lists the deliveries from the shared store, newest first.
+   *
+   * @param options - `state`, `sessionIds`, `since` and `q`
+   * @returns the views
+   */
   list(options?: ListOptions): Json[] {
     const { log } = this.deps;
     const self = this;
@@ -851,6 +991,13 @@ class BackchannelLogout {
 
   // The deliveries queued for these sessions since `since` (see `mark()`),
   // oldest first. The sign-out result pages and JSON answers call this.
+  /**
+   * Lists the deliveries queued for these sessions since a mark, oldest first.
+   *
+   * @param sessionIds - the sessions ended
+   * @param since - `mark()`'s answer
+   * @returns the views
+   */
   deliveriesFor(sessionIds: string[] | null | undefined,
                 since?: number): Json[] {
     const { log } = this.deps;
@@ -863,6 +1010,12 @@ class BackchannelLogout {
   }
 
   // The most recent deliveries in this realm, newest first.
+  /**
+   * Lists the most recent deliveries in this realm, newest first.
+   *
+   * @param limit - how many
+   * @returns the views
+   */
   recent(limit?: number): Json[] {
     const { log } = this.deps;
     log.debug("Entering BackchannelLogout.recent().");
@@ -872,6 +1025,11 @@ class BackchannelLogout {
   }
 
   // How many rows are in each state, in this realm.
+  /**
+   * Counts the realm's rows by state.
+   *
+   * @returns the counts
+   */
   counts(): Json {
     const { log } = this.deps;
     log.debug("Entering BackchannelLogout.counts().");
@@ -880,6 +1038,12 @@ class BackchannelLogout {
   }
 
   // A one-sentence summary of a set of rows, for a result message.
+  /**
+   * Summarises a set of rows in one sentence, for a result message.
+   *
+   * @param rows - the rows
+   * @returns the sentence
+   */
   summarize(rows: Json[] | null | undefined): string {
     const { log } = this.deps;
     log.debug("Entering BackchannelLogout.summarize().");
@@ -909,6 +1073,13 @@ class BackchannelLogout {
   // THE BLOCK OF HTML, for `/logout`, `/oauth2/logout` and `/admin/logout`'s
   // results.
   // -------------------------------------------------------------------------
+  /**
+   * Renders a set of rows as HTML for the sign-out result pages.
+   *
+   * @param rows - the rows
+   * @param heading - the block's heading
+   * @returns the HTML fragment
+   */
   render(rows: Json[] | null | undefined, heading?: string): string {
     const { log, xmlEscape } = this.deps;
     log.debug("Entering BackchannelLogout.render().");
@@ -960,10 +1131,29 @@ const slot = new InstanceSlot<BackchannelLogout>(
 // Standalone, build the default now, as loading a module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * OpenID Connect Back-Channel Logout 1.0.
+ *
+ * A library that registers no route. The composition root builds the instance;
+ * each function here forwards to it.
+ *
+ * @namespace
+ */
 export = {
   BackchannelLogout: BackchannelLogout,
+  /**
+   * Installs the instance the composition root built, and runs its wiring.
+   * Refused once an instance is installed or a default built.
+   *
+   * @param instance - the instance every facade here forwards to
+   */
   installInstance: (instance: BackchannelLogout): void =>
     slot.install(instance),
+  /**
+   * Tells where the instance in use came from.
+   *
+   * @returns `root`, `default` or `none`
+   */
   instanceOrigin: (): string => slot.origin(),
   EVENT: BackchannelLogout.EVENT,
   TOKEN_TYPE: BackchannelLogout.TOKEN_TYPE,
