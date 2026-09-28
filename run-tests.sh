@@ -80,6 +80,11 @@
 #   ./run-tests.sh --modes=memory,single-node # what CI's `tests` job runs; its
 #                                             # `cluster` job runs the third
 #                                             # (2026-09-21)
+#   ./run-tests.sh --modes=cells --only=sts_cells --no-browser
+#                                             # the fourth mode, two cells of
+#                                             # one service (#98): run only
+#                                             # when named, never by a bare
+#                                             # run or by CI
 #   ./run-tests.sh --only=crypto --no-browser
 #                                             # anything else is passed straight
 #                                             # to tests/tools/run-report.js
@@ -166,6 +171,11 @@ COMPOSE_FILE="${COMPOSE_FILE:-docker-compose-run-tests.yml}"
 # no other mode's stack reads the layer. The layer's own header argues its
 # contents; tests/tools/modes.sh defines the mode.
 CLUSTER_COMPOSE_FILE="tests/docker-compose-run-tests-cluster.yml"
+# THE `cells` MODE'S LAYER (#98, 2026-09-28): a second cell, a global-tier
+# database, cell B's own database and the cell keys, over the same file. Read
+# only in that mode, which runs only when named (`--modes=cells`); its header
+# argues the stack and tests/tools/modes.sh the mode.
+CELLS_COMPOSE_FILE="tests/docker-compose-run-tests-cells.yml"
 COMPOSE_FILE_ARGS=(-f "${COMPOSE_FILE}")
 # Overridable so that two runs on one machine — a CI agent with two workspaces —
 # do not share a project: compose scopes containers, networks and images by it,
@@ -184,6 +194,12 @@ STS_TESTS_CONTAINER_NAME="${STS_TESTS_CONTAINER_NAME:-mock-sts-test-runner}"
 # same reason.
 STS2_CONTAINER_NAME="${STS2_CONTAINER_NAME:-sts-docker-tests-node-b}"
 STS_LB_CONTAINER_NAME="${STS_LB_CONTAINER_NAME:-sts-docker-tests-lb}"
+# The `cells` mode's two databases and its one-shot cell-key writer (#98,
+# 2026-09-28), named for the same reason. Cell B is `sts2` and so reuses
+# STS2_CONTAINER_NAME.
+STS_POSTGRES_GLOBAL_CONTAINER_NAME="${STS_POSTGRES_GLOBAL_CONTAINER_NAME:-sts-docker-tests-postgres-global}"
+STS_POSTGRES_CELLB_CONTAINER_NAME="${STS_POSTGRES_CELLB_CONTAINER_NAME:-sts-docker-tests-postgres-cellb}"
+STS_CELL_KEK_CONTAINER_NAME="${STS_CELL_KEK_CONTAINER_NAME:-sts-docker-tests-cell-kek}"
 # The OpenID conformance suite's three (#176), named for the same reason.
 STS_CONFORMANCE_MONGO_CONTAINER_NAME="${STS_CONFORMANCE_MONGO_CONTAINER_NAME:-sts-docker-tests-conformance-mongo}"
 STS_CONFORMANCE_SERVER_CONTAINER_NAME="${STS_CONFORMANCE_SERVER_CONTAINER_NAME:-sts-docker-tests-conformance-server}"
@@ -820,6 +836,9 @@ COMPOSE_ENV=(
   "STS_TESTS_CONTAINER_NAME=${STS_TESTS_CONTAINER_NAME}"
   "STS2_CONTAINER_NAME=${STS2_CONTAINER_NAME}"
   "STS_LB_CONTAINER_NAME=${STS_LB_CONTAINER_NAME}"
+  "STS_POSTGRES_GLOBAL_CONTAINER_NAME=${STS_POSTGRES_GLOBAL_CONTAINER_NAME}"
+  "STS_POSTGRES_CELLB_CONTAINER_NAME=${STS_POSTGRES_CELLB_CONTAINER_NAME}"
+  "STS_CELL_KEK_CONTAINER_NAME=${STS_CELL_KEK_CONTAINER_NAME}"
   "STS_CONFORMANCE_MONGO_CONTAINER_NAME=${STS_CONFORMANCE_MONGO_CONTAINER_NAME}"
   "STS_CONFORMANCE_SERVER_CONTAINER_NAME=${STS_CONFORMANCE_SERVER_CONTAINER_NAME}"
   "STS_CONFORMANCE_NGINX_CONTAINER_NAME=${STS_CONFORMANCE_NGINX_CONTAINER_NAME}"
@@ -999,6 +1018,12 @@ captureContainerLogs()
       "Node B log"
     captureOneContainerLog "${mode}" sts-lb "00-load-balancer.log" \
       "Balancer log"
+  fi
+  # The `cells` mode's cell B (#98), whose log goes with its container.
+  if stsModeIsCells "${mode}";
+  then
+    captureOneContainerLog "${mode}" sts2   "00-mock-sts-service-cell-b.log" \
+      "Cell B log"
   fi
   captureOneContainerLog "${mode}" tests "00-test-runner.log"      "Runner log"
 }
@@ -1336,11 +1361,14 @@ COMPOSE_ENV=(${BUILD_ENV[@]+"${BUILD_ENV[@]}"})
 # ---------------------------------------------------------------------------
 waitForStsHealthy()
 {
+  # The container to wait for: the service's by default, cell B's in the
+  # `cells` mode's second call (#98).
+  local container="${1:-${STS_CONTAINER_NAME}}"
   local waited=0 state=""
   while [ "${waited}" -lt "${STS_TEST_READY_SECONDS:-180}" ];
   do
     state="$(docker inspect -f '{{.State.Health.Status}}' \
-             "${STS_CONTAINER_NAME}" 2>/dev/null || echo unknown)"
+             "${container}" 2>/dev/null || echo unknown)"
     if [ "${state}" = "healthy" ];
     then
       return 0
@@ -1348,7 +1376,7 @@ waitForStsHealthy()
     sleep 2
     waited=$(( waited + 2 ))
   done
-  echo "The mock STS did not become healthy in ${waited}s (last: ${state})." >&2
+  echo "${container} did not become healthy in ${waited}s (last: ${state})." >&2
   return 1
 }
 
@@ -1723,6 +1751,21 @@ do
       "STS_TRUSTED_PROXIES=${STS_NETWORK_PREFIX}.30/32"
     )
   fi
+  # ---- THE `cells` MODE: TWO CELLS OF ONE SERVICE (#98, 2026-09-28) -------
+  #
+  # The layer and the two cells `up -d` starts (their databases and the
+  # cell-key one-shot come with them as dependencies). No balancer: the
+  # runner is handed cell A as the service, as `sts` in every mode, and
+  # both cells by name through the layer. Cell B's address is pinned like
+  # `cluster`'s node B, because `sts2` extends `sts`, whose address is.
+  if stsModeIsCells "${MODE}";
+  then
+    COMPOSE_FILE_ARGS+=(-f "${CELLS_COMPOSE_FILE}")
+    UP_SERVICES=(sts sts2)
+    MODE_ENV+=(
+      "STS2_ADDRESS=${STS_NETWORK_PREFIX}.20"
+    )
+  fi
 
   # ---- A PRODUCT-MODE MODE: WHAT A DEPLOYMENT IS GIVEN (2026-09-21) ------
   # (`single-node` and `cluster` since that evening; it was written for the
@@ -1767,6 +1810,12 @@ do
   # the job reports every module itself.
   UP_NO_ATTACH=(--no-attach openbao-tls --no-attach openbao-seed
                 --no-attach mailpit-tls --no-attach mailpit)
+  # The `cells` mode's one-shot cell-key writer exits 0 by design, and an
+  # attached exit ends the mode (see THE TWO ONE-SHOT CONTAINERS below).
+  if stsModeIsCells "${MODE}";
+  then
+    UP_NO_ATTACH+=(--no-attach sts-cell-kek)
+  fi
   # The profiles this mode brings up, joined once below: compose reads ONE
   # COMPOSE_PROFILES, and the conformance suite and the SAML peers can both
   # be on.
@@ -1833,6 +1882,11 @@ do
   then
     echo "The mock STS never became healthy in mode ${MODE}. Nothing was" >&2
     echo "run — see the container log captured below." >&2
+    MODE_RC=1
+  elif stsModeIsCells "${MODE}" && ! waitForStsHealthy "${STS2_CONTAINER_NAME}";
+  then
+    echo "Cell B never became healthy in mode ${MODE}. Nothing was run —" >&2
+    echo "see the container log captured below." >&2
     MODE_RC=1
   elif ! mintAdminApiToken;
   then

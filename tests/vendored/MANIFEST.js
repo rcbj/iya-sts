@@ -1143,6 +1143,36 @@ const JOBS = [
   { file: 'sts_client_attestation.js',   browser: false, local: true },
   { file: 'vc_did.js',                   browser: false },
   // ---------------------------------------------------------------------
+  // TWO CELLS OF ONE SERVICE (#98, 2026-09-28). Each runs only in the
+  // `cells` mode (`./run-tests.sh --modes=cells`), which hands the runner
+  // both cells by name (STS_TEST_CELL_A_URL, STS_TEST_CELL_B_URL), and
+  // declines to run in every other mode, naming the variable. `local`:
+  // they drive this repository's own `/admin-api` and a stack only this
+  // repository's launcher builds. What they share is cells_kit.js.
+  //
+  //   sts_cells_map.js        each cell reports both, the peer reachable
+  //                           over the channel, a tiered store, no address
+  //   sts_cells_routing.js    a login name is unique across cells (409 at
+  //                           the other), and a creation naming another
+  //                           cell as home is made there (D1)
+  //   sts_cells_traveller.js  a flow started at cell A for a person homed
+  //                           at cell B restarts at home, pinned, and is
+  //                           served there through A — code, tokens, one
+  //                           key set (D8, D9) — and a pushed request made
+  //                           at B is found from A (D10)
+  //   sts_cells_transfer.js   a realm that lists `ca>us` holds the session
+  //                           at A with a projection; a disable at home
+  //                           ends it at A (D4, D6)
+  //   sts_cells_release.js    another cell's residents are refused under
+  //                           the strict default and listed once the realm
+  //                           permits it (D11)
+  // ---------------------------------------------------------------------
+  { file: 'sts_cells_map.js',            browser: false, local: true },
+  { file: 'sts_cells_routing.js',        browser: false, local: true },
+  { file: 'sts_cells_traveller.js',      browser: false, local: true },
+  { file: 'sts_cells_transfer.js',       browser: false, local: true },
+  { file: 'sts_cells_release.js',        browser: false, local: true },
+  // ---------------------------------------------------------------------
   // LAST, ALL THREE OF THEM, AND THE ORDER IS THE WHOLE OF WHY IT IS SAFE
   // (2026-09-06).
   //
@@ -1327,7 +1357,13 @@ const LOCAL_HELPERS = [
   // `tests/risk_upload.js`: one entry, several, a directory and __MACOSX/
   // beside the data, a declared size that lies. Node's zlib; nothing from
   // yauzl, which is the reader under test.
-  'zip_writer.js'
+  'zip_writer.js',
+  // WHAT THE FIVE `sts_cells_*.js` JOBS SHARE (#98): each cell's management
+  // API with a token minted at that cell, a cookie jar and a browser that
+  // follows no redirect, a JWT checked against a key set with node's own
+  // crypto, and a bounded wait for the global tier. Nothing from the
+  // service.
+  'cells_kit.js'
 ];
 
 // ---------------------------------------------------------------------------
