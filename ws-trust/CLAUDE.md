@@ -248,3 +248,30 @@ holds or must hold a second factor is refused their own password with the one
 scoped to `wstrust` instead; the authentication row's method then says
 `(app password)`. `authn/CLAUDE.md` owns the rule. WS-Trust has no rate limit
 of its own for a refused UsernameToken, so there is nothing further to count.
+
+## IN A SERVICE DEPLOYED AS CELLS (#98 D10, 2026-09-28)
+
+`POST /sts` is a `handler` row of `common/cell_placement.ts`: an RST is
+relayed WHOLE to the home cell of the person whose credential it presents,
+before anything is read for the risk standing, verified, recorded or spent
+(`homeNameOf()`, `stsEndpoint()`). The name is, in order, the requester's
+UsernameToken's Username, the requester's own SAML assertion's NameID, and —
+with no requester credential, which only development allows — the subject of
+the OnBehalfOf / ActAs.
+
+**A SAML ASSERTION THIS REALM SIGNED WOULD VERIFY IN ANY CELL**, since the
+signing keys are the global tier's (D8), and it is relayed anyway: what
+follows the signature is the person's — the authentication recorded against
+their entry, the issuance policy and risk standing that read it, the issued
+token's attributes, and the browser session the exchange may start. None of
+that exists outside their home.
+
+**DOCUMENTED EXCEPTION — A DELEGATION ACROSS CELLS**: a request whose
+requester and delegated subject are homed in different cells is served at the
+REQUESTER's home, which does not hold the delegated subject's entry; the token
+about them carries only what that cell knows, which is the name. Answering it
+properly needs the design's `fetch-attributes` operation (#98 section 5),
+which is not built. A NameID that is not a login name (an email address, a
+pairwise value) is unknown to the routing index and served where it arrives.
+Held in process by `tests/cell_saml_federation.js`.
+

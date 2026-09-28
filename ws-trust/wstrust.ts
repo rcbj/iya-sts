@@ -149,6 +149,10 @@ import authnContext = require('../saml/authn_context');
 // refusal decided below handleRst() travels out on the result's `errorCode` and
 // is marked on the response by the route; it never reaches the SOAP body.
 import errorCodes = require('../common/error_codes');
+// WHERE A REQUEST IS SERVED IN A SERVICE DEPLOYED AS CELLS (#98 D10): at the
+// home of the person it names. Libraries that register no route.
+import cells = require('../common/cells');
+import cellPlacement = require('../common/cell_placement');
 
 const { DOMParser, XMLSerializer } = xmldom;
 
@@ -1808,7 +1812,7 @@ class WsTrust {
   // cannot answer leaves the decision to roles alone.
   // -------------------------------------------------------------------------
   private stsEndpoint(req, res) {
-    const { log, validation, textByLocal, subjectForName } = this.deps;
+    const { log, validation, textByLocal } = this.deps;
     log.debug("Entering WsTrust.stsEndpoint().");
     const self = this;
     let claimed = '';
@@ -1816,6 +1820,84 @@ class WsTrust {
     if (read.ok) {
       claimed = textByLocal(read.value, 'Username');
     }
+    // THE PERSON'S HOME CELL (#98 D10), before anything is read, verified,
+    // recorded or spent: see homeNameOf(). Single-cell mode goes straight
+    // on, as it always did.
+    const home = read.ok && cells.isMulti() && !req.stsCellRelay
+      ? this.homeNameOf(read.value) : '';
+    if (home) {
+      log.debug("Leaving WsTrust.stsEndpoint(). Finding the home cell.");
+      return cellPlacement.relayToHome(req, res,
+        require('../common/realms').currentId(), 'name', home,
+        'a WS-Trust request').then(function (relayed: boolean): unknown {
+          return relayed ? undefined : self.stsEndpointHere(req, res, claimed);
+        });
+    }
+    log.debug("Leaving WsTrust.stsEndpoint().");
+    return this.stsEndpointHere(req, res, claimed);
+  }
+
+  // ---------------------------------------------------------------------------
+  // WHICH PERSON'S HOME SERVES AN RST (#98 D10). A request is served where the
+  // person whose CREDENTIAL it presents is homed, because that is the one
+  // cell that can verify it — a UsernameToken's password is checked against
+  // a `userPassword` only the home cell holds, and a person's second factor,
+  // lockout and app passwords are there too. In order:
+  //
+  //   1. the requester's UsernameToken, by its Username;
+  //   2. the requester's own SAML assertion, by its NameID. **An assertion
+  //      this realm signed would VERIFY in any cell** — the signing keys are
+  //      the global tier's (D8) — and it is relayed anyway, because what
+  //      follows the verification is the person's: the authentication is
+  //      recorded against their entry, the issuance policy and the risk
+  //      standing read it, the token's attributes are its attributes, and a
+  //      browser session may be started for them. None of that exists
+  //      outside their home;
+  //   3. with no requester credential (development's delegation with nobody
+  //      in the requester's seat), the subject of the OnBehalfOf / ActAs.
+  //
+  // **A DELEGATION ACROSS CELLS IS SERVED AT THE REQUESTER'S HOME**, which
+  // does not hold the delegated subject's entry when that person is homed
+  // elsewhere; the token about them then carries what that cell knows of
+  // them, which is nothing beyond the name. Fetching a subject's attributes
+  // from its home is the design's `fetch-attributes` operation (#98 section
+  // 5), not built yet — recorded in `ws-trust/CLAUDE.md`.
+  //
+  // A NameID that is not a login name (an email address, a pairwise value)
+  // is unknown to the routing index, and the request is served where it
+  // arrived — the answer it always had.
+  // ---------------------------------------------------------------------------
+  private homeNameOf(doc): string {
+    const { firstByLocal, log, textByLocal } = this.deps;
+    log.debug("Entering WsTrust.homeNameOf().");
+    const nameOf = function (el): string {
+      log.debug("Entering nameOf().");
+      const named = el ? firstByLocal(el, 'NameID') ||
+                         firstByLocal(el, 'NameIdentifier') : null;
+      log.debug("Leaving nameOf().");
+      return named ? String(named.textContent || '').trim() : '';
+    };
+    const scope = this.credentialScope(doc);
+    const ut = this.firstOwnedByRequester(scope, 'UsernameToken');
+    if (ut) {
+      log.debug("Leaving WsTrust.homeNameOf(). A UsernameToken.");
+      return String(textByLocal(ut, 'Username') || '').trim();
+    }
+    const assertion = this.firstOwnedByRequester(scope, 'Assertion');
+    if (assertion) {
+      log.debug("Leaving WsTrust.homeNameOf(). The requester's assertion.");
+      return nameOf(assertion);
+    }
+    log.debug("Leaving WsTrust.homeNameOf(). The delegated subject.");
+    return nameOf(firstByLocal(doc, 'OnBehalfOf') ||
+                  firstByLocal(doc, 'ActAs'));
+  }
+
+  // The endpoint, once the request is known to be served HERE.
+  private stsEndpointHere(req, res, claimed) {
+    const { log, subjectForName } = this.deps;
+    log.debug("Entering WsTrust.stsEndpointHere().");
+    const self = this;
     let preload: Promise<unknown> = Promise.resolve(null);
     if (claimed) {
       try {
@@ -1824,18 +1906,19 @@ class WsTrust {
           require('../common/realms').currentId(), claimed, sub)
           : preload;
       } catch (e) {
-        log.debug("Caught in WsTrust.stsEndpoint(): " +
+        log.debug("Caught in WsTrust.stsEndpointHere(): " +
                   ((e && e.message) || e));
         // No risk engine in this process: nothing to read, and the roles
         // decide.
         preload = Promise.resolve(null);
       }
     }
-    log.debug("Leaving WsTrust.stsEndpoint().");
+    log.debug("Leaving WsTrust.stsEndpointHere().");
     return preload.then(function (): unknown {
       return self.stsEndpointNow(req, res);
     }, function (e: any): unknown {
-      log.debug("Caught in WsTrust.stsEndpoint(): " + ((e && e.message) || e));
+      log.debug("Caught in WsTrust.stsEndpointHere(): " +
+                ((e && e.message) || e));
       // loadStanding() never rejects; this is its belt and braces.
       return self.stsEndpointNow(req, res);
     });
