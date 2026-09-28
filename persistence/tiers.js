@@ -320,18 +320,23 @@ const GLOBAL_MINTED = {
 // Cell-tier: minted here, or somebody's. Listed rather than defaulted — see
 // the header.
 const CELL_MINTED = [
+  // `attribute_sources.status` and `federation.unmapped` (#94) are
+  // OBSERVATIONS of this cell's own traffic: a source's last error can name
+  // the person it was looking up, and the names a partner sent arrived at
+  // somebody's sign-in. Each cell's console shows what that cell saw.
   'acme.accountKeys', 'acme.accounts', 'acme.authorizations',
   'acme.certificates', 'acme.orders', 'acme.renewalInfo', 'acme.usedNonces',
   'admin_stats.artifacts', 'admin_stats.calls', 'admin_stats.claimSets',
   'admin_stats.nums', 'admin_stats.scimCounts', 'admin_stats.tokens',
-  'admin_stats.users', 'audit.events', 'audit.nums', 'authn.pending',
+  'admin_stats.users', 'attribute_sources.status', 'audit.events', 'audit.nums', 'authn.pending',
   'authn.pendingMfa', 'authn.pendingPasswordChange', 'authn.sessions',
   'authn.webauthnCredentials', 'authorization_details.consented',
   'caep.register', 'cells.deliveries', 'cells.exports', 'cells.projections',
   'claim_attributes.selections', 'consent_screen.pending',
   'credentials.pendingBackupCodes', 'credentials.pendingKeys',
   'credentials.pendingTotp', 'delegation.acts', 'devices.challenges',
-  'devices.events', 'dpop.issuedNonces', 'federation_sp.contexts',
+  'devices.events', 'dpop.issuedNonces', 'federation.unmapped',
+  'federation_sp.contexts',
   'gnap.approvers', 'gnap.continuations', 'gnap.grants', 'gnap.instances',
   'gnap.interactions', 'gnap.manageHandles', 'gnap.manageValues',
   'gnap.movedGrants', 'gnap_monitor.counters', 'gnap.tokens',
