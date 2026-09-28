@@ -26,8 +26,9 @@
 //     the entry (`projectionOf()` — `credentialFree()` and the groups home
 //     says they are in). No password hash, second-factor secret or key.
 //   * **IT IS HELD FOR ONE SYNCHRONOUS CALL AND NEVER STORED**
-//     (`withPerson()`): the projection is put into this process's directory, the caller's
-//     function runs, and it is taken out again before anything else in this
+//     (`withPerson()`): the projection is put into this process's
+//     directory, the caller's function runs, and it is taken out again
+//     before anything else in this
 //     process can run — so no other request here ever reads the person as a
 //     resident, and no row, store or cache keeps them. A person already held
 //     here as a projection (a session exported here) is read as they are and

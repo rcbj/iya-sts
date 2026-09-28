@@ -72,17 +72,35 @@ const TAG_LENGTH = 12;
 // sixteen random ones saml-bindings-2.0-os section 3.6.4 asks for.
 const SAML_HANDLE_TAG_BYTES = 4;
 
+// What the locator reads of the cell map; a test hands in a stub.
+interface LocatorCells {
+  isMulti(): boolean;
+  id(): string;
+  all(): Array<{ id: string }>;
+}
+
 /**
  * Stamps and reads the keyed tag that says which cell minted an artifact.
  */
 class CellLocator {
   private readonly tags = new Map<string, string>();
+  private readonly cellMap: LocatorCells;
+  private readonly keyedDigest: (label: string, text: string) => string | null;
 
   /**
    * Builds the locator. It holds no tag until one is asked for.
+   *
+   * @param deps - the cell map and the keyed digest; the module's own when
+   *   absent (a test hands in both)
    */
-  constructor() {
+  constructor(deps?: { cells?: LocatorCells;
+                       digest?: (label: string, text: string) =>
+                         string | null }) {
     log.debug("Entering CellLocator.constructor().");
+    this.cellMap = (deps && deps.cells) || cells;
+    this.keyedDigest = (deps && deps.digest) || function (label, text) {
+      return require('./keystore').keyedDigest(label, text);
+    };
     log.debug("Leaving CellLocator.constructor().");
   }
 
@@ -100,8 +118,7 @@ class CellLocator {
       log.debug("Leaving CellLocator.tagOf(). Cached.");
       return held;
     }
-    const keystore = require('./keystore');
-    const digest = keystore.keyedDigest('cell-locator', id);
+    const digest = this.keyedDigest('cell-locator', id);
     if (!digest) {
       log.debug("Leaving CellLocator.tagOf(). No key.");
       return '';
@@ -121,11 +138,11 @@ class CellLocator {
    */
   stamp(value: string): string {
     log.debug("Entering CellLocator.stamp().");
-    if (!cells.isMulti()) {
+    if (!this.cellMap.isMulti()) {
       log.debug("Leaving CellLocator.stamp(). Single-cell.");
       return String(value);
     }
-    const tag = this.tagOf(cells.id());
+    const tag = this.tagOf(this.cellMap.id());
     log.debug("Leaving CellLocator.stamp().");
     return String(value) + tag;
   }
@@ -140,12 +157,13 @@ class CellLocator {
   locate(value: string): string {
     log.debug("Entering CellLocator.locate().");
     const text = String(value || '');
-    if (!cells.isMulti() || text.length <= TAG_LENGTH) {
+    if (!this.cellMap.isMulti() || text.length <= TAG_LENGTH) {
       log.debug("Leaving CellLocator.locate(). Nothing to read.");
       return '';
     }
     const tail = text.slice(-TAG_LENGTH);
-    const found = cells.all().filter((one) => this.tagOf(one.id) === tail)[0];
+    const found = this.cellMap.all().filter((one) =>
+      this.tagOf(one.id) === tail)[0];
     log.debug("Leaving CellLocator.locate(). " +
               (found ? found.id : 'none'));
     return found ? found.id : '';
@@ -162,7 +180,7 @@ class CellLocator {
     log.debug("Entering CellLocator.elsewhere().");
     const at = this.locate(value);
     log.debug("Leaving CellLocator.elsewhere().");
-    return at && at !== cells.id() ? at : '';
+    return at && at !== this.cellMap.id() ? at : '';
   }
 
   /**
@@ -191,11 +209,11 @@ class CellLocator {
    */
   stampBytes(handle: Buffer, n: number): Buffer {
     log.debug("Entering CellLocator.stampBytes().");
-    if (!cells.isMulti() || handle.length <= n) {
+    if (!this.cellMap.isMulti() || handle.length <= n) {
       log.debug("Leaving CellLocator.stampBytes(). Single-cell.");
       return handle;
     }
-    const tag = this.tagBytes(cells.id(), n);
+    const tag = this.tagBytes(this.cellMap.id(), n);
     if (tag.length !== n) {
       log.debug("Leaving CellLocator.stampBytes(). No key.");
       return handle;
@@ -216,12 +234,12 @@ class CellLocator {
    */
   locateBytes(handle: Buffer, n: number): string {
     log.debug("Entering CellLocator.locateBytes().");
-    if (!cells.isMulti() || !handle || handle.length <= n) {
+    if (!this.cellMap.isMulti() || !handle || handle.length <= n) {
       log.debug("Leaving CellLocator.locateBytes(). Nothing to read.");
       return '';
     }
     const tail = handle.subarray(handle.length - n);
-    const found = cells.all().filter((one) => {
+    const found = this.cellMap.all().filter((one) => {
       const tag = this.tagBytes(one.id, n);
       return tag.length === n && tag.equals(tail);
     });
@@ -252,7 +270,7 @@ class CellLocator {
     log.debug("Entering CellLocator.elsewhereBytes().");
     const at = this.locateBytes(handle, n);
     log.debug("Leaving CellLocator.elsewhereBytes().");
-    return at && at !== cells.id() ? at : '';
+    return at && at !== this.cellMap.id() ? at : '';
   }
 
   /**
