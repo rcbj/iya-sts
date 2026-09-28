@@ -98,6 +98,11 @@ const ROWS: Row[] = [
   { prefix: '/.well-known', strategy: 'local',
     why: 'discovery documents and key sets are the global tier\'s, the ' +
          'same in every cell' },
+  { prefix: '/.well-known/hoba', strategy: 'handler', browser: true,
+    handler: 'scim/scim_cells.ts',
+    why: 'a HOBA key goes on its person\'s entry, where they are homed; a ' +
+         'pinned browser first, because outside development only the ' +
+         'owner\'s own session may register one' },
   { prefix: '/.well-known/est', strategy: 'handler',
     handler: 'est/est.ts',
     why: 'an EST enrollment is served where the person its Basic name or ' +
@@ -135,7 +140,9 @@ const ROWS: Row[] = [
     why: 'the Kerberos views read global configuration' },
   { prefix: '/KdcProxy', strategy: 'handler',
     handler: 'kerberos/krb5_home.ts',
-    why: 'an AS-REQ names a principal, served where it is homed' },
+    why: 'an AS-REQ names its client, and a TGS-REQ\'s ticket does; both ' +
+         'are answered where the client is homed (the raw port 88 is not ' +
+         'placed: kerberos/CLAUDE.md)' },
   { prefix: '/spnego', strategy: 'affinity', browser: true,
     why: 'a browser flow, served where the browser is pinned' },
   // --- the sign-in service and the browser flows ---
@@ -248,9 +255,10 @@ const ROWS: Row[] = [
          'where it arrives, and fanned out to every peer ' +
          '(federation-partner-signout)' },
   // --- SCIM, SSF, XACML ---
-  { prefix: '/scim', strategy: 'handler', handler: 'scim/scim.ts',
+  { prefix: '/scim', strategy: 'handler', handler: 'scim/scim_cells.ts',
     why: 'a resource is written where its person is homed; a list answers ' +
-         'the serving cell\'s residents (D11)' },
+         'the serving cell\'s residents (D11); a Group write or a Bulk ' +
+         'spanning cells is refused whole' },
   { prefix: '/scim/v2/ServiceProviderConfig', strategy: 'local',
     why: 'the same configuration in every cell' },
   { prefix: '/scim/v2/ResourceTypes', strategy: 'local',
@@ -270,8 +278,10 @@ const ROWS: Row[] = [
   { prefix: '/tls', strategy: 'local',
     why: 'certificate views and test controls over global configuration' },
   { prefix: '/tls/sign-in', strategy: 'handler', browser: true,
-    handler: 'tls/tls_home.ts',
-    why: 'a client certificate names its person, signed in at home' },
+    handler: 'tls/tls_server.js',
+    why: 'a client certificate names its person, signed in at home; a ' +
+         'pinned browser first, because a browser already holding a ' +
+         'session is not given a second one' },
   // --- OpenID4VC ---
   { prefix: '/oid4vci', strategy: 'local',
     why: 'nonces and status lists: minted here, or the global tier\'s' },

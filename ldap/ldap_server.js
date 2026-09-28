@@ -151,6 +151,10 @@ const config = require('../common/config');
 // realm. It requires only config.js, so it closes no cycle and moves no route
 // — the ordinary direction, no slot. See the naming-context block below.
 const realms = require('../common/realms');
+// WHICH CELL A PERSON IS HOMED IN (#98): the cell map, a leaf. The routing
+// index and the inter-cell channel are reached lazily, where a bind needs
+// them.
+const cells = require('../common/cells');
 // ---------------------------------------------------------------------------
 // WHERE THIS DIRECTORY IS WRITTEN DOWN, SINCE 2026-08-27.
 //
@@ -12646,6 +12650,135 @@ function registerWorkerOperations() {
             DISPATCHABLE_OPERATIONS.length + ' operation(s) registered.');
 }
 
+// ---------------------------------------------------------------------------
+// A SIMPLE BIND AS A PERSON HOMED IN ANOTHER CELL (#98 D2, 2026-09-28).
+//
+// The LDAP connection is to THIS cell, and the person's entry — their
+// `userPassword`, their app passwords, whether they are disabled — exists
+// only in the cell they are homed in. Three ways to answer a bind naming
+// them were weighed:
+//
+//   * **REFUSE IT HERE**, with a diagnosticMessage saying where the account
+//     is. Nothing leaves the cell — and LDAP, unlike a browser, has no way to
+//     be sent somewhere else: RFC 4511 section 4.1.10's referral is a result
+//     a client MAY chase, which almost none do on a bind, and it would publish
+//     a cell's address, which this service never does.
+//   * **HOLD A COPY OF THE CREDENTIAL HERE.** That is the person's data
+//     outside their jurisdiction — the one thing §3 rules out.
+//   * **SEND THE PRESENTED PASSWORD HOME AND BRING BACK ONLY THE VERDICT**
+//     (the `ldap-bind` operation, below). The password crosses between cells
+//     inside the mutual-TLS channel, is compared at home by
+//     `credentials.verify()` with `door: 'ldap'` (the same verifier, the same
+//     second-factor and app-password rules, the same disabled-account check)
+//     and is never stored or logged on either side; what comes back is ok or
+//     not, the reason, and which app password matched.
+//
+// **THE THIRD IS D2**, rcbj's decision that a traveller's CREDENTIAL is relayed
+// to the home cell over the channel. D9 replaced it for BROWSERS only, and for
+// a reason that does not reach LDAP: a browser flow's state lives where the
+// flow started, so the flow restarts at home. A bind has no flow; the
+// connection is the session (RFC 4511 section 4.2), and it is here.
+//
+// **WHAT STAYS HERE**: the rate limit (this cell's buckets, keyed on the
+// address and the DN — so a guesser spreading attempts across cells gets each
+// cell's budget, which is stated rather than hidden), the refusals that come
+// before a password is read, the audit rows of the bind, and the connection.
+// What a bound traveller may then READ is decided as for any bound identity
+// whose entry this cell does not hold — their group memberships are resident
+// at home, so they hold no role here — and a search answers this cell's own
+// residents (D11).
+//
+// **FAIL-CLOSED (D6)**: a home cell that cannot be asked is
+// LDAP_UNAVAILABLE (52), `STS-CELL-0147`, and not counted as a failure.
+//
+// **A DN NOBODY IS HOMED UNDER** (the routing index knows no such login name)
+// is verified here, exactly as before cells.
+// ---------------------------------------------------------------------------
+/**
+ * Verifies a bind's password in the home cell of the person the DN names, or
+ * here when that is this cell or nobody's.
+ *
+ * @param dn - the bind DN, which this cell holds no entry for
+ * @param password - the presented password
+ * @returns a promise of `credentials.verify()`'s answer, from wherever it
+ *   was reached; rejected when the home cell cannot be asked
+ */
+function verifyInHomeCell(dn, password) {
+  log.debug("Entering verifyInHomeCell().");
+  const realmId = realms.currentId();
+  const rdn = /^[A-Za-z][A-Za-z0-9-]*=([^,+]+)[,+]/.exec(String(dn));
+  const name = rdn ? rdn[1].replace(/\\(.)/g, '$1').trim() : '';
+  const local = function () {
+    log.debug("Entering local().");
+    log.debug("Leaving local().");
+    return credentials.verify(dn, password, { via: 'an LDAP simple bind',
+                                              door: 'ldap' });
+  };
+  log.debug("Leaving verifyInHomeCell().");
+  return require('../common/cell_routing').homeOf(realmId, 'name', name)
+    .then(function (home) {
+      if (!home || home === cells.id() || !cells.get(home)) {
+        return local();
+      }
+      log.info('ldap: a bind as ' + dn + ' names a person homed in cell "' +
+               home + '"; the password is verified there (#98 D2).');
+      return require('../common/cell_channel').call(home, 'ldap-bind', {
+        realm: realmId, dn: dn, password: password
+      }).then(function (answer) {
+        const out = {
+          ok: !!(answer && answer.ok),
+          reason: String((answer && answer.reason) || 'refused'),
+          detail: String((answer && answer.detail) || ''),
+          appPassword: answer && answer.appPassword ? answer.appPassword
+                                                    : null
+        };
+        return answer && answer.code ? errorCodes.mark(out, answer.code) : out;
+      });
+    });
+}
+
+// THE HOME CELL'S HALF: `ldap-bind`, answered for a peer cell only (the
+// channel authenticates the caller as one). The verdict and nothing else —
+// never the entry, never a hash.
+/**
+ * Answers another cell's `ldap-bind` operation: verifies a password against
+ * a person this cell holds.
+ *
+ * @param body - `{ realm, dn, password }`
+ * @param ctx - `{ peer }`, the calling cell
+ * @returns `{ ok, reason, detail, code, appPassword }`
+ */
+function answerCellBind(body, ctx) {
+  log.debug("Entering answerCellBind().");
+  const realm = realms.get(String((body && body.realm) || '')) ||
+                realms.DEFAULT_REALM;
+  const dn = String((body && body.dn) || '');
+  const password = String((body && body.password) || '');
+  const answer = realms.run(realm, function () {
+    if (!dn || !isPersonEntry({ dn: dn, attributes: {} }) || !getEntry(dn)) {
+      return { ok: false, reason: 'unknown',
+               detail: 'this cell holds no person at that DN',
+               code: 'STS-LDAP-0002', appPassword: null };
+    }
+    const checked = credentials.verify(dn, password, {
+      via: 'an LDAP simple bind at cell "' + String((ctx && ctx.peer) || '') +
+           '"', door: 'ldap' });
+    return {
+      ok: !!(checked && checked.ok),
+      reason: String((checked && checked.reason) || ''),
+      detail: String((checked && checked.detail) || ''),
+      code: errorCodes.codeOf(checked) || '',
+      appPassword: checked && checked.ok && checked.appPassword
+        ? { id: checked.appPassword.id, name: checked.appPassword.name }
+        : null
+    };
+  });
+  log.debug("Leaving answerCellBind(). " + (answer.ok ? 'ok' : 'refused'));
+  return answer;
+}
+
+require('../common/cell_channel').registerOp('ldap-bind', answerCellBind);
+
 // --- bind ------------------------------------------------------------------
 server.bind('', function (req, res, next) {
   log.debug('Entering the LDAP bind handler.');
@@ -12860,13 +12993,69 @@ server.bind('', function (req, res, next) {
   let verified = false;
   // WHICH APP PASSWORD, where one was what matched (#101) — for the two rows.
   let appPassword = null;
+  // A PERSON HOMED IN ANOTHER CELL (#98 D2) is verified THERE: their
+  // `userPassword` exists only in their home cell, so the password is sent
+  // to it over the inter-cell channel and only the verdict comes back —
+  // `verifyInHomeCell()` argues it. Everybody else is verified here, as
+  // always; single-cell mode never asks.
+  if (dn && cells.isMulti() && !getEntry(dn)) {
+    req.stsAsyncOperation = true;
+    // `next` from here on is called once, whichever path answers — the
+    // shared limiter's arrangement above, for the same reason.
+    let settled = false;
+    const answerOnce = next;
+    next = function (err) {
+      settled = true;
+      return answerOnce(err);
+    };
+    log.debug("Leaving finishBind(). Asking the person's home cell.");
+    return verifyInHomeCell(dn, credentials_value).then(settleBind,
+      function (e) {
+        log.error(errorCodes.tag('STS-CELL-0147') + 'ldap: a bind as ' + dn +
+                  ' could not be verified in its home cell: ' +
+                  ((e && e.message) || e));
+        return settleBind(errorCodes.mark({ ok: false, unreachable: true,
+          reason: 'home-unreachable',
+          detail: 'the home cell could not be asked' }, 'STS-CELL-0147'));
+      })
+      .catch(function (e) {
+        log.error(errorCodes.tag('STS-LDAP-0094') + 'ldap: a bind as ' + dn +
+                  ' could not be completed: ' + ((e && e.stack) || e));
+        if (settled) {
+          return undefined;
+        }
+        return next(coded('STS-LDAP-0094',
+          new ldap.OperationsError('the bind could not be completed')));
+      });
+  }
   if (dn) {
     // `door: 'ldap'` (#101): a password-only door, so in product a person
     // with a second factor is refused their password here and an app password
     // scoped to `ldap` is accepted instead (`common/credentials.ts`).
-    const checked = credentials.verify(dn, credentials_value,
-                                       { via: 'an LDAP simple bind',
-                                         door: 'ldap' });
+    log.debug("Leaving finishBind(). Settling a local verdict.");
+    return settleBind(credentials.verify(dn, credentials_value,
+                                         { via: 'an LDAP simple bind',
+                                           door: 'ldap' }));
+  }
+  log.debug("Leaving finishBind(). Accepted.");
+  return bindAccepted();
+
+  // THE VERDICT, WHEREVER IT WAS REACHED — here, or in the person's home
+  // cell. Everything below is what followed the verification before #98.
+  function settleBind(checked) {
+    log.debug("Entering settleBind().");
+    // FAIL-CLOSED (#98 D6): a home cell that cannot be asked is not a wrong
+    // password — it is not counted against the limit — and the bind is
+    // refused rather than answered from a cell that holds no credential.
+    if (checked && checked.unreachable) {
+      log.debug("Leaving settleBind(). The home cell is unreachable.");
+      return next(ldapRefusal(req, 'STS-CELL-0147', 'a bind as ' + dn +
+        ' was refused: the person is homed in another region of this ' +
+        'service, which could not be reached to verify the password',
+        coded('STS-CELL-0147', new ldap.UnavailableError(
+          'this account is held in another region of this service, which ' +
+          'cannot be reached just now; try again shortly')), dn, 'error'));
+    }
     verified = !!(checked && checked.ok && (checked.reason === 'verified' ||
                                             checked.reason === 'app-password'));
     appPassword = checked && checked.ok && checked.appPassword
@@ -12887,7 +13076,7 @@ server.bind('', function (req, res, next) {
       // FAILURE is what the limit is about. See `websecurity.blocked()`.
       if (bindLimited && websecurity.sharesLimits()) {
         // Awaited, as at the literal-password refusal above.
-        log.debug("Leaving finishBind(). Counting the failure first.");
+        log.debug("Leaving settleBind(). Counting the failure first.");
         return websecurity.failedShared('ldap-bind', limiterRequestOf(req), dn)
           .then(function (overLimit) {
             return overLimit ? refuseLockedOut(overLimit)
@@ -12898,7 +13087,7 @@ server.bind('', function (req, res, next) {
       if (bindLimited) {
         websecurity.attemptShared('ldap-bind', limiterRequestOf(req), dn);
       }
-      log.debug("Leaving finishBind(). The credential was refused.");
+      log.debug("Leaving settleBind(). The credential was refused.");
       return next(coded(errorCodes.codeOf(checked) || 'STS-LDAP-0002',
                         new ldap.InvalidCredentialsError()));
     }
@@ -12907,7 +13096,7 @@ server.bind('', function (req, res, next) {
       // LIMIT (2026-09-14): a right guess racing a burst that spent the budget
       // is refused like the burst. A read, so a pool binding fifty connections
       // at once costs nothing. `websecurity.failedShared()` argues it.
-      log.debug("Leaving finishBind(). Settling the success first.");
+      log.debug("Leaving settleBind(). Settling the success first.");
       return websecurity.succeededShared('ldap-bind', limiterRequestOf(req),
         dn, { keepAddress: true, unlessBlocked: true })
         .then(function (racedOut) {
@@ -12918,9 +13107,9 @@ server.bind('', function (req, res, next) {
       websecurity.succeededShared('ldap-bind', limiterRequestOf(req), dn,
                                   { keepAddress: true });
     }
+    log.debug("Leaving settleBind(). Accepted.");
+    return bindAccepted();
   }
-  log.debug("Leaving finishBind(). Accepted.");
-  return bindAccepted();
 
   // THE ACCEPTED BIND, split out so the shared limiter's answer can come first.
   function bindAccepted() {

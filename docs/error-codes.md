@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3800** of them, in **40** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3808** of them, in **40** subsystems.
 
 ## Where a code appears
 
@@ -55,7 +55,7 @@ is an ordinary outcome.
 * [Worker pools (`STS-WORKER`)](#sts-worker) — 43
 * [Persistence and coordination (`STS-STORE`)](#sts-store) — 63
 * [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 28
-* [Cells and residency (`STS-CELL`)](#sts-cell) — 54
+* [Cells and residency (`STS-CELL`)](#sts-cell) — 62
 * [Scheduler (`STS-SCHED`)](#sts-sched) — 16
 * [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 79
 * [Certificate authority (`STS-PKI`)](#sts-pki) — 204
@@ -433,6 +433,14 @@ Raised from: common/cells.ts, common/cell_*.ts, persistence/tiers.js, persistenc
 | `STS-CELL-0182` | A transfer question named a realm this service does not have; the session is not held away from home, the request is not served and nothing is released (#98). | — |
 | `STS-CELL-0183` | A request about a person homed in another jurisdiction was refused under the realm's hard geofence (cells.hardGeofence): the issuance policy answered serve-request with refuse, so it is neither served nor relayed (#98). | — |
 | `STS-CELL-0184` | Personal data of the people homed in this cell was withheld from a reader at a cell in another jurisdiction (a directory listing or a management-API call relayed with ?cell=): the issuance policy answered release-attributes with withhold (#98 D11). | — |
+| `STS-CELL-0140` | A SCIM create names a home cell (the iya-sts User extension's homeCell, or the realm's default) that this service does not have or that is outside the jurisdictions the realm may home people in; refused 400 invalidValue and nothing is created. | RFC 7644 section 3.12 |
+| `STS-CELL-0141` | A SCIM create reached a cell that is not the home it resolves to and could not be relayed again (it arrived relayed, or inside a relayed BulkRequest); refused 400 invalidValue rather than made in the wrong region. | RFC 7644 section 3.12 |
+| `STS-CELL-0142` | A SCIM create names a login name the routing index already places in another cell of this realm; refused 409 uniqueness. | RFC 7644 section 3.12 |
+| `STS-CELL-0143` | A SCIM Group write names members homed in more than one cell; one request is performed in one cell, so it is refused 400 invalidValue whole and nothing is changed. | RFC 7644 section 3.12 |
+| `STS-CELL-0144` | A SCIM BulkRequest's operations belong to people homed in more than one cell; it is refused 400 invalidValue whole before any operation runs. | RFC 7644 section 3.7 |
+| `STS-CELL-0145` | A SCIM write to an existing User names a homeCell other than the one the person is homed in; re-homing is an administrator's act, so it is refused 400 mutability. | RFC 7644 section 3.12 |
+| `STS-CELL-0146` | The routing index could not be asked to claim a SCIM create's login name; the create is refused 500 and nothing is written. | — |
+| `STS-CELL-0147` | An LDAP simple bind names a person homed in another cell, and that cell could not be asked to verify the password; the bind is refused LDAP_UNAVAILABLE (52), fail-closed, and not counted as a failed bind. | RFC 4511 section 4.1.9 |
 
 ## STS-SCHED
 

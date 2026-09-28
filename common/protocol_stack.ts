@@ -746,6 +746,18 @@ class ProtocolStack {
     this.build('oidfed/entity_collection',
                require('../oidfed/entity_collection'), 'EntityCollection');
     this.register(app, require('../oidfed/oidfed'), 'oidfed/oidfed');
+    // -------------------------------------------------------------------------
+    // 14c. WHICH CELL ANSWERS A KERBEROS REQUEST OVER MS-KKDCP (#98): a
+    // `POST /KdcProxy` of its own, registered JUST BEFORE the KDC is
+    // required so it runs first — it relays a request whose client is homed
+    // in another cell and calls next() for everything else, after which the
+    // KDC's own handler answers exactly as it did. The KDC is one of the
+    // parent project's locked files and cannot be given the check itself.
+    // It requires only the vendored codec (a leaf set) at load and the
+    // principal database lazily, so nothing moves and no cycle closes.
+    // -------------------------------------------------------------------------
+    require('../kerberos/krb5_home');
+    this.register(app, require('../kerberos/krb5_home'), 'kerberos/krb5_home');
     // The Kerberos KDC. Requiring it registers /KdcProxy and /krb5/principals
     // — it is one of the parent project's locked JavaScript files, which still
     // register at require (rule 1) — but NOT the raw TCP/UDP listeners on port

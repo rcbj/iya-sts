@@ -2872,3 +2872,31 @@ this JavaScript module registers `/admin/ldap/*` when required.
 every code from `STS-LDAP-0102` to `0109`, the formats, untouched neighbours,
 the observer, the view and the page. `tests/vendored/sts_person_attributes.js`
 covers the API over HTTP in a realm of its own.
+
+## CELLS: A BIND AS A PERSON HOMED IN ANOTHER CELL (#98, 2026-09-28)
+
+**The password is verified in the person's home cell and only the verdict comes
+back** (`verifyInHomeCell()`, and the `ldap-bind` inter-cell operation
+`answerCellBind()` answers). That is D2 — a traveller's credential is relayed
+to the home cell over the mutual-TLS channel — which D9 replaced for browsers
+only, because a browser flow's state lives where it started; an LDAP bind has
+no flow, and the connection (the session, RFC 4511 section 4.2) is here. The
+two alternatives and why they lost are in the code's header: a referral is a
+result almost no client chases on a bind and would publish a cell's address,
+and a local copy of the credential is the person's data outside their
+jurisdiction. The password crosses inside the channel, is compared by
+`credentials.verify()` with `door: 'ldap'` at home (second factors, app
+passwords, a disabled account — the same rules), and is stored and logged
+nowhere.
+
+Only a DN this cell holds no entry for, in multi-cell mode, is sent; a DN the
+routing index does not know is verified here as always. **What stays here**:
+the refusals before a password is read, this cell's rate-limit buckets (a
+guesser spreading across cells gets each cell's budget — said, not hidden), the
+audit rows and the connection. A bound traveller reads what any bound identity
+without a local entry may — their group memberships are resident at home, so
+they hold no role here — and **a search answers this cell's residents** (D11).
+A home cell that cannot be asked is LDAP_UNAVAILABLE (52), `STS-CELL-0147`,
+fail-closed and not counted as a failed bind. LDAP writes act on this cell's
+residents only; the console's and `/admin-api`'s `?cell=` selector is the
+cross-cell door.

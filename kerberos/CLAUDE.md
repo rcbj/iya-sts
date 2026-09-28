@@ -1514,3 +1514,52 @@ need a computer, server or managed-service account — a sAMAccountName and SPNs
 sharing ONE key, which this KDC keys apart. They are thousands of tests (the etype
 permutations, as_canonicalization, claims, PKINIT, RODC, authentication policies),
 skipped by the driver naming what each needed; the job logs the count per reason.
+
+## CELLS: A KERBEROS REQUEST IS ANSWERED AT HOME (#98, 2026-09-28)
+
+In a service deployed as cells a person is homed in one cell, and everything a
+KDC consults about them is there: the long-term keys sealed on their entry, the
+disabled flag, the second factor, the PAC's facts, and the sign-out instant —
+`signedOutAt` is a field of the `krb5.principals` row, which is CELL-tier
+(`persistence/tiers.js`). So a Kerberos request is answered in its client's home
+cell, and the request travels rather than the data (#98 §5, D2).
+
+**`krb5_home.ts` does it for MS-KKDCP**, as a `POST /KdcProxy` of its own
+registered just before `krb5_kdc.js` is required (require order 14c): it
+unframes the KDC-PROXY-MESSAGE, finds the client, relays the whole request to
+its home over the inter-cell channel, and calls `next()` for everything else —
+after which the KDC's own handler runs unchanged. The KDC is one of the parent
+project's locked files, so this is the only way to put a check in front of it
+here. It requires the vendored codec and `krb5_principals.js` and edits none of
+them; nothing in the COPY closure requires it, so **the closure is unchanged**.
+
+* **AS-REQ**: the body's `cname`, one component, in the realm's own Kerberos
+  realm. A FAST-armored AS-REQ is routed by its OUTER body — the inner cannot be
+  read before the armor key — which every client this KDC is tested against
+  copies.
+* **TGS-REQ: SERVED AT HOME, NOT WHEREVER IT ARRIVES.** The krbtgt key lives on
+  an APPLICATION entry (`krbtgt/<REALM>`, #169), the global tier, so every cell
+  CAN open a TGT, and `krb5_home.ts` does — only to read its `cname`. It is not
+  answered where it arrives because the sign-out instant, the disabled account
+  and the PAC's person are the home cell's: a TGT stamped signed out at home
+  would be honoured by a cell that never saw the stamp. An S4U2Self request is
+  routed by the PA-FOR-USER user rather than by the service asking.
+* A cross-realm ticket, a multi-component name, a service's own ticket, or a
+  message that does not decode is the KDC's to answer, where it arrived.
+
+**THE EXCEPTION: THE RAW SOCKETS ON TCP AND UDP 88 ARE NOT PLACED.** `listen()`
+in `krb5_kdc.js` starts them and hands each message to the module-private
+`handleMessage()` with no hook between the socket and the answer, and the file
+is locked. So a traveller whose `krb5.conf` names port 88 and whose packets reach
+a visiting cell is answered THERE: an unknown principal in product (their keys
+are at home), a freshly made one in development. MS-KKDCP is placed; port 88 is
+not. **What the parent project would need to add** to close it, in
+`common/krb5`'s copy of the KDC, is one exported seam — a
+`setMessageRouter(fn)` whose `fn(bytes, { transport, peer })` is awaited by
+`startTcp()` and `startUdp()` before `handleMessage()` and may answer the reply
+bytes itself (relayed, here, as an inter-cell operation that runs
+`handleMessage()` at home) or `null` to go on. `krb5_home.ts`'s `clientOf()`
+is already the decision such a router would make; the operation it would call
+does not exist yet, because nothing could reach it.
+
+Tested in process with stubbed routing and channel by `tests/cell_handlers_c.js`.
