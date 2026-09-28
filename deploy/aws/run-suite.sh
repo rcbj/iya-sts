@@ -198,6 +198,72 @@ manifestJobs() {
       .filter(function (f) { return !skip.has(f); }).join(","));'
 }
 
+# THE SUITE'S ADDRESS ON THE DEFAULT REALM'S OPERATOR ALLOW LIST (#311).
+# Every job runs from the one NAT address, and the suite refuses passwords on
+# purpose — so within minutes the risk engine's `network-failures` signal
+# (refused passwords from this network in the last hour, x3) rates every
+# first sign-in MEDIUM and asks a step-up the suite's people cannot answer
+# (STS-RISK-0017 / 0018: about a dozen jobs in the first in-AWS run). A local
+# stack sets the thresholds out of reach instead
+# (docker-compose-run-tests.yml); a deployment keeps its own, so here the
+# address is allow-listed (x0.2), rcbj's call. The NAT gateway, and so the
+# address, is new on every run, which is why this is done here rather than by
+# hand. A list somebody else made is never replaced: only one whose version
+# this script named.
+allowTheSuitesAddress() {
+  local ip="$1" token current
+  if [ -z "${ip}" ];
+  then
+    say "no egress address to allow-list"
+    return 0
+  fi
+  token="$(curl -fsS -u "sts-management-api:${CLIENT_SECRET}" \
+    -d grant_type=client_credentials \
+    --data-urlencode 'scope=admin:read admin:write' \
+    --data-urlencode "resource=${URL}/admin-api" "${URL}/oauth2/token" |
+    sed -n 's/.*"access_token":"\([^"]*\)".*/\1/p')" || true
+  if [ -z "${token}" ];
+  then
+    say "could not mint an /admin-api token to allow-list ${ip}"
+    return 0
+  fi
+  current="$(curl -fsS -H "Authorization: Bearer ${token}" \
+      "${URL}/admin-api/risk" |
+    docker run --rm -i "${TESTS_IMAGE}" node -e '
+      let t = "";
+      process.stdin.on("data", function (c) { t += c; });
+      process.stdin.on("end", function () {
+        const d = JSON.parse(t);
+        const one = (d.datasets || []).filter(function (x) {
+          return x.dataset === "iplist.operator-allow";
+        })[0] || {};
+        const active = (one.versions || []).filter(function (v) {
+          return v.state === "active" && (v.realm || "") === "default";
+        })[0];
+        process.stdout.write(active ? String(active.version) : "");
+      });')" || current=""
+  case "${current}" in
+    ""|suite-*)
+      ;;
+    *)
+      say "the default realm has an operator allow list of its own" \
+          "(${current}); not replacing it, so ${ip} is NOT allow-listed"
+      return 0
+      ;;
+  esac
+  if printf '# the in-AWS suite run %s (deploy/aws/run-suite.sh)\n%s/32\n' \
+       "${RUN_ID}" "${ip}" |
+     curl -fsS -o /dev/null -X POST -H "Authorization: Bearer ${token}" \
+       -H 'Content-Type: application/octet-stream' --data-binary @- \
+       "${URL}/admin-api/risk/upload?dataset=iplist.operator-allow&format=ip-list&realm=default&version=suite-${RUN_ID}";
+  then
+    say "${ip} is on the default realm's operator allow list" \
+        "(version suite-${RUN_ID})"
+  else
+    say "could not allow-list ${ip}; sign-ins may be asked to step up"
+  fi
+}
+
 # --- 3. the callback stack, applied while the local half runs -----------------
 APPLY_PID=""
 APPLIED=0
@@ -350,6 +416,10 @@ then
     SG="$(cb security_group_id)"
     BUCKET="$(cb reports_bucket)"
     LOG_GROUP="$(cb log_group)"
+    if [ "${IN_AWS}" = "1" ];
+    then
+      allowTheSuitesAddress "$(cb egress_ip)"
+    fi
     PEP_REALM="pep-$(date -u +%m%d%H%M%S)"
     OVERRIDES="$(RUN_ID="${RUN_ID}" PEP_REALM="${PEP_REALM}" ONLY="${TASK_JOBS}" \
       KEEP="${TASK_KEEP_REALMS}" UNPUB="${UNPUBLISHED}" \
