@@ -216,6 +216,22 @@ function create(options) {
             ? JSON.stringify(Object.assign({}, baseEntry,
                                            { attributes: baseHalves[which] }))
             : row.base;
+          // A CELL HALF THAT WAS NEVER STORED HAS NO BASE (2026-09-28,
+          // tests/vendored/sts_cells_console.js). A group whose base held no
+          // person resident here had no cell row at all — an empty half is
+          // DELETED, below — so handing the driver the base entry with an
+          // empty attribute map told its merge "this row existed and is gone
+          // from the store now": `mergeEntry(base, mine, null)` answers
+          // `deleted`, the insert was skipped, and the outcome put the group
+          // back WITHOUT the member. So the first resident member of any
+          // group in a cell — a console role granted at cell B — was dropped
+          // on the very flush that should have written it. No stored half is
+          // a base of null: `mine` is inserted, and a half another process in
+          // this cell inserted meanwhile is merged over an empty base.
+          if (which === 'cell' && baseHalves &&
+              !Object.keys(baseHalves.cell).length) {
+            out.base = null;
+          }
         }
         return out;
       };
@@ -343,6 +359,22 @@ function create(options) {
           const elsewhere = answers.filter(function (one) {
             return one && one.cell && one.cell !== cellId;
           });
+          // A RE-HOMED PERSON IS NOT A CONFLICT (2026-09-28,
+          // tests/vendored/sts_cells_rehome.js): `adopt-person` writes them
+          // here BEFORE the sending cell moves their index rows
+          // (common/cell_rehome.ts, steps 3 and 5), so a flush that lands in
+          // between finds them claimed by the cell they are leaving. That
+          // was logged as STS-CELL-0020 and counted as a conflict on every
+          // move that raced its own flush. The index moves to this cell a
+          // moment later and the next write of the entry claims it; a move
+          // whose index never follows is the sender's STS-CELL-0047.
+          if (elsewhere.length &&
+              String((row.entry && row.entry.origin) || '') === 'rehomed') {
+            log.info('cells: realm "' + row.realm + '": a person re-homed ' +
+                     'here is still indexed in cell "' + elsewhere[0].cell +
+                     '", which is moving the index to this one.');
+            return;
+          }
           if (elsewhere.length) {
             conflicts += 1;
             lastConflict = 'realm "' + row.realm + '": a person with this ' +

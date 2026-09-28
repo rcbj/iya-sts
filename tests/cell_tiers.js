@@ -325,6 +325,26 @@ async function tieredDriver(t) {
   t.check(JSON.stringify(cellGroup.entry.attributes) ===
           JSON.stringify({ member: ['uid=alice,ou=users,' + base] }),
           'the cell half of the group holds only alice');
+  // THE FIRST RESIDENT MEMBER OF A GROUP (2026-09-28): the base held none,
+  // so this cell stored no half, and the cell half is sent with NO base —
+  // the base's empty half read as "stored and deleted since", and the
+  // merge dropped the member (sts_cells_console.js).
+  const firstBase = JSON.stringify({ dn: grp.entry.dn, attributes: {
+    cn: ['admins'], member: ['cn=app,ou=applications,' + base] } });
+  await d.saveDirectory({ upserts: [Object.assign({}, grp,
+                                                  { base: firstBase })],
+                          deletes: [], removedRealms: [] });
+  const firstCell = c.calls.filter(function (x) {
+    return x.op === 'saveDirectory';
+  })[1].change.upserts[0];
+  const firstGlobal = g.calls.filter(function (x) {
+    return x.op === 'saveDirectory';
+  })[1].change.upserts[0];
+  t.check(firstCell.key === grp.key && firstCell.base === null,
+          'a group\'s first resident member goes to the cell with no base: ' +
+          'its cell half was never stored');
+  t.check(typeof firstGlobal.base === 'string',
+          'and the global half keeps its base');
   const claims = g.calls.filter(function (x) {
     return x.op === 'routeClaim';
   }).length;

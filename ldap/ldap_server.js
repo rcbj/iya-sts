@@ -13054,7 +13054,20 @@ server.bind('', function (req, res, next) {
   // to it over the inter-cell channel and only the verdict comes back —
   // `verifyInHomeCell()` argues it. Everybody else is verified here, as
   // always; single-cell mode never asks.
-  if (dn && cells.isMulti() && !getEntry(dn)) {
+  //
+  // A PROJECTION IS NOT AN ENTRY THIS CELL HOLDS (2026-09-28,
+  // tests/vendored/sts_cells_unreachable.js). A session exported here puts a
+  // credential-free copy of its person in this directory
+  // (`common/cell_sessions.ts`, origin `projection:<home>`), and asking only
+  // whether an entry exists sent a bind as that person to the local verifier
+  // — which found no `userPassword` and answered invalidCredentials: the
+  // right password was refused while the session was held here, and a home
+  // that could not be asked read as a wrong password rather than
+  // STS-CELL-0147.
+  const localEntry = dn ? getEntry(dn) : null;
+  const projected = !!localEntry && String(localEntry.origin || '')
+    .indexOf('projection') === 0;
+  if (dn && cells.isMulti() && (!localEntry || projected)) {
     req.stsAsyncOperation = true;
     // `next` from here on is called once, whichever path answers — the
     // shared limiter's arrangement above, for the same reason.
