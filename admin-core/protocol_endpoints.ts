@@ -139,6 +139,11 @@ interface ProtocolEndpointsDeps {
   authorizationServers: typeof authorizationServers;
 }
 
+/**
+ * The endpoints each page under Protocols lists as "the endpoints of this
+ * realm": one table of routes and sockets, named from `sts_metadata.ts` and
+ * with URLs computed for the ambient realm.
+ */
 class ProtocolEndpoints {
   // THE TABLE and the socket builders, built once when the instance is — by
   // the composition root, or at load for a process without one, which is
@@ -146,6 +151,13 @@ class ProtocolEndpoints {
   private readonly pagesTable: Record<string, Entry[]>;
   private readonly sockets: Record<string, SocketBuilder>;
 
+  /**
+   * Builds the table and the socket builders.
+   *
+   * @param deps - the logger, configuration, `baseUrlOf()`, realms, the
+   *   authorization servers, and the require cache and directory `loaded()`
+   *   reads
+   */
   constructor(private readonly deps: ProtocolEndpointsDeps) {
     deps.log.debug("Entering ProtocolEndpoints.constructor().");
     this.pagesTable = this.buildPages();
@@ -155,6 +167,11 @@ class ProtocolEndpoints {
 
   // What the composition root passes, from the real modules: `require.cache`
   // and this file's directory for `loaded()`, as before.
+  /**
+   * Returns the dependencies the composition root passes.
+   *
+   * @returns the production dependency set
+   */
   static defaultDeps(): ProtocolEndpointsDeps {
     helpers.log.debug("Entering ProtocolEndpoints.defaultDeps().");
     helpers.log.debug("Leaving ProtocolEndpoints.defaultDeps().");
@@ -629,6 +646,13 @@ class ProtocolEndpoints {
   // not a Protocols page in the table. An array, always, for a page that is —
   // empty is an answer (a SPIFFE realm with nothing bound, no named server).
   // ---------------------------------------------------------------------------
+  /**
+   * Lists the endpoints a Protocols page shows in the current realm.
+   *
+   * @param req - the request, for the realm's base URL
+   * @param page - the console path
+   * @returns the rows, possibly empty, or null for a page not in the table
+   */
   forPage(req, page) {
     const { log, baseUrlOf } = this.deps;
     const self = this;
@@ -668,6 +692,12 @@ class ProtocolEndpoints {
   }
 
   // The console paths this file has a row for, for the test and the API.
+  /**
+   * Returns the console paths the table has a row for, for the test and the
+   * API.
+   *
+   * @returns the paths
+   */
   pages() {
     const { log } = this.deps;
     log.debug("Entering ProtocolEndpoints.pages().");
@@ -676,6 +706,11 @@ class ProtocolEndpoints {
   }
 
   // The pages exempt from the table, and why.
+  /**
+   * Returns the Protocols pages exempt from the table, and why.
+   *
+   * @returns a copy of the exemptions by path
+   */
   exempt() {
     const { log } = this.deps;
     log.debug("Entering ProtocolEndpoints.exempt().");
@@ -702,6 +737,10 @@ const slot = new InstanceSlot<ProtocolEndpoints>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * What each Protocols page lists as the endpoints of this realm (rule 7).
+ * @namespace
+ */
 export = {
   ProtocolEndpoints: ProtocolEndpoints,
   installInstance: (instance: ProtocolEndpoints): void =>
