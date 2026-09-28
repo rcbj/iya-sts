@@ -687,6 +687,34 @@ class CellPlacement {
     };
   }
 
+  // The serve policy's answer for relaying a person's request home from here
+  // (D4). A refusal is answered here — 403 with the policy's reason — and
+  // the caller treats the request as handled.
+  static servePermitted(realmId: string, home: string, res: any): boolean {
+    log.debug("Entering CellPlacement.servePermitted().");
+    let answer: any = { allowed: true, relay: true, why: '' };
+    try {
+      answer = require('./cell_transfer').serveDecision({
+        realm: realmId, subject: '', homeCell: home,
+        servingCell: cells.id() });
+    } catch (e) {
+      log.debug("Caught in CellPlacement.servePermitted(): " +
+                ((e && e.message) || e));
+      answer = { allowed: false, relay: false,
+                 why: 'the serve policy could not be asked' };
+    }
+    if (answer && answer.allowed) {
+      log.debug("Leaving CellPlacement.servePermitted(). Allowed.");
+      return true;
+    }
+    errorCodes.mark(res, errorCodes.codeOf(answer) || 'STS-CELL-0183');
+    res.status(403).type('text/plain')
+      .send('This service cannot be used for this account from where the ' +
+            'request was made.\n');
+    log.debug("Leaving CellPlacement.servePermitted(). Refused.");
+    return false;
+  }
+
   // The release policy's answer for a request another cell selected this one
   // for (D11). No decision available is a refusal.
   static releasePermitted(req: any): boolean {
@@ -843,6 +871,12 @@ class CellPlacement {
       .then(function (home: string) {
         if (!home || home === cells.id() || !cells.get(home)) {
           return false;
+        }
+        // A HARD GEOFENCE (#98 D4, `cells.hardGeofence`): a realm whose law
+        // forbids even carrying the traffic refuses here rather than
+        // relaying. The policy decides (`cell_transfer.ts`).
+        if (!CellPlacement.servePermitted(realmId, home, res)) {
+          return true;
         }
         self.relayed += 1;
         return require('./cell_channel').relay(req, res, home, {

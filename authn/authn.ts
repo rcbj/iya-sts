@@ -10374,6 +10374,13 @@ class Authn {
         const home = await cellRouting.homeOf(realms.currentId(), 'name',
                                               username);
         if (home && home !== cells.id() && cells.get(home)) {
+          // A hard geofence refuses rather than restarting at home (D4).
+          if (!cellPlacement.CellPlacement.servePermitted(realms.currentId(),
+                                                          home, res)) {
+            pending.delete(record.id);
+            log.debug("Leaving the authentication endpoint. Geofenced.");
+            return undefined;
+          }
           await this.restartAtHome(req, res, record, home);
           log.debug("Leaving the authentication endpoint. Restarted at " +
                     "home.");
