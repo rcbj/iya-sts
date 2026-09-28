@@ -229,7 +229,18 @@ const STATUS_INVALID = WST_NS + '/status/invalid';
 const NOT_A_CREDENTIAL = ['OnBehalfOf', 'ActAs', 'RenewTarget',
                           'ValidateTarget', 'CancelTarget'];
 
+/**
+ * WS-Trust 1.0 to 1.4: the SOAP RequestSecurityToken endpoint at `/sts`,
+ * dispatching on the request type (Issue, Renew, Validate, Cancel), and
+ * everything that reads or writes an RST.
+ */
 class WsTrust {
+  /**
+   * Builds an instance over what it depends on.
+   *
+   * @param deps - the helpers, settings, crypto, the assertion builders, the
+   * registers, the issuance gate and the delegation policy, among others
+   */
   constructor(private readonly deps: WsTrustDeps) {
     deps.log.debug("Entering WsTrust.constructor().");
     deps.log.debug("Leaving WsTrust.constructor().");
@@ -237,6 +248,11 @@ class WsTrust {
 
   // What the composition root passes: the deps the module built its
   // own instance from before R2, from the same imports.
+  /**
+   * Answers the real modules the composition root passes to the constructor.
+   *
+   * @returns the dependencies of a default instance
+   */
   static defaultDeps(): WsTrustDeps {
     helpers.log.debug("Entering WsTrust.defaultDeps().");
     helpers.log.debug("Leaving WsTrust.defaultDeps().");
@@ -272,6 +288,12 @@ class WsTrust {
 
   // The work loading this module did with its own instance before R2,
   // run once for whichever instance is installed.
+  /**
+   * Runs the startup check once for the installed instance: whether the two
+   * issuer names agree.
+   *
+   * @param instance - the instance being installed
+   */
   static wire(instance: WsTrust): void {
     helpers.log.debug("Entering WsTrust.wire().");
     instance.warnAtStartup();
@@ -281,6 +303,11 @@ class WsTrust {
   // -------------------------------------------------------------------------
   // THE ROUTES, in the order this module has always registered them.
   // -------------------------------------------------------------------------
+  /**
+   * Registers `GET /sts/cert`, `GET /sts` and `POST /sts`.
+   *
+   * @param app - the shared express app
+   */
   registerRoutes(app: RouteRegistrar): void {
     const { log } = this.deps;
     log.debug("Entering WsTrust.registerRoutes().");
@@ -367,6 +394,19 @@ class WsTrust {
   // authnContextOf() — and is written into a SAML assertion's AuthnStatement.
   // It is optional so an existing caller of this export gets `unspecified`,
   // which is the builder's default and overstates nothing.
+  /**
+   * Builds the token that goes inside `wst:RequestedSecurityToken`: a signed
+   * SAML 2.0 assertion, or a JWT in a BinarySecurityToken when the token type
+   * asks for one.
+   *
+   * @param tokenType - the requested token type
+   * @param subject - the subject
+   * @param audience - the audience
+   * @param lifetimeMin - the lifetime in minutes
+   * @param authnContextClassRef - how the requester authenticated; unspecified
+   * when absent
+   * @returns the token's XML, its reference, its token type and its id
+   */
   buildToken(tokenType, subject, audience, lifetimeMin,
                       authnContextClassRef) {
     const { buildSamlAssertion, authnContext, log, xmlEscape } = this.deps;
@@ -432,6 +472,16 @@ class WsTrust {
   // the faultcode below." So on 1.1 it REPLACES `soap:Client` as the
   // faultcode, and on 1.2 it is the Subcode under `soap:Sender`. Without it
   // the fault is the generic one every other refusal here still sends.
+  /**
+   * Builds a SOAP Fault for the request's SOAP version, qualified with a
+   * WS-Trust 1.4 section 11 fault code when one is given.
+   *
+   * @param version - the SOAP version, `1.1` or `1.2`
+   * @param reason - the fault's reason
+   * @param trustFault - a WS-Trust fault code, such as `RequestFailed`
+   * @param trustNs - the trust namespace to qualify it with, the request's own
+   * @returns the SOAP envelope
+   */
   // error-code: none — the definition of the helper, not a call to it
   soapFault(version, reason, trustFault?, trustNs?) {
     const { log, xmlEscape } = this.deps;
@@ -578,6 +628,15 @@ class WsTrust {
   // accepting any certificate in the document's own KeyInfo would be accepting
   // any assertion at all.
   // ---------------------------------------------------------------------------
+  /**
+   * Checks a SAML assertion presented to this STS, as a credential or inside
+   * OnBehalfOf or ActAs: its signature against this realm's own signing
+   * certificate, its conditions within `oauth2.clockSkewS`, and a subject.
+   *
+   * @param assertion - the assertion element
+   * @param what - what it was presented as, for the refusal
+   * @returns `{ ok, subject }`, or `{ ok: false, errorCode, … }`
+   */
   checkedAssertion(assertion, what) {
     const { stsCrypto, config, log, STS, firstByLocal } = this.deps;
     log.debug("Entering WsTrust.checkedAssertion(). what=" + what);
@@ -1008,6 +1067,17 @@ class WsTrust {
     return authnContext.AC_UNSPECIFIED;
   }
 
+  /**
+   * Handles one RequestSecurityToken: parses the SOAP body, authenticates the
+   * requester, decides delegation and issuance, and answers the RSTR or a SOAP
+   * Fault. Never throws on a malformed body.
+   *
+   * @param rawBody - the request body
+   * @param contentType - the request's content type
+   * @param options - `encrypt`, to encrypt an issued assertion
+   * @returns the HTTP status, the SOAP version, the envelope body and, where
+   * issued, the sign-in to record
+   */
   handleRst(rawBody, contentType, options) {
     const {
       config, validation, encryptAssertion, applications, gate, delegation,
@@ -1692,6 +1762,12 @@ class WsTrust {
   // rather than reconciled, because making one follow the other would take away
   // the split.
   // ---------------------------------------------------------------------------
+  /**
+   * Reports whether the two names this STS signs under disagree:
+   * `wstrust.issuer` for a JWT and `saml.issuer` for a SAML assertion.
+   *
+   * @returns the sentence saying they disagree, or '' when they agree
+   */
   issuerDisagreement() {
     const { config, log } = this.deps;
     log.debug("Entering WsTrust.issuerDisagreement().");
@@ -1844,6 +1920,10 @@ class WsTrust {
 
   // The startup half of issuerDisagreement(), once, for the process-wide
   // values.
+  /**
+   * Logs once at startup, for the process-wide values, when the two issuer
+   * names disagree.
+   */
   warnAtStartup(): void {
     const { log } = this.deps;
     log.debug("Entering WsTrust.warnAtStartup().");
@@ -1878,10 +1958,23 @@ const slot = new InstanceSlot<WsTrust>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * WS-Trust 1.0 to 1.4: the RequestSecurityToken endpoint, and the functions
+ * that build and check what goes in and out of it.
+ * @namespace
+ */
 export = {
   registerRoutes: slot.forward('registerRoutes'),
   WsTrust: WsTrust,
+  /**
+   * Installs the instance the composition root built and runs its
+   * wire step; a second install is refused.
+   */
   installInstance: (instance: WsTrust): void => slot.install(instance),
+  /**
+   * Says where the instance in use came from: `root`, `default` or
+   * `none`.
+   */
   instanceOrigin: (): string => slot.origin(),
   handleRst: slot.forward('handleRst'),
   issuerDisagreement: slot.forward('issuerDisagreement'),
