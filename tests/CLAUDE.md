@@ -3586,17 +3586,32 @@ note where it was:
 
 **THREE THINGS THE JOBS HAD TO WAIT FOR, AND WHY EACH IS A BOUND NOT A
 SLEEP**: a realm, an application or a setting written at one cell reaches the
-other through the global change log's pull; a person's routing-index rows are
-written when their home cell's store is FLUSHED, a moment after the creation
-answers (a sign-in elsewhere before then finds nobody to send home); and a
-revocation home pushes is a durable delivery. Each is `until()` with its
+other through the global change log's pull; a person's entryUUID row in the
+routing index (what `peopleIn()` counts) is written when their home cell's
+store is FLUSHED, a moment after the creation answers; and a revocation home
+pushes is a durable delivery. The LOGIN NAME is not among them since
+2026-09-28: the home cell claims it before the creation answers, relayed or
+not, so a sign-in may follow at once and `sts_cells_traveller.js` does.
+Before that a sign-in in the half second after a relayed creation was
+answered at the wrong cell. Each is `until()` with its
 bound in the failure.
 
 **What this mode does not cover yet**: raw Kerberos on port 88 at cell B
 (the KDC's socket code is not placed yet — rcbj/id-proto-debugger#317), the
-full suite at cell B — every other job talks to cell A — and a cell that is
-DOWN as a process rather than cut off by the link (what a caller sees is the
-same refused connection). The service log of cell B is
+full suite through cell B as a routine run, and a cell that is DOWN as a
+process rather than cut off by the link (what a caller sees is the same
+refused connection).
+
+**THE WHOLE SUITE THROUGH CELL B**: `STS_TEST_CELLS_ENTRY=b ./run-tests.sh
+--modes=cells` maps the public name `sts` to cell B in the RUNNER's
+`/etc/hosts` only (the layer's `extra_hosts`), which is what a client in
+cell B's region sees through the geolocation record. Every job then enters
+at cell B; the cells keep their own names, so cell A still reaches cell B as
+`sts2` through the link. What still goes to cell A by ADDRESS rather than by
+name: the SPIFFE jobs (`STS_SPIFFE_GRPC_HOST`) and the peer containers
+(SAML, conformance), which resolve `sts` in their own containers. It writes
+the same `report/cells/` as an entry-A run. The default, `a`, is what the
+mode always did. The service log of cell B is
 `logs/00-mock-sts-service-cell-b.log`.
 
 ## APPLICATION CREDENTIALS: THE PAIR, AND THE SPLIT (2026-09-13)

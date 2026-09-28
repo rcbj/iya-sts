@@ -194,6 +194,15 @@ services:
       # The switch on the link cell A dials cell B through
       # (sts_cells_unreachable.js).
       - STS_TEST_CELL_LINK_URL=http://sts-cell-link:8447
+      - STS_TEST_CELLS_ENTRY=${STS_TEST_CELLS_ENTRY:-a}
+    # WHICH CELL THE PUBLIC NAME REACHES, FOR THE RUNNER ONLY. A client in
+    # another region reaches the one public name at ITS cell (Route 53's
+    # geolocation record in deploy/aws), so `STS_TEST_CELLS_ENTRY=b` maps
+    # `sts` to cell B here and nowhere else: every job, the whole suite,
+    # enters at cell B while both cells, the peers and the link keep their
+    # own names. The default maps it to cell A, which is what it already was.
+    extra_hosts:
+      - "sts:${STS_TEST_ENTRY_ADDRESS:-172.30.0.10}"
     depends_on:
       sts2:
         condition: service_healthy

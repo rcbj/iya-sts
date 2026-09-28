@@ -814,6 +814,16 @@ STS_NETWORK_BITS="${STS_NETWORK_SUBNET##*/}"
 STS_NETWORK_PREFIX="${STS_NETWORK_SUBNET%/*}"
 STS_NETWORK_PREFIX="${STS_NETWORK_PREFIX%.*}"
 STS_SERVICE_ADDRESS="${STS_NETWORK_PREFIX}.10"
+# The `cells` mode's entry cell (#98): refused here, before any stack starts,
+# rather than when the mode is reached after the others have run.
+case "${STS_TEST_CELLS_ENTRY:-a}" in
+  a|b) ;;
+  *)
+    echo "run-tests.sh: STS_TEST_CELLS_ENTRY must be a or b, not" \
+         "'${STS_TEST_CELLS_ENTRY}'." >&2
+    exit 2
+    ;;
+esac
 STS_SERVICE_EXTRA_IPS="${STS_NETWORK_PREFIX}.11/${STS_NETWORK_BITS}"
 STS_SERVICE_EXTRA_IPS="${STS_SERVICE_EXTRA_IPS} ${STS_NETWORK_PREFIX}.12/${STS_NETWORK_BITS}"
 STS_SERVICE_EXTRA_IPS="${STS_SERVICE_EXTRA_IPS} ${STS_NETWORK_PREFIX}.13/${STS_NETWORK_BITS}"
@@ -1771,6 +1781,12 @@ do
       # `sts-cell-link`), pinned because cell A's /etc/hosts names it.
       "STS_CELL_LINK_ADDRESS=${STS_NETWORK_PREFIX}.21"
     )
+    # Which cell the runner's `sts` is (the layer's `extra_hosts`):
+    # STS_TEST_CELLS_ENTRY=b sends the whole suite in through cell B.
+    case "${STS_TEST_CELLS_ENTRY:-a}" in
+      a) MODE_ENV+=("STS_TEST_ENTRY_ADDRESS=${STS_SERVICE_ADDRESS}") ;;
+      b) MODE_ENV+=("STS_TEST_ENTRY_ADDRESS=${STS_NETWORK_PREFIX}.20") ;;
+    esac
   fi
 
   # ---- A PRODUCT-MODE MODE: WHAT A DEPLOYMENT IS GIVEN (2026-09-21) ------
