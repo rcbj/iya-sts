@@ -91,6 +91,8 @@ const ROWS: Row[] = [
   // --- served where it arrives: the same answer in every cell ---
   { prefix: '/', exact: true, strategy: 'local',
     why: 'the front door is the same page in every cell' },
+  { prefix: '*', exact: true, strategy: 'local',
+    why: 'the unrouted path: a 404 is the same answer in every cell' },
   { prefix: '/healthcheck', strategy: 'local',
     why: 'each cell answers for itself; a balancer health check must' },
   { prefix: '/.well-known', strategy: 'local',
@@ -354,15 +356,17 @@ class CellPlacement {
     log.debug("Leaving CellPlacement.constructor().");
   }
 
-  // A named authorization server lives under `/{id}/oauth2/…` and
-  // `/{id}/gnap…`; it is placed as the default one is.
+  // A named authorization server lives under `/{id}/oauth2/…`,
+  // `/{id}/gnap…` and `/{id}/.well-known/…`; it is placed as the default one
+  // is.
   static canonicalPath(path: string): string {
     log.debug("Entering CellPlacement.canonicalPath().");
     const text = String(path || '/');
-    const m = /^\/[^/]+(\/(?:oauth2|gnap)(?:\/.*)?)$/.exec(text);
+    const m = /^\/[^/]+(\/(?:oauth2|gnap|\.well-known)(?:\/.*)?)$/
+      .exec(text);
     log.debug("Leaving CellPlacement.canonicalPath().");
-    return m && text.indexOf('/oauth2') !== 0 && text.indexOf('/gnap') !== 0
-      ? m[1] : text;
+    return m && text.indexOf('/oauth2') !== 0 && text.indexOf('/gnap') !== 0 &&
+      text.indexOf('/.well-known') !== 0 ? m[1] : text;
   }
 
   /**
