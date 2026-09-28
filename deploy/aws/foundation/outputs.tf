@@ -50,3 +50,8 @@ output "ci_user_name" {
   description = "GitHub Actions' IAM user. Create its key by hand: aws iam create-access-key --user-name <this>"
   value       = aws_iam_user.ci.name
 }
+
+output "inside_zone_ids" {
+  description = "The private zone per public name (dns_inside.tf), which an environment's VPC is associated with so its nodes reach the load balancer by the public name."
+  value       = { for n, z in aws_route53_zone.inside : n => z.zone_id }
+}

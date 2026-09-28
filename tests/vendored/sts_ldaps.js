@@ -303,7 +303,16 @@ async function test() {
       "so a difference means two listeners disagreeing about who this " +
       "service is.");
   });
-  if (nodes > 1) {
+  // ONE SUPPLIED CERTIFICATE ON EVERY NODE (#311): a deployment with a public
+  // name serves the same leaf everywhere (testidp's ACM certificate), so the
+  // leaf cannot tell the nodes apart and this proxy for "every node answered"
+  // does not apply; sts_cluster_alternation asks that question directly. The
+  // launcher says so with STS_TEST_SHARED_LEAF.
+  if (nodes > 1 && process.env.STS_TEST_SHARED_LEAF === "1") {
+    log.info("  [skip] every node presents the one supplied certificate " +
+             "(STS_TEST_SHARED_LEAF), so the leaf cannot show that each " +
+             "node answered; sts_cluster_alternation checks that");
+  } else if (nodes > 1) {
     check("and each of the " + nodes + " nodes answered both ports",
           function () {
       assert.strictEqual(onHttps.length, nodes,

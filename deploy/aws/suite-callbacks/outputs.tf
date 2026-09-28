@@ -21,6 +21,11 @@ output "security_group_id" {
   value       = aws_security_group.callbacks.id
 }
 
+output "subnet_cidr" {
+  description = "The task's subnet: where it reaches the load balancer from when the public name resolves inside the VPC (environment/dns.tf)."
+  value       = aws_subnet.callbacks.cidr_block
+}
+
 output "egress_ip" {
   description = "The NAT address the task reaches the load balancer from."
   value       = aws_eip.callbacks.public_ip

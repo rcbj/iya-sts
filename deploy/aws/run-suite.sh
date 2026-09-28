@@ -211,7 +211,10 @@ manifestJobs() {
 # hand. A list somebody else made is never replaced: only one whose version
 # this script named.
 allowTheSuitesAddress() {
-  local ip="$1" token current
+  # The NAT address, and the task's subnet: where the environment answers its
+  # public name inside the VPC (environment/dns.tf), the task arrives from
+  # there instead.
+  local ip="$*" token current
   if [ -z "${ip}" ];
   then
     say "no egress address to allow-list"
@@ -251,8 +254,8 @@ allowTheSuitesAddress() {
       return 0
       ;;
   esac
-  if printf '# the in-AWS suite run %s (deploy/aws/run-suite.sh)\n%s/32\n' \
-       "${RUN_ID}" "${ip}" |
+  if { printf '# the in-AWS suite run %s (deploy/aws/run-suite.sh)\n' \
+       "${RUN_ID}"; printf '%s\n' "$@"; } |
      curl -fsS -o /dev/null -X POST -H "Authorization: Bearer ${token}" \
        -H 'Content-Type: application/octet-stream' --data-binary @- \
        "${URL}/admin-api/risk/upload?dataset=iplist.operator-allow&format=ip-list&realm=default&version=suite-${RUN_ID}";
@@ -418,7 +421,7 @@ then
     LOG_GROUP="$(cb log_group)"
     if [ "${IN_AWS}" = "1" ];
     then
-      allowTheSuitesAddress "$(cb egress_ip)"
+      allowTheSuitesAddress "$(cb egress_ip)/32" "$(cb subnet_cidr)"
     fi
     PEP_REALM="pep-$(date -u +%m%d%H%M%S)"
     OVERRIDES="$(RUN_ID="${RUN_ID}" PEP_REALM="${PEP_REALM}" ONLY="${TASK_JOBS}" \

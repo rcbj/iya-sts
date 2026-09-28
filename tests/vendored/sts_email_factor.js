@@ -577,7 +577,10 @@ async function test() {
   if (!MAILPIT) {
     skip("sections 1-3", "MAILPIT_API_URL is not set, so there is no mail " +
          "catcher to deliver to (an AWS target or the coverage run)");
-    assert.ok(checks >= 7, "only " + checks + " checks ran");
+    // SIX: section 0's checks, every one unconditional. It read seven and
+    // this path had never run — a local stack always has the catcher — until
+    // the first in-AWS run reached it (#311).
+    assert.ok(checks >= 6, "only " + checks + " checks ran");
     log.info("Test completed successfully.");
     log.debug("Leaving test().");
     return;

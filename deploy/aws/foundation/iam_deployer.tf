@@ -504,6 +504,26 @@ data "aws_iam_policy_document" "deploy_network" {
     resources = local.ses_identity_arns
   }
 
+  # THE PRIVATE ZONE PER PUBLIC NAME (#311, dns_inside.tf): an environment
+  # associates its VPC with it and writes its record there. This zone's ARN
+  # only — never a create or a delete of any zone.
+  statement {
+    sid = "Route53TheInsideZones"
+    actions = [
+      "route53:GetHostedZone", "route53:ListResourceRecordSets",
+      "route53:ListTagsForResource", "route53:ChangeResourceRecordSets",
+      "route53:AssociateVPCWithHostedZone",
+      "route53:DisassociateVPCFromHostedZone",
+    ]
+    resources = [for z in aws_route53_zone.inside : z.arn]
+  }
+
+  statement {
+    sid       = "Route53ListZonesByVpc"
+    actions   = ["route53:ListHostedZonesByVPC"]
+    resources = ["*"]
+  }
+
   statement {
     sid       = "Route53WaitForChanges"
     actions   = ["route53:GetChange"]

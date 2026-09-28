@@ -581,16 +581,18 @@ async function theClusterAgrees() {
     log.debug("Leaving theClusterAgrees(). One node.");
     return;
   }
-  log.info("=== 6. two nodes agree, and hand over ===");
+  // EVERY node, not two (#311): the AWS environments run three, and
+  // STS_TEST_CLUSTER_NODES says how many; the local cluster mode sets 2.
+  log.info("=== 6. " + EXPECTED_NODES + " nodes agree, and hand over ===");
   const seen = {};
   const answers = [];
-  for (let i = 0; i < 16; i++) {
+  for (let i = 0; i < 8 * EXPECTED_NODES; i++) {
     const r = await report();
     seen[r.answeredBy.node] = true;
     answers.push(r);
   }
-  check("both nodes answered through the balancer", function () {
-    assert.strictEqual(Object.keys(seen).length, 2,
+  check("every node answered through the balancer", function () {
+    assert.strictEqual(Object.keys(seen).length, EXPECTED_NODES,
                        JSON.stringify(Object.keys(seen)));
   });
   check("and every answer names the same leader", function () {
