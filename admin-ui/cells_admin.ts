@@ -43,6 +43,7 @@ import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 import cells = require('../common/cells');
 import realms = require('../common/realms');
+import errorCodes = require('../common/error_codes');
 
 type Req = any;
 type Res = any;
@@ -418,8 +419,9 @@ class CellsAdmin {
                       admin.messagesOf(req) + self.html(both[0], both[1]));
         log.debug('Leaving GET ' + PAGE + '.');
       }, function (err: any) {
-        log.error('cells: ' + PAGE + ' could not be drawn: ' +
-                  ((err && err.message) || err));
+        log.error(errorCodes.tag('STS-CELL-0190') + 'cells: ' + PAGE +
+                  ' could not be drawn: ' + ((err && err.message) || err));
+        errorCodes.mark(res, 'STS-CELL-0190');
         res.status(500).type('text/plain').send('The cell map could not ' +
                                                 'be read.\n');
       });

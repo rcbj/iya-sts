@@ -2465,6 +2465,7 @@ class AdminApi {
           }, function (e) {
             log.debug("Caught in the management API cells endpoint: " +
                       ((e && e.message) || e));
+            errorCodes.mark(res, 'STS-CELL-0191');
             self.sendJson(res, 500, { error: 'server_error',
                                       error_description: String(
                                         (e && e.message) || e) });

@@ -1265,6 +1265,33 @@ class Scheduler {
   }
 
   // -------------------------------------------------------------------------
+  // THE SCOPE A RUN IS CLAIMED UNDER (#98). A cluster job claims its run in
+  // its own cell's database; a job whose work is the GLOBAL tier's
+  // (`persistence/tiers.js`, GLOBAL_JOBS) claims it under the global run
+  // scope when the service is deployed as cells, which the tiered driver
+  // keeps in the global database — so one cell runs each slot rather than
+  // every cell rotating the same key. Required lazily: the scheduler is a
+  // library loaded before the cells are.
+  // -------------------------------------------------------------------------
+  private runScopeOf(job: JobSpec): string {
+    const { log } = this.deps;
+    log.debug("Entering Scheduler.runScopeOf().");
+    const tiers = require('../persistence/tiers');
+    let multi = false;
+    try {
+      multi = require('../common/cells').isMulti();
+    } catch (e) {
+      log.debug("Caught in Scheduler.runScopeOf(): " +
+                (((e as Json) && (e as Json).message) || e));
+    }
+    const scope = multi && tiers.isGlobalJob(job.id) ?
+      tiers.GLOBAL_RUN_SCOPE :
+      RUN_SCOPE;
+    log.debug("Leaving Scheduler.runScopeOf(). " + scope);
+    return scope;
+  }
+
+  // -------------------------------------------------------------------------
   // ONE ATTEMPT AT ONE RUN: claim it, write it running with the claim's time
   // as its fence, run it with a time limit, and write the outcome only if
   // the fence still stands. Not awaited by the tick: a slow job does not
@@ -1282,7 +1309,8 @@ class Scheduler {
     // Held while the claim is being asked, so the next tick does not ask too.
     this.inFlight.set(row.runId, { fence: 0, realm: realmId,
                                    timedOut: false, asking: true });
-    claims.claim({ scope: RUN_SCOPE, value: row.runId, realm: realmId,
+    claims.claim({ scope: this.runScopeOf(job), value: row.runId,
+                   realm: realmId,
                    ttlMs: timeoutMs + 1000 }).then(function (answer: Json) {
       if (!answer.ok) {
         self.inFlight.delete(row.runId);

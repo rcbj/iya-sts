@@ -371,6 +371,55 @@ const CELL_MINTED = [
 // must not be refused as unclassified when a test runs the tiered driver.
 const CELL_PREFIXES = ['enrollment_monitor.', 'test.'];
 
+// ---------------------------------------------------------------------------
+// THE SCHEDULER JOBS THAT ACT ON GLOBAL STATE (#98). A cluster job runs once
+// per cluster, and a cell IS a cluster — so a job whose work is the global
+// tier's (rotating a realm's signing keys, the krbtgt key, a SPIFFE authority,
+// the OpenID Federation key; expiring a client secret; purging the global
+// used-assertion history) would run once PER CELL if its run were claimed in
+// the cell's database. Their runs are claimed in the global tier instead,
+// under `GLOBAL_RUN_SCOPE`, so exactly one cell runs each slot. Every other
+// job's work is what its own cell holds, and it runs in every cell.
+// ---------------------------------------------------------------------------
+const GLOBAL_JOBS = [
+  'signing.rotate', 'signing.retire', 'signing.rotate-now',
+  'krb5.krbtgt-rotate', 'krb5.krbtgt-rotate-now',
+  'oidfed.key-rotate', 'oidfed.key-rotate-now', 'oidfed.collection-crawl',
+  'oidfed.registrations-expire', 'federation.encryption-key-retire',
+  'spiffe.authority-rotation', 'spiffe.sigstore-tuf-refresh',
+  'oauth2.client-secret-expiry', 'oauth2.used-assertion-purge',
+  'saml2.sp-metadata-refresh', 'ssf.stream-maintenance', 'ssf.foreign-poll'
+];
+// The claim scope a global job's run is claimed under.
+const GLOBAL_RUN_SCOPE = 'scheduler.run.global';
+// The claim scopes kept in the global tier.
+const GLOBAL_CLAIM_SCOPES = [GLOBAL_RUN_SCOPE];
+
+/**
+ * Tells whether a scheduler job's work is the global tier's.
+ *
+ * @param id - the job id
+ * @returns true for a job whose run is claimed in the global tier
+ */
+function isGlobalJob(id) {
+  log.debug("Entering isGlobalJob().");
+  log.debug("Leaving isGlobalJob().");
+  return GLOBAL_JOBS.indexOf(String(id || '')) >= 0;
+}
+
+/**
+ * Decides which tier a cluster claim is kept in.
+ *
+ * @param scope - the claim's scope
+ * @returns 'global' or 'cell'
+ */
+function claimTierOf(scope) {
+  log.debug("Entering claimTierOf().");
+  log.debug("Leaving claimTierOf().");
+  return GLOBAL_CLAIM_SCOPES.indexOf(String(scope || '')) >= 0 ? 'global'
+                                                                : 'cell';
+}
+
 /**
  * Decides which tier a minted store is kept in.
  *
@@ -434,5 +483,9 @@ module.exports = {
   GLOBAL_MINTED: GLOBAL_MINTED,
   CELL_MINTED: CELL_MINTED,
   CELL_PREFIXES: CELL_PREFIXES,
-  MEMBER_ATTRIBUTES: MEMBER_ATTRIBUTES
+  MEMBER_ATTRIBUTES: MEMBER_ATTRIBUTES,
+  GLOBAL_JOBS: GLOBAL_JOBS,
+  GLOBAL_RUN_SCOPE: GLOBAL_RUN_SCOPE,
+  isGlobalJob: isGlobalJob,
+  claimTierOf: claimTierOf
 };

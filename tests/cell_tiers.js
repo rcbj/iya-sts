@@ -181,6 +181,22 @@ function stubDriver(name) {
       return Promise.resolve([]);
     },
     purgeMinted: function () { return Promise.resolve(1); },
+    claimOnce: function (scope) {
+      calls.push({ op: 'claimOnce', scope: scope });
+      return Promise.resolve({ ok: true });
+    },
+    releaseClaim: function (scope) {
+      calls.push({ op: 'releaseClaim', scope: scope });
+      return Promise.resolve(true);
+    },
+    claimHeld: function (scope) {
+      calls.push({ op: 'claimHeld', scope: scope });
+      return Promise.resolve(false);
+    },
+    purgeClaims: function () {
+      calls.push({ op: 'purgeClaims' });
+      return Promise.resolve(2);
+    },
     purgeTombstones: function () { return Promise.resolve(1); },
     changeRowsWritten: function () { return 2; },
     adoptOrigin: function () {
@@ -219,6 +235,41 @@ function stubDriver(name) {
   };
   log.debug("Leaving stubDriver().");
   return stub;
+}
+
+// A job whose work is the global tier's claims its run there, so one cell
+// runs each slot rather than every cell rotating the same key; every other
+// claim stays in the cell's own database.
+async function globalJobs(t) {
+  log.debug("Entering globalJobs().");
+  t.check(tiers.isGlobalJob('signing.rotate') &&
+          tiers.isGlobalJob('krb5.krbtgt-rotate') &&
+          !tiers.isGlobalJob('mail.deliver'),
+          'a key rotation is a global job, a mail delivery is not');
+  t.equal(tiers.claimTierOf(tiers.GLOBAL_RUN_SCOPE), 'global',
+          'the global run scope is kept in the global tier');
+  t.equal(tiers.claimTierOf('scheduler.run'), 'cell',
+          'an ordinary run is claimed in the cell');
+  const g = stubDriver('global');
+  const c = stubDriver('cell');
+  const d = tiered.create({ global: g, cell: c, cellId: 'usw2',
+                            digest: function (realm, kind, value) {
+                              return kind + ':' + value;
+                            } });
+  await d.claimOnce(tiers.GLOBAL_RUN_SCOPE, '', 'k', {});
+  await d.releaseClaim(tiers.GLOBAL_RUN_SCOPE, '', 'k', 'r');
+  await d.claimOnce('scheduler.run', '', 'k', {});
+  const scopes = function (s) {
+    return s.calls.filter(function (x) {
+      return x.op === 'claimOnce' || x.op === 'releaseClaim';
+    }).map(function (x) { return x.scope; }).join(',');
+  };
+  t.equal(scopes(g), tiers.GLOBAL_RUN_SCOPE + ',' + tiers.GLOBAL_RUN_SCOPE,
+          'a global run is claimed and released in the global database');
+  t.equal(scopes(c), 'scheduler.run',
+          'an ordinary run is claimed in the cell\'s database');
+  t.equal(await d.purgeClaims(), 4, 'expired claims are purged in both');
+  log.debug("Leaving globalJobs().");
 }
 
 async function tieredDriver(t) {
@@ -372,6 +423,7 @@ async function run(t) {
   everyClassified(t);
   directory(t);
   await tieredDriver(t);
+  await globalJobs(t);
   sealing(t);
   log.debug("Leaving run().");
 }

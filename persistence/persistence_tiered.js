@@ -498,6 +498,26 @@ function create(options) {
     }
   });
 
+  // A CLAIM GOES WHERE ITS SCOPE SAYS (`tiers.claimTierOf()`): a global
+  // scheduler job's run is claimed in the global tier, so one cell runs it.
+  ['claimOnce', 'releaseClaim', 'claimHeld'].forEach(function (key) {
+    driver[key] = function (scope) {
+      log.debug("Entering tiered " + key + "().");
+      const target = tiers.claimTierOf(scope) === 'global' ? globalDriver
+                                                           : cellDriver;
+      log.debug("Leaving tiered " + key + "().");
+      return target[key].apply(target, arguments);
+    };
+  });
+  driver.purgeClaims = function () {
+    log.debug("Entering tiered purgeClaims().");
+    log.debug("Leaving tiered purgeClaims().");
+    return Promise.all([globalDriver.purgeClaims(),
+                        cellDriver.purgeClaims()]).then(function (both) {
+      return (Number(both[0]) || 0) + (Number(both[1]) || 0);
+    });
+  };
+
   driver.open = function () {
     log.debug("Entering tiered open().");
     log.debug("Leaving tiered open().");

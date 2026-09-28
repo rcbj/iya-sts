@@ -123,10 +123,12 @@ async function run(t) {
           '2026-09-13, when a remote XACML PEP\'s HTTPS listener was given ' +
           'an authority of its realm\'s own');
   t.equal(process.issuing.map(function (one) { return one.id; }).join(','),
-          'tls',
-          'and the PROCESS branch carries the one whose key is shared by ' +
+          'tls,cell',
+          'and the PROCESS branch carries the two whose keys are shared by ' +
           'every realm — a realm\'s Intermediate signing the TLS certificate ' +
-          'would be one realm vouching for every other realm\'s front door');
+          'would be one realm vouching for every other realm\'s front door. ' +
+          'The second arrived 2026-09-28 (#98): the inter-cell channel\'s ' +
+          'certificates, which name a CELL, and a cell is no realm\'s');
   t.check(a.issuing.every(function (one) { return one.built; }) &&
           process.issuing.every(function (one) { return one.built; }),
           'every Issuing CA in every scope is built, because a branch is ' +

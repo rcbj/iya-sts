@@ -1775,6 +1775,15 @@ const CODES = [
       'or a management-API call relayed with ?cell=): the issuance policy ' +
       'answered release-attributes with withhold (#98 D11).',
     spec: '' },
+  { code: 'STS-CELL-0190',
+    summary: 'Server configuration -> Cells (/admin/cells) could not be ' +
+      'drawn: the cell map or its peers could not be read; the page answers ' +
+      '500 and the reason is logged.',
+    spec: '' },
+  { code: 'STS-CELL-0191',
+    summary: 'GET /admin-api/cells could not read the cell map; the call ' +
+      'answers 500 server_error.',
+    spec: '' },
   // --- #98 placement, group C: SCIM, the XACML PIP, TLS sign-in, Kerberos,
   //     LDAP (0140-0159) ---
   { code: 'STS-CELL-0140',

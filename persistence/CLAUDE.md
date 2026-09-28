@@ -1496,6 +1496,16 @@ or claims stays on the writer. A change row and its data row are read from the
 same replica, which replays the writer's commits whole and in order, so a
 pointer is never read ahead of what it points at.
 
+**A GLOBAL JOB RUNS IN ONE CELL, NOT IN EVERY CELL.** A cluster job claims its
+run in its cluster's database, and a cell is a cluster — so a job whose work
+is the global tier's (a realm signing-key rotation, the krbtgt key, a SPIFFE
+authority, the OpenID Federation key, a client secret's expiry, the global
+used-assertion purge; `tiers.js`'s `GLOBAL_JOBS`) claimed there would run once
+per cell. In multi-cell mode the scheduler claims those runs under
+`scheduler.run.global` (`tiers.GLOBAL_RUN_SCOPE`), and the tiered driver keeps
+that scope in the global database (`claimTierOf()`); `purgeClaims()` runs on
+both. A new job that writes global state belongs on that list.
+
 **SEALING BY TIER.** A cell-tier minted row is sealed under the cell's own
 key-encryption key (`keys.cellKek*`, `keystore.seal(…, 'cell')`), which lives
 only in the cell's region and has no fallback; `keystore.open()` tries the
