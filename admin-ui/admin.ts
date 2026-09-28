@@ -30282,6 +30282,53 @@ class AdminConsole {
       'verifies.');
   }
 
+  // WHAT THE PARTNER SENT AND NOTHING WROTE (#94), under the mapping it
+  // would take to keep one: a name no mapping names, or a name mapped onto an
+  // attribute no partner may write (with why). Each row carries a Map form
+  // with the name filled in, so keeping one is naming its attribute.
+  /**
+   * Draws the names a relationship's partner sent that were not written,
+   * each with a form to map it.
+   *
+   * @param row - the relationship's view
+   * @param unmapped - `federation.unmappedOf()`
+   * @param carryBack - the hidden `back` field every form carries
+   * @returns the section as HTML, or '' when there is nothing to show
+   */
+  federationUnmappedSection(row, unmapped, carryBack) {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering AdminConsole.federationUnmappedSection(). id=" +
+              row.id);
+    if (!unmapped.length) {
+      log.debug("Leaving AdminConsole.federationUnmappedSection(). None.");
+      return '';
+    }
+    log.debug("Leaving AdminConsole.federationUnmappedSection().");
+    return '<h3 id="unmapped">Sent and not written</h3>' +
+      this.note('Names this partner sent at a sign-in that were NOT ' +
+        'written to the directory: nothing maps them, or a mapping sends ' +
+        'them onto an attribute no partner may write. The newest first; a ' +
+        'name is kept for ' + 'as long as minted state is (' +
+        '<code>persistence.mintedRetention</code>).') +
+      '<table><tr><th>Name</th><th>Why</th><th>Last sent</th><th>Map it' +
+      '</th></tr>' +
+      unmapped.map(function (one) {
+        return '<tr><td class="who"><code>' + self.esc(one.name) +
+          '</code></td><td class="sub">' +
+          (one.refused ? self.esc(one.refused) : 'nothing maps it') +
+          '</td><td class="sub">' + self.esc(one.last) + '</td><td><form ' +
+          'method="post" action="/admin/federation"><div class="formrow">' +
+          carryBack +
+          '<input type="hidden" name="action" value="add-value">' +
+          '<input type="hidden" name="id" value="' + self.esc(row.id) +
+          '"><input type="hidden" name="field" value="fedAttributeMap">' +
+          '<input type="text" name="value" size="30" value="' +
+          self.esc(one.name + '=') + '"><button type="submit">Map' +
+          '</button></div></form></td></tr>';
+      }).join('') + '</table>';
+  }
+
   // The drill-down. It is the page that actually does the work, because a
   // relationship is configured field by field and the fields differ by role and
   // by protocol — which is why the form is BUILT from the schema rather than
@@ -30472,7 +30519,11 @@ class AdminConsole {
         (field.name === 'fedAttributeMap' ? 'incoming name=ldapAttribute'
           : (field.name === 'fedRelease' ? 'a claim or attribute name' :
              'a value')) + '"><button ' +
-        'type="submit">Add</button></div></form>';
+        'type="submit">Add</button></div></form>' +
+        (field.name === 'fedAttributeMap'
+          ? self.federationUnmappedSection(row, view.unmapped || [],
+                                           carryBack)
+          : '');
     }).join('');
 
     const inner = this.messagesOf(req) +

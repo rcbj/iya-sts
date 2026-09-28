@@ -92,6 +92,10 @@ import config = require('./../common/config');
 import helpers = require('./../common/helpers');
 import InstanceSlot = require('./../common/instance_slot');
 import vcClaims = require('./../oid4vc/vc_claims');
+// The attributes no outside source may write (#94), and the code a mapping
+// that names one is dropped under. Both leaves.
+import SourcedAttributes = require('./../common/sourced_attributes');
+import errorCodes = require('./../common/error_codes');
 // `identityKeyOf()`, and ONLY that. See usernameFor() below, where the reason
 // is argued: the local name a foreign subject becomes has to be the SAME name
 // the identity funnel and the directory will file them under, and that
@@ -710,6 +714,19 @@ class FederationMap {
       const row = this.resolve(name, own);
       if (!row) {
         unmapped.push({ incoming: name, values: values });
+        return;
+      }
+      // A TARGET NO PARTNER MAY WRITE (#94) is dropped as if unmapped, with
+      // the reason. The console and the API refuse such a mapping when it
+      // is written; this is the second net, for one written before #94 or
+      // by an ldapmodify on ou=federations.
+      const refused = SourcedAttributes.refusal(row.ldap);
+      if (refused) {
+        log.warn(errorCodes.tag('STS-FED-0153') + 'federation: ' +
+                 ((record && record.fedId) || '?') + ' maps "' + name +
+                 '" onto ' + row.ldap + ', and it was NOT written: ' +
+                 refused + '.');
+        unmapped.push({ incoming: name, values: values, refused: refused });
         return;
       }
       const kept = attributes[row.ldap] || [];

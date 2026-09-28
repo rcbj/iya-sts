@@ -1265,9 +1265,17 @@ class FederationSp {
   // Steps 3 to 5 are finishSignIn(), which the linking step calls too.
   // ---------------------------------------------------------------------------
   private completeSignIn(req, res, record, result) {
-    const { fedMap, errorCodes, log } = this.deps;
+    const { fedMap, errorCodes, log, federation } = this.deps;
     log.debug("Entering FederationSp.completeSignIn(). id=" + record.fedId);
     const mapped = fedMap.mapIncoming(record, result.bag, result.subject);
+    // What was dropped, for /admin/federation (#94). A store that cannot be
+    // written costs the list and never the sign-in.
+    try {
+      federation.recordUnmapped(record.fedId, mapped.unmapped);
+    } catch (e) {
+      log.debug("Caught in FederationSp.completeSignIn(): " +
+                ((e && e.message) || e));
+    }
     if (!mapped.username) {
       log.debug("Leaving FederationSp.completeSignIn(). There is no username.");
       errorCodes.mark(res, 'STS-FED-0043');

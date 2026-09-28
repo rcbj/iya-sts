@@ -361,6 +361,9 @@ const passwordPolicy = require('../common/password_policy');
 // so the require moves no route and closes no cycle.
 const authnPolicy = require('../common/authn_policy');
 const mode = require('../common/mode');
+// The attributes no outside source may write (#94), asked at the federated
+// write. A leaf.
+const SourcedAttributes = require('../common/sourced_attributes');
 // THE RATE LIMITER THE SIGN-IN SCREEN AND THE PORTAL ALREADY USE, for failed
 // binds (2026-09-12). A LIBRARY that requires only helpers, config, crypto,
 // realms and error_codes, so the require closes no cycle and moves no route.
@@ -4975,6 +4978,11 @@ function applyFederatedAttributes(stored, info, how) {
     return false;
   }
   let changed = false;
+  // WHAT THE PERSON LOOKED LIKE BEFORE (#94), for the change this write tells
+  // the observers about. Not for an entry this sign-in created: its creation
+  // is announced by the create.
+  const beforeAll = createdNow ? null : attributeSnapshot(stored);
+  let described = false;
   // What `mail` was, for verifyWrittenMail() (#64).
   const beforeFederated = { mail: (stored.attributes.mail || []).slice(0) };
   // The facts about WHERE they came from. Multi-valued and accumulated,
@@ -5013,13 +5021,18 @@ function applyFederatedAttributes(stored, info, how) {
     // name two different people — and every lookup here that finds somebody by
     // name goes through one or the other. The username mapping is where a
     // partner's own idea of the local name belongs, and it has its own setting.
+    //
+    // AND NEVER AN ATTRIBUTE NO OUTSIDE SOURCE MAY WRITE (#94): credentials,
+    // account state, group membership, links and provenance. The mapping is
+    // refused when it is written and dropped by `federation_map.ts` when it
+    // is applied; this is the third net, at the write itself.
     const lower = name.toLowerCase();
-    if (lower === 'uid' || lower === 'objectclass' ||
-        lower === 'createtimestamp' || lower === 'modifytimestamp' ||
-        lower === 'entrydn' || lower === 'entryuuid' ||
-        lower === ENTRY_UUID_ALIAS) {
-      log.debug('applyFederatedAttributes(): not writing "' + name + '" — it ' +
-                'names the entry rather than describing the person.');
+    const refused = lower === ENTRY_UUID_ALIAS ? 'it names the entry'
+      : SourcedAttributes.refusal(lower);
+    if (refused) {
+      log.warn(errorCodes.tag('STS-FED-0153') + 'applyFederatedAttributes(): ' +
+               'not writing "' + name + '" onto ' + stored.dn + ': ' +
+               refused + '.');
       return;
     }
     const canonical = canonicalName(lower);
@@ -5029,6 +5042,7 @@ function applyFederatedAttributes(stored, info, how) {
     if (!same) {
       stored.attributes[lower] = values;
       changed = true;
+      described = true;
     }
     written.push(canonical);
   });
@@ -5067,6 +5081,16 @@ function applyFederatedAttributes(stored, info, how) {
                'names nothing maps and were NOT ' +
                'written: ' + federated.unmapped.join(', ') + '.'
              : ''));
+  // TOLD (#94): a partner's values that changed a person who already existed
+  // reach the observers as any other write does — CAEP token-claims-change
+  // for what their live tokens carry, RISC for an identifier, the former
+  // address told of a new one. Until #94 this write was the one silent door
+  // onto a person's attributes. Only when a value describing the person
+  // moved: `federationLastSeen` moves on every sign-in and is not news.
+  if (beforeAll && described) {
+    noteAccountChange('updated', stored.dn, beforeAll,
+                      attributeSnapshot(stored));
+  }
   log.debug('Leaving applyFederatedAttributes(). The entry was updated.');
   return true;
 }

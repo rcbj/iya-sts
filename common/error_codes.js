@@ -8998,6 +8998,21 @@ const CODES = [
       'values (fedAuthnMechanism, fedBinding, fedResponseType, or any row ' +
       'with an enum) was set to a value outside it (#86).',
     spec: 'HTTP 400 (console and API)' },
+  { code: 'STS-FED-0151',
+    summary: 'A fedAttributeMap value was not a mapping: it is ' +
+      '<incoming name>=<LDAP attribute> (#94).',
+    spec: 'HTTP 400 (console and API)' },
+  { code: 'STS-FED-0152',
+    summary: 'A fedAttributeMap value named a target no partner may write — ' +
+      'an attribute this service keeps (sts*, app*, fed*, pwd*) or the ' +
+      'entry\'s identity, structure or authorization (uid, memberOf, ' +
+      'userPassword, the operational attributes) (#94).',
+    spec: 'HTTP 400 (console and API)' },
+  { code: 'STS-FED-0153',
+    summary: 'A partner\'s attribute was dropped at sign-in because the ' +
+      'relationship maps it onto an attribute no partner may write (a ' +
+      'mapping written before #94, or by an ldapmodify) (#94).',
+    spec: 'none (logged; the sign-in proceeds without it)' },
   // ===== OIDFED ============================================================
   { code: 'STS-OIDFED-0001',
     summary: 'A metadata_policy is not the three levels of JSON objects ' +

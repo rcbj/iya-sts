@@ -7044,6 +7044,11 @@ class AdminViews {
           })
         : [],
       { name: 'links', noun: 'links' });
+    // WHAT THE PARTNER SENT AND NOTHING WROTE (#94): names no mapping names,
+    // and names mapped onto an attribute no partner may write, newest
+    // first. Service-provider side only, where attributes arrive.
+    const unmapped = row.role === 'service-provider'
+      ? federation.unmappedOf(record.fedId) : [];
 
     log.debug("Leaving AdminViews.federationDetailJson().");
     return {
@@ -7052,6 +7057,7 @@ class AdminViews {
       encryption: encryption,
       signOut: row.role === 'service-provider' ? signOut : {},
       setFields: setFields, multiFields: multiFields, linkPage: linkPage,
+      unmapped: unmapped,
       json: (function () {
       return Object.assign({ found: true }, row, {
           endpoints: Object.assign({
@@ -7080,6 +7086,7 @@ class AdminViews {
             return out;
           })(),
           editable: federation.fieldsForRole(row.role),
+          unmappedAttributes: unmapped,
           encryption: encryption,
           // Who this partner's subjects are linked to (#109): the page, and
           // the paging a caller walks it with.

@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3751** of them, in **39** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3754** of them, in **39** subsystems.
 
 ## Where a code appears
 
@@ -67,7 +67,7 @@ is an ordinary outcome.
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 97
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 21
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 16
-* [Federation (`STS-FED`)](#sts-fed) — 134
+* [Federation (`STS-FED`)](#sts-fed) — 137
 * [OpenID Federation (`STS-OIDFED`)](#sts-oidfed) — 67
 * [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 169
 * [LDAP directory (`STS-LDAP`)](#sts-ldap) — 87
@@ -2168,6 +2168,9 @@ Raised from: federation/.
 | `STS-FED-0148` | A relationship whose OpenID Provider is discovered through an OpenID Federation could not resolve it to its fedTrustAnchor (#134). | HTTP 502 page |
 | `STS-FED-0149` | An OpenID Provider resolved through an OpenID Federation cannot be used: no openid_provider metadata, an issuer that is not its Entity Identifier, no https endpoints, no automatic registration, or no keys (#134). | HTTP 502 page |
 | `STS-FED-0150` | A federation relationship field that takes a closed set of values (fedAuthnMechanism, fedBinding, fedResponseType, or any row with an enum) was set to a value outside it (#86). | HTTP 400 (console and API) |
+| `STS-FED-0151` | A fedAttributeMap value was not a mapping: it is <incoming name>=<LDAP attribute> (#94). | HTTP 400 (console and API) |
+| `STS-FED-0152` | A fedAttributeMap value named a target no partner may write — an attribute this service keeps (sts*, app*, fed*, pwd*) or the entry's identity, structure or authorization (uid, memberOf, userPassword, the operational attributes) (#94). | HTTP 400 (console and API) |
+| `STS-FED-0153` | A partner's attribute was dropped at sign-in because the relationship maps it onto an attribute no partner may write (a mapping written before #94, or by an ldapmodify) (#94). | none (logged; the sign-in proceeds without it) |
 
 ## STS-OIDFED
 
