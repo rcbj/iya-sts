@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3752** of them, in **39** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3754** of them, in **39** subsystems.
 
 ## Where a code appears
 
@@ -51,7 +51,7 @@ is an ordinary outcome.
 
 * [HTTP front door (`STS-HTTP`)](#sts-http) — 18
 * [PROXY protocol (`STS-PROXY`)](#sts-proxy) — 9
-* [Service core (`STS-CORE`)](#sts-core) — 66
+* [Service core (`STS-CORE`)](#sts-core) — 68
 * [Worker pools (`STS-WORKER`)](#sts-worker) — 44
 * [Persistence and coordination (`STS-STORE`)](#sts-store) — 63
 * [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 28
@@ -138,7 +138,7 @@ Raised from: common/proxy_protocol.ts, server.js.
 
 **Service core.** Starting the service, the settings table, trust realms, and the helpers every protocol shares.
 
-Raised from: server.js, common/protocol_stack.ts, common/config.js, common/config_file.js, common/realms.js, common/helpers.js, common/mode.js, common/version.js, sts_metadata.ts, home/.
+Raised from: server.js, common/protocol_stack.ts, common/config.js, common/config_file.js, common/realms.js, common/helpers.js, common/mode.js, common/version.js, sts_metadata.ts, home/, admin-ui/node_health_admin.ts.
 
 | Code | What failed | Client sees |
 |---|---|---|
@@ -208,6 +208,8 @@ Raised from: server.js, common/protocol_stack.ts, common/config.js, common/confi
 | `STS-CORE-0121` | A sign-in or an issuance was refused because its trust realm is being removed (#262): realms.retire() marks the realm retiring before it ends its sessions and announces the removal, and from then on no session, token, authorization code, assertion, ticket, credential, certificate or SVID is started or issued in it, in either mode. Also logged once, as information, when the mark is set. | the protocol's own refusal — invalid_grant at the token endpoint, access_denied at the authorization endpoint, credential_request_denied at OpenID4VCI, a SAML Responder / RequestDenied status, a SOAP fault, a 503 problem at ACME, EST and SCEP, and a refused session at every sign-in door |
 | `STS-CORE-0122` | A trust realm's removal was refused because a removal of it is already in progress (#294): realms.retire() marked it less than realms.removalDeliveryTimeoutS plus a 30-second margin ago, or is running in this process. Starting a second one would end and announce everything twice. Once that time has passed the removal is taken to be interrupted, and removing the realm again finishes it. | none — the console and /admin-api refuse the remove action |
 | `STS-CORE-0123` | A trust realm is stuck half removed (#294): it carries the retiring mark (#262) from longer ago than a removal can take, so the process that was removing it stopped before it finished. Every new sign-in and issuance in it is refused (STS-CORE-0121) until an administrator removes it again, from another realm. Logged when such a realm is restored at start, and when the removal is finished. | none — logged; /admin/realms and GET /admin-api/realms show it |
+| `STS-CORE-0124` | The /admin/node-health page or GET /admin-api/node-health could not build its report of the node's container and processes (#329). | HTTP 500 page or JSON |
+| `STS-CORE-0125` | ECS_CONTAINER_METADATA_URI_V4 is set, but the ECS task metadata endpoint did not answer Monitoring → Node Health within its bound, or answered with an error (#329). Logged when it starts failing, not on every page; the page says so in a sentence and draws the cgroup figures without the cross-check. | none — the page and GET /admin-api/node-health still answer 200 |
 
 ## STS-WORKER
 

@@ -1759,6 +1759,14 @@ worker that has not installed its handler ends it and that reply overwrites
 `served` with the worker's own tally. And `/admin/worker-pools` with its API
 are in `NEVER_DISPATCHED`: only the front process has the request pools.
 
+**THE SAME QUESTION CARRIES EACH WORKER'S OWN MEMORY (#329).** Monitoring →
+Node Health asks it too, and the answer grew rather than a second message:
+`{ poolStatus, id, pq, memory, cpu, uptimeS }` — the worker's
+`process.memoryUsage()`, `process.cpuUsage()` and uptime, which nothing
+outside the process can read (the heap is in no `/proc` file) — and
+`askWorkerPoolStatus()` hands them back beside `pq`. Node Health's paths are
+in `NEVER_DISPATCHED` for the same reason as Worker Pools'.
+
 ### A RATE-LIMIT COUNT IS WRITTEN DOWN EVERY TIME IT MOVES (2026-09-14)
 
 `websecurity.ts`'s buckets are a persisted `sharedMap()`, and `attempt()` set a

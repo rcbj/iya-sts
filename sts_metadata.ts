@@ -6706,6 +6706,22 @@ const ENDPOINTS: EndpointEntry[] = [
           'the figures are this node\'s. A service page: a realm ' +
           'administrator is refused it. Add ?format=json, or ' +
           'GET /admin-api/worker-pools.' },
+  { path: '/admin/node-health', group: 'Admin',
+    name: 'The container and processes of this node',
+    specs: [],
+    what: 'NON-SPEC (#329). Filed under Monitoring. The CPU utilisation of ' +
+          'this node\'s container (cgroup v2 cpu.stat over an interval, ' +
+          'against the quota in cpu.max), its memory (memory.current ' +
+          'against memory.max, and memory.stat), and the Node.js memory of ' +
+          'every process of the node — the front process and each request ' +
+          'and hosted-surface worker (process.memoryUsage(), asked over the ' +
+          'channel), each post-quantum child and the debugger\'s api ' +
+          '(resident size from /proc) — with the total; the ECS task ' +
+          'metadata endpoint as a cross-check where there is one. A source ' +
+          'that is not there says so. Always drawn by the front process; ' +
+          'the figures are this node\'s. A service page: a realm ' +
+          'administrator is refused it. Add ?format=json, or ' +
+          'GET /admin-api/node-health.' },
   { path: '/admin/encryption', group: 'Admin',
     name: 'What is encrypted at rest, and how much of it has happened',
     specs: [],
@@ -7591,6 +7607,14 @@ const ENDPOINTS: EndpointEntry[] = [
           'workers, its crashes, failed starts and stops, and its response ' +
           'time; the post-quantum pool per process. Mirrors ' +
           'GET /admin/worker-pools.' },
+  { path: '/admin-api/node-health', group: 'Management API',
+    name: 'Node health', specs: [],
+    what: 'NON-SPEC (#329). Everything /admin/node-health draws, as JSON: ' +
+          'the container\'s CPU utilisation and memory from its cgroup, ' +
+          'the Node.js memory of every process of this node and their ' +
+          'total, the ECS task metadata endpoint\'s figures where there is ' +
+          'one, and the machine\'s own figures labelled as such. Mirrors ' +
+          'GET /admin/node-health.' },
   { path: '/admin-api/encryption', group: 'Management API',
     name: 'Encryption at rest', specs: [],
     what: 'NON-SPEC. Everything /admin/encryption draws, as JSON: the mode, ' +

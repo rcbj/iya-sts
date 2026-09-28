@@ -1373,9 +1373,17 @@ class RequestWorker {
   // and nothing else can see them. Required lazily: by the time a worker is
   // ready the stack has loaded it, so this is a module-cache lookup; a worker
   // that cannot reach it answers with the reason rather than not at all.
+  //
+  // **AND THIS PROCESS'S OWN MEMORY AND CPU TIME (#329, 2026-09-28)**, for
+  // Monitoring → Node Health: `process.memoryUsage()` and
+  // `process.cpuUsage()`, which only the process itself can read — the heap
+  // figures in particular are nowhere in `/proc`. The same one message, so
+  // the front process asks every worker one question for both pages, and a
+  // worker that cannot read one answers without it rather than not at all.
   /**
    * Answers the front process's `{ poolStatus }` question with this
-   * process's `worker_pool.stats()`.
+   * process's `worker_pool.stats()`, its `process.memoryUsage()` and its
+   * `process.cpuUsage()`.
    *
    * @param message - the question, carrying the id to answer under
    */
@@ -1391,8 +1399,21 @@ class RequestWorker {
                 ((e && e.message) || e));
       error = String((e && e.message) || e);
     }
+    let memory: unknown = null;
+    let cpu: unknown = null;
+    try {
+      memory = process.memoryUsage();
+      cpu = process.cpuUsage();
+    } catch (e) {
+      log.debug("Caught in RequestWorker.reportPoolStatus(): " +
+                ((e && e.message) || e));
+      // `memoryUsage()` reads /proc on Linux and can fail for want of a
+      // file descriptor; the pool's figures still go back, and whichever of
+      // these two was read before the throw.
+    }
     this.report({ poolStatus: true, id: message.id, pid: process.pid,
-                  pq: pq, error: error || null });
+                  pq: pq, error: error || null, memory: memory, cpu: cpu,
+                  uptimeS: Math.round(process.uptime()) });
     log.debug("Leaving RequestWorker.reportPoolStatus().");
   }
 

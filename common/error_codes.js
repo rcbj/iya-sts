@@ -159,7 +159,8 @@ const SUBSYSTEMS = [
   { id: 'CORE', label: 'Service core',
     where: 'server.js, common/protocol_stack.ts, common/config.js, ' +
            'common/config_file.js, common/realms.js, common/helpers.js, ' +
-           'common/mode.js, common/version.js, sts_metadata.ts, home/',
+           'common/mode.js, common/version.js, sts_metadata.ts, home/, ' +
+           'admin-ui/node_health_admin.ts',
     what: 'Starting the service, the settings table, trust realms, and the ' +
           'helpers every protocol shares.' },
   { id: 'WORKER', label: 'Worker pools',
@@ -862,6 +863,18 @@ const CODES = [
       'administrator removes it again, from another realm. Logged when ' +
       'such a realm is restored at start, and when the removal is finished.',
     spec: 'none — logged; /admin/realms and GET /admin-api/realms show it' },
+  { code: 'STS-CORE-0124',
+    summary: 'The /admin/node-health page or GET /admin-api/node-health ' +
+      'could not build its report of the node\'s container and processes ' +
+      '(#329).',
+    spec: 'HTTP 500 page or JSON' },
+  { code: 'STS-CORE-0125',
+    summary: 'ECS_CONTAINER_METADATA_URI_V4 is set, but the ECS task ' +
+      'metadata endpoint did not answer Monitoring → Node Health within ' +
+      'its bound, or answered with an error (#329). Logged when it starts ' +
+      'failing, not on every page; the page says so in a sentence and ' +
+      'draws the cgroup figures without the cross-check.',
+    spec: 'none — the page and GET /admin-api/node-health still answer 200' },
   { code: 'STS-WORKER-0001',
     summary: 'The IPC channel to a post-quantum worker process failed, so a ' +
       'job sent to it may not arrive or its answer may not come back.',

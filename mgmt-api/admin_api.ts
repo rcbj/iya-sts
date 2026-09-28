@@ -221,6 +221,8 @@ import vcStatusAdmin = require('../admin-ui/vc_status_admin');
 // Server configuration → Mode (#181): its one view, rule 7.
 import modeAdmin = require('../admin-ui/mode_admin');
 import workerPoolsAdmin = require('../admin-ui/worker_pools_admin');
+// Monitoring → Node Health (#329): its one view, rule 7.
+import nodeHealthAdmin = require('../admin-ui/node_health_admin');
 // The scheduler's page (#49): its view and its two actions, rule 7.
 import schedulerAdmin = require('../admin-ui/scheduler_admin');
 // The mail channel's two pages (#63), mirrored below (rule 7).
@@ -3934,6 +3936,76 @@ class AdminApi {
               'The worker pools report could not be built.'] });
           });
           log.debug("Leaving the management API worker pools endpoint.");
+        } },
+
+      // ---------------------------------------------------------------------
+      // NODE HEALTH (#329). `nodeHealthAdmin.nodeHealthView()` — the
+      // function `/admin/node-health?format=json` answers — and nothing
+      // else. Pinned to the front process with the page
+      // (`request_pool.js`'s NEVER_DISPATCHED), because only it knows every
+      // process of the node.
+      // ---------------------------------------------------------------------
+      { method: 'GET', path: BASE + '/node-health', tag: 'Service',
+        operationId: 'getNodeHealth',
+        summary: 'The CPU and memory of this node\'s container, and the ' +
+                 'Node.js memory of each of its processes',
+        description: 'Always `generatedAt`, `host`, `pid` (the front ' +
+                     'process that answered), `scope` (`node`), ' +
+                     '`scopeText` and `cgroup` (the cgroup v2 directory ' +
+                     'read, or null). `cpu`: `available`, and either ' +
+                     '`unavailableText` or `utilisationPercent` — CPU time ' +
+                     'from `cpu.stat` over `windowSeconds` (`sampled` ' +
+                     '`since-previous-sample` or `fresh-sample`), as a ' +
+                     'share of `percentOfVcpus` — `coresUsed`, ' +
+                     '`limitVcpus` (from `cpu.max`; null for no quota, ' +
+                     'when the share is of `os.availableParallelism()`, ' +
+                     'which `limitText` says), `usageSeconds`, ' +
+                     '`userSeconds`, `systemSeconds` and `throttling`. ' +
+                     '`memory`: `available`, and either `unavailableText` ' +
+                     'or `currentBytes` (`memory.current`), `limitBytes` ' +
+                     '(`memory.max`; null for none), ' +
+                     '`utilisationPercent`, `peakBytes`, `anonBytes`, ' +
+                     '`fileBytes`, `kernelBytes` and `oomKills`. ' +
+                     '`processes`: `rows` — the front process and each ' +
+                     'request and hosted-surface worker that answered ' +
+                     'within a second (`process.memoryUsage()`: ' +
+                     '`rssBytes`, `heapUsedBytes`, `heapTotalBytes`, ' +
+                     '`externalBytes`, `arrayBuffersBytes`, and CPU time), ' +
+                     'and each post-quantum child and the debugger\'s api ' +
+                     'child (`rssBytes` and `peakRssBytes` from ' +
+                     '`/proc/<pid>/status`, the heap figures null) — ' +
+                     '`unanswered`, and `totals`. `ecs`: the ECS task ' +
+                     'metadata endpoint\'s `taskLimits` and `stats` where ' +
+                     '`ECS_CONTAINER_METADATA_URI_V4` is set, and ' +
+                     '`available: false` with a sentence where it is not. ' +
+                     '`machine`: `os.loadavg()`, `os.totalmem()`, ' +
+                     '`os.freemem()` and the CPU count, which describe the ' +
+                     'machine (on Fargate the micro-VM) and NOT the ' +
+                     'container. THE FIGURES ARE THIS NODE\'S: another ' +
+                     'node of a cluster is another container. A service ' +
+                     'operation: a realm\'s own administrator is refused ' +
+                     'it.',
+        mirrors: 'GET /admin/node-health',
+        responseDescription: 'The container and its processes.',
+        responseSchema: { type: 'object',
+          description: '`generatedAt`, `host`, `pid`, `scope`, `scopeText`, ' +
+                       '`cgroup`, `cpu`, `memory`, `processes`, `ecs` and ' +
+                       '`machine`.' },
+        handler: function (req, res) {
+          log.debug("Entering the management API node health endpoint.");
+          nodeHealthAdmin.nodeHealthView().then(function (view) {
+            self.sendJson(res, 200, view);
+          }).catch(function (e) {
+            log.debug("Caught in the management API node health " +
+                      "endpoint: " + ((e && e.message) || e));
+            log.error(errorCodes.tag('STS-CORE-0124') + 'The node health ' +
+                      'report could not be built: ' +
+                      ((e && e.message) || e));
+            errorCodes.mark(res, 'STS-CORE-0124');
+            self.sendJson(res, 500, { ok: false, errors: [
+              'The node health report could not be built.'] });
+          });
+          log.debug("Leaving the management API node health endpoint.");
         } },
 
       // ---------------------------------------------------------------------

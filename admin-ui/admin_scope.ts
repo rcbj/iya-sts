@@ -109,6 +109,8 @@ const SERVICE_PAGES = [
   '/admin/caches',
   // The request, hosted-surface and post-quantum pools of the node (#327).
   '/admin/worker-pools',
+  // The container's CPU and memory and every process of the node (#329).
+  '/admin/node-health',
   '/admin/debugger',
   '/admin/tls',
   // `/admin/kerberos` and `/admin/kerberos/principals` LEFT THIS LIST on

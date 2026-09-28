@@ -156,8 +156,8 @@ The navigation is a grouped list down the left. Its five sections:
 * **Monitoring** — metrics, sessions, tokens, used assertions, delegation,
   the Shared Signals monitors, consent, XACML decisions, GNAP grants, the
   enrollment monitors, OAuth activity, SCIM metrics, sign-out, the database,
-  encryption, the secret store, caches, the worker pools, the scheduler, the
-  mail outbox, risk, the audit log and the error codes.
+  encryption, the secret store, caches, the worker pools, node health, the
+  scheduler, the mail outbox, risk, the audit log and the error codes.
 * **Server configuration** — trust realms, configuration, mode, persistence,
   cluster, mail, admin roles, the protocol debugger, the service metadata, the
   API explorer, key pairs and cryptography.
@@ -1009,6 +1009,36 @@ Every request worker also forks a post-quantum pool of its own, so that
 section has a row per process and a total. It is read-only; the sizes are set
 on Configuration. A realm's own administrator is refused it.
 `GET /admin-api/worker-pools` answers the same figures.
+
+### Node health — `/admin/node-health`
+
+`/admin/node-health` shows the container this node runs in and every Node.js
+process in it:
+
+* **CPU** — the container's utilisation, measured from its cgroup (v2) over
+  a short interval, as a percentage of its CPU quota; with no quota, of the
+  CPUs the host gives it, which the page says. How often the quota held it
+  back (throttling) beside it.
+* **Memory** — what the container uses against its limit, and how much of it
+  is the processes' own memory, page cache the kernel can reclaim, and the
+  kernel's; how many processes the kernel killed at the limit.
+* **Node.js processes** — for the front process, each request and console
+  worker, each post-quantum child and the protocol debugger's api: resident
+  memory, and for the Node.js processes that report it the heap used and
+  allocated, external memory and array buffers, with the totals. A worker
+  that did not answer within a second is listed as such.
+* **ECS task metadata** — on Amazon ECS (Fargate included), the agent's own
+  figures for the container and the task's limits, as a cross-check; it
+  needs no IAM permission. Elsewhere the page says there is no endpoint.
+* **The machine** — load average and free memory of the machine the container
+  runs on, labelled as the machine's: on Fargate that is the micro-VM, and it
+  says nothing about the container's limit.
+
+A source that is not there — no cgroup v2, not Linux, no ECS endpoint — is
+said in a sentence rather than drawn as zeros. The figures are **this
+node's**, drawn by its front process. It is read-only, and a realm's own
+administrator is refused it. `GET /admin-api/node-health` answers the same
+figures.
 
 ### Audit log — `/admin/audit`
 

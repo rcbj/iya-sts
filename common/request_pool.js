@@ -1751,12 +1751,17 @@ function poolFor(url) {
 // `GET /admin-api/worker-pools` answered by a worker would report every pool
 // off on a service running eight workers — the debugger's shape again, and
 // pinned for its reason.
+//
+// **AND NODE HEALTH'S (#329, 2026-09-28)**, for the same reason: it lists
+// every process of the node, and only the front process knows the workers and
+// can ask them. A worker drawing it would list itself alone.
 // ---------------------------------------------------------------------------
 const NEVER_DISPATCHED = ['/tls', '/admin/tls/trust', '/admin-api/tls/trust',
                           '/admin/debugger', '/admin-api/debugger',
                           '/admin/spiffe/brokers',
                           '/admin-api/spiffe/brokers',
-                          '/admin/worker-pools', '/admin-api/worker-pools'];
+                          '/admin/worker-pools', '/admin-api/worker-pools',
+                          '/admin/node-health', '/admin-api/node-health'];
 
 /**
  * Tells whether a request is handled in a request worker rather than here.
@@ -5438,7 +5443,9 @@ function removeSocketDir() {
 // that nothing in this process can see. With dispatch on, that is where most
 // such jobs run. Monitoring → Worker Pools asks for them through the channel
 // every other exchange here uses: one `{ poolStatus }` message to each ready
-// worker, answered with that worker's `worker_pool.stats()`, the answers
+// worker, answered with that worker's `worker_pool.stats()` — and, since #329,
+// its `process.memoryUsage()` and `process.cpuUsage()` for Monitoring → Node
+// Health, which asks the same question — the answers
 // awaited for at most `timeoutMs`. A worker that does not answer in time is
 // reported as not having answered, and the page is drawn without it rather
 // than waiting — a worker busy for seconds is exactly the one whose numbers
@@ -5458,8 +5465,14 @@ function receivePoolStatus(entry, message) {
     log.debug("Leaving receivePoolStatus(). Nobody is waiting.");
     return;
   }
+  // `memory`, `cpu` and `uptimeS` for Monitoring → Node Health (#329): the
+  // worker's own `process.memoryUsage()` and `process.cpuUsage()`.
   waiter.answers[entry.pid] = { pq: message.pq || null,
-                                error: message.error || null };
+                                error: message.error || null,
+                                memory: message.memory || null,
+                                cpu: message.cpu || null,
+                                uptimeS: message.uptimeS === undefined
+                                  ? null : message.uptimeS };
   waiter.left--;
   if (waiter.left <= 0) {
     waiter.finish();
@@ -5471,8 +5484,9 @@ function receivePoolStatus(entry, message) {
  * Asks every ready request worker for its own post-quantum pool's stats.
  *
  * @param timeoutMs - how long to wait for the answers; 1000 when omitted
- * @returns a promise of `{ [pid]: { pq, error } }`; a worker that did not
- *   answer in time is absent
+ * @returns a promise of `{ [pid]: { pq, error, memory, cpu, uptimeS } }`
+ *   (the last three for Monitoring → Node Health, #329); a worker that did
+ *   not answer in time is absent
  */
 function askWorkerPoolStatus(timeoutMs) {
   log.debug("Entering askWorkerPoolStatus().");
