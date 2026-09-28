@@ -290,7 +290,14 @@ const USE_CASES = [
   // cell holds the same authority. Its leaves are SHORT-LIVED and never
   // recorded (`issueUnder()`, the SVID arrangement): a node re-mints its own
   // on a scheduler job, and a lost node's leaf simply expires.
+  //
+  // **BUILT ONLY IN A SERVICE DEPLOYED AS CELLS** (`multiCellOnly`,
+  // `useCasesFor()`): a single-cell service has no channel, and an authority
+  // it never used made every stored process branch incomplete on its next
+  // start — a top-up write nobody asked for (tests/key_residency.js found the
+  // stray `pki:default` row). Turning cells on tops the branch up.
   { id: 'cell', scope: 'process', label: 'Inter-cell channel',
+    multiCellOnly: true,
     cn: 'Inter-cell Issuing CA',
     what: 'The certificates the nodes of a service deployed as cells ' +
           'present to each other on the inter-cell channel (cells.port), as ' +
@@ -423,8 +430,18 @@ function useCase(id) {
  */
 function useCasesFor(kind) {
   log.debug("Entering useCasesFor().");
+  let multiCell = false;
+  try {
+    // Lazily: this library is below the cell map in the require order.
+    multiCell = require('./cells').isMulti();
+  } catch (e) {
+    log.debug("Caught in useCasesFor(): " + ((e && e.message) || e));
+    multiCell = false;
+  }
   log.debug("Leaving useCasesFor().");
-  return USE_CASES.filter(function (one) { return one.scope === kind; });
+  return USE_CASES.filter(function (one) {
+    return one.scope === kind && (!one.multiCellOnly || multiCell);
+  });
 }
 
 // ---------------------------------------------------------------------------
