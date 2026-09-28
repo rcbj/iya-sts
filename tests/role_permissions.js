@@ -567,7 +567,10 @@ async function run(t) {
     try {
       await thePolicyDecides(t, names);
     } finally {
-      gate.setDecider(deciderBefore);
+      // THE STATE THE REQUIRE LEFT, not an empty slot: requiring the
+      // issuance PEP arms the gate once, for the whole process, and the
+      // files after this one rely on it being armed.
+      gate.setDecider(deciderBefore || rolePep.decide);
     }
   });
   // THE THROWAWAY REALM GOES WITH THE FILE, as the other in-process files'

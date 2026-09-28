@@ -273,7 +273,10 @@ async function run(t) {
       noDecider(t);
     });
   } finally {
-    gate.setDecider(deciderBefore);
+    // THE STATE THE REQUIRE LEFT, not an empty slot: requiring the issuance
+    // PEP arms the gate once, for the whole process, and the files after
+    // this one rely on it being armed.
+    gate.setDecider(deciderBefore || rolePep.decide);
     // THE THROWAWAY REALM GOES WITH THE FILE — `role_permissions.js` says
     // why: one directory, one entry cap, every file in the process.
     realms.remove(realm.id);

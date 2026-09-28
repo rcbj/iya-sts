@@ -4754,6 +4754,28 @@ ordinary role (any member kind, edited on `/admin/roles`) and is seeded EMPTY
 `device:compliance` is gated like `admin:*`, at issuance and at
 `/admin-api`'s gate (held ∩ carried). No role is read off a scope now.
 
+### Roles that belong to ONE application (#310, 2026-09-28)
+
+Entra's app roles, on rcbj's three decisions. **A role entry scoped by
+`roleApplication`**, the application's registry identifier — the same
+members, `rolePermission` and console as any role; without the attribute a
+role is realm-wide. **Named `<role>@<application>`**, unique per application,
+so two applications may each have a `reader`; a realm-wide role's name may not
+contain the separator (`STS-ADMIN-0829`), and an application's role may not
+take a native or built-in name. **A token or assertion for application X
+carries the realm-wide roles and X's, never another application's** — X by
+the token's audience (`admin_stats.js`'s `claimApplicationsOf()`: an
+identifier, a client_id, an `oauthAudience`, a permission base, an AppliesTo
+or entityID), so an ID Token carries its client's roles and an access token
+its resource's. The same rule decides issuance: the issuance PEP resolves
+roles for the application being issued for, so X's `appRequiredRole` is met by
+a realm-wide role or X's own role of that name, and a role of Y's never
+satisfies X. Inside the service an application's role is known by its full
+name — `rolePermission` (it may authorize only its own application's
+permissions, `STS-ADMIN-0831`), the PIP's role designator — and outside it by
+its name inside the application. `roles.rolesOf()` takes `application(s)` for
+the first reading and `ids: true` for the second.
+
 ### `roles.js` is a LEAF and must stay one
 
 It requires `helpers.js` and `config.js` and nothing else here, which is what

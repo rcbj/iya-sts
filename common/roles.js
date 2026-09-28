@@ -172,6 +172,14 @@ const SCHEMA = {
             'its resource application GATES (`oauthRoleGatedPermission`); ' +
             'a gated permission is issued only to a subject holding a role ' +
             'that names it, and an ungated one as it always was.' },
+    { name: 'roleApplication',
+      what: 'The ONE application this role belongs to (#310), by its ' +
+            'identifier in ou=applications; absent, the role is realm-wide. ' +
+            'An application\'s role is named `<role>@<application>` in the ' +
+            'register, so two applications may each have a `reader`; a token ' +
+            'or assertion for that application carries it as `<role>`, and ' +
+            'no other application\'s token carries it at all. The ' +
+            'application\'s `appRequiredRole` may name it by `<role>`.' },
     { name: 'description',
       what: 'What the role is for, for the next person.' }
   ]
@@ -383,6 +391,9 @@ function xacmlUserGroupName() {
 /**
  * The names of the built-in roles, in table order.
  */
+// THE SEPARATOR IN AN APPLICATION ROLE'S NAME (#310): `reader@payroll`.
+const APPLICATION_SEPARATOR = '@';
+
 const BUILT_IN_NAMES = BUILT_IN.map(function (one) {
   return one.name;
 });
@@ -672,8 +683,18 @@ function all() {
     const at = entry.attributes || {};
     const consoleRow = consoleRoleFor(entry.name);
     const nativeRow = nativeRoleFor(entry.name);
+    // THE APPLICATION A ROLE BELONGS TO (#310), and its name inside it: the
+    // part of `<role>@<application>` before the separator, which is what a
+    // token for that application carries and its requirement names.
+    const application = firstValue(at, 'roleApplication');
     return {
       name: entry.name,
+      application: application,
+      localName: application && String(entry.name).endsWith(
+        APPLICATION_SEPARATOR + application)
+        ? String(entry.name).slice(0, String(entry.name).length -
+                                      application.length - 1)
+        : entry.name,
       dn: entry.dn,
       description: firstValue(at, 'description'),
       // A console role's people and groups are the roster's, never stored:
@@ -796,6 +817,33 @@ function write(name, record) {
              'STS-XACML-0026');
   }
   const given = record || {};
+  // AN APPLICATION'S ROLE (#310): named `<role>@<application>`, the local
+  // part a role name of its own. The application is not looked up here —
+  // this file is a leaf and knows no registry — so the caller that creates
+  // one says it exists (`admin_actions.ts`).
+  const application = String(given.application || '').trim();
+  if (application) {
+    const local = String(name).slice(0, Math.max(0, String(name).length -
+                                                    application.length - 1));
+    if (String(name) !== local + APPLICATION_SEPARATOR + application ||
+        !local || local.indexOf(APPLICATION_SEPARATOR) >= 0 ||
+        checkName(local)) {
+      log.debug('Leaving write(). Not a well-formed application role name.');
+      return errorCodes.mark({ ok: false,
+               why: 'An application\'s role is named <role>' +
+                    APPLICATION_SEPARATOR + '<application>, the role part a ' +
+                    'role name with no "' + APPLICATION_SEPARATOR + '" in it; "' +
+                    name + '" for "' + application + '" is not.' },
+               'STS-XACML-0080');
+    }
+    if (nativeRoleFor(local) || isBuiltIn(local)) {
+      log.debug('Leaving write(). A reserved role name for an application.');
+      return errorCodes.mark({ ok: false,
+               why: '"' + local + '" is a role of this service itself and ' +
+                    'cannot be an application\'s role too: a token would ' +
+                    'carry one name meaning two things.' }, 'STS-XACML-0080');
+    }
+  }
   const consoleRow = consoleRoleFor(name);
   if (consoleRow && ((given.users || []).length ||
                      (given.groups || []).some(function (group) {
@@ -829,6 +877,7 @@ function write(name, record) {
     roleMemberUser: (given.users || []).map(String),
     roleMemberGroup: (given.groups || []).map(String),
     roleMemberApplication: (given.applications || []).map(String),
+    roleApplication: application ? [application] : [],
     // A native role's permission is fixed (see THE NATIVE ROLES) and
     // written as such, so an ldapsearch shows what the role authorizes.
     rolePermission: nativeRoleFor(name) ? [nativeRoleFor(name).permission]
@@ -1028,6 +1077,16 @@ function normalizeContext(who) {
     name: String(given.name || ''),
     authenticated: given.authenticated === true,
     groups: Array.isArray(given.groups) ? given.groups.map(String) : null,
+    // THE APPLICATION(S) THIS DECISION OR TOKEN IS FOR (#310): a role
+    // belonging to one of them is held under its name inside it; any other
+    // application's role is not held here at all.
+    applications: (Array.isArray(given.applications) ? given.applications
+      : (given.application ? [given.application] : []))
+      .map(String).filter(Boolean),
+    // `ids`: answer every configured role held, an application's by its full
+    // `<role>@<application>` — what a permission is authorized by and the
+    // PIP answers — rather than by the context's applications.
+    ids: given.ids === true,
     // THE SCOPES OF THE ACCESS TOKEN THIS DECISION IS BEING MADE FOR, when
     // there is one. No role is computed from them since #309 — the last,
     // DEVICE_COMPLIANCE, is configured now — so a caller that
@@ -1077,8 +1136,11 @@ function configuredRolesOf(context) {
     return role.groups.some(function (group) {
       return lowerGroups.indexOf(String(group).toLowerCase()) >= 0;
     });
+  }).filter(function (role) {
+    return context.ids || !role.application ||
+           context.applications.indexOf(role.application) >= 0;
   }).map(function (role) {
-    return role.name;
+    return context.ids || !role.application ? role.name : role.localName;
   });
 }
 
@@ -1218,6 +1280,7 @@ module.exports = {
   builtInCatalogue: builtInCatalogue,
   CONSOLE_ROLES: CONSOLE_ROLES,
   CONSOLE_ROLE_APPLICATION: CONSOLE_ROLE_APPLICATION,
+  APPLICATION_SEPARATOR: APPLICATION_SEPARATOR,
   consoleRoleFor: consoleRoleFor,
   isConsoleRole: isConsoleRole,
   NATIVE_ROLES: NATIVE_ROLES,

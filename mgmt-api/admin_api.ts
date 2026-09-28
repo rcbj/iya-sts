@@ -17723,11 +17723,27 @@ class AdminApi {
                 role: { type: 'string', description: 'The role\'s name.' },
                 description: { type: 'string',
                                description:
-                                 'What it is for, for the next person.' }
+                                 'What it is for, for the next person.' },
+                application: { type: 'string',
+                               description: 'The ONE application this role ' +
+                                            'belongs to (#310), by its ' +
+                                            'identifier. The role is ' +
+                                            'registered as `<role>@' +
+                                            '<application>` — two ' +
+                                            'applications may each have a ' +
+                                            '`reader` — and a token or ' +
+                                            'assertion for that ' +
+                                            'application carries it as ' +
+                                            '`<role>`, no other ' +
+                                            'application\'s at all. Omit it ' +
+                                            'for a realm-wide role, whose ' +
+                                            'name may not contain `@`.' }
               },
               required: ['role'],
               examples: [{ role: 'staff',
-                           description: 'People who work here' }],
+                           description: 'People who work here' },
+                         { role: 'reader', application: 'payroll',
+                           description: 'May read payroll' }],
               additionalProperties: false
             },
             responseDescription: 'The role that was made.' },
