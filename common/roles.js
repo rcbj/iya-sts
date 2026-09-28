@@ -67,11 +67,12 @@
 // application is narrowing a list rather than switching on a subsystem that
 // has never run.
 //
-// The others — DEVICE_COMPLIANCE (read off an access token's scope),
-// REMOTE_PEPS and XACML_USER (held through a named group) — are argued at
-// their rows in `BUILT_IN` below. ADMIN_READ and ADMIN_WRITE were built-ins
-// read off the scopes until #303 (2026-09-27) made them CONFIGURED roles; see
-// THE TWO CONSOLE ROLES, below the table.
+// The others — REMOTE_PEPS and XACML_USER (held through a named group) — are
+// argued at their rows in `BUILT_IN` below. ADMIN_READ and ADMIN_WRITE were
+// built-ins read off the scopes until #303 (2026-09-27), and DEVICE_COMPLIANCE
+// until #309 (2026-09-28): all three are CONFIGURED roles now, authorizing
+// their native permission — see THE NATIVE ROLES, below the table. No role is
+// read off a scope any more.
 //
 // ---------------------------------------------------------------------------
 // A ROLE AUTHORIZES PERMISSIONS (#303, part B of #88, 2026-09-27).
@@ -171,6 +172,14 @@ const SCHEMA = {
             'its resource application GATES (`oauthRoleGatedPermission`); ' +
             'a gated permission is issued only to a subject holding a role ' +
             'that names it, and an ungated one as it always was.' },
+    { name: 'roleApplication',
+      what: 'The ONE application this role belongs to (#310), by its ' +
+            'identifier in ou=applications; absent, the role is realm-wide. ' +
+            'An application\'s role is named `<role>@<application>` in the ' +
+            'register, so two applications may each have a `reader`; a token ' +
+            'or assertion for that application carries it as `<role>`, and ' +
+            'no other application\'s token carries it at all. The ' +
+            'application\'s `appRequiredRole` may name it by `<role>`.' },
     { name: 'description',
       what: 'What the role is for, for the next person.' }
   ]
@@ -227,29 +236,6 @@ const BUILT_IN = [
       log.debug("Entering holds().");
       log.debug("Leaving holds().");
       return who.kind === 'user' && !who.authenticated;
-    } },
-  // -------------------------------------------------------------------------
-  // COMPUTED FROM A CREDENTIAL (#164 phase 3, 2026-09-26), for the
-  // one `/admin-api` operation that is NOT an administrator's: an MDM or
-  // posture feed reporting device compliance (`POST
-  // /admin-api/device-compliance`). Its token carries `device:compliance`
-  // and nothing else, so the feed can report posture and cannot read the
-  // directory or change anything but a device's compliance — which is the
-  // whole reason it is a scope and a role of its own rather than
-  // `admin:write` (rcbj's decision 2 on #164). Read off the scope — nobody
-  // grants it, the token carries it. It is the last role read off a scope:
-  // ADMIN_READ and ADMIN_WRITE, which it was modelled on, became configured
-  // roles authorizing their scopes in #303, and this one has not followed.
-  // -------------------------------------------------------------------------
-  { name: 'DEVICE_COMPLIANCE',
-    what: 'A caller presenting an access token for the management API that ' +
-          'carries the `device:compliance` scope — an MDM or posture feed. ' +
-          'The device compliance feed, POST /admin-api/device-compliance, ' +
-          'requires it and nothing else on /admin-api accepts it.',
-    holds: function (who) {
-      log.debug("Entering holds().");
-      log.debug("Leaving holds().");
-      return (who.scopes || []).indexOf('device:compliance') >= 0;
     } },
   { name: 'ALL_APPLICATIONS',
     what: 'Any client, however it turned up.',
@@ -405,6 +391,9 @@ function xacmlUserGroupName() {
 /**
  * The names of the built-in roles, in table order.
  */
+// THE SEPARATOR IN AN APPLICATION ROLE'S NAME (#310): `reader@payroll`.
+const APPLICATION_SEPARATOR = '@';
+
 const BUILT_IN_NAMES = BUILT_IN.map(function (one) {
   return one.name;
 });
@@ -476,12 +465,14 @@ function isBuiltIn(name) {
 const CONSOLE_ROLES = [
   { name: 'ADMIN_READ', consoleRole: 'read', permission: 'admin:read',
     groupSettings: ['admin.readGroup', 'admin.writeGroup'],
+    seedApplications: ['sts-management-api'],
     what: 'Admin Read: every READ on /admin-api. Held by the console\'s ' +
           'Admin Read and Admin Write groups (Admin Write implies Admin ' +
           'Read) and by the applications listed here. Authorizes the ' +
           'admin:read permission.' },
   { name: 'ADMIN_WRITE', consoleRole: 'write', permission: 'admin:write',
     groupSettings: ['admin.writeGroup'],
+    seedApplications: ['sts-management-api'],
     what: 'Admin Write: every /admin-api operation that CHANGES anything. ' +
           'Held by the console\'s Admin Write group and by the applications ' +
           'listed here. Authorizes the admin:write permission. It does not ' +
@@ -496,6 +487,46 @@ const CONSOLE_ROLES = [
  * API's own client.
  */
 const CONSOLE_ROLE_APPLICATION = 'sts-management-api';
+
+// ---------------------------------------------------------------------------
+// THE NATIVE ROLES (#309, a follow-up to #88, 2026-09-28): every role that
+// authorizes one of this service's NATIVE permissions — the two console roles
+// above, and DEVICE_COMPLIANCE. Each is seeded in every realm, cannot be
+// deleted, and authorizes exactly its permission.
+//
+// **DEVICE_COMPLIANCE WAS THE LAST ROLE READ OFF A SCOPE.** It was built in:
+// a token carrying `device:compliance` WAS the MDM feed (#164 phase 3), the
+// scope-as-authorization #88 removed for the admin scopes. It is configured
+// now, and `device:compliance` is issued to a client on `client_credentials`
+// only while that client HOLDS the role. It is an ordinary role otherwise —
+// any member kind, edited on /admin/roles — and it is seeded EMPTY (rcbj's
+// decision on #309): no client is the MDM feed until an operator adds it,
+// and the management API's own client is not, which is the separation #164
+// decision 2 made on purpose.
+// ---------------------------------------------------------------------------
+const NATIVE_ROLES = CONSOLE_ROLES.concat([
+  { name: 'DEVICE_COMPLIANCE', consoleRole: '', permission: 'device:compliance',
+    groupSettings: [], seedApplications: [],
+    what: 'The device compliance feed: an MDM or posture feed reporting a ' +
+          'device\'s compliance through POST /admin-api/device-compliance, ' +
+          'and nothing else on /admin-api. Authorizes the device:compliance ' +
+          'permission. Seeded with no member: add the feed\'s application.' }
+]);
+
+function nativeRoleFor(name) {
+  log.debug("Entering nativeRoleFor().");
+  const wanted = String(name == null ? '' : name);
+  log.debug("Leaving nativeRoleFor().");
+  return NATIVE_ROLES.filter(function (one) {
+    return one.name === wanted;
+  })[0] || null;
+}
+
+function isNativeRole(name) {
+  log.debug("Entering isNativeRole().");
+  log.debug("Leaving isNativeRole().");
+  return !!nativeRoleFor(name);
+}
 
 /**
  * Returns the `CONSOLE_ROLES` row of a role name.
@@ -651,8 +682,19 @@ function all() {
   const rows = directory.allRoles().map(function (entry) {
     const at = entry.attributes || {};
     const consoleRow = consoleRoleFor(entry.name);
+    const nativeRow = nativeRoleFor(entry.name);
+    // THE APPLICATION A ROLE BELONGS TO (#310), and its name inside it: the
+    // part of `<role>@<application>` before the separator, which is what a
+    // token for that application carries and its requirement names.
+    const application = firstValue(at, 'roleApplication');
     return {
       name: entry.name,
+      application: application,
+      localName: application && String(entry.name).endsWith(
+        APPLICATION_SEPARATOR + application)
+        ? String(entry.name).slice(0, String(entry.name).length -
+                                      application.length - 1)
+        : entry.name,
       dn: entry.dn,
       description: firstValue(at, 'description'),
       // A console role's people and groups are the roster's, never stored:
@@ -661,9 +703,11 @@ function all() {
       groups: consoleRow ? consoleRoleGroups(consoleRow)
                          : allValues(at, 'roleMemberGroup'),
       applications: allValues(at, 'roleMemberApplication'),
-      permissions: consoleRow ? [consoleRow.permission]
-                              : allValues(at, 'rolePermission'),
+      permissions: nativeRow ? [nativeRow.permission]
+                             : allValues(at, 'rolePermission'),
       console: !!consoleRow,
+      // Seeded in every realm, undeletable, its permission fixed (#309).
+      native: !!nativeRow,
       builtIn: false
     };
   });
@@ -773,6 +817,33 @@ function write(name, record) {
              'STS-XACML-0026');
   }
   const given = record || {};
+  // AN APPLICATION'S ROLE (#310): named `<role>@<application>`, the local
+  // part a role name of its own. The application is not looked up here —
+  // this file is a leaf and knows no registry — so the caller that creates
+  // one says it exists (`admin_actions.ts`).
+  const application = String(given.application || '').trim();
+  if (application) {
+    const local = String(name).slice(0, Math.max(0, String(name).length -
+                                                    application.length - 1));
+    if (String(name) !== local + APPLICATION_SEPARATOR + application ||
+        !local || local.indexOf(APPLICATION_SEPARATOR) >= 0 ||
+        checkName(local)) {
+      log.debug('Leaving write(). Not a well-formed application role name.');
+      return errorCodes.mark({ ok: false,
+               why: 'An application\'s role is named <role>' +
+                    APPLICATION_SEPARATOR + '<application>, the role part a ' +
+                    'role name with no "' + APPLICATION_SEPARATOR + '" in it; "' +
+                    name + '" for "' + application + '" is not.' },
+               'STS-XACML-0080');
+    }
+    if (nativeRoleFor(local) || isBuiltIn(local)) {
+      log.debug('Leaving write(). A reserved role name for an application.');
+      return errorCodes.mark({ ok: false,
+               why: '"' + local + '" is a role of this service itself and ' +
+                    'cannot be an application\'s role too: a token would ' +
+                    'carry one name meaning two things.' }, 'STS-XACML-0080');
+    }
+  }
   const consoleRow = consoleRoleFor(name);
   if (consoleRow && ((given.users || []).length ||
                      (given.groups || []).some(function (group) {
@@ -806,10 +877,11 @@ function write(name, record) {
     roleMemberUser: (given.users || []).map(String),
     roleMemberGroup: (given.groups || []).map(String),
     roleMemberApplication: (given.applications || []).map(String),
-    // A console role's permission is fixed (see THE TWO CONSOLE ROLES) and
+    roleApplication: application ? [application] : [],
+    // A native role's permission is fixed (see THE NATIVE ROLES) and
     // written as such, so an ldapsearch shows what the role authorizes.
-    rolePermission: consoleRow ? [consoleRow.permission]
-                               : (given.permissions || []).map(String)
+    rolePermission: nativeRoleFor(name) ? [nativeRoleFor(name).permission]
+                                        : (given.permissions || []).map(String)
   };
   if (consoleRow) {
     attributes.roleMemberUser = [];
@@ -842,13 +914,14 @@ function remove(name) {
                   'application requiring it would be requiring something ' +
                   'that no longer existed.' }, 'STS-XACML-0056');
   }
-  if (isConsoleRole(name)) {
-    log.debug('Leaving remove(). A console role.');
+  if (isNativeRole(name)) {
+    log.debug('Leaving remove(). A native role.');
     return errorCodes.mark({ ok: false,
-             why: '"' + name + '" is one of the two console roles, and a ' +
-                  'realm without it could never be administered through ' +
-                  '/admin-api by a machine. Take an application out of it ' +
-                  'with remove-member instead.' }, 'STS-XACML-0076');
+             why: '"' + name + '" authorizes a permission of this service ' +
+                  'itself (' + nativeRoleFor(name).permission + ') and is ' +
+                  'kept in every realm: without it nobody could ever be ' +
+                  'issued that permission there. Take a member out with ' +
+                  'remove-member instead.' }, 'STS-XACML-0076');
   }
   if (!haveDirectory() || !directory.deleteRole(String(name))) {
     log.debug('Leaving remove(). Not here.');
@@ -861,7 +934,8 @@ function remove(name) {
 }
 
 // ---------------------------------------------------------------------------
-// SEEDING THE TWO CONSOLE ROLES, in the AMBIENT realm — `ldap_server.js`
+// SEEDING THE NATIVE ROLES (the two console roles, and DEVICE_COMPLIANCE
+// since #309), in the AMBIENT realm — `ldap_server.js`
 // calls it where it seeds this process's own applications, for the default
 // realm at startup and inside each realm's builder. An entry already there
 // is left exactly as it is, as `applications.js` leaves its seeded clients:
@@ -875,29 +949,30 @@ function remove(name) {
  *
  * @returns how many were created
  */
-function seedConsoleRoles() {
-  log.debug('Entering seedConsoleRoles().');
+function seedNativeRoles() {
+  log.debug('Entering seedNativeRoles().');
   if (!haveDirectory()) {
-    log.debug('Leaving seedConsoleRoles(). No directory.');
+    log.debug('Leaving seedNativeRoles(). No directory.');
     return 0;
   }
   let made = 0;
-  CONSOLE_ROLES.forEach(function (row) {
+  NATIVE_ROLES.forEach(function (row) {
     if (read(row.name)) {
       return;
     }
-    const written = write(row.name, { description: row.what,
-                                      applications: [CONSOLE_ROLE_APPLICATION] });
+    const written = write(row.name, {
+      description: row.what,
+      applications: (row.seedApplications || []).slice(0) });
     if (written.ok) {
       made += 1;
     } else {
-      log.warn(errorCodes.tag('STS-XACML-0077') + 'roles: the console role "' +
+      log.warn(errorCodes.tag('STS-XACML-0077') + 'roles: the native role "' +
                row.name + '" was not seeded: ' + written.why + ' Machine ' +
                'clients cannot be issued ' + row.permission + ' in this ' +
                'realm until it exists.');
     }
   });
-  log.debug('Leaving seedConsoleRoles(). ' + made + ' created.');
+  log.debug('Leaving seedNativeRoles(). ' + made + ' created.');
   return made;
 }
 
@@ -931,8 +1006,8 @@ function rolesAuthorizing(permission) {
 //     name: the username or the application's client id / handle,
 //     authenticated: whether this party proved anything,
 //     groups: the group names a person is in (a user only),
-//     scopes: an access token's scopes, where there is one — DEVICE_COMPLIANCE
-//             is read off them }
+//     scopes: an access token's scopes, where there is one — no role is read
+//             off them since #309; kept for a caller's context }
 //
 // THE GROUPS ARE PASSED IN RATHER THAN LOOKED UP HERE where the caller already
 // has them, and looked up through the directory slot where it does not. Both,
@@ -1002,9 +1077,19 @@ function normalizeContext(who) {
     name: String(given.name || ''),
     authenticated: given.authenticated === true,
     groups: Array.isArray(given.groups) ? given.groups.map(String) : null,
+    // THE APPLICATION(S) THIS DECISION OR TOKEN IS FOR (#310): a role
+    // belonging to one of them is held under its name inside it; any other
+    // application's role is not held here at all.
+    applications: (Array.isArray(given.applications) ? given.applications
+      : (given.application ? [given.application] : []))
+      .map(String).filter(Boolean),
+    // `ids`: answer every configured role held, an application's by its full
+    // `<role>@<application>` — what a permission is authorized by and the
+    // PIP answers — rather than by the context's applications.
+    ids: given.ids === true,
     // THE SCOPES OF THE ACCESS TOKEN THIS DECISION IS BEING MADE FOR, when
-    // there is one. One built-in role is computed from them — see
-    // DEVICE_COMPLIANCE — and everything else ignores them, so a caller that
+    // there is one. No role is computed from them since #309 — the last,
+    // DEVICE_COMPLIANCE, is configured now — so a caller that
     // presented no token is exactly what it was.
     scopes: Array.isArray(given.scopes)
       ? given.scopes.map(String)
@@ -1051,8 +1136,11 @@ function configuredRolesOf(context) {
     return role.groups.some(function (group) {
       return lowerGroups.indexOf(String(group).toLowerCase()) >= 0;
     });
+  }).filter(function (role) {
+    return context.ids || !role.application ||
+           context.applications.indexOf(role.application) >= 0;
   }).map(function (role) {
-    return role.name;
+    return context.ids || !role.application ? role.name : role.localName;
   });
 }
 
@@ -1192,9 +1280,13 @@ module.exports = {
   builtInCatalogue: builtInCatalogue,
   CONSOLE_ROLES: CONSOLE_ROLES,
   CONSOLE_ROLE_APPLICATION: CONSOLE_ROLE_APPLICATION,
+  APPLICATION_SEPARATOR: APPLICATION_SEPARATOR,
   consoleRoleFor: consoleRoleFor,
   isConsoleRole: isConsoleRole,
-  seedConsoleRoles: seedConsoleRoles,
+  NATIVE_ROLES: NATIVE_ROLES,
+  nativeRoleFor: nativeRoleFor,
+  isNativeRole: isNativeRole,
+  seedNativeRoles: seedNativeRoles,
   rolesAuthorizing: rolesAuthorizing,
   setDirectory: setDirectory,
   directoryInstalled: directoryInstalled,

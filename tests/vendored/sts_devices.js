@@ -43,6 +43,7 @@
 // RISC.
 //
 //  11. The MDM feed: device:compliance is issued only to a client that
+//      holds DEVICE_COMPLIANCE (#309) and
 //      declares it; POST /admin-api/device-compliance applies a batch by key
 //      thumbprint and by certificate and refuses an unknown device alone;
 //      the job's own admin:write token is refused there; and CAEP
@@ -774,9 +775,21 @@ async function test() {
     });
   };
   const notDeclared = await tokenOf(NOT_MDM, "device:compliance", api);
+  // #309: DEVICE_COMPLIANCE is a configured role, seeded EMPTY — declaring
+  // the scope is not enough; the feed's application must hold the role.
+  const declaredOnly = await tokenOf(MDM, "device:compliance", api);
+  check("declared but not in DEVICE_COMPLIANCE, the feed is still refused " +
+        "(#309)", function () {
+    assert.strictEqual(declaredOnly.status, 400,
+                       JSON.stringify(declaredOnly.json));
+    assert.strictEqual(declaredOnly.json.error, "invalid_scope");
+  });
+  await ok(api + "/roles/add-member",
+           { role: "DEVICE_COMPLIANCE", kind: "application", member: MDM },
+           "put the MDM feed in DEVICE_COMPLIANCE");
   const feedGrant = await tokenOf(MDM, "device:compliance", api);
-  check("device:compliance is issued only to a client that declares it",
-        function () {
+  check("device:compliance is issued only to a client that declares it " +
+        "and holds DEVICE_COMPLIANCE", function () {
     assert.strictEqual(notDeclared.status, 400,
                        JSON.stringify(notDeclared.json));
     assert.strictEqual(notDeclared.json.error, "invalid_scope");

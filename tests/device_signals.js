@@ -39,7 +39,8 @@
 //      section's own three examples.
 //   H. THE MDM FEED: device:compliance is a protected scope (refused to a
 //      client that does not declare it, kept for one that does), the
-//      DEVICE_COMPLIANCE role is held off it and ADMIN_WRITE is not, the
+//      DEVICE_COMPLIANCE role is held by membership (#309) and ADMIN_WRITE
+//      is not, the
 //      gate recognises only its path, and a batch by thumbprint, by
 //      certificate and by id applies with an unknown device refused alone.
 //   I. THE TEST CONTROL: answers in development, 403 in product.
@@ -523,13 +524,24 @@ function childMain() {
       note(declaredJudge.kept.indexOf('device:compliance') >= 0 &&
            scopePolicy.declares(MDM, 'device:compliance'),
            'H2. and kept for one that does', JSON.stringify(declaredJudge));
+      // #309: DEVICE_COMPLIANCE is a CONFIGURED role now, seeded empty —
+      // the scope alone holds nothing; the feed's application is a member.
+      const scopeOnly = roles.rolesOf({ kind: 'application', name: MDM,
+        authenticated: true, scopes: ['device:compliance'] });
+      const seeded = roles.read('DEVICE_COMPLIANCE');
+      roles.write('DEVICE_COMPLIANCE', {
+        description: seeded ? seeded.description : '',
+        users: seeded ? seeded.users : [], groups: seeded ? seeded.groups : [],
+        applications: (seeded ? seeded.applications : []).concat([MDM]) });
       const held2 = roles.rolesOf({ kind: 'application', name: MDM,
         authenticated: true, scopes: ['device:compliance'] });
-      note(held2.indexOf('DEVICE_COMPLIANCE') >= 0 &&
+      note(scopeOnly.indexOf('DEVICE_COMPLIANCE') < 0 &&
+           held2.indexOf('DEVICE_COMPLIANCE') >= 0 &&
            held2.indexOf('ADMIN_WRITE') < 0 &&
            held2.indexOf('ADMIN_READ') < 0,
-           'H3. the scope holds DEVICE_COMPLIANCE and no admin role',
-           held2.join(','));
+           'H3. the scope alone holds nothing (#309); the feed\'s ' +
+           'application, a member, holds DEVICE_COMPLIANCE and no admin role',
+           scopeOnly.join(',') + ' / ' + held2.join(','));
       const certPem = phone.keys[0].material.certificate;
       const feed = devicesAdmin.mdmFeed({ reports: [
         { thumbprint: thumb, keyKind: 'jwk', status: 'not-compliant',

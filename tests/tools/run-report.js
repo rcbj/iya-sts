@@ -236,6 +236,14 @@ const service = require('./service');
 const trust = require('./trust');
 const manifest = require('../vendored/MANIFEST.js');
 const coverage = require('./coverage-report');
+
+// A JOB THAT DECLINES TO RUN says so on a line of its own and exits with
+// this code: `tests/vendored/expectation.js`'s declineToRun(), whose two
+// constants these must match (it is a vendored helper, so it is read rather
+// than required here: a require would run nothing, but the rule for that
+// directory is to take nothing from it that a job does not).
+const SELF_SKIP_EXIT = 42;
+const SELF_SKIP_MARKER = '===== SELF-SKIP: ';
 const adminApiToken = require('./admin-api-token');
 
 const { testFiles } = require('../run');
@@ -659,6 +667,9 @@ function runJob(job, opts) {
     // parse. Each job's own log file gets its bytes exactly as they came.
     let echoed = '';
     const assertions = [];
+    // The reason a job gave for declining to run, off its SELF_SKIP_MARKER
+    // line; see where the status is decided.
+    let selfSkip = null;
     function onData(chunk) {
       log.debug("Entering onData().");
       const text = chunk.toString();
@@ -680,6 +691,9 @@ function runJob(job, opts) {
         const a = assertionOf(line);
         if (a) {
           assertions.push(a);
+        }
+        if (line.indexOf(SELF_SKIP_MARKER) === 0) {
+          selfSkip = line.slice(SELF_SKIP_MARKER.length).trim();
         }
       });
       log.debug("Leaving onData().");
@@ -753,6 +767,16 @@ function runJob(job, opts) {
       if (timedOut) {
         failures.push('the job did not finish within ' + jobTimeoutMs +
                       'ms and was killed');
+      } else if (code === SELF_SKIP_EXIT && selfSkip !== null &&
+                 !failures.length) {
+        // A JOB THAT DECLINED TO RUN (2026-09-28): the parent project's
+        // convention, `expectation.js`'s declineToRun() — a marker line
+        // with the reason, then exit 42 — which the jobs copied from there
+        // use for a prerequisite this run does not have (Samba's raw tests
+        // need the KDC on port 88; the coverage run's is on a port of its
+        // own). It was counted as a failure here, which it is not. Both the
+        // marker AND the code are required, so neither alone can hide one.
+        log.warn(job.name + ' declined to run: ' + selfSkip);
       } else if (code !== 0 && !failures.length) {
         // The exit code is the only evidence there is: a parent-project job
         // reports through `assert` rather than through this repository's
@@ -763,12 +787,15 @@ function runJob(job, opts) {
       stream.end('\n# exit code ' + code + (signal ? ' (' + signal + ')' : '') +
                  ' after ' + ms + 'ms\n');
       log.debug('Leaving runJob(). ' + job.name + ' exited ' + code + '.');
+      const declined = !timedOut && code === SELF_SKIP_EXIT &&
+        selfSkip !== null && !failures.length;
       resolve(Object.assign({}, job, {
-        status: (code === 0 && !timedOut && !failures.length) ? 'passed'
-                                                             : 'failed',
+        status: declined ? 'skipped'
+          : (code === 0 && !timedOut && !failures.length) ? 'passed'
+                                                          : 'failed',
         ms: ms, code: code, signal: signal || null,
         assertions: assertions, failures: failures
-      }));
+      }, declined ? { why: selfSkip } : {}));
     });
   });
 }
@@ -1495,6 +1522,17 @@ const UNIT_WATCHDOG_MS = {
   wycheproof: 600000
 };
 
+// LEFT OUT OF THE COVERAGE RUN, FOR NOW (#314, 2026-09-28): reported SKIPPED
+// with the reason there, and run as usual everywhere else. acvp_pqc's
+// SLH-DSA vectors cannot finish under V8 coverage inside even a thirty-minute
+// watchdog (CI runs 36382542145 and 36394938951). The ticket carries the
+// options; take the row out when one is chosen.
+const COVERAGE_LEFT_OUT = {
+  acvp_pqc: 'the NIST ACVP SLH-DSA vectors cannot finish under coverage ' +
+            'instrumentation (#314); the file runs in full in every ' +
+            './run-tests.sh mode and in ./docker-npm-test.sh'
+};
+
 // ---------------------------------------------------------------------------
 // THE SCHEDULE (2026-09-26). This runner ran every job one at a time until
 // then, and a mode took 4650s: 1170s of in-process files, 3475s of protocol
@@ -1913,6 +1951,18 @@ async function main() {
     // --only); an intended job that did not run is a failure, because the
     // thing it was going to check is unchecked either way and only one of
     // those two words makes somebody look.
+    if (wantCoverage && job.suite === 'unit' &&
+        Object.prototype.hasOwnProperty.call(COVERAGE_LEFT_OUT, job.name)) {
+      // A DELIBERATE EXCLUSION, named and reasoned: see COVERAGE_LEFT_OUT.
+      const why = COVERAGE_LEFT_OUT[job.name];
+      log.warn('[' + n + '/' + jobs.length + '] SKIPPING ' + job.name + ' — ' +
+               why);
+      log.debug('Leaving runOne(). Left out of coverage.');
+      return Object.assign({}, job, {
+        status: 'skipped', ms: 0, code: null, assertions: [],
+        failures: [], why: why
+      });
+    }
     if (job.docker && !dockerHere.ok) {
       // A DELIBERATE EXCLUSION — see haveDocker() above for why this one is a
       // skip where everything else here is a failure. The reason travels with
@@ -2260,8 +2310,12 @@ async function main() {
     log.info('[' + n + '/' + jobs.length + '] ' + job.suite + ' — ' + job.name);
     const result = await runJob(job, opts);
     // The name is on the result line because, with jobs running side by
-    // side, the line above it is often another job's.
-    log.info('    ' + (result.status === 'passed' ? 'passed' : 'FAILED') +
+    // side, the line above it is often another job's. A job that declined
+    // to run is SKIPPED here as in the report: this line said FAILED for
+    // one, which read as a failure the summary did not count (CI run
+    // 36394938951, sts_kerberos_samba under coverage).
+    log.info('    ' + (result.status === 'passed' ? 'passed'
+      : (result.status === 'skipped' ? 'SKIPPED' : 'FAILED')) +
              ' in ' + result.ms + 'ms' +
              (result.assertions.length ? ', ' + result.assertions.length +
               ' assertion(s)' : '') + ' — ' + job.name);

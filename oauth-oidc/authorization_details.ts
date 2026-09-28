@@ -106,6 +106,14 @@ import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 import realms = require('../common/realms');
 import cacheRegistry = require('../common/cache_registry');
+// THE TWO AUTHORIZATION QUESTIONS ABOUT A DETAIL'S TYPE ARE THE ISSUANCE
+// POLICY'S (#305, part D of #88): whether the client registered types and
+// not this one (RFC 9396 section 10), and whether this authorization server
+// publishes a list without it. The rest of `parse()` is RFC 9396
+// WELL-FORMEDNESS — an unknown type, a schema, a location nobody declared —
+// and stays here: it is not an authorization decision.
+import gate = require('../common/issuance_gate');
+import scopeVerdicts = require('../xacml/xacml_scope_verdicts');
 
 // A loose JSON-shaped object: a detail, a definition, a refusal.
 type Json = any;
@@ -116,6 +124,8 @@ interface AuthorizationDetailsDeps {
   config: typeof config;
   errorCodes: typeof errorCodes;
   log: typeof helpers.log;
+  gate: typeof gate;
+  scopeVerdicts: typeof scopeVerdicts;
 }
 
 // Section 2.2's common data fields: four arrays of strings and one string.
@@ -204,7 +214,9 @@ class AuthorizationDetails {
       applications: applications,
       config: config,
       errorCodes: errorCodes,
-      log: helpers.log
+      log: helpers.log,
+      gate: gate,
+      scopeVerdicts: scopeVerdicts
     };
   }
 
@@ -531,7 +543,31 @@ class AuthorizationDetails {
           'to be refused. This authorization server supports ' +
           JSON.stringify(self.typesSupported()) + '.');
       }
-      if (clientTypes.length && clientTypes.indexOf(detail.type) < 0) {
+      // THE POLICY DECIDES the two authorization questions (#305): the
+      // facts, one question for this detail, and its verdict.
+      const A = self.deps.scopeVerdicts.ATTRIBUTE;
+      const asked = self.deps.gate.checkScopes({
+        subject: { kind: 'application', name: String(options.clientId || ''),
+                   authenticated: true },
+        client: String(options.clientId || ''),
+        protocol: 'OAuth 2.0',
+        action: self.deps.scopeVerdicts.SCOPE.DETAIL_ACTION,
+        requested: [String(detail.type)],
+        facts: [{ scope: String(detail.type), attributes: [
+          self.deps.scopeVerdicts.resourceFact(A.CLIENT_HAS_DETAIL_TYPES,
+                                               clientTypes.length > 0),
+          self.deps.scopeVerdicts.resourceFact(
+            A.DETAIL_TYPE_REGISTERED, clientTypes.indexOf(detail.type) >= 0),
+          self.deps.scopeVerdicts.resourceFact(A.SERVER_HAS_DETAIL_TYPES,
+                                               !!profileTypes),
+          self.deps.scopeVerdicts.resourceFact(
+            A.DETAIL_TYPE_PUBLISHED,
+            !!profileTypes && profileTypes.indexOf(detail.type) >= 0)] }]
+      });
+      const typeVerdict = (asked.verdicts || [])[0] ||
+                          { verdict: 'keep', code: '' };
+      if (typeVerdict.verdict !== 'keep' &&
+          typeVerdict.code !== 'STS-OAUTH-0455') {
         log.debug("Leaving AuthorizationDetails.parse(). Not a type the " +
                   "client registered.");
         return self.refusal('STS-OAUTH-0454', where + ' is of type "' +
@@ -539,7 +575,7 @@ class AuthorizationDetails {
           'authorization_details_types ' + JSON.stringify(clientTypes) +
           ' (RFC 9396 section 10).');
       }
-      if (profileTypes && profileTypes.indexOf(detail.type) < 0) {
+      if (typeVerdict.verdict !== 'keep') {
         log.debug("Leaving AuthorizationDetails.parse(). Not a type this " +
                   "server publishes.");
         return self.refusal('STS-OAUTH-0455', where + ' is of type "' +

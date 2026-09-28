@@ -542,6 +542,20 @@ async function checkIssuance(t) {
   const live = core.enrolledOf(entry).filter(function (one) {
     return one.status === 'valid';
   }).length;
+  // A RENEWAL THAT CANNOT SUPERSEDE WHAT IT RENEWS IS REFUSED (2026-09-28):
+  // a serial the realm has no record of for this entry issues nothing, where
+  // it used to issue and leave the named certificate standing.
+  const heldBefore = core.enrolledOf(entry).length;
+  const orphan = await core.issue({
+    family: 'est', profile: 'tls-client', principal: person(ALICE),
+    target: entry, publicKeyPem: other.pair.publicPem, requested: {},
+    via: 'test', replaces: '00deadbeef'
+  });
+  t.equal(codeOf(orphan), 'STS-ENROLL-0092',
+          'a renewal naming a certificate not recorded for this entry is ' +
+          'refused');
+  t.equal(core.enrolledOf(entry).length, heldBefore,
+          'and nothing was issued for it');
   await withOverride('pki.enrollmentMaxCertificatesPerEntry', String(live),
     async function () {
       const capped = await core.issue({

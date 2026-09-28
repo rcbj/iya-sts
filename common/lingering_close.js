@@ -40,6 +40,15 @@
 // socket changes, and a request whose body HAS all arrived is closed the
 // ordinary way, since there is nothing left to read.
 //
+// **AND EVERY REQUEST A WORKER IS DISPATCHED (2026-09-27).**
+// `common/request_worker.ts` arms it at the top of its server's handler,
+// because the front process asks every dispatched request for `Connection:
+// close` (#77), so ANY answer a worker gives before the request has all
+// reached it — not only an upload's refusal — closed a socket the front
+// process was still writing to, and the answer was lost to `write EPIPE`
+// and a 502. The routes' own calls stay: they are what closes the
+// browser's connection to the front process, which is the other hop.
+//
 // The two timers are per connection and one-shot — a bound on one close,
 // not periodic work (see "Anything periodic is a scheduler job").
 // ===========================================================================
@@ -162,7 +171,8 @@ function arm(req, res) {
  * Lingering close: an answer sent before the request body has all arrived,
  * closed without a TCP reset.
  *
- * Used by routes that refuse an upload early, such as the dataset upload.
+ * Armed by every request worker for each dispatched request, and by routes
+ * that refuse an upload early, such as the dataset upload.
  *
  * @namespace
  */

@@ -144,8 +144,10 @@ async function postJson(url, body, token) {
 // /admin-api/device-compliance` takes `device:compliance` and REFUSES the
 // admin token (403, before its body is read), so its enums are probed with a
 // token of that scope, from a client this job registers declaring it (#110:
-// a protected scope is issued only to a client that declares it). The admin
-// pair is the launcher's token and needs nothing.
+// a protected scope is issued only to a client that declares it) and puts in
+// the native role that authorizes it (#309: DEVICE_COMPLIANCE is seeded with
+// no member, and declaring the scope is not enough). The admin pair is the
+// launcher's token and needs nothing.
 function ownScopeOf(op) {
   log.debug("Entering ownScopeOf().");
   let own = "";
@@ -161,6 +163,9 @@ function ownScopeOf(op) {
   log.debug("Leaving ownScopeOf(). " + (own || "the admin pair"));
   return own;
 }
+
+// The native role that authorizes a scope of its own (#309), where one does.
+const NATIVE_ROLE_OF = { "device:compliance": "DEVICE_COMPLIANCE" };
 
 const scopeTokens = {};
 async function tokenForScope(scope) {
@@ -181,6 +186,13 @@ async function tokenForScope(scope) {
   assert.ok(made.status === 200 || made.status === 201,
             "registering a client that declares " + scope + ": " +
             made.status + " " + made.text.slice(0, 300));
+  if (NATIVE_ROLE_OF[scope]) {
+    const member = await postJson(API + "/roles/add-member", {
+      role: NATIVE_ROLE_OF[scope], kind: "application", member: id });
+    assert.ok(member.status === 200,
+              "adding the client to " + NATIVE_ROLE_OF[scope] + ": " +
+              member.status + " " + member.text.slice(0, 300));
+  }
   const r = await call("POST", base + "/oauth2/token", {
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({ grant_type: "client_credentials",

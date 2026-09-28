@@ -206,7 +206,10 @@ class GnapTokens {
     const { log } = this;
     const { helpers } = this.deps;
     log.debug("Entering GnapTokens.ed25519Keys().");
-    const found = helpers.allSigningKeys().filter(function (one) {
+    // The curve keys alone (2026-09-28): the full list makes the realm's
+    // post-quantum keys on this thread the first time, for a lookup that
+    // can only ever find a curve key — helpers.js's keyListFor().
+    const found = helpers.curveSigningKeys().filter(function (one) {
       return one.alg === 'EdDSA' &&
              (one.publicJwk.crv || 'Ed25519') === 'Ed25519';
     })[0];

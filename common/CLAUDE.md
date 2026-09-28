@@ -40,7 +40,7 @@ more than one family needs it, not because it felt general.
 | `realm_chooser.ts` | **WHICH REALM TO SIGN IN THROUGH (2026-09-14, #32).** A GET of exactly `/admin` or `/portal`, in the default realm, with no session and realms defined, asks which realm first — a list in development and a text box in product (`mode.listsRealmsBeforeSignIn()`) — and `?realm=<id>` redirects to that realm's surface, BUILT from the registry and never echoed. A LIBRARY both surfaces call from their own gate, so they cannot ask differently; `admin-ui/CLAUDE.md` 8d. |
 | `account_state.ts` | **A DISABLED ACCOUNT — THE ONE PLACE ONE IS DISABLED, ENABLED AND ASKED ABOUT (2026-09-17).** `pwdAccountLockedTime` on the person's entry, written by the console's Disable button, `POST /admin-api/users/disable` and SCIM's `active: false` alike; a disable ENDS everything the person holds through the same global logout. A LIBRARY (rule 3at) that finds `logout/logout.ts` in `require.cache` and never requires it. |
 | `outbound_tls.ts` | **WHETHER AN OUTBOUND REQUEST MAY BE PLAIN HTTP, AND WHETHER THE CERTIFICATE OF WHOEVER ANSWERS IS VERIFIED (#171, 2026-09-23)** — one policy for GNAP's push finish, SSF push, federation's back channels (and every requester that borrows them) and the XACML nudge, each handing in its three settings and two codes. A static utility class. See *`outbound_tls.ts`* below. |
-| `lingering_close.js` | **AN ANSWER SENT BEFORE AN UPLOAD HAS ALL ARRIVED, CLOSED WITHOUT A RESET (2026-09-26).** `arm(req, res)` in place of `res.set('Connection', 'close')`: after the answer is flushed the socket half-closes and discards what the client is still sending (until it closes, 5 s idle or 30 s), instead of node's immediate destroy — which, with unread data in the buffer, sends a TCP RESET that throws away the answer the peer had not read. The risk upload routes and `request_pool.js`'s early-answer path use it. A LEAF over `config`. |
+| `lingering_close.js` | **AN ANSWER SENT BEFORE AN UPLOAD HAS ALL ARRIVED, CLOSED WITHOUT A RESET (2026-09-26).** `arm(req, res)` in place of `res.set('Connection', 'close')`: after the answer is flushed the socket half-closes and discards what the client is still sending (until it closes, 5 s idle or 30 s), instead of node's immediate destroy — which, with unread data in the buffer, sends a TCP RESET that throws away the answer the peer had not read. The risk upload routes and `request_pool.js`'s early-answer path use it, and **since 2026-09-27 `request_worker.ts` arms it for every dispatched request**: the front asks each for `Connection: close` (#77), so any early answer — a refusal, a 404, a sign-out with no session — closed a socket the front was still writing, and the answer was lost to `write EPIPE` and a 502 (`STS-WORKER-0030`; 17 in 2000 races measured, none armed). A LEAF over `config`. |
 | `revocation_status.js` | **REVOCATION, CONSULTED (2026-09-12)** — the one function that answers whether a PRESENTED certificate chain is revoked: from the register for one this service issued, from the OCSP responder and the CRL (delta and indirect included) it names for anybody else's. `pki_revocation.js` publishes; this checks. A LIBRARY (rule 3ad). |
 | `vendored/` | Byte-identical copies of the parent project's files. **Do not edit them here** — see `common/vendored/CLAUDE.md`. |
 
@@ -1600,6 +1600,15 @@ to REFUSE them well:
   connection error instead of the refusal. The front also closes its worker
   connection once an early answer is read in full, and treats that
   connection ending as expected rather than a worker that could not answer.
+* **and every dispatched request's close lingers on the worker, not only an
+  upload's (2026-09-27)** — `request_worker.ts` arms it at the top of its
+  handler. With `Connection: close` on every request, an ordinary early
+  answer (eight Shared Signals deliveries to this service's own receivers
+  and an RP-initiated logout, in CI run 36369109378's single-node mode)
+  closed the socket under the front's next write, which failed as `write
+  EPIPE` before the answer was parsed: a 502 for a request the worker had
+  answered. The resend (#77) rightly does not apply, since the worker had
+  read the request.
 
 Every ordinary request is proxied exactly as before.
 
@@ -4079,6 +4088,17 @@ with `Cannot find module` naming a file the operator never mentioned.
 
 ## `scope_policy.ts`: which scopes a client may be issued (#110, 2026-09-22) — rule 3au
 
+**THE RULES ARE THE ISSUANCE POLICY'S SINCE #305 (part D of #88).** This file
+gathers the FACTS about each requested scope — protected, declared,
+in the default set, naming another party, `device_sso` and whether the
+client's Native SSO is on — and `judge()` asks one `issue-scope` question per
+scope through `issuance_gate.checkScopes()`, with the realm's mode and the
+stage (`request` refuses, `mint` narrows) in the environment. The built-in
+`role-issuance` holds the rules (`native-sso-not-enabled`,
+`protected-undeclared`, `undeclared`, each a refused/dropped pair); the codes
+(`STS-OAUTH-0577`, `0578`, `0624`, and `0579` for the narrowing's audit row)
+are unchanged. What follows argues the RULES, which moved rather than changed.
+
 Until #110 nothing tied a scope to a client: the token endpoint kept every scope
 a request named, in every mode, so any client that could use
 `client_credentials` minted `admin:write` for `/admin-api`, `scim:write` or
@@ -4506,6 +4526,15 @@ change, and changing where a cleanup goes is a change to what the protocol does.
 
 ## `consent.ts`: what a person AGREED to, which is neither an act nor an intent
 
+**WHICH SCOPES STILL NEED AN ANSWER IS THE ISSUANCE POLICY'S SINCE #305.**
+`outstanding()` gathers the facts — the person's own consent or a global
+consent covering each scope — and asks at the `consent` stage, with
+consent-required in the environment (true unless the caller says otherwise:
+every caller already requires consent, `required()` or OpenID Connect Core
+section 11 for `offline_access`). The rule is the built-in
+`consent-outstanding`, verdict `consent`. The screen, the records and the Deny
+button stay here, by rcbj's decision: a policy cannot draw a page.
+
 Rule 3t. It is the THIRD register in this directory that looks like the other
 two and answers a different question, and saying which is which is most of what
 this file has to do. `delegation.js` holds ACTS — one row per exchange, evidence
@@ -4719,11 +4748,10 @@ container: `EVERYBODY`, `ALL_AUTHENTICATED_USERS`,
 `ALL_UNAUTHENTICATED_USERS`, `ALL_APPLICATIONS`,
 `ALL_AUTHENTICATED_APPLICATIONS`, `ALL_UNAUTHENTICATED_APPLICATIONS`.
 
-**THERE ARE NINE NOW.** `DEVICE_COMPLIANCE` (#164) is read off the scope
-`device:compliance`; `roles.js` argues it at its row. `ADMIN_READ` and
-`ADMIN_WRITE` were read off the admin scopes from 2026-09-09 until #303
-(2026-09-27) made them CONFIGURED roles — see *A role authorizes permissions*,
-below. **The other two are a different shape again.** The six above
+**THERE ARE EIGHT NOW.** `ADMIN_READ` and `ADMIN_WRITE` were read off the
+admin scopes from 2026-09-09 until #303 (2026-09-27), and `DEVICE_COMPLIANCE`
+off `device:compliance` until #309 (2026-09-28); all three are CONFIGURED
+roles now — see *A role authorizes permissions*, below. **The other two are a different shape again.** The six above
 read `kind` and `authenticated` and touch no store. `REMOTE_PEPS` (2026-09-06)
 and `XACML_USER` (beside it) are held by whoever is in one named GROUP —
 `roles.remotePepGroup` and `roles.xacmlUserGroup` — which makes them hybrids,
@@ -4812,10 +4840,37 @@ they cannot be deleted (`STS-XACML-0076`) and their permission cannot change.
 **A machine must HOLD the role (decision 3)**: declaring `admin:*` in
 `oauthAllowedScope` is no longer enough on `client_credentials`.
 
-**WHAT IS NOT DONE**: `DEVICE_COMPLIANCE` is still read off a scope — the
-pattern this removed for the admin ones — and roles scoped to ONE application
-(Entra-style app roles) do not exist; a role is per realm. Both are recorded on
-#88.
+**DEVICE_COMPLIANCE FOLLOWED THEM (#309, 2026-09-28)** — the last role read
+off a scope. The console roles and it are the NATIVE ROLES (`NATIVE_ROLES`):
+each authorizes one native permission, is seeded in every realm, cannot be
+deleted and cannot authorize anything else. DEVICE_COMPLIANCE is otherwise an
+ordinary role (any member kind, edited on `/admin/roles`) and is seeded EMPTY
+(rcbj's decision): no client is the MDM feed until an operator adds it, and
+`sts-management-api` is not one — the separation #164 decision 2 made.
+`device:compliance` is gated like `admin:*`, at issuance and at
+`/admin-api`'s gate (held ∩ carried). No role is read off a scope now.
+
+### Roles that belong to ONE application (#310, 2026-09-28)
+
+Entra's app roles, on rcbj's three decisions. **A role entry scoped by
+`roleApplication`**, the application's registry identifier — the same
+members, `rolePermission` and console as any role; without the attribute a
+role is realm-wide. **Named `<role>@<application>`**, unique per application,
+so two applications may each have a `reader`; a realm-wide role's name may not
+contain the separator (`STS-ADMIN-0829`), and an application's role may not
+take a native or built-in name. **A token or assertion for application X
+carries the realm-wide roles and X's, never another application's** — X by
+the token's audience (`admin_stats.js`'s `claimApplicationsOf()`: an
+identifier, a client_id, an `oauthAudience`, a permission base, an AppliesTo
+or entityID), so an ID Token carries its client's roles and an access token
+its resource's. The same rule decides issuance: the issuance PEP resolves
+roles for the application being issued for, so X's `appRequiredRole` is met by
+a realm-wide role or X's own role of that name, and a role of Y's never
+satisfies X. Inside the service an application's role is known by its full
+name — `rolePermission` (it may authorize only its own application's
+permissions, `STS-ADMIN-0831`), the PIP's role designator — and outside it by
+its name inside the application. `roles.rolesOf()` takes `application(s)` for
+the first reading and `ids: true` for the second.
 
 ### `roles.js` is a LEAF and must stay one
 
@@ -5375,7 +5430,10 @@ holds.**
   to the store hook `hierarchyAdopted`, which reconciles the listener.
 * **A ROW ANOTHER NODE WROTE IS ADOPTED** — `applyStoredChange()`, called by
   `persistence.js`'s `keys` applier for every change row: it reads the CURRENT
-  row, defers to a write of its own in flight, drops a set whose row is gone
+  row, defers to a write of its own in flight — by WAITING for it to land and
+  looking again, since 2026-09-28, because the cluster barrier awaits this
+  applier and an immediate `pending` let a node answer without the other
+  node's change (`sts_pinned_signer` in CI's cluster job) — drops a set whose row is gone
   (rotation, removal — `deleteKeys()` logs a change row since this), and adopts a
   different set or a richer one. `rotate()` now drops the cached set as well.
 * **A COLD START SETTLES BEFORE ANYTHING IS SERVED** — `service_state.ts`'s
@@ -5399,6 +5457,21 @@ started together against one empty store still publish two JWKS (and two Roots
 when their starts overlap), where `active-active` publishes one of each.
 `tests/cluster_key_pki_agreement.js` holds every rule to a stub store and two
 fresh module instances.
+
+**EXCEPT THE CERTIFICATE AUTHORITY ROW, WHICH IS MERGED IN ONE CONTAINER TOO
+(2026-09-28): `mergesPkiRows()`**, the same capabilities without the
+`cluster.mode` test, gates `writePki()` and the applier for `pki:` rows. The
+request pool hands a hierarchy over whole and `adoptPki()` replaces what is
+held, so in single-node a worker recorded an enrolled certificate, adopted
+the front process's copy made a moment before, and wrote the row without it —
+the renewal then found nothing to supersede and the old certificate stayed off
+the CRL (`sts_scep_sscep`). Every process of a container writes this row as
+every node does, so it takes the same three-way merge. Key sets keep
+`arbitrates()`: the pool arbitrates those first-generator-wins. And
+`cert_enrollment.ts`'s `issue()` now refuses a renewal whose old certificate
+is not recorded for the entry (`STS-ENROLL-0092`) before issuing, and takes a
+renewal back when the supersede still fails (`STS-ENROLL-0093`), where it
+ignored the failure.
 
 ### A REALM'S KEY SET, MADE OFF THE EVENT LOOP (2026-09-14, #46 follow-up)
 

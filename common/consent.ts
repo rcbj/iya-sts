@@ -166,6 +166,13 @@ import InstanceSlot = require('./instance_slot');
 // FAPI 1.0 Part 1 section 5.2.2 item 12 (#138): a leaf requiring helpers and
 // config only, with no instance, so requiring it this early builds nothing.
 import fapi = require('../oauth-oidc/fapi');
+// WHICH SCOPES STILL NEED AN ANSWER IS THE ISSUANCE POLICY'S (#305, part D of
+// #88): this file gathers the facts — what the person agreed to, what a
+// global consent covers — and asks the per-scope question at the `consent`
+// stage through the gate. The screen, the records and the Deny button stay
+// here: a policy cannot draw a page (rcbj's decision).
+import gate = require('./issuance_gate');
+import scopeVerdicts = require('../xacml/xacml_scope_verdicts');
 
 // The attribute a person's agreement is written into, and the one an operator's
 // override is written into. Named here rather than spelled at each call site so
@@ -218,6 +225,8 @@ interface ConsentDeps {
   stats: typeof stats;
   fapi: typeof fapi;
   grants: () => GrantBookkeeping;
+  gate: typeof gate;
+  scopeVerdicts: typeof scopeVerdicts;
 }
 
 // A GeneralizedTime stamp's exact shape — see `parseConsentValue()`.
@@ -287,6 +296,8 @@ class Consent {
       errorCodes: errorCodes,
       stats: stats,
       fapi: fapi,
+      gate: gate,
+      scopeVerdicts: scopeVerdicts,
       // LAZILY, and it is the one module here that is: `oauth2_bcp.js` is
       // loaded by the OAuth modules at 9, this one at 8a, and a require at
       // the top of this file would run that module's store declarations
@@ -896,8 +907,35 @@ class Consent {
         permission: applications.forPermission(scope) || null
       };
     });
+    // THE POLICY DECIDES WHICH ARE OUTSTANDING (#305): each scope with
+    // whether an answer covers it — the person's own or a global consent —
+    // and consent-required in the environment. `required` is the caller's:
+    // true unless it says otherwise, because every caller that asks already
+    // requires consent (`required()`, or OpenID Connect Core section 11 for
+    // offline_access, which requires it whatever the setting says).
+    const A = self.deps.scopeVerdicts.ATTRIBUTE;
+    const answer = rows.length ? self.deps.gate.checkScopes({
+      subject: { kind: 'user', name: String(asked.username || ''),
+                 authenticated: true },
+      client: clientId,
+      protocol: 'OAuth 2.0',
+      stage: 'consent',
+      consentRequired: asked.required !== false,
+      requested: wanted,
+      facts: rows.map(function (one) {
+        return { scope: one.scope, attributes: [
+          self.deps.scopeVerdicts.resourceFact(A.SCOPE_CONSENTED,
+                                               one.consented || one.global)] };
+      })
+    }) : { verdicts: [] };
+    const needed: Record<string, boolean> = {};
+    (answer.verdicts || []).forEach(function (one) {
+      if (one.verdict === 'consent') {
+        needed[one.scope] = true;
+      }
+    });
     const out = rows.filter(function (one) {
-      return all ? true : (!one.consented && !one.global);
+      return all ? true : !!needed[one.scope];
     });
     log.debug("Leaving Consent.outstanding(). " + out.length + " of " +
               rows.length + " scope(s) need an answer.");

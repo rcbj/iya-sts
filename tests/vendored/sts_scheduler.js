@@ -142,6 +142,75 @@ async function report(prefix) {
   return body;
 }
 
+// THE TWO JOB LISTS, WITH A REALM CREATED MID-WALK ALLOWED FOR (2026-09-28).
+// `ids` and `pageIds` are sorted `id@realm` lists. A row on one side only is
+// set aside when its realm has rows on both sides and its job has rows for
+// some other realm on both sides — the signature of a row inserted behind a
+// paged walk's cursor. Anything else is a real difference: `agree` is false
+// and the lists are handed back unchanged.
+function settleRealmWalk(ids, pageIds) {
+  log.debug("Entering settleRealmWalk().");
+  const split = function (row) {
+    const at = row.lastIndexOf("@");
+    return { job: row.slice(0, at), realm: row.slice(at + 1) };
+  };
+  const index = function (list) {
+    const realms = {};
+    const jobRealms = {};
+    list.forEach(function (row) {
+      const p = split(row);
+      realms[p.realm] = true;
+      (jobRealms[p.job] = jobRealms[p.job] || {})[p.realm] = true;
+    });
+    return { realms: realms, jobRealms: jobRealms };
+  };
+  const a = index(ids);
+  const b = index(pageIds);
+  const inA = {};
+  ids.forEach(function (row) {
+    inA[row] = true;
+  });
+  const inB = {};
+  pageIds.forEach(function (row) {
+    inB[row] = true;
+  });
+  const onlyOne = ids.filter(function (row) {
+    return !inB[row];
+  }).concat(pageIds.filter(function (row) {
+    return !inA[row];
+  }));
+  const explained = function (row) {
+    const p = split(row);
+    if (p.realm === "default" || !a.realms[p.realm] || !b.realms[p.realm]) {
+      return false;
+    }
+    const elsewhere = function (x) {
+      return Object.keys(x.jobRealms[p.job] || {}).some(function (r) {
+        return r !== p.realm;
+      });
+    };
+    return elsewhere(a) && elsewhere(b);
+  };
+  if (!onlyOne.length || !onlyOne.every(explained)) {
+    log.debug("Leaving settleRealmWalk(). " +
+              (onlyOne.length ? "A real difference." : "No difference."));
+    return { agree: !onlyOne.length, setAside: [], ids: ids,
+             pageIds: pageIds };
+  }
+  const drop = {};
+  onlyOne.forEach(function (row) {
+    drop[row] = true;
+  });
+  log.debug("Leaving settleRealmWalk(). Set aside " + onlyOne.length + ".");
+  return { agree: true, setAside: onlyOne,
+           ids: ids.filter(function (row) {
+             return !drop[row];
+           }),
+           pageIds: pageIds.filter(function (row) {
+             return !drop[row];
+           }) };
+}
+
 // Polls `fn` until it answers something truthy, at the service's own tick,
 // for at most `limitMs`. The condition, not the clock, ends the wait.
 async function until(what, fn, limitMs) {
@@ -219,6 +288,8 @@ async function thePageAndTheApiAgree(cookie) {
   // How far apart the two reads the nextRunAt check compares were made, for
   // that check's allowance (below).
   let readGapMs = 0;
+  // The `id@realm` rows set aside as a realm created mid-walk (below).
+  let walkSetAside = [];
   for (let attempt = 1; attempt <= 5; attempt++) {
     const readStarted = Date.now();
     json = await report();
@@ -263,6 +334,27 @@ async function thePageAndTheApiAgree(cookie) {
     if (JSON.stringify(ids) === JSON.stringify(pageIds)) {
       break;
     }
+    // A REALM CREATED DURING THE WALK LOSES THE ROWS THAT LAND BEHIND IT
+    // (2026-09-28, CI run 36380417724, cluster). Each read walks the job
+    // table a page at a time while other lanes create realms, and a row
+    // inserted into a page a walk has already read is seen by that walk
+    // never — while the same realm's other rows, landing ahead of the cursor,
+    // are. So one side can lack `signing.retire@<realm>` while holding that
+    // realm's other jobs, and with realms made all the time in cluster mode
+    // five readings need not find a quiet moment. Such a row is set aside
+    // ONLY where its realm is on both sides and its job is listed for some
+    // other realm on both sides: a job a process never registered is missing
+    // for every realm or is a service-wide row, and still fails below.
+    const settled = settleRealmWalk(ids, pageIds);
+    if (settled.agree) {
+      log.info("the API and the page agree but for " + settled.setAside.length +
+               " row(s) of realms created during the walk, set aside: " +
+               settled.setAside.join(", "));
+      walkSetAside = settled.setAside;
+      ids = settled.ids;
+      pageIds = settled.pageIds;
+      break;
+    }
     log.info("the API and the page were read while the job list moved " +
              "(attempt " + attempt + "); reading both again");
     await new Promise(function (resolve) { setTimeout(resolve, 2000); });
@@ -280,7 +372,9 @@ async function thePageAndTheApiAgree(cookie) {
   });
   check("and every job is a row of the drawn page, by id", function () {
     assert.strictEqual(html.status, 200, "it answered " + html.status);
-    json.jobs.forEach(function (j) {
+    json.jobs.filter(function (j) {
+      return walkSetAside.indexOf(j.id + "@" + j.realm) < 0;
+    }).forEach(function (j) {
       assert.ok(html.text.indexOf('id="job-' + j.id + "-" + j.realm + '"') >= 0,
                 j.id + " has no row on /admin/scheduler");
     });

@@ -73,7 +73,18 @@ const VOCABULARY = Object.freeze({
   // environment: the protocol family the request arrived over.
   PROTOCOL: 'urn:sts:xacml:protocol',
   // environment: the OAuth grant type, where there is one.
-  GRANT_TYPE: 'urn:sts:xacml:grant-type'
+  GRANT_TYPE: 'urn:sts:xacml:grant-type',
+  // environment: the realm's mode, `development` or `product` (#305 — rcbj's
+  // decision that the mode and the settings a rule depends on are facts in
+  // the request, so the policy decides what differs between the two).
+  MODE: 'urn:sts:xacml:mode',
+  // environment: a setting's value, the setting's key after this prefix
+  // (`urn:sts:xacml:setting:oauth2.consentRequired`), typed as it is.
+  SETTING_PREFIX: 'urn:sts:xacml:setting:',
+  // environment: which moment a scope is judged at (#305): `request` (an
+  // endpoint still talking to the client, which refuses), `mint` (the
+  // backstop every grant mints through, which narrows) or `consent`.
+  SCOPE_STAGE: 'urn:sts:xacml:scope-stage'
 });
 
 // The principal types a request may name. Anything else is a person, which
@@ -242,6 +253,32 @@ class AuthorizationRequest {
     log.debug("Entering AuthorizationRequest.grantType().");
     log.debug("Leaving AuthorizationRequest.grantType().");
     return this.environment(VOCABULARY.GRANT_TYPE, name ? [name] : []);
+  }
+
+  // The realm's mode (#305).
+  mode(name) {
+    log.debug("Entering AuthorizationRequest.mode().");
+    log.debug("Leaving AuthorizationRequest.mode().");
+    return this.environment(VOCABULARY.MODE, name ? [name] : []);
+  }
+
+  // One setting's value (#305): a boolean as a boolean, anything else as a
+  // string.
+  setting(key, value) {
+    log.debug("Entering AuthorizationRequest.setting().");
+    const typed = typeof value === 'boolean';
+    log.debug("Leaving AuthorizationRequest.setting().");
+    return this.environment(VOCABULARY.SETTING_PREFIX + key,
+                            value === undefined || value === null ? []
+                                                                  : [value],
+                            typed ? model.TYPE.BOOLEAN : undefined);
+  }
+
+  // The stage a scope is judged at (#305).
+  stage(name) {
+    log.debug("Entering AuthorizationRequest.stage().");
+    log.debug("Leaving AuthorizationRequest.stage().");
+    return this.environment(VOCABULARY.SCOPE_STAGE, name ? [name] : []);
   }
 
   // The party acting between the subject and the resource (XACML 3.0's

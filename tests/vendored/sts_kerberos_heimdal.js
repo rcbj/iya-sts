@@ -228,6 +228,16 @@ function run(tool, args, opts) {
       log.debug("Leaving run(). " + tool + " exit " + code);
       resolve({ status: code, out: out });
     });
+    // A TOOL THAT EXITS WITHOUT READING ITS INPUT (2026-09-28): a `curl
+    // --negotiate` or a `kinit` that needs no password closes its stdin, and
+    // this write then fails as EPIPE on the stream — an 'error' nothing
+    // handled, which killed the whole job after its checks had passed (the
+    // coverage run of CI run 36380417724). What the tool did is judged by its
+    // exit code and output, above; the input it did not read is not a fault.
+    child.stdin.on("error", function (e) {
+      log.debug("Caught in run(): " + tool + "'s stdin: " +
+                ((e && e.message) || e));
+    });
     child.stdin.end(options.input || "");
   });
 }

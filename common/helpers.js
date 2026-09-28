@@ -4345,7 +4345,13 @@ function allVerificationKeys() {
   log.debug("Entering allVerificationKeys().");
   const keys = stsKeysFor();
   const now = Date.now();
-  const out = allSigningKeys().concat(standbyOf(keys).filter(function (one) {
+  // THE POST-QUANTUM KEYS THAT EXIST, NOT ONES MADE HERE (2026-09-28): a key
+  // never made has signed nothing, and making the eleven synchronously to look
+  // a `kid` up stopped the whole service for ten seconds on a CI runner the
+  // first time this realm's own receivers verified a Security Event Token —
+  // keyListFor()'s reason. Keys another process made arrive by adoption.
+  const out = (keys.extraKeys || []).concat(keys.pqKeys || [])
+    .concat(standbyOf(keys).filter(function (one) {
     // The JWK-shaped generations only: a BBS key (#49 P5) has no JWK and is
     // looked up through bbsGenerations().
     return (one.kind === 'curve' || one.kind === 'pq' ||
@@ -6639,7 +6645,46 @@ function signingKeyFor(alg, useCaseId) {
     return direct;
   }
   log.debug("Leaving signingKeyFor(). " + alg + ".");
-  return signingKeyFromList(alg, allSigningKeys());
+  return signingKeyFromList(alg, keyListFor(alg));
+}
+
+// ---------------------------------------------------------------------------
+// THE LIST A CURVE SIGNATURE IS PICKED FROM IS THE CURVE KEYS ALONE
+// (2026-09-28, CI run 36380417724).
+//
+// `allSigningKeys()` is the curve keys followed by the post-quantum ones, and
+// its post-quantum half is MADE on first use — eleven key generations, SLH-DSA
+// among them, SYNCHRONOUSLY, on this process's one thread. So the first ES256
+// signature in a new realm stopped the whole service while keys it could not
+// use were made: ten seconds on a CI runner, which a sign-in's connection
+// timed out against (sts_mail's reset link, sts_kerberos_krbtgt_rotation).
+// A curve algorithm can only ever be answered by a curve key, so it is looked
+// up among those and the post-quantum keys are left for whoever asks for
+// one — the JWKS, in the worker pool (`pqKeysForAsync()`), or a post-quantum
+// signature. The answer is the same key it always was.
+// ---------------------------------------------------------------------------
+/**
+ * Lists this realm's curve signing keys (EC and EdDSA), without making its
+ * post-quantum keys: what a caller wanting one of these uses, since the full
+ * list generates the post-quantum half on this thread the first time.
+ *
+ * @returns the curve keys, as `allSigningKeys()` lists them
+ */
+function curveSigningKeys() {
+  log.debug("Entering curveSigningKeys().");
+  log.debug("Leaving curveSigningKeys().");
+  return stsKeysFor().extraKeys || [];
+}
+
+function keyListFor(alg) {
+  log.debug("Entering keyListFor(). alg=" + alg);
+  const spec = stsCrypto.JWS_ALGS[alg];
+  if (spec && spec.family !== 'pq') {
+    log.debug("Leaving keyListFor(). The curve keys.");
+    return curveSigningKeys();
+  }
+  log.debug("Leaving keyListFor(). Every key.");
+  return allSigningKeys();
 }
 
 // The same key, with the post-quantum half of the list generated in the pool.
@@ -6667,6 +6712,18 @@ function signingKeyForAsync(alg, useCaseId) {
   if (direct) {
     log.debug("Leaving signingKeyForAsync(). No list needed.");
     return Promise.resolve(direct);
+  }
+  const spec = stsCrypto.JWS_ALGS[alg];
+  if (spec && spec.family !== 'pq') {
+    // The curve keys alone, and at once: see keyListFor().
+    try {
+      const curve = signingKeyFromList(alg, keyListFor(alg));
+      log.debug("Leaving signingKeyForAsync(). A curve key.");
+      return Promise.resolve(curve);
+    } catch (e) {
+      log.debug("Leaving signingKeyForAsync(). Refused.");
+      return Promise.reject(e);
+    }
   }
   log.debug("Leaving signingKeyForAsync(). Waiting on the key list.");
   return allSigningKeysAsync().then(function (list) {
@@ -7455,6 +7512,7 @@ module.exports = {
   signingKeyForAsync: signingKeyForAsync,
   allSigningKeys: allSigningKeys,
   allSigningKeysAsync: allSigningKeysAsync,
+  curveSigningKeys: curveSigningKeys,
   signJwtAs: signJwtAs,
   signJwtAsAsync: signJwtAsAsync,
   certificateHeaderFor: certificateHeaderFor,

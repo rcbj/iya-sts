@@ -344,6 +344,10 @@ import debuggerAccess = require('../debugger/debugger_access');
 // Asked at the two places the debugger permission is narrowed. A library
 // (rule 3) requiring only libraries. See `common/role_permissions.ts`.
 import rolePermissions = require('../common/role_permissions');
+// THE PER-SCOPE QUESTION'S FACT SHAPES (#305): delegated permissions and
+// consent are decided by the issuance policy, and this module hands it the
+// facts in these shapes. A library of the engine's.
+import scopeVerdicts = require('../xacml/xacml_scope_verdicts');
 // WHICH SCOPES A CLIENT MAY BE ISSUED (#110, 2026-09-22). A library (rule 3)
 // requiring only libraries this module already requires. See
 // `common/scope_policy.ts` and scopeRefusal() below.
@@ -495,6 +499,7 @@ interface OAuth2ServerDeps {
   gate: typeof gate;
   debuggerAccess: typeof debuggerAccess;
   rolePermissions: typeof rolePermissions;
+  scopeVerdicts: typeof scopeVerdicts;
   scopePolicy: typeof scopePolicy;
   delegationPolicy: typeof delegationPolicy;
   credentials: typeof credentials;
@@ -1681,6 +1686,7 @@ class OAuth2Server {
       gate: gate,
       debuggerAccess: debuggerAccess,
       rolePermissions: rolePermissions,
+      scopeVerdicts: scopeVerdicts,
       scopePolicy: scopePolicy,
       delegationPolicy: delegationPolicy,
       credentials: credentials,
@@ -6526,22 +6532,51 @@ class OAuth2Server {
    * @returns '' to allow, or the refusal's description
    */
   permissionRefusal(scope: Json, clientId: Json): Json {
-    const { log, config, applications, delegation, mode } = this.deps;
+    const { log, config, gate, mode, scopeVerdicts } = this.deps;
     const self = this;
     log.debug("Entering OAuth2Server.permissionRefusal().");
-    // PRODUCT ALWAYS ENFORCES (#110, 2026-09-22); the setting turns it on in
-    // development. See `mode.honoursUngrantedPermissions()`.
-    const enforced = !mode.honoursUngrantedPermissions() ||
-                     !!config.value('oauth2.delegatedPermissionsEnforced');
-    if (!enforced) {
-      log.debug("Leaving OAuth2Server.permissionRefusal(). Not enforced.");
+    const found = self.audienceScopes(scope, clientId);
+    if (!found.permissions.length) {
+      log.debug("Leaving OAuth2Server.permissionRefusal(). No permission " +
+                "asked for.");
       return '';
     }
-    const named = self.audienceScopes(scope, clientId);
-    if (!named.ungranted.length) {
-      log.debug("Leaving OAuth2Server.permissionRefusal(). Nothing ungranted.");
+    // THE FACTS, AND THE POLICY DECIDES (#305, part D of #88): each
+    // delegated permission asked for, and whether the client holds it; the
+    // mode and `oauth2.delegatedPermissionsEnforced` in the environment. The
+    // rule — product always enforces, development with the setting (#110,
+    // `mode.honoursUngrantedPermissions()`) — is the built-in issuance
+    // policy's `permission-not-granted`.
+    const A = scopeVerdicts.ATTRIBUTE;
+    const answer = gate.checkScopes({
+      subject: { kind: 'application', name: String(clientId || ''),
+                 authenticated: true },
+      client: String(clientId || ''),
+      protocol: 'OAuth 2.0',
+      mode: mode.current(),
+      settings: { 'oauth2.delegatedPermissionsEnforced':
+                    !!config.value('oauth2.delegatedPermissionsEnforced') },
+      stage: 'request',
+      requested: String(scope || '').split(/\s+/).filter(Boolean),
+      facts: found.permissions.map(function (one: Json): Json {
+        return { scope: one.scope, attributes: [
+          scopeVerdicts.resourceFact(A.SCOPE_DELEGATED, true),
+          scopeVerdicts.resourceFact(A.SCOPE_GRANTED, !!one.granted)] };
+      })
+    });
+    const refused = (answer.verdicts || []).filter(function (one: Json) {
+      return one.verdict === 'refuse';
+    }).map(function (one: Json): string {
+      return String(one.scope);
+    });
+    if (!refused.length) {
+      log.debug("Leaving OAuth2Server.permissionRefusal(). Nothing refused.");
       return '';
     }
+    const named = { ungranted: refused,
+                    permissions: found.permissions.filter(function (one) {
+                      return refused.indexOf(one.scope) >= 0;
+                    }) };
     const who = String(clientId || '').trim();
     // The message names the grant that is missing AND where to make it, because
     // this is the one refusal in this service whose fix is a configuration

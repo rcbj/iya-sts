@@ -3087,6 +3087,16 @@ const CODES = [
       'password could not be proved unspent because the cluster store ' +
       'could not be asked, so it was refused.',
     spec: 'ACME unauthorized / SCEP CertRep FAILURE badRequest' },
+  { code: 'STS-ENROLL-0092',
+    summary: 'A renewal named a certificate that is not recorded as issued ' +
+      'to the entry in this realm, so it could not be superseded and ' +
+      'nothing was issued.',
+    spec: 'EST 400 / SCEP CertRep FAILURE badRequest' },
+  { code: 'STS-ENROLL-0093',
+    summary: 'A renewal was issued but the certificate it renews could not ' +
+      'be revoked as superseded, so the renewal was revoked and the ' +
+      'request refused.',
+    spec: 'EST 503 / SCEP CertRep FAILURE badRequest' },
   // ===== ACME ==============================================================
   { code: 'STS-ACME-0001',
     summary: 'ACME is turned off in this realm (acme.enabled is false).',
@@ -14878,13 +14888,13 @@ const CODES = [
       'only an application is added on the role (#303).',
     spec: 'none (a console or management API refusal, HTTP 400)' },
   { code: 'STS-XACML-0076',
-    summary: 'A delete named ADMIN_READ or ADMIN_WRITE, which every realm ' +
-      'keeps (#303).',
+    summary: 'A delete named a native role — ADMIN_READ, ADMIN_WRITE or ' +
+      'DEVICE_COMPLIANCE — which every realm keeps (#303, #309).',
     spec: 'none (a console or management API refusal, HTTP 400)' },
   { code: 'STS-XACML-0077',
-    summary: 'ADMIN_READ or ADMIN_WRITE could not be seeded in a realm; ' +
-      'no machine client can be issued that admin scope there until it ' +
-      'exists (#303).',
+    summary: 'A native role (ADMIN_READ, ADMIN_WRITE or DEVICE_COMPLIANCE) ' +
+      'could not be seeded in a realm; no machine client can be issued its ' +
+      'permission there until it exists (#303, #309).',
     spec: 'none — a warning in the log' },
   { code: 'STS-XACML-0078',
     summary: 'Neither the issuance policy nor the built-in one it falls back ' +
@@ -14892,9 +14902,15 @@ const CODES = [
       'role was dropped and an ungated one kept (#304).',
     spec: 'none — a warning in the log' },
   { code: 'STS-XACML-0079',
-    summary: 'No XACML family is loaded in the process, so no policy could ' +
-      'decide the requested scopes gated by role; they were dropped (#304).',
-    spec: 'none — a warning in the log' },
+    summary: 'The built-in issuance policy could not be evaluated for the ' +
+      'per-scope question in a process with no issuance PEP — a defect; ' +
+      'scopes gated by role were dropped and the rest kept (#304, #305).',
+    spec: 'none — an error in the log' },
+  { code: 'STS-XACML-0080',
+    summary: 'A write named an application\'s role that is not ' +
+      '<role>@<application>, or used a native or built-in role\'s name for ' +
+      'one (#310).',
+    spec: 'none (a console or management API refusal, HTTP 400)' },
   // ===== XPEP ==============================================================
   { code: 'STS-XPEP-0001',
     summary: 'The error-code registry could not be loaded from ./error_codes ' +
@@ -15896,8 +15912,9 @@ const CODES = [
       'left to issue (#302, #303).',
     spec: 'invalid_scope (RFC 6749 sections 4.1.2.1 and 5.2)' },
   { code: 'STS-ADMIN-0823',
-    summary: 'add-permission or remove-permission named ADMIN_READ or ' +
-      'ADMIN_WRITE, whose permission is fixed (#303).',
+    summary: 'add-permission or remove-permission named a native role — ' +
+      'ADMIN_READ, ADMIN_WRITE or DEVICE_COMPLIANCE — whose permission is ' +
+      'fixed (#303, #309).',
     spec: 'none (a console or management API refusal, HTTP 400)' },
   { code: 'STS-ADMIN-0824',
     summary: 'add-permission or remove-permission named no permission ' +
@@ -15905,8 +15922,8 @@ const CODES = [
     spec: 'none (a console or management API refusal, HTTP 400)' },
   { code: 'STS-ADMIN-0825',
     summary: 'add-permission named a native permission (admin:read, ' +
-      'admin:write), which only the two console roles authorize ' +
-      '(#303).',
+      'admin:write, device:compliance), which only its native role ' +
+      'authorizes (#303, #309).',
     spec: 'none (a console or management API refusal, HTTP 400)' },
   { code: 'STS-ADMIN-0826',
     summary: 'add-permission named a permission no application in the realm ' +
@@ -15920,6 +15937,20 @@ const CODES = [
   { code: 'STS-ADMIN-0828',
     summary: 'remove-permission named a permission the role does not ' +
       'authorize (#303).',
+    spec: 'none (a console or management API refusal, HTTP 400)' },
+  { code: 'STS-ADMIN-0829',
+    summary: 'create-role named a realm-wide role with the application ' +
+      'separator "@" in it; that is how an application\'s role is named ' +
+      '(#310).',
+    spec: 'none (a console or management API refusal, HTTP 400)' },
+  { code: 'STS-ADMIN-0830',
+    summary: 'create-role named an application that is not in the realm\'s ' +
+      'registry (#310).',
+    spec: 'none (a console or management API refusal, HTTP 400)' },
+  { code: 'STS-ADMIN-0831',
+    summary: 'add-permission put another application\'s permission on an ' +
+      'application\'s role, which may authorize only its own ' +
+      'application\'s permissions (#310).',
     spec: 'none (a console or management API refusal, HTTP 400)' },
   { code: 'STS-API-0001',
     summary: 'A management API request carried no Bearer access token while ' +

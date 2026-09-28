@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3742** of them, in **39** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3748** of them, in **39** subsystems.
 
 ## Where a code appears
 
@@ -58,7 +58,7 @@ is an ordinary outcome.
 * [Scheduler (`STS-SCHED`)](#sts-sched) — 16
 * [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 79
 * [Certificate authority (`STS-PKI`)](#sts-pki) — 204
-* [Certificate enrollment core (`STS-ENROLL`)](#sts-enroll) — 51
+* [Certificate enrollment core (`STS-ENROLL`)](#sts-enroll) — 53
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 72
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 26
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 47
@@ -80,9 +80,9 @@ is an ordinary outcome.
 * [Mail (`STS-MAIL`)](#sts-mail) — 39
 * [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 282
 * [Device register (`STS-DEVICE`)](#sts-device) — 45
-* [XACML and access policy (`STS-XACML`)](#sts-xacml) — 79
+* [XACML and access policy (`STS-XACML`)](#sts-xacml) — 80
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 32
-* [Admin console (`STS-ADMIN`)](#sts-admin) — 207
+* [Admin console (`STS-ADMIN`)](#sts-admin) — 210
 * [Management API (`STS-API`)](#sts-api) — 75
 * [User portal (`STS-PORTAL`)](#sts-portal) — 75
 * [Sign-out (`STS-LOGOUT`)](#sts-logout) — 7
@@ -755,6 +755,8 @@ Raised from: common/cert_enrollment.ts, common/enrollment_monitor.ts.
 | `STS-ENROLL-0085` | A SCEP challenge password was presented after it expired. | SCEP CertRep FAILURE badRequest |
 | `STS-ENROLL-0090` | An enrollment monitor counter could not be recorded (the request it counted is unaffected). | none (log only) |
 | `STS-ENROLL-0091` | An ACME External Account Binding key or a SCEP challenge password could not be proved unspent because the cluster store could not be asked, so it was refused. | ACME unauthorized / SCEP CertRep FAILURE badRequest |
+| `STS-ENROLL-0092` | A renewal named a certificate that is not recorded as issued to the entry in this realm, so it could not be superseded and nothing was issued. | EST 400 / SCEP CertRep FAILURE badRequest |
+| `STS-ENROLL-0093` | A renewal was issued but the certificate it renews could not be revoked as superseded, so the renewal was revoked and the request refused. | EST 503 / SCEP CertRep FAILURE badRequest |
 
 ## STS-ACME
 
@@ -3575,10 +3577,11 @@ Raised from: xacml/, common/access_gate.ts, common/issuance_gate.js, common/role
 | `STS-XACML-0073` | A change nudge was not sent because the PEP's notify URL is plain http and the realm is in product mode, whatever xacml.pepNotifyAllowHttp says (#171). | — |
 | `STS-XACML-0074` | Product mode ignored xacml.pepNotifySkipTlsVerification: a nudge verifies the PEP's certificate whatever it says. Logged once per process (#171). | none — a warning in the log |
 | `STS-XACML-0075` | A write put a person or a group on ADMIN_READ or ADMIN_WRITE; their people are the console roster's, granted on /admin/rbac, and only an application is added on the role (#303). | none (a console or management API refusal, HTTP 400) |
-| `STS-XACML-0076` | A delete named ADMIN_READ or ADMIN_WRITE, which every realm keeps (#303). | none (a console or management API refusal, HTTP 400) |
-| `STS-XACML-0077` | ADMIN_READ or ADMIN_WRITE could not be seeded in a realm; no machine client can be issued that admin scope there until it exists (#303). | none — a warning in the log |
+| `STS-XACML-0076` | A delete named a native role — ADMIN_READ, ADMIN_WRITE or DEVICE_COMPLIANCE — which every realm keeps (#303, #309). | none (a console or management API refusal, HTTP 400) |
+| `STS-XACML-0077` | A native role (ADMIN_READ, ADMIN_WRITE or DEVICE_COMPLIANCE) could not be seeded in a realm; no machine client can be issued its permission there until it exists (#303, #309). | none — a warning in the log |
 | `STS-XACML-0078` | Neither the issuance policy nor the built-in one it falls back to gave a verdict on a requested scope — a defect; a scope gated by role was dropped and an ungated one kept (#304). | none — a warning in the log |
-| `STS-XACML-0079` | No XACML family is loaded in the process, so no policy could decide the requested scopes gated by role; they were dropped (#304). | none — a warning in the log |
+| `STS-XACML-0079` | The built-in issuance policy could not be evaluated for the per-scope question in a process with no issuance PEP — a defect; scopes gated by role were dropped and the rest kept (#304, #305). | none — an error in the log |
+| `STS-XACML-0080` | A write named an application's role that is not <role>@<application>, or used a native or built-in role's name for one (#310). | none (a console or management API refusal, HTTP 400) |
 
 ## STS-XPEP
 
@@ -3830,12 +3833,15 @@ Raised from: admin-ui/ (except pki_admin.js), admin-core/.
 | `STS-ADMIN-0820` | A console form POST held a value outside the closed set the mirroring /admin-api operation's enum declares (#86). | HTTP 400 page |
 | `STS-ADMIN-0821` | A permission gated by role — admin:read, admin:write, or an application permission its resource lists in oauthRoleGatedPermission — was asked for on behalf of a person or an application no held role authorizes it for (for a person's console roles: no Admin Read or Admin Write, not signed in, or the bootstrap administrator before its claim), and was left off the tokens (#302, #303). | none — the token is issued without that scope (RFC 6749 section 3.3) |
 | `STS-ADMIN-0822` | Every scope a request asked for was a permission gated by role that the subject's roles do not authorize, so nothing was left to issue (#302, #303). | invalid_scope (RFC 6749 sections 4.1.2.1 and 5.2) |
-| `STS-ADMIN-0823` | add-permission or remove-permission named ADMIN_READ or ADMIN_WRITE, whose permission is fixed (#303). | none (a console or management API refusal, HTTP 400) |
+| `STS-ADMIN-0823` | add-permission or remove-permission named a native role — ADMIN_READ, ADMIN_WRITE or DEVICE_COMPLIANCE — whose permission is fixed (#303, #309). | none (a console or management API refusal, HTTP 400) |
 | `STS-ADMIN-0824` | add-permission or remove-permission named no permission (#303). | none (a console or management API refusal, HTTP 400) |
-| `STS-ADMIN-0825` | add-permission named a native permission (admin:read, admin:write), which only the two console roles authorize (#303). | none (a console or management API refusal, HTTP 400) |
+| `STS-ADMIN-0825` | add-permission named a native permission (admin:read, admin:write, device:compliance), which only its native role authorizes (#303, #309). | none (a console or management API refusal, HTTP 400) |
 | `STS-ADMIN-0826` | add-permission named a permission no application in the realm defines; a permission must be defined before a role can authorize it (#303). | none (a console or management API refusal, HTTP 400) |
 | `STS-ADMIN-0827` | add-permission named a permission the role already authorizes (#303). | none (a console or management API refusal, HTTP 400) |
 | `STS-ADMIN-0828` | remove-permission named a permission the role does not authorize (#303). | none (a console or management API refusal, HTTP 400) |
+| `STS-ADMIN-0829` | create-role named a realm-wide role with the application separator "@" in it; that is how an application's role is named (#310). | none (a console or management API refusal, HTTP 400) |
+| `STS-ADMIN-0830` | create-role named an application that is not in the realm's registry (#310). | none (a console or management API refusal, HTTP 400) |
+| `STS-ADMIN-0831` | add-permission put another application's permission on an application's role, which may authorize only its own application's permissions (#310). | none (a console or management API refusal, HTTP 400) |
 
 ## STS-API
 

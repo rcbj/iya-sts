@@ -188,6 +188,9 @@ import bunyan = require('bunyan');
 import config = require('./config');
 // A LEAF with no requires: the failure codes on the log lines below.
 import errorCodes = require('./error_codes');
+// Requires only bunyan and `config`, both already loaded above: every
+// dispatched request's close lingers (the server's request handler below).
+import lingeringClose = require('./lingering_close');
 
 let logLevelProblem = null;
 const log = bunyan.createLogger({
@@ -828,6 +831,25 @@ class RequestWorker {
     this.announcer = announcer;
 
     const server = http.createServer(function (req, res) {
+      // -------------------------------------------------------------------
+      // EVERY DISPATCHED REQUEST'S CLOSE LINGERS (2026-09-27, CI run
+      // 36369109378).
+      //
+      // The front process asks for `Connection: close` on every request (#77),
+      // so node's server here closes the socket the moment an answer is
+      // flushed. When that answer went out before the front process had
+      // finished writing the request — a refusal, a 404, a sign-out with no
+      // session — its next write met a closed socket, node reported `write
+      // EPIPE` before it had parsed the answer, and the front process sent
+      // the person a 502 in place of the answer this worker gave (nine in the
+      // single-node run: eight Shared Signals deliveries to this service's
+      // own receivers, and an RP-initiated logout). Measured with node alone:
+      // 17 of 2000 such races lost the answer, and none with the close
+      // armed. `arm()` lingers only when the body has not all arrived and
+      // closes a finished request the ordinary way; the `Connection: close`
+      // it sets is what this answer said already.
+      // -------------------------------------------------------------------
+      lingeringClose.arm(req, res);
       // THE CLIENT'S JA4 FINGERPRINT (#62 P0), forwarded beside the
       // certificate and put on the REQUEST, for the keep-alive reason above.
       // Stripped whether or not it is well formed; see

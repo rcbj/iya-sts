@@ -310,8 +310,15 @@ async function setUp(k) {
   for (;;) {
     account = await wire.asExchange(tcp, KREALM, ACCOUNT,
                                     { password: k.password });
-    const err = account && !account.tgt && account.first &&
-      account.first.error;
+    // EITHER LEG (CI run 36394938951): the pre-authenticated second request
+    // is a connection of its own, and behind the cluster's balancer it can
+    // reach the node that has not learnt the realm while the first did.
+    const leg = account && !account.tgt
+      ? ((account.second && account.second.error) ||
+         (account.first && account.first.error))
+      : null;
+    const err = leg && leg.code === 68 ? leg
+      : (account && account.first && account.first.error);
     if (!(err && err.code === 68) || Date.now() > until) {
       break;
     }

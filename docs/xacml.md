@@ -124,8 +124,9 @@ answered under its bare name and under `urn:sts:xacml:attribute:employeeType`.
 **It also answers the subject's roles** (#303). A designator for
 `urn:sts:xacml:role` returns the configured roles the subject holds in the
 realm: roles held directly, through a group, or as an application, plus
-`ADMIN_READ` and `ADMIN_WRITE` for a person on the console roster. This is the
-same answer the service uses when it issues tokens. That lets a policy decide
+`ADMIN_READ` and `ADMIN_WRITE` for a person on the console roster. A role that
+belongs to one application is answered by its full name, `<role>@<application>`
+(#310). This is the same answer the service uses when it issues tokens. That lets a policy decide
 on roles for a subject that came with no scopes: a person named in a SAML
 assertion, a Kerberos principal, or a client ID. Built-in roles such as
 `ALL_AUTHENTICATED_USERS` are not returned, because they describe the request
@@ -171,6 +172,23 @@ Five PEPs are built into the process:
 | **signal response** | what this service's own console and portal do with a verified CAEP or RISC event they receive: whether it ends their own sessions for the person it names ([Signals received](signals-received.md#what-the-console-and-the-portal-do-with-a-signal)) | `xacml.signalResponsePolicy` (`signal-response`) |
 | **demonstration** | `GET /xacml/protected` | the repository root |
 
+**The issuance policy also decides which OAuth scopes are issued** (#304,
+#305). For each requested scope, the issuance PEP asks one more question: the
+action is `issue-scope` and the resource is the scope. The request carries the
+facts: whether the client declares the scope, whether it is one of this
+service's protected scopes, whether a delegated permission was granted, which
+roles authorize it, and whether the person consented. It also carries the
+realm's mode, the relevant settings, and the stage (`request`, `mint` or
+`consent`). The answer's obligation `urn:sts:xacml:obligation:scope` says
+`keep`, `drop`, `refuse` or `consent`, with an error code. The built-in
+`role-issuance` policy holds the rules; before this change they were code. To
+change what is issued, edit the policy: for example, add a rule that refuses a
+scope, or remove the consent rule. If a policy gives no verdict on a scope (for
+example an older override without these rules, or `xacml.enabled` off), the
+built-in policy decides. RFC 9396 authorization details are asked about in the
+same way (action `issue-authorization-detail`) for the client's registered
+types and the types the server publishes.
+
 The issuance PEP builds a request in which the subject is the party being
 authenticated (in a `client_credentials` grant, that is the client). The
 request carries the roles the subject holds and any roles found in a token it
@@ -179,6 +197,15 @@ application, with the roles it requires, and the action is the kind of
 issuance. **Nothing else in the service tests roles.** The reason someone was
 refused is always a document that you can read, edit, try out and find in the
 audit log.
+
+**A role can belong to one application** (#310). Create it on `/admin/roles`
+(or `POST /admin-api/roles/create-role`) with `application` set to the
+application's identifier. It is registered as `<role>@<application>`, so two
+applications can each have a `reader`. When the service issues something for
+that application, the role counts under its short name (`reader`): the
+application's `appRequiredRole` can name it, and tokens and assertions for that
+application carry it in the roles claim. Tokens for any other application never
+carry it. Realm-wide roles work as before and appear everywhere.
 
 **The request also carries the RISK of the authentication** the issuance
 rests on, as four environment attributes (`urn:sts:xacml:risk-level`,

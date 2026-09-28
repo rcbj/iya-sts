@@ -3019,6 +3019,9 @@ function holdAndWritePki(id, chain) {
 // is then the `saveKeys()` upsert it always was.
 // ===========================================================================
 const writes = new Map();        // row key -> { tail, queued, pending }
+// How many times `applyStoredChange()` waits for a write of its own to land
+// before it answers `pending` (see its header).
+const APPLY_WAIT_ROUNDS = 3;
 const lastOutcome = new Map();   // row key -> what its last write decided
 const pkiBase = new Map();       // scope id -> ciphertext last read or written
 const pkiLocalGen = new Map();   // scope id -> attachPki() calls so far
@@ -3053,6 +3056,39 @@ function arbitrates() {
   }
   log.debug("Leaving arbitrates(). " + clustered);
   return clustered;
+}
+
+// ---------------------------------------------------------------------------
+// **A CERTIFICATE AUTHORITY ROW IS MERGED WHEREVER THE STORE CAN MERGE, IN
+// ONE CONTAINER AS WELL AS A CLUSTER (2026-09-28).** `arbitrates()`' argument
+// for keeping the upsert with `cluster.mode=off` — one container already
+// agrees over the request pool's channels — is true of a KEY SET, which those
+// channels arbitrate first-generator-wins, and false of this row: the channel
+// hands a hierarchy over WHOLE and `adoptPki()` REPLACES what is held, so two
+// processes writing at once lost whichever record the other had not seen.
+// Measured in single-node (`sts_scep_sscep`): a worker recorded an enrolled
+// certificate, the front process certified the realm's post-quantum keys from
+// a copy made just before, the worker adopted that copy, and the renewal
+// found nothing to supersede — the old certificate never reached the CRL.
+// Every process in a container is a writer of the row exactly as every node
+// is, so the row takes the cluster's three-way merge (`pki_merge.js`: issued
+// serials and revocations are unions) wherever the store holds it. Key sets
+// keep `arbitrates()`.
+// ---------------------------------------------------------------------------
+/**
+ * Tells whether a certificate authority row is merged under the row's lock
+ * rather than upserted: persisting, a merging store and a key-encryption key,
+ * whatever `cluster.mode` says.
+ *
+ * @returns true when a hierarchy write is a merge
+ */
+function mergesPkiRows() {
+  log.debug("Entering mergesPkiRows().");
+  const answer = persists() && !!store && !!kek &&
+                 typeof store.mergeKeys === 'function' &&
+                 typeof store.loadKey === 'function';
+  log.debug("Leaving mergesPkiRows(). " + answer);
+  return answer;
 }
 
 // ---------------------------------------------------------------------------
@@ -3420,7 +3456,7 @@ function writePki(rowKey, payload) {
   }
   const text = JSON.stringify(chain);
   const cipher = crypto.encryptWithKek(kek, text, 'pki-hierarchy');
-  if (!arbitrates()) {
+  if (!mergesPkiRows()) {
     log.debug("Leaving writePki(). An upsert.");
     return Promise.resolve().then(function () {
       return store.saveKeys(rowKey, cipher);
@@ -3559,6 +3595,18 @@ function notifyHierarchyAdopted(id) {
 // WRITE OF ITS OWN IN FLIGHT**, whose merge is about to decide against the
 // same row and will adopt the answer — adopting underneath it would replace
 // this process's unwritten change with a copy that lacks it.
+//
+// **DEFERS BY WAITING, NOT BY RETURNING (2026-09-28).** It answered `pending`
+// at once, and the cluster barrier — which awaits this applier before a
+// request is served — took that as caught up. So a node whose own write of a
+// realm's certificate-authority row was out answered from its copy WITHOUT
+// the other node's change, until its write landed a moment later:
+// `sts_pinned_signer` in CI's cluster job (runs 36382542145, 36394938951), an
+// xml key pinned on one node and the other serving `/saml2/metadata` with the
+// generated encryption certificate. It now waits for its own write to land —
+// which merged the other node's row under the lock — and looks again. Three
+// rounds at most, so writes that keep coming cannot hold a request; after
+// that it answers `pending` as it did.
 // ---------------------------------------------------------------------------
 /**
  * Adopts a key or hierarchy row another process wrote, reading the current row;
@@ -3567,9 +3615,10 @@ function notifyHierarchyAdopted(id) {
  * @param rowKey - the row: a realm id, or `pki:` and a scope
  * @returns a promise of `{ kind, realm, adopted }`
  */
-function applyStoredChange(rowKey) {
+function applyStoredChange(rowKey, round) {
   log.debug("Entering applyStoredChange(). row=" + rowKey);
   const key = String(rowKey || '');
+  const turn = Number(round) || 0;
   const isPki = key.indexOf(PKI_ROW_PREFIX) === 0;
   const id = isPki ? key.slice(PKI_ROW_PREFIX.length) : key;
   const kind = isPki ? 'pki' : 'keys';
@@ -3578,21 +3627,35 @@ function applyStoredChange(rowKey) {
   // two processes each adopting the other's set in the same moment and ending
   // as split as they started — which is the argument `applyKeysChange()` used
   // to make for doing nothing, and it still holds there.
-  if (!arbitrates()) {
+  // A CERTIFICATE AUTHORITY ROW IS ADOPTED WHEREVER IT IS MERGED
+  // (mergesPkiRows()): a merged row is the store's answer, and a process
+  // that holds less than it must take it.
+  if (isPki ? !mergesPkiRows() : !arbitrates()) {
     log.debug("Leaving applyStoredChange(). The store does not arbitrate.");
     return Promise.resolve({ kind: kind, realm: id, adopted: false });
   }
+  // A write of ours in flight: wait for it to land, then look again.
+  const afterOurWrite = function () {
+    if (turn >= APPLY_WAIT_ROUNDS) {
+      log.debug('applyStoredChange(): ' + key + ' is still being written ' +
+                'here after ' + turn + ' round(s); its merge decides.');
+      return Promise.resolve({ kind: kind, realm: id, adopted: false,
+                               pending: true });
+    }
+    return settle(key).then(function () {
+      return applyStoredChange(key, turn + 1);
+    });
+  };
   if (writes.has(key)) {
     log.debug("Leaving applyStoredChange(). A write of ours is in flight.");
-    return Promise.resolve({ kind: kind, realm: id, adopted: false,
-                             pending: true });
+    return afterOurWrite();
   }
   log.debug("Leaving applyStoredChange(). Reading the row.");
   return Promise.resolve().then(function () {
     return store.loadKey(key);
   }).then(function (cipher) {
     if (writes.has(key)) {
-      return { kind: kind, realm: id, adopted: false, pending: true };
+      return afterOurWrite();
     }
     try {
       return isPki ? adoptPkiRow(id, cipher) : adoptKeyRow(id, cipher);
@@ -3804,6 +3867,7 @@ module.exports = {
   // THE STORE AS THE ARBITER BETWEEN NODES (#46). See the block above
   // `arbitrates()`.
   arbitrates: arbitrates,
+  mergesPkiRows: mergesPkiRows,
   applyStoredChange: applyStoredChange,
   refreshPki: refreshPki,
   pendingWrites: pendingWrites,

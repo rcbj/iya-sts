@@ -566,23 +566,45 @@ function purgeExpiredTokens(nowMs) {
   return out;
 }
 
-function ensureTokenPurgeJob() {
+function ensureTokenPurgeJob(schedulerInstance) {
   log.debug("Entering ensureTokenPurgeJob().");
   if (tokenPurgeRegistered) {
     log.debug("Leaving ensureTokenPurgeJob(). Registered.");
     return;
   }
-  tokenPurgeRegistered = true;
-  let scheduler = null;
-  try {
-    scheduler = require('../cluster/scheduler');
-  } catch (e) {
-    // A process without the scheduler — the parent project's in-process
-    // Kerberos tests load this file alone — keeps the size cap only.
-    log.debug("Caught in ensureTokenPurgeJob(): " + ((e && e.message) || e));
-    log.debug("Leaving ensureTokenPurgeJob(). No scheduler.");
+  // **REGISTERED AT START-UP IN EVERY PROCESS TOO (2026-09-28)**, by
+  // `common/protocol_stack.ts` with the scheduler it hands in — the fix
+  // `cluster/scheduler.ts` made for the three shared-table sweeps on
+  // 2026-09-22, which this CLUSTER job missed. Registered only at a process's
+  // first recorded JWT, it was a job of whichever processes had signed
+  // something: with every path dispatched, the leader's FRONT process often
+  // had not, so the hourly purge ran only where the leader happened to sign
+  // a token, a node taking the lease over need not know the job at all, and
+  // `/admin/scheduler` and `GET /admin-api/scheduler` — answered by
+  // different workers on different nodes — listed different jobs
+  // (`sts_scheduler`, cluster mode, CI run 36380417724). The call at the
+  // first recording stays, for a process that loaded this file alone.
+  let scheduler = schedulerInstance || null;
+  if (!scheduler) {
+    try {
+      scheduler = require('../cluster/scheduler');
+    } catch (e) {
+      // A process without the scheduler — the parent project's in-process
+      // Kerberos tests load this file alone — keeps the size cap only.
+      log.debug("Caught in ensureTokenPurgeJob(): " +
+                ((e && e.message) || e));
+      log.debug("Leaving ensureTokenPurgeJob(). No scheduler.");
+      return;
+    }
+  }
+  // NOT LATCHED BEFORE THE REGISTRATION HAPPENS: a half-built scheduler
+  // reached through the require above would otherwise mark the job
+  // registered while registering nothing (`used_assertions.js`'s guard).
+  if (!scheduler || typeof scheduler.register !== 'function') {
+    log.debug("Leaving ensureTokenPurgeJob(). No scheduler yet.");
     return;
   }
+  tokenPurgeRegistered = true;
   if (scheduler.job(TOKEN_PURGE_JOB)) {
     log.debug("Leaving ensureTokenPurgeJob(). Registered elsewhere.");
     return;
@@ -3093,17 +3115,55 @@ function resolvedGroupClaims(id, context) {
 // the case the role register exists to be able to answer. `authenticated` is
 // true here because a token is being minted: whatever door this came through
 // let them through it.
+// THE APPLICATIONS A TOKEN OR ASSERTION IS FOR (#310): each audience value
+// resolved to the registry entry it names — an identifier, a client_id, an
+// oauthAudience, a permission base URI, or an AppliesTo / SAML entityID. A
+// token for application X carries the roles that belong to X (and every
+// realm-wide role), and never another application's (rcbj's decision 3). An
+// ID Token's audience is its client; an access token's is its resource, and
+// its default audience — this service — is no application at all, so it
+// carries realm-wide roles alone.
+function claimApplicationsOf(ctx) {
+  log.debug("Entering claimApplicationsOf().");
+  const out = [];
+  String(ctx.audience || '').split(/\s+/).filter(Boolean)
+    .forEach(function (value) {
+      let found = null;
+      try {
+        found = (applications.get(value) && { identifier: value }) ||
+                applications.forClientId(value) ||
+                applications.forAudience(value) ||
+                applications.forPermissionBase(value) ||
+                applications.forAppliesTo(value);
+      } catch (e) {
+        // A registry that cannot be read names no application: the token
+        // carries its realm-wide roles, which is what it carried before.
+        log.debug("Caught in claimApplicationsOf(): " +
+                  ((e && e.message) || e));
+        found = null;
+      }
+      if (found && found.identifier &&
+          out.indexOf(found.identifier) < 0) {
+        out.push(String(found.identifier));
+      }
+    });
+  log.debug("Leaving claimApplicationsOf(). " + out.join(' '));
+  return out;
+}
+
 function resolvedRoleClaims(context) {
   log.debug("Entering resolvedRoleClaims().");
   const ctx = context || {};
   const username = String(ctx.username || ctx.subject || '');
   try {
+    const forApplications = claimApplicationsOf(ctx);
     log.debug("Leaving resolvedRoleClaims().");
     return roles.claimFor(
       username
-        ? { kind: 'user', name: username, authenticated: true }
-        : { kind: 'application',
-            name: String(ctx.client_id || ''), authenticated: true }) || {};
+        ? { kind: 'user', name: username, authenticated: true,
+            applications: forApplications }
+        : { kind: 'application', name: String(ctx.client_id || ''),
+            authenticated: true, applications: forApplications }) || {};
   } catch (e) {
     log.error(errorCodes.tag('STS-REG-0044') +
               'the role register threw and was ignored; the token is issued ' +
@@ -5290,6 +5350,7 @@ module.exports = {
   setRevocationObserver: setRevocationObserver,
   restore: restore,
   purgeExpiredTokens: purgeExpiredTokens,
+  ensureTokenPurgeJob: ensureTokenPurgeJob,
   revokeWhere: revokeWhere,
   revokeArtifact: revokeArtifact,
   restoreArtifact: restoreArtifact,

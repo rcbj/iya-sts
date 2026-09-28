@@ -260,7 +260,7 @@ counts changes by source, day by day.
 | Door | Source | Who may use it |
 |---|---|---|
 | An administrator: the **Compliance** form on a device's page, or `POST /admin-api/devices/set-compliance` | `admin` | Admin Write. May also set `unknown`, withdrawing a vouch. |
-| An MDM or posture feed: `POST /admin-api/device-compliance` | `mdm` | A client holding an access token with the **`device:compliance`** scope, and nothing else. |
+| An MDM or posture feed: `POST /admin-api/device-compliance` | `mdm` | A client holding an access token with the **`device:compliance`** scope, and nothing else, whose application is a member of the `DEVICE_COMPLIANCE` role. |
 | The test control: `POST /devices/test/compliance` | `test-control` | Anybody, **in development only**; product answers `403`. |
 | A received CAEP `device-compliance-change` from a trusted transmitter | `caep` | A foreign transmitter an administrator registered on **Shared Signals transmitters** (#153). The device is named by its id (an `iss_sub` subject's `sub`) or a key thumbprint. |
 
@@ -274,12 +274,19 @@ counts changes by source, day by day.
    only to a client that declares it, in both modes, and `/admin-api` asks
    again on every call, so removing it from the application stops the tokens
    the feed already holds.
-2. **Get a token** with the client credentials grant:
+2. **Add the application to the `DEVICE_COMPLIANCE` role** (#309), on
+   `/admin/roles` or with `POST /admin-api/roles/add-member`
+   `{"role": "DEVICE_COMPLIANCE", "kind": "application", "member": "<feed>"}`.
+   The role authorizes `device:compliance`. It exists in every realm with no
+   members, so no client is the feed until you add one; declaring the scope
+   alone is not enough. Taking the application out of the role stops the
+   tokens it already holds at the next call.
+3. **Get a token** with the client credentials grant:
    `POST /oauth2/token` with `grant_type=client_credentials`,
    `scope=device:compliance` and `resource=<base>/admin-api` (the resource
    indicator puts the management API in the token's `aud`; without it every
    call is refused `401`).
-3. **Report**: `POST /admin-api/device-compliance` with
+4. **Report**: `POST /admin-api/device-compliance` with
    `Authorization: Bearer <token>` and a JSON body — one report, or up to
    `devices.complianceFeedMaxReports` of them:
 

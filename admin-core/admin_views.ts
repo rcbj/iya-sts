@@ -1466,9 +1466,14 @@ class AdminViews {
         // and correctly, and looks exactly like the application being broken.
         // This is the one thing this page can say that neither the application
         // page nor the role table can.
+        // A requirement is met by a realm-wide role of that name or by
+        // this application's own role of that name inside it (#310) —
+        // never another application's.
         unknown: required.filter(function (name) {
           return !roles.isBuiltIn(name) && !configured.some(function (role) {
-            return role.name === name;
+            return role.application
+              ? role.application === row.identifier && role.localName === name
+              : role.name === name;
           });
         })
       };

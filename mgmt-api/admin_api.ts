@@ -3553,7 +3553,9 @@ class AdminApi {
                      '(STS-DEVICE-0007) and the rest still apply. **The ' +
                      'access token must carry `device:compliance`**, which ' +
                      'the token endpoint issues only to a client whose ' +
-                     'oauthAllowedScope declares it, in both modes; an ' +
+                     'oauthAllowedScope declares it, in both modes, and ' +
+                     'that HOLDS the DEVICE_COMPLIANCE role (#309, seeded ' +
+                     'with no member — add the feed on /admin/roles); an ' +
                      '`admin:write` token is refused here, so a feed\'s ' +
                      'reports are always a feed\'s.',
         // NO CONSOLE FORM POSTS AS A FEED, and saying it mirrored the device
@@ -17721,11 +17723,27 @@ class AdminApi {
                 role: { type: 'string', description: 'The role\'s name.' },
                 description: { type: 'string',
                                description:
-                                 'What it is for, for the next person.' }
+                                 'What it is for, for the next person.' },
+                application: { type: 'string',
+                               description: 'The ONE application this role ' +
+                                            'belongs to (#310), by its ' +
+                                            'identifier. The role is ' +
+                                            'registered as `<role>@' +
+                                            '<application>` — two ' +
+                                            'applications may each have a ' +
+                                            '`reader` — and a token or ' +
+                                            'assertion for that ' +
+                                            'application carries it as ' +
+                                            '`<role>`, no other ' +
+                                            'application\'s at all. Omit it ' +
+                                            'for a realm-wide role, whose ' +
+                                            'name may not contain `@`.' }
               },
               required: ['role'],
               examples: [{ role: 'staff',
-                           description: 'People who work here' }],
+                           description: 'People who work here' },
+                         { role: 'reader', application: 'payroll',
+                           description: 'May read payroll' }],
               additionalProperties: false
             },
             responseDescription: 'The role that was made.' },
@@ -19836,12 +19854,20 @@ class AdminApi {
             'subject no longer holds a role authorizing it: ' +
             effective.why + '. A token is honoured here only while its ' +
             'subject\'s roles authorize the scope it uses. ' +
-            (effective.subject.kind === 'application'
-              ? 'Add the application to ' + (neededScope === 'admin:read'
-                ? 'ADMIN_READ' : 'ADMIN_WRITE') + ' on /admin/roles (or ' +
-                'POST /admin-api/roles/add-member)'
-              : 'Grant the console role on /admin/rbac (or POST ' +
-                '/admin-api/rbac/grant)') + ' and ask for a new token.'] });
+            // THE ROLE THAT AUTHORIZES IT, and where it is granted: a
+            // person's console role on the roster, anything else on the
+            // role itself (#309: device:compliance is DEVICE_COMPLIANCE's).
+            (effective.subject.kind !== 'application' &&
+             neededScope !== 'device:compliance'
+              ? 'Grant the console role on /admin/rbac (or POST ' +
+                '/admin-api/rbac/grant)'
+              : 'Add the ' + (effective.subject.kind === 'application'
+                  ? 'application' : 'person') + ' to ' +
+                (neededScope === 'device:compliance' ? 'DEVICE_COMPLIANCE'
+                  : (neededScope === 'admin:read' ? 'ADMIN_READ'
+                                                  : 'ADMIN_WRITE')) +
+                ' on /admin/roles (or POST /admin-api/roles/add-member)') +
+            ' and ask for a new token.'] });
         }
         if (tokenRealm !== realms.DEFAULT_ID) {
           const realmRefusal = self.realmTokenRefusal(claims, req);
