@@ -1443,8 +1443,10 @@ class CryptoMetadata {
             ['UserInfo response', oauth2.USERINFO_SIGNING_ALGS],
             ['JWT introspection response (RFC 9701)',
              introspectionJwt.SIGNING_ALGS],
+            // Narrowed to what the realm OFFERS (`keys.offerKemEncryption`,
+            // 2026-09-28), as discovery is.
             ['JWT introspection response encryption (RFC 9701)',
-             introspectionJwt.ENCRYPTION_ALGS],
+             helpers.offeredJweAlgs(introspectionJwt.ENCRYPTION_ALGS)],
             ['Request object signature (RFC 9101)',
              applicationRegistry.REQUEST_OBJECT_SIGNING_ALGS],
             // Narrowed to the ML-KEM and HPKE algs the realm holds a key
@@ -1467,7 +1469,7 @@ class CryptoMetadata {
             // `JWE_ASYMMETRIC_ALGS` exists to carry. `userinfo_encryption_alg_
             // values_supported` never moved, and `tests/vendored/admin_api.js`
             // is what compared the two.
-            ['JWE key management (out)', stsCrypto.JWE_ASYMMETRIC_ALGS],
+            ['JWE key management (out)', helpers.offeredJweAlgs()],
             ['JWE key management (in)',
              helpers.decryptableJweAlgs(stsCrypto.JWE_DECRYPT_ALGS)],
             ['JWE content encryption', Object.keys(stsCrypto.JWE_ENCS)],
@@ -3102,7 +3104,9 @@ class CryptoMetadata {
         // The asymmetric half, on the row above's argument: what this service
         // may use when IT encrypts is decided by holding the recipient's public
         // key, and what it will open is the whole table.
-        keyManagementOut: stsCrypto.JWE_ASYMMETRIC_ALGS.slice(0),
+        // And the ML-KEM and HPKE ones only where the realm offers them
+        // (`keys.offerKemEncryption`, 2026-09-28).
+        keyManagementOut: helpers.offeredJweAlgs(),
         // What THIS realm will open (#82): the ML-KEM and HPKE algs only
         // where it holds a key (`keys.encryptionKemAlgs`).
         keyManagementIn: helpers.decryptableJweAlgs(

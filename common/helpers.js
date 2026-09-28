@@ -2779,6 +2779,30 @@ function decryptableJweAlgs(base) {
   return out;
 }
 
+// The JWE algs this realm OFFERS where it encrypts TO a key a client or a
+// wallet holds (2026-09-28, rcbj): every classical alg in `base`, and the
+// ML-KEM and HPKE ones only while `keys.offerKemEncryption` is on in the
+// ambient realm. The twin of `decryptableJweAlgs()` above for the other
+// direction; used for every outbound discovery list and every registration
+// check, so what is advertised and what is accepted cannot disagree.
+/**
+ * The JWE algs this realm offers for encryption to a client's or a wallet's
+ * key: the classical ones in `base`, and the ML-KEM and HPKE ones only while
+ * `keys.offerKemEncryption` is on.
+ *
+ * @param base - the list to narrow; `JWE_ASYMMETRIC_ALGS` by default
+ * @returns the narrowed list
+ */
+function offeredJweAlgs(base) {
+  log.debug("Entering offeredJweAlgs().");
+  const offered = config.value('keys.offerKemEncryption') === true;
+  const out = (base || stsCrypto.JWE_ASYMMETRIC_ALGS).filter(function (alg) {
+    return offered || !stsCrypto.describeJweKemAlg(alg);
+  });
+  log.debug("Leaving offeredJweAlgs(). " + out.length);
+  return out;
+}
+
 // ---------------------------------------------------------------------------
 // THE REQUEST OBJECT ENCRYPTION KEYS FOR A KEY SET, BACKFILLED WHERE THE SET WAS
 // WRITTEN BEFORE THEY EXISTED (2026-09-13). `refreshTokenKeysFor()` above, step
@@ -7604,6 +7628,7 @@ module.exports = {
   kemDecryptionKeyFor: kemDecryptionKeyFor,
   kemAlgsConfigured: kemAlgsConfigured,
   decryptableJweAlgs: decryptableJweAlgs,
+  offeredJweAlgs: offeredJweAlgs,
   browserDeviceKeysFor: browserDeviceKeysFor,
   browserDeviceSigner: browserDeviceSigner,
   browserDeviceVerifiers: browserDeviceVerifiers,

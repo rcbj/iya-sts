@@ -2584,6 +2584,34 @@ const SETTINGS = [
                  'realm\'s JWKS are known to cope. Removing one stops ' +
                  'publishing and accepting it; naming it again brings back ' +
                  'the same key.' },
+  // THE OTHER DIRECTION (2026-09-28, rcbj): encrypting TO a client's or a
+  // wallet's key. The row above is the realm's own decryption keys; this one
+  // says whether the ML-KEM and HPKE algorithms are OFFERED where this service
+  // encrypts to a key somebody else holds, and it is off by default for the
+  // same compatibility reason: a client that registers every advertised
+  // algorithm (the debugger's `sts_userinfo_protected`) or a conformance
+  // suite validating the lists (OpenID4VCI's metadata test) meets draft
+  // algorithms it does not know.
+  { key: 'keys.offerKemEncryption', group: 'Key material',
+    label: 'Offer post-quantum / hybrid encryption to clients',
+    path: 'keys.offerKemEncryption', env: 'STS_KEYS_OFFER_KEM_ENCRYPTION',
+    type: 'bool', dflt: false, runtime: true,
+    description: 'Whether the ML-KEM and HPKE JWE algorithms (#82 — drafts, ' +
+                 'see keys.encryptionKemAlgs) are offered where this realm ' +
+                 'encrypts TO a key a client or wallet holds: advertised in ' +
+                 '`userinfo_encryption_alg_values_supported`, ' +
+                 '`id_token_encryption_alg_values_supported`, ' +
+                 '`authorization_encryption_alg_values_supported` (JARM), ' +
+                 '`introspection_encryption_alg_values_supported` and an ' +
+                 'OpenID4VCI issuer\'s `credential_response_encryption`, and ' +
+                 'accepted when a client registers one or a wallet names ' +
+                 'one. **Off by default, and an administrator\'s choice:** ' +
+                 'these algorithms are from Internet-Drafts, and a client ' +
+                 'or a conformance suite that tries every advertised ' +
+                 'algorithm meets ones it does not know. A client already ' +
+                 'registered for one keeps its registration; with this off ' +
+                 'its next encrypted response is refused, as for any ' +
+                 'algorithm this realm does not offer.' },
   { key: 'keys.kidFormat', group: 'Key material',
     label: 'Signed token kid format',
     path: 'keys.kidFormat', env: 'STS_KEYS_KID_FORMAT', type: 'enum',

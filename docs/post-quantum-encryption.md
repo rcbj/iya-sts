@@ -73,10 +73,15 @@ matching key in its `jwks` or `jwks_uri`. This applies to:
 * an OID4VCI `credential_response_encryption.jwk` whose `alg` names a Key
   Encryption form
 
-The server advertises the algorithms in the matching
-`*_encryption_alg_values_supported` lists. There is nothing to switch on. If
-the client registered an `enc` next to an Integrated `HPKE-n` algorithm, that
-`enc` is ignored, because the JWE has none.
+**Off by default.** A realm offers these algorithms only when
+`keys.offerKemEncryption` is on (Key material, per realm). It lists them in
+the matching `*_encryption_alg_values_supported` lists and accepts them at
+registration. It is off because the OpenID conformance suite, and some client
+libraries, reject a discovery list naming algorithms they do not know. If a
+client registered one while the setting was on, it keeps the registration.
+With the setting off, its next encrypted response is refused rather than sent
+in the clear. If the client registered an `enc` next to an Integrated `HPKE-n`
+algorithm, that `enc` is ignored, because the JWE has none.
 
 If a client registers an algorithm and has no key of the right type, it is
 told so at registration or when a token would be encrypted. The token is

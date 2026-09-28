@@ -1936,7 +1936,8 @@ class OAuth2Server {
       // JARM section 4: what a JWT-secured authorization response may be
       // signed and encrypted with.
       authorization_signing_alg_values_supported: jarm.SIGNING_ALGS,
-      authorization_encryption_alg_values_supported: jarm.ENCRYPTION_ALGS,
+      authorization_encryption_alg_values_supported:
+        helpers.offeredJweAlgs(jarm.ENCRYPTION_ALGS),
       authorization_encryption_enc_values_supported: jarm.ENCRYPTION_ENCS,
       // Only what the token endpoint below actually implements — the metadata
       // should not promise a grant this server would refuse. The device_code
@@ -2063,7 +2064,7 @@ class OAuth2Server {
       introspection_signing_alg_values_supported:
         introspectionJwt.SIGNING_ALGS,
       introspection_encryption_alg_values_supported:
-        introspectionJwt.ENCRYPTION_ALGS,
+        helpers.offeredJweAlgs(introspectionJwt.ENCRYPTION_ALGS),
       introspection_encryption_enc_values_supported:
         introspectionJwt.ENCRYPTION_ENCS,
       // RFC 9101 AND OPENID CONNECT DISCOVERY (2026-09-13). A request object by
@@ -2950,7 +2951,9 @@ class OAuth2Server {
       // response to the key the CLIENT registered — so a client could otherwise
       // register `userinfo_encrypted_response_alg="dir"` off this list and be
       // answered by a key derived from the JSON of its own public key.
-      userinfo_encryption_alg_values_supported: stsCrypto.JWE_ASYMMETRIC_ALGS,
+      // The ML-KEM and HPKE algorithms only where `keys.offerKemEncryption`
+      // is on (helpers.offeredJweAlgs(), 2026-09-28), for all four lists.
+      userinfo_encryption_alg_values_supported: helpers.offeredJweAlgs(),
       userinfo_encryption_enc_values_supported: Object.keys(stsCrypto.JWE_ENCS),
       //
       // `public`: the `sub` userFor() gives — the person's urn:uuid:<entryUUID>
@@ -2964,7 +2967,8 @@ class OAuth2Server {
       // the client registered `id_token_encrypted_response_alg`. The lists
       // are the UserInfo response's, for its reason; `id_token_encryption.ts`
       // argues the rest. A Logout Token follows the same registration.
-      id_token_encryption_alg_values_supported: idTokenEncryption.ALGS,
+      id_token_encryption_alg_values_supported:
+        helpers.offeredJweAlgs(idTokenEncryption.ALGS),
       id_token_encryption_enc_values_supported: idTokenEncryption.ENCS,
       // OIDC Core section 3.1.3.7: a client may register
       // `id_token_signed_response_alg`. This service holds a key for every
@@ -10669,13 +10673,13 @@ class OAuth2Server {
         USERINFO_SIGNING_ALGS.join(', ') + ' (see ' +
         'userinfo_signing_alg_values_supported).');
     }
-    if (encAlg && stsCrypto.JWE_ASYMMETRIC_ALGS.indexOf(encAlg) === -1) {
+    if (encAlg && helpers.offeredJweAlgs().indexOf(encAlg) === -1) {
       log.debug("Leaving OAuth2Server.protectUserinfo(). Unsupported " +
                 "encryption alg.");
       throw new Error('This client registered ' +
         'userinfo_encrypted_response_alg="' +
         encAlg + '" and this service encrypts a UserInfo response with ' +
-        stsCrypto.JWE_ASYMMETRIC_ALGS.join(', ') + ' (see ' +
+        helpers.offeredJweAlgs().join(', ') + ' (see ' +
         'userinfo_encryption_alg_values_supported). The symmetric algorithms ' +
         'in this service\'s JWE table are for a document encrypted TO it, ' +
         'where both ends hold the key; there is no shared key here, only the ' +

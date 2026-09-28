@@ -652,7 +652,13 @@ whole set.
   different key.
 * `helpers.decryptableJweAlgs()` narrows every decryption list to the algs
   held: discovery, registration, the request-object door and the console.
-  **Encrypting to a client needs none of this.**
+  **Encrypting to a client needs none of this, but OFFERING it does
+  (2026-09-28)**: `keys.offerKemEncryption`, off by default per realm.
+  `helpers.offeredJweAlgs()` is the one list that discovery, registration,
+  `protectUserinfo`, OID4VCI and `/admin/crypto-metadata` read. With it off,
+  the ML-KEM and HPKE algs are not advertised and a registration naming one is
+  refused. The OpenID conformance suite rejected the widened lists (CI run
+  36415737694).
 
 **THE OTHER TWO DECISIONS.**
 * **OpenID4VP offers the X-Wing key first and the HAIP P-256 ECDH-ES key

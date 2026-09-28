@@ -641,7 +641,10 @@ class VcIssuer {
       // as well, which nothing implemented — metadata that overstates is worse
       // than metadata that says little.
       credential_response_encryption: {
-        alg_values_supported: VCI_ENC_ALGS.slice(),
+        // The ML-KEM and HPKE ones only where `keys.offerKemEncryption` is
+        // on (helpers.offeredJweAlgs(), 2026-09-28): drafts, and the
+        // OpenID4VCI conformance suite refuses the metadata naming them.
+        alg_values_supported: helpers.offeredJweAlgs(VCI_ENC_ALGS),
         enc_values_supported: this.responseEncValues(),
         // DEFLATE before encryption (section 8.2's `zip`, #187). Requests
         // are not decompressed — credential_request_encryption says none.
@@ -2603,15 +2606,21 @@ class VcIssuer {
     // A KEY THAT NAMES AN ML-KEM OR HPKE KEY ENCRYPTION ALG (#82) is judged
     // by `common/crypto.js`'s own check of that alg against the key, and
     // then by the same `enc` and `zip` rules below.
-    const kemAlg = jwk && VCI_KEM_ALGS.indexOf(String(jwk.alg || '')) >= 0
+    // Only while the realm OFFERS them (`keys.offerKemEncryption`).
+    const offeredKem = helpers.offeredJweAlgs(VCI_KEM_ALGS);
+    const kemAlg = jwk && offeredKem.indexOf(String(jwk.alg || '')) >= 0
       ? String(jwk.alg) : '';
     if (jwk && jwk.kty === 'AKP' && !kemAlg) {
       log.debug("Leaving VcIssuer.encryptionProblem(). AKP without a KEM " +
                 "alg.");
-      return 'credential_response_encryption.jwk is an AKP key, and an AKP ' +
-             'key names its algorithm: this issuer encrypts to one whose ' +
-             '`alg` is one of ' + VCI_KEM_ALGS.join(', ') + '; this one ' +
-             'says "' + (jwk.alg || '(none)') + '".';
+      return offeredKem.length
+        ? 'credential_response_encryption.jwk is an AKP key, and an AKP ' +
+          'key names its algorithm: this issuer encrypts to one whose ' +
+          '`alg` is one of ' + offeredKem.join(', ') + '; this one ' +
+          'says "' + (jwk.alg || '(none)') + '".'
+        : 'credential_response_encryption.jwk is an AKP key, and this ' +
+          'issuer offers no ML-KEM or HPKE encryption ' +
+          '(keys.offerKemEncryption is off in this realm).';
     }
     if (kemAlg && !stsCrypto.jweRecipientKeyFits(kemAlg, jwk)) {
       log.debug("Leaving VcIssuer.encryptionProblem(). The KEM key does " +

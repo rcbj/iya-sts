@@ -237,6 +237,7 @@ var config = {
     plaintextTtlS: 300,              // Decrypted key idle timeout (seconds)
     signerModel: "per-algorithm",    // Signer model
     encryptionKemAlgs: "",           // Post-quantum / hybrid decryption keys
+    offerKemEncryption: false,       // Offer post-quantum / hybrid encryption to clients
     kidFormat: "internal",           // Signed token kid format
     kekProvider: "file",             // Key-encryption key provider; restart to apply
     kekFile: "/run/secrets/sts-kek", // Key-encryption key file; restart to apply

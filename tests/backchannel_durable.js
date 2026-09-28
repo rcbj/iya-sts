@@ -197,6 +197,11 @@ function childMain() {
     config.setOverride('oauth2.backchannelLogoutLeaseMs', 1000);
     // The sweep is driven by hand below; the timer must not race it.
     config.setOverride('oauth2.backchannelLogoutSweepS', 3600);
+    // Encryption TO a client with ML-KEM and HPKE (#82) is OFFERED only where
+    // `keys.offerKemEncryption` is on (2026-09-28, off by default): H6, H7
+    // and I7-I11 are about exactly that, so it is on here. I6b holds the
+    // default.
+    config.setOverride('keys.offerKemEncryption', true);
 
     const SECRET = 'backchannel-durable-secret-0123456789abcdef';
     const REDIRECT = 'https://rp.durable.example/cb';
@@ -738,6 +743,27 @@ function childMain() {
          r.status + ' ' + JSON.stringify([idHeader, idClaims]).slice(0, 400));
 
     // --- I (#82). post-quantum and hybrid ID Token encryption end to end ---
+    config.clearOverride('keys.offerKemEncryption');
+    const plain = (await anon.go('GET',
+                                 '/.well-known/openid-configuration')).json;
+    config.setOverride('keys.offerKemEncryption', true);
+    const kemIn = function (list) {
+      return (list || []).filter(function (alg) {
+        return !!stsCrypto.describeJweKemAlg(alg);
+      });
+    };
+    note(kemIn(plain.id_token_encryption_alg_values_supported).length === 0 &&
+         kemIn(plain.userinfo_encryption_alg_values_supported).length === 0 &&
+         kemIn(plain.authorization_encryption_alg_values_supported)
+           .length === 0 &&
+         kemIn(plain.introspection_encryption_alg_values_supported)
+           .length === 0 &&
+         (plain.id_token_encryption_alg_values_supported || [])
+           .indexOf('RSA-OAEP') >= 0,
+         'I6b. BY DEFAULT no ML-KEM or HPKE algorithm is offered for ' +
+         'encrypting to a client (keys.offerKemEncryption is off): not for ' +
+         'ID Tokens, UserInfo, JARM or introspection',
+         JSON.stringify(plain.id_token_encryption_alg_values_supported));
     note(['ML-KEM-768', 'ML-KEM-768+A192KW', 'HPKE-10', 'HPKE-10-KE']
            .every(function (alg) {
              return disco.id_token_encryption_alg_values_supported

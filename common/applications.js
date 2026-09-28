@@ -5171,11 +5171,15 @@ function introspectionResponseProblem(values) {
           INTROSPECTION_SIGNING_ALGS.join(', ') + ' (see ' +
           'introspection_signing_alg_values_supported).'));
   }
-  if (alg && INTROSPECTION_ENCRYPTION_ALGS.indexOf(alg) < 0) {
+  // The ML-KEM and HPKE ones only where `keys.offerKemEncryption` is on
+  // (helpers.offeredJweAlgs(), 2026-09-28) — what discovery advertises.
+  if (alg && helpers.offeredJweAlgs(INTROSPECTION_ENCRYPTION_ALGS)
+    .indexOf(alg) < 0) {
     log.debug("Leaving introspectionResponseProblem(). Encryption alg.");
     return refusal('introspection_encrypted_response_alg', '"' + alg + '" is ' +
       'not an algorithm this service encrypts a response with. It encrypts ' +
-      'with ' + INTROSPECTION_ENCRYPTION_ALGS.join(', ') + ' (see ' +
+      'with ' + helpers.offeredJweAlgs(INTROSPECTION_ENCRYPTION_ALGS)
+        .join(', ') + ' (see ' +
       'introspection_encryption_alg_values_supported). The symmetric ' +
       'families are for a document encrypted TO this service; a response is ' +
       'encrypted to the key you registered.');
@@ -5292,11 +5296,12 @@ function idTokenEncryptionMetadataProblem(values) {
   }
   const alg = String(asked.id_token_encrypted_response_alg || '').trim();
   const enc = String(asked.id_token_encrypted_response_enc || '').trim();
-  if (alg && ID_TOKEN_ENCRYPTION_ALGS.indexOf(alg) < 0) {
+  if (alg && helpers.offeredJweAlgs(ID_TOKEN_ENCRYPTION_ALGS)
+    .indexOf(alg) < 0) {
     log.debug("Leaving idTokenEncryptionMetadataProblem(). Encryption alg.");
     return refusal(names[0], '"' + alg + '" is not an algorithm this ' +
       'service encrypts an ID Token with. It encrypts with ' +
-      ID_TOKEN_ENCRYPTION_ALGS.join(', ') + ' (see ' +
+      helpers.offeredJweAlgs(ID_TOKEN_ENCRYPTION_ALGS).join(', ') + ' (see ' +
       'id_token_encryption_alg_values_supported). The symmetric families ' +
       'are for a document encrypted TO this service; an ID Token is ' +
       'encrypted to the key you registered in "jwks".');
@@ -5373,11 +5378,13 @@ function jarmMetadataProblem(values) {
   }
   const alg = String(asked.authorization_encrypted_response_alg || '').trim();
   const enc = String(asked.authorization_encrypted_response_enc || '').trim();
-  if (alg && ID_TOKEN_ENCRYPTION_ALGS.indexOf(alg) < 0) {
+  if (alg && helpers.offeredJweAlgs(ID_TOKEN_ENCRYPTION_ALGS)
+    .indexOf(alg) < 0) {
     log.debug("Leaving jarmMetadataProblem(). Encryption alg.");
     return refusal(names[1], '"' + alg + '" is not an algorithm this ' +
       'service encrypts an authorization response with. It encrypts with ' +
-      ID_TOKEN_ENCRYPTION_ALGS.join(', ') + ', to the key registered in ' +
+      helpers.offeredJweAlgs(ID_TOKEN_ENCRYPTION_ALGS).join(', ') +
+      ', to the key registered in ' +
       '"jwks".');
   }
   if (enc && !alg) {
