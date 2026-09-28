@@ -131,14 +131,19 @@ async function tokenCall(realmBase, form) {
 async function setUp(cells) {
   log.debug("Entering setUp().");
   const realm = await kit.throwawayRealm(cells, REALM);
-  await kit.setSetting(realm.a, "cells.permittedTransfers", "ca>us");
+  // FROM THE CELLS' JURISDICTIONS, NOT A LITERAL: home is the job's cell B
+  // and the serving cell its A, and with STS_TEST_CELLS_ENTRY=b the two
+  // swap — a literal `ca>us` permitted the wrong direction, and the session
+  // was (rightly) never held away from home.
+  const transfer = cells.jurisdictions.b + ">" + cells.jurisdictions.a;
+  await kit.setSetting(realm.a, "cells.permittedTransfers", transfer);
   await kit.until("cell B reads the realm's permitted transfer", 60000,
                   async function () {
                     const v = await kit.settingAt(realm.b,
                                                   "cells.permittedTransfers");
-                    return JSON.stringify(v || "").indexOf("ca>us") >= 0;
+                    return JSON.stringify(v || "").indexOf(transfer) >= 0;
                   });
-  check("the realm lists ca>us, read at both cells", function () {
+  check("the realm lists " + transfer + ", read at both cells", function () {
     assert.ok(true);
   });
   await kit.publicClient(realm.a, CLIENT, REDIRECT);
@@ -326,7 +331,7 @@ async function test() {
 const program = new Command();
 program
   .name("sts_cells_transfer")
-  .description("a realm listing ca>us holds a traveller's session at cell A " +
+  .description("a realm listing B>A holds a traveller's session at cell A " +
       "with a projection; a disable at home ends it there.")
   .addOption(new Option("-u, --url <url>",
       "base url (unused: the cells come from STS_TEST_CELL_*_URL)"))

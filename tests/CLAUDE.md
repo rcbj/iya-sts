@@ -3606,12 +3606,19 @@ refused connection).
 --modes=cells` maps the public name `sts` to cell B in the RUNNER's
 `/etc/hosts` only (the layer's `extra_hosts`), which is what a client in
 cell B's region sees through the geolocation record. Every job then enters
-at cell B; the cells keep their own names, so cell A still reaches cell B as
-`sts2` through the link. What still goes to cell A by ADDRESS rather than by
-name: the SPIFFE jobs (`STS_SPIFFE_GRPC_HOST`) and the peer containers
-(SAML, conformance), which resolve `sts` in their own containers. It writes
-the same `report/cells/` as an entry-A run. The default, `a`, is what the
-mode always did. The service log of cell B is
+at cell B. **The cells jobs' two ROLES swap with it**, so none of them
+changed: their "A" is whatever the runner's `sts` is (the public name, where
+every browser redirect lands) and their "B" is the other cell — with `b`,
+cell A reached as `sts-cella`, a network alias only cell A has and both
+cells' certificates name. The link moves too: it sits in front of cell A
+(cell B's `extra_hosts` maps `sts` to it, and it forwards to `sts:8446`),
+so the direction `sts_cells_unreachable.js` cuts is still from its A to its
+B. `STS_TEST_CELLS` lists the swapped ids, and every job reads ids and
+jurisdictions from it. What still goes to cell A whatever the entry: the
+SPIFFE jobs, which dial `STS_SPIFFE_GRPC_HOST` by address, and the peer
+containers (SAML, conformance), which resolve `sts` in their own
+containers. It writes the same `report/cells/` as an entry-A run. The
+default, `a`, is what the mode always did. The service log of cell B is
 `logs/00-mock-sts-service-cell-b.log`.
 
 ## APPLICATION CREDENTIALS: THE PAIR, AND THE SPLIT (2026-09-13)

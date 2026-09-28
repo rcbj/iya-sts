@@ -1783,9 +1783,29 @@ do
     )
     # Which cell the runner's `sts` is (the layer's `extra_hosts`):
     # STS_TEST_CELLS_ENTRY=b sends the whole suite in through cell B.
+    # With `b` the two cells swap ROLES as well (the layer's comments): the
+    # runner's `sts` is cell B and is the cells jobs' "A", cell A is their
+    # "B" as `sts-cella`, and the link moves in front of cell A so that the
+    # direction the unreachable job cuts is still its A towards its B.
     case "${STS_TEST_CELLS_ENTRY:-a}" in
-      a) MODE_ENV+=("STS_TEST_ENTRY_ADDRESS=${STS_SERVICE_ADDRESS}") ;;
-      b) MODE_ENV+=("STS_TEST_ENTRY_ADDRESS=${STS_NETWORK_PREFIX}.20") ;;
+      a)
+        MODE_ENV+=(
+          "STS_TEST_ENTRY_ADDRESS=${STS_SERVICE_ADDRESS}"
+          "STS_CELL_A_REACHES_B=${STS_NETWORK_PREFIX}.21"
+          "STS_CELL_B_REACHES_A=${STS_SERVICE_ADDRESS}"
+        )
+        ;;
+      b)
+        MODE_ENV+=(
+          "STS_TEST_ENTRY_ADDRESS=${STS_NETWORK_PREFIX}.20"
+          "STS_CELL_A_REACHES_B=${STS_NETWORK_PREFIX}.20"
+          "STS_CELL_B_REACHES_A=${STS_NETWORK_PREFIX}.21"
+          "STS_CELL_LINK_TARGET=sts:8446"
+          "STS_TEST_CELL_A_URL=https://sts:8081"
+          "STS_TEST_CELL_B_URL=https://sts-cella:8081"
+          "STS_TEST_CELLS=cellb:ca,cella:us"
+        )
+        ;;
     esac
   fi
 

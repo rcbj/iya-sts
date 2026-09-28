@@ -108,15 +108,26 @@ services:
     environment:
       - CELL_LINK_LISTEN_PORT=8446
       - CELL_LINK_CONTROL_PORT=8447
-      - CELL_LINK_TARGET=sts2:8446
+      # Cell B's channel by default; cell A's (`sts`, which only the RUNNER
+      # maps elsewhere) when STS_TEST_CELLS_ENTRY=b swaps the roles.
+      - CELL_LINK_TARGET=${STS_CELL_LINK_TARGET:-sts2:8446}
     networks:
       default:
         ipv4_address: ${STS_CELL_LINK_ADDRESS:-172.30.0.21}
 
   sts:
-    # `sts2` is the link here, and only here (the header).
+    # `sts-cella` is cell A's own name and nothing else's: the runner's `sts`
+    # is cell B when STS_TEST_CELLS_ENTRY=b, and the cells jobs then reach
+    # cell A by this name (TLS checks the name).
+    networks:
+      default:
+        aliases:
+          - sts-cella
+    # `sts2` is the link here by default (the header); with
+    # STS_TEST_CELLS_ENTRY=b it is cell B itself, and the link sits in front
+    # of cell A instead (sts2's `extra_hosts`).
     extra_hosts:
-      - "sts2:${STS_CELL_LINK_ADDRESS:-172.30.0.21}"
+      - "sts2:${STS_CELL_A_REACHES_B:-172.30.0.21}"
     environment:
       - STS_CELL_ID=cella
       - STS_CELL_JURISDICTION=us
@@ -131,7 +142,7 @@ services:
       - STS_GLOBAL_DATABASE_PASSWORD_FIELD=databasePassword
       - STS_CELL_KEK_PROVIDER=file
       - STS_CELL_KEK_REF=/run/secrets/cell-kek/kek
-      - STS_TLS_HOSTNAMES=${STS_TLS_HOSTNAMES:-localhost,sts,sts2,sts-mock,sts.example.com}
+      - STS_TLS_HOSTNAMES=${STS_TLS_HOSTNAMES:-localhost,sts,sts2,sts-cella,sts-mock,sts.example.com}
     volumes:
       - sts-cell-kek-a:/run/secrets/cell-kek:ro
     depends_on:
@@ -151,6 +162,11 @@ services:
     networks:
       default:
         ipv4_address: ${STS2_ADDRESS:-172.30.0.20}
+    # Cell A itself by default; the link when STS_TEST_CELLS_ENTRY=b, so the
+    # direction `sts_cells_unreachable.js` cuts is always the one from the
+    # cell the runner calls A to the one it calls B.
+    extra_hosts:
+      - "sts:${STS_CELL_B_REACHES_A:-172.30.0.10}"
     depends_on:
       sts:
         condition: service_healthy
@@ -173,7 +189,7 @@ services:
       - STS_GLOBAL_DATABASE_PASSWORD_FIELD=databasePassword
       - STS_CELL_KEK_PROVIDER=file
       - STS_CELL_KEK_REF=/run/secrets/cell-kek/kek
-      - STS_TLS_HOSTNAMES=${STS_TLS_HOSTNAMES:-localhost,sts,sts2,sts-mock,sts.example.com}
+      - STS_TLS_HOSTNAMES=${STS_TLS_HOSTNAMES:-localhost,sts,sts2,sts-cella,sts-mock,sts.example.com}
       # Cell B binds no realm SPIFFE listener: the extra addresses are cell
       # A's (`cluster`'s arrangement for node B).
       - STS_SPIFFE_GRPC_HOST=${STS2_ADDRESS:-172.30.0.20}
@@ -188,9 +204,12 @@ services:
     environment:
       # Each cell by name, for the `sts_cells_*.js` jobs; every other job
       # talks to cell A through STS_TEST_SERVICE_URL, as in every mode.
-      - STS_TEST_CELL_A_URL=https://sts:8081
-      - STS_TEST_CELL_B_URL=https://sts2:8081
-      - STS_TEST_CELLS=cella:us,cellb:ca
+      # With STS_TEST_CELLS_ENTRY=b the ROLES swap: the runner's `sts` is
+      # cell B and plays A, and cell A, as `sts-cella`, plays B. Every cells
+      # job reads the ids and jurisdictions from here, so none changes.
+      - STS_TEST_CELL_A_URL=${STS_TEST_CELL_A_URL:-https://sts:8081}
+      - STS_TEST_CELL_B_URL=${STS_TEST_CELL_B_URL:-https://sts2:8081}
+      - STS_TEST_CELLS=${STS_TEST_CELLS:-cella:us,cellb:ca}
       # The switch on the link cell A dials cell B through
       # (sts_cells_unreachable.js).
       - STS_TEST_CELL_LINK_URL=http://sts-cell-link:8447
