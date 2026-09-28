@@ -2957,7 +2957,9 @@ class Credentials {
     // question is whether the KEY survives a restart, and in development it
     // does not even when there is one.
     if (keystore.persists()) {
-      const sealedSecret = keystore.seal(out.secret, 'totp-secret');
+      // Under the CELL's key where there is one (#98): a person's secret is
+      // theirs and lives only in their home cell.
+      const sealedSecret = keystore.seal(out.secret, 'totp-secret', 'cell');
       if (!sealedSecret) {
         log.error(errorCodes.tag('STS-AUTHN-0072') +
                   'credentials: the authenticator secret for ' + name + ' ' +
@@ -3879,7 +3881,7 @@ class Credentials {
     let vault = plain;
     let sealedVault = false;
     if (legacy && keystore.persists()) {
-      const sealedText = keystore.seal(plain, 'recovery-codes');
+      const sealedText = keystore.seal(plain, 'recovery-codes', 'cell');
       if (!sealedText) {
         log.error(errorCodes.tag('STS-AUTHN-0195') +
                   'credentials: the legacy recovery codes for ' + name +

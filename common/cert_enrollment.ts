@@ -1962,7 +1962,7 @@ class CertEnrollment {
     return !!written;
   }
 
-  sealText(plain, label?) {
+  sealText(plain, label?, tier?) {
     const { log, keystore } = this.deps;
     log.debug("Entering CertEnrollment.sealText().");
     if (!keystore.persists()) {
@@ -1972,7 +1972,10 @@ class CertEnrollment {
     }
     let sealed = null;
     try {
-      sealed = keystore.seal(String(plain), label);
+      // `tier` 'cell' for a PERSON's material (#98): sealed under their home
+      // cell's key where there is one; an application's is configuration
+      // every cell holds, under the service key.
+      sealed = keystore.seal(String(plain), label, tier);
     } catch (e) {
       log.debug("Caught in CertEnrollment.sealText(): " +
                 ((e && e.message) || e));
@@ -2263,7 +2266,8 @@ class CertEnrollment {
     const kind = resolved.entry.kind;
     if (record.keySource === 'server') {
       const sealed = self.sealText(asked.privateKeyPem, kind === 'person'
-        ? 'person-private-key' : 'application-private-key');
+        ? 'person-private-key' : 'application-private-key',
+        kind === 'person' ? 'cell' : '');
       if (!sealed.ok) {
         log.debug("Leaving CertEnrollment.issue(). The key could not be " +
                   "sealed.");
@@ -3066,7 +3070,9 @@ class CertEnrollment {
     }
     const kid = self.credentialId('eab', resolved.entry);
     const hmacKey = nodeCrypto.randomBytes(32).toString('base64url');
-    const sealed = self.sealText(hmacKey, 'acme-eab-key');
+    const sealed = self.sealText(hmacKey, 'acme-eab-key',
+                                 resolved.entry.kind === 'person' ? 'cell'
+                                                                  : '');
     if (!sealed.ok) {
       log.debug("Leaving CertEnrollment.createEab(). Could not seal.");
       return self.refuse('STS-ENROLL-0043', 503, 'The EAB key could not be ' +
