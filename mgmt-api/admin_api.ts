@@ -2538,8 +2538,22 @@ class AdminApi {
                                   String((body && body.target) || ''),
                                   'the management API')
             .then(function (result) {
-              self.sendJson(res, result.ok ? 200 : 400, result);
+              if (!result.ok) {
+                // The refusal's own code, from cell_rehome.ts.
+                errorCodes.mark(res, result.code || 'STS-CELL-0192');
+                self.sendJson(res, 400, result);
+                log.debug("Leaving the management API rehome endpoint. " +
+                          "Refused.");
+                return;
+              }
+              self.sendJson(res, 200, result);
               log.debug("Leaving the management API rehome endpoint.");
+            }, function (e) {
+              log.debug("Caught in the management API rehome endpoint: " +
+                        ((e && e.message) || e));
+              errorCodes.mark(res, 'STS-CELL-0192');
+              self.sendJson(res, 500, { ok: false, errors: [String(
+                (e && e.message) || e)] });
             });
         } },
 
