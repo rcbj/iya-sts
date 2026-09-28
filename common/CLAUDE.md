@@ -1177,6 +1177,24 @@ use. `helpers.js`'s block below `warmPqKeys()` carries the measurement.
 `tests/worker_pool.js` has the four contracts and the measurement that shows the
 loop is free.
 
+**ONE QUESTION A WORKER ANSWERS THAT IS NOT A JOB: ITS OWN MEMORY (#329).**
+Monitoring → Node Health lists every process with its
+`process.memoryUsage()`, which only the process can read.
+`worker_pool.askMemoryStatus(timeoutMs)` sends each worker
+`{ memoryStatus: true, id }`, and `worker.js` answers it BEFORE its job table
+with `{ memoryStatus, id, pid, memory, cpu, uptimeS }`. **The pool is still
+crypto-only**: this computes nothing (three reads of the process's own
+counters), is not a row of `JOBS` — so it is never run in process when
+`workers.count` is 0, where it would describe the wrong process — has no
+entry in `inFlight`, and is not counted among the jobs Worker Pools reports.
+It is not queued behind anything in the pool, but it cannot interrupt a job
+the worker is COMPUTING, since a job is synchronous: the wait is bounded and
+a busy worker is simply absent from the answer, which the page draws as a
+`/proc` row saying so. The channel is held (`refWhileWorking()`) while a
+question is out and released at the bound, because an idle worker's channel
+is unreferenced and a process with nothing else to do drained its loop before
+the answer arrived — `tests/node_health_page.js` found it.
+
 
 ## `protocol_stack.ts`: THE REQUIRE ORDER MOVED OUT OF `server.js` (2026-09-07), AND BECAME THE COMPOSITION ROOT (2026-09-16)
 
@@ -1717,6 +1735,58 @@ minutes. rcbj asked for batch throughput balanced against everything else.
 
 `tests/request_batch_lane.js` pins it, four mutants caught and one equivalent
 removed.
+
+### WHAT BOTH POOLS COUNT, FOR MONITORING → WORKER POOLS (#327, 2026-09-28)
+
+`stats()` answered what each pool IS; #327's page (`admin-ui/CLAUDE.md`,
+`/admin/worker-pools`) also needs what has HAPPENED to it, and neither pool
+kept that. Each now keeps it beside what it counts, cumulative from the
+process's start and cleared only by the test-only `reset()`:
+
+* **`worker_pool.js`: `stats().counts`** — `forked`; `firstForked` and
+  `firstForkAt`, what the first fork brought up, which is the lazy pool's
+  initial size; `crashed` (an exit nobody asked for) apart from `retired` (a
+  worker `retire()` marked `leaving`, or any exit after `stop()`), and the
+  `failedStarts` among the crashes, counted for good where `quickExits` is a
+  run one job resets; `jobs`, `jobMs`, `maxJobMs` and `failed` from the send
+  to the reply, `timedOut`, and `inProcess` / `inProcessMs` for a job with no
+  worker to go to. Plus `busy`, `free` and `averageJobMs`.
+* **`request_pool.js`: `stats().pools[].history`** — `initial` and
+  `startedAt` (what `start()` forked into the pool), `forked`, `crashed`
+  apart from `stoppedExits` (`stop()` sets `retiring`), `failedStarts`, and
+  `answered`, `answerMs`, `maxAnswerMs` and `recentMs` — a request streamed by
+  `proxy()` or an operation, from dispatch to the end of the answer, and not
+  a 502 for a worker that never answered. `recentMs` is an exponentially
+  weighted average (0.1 for the newest), because a mean since start stops
+  moving within the hour. Plus `running`, `busy`, `free`, `averageMs` and
+  `recentAverageMs` on each pool.
+
+**THE HOT PATH PAYS ONE `Date.now()` AND FOUR ADDITIONS PER DISPATCHED
+REQUEST** (`noteAnswered()`, which carries no Entering/Leaving pair and says
+why) and a handful per post-quantum job, whose own cost is milliseconds at
+the least; nothing is a list, nothing grows.
+
+**AND A REQUEST WORKER'S OWN POST-QUANTUM POOL IS ASKED FOR.** Every worker
+loads `crypto.js` and so has a `worker_pool.js` of its own, invisible to the
+front process. `askWorkerPoolStatus(timeoutMs)` sends each ready worker one
+`{ poolStatus, id }` message; `request_worker.ts`'s `reportPoolStatus()`
+answers `{ poolStatus, id, pq }` with its `worker_pool.stats()`, and what has
+not answered by the bound is simply absent. It is a message and not the
+SIGUSR2 status `request_worker.ts` already answers, because a signal to a
+worker that has not installed its handler ends it and that reply overwrites
+`served` with the worker's own tally. And `/admin/worker-pools` with its API
+are in `NEVER_DISPATCHED`: only the front process has the request pools.
+
+**THE SAME QUESTION CARRIES EACH WORKER'S OWN MEMORY (#329).** Monitoring →
+Node Health asks it too, and the answer grew rather than a second message:
+`{ poolStatus, id, pq, memory, cpu, uptimeS }` — the worker's
+`process.memoryUsage()`, `process.cpuUsage()` and uptime, which nothing
+outside the process can read (the heap is in no `/proc` file) — and
+`askWorkerPoolStatus()` hands them back beside `pq`. Asked with
+`{ childMemory: ms }`, each worker also asks its OWN post-quantum children
+(`worker_pool.askMemoryStatus(ms)`, above) and answers with `pqMemory`; Worker
+Pools does not ask, and so never waits on it. Node Health's paths are in
+`NEVER_DISPATCHED` for the same reason as Worker Pools'.
 
 ### A RATE-LIMIT COUNT IS WRITTEN DOWN EVERY TIME IT MOVES (2026-09-14)
 

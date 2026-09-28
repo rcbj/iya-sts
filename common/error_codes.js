@@ -159,12 +159,14 @@ const SUBSYSTEMS = [
   { id: 'CORE', label: 'Service core',
     where: 'server.js, common/protocol_stack.ts, common/config.js, ' +
            'common/config_file.js, common/realms.js, common/helpers.js, ' +
-           'common/mode.js, common/version.js, sts_metadata.ts, home/',
+           'common/mode.js, common/version.js, sts_metadata.ts, home/, ' +
+           'admin-ui/node_health_admin.ts',
     what: 'Starting the service, the settings table, trust realms, and the ' +
           'helpers every protocol shares.' },
   { id: 'WORKER', label: 'Worker pools',
     where: 'common/worker_pool.js, common/worker.js, common/request_pool.js, ' +
-           'common/request_worker.ts, common/service_state.ts',
+           'common/request_worker.ts, common/service_state.ts, ' +
+           'admin-ui/worker_pools_admin.ts',
     what: 'The child processes post-quantum signing runs in, and the request ' +
           'workers the whole protocol stack can be dispatched to.' },
   { id: 'STORE', label: 'Persistence and coordination',
@@ -861,6 +863,18 @@ const CODES = [
       'administrator removes it again, from another realm. Logged when ' +
       'such a realm is restored at start, and when the removal is finished.',
     spec: 'none — logged; /admin/realms and GET /admin-api/realms show it' },
+  { code: 'STS-CORE-0124',
+    summary: 'The /admin/node-health page or GET /admin-api/node-health ' +
+      'could not build its report of the node\'s container and processes ' +
+      '(#329).',
+    spec: 'HTTP 500 page or JSON' },
+  { code: 'STS-CORE-0125',
+    summary: 'ECS_CONTAINER_METADATA_URI_V4 is set, but the ECS task ' +
+      'metadata endpoint did not answer Monitoring → Node Health within ' +
+      'its bound, or answered with an error (#329). Logged when it starts ' +
+      'failing, not on every page; the page says so in a sentence and ' +
+      'draws the cgroup figures without the cross-check.',
+    spec: 'none — the page and GET /admin-api/node-health still answer 200' },
   { code: 'STS-WORKER-0001',
     summary: 'The IPC channel to a post-quantum worker process failed, so a ' +
       'job sent to it may not arrive or its answer may not come back.',
@@ -1064,6 +1078,10 @@ const CODES = [
       'replacement was forked into its pool and slot.',
     spec: 'Nothing directly: requests in flight on the dead worker were ' +
       'answered 502 (STS-WORKER-0030)' },
+  { code: 'STS-WORKER-0044',
+    summary: 'The /admin/worker-pools page or GET /admin-api/worker-pools ' +
+      'could not build its report of the worker pools (#327).',
+    spec: 'HTTP 500 page or JSON' },
   // ===== STORE =============================================================
   { code: 'STS-STORE-0001',
     summary: 'A scheduled persistence flush threw past its own handler.',

@@ -152,8 +152,9 @@ cover:
 
 * **The service itself.** Status and totals, metrics, configuration (read,
   `set`, `set-many`, `reset`, `reset-all`), trust realms, token lifetimes,
-  persistence, the database, encryption at rest, secrets, caches, the
-  scheduler, the cluster, the error-code table and the audit log.
+  persistence, the database, encryption at rest, secrets, caches, the worker
+  pools, node health, the scheduler, the cluster, the error-code table and
+  the audit log.
 * **Identities.** People and groups in the directory, second factors (TOTP,
   WebAuthn, recovery codes), password policies, sessions and sign-out. Each
   security key on `GET /admin-api/users?user=` carries `attestation` — what

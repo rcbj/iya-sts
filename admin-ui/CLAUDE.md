@@ -6557,3 +6557,123 @@ five-name sentence (`STS-DEVICE-0013`) the parity jobs read.
 Two labels read *Devices* — the Directory page and the Monitoring one — the
 way *Policies* is shared; the sections tell them apart. The fourth view,
 `/admin/ldap/devices`, is `ldap/ldap_server.js`'s (`ldap/CLAUDE.md`).
+
+---
+
+## `/admin/worker-pools`: THE THREE POOLS OF THIS NODE (#327, 2026-09-28)
+
+Monitoring → Worker Pools, drawn by `worker_pools_admin.ts` (18r) from the
+pools' own `stats()` — `common/CLAUDE.md` argues both pools and the counters
+#327 added to them. One section per pool: the request pool
+(`workers.requestCount`), the hosted-surface pool (`workers.surfaceCount`, the
+"admin" pool) and the post-quantum pool (`workers.count`). Each carries the
+seven figures rcbj asked for — current workers, busy, free, maximum (the
+setting), initial (what `start()` forked; for the lazy post-quantum pool, what
+its first fork brought up), restarts and crashes, and the average response
+time — plus a `state` and a sentence.
+
+Five decisions:
+
+* **A POOL THAT IS OFF SAYS SO IN WORDS.** `off`, `not-started`,
+  `not-dispatching` (forked, and `workers.dispatch` names nothing), `given-up`,
+  `running`, and `not-forked` for a post-quantum pool that has had no job. An
+  off pool draws its sentence and no table, so no row of zeros reads as a
+  broken pool.
+* **A CRASH IS NOT A STOP.** Each pool counts an exit nobody asked for apart
+  from one it asked for (`stop()`'s drain; `retire()` on a lowered
+  `workers.count`), and the failed starts among the crashes. A request pool's
+  `replaced` is `request_pool.js`'s own count, beside them.
+* **THE FRONT PROCESS DRAWS IT, ALWAYS.** Both paths are in `request_pool.js`'s
+  `NEVER_DISPATCHED`, the debugger page's arrangement: a worker's copy of that
+  module forked nothing and would report every request pool off. Not the
+  caches page's cluster snapshot — that carries only what a heartbeat can
+  afford, and exists only with a cluster.
+* **THE POST-QUANTUM POOL HAS A ROW PER PROCESS.** Every request worker loads
+  `common/crypto.js` and so forks a post-quantum pool of its own, where most
+  such jobs run once dispatch is on. The front process asks each ready worker
+  over the channel (`askWorkerPoolStatus()`, one `{ poolStatus }` message,
+  answered with that worker's `worker_pool.stats()`, bounded at a second); a
+  worker that does not answer is listed under `unanswered` rather than holding
+  the page. The pool's own figures are the rows' totals; its maximum is per
+  process.
+* **THIS NODE'S, AND A SERVICE PAGE.** The page names the host and pid that
+  drew it and says another node has pools of its own. It is in
+  `SERVICE_PAGES`, so a realm administrator is refused it; it has no control,
+  because every size is a Global setting on `/admin/config`.
+
+`GET /admin-api/worker-pools` answers the same `workerPoolsView()` (rule 7);
+a view that could not be built is `STS-WORKER-0044`. `tests/worker_pools_page.js`
+and `tests/vendored/sts_worker_pools.js` cover it.
+
+---
+
+## `/admin/node-health`: THE CONTAINER AND EVERY PROCESS OF THIS NODE (#329, 2026-09-28)
+
+Monitoring → Node Health, beside Worker Pools, drawn by `node_health_admin.ts`
+(18s). rcbj asked for the container's CPU utilisation, its total memory, and
+the Node.js memory of every process, with #320 in mind: per-process heap is
+what shows WHICH process grows. Four sections and the machine's own figures:
+
+* **CPU** — cgroup v2 `cpu.stat`'s `usage_usec` over wall time, against
+  `cpu.max`'s quota (quota / period = vCPUs), with `nr_throttled` and
+  `throttled_usec`. No quota (`max`, or no `cpu.max` at all) is a share of
+  `os.availableParallelism()`, and `limitText` says so.
+* **Memory** — `memory.current` against `memory.max`; `memory.stat`'s `anon`,
+  `file` and `kernel`, `memory.peak` and `memory.events`' `oom_kill`. No limit
+  gives no percentage.
+* **Processes** — the front process's own `process.memoryUsage()` and
+  `cpuUsage()`; each request and hosted-surface worker's, asked over #327's
+  `{ poolStatus }` exchange (`common/CLAUDE.md`), bounded at a second, a
+  silent one under `unanswered`; and the same figures from every child —
+  each post-quantum child of the front process
+  (`worker_pool.askMemoryStatus()`, a control message `worker.js` answers
+  before its job table and never a job, `common/CLAUDE.md`), of each request
+  worker (which asks its own when the question carries `childMemory`, and
+  answers with `pqMemory`), and the debugger's api child
+  (`debugger_api_process.askMemory()`, answered by the preload
+  `debugger_api_status.ts`, `debugger/CLAUDE.md`), each bounded at half a
+  second so a worker's answer fits inside the front process's second. **A
+  child that does not answer** — a post-quantum worker computing a job reads
+  no message until it returns, and a worker that did not ask its children —
+  keeps a row with its resident size (`VmRSS`, `VmHWM`) from
+  `/proc/<pid>/status`, the heap figures null, and `notReported` saying why.
+  The totals sum the rows and say that shared pages are counted once per
+  process.
+* **ECS** — where `ECS_CONTAINER_METADATA_URI_V4` is set, the container
+  document, `/task` (limits) and `/task/stats` (this container's entry, by its
+  `DockerId`), each with a one-second bound, as a cross-check. No IAM. Dialled
+  directly and not through `common/outbound_tls.ts`: it is the platform's
+  agent on a link-local address the platform names, not a peer.
+* **The machine** — `os.loadavg()`, `os.totalmem()`, `os.freemem()`, in a
+  section of its own that says it is NOT the container (on Fargate it is the
+  micro-VM). Never beside a container figure.
+
+Five decisions:
+
+* **A SOURCE THAT IS NOT THERE IS A SENTENCE.** Not Linux, no cgroup v2 (and
+  cgroup v1 named as such), a missing file, no ECS endpoint, an ECS endpoint
+  that does not answer (`STS-CORE-0125`, logged when it starts failing and
+  not on every page): `available: false` and `unavailableText`, with no
+  figure at all — a zero would read as an idle container.
+* **TWO SAMPLES, BOUNDED.** The instance keeps the previous CPU sample; a page
+  between 250 ms and a minute after it reports the utilisation since then.
+  Otherwise (the first page, a quick reload, a stale sample, a counter that
+  went backwards) it takes two, 500 ms apart, while the workers and the ECS
+  endpoint are being asked, so a page costs at most about a second.
+* **THE PROCESS'S OWN CGROUP.** `/proc/self/cgroup`'s `0::` path under
+  `/sys/fs/cgroup` when that directory has `memory.current` (a host, or a
+  container sharing the host's namespace); the root otherwise (a container
+  with a cgroup namespace of its own, where the root is the container).
+* **THE FRONT PROCESS DRAWS IT, ALWAYS** — `NEVER_DISPATCHED`, 18r's reason:
+  only it knows every worker.
+* **THIS NODE'S, AND A SERVICE PAGE** — it names the host and pid, it is in
+  `SERVICE_PAGES`, and it has no control.
+
+The locations (`cgroupRoot`, `procRoot`), the clock, `sleep`, the pools and
+`fetchJson` are constructor dependencies, which is how
+`tests/node_health_page.js` hands it a cgroup of its own; its section 8 holds
+a real post-quantum child to its answer, and `tests/debugger_api_process.js`
+section F the preload.
+`GET /admin-api/node-health` answers the same `nodeHealthView()` (rule 7); a
+view that could not be built is `STS-CORE-0124`.
+`tests/vendored/sts_node_health.js` is the HTTP half.

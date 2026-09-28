@@ -1200,6 +1200,26 @@ class ProtocolStack {
                'DevicesAdmin');
     this.register(app, require('../admin-ui/devices_admin'),
                   'admin-ui/devices_admin');
+    // 18r. THE WORKER POOLS' PAGE (#327, 2026-09-28). `/admin/worker-pools` —
+    // the request, hosted-surface and post-quantum pools of this node. 18a's
+    // placement and 18a's reason: the console's shell is here, the two pool
+    // modules are libraries it reaches lazily when a page is drawn, and
+    // `mgmt-api/admin_api` requires it in the ordinary direction.
+    require('../admin-ui/worker_pools_admin');
+    this.build('admin-ui/worker_pools_admin',
+               require('../admin-ui/worker_pools_admin'), 'WorkerPoolsAdmin');
+    this.register(app, require('../admin-ui/worker_pools_admin'),
+                  'admin-ui/worker_pools_admin');
+    // 18s. NODE HEALTH (#329, 2026-09-28). `/admin/node-health` — the
+    // container's CPU and memory from its cgroup, and every process of this
+    // node. 18r's placement and 18a's reason: the console's shell, the pools
+    // and the debugger's api reached lazily when a page is drawn, and
+    // `mgmt-api/admin_api` requires it in the ordinary direction.
+    require('../admin-ui/node_health_admin');
+    this.build('admin-ui/node_health_admin',
+               require('../admin-ui/node_health_admin'), 'NodeHealthAdmin');
+    this.register(app, require('../admin-ui/node_health_admin'),
+                  'admin-ui/node_health_admin');
     // The management API: everything that console shows and everything it can
     // change, at /admin-api, over JSON. It must come AFTER admin.js and the
     // order is a dependency rather than a preference — it requires that module

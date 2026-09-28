@@ -6690,6 +6690,40 @@ const ENDPOINTS: EndpointEntry[] = [
           'valid. Keys only, never values, and no control. A service page: ' +
           'a realm administrator is refused it. The figures are the ' +
           'answering process\'s. Add ?format=json, or GET /admin-api/caches.' },
+  { path: '/admin/worker-pools', group: 'Admin',
+    name: 'The worker pools of this node',
+    specs: [],
+    what: 'NON-SPEC (#327). Filed under Monitoring. The three pools of ' +
+          'child processes this node runs — the request workers ' +
+          '(workers.requestCount), the console and portal\'s own ' +
+          '(workers.surfaceCount) and the post-quantum job pool ' +
+          '(workers.count), which every process forks on its first ' +
+          'post-quantum job — each with its workers now, busy and free, its ' +
+          'maximum and initial size, how many crashed (and never started) ' +
+          'against how many were stopped, and its average response time. A ' +
+          'pool that is off says so. Always drawn by the front process, ' +
+          'which asks each request worker for its own post-quantum pool; ' +
+          'the figures are this node\'s. A service page: a realm ' +
+          'administrator is refused it. Add ?format=json, or ' +
+          'GET /admin-api/worker-pools.' },
+  { path: '/admin/node-health', group: 'Admin',
+    name: 'The container and processes of this node',
+    specs: [],
+    what: 'NON-SPEC (#329). Filed under Monitoring. The CPU utilisation of ' +
+          'this node\'s container (cgroup v2 cpu.stat over an interval, ' +
+          'against the quota in cpu.max), its memory (memory.current ' +
+          'against memory.max, and memory.stat), and the Node.js memory of ' +
+          'every process of the node — the front process and each request ' +
+          'and hosted-surface worker (process.memoryUsage(), asked over the ' +
+          'channel), each post-quantum child and the debugger\'s api ' +
+          '(the same, each asked over its own channel; a child busy with a ' +
+          'job is read from /proc and says so) — with the total; the ECS ' +
+          'task ' +
+          'metadata endpoint as a cross-check where there is one. A source ' +
+          'that is not there says so. Always drawn by the front process; ' +
+          'the figures are this node\'s. A service page: a realm ' +
+          'administrator is refused it. Add ?format=json, or ' +
+          'GET /admin-api/node-health.' },
   { path: '/admin/encryption', group: 'Admin',
     name: 'What is encrypted at rest, and how much of it has happened',
     specs: [],
@@ -7567,6 +7601,22 @@ const ENDPOINTS: EndpointEntry[] = [
           'each with its realm, key and time left. An unknown name answers ' +
           '200 with found: false. No cached value is in the reply. Mirrors ' +
           'GET /admin/caches.' },
+  { path: '/admin-api/worker-pools', group: 'Management API',
+    name: 'Worker pools', specs: [],
+    what: 'NON-SPEC (#327). Everything /admin/worker-pools draws, as JSON: ' +
+          'the request, hosted-surface and post-quantum pools of this node, ' +
+          'each with its state, current, busy, free, maximum and initial ' +
+          'workers, its crashes, failed starts and stops, and its response ' +
+          'time; the post-quantum pool per process. Mirrors ' +
+          'GET /admin/worker-pools.' },
+  { path: '/admin-api/node-health', group: 'Management API',
+    name: 'Node health', specs: [],
+    what: 'NON-SPEC (#329). Everything /admin/node-health draws, as JSON: ' +
+          'the container\'s CPU utilisation and memory from its cgroup, ' +
+          'the Node.js memory of every process of this node and their ' +
+          'total, the ECS task metadata endpoint\'s figures where there is ' +
+          'one, and the machine\'s own figures labelled as such. Mirrors ' +
+          'GET /admin/node-health.' },
   { path: '/admin-api/encryption', group: 'Management API',
     name: 'Encryption at rest', specs: [],
     what: 'NON-SPEC. Everything /admin/encryption draws, as JSON: the mode, ' +

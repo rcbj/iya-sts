@@ -1031,6 +1031,61 @@ givenUp[SURFACE_POOL] = false;
 const replaced = {};
 replaced[PROTOCOL_POOL] = 0;
 replaced[SURFACE_POOL] = 0;
+// ---------------------------------------------------------------------------
+// WHAT HAS HAPPENED TO EACH POOL SINCE THIS PROCESS STARTED, for Monitoring →
+// Worker Pools (#327). `stats()` answered what each pool IS and how many dead
+// workers it replaced, and nothing else about its history: not how many
+// workers died unasked against how many were stopped, not how long a
+// dispatched request took.
+//
+// * `initial` — the workers `start()` forked into the pool (the configured
+//   count, or 0 when the surface pool was idled for want of prefixes), and
+//   `startedAt` when.
+// * `forked` — every fork, replacements included.
+// * `crashed` — a worker that exited while nobody had asked it to;
+//   `stoppedExits` one that exited because `stop()` retired it.
+//   `failedStarts` is the subset of crashes that never became ready (or went
+//   within QUICK_EXIT_MS having served nothing), counted for good where
+//   `quickExits` counts only a run of them.
+// * `answered`, `answerMs`, `maxAnswerMs`, `recentMs` — every request and
+//   operation a worker ANSWERED, from dispatch to the end of its answer as
+//   the front process saw it; a 502 for a worker that never answered is not a
+//   response time and is not counted. `recentMs` is an exponentially weighted
+//   average (a weight of RECENT_WEIGHT for the newest), because a mean since
+//   start stops moving after the first hour and is not what an operator
+//   looking at a slow console wants to see.
+//
+// **THE HOT PATH PAYS ONE `Date.now()` AND FOUR ADDITIONS PER REQUEST**, in
+// the process whose whole job is request/response I/O; it keeps no list and
+// nothing grows. That is below the cost of the headers proxy() already copies.
+// ---------------------------------------------------------------------------
+const RECENT_WEIGHT = 0.1;
+function freshHistory() {
+  log.debug("Entering freshHistory().");
+  log.debug("Leaving freshHistory().");
+  return { initial: 0, startedAt: 0, forked: 0, crashed: 0, stoppedExits: 0,
+           failedStarts: 0, answered: 0, answerMs: 0, maxAnswerMs: 0,
+           recentMs: 0 };
+}
+const history = {};
+history[PROTOCOL_POOL] = freshHistory();
+history[SURFACE_POOL] = freshHistory();
+
+// One answered request or operation, for `history` above. Called from
+// proxy()'s finish and receiveOperation() — no Entering/Leaving pair: it is
+// on every dispatched request and a debug line each way would double what
+// the proxy logs per request for four additions.
+function noteAnswered(pool, ms) {
+  const h = history[pool] || history[PROTOCOL_POOL];
+  const took = ms > 0 ? ms : 0;
+  h.answered++;
+  h.answerMs += took;
+  if (took > h.maxAnswerMs) {
+    h.maxAnswerMs = took;
+  }
+  h.recentMs = h.answered === 1
+    ? took : h.recentMs + RECENT_WEIGHT * (took - h.recentMs);
+}
 // The module a worker runs. Only tests/request_worker_replacement.js changes
 // it, to fork a stub that answers the same channel without loading the stack;
 // reset() puts it back.
@@ -1689,11 +1744,24 @@ function poolFor(url) {
 // brokers they list are ordinary configuration either way. Only these two:
 // `/admin/spiffe` and `/admin-api/spiffe` stay dispatched, for the authority
 // argument above, and `matchesAny()` stops at the segment boundary.
+//
+// **AND THE WORKER POOLS' OWN PAGE (#327, 2026-09-28).** Both request pools
+// are this module's table, and only the front process has one: a worker's
+// copy of this module forked nothing. `/admin/worker-pools` and
+// `GET /admin-api/worker-pools` answered by a worker would report every pool
+// off on a service running eight workers — the debugger's shape again, and
+// pinned for its reason.
+//
+// **AND NODE HEALTH'S (#329, 2026-09-28)**, for the same reason: it lists
+// every process of the node, and only the front process knows the workers and
+// can ask them. A worker drawing it would list itself alone.
 // ---------------------------------------------------------------------------
 const NEVER_DISPATCHED = ['/tls', '/admin/tls/trust', '/admin-api/tls/trust',
                           '/admin/debugger', '/admin-api/debugger',
                           '/admin/spiffe/brokers',
-                          '/admin-api/spiffe/brokers'];
+                          '/admin-api/spiffe/brokers',
+                          '/admin/worker-pools', '/admin-api/worker-pools',
+                          '/admin/node-health', '/admin-api/node-health'];
 
 /**
  * Tells whether a request is handled in a request worker rather than here.
@@ -2497,6 +2565,7 @@ function fork(pool, slot) {
                   // seen everything committed before it started.
                   generation: generation };
   workers.push(entry);
+  history[which].forked++;
   // TELL IT WHAT IT IS. Nothing is loaded in the child until this arrives —
   // see request_worker.ts for why the certificate travels here rather than in
   // the fork's environment.
@@ -2574,6 +2643,10 @@ function fork(pool, slot) {
       }
       if (message && message.operation) {
         receiveOperation(entry, message);
+        return;
+      }
+      if (message && message.poolStatus) {
+        receivePoolStatus(entry, message);
         return;
       }
       if (message && message.status) {
@@ -2671,6 +2744,17 @@ function reap(entry, code, signal) {
   const pool = entry.pool || PROTOCOL_POOL;
   if (failedStart && !stopped) {
     quickExits[pool]++;
+  }
+  // CRASHED OR STOPPED (#327): `stop()` sets both `stopped` and `retiring`
+  // before its workers go; any other exit is one nobody asked for.
+  const h = history[pool] || history[PROTOCOL_POOL];
+  if (stopped || entry.retiring) {
+    h.stoppedExits++;
+  } else {
+    h.crashed++;
+    if (failedStart) {
+      h.failedStarts++;
+    }
   }
   if (entry.inFlight) {
     log.warn(errorCodes.tag('STS-WORKER-0022') +
@@ -3614,6 +3698,9 @@ function start() {
            'loads the whole protocol stack and binds no protocol port.');
   const forks = [];
   POOLS.forEach(function (pool) {
+    // The pool's initial size, for Monitoring → Worker Pools (#327).
+    history[pool].initial = wantedByPool[pool];
+    history[pool].startedAt = Date.now();
     for (let i = 0; i < wantedByPool[pool]; i++) {
       forks.push(fork(pool, i).settled);
     }
@@ -4276,6 +4363,8 @@ function proxy(entry, req, res, atGeneration, ticket) {
             req.url);
   const wrote = mayWrite(req.method);
   entry.inFlight++;
+  // For the pool's response time (#327); see noteAnswered().
+  const dispatchedAt = Date.now();
   let done = false;
   // WHETHER THE WORKER EVER GOT AS FAR AS AN ANSWER. It decides which of the
   // two ticket endings this request has — see ticketAbandoned(), which is the
@@ -4290,6 +4379,9 @@ function proxy(entry, req, res, atGeneration, ticket) {
       done = true;
       entry.inFlight--;
       entry.served++;
+      if (!lost) {
+        noteAnswered(entry.pool, Date.now() - dispatchedAt);
+      }
       // THE TICKET IS TAKEN AT DISPATCH NOW, NOT HERE — see dispatchTicket().
       // Taking it on `finish` left a window the client could drive straight
       // through: `finish` fires after the response has been flushed, so a
@@ -5149,7 +5241,9 @@ function sendOperation(entry, kind, args, ticket) {
   const id = nextOperationId++;
   const promise = new Promise(function (resolve, reject) {
     pendingOperations.set(id, { resolve: resolve, reject: reject, kind: kind,
-                                pid: entry.pid, ticket: ticket });
+                                pid: entry.pid, ticket: ticket,
+                                // For the pool's response time (#327).
+                                sentAt: Date.now() });
   });
   entry.inFlight++;
   try {
@@ -5185,6 +5279,7 @@ function receiveOperation(entry, message) {
   pendingOperations.delete(message.id);
   entry.inFlight--;
   entry.served++;
+  noteAnswered(entry.pool, Date.now() - (pending.sentAt || Date.now()));
   // ---------------------------------------------------------------------
   // THE TICKET, AND THE TWO ENDINGS ARE THE ONES proxy() HAS.
   //
@@ -5339,6 +5434,117 @@ function removeSocketDir() {
   log.debug("Leaving removeSocketDir().");
 }
 
+// ---------------------------------------------------------------------------
+// EACH WORKER'S OWN POST-QUANTUM POOL, ASKED FOR (#327).
+//
+// A request worker loads the whole stack, `common/crypto.js` with it, and so
+// has a `worker_pool.js` of its OWN: a post-quantum job computed while a
+// worker answers a request goes to children that worker forks, lazily, and
+// that nothing in this process can see. With dispatch on, that is where most
+// such jobs run. Monitoring → Worker Pools asks for them through the channel
+// every other exchange here uses: one `{ poolStatus }` message to each ready
+// worker, answered with that worker's `worker_pool.stats()` — and, since #329,
+// its `process.memoryUsage()` and `process.cpuUsage()` for Monitoring → Node
+// Health, which asks the same question — the answers
+// awaited for at most `timeoutMs`. A worker that does not answer in time is
+// reported as not having answered, and the page is drawn without it rather
+// than waiting — a worker busy for seconds is exactly the one whose numbers
+// would say why, and a page that hung on it would say nothing.
+//
+// NOT SIGUSR2, which `request_worker.ts` also answers with a status: a signal
+// to a worker that has not installed its handler yet ends it, and its reply
+// overwrites `served` with the worker's own count.
+// ---------------------------------------------------------------------------
+let nextPoolStatusId = 1;
+const poolStatusWaiters = new Map();
+
+function receivePoolStatus(entry, message) {
+  log.debug("Entering receivePoolStatus(). pid=" + entry.pid);
+  const waiter = poolStatusWaiters.get(message.id);
+  if (!waiter || waiter.answers[entry.pid]) {
+    log.debug("Leaving receivePoolStatus(). Nobody is waiting.");
+    return;
+  }
+  // `memory`, `cpu` and `uptimeS` for Monitoring → Node Health (#329): the
+  // worker's own `process.memoryUsage()` and `process.cpuUsage()`.
+  waiter.answers[entry.pid] = { pq: message.pq || null,
+                                error: message.error || null,
+                                memory: message.memory || null,
+                                cpu: message.cpu || null,
+                                uptimeS: message.uptimeS === undefined
+                                  ? null : message.uptimeS,
+                                // Its post-quantum children's, when asked.
+                                pqMemory: message.pqMemory || null };
+  waiter.left--;
+  if (waiter.left <= 0) {
+    waiter.finish();
+  }
+  log.debug("Leaving receivePoolStatus().");
+}
+
+/**
+ * Asks every ready request worker for its own post-quantum pool's stats.
+ *
+ * @param timeoutMs - how long to wait for the answers; 1000 when omitted
+ * @param options - `{ childMemory: ms }` asks each worker to ask its own
+ *   post-quantum children for their memory within `ms` too (#329); the
+ *   answers then carry `pqMemory`
+ * @returns a promise of
+ *   `{ [pid]: { pq, error, memory, cpu, uptimeS, pqMemory } }` (the last
+ *   four for Monitoring → Node Health, #329); a worker that did not answer
+ *   in time is absent
+ */
+function askWorkerPoolStatus(timeoutMs, options) {
+  log.debug("Entering askWorkerPoolStatus().");
+  const asked = workers.filter(function (one) {
+    return one.ready && one.child && one.child.connected;
+  });
+  if (!asked.length) {
+    log.debug("Leaving askWorkerPoolStatus(). No worker to ask.");
+    return Promise.resolve({});
+  }
+  const id = nextPoolStatusId++;
+  const limit = timeoutMs === undefined ? 1000 : timeoutMs;
+  log.debug("Leaving askWorkerPoolStatus(). Asked " + asked.length + ".");
+  return new Promise(function (resolve) {
+    const waiter = { answers: {}, left: asked.length,
+                     finish: function () {} };
+    // Unreferenced, as every timer of this pool that is not a drain is: it
+    // may not hold the process open for a page nobody is waiting on.
+    const timer = setTimeout(function () {
+      waiter.finish();
+    }, limit);
+    if (timer.unref) {
+      timer.unref();
+    }
+    waiter.finish = function () {
+      log.debug("Entering finish().");
+      clearTimeout(timer);
+      poolStatusWaiters.delete(id);
+      resolve(waiter.answers);
+      log.debug("Leaving finish().");
+    };
+    poolStatusWaiters.set(id, waiter);
+    asked.forEach(function (one) {
+      try {
+        one.child.send({ poolStatus: true, id: id,
+                         childMemory: !!(options && options.childMemory),
+                         childMemoryMs: (options && options.childMemory) ||
+                           0 });
+      } catch (e) {
+        log.debug("Caught in askWorkerPoolStatus(): " +
+                  ((e && e.message) || e));
+        // A channel that closed between the filter and the send: that
+        // worker is going, and is simply not waited for.
+        waiter.left--;
+      }
+    });
+    if (waiter.left <= 0) {
+      waiter.finish();
+    }
+  });
+}
+
 // What the pool is doing, for `/admin` and for the tests. A copy, so a reader
 // cannot reach into the live entries.
 /**
@@ -5360,11 +5566,26 @@ function stats() {
     inProcess: readyWorkers(PROTOCOL_POOL).length === 0,
     gaveUp: givenUp[PROTOCOL_POOL],
     pools: POOLS.map(function (pool) {
+      const ready = readyWorkers(pool);
+      const busy = ready.filter(function (one) {
+        return one.inFlight > 0;
+      }).length;
+      const h = history[pool];
       return { pool: pool, configured: size(pool),
-               ready: readyWorkers(pool).length, gaveUp: givenUp[pool],
+               running: workers.filter(function (one) {
+                 return (one.pool || PROTOCOL_POOL) === pool;
+               }).length,
+               ready: ready.length, gaveUp: givenUp[pool],
                replaced: replaced[pool],
                affinities: affinities[pool].size,
-               prefixes: pool === SURFACE_POOL ? surfacePrefixes() : [] };
+               prefixes: pool === SURFACE_POOL ? surfacePrefixes() : [],
+               // #327: busy and free among the ready workers, and the
+               // pool's history (see `history`).
+               busy: busy, free: ready.length - busy,
+               history: Object.assign({}, h),
+               averageMs: h.answered ? Math.round(h.answerMs / h.answered)
+                                     : null,
+               recentAverageMs: h.answered ? Math.round(h.recentMs) : null };
     }),
     readYourWrite: readYourWrite(),
     generation: generation,
@@ -5392,7 +5613,8 @@ function stats() {
       return { pid: one.pid, pool: one.pool, ready: one.ready,
                inFlight: one.inFlight,
                served: one.served, socket: one.socket,
-               generation: one.generation };
+               generation: one.generation, slot: one.slot,
+               startedAt: one.startedAt, retiring: !!one.retiring };
     })
   };
 }
@@ -5409,6 +5631,7 @@ function reset() {
     givenUp[pool] = false;
     quickExits[pool] = 0;
     replaced[pool] = 0;
+    history[pool] = freshHistory();
   });
   workerModule = WORKER_MODULE;
   stopped = false;
@@ -5445,6 +5668,9 @@ module.exports = {
   start: start,
   stop: stop,
   stats: stats,
+  // Monitoring → Worker Pools (#327): each request worker's own
+  // post-quantum pool, asked for over the channel.
+  askWorkerPoolStatus: askWorkerPoolStatus,
   reset: reset,
   middleware: middleware,
   setServerCertificate: setServerCertificate,
