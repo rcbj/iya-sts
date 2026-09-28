@@ -87,6 +87,11 @@
 // `tests/revocation_status.js` reads in this file's source.
 // ---------------------------------------------------------------------------
 
+// WHICH CELL MINTED AN ARTIFACT (#98 D10): a keyed tag appended to what
+// this module mints and read where it is presented. A leaf library.
+import cellLocator = require('../common/cell_locator');
+// WHICH CELL ANSWERS A WALLET'S POST (#98 D10). A library.
+import cellPlacement = require('../common/cell_placement');
 import crypto = require('crypto');
 // Whether a host is an IP address, which a dNSName cannot be (#230).
 import net = require('net');
@@ -1407,14 +1412,17 @@ class VcVerifier {
     const byReference = !!opts.byReference || !!signIn;
     const base = baseUrlOf(req);
     const responseUri = base + '/oid4vp/response';
-    const id = randomId(16);
+    // The request id and the state are stamped with the minting cell (#98
+    // D10): a wallet fetches the request, and posts its answer, at the cell
+    // nearest it, which relays both here.
+    const id = cellLocator.stamp(randomId(16));
     // 32 bytes (2026-09-27): OID4VP 1.0 section 5.2 asks for a fresh random
     // number, and the OpenID conformance suite judges one by the Shannon
     // entropy of its characters. Eighteen bytes (24 characters) is ample
     // randomness and still fell under that measure now and then by chance
     // (VP1FinalEnsureMinimumNonceEntropy); 43 characters does not.
     const nonce = randomId(32);
-    const state = randomId(18);
+    const state = cellLocator.stamp(randomId(18));
     // SIOPv2 (#129): `id_token` asks for a self-issued ID Token alone,
     // `vp_token id_token` for one beside a presentation, whose holder it must
     // be. `form_post` sends the answer through the browser to a
@@ -4124,6 +4132,26 @@ class VcVerifier {
     app.post('/oid4vp/response', async (req, res) => {
       log.debug("Entering the OID4VP response endpoint.");
       let body = parseBody(req);
+      // THE CELL THAT HOLDS THE TRANSACTION ANSWERS IT (#98 D10). A wallet
+      // posts to the cell nearest IT; the transaction was minted where the
+      // browser was, and its `state` — or, for `direct_post.jwt`, the `kid`
+      // of the key it was encrypted to, which ends in that state — carries
+      // the minting cell's tag. Read before anything is opened or spent.
+      let where = String(body.state || '');
+      if (!where && body.response) {
+        try {
+          where = String(JSON.parse(Buffer.from(String(body.response)
+            .split('.')[0], 'base64url').toString('utf8')).kid || '');
+        } catch (e) {
+          log.debug("Caught in the OID4VP response endpoint: " +
+                    ((e && e.message) || e));
+          where = '';
+        }
+      }
+      if (cellPlacement.relayIfElsewhere(req, res, where, 'oid4vp-response')) {
+        log.debug("Leaving the OID4VP response endpoint. Relayed.");
+        return undefined;
+      }
       // A `direct_post.jwt` answer (section 8.3.1): one `response`, a JWE to
       // the transaction's own key, which its header's `kid` names (#187).
       const opened = this.openEncryptedResponse(body);

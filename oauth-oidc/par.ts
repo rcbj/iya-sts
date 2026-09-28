@@ -102,6 +102,9 @@
 // ---------------------------------------------------------------------------
 
 import crypto = require('crypto');
+// WHICH CELL MINTED AN ARTIFACT (#98 D10): a keyed tag appended to what
+// this module mints and read where it is presented. A leaf library.
+import cellLocator = require('../common/cell_locator');
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 import config = require('../common/config');
@@ -358,8 +361,11 @@ class PushedRequests {
         'forgotten to make room.');
     }
     const seconds = this.lifetimeS();
-    const requestUri = REQUEST_URI_PREFIX +
-      crypto.randomBytes(REFERENCE_BYTES).toString('base64url');
+    // The reference is stamped with the minting cell (#98 D10): the
+    // browser that carries it may reach another cell, whose edge relays the
+    // authorization request here.
+    const requestUri = REQUEST_URI_PREFIX + cellLocator.stamp(
+      crypto.randomBytes(REFERENCE_BYTES).toString('base64url'));
     const params = Object.assign({}, options.params || {});
     delete params.request;
     delete params.request_uri;

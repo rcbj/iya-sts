@@ -395,6 +395,21 @@ realms.reserve(function () {
 // With `workers.dispatch` empty — the default — this calls next() for
 // everything and the service behaves exactly as it did.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// AND JUST ABOVE IT, WHICH CELL SERVES THE REQUEST (#98, 2026-09-28).
+//
+// In a service deployed as cells a request that belongs to another cell — a
+// browser pinned to its home, an artifact another cell minted, a token its
+// minting cell must check — is relayed there WHOLE, before this process reads
+// its body or hands it to a worker, which is why this is the one position
+// that works: below the realm middleware (the placement is per realm) and
+// above the pool and the body parsers (a relay pipes the request untouched).
+// `common/cell_placement.ts` argues the table; single-cell mode calls next()
+// for everything. Required HERE rather than at the top of this file for the
+// reason the pool is: it is a library of the front process's edge.
+// ---------------------------------------------------------------------------
+app.use(require('./cell_placement').middleware());
+
 app.use(requestPool.middleware({ enterRealm: enterRealm }));
 
 // ---------------------------------------------------------------------------

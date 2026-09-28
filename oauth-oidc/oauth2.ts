@@ -109,6 +109,11 @@ import forge = require('node-forge');
 import jwt = require('jsonwebtoken');
 // One signer and one verifier for the whole service since 2026-08-27.
 import stsCrypto = require('../common/crypto');
+// WHICH CELL MINTED AN ARTIFACT (#98 D10): a keyed tag appended to what
+// this module mints and read where it is presented. A leaf library.
+import cellLocator = require('../common/cell_locator');
+// WHICH CELL SERVES A BACK-CHANNEL REQUEST (#98 D10). A library.
+import cellPlacement = require('../common/cell_placement');
 import app = require('../common/app');
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
@@ -3783,7 +3788,10 @@ class OAuth2Server {
       iss: self.issuerOf(base), sub: opts.sub || user.sub,
       aud: opts.audience || jwtAccessToken.defaultAudienceFor(base),
       client_id: opts.client_id, typ: 'Bearer',
-      jti: randomId(16), iat: iat, nbf: iat,
+      // Stamped with the minting cell (#98 D10): a resource that checks the
+      // token, or a UserInfo request, reaches the cell that holds its
+      // session through this.
+      jti: cellLocator.stamp(randomId(16)), iat: iat, nbf: iat,
       exp: iat + self.accessTokenTtl(opts.client_id),
       username: user.username
     };
@@ -3942,7 +3950,8 @@ class OAuth2Server {
     // counted.
     // Minted by `tokenSet()` where it had to name the family before the
     // access token beside this one was signed (#239); here otherwise.
-    const refreshJti = String(opts.refresh_jti || '') || randomId(16);
+    const refreshJti = String(opts.refresh_jti || '') ||
+      cellLocator.stamp(randomId(16));
     const payload = {
       // username travels with the refresh token, so refreshing keeps describing
       // the person who actually signed in.
@@ -4994,7 +5003,10 @@ class OAuth2Server {
     // same grant — which is what lets revoking the grant be reported once, as
     // the grant (`oauth_grant_signals.ts`), whichever of its tokens a door
     // names.
-    const refreshJti = opts.withRefresh !== false ? randomId(16) : '';
+    // Stamped with the minting cell (#98 D10): the refresh grant is relayed
+    // here from whichever cell the client reaches.
+    const refreshJti = opts.withRefresh !== false
+      ? cellLocator.stamp(randomId(16)) : '';
     const grantFamily = refreshJti
       ? bcp.familyForIssuance(refreshJti, opts.parent_refresh_jti,
                               opts.parent_refresh_family)
@@ -7685,7 +7697,9 @@ class OAuth2Server {
                                                    user.sub, sessionId) });
 
     if (types.indexOf('code') >= 0) {
-      const code = randomId(24);
+      // Stamped with the minting cell (#98 D10): the client redeems it at
+      // the cell nearest ITS server, which relays the token request here.
+      const code = cellLocator.stamp(randomId(24));
       authzCodes.set(code, {
         client_id: String(query.client_id), redirect_uri: redirectUri,
         // A merged grant's whole scope (#142), the request's otherwise.
@@ -11408,6 +11422,86 @@ class OAuth2Server {
   // PEP's sentence — it names the application, the roles required and the roles
   // held — because a client that cannot see why is a client whose operator
   // files a bug against this service.
+  // ---------------------------------------------------------------------------
+  // WHAT A BACK-CHANNEL REQUEST NAMES, AND WHERE IT IS SERVED (#98 D10). Read
+  // from the parsed body and NEVER verified here: this decides only which
+  // cell verifies it. A refresh token is opened (the realm key is the global
+  // tier's, so every cell can) for its `jti`, and nothing else is read from
+  // it; a JWT's `jti` is read off its payload. Resolves true when the request
+  // was relayed and must not be served here.
+  // ---------------------------------------------------------------------------
+  /**
+   * Relays a token, introspection, revocation or CIBA request to the cell
+   * that holds what it names.
+   *
+   * @param req - the request, its body parsed
+   * @param res - the response
+   * @returns a promise of true when the request was relayed
+   */
+  async placeBackChannel(req: Req, res: Res): Promise<boolean> {
+    const { log, refreshTokenCrypto } = this.deps;
+    log.debug("Entering OAuth2Server.placeBackChannel().");
+    const body = req.body || {};
+    const jtiOf = function (token: string): string {
+      let text = String(token || '');
+      try {
+        if (text.split('.').length === 5 &&
+            refreshTokenCrypto.isEncrypted(text)) {
+          text = refreshTokenCrypto.open(text);
+        }
+        const parts = text.split('.');
+        if (parts.length !== 3) {
+          return text;
+        }
+        const claims = JSON.parse(Buffer.from(parts[1], 'base64url')
+          .toString('utf8'));
+        return String((claims && claims.jti) || '');
+      } catch (e) {
+        log.debug("Caught in OAuth2Server.placeBackChannel(): " +
+                  ((e && e.message) || e));
+        return '';
+      }
+    };
+    const path = String(req.path || '');
+    let artifact = '';
+    let reason = '';
+    if (/\/token$/.test(path)) {
+      const grant = String(body.grant_type || '');
+      reason = 'token:' + grant;
+      artifact = grant === 'authorization_code' ? String(body.code || '')
+        : grant === 'urn:ietf:params:oauth:grant-type:device_code'
+          ? String(body.device_code || '')
+          : grant === 'urn:openid:params:grant-type:ciba'
+            ? String(body.auth_req_id || '')
+            : grant === 'urn:ietf:params:oauth:grant-type:pre-authorized_code'
+              ? String(body['pre-authorized_code'] || '')
+              : grant === 'refresh_token'
+                ? jtiOf(String(body.refresh_token || ''))
+                : grant === 'urn:ietf:params:oauth:grant-type:token-exchange'
+                  ? jtiOf(String(body.subject_token || ''))
+                  : '';
+      if (!artifact && grant === 'password' && body.username) {
+        log.debug("Leaving OAuth2Server.placeBackChannel(). A password.");
+        return cellPlacement.relayToHome(req, res, realms.currentId(), 'name',
+                                         String(body.username), reason);
+      }
+    } else if (/\/(introspect|revoke)$/.test(path)) {
+      reason = path.slice(path.lastIndexOf('/') + 1);
+      artifact = jtiOf(String(body.token || ''));
+    } else if (/\/bc-authorize$/.test(path)) {
+      const hint = String(body.login_hint || '');
+      log.debug("Leaving OAuth2Server.placeBackChannel(). A CIBA request.");
+      return hint ? cellPlacement.relayToHome(req, res, realms.currentId(),
+                                              'name', hint, 'ciba')
+                  : false;
+    }
+    const relayed = artifact
+      ? cellPlacement.relayIfElsewhere(req, res, artifact, reason) : false;
+    log.debug("Leaving OAuth2Server.placeBackChannel(). " +
+              (relayed ? 'Relayed.' : 'Here.'));
+    return relayed;
+  }
+
   private async tokenEndpoint(req: Req, res: Res): Promise<Json> {
     const { log, STS, errorCodes } = this.deps;
     const self = this;
@@ -18240,6 +18334,38 @@ class OAuth2Server {
     // Never refuses: a failed fetch is refused, by name, where the key was
     // needed.
     // -------------------------------------------------------------------------
+    // -------------------------------------------------------------------------
+    // WHICH CELL ANSWERS A BACK-CHANNEL REQUEST (#98 D10), FIRST, before
+    // anything below authenticates the client or reads a proof. A code, a
+    // refresh token, a device code or a CIBA id is held by the cell that
+    // minted it and is presented at whichever cell the client's server
+    // reached, so this sends the request there WHOLE — and it has to be
+    // before client authentication, because a client assertion and a DPoP
+    // proof are spent where they are checked (once ever, #98's global
+    // replay sets), and the owning cell must be the one that spends them.
+    // A person named by a password grant or a CIBA hint is served at home.
+    // `common/cell_placement.ts` is the table; single-cell mode passes.
+    // -------------------------------------------------------------------------
+    app.use(['/oauth2/token', '/oauth2/introspect', '/oauth2/revoke',
+             '/oauth2/bc-authorize', '/:as/oauth2/token',
+             '/:as/oauth2/introspect', '/:as/oauth2/revoke'],
+            function (req: Req, res: Res, next: () => void): void {
+      log.debug("Entering the cell placement of a back-channel request.");
+      self.placeBackChannel(req, res).then(function (relayed: boolean) {
+        log.debug("Leaving the cell placement of a back-channel request. " +
+                  (relayed ? 'Relayed.' : 'Here.'));
+        if (!relayed) {
+          next();
+        }
+      }, function (e: any) {
+        log.debug("Caught in the cell placement: " + ((e && e.message) || e));
+        // A lookup that failed is served here, which is what an unknown
+        // person or artifact is: the owning cell, if there is one, answers
+        // for its own when it is asked.
+        next();
+      });
+    });
+
     app.use(['/oauth2/authorize', '/oauth2/token', '/oauth2/par',
              '/oauth2/userinfo', '/oauth2/introspect',
              '/:as/oauth2/authorize', '/:as/oauth2/token', '/:as/oauth2/par',
