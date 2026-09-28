@@ -16,9 +16,11 @@
 //
 //   * **EXPORT, at home.** A request relayed FROM another cell, carrying a
 //     session of a person homed here, is the moment: the session and a
-//     PROJECTION of the person are sent to that cell (`adopt-session`), the
+//     PROJECTION of the person are COPIED to that cell (`adopt-session`), the
 //     browser's pin is moved there on this very response, and home records
-//     the export so it can reach that cell again.
+//     the export so it can reach that cell again. Home keeps its own copy —
+//     the portal, which manages the person's entry, is always served at home
+//     and is relayed there with the same cookie.
 //   * **THE PROJECTION** is the person's entry with every credential taken
 //     out (passwords, second-factor secrets, private keys, one-time tokens —
 //     `credentialFree()`), and `memberOf` set to the groups home says they
@@ -325,6 +327,13 @@ class CellSessions {
   private async maybeExport(req: any, res: any): Promise<void> {
     log.debug("Entering CellSessions.maybeExport().");
     const to = String(req.stsCellRelay.from);
+    // THE PORTAL STAYS AT HOME: it manages the person's own entry, which only
+    // home holds, and a portal request another cell relays here is served
+    // from home's copy of the session rather than being a reason to move it.
+    if (/^\/portal(\/|$)/.test(String(req.path || ''))) {
+      log.debug("Leaving CellSessions.maybeExport(). The portal.");
+      return;
+    }
     const authn = require('../authn/authn');
     const session = authn.sessionOf(req);
     const username = session && session.authenticated !== false &&
@@ -339,6 +348,12 @@ class CellSessions {
       return;
     }
     const realmId = realms.currentId();
+    const already = exports_.realmMap(realmId).get(projection.uuid);
+    if (already && already.cells && already.cells[to] &&
+        already.cells[to].sid === String(session.id)) {
+      log.debug("Leaving CellSessions.maybeExport(). Already there.");
+      return;
+    }
     let decision: { allowed: boolean; why: string } = {
       allowed: false, why: 'no transfer decision is available' };
     try {
@@ -371,21 +386,15 @@ class CellSessions {
     });
     const held = exports_.realmMap(realmId).get(projection.uuid) ||
       { cells: {}, pwdChangedTime: '' };
-    held.cells[to] = { at: Date.now() };
+    held.cells[to] = { at: Date.now(), sid: String(session.id) };
     held.name = projection.name;
     held.pwdChangedTime = CellSessions.pwdChangedTimeOf(username);
     exports_.realmMap(realmId).set(projection.uuid, held);
+    // A COPY, NOT A MOVE: home keeps its session, which is what serves a
+    // portal request the other cell relays here, and what a revocation made
+    // here ends along with the export. The browser is pinned to the other
+    // cell, so this copy answers only what that cell sends home.
     require('./cell_placement').setAffinity(req, res, realmId, to);
-    // The session MOVED: this cell no longer answers for it once the
-    // response that pins the browser elsewhere has gone.
-    res.on('finish', function () {
-      try {
-        authn.sessions.realmMap(realmId).delete(String(session.id));
-      } catch (e) {
-        log.debug("Caught in the export's finish: " + ((e && e.message) ||
-                                                        e));
-      }
-    });
     log.info('cells: a session of a person homed here was exported to cell "' +
              to + '", which the transfer policy permits (' + decision.why +
              '); the browser is pinned there.');

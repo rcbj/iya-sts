@@ -151,9 +151,11 @@ const ROWS: Row[] = [
     handler: 'portal/portal.ts',
     why: 'the portal manages a person\'s own entry, which only their home ' +
          'cell holds; a projected session is sent home' },
-  { prefix: '/admin', strategy: 'selector', browser: true,
+  { prefix: '/admin', strategy: 'affinity', browser: true,
     why: 'the console acts on the global tier and on the serving cell\'s ' +
-         'residents; ?cell= names another cell (D11)' },
+         'residents; its session is the cell\'s, so another cell\'s ' +
+         'residents are fetched over the channel by the page, not by ' +
+         'relaying the browser (D11, admin-ui/cells_admin.ts)' },
   { prefix: '/admin-api', strategy: 'selector',
     why: 'the management API acts on the global tier and on the serving ' +
          'cell\'s residents; ?cell= names another cell (D11)' },
@@ -610,7 +612,23 @@ class CellPlacement {
     return function cellPlacementEdge(req: any, res: any, next: () => void) {
       // A HOT PATH: every request passes, so the Entering/Leaving pair is on
       // the branch that does something rather than on every request.
-      if (!cells.isMulti() || req.stsCellRelay) {
+      if (!cells.isMulti()) {
+        next();
+        return;
+      }
+      if (req.stsCellRelay) {
+        // A REQUEST ANOTHER CELL SELECTED THIS ONE FOR (`?cell=`, D11)
+        // releases this cell's residents to a reader in that cell's
+        // jurisdiction, and the release policy is asked here, where the
+        // people are, before anything is read.
+        if (req.stsCellRelay.reason === 'selected' &&
+            !CellPlacement.releasePermitted(req)) {
+          errorCodes.mark(res, 'STS-CELL-0042');
+          res.status(403).type('text/plain')
+            .send('The release policy does not permit this cell\'s ' +
+                  'people to be listed from where the request was made.\n');
+          return;
+        }
         next();
         return;
       }
@@ -628,6 +646,27 @@ class CellPlacement {
       require('./cell_channel').relay(req, res, decision.cell,
                                       { reason: decision.reason });
     };
+  }
+
+  // The release policy's answer for a request another cell selected this one
+  // for (D11). No decision available is a refusal.
+  static releasePermitted(req: any): boolean {
+    log.debug("Entering CellPlacement.releasePermitted().");
+    let allowed = false;
+    try {
+      const realms = require('./realms');
+      const answer = require('./cell_transfer').releaseDecision({
+        realm: realms.currentId(), homeCell: cells.id(),
+        servingCell: String(req.stsCellRelay.from || ''),
+        purpose: 'api' });
+      allowed = !!(answer && answer.allowed);
+    } catch (e) {
+      log.debug("Caught in CellPlacement.releasePermitted(): " +
+                ((e && e.message) || e));
+      allowed = false;
+    }
+    log.debug("Leaving CellPlacement.releasePermitted(). " + allowed);
+    return allowed;
   }
 
   // -------------------------------------------------------------------------

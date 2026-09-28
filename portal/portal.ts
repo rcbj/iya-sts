@@ -4504,6 +4504,48 @@ class Portal {
    *
    * @param app - the express app
    */
+  // Which cell a portal request belongs to (#98): the home of the person it
+  // is about. Resolves true when it was relayed.
+  /**
+   * Relays a portal request to the home cell of the person it is about.
+   *
+   * @param req - the request
+   * @param res - the response
+   * @returns a promise of true when the request was relayed
+   */
+  async placeRequest(req: any, res: any): Promise<boolean> {
+    const { authn, log, parseBody } = this.deps;
+    log.debug("Entering Portal.placeRequest().");
+    const cells = require('../common/cells');
+    if (!cells.isMulti() || req.stsCellRelay) {
+      log.debug("Leaving Portal.placeRequest(). Here.");
+      return false;
+    }
+    const realms = require('../common/realms');
+    const placement = require('../common/cell_placement');
+    const realmId = realms.currentId();
+    const session = authn.sessionOf(req);
+    const username = session && session.user
+      ? String(session.user.username || '') : '';
+    if (username &&
+        require('../common/cell_sessions').isProjected(realmId, 'name',
+                                                       username)) {
+      log.debug("Leaving Portal.placeRequest(). A projected session.");
+      return placement.relayToHome(req, res, realmId, 'name', username,
+                                   'portal');
+    }
+    // A link that names its person — the activation, reset and verification
+    // pages carry `user` in the query or the form.
+    const body = String(req.method || 'GET') === 'POST'
+      ? (parseBody(req) || {}) : {};
+    const named = String((req.query && req.query.user) || body.user || '')
+      .trim();
+    log.debug("Leaving Portal.placeRequest().");
+    return named ? placement.relayToHome(req, res, realmId, 'name', named,
+                                         'portal-link')
+                 : false;
+  }
+
   registerRoutes(app: typeof import('../common/app')): void {
     const self = this;
     const { accessGate, accountSignals, audit, authn, baseUrlOf, config,
@@ -4528,6 +4570,27 @@ class Portal {
     // browser through the code flow as it always did for a request with no
     // session.
     // -------------------------------------------------------------------------
+    // THE PORTAL IS SERVED AT THE PERSON'S HOME (#98). It manages a person's
+    // own entry, which only their home cell holds: a request whose session
+    // is a PROJECTION of somebody homed elsewhere, or a link naming a person
+    // homed elsewhere (activation, password reset, address verification), is
+    // relayed there whole. Above the renewal and every page, before anything
+    // is read or spent. `common/cell_placement.ts` is the table.
+    app.use(BASE, function (req, res, next) {
+      log.debug("Entering the portal's cell placement.");
+      self.placeRequest(req, res).then(function (relayed) {
+        log.debug("Leaving the portal's cell placement. " +
+                  (relayed ? 'Relayed.' : 'Here.'));
+        if (!relayed) {
+          next();
+        }
+      }, function (e) {
+        log.debug("Caught in the portal's cell placement: " +
+                  ((e && e.message) || e));
+        next();
+      });
+    });
+
     app.use(BASE, oidcRp.renewal('portal'));
 
     // ASYNCHRONOUS SINCE 2026-09-14 (#46): the rate limit below counts in the

@@ -1568,6 +1568,11 @@ const CODES = [
     summary: 'A pushed authorization request could not be handed to the home ' +
       'cell of a flow restarting there; the flow restarts without it.',
     spec: '' },
+  { code: 'STS-CELL-0042',
+    summary: 'A request another cell selected this one for (?cell=) was ' +
+      'refused: the release policy does not permit this cell\'s people to ' +
+      'be released to a reader in that cell\'s jurisdiction.',
+    spec: '' },
   { code: 'STS-CELL-0050',
     summary: 'A change made in this cell to a projected person could not be ' +
       'sent to their home cell; it is held here only until the session ' +
