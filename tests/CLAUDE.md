@@ -1338,6 +1338,11 @@ and carrying them twice is what made this table's own arithmetic wrong.
 | `tests/vendored/sts_email_verification.js` **(ours)** | **WHICH ADDRESSES ARE VERIFIED, A PERSON'S OWN CHANGE, AND THE RECOVERY-CODE RESET** (#64, 2026-09-23), in a realm it creates in development and switches to product for the reset. An administrator's address verified at create and by `set-mail`, the former address told; a person's change on `/portal/email` PENDING until the link sent to the new address is followed (the GET spends nothing, the form once), then the account's, verified, the former told; the three-field forgot-password form, a wrong recovery code with the right name and address notifying the owner, every combination answered alike, the right one mailing a link that sets a password, the same code a second time mailing nothing. **And a RISC poll stream in the realm (#294, for #235)**: asking for a change sends nothing, following the link is `identifier-changed` and `recovery-information-changed`; a wrong recovery code on the form spends nothing, the right one is `recovery-information-changed` and `recovery-activated`. Skips entirely where `MAILPIT_API_URL` is unset. Floor of twenty-four checks |
 | `tests/vendored/sts_person_attributes.js` **(ours)** | **A PERSON'S ATTRIBUTES THROUGH `/admin-api`, OVER HTTP** (#228, 2026-09-26), in a realm it creates and leaves standing. `GET /admin-api/users?user=` publishes `attributeEditor` with the entry in the realm's own tree, title editable, userPassword and mail withheld. set-attribute, add-attribute (twice) and remove-attribute are read back on the next GET, with the country upper-cased. userPassword, mail, an add to displayName and a country that is not a code are 400s naming why, and the same name in the DEFAULT realm is nobody there. The OpenAPI document declares the three operations. Floor of nine checks |
 | `tests/vendored/sts_client_attestation.js` **(ours)** | **OAUTH 2.0 ATTESTATION-BASED CLIENT AUTHENTICATION, OVER HTTP** (#229, 2026-09-26, draft-ietf-oauth-attestation-based-client-auth-11), in a realm it creates and leaves standing, with a client attester (a root and an attester certificate, node-forge) and client instance keys made at run time. A realm trusting no attester advertises neither method and refuses `POST /oauth2/challenge`; with the root configured, discovery names both methods, the challenge endpoint and section 8's lists, and the endpoint answers an uncacheable challenge. PAR for an `attest_jwt_client_auth` client: no attestation 401, no challenge 400 `use_attestation_challenge` with a fresh one in the header, an untrusted attester 401, then 201. The code redeemed by another instance key 400 `invalid_grant` and by its own 200; the same PoP again a 401 replay. The refresh token without an attestation and by another key refused, by its own key 200. Introspection takes the PoP mode. An `attest_jwt_client_auth_dpop` client: another key's DPoP proof, and a PoP beside the proof, refused; the attested key's proof alone yields a DPoP-bound token. Floor of twenty checks |
+| `tests/vendored/sts_cells_map.js` **(ours)** | **THE CELL MAP AT BOTH CELLS** (#98, 2026-09-28, `cells` mode only): `GET /admin-api/cells` answers two cells in the jurisdictions the stack gave them, the peer REACHABLE over the channel and reporting the same jurisdiction, a tiered store, the channel listening with `cell-ping`, and the peer's address nowhere in what the map reports (the `settings` block — the configured `cells.peers` — is the one part left out). Found the channel leaf's `commonName`. Floor of fourteen checks |
+| `tests/vendored/sts_cells_routing.js` **(ours)** | **A LOGIN NAME IS UNIQUE ACROSS CELLS** (#98 D1): a person created at cell B is counted in cell B by the routing index read at cell A; the same name at cell A is 409 and nothing is made; `homeCell: cellb` at cell A creates the person AT cell B (cell B holds them, cell A does not, the index counts them in B, the name is claimed); a home that is no cell is 400. Found `homeCell` missing from the operation's schema. Floor of nine checks |
+| `tests/vendored/sts_cells_traveller.js` **(ours)** | **THE TRAVELLER** (#98 D8, D9, D10): every request to cell A for a person homed at cell B. The login POST restarts at home — 303 to the original request, an `sts_cell` pin naming no cell in the clear, no session at A; with the pin the flow is relayed to B (the same sign-in URL without the pin is not one A holds); the password signs in at B; the code, redeemed at A, is relayed by its locator (A's relay counter moves); the ID Token and access token verify against A's key set and B publishes the same keys; a PAR pushed at B and started at A with no pin reaches B, pins the browser there, and ends in a code. Found the back-channel placement, the realm-key arbitration and the unpinned artifact relay. Floor of twenty-two checks |
+| `tests/vendored/sts_cells_transfer.js` **(ours)** | **A SESSION HELD AWAY FROM HOME, AND HOME'S AUTHORITY** (#98 D4, D6): in a realm listing `ca>us`, the traveller signs in at home through A and the pin moves to A when the flow ends; A reports a projection and B an export; a second authorization request at A is answered with a code and no sign-in with nothing relayed; then the person is DISABLED at B, and within 90 s A drops the projection, refuses a refresh (`invalid_grant`) and issues no code. Found the mid-flow pin move. Floor of fourteen checks |
+| `tests/vendored/sts_cells_release.js` **(ours)** | **ANOTHER CELL'S RESIDENTS** (#98 D11): `GET /admin-api/cells/people?cell=cellb` at A is refused under the strict default and names nobody; once the realm lists `ca>us` it is answered with B's residents — the person as `name`, `uuid`, `displayName` and nothing else — and A's directory still does not hold them. Found B refusing a relayed listing as "not another cell". Floor of five checks |
 | `tests/vendored/sts_outbound_tls.js` **(ours)** | **NOTHING GOES OUT OVER TLS IT DID NOT VERIFY, IN PRODUCT, OVER HTTP** (#171, 2026-09-23), in a development realm and a product realm it creates and leaves standing, so both halves are asserted whatever mode the service runs in. A realm create naming product mode and a skip in one body refused and nothing created (`STS-CORE-0103`); every `…SkipTlsVerification` and `spiffe.k8sSkipKubeletVerification` refused `true` in the product realm through `config/set`, `realms/set` and an all-or-nothing `config/set-many` that writes nothing, accepted `false`, and accepted `true` in development; a removed `…AllowInsecure` refused naming its replacements. **SSF push to this job's own listeners**: a self-signed listener reached in development with the skip, NOT reached once the realm is switched to product with the skip still stored (and dead-lettered with the certificate failure), a listener certified by a CA the job makes at run time reached in product through `ssf.pushCaFile` (skipped with no shared directory), and a plain-http endpoint refused in product whatever `ssf.pushAllowHttp` says. The RFC 9728 import under federation's policy (a self-signed document loaded only with the skip, in development; plain http refused in product), and `GET /admin-api/xacml/peps` reporting a stored nudge skip as not in force. Floor of twenty-five checks; the listeners are on `OUTBOUND_TEST_HOST` or `GNAP_PUSH_HOST` |
 | `tests/vendored/sts_spiffe_broker.js` **(ours)** | **THE SPIFFE BROKER API OVER MUTUAL TLS** (#170, 2026-09-23), in a development realm and a product realm it creates and leaves standing with SPIFFE off. A CA of the job's own for a trust domain of its own, federated into each realm, and X509-SVIDs under it for a broker, a pod-only broker and a stranger; the brokers through `/admin-api/spiffe/brokers/set` (a non-SPIFFE ID and an empty type list refused). No `broker.spiffe.io` header INVALID_ARGUMENT, no client certificate UNAUTHENTICATED, a stranger PERMISSION_DENIED; no reference INVALID_ARGUMENT with a `google.rpc.ErrorInfo` (WORKLOAD_REFERENCE_INVALID); a type not allowed PERMISSION_DENIED; a missing pid NOT_FOUND (WORKLOAD_NOT_FOUND); pid 1 attested by the unix attestor and answered (FetchJWTSVID, SubscribeToX509SVID; `STS_SPIFFE_BROKER_PID_UID`, 0); a pod by UID over a fake kubelet on `OUTBOUND_TEST_HOST`/`GNAP_PUSH_HOST` — skip-verified in development, through `spiffe.k8sKubeletCaFile` in product (skipped with no shared directory) — and a pod with no entry WORKLOAD_NOT_ENTITLED; a removed broker refused. Ports `STS_SPIFFE_BROKER_PORT_DEV`/`_PROD` (8193, 8194); an endpoint this runner cannot reach is a skip. Thirty-two checks |
 | `tests/vendored/sts_development_only_settings.js` **(ours)** | **THE DEVELOPMENT-ONLY SETTINGS, OVER HTTP** (#104, 2026-09-23), in a development realm and a product realm it creates and leaves standing. A realm create naming product mode and `oauth2.breakIdTokenNonce` in one body refused and nothing created; every marked value refused in the product realm through `config/set` and `realms/set`, an all-or-nothing `config/set-many` writing nothing, and the default accepted; every value accepted in development. Then, in the development realm with the defects on: an authorization code flow's ID Token carrying a spoiled nonce, a poll stream's verification SET failing to verify against the realm's published keys, and `GET /spiffe` reporting both loosening switches; the realm switched to product with every value STILL STORED (and `risk.assessSignIns` off in it, so #62's product-mode risk policy does not ask this job's automated client for a security key): the next ID Token carrying the nonce asked for, `GET /oauth2/rfc9700` reporting the defect not in force, the next SET verifying, `GET /spiffe` reporting attestation on, and a new defect refused. Floor of twenty-five checks |
@@ -3487,6 +3492,88 @@ keeps an unnamed run exactly as it was.
 The service logs are `logs/00-mock-sts-service.log` (node A, the name every mode
 uses), `logs/00-mock-sts-service-node-b.log` and `logs/00-load-balancer.log`.
 `!reset` in the local override needs docker compose 2.24 or later.
+
+## THE `cells` MODE: TWO CELLS OF ONE SERVICE (2026-09-28, issue #98)
+
+**A FOURTH MODE, RUN ONLY WHEN NAMED**: `./run-tests.sh --modes=cells`. It is
+not in `STS_ALL_MODES`, so a bare run and both CI jobs start exactly the
+stacks they did; `tests/tools/modes.sh` defines it and argues it. It exists
+for the five `sts_cells_*.js` jobs, which prove #98 end to end over HTTP, and
+every other job run in it asserts what it always did against cell A:
+
+```bash
+./run-tests.sh --modes=cells --only=sts_cells --protocol=only --no-browser
+```
+
+**THE STACK** is `tests/docker-compose-run-tests-cells.yml` over
+`docker-compose-run-tests.yml`, read in no other mode:
+
+| | What it is |
+|---|---|
+| cell A | the existing `sts`: cell `cella`, jurisdiction `us`, on the `postgres` every mode has — which is now cell A's OWN database |
+| cell B | `sts2`, which `extends` the base file's `sts` (so cell A's cell settings are NOT inherited — the layer names cell B's): cell `cellb`, jurisdiction `ca`, on `postgres-cellb`, started once cell A is HEALTHY so cell A builds the global tier's first keys and certificate authorities alone |
+| the global tier | `postgres-global`, both cells' `STS_GLOBAL_DATABASE_URL` and its read URL (there is no replica here). The same image, scripts and application role as `postgres`; which rows a tier holds is `persistence/tiers.js`'s decision, not the database's |
+| the keys | the SERVICE key and every database password from the one OpenBao, as in every mode; a CELL key per cell, written fresh per run by the one-shot `sts-cell-kek` into a volume only that cell mounts (`keys.cellKekProvider=file`) — product mode refuses a cell without one (STS-CELL-0003) and a key in git is key material in git |
+| the names | ONE public name, `https://sts:8081` (the launcher's `STS_PUBLIC_BASE_URL` for a product mode, required by STS-CELL-0005); `sts` and `sts2` in both cells' `tls.hostnames`; the channel on 8446, dialled at `cells.hostname`; nothing published |
+| the runner | `STS_TEST_SERVICE_URL` is cell A, as `sts` is in every mode; `STS_TEST_CELL_A_URL`, `STS_TEST_CELL_B_URL` and `STS_TEST_CELLS` name both cells — a TEST-ONLY resolver override (#98 section 9) |
+
+**PRODUCT MODE, ONE PROCESS PER CELL, CLUSTER OFF.** What is under test is
+BETWEEN cells; request workers are `single-node`'s axis and two cells of five
+processes each would make a failure here harder to read, not more likely to
+be found. Each cell is one node, so `cluster.mode=off` — and that is exactly
+what hid the key-arbitration defect below.
+
+**TRUST**: both cells' listener leaves chain to the ONE service Root the
+global tier holds, so the anchor `tools/trust.js` fetches from cell A
+verifies cell B too; nothing in `trust.js` changed. (The browser jobs pin a
+leaf's key and would meet an interstitial at cell B — none of the cells jobs
+drives a browser, and a browser job run in this mode talks to cell A only.)
+
+**THE JOBS MINT A TOKEN AT EACH CELL** (`cells_kit.js`), audienced to the
+service's one `/admin-api`, and set the Authorization header themselves, so
+the runner's preloaded token (cell A's) never decides which cell is shown
+what. They drive a browser as a cookie jar that follows no redirect, so
+every hop and every `sts_cell` pin is theirs to assert.
+
+**WHAT ITS FIRST RUNS FOUND (2026-09-28): SEVEN DEFECTS IN THE SERVICE, NONE
+IN THE MODE**, each fixed with a note where it was:
+
+* the inter-cell leaf's subject was `commonName`, which the encoder does not
+  know (`CN`): no cell held a channel certificate and every peer was
+  unreachable (`common/cell_channel.ts`);
+* `POST /admin-api/users/create` refused `homeCell` as not in its schema, at
+  the cell the creation was relayed to (`mgmt-api/admin_api.ts`);
+* the back-channel placement read `req.path` under `app.use([...])`, where
+  express has taken the mount off, and `req.body`, which `app.js` leaves as
+  text — no code, refresh token or CIBA id was ever relayed
+  (`oauth-oidc/oauth2.ts`);
+* realm keys and certificate authorities were arbitrated only where
+  `cluster.mode` is not `off`, so each cell generated its own for a realm
+  created at runtime and a token minted at one cell did not verify against
+  the other's key set (`common/keystore.js`, D8);
+* a browser relayed by an artifact (a pushed `request_uri`) was not pinned to
+  the cell holding its sign-in, and an affinity appended above a handler that
+  sets its own cookie with `res.set()` was dropped
+  (`common/cell_placement.ts`, `setAffinityOnAnswer()`);
+* a permitted export moved the pin mid-flow, stranding a consent screen held
+  at home (`common/cell_sessions.ts` — the pin now moves on the answer that
+  takes the browser off the service);
+* `GET /admin-api/cells/people?cell=<B>` is relayed to B by the edge, and B
+  refused it as "not another cell" (`admin-ui/cells_admin.ts`).
+
+**THREE THINGS THE JOBS HAD TO WAIT FOR, AND WHY EACH IS A BOUND NOT A
+SLEEP**: a realm, an application or a setting written at one cell reaches the
+other through the global change log's pull; a person's routing-index rows are
+written when their home cell's store is FLUSHED, a moment after the creation
+answers (a sign-in elsewhere before then finds nobody to send home); and a
+revocation home pushes is a durable delivery. Each is `until()` with its
+bound in the failure.
+
+**What this mode does not cover yet**: a cell that is DOWN (home
+unreachable, D6's fail-closed), re-homing, the raw Kerberos and LDAP sockets
+at cell B, the console at cell B, and the full suite at cell B — every other
+job talks to cell A. The service log of cell B is
+`logs/00-mock-sts-service-cell-b.log`.
 
 ## APPLICATION CREDENTIALS: THE PAIR, AND THE SPLIT (2026-09-13)
 
