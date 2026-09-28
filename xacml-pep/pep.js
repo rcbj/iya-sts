@@ -472,8 +472,25 @@ async function decide(query) {
   // for one string would bring the mock's directory reader into a process
   // that has no directory.
   const PIP_PREFIX = 'urn:sts:xacml:attribute:';
+  // WHETHER THE SUBJECT IS A PERSON OR AN APPLICATION (#303), from
+  // `subjectKind`. It is not a directory attribute, so it is asserted once,
+  // under the issuance vocabulary's own id — a literal for PIP_PREFIX's
+  // reason (`xacml_templates.ts` is not in the copy list) — and `pip.js`
+  // forwards it, so the PDP resolves the ROLES of the right kind of subject:
+  // a name like `payroll-worker` could be either, and the two hold roles
+  // through different relations.
+  const SUBJECT_KIND = 'urn:sts:xacml:subject-kind';
+  if (query.subjectKind !== undefined) {
+    subjectAttributes.push({ attributeId: SUBJECT_KIND, issuer: null,
+                             includeInResult: true,
+                             values: [{ type: model.TYPE.STRING,
+                                        lexical: String(query.subjectKind) ===
+                                                 'application'
+                                          ? 'application' : 'user' }] });
+  }
   Object.keys(query).forEach(function (key) {
-    if (key === 'subject' || key === 'resource' || key === 'action') {
+    if (key === 'subject' || key === 'resource' || key === 'action' ||
+        key === 'subjectKind') {
       return;
     }
     const values = [{ type: model.TYPE.STRING, lexical: String(query[key]) }];

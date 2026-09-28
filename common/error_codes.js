@@ -14856,6 +14856,20 @@ const CODES = [
       'nudge verifies the PEP\'s certificate whatever it says. Logged once ' +
       'per process (#171).',
     spec: 'none — a warning in the log' },
+  { code: 'STS-XACML-0075',
+    summary: 'A write put a person or a group on ADMIN_READ or ADMIN_WRITE; ' +
+      'their people are the console roster\'s, granted on /admin/rbac, and ' +
+      'only an application is added on the role (#303).',
+    spec: 'none (a console or management API refusal, HTTP 400)' },
+  { code: 'STS-XACML-0076',
+    summary: 'A delete named ADMIN_READ or ADMIN_WRITE, which every realm ' +
+      'keeps (#303).',
+    spec: 'none (a console or management API refusal, HTTP 400)' },
+  { code: 'STS-XACML-0077',
+    summary: 'ADMIN_READ or ADMIN_WRITE could not be seeded in a realm; ' +
+      'no machine client can be issued that admin scope there until it ' +
+      'exists (#303).',
+    spec: 'none — a warning in the log' },
   // ===== XPEP ==============================================================
   { code: 'STS-XPEP-0001',
     summary: 'The error-code registry could not be loaded from ./error_codes ' +
@@ -15842,17 +15856,46 @@ const CODES = [
       'mirroring /admin-api operation\'s enum declares (#86).',
     spec: 'HTTP 400 page' },
   { code: 'STS-ADMIN-0821',
-    summary: 'admin:read or admin:write was asked for on behalf of a person ' +
-      'whose console roles in the realm do not authorize it — no Admin ' +
-      'Read or Admin Write, not signed in, or the bootstrap administrator ' +
-      'before its claim — and was left off the tokens (#302).',
+    summary: 'A permission gated by role — admin:read, admin:write, or an ' +
+      'application permission its resource lists in ' +
+      'oauthRoleGatedPermission — was asked for on behalf of a person or ' +
+      'an application no held role authorizes it for (for a person\'s ' +
+      'console roles: no Admin Read or Admin Write, not signed in, or the ' +
+      'bootstrap administrator before its claim), and was left off the ' +
+      'tokens (#302, #303).',
     spec: 'none — the token is issued without that scope (RFC 6749 ' +
       'section 3.3)' },
   { code: 'STS-ADMIN-0822',
-    summary: 'Every scope a person\'s request asked for was admin:read or ' +
-      'admin:write that their console roles do not authorize, so nothing ' +
-      'was left to issue (#302).',
+    summary: 'Every scope a request asked for was a permission gated by ' +
+      'role that the subject\'s roles do not authorize, so nothing was ' +
+      'left to issue (#302, #303).',
     spec: 'invalid_scope (RFC 6749 sections 4.1.2.1 and 5.2)' },
+  { code: 'STS-ADMIN-0823',
+    summary: 'add-permission or remove-permission named ADMIN_READ or ' +
+      'ADMIN_WRITE, whose permission is fixed (#303).',
+    spec: 'none (a console or management API refusal, HTTP 400)' },
+  { code: 'STS-ADMIN-0824',
+    summary: 'add-permission or remove-permission named no permission ' +
+      '(#303).',
+    spec: 'none (a console or management API refusal, HTTP 400)' },
+  { code: 'STS-ADMIN-0825',
+    summary: 'add-permission named a native permission (admin:read, ' +
+      'admin:write), which only the two console roles authorize ' +
+      '(#303).',
+    spec: 'none (a console or management API refusal, HTTP 400)' },
+  { code: 'STS-ADMIN-0826',
+    summary: 'add-permission named a permission no application in the realm ' +
+      'defines; a permission must be defined before a role can ' +
+      'authorize it (#303).',
+    spec: 'none (a console or management API refusal, HTTP 400)' },
+  { code: 'STS-ADMIN-0827',
+    summary: 'add-permission named a permission the role already authorizes ' +
+      '(#303).',
+    spec: 'none (a console or management API refusal, HTTP 400)' },
+  { code: 'STS-ADMIN-0828',
+    summary: 'remove-permission named a permission the role does not ' +
+      'authorize (#303).',
+    spec: 'none (a console or management API refusal, HTTP 400)' },
   { code: 'STS-API-0001',
     summary: 'A management API request carried no Bearer access token while ' +
       'adminApi.authRequired is on.',
@@ -16202,9 +16245,10 @@ const CODES = [
       'closed set its operation\'s enum declares (#86).',
     spec: 'HTTP 400 { ok: false, errors }' },
   { code: 'STS-API-0125',
-    summary: 'A management API access token issued for a PERSON carried the ' +
-      'admin scope an operation needs, and that person no longer holds the ' +
-      'console role it goes with in the realm that issued it (#302).',
+    summary: 'A management API access token carried the admin scope an ' +
+      'operation needs, and its subject — a person, or the application on ' +
+      'a client_credentials token — no longer holds a role authorizing it ' +
+      'in the realm that issued it (#302, #303).',
     spec: 'HTTP 403 forbidden' },
   { code: 'STS-PORTAL-0001',
     summary: 'A user portal request\'s query string or form body did not ' +
@@ -16878,6 +16922,11 @@ const CODES = [
       'oauthResourceMetadata (not a JSON object with a `resource`) or ' +
       'oauthResourceMetadataUrl (not an http or https URL).',
     spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
+  { code: 'STS-REG-0090',
+    summary: 'oauthRoleGatedPermission named a permission the application ' +
+      'does not define in oauthPermission; only its own permissions can be ' +
+      'gated by role (#303).',
+    spec: 'none (a console or management API refusal, HTTP 400)' },
   { code: 'STS-REG-0100',
     summary: 'An RFC 7591 registration or RFC 7592 update named ' +
       'request_uris, request_object_signing_alg, ' +

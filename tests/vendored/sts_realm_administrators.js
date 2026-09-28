@@ -553,15 +553,37 @@ async function aRealmTokenStaysInItsRealm() {
               " answered " + declared.status + " " +
               declared.text.slice(0, 200));
   }
+  // DECLARING IS NO LONGER ENOUGH (#303): admin:read and admin:write are
+  // authorized by the realm's ADMIN_READ and ADMIN_WRITE roles, and a client
+  // is issued them only while it is a member. Declared and holding neither,
+  // the request asked for nothing it may have.
+  const declaredOnly = await tokenFor(REALM, rogueId, secretOfRogue);
+  check("DECLARED BUT HOLDING NO ROLE, IT IS STILL REFUSED (#303) — " +
+        "invalid_scope, because the role authorizes the scope",
+        function () {
+    assert.strictEqual(declaredOnly.status, 400,
+      "it answered " + declaredOnly.status + " " +
+      declaredOnly.text.slice(0, 200));
+    assert.strictEqual(declaredOnly.body && declaredOnly.body.error,
+                       "invalid_scope");
+  });
+  for (const role of ["ADMIN_READ", "ADMIN_WRITE"]) {
+    const added = await api("POST", R + "/admin-api/roles/add-member",
+      { role: role, kind: "application", member: rogueId });
+    assert.ok(added.status === 200, "precondition: adding " + rogueId +
+              " to the realm's " + role + " answered " + added.status + " " +
+              added.text.slice(0, 200));
+  }
   const rogue = await tokenFor(REALM, rogueId, secretOfRogue);
   const rogueToken = rogue.body && rogue.body.access_token;
-  assert.ok(rogueToken, "precondition: a client declaring admin:* is issued " +
-            "them; it answered " + rogue.status + " " +
-            rogue.text.slice(0, 200));
+  assert.ok(rogueToken, "precondition: a client declaring admin:* and " +
+            "holding both roles is issued them; it answered " + rogue.status +
+            " " + rogue.text.slice(0, 200));
   const rogueRead = await apiAs(rogueToken, "GET",
                                 R + "/admin-api/users?per=1");
-  check("a client an administrator declared admin:* for reaches the " +
-        "realm's operations", function () {
+  check("a client an administrator declared admin:* for, and put in the " +
+        "realm's two console roles, reaches the realm's operations",
+        function () {
     assert.strictEqual(rogueRead.status, 200,
                        "it answered " + rogueRead.status + " " +
                        rogueRead.text.slice(0, 200));

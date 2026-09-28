@@ -1199,6 +1199,28 @@ const SCHEMA = {
             'It is checked on the GRANT and not here: this attribute is the ' +
             'definition, and a definition nobody has used yet is the ' +
             'ordinary first step rather than a mistake.' },
+    // WHICH OF THIS APPLICATION'S PERMISSIONS NEED A ROLE (#303, part B of
+    // #88, 2026-09-27). rcbj's decision 1 on #88: a permission is gated by
+    // role only where its RESOURCE application says so, so every existing
+    // client keeps behaving as it did until an operator opts a permission
+    // in. The role side is `rolePermission` on a role entry
+    // (`common/roles.js`); the question is `common/role_permissions.ts`'s.
+    { name: 'oauthRoleGatedPermission', kind: 'multi',
+      from: 'the console, the management API, or by hand',
+      what: 'A PERMISSION THIS APPLICATION DEFINES THAT IS ISSUED ONLY TO A ' +
+            'SUBJECT HOLDING A ROLE THAT AUTHORIZES IT. One value each, the ' +
+            'permission\'s NAME as `oauthPermission` gives it (`write`, not ' +
+            'the full identifier). A person or an application asking for a ' +
+            'gated permission is issued it only while they hold a role whose ' +
+            '`rolePermission` names the full identifier (base + name); ' +
+            'otherwise it is left off the token (RFC 6749 section 3.3), and ' +
+            'a request asking for nothing else is refused `invalid_scope`. A ' +
+            'permission not listed here is issued as it always was, which is ' +
+            'what keeps every existing client working until somebody opts ' +
+            'in.\n\nThe name must be one of this entry\'s own permissions ' +
+            'when it is written through this module; an `ldapmodify` is not ' +
+            'checked, and a value naming no defined permission gates nothing, ' +
+            'because no request can name it.' },
     // THE RFC 9728 DOCUMENT THIS APPLICATION WAS CREATED FROM (2026-09-13).
     // /admin/applications/new can be handed a protected resource's metadata
     // document and turn it into an entry; the members with an attribute of
@@ -3528,6 +3550,7 @@ const EDITABLE = {
   // what LDAP put there would shut the one door that could tidy it up.
   oauthPermissionBaseUri: 'set',
   oauthPermission: 'multi',
+  oauthRoleGatedPermission: 'multi',
   oauthDelegatedPermission: 'multi',
   oauthGlobalConsent: 'multi',
   // The RFC 9728 document an entry was created from, and where it came from.
@@ -6560,6 +6583,21 @@ function normaliseFields(value) {
         return;
       }
     }
+    // A GATED PERMISSION MUST BE ONE THIS CREATE DEFINES (#303), for the
+    // update's reason below.
+    if (name === 'oauthRoleGatedPermission') {
+      const defined = valuesOf(asked.oauthPermission).map(function (one) {
+        return parsePermissionValue(one).name;
+      });
+      const undefinedHere = values.filter(function (one) {
+        return defined.indexOf(String(one)) < 0;
+      });
+      if (undefinedHere.length) {
+        errors.push(roleGatedProblem(undefinedHere[0]));
+        code = code || 'STS-REG-0090';
+        return;
+      }
+    }
     if (name === 'oauthResourceMetadata' ||
         name === 'oauthResourceMetadataUrl') {
       const problem = name === 'oauthResourceMetadata'
@@ -9250,6 +9288,17 @@ function updateApplication(identifier, change) {
                                    '`api://<guid>`.'] }, 'STS-REG-0015');
     }
   }
+  if (attribute === 'oauthRoleGatedPermission' && mode === 'add') {
+    const defined = permissionsOf(loaded.record).some(function (one) {
+      return one.name === String(value);
+    });
+    if (!defined) {
+      log.debug("Leaving updateApplication(). Gating a permission this " +
+                "entry does not define.");
+      return errorCodes.mark({ ok: false, errors: [roleGatedProblem(value)] },
+                             'STS-REG-0090');
+    }
+  }
   if (attribute === 'oauthDelegatedPermission' && mode === 'add') {
     const defines = forPermission(value);
     if (!defines) {
@@ -11011,6 +11060,33 @@ function permissionsOf(source) {
 // scope naming a permission that does not exist is an ordinary scope, and
 // turning it into an audience would let any client address a token to any
 // registered base by inventing a word.
+// The sentence a gate naming no defined permission is refused with (#303).
+function roleGatedProblem(value) {
+  log.debug("Entering roleGatedProblem().");
+  log.debug("Leaving roleGatedProblem().");
+  return '"' + value + '" is not one of this application\'s own ' +
+         'permissions, and only a permission it defines (`oauthPermission`) ' +
+         'can be gated by role. Give the NAME, as `oauthPermission` holds it ' +
+         '(`write`), not the full identifier.';
+}
+
+// IS THIS PERMISSION GATED BY ROLE (#303)? `id` is the full identifier a
+// client asks for (base + name). Answers the defining application's lookup
+// with `gated`, or null where no application defines the identifier — which
+// is an ordinary scope and nothing this relation decides.
+function roleGatingFor(id) {
+  log.debug("Entering roleGatingFor().");
+  const found = forPermission(id);
+  if (!found) {
+    log.debug("Leaving roleGatingFor(). Not an application permission.");
+    return null;
+  }
+  const gated = valuesOf((found.application.fields || {})
+    .oauthRoleGatedPermission).indexOf(found.name) >= 0;
+  log.debug("Leaving roleGatingFor(). " + gated);
+  return Object.assign({ gated: gated }, found);
+}
+
 function forPermission(id) {
   log.debug("Entering forPermission(). id=" + id);
   const wanted = String(id == null ? '' : id).trim();
@@ -12104,6 +12180,7 @@ module.exports = {
   familyRefusal: familyRefusal,
   createApplication: createApplication,
   seedInternalApplications: seedInternalApplications,
+  roleGatingFor: roleGatingFor,
   updateApplication: updateApplication,
   noteGlobalConsentWithdrawn: noteGlobalConsentWithdrawn,
   regenerateClientSecret: regenerateClientSecret,

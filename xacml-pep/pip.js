@@ -291,7 +291,32 @@ function escape(text) {
     .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
-function queryDocument(subject, designators) {
+// WHETHER THE REQUEST IS ABOUT AN APPLICATION (#303): the issuance
+// vocabulary's subject-kind attribute, which `pep.js` asserts from
+// `subjectKind`. Forwarded so the PDP resolves the ROLE designator for the
+// right kind of subject; absent, the subject is a person, as it always was.
+const SUBJECT_KIND = 'urn:sts:xacml:subject-kind';
+
+function subjectKindOf(request) {
+  log.debug("Entering subjectKindOf().");
+  let kind = 'user';
+  (request.categories || []).forEach(function (category) {
+    if (category.category !== model.CATEGORY.ACCESS_SUBJECT) {
+      return;
+    }
+    (category.attributes || []).forEach(function (attribute) {
+      if (attribute.attributeId === SUBJECT_KIND &&
+          (attribute.values || []).length &&
+          String(attribute.values[0].lexical) === 'application') {
+        kind = 'application';
+      }
+    });
+  });
+  log.debug("Leaving subjectKindOf(). " + kind);
+  return kind;
+}
+
+function queryDocument(subject, designators, kind) {
   log.debug("Entering queryDocument().");
   const parts = ['<?xml version="1.0" encoding="UTF-8"?>',
                  '<PIPRequest xmlns="' + PIP_NS + '">',
@@ -303,9 +328,15 @@ function queryDocument(subject, designators) {
                  '" IncludeInResult="true">',
                  '        <AttributeValue DataType="' + model.TYPE.STRING +
                  '">' + escape(subject) + '</AttributeValue>',
-                 '      </Attribute>',
-                 '    </Attributes>',
-                 '  </Request>'];
+                 '      </Attribute>']
+    .concat(kind === 'application'
+      ? ['      <Attribute AttributeId="' + SUBJECT_KIND +
+         '" IncludeInResult="false">',
+         '        <AttributeValue DataType="' + model.TYPE.STRING +
+         '">application</AttributeValue>',
+         '      </Attribute>']
+      : [])
+    .concat(['    </Attributes>', '  </Request>']);
   designators.forEach(function (one) {
     parts.push('  <AttributeDesignator xmlns="' + model.NS_XACML +
                '" Category="' + escape(one.category) + '" AttributeId="' +
@@ -492,7 +523,8 @@ async function resolverFor(request, holding, options) {
   }
 
   const answered = await post(options.pdpUrl + '/xacml/pip',
-                              queryDocument(subject, designators), options);
+                              queryDocument(subject, designators,
+                                            subjectKindOf(request)), options);
   if (!answered.ok) {
     // REPORTED AND DEGRADED, NEVER THROWN. See the header.
     const why = answered.why
@@ -576,6 +608,7 @@ module.exports = {
   // the policy model grows an element.
   designatorsIn: designatorsIn,
   queryDocument: queryDocument,
+  subjectKindOf: subjectKindOf,
   readAnswer: readAnswer,
   MAX_DESIGNATORS: MAX_DESIGNATORS
 };

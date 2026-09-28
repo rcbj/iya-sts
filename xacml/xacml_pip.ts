@@ -79,6 +79,16 @@ import InstanceSlot = require('../common/instance_slot');
 import errorCodes = require('../common/error_codes');
 import model = require('./xacml_model');
 import datatypes = require('./xacml_datatypes');
+// THE ROLE DESIGNATOR (#303): a subject's configured roles, from the register
+// and — for the console roles and a person — the console roster, the same
+// answer token issuance gets. A library (rule 3). Not copied into the remote
+// PEP either: that container asks `POST /xacml/pip`, which asks this.
+import rolePermissions = require('../common/role_permissions');
+import templates = require('./xacml_templates');
+
+// The two issuance-vocabulary attributes this PIP answers or reads (#303).
+const ROLE_ATTRIBUTE = templates.ISSUANCE_ATTRIBUTE.ROLE;
+const SUBJECT_KIND_ATTRIBUTE = templates.ISSUANCE_ATTRIBUTE.SUBJECT_KIND;
 
 // The directory functions this module calls. Installed by
 // `ldap/ldap_server.js`.
@@ -92,6 +102,7 @@ interface XacmlPipDeps {
   errorCodes: { tag(code: string): string };
   model: typeof model;
   datatypes: { parseValue(type: string, lexical: string): any };
+  rolePermissions: { configuredRolesOf(subject: any): string[] };
 }
 
 // Installed by `ldap/ldap_server.js` at require time, the way every other
@@ -137,7 +148,8 @@ class XacmlPip {
       log: helpers.log,
       errorCodes: errorCodes,
       model: model,
-      datatypes: datatypes
+      datatypes: datatypes,
+      rolePermissions: rolePermissions
     };
   }
 
@@ -215,6 +227,70 @@ class XacmlPip {
     });
     log.debug('Leaving XacmlPip.subjectOf(). ' + (found ? found : 'none'));
     return found;
+  }
+
+  // Whether the request is about a person (`user`, the default) or an
+  // application acting as itself (#303) — `SUBJECT_KIND_ATTRIBUTE` in the
+  // access-subject category. Anything but `application` is a person, which
+  // is what a request that never heard of the attribute meant.
+  subjectKindOf(request: any): string {
+    const { log, model } = this.deps;
+    log.debug('Entering XacmlPip.subjectKindOf().');
+    let kind = 'user';
+    request.categories.forEach(function (category) {
+      if (category.category !== model.CATEGORY.ACCESS_SUBJECT) {
+        return;
+      }
+      category.attributes.forEach(function (attribute) {
+        if (attribute.attributeId === SUBJECT_KIND_ATTRIBUTE &&
+            attribute.values.length &&
+            String(attribute.values[0].lexical) === 'application') {
+          kind = 'application';
+        }
+      });
+    });
+    log.debug('Leaving XacmlPip.subjectKindOf(). ' + kind);
+    return kind;
+  }
+
+  // THE ROLE DESIGNATOR (#303). The subject's CONFIGURED roles, as strings
+  // parsed at the designator's datatype. The built-in ones are not answered:
+  // they are facts about the request — who authenticated, over what — that
+  // a PIP naming a subject cannot know, and a PEP asserts them where it can.
+  // The subject is taken as authenticated: a PEP asking about a named
+  // subject is deciding for somebody it already accepted.
+  private rolesFor(request: any, designator: any): any[] {
+    const { log, datatypes, rolePermissions } = this.deps;
+    log.debug('Entering XacmlPip.rolesFor().');
+    const name = this.subjectOf(request);
+    if (!name) {
+      log.debug('Leaving XacmlPip.rolesFor(). No subject.');
+      return [];
+    }
+    let held = [];
+    try {
+      held = rolePermissions.configuredRolesOf({
+        kind: this.subjectKindOf(request), name: name, authenticated: true });
+    } catch (e) {
+      // A register that cannot be read answers an empty bag, which is what
+      // this PIP answers for every failure (see the header): the PDP decides
+      // on less rather than not at all.
+      log.debug('Caught in XacmlPip.rolesFor(): ' + ((e && e.message) || e));
+      held = [];
+    }
+    const out = [];
+    held.forEach(function (role) {
+      try {
+        out.push(datatypes.parseValue(designator.dataType, String(role)));
+      } catch (e) {
+        // A role name that is not a value of the designator's type — a
+        // policy asking for roles as integers — is dropped, as a directory
+        // value would be.
+        log.debug('Caught in XacmlPip.rolesFor(): ' + ((e && e.message) || e));
+      }
+    });
+    log.debug('Leaving XacmlPip.rolesFor(). ' + out.length + ' role(s).');
+    return out;
   }
 
   // An attribute off a directory entry, matched without regard to case. See
@@ -332,6 +408,11 @@ class XacmlPip {
                   'attribute.');
         return [];
       }
+      if (designator.attributeId === ROLE_ATTRIBUTE) {
+        log.debug('Leaving XacmlPip.resolverFor().resolve(). The role ' +
+                  'designator.');
+        return self.rolesFor(request, designator);
+      }
       const name = self.directoryAttributeFor(designator.attributeId);
       if (!name) {
         log.debug('Leaving XacmlPip.resolverFor().resolve(). Not a ' +
@@ -418,6 +499,9 @@ export = {
   rawAttribute: slot.forward('attributeOf'),
   directoryAttributeFor: slot.forward('directoryAttributeFor'),
   subjectOf: slot.forward('subjectOf'),
+  subjectKindOf: slot.forward('subjectKindOf'),
+  ROLE_ATTRIBUTE: ROLE_ATTRIBUTE,
+  SUBJECT_KIND_ATTRIBUTE: SUBJECT_KIND_ATTRIBUTE,
   available: slot.forward('available'),
   ATTRIBUTE_PREFIX: XacmlPip.ATTRIBUTE_PREFIX
 };

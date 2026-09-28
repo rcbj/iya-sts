@@ -531,6 +531,24 @@ earlier — a refresh, a token exchange inheriting the subject token's scope, an
 assertion grant — is issued without the scope instead, and the token response's
 `scope` says what was issued.
 
+**Declaring a scope is a request, and some scopes also need a role** (#302,
+#303). A scope that is *gated by role* is issued only to a subject whose roles
+authorize it. For a person that is the signed-in person; for `client_credentials`
+it is the client itself. Two kinds of scope are gated:
+
+* **`admin:read` and `admin:write`**, always. They are authorized by the
+  `ADMIN_READ` and `ADMIN_WRITE` roles. A person holds those through the
+  console's Admin Read and Admin Write groups, and an application by being a
+  member of the role ([Management API](management-api.md)).
+* **An application permission its resource opts in.** List the permission's
+  name in `oauthRoleGatedPermission` on the resource application. Then name the
+  full permission (base URI + name) on a role, with the `add-permission` action
+  on `/admin/roles` or `POST /admin-api/roles/add-permission`.
+
+A gated scope the subject's roles do not authorize is left off the token. If
+nothing else was requested, the request is refused with `invalid_scope`. A
+permission nobody has gated is issued exactly as before.
+
 ### ID Tokens
 
 An ID Token carries `nonce`, `at_hash` and `c_hash` in all three flows, plus

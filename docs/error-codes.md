@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3730** of them, in **39** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3740** of them, in **39** subsystems.
 
 ## Where a code appears
 
@@ -80,13 +80,13 @@ is an ordinary outcome.
 * [Mail (`STS-MAIL`)](#sts-mail) — 39
 * [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 282
 * [Device register (`STS-DEVICE`)](#sts-device) — 45
-* [XACML and access policy (`STS-XACML`)](#sts-xacml) — 74
+* [XACML and access policy (`STS-XACML`)](#sts-xacml) — 77
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 32
-* [Admin console (`STS-ADMIN`)](#sts-admin) — 201
+* [Admin console (`STS-ADMIN`)](#sts-admin) — 207
 * [Management API (`STS-API`)](#sts-api) — 75
 * [User portal (`STS-PORTAL`)](#sts-portal) — 75
 * [Sign-out (`STS-LOGOUT`)](#sts-logout) — 7
-* [Registries (`STS-REG`)](#sts-reg) — 132
+* [Registries (`STS-REG`)](#sts-reg) — 133
 * [Protocol debugger (`STS-DBG`)](#sts-dbg) — 28
 
 ## STS-HTTP
@@ -3574,6 +3574,9 @@ Raised from: xacml/, common/access_gate.ts, common/issuance_gate.js, common/role
 | `STS-XACML-0072` | A remote PEP's HTTPS listener certificate could not be issued: the certificate authority refused it, or issuing threw. | console: a page saying so; /admin-api: HTTP 400 { ok: false, errors }, or 500 when issuing threw |
 | `STS-XACML-0073` | A change nudge was not sent because the PEP's notify URL is plain http and the realm is in product mode, whatever xacml.pepNotifyAllowHttp says (#171). | — |
 | `STS-XACML-0074` | Product mode ignored xacml.pepNotifySkipTlsVerification: a nudge verifies the PEP's certificate whatever it says. Logged once per process (#171). | none — a warning in the log |
+| `STS-XACML-0075` | A write put a person or a group on ADMIN_READ or ADMIN_WRITE; their people are the console roster's, granted on /admin/rbac, and only an application is added on the role (#303). | none (a console or management API refusal, HTTP 400) |
+| `STS-XACML-0076` | A delete named ADMIN_READ or ADMIN_WRITE, which every realm keeps (#303). | none (a console or management API refusal, HTTP 400) |
+| `STS-XACML-0077` | ADMIN_READ or ADMIN_WRITE could not be seeded in a realm; no machine client can be issued that admin scope there until it exists (#303). | none — a warning in the log |
 
 ## STS-XPEP
 
@@ -3823,8 +3826,14 @@ Raised from: admin-ui/ (except pki_admin.js), admin-core/.
 | `STS-ADMIN-0818` | A set-aud-sub act named a person with no entry in this realm, or the directory would not write it (#148). | none (a console or management API refusal, HTTP 400) |
 | `STS-ADMIN-0819` | set-attribute, add-attribute or remove-attribute was refused and ldap/person_editor.ts named no more specific reason (#228). | HTTP 400 (API) or a 303 with error= |
 | `STS-ADMIN-0820` | A console form POST held a value outside the closed set the mirroring /admin-api operation's enum declares (#86). | HTTP 400 page |
-| `STS-ADMIN-0821` | admin:read or admin:write was asked for on behalf of a person whose console roles in the realm do not authorize it — no Admin Read or Admin Write, not signed in, or the bootstrap administrator before its claim — and was left off the tokens (#302). | none — the token is issued without that scope (RFC 6749 section 3.3) |
-| `STS-ADMIN-0822` | Every scope a person's request asked for was admin:read or admin:write that their console roles do not authorize, so nothing was left to issue (#302). | invalid_scope (RFC 6749 sections 4.1.2.1 and 5.2) |
+| `STS-ADMIN-0821` | A permission gated by role — admin:read, admin:write, or an application permission its resource lists in oauthRoleGatedPermission — was asked for on behalf of a person or an application no held role authorizes it for (for a person's console roles: no Admin Read or Admin Write, not signed in, or the bootstrap administrator before its claim), and was left off the tokens (#302, #303). | none — the token is issued without that scope (RFC 6749 section 3.3) |
+| `STS-ADMIN-0822` | Every scope a request asked for was a permission gated by role that the subject's roles do not authorize, so nothing was left to issue (#302, #303). | invalid_scope (RFC 6749 sections 4.1.2.1 and 5.2) |
+| `STS-ADMIN-0823` | add-permission or remove-permission named ADMIN_READ or ADMIN_WRITE, whose permission is fixed (#303). | none (a console or management API refusal, HTTP 400) |
+| `STS-ADMIN-0824` | add-permission or remove-permission named no permission (#303). | none (a console or management API refusal, HTTP 400) |
+| `STS-ADMIN-0825` | add-permission named a native permission (admin:read, admin:write), which only the two console roles authorize (#303). | none (a console or management API refusal, HTTP 400) |
+| `STS-ADMIN-0826` | add-permission named a permission no application in the realm defines; a permission must be defined before a role can authorize it (#303). | none (a console or management API refusal, HTTP 400) |
+| `STS-ADMIN-0827` | add-permission named a permission the role already authorizes (#303). | none (a console or management API refusal, HTTP 400) |
+| `STS-ADMIN-0828` | remove-permission named a permission the role does not authorize (#303). | none (a console or management API refusal, HTTP 400) |
 
 ## STS-API
 
@@ -3908,7 +3917,7 @@ Raised from: mgmt-api/.
 | `STS-API-0122` | A management API access token was refused because this service has revoked or disowned it, or the person it was issued to has a disabled account. | invalid_token (HTTP 401) |
 | `STS-API-0123` | A management API access token carried the admin scope an operation needs, and the client it was issued to does not declare that scope in its oauthAllowedScope (in the realm that issued it). | HTTP 403 forbidden |
 | `STS-API-0124` | A management API query parameter held a value outside the closed set its operation's enum declares (#86). | HTTP 400 { ok: false, errors } |
-| `STS-API-0125` | A management API access token issued for a PERSON carried the admin scope an operation needs, and that person no longer holds the console role it goes with in the realm that issued it (#302). | HTTP 403 forbidden |
+| `STS-API-0125` | A management API access token carried the admin scope an operation needs, and its subject — a person, or the application on a client_credentials token — no longer holds a role authorizing it in the realm that issued it (#302, #303). | HTTP 403 forbidden |
 
 ## STS-PORTAL
 
@@ -4093,6 +4102,7 @@ Raised from: common/applications.js, common/consent.ts, common/app_permissions.t
 | `STS-REG-0087` | In product mode, a fetched RFC 9728 document's `resource` is not the identifier its well-known URL was built from (section 3.3). | the caller's refusal (errors on a console or /admin-api reply) |
 | `STS-REG-0088` | In product mode, an RFC 9728 document's `resource` is not an https URL (section 2). | the caller's refusal (errors on a console or /admin-api reply) |
 | `STS-REG-0089` | A console or /admin-api write put an unusable value on oauthResourceMetadata (not a JSON object with a `resource`) or oauthResourceMetadataUrl (not an http or https URL). | the caller's refusal (errors on a console or /admin-api reply) |
+| `STS-REG-0090` | oauthRoleGatedPermission named a permission the application does not define in oauthPermission; only its own permissions can be gated by role (#303). | none (a console or management API refusal, HTTP 400) |
 | `STS-REG-0100` | An RFC 7591 registration or RFC 7592 update named request_uris, request_object_signing_alg, request_object_encryption_alg, request_object_encryption_enc or require_signed_request_object this service cannot honour. | invalid_client_metadata (HTTP 400) |
 | `STS-REG-0101` | A console or /admin-api write put an unusable value on oauthRequestUri, oauthRequestObjectSigningAlg, oauthRequestObjectEncryptionAlg, oauthRequestObjectEncryptionEnc or oauthRequireSignedRequestObject. | the caller's refusal (errors on a console or /admin-api reply) |
 | `STS-REG-0110` | An RFC 7591 registration or RFC 7592 update gave authorization_details_types a value that is not an array of type names (RFC 9396 section 10). | invalid_client_metadata (HTTP 400) |

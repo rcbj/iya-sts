@@ -1099,7 +1099,7 @@ class XacmlSurface {
   // caller, and it is why `<Unresolved>` exists.
   // ---------------------------------------------------------------------------
   private pipWhy(designator: any, subject: string, stored: any,
-                 mapped: string | null): string {
+                 mapped: string | null, subjectKind?: string): string {
     const { log, model, pip } = this.deps;
     log.debug("Entering XacmlSurface.pipWhy().");
     if (designator.category !== model.CATEGORY.ACCESS_SUBJECT) {
@@ -1107,6 +1107,17 @@ class XacmlSurface {
       return 'Only the access-subject category is resolved by this PIP: a ' +
              'resource or environment designator has no directory entry to ' +
              'be looked up on.';
+    }
+    if (designator.attributeId === pip.ROLE_ATTRIBUTE) {
+      log.debug("Leaving XacmlSurface.pipWhy().");
+      return subject
+        ? '"' + subject + '" holds no configured role in this realm (as a ' +
+          (subjectKind === 'application' ? 'an application' : 'a person') +
+          '). Only configured ' +
+          'roles are resolved here; the built-in ones describe the request ' +
+          'and are the PEP\'s to assert.'
+        : 'The request names no ' + model.ATTRIBUTE.SUBJECT_ID + ', so ' +
+          'there is nobody whose roles could be resolved.';
     }
     if (!mapped) {
       log.debug("Leaving XacmlSurface.pipWhy().");
@@ -2431,7 +2442,8 @@ class XacmlSurface {
           attributeId: designator.attributeId,
           dataType: designator.dataType,
           mustBePresent: designator.mustBePresent,
-          why: self.pipWhy(designator, subject, stored, mapped)
+          why: self.pipWhy(designator, subject, stored, mapped,
+                           pip.subjectKindOf(request))
         });
       });
       audit.audit({

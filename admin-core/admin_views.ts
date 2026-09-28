@@ -1216,6 +1216,17 @@ class AdminViews {
         })
       };
     });
+    const permissions = [];
+    applications.list().forEach(function (row) {
+      applications.permissionsOf(row).forEach(function (one) {
+        if (one.id) {
+          const gating = applications.roleGatingFor(one.id);
+          permissions.push({ id: one.id, application: row.identifier,
+                             name: one.name,
+                             gated: !!(gating && gating.gated) });
+        }
+      });
+    });
     const out = {
       // The store, so a reader can say where these entries are and reach them
       // with an ldapsearch.
@@ -1229,6 +1240,14 @@ class AdminViews {
       policy: rolePreviewer ? rolePreviewer.policy() : null,
       builtIn: roles.builtInCatalogue(),
       roles: configured,
+      // EVERY PERMISSION A ROLE MAY AUTHORIZE (#303): each application
+      // permission defined in this realm, by the identifier a client asks
+      // for, marked `gated` where its resource opted in. The console's
+      // suggestions and the API's answer to "what could I name".
+      permissions: permissions,
+      permissionIds: permissions.map(function (one) {
+        return one.id;
+      }),
       requiring: requiring,
       counts: {
         builtIn: roles.BUILT_IN_NAMES.length,

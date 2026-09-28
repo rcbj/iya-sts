@@ -138,15 +138,16 @@ import helpers = require('../common/helpers');
 const { log, parseBody, baseUrlOf, STS } = helpers;
 // BOTH ARE LIBRARIES (rule 3): they register no route, so requiring them here
 // cannot move one or join a cycle. `crypto.js` is THE one place this service
-// verifies a signature, and `roles.js` is what turns an access token's scopes
-// into the roles the access policy asks for — see the gate below.
+// verifies a signature. (`roles.js` turned an access token's scopes into the
+// roles the access policy asks for until #303; `role_permissions.ts` answers
+// the roles the token's subject holds now — see the gate below.)
 import stsCrypto = require('../common/crypto');
-import roles = require('../common/roles');
 // WHICH CLIENTS MAY HOLD `admin:*` (#110) — the gate asks it of every token.
 import scopePolicy = require('../common/scope_policy');
-// WHICH PEOPLE MAY STILL USE `admin:*` (#302) — the gate asks it of every
-// person's token, against the roster as it is now. A library (rule 3).
-import adminScopeAccess = require('./admin_scope_access');
+// THE ROLES A TOKEN'S SUBJECT HOLDS NOW, LESS THOSE ITS SCOPES DO NOT CARRY
+// (#302, #303) — what the gate hands the access-control policy. A library
+// (rule 3).
+import rolePermissions = require('../common/role_permissions');
 // The password policy's FIELD TABLE, which the request schema of
 // `save-password-policy` is generated from — for `narrowDoorProperties()`'s
 // reason: a hand-written list of what an operation accepts is a second
@@ -432,9 +433,8 @@ interface AdminApiDeps {
   baseUrlOf: typeof baseUrlOf;
   STS: typeof STS;
   stsCrypto: typeof stsCrypto;
-  roles: typeof roles;
   scopePolicy: typeof scopePolicy;
-  adminScopeAccess: typeof adminScopeAccess;
+  rolePermissions: typeof rolePermissions;
   passwordPolicy: typeof passwordPolicy;
   admin: typeof admin;
   adminScope: typeof adminScope;
@@ -512,9 +512,8 @@ class AdminApi {
       baseUrlOf: baseUrlOf,
       STS: STS,
       stsCrypto: stsCrypto,
-      roles: roles,
       scopePolicy: scopePolicy,
-      adminScopeAccess: adminScopeAccess,
+      rolePermissions: rolePermissions,
       passwordPolicy: passwordPolicy,
       admin: admin,
       adminScope: adminScope,
@@ -17669,7 +17668,67 @@ class AdminApi {
               examples: [{ role: 'staff', kind: 'user', member: 'alice' }],
               additionalProperties: false
             },
-            responseDescription: 'Who no longer holds what.' }
+            responseDescription: 'Who no longer holds what.' },
+
+          { action: 'add-permission', operationId: 'addRolePermission',
+            summary: 'Let a role authorize a permission',
+            description: 'Adds one value to the role\'s `rolePermission` ' +
+                         '(#303). **A scope is a request and a role is what ' +
+                         'authorizes it**: a permission its resource ' +
+                         'application GATES (`oauthRoleGatedPermission`) is ' +
+                         'issued only to a subject — a person, or an ' +
+                         'application on `client_credentials` — holding a ' +
+                         'role that names it, and left off the token ' +
+                         'otherwise.\n\n`permission` is the full ' +
+                         'identifier a client asks for: the resource\'s ' +
+                         '`oauthPermissionBaseUri` followed by the name. It ' +
+                         'must be DEFINED by an application in this realm ' +
+                         'first. `gated: false` in the reply means the ' +
+                         'resource does not gate it yet, so the role changes ' +
+                         'nothing until it does.\n\n**The native ' +
+                         'permissions `admin:read` and `admin:write` are ' +
+                         'refused**: they are authorized by the console ' +
+                         'roles ADMIN_READ and ADMIN_WRITE alone, whose ' +
+                         'permissions are fixed. Put an application in one ' +
+                         'of those with `add-member`.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                role: { type: 'string', description: 'The role.' },
+                permission: { type: 'string',
+                              description: 'The permission identifier, ' +
+                                           'base + name.' }
+              },
+              required: ['role', 'permission'],
+              examples: [{ role: 'payroll-reader',
+                           permission: 'https://payroll.example/read' }],
+              additionalProperties: false
+            },
+            responseDescription: 'What the role now authorizes, and whether ' +
+                                 'its resource gates it.' },
+
+          { action: 'remove-permission', operationId: 'removeRolePermission',
+            summary: 'Stop a role authorizing a permission',
+            description: 'Removes one value from the role\'s ' +
+                         '`rolePermission` (#303). The next issuance is ' +
+                         'decided without it; a token already issued keeps ' +
+                         'what it carries, except at `/admin-api`, whose ' +
+                         'gate asks the roles again on every call.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                role: { type: 'string', description: 'The role.' },
+                permission: { type: 'string',
+                              description: 'The permission identifier.' }
+              },
+              required: ['role', 'permission'],
+              examples: [{ role: 'payroll-reader',
+                           permission: 'https://payroll.example/read' }],
+              additionalProperties: false
+            },
+            responseDescription: 'What the role no longer authorizes.' }
         ] },
 
       // -----------------------------------------------------------------------
@@ -18845,17 +18904,22 @@ class AdminApi {
   //     replayable here; that is the whole purpose of `aud` and it is the check
   //     most often left out.
   //   * A TOKEN WITHOUT THE SCOPE THE OPERATION NEEDS — 403 from the POLICY,
-  //     not from this code. The scopes become the built-in ADMIN_READ and
-  //     ADMIN_WRITE roles (see `common/roles.js`) and the XACML access-control
-  //     document asks for the one the action requires, so what this surface
-  //     demands is stated where every other access decision in this service is
-  //     stated rather than in an `if` here.
+  //     not from this code. ADMIN_READ and ADMIN_WRITE are CONFIGURED roles
+  //     since #303, authorizing admin:read and admin:write; the gate hands the
+  //     policy the roles the token's subject holds now less those whose
+  //     permissions the token does not carry (held ∩ carried,
+  //     `common/role_permissions.ts`), and the XACML access-control document
+  //     asks for the one the action requires — so what this surface demands
+  //     is stated where every other access decision in this service is stated
+  //     rather than in an `if` here.
   //
-  // THE SCOPE IS NOT THE ROLE AND THE MAPPING IS DELIBERATE. A scope is what a
-  // client asked for and the authorization server granted; a role is what a
-  // policy names. Keeping them apart is what lets a deployment write "a read of
-  // the management API needs ADMIN_READ" without the document knowing that
-  // OAuth exists.
+  // THE SCOPE IS NOT THE ROLE, AND SINCE #303 NEITHER IS MADE FROM THE OTHER.
+  // A scope is what a client asked for and the authorization server granted;
+  // a role is what a subject holds and a policy names. Until #303 the role
+  // was READ OFF the scope, which made the scope the authorization — the
+  // pattern #88 removes. Keeping them apart is still what lets a deployment
+  // write "a read of the management API needs ADMIN_READ" without the
+  // document knowing that OAuth exists.
   // ---------------------------------------------------------------------------
   // BOTH SCHEMES SINCE #34 (2026-09-15). It read `Bearer` alone until then, so
   // a DPoP-bound token presented here — with `Authorization: DPoP` — counted as
@@ -19164,8 +19228,8 @@ class AdminApi {
   // order is unchanged (rule 1; #50, R1).
   registerGate(app: RouteApp): void {
     const { log, config, errorCodes, realms, STS, stsCrypto, jwtAccessToken,
-            mtls, dpop, senderConstraints, roles, accessGate, mode, adminViews,
-            parseBody, adminScope, adminScopeAccess } = this.deps;
+            mtls, dpop, senderConstraints, accessGate, mode, adminViews,
+            parseBody, adminScope, rolePermissions } = this.deps;
     const self = this;
     log.debug("Entering AdminApi.registerGate().");
     app.use(BASE, function (req, res, next) {
@@ -19436,15 +19500,19 @@ class AdminApi {
         // one the client does not declare; an undeclared scope the operation
         // does not need is dropped and the call goes on.
         const declared = self.declaredAdminScopes(claims, tokenRealm, carried);
-        // A PERSON MUST STILL HOLD THE CONSOLE ROLE THE SCOPE GOES WITH
-        // (#302), asked of the roster as it is now, in the realm that issued
-        // the token — so a role revoked after the token was minted stops
-        // working at once rather than when the token expires. A client's
-        // own token passes through; the declaration above is its question.
-        // See `mgmt-api/admin_scope_access.ts`.
-        const rechecked = adminScopeAccess.recheck(claims, declared.kept,
-                                                   tokenRealm);
-        const scopes = rechecked.kept;
+        // HELD ∩ CARRIED (#302, #303 — rcbj's decision 4 on #303). The roles
+        // the token's subject — a person, or a client on client_credentials —
+        // holds NOW, in the realm that issued the token, less any role whose
+        // permissions the token does not carry. So a role revoked after the
+        // token was minted stops working at once rather than when the token
+        // expires, and a token carrying only admin:read is not Admin Write
+        // because its subject happens to hold that too. The access-control
+        // policy is unchanged: it still asks for ADMIN_READ or ADMIN_WRITE,
+        // which are configured roles authorizing those scopes now rather
+        // than the scopes themselves. See `common/role_permissions.ts`.
+        const scopes = declared.kept;
+        const effective = rolePermissions.effectiveRoles(claims, scopes,
+                                                         tokenRealm);
         const neededScope = scopesWanted;
         if (declared.undeclared.indexOf(neededScope) >= 0) {
           errorCodes.mark(res, 'STS-API-0123');
@@ -19459,15 +19527,19 @@ class AdminApi {
                 'scopes. Declare it on the application (POST ' +
                 '/admin-api/applications/add) or use that client.')] });
         }
-        if (rechecked.withdrawn.indexOf(neededScope) >= 0) {
+        if (effective.withdrawn.indexOf(neededScope) >= 0) {
           errorCodes.mark(res, 'STS-API-0125');
           return self.sendJson(res, 403, { error: 'forbidden', errors: [
-            'This access token carries "' + neededScope + '", and it was ' +
-            'issued for a person who no longer holds the console role that ' +
-            'scope goes with: ' + rechecked.why + '. A person\'s token is ' +
-            'honoured here only while their console roles authorize the ' +
-            'scope it uses. Grant the role on /admin/rbac (or POST ' +
-            '/admin-api/rbac/grant) and ask for a new token.'] });
+            'This access token carries "' + neededScope + '", and its ' +
+            'subject no longer holds a role authorizing it: ' +
+            effective.why + '. A token is honoured here only while its ' +
+            'subject\'s roles authorize the scope it uses. ' +
+            (effective.subject.kind === 'application'
+              ? 'Add the application to ' + (neededScope === 'admin:read'
+                ? 'ADMIN_READ' : 'ADMIN_WRITE') + ' on /admin/roles (or ' +
+                'POST /admin-api/roles/add-member)'
+              : 'Grant the console role on /admin/rbac (or POST ' +
+                '/admin-api/rbac/grant)') + ' and ask for a new token.'] });
         }
         if (tokenRealm !== realms.DEFAULT_ID) {
           const realmRefusal = self.realmTokenRefusal(claims, req);
@@ -19483,8 +19555,7 @@ class AdminApi {
           // administrator's console session.
           res.locals.realmTokenOf = tokenRealm;
         }
-        const held = roles.rolesOf({ kind: 'application', name: who,
-                                     authenticated: true, scopes: scopes });
+        const held = effective.roles;
         const policy = accessGate.check({
           resource: accessGate.RESOURCE.MANAGEMENT_API,
           action: req.method === 'GET' ? accessGate.ACTION.READ
