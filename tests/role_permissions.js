@@ -541,6 +541,10 @@ async function run(t) {
       gate.setDecider(deciderBefore);
     }
   });
+  // THE THROWAWAY REALM GOES WITH THE FILE, as the other in-process files'
+  // do: every file in `run.js` shares one directory and its entry cap, and a
+  // realm left here is a whole seeded subtree the later files cannot use.
+  realms.remove(realm.id);
   log.debug("Leaving run().");
 }
 

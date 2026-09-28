@@ -268,6 +268,9 @@ async function run(t) {
     });
   } finally {
     gate.setDecider(deciderBefore);
+    // THE THROWAWAY REALM GOES WITH THE FILE — `role_permissions.js` says
+    // why: one directory, one entry cap, every file in the process.
+    realms.remove(realm.id);
   }
   log.debug("Leaving run().");
 }
