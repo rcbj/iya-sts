@@ -14669,6 +14669,20 @@ const SETTINGS = [
                  'never be reachable from the internet: it is reachable ' +
                  'from the other cells\' networks and nothing else.' },
 
+  { key: 'cells.hostname', group: 'Cells',
+    label: 'This cell\'s inter-cell host name',
+    env: 'STS_CELL_HOSTNAME', type: 'string', dflt: '',
+    runtime: false, perProcess: true,
+    restartReason: 'the inter-cell certificate is issued with this name ' +
+                   'when the listener binds',
+    description: 'The private DNS name the OTHER cells dial this one at — ' +
+                 'the host of this cell\'s entry in their `cells.peers`. ' +
+                 'Each node\'s inter-cell certificate carries it, so a peer ' +
+                 'that dialled the name can check it. It resolves only on ' +
+                 'the private network between cells, to one address per ' +
+                 'node, and is never published. Empty means the node\'s own ' +
+                 'host name.' },
+
   { key: 'cells.relayTimeoutMs', group: 'Cells',
     label: 'Inter-cell request timeout (ms)',
     env: 'STS_CELL_RELAY_TIMEOUT_MS', type: 'int', dflt: 10000,

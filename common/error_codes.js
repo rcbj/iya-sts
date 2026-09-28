@@ -1521,6 +1521,39 @@ const CODES = [
     summary: 'Group membership rows in this cell belong to a group the ' +
       'global tier no longer has; they are not restored.',
     spec: '' },
+  { code: 'STS-CELL-0030',
+    summary: 'A request could not be relayed to the cell that owns it, or ' +
+      'that cell could not be dialled; the request is answered 503 here ' +
+      '(fail-closed).',
+    spec: '' },
+  { code: 'STS-CELL-0031',
+    summary: 'This process\'s inter-cell certificate could not be issued ' +
+      '(the process branch or its inter-cell Issuing CA is missing or ' +
+      'refused).',
+    spec: '' },
+  { code: 'STS-CELL-0032',
+    summary: 'A peer on the inter-cell channel was refused: its chain does ' +
+      'not verify to the service Root, its leaf is not from the inter-cell ' +
+      'Issuing CA, or it names a cell that is not one of this cell\'s ' +
+      'peers or not the one dialled.',
+    spec: '' },
+  { code: 'STS-CELL-0033',
+    summary: 'The inter-cell listener could not bind its port; requests ' +
+      'relayed to this cell and questions from other cells fail at them.',
+    spec: '' },
+  { code: 'STS-CELL-0034',
+    summary: 'A relayed request did not carry its sending cell and exactly ' +
+      'one hop, or a relayed request would have been relayed again; ' +
+      'refused.',
+    spec: '' },
+  { code: 'STS-CELL-0035',
+    summary: 'An inter-cell operation call was refused: no such operation, ' +
+      'not a POST, a body that is not JSON, or a body over the size limit.',
+    spec: '' },
+  { code: 'STS-CELL-0036',
+    summary: 'An inter-cell operation failed, at this cell for another\'s ' +
+      'call or at another cell for this one\'s.',
+    spec: '' },
   // ===== SCHED =============================================================
   { code: 'STS-SCHED-0001',
     summary: 'A scheduled job\'s run threw or rejected; the run is recorded ' +

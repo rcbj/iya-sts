@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3756** of them, in **40** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3763** of them, in **40** subsystems.
 
 ## Where a code appears
 
@@ -55,7 +55,7 @@ is an ordinary outcome.
 * [Worker pools (`STS-WORKER`)](#sts-worker) — 43
 * [Persistence and coordination (`STS-STORE`)](#sts-store) — 63
 * [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 28
-* [Cells and residency (`STS-CELL`)](#sts-cell) — 10
+* [Cells and residency (`STS-CELL`)](#sts-cell) — 17
 * [Scheduler (`STS-SCHED`)](#sts-sched) — 16
 * [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 79
 * [Certificate authority (`STS-PKI`)](#sts-pki) — 204
@@ -389,6 +389,13 @@ Raised from: common/cells.ts, common/cell_*.ts, persistence/tiers.js, persistenc
 | `STS-CELL-0020` | A person was written in this cell whose login name or entryUUID the routing index already places in another cell (a creation raced the index check); sign-in routing will not find the copy here. | — |
 | `STS-CELL-0021` | The routing index could not be updated at a directory flush; it is retried at the next write of the same person. | — |
 | `STS-CELL-0022` | Group membership rows in this cell belong to a group the global tier no longer has; they are not restored. | — |
+| `STS-CELL-0030` | A request could not be relayed to the cell that owns it, or that cell could not be dialled; the request is answered 503 here (fail-closed). | — |
+| `STS-CELL-0031` | This process's inter-cell certificate could not be issued (the process branch or its inter-cell Issuing CA is missing or refused). | — |
+| `STS-CELL-0032` | A peer on the inter-cell channel was refused: its chain does not verify to the service Root, its leaf is not from the inter-cell Issuing CA, or it names a cell that is not one of this cell's peers or not the one dialled. | — |
+| `STS-CELL-0033` | The inter-cell listener could not bind its port; requests relayed to this cell and questions from other cells fail at them. | — |
+| `STS-CELL-0034` | A relayed request did not carry its sending cell and exactly one hop, or a relayed request would have been relayed again; refused. | — |
+| `STS-CELL-0035` | An inter-cell operation call was refused: no such operation, not a POST, a body that is not JSON, or a body over the size limit. | — |
+| `STS-CELL-0036` | An inter-cell operation failed, at this cell for another's call or at another cell for this one's. | — |
 
 ## STS-SCHED
 

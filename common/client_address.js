@@ -334,6 +334,13 @@ function clientAddressOf(req) {
     log.debug("Leaving clientAddressOf(). No request.");
     return 'unknown';
   }
+  // A REQUEST RELAYED FROM ANOTHER CELL (#98): the address the sending cell
+  // resolved, as it resolved it — the socket here is that cell's node, and
+  // the header was read from an authenticated peer by `cell_channel.ts`.
+  if (req.stsCellRelay && req.stsCellRelay.client) {
+    log.debug("Leaving clientAddressOf(). As the sending cell resolved it.");
+    return normalise(req.stsCellRelay.client) || 'unknown';
+  }
   const peer = peerOf(req);
   const chain = forwardedFor(req);
   if (fromFrontProcess(req)) {

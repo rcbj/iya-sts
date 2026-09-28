@@ -132,6 +132,20 @@ class Cells {
     return out;
   }
 
+  /**
+   * The private host name the other cells dial this one at, or '' when it
+   * is not set (the channel then names the node's own host).
+   *
+   * @returns `cells.hostname`, trimmed and lower-cased
+   */
+  hostname(): string {
+    this.deps.log.debug("Entering Cells.hostname().");
+    const out = String(this.deps.value('cells.hostname') || '')
+      .trim().toLowerCase();
+    this.deps.log.debug("Leaving Cells.hostname().");
+    return out;
+  }
+
   // The peers, parsed. Tolerant here — a malformed value parses to what it
   // can — because `validate()` is where a malformed value is REFUSED, at
   // startup, and a reader later must not throw inside a request.
@@ -455,6 +469,7 @@ export = {
   id: (): string => cells.id(),
   isMulti: (): boolean => cells.isMulti(),
   jurisdiction: (): string => cells.jurisdiction(),
+  hostname: (): string => cells.hostname(),
   peers: (): Cell[] => cells.peers(),
   all: (): Cell[] => cells.all(),
   get: (cellId: string): Cell | null => cells.get(cellId),

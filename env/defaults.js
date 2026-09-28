@@ -1217,6 +1217,7 @@ var config = {
     jurisdiction: "",               // This cell's jurisdiction; restart to apply
     peers: "",                      // The other cells; restart to apply
     port: 8446,                     // Inter-cell port; restart to apply
+    hostname: "",                   // This cell's inter-cell host name; restart to apply
     relayTimeoutMs: 10000,          // Inter-cell request timeout (ms)
     homeUnreachable: "fail-closed", // When a person's home cell cannot be reached
     failOpenGraceS: 900,            // Fail-open grace (s)
