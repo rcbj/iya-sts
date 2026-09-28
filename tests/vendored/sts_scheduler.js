@@ -216,10 +216,15 @@ async function thePageAndTheApiAgree(cookie) {
   let html = null;
   let ids = [];
   let pageIds = [];
+  // How far apart the two reads the nextRunAt check compares were made, for
+  // that check's allowance (below).
+  let readGapMs = 0;
   for (let attempt = 1; attempt <= 5; attempt++) {
+    const readStarted = Date.now();
     json = await report();
     pageJson = await call("GET", base + "/admin/scheduler?format=json" +
                                 "&per=200", { headers: { Cookie: cookie } });
+    readGapMs = Date.now() - readStarted;
     // EVERY PAGE, as report() reads the API's (2026-09-23): a comparison of
     // all the API's jobs with one page of the console's would fail on a
     // service with more than 200 job rows, about pages drawing exactly what
@@ -290,18 +295,24 @@ async function thePageAndTheApiAgree(cookie) {
             }
             const delta = Math.abs(Date.parse(j.nextRunAt) -
                                    Date.parse(other.nextRunAt));
-            // ONE SLOT APART IS AGREEMENT (2026-09-27): the two reads are
-            // made one after the other, and for a job whose interval is a
-            // few seconds (persistence.change-log-pull, 5 s) a slot boundary
-            // can fall between them — the cluster run in CI saw 5 s exactly.
-            // Both then name the right next run for the instant they were
-            // asked; a disagreement is anything else.
+            // WHOLE SLOTS APART IS AGREEMENT (2026-09-27): the two reads
+            // are made one after the other, and for a job whose interval is
+            // a few seconds (persistence.change-log-pull, 5 s) slot
+            // boundaries can fall between them — the cluster run in CI saw
+            // 5 s exactly, and the single-node run 10 s, with the API's
+            // paged read taking more than five. Both then name the right
+            // next run for the instant they were asked, so the difference
+            // may be any whole number of slots that fits in the time the
+            // reads took; a disagreement is anything else.
             const every = Number(j.schedule && j.schedule.everyMs) || 0;
-            const oneSlot = every > 0 && every <= 60000 &&
-              Math.abs(delta - every) < 1000;
-            assert.ok(delta < 1000 || oneSlot,
+            const slots = every > 0 ? Math.round(delta / every) : 0;
+            const wholeSlots = every > 0 && every <= 60000 && slots >= 1 &&
+              Math.abs(delta - slots * every) < 1000 &&
+              delta <= readGapMs + every;
+            assert.ok(delta < 1000 || wholeSlots,
                       j.id + ": " + j.nextRunAt + " and " +
-                      other.nextRunAt);
+                      other.nextRunAt + " (the reads took " + readGapMs +
+                      " ms)");
           });
         });
   log.debug("Leaving thePageAndTheApiAgree().");

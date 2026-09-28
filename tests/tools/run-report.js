@@ -1585,8 +1585,18 @@ async function runScheduled(jobs, runOne, opts) {
 
   async function protocolHalf() {
     log.debug('Entering protocolHalf().');
+    // THE `bulk` LANE LAST, WHERE THE MODE SAYS SO (STS_TEST_BULK_LAST,
+    // tests/tools/modes.sh — the cluster mode only, 2026-09-27). The three
+    // bulk loads then run after every other protocol job has ended, one
+    // after another as their lane always ran them, rather than beside the
+    // sign-ins whose back-channel calls they slowed past their bound.
+    const bulkLast = process.env.STS_TEST_BULK_LAST === '1';
     const protocol = indexed.filter(function (i) {
-      return i.job.suite !== 'unit';
+      return i.job.suite !== 'unit' &&
+        !(bulkLast && i.job.lane === 'bulk');
+    });
+    const deferred = indexed.filter(function (i) {
+      return i.job.suite !== 'unit' && bulkLast && i.job.lane === 'bulk';
     });
     let segment = [];
     async function runSegment() {
@@ -1614,6 +1624,11 @@ async function runScheduled(jobs, runOne, opts) {
       }
     }
     await runSegment();
+    if (deferred.length) {
+      log.info(deferred.length + ' bulk-lane job(s) run now, after every ' +
+               'other protocol job (STS_TEST_BULK_LAST).');
+      await inOrder(deferred);
+    }
     log.debug('Leaving protocolHalf().');
   }
 

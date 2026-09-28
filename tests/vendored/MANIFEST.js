@@ -216,6 +216,10 @@ const CLIENT_SOURCE_DIR = path.join('client', 'src');
 //                      They stay one lane among themselves because each
 //                      raises `ldap.maxEntries` to what it is about to add,
 //                      and two raising at once can lower each other's.
+//                      In the cluster mode the lane runs LAST instead, after
+//                      every other protocol job (STS_TEST_BULK_LAST,
+//                      tools/modes.sh, 2026-09-27): two nodes on one store
+//                      could not carry both loads within the sign-ins' bounds.
 //                      `conformance`, `conformance-fapi` and
 //                      `conformance-b` hold the OpenID conformance plans
 //                      (about two and a quarter hours one after another, the

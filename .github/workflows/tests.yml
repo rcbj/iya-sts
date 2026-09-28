@@ -342,12 +342,22 @@ jobs:
       # keeping both: a job that passes plain and fails under coverage is a real
       # thing (the throwaway service is a child process here, not a container),
       # and without this there would be no report to read it from.
+      #
+      # THE WHOLE tests/report TREE, NOT `tests/report/latest` (2026-09-27):
+      # the runner points `latest` at the run only when it finishes, so a run
+      # that died first — CI run 36369109378's, out of heap in the render —
+      # uploaded nothing, and with it went the throwaway service's own log,
+      # the one record of why it stopped answering twenty minutes earlier.
+      # The dated directory is written from the first job on. The tests job's
+      # reason for leaving out the PEP credentials applies here too.
       - name: Upload the coverage run's test report
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: coverage-test-report
-          path: tests/report/latest
+          path: |
+            tests/report
+            !tests/report/pep-credential
           if-no-files-found: warn
           retention-days: 30
 
