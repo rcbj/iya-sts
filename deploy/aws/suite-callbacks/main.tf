@@ -357,6 +357,16 @@ resource "aws_ecs_task_definition" "callbacks" {
         # certificate, which names it and not the load balancer (#311).
         { name = "STS_LDAP_URL", value = "ldap://${local.ldap_host}:${local.env.load_balancer_ports.ldap.listener}" },
         { name = "STS_LDAP_PORT", value = tostring(local.env.load_balancer_ports.ldap.listener) },
+        # THE BULK LOADS AS ./run-tests.sh RUNS THEM (#311): rcbj's sizes for
+        # every mode (1000 people, 10 groups of 100; tests/tools/modes.sh,
+        # 2026-09-27) and the bulk lane LAST, as the cluster mode runs it —
+        # beside the protocol jobs, 5000-person loads on a cluster starved
+        # them and were killed at the watchdog. The in-AWS run 4 had neither,
+        # and lost all three loads to the 30-minute watchdog.
+        { name = "BULK_USERS", value = "1000" },
+        { name = "BULK_GROUPS", value = "10" },
+        { name = "BULK_MEMBERS_PER_GROUP", value = "100" },
+        { name = "STS_TEST_BULK_LAST", value = "1" },
         # One supplied certificate on every node where there is a public name
         # (sts_ldaps reads it, #311).
         { name = "STS_TEST_SHARED_LEAF", value = try(local.env.public_hostname, "") != "" ? "1" : "0" },
