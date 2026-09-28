@@ -1560,6 +1560,9 @@ not. **What the parent project would need to add** to close it, in
 bytes itself (relayed, here, as an inter-cell operation that runs
 `handleMessage()` at home) or `null` to go on. `krb5_home.ts`'s `clientOf()`
 is already the decision such a router would make; the operation it would call
-does not exist yet, because nothing could reach it.
+does not exist yet, because nothing could reach it. **Filed as
+rcbj/id-proto-debugger#317 (2026-09-28, rcbj's decision)**, which also asks
+for an exported `answerMessage(bytes, transport)` — the home cell needs to run
+what `handleMessage()` does on bytes that arrived without a socket.
 
 Tested in process with stubbed routing and channel by `tests/cell_handlers_c.js`.

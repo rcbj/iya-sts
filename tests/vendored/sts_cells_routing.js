@@ -143,6 +143,13 @@ async function test() {
         cells.ids.b + " answers 200", function () {
           assert.strictEqual(named.status, 200, named.raw.slice(0, 300));
         });
+  // AT ONCE, with no wait for a flush: the home cell claimed the name before
+  // it answered, so the index already names cell B.
+  const atOnce = await kit.createPerson(realm.a, relayed, PASSWORD, "");
+  check("and at once, with no wait, the same name at cell A answers 409: " +
+        "the relayed creation claimed it before answering", function () {
+          assert.strictEqual(atOnce.status, 409, atOnce.raw.slice(0, 300));
+        });
   const afterRelay = await kit.until("the index counts the relayed person",
     30000, async function () {
       const now = await kit.peopleIn(realm.a, REALM);

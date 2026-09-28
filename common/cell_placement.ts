@@ -973,7 +973,13 @@ class CellPlacement {
     log.debug("Leaving CellPlacement.creationClaim().");
     return function cellCreationClaim(req: any, res: any, next: () => void) {
       // A HOT PATH: the pair is logged only on the two doors it acts on.
-      if (!cells.isMulti() || req.method !== 'POST' || req.stsCellRelay) {
+      // A RELAYED creation is claimed too, at the home it was relayed to:
+      // skipping it left the name out of the index until the home cell's
+      // store was next flushed (about half a second), and a sign-in at any
+      // other cell in that window was answered there, as a stranger — what
+      // the two-cell stack found on its first run (#98). SCIM already
+      // claimed at the receiving end (`scim/scim_cells.ts`).
+      if (!cells.isMulti() || req.method !== 'POST') {
         next();
         return;
       }
@@ -1004,6 +1010,18 @@ class CellPlacement {
         res.status(400).json({ error: 'invalid_request',
                                error_description: home.error });
         log.debug("Leaving cellCreationClaim(). The home was refused.");
+        return;
+      }
+      if (home.cell && home.cell !== cells.id() && req.stsCellRelay) {
+        // Relayed here for a home that is not this cell: the two cells'
+        // settings disagree. Refused, never relayed on — a relay that may
+        // relay again is a loop waiting for a misconfiguration.
+        errorCodes.mark(res, 'STS-CELL-0193');
+        res.status(400).json({ error: 'invalid_request',
+          error_description: 'This person is homed in cell "' + home.cell +
+            '", and the request was answered by another. Nothing was ' +
+            'created; send it again.' });
+        log.debug("Leaving cellCreationClaim(). Relayed to the wrong cell.");
         return;
       }
       if (home.cell && home.cell !== cells.id()) {

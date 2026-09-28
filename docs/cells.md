@@ -81,7 +81,7 @@ against the same JWKS in every cell.
 | Setting | What it does |
 |---|---|
 | `cells.id`, `cells.jurisdiction` | This cell, and its jurisdiction. Empty `cells.id` means single-cell mode. |
-| `cells.peers` | Every other cell as JSON: `[{"id","jurisdiction","url"}]`. The URL is a private inter-cell address and is never published. |
+| `cells.peers` | Every other cell as JSON: `[{"id","jurisdiction","url"}]`. The URL is a private inter-cell address. It is never published: only administrators see it, on the Cells page and in `/admin-api/cells`'s settings. |
 | `cells.port`, `cells.hostname` | The inter-cell listener: mutual TLS 1.3, and the name its certificate carries. |
 | `persistence.globalDatabaseUrl`, `persistence.globalDatabaseReadUrl` | The global tier's writer and this cell's replica. |
 | `persistence.globalDatabasePassword*` | The global tier's password, read from a secret store. |

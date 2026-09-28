@@ -138,7 +138,10 @@ async function setUp(cells) {
         function () {
           assert.strictEqual(made.status, 200, made.raw.slice(0, 300));
         });
-  await kit.homed(realm.a, REALM, cells.ids.b, 1);
+  // NO WAIT FOR THE INDEX HERE, deliberately. A relayed creation claims its
+  // login name at the home cell before it answers, so the sign-in below may
+  // start at once; until 2026-09-28 it waited for the home cell's flush,
+  // and a sign-in in that half second was answered at the wrong cell.
   log.debug("Leaving setUp().");
   return realm;
 }

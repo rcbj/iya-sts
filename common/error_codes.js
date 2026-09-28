@@ -1832,6 +1832,12 @@ const CODES = [
       'own (the move threw, or a refusal carried no code); the call answers ' +
       'an error and the person stays where they were homed.',
     spec: '' },
+  { code: 'STS-CELL-0193',
+    summary: 'A person\'s creation from the console or /admin-api arrived ' +
+      'relayed from another cell for a home that is not this cell (the two ' +
+      'cells\' settings disagree); it is refused 400 rather than relayed ' +
+      'again, and nothing is created.',
+    spec: '' },
   // ===== SCHED =============================================================
   { code: 'STS-SCHED-0001',
     summary: 'A scheduled job\'s run threw or rejected; the run is recorded ' +

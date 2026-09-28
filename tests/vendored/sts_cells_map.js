@@ -102,6 +102,9 @@ async function assertCell(label, url, self, peer, peerAddress) {
   // THE SETTINGS BLOCK IS LEFT OUT, and only it: it is the Cells settings
   // group as the page's form draws it, `cells.peers` among them — the
   // configured value an administrator edits, where the address has to be.
+  // Kept there by rcbj's decision on #98 (2026-09-28): the settings block
+  // is behind the console gate and admin:read, and hiding a value from the
+  // administrators who set it would only make it uneditable.
   // Everything the map REPORTS is asserted to carry none.
   const reported = Object.assign({}, view);
   delete reported.settings;
