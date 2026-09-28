@@ -119,6 +119,7 @@ STS_CLUSTER_MODE=off
 STS_PROXY_PROTOCOL=off
 STS_TEST_FRESH_CONNECTIONS=0
 STS_TEST_CLUSTER_NODES=1
+STS_TEST_BULK_LAST=0
 EOF
       ;;
     single-node)
@@ -158,6 +159,7 @@ STS_CLUSTER_MODE=off
 STS_PROXY_PROTOCOL=off
 STS_TEST_FRESH_CONNECTIONS=0
 STS_TEST_CLUSTER_NODES=1
+STS_TEST_BULK_LAST=0
 EOF
       ;;
     cluster)
@@ -191,9 +193,16 @@ EOF
       # NOTHING IS ACCEPTED AS MISSING: no STS_CLUSTER_ACCEPT_MISSING_CAPABILITIES.
       # The gate must pass on its own, and a node that refuses is a finding.
       #
-      # THE TWO `STS_TEST_*` NAMES ARE THE RUNNER'S, not the service's:
-      # a new connection per request (tools/fresh-connections.js), and how many
-      # nodes `sts_cluster_alternation.js` must see answer.
+      # THE THREE `STS_TEST_*` NAMES ARE THE RUNNER'S, not the service's:
+      # a new connection per request (tools/fresh-connections.js), how many
+      # nodes `sts_cluster_alternation.js` must see answer, and whether the
+      # `bulk` lane waits for every other protocol job to finish
+      # (tools/run-report.js, runScheduled()). The last is on HERE ONLY
+      # (2026-09-27, CI run 36369109378): beside the protocol jobs, 5000 SCIM
+      # creates and their RISC signals on two nodes held the one postgres
+      # store long enough that three sign-ins' back-channel fetch of the
+      # realm's own JWKS missed its 10 s, and the load itself was killed at
+      # its watchdog. The bound was right and stays; the overlap goes.
       cat <<'EOF'
 STS_MODE=product
 STS_PERSISTENCE_MODE=postgres
@@ -207,6 +216,7 @@ STS_CLUSTER_MODE=active-active
 STS_PROXY_PROTOCOL=v2
 STS_TEST_FRESH_CONNECTIONS=1
 STS_TEST_CLUSTER_NODES=2
+STS_TEST_BULK_LAST=1
 EOF
       ;;
     *)

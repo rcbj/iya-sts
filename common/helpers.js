@@ -5561,7 +5561,49 @@ function pqKeysFor(keys) {
 // A failure clears the in-flight promise rather than remembering it, so a realm
 // whose first attempt failed can be asked again instead of being permanently
 // without post-quantum keys.
+//
+// **AND THE GENERATION BELONGS TO THE REALM, NOT TO THE SET THAT ASKED
+// (2026-09-27, CI run 36369109378).** A set can be REPLACED while its eleven
+// keys are being made: another node writes the realm's next generation, and
+// `keystore.onAdopt()` drops this process's set so the next read rebuilds
+// from the stored one. Until this date the finished keys landed on the set
+// that asked, which nobody held any more; the rebuilt set had neither the
+// keys nor the promise, so the next JWKS fetch started a second generation
+// and waited for it. On the cluster suite that was nine and a half seconds
+// more, a new realm's first sign-in's back-channel JWKS fetch ran out of its
+// ten, and a FAPI 1.0 Advanced sign-in failed with a JARM response it could
+// not verify. The post-quantum keys are a family of their own, independent
+// of the RSA and curve keys the new generation replaced, so the fix is to
+// put them where the realm is NOW: `pqGenerations` lets a rebuilt set join
+// the generation already running, and a finished one goes on the set the
+// realm holds when it finishes — published, written down and certified from
+// there, under the rules below.
 // ---------------------------------------------------------------------------
+// A realm's id → its post-quantum generation in flight in this process, the
+// promise of the eleven keys it makes.
+const pqGenerations = new Map();
+
+// The set a realm holds in this process NOW, for a generation that finished:
+// the one in the cache, rebuilt from the store if the cache was just emptied
+// by an adoption — but only for a realm that still exists, so that a
+// generation finishing after its realm was removed does not bring a set back
+// for it. `keys` itself where there is no other answer.
+function pqTargetSet(keys) {
+  log.debug("Entering pqTargetSet().");
+  const id = keys.realm;
+  const held = stsKeysFor.existing().get(id);
+  if (held) {
+    log.debug("Leaving pqTargetSet(). The cached set.");
+    return held;
+  }
+  if (id !== undefined && realms.get(id)) {
+    log.debug("Leaving pqTargetSet(). Rebuilt.");
+    return stsKeysFor.of(id);
+  }
+  log.debug("Leaving pqTargetSet(). The set that asked.");
+  return keys;
+}
+
 function pqKeysForAsync(keys) {
   log.debug("Entering pqKeysForAsync().");
   if (keys.pqKeys) {
@@ -5573,15 +5615,38 @@ function pqKeysForAsync(keys) {
     log.debug("Leaving pqKeysForAsync(). One is already in flight.");
     return keys.pqKeysPromise;
   }
-  pqKeysCount.miss();
   const started = Date.now();
-  keys.pqKeysPromise = Promise.all(pqJose.PQ_ALGS.map(function (alg) {
-    return pqJose.generateAsync(alg).then(function (pair) {
-      return pqKeyFrom(alg, pair);
+  let generation = pqGenerations.get(keys.realm);
+  if (generation) {
+    pqKeysCount.hit();
+  } else {
+    pqKeysCount.miss();
+    generation = Promise.all(pqJose.PQ_ALGS.map(function (alg) {
+      return pqJose.generateAsync(alg).then(function (pair) {
+        return pqKeyFrom(alg, pair);
+      });
+    }));
+    const running = generation;
+    pqGenerations.set(keys.realm, running);
+    running.then(function () {
+      if (pqGenerations.get(keys.realm) === running) {
+        pqGenerations.delete(keys.realm);
+      }
+    }, function (e) {
+      // Reported by the caller's own chain below; this branch only frees the
+      // slot, so a realm whose generation failed can be asked again.
+      log.debug("Caught in pqKeysForAsync(): " + ((e && e.message) || e));
+      if (pqGenerations.get(keys.realm) === running) {
+        pqGenerations.delete(keys.realm);
+      }
     });
-  })).then(function (made) {
-    if (!keys.pqKeys) {
-      keys.pqKeys = made;
+  }
+  keys.pqKeysPromise = generation.then(function (made) {
+    // The set the realm holds now — this one, unless it was replaced while
+    // the keys were being made (the block above this function).
+    const target = pqTargetSet(keys);
+    if (!target.pqKeys) {
+      target.pqKeys = made;
       // AND OFFERED TO EVERY OTHER PROCESS. The set was published when it was
       // GENERATED, before these existed — so without this the shared blob keeps
       // the RSA and EC halves and every worker makes its own post-quantum keys,
@@ -5592,7 +5657,7 @@ function pqKeysForAsync(keys) {
       // where nothing was offered, which is "yes": there is nobody to lose to.
       let took;
       if (keys.realm) {
-        took = keystore.publishShared(keys.realm, keys);
+        took = keystore.publishShared(keys.realm, target);
         // ---------------------------------------------------------------
         // **AND WRITTEN DOWN, WHICH THEY WERE NOT UNTIL 2026-09-12.**
         //
@@ -5620,7 +5685,7 @@ function pqKeysForAsync(keys) {
         // the row converges on what everybody is signing with.
         // ---------------------------------------------------------------
         if (took !== false) {
-          keystore.remember(keys.realm, keys);
+          keystore.remember(keys.realm, target);
         }
       }
       // -----------------------------------------------------------------
@@ -5638,9 +5703,16 @@ function pqKeysForAsync(keys) {
       log.info('The post-quantum signing keys were generated for the "' +
                keys.realm + '" realm: ' + made.length + ' key(s) in ' +
                (Date.now() - started) + 'ms, in worker processes, so this ' +
-               'service went on answering throughout.');
+               'service went on answering throughout.' +
+               (target !== keys ? ' The set that asked for them had been ' +
+                'replaced meanwhile; they are on the one held now.' : ''));
     }
-    return keys.pqKeys;
+    // The set that asked answers with the realm's keys too, so a caller
+    // still holding it cannot publish a different post-quantum half.
+    if (!keys.pqKeys) {
+      keys.pqKeys = target.pqKeys;
+    }
+    return target.pqKeys;
   }).catch(function (err) {
     keys.pqKeysPromise = null;
     throw err;
@@ -6017,7 +6089,11 @@ function allSigningKeysAsync() {
   const keys = stsKeysFor();
   log.debug("Leaving allSigningKeysAsync().");
   return pqKeysForAsync(keys).then(function (pq) {
-    return (keys.extraKeys || []).concat(pq);
+    // The set read AGAIN after the wait (2026-09-27): another node's
+    // generation may have replaced it meanwhile, and a JWKS of the old
+    // set's curve keys would lack the keys this realm now signs with.
+    const now = stsKeysFor();
+    return (now.extraKeys || []).concat(now.pqKeys || pq);
   });
 }
 
