@@ -115,6 +115,10 @@ type Json = any;
 
 // The formats, as section 8 names them. The same list `webauthn_policy.ts`
 // reports; `tests/webauthn_attestation.js` asserts they agree.
+/**
+ * The attestation statement formats of WebAuthn Level 3 section 8, matched
+ * case-sensitively.
+ */
 const FORMATS = ['packed', 'tpm', 'android-key', 'android-safetynet',
                  'fido-u2f', 'none', 'apple', 'compound'];
 
@@ -190,14 +194,36 @@ interface WebauthnAttestationDeps {
   revocation(): Json;
 }
 
+/**
+ * Verifies a WebAuthn registration's attestation statement (WebAuthn Level
+ * 3 section 7.1, steps 21 to 25) under the realm's attestation policy.
+ *
+ * Trust anchors come from `webauthn.attestationTrustAnchors` and the FIDO
+ * Metadata Service.
+ */
 class WebauthnAttestation {
+  /**
+   * The section 8 formats, as a static member.
+   */
   static readonly FORMATS = FORMATS;
 
+  /**
+   * Builds the verifier over the dependencies given.
+   *
+   * @param deps - the logger, crypto, PKI, error-code registry, WebAuthn
+   * policy, a clock, and lazy loaders for the FIDO metadata and revocation
+   */
   constructor(private readonly deps: WebauthnAttestationDeps) {
     deps.log.debug("Entering WebauthnAttestation.constructor().");
     deps.log.debug("Leaving WebauthnAttestation.constructor().");
   }
 
+  /**
+   * Returns the dependencies built from the real modules, as the composition
+   * root passes them.
+   *
+   * @returns the default dependency set
+   */
   static defaultDeps(): WebauthnAttestationDeps {
     helpers.log.debug("Entering WebauthnAttestation.defaultDeps().");
     helpers.log.debug("Leaving WebauthnAttestation.defaultDeps().");
@@ -230,6 +256,16 @@ class WebauthnAttestation {
   // Never rejects: a defect here is a refused registration with its own code
   // (STS-AUTHN-0241), never an accepted one.
   // =========================================================================
+  /**
+   * Assesses the attestation of a registration whose own checks passed.
+   *
+   * With the policy off and no demand for trust it records the format and
+   * verifies nothing. Never rejects: a failure inside is a refused
+   * registration with its own error code.
+   * @param verdict - what `webauthn.verifyRegistration()` returned
+   * @returns `{ ok: true, attestation }` with the record the key carries, or
+   * `{ ok: false, why, attestation }` carrying an error code
+   */
   async assess(verdict: Json): Promise<Json> {
     const { log, policy, errorCodes } = this.deps;
     log.debug("Entering WebauthnAttestation.assess(). fmt=" +
@@ -370,6 +406,17 @@ class WebauthnAttestation {
   // =========================================================================
   // STEP 22: THE FORMAT'S VERIFICATION PROCEDURE.
   // =========================================================================
+  /**
+   * Runs one format's verification procedure (section 7.1 step 22).
+   *
+   * @param format - the statement's `fmt`
+   * @param attStmt - the decoded attestation statement
+   * @param ctx - the authenticator data, client data hash, credential key and
+   * settings the procedure needs
+   * @param depth - how deep inside a compound statement this is
+   * @returns the attestation type and trust path, or a refusal with its code
+   * and reason
+   */
   async verifyStatement(format: string, attStmt: Json, ctx: Context,
                         depth: number): Promise<StatementResult> {
     const { log } = this.deps;
@@ -550,6 +597,13 @@ class WebauthnAttestation {
   }
 
   // Section 8.2.1's requirements of the attestation certificate. '' or why.
+  /**
+   * Checks a packed attestation certificate against section 8.2.1's
+   * requirements.
+   *
+   * @param facts - the certificate's parsed facts
+   * @returns the first requirement it fails, or the empty string
+   */
   static packedCertificateProblem(facts: Json): string {
     log.debug("Entering WebauthnAttestation.packedCertificateProblem().");
     const s = facts.subject || {};
@@ -665,6 +719,12 @@ class WebauthnAttestation {
   }
 
   // Section 8.3.1's requirements of the AIK certificate. '' or why.
+  /**
+   * Checks a TPM AIK certificate against section 8.3.1's requirements.
+   *
+   * @param facts - the certificate's parsed facts
+   * @returns the first requirement it fails, or the empty string
+   */
   static tpmCertificateProblem(facts: Json): string {
     log.debug("Entering WebauthnAttestation.tpmCertificateProblem().");
     let why = '';
@@ -1115,6 +1175,13 @@ class WebauthnAttestation {
   // =========================================================================
 
   // The attestation root certificates MDS lists for a model.
+  /**
+   * Returns the attestation root certificates the FIDO Metadata Service
+   * lists for a model.
+   *
+   * @param listed - the metadata lookup's answer for the model
+   * @returns the parsed root certificates
+   */
   static mdsRoots(listed: Json): Json[] {
     log.debug("Entering WebauthnAttestation.mdsRoots().");
     const statement = listed && listed.model &&
@@ -1133,6 +1200,13 @@ class WebauthnAttestation {
 
   // The first certificate a statement carries, for a compound its first
   // member's; null for none and self.
+  /**
+   * Returns the first certificate a verified statement carries, or its first
+   * member's for a compound.
+   *
+   * @param statement - a verified statement
+   * @returns the DER leaf certificate, or null for None and Self attestation
+   */
   static leafOf(statement: Verified): Buffer {
     log.debug("Entering WebauthnAttestation.leafOf().");
     if (statement.trustPath.length) {
@@ -1148,6 +1222,13 @@ class WebauthnAttestation {
   }
 
   // The statuses that make a model compromised, for the sentence.
+  /**
+   * Lists the status reports that make a model compromised, for the refusal
+   * sentence.
+   *
+   * @param model - the metadata entry for the model
+   * @returns the compromising statuses, or `compromised` when none is named
+   */
   static compromisedStatuses(model: Json): string[] {
     log.debug("Entering WebauthnAttestation.compromisedStatuses().");
     const bad = ['REVOKED', 'USER_VERIFICATION_BYPASS',
@@ -1163,6 +1244,13 @@ class WebauthnAttestation {
   }
 
   // Which settings demand a trusted statement, for the sentence.
+  /**
+   * Names the settings that demand a trusted statement, for the refusal
+   * sentence.
+   *
+   * @param settings - the attestation settings in force
+   * @returns the settings joined with semicolons
+   */
   static demandedBy(settings: Json): string {
     log.debug("Entering WebauthnAttestation.demandedBy().");
     const why = [];
@@ -1185,6 +1273,14 @@ class WebauthnAttestation {
 
   // A certification level or FIPS the model does not meet, as a sentence;
   // '' when none is demanded or the model meets it.
+  /**
+   * Checks a model against the certification level or FIPS certification the
+   * realm demands.
+   *
+   * @param listed - the metadata lookup's answer for the model, or null
+   * @param settings - the attestation settings in force
+   * @returns a sentence saying what is not met, or the empty string
+   */
   static levelProblem(listed: Json, settings: Json): string {
     log.debug("Entering WebauthnAttestation.levelProblem().");
     const wantLevel = settings.minCertificationLevel !== 'none';
@@ -1226,6 +1322,13 @@ class WebauthnAttestation {
   }
 
   // Two public keys as JWKs, compared by their defining members.
+  /**
+   * Compares two public-key JWKs by their defining members.
+   *
+   * @param a - the first JWK
+   * @param b - the second JWK
+   * @returns true when they are the same key
+   */
   static sameKey(a: Json, b: Json): boolean {
     log.debug("Entering WebauthnAttestation.sameKey().");
     if (!a || !b || a.kty !== b.kty) {
@@ -1249,6 +1352,12 @@ class WebauthnAttestation {
   }
 
   // An AAGUID as a UUID string; '' for none or the all-zero one.
+  /**
+   * Formats an AAGUID as a UUID string.
+   *
+   * @param value - the AAGUID in hex, with or without hyphens
+   * @returns the UUID, or the empty string for none or the all-zero AAGUID
+   */
   static aaguidString(value: Json): string {
     log.debug("Entering WebauthnAttestation.aaguidString().");
     const hex = String(value || '').toLowerCase().replace(/-/g, '');
@@ -1274,6 +1383,13 @@ const slot = new InstanceSlot<WebauthnAttestation>(
 
 slot.buildNowUnlessDeferred();
 
+/**
+ * WebAuthn attestation statement verification for registrations (#105).
+ *
+ * Exports the class for the composition root, facades that forward to the
+ * installed instance, and the static certificate checks for the tests.
+ * @namespace
+ */
 export = {
   WebauthnAttestation: WebauthnAttestation,
   installInstance: (instance: WebauthnAttestation): void =>

@@ -102,6 +102,10 @@ import authnPolicy = require('../common/authn_policy');
 // be checked at all, so deriving the offer from it is what stops this service
 // asking a browser for an algorithm it would then refuse to verify — a
 // credential that enrols perfectly and never works again.
+/**
+ * JOSE algorithm names mapped to COSE identifiers, inverted from the
+ * verifier's own table so the offer cannot name what it cannot verify.
+ */
 const ALG_IDS = {};
 Object.keys(webauthn.COSE_ALGS).forEach(function (id) {
   ALG_IDS[webauthn.COSE_ALGS[id]] = Number(id);
@@ -118,6 +122,10 @@ const FALLBACK_ALGS = ['ES256', 'RS256'];
 // read from that module because this one is required by it, and a table of
 // eight names is data, not behaviour — `tests/webauthn_attestation.js`
 // asserts the two agree.
+/**
+ * The attestation statement formats `authn/webauthn_attestation.ts`
+ * verifies: all eight of WebAuthn Level 3 section 8.
+ */
 const ATTESTATION_FORMATS = ['packed', 'tpm', 'android-key',
                              'android-safetynet', 'fido-u2f', 'none', 'apple',
                              'compound'];
@@ -172,7 +180,20 @@ interface WebauthnPolicyDeps {
   mode: typeof mode;
 }
 
+/**
+ * The WebAuthn ceremony's options and this service's policy on keys, read
+ * from the ambient realm's settings.
+ *
+ * Ceremony and CTAP2 settings are requests to the browser; the policy
+ * settings, user verification and the attestation policy are enforced.
+ */
 class WebauthnPolicy {
+  /**
+   * Builds the policy over the dependencies given.
+   *
+   * @param deps - the settings, logger, verifier, error-code registry and
+   * mode
+   */
   constructor(private readonly deps: WebauthnPolicyDeps) {
     deps.log.debug("Entering WebauthnPolicy.constructor().");
     deps.log.debug("Leaving WebauthnPolicy.constructor().");
@@ -180,6 +201,12 @@ class WebauthnPolicy {
 
   // What the composition root passes, from the real modules — what
   // loading this module passed before #50's R2.
+  /**
+   * Returns the dependencies built from the real modules, as the composition
+   * root passes them.
+   *
+   * @returns the default dependency set
+   */
   static defaultDeps(): WebauthnPolicyDeps {
     helpers.log.debug("Entering WebauthnPolicy.defaultDeps().");
     helpers.log.debug("Leaving WebauthnPolicy.defaultDeps().");
@@ -208,6 +235,16 @@ class WebauthnPolicy {
   // so there is nothing for a later setting to contradict — every row below
   // applies to the NEXT ceremony and to every existing key alike.
   // ---------------------------------------------------------------------------
+  /**
+   * Reads every WebAuthn setting in the ambient realm, each bounded to its
+   * legal values.
+   *
+   * Nothing here is frozen onto a credential; every value applies to the next
+   * ceremony and to existing keys alike.
+   * @returns the settings: enabled, RP name and id, algorithms, user
+   * verification, attestation, timeout, attachment, resident key, credProps
+   * and the enrolment policy
+   */
   settings() {
     const { config, log } = this.deps;
     log.debug('Entering WebauthnPolicy.settings().');
@@ -262,6 +299,16 @@ class WebauthnPolicy {
   // statement can make. A demand for trust verifies whatever the policy
   // says, and asks the browser for `direct` attestation (creationOptions()).
   // ---------------------------------------------------------------------------
+  /**
+   * Reads the attestation policy in force (#105).
+   *
+   * `by-mode` resolves to `off` in development and `verify-if-present` in
+   * product. `demandsTrust` is true when any setting needs a statement that
+   * chains to a trust anchor.
+   * @returns the configured and effective policy, the trust anchors, the
+   * AAGUID allow-list, certification level, FIPS and Android settings, and
+   * `demandsTrust`
+   */
   attestationSettings() {
     const { config, log, mode } = this.deps;
     log.debug('Entering WebauthnPolicy.attestationSettings().');
@@ -332,6 +379,14 @@ class WebauthnPolicy {
   // then fails every assertion it is ever used for — with the failure landing
   // at sign-in rather than at enrolment, which is the worst possible place for
   // it.
+  /**
+   * Returns the algorithms to offer, as JOSE names, keeping only those the
+   * verifier can check.
+   *
+   * A name it cannot verify is dropped with a warning; when nothing usable
+   * is left it falls back to ES256 and RS256.
+   * @returns the algorithm names
+   */
   algorithmsOffered() {
     const { config, log } = this.deps;
     log.debug('Entering WebauthnPolicy.algorithmsOffered().');
@@ -377,6 +432,12 @@ class WebauthnPolicy {
   // given. Separate from `algorithms` above because the page wants the names
   // and the ceremony wants the numbers, and computing either from the other at
   // two call sites is how the two come to disagree.
+  /**
+   * Returns the offered algorithms as COSE identifiers for
+   * `pubKeyCredParams`, in the same order.
+   *
+   * @returns the COSE algorithm identifiers
+   */
   algorithmIds() {
     const { log } = this.deps;
     log.debug("Entering WebauthnPolicy.algorithmIds().");
@@ -390,6 +451,11 @@ class WebauthnPolicy {
   // `authn.unauthenticatedSessions` and `totp.js` repeats: a page is markup and
   // an endpoint is a door, and a form posted by hand while the setting is off
   // must not enrol anybody.
+  /**
+   * Tells whether WebAuthn is offered in this realm at all.
+   *
+   * @returns the `webauthn.enabled` setting
+   */
   offered() {
     const { log } = this.deps;
     log.debug("Entering WebauthnPolicy.offered().");
@@ -410,6 +476,16 @@ class WebauthnPolicy {
   // says. Worse for `primary`, where the person's ONLY credential would be the
   // one being switched off — an operator moving a knob must not be able to lock
   // somebody out of their own account.
+  /**
+   * Decides whether a new key may be enrolled in a role, or used as a first
+   * factor.
+   *
+   * Answers about enrolment only: a key already enrolled in a role since
+   * switched off goes on working. Asks the realm's authentication policy
+   * after this module's own settings.
+   * @param role - `primary` or `mfa`
+   * @returns `{ ok: true }`, or `{ ok: false, why }` carrying an error code
+   */
   roleAllowed(role) {
     const { log, errorCodes } = this.deps;
     log.debug('Entering WebauthnPolicy.roleAllowed(). role=' + role);
@@ -466,6 +542,13 @@ class WebauthnPolicy {
     return { ok: true };
   }
 
+  /**
+   * Maps a failed ceremony to the error code of its first failed check.
+   *
+   * @param verdict - the result of `verifyRegistration()` or
+   * `verifyAssertion()`
+   * @returns the check's code, or the generic code when none is known
+   */
   failureCodeFor(verdict) {
     const { log } = this.deps;
     log.debug("Entering WebauthnPolicy.failureCodeFor().");
@@ -517,6 +600,17 @@ class WebauthnPolicy {
   // `webauthn.residentKey`'s reason (the few slots a ROAMING authenticator
   // has) does not reach an authenticator built in. No `kind`, and the sign-in
   // screen's ceremony, is the request as it always was.
+  /**
+   * Builds the registration options the browser receives.
+   *
+   * A `kind` narrows the authenticator attachment only while the setting is
+   * `any`, and a platform ceremony prefers a discoverable credential. A
+   * policy that demands a trusted statement asks for `direct` attestation.
+   * @param rpId - the relying party id
+   * @param kind - `platform` or `roaming`, as the person chose, if any
+   * @returns the options: RP, algorithms, attestation, timeout,
+   * authenticator selection and credProps
+   */
   creationOptions(rpId, kind?) {
     const { log } = this.deps;
     log.debug('Entering WebauthnPolicy.creationOptions(). rpId=' + rpId);
@@ -569,6 +663,12 @@ class WebauthnPolicy {
   // on `/portal/keys` (2026-09-26): both while
   // `webauthn.authenticatorAttachment` is `any`, and only the one it names
   // otherwise — so the page offers no choice the ceremony would ignore.
+  /**
+   * Lists the kinds of authenticator a person may choose between on
+   * `/portal/keys`, as the attachment setting allows.
+   *
+   * @returns `platform`, `roaming` or both
+   */
   authenticatorKinds() {
     const { log } = this.deps;
     log.debug('Entering WebauthnPolicy.authenticatorKinds().');
@@ -581,6 +681,12 @@ class WebauthnPolicy {
     return out;
   }
 
+  /**
+   * Builds the authentication options the browser receives.
+   *
+   * @param rpId - the relying party id
+   * @returns the RP id, the user verification requirement and the timeout
+   */
   requestOptions(rpId) {
     const { log } = this.deps;
     log.debug('Entering WebauthnPolicy.requestOptions(). rpId=' + rpId);
@@ -599,6 +705,12 @@ class WebauthnPolicy {
   // `authn/webauthn.js` is handed as `requireUserVerification`, and the one
   // ceremony setting that becomes a CHECK rather than a request — see the
   // header.
+  /**
+   * Tells whether a ceremony must have verified the person, which the
+   * verifier then checks.
+   *
+   * @returns true when `webauthn.userVerification` is `required`
+   */
   requireUserVerification() {
     const { log } = this.deps;
     log.debug("Entering WebauthnPolicy.requireUserVerification().");
@@ -613,6 +725,13 @@ class WebauthnPolicy {
   // that performs the algorithm, so the report cannot describe something this
   // service does not do.
   // ---------------------------------------------------------------------------
+  /**
+   * Describes the relying party for `/admin/webauthn` and
+   * `/admin/crypto-metadata`: every algorithm and curve the verifier knows,
+   * which are offered, and the ceremony and attestation settings.
+   *
+   * @returns the report
+   */
   report() {
     const { log, webauthn } = this.deps;
     log.debug('Entering WebauthnPolicy.report().');
@@ -694,6 +813,13 @@ const slot = new InstanceSlot<WebauthnPolicy>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * The WebAuthn ceremony options and the service's policy on security keys.
+ *
+ * Exports the class for the composition root and facades that forward to
+ * the installed instance.
+ * @namespace
+ */
 export = {
   WebauthnPolicy: WebauthnPolicy,
   installInstance: (instance: WebauthnPolicy): void => slot.install(instance),
