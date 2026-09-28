@@ -72,8 +72,12 @@ globalThis.stsAdminApiToken = {
   refresh: async function () {
     log.debug("Entering stsAdminApiToken.refresh().");
     const minter = require('./admin-api-token.js');
+    // WSTRUST_STS_URL last (2026-09-27): it is how every job is told where
+    // the service is, and the only one set in a coverage run, whose
+    // launcher empties STS_TEST_SERVICE_URL. Without it a refresh there
+    // minted nothing and admin_api answered 401 after its revoke-all.
     const base = process.env.STS_TEST_SERVICE_URL ||
-                 process.env.STS_URL || '';
+                 process.env.STS_URL || process.env.WSTRUST_STS_URL || '';
     try {
       const fresh = await minter.tokenFor(base);
       if (fresh) {
