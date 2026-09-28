@@ -129,6 +129,64 @@ admits the runner's own address to the load balancer. The `keep` input leaves
 an `apply-and-test` environment running; the report is uploaded as an
 artifact either way.
 
+## Several regions: cells
+
+An environment can also be built in several AWS regions at once, as
+**cells** (issue #98). Each cell is a complete copy of the environment above
+in one region: its own nodes, load balancer, database and logs. The cells
+answer to one public name. A **global** stack joins them.
+
+```
+                  test-idp.iyasec.io (Route 53)
+      Canada ─────────┘          └───────── everyone else: the nearest
+        │                                   healthy cell (latency)
+        ▼                                          ▼
+  cell cac1 (ca-central-1)  ◀── peering, 8446 ──▶  cell usw2 (us-west-2)
+  nodes, cell database                             nodes, cell database
+  global read replica  ◀──── RDS replication ────  global database (writer)
+```
+
+**What stays in a cell**: its own database and its own key-encryption key.
+That key is sealed by a KMS key that exists only in the cell's region and is
+never copied.
+
+**What every cell shares**: the global database (one writer, and a read
+replica in each other cell), the global key-encryption key, and a few
+secrets that must be the same everywhere. Secrets Manager copies these into
+each cell's region.
+
+**How clients reach a cell**:
+
+- Clients in a country that has been pinned to a cell always go to that cell,
+  even when it is down. Canada is pinned to `cac1`.
+- Everyone else goes to the nearest cell that passes its health check.
+- The cells reach one another on port 8446, over VPC peering, by private
+  names. That port is on no public load balancer.
+
+**Before the first apply**, an administrator re-applies `foundation/` with
+every cell's region in `permitted_regions`, for example
+`["us-west-2", "ca-central-1"]`.
+
+**Building and removing it**: a multi-cell environment is described by
+`deploy/aws/environment/envs/<env>.cells.tfvars.json`. The first one,
+`testidpna`, has two cells, `usw2` and `cac1`. You apply and destroy it as
+one environment, and the entrypoint takes the steps in order:
+
+```bash
+IMAGE_TAG=<tag> deploy/aws/terraform-local.sh testidpna apply
+deploy/aws/terraform-local.sh testidpna destroy
+TF_CELL=cac1 deploy/aws/terraform-local.sh testidpna output   # one cell
+```
+
+You can also use the **testidp deploy** and **testidp destroy** workflows with
+`environment: testidpna`.
+
+**`testidp` and `testidpna` cannot both exist**, because they use the same
+public name. Destroy one before you apply the other.
+
+**Cost**: each cell costs about as much as `testidp`, roughly $0.50 an hour.
+Add a global replica per extra cell and data sent between regions.
+
 ## Reading the logs
 
 ```bash

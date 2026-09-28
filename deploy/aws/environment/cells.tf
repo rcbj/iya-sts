@@ -8,8 +8,9 @@
 # Issue #98's design, section 7: a CELL is one application of this stack in
 # one region — its own VPC, load balancer, nodes, cell PostgreSQL (primary and
 # same-region replica, exactly as today), exportable ACM certificate for the
-# SAME public name, SES identity and logs — and it is the unit of failure and
-# of data residency. The cells of an environment, and which one holds the
+# SAME public name and logs — and it is the unit of failure and of data
+# residency. (The issue lists an SES identity per cell too; this stack has
+# none to give each cell yet — deploy/aws/CLAUDE.md, *Cells*.) The cells of an environment, and which one holds the
 # global database's writer, are one map, `cells`, read from
 # `envs/<env>.cells.tfvars.json`; `cell` says which of them this apply is.
 #
