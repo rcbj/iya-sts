@@ -171,6 +171,23 @@ Five PEPs are built into the process:
 | **signal response** | what this service's own console and portal do with a verified CAEP or RISC event they receive: whether it ends their own sessions for the person it names ([Signals received](signals-received.md#what-the-console-and-the-portal-do-with-a-signal)) | `xacml.signalResponsePolicy` (`signal-response`) |
 | **demonstration** | `GET /xacml/protected` | the repository root |
 
+**The issuance policy also decides which OAuth scopes are issued** (#304,
+#305). For each requested scope, the issuance PEP asks one more question: the
+action is `issue-scope` and the resource is the scope. The request carries the
+facts: whether the client declares the scope, whether it is one of this
+service's protected scopes, whether a delegated permission was granted, which
+roles authorize it, and whether the person consented. It also carries the
+realm's mode, the relevant settings, and the stage (`request`, `mint` or
+`consent`). The answer's obligation `urn:sts:xacml:obligation:scope` says
+`keep`, `drop`, `refuse` or `consent`, with an error code. The built-in
+`role-issuance` policy holds the rules; before this change they were code. To
+change what is issued, edit the policy: for example, add a rule that refuses a
+scope, or remove the consent rule. If a policy gives no verdict on a scope (for
+example an older override without these rules, or `xacml.enabled` off), the
+built-in policy decides. RFC 9396 authorization details are asked about in the
+same way (action `issue-authorization-detail`) for the client's registered
+types and the types the server publishes.
+
 The issuance PEP builds a request in which the subject is the party being
 authenticated (in a `client_credentials` grant, that is the client). The
 request carries the roles the subject holds and any roles found in a token it

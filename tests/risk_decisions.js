@@ -184,7 +184,12 @@ function childMain() {
     note(built.ok && ruleIds.join(',') === 'device-compromised,' +
          'device-required,risk-high,risk-medium-key,' +
          'risk-medium-second-factor,risk-protected-key,' +
-         'risk-protected-second-factor,scope-not-authorized,scope-kept,' +
+         'risk-protected-second-factor,' +
+         'native-sso-not-enabled-refused,native-sso-not-enabled-dropped,' +
+         'protected-undeclared-refused,protected-undeclared-dropped,' +
+         'undeclared-refused,undeclared-dropped,permission-not-granted,' +
+         'scope-not-authorized,consent-outstanding,scope-kept,' +
+         'detail-type-not-registered,detail-type-not-published,detail-kept,' +
          'risk-protected-alarm,holds-a-required-role' &&
          /ordered-deny-overrides$/.test(built.policy.combiningAlgId),
          'A1. the built-in issuance policy carries the two device rules ' +
@@ -499,8 +504,8 @@ function childMain() {
     const plain = pdp.evaluate(unprotectedPolicy.policy, consoleRequest, {});
     note(unprotectedPolicy.ok && plain.decision === 'Deny' &&
          // The three risk rules, the role rule, #164's two device rules,
-         // and #304's two scope rules.
-         unprotectedPolicy.policy.rules.length === 8,
+         // and the thirteen scope and detail rules of #304 and #305.
+         unprotectedPolicy.policy.rules.length === 19,
          'I5. neverLockOut none puts the console under the three rules, ' +
          'and HIGH refuses it', plain.decision);
 

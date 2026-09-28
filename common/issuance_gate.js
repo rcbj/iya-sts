@@ -432,47 +432,61 @@ function checkDelegation(delegation) {
 }
 
 // ---------------------------------------------------------------------------
-// THE PER-SCOPE QUESTION (#304, part C of #88): which of the requested scopes
-// are issued. `request` is `{ subject, application, client, grantType,
-// protocol, held, scopes: [{ scope, gated, authorizingRoles }] }` — the
-// FACTS, gathered by `role_permissions.ts`; the issuance policy decides each
-// one and answers `{ verdicts: [{ scope, verdict, code, decidedBy }] }`,
-// verdict `keep`, `drop` or `refuse`.
+// THE PER-SCOPE QUESTION (#304, #305 — parts C and D of #88): which requested
+// scopes (or RFC 9396 details) are issued. `request` is the question
+// `xacml/xacml_scope_verdicts.js` asks — `{ subject, client, grantType,
+// protocol, held, mode, settings, stage, consentRequired, action, requested,
+// facts: [{ scope, gated?, attributes }] }` — the FACTS, gathered by the
+// subsystem that knows them; the issuance policy decides each one and this
+// answers `{ verdicts: [{ scope, verdict, code, decidedBy }] }`, verdict
+// `keep`, `drop`, `refuse` or `consent`.
 //
-// **NO DECIDER IS NOT PERMISSION HERE**, where it is for an issuance (rcbj's
-// decision on #304). A process with no XACML family loaded cannot ask any
-// document, so a GATED scope is dropped and an ungated one kept — the
-// narrowed-application rule `xacml_role_pep.ts` argues: a configured
-// restriction must not silently stop happening. A decider that THROWS is the
-// same: a defect, and a gated scope is not issued on one.
+// **WITH NO DECIDER THE BUILT-IN POLICY STILL DECIDES (rcbj's decision on
+// #305).** A process with no XACML family loaded — the in-process tests, the
+// parent project's Kerberos jobs — loads the engine's LIBRARIES here, lazily
+// (the model, the PDP, the templates and the request builder, none of which
+// registers a route or fills a slot), and asks the built-in document itself:
+// the rules live in one place and hold in every process. A decider that
+// THROWS is a defect, and the built-in policy is asked the same way.
 // ---------------------------------------------------------------------------
-function checkScopes(request) {
-  log.debug('Entering checkScopes().');
-  const asked = request || {};
-  const scopes = Array.isArray(asked.scopes) ? asked.scopes : [];
-  const closed = function (why) {
-    return { verdicts: scopes.map(function (one) {
+function builtInScopeVerdicts(asked, why) {
+  log.debug('Entering builtInScopeVerdicts().');
+  let verdicts;
+  try {
+    verdicts = require('../xacml/xacml_scope_verdicts').decide(asked, null, {});
+  } catch (error) {
+    // THE ENGINE ITSELF COULD NOT BE LOADED OR RUN — a defect. What is left
+    // is the fact-level reading the policy module uses for its own defect:
+    // a gated scope dropped, everything else kept.
+    log.error(errorCodes.tag('STS-XACML-0079') + 'issuance_gate: the ' +
+              'built-in issuance policy could not be evaluated for the ' +
+              'scope question; gated scopes are dropped. ' + error.message);
+    verdicts = (asked.facts || []).map(function (one) {
       return { scope: one.scope, verdict: one.gated ? 'drop' : 'keep',
                code: one.gated ? 'STS-ADMIN-0821' : '', decidedBy: 'none' };
-    }), why: why };
-  };
-  if (!scopes.length) {
+    });
+  }
+  log.debug('Leaving builtInScopeVerdicts().');
+  return { verdicts: verdicts, why: why, policy: 'built-in' };
+}
+
+function checkScopes(request) {
+  log.debug('Entering checkScopes().');
+  const asked = Object.assign({}, request || {});
+  asked.facts = Array.isArray(asked.facts) ? asked.facts : [];
+  if (!asked.facts.length) {
     log.debug('Leaving checkScopes(). Nothing asked.');
     return { verdicts: [], why: '' };
   }
   if (!decider) {
-    if (scopes.some(function (one) { return one.gated; })) {
-      log.warn(errorCodes.tag('STS-XACML-0079') + 'issuance_gate: no XACML ' +
-               'family is loaded, so no policy can decide the scopes ' +
-               'gated by role; they are dropped.');
-    }
-    log.debug('Leaving checkScopes(). No decider: gated scopes dropped.');
-    return closed('No XACML family is loaded in this process.');
+    log.debug('Leaving checkScopes(). No decider: the built-in policy.');
+    return builtInScopeVerdicts(asked, 'No XACML family is loaded in this ' +
+                                'process; the built-in policy decided.');
   }
   let answer;
   try {
     answer = decider({
-      kind: 'issue-scope',
+      kind: asked.action || 'issue-scope',
       application: String(asked.application || ''),
       subject: asked.subject || {},
       client: asked.client || '',
@@ -481,21 +495,23 @@ function checkScopes(request) {
       claims: null,
       risk: null,
       rolesWaived: true,
-      scopeQuestion: { held: asked.held || [], scopes: scopes }
+      scopeQuestion: asked
     });
   } catch (error) {
     log.error(errorCodes.tag('STS-XACML-0052') +
               'issuance_gate: the decider threw on the scope question; the ' +
-              'scopes gated by role are dropped. This is a defect in the ' +
+              'built-in policy decides instead. This is a defect in the ' +
               'embedded PEP rather than a decision. ' + error.message);
     log.debug('Leaving checkScopes(). The decider threw.');
-    return closed('The embedded PEP threw: ' + error.message);
+    return builtInScopeVerdicts(asked, 'The embedded PEP threw: ' +
+                                error.message);
   }
   const verdicts = answer && Array.isArray(answer.scopes) ? answer.scopes
     : null;
   if (!verdicts) {
     log.debug('Leaving checkScopes(). The PEP answered no verdicts.');
-    return closed('The embedded PEP answered no verdicts.');
+    return builtInScopeVerdicts(asked, 'The embedded PEP answered no ' +
+                                'verdicts.');
   }
   log.debug('Leaving checkScopes(). ' + verdicts.length + ' verdict(s).');
   return { verdicts: verdicts, why: '', policy: answer.policy || '' };

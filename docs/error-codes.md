@@ -3578,7 +3578,7 @@ Raised from: xacml/, common/access_gate.ts, common/issuance_gate.js, common/role
 | `STS-XACML-0076` | A delete named ADMIN_READ or ADMIN_WRITE, which every realm keeps (#303). | none (a console or management API refusal, HTTP 400) |
 | `STS-XACML-0077` | ADMIN_READ or ADMIN_WRITE could not be seeded in a realm; no machine client can be issued that admin scope there until it exists (#303). | none — a warning in the log |
 | `STS-XACML-0078` | Neither the issuance policy nor the built-in one it falls back to gave a verdict on a requested scope — a defect; a scope gated by role was dropped and an ungated one kept (#304). | none — a warning in the log |
-| `STS-XACML-0079` | No XACML family is loaded in the process, so no policy could decide the requested scopes gated by role; they were dropped (#304). | none — a warning in the log |
+| `STS-XACML-0079` | The built-in issuance policy could not be evaluated for the per-scope question in a process with no issuance PEP — a defect; scopes gated by role were dropped and the rest kept (#304, #305). | none — an error in the log |
 
 ## STS-XPEP
 

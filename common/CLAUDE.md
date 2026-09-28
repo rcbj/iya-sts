@@ -3992,6 +3992,17 @@ with `Cannot find module` naming a file the operator never mentioned.
 
 ## `scope_policy.ts`: which scopes a client may be issued (#110, 2026-09-22) — rule 3au
 
+**THE RULES ARE THE ISSUANCE POLICY'S SINCE #305 (part D of #88).** This file
+gathers the FACTS about each requested scope — protected, declared,
+in the default set, naming another party, `device_sso` and whether the
+client's Native SSO is on — and `judge()` asks one `issue-scope` question per
+scope through `issuance_gate.checkScopes()`, with the realm's mode and the
+stage (`request` refuses, `mint` narrows) in the environment. The built-in
+`role-issuance` holds the rules (`native-sso-not-enabled`,
+`protected-undeclared`, `undeclared`, each a refused/dropped pair); the codes
+(`STS-OAUTH-0577`, `0578`, `0624`, and `0579` for the narrowing's audit row)
+are unchanged. What follows argues the RULES, which moved rather than changed.
+
 Until #110 nothing tied a scope to a client: the token endpoint kept every scope
 a request named, in every mode, so any client that could use
 `client_credentials` minted `admin:write` for `/admin-api`, `scim:write` or
@@ -4418,6 +4429,15 @@ wreply is the obvious next step and is deliberately not taken: storing it is one
 change, and changing where a cleanup goes is a change to what the protocol does.
 
 ## `consent.ts`: what a person AGREED to, which is neither an act nor an intent
+
+**WHICH SCOPES STILL NEED AN ANSWER IS THE ISSUANCE POLICY'S SINCE #305.**
+`outstanding()` gathers the facts — the person's own consent or a global
+consent covering each scope — and asks at the `consent` stage, with
+consent-required in the environment (true unless the caller says otherwise:
+every caller already requires consent, `required()` or OpenID Connect Core
+section 11 for `offline_access`). The rule is the built-in
+`consent-outstanding`, verdict `consent`. The screen, the records and the Deny
+button stay here, by rcbj's decision: a policy cannot draw a page.
 
 Rule 3t. It is the THIRD register in this directory that looks like the other
 two and answers a different question, and saying which is which is most of what

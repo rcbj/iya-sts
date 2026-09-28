@@ -89,6 +89,9 @@ import adminRbac = require('../admin-ui/admin_rbac');
 // THE ISSUANCE GATE (#304): the per-scope question goes to the issuance
 // policy through it. A leaf library, as this file's other imports are.
 import gate = require('./issuance_gate');
+// The fact shapes and the attribute ids of the per-scope question (#305) — a
+// library of the engine's, requiring no route and no slot.
+import scopeVerdicts = require('../xacml/xacml_scope_verdicts');
 
 /**
  * The error code audited when a gated permission is taken off a grant.
@@ -433,12 +436,18 @@ class RolePermissions {
     // — `issuance_gate.checkScopes()`, then `xacml_role_pep.ts`, which falls
     // back to the built-in policy where the configured one gives no verdict.
     const facts = values.map(function (value) {
+      const isGated = gated.indexOf(value) >= 0;
       return {
         scope: value,
-        gated: gated.indexOf(value) >= 0,
-        authorizingRoles: Object.keys(authorizes).filter(function (role) {
-          return authorizes[role].indexOf(value) >= 0;
-        })
+        gated: isGated,
+        attributes: [
+          scopeVerdicts.resourceFact(scopeVerdicts.ATTRIBUTE.SCOPE_GATED,
+                                     isGated),
+          scopeVerdicts.resourceStrings(
+            scopeVerdicts.ATTRIBUTE.AUTHORIZING_ROLE,
+            Object.keys(authorizes).filter(function (role) {
+              return authorizes[role].indexOf(value) >= 0;
+            }))]
       };
     });
     const answer = gate.checkScopes({
@@ -450,7 +459,9 @@ class RolePermissions {
       grantType: String(ctx.grant || ''),
       protocol: 'OAuth 2.0',
       held: held.configured,
-      scopes: facts
+      requested: values,
+      stage: String(ctx.stage || ''),
+      facts: facts
     });
     const verdictOf: Record<string, any> = {};
     (answer.verdicts || []).forEach(function (one) {

@@ -1306,6 +1306,21 @@ policy instead, so role gating never switches off; a process with no XACML
 family drops a gated scope (`STS-XACML-0079`). The code that gathers the
 facts is `common/role_permissions.ts`; nothing in it decides.
 
+**AND SINCE #305 (part D) THE OTHER SCOPE RULES ARE HERE TOO.** The #110 scope
+rules (`scope_policy.ts`), delegated permissions (`permissionRefusal()`),
+consent (`consent.outstanding()`, verdict `consent`) and the two RFC 9396 type
+questions (action-id `issue-authorization-detail`, the type as the
+resource-id) ask the same question, each with only ITS facts — a rule tests
+its facts with `boolean-is-in`, false over an empty bag, so one subsystem's
+question never trips another's rule. The environment carries the realm's
+MODE, the settings a rule reads (`urn:sts:xacml:setting:<key>`) and the STAGE
+(`request` refuses, `mint` narrows, `consent`), by rcbj's decision that the
+mode and the settings are facts and the policy decides what differs. **With no
+decider the gate evaluates the built-in policy itself** (rcbj's decision on
+#305): `xacml_scope_verdicts.js` is a library — engine, builder and templates,
+no route and no slot — which the issuance PEP and `issuance_gate.js` both ask
+through, so the rules hold in every process.
+
 **The subject is the party being authenticated and not always a person.** In a
 browser flow it is whoever signed in; in a `client_credentials` grant there is
 nobody there and it is the CLIENT. That is the case `common/roles.js` exists to

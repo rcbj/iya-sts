@@ -45,7 +45,8 @@
 //      operator's own rule can drop an ungated scope with its own code — and
 //      where no verdict comes (an override built without the scope rules,
 //      xacml.enabled off) the BUILT-IN policy decides, so gating never
-//      switches off. With no decider at all, a gated scope is dropped.
+//      switches off — and with no decider at all the gate evaluates the
+//      built-in policy itself (#305).
 //
 // IN A THROWAWAY REALM, for the reason #302's test was: `run.js` runs every
 // file in one process, and a grant on the default realm's roster would
@@ -506,9 +507,11 @@ async function thePolicyDecides(t, names) {
     const none = rolePermissions.narrowScope('openid admin:read',
       { kind: 'user', name: names.writer, authenticated: true },
       { clientId: CLIENT, grant: 'refresh_token' });
-    t.equal(none.scope, 'openid',
-            'G5. with no decider at all, even a holder\'s gated scope is ' +
-            'dropped (fail closed)');
+    // #305: with no decider the GATE evaluates the built-in policy itself
+    // (rcbj's decision), so a holder keeps what the rule gives them.
+    t.equal(none.scope, 'openid admin:read',
+            'G5. with no decider at all the built-in policy still decides: ' +
+            'a holder of Admin Write keeps admin:read');
   } finally {
     gate.setDecider(installed);
   }
@@ -538,6 +541,10 @@ async function run(t) {
       gate.setDecider(deciderBefore);
     }
   });
+  // THE THROWAWAY REALM GOES WITH THE FILE, as the other in-process files'
+  // do: every file in `run.js` shares one directory and its entry cap, and a
+  // realm left here is a whole seeded subtree the later files cannot use.
+  realms.remove(realm.id);
   log.debug("Leaving run().");
 }
 
