@@ -1604,6 +1604,18 @@ const CODES = [
       'confirm the account; refused fail-closed, or allowed within ' +
       'cells.failOpenGraceS when cells.homeUnreachable is fail-open.',
     spec: '' },
+  { code: 'STS-CELL-0100',
+    summary: 'An ACME request naming its account only by key (a newAccount ' +
+      'with no External Account Binding) or an RFC 9773 renewal-info ' +
+      'request could not be asked of every other cell; it is refused 503 ' +
+      'rather than answered by a cell that could not know.',
+    spec: 'RFC 8555 section 7.3.1; RFC 9773 section 4' },
+  { code: 'STS-CELL-0101',
+    summary: 'An EST enrollment on behalf of a person homed in another cell ' +
+      'was refused: the certificate is written onto their entry only in ' +
+      'that cell, and the administrator\'s own credential is checked only ' +
+      'in theirs.',
+    spec: 'RFC 7030 section 4.2' },
   // ===== SCHED =============================================================
   { code: 'STS-SCHED-0001',
     summary: 'A scheduled job\'s run threw or rejected; the run is recorded ' +

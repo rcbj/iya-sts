@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3774** of them, in **40** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3776** of them, in **40** subsystems.
 
 ## Where a code appears
 
@@ -55,7 +55,7 @@ is an ordinary outcome.
 * [Worker pools (`STS-WORKER`)](#sts-worker) — 43
 * [Persistence and coordination (`STS-STORE`)](#sts-store) — 63
 * [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 28
-* [Cells and residency (`STS-CELL`)](#sts-cell) — 28
+* [Cells and residency (`STS-CELL`)](#sts-cell) — 30
 * [Scheduler (`STS-SCHED`)](#sts-sched) — 16
 * [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 79
 * [Certificate authority (`STS-PKI`)](#sts-pki) — 204
@@ -407,6 +407,8 @@ Raised from: common/cells.ts, common/cell_*.ts, persistence/tiers.js, persistenc
 | `STS-CELL-0054` | Another cell sent a change to an attribute of a person homed here that no other cell may write (a credential, the name, the entryUUID, memberOf); refused. | — |
 | `STS-CELL-0055` | A cell holding a person's exported session could not be told to end it; it finds out at its next check against home. | — |
 | `STS-CELL-0056` | The home cell of a projected person could not be reached to confirm the account; refused fail-closed, or allowed within cells.failOpenGraceS when cells.homeUnreachable is fail-open. | — |
+| `STS-CELL-0100` | An ACME request naming its account only by key (a newAccount with no External Account Binding) or an RFC 9773 renewal-info request could not be asked of every other cell; it is refused 503 rather than answered by a cell that could not know. | RFC 8555 section 7.3.1; RFC 9773 section 4 |
+| `STS-CELL-0101` | An EST enrollment on behalf of a person homed in another cell was refused: the certificate is written onto their entry only in that cell, and the administrator's own credential is checked only in theirs. | RFC 7030 section 4.2 |
 
 ## STS-SCHED
 
