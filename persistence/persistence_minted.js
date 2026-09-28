@@ -390,6 +390,14 @@ let realmOnlyKeylessWarned = false;
 // A KEK is required too and is checked at the point of sealing rather than
 // here, because it arrives later than everything above: `keystore.start()` runs
 // after `persistence.start()`.
+/**
+ * Tells whether this process writes minted state down at all.
+ *
+ * True when `persistence.minted` is set, a driver that can hold minted rows
+ * is open, and either the mode is product or several processes or nodes must
+ * agree and hold a key to seal the rows with.
+ * @returns true when minted state is being persisted
+ */
 function enabled() {
   log.debug("Entering enabled().");
   if (stopped || !driver) {
@@ -521,6 +529,14 @@ function retentionMs() {
 // `persistence.realms` already practises about a half-persisted service: one
 // sentence at the point of the decision beats a surprise afterwards.
 // ---------------------------------------------------------------------------
+/**
+ * Tells whether a persistence driver can hold minted rows.
+ *
+ * The ldif driver cannot: it writes whole files, which is wrong for stores
+ * that change on every request.
+ * @param theDriver - the driver to test
+ * @returns true when it has `loadMinted()` and `saveMinted()`
+ */
 function supports(theDriver) {
   log.debug("Entering supports().");
   log.debug("Leaving supports().");
@@ -533,6 +549,15 @@ function supports(theDriver) {
 // this is where the observer is armed — after which every declared store
 // reports its writes.
 // ---------------------------------------------------------------------------
+/**
+ * Installs the driver minted rows are written through, and arms the journal.
+ *
+ * For a driver that cannot hold minted state, says so at startup (a warning
+ * in product mode) and journals nothing.
+ * @param theDriver - the opened persistence driver
+ * @param activeMode - the persistence mode's name, for the messages
+ * @returns true when the driver was installed
+ */
 function setDriver(theDriver, activeMode) {
   log.debug('Entering setDriver(). mode=' + activeMode);
   if (!supports(theDriver)) {
@@ -613,6 +638,10 @@ function note(handle, realmId, key) {
 }
 
 // `persistence.js` hands its `mintedChanged()` here once a driver is open.
+/**
+ * Installs the function a journalled write calls to ask for a flush.
+ * @param fn - `persistence.js`'s `mintedChanged()`; anything else clears it
+ */
 function setScheduler(fn) {
   log.debug("Entering setScheduler().");
   scheduler = typeof fn === 'function' ? fn : null;
@@ -691,6 +720,16 @@ function splitKey(row, storedName) {
 // ---------------------------------------------------------------------------
 let prefetched = null;
 
+/**
+ * Reads, in one query, every minted row a page of change-log rows names.
+ *
+ * The applier then reads from this map instead of querying per row; the map
+ * is a page's working set, cleared by `endPrefetch()`. A driver without
+ * `readMintedMany()` leaves it empty, and a failed read falls back to one
+ * query per row.
+ * @param changes - the change-log rows of the page
+ * @returns a promise of the number of references read
+ */
 function prefetch(changes) {
   log.debug("Entering prefetch().");
   prefetched = null;
@@ -750,6 +789,9 @@ function prefetch(changes) {
   });
 }
 
+/**
+ * Discards the page's prefetched rows.
+ */
 function endPrefetch() {
   log.debug("Entering endPrefetch().");
   prefetched = null;
@@ -779,6 +821,16 @@ function splitChangeKey(key) {
   }
 }
 
+/**
+ * Applies one minted change another process committed into this process.
+ *
+ * Reads the row the change names (from the prefetch where present), opens it
+ * under the key-encryption key, and puts it in the live store with the
+ * journal suppressed — or, for a `merge: 'own'` row of another origin, hands
+ * it to the replication fan-in. A row that cannot be read is skipped.
+ * @param change - the change-log row, `{ key, realm, ... }`
+ * @returns a promise of true when the change was applied
+ */
 function applyChange(change) {
   log.debug('Entering applyChange(). key=' + change.key);
   if (!driver || typeof driver.readMinted !== 'function') {
@@ -915,6 +967,10 @@ function applyLocally(store, realmId, key, value, remove) {
 }
 
 // Is there anything to write? `persistence.js` asks before scheduling.
+/**
+ * Tells whether any journalled key is waiting to be written.
+ * @returns true when there is something to flush
+ */
 function dirty() {
   log.debug("Entering dirty().");
   log.debug("Leaving dirty().");
@@ -975,6 +1031,15 @@ function dirty() {
 // `tests/minted_persistence.js` section 5b holds it with a store that commits
 // when told to.
 // ---------------------------------------------------------------------------
+/**
+ * Writes every journalled key to the store, sealed; deletes what is gone.
+ *
+ * One flush at a time per process: a call made while one is in flight waits
+ * for it and then takes the journal itself. On failure the keys go back into
+ * the journal. Resolves rather than rejects.
+ * @returns a promise of `{ written, upserts, deletes }`, or `{ written:
+ * false }` with `error` when nothing was written or the write failed
+ */
 function flush() {
   log.debug('Entering flush().');
   if (flushInFlight) {
@@ -1227,6 +1292,10 @@ function flush() {
 
 // The generation every key journalled so far has reached, and the one whose
 // writes have settled in the store.
+/**
+ * Returns the generation every key journalled so far has reached.
+ * @returns the generation counter
+ */
 function generationNow() {
   log.debug("Entering generationNow().");
   log.debug("Leaving generationNow().");
@@ -1234,12 +1303,23 @@ function generationNow() {
 }
 
 // The part of `generation` that was observations. See `observedGeneration`.
+/**
+ * Returns the part of the generation that was observations.
+ *
+ * Journalled writes to `observation: true` stores (decision counters), which
+ * the cluster barrier subtracts when it asks whether a request wrote.
+ * @returns the observed-generation counter
+ */
 function observedGenerationNow() {
   log.debug("Entering observedGenerationNow().");
   log.debug("Leaving observedGenerationNow().");
   return observedGeneration;
 }
 
+/**
+ * Returns the generation whose writes have settled in the store.
+ * @returns the committed-generation counter
+ */
 function committedGeneration() {
   log.debug("Entering committedGeneration().");
   log.debug("Leaving committedGeneration().");
@@ -1256,6 +1336,15 @@ function committedGeneration() {
 // the one in flight and then takes the journal holding the target. Resolves
 // flush()'s answer; `error` set means the write did not land.
 // ---------------------------------------------------------------------------
+/**
+ * Makes sure the writes up to a generation are in the store.
+ *
+ * Answers at once when already committed, returns the flush in flight when
+ * its journal covered the target, and otherwise calls `flush()`.
+ * @param target - the generation to cover
+ * @returns a promise of `flush()`'s answer; `error` set means the write did
+ * not land
+ */
 function flushThrough(target) {
   log.debug("Entering flushThrough().");
   if (committedAt >= target) {
@@ -1453,6 +1542,15 @@ capabilities.provide('sessions.no-resurrection');
 //   * UNKNOWN — a handle no store in this build declares, which is what an
 //     older or newer build's rows look like. Harmless and worth saying.
 // ---------------------------------------------------------------------------
+/**
+ * Restores the minted rows from the store into this process at startup.
+ *
+ * Runs after the keystore has started. Stale, unreadable and unknown rows are
+ * dropped and counted separately.
+ * @returns a promise of `{ restored }`
+ * @throws a rejected promise when minted state is persisted but no
+ * key-encryption key is available, or the rows cannot be read
+ */
 function restore() {
   log.debug('Entering restore().');
   if (!enabled()) {
@@ -1667,6 +1765,10 @@ function restore() {
 // costs here is whatever was journalled and not yet flushed, which in postgres
 // mode is one turn of the event loop.
 // ---------------------------------------------------------------------------
+/**
+ * Writes what is journalled and stops journalling, for a clean shutdown.
+ * @returns a promise of the last flush's answer
+ */
 function stop() {
   log.debug('Entering stop().');
   log.debug("Leaving stop().");
@@ -1680,6 +1782,11 @@ function stop() {
 // What the console and the management API draw. ONE object through ONE
 // function, so the page and the API cannot disagree about what is persisted —
 // rule 7's shape applied to a report rather than to an action.
+/**
+ * Describes minted persistence for the console and the management API.
+ * @returns whether it is on and supported, the declared stores, and the
+ * counters of writes, failures, restored and dropped rows
+ */
 function status() {
   log.debug("Entering status().");
   const declared = realms.handles();
@@ -1718,6 +1825,9 @@ function status() {
 // pays and the same reason it is paid: the alternative is a test that launches
 // two processes and therefore cannot run in the in-process suite at all.
 // ---------------------------------------------------------------------------
+/**
+ * Clears every piece of state in this module, for the tests.
+ */
 function reset() {
   log.debug("Entering reset().");
   journal.clear();
@@ -1751,6 +1861,15 @@ function reset() {
   log.debug("Leaving reset().");
 }
 
+/**
+ * Persistence of what this process minted — sessions, tokens, codes, replay
+ * caches, statistics and the audit log.
+ *
+ * In product mode, or where several processes or nodes must agree, each
+ * declared store's writes are journalled and flushed sealed under the
+ * key-encryption key; in development mode nothing minted is persisted.
+ * @namespace
+ */
 module.exports = {
   setDriver: setDriver,
   setScheduler: setScheduler,

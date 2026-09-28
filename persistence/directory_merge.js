@@ -66,6 +66,12 @@
 
 // Always whole-valued: a credential, or a value whose meaning is the pair it
 // forms with another whole-valued attribute (a password and its history).
+/**
+ * The attribute names that are always whole-valued in a merge.
+ *
+ * A credential, or a value whose meaning is the pair it forms with another
+ * whole-valued attribute; when both sides changed one, mine wins.
+ */
 const SINGLE = ['userpassword', 'pwdhistory', 'pwdchangedtime',
                 'ststotpcredential', 'stsbackupcodes', 'stsactivationtoken',
                 'stsactivationexpires', 'appregistrationjson',
@@ -82,6 +88,12 @@ const SINGLE = ['userpassword', 'pwdhistory', 'pwdchangedtime',
                 'stsoidfedkeys'];
 
 // Always merged by value: lists this service appends to itself.
+/**
+ * The attribute names that are always merged by value.
+ *
+ * Lists this service appends to itself, such as a group's `member`: theirs,
+ * minus what mine removed, plus what mine added.
+ */
 const MULTI = ['member', 'uniquemember', 'memberof', 'objectclass',
                'description', 'oauthconsent', 'stswebauthncredential',
                'x509subject', 'didsubject', 'spiffesubject', 'authnmethod',
@@ -130,6 +142,18 @@ function listOf(values) {
 // theirs' order with mine's additions after, so two nodes merging the same
 // pair produce the same array. Undefined when nothing is left, which the
 // caller reads as "the attribute is gone".
+/**
+ * Merges one list-valued attribute three ways.
+ *
+ * Theirs, minus what mine removed from base, plus what mine added to it, in
+ * theirs' order with mine's additions after, so that two nodes merging the
+ * same pair produce the same array.
+ * @param base - the attribute's values as this process last knew them
+ * @param mine - the live values this process's change produced
+ * @param theirs - the values currently in the store
+ * @returns the merged values as strings, or undefined when none are left
+ * (which the caller reads as the attribute being gone)
+ */
 function mergeValues(base, mine, theirs) {
   const b = listOf(base).map(String);
   const m = listOf(mine).map(String);
@@ -197,6 +221,21 @@ function mergeAttributes(base, mine, theirs) {
 //   'theirs'  — the store's entry wins whole; write nothing, take `entry` here;
 //   'deleted' — another node deleted it; write nothing, remove it here.
 // ---------------------------------------------------------------------------
+/**
+ * Decides what survives when this process's write of a directory entry meets
+ * the row another node committed.
+ *
+ * Each argument is an entry (`{ dn, attributes, createdAt, modifiedAt,
+ * origin }`) or null. `entryUUID` decides whether two writes are one entry: a
+ * different entry at the same DN makes the first committed win, and a row gone
+ * from the store that this process had seen was deleted elsewhere.
+ * @param base - the entry as this process last wrote or applied it, or null
+ * @param mine - the live entry this process wants to write, or null
+ * @param theirs - the row in the store, read under lock, or null
+ * @returns `{ outcome, entry }`, where outcome is 'mine' (write mine),
+ * 'merged' (write `entry`), 'theirs' (write nothing, adopt `entry` here) or
+ * 'deleted' (write nothing, remove the entry here)
+ */
 function mergeEntry(base, mine, theirs) {
   if (!mine) {
     // A delete is written as a delete and never reaches here; answered for a
@@ -258,6 +297,14 @@ function mergeEntry(base, mine, theirs) {
 // live entry has (`putEntry()` builds dn, attributes, createdAt, modifiedAt,
 // origin). The shadow compares strings, so a row that arrived with another
 // key order would otherwise look changed on every flush.
+/**
+ * Serialises an entry read from the store in the key order a live entry has.
+ *
+ * The shadow compares strings, so a row that arrived with another key order
+ * would otherwise look changed on every flush.
+ * @param entry - the entry to serialise, or null
+ * @returns the canonical JSON string, or null for no entry
+ */
 function canonicalJson(entry) {
   if (!entry) {
     return null;
@@ -271,6 +318,14 @@ function canonicalJson(entry) {
   return JSON.stringify(out);
 }
 
+/**
+ * The three-way merge of a directory entry written by two nodes at once.
+ *
+ * A library with no requires: the postgres driver calls it inside the flush's
+ * transaction, and `persistence.js` calls it again for a write that raced the
+ * flush.
+ * @namespace
+ */
 module.exports = {
   SINGLE: SINGLE,
   MULTI: MULTI,

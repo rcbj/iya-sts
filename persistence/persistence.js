@@ -239,6 +239,9 @@ config.registerLogger(log);
 // the same list in its `enumValues`, which is the copy a caller is validated
 // against; this one is what the code branches on, and the two are checked
 // against each other at start() rather than trusted.
+/**
+ * The persistence modes this module knows: `memory`, `ldif` and `postgres`.
+ */
 const MODES = ['memory', 'ldif', 'postgres'];
 
 // ---------------------------------------------------------------------------
@@ -253,6 +256,15 @@ const MODES = ['memory', 'ldif', 'postgres'];
 // ---------------------------------------------------------------------------
 let directory = null;
 
+/**
+ * Installs the directory hooks `ldap/ldap_server.js` fills this module with.
+ *
+ * A slot rather than a require, because a require would move routes. The
+ * hooks are validated whole: `realmEntries` and `replaceRealm` are required,
+ * and `applyEntry` and `removeEntry` are what coordination needs.
+ * @param hooks - the directory's functions
+ * @throws when a required hook is missing
+ */
 function setDirectory(hooks) {
   log.debug('Entering setDirectory().');
   // `applyEntry` and `removeEntry` are NOT on this list, deliberately: they
@@ -421,12 +433,21 @@ let restoredCounts = { realms: 0, entries: 0, overrides: 0 };
 // read is a consistency habit rather than something that can change under us.
 // ---------------------------------------------------------------------------
 
+/**
+ * Returns the configured persistence mode (`persistence.mode`).
+ * @returns 'memory', 'ldif' or 'postgres'
+ */
 function mode() {
   log.debug("Entering mode().");
   log.debug("Leaving mode().");
   return config.value('persistence.mode');
 }
 
+/**
+ * Returns the ldif store's data directory, resolved against the package root
+ * when the setting is relative.
+ * @returns the absolute path
+ */
 function dataDir() {
   log.debug("Entering dataDir().");
   // Resolved against the PACKAGE ROOT rather than the working directory, for
@@ -472,6 +493,10 @@ function persistsRealms() {
 // Is anything being written down at all? Every caller in this file asks this
 // rather than comparing the mode to 'memory', so that a mode added later is one
 // edit here instead of a search for string comparisons.
+/**
+ * Tells whether anything is being written down at all.
+ * @returns true when a store other than memory is open and not stopped
+ */
 function enabled() {
   log.debug("Entering enabled().");
   log.debug("Leaving enabled().");
@@ -571,6 +596,10 @@ function directoryThrough(target) {
   return waiting;
 }
 
+/**
+ * Reports that a directory entry changed, and schedules a flush.
+ * @param dn - the entry's DN; empty or undefined marks the whole directory
+ */
 function directoryChanged(dn) {
   log.debug("Entering directoryChanged().");
   if (!enabled() || restoring) {
@@ -605,6 +634,14 @@ function directoryChanged(dn) {
 // `note()` calls it now, once per flush, through `setScheduler()` below; that
 // file's block above `scheduler` has the measurement. It answers whether it
 // scheduled, so a write made while this answers no asks again.
+/**
+ * Schedules a flush for a minted write, marking nothing itself.
+ *
+ * `persistence_minted.js` keeps its own journal and calls this through
+ * `setScheduler()`.
+ * @returns true when a flush was scheduled, false when persistence is off or
+ * restoring
+ */
 function mintedChanged() {
   log.debug("Entering mintedChanged().");
   if (!enabled() || restoring) {
@@ -616,6 +653,9 @@ function mintedChanged() {
   return true;
 }
 
+/**
+ * Reports that the realm registry changed, and schedules a flush.
+ */
 function realmsChanged() {
   log.debug("Entering realmsChanged().");
   if (!enabled() || restoring || !persistsRealms()) {
@@ -633,6 +673,11 @@ function realmsChanged() {
 // told rather than asked: a realm's overrides live on the realm row and a
 // process-wide one lives in the appconfig store, and those are two different
 // files and two different tables.
+/**
+ * Reports that a runtime appconfig override changed, and schedules a flush.
+ * @param realmId - the realm the override landed in (written on the realm's
+ * row), or null for a process-wide one
+ */
 function configChanged(realmId) {
   log.debug("Entering configChanged().");
   if (!enabled() || restoring) {
@@ -1155,6 +1200,14 @@ function applyDirectoryOutcomes(changes, outcomes) {
 // starting a competing write — two transactions computing their diff against
 // the same shadow would each think they had to write everything.
 // ---------------------------------------------------------------------------
+/**
+ * Writes the directory, realm and appconfig changes, then the minted rows.
+ *
+ * One flush at a time; a second caller shares the one queued behind the
+ * running flush. A failure is logged and the changes stay dirty for the next
+ * flush; the service keeps answering from memory.
+ * @returns a promise of `{ written }`, with `error` when the write failed
+ */
 function flush() {
   log.debug('Entering flush().');
   if (!enabled()) {
@@ -1454,6 +1507,16 @@ function flush() {
 // without the password somebody configured — the same direction every other
 // refusal in this file takes.
 // ===========================================================================
+/**
+ * Returns the database connection string with the configured provider's
+ * password put into it.
+ *
+ * Returns `persistence.databaseUrl` as it is when no password provider is
+ * configured. A password already in the string is replaced.
+ * @returns a promise of the connection string
+ * @throws a rejected promise (STS-STORE-0005) when the string is not a URL
+ * that can be edited, or the provider's error when the secret cannot be read
+ */
 function resolveDatabaseUrl() {
   log.debug('Entering resolveDatabaseUrl().');
   const raw = databaseUrl();
@@ -1501,6 +1564,11 @@ function resolveDatabaseUrl() {
 // `persistence.databaseTlsRejectUnauthorized`, shared by the pool this
 // process opens, `status()`'s report of it, and `databaseConnection()` below.
 // ---------------------------------------------------------------------------
+/**
+ * Tells whether the database server's certificate is verified
+ * (`persistence.databaseTlsRejectUnauthorized`).
+ * @returns true when it is verified
+ */
 function verifiesDatabaseTls() {
   log.debug("Entering verifiesDatabaseTls().");
   log.debug("Leaving verifiesDatabaseTls().");
@@ -1528,6 +1596,15 @@ function verifiesDatabaseTls() {
 // tagged error when a configured secret cannot be read, and STS-STORE-0005
 // for a string it cannot edit.
 // ---------------------------------------------------------------------------
+/**
+ * Returns what a process needs to dial the database the way this service
+ * does.
+ *
+ * For an out-of-process tool such as the risk dataset loader, so the two
+ * cannot disagree about how a connection is made.
+ * @returns a promise of `{ url, verifyTls }`; rejects as `resolveDatabaseUrl()`
+ * does
+ */
 function databaseConnection() {
   log.debug("Entering databaseConnection().");
   log.debug("Leaving databaseConnection().");
@@ -1546,6 +1623,16 @@ function workerCount() {
   return n;
 }
 
+/**
+ * Opens the configured store and restores the directory, realms and
+ * overrides from it.
+ *
+ * Called before any listener binds. Memory mode opens nothing. A store that
+ * cannot be opened or read is fatal: the promise rejects.
+ * @returns a promise of `{ mode, restored }`
+ * @throws a rejected promise when no directory is installed or the store
+ * cannot be opened or read
+ */
 function start() {
   log.debug('Entering start().');
   const chosen = mode();
@@ -2217,6 +2304,11 @@ function primeShadow(loadedRealmIds) {
 // and from nowhere else. `kill -9` cannot be trapped and is what `writeDelay`
 // is measured against in ldif mode.
 // ---------------------------------------------------------------------------
+/**
+ * Stops coordination, writes what is pending (the minted rows included) and
+ * closes the store, for a clean shutdown.
+ * @returns a promise that resolves when the store is closed
+ */
 function stop() {
   log.debug('Entering stop().');
   if (!enabled()) {
@@ -2615,6 +2707,14 @@ function applyKeysChange(change) {
 // because the change log's high-water mark only means "I am up to date" if
 // this process actually is.
 // ---------------------------------------------------------------------------
+/**
+ * Starts following the change log that several processes share.
+ *
+ * Called last at startup, after every store has been restored, with the
+ * appliers for each kind of change row.
+ * @returns a promise of `persistence_replication.start()`'s answer, or
+ * `{ coordinating: false }` when nothing is persisted
+ */
 function coordinate() {
   log.debug('Entering coordinate().');
   if (!enabled()) {
@@ -2681,6 +2781,12 @@ function coordinate() {
 // that compute the same answer twice are a console and an API that will
 // disagree about it.
 // ---------------------------------------------------------------------------
+/**
+ * Describes the persistence store for the console and the management API.
+ *
+ * The database is described without its password.
+ * @returns the mode, health, what is persisted, and the write counters
+ */
 function status() {
   log.debug('Entering status().');
   const out = {
@@ -2902,6 +3008,15 @@ realms.onRetire({
   }
 });
 
+/**
+ * The one place this service writes anything down: the directory, the realm
+ * registry and the runtime appconfig overrides, and — through
+ * `persistence_minted.js` — what it minted.
+ *
+ * Selects the memory, ldif or postgres driver, flushes changes to it, and
+ * coordinates several processes through its change log.
+ * @namespace
+ */
 module.exports = {
   // FOR `tests/database_password.js` ONLY, and it is worth saying why a
   // private function is exported at all. The claim this feature makes is that
@@ -2917,6 +3032,10 @@ module.exports = {
   verifiesDatabaseTls: verifiesDatabaseTls,
   MODES: MODES,
   mode: mode,
+  /**
+   * Returns the mode `start()` actually ran in.
+   * @returns 'memory', 'ldif' or 'postgres'
+   */
   activeMode: function () {
     log.debug("Entering activeMode().");
     log.debug("Leaving activeMode().");
@@ -2935,6 +3054,10 @@ module.exports = {
   // The minted half, for `server.js`'s third startup step. It is re-exported
   // rather than required over there directly so that `server.js` has ONE
   // persistence module to talk to, which is what it has always had.
+  /**
+   * Restores the minted rows from the store, the third startup step.
+   * @returns `persistence_minted.restore()`'s promise
+   */
   restoreMinted: function () {
     log.debug("Entering restoreMinted().");
     log.debug("Leaving restoreMinted().");
@@ -2944,6 +3067,10 @@ module.exports = {
   // The store's flush and this one are two schedulers, and a caller that
   // awaited only the first would leave everything this service MINTS exactly
   // as racy as it was — which is most of what a browser flow writes.
+  /**
+   * Flushes the minted rows and waits for the keystore's queued writes.
+   * @returns a promise of the minted flush's answer
+   */
   flushMinted: function () {
     log.debug("Entering flushMinted().");
     log.debug("Leaving flushMinted().");
@@ -2965,6 +3092,10 @@ module.exports = {
   // claim and a shared secret — postgres — and null otherwise, which those
   // modules answer from this process's memory. Handed over rather than
   // reached for, so that neither module needs to know which drivers exist.
+  /**
+   * Returns the open driver when it can hold atomic claims and shared secrets.
+   * @returns the postgres driver, or null
+   */
   clusterStore: function () {
     log.debug("Entering clusterStore().");
     if (!enabled() || !driver || typeof driver.claimOnce !== 'function') {
@@ -2984,6 +3115,10 @@ module.exports = {
   // `error`. The keystore's queued rows have no generation, so a request that
   // answers while any are queued waits for all of them, as it always did.
   // ---------------------------------------------------------------------
+  /**
+   * Returns how far this process's writes have got, as a position.
+   * @returns `{ directory, minted, observed }` generation counters
+   */
   writeGeneration: function () {
     log.debug("Entering writeGeneration().");
     log.debug("Leaving writeGeneration().");
@@ -2994,12 +3129,22 @@ module.exports = {
              observed: typeof minted.observedGeneration === 'function'
                ? minted.observedGeneration() : 0 };
   },
+  /**
+   * Tells whether the keystore has queued writes not yet in the store.
+   * @returns true when keys are pending
+   */
   keysPending: function () {
     log.debug("Entering keysPending().");
     log.debug("Leaving keysPending().");
     return enabled() && typeof keystore.pendingWrites === 'function' &&
       !!keystore.pendingWrites();
   },
+  /**
+   * Waits until every write up to a position is committed to the store.
+   * @param target - a `writeGeneration()` answer; defaults to the current one
+   * @returns a promise of an array of the flush answers, any of which may carry
+   * `error`
+   */
   commitThrough: function (target) {
     log.debug("Entering commitThrough().");
     const wanted = target || { directory: dirGeneration,
@@ -3019,6 +3164,10 @@ module.exports = {
   },
   // Whether anything this process has changed is not yet committed, for the
   // cluster barrier's commit-before-respond. See cluster/cluster_barrier.js.
+  /**
+   * Tells whether anything this process changed is not yet committed.
+   * @returns true when writes are pending
+   */
   pendingWrites: function () {
     log.debug("Entering pendingWrites().");
     log.debug("Leaving pendingWrites().");
@@ -3051,6 +3200,15 @@ module.exports = {
   // build of the driver has no metrics* are three different things to do
   // something about, and only the second is a fault.
   // ---------------------------------------------------------------------
+  /**
+   * Collects the database metrics `/admin/database` draws.
+   *
+   * Answers with `available: false` and a reason when the mode has no
+   * database, no store is open, or the driver has no metrics.
+   * @param options - unused
+   * @returns a promise of the driver's metrics report, with the declared schema
+   * version and objects added
+   */
   databaseMetrics: function (options) {
     log.debug('Entering databaseMetrics().');
     const configured = mode();
@@ -3127,6 +3285,10 @@ module.exports = {
     });
   },
 
+  /**
+   * Returns how many change-log rows this process has written.
+   * @returns the count, or 0 when the driver keeps none
+   */
   changeRowsWritten: function () {
     log.debug("Entering changeRowsWritten().");
     if (!driver || typeof driver.changeRowsWritten !== 'function') {
@@ -3137,6 +3299,10 @@ module.exports = {
     return driver.changeRowsWritten();
   },
 
+  /**
+   * Returns the change log's latest sequence number.
+   * @returns a promise of the sequence, or 0 when nothing is persisted
+   */
   latestChangeSeq: function () {
     log.debug("Entering latestChangeSeq().");
     if (!enabled() || !driver || typeof driver.latestChangeSeq !== 'function') {
@@ -3148,12 +3314,20 @@ module.exports = {
       return Number(seq) || 0;
     });
   },
+  /**
+   * Returns `persistence_minted.status()`.
+   * @returns the minted persistence report
+   */
   mintedStatus: function () {
     log.debug("Entering mintedStatus().");
     log.debug("Leaving mintedStatus().");
     return minted.status();
   },
   coordinate: coordinate,
+  /**
+   * Returns `persistence_replication.status()`.
+   * @returns the coordination report
+   */
   replicationStatus: function () {
     log.debug("Entering replicationStatus().");
     log.debug("Leaving replicationStatus().");
@@ -3162,6 +3336,10 @@ module.exports = {
   // THE READ BARRIER, for `common/request_pool.js`. Re-exported here rather
   // than reached for directly so that a caller has ONE persistence module to
   // talk to — the same reason restoreMinted() is re-exported above.
+  /**
+   * Waits until everything committed before the call is applied here.
+   * @returns `persistence_replication.syncNow()`'s promise
+   */
   syncNow: function () {
     log.debug("Entering syncNow().");
     log.debug("Leaving syncNow().");
