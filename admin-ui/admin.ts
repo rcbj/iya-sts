@@ -22764,7 +22764,7 @@ class AdminConsole {
     const permissions = (one.permissions || []).length
       ? '<td>' + one.permissions.map(function (permission) {
           return '<div><code>' + self.esc(permission) + '</code>' +
-            (one.console ? '' :
+            (one.native ? '' :
               ' <form method="post" action="/admin/roles" class="inline">' +
               self.rolesBack(listView) +
               '<input type="hidden" name="action" value="remove-permission">' +
@@ -22777,11 +22777,12 @@ class AdminConsole {
       : '<td><span class="state-none">none</span></td>';
     log.debug("Leaving AdminConsole.roleRow().");
     return '<tr><td class="who"><code>' + this.esc(one.name) + '</code>' +
-      (one.console ? ' <span class="sub">console role</span>' : '') +
+      (one.console ? ' <span class="sub">console role</span>'
+        : (one.native ? ' <span class="sub">native role</span>' : '')) +
       (one.description ? '<br><span class="sub">' + this.esc(one.description) +
                          '</span>' : '') +
       '</td>' + members + permissions +
-      '<td class="act">' + (one.console
+      '<td class="act">' + (one.native
         ? '<span class="sub">kept in every realm</span>'
         : '<form method="post" action="/admin/roles">' +
           this.rolesBack(listView) +
@@ -37616,7 +37617,7 @@ class AdminConsole {
         '<div class="formrow">' +
         '<label>Role <select name="role" required>' +
         register.roles.filter(function (one) {
-          return !one.console;
+          return !one.native;
         }).map(function (one) {
           return '<option value="' + self.esc(one.name) + '">' +
                  self.esc(one.name) + '</option>';
@@ -37628,7 +37629,7 @@ class AdminConsole {
             return '<option value="' + self.esc(id) + '">';
           }).join('') + '</datalist>' +
         '<button type="submit"' +
-          (register.roles.some(function (one) { return !one.console; })
+          (register.roles.some(function (one) { return !one.native; })
             ? '' : ' disabled') + '>Authorize</button>' +
         '</div></form>' +
 

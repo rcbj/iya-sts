@@ -248,10 +248,11 @@ no object class and gains one on its next save.
 (`appRequiredRole` on an application). Which of an application's permissions need a role at all is
 `oauthRoleGatedPermission` on the resource application. Every realm is seeded with two roles, `ADMIN_READ` and
 `ADMIN_WRITE`, which authorize `admin:read` and `admin:write`. Their groups come from `admin.readGroup` and
-`admin.writeGroup` and are not stored on the entry; `sts-management-api` is a member of both. The service also
-computes nine built-in roles that are not stored: EVERYBODY, ALL_AUTHENTICATED_USERS, ALL_UNAUTHENTICATED_USERS,
-ALL_APPLICATIONS, ALL_AUTHENTICATED_APPLICATIONS, ALL_UNAUTHENTICATED_APPLICATIONS, REMOTE_PEPS, XACML_USER and
-DEVICE_COMPLIANCE.
+`admin.writeGroup` and are not stored on the entry; `sts-management-api` is a member of both. A third seeded role,
+`DEVICE_COMPLIANCE`, authorizes `device:compliance` and has no members until the MDM feed's application is added
+(#309). None of the three can be deleted, and their permissions are fixed. The service also computes eight
+built-in roles that are not stored: EVERYBODY, ALL_AUTHENTICATED_USERS, ALL_UNAUTHENTICATED_USERS,
+ALL_APPLICATIONS, ALL_AUTHENTICATED_APPLICATIONS, ALL_UNAUTHENTICATED_APPLICATIONS, REMOTE_PEPS and XACML_USER.
 
 ## XACML: `ou=policies` and `ou=peps`
 

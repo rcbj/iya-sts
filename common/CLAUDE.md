@@ -4652,11 +4652,10 @@ container: `EVERYBODY`, `ALL_AUTHENTICATED_USERS`,
 `ALL_UNAUTHENTICATED_USERS`, `ALL_APPLICATIONS`,
 `ALL_AUTHENTICATED_APPLICATIONS`, `ALL_UNAUTHENTICATED_APPLICATIONS`.
 
-**THERE ARE NINE NOW.** `DEVICE_COMPLIANCE` (#164) is read off the scope
-`device:compliance`; `roles.js` argues it at its row. `ADMIN_READ` and
-`ADMIN_WRITE` were read off the admin scopes from 2026-09-09 until #303
-(2026-09-27) made them CONFIGURED roles — see *A role authorizes permissions*,
-below. **The other two are a different shape again.** The six above
+**THERE ARE EIGHT NOW.** `ADMIN_READ` and `ADMIN_WRITE` were read off the
+admin scopes from 2026-09-09 until #303 (2026-09-27), and `DEVICE_COMPLIANCE`
+off `device:compliance` until #309 (2026-09-28); all three are CONFIGURED
+roles now — see *A role authorizes permissions*, below. **The other two are a different shape again.** The six above
 read `kind` and `authenticated` and touch no store. `REMOTE_PEPS` (2026-09-06)
 and `XACML_USER` (beside it) are held by whoever is in one named GROUP —
 `roles.remotePepGroup` and `roles.xacmlUserGroup` — which makes them hybrids,
@@ -4745,10 +4744,15 @@ they cannot be deleted (`STS-XACML-0076`) and their permission cannot change.
 **A machine must HOLD the role (decision 3)**: declaring `admin:*` in
 `oauthAllowedScope` is no longer enough on `client_credentials`.
 
-**WHAT IS NOT DONE**: `DEVICE_COMPLIANCE` is still read off a scope — the
-pattern this removed for the admin ones — and roles scoped to ONE application
-(Entra-style app roles) do not exist; a role is per realm. Both are recorded on
-#88.
+**DEVICE_COMPLIANCE FOLLOWED THEM (#309, 2026-09-28)** — the last role read
+off a scope. The console roles and it are the NATIVE ROLES (`NATIVE_ROLES`):
+each authorizes one native permission, is seeded in every realm, cannot be
+deleted and cannot authorize anything else. DEVICE_COMPLIANCE is otherwise an
+ordinary role (any member kind, edited on `/admin/roles`) and is seeded EMPTY
+(rcbj's decision): no client is the MDM feed until an operator adds it, and
+`sts-management-api` is not one — the separation #164 decision 2 made.
+`device:compliance` is gated like `admin:*`, at issuance and at
+`/admin-api`'s gate (held ∩ carried). No role is read off a scope now.
 
 ### `roles.js` is a LEAF and must stay one
 

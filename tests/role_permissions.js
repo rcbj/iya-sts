@@ -160,7 +160,7 @@ function setUp(t) {
       protocols: ['oauth2'],
       fields: { oauthClientId: MACHINE,
                 oauthAllowedScope: ['admin:read', 'admin:write',
-                                    PERMISSION] } }),
+                                    'device:compliance', PERMISSION] } }),
     applications.createApplication({ identifier: RESOURCE,
       protocols: ['oauth2'],
       fields: { oauthClientId: RESOURCE,
@@ -256,6 +256,28 @@ async function machines(t) {
                                     'admin:read admin:write');
   t.equal(seeded.scope, 'admin:read admin:write',
           'C3. the seeded management client, in both, is issued both');
+  // #309: DEVICE_COMPLIANCE, the last role that was read off a scope.
+  const feedRole = roles.read('DEVICE_COMPLIANCE');
+  t.check(!!feedRole && feedRole.native && !feedRole.console &&
+          feedRole.applications.length === 0 &&
+          feedRole.permissions.join() === 'device:compliance',
+          'C4. DEVICE_COMPLIANCE is a native role, seeded with no member, ' +
+          'authorizing device:compliance', JSON.stringify(feedRole));
+  const feedRefused = await refusedWith(function () {
+    return machineToken(MACHINE, 'device:compliance');
+  });
+  t.check(!!feedRefused && feedRefused.refusal &&
+          feedRefused.refusal.error === 'invalid_scope',
+          'C5. a client declaring device:compliance but not in the role is ' +
+          'not issued it', feedRefused ? JSON.stringify(feedRefused.refusal)
+                                       : '');
+  t.check(action({ action: 'add-member', role: 'DEVICE_COMPLIANCE',
+                   kind: 'application', member: MACHINE }).ok,
+          'precondition: the client was added to DEVICE_COMPLIANCE');
+  t.equal((await machineToken(MACHINE, 'device:compliance')).scope,
+          'device:compliance', 'C6. in the role, it is issued the scope');
+  t.check(!action({ action: 'delete-role', role: 'DEVICE_COMPLIANCE' }).ok,
+          'C7. and the role cannot be deleted');
   log.debug("Leaving machines().");
 }
 
@@ -383,7 +405,8 @@ function pipRoles(t, names) {
           ['ADMIN_READ', 'ADMIN_WRITE'].join(','),
           'F1. a person\'s configured roles, the console ones from the roster');
   t.equal(answer(request(MACHINE, 'application')),
-          ['ADMIN_READ', 'rp-readers-' + RUN].sort().join(','),
+          ['ADMIN_READ', 'DEVICE_COMPLIANCE', 'rp-readers-' + RUN].sort()
+            .join(','),
           'F2. an application\'s, when the request says it is one');
   t.equal(answer(request(MACHINE)), '',
           'F3. and the same name as a person holds nothing');
@@ -520,6 +543,12 @@ async function thePolicyDecides(t, names) {
 
 async function run(t) {
   log.debug("Entering run().");
+  // THE ISSUANCE PEP IS THE DECIDER FOR THIS FILE, installed here rather
+  // than left to the require: a module another file loaded first comes out
+  // of the cache without re-arming the gate, and a file before this one may
+  // have put back "no decider" — which order the files run in must not
+  // decide what this one tests. `deciderBefore` is restored at the end.
+  gate.setDecider(rolePep.decide);
   const realm = realms.create({ id: 'rp-' + RUN,
                                 name: 'role permissions ' + RUN }).realm;
   const names = { nobody: 'rp-nobody-' + RUN, reader: 'rp-reader-' + RUN,

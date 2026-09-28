@@ -14878,13 +14878,13 @@ const CODES = [
       'only an application is added on the role (#303).',
     spec: 'none (a console or management API refusal, HTTP 400)' },
   { code: 'STS-XACML-0076',
-    summary: 'A delete named ADMIN_READ or ADMIN_WRITE, which every realm ' +
-      'keeps (#303).',
+    summary: 'A delete named a native role — ADMIN_READ, ADMIN_WRITE or ' +
+      'DEVICE_COMPLIANCE — which every realm keeps (#303, #309).',
     spec: 'none (a console or management API refusal, HTTP 400)' },
   { code: 'STS-XACML-0077',
-    summary: 'ADMIN_READ or ADMIN_WRITE could not be seeded in a realm; ' +
-      'no machine client can be issued that admin scope there until it ' +
-      'exists (#303).',
+    summary: 'A native role (ADMIN_READ, ADMIN_WRITE or DEVICE_COMPLIANCE) ' +
+      'could not be seeded in a realm; no machine client can be issued its ' +
+      'permission there until it exists (#303, #309).',
     spec: 'none — a warning in the log' },
   { code: 'STS-XACML-0078',
     summary: 'Neither the issuance policy nor the built-in one it falls back ' +
@@ -15897,8 +15897,9 @@ const CODES = [
       'left to issue (#302, #303).',
     spec: 'invalid_scope (RFC 6749 sections 4.1.2.1 and 5.2)' },
   { code: 'STS-ADMIN-0823',
-    summary: 'add-permission or remove-permission named ADMIN_READ or ' +
-      'ADMIN_WRITE, whose permission is fixed (#303).',
+    summary: 'add-permission or remove-permission named a native role — ' +
+      'ADMIN_READ, ADMIN_WRITE or DEVICE_COMPLIANCE — whose permission is ' +
+      'fixed (#303, #309).',
     spec: 'none (a console or management API refusal, HTTP 400)' },
   { code: 'STS-ADMIN-0824',
     summary: 'add-permission or remove-permission named no permission ' +
@@ -15906,8 +15907,8 @@ const CODES = [
     spec: 'none (a console or management API refusal, HTTP 400)' },
   { code: 'STS-ADMIN-0825',
     summary: 'add-permission named a native permission (admin:read, ' +
-      'admin:write), which only the two console roles authorize ' +
-      '(#303).',
+      'admin:write, device:compliance), which only its native role ' +
+      'authorizes (#303, #309).',
     spec: 'none (a console or management API refusal, HTTP 400)' },
   { code: 'STS-ADMIN-0826',
     summary: 'add-permission named a permission no application in the realm ' +

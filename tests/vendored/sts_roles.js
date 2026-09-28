@@ -498,23 +498,29 @@ async function anUnconfiguredRealmRefusesNobody() {
       "GET /admin-api/roles should answer 200; it answered " +
       register.status);
   });
-  check("a new realm holds exactly the two console roles", function () {
+  check("a new realm holds exactly the three native roles", function () {
     // #303: ADMIN_READ and ADMIN_WRITE are CONFIGURED roles seeded into every
     // realm, each held by the realm's own management API client and
-    // authorizing its admin scope. Nothing else is seeded.
+    // authorizing its admin scope. #309: DEVICE_COMPLIANCE beside them,
+    // authorizing device:compliance and seeded with NO member. Nothing else
+    // is seeded.
     const names = register.body.roles.map(function (r) { return r.name; });
     assert.strictEqual(JSON.stringify(names.slice().sort()),
-      JSON.stringify(["ADMIN_READ", "ADMIN_WRITE"]),
-      "a realm's ou=roles starts with the two console roles; this one holds " +
-      JSON.stringify(names));
+      JSON.stringify(["ADMIN_READ", "ADMIN_WRITE", "DEVICE_COMPLIANCE"]),
+      "a realm's ou=roles starts with the three native roles; this one " +
+      "holds " + JSON.stringify(names));
+    const wanted = { ADMIN_READ: "admin:read", ADMIN_WRITE: "admin:write",
+                     DEVICE_COMPLIANCE: "device:compliance" };
     register.body.roles.forEach(function (row) {
-      assert.ok(row.console === true &&
-                row.applications.indexOf("sts-management-api") >= 0 &&
+      const feed = row.name === "DEVICE_COMPLIANCE";
+      assert.ok(row.native === true && row.console === !feed &&
+                (feed ? row.applications.length === 0
+                      : row.applications.indexOf("sts-management-api") >= 0) &&
                 row.permissions.length === 1 &&
-                row.permissions[0] === (row.name === "ADMIN_READ"
-                  ? "admin:read" : "admin:write"),
-                "each is a console role held by sts-management-api and " +
-                "authorizing its own scope: " + JSON.stringify(row));
+                row.permissions[0] === wanted[row.name],
+                "each authorizes its own native permission; the console " +
+                "roles are held by sts-management-api and DEVICE_COMPLIANCE " +
+                "by nobody: " + JSON.stringify(row));
     });
   });
   check("and the built-in ones are there anyway", function () {
@@ -542,7 +548,11 @@ async function anUnconfiguredRealmRefusesNobody() {
     // read off a scope and became configured roles authorizing it — a scope
     // is a request, and #88 is the rule that it never grants authorization
     // by itself. They are asserted above, among the configured ones.
-    assert.strictEqual(register.body.builtIn.length, 9,
+    //
+    // EIGHT SINCE #309 (2026-09-28): DEVICE_COMPLIANCE followed them, the
+    // last role read off a scope, and is asserted above among the native
+    // ones.
+    assert.strictEqual(register.body.builtIn.length, 8,
       "the built-in roles are computed rather than stored, so an empty " +
       "container has them; this realm reports " +
       register.body.builtIn.length + " (" +
