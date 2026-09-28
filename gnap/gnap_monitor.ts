@@ -132,17 +132,40 @@ const FORMATS = ['jwt-signed', 'jwt-encrypted', 'macaroon', 'biscuit', 'zcap'];
 const counters = realms.map({ persist: 'gnap_monitor.counters',
                               merge: 'own' });
 
+/**
+ * Counts what GNAP is doing, per client instance or resource server, since the
+ * process started, for `/admin/gnap/monitor`.
+ *
+ * A leaf, and a call to it never throws into its caller.
+ */
 class GnapMonitor {
+  /**
+   * The events counted, each mapped to its counter and its label.
+   */
   static readonly EVENTS = EVENTS;
+  /**
+   * The token formats counted: `jwt-signed`, `jwt-encrypted`, `macaroon`,
+   * `biscuit` and `zcap`.
+   */
   static readonly FORMATS = FORMATS;
 
   private readonly startedAt = new Date().toISOString();
 
+  /**
+   * Builds the monitor from the modules it reads.
+   *
+   * @param deps - the modules the composition root passes
+   */
   constructor(private readonly deps: GnapMonitorDeps) {
     deps.log.debug("Entering GnapMonitor.constructor().");
     deps.log.debug("Leaving GnapMonitor.constructor().");
   }
 
+  /**
+   * Returns a counter row with every counter and format at zero.
+   *
+   * @returns an empty row
+   */
   emptyRow(): CounterRow {
     const { log } = this.deps;
     log.debug("Entering GnapMonitor.emptyRow().");
@@ -161,6 +184,17 @@ class GnapMonitor {
   // `detail.format` counts a token format; `detail.gnapError` counts the RFC
   // error a refusal returned, which is the column a client developer reads
   // first.
+  /**
+   * Counts one event for an identifier; an unknown event is ignored, and a
+   * failure is logged rather than thrown.
+   *
+   * `detail.format` counts a token format; `detail.gnapError` counts the RFC
+   * error a refusal returned.
+   *
+   * @param identifier - the client instance or resource server
+   * @param event - one of `EVENTS`' names
+   * @param detail - the format or error to count as well
+   */
   record(identifier: unknown, event: string, detail?: EventDetail): void {
     const { log, errorCodes, counters } = this.deps;
     log.debug("Entering GnapMonitor.record().");
@@ -258,6 +292,12 @@ class GnapMonitor {
     return out;
   }
 
+  /**
+   * Returns every identifier's counters, with the event and format lists the
+   * page draws them against.
+   *
+   * @returns `{ startedAt, events, formats, rows, blank }`
+   */
   snapshot() {
     const { log } = this.deps;
     log.debug("Entering GnapMonitor.snapshot().");
@@ -281,6 +321,12 @@ class GnapMonitor {
 
   // What the composition root passes (#50, R2): the real modules, as the
   // module built its own instance from before.
+  /**
+   * Returns the real modules the instance was built from before the composition
+   * root (#50, R2) passed them.
+   *
+   * @returns the default dependencies
+   */
   static defaultDeps(): GnapMonitorDeps {
     helpers.log.debug("Entering GnapMonitor.defaultDeps().");
     helpers.log.debug("Leaving GnapMonitor.defaultDeps().");
@@ -310,9 +356,25 @@ const slot = new InstanceSlot<GnapMonitor>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * What GNAP is doing, counted per application since the process started — the
+ * data behind `/admin/gnap/monitor`.
+ *
+ * @namespace
+ */
 export = {
   GnapMonitor: GnapMonitor,
+  /**
+   * Installs the instance the composition root built (#50, R2).
+   *
+   * @param instance - the instance the facades forward to
+   */
   installInstance: (instance: GnapMonitor): void => slot.install(instance),
+  /**
+   * Says where the installed instance came from: `root`, `default`, or `none`.
+   *
+   * @returns the origin label
+   */
   instanceOrigin: (): string => slot.origin(),
   EVENTS: GnapMonitor.EVENTS,
   record: slot.forward('record'),

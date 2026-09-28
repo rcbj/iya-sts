@@ -152,7 +152,17 @@ const PAGE_CSS =
   'input.code{font-size:1.4em;letter-spacing:.2em;text-transform:uppercase;' +
   'width:100%}';
 
+/**
+ * The pages a GNAP resource owner sees: the four start modes, sign-in through
+ * the one authentication service, the approval page, and the finish that tells
+ * the client (RFC 9635 section 4).
+ */
 class GnapInteract {
+  /**
+   * Builds the interaction pages from the modules they read.
+   *
+   * @param deps - the modules the composition root passes
+   */
   constructor(private readonly deps: GnapInteractDeps) {
     deps.log.debug("Entering GnapInteract.constructor().");
     deps.log.debug("Leaving GnapInteract.constructor().");
@@ -510,6 +520,14 @@ class GnapInteract {
   }
 
   // The six routes, in the order this file has always registered them.
+  /**
+   * Registers the six interaction routes, in the order this file always
+   * registered them.
+   *
+   * Called by `common/protocol_stack.ts` after `gnap.ts`'s routes.
+   *
+   * @param app - the shared express application
+   */
   registerRoutes(app: RouteTable): void {
     const self = this;
     const { log, config, validation, parseBody, bodyValues, errorCodes,
@@ -755,6 +773,12 @@ class GnapInteract {
 
   // What the composition root passes (#50, R2): the real modules, as the
   // module built its own instance from before.
+  /**
+   * Returns the real modules the instance was built from before the composition
+   * root (#50, R2) passed them.
+   *
+   * @returns the default dependencies
+   */
   static defaultDeps(): GnapInteractDeps {
     helpers.log.debug("Entering GnapInteract.defaultDeps().");
     helpers.log.debug("Leaving GnapInteract.defaultDeps().");
@@ -797,8 +821,24 @@ const slot = new InstanceSlot<GnapInteract>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * The pages a GNAP resource owner sees: where an interaction starts, where they
+ * sign in and decide, and how the client is told.
+ *
+ * @namespace
+ */
 export = {
+  /**
+   * Installs the instance the composition root built (#50, R2).
+   *
+   * @param instance - the instance the facades forward to
+   */
   installInstance: (instance: GnapInteract): void => slot.install(instance),
+  /**
+   * Says where the installed instance came from: `root`, `default`, or `none`.
+   *
+   * @returns the origin label
+   */
   instanceOrigin: (): string => slot.origin(),
   registerRoutes: slot.forward('registerRoutes'),
   GnapInteract: GnapInteract

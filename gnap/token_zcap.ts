@@ -279,17 +279,49 @@ const VALUE_RE = /^[A-Za-z0-9_-]+$/;
 // impossible for every resource server registered under a plain name.
 const RS_TARGET_PREFIX = 'urn:gnap:rs:';
 
+/**
+ * The `zcap` GNAP token format (RFC 9767 section 5.3.2): a ZCAP-LD delegated
+ * capability signed by the authorization server, with an `eddsa-jcs-2022` Data
+ * Integrity proof by default.
+ *
+ * A route-free library; the ES-module packages it uses are loaded lazily, once,
+ * by the first call that needs them.
+ */
 class TokenZcap {
+  /**
+   * The format's name, `zcap`.
+   */
   static readonly FORMAT = FORMAT;
+  /**
+   * The pinned `@context` of a capability proved with a JCS suite.
+   */
   static readonly CONTEXT = CONTEXT;
+  /**
+   * The pinned `@context` of a capability proved with `Ed25519Signature2020`.
+   */
   static readonly LEGACY_CONTEXT = LEGACY_CONTEXT;
+  /**
+   * The proof suites a zcap token may be signed with: the three JCS suites and
+   * `Ed25519Signature2020`.
+   */
   static readonly CRYPTOSUITES = CRYPTOSUITES;
+  /**
+   * The suite used when none is set, `eddsa-jcs-2022`.
+   */
   static readonly DEFAULT_CRYPTOSUITE = DEFAULT_CRYPTOSUITE;
+  /**
+   * The compatibility suite, `Ed25519Signature2020`.
+   */
   static readonly LEGACY_SUITE = LEGACY_SUITE;
 
   // The one load of the ES modules, shared by every call.
   private loading: Promise<any> | null = null;
 
+  /**
+   * Builds the format from the modules it reads.
+   *
+   * @param deps - the modules the composition root passes
+   */
   constructor(private readonly deps: TokenZcapDeps) {
     deps.log.debug("Entering TokenZcap.constructor().");
     deps.log.debug("Leaving TokenZcap.constructor().");
@@ -380,6 +412,12 @@ class TokenZcap {
     return { ok: true, suite: suite };
   }
 
+  /**
+   * Returns the `@context` a capability proved with the given suite carries.
+   *
+   * @param suite - the proof suite
+   * @returns `LEGACY_CONTEXT` for the compatibility suite, else `CONTEXT`
+   */
   contextFor(suite: string): any[] {
     const { log } = this.deps;
     log.debug("Entering TokenZcap.contextFor().");
@@ -686,6 +724,12 @@ class TokenZcap {
   // `/gnap/zcap/controller`. Asynchronous because the key classes are ES
   // modules. Returns the document, or a refusal when the keys are unusable.
   // -------------------------------------------------------------------------
+  /**
+   * Builds the controller document the AS publishes at `/gnap/zcap/controller`.
+   *
+   * @param keys - the realm's zcap keys, as `gnap_tokens.zcapKeys()` gives
+   * @returns the document, or a refusal when the keys are unusable
+   */
   async controllerDocument(keys: any): Promise<any> {
     const { log, crypto } = this.deps;
     log.debug("Entering TokenZcap.controllerDocument().");
@@ -795,6 +839,13 @@ class TokenZcap {
     });
   }
 
+  /**
+   * Returns the controller a capability names for a key confirmation: the
+   * bearer controller when there is none.
+   *
+   * @param cnf - the token's confirmation
+   * @returns the controller URI
+   */
   controllerFor(cnf: any): string {
     const { log } = this.deps;
     log.debug("Entering TokenZcap.controllerFor().");
@@ -890,6 +941,14 @@ class TokenZcap {
   // when absent; the compatibility suite derives its publicKey from the
   // private one).
   // -------------------------------------------------------------------------
+  /**
+   * Mints a zcap capability carrying a token model, signed by the AS.
+   *
+   * @param model - the token model `gnap_access` validates
+   * @param keys - `{ cryptosuite, privateKey, controller, keyId }`, plus
+   *   `publicJwk` for a JCS suite
+   * @returns `{ value, format, jti }`, or a refusal
+   */
   async mint(model: any, keys: any): Promise<any> {
     const { log, errorCodes, access, crypto } = this.deps;
     log.debug("Entering TokenZcap.mint().");
@@ -1108,6 +1167,17 @@ class TokenZcap {
   // KeyObject) or `publicJwk` — one generation of the realm's key; the caller
   // tries each live generation in turn.
   // -------------------------------------------------------------------------
+  /**
+   * Verifies a zcap capability against one generation of the realm's key and
+   * checks it against the presentation context; the caller tries each live
+   * generation in turn.
+   *
+   * @param value - the presented token value
+   * @param keys - `{ cryptosuite, controller, keyId }` plus `publicKey` or
+   *   `publicJwk`
+   * @param context - the presentation to check the token against
+   * @returns `{ ok: true, model }`, or a refusal
+   */
   async verify(value: unknown, keys: any, context?: any): Promise<any> {
     const { log, access, nowSec } = this.deps;
     log.debug("Entering TokenZcap.verify().");
@@ -1218,6 +1288,12 @@ class TokenZcap {
              cryptosuite: chosen.suite };
   }
 
+  /**
+   * Describes the format for the console: its libraries, algorithms and the
+   * fields it carries.
+   *
+   * @returns the format's description
+   */
   describe() {
     const { log, access } = this.deps;
     log.debug("Entering TokenZcap.describe().");
@@ -1257,6 +1333,12 @@ class TokenZcap {
   // module built its own instance from before. The importer is the old
   // module-level load, unchanged: three ES modules by dynamic import and two
   // CommonJS packages by require, all at the first call that needs them.
+  /**
+   * Returns the real modules and the lazy importer the instance was built from
+   * before the composition root (#50, R2) passed them.
+   *
+   * @returns the default dependencies
+   */
   static defaultDeps(): TokenZcapDeps {
     helpers.log.debug("Entering TokenZcap.defaultDeps().");
     helpers.log.debug("Leaving TokenZcap.defaultDeps().");
@@ -1307,9 +1389,25 @@ const slot = new InstanceSlot<TokenZcap>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * The `zcap` GNAP token format (RFC 9767 section 5.3.2), a ZCAP-LD capability
+ * signed by the authorization server.
+ *
+ * @namespace
+ */
 export = {
   TokenZcap: TokenZcap,
+  /**
+   * Installs the instance the composition root built (#50, R2).
+   *
+   * @param instance - the instance the facades forward to
+   */
   installInstance: (instance: TokenZcap): void => slot.install(instance),
+  /**
+   * Says where the installed instance came from: `root`, `default`, or `none`.
+   *
+   * @returns the origin label
+   */
   instanceOrigin: (): string => slot.origin(),
   FORMAT: TokenZcap.FORMAT,
   CONTEXT: TokenZcap.CONTEXT,

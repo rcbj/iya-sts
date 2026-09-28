@@ -187,13 +187,43 @@ interface GnapGrantsDeps {
   loadOauth2(): typeof import('../oauth-oidc/oauth2');
 }
 
+/**
+ * The grant engine: every decision a GNAP authorization server makes, in one
+ * route-free library.
+ *
+ * `gnap.ts` and `gnap_interact.ts` both call it, so the grant state machine of
+ * RFC 9635 section 1.5 lives here where both halves reach it.
+ */
 class GnapGrants {
+  /**
+   * The protocol name recorded on audit rows, `GNAP`.
+   */
   static readonly PROTOCOL = PROTOCOL;
+  /**
+   * The application kind recorded for a GNAP client instance, `gnap-client`.
+   */
   static readonly KIND_CLIENT = KIND_CLIENT;
+  /**
+   * The application kind recorded for a GNAP resource server,
+   * `gnap-resource-server`.
+   */
   static readonly KIND_RS = KIND_RS;
+  /**
+   * The discovery members (section 9) an authorization server profile may set,
+   * and which the grant endpoint enforces.
+   */
   static readonly GNAP_MEMBERS = GNAP_MEMBERS;
+  /**
+   * The first path segments that are never taken as an authorization server
+   * name by `/:as/gnap`.
+   */
   static readonly RESERVED_AS_NAMES = RESERVED_AS_NAMES;
 
+  /**
+   * Builds the grant engine from the modules it reads.
+   *
+   * @param deps - the modules the composition root passes
+   */
   constructor(private readonly deps: GnapGrantsDeps) {
     deps.log.debug("Entering GnapGrants.constructor().");
     deps.log.debug("Leaving GnapGrants.constructor().");
@@ -235,6 +265,13 @@ class GnapGrants {
     }).filter(Boolean);
   }
 
+  /**
+   * Returns every value of a field on an application entry, as strings.
+   *
+   * @param app - the application entry
+   * @param name - the field's name
+   * @returns the values, empty when there are none
+   */
   fieldValues(app, name) {
     const { log } = this.deps;
     log.debug("Entering GnapGrants.fieldValues().");
@@ -251,6 +288,13 @@ class GnapGrants {
     return (Array.isArray(value) ? value : [value]).map(String);
   }
 
+  /**
+   * Returns the first value of a field on an application entry.
+   *
+   * @param app - the application entry
+   * @param name - the field's name
+   * @returns the value, or null
+   */
   field(app, name) {
     const { log } = this.deps;
     log.debug("Entering GnapGrants.field().");
@@ -272,6 +316,14 @@ class GnapGrants {
     return asId && asId !== authorizationServers.DEFAULT_ID ? '/' + asId : '';
   }
 
+  /**
+   * Returns the absolute grant endpoint URI of an authorization server on the
+   * realm the request arrived on.
+   *
+   * @param req - the request
+   * @param asId - the authorization server's name, or none for the default
+   * @returns the URI
+   */
   grantEndpointOf(req, asId) {
     const { log, baseUrlOf } = this.deps;
     log.debug("Entering GnapGrants.grantEndpointOf().");
@@ -279,6 +331,12 @@ class GnapGrants {
     return baseUrlOf(req) + this.asPath(asId) + '/gnap';
   }
 
+  /**
+   * Returns the base URL of the realm the request arrived on.
+   *
+   * @param req - the request
+   * @returns the base URL
+   */
   realmBase(req) {
     const { log, baseUrlOf } = this.deps;
     log.debug("Entering GnapGrants.realmBase().");
@@ -286,6 +344,14 @@ class GnapGrants {
     return baseUrlOf(req);
   }
 
+  /**
+   * Returns the discovery document's members (section 9) as the settings make
+   * them, before an authorization server profile changes any.
+   *
+   * @param req - the request
+   * @param asId - the authorization server's name
+   * @returns the members
+   */
   defaultCapabilities(req, asId) {
     const { log, config, keys, request, tokens, subject } = this.deps;
     log.debug("Entering GnapGrants.defaultCapabilities().");
@@ -321,6 +387,14 @@ class GnapGrants {
     };
   }
 
+  /**
+   * Returns an authorization server's discovery members: the defaults, as its
+   * profile changes them.
+   *
+   * @param req - the request
+   * @param asId - the authorization server's name
+   * @returns the members
+   */
   capabilities(req, asId) {
     const { log, authorizationServers } = this.deps;
     log.debug("Entering GnapGrants.capabilities().");
@@ -342,6 +416,15 @@ class GnapGrants {
   // A list capability, or null when the profile REMOVED the member — which the
   // OAuth side reads as "enforce nothing" (authorization_servers.js), and so
   // does this one.
+  /**
+   * Returns one list capability of an authorization server.
+   *
+   * @param req - the request
+   * @param asId - the authorization server's name
+   * @param member - the discovery member
+   * @returns the list, or null when the profile removed the member (enforce
+   *   nothing)
+   */
   capabilityList(req, asId, member) {
     const { log } = this.deps;
     log.debug("Entering GnapGrants.capabilityList().");
@@ -366,6 +449,12 @@ class GnapGrants {
   // (the user's requirement), found by the identity of its key, by its static
   // instance identifier, or by a dynamic one this AS issued.
   // ---------------------------------------------------------------------------
+  /**
+   * Lists the application entries that are GNAP client instances or resource
+   * servers — by kind, declared protocol, or a GNAP key or instance identifier.
+   *
+   * @returns the entries
+   */
   gnapApplications() {
     const { log, applications } = this.deps;
     log.debug("Entering GnapGrants.gnapApplications().");
@@ -437,6 +526,13 @@ class GnapGrants {
   // registered `gnapKeyReference` naming either the entry's public key or its
   // shared secret. The secret is SEALED at rest when keys persist
   // (common/keystore.js) and arrives opened through applications.get().
+  /**
+   * Resolves a key reference (section 7.1.1) against application entries: the
+   * entry's public key or its shared secret.
+   *
+   * @param reference - the reference
+   * @returns the key material, or null for an unknown reference
+   */
   resolveKeyReference(reference) {
     const { log, errorCodes, keystore } = this.deps;
     log.debug("Entering GnapGrants.resolveKeyReference().");
@@ -488,6 +584,13 @@ class GnapGrants {
   // `gnapMtlsTrustFor()`, the one combination of the realm's setting and the
   // entry's stricter-only override.
   // ---------------------------------------------------------------------------
+  /**
+   * Returns the mutual TLS trust model in force for an application entry
+   * (#107): the realm's setting with the entry's stricter-only override.
+   *
+   * @param app - the application entry, or null
+   * @returns `pki` or `pinned`
+   */
   mtlsTrustOf(app) {
     const { log, applications } = this.deps;
     log.debug("Entering GnapGrants.mtlsTrustOf().");
@@ -497,6 +600,13 @@ class GnapGrants {
   }
 
   // The same, for a caller named by the identifier a grant or token records.
+  /**
+   * Returns the mutual TLS trust model in force for the caller a grant or token
+   * records.
+   *
+   * @param identifier - the application's identifier
+   * @returns `pki` or `pinned`
+   */
   mtlsTrustOfIdentifier(identifier) {
     const { log, applications } = this.deps;
     log.debug("Entering GnapGrants.mtlsTrustOfIdentifier().");
@@ -613,6 +723,18 @@ class GnapGrants {
   // `member` is `{ reference, key, classId, display }` (gnap_request.ts).
   // `kind` is KIND_CLIENT or KIND_RS.
   // ---------------------------------------------------------------------------
+  /**
+   * Identifies who is calling — a client instance or a resource server — by its
+   * key, its entry and its proof of possession.
+   *
+   * @param req - the request
+   * @param body - what `gnap_proof.readBody()` read
+   * @param member - the `client` or resource server member: `{ reference, key,
+   *   classId, display }`
+   * @param kind - `KIND_CLIENT` or `KIND_RS`
+   * @param options - further options for the proof
+   * @returns `{ ok: true, app, descriptor, proof, ... }`, or a refusal
+   */
   async identifyCaller(req, body, member, kind, options?) {
     const { log, mode, applications, keys, proof, monitor } = this.deps;
     log.debug("Entering GnapGrants.identifyCaller(). kind=" + kind);
@@ -773,6 +895,13 @@ class GnapGrants {
   // ---------------------------------------------------------------------------
   // ACCESS POLICY for one requested token.
   // ---------------------------------------------------------------------------
+  /**
+   * Serializes a value as canonical JSON — sorted keys, and arrays of strings
+   * sorted — so equal rights compare equal.
+   *
+   * @param value - the value
+   * @returns the canonical JSON
+   */
   canonicalJson(value) {
     const { log } = this.deps;
     log.debug("Entering GnapGrants.canonicalJson().");
@@ -793,6 +922,13 @@ class GnapGrants {
     return JSON.stringify(value);
   }
 
+  /**
+   * Returns the consent token recorded for one access right: `gnap:` and a
+   * truncated SHA-256 of its canonical JSON.
+   *
+   * @param right - the access right
+   * @returns the digest token
+   */
   digestTokenOf(right) {
     const { log } = this.deps;
     log.debug("Entering GnapGrants.digestTokenOf().");
@@ -890,6 +1026,13 @@ class GnapGrants {
   // ---------------------------------------------------------------------------
   // RESOURCE SERVERS AND TOKEN FORMAT for a set of rights.
   // ---------------------------------------------------------------------------
+  /**
+   * Returns the resource servers a set of rights is for: by registered
+   * reference, or by a location under a resource server's registered URI.
+   *
+   * @param access - the access rights
+   * @returns the resource servers' identifiers
+   */
   resourceServersFor(access) {
     const { log, store } = this.deps;
     log.debug("Entering GnapGrants.resourceServersFor().");
@@ -1249,6 +1392,13 @@ class GnapGrants {
 
   // Section 4.1.2: strip what is not in the alphabet, compare
   // case-insensitively.
+  /**
+   * Normalises a user code (section 4.1.2): upper-cased, everything outside the
+   * alphabet stripped.
+   *
+   * @param input - the code as typed
+   * @returns the normalised code
+   */
   normaliseUserCode(input) {
     const { log } = this.deps;
     log.debug("Entering GnapGrants.normaliseUserCode().");
@@ -1377,6 +1527,17 @@ class GnapGrants {
   }
 
   // Section 4.2.3.
+  /**
+   * Computes the interaction hash of section 4.2.3 over the two nonces, the
+   * interaction reference and the grant endpoint URI.
+   *
+   * @param clientNonce - the client's nonce
+   * @param serverNonce - the AS's nonce
+   * @param interactRef - the interaction reference
+   * @param grantEndpoint - the grant endpoint URI
+   * @param hashMethod - the hash method (`sha-256` by default)
+   * @returns the base64url hash
+   */
   interactionHash(clientNonce, serverNonce, interactRef, grantEndpoint,
                            hashMethod?) {
     const { log, request } = this.deps;
@@ -1392,6 +1553,14 @@ class GnapGrants {
   // ---------------------------------------------------------------------------
   // A NEW GRANT REQUEST (section 2). Answers `{ status, body }` or a refusal.
   // ---------------------------------------------------------------------------
+  /**
+   * Handles a new grant request (section 2): identifies the client, decides the
+   * access, and answers with tokens, an interaction, or both.
+   *
+   * @param req - the request to the grant endpoint
+   * @param asId - the authorization server's name
+   * @returns `{ ok: true, status, body, grant }`, or a refusal
+   */
   async createGrant(req, asId) {
     const { log, nowSec, config, audit, authorizationServers, store, keys,
           proof, request, tokens, subject, monitor } = this.deps;
@@ -1673,6 +1842,18 @@ class GnapGrants {
   // Answers what the page does next: the finish method's redirect URI, or a
   // sentence.
   // ---------------------------------------------------------------------------
+  /**
+   * Records the resource owner's decision on a grant and follows the finish
+   * method.
+   *
+   * @param req - the request from the approval page
+   * @param grant - the grant
+   * @param session - the resource owner's session
+   * @param selection - `{ approve, tokens, subject }`, with the rights the
+   *   resource owner left ticked
+   * @returns what the page does next: `{ redirect }`, `{ pushed, why }` or `{
+   *   none }`
+   */
   async decide(req, grant, session, selection) {
     const { log, config, audit, consent, store, request, subject, monitor,
           signals } = this.deps;
@@ -1736,6 +1917,14 @@ class GnapGrants {
 
   // A decision already remembered for every requested right — the approval page
   // is skipped, the way the OAuth consent screen is.
+  /**
+   * Says whether a decision is already remembered for every right a grant
+   * requests, so the approval page is skipped.
+   *
+   * @param grant - the grant
+   * @param username - the resource owner
+   * @returns true when every right is remembered
+   */
   rememberedFor(grant, username) {
     const { log, config, consent } = this.deps;
     log.debug("Entering GnapGrants.rememberedFor().");
@@ -1767,6 +1956,14 @@ class GnapGrants {
 
   // Section 4.2: create the interaction reference, compute the hash, and follow
   // the finish method. Answers `{ redirect }`, `{ pushed }` or `{ none }`.
+  /**
+   * Finishes an interaction (section 4.2): creates the interaction reference,
+   * computes the hash and follows the finish method.
+   *
+   * @param req - the request
+   * @param grant - the grant
+   * @returns `{ redirect }`, `{ pushed, why }` or `{ none }`
+   */
   async finishInteraction(req, grant) {
     const { log, audit, store, transport, monitor } = this.deps;
     log.debug("Entering GnapGrants.finishInteraction(). grant=" + grant.id);
@@ -1899,6 +2096,14 @@ class GnapGrants {
   // `grantByContinuation()`, so the rule cannot drift from what rotation
   // actually does.
   // ---------------------------------------------------------------------------
+  /**
+   * Handles a continuation request (section 5), the continuation token spent
+   * once across the cluster and given back if it is still live afterwards.
+   *
+   * @param req - the request to the continuation URI
+   * @param grantId - the grant's identifier
+   * @returns the response to send, or a refusal
+   */
   async continueGrant(req, grantId) {
     const { log, store, request } = this.deps;
     log.debug("Entering GnapGrants.continueGrant(). method=" + req.method);
@@ -2178,6 +2383,12 @@ class GnapGrants {
     return { ok: true, status: 200, body: body };
   }
 
+  /**
+   * Revokes every live access token a grant issued, and its management token.
+   *
+   * @param grant - the grant
+   * @param why - the reason recorded
+   */
   revokeTokens(grant, why) {
     const { log, nowSec, stats, store } = this.deps;
     log.debug("Entering GnapGrants.revokeTokens().");
@@ -2231,6 +2442,15 @@ class GnapGrants {
   // here when the management token is still live afterwards, for the reason
   // continueGrant() gives.
   // ---------------------------------------------------------------------------
+  /**
+   * Handles token management (section 6): rotation or revocation, the
+   * management token spent once across the cluster and given back if it is
+   * still live afterwards.
+   *
+   * @param req - the request to the management URI
+   * @param handle - the management handle
+   * @returns the response to send, or a refusal
+   */
   async manageToken(req, handle) {
     const { log, store, proof } = this.deps;
     log.debug("Entering GnapGrants.manageToken(). method=" + req.method);
@@ -2490,6 +2710,12 @@ class GnapGrants {
 
   // What the composition root passes (#50, R2): the real modules, as the
   // module built its own instance from before.
+  /**
+   * Returns the real modules the instance was built from before the composition
+   * root (#50, R2) passed them.
+   *
+   * @returns the default dependencies
+   */
   static defaultDeps(): GnapGrantsDeps {
     helpers.log.debug("Entering GnapGrants.defaultDeps().");
     helpers.log.debug("Leaving GnapGrants.defaultDeps().");
@@ -2546,9 +2772,25 @@ const slot = new InstanceSlot<GnapGrants>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * The GNAP grant engine: every decision the authorization server makes, in one
+ * route-free library.
+ *
+ * @namespace
+ */
 export = {
   GnapGrants: GnapGrants,
+  /**
+   * Installs the instance the composition root built (#50, R2).
+   *
+   * @param instance - the instance the facades forward to
+   */
   installInstance: (instance: GnapGrants): void => slot.install(instance),
+  /**
+   * Says where the installed instance came from: `root`, `default`, or `none`.
+   *
+   * @returns the origin label
+   */
   instanceOrigin: (): string => slot.origin(),
   PROTOCOL: GnapGrants.PROTOCOL,
   KIND_CLIENT: GnapGrants.KIND_CLIENT,

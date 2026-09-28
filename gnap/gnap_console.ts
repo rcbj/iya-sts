@@ -90,10 +90,30 @@ const GNAP_ACTIONS = ['revoke-grant', 'delete-resource-set'];
 
 const STATES = ['processing', 'pending', 'approved', 'finalized'];
 
+/**
+ * What the two GNAP console pages and their `/admin-api` operations read and
+ * do: one view model and one action, rendered by both doors (rule 7).
+ *
+ * No route, no response and no markup: `gnap_admin.ts` draws the pages and
+ * `mgmt-api/admin_api.ts` sends the JSON.
+ */
 class GnapConsole {
+  /**
+   * The actions `gnapAction()` performs: `revoke-grant` and
+   * `delete-resource-set`.
+   */
   static readonly GNAP_ACTIONS = GNAP_ACTIONS;
+  /**
+   * The grant states, in order: `processing`, `pending`, `approved`,
+   * `finalized`.
+   */
   static readonly STATES = STATES;
 
+  /**
+   * Builds the view model from the modules it reads.
+   *
+   * @param deps - the modules the composition root passes
+   */
   constructor(private readonly deps: GnapConsoleDeps) {
     deps.log.debug("Entering GnapConsole.constructor().");
     deps.log.debug("Leaving GnapConsole.constructor().");
@@ -167,6 +187,15 @@ class GnapConsole {
   // their verification material, the grants it is holding and the resource
   // sets registered with it, and its settings.
   // -------------------------------------------------------------------------
+  /**
+   * Computes `GET /admin/gnap`: the authorization server's endpoints, its
+   * capabilities per authorization server profile, the token formats and their
+   * verification material, the grants held, the resource sets registered and
+   * the settings.
+   *
+   * @param req - the request; only its query is read
+   * @returns the page's facts
+   */
   gnapView(req: any) {
     const { log, baseUrlOf, store, adminViews, authorizationServers, grants,
             tokens, config } = this.deps;
@@ -253,6 +282,13 @@ class GnapConsole {
   // the union, because an entry an operator provisioned and nobody has used yet
   // is exactly what somebody looking at this page wants to see is idle.
   // -------------------------------------------------------------------------
+  /**
+   * Computes `GET /admin/gnap/monitor`: the applications that use GNAP —
+   * declared for it, observed speaking it, or counted — and what each has done.
+   *
+   * @param req - the request; only its query is read
+   * @returns the page's facts
+   */
   gnapMonitorView(req: any) {
     const { log, monitor, grants, applications, store, nowSec,
             adminViews } = this.deps;
@@ -356,6 +392,17 @@ class GnapConsole {
   // resolving, which is the operator's intent, and tokens already issued
   // against it keep the rights they carry.
   // -------------------------------------------------------------------------
+  /**
+   * Performs one of the two operator actions on GNAP state.
+   *
+   * `revoke-grant` goes the client's section 5.4 path (tokens revoked, grant
+   * finalized, CAEP told); `delete-resource-set` deletes the set outright,
+   * leaving issued tokens their rights.
+   *
+   * @param body - `{ action, grant }` or `{ action, reference }`
+   * @param context - who is acting and through which door
+   * @returns `{ ok: true, ... }`, or `{ ok: false, errors }`
+   */
   gnapAction(body: any, context?: ActionContext): any {
     const { log, store, grants, monitor, audit, loadSignals } = this.deps;
     log.debug("Entering GnapConsole.gnapAction(). action=" +
@@ -443,6 +490,12 @@ class GnapConsole {
 
   // What the composition root passes (#50, R2): the real modules, as the
   // module built its own instance from before.
+  /**
+   * Returns the real modules the instance was built from before the composition
+   * root (#50, R2) passed them.
+   *
+   * @returns the default dependencies
+   */
   static defaultDeps(): GnapConsoleDeps {
     helpers.log.debug("Entering GnapConsole.defaultDeps().");
     helpers.log.debug("Leaving GnapConsole.defaultDeps().");
@@ -484,9 +537,25 @@ const slot = new InstanceSlot<GnapConsole>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * What the GNAP console pages and their management API operations read and do:
+ * one model, two doors.
+ *
+ * @namespace
+ */
 export = {
   GnapConsole: GnapConsole,
+  /**
+   * Installs the instance the composition root built (#50, R2).
+   *
+   * @param instance - the instance the facades forward to
+   */
   installInstance: (instance: GnapConsole): void => slot.install(instance),
+  /**
+   * Says where the installed instance came from: `root`, `default`, or `none`.
+   *
+   * @returns the origin label
+   */
   instanceOrigin: (): string => slot.origin(),
   GNAP_ACTIONS: GnapConsole.GNAP_ACTIONS,
   STATES: GnapConsole.STATES,

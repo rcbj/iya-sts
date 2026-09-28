@@ -93,7 +93,17 @@ interface AuthenticateOptions {
   base?: string;
 }
 
+/**
+ * The resource server's side of GNAP: what RFC 9767 lets a resource server ask
+ * the AS, and how a presented token is judged — by the AS's record of it and by
+ * its own format, both of which must agree.
+ */
 class GnapRs {
+  /**
+   * Builds the resource server side from the modules it reads.
+   *
+   * @param deps - the modules the composition root passes
+   */
   constructor(private readonly deps: GnapRsDeps) {
     deps.log.debug("Entering GnapRs.constructor().");
     deps.log.debug("Leaving GnapRs.constructor().");
@@ -112,6 +122,13 @@ class GnapRs {
 
   // Whether a token record is live — the checks introspection and the RS
   // share.
+  /**
+   * Says why a token record is not live, or '' when it is — the checks
+   * introspection and the resource server share.
+   *
+   * @param record - the token's record in the store
+   * @returns a sentence, or ''
+   */
   liveProblem(record: any): string {
     const { log, tokens, nowSec, store } = this.deps;
     log.debug("Entering GnapRs.liveProblem().");
@@ -148,6 +165,14 @@ class GnapRs {
   // -------------------------------------------------------------------------
   // RFC 9767 SECTION 3.3.
   // -------------------------------------------------------------------------
+  /**
+   * Answers a resource server's token introspection request (RFC 9767 section
+   * 3.3), after authenticating the resource server by its key proof.
+   *
+   * @param req - the request to `POST /gnap/introspect`
+   * @returns `{ ok: true, status, body }`, `active: false` for a token that is
+   *   not live, or a refusal
+   */
   async introspect(req: any): Promise<any> {
     const { log, config, proof, request, grants, monitor, store,
             accessRights, audit } = this.deps;
@@ -243,6 +268,13 @@ class GnapRs {
   // -------------------------------------------------------------------------
   // RFC 9767 SECTION 3.4.
   // -------------------------------------------------------------------------
+  /**
+   * Registers a resource set for a resource server (RFC 9767 section 3.4),
+   * after authenticating it by its key proof.
+   *
+   * @param req - the request to `POST /gnap/resource`
+   * @returns `{ ok: true, status, body }` carrying the reference, or a refusal
+   */
   async register(req: any): Promise<any> {
     const { log, config, proof, request, grants, tokens, store, monitor,
             audit } = this.deps;
@@ -416,6 +448,17 @@ class GnapRs {
   // holds the record of, the record IS the answer: the format check re-derives
   // facts the store already holds.
   // -------------------------------------------------------------------------
+  /**
+   * Judges a presented GNAP token against this AS's own record of it — issued
+   * here, live, presented under the right scheme, with a proof by the key it is
+   * bound to. Synchronous.
+   *
+   * `ssf/ssf_auth.ts` takes this half only; `authenticate()` adds the format's
+   * own verification.
+   *
+   * @param req - the request presenting the token
+   * @returns `{ ok: true, record, value, ... }`, or a refusal
+   */
   presentation(req: any): any {
     const { log, store, keys, grants, proof, monitor,
             errorCodes } = this.deps;
@@ -501,6 +544,16 @@ class GnapRs {
 
   // `options`: `{ audience, requiredAccess, base }`. Answers `{ ok, record,
   // model, method }` or a refusal carrying the WWW-Authenticate reason.
+  /**
+   * Judges a presented GNAP token completely: `presentation()`, then the token
+   * verified in its own format against the audience and the access the request
+   * needs.
+   *
+   * @param req - the request presenting the token
+   * @param options - `{ audience, requiredAccess, base }`
+   * @returns `{ ok, record, model, method }`, or a refusal carrying the
+   *   WWW-Authenticate reason
+   */
   async authenticate(req: any, options?: AuthenticateOptions): Promise<any> {
     const { log, proof, monitor, errorCodes, tokens, nowSec } = this.deps;
     log.debug("Entering GnapRs.authenticate().");
@@ -561,6 +614,12 @@ class GnapRs {
 
   // What the composition root passes (#50, R2): the real modules, as the
   // module built its own instance from before.
+  /**
+   * Returns the real modules the instance was built from before the composition
+   * root (#50, R2) passed them.
+   *
+   * @returns the default dependencies
+   */
   static defaultDeps(): GnapRsDeps {
     helpers.log.debug("Entering GnapRs.defaultDeps().");
     helpers.log.debug("Leaving GnapRs.defaultDeps().");
@@ -601,9 +660,28 @@ const slot = new InstanceSlot<GnapRs>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * The resource server's side of GNAP (RFC 9767): introspection, resource
+ * registration, and judging a presented token.
+ *
+ * Route-free; its callers are `gnap.ts`, the demonstration resource server and
+ * the Shared Signals endpoints.
+ *
+ * @namespace
+ */
 export = {
   GnapRs: GnapRs,
+  /**
+   * Installs the instance the composition root built (#50, R2).
+   *
+   * @param instance - the instance the facades forward to
+   */
   installInstance: (instance: GnapRs): void => slot.install(instance),
+  /**
+   * Says where the installed instance came from: `root`, `default`, or `none`.
+   *
+   * @returns the origin label
+   */
   instanceOrigin: (): string => slot.origin(),
   introspect: slot.forward('introspect'),
   register: slot.forward('register'),

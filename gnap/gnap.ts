@@ -163,15 +163,44 @@ const STATUS_FOR: Record<string, number> = {
 const DEMO_TYPE = 'urn:mock-sts:gnap:demo';
 const DEMO_REFERENCE = 'mock-sts-gnap-demo';
 
+/**
+ * GNAP's HTTP surface: the grant, continuation, token management, discovery,
+ * RS-facing and demonstration resource server routes (RFC 9635, RFC 9767).
+ *
+ * Transport only: every decision is `gnap_grants.ts`'s and `gnap_rs.ts`'s.
+ */
 class GnapRoutes {
+  /**
+   * The access type the demonstration resource server at `/gnap/rs/resource`
+   * protects.
+   */
   static readonly DEMO_TYPE = DEMO_TYPE;
+  /**
+   * The registered reference the demonstration resource server's RS-first
+   * challenge hands out for its access.
+   */
   static readonly DEMO_REFERENCE = DEMO_REFERENCE;
 
+  /**
+   * Builds the routes from the modules they read.
+   *
+   * @param deps - the modules the composition root passes
+   */
   constructor(private readonly deps: GnapRoutesDeps) {
     deps.log.debug("Entering GnapRoutes.constructor().");
     deps.log.debug("Leaving GnapRoutes.constructor().");
   }
 
+  /**
+   * Sends a GNAP error response: `{ error: { code, description } }` with the
+   * given status, marked `no-store`.
+   *
+   * @param res - the response to answer on
+   * @param status - the HTTP status
+   * @param code - the GNAP error code
+   * @param description - the human-readable description
+   * @param extra - further members merged into the body
+   */
   // error-code: none — the helper's definition, not a call to it.
   gnapError(res: Res, status: number, code: string, description: string,
             extra?: object): void {
@@ -499,6 +528,14 @@ class GnapRoutes {
   }
 
   // Every route, in the order this file has always registered them.
+  /**
+   * Registers every GNAP route, in the order this file always registered them.
+   *
+   * Called by `common/protocol_stack.ts`; requiring this module registers
+   * nothing.
+   *
+   * @param app - the shared express application
+   */
   registerRoutes(app: RouteTable): void {
     const self = this;
     const { log, validation, errorCodes, grants, rs, tokens,
@@ -669,6 +706,12 @@ class GnapRoutes {
 
   // What the composition root passes (#50, R2): the real modules, as the
   // module built its own instance from before.
+  /**
+   * Returns the real modules the instance was built from before the composition
+   * root (#50, R2) passed them.
+   *
+   * @returns the default dependencies
+   */
   static defaultDeps(): GnapRoutesDeps {
     helpers.log.debug("Entering GnapRoutes.defaultDeps().");
     helpers.log.debug("Leaving GnapRoutes.defaultDeps().");
@@ -695,6 +738,12 @@ class GnapRoutes {
   // install GNAP's subject scope on the SSF streams. Run once, for whichever
   // instance is installed; the scope is `gnap_signals`' and needs nothing of
   // the instance itself.
+  /**
+   * Installs GNAP's subject scope on the Shared Signals streams, once, for
+   * whichever instance is installed.
+   *
+   * @param _instance - the installed instance (unused)
+   */
   static wire(_instance: GnapRoutes): void {
     helpers.log.debug("Entering GnapRoutes.wire().");
     signals.install();
@@ -731,8 +780,26 @@ require('./gnap_admin');
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * GNAP (RFC 9635) and its resource server connections (RFC 9767), as routes.
+ *
+ * This family is one require in the stack: it requires `gnap_interact.ts` and
+ * `gnap_admin.ts`, and the composition root registers the three in turn.
+ *
+ * @namespace
+ */
 export = {
+  /**
+   * Installs the instance the composition root built (#50, R2).
+   *
+   * @param instance - the instance the facades forward to
+   */
   installInstance: (instance: GnapRoutes): void => slot.install(instance),
+  /**
+   * Says where the installed instance came from: `root`, `default`, or `none`.
+   *
+   * @returns the origin label
+   */
   instanceOrigin: (): string => slot.origin(),
   registerRoutes: slot.forward('registerRoutes'),
   GnapRoutes: GnapRoutes,

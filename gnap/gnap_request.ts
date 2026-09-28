@@ -122,14 +122,46 @@ interface GnapRequestDeps {
   schemas: typeof schemas;
 }
 
+/**
+ * The shape of every document a GNAP client or resource server sends, checked
+ * once and turned into one normalised object the endpoints read.
+ *
+ * Shape here, policy elsewhere. Every refusal is `{ ok: false, errorCode, why,
+ * gnapError }`, naming the member at fault.
+ */
 class GnapRequest {
+  /**
+   * The access token flags a client may request: `bearer`.
+   */
   static readonly REQUEST_FLAGS = REQUEST_FLAGS;
+  /**
+   * The interaction start modes: `redirect`, `app`, `user_code` and
+   * `user_code_uri`.
+   */
   static readonly START_MODES = START_MODES;
+  /**
+   * The interaction finish methods: `redirect` and `push`.
+   */
   static readonly FINISH_METHODS = FINISH_METHODS;
+  /**
+   * The assertion formats of section 10.6: `id_token` and `saml2`.
+   */
   static readonly ASSERTION_FORMATS = ASSERTION_FORMATS;
+  /**
+   * The RFC 9493 Subject Identifier formats, each with the members it carries.
+   */
   static readonly SUB_ID_FORMATS = SUB_ID_FORMATS;
+  /**
+   * The interaction hash methods (section 2.5.2's `hash_method`) node can
+   * compute, from the IANA Named Information Hash Algorithm Registry.
+   */
   static readonly HASH_METHODS = HASH_METHODS;
 
+  /**
+   * Builds the request reader from the modules it reads.
+   *
+   * @param deps - the modules the composition root passes
+   */
   constructor(private readonly deps: GnapRequestDeps) {
     deps.log.debug("Entering GnapRequest.constructor().");
     deps.log.debug("Leaving GnapRequest.constructor().");
@@ -203,6 +235,15 @@ class GnapRequest {
   // compared by exact bytes and never normalised, so nothing here trims or
   // lower-cases it.
   // ---------------------------------------------------------------------------
+  /**
+   * Checks an access rights array (section 8): reference strings, or objects
+   * with a string `type` whose common dimensions have their JSON types. Nothing
+   * is trimmed or lower-cased.
+   *
+   * @param access - the array
+   * @param where - the member's name, for the refusal
+   * @returns `{ ok: true, access }`, or a refusal
+   */
   checkAccess(access, where) {
     const { log } = this.deps;
     log.debug("Entering GnapRequest.checkAccess(). where=" + where);
@@ -364,6 +405,14 @@ class GnapRequest {
   }
 
   // RFC 9493 section 3, in GNAP's spelling.
+  /**
+   * Checks a Subject Identifier (RFC 9493 section 3), in GNAP's spelling.
+   *
+   * @param subject - the identifier
+   * @param where - the member's name, for the refusal
+   * @param nested - true inside an `aliases` member
+   * @returns `{ ok: true }`, or a refusal
+   */
   checkSubId(subject, where, nested?) {
     const { log } = this.deps;
     log.debug("Entering GnapRequest.checkSubId(). where=" + where);
@@ -757,6 +806,12 @@ class GnapRequest {
   // ---------------------------------------------------------------------------
   // SECTION 2: A NEW GRANT REQUEST.
   // ---------------------------------------------------------------------------
+  /**
+   * Checks and normalises a new grant request (section 2).
+   *
+   * @param body - the parsed JSON body
+   * @returns `{ ok: true, request }`, or a refusal
+   */
   parseGrantRequest(body) {
     const { log } = this.deps;
     log.debug("Entering GnapRequest.parseGrantRequest().");
@@ -841,6 +896,14 @@ class GnapRequest {
   }
 
   // Section 5.1 / 5.2: an empty body (a poll) or `{ interact_ref }`.
+  /**
+   * Checks a continuation (sections 5.1 and 5.2): an empty body, a poll, or `{
+   * interact_ref }`.
+   *
+   * @param body - the parsed JSON body
+   * @param hadContent - whether the request carried a body
+   * @returns `{ ok: true, interactRef }` (null for a poll), or a refusal
+   */
   parseContinuation(body, hadContent?) {
     const { log } = this.deps;
     log.debug("Entering GnapRequest.parseContinuation().");
@@ -882,6 +945,12 @@ class GnapRequest {
   }
 
   // Section 5.3.
+  /**
+   * Checks and normalises a grant modification (section 5.3).
+   *
+   * @param body - the parsed JSON body
+   * @returns `{ ok: true, request }`, or a refusal
+   */
   parseModification(body) {
     const { log } = this.deps;
     log.debug("Entering GnapRequest.parseModification().");
@@ -943,6 +1012,14 @@ class GnapRequest {
   }
 
   // Section 6.1 / 6.1.1: no content, or `{ key }`.
+  /**
+   * Checks a token rotation body (sections 6.1 and 6.1.1): no content, or `{
+   * key }`.
+   *
+   * @param body - the parsed JSON body
+   * @param hadContent - whether the request carried a body
+   * @returns `{ ok: true, key }` (null for no new key), or a refusal
+   */
   parseRotation(body, hadContent?) {
     const { log } = this.deps;
     log.debug("Entering GnapRequest.parseRotation().");
@@ -990,6 +1067,12 @@ class GnapRequest {
   }
 
   // RFC 9767 section 3.3.
+  /**
+   * Checks an introspection request (RFC 9767 section 3.3).
+   *
+   * @param body - the parsed JSON body
+   * @returns `{ ok: true, request }`, or a refusal
+   */
   parseIntrospection(body) {
     const { log } = this.deps;
     log.debug("Entering GnapRequest.parseIntrospection().");
@@ -1032,6 +1115,12 @@ class GnapRequest {
   }
 
   // RFC 9767 section 3.4.
+  /**
+   * Checks a resource set registration (RFC 9767 section 3.4).
+   *
+   * @param body - the parsed JSON body
+   * @returns `{ ok: true, request }`, or a refusal
+   */
   parseRegistration(body) {
     const { log } = this.deps;
     log.debug("Entering GnapRequest.parseRegistration().");
@@ -1081,6 +1170,12 @@ class GnapRequest {
 
   // What the composition root passes (#50, R2): the real modules, as the
   // module built its own instance from before.
+  /**
+   * Returns the real modules the instance was built from before the composition
+   * root (#50, R2) passed them.
+   *
+   * @returns the default dependencies
+   */
   static defaultDeps(): GnapRequestDeps {
     helpers.log.debug("Entering GnapRequest.defaultDeps().");
     helpers.log.debug("Leaving GnapRequest.defaultDeps().");
@@ -1110,9 +1205,25 @@ const slot = new InstanceSlot<GnapRequest>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * The shape of every document a GNAP client or resource server sends, checked
+ * once and normalised.
+ *
+ * @namespace
+ */
 export = {
   GnapRequest: GnapRequest,
+  /**
+   * Installs the instance the composition root built (#50, R2).
+   *
+   * @param instance - the instance the facades forward to
+   */
   installInstance: (instance: GnapRequest): void => slot.install(instance),
+  /**
+   * Says where the installed instance came from: `root`, `default`, or `none`.
+   *
+   * @returns the origin label
+   */
   instanceOrigin: (): string => slot.origin(),
   REQUEST_FLAGS: GnapRequest.REQUEST_FLAGS,
   START_MODES: GnapRequest.START_MODES,

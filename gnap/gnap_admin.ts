@@ -93,7 +93,17 @@ const ACTION_FORM = vz.looseObject({
   csrf_token: vt.opt(vt.token)
 });
 
+/**
+ * The two GNAP console pages, Protocols -> GNAP (`/admin/gnap`) and Monitoring
+ * -> GNAP grants (`/admin/gnap/monitor`), drawn in the console's shell from one
+ * call to `gnap_console.ts` each.
+ */
 class GnapAdmin {
+  /**
+   * Builds the pages from the modules they read.
+   *
+   * @param deps - the modules the composition root passes
+   */
   constructor(private readonly deps: GnapAdminDeps) {
     deps.log.debug("Entering GnapAdmin.constructor().");
     deps.log.debug("Leaving GnapAdmin.constructor().");
@@ -137,6 +147,14 @@ class GnapAdmin {
   }
 
   // The three routes, in the order this file has always registered them.
+  /**
+   * Registers the three console routes, in the order this file always
+   * registered them.
+   *
+   * Called by `common/protocol_stack.ts` after `gnap_interact.ts`'s routes.
+   *
+   * @param app - the shared express application
+   */
   registerRoutes(app: RouteTable): void {
     const self = this;
     const { log, parseBody, errorCodes, validation, admin,
@@ -481,6 +499,12 @@ class GnapAdmin {
 
   // What the composition root passes (#50, R2): the real modules, as the
   // module built its own instance from before.
+  /**
+   * Returns the real modules the instance was built from before the composition
+   * root (#50, R2) passed them.
+   *
+   * @returns the default dependencies
+   */
   static defaultDeps(): GnapAdminDeps {
     helpers.log.debug("Entering GnapAdmin.defaultDeps().");
     helpers.log.debug("Leaving GnapAdmin.defaultDeps().");
@@ -516,8 +540,23 @@ const slot = new InstanceSlot<GnapAdmin>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * The two GNAP console pages: Protocols -> GNAP and Monitoring -> GNAP grants.
+ *
+ * @namespace
+ */
 export = {
+  /**
+   * Installs the instance the composition root built (#50, R2).
+   *
+   * @param instance - the instance the facades forward to
+   */
   installInstance: (instance: GnapAdmin): void => slot.install(instance),
+  /**
+   * Says where the installed instance came from: `root`, `default`, or `none`.
+   *
+   * @returns the origin label
+   */
   instanceOrigin: (): string => slot.origin(),
   registerRoutes: slot.forward('registerRoutes'),
   GnapAdmin: GnapAdmin
