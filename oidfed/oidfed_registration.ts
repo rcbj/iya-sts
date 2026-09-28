@@ -82,6 +82,9 @@ const SECRET_METHODS = Object.freeze(['client_secret_basic',
 const FEDERATION_ONLY = Object.freeze(['client_registration_types',
   'signed_jwks_uri', 'organization_name', 'display_name', 'description',
   'keywords', 'information_uri', 'organization_uri']);
+/**
+ * The scheduler job that removes registrations that have ended.
+ */
 const EXPIRE_JOB = 'oidfed.registrations-expire';
 
 interface RegistrationDeps {
@@ -109,14 +112,34 @@ interface Outcome {
   [key: string]: Json;
 }
 
+/**
+ * A relying party becoming a client through the federation (OpenID Federation
+ * for OpenID Connect 1.1, section 12): automatic registration at the
+ * authorization and PAR endpoints, and explicit registration.
+ */
 class OidfedRegistration {
+  /**
+   * See the module's `EXPIRE_JOB`.
+   */
   static readonly EXPIRE_JOB = EXPIRE_JOB;
 
+  /**
+   * Builds an instance over what it depends on.
+   *
+   * @param deps - settings, the error-code table, the federation keys, the
+   * lazily loaded entity, authorization server, application register, outbound
+   * requester, audit log and scheduler, and a clock
+   */
   constructor(private readonly deps: RegistrationDeps) {
     deps.log.debug("Entering OidfedRegistration.constructor().");
     deps.log.debug("Leaving OidfedRegistration.constructor().");
   }
 
+  /**
+   * Answers the real modules the composition root passes to the constructor.
+   *
+   * @returns the dependencies of a default instance
+   */
   static defaultDeps(): RegistrationDeps {
     helpers.log.debug("Entering OidfedRegistration.defaultDeps().");
     helpers.log.debug("Leaving OidfedRegistration.defaultDeps().");
@@ -174,6 +197,15 @@ class OidfedRegistration {
   // registration that has ended is no registration (12.3), so the same
   // client registers again.
   // -------------------------------------------------------------------------
+  /**
+   * Answers whether a request is one to register automatically (12.1.1.1.2):
+   * the client_id is a URL this OP has no live registration for, and the realm
+   * accepts automatic registration.
+   *
+   * @param req - the request
+   * @param clientId - the request's client_id
+   * @returns true when it should register automatically
+   */
   wants(req: Req, clientId: Json): boolean {
     const { log, applications } = this.deps;
     log.debug("Entering OidfedRegistration.wants().");
@@ -192,6 +224,19 @@ class OidfedRegistration {
   // Registration's body, which the walk starts from; `audience` the OP it
   // must name.
   // -------------------------------------------------------------------------
+  /**
+   * Resolves a relying party: its Trust Chain to one of this realm's anchors
+   * (the one presented, validated in full, or walked for) and its resolved
+   * `openid_relying_party` metadata.
+   *
+   * @param req - the request
+   * @param clientId - the relying party's Entity Identifier
+   * @param presented - a Trust Chain the request presented, if any
+   * @param configuration - an Explicit Registration's Entity Configuration, the
+   * walk's start
+   * @param audience - the OP that configuration must name
+   * @returns a promise of `{ ok, resolved, rp }`, or of a refusal
+   */
   async resolveRp(req: Req, clientId: string, presented: Json,
                   configuration?: string, audience?: string): Promise<Outcome> {
     const { log, oidfed } = this.deps;
@@ -244,6 +289,16 @@ class OidfedRegistration {
   // `jwks`, chain[1]); or a `jwks_uri`, fetched when a key is needed as any
   // registered client's is. `{ ok, jwks }` or `{ ok, jwksUri }`.
   // -------------------------------------------------------------------------
+  /**
+   * Answers the relying party's keys for its protocol role (5.2.1): `jwks` by
+   * value, a `signed_jwks_uri` verified against its Federation Entity Keys as
+   * its superior attested them, or a `jwks_uri`.
+   *
+   * @param rp - the resolved metadata
+   * @param resolved - the resolved chain
+   * @param clientId - the relying party's Entity Identifier
+   * @returns a promise of `{ ok, jwks }` or `{ ok, jwksUri }`, or of a refusal
+   */
   async rpKeys(rp: Json, resolved: Json, clientId: string): Promise<Outcome> {
     const { log, fedHttp, config } = this.deps;
     log.debug("Entering OidfedRegistration.rpKeys().");
@@ -334,6 +389,20 @@ class OidfedRegistration {
   // sent a second request with no `jti`, no `exp`, a `sub` and more, each of
   // which was accepted because the client was already registered.
   // -------------------------------------------------------------------------
+  /**
+   * Checks the claims of a registration proof (12.1.1.1, 12.1.1.2): audienced
+   * to this OP alone, issued by the relying party, with a `jti` and an `exp`; a
+   * request object names the RP as client_id and carries no `sub`, an
+   * assertion's `sub` is the RP.
+   *
+   * @param c - the proof's claims
+   * @param kind - `request` or `assertion`
+   * @param clientId - the relying party's Entity Identifier
+   * @param opId - this OP's Entity Identifier
+   * @param nowSec - the time now, in seconds
+   * @param skewS - the leeway, in seconds
+   * @returns the problem, or '' when there is none
+   */
   static proofClaimsProblem(c: Json, kind: string, clientId: string,
                             opId: string, nowSec: number,
                             skewS: number): string {
@@ -369,6 +438,17 @@ class OidfedRegistration {
   // `jti` and an `exp`. A request object names the RP as client_id and
   // carries no `sub`; an assertion's `sub` is the RP.
   // -------------------------------------------------------------------------
+  /**
+   * Verifies a registration proof, a request object or a `private_key_jwt`
+   * assertion, against the relying party's keys, then its claims.
+   *
+   * @param jwt - the proof
+   * @param kind - `request` or `assertion`
+   * @param keys - the relying party's keys
+   * @param clientId - the relying party's Entity Identifier
+   * @param opId - this OP's Entity Identifier
+   * @returns a promise of `{ ok, claims }`, or of a refusal
+   */
   async verifyProof(jwt: string, kind: string, keys: Json, clientId: string,
                     opId: string): Promise<Outcome> {
     const { log, config } = this.deps;
@@ -424,6 +504,16 @@ class OidfedRegistration {
   // The RP's resolved metadata as a registration: the federation-only members
   // taken off, the keys as resolved, and the token endpoint method checked —
   // automatic registration authenticates with a key or not at all (12.1).
+  /**
+   * Turns the relying party's resolved metadata into a registration: the
+   * federation-only members removed, the keys as resolved, and the token
+   * endpoint method checked.
+   *
+   * @param rp - the resolved metadata
+   * @param keys - the resolved keys
+   * @param type - `automatic` or `explicit`
+   * @returns `{ ok, doc }`, the registration, or a refusal
+   */
   registrationOf(rp: Json, keys: Json, type: string): Outcome {
     const { log } = this.deps;
     log.debug("Entering OidfedRegistration.registrationOf(). " + type);
@@ -489,6 +579,17 @@ class OidfedRegistration {
   // the proof, and registers; `{ ok }` or a refusal the endpoint answers
   // without redirecting.
   // -------------------------------------------------------------------------
+  /**
+   * Registers a relying party automatically (12.1): resolves it, verifies the
+   * proof and registers it.
+   *
+   * @param req - the request
+   * @param clientId - the relying party's Entity Identifier
+   * @param proof - `request` (a request object) or `clientAssertion` (a
+   * `private_key_jwt`, PAR only)
+   * @returns a promise of `{ ok }`, or of a refusal the endpoint answers
+   * without redirecting
+   */
   async automatic(req: Req, clientId: string, proof: Json): Promise<Outcome> {
     const { log, oidfed, oauth2 } = this.deps;
     log.debug("Entering OidfedRegistration.automatic(). " + clientId);
@@ -563,6 +664,17 @@ class OidfedRegistration {
   // `{ ok, jwt }` — the explicit-registration-response+jwt — or a refusal in
   // section 8.9's and RFC 7591's vocabulary.
   // -------------------------------------------------------------------------
+  /**
+   * Registers a relying party explicitly (12.2) from the body of a POST: an
+   * Entity Configuration, or a Trust Chain beginning with one.
+   *
+   * @param req - the request
+   * @param contentType - `application/entity-statement+jwt` or
+   * `application/trust-chain+json`
+   * @param body - the raw body
+   * @returns a promise of `{ ok, jwt }` (the explicit registration response),
+   * or of a refusal in section 8.9's and RFC 7591's vocabulary
+   */
   async explicit(req: Req, contentType: string, body: string):
       Promise<Outcome> {
     const { log, oidfed, oauth2, keys } = this.deps;
@@ -711,6 +823,12 @@ class OidfedRegistration {
   // correctness: `clientConfigOf()` already answers an ended one as unknown.
   // A cluster job per realm (`oidfed.registrations-expire`).
   // -------------------------------------------------------------------------
+  /**
+   * Removes each federated registration that has ended (12.3); housekeeping,
+   * since an ended one is already answered as unknown.
+   *
+   * @returns `{ removed }`
+   */
   expireRegistrations(): Json {
     const { log, applications } = this.deps;
     log.debug("Entering OidfedRegistration.expireRegistrations().");
@@ -729,6 +847,10 @@ class OidfedRegistration {
     return { removed: removed };
   }
 
+  /**
+   * Registers the `oidfed.registrations-expire` scheduler job, a cluster job
+   * per realm every hour.
+   */
   scheduleJobs(): void {
     const { log, scheduler } = this.deps;
     const self = this;
@@ -768,10 +890,23 @@ const slot = new InstanceSlot<OidfedRegistration>(
 
 slot.buildNowUnlessDeferred();
 
+/**
+ * A relying party becoming a client through the federation: automatic and
+ * explicit registration, and the removal of registrations that have ended.
+ * @namespace
+ */
 export = {
   OidfedRegistration: OidfedRegistration,
+  /**
+   * Installs the instance the composition root built and runs its
+   * wire step; a second install is refused.
+   */
   installInstance: (instance: OidfedRegistration): void =>
     slot.install(instance),
+  /**
+   * Says where the instance in use came from: `root`, `default` or
+   * `none`.
+   */
   instanceOrigin: (): string => slot.origin(),
   EXPIRE_JOB: EXPIRE_JOB,
   wants: slot.forward('wants'),

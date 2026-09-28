@@ -134,14 +134,34 @@ const CODE_MARK = 'STS-OIDFED-0029';
 const CODE_MARK_ISSUER = 'STS-OIDFED-0030';
 const CODE_DELEGATION = 'STS-OIDFED-0031';
 
+/**
+ * OpenID Federation 1.1 Trust Chains (4, 10) and the Trust Marks they carry
+ * (7.3): validating a chain, assembling one by walking `authority_hints`
+ * towards a configured Trust Anchor within bounds, and resolving the subject's
+ * metadata through it.
+ */
 class TrustChain {
+  /**
+   * The federation JWT `typ` values, `EntityStatement.TYP`.
+   */
   static readonly TYP = EntityStatement.TYP;
 
+  /**
+   * Builds an instance over what it depends on.
+   *
+   * @param deps - the logger, the clock and its leeway, the walk's limits, the
+   * fetcher, and the lookup of an entity this process answers for itself
+   */
   constructor(private readonly deps: TrustChainDeps) {
     deps.log.debug("Entering TrustChain.constructor().");
     deps.log.debug("Leaving TrustChain.constructor().");
   }
 
+  /**
+   * Answers the service logger, for a caller building the dependencies.
+   *
+   * @returns the logger
+   */
   static defaultLog(): Json {
     helpers.log.debug("Entering TrustChain.defaultLog().");
     helpers.log.debug("Leaving TrustChain.defaultLog().");
@@ -177,6 +197,19 @@ class TrustChain {
   //   options.audience   an Explicit Registration request's first statement
   //                      carries `aud` (Connect 1.1, 3.1.1); this is the OP
   //                      it must name.
+  /**
+   * Validates a Trust Chain (4, 10.2): every check of 10.2, then the
+   * constraints (6.2) and the subject's resolved metadata (6.1).
+   *
+   * @param jwts - the statements in chain order: the subject's Entity
+   * Configuration, the Subordinate Statements upwards, optionally the Trust
+   * Anchor's Entity Configuration
+   * @param anchors - the configured Trust Anchors
+   * @param options - `audience`: the OP an Explicit Registration request's
+   * first statement must name
+   * @returns the chain's claims, its Trust Anchor, its expiry (the least `exp`)
+   * and the resolved metadata; or a refusal with its code
+   */
   validate(jwts: Json, anchors: TrustAnchor[], options?: Json): Validated {
     const { log, nowSec, skewSec } = this.deps;
     const opts = options || {};
@@ -321,6 +354,16 @@ class TrustChain {
   // memory — a statement already obtained is answered from it, which is
   // both the saving and the loop detection of 10.1.
   // -------------------------------------------------------------------------
+  /**
+   * Obtains an entity's Entity Configuration, verified by its own keys (9,
+   * 3.2): in process for this service's own realms, fetched otherwise, and
+   * answered from the walk's memory when already obtained.
+   *
+   * @param entityId - the Entity Identifier
+   * @param walk - the walk's state: what it has seen and fetched
+   * @returns a promise of the verified configuration, or of why it could not be
+   * obtained
+   */
   async configurationOf(entityId: string, walk: Json): Promise<Json> {
     const { log, nowSec, skewSec } = this.deps;
     log.debug("Entering TrustChain.configurationOf(). " + entityId);
@@ -372,6 +415,17 @@ class TrustChain {
   // The Subordinate Statement a superior makes about `sub`, from the fetch
   // endpoint its (already verified) configuration names (8.1), verified by
   // the superior's keys and checked for who it is from and about.
+  /**
+   * Obtains the Subordinate Statement a superior makes about an entity from the
+   * fetch endpoint its verified configuration names (8.1), verified by the
+   * superior's keys and checked for who it is from and about.
+   *
+   * @param superior - the superior's verified configuration
+   * @param sub - the subject's Entity Identifier
+   * @param walk - the walk's state
+   * @returns a promise of the verified statement, or of why it could not be
+   * obtained
+   */
   async subordinateStatementOf(superior: Json, sub: string,
                                walk: Json): Promise<Json> {
     const { log, nowSec, skewSec } = this.deps;
@@ -556,6 +610,17 @@ class TrustChain {
   //                          fetched one, and the walk starts from its
   //                          authority_hints.
   //   options.audience       the `aud` that configuration carries.
+  /**
+   * Resolves an entity (10): walks to every configured Trust Anchor reachable,
+   * within the walk's bounds, validates each chain found and chooses the
+   * shortest valid one.
+   *
+   * @param entityId - the subject's Entity Identifier
+   * @param anchors - the Trust Anchors, possibly narrowed by the caller
+   * @param options - `configuration` (the subject's Entity Configuration handed
+   * over rather than fetched) and `audience`
+   * @returns a promise of the chosen chain, validated, or of why there was none
+   */
   async resolve(entityId: string, anchors: TrustAnchor[],
                 options?: Json): Promise<Validated> {
     const { log, nowSec, skewSec } = this.deps;
@@ -626,6 +691,15 @@ class TrustChain {
   // VALIDATE A TRUST MARK DELEGATION (7.2.2) against the owner named for its
   // type in the Trust Anchor's `trust_mark_owners`.
   // -------------------------------------------------------------------------
+  /**
+   * Validates a Trust Mark delegation (7.2.2) against the owner named for its
+   * type in the Trust Anchor's `trust_mark_owners`.
+   *
+   * @param delegation - the delegation JWT
+   * @param mark - the Trust Mark's claims
+   * @param owner - the owner's Entity Identifier and keys
+   * @returns `{ ok: true }`, or a refusal with its code
+   */
   validateDelegation(delegation: Json, mark: Json, owner: Json): Validated {
     const { log, nowSec, skewSec } = this.deps;
     log.debug("Entering TrustChain.validateDelegation().");
@@ -666,6 +740,19 @@ class TrustChain {
   // `federationTrusted`: also require the anchor to list the type and allow
   // the issuer (8.3.2, what a resolver may return).
   // -------------------------------------------------------------------------
+  /**
+   * Validates a Trust Mark (7.3) presented in an entity's configuration,
+   * against the issuer's keys established through its own chain.
+   *
+   * @param markJwt - the Trust Mark JWT
+   * @param subject - the entity presenting it
+   * @param anchorClaims - the Trust Anchor's Entity Configuration claims
+   * @param issuerJwks - the issuer's Federation Entity Keys
+   * @param federationTrusted - also require the anchor to list the type and
+   * allow the issuer
+   * @returns `{ ok, chain }` holding the mark's claims, or a refusal with its
+   * code
+   */
   validateTrustMark(markJwt: Json, subject: string, anchorClaims: Json,
                     issuerJwks: Json, federationTrusted: boolean): Validated {
     const { log, nowSec, skewSec } = this.deps;

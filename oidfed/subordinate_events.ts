@@ -120,11 +120,30 @@ interface SubordinateEvent {
 
 const REALM_PREFIX = 'realm:';
 
+/**
+ * What happened to each subordinate, kept for good (OpenID Federation
+ * Subordinate Events Endpoint, draft 01): an append-only history per
+ * subordinate in the realm's `ou=oidfed` register. A library of static methods.
+ */
 class SubordinateEvents {
+  /**
+   * The events recorded: the draft's six and this service's four
+   * (`reinstatement`, `constraints_update`, `trust_mark_issuance`,
+   * `trust_mark_revocation`).
+   */
   static readonly EVENTS = EVENTS;
+  /**
+   * The prefix of the key a realm of this service is recorded under.
+   */
   static readonly REALM_PREFIX = REALM_PREFIX;
 
   // The key a realm of this service is recorded under.
+  /**
+   * Answers the key a realm of this service is recorded under.
+   *
+   * @param realmId - the realm id
+   * @returns `realm:` and the id
+   */
   static realmKey(realmId: string): string {
     log.debug("Entering SubordinateEvents.realmKey().");
     log.debug("Leaving SubordinateEvents.realmKey().");
@@ -132,6 +151,12 @@ class SubordinateEvents {
   }
 
   // The realm id a key names, or '' for a registered subordinate's.
+  /**
+   * Answers the realm id a key names.
+   *
+   * @param key - a subordinate's key
+   * @returns the realm id, or '' for a registered subordinate's key
+   */
   static realmOfKey(key: string): string {
     log.debug("Entering SubordinateEvents.realmOfKey().");
     const out = String(key).indexOf(REALM_PREFIX) === 0
@@ -142,6 +167,14 @@ class SubordinateEvents {
 
   // An https (or http) URL, as the draft's `information_uri` may be; '' when
   // `value` is empty, and null when it is something else.
+  /**
+   * Checks a value as the draft's `information_uri`: an http or https URL with
+   * no user information, at most 2048 characters.
+   *
+   * @param value - the value
+   * @returns the URL, '' when the value is empty, or null when it is something
+   * else
+   */
   static informationUriOf(value: Json): string | null {
     log.debug("Entering SubordinateEvents.informationUriOf().");
     const text = String(value === undefined || value === null ? ''
@@ -172,6 +205,20 @@ class SubordinateEvents {
   // written, or null when the register could not be written — which is
   // logged, and never fails the act that caused it: the act happened.
   // -------------------------------------------------------------------------
+  /**
+   * Records one event about a subordinate.
+   *
+   * A failure to write is logged under `STS-OIDFED-0065` and never fails the
+   * act that caused it.
+   * @param key - the subordinate's key
+   * @param entityId - its Entity Identifier, where known
+   * @param event - one of `EVENTS`
+   * @param options - `description`, `informationUri`, `atMs` (default now) and
+   * `id` (default random)
+   * @returns the event as written, or null when the register could not be
+   * written
+   * @throws Error when `event` is not a subordinate event
+   */
   static record(key: string, entityId: string, event: string,
                 options?: Json): SubordinateEvent | null {
     log.debug("Entering SubordinateEvents.record(). " + event);
@@ -213,6 +260,13 @@ class SubordinateEvents {
   // earliest copy of an id a cluster recorded twice), in the order recorded
   // where two share a second.
   // -------------------------------------------------------------------------
+  /**
+   * Reads a subordinate's history, oldest first, each event once (the earliest
+   * copy of an id a cluster recorded twice).
+   *
+   * @param key - the subordinate's key
+   * @returns the events
+   */
   static history(key: string): SubordinateEvent[] {
     log.debug("Entering SubordinateEvents.history().");
     const byId: Record<string, SubordinateEvent> = {};
@@ -249,6 +303,12 @@ class SubordinateEvents {
   }
 
   // Whether anything was ever recorded about `key`.
+  /**
+   * Answers whether anything was ever recorded about a subordinate.
+   *
+   * @param key - the subordinate's key
+   * @returns true when it has a history
+   */
   static known(key: string): boolean {
     log.debug("Entering SubordinateEvents.known().");
     const out = OidfedStore.eventValues(String(key)).length > 0;
@@ -258,6 +318,12 @@ class SubordinateEvents {
 
   // The keys of every realm of this service recorded in the ambient realm's
   // register — live or deleted — for mapping an identifier back to one.
+  /**
+   * Lists the keys of every realm of this service recorded in the ambient
+   * realm's register, live or deleted.
+   *
+   * @returns the keys
+   */
   static realmKeys(): string[] {
     log.debug("Entering SubordinateEvents.realmKeys().");
     const out: string[] = [];
@@ -273,6 +339,13 @@ class SubordinateEvents {
 
   // A value as canonical JSON — members sorted at every level — so two
   // records that say the same thing compare equal however they were built.
+  /**
+   * Writes a value as canonical JSON, members sorted at every level, so two
+   * records that say the same thing compare equal.
+   *
+   * @param value - the value
+   * @returns the JSON text
+   */
   static canonical(value: Json): string {
     log.debug("Entering SubordinateEvents.canonical().");
     // No Entering/Leaving pair in walk(): it runs once per member of every
@@ -303,6 +376,15 @@ class SubordinateEvents {
   // (`oidfed.ts`'s register record: jwks, metadata, metadataPolicy with its
   // crit, constraints) — one per part that changed, in the draft's order.
   // -------------------------------------------------------------------------
+  /**
+   * Lists the update events between two records of one registered subordinate,
+   * one per part that changed, in the draft's order.
+   *
+   * @param before - the record before
+   * @param after - the record after
+   * @returns the events: `metadata_policy_update`, `metadata_update`,
+   * `jwks_update` and `constraints_update`, as they apply
+   */
   static updatesBetween(before: Json, after: Json): string[] {
     log.debug("Entering SubordinateEvents.updatesBetween().");
     const b = before || {};
@@ -357,6 +439,14 @@ class SubordinateEvents {
     return out;
   }
 
+  /**
+   * Records a realm's creation as its registration, in the default realm's
+   * register, while the default topology makes every realm a subordinate.
+   *
+   * @param realmId - the realm id
+   * @param createdAt - when it was created, which fixes the event's id on every
+   * node
+   */
   static realmCreated(realmId: string, createdAt: Json): void {
     log.debug("Entering SubordinateEvents.realmCreated(). " + realmId);
     if (!SubordinateEvents.inDefaultTopology(realmId)) {
@@ -376,6 +466,14 @@ class SubordinateEvents {
     log.debug("Leaving SubordinateEvents.realmCreated().");
   }
 
+  /**
+   * Records a realm's deletion as its revocation, in the default realm's
+   * register, while the default topology makes every realm a subordinate.
+   *
+   * @param realmId - the realm id
+   * @param createdAt - when it was created, which fixes the event's id on every
+   * node
+   */
   static realmRemoved(realmId: string, createdAt: Json): void {
     log.debug("Entering SubordinateEvents.realmRemoved(). " + realmId);
     if (!SubordinateEvents.inDefaultTopology(realmId)) {
@@ -395,6 +493,13 @@ class SubordinateEvents {
 
   // The ambient realm's Federation Entity Keys changed — a key published or
   // revoked (`federation_keys.ts`).
+  /**
+   * Records a change to a realm's Federation Entity Keys as a `jwks_update`, in
+   * the default realm's register.
+   *
+   * @param realmId - the realm id
+   * @param what - the event's description
+   */
   static realmKeysChanged(realmId: string, what: string): void {
     log.debug("Entering SubordinateEvents.realmKeysChanged(). " + realmId);
     if (!SubordinateEvents.inDefaultTopology(realmId)) {

@@ -63,6 +63,10 @@ import PagePointer = require('./page_pointer');
 type Json = any;
 type Req = any;
 
+/**
+ * The endpoint's path segment under `/oidfed`, and the name its page pointers
+ * are bound to.
+ */
 const ENDPOINT = 'extended-list';
 
 interface ExtendedListingDeps {
@@ -80,12 +84,27 @@ interface Outcome {
   body?: Json;
 }
 
+/**
+ * The Extended Subordinate Listing (draft 03) at `/oidfed/extended-list`: the
+ * realm's subordinates, filtered and paged, with what a consumer would
+ * otherwise fetch one statement at a time.
+ */
 class ExtendedListing {
+  /**
+   * Builds an instance over what it depends on.
+   *
+   * @param deps - the logger, settings and realms
+   */
   constructor(private readonly deps: ExtendedListingDeps) {
     deps.log.debug("Entering ExtendedListing.constructor().");
     deps.log.debug("Leaving ExtendedListing.constructor().");
   }
 
+  /**
+   * Answers the real modules the composition root passes to the constructor.
+   *
+   * @returns the dependencies of a default instance
+   */
   static defaultDeps(): ExtendedListingDeps {
     helpers.log.debug("Entering ExtendedListing.defaultDeps().");
     helpers.log.debug("Leaving ExtendedListing.defaultDeps().");
@@ -100,6 +119,13 @@ class ExtendedListing {
   }
 
   // Every value of a parameter: repeated, comma- or space-separated.
+  /**
+   * Reads every value of a parameter: repeated, comma- or space-separated, each
+   * once.
+   *
+   * @param v - the parameter's value or values
+   * @returns the values
+   */
   static values(v: Json): string[] {
     helpers.log.debug("Entering ExtendedListing.values().");
     const out: string[] = [];
@@ -117,6 +143,13 @@ class ExtendedListing {
 
   // A single-valued parameter as its one value; undefined when absent, and
   // null when it was given twice (which is no one value).
+  /**
+   * Reads a single-valued parameter.
+   *
+   * @param v - the parameter's value or values
+   * @returns its one value, undefined when absent, or null when it was given
+   * more than once
+   */
   static single(v: Json): string | null | undefined {
     helpers.log.debug("Entering ExtendedListing.single().");
     if (v === undefined) {
@@ -129,6 +162,13 @@ class ExtendedListing {
 
   // The page size: `limit` where it is a positive integer, never more than
   // `oidfed.listPageMax`; null for a `limit` that is not one.
+  /**
+   * Answers the page size: `limit` where it is a positive integer, never more
+   * than `oidfed.listPageMax`.
+   *
+   * @param limit - the `limit` parameter
+   * @returns the size, or null for a `limit` that is not a positive integer
+   */
   pageSize(limit: Json): number | null {
     const { log, config } = this.deps;
     log.debug("Entering ExtendedListing.pageSize().");
@@ -150,6 +190,15 @@ class ExtendedListing {
   // THE ANSWER to one request, `{ ok, body }` or a refusal. `entity` is the
   // `Oidfed` instance serving the realm.
   // -------------------------------------------------------------------------
+  /**
+   * Answers one request to the endpoint.
+   *
+   * @param entity - the `Oidfed` instance serving the realm
+   * @param req - the request
+   * @param query - the query's values
+   * @returns a promise of `{ ok, body }`, or of a refusal with its code, error
+   * and status
+   */
   async answer(entity: Json, req: Req, query: Json): Promise<Outcome> {
     const { log, realms } = this.deps;
     log.debug("Entering ExtendedListing.answer().");
@@ -340,9 +389,22 @@ const slot = new InstanceSlot<ExtendedListing>(
 
 slot.buildNowUnlessDeferred();
 
+/**
+ * The Extended Subordinate Listing: the realm's subordinates, paged, with their
+ * statements' parts, at `/oidfed/extended-list`.
+ * @namespace
+ */
 export = {
   ExtendedListing: ExtendedListing,
+  /**
+   * Installs the instance the composition root built and runs its
+   * wire step; a second install is refused.
+   */
   installInstance: (instance: ExtendedListing): void => slot.install(instance),
+  /**
+   * Says where the instance in use came from: `root`, `default` or
+   * `none`.
+   */
   instanceOrigin: (): string => slot.origin(),
   ENDPOINT: ENDPOINT,
   values: ExtendedListing.values,

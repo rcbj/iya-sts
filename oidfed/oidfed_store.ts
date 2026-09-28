@@ -103,10 +103,27 @@ interface Entry {
   updatedAt: number;
 }
 
+/**
+ * The OpenID Federation register: every entry under `ou=oidfed` in the ambient
+ * realm's directory tree, one class whose kind says what it records. A library
+ * of static methods that holds nothing in memory.
+ */
 class OidfedStore {
+  /**
+   * The kinds of entry: keys, subordinate, anchor, mark-type, issued-mark,
+   * held-mark, mark-policy, events, suspension and collection.
+   */
   static readonly KINDS = KINDS;
 
   // The digest an entry is named by.
+  /**
+   * Answers the digest an entry is named by: SHA-256 in hex, cut to 32
+   * characters.
+   *
+   * @param value - what the entry is about: an Entity Identifier, a type or a
+   * JWT
+   * @returns the digest
+   */
   static digest(value: string): string {
     log.debug("Entering OidfedStore.digest().");
     const out = nodeCrypto.createHash('sha256').update(String(value), 'utf8')
@@ -116,6 +133,14 @@ class OidfedStore {
   }
 
   // The `cn` of the entry of `kind` about `key`.
+  /**
+   * Answers the `cn` of the entry of a kind about a key.
+   *
+   * @param kind - one of `KINDS`
+   * @param key - what the entry is about
+   * @returns the kind's prefix and the key's digest, or the kind itself for a
+   * realm's one `keys` or `collection` entry
+   */
   static cnOf(kind: string, key: string): string {
     log.debug("Entering OidfedStore.cnOf(). " + kind);
     log.debug("Leaving OidfedStore.cnOf().");
@@ -127,6 +152,12 @@ class OidfedStore {
 
   // A generalized time ("20260923120000Z" or with a fraction) as epoch ms;
   // 0 when there is none.
+  /**
+   * Reads a generalized time as epoch milliseconds.
+   *
+   * @param values - the attribute's value or values
+   * @returns the time, or 0 when there is none
+   */
   static timeOf(values: Json): number {
     log.debug("Entering OidfedStore.timeOf().");
     const raw = String((Array.isArray(values) ? values[0] : values) || '');
@@ -161,6 +192,12 @@ class OidfedStore {
   }
 
   // Every entry of `kind` in the ambient realm, oldest first.
+  /**
+   * Lists every entry of a kind in the ambient realm, oldest first.
+   *
+   * @param kind - one of `KINDS`
+   * @returns the entries: cn, kind, Entity Identifier, data and times
+   */
   static entries(kind: string): Entry[] {
     log.debug("Entering OidfedStore.entries(). " + kind);
     const all = credentials.oidfedStore('listOidfedEntries', []) || [];
@@ -179,6 +216,13 @@ class OidfedStore {
   }
 
   // The entry of `kind` about `key`, or null.
+  /**
+   * Reads the entry of a kind about a key.
+   *
+   * @param kind - one of `KINDS`
+   * @param key - what the entry is about
+   * @returns the entry, or null
+   */
   static get(kind: string, key: string): Entry | null {
     log.debug("Entering OidfedStore.get(). " + kind);
     const cn = OidfedStore.cnOf(kind, key);
@@ -190,6 +234,15 @@ class OidfedStore {
   }
 
   // Write the entry of `kind` about `key` — created, or replaced whole.
+  /**
+   * Writes the entry of a kind about a key, created or replaced whole.
+   *
+   * @param kind - one of `KINDS`
+   * @param key - what the entry is about
+   * @param entityId - the Entity Identifier it concerns, if any
+   * @param data - the record, stored as one JSON value
+   * @returns true when the directory wrote it
+   */
   static put(kind: string, key: string, entityId: string,
              data: Json): boolean {
     log.debug("Entering OidfedStore.put(). " + kind);
@@ -208,6 +261,13 @@ class OidfedStore {
     return ok;
   }
 
+  /**
+   * Deletes the entry of a kind about a key.
+   *
+   * @param kind - one of `KINDS`
+   * @param key - what the entry is about
+   * @returns true when the directory deleted it
+   */
   static remove(kind: string, key: string): boolean {
     log.debug("Entering OidfedStore.remove(). " + kind);
     const ok = !!credentials.oidfedStore('deleteOidfedEntry',
@@ -222,6 +282,12 @@ class OidfedStore {
   // redaction of a key table's private keys (`withheldKeyTableValues()`)
   // applies to it row by row, as it does to a federation relationship's.
   // -------------------------------------------------------------------------
+  /**
+   * Reads the rows of the realm's Federation Entity Key table, one JSON value
+   * each.
+   *
+   * @returns the rows
+   */
   static keyRows(): Json[] {
     log.debug("Entering OidfedStore.keyRows().");
     const all = credentials.oidfedStore('listOidfedEntries', []) || [];
@@ -260,6 +326,13 @@ class OidfedStore {
     return hit;
   }
 
+  /**
+   * Reads a subordinate's event log: the values of the `events` entry about its
+   * key.
+   *
+   * @param key - the subordinate's key
+   * @returns each event's JSON text
+   */
   static eventValues(key: string): string[] {
     log.debug("Entering OidfedStore.eventValues().");
     const stored = OidfedStore.rawEntry(OidfedStore.cnOf(KINDS.EVENTS, key));
@@ -269,6 +342,14 @@ class OidfedStore {
     return out;
   }
 
+  /**
+   * Appends one event to a subordinate's log, never replacing a value.
+   *
+   * @param key - the subordinate's key
+   * @param entityId - its Entity Identifier, if any
+   * @param value - the event's JSON text
+   * @returns true when the directory wrote it
+   */
   static appendEvent(key: string, entityId: string, value: string): boolean {
     log.debug("Entering OidfedStore.appendEvent().");
     const values = OidfedStore.eventValues(key);
@@ -291,6 +372,12 @@ class OidfedStore {
     return ok;
   }
 
+  /**
+   * Writes the realm's Federation Entity Key table, one value per row.
+   *
+   * @param rows - the rows
+   * @returns true when the directory wrote it
+   */
   static writeKeyRows(rows: Json[]): boolean {
     log.debug("Entering OidfedStore.writeKeyRows(). " + rows.length);
     const attributes: Json = {
