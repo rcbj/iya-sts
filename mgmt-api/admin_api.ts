@@ -3885,7 +3885,7 @@ class AdminApi {
         operationId: 'getWorkerPools',
         summary: 'The request, hosted-surface and post-quantum worker ' +
                  'pools of this node',
-        description: 'Always `generatedAt`, `host`, `pid` (the front ' +
+        description: 'Always `generatedAt`, `node`, `pid` (the front ' +
                      'process that answered), `scope` (`node`) and ' +
                      '`scopeText`; then `pools`, three of them, `id` ' +
                      '`request`, `surface` and `post-quantum`, each with ' +
@@ -3913,17 +3913,43 @@ class AdminApi {
                      'with the same figures — and `unanswered`, and its ' +
                      'pool-level figures are their totals. Every count is ' +
                      'since the process started. THE FIGURES ARE THIS ' +
-                     'NODE\'S: another node of a cluster has pools of its ' +
-                     'own. A service operation: a realm\'s own ' +
-                     'administrator is refused it.',
+                     'NODE\'S at the top level (`node` names it; never a ' +
+                     'host or an address). In a cluster, `nodes` has a ' +
+                     'section per node — this one live, every other from ' +
+                     'the snapshot it writes every 15 s, each with ' +
+                     '`name`, `self`, `state` (`live`, `stale` past 45 s, ' +
+                     '`gone` from cluster membership, `no-snapshot`), ' +
+                     '`stateText`, `ageSeconds` and `view` — and `totals` ' +
+                     'sums each pool over the nodes not gone; `cluster` ' +
+                     'says whether there is one. `answeredBy` names the ' +
+                     'node that answered (#332). A service operation: a ' +
+                     'realm\'s own administrator is refused it.',
         mirrors: 'GET /admin/worker-pools',
+        parameters: [
+          { name: 'node', in: 'query', required: false,
+            schema: { type: 'string' },
+            description: 'A cluster node\'s NAME (`cluster.nodeName`, ' +
+                         'node-a, node-b, …), to answer about that node ' +
+                         'alone: its view at the top, `nodes` holding its ' +
+                         'one section. An unknown name is 404 with the ' +
+                         'names there are (#332).' }
+        ],
         responseDescription: 'The three pools.',
         responseSchema: { type: 'object',
-          description: '`generatedAt`, `host`, `pid`, `scope`, `scopeText` ' +
-                       'and `pools`.' },
+          description: '`generatedAt`, `node`, `pid`, `scope`, `scopeText`, ' +
+                       '`pools`, `answeredBy`, `state`, `cluster`, `nodes` ' +
+                       'and `totals`.' },
         handler: function (req, res) {
           log.debug("Entering the management API worker pools endpoint.");
-          workerPoolsAdmin.workerPoolsView().then(function (view) {
+          workerPoolsAdmin.workerPoolsView({ node: req.query && req.query.node
+            ? String(req.query.node) : '' }).then(function (view) {
+            if (view.notFound) {
+              errorCodes.mark(res, 'STS-CORE-0126');
+              self.sendJson(res, 404, { ok: false, errors: [
+                'There is no node named ' + view.notFound + '.'],
+                nodes: view.nodeNames });
+              return;
+            }
             self.sendJson(res, 200, view);
           }).catch(function (e) {
             log.debug("Caught in the management API worker pools " +
@@ -3949,7 +3975,7 @@ class AdminApi {
         operationId: 'getNodeHealth',
         summary: 'The CPU and memory of this node\'s container, and the ' +
                  'Node.js memory of each of its processes',
-        description: 'Always `generatedAt`, `host`, `pid` (the front ' +
+        description: 'Always `generatedAt`, `node`, `pid` (the front ' +
                      'process that answered), `scope` (`node`), ' +
                      '`scopeText` and `cgroup` (the cgroup v2 directory ' +
                      'read, or null). `cpu`: `available`, and either ' +
@@ -3983,19 +4009,46 @@ class AdminApi {
                      '`machine`: `os.loadavg()`, `os.totalmem()`, ' +
                      '`os.freemem()` and the CPU count, which describe the ' +
                      'machine (on Fargate the micro-VM) and NOT the ' +
-                     'container. THE FIGURES ARE THIS NODE\'S: another ' +
-                     'node of a cluster is another container. A service ' +
+                     'container. THE TOP-LEVEL FIGURES ARE THIS NODE\'S ' +
+                     '(`node` names it; never a host or an address). In a ' +
+                     'cluster, `nodes` has a section per node — this one ' +
+                     'live, every other from the snapshot it writes every ' +
+                     '15 s, each with `name`, `self`, `state` (`live`, ' +
+                     '`stale` past 45 s, `gone` from cluster membership, ' +
+                     '`no-snapshot`), `stateText`, `ageSeconds` and `view` ' +
+                     '— and `totals` sums container memory and its limit, ' +
+                     'CPU and the processes over the nodes not gone; ' +
+                     '`cluster` says whether there is one. `answeredBy` ' +
+                     'names the node that answered (#332). A service ' +
                      'operation: a realm\'s own administrator is refused ' +
                      'it.',
         mirrors: 'GET /admin/node-health',
+        parameters: [
+          { name: 'node', in: 'query', required: false,
+            schema: { type: 'string' },
+            description: 'A cluster node\'s NAME (`cluster.nodeName`, ' +
+                         'node-a, node-b, …), to answer about that node ' +
+                         'alone: its view at the top, `nodes` holding its ' +
+                         'one section. An unknown name is 404 with the ' +
+                         'names there are (#332).' }
+        ],
         responseDescription: 'The container and its processes.',
         responseSchema: { type: 'object',
-          description: '`generatedAt`, `host`, `pid`, `scope`, `scopeText`, ' +
-                       '`cgroup`, `cpu`, `memory`, `processes`, `ecs` and ' +
-                       '`machine`.' },
+          description: '`generatedAt`, `node`, `pid`, `scope`, `scopeText`, ' +
+                       '`cgroup`, `cpu`, `memory`, `processes`, `ecs`, ' +
+                       '`machine`, `answeredBy`, `state`, `cluster`, ' +
+                       '`nodes` and `totals`.' },
         handler: function (req, res) {
           log.debug("Entering the management API node health endpoint.");
-          nodeHealthAdmin.nodeHealthView().then(function (view) {
+          nodeHealthAdmin.nodeHealthView({ node: req.query && req.query.node
+            ? String(req.query.node) : '' }).then(function (view) {
+            if (view.notFound) {
+              errorCodes.mark(res, 'STS-CORE-0126');
+              self.sendJson(res, 404, { ok: false, errors: [
+                'There is no node named ' + view.notFound + '.'],
+                nodes: view.nodeNames });
+              return;
+            }
             self.sendJson(res, 200, view);
           }).catch(function (e) {
             log.debug("Caught in the management API node health " +

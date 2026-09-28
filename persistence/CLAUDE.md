@@ -1231,6 +1231,23 @@ and not finished). This module's `realms.onRetire()` hook is a `mark` that
 flushes, so the row and its change-log row are committed before `retire()`
 ends anything. The ldif driver needs nothing: it writes the rows as JSON.
 
+### Each node's snapshot is a table of its own (#332, schema version 11)
+
+`sts_node_snapshots` holds each cluster node's latest Monitoring → Worker
+Pools and → Node Health views, one row per node NAME, overwritten every
+fifteen seconds by `cluster/node_snapshots.ts`'s per-process job and read by
+whichever node draws those pages. The driver's `putNodeSnapshot()` (one
+upsert at the database's clock) and `nodeSnapshots()` (every row, at most 64,
+with the database's `now`) are the whole interface, reached through
+`clusterStore()`; memory and ldif have neither, and the pages say there is
+no cluster store. **Not `sts_cluster_nodes.info`**, which is where another
+node's cache figures ride: that column is rewritten on every heartbeat and
+read, for every retained row, on every heartbeat — a snapshot is kilobytes,
+and the heartbeat is what a node's life depends on. The write is not fenced:
+it is a report, not state anything acts on, and its age is drawn.
+`schema.sql` adds it with `CREATE TABLE IF NOT EXISTS`, and the grants on
+every table in the schema cover it.
+
 ### The schema version moved to 2
 
 `sts_keys` is the fourth table and the first with a `PRIMARY KEY` that is a realm

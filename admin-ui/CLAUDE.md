@@ -6677,3 +6677,37 @@ section F the preload.
 `GET /admin-api/node-health` answers the same `nodeHealthView()` (rule 7); a
 view that could not be built is `STS-CORE-0124`.
 `tests/vendored/sts_node_health.js` is the HTTP half.
+
+---
+
+## EVERY CLUSTER NODE ON BOTH PAGES (#332, 2026-09-28)
+
+`/admin/worker-pools` and `/admin/node-health`, with their API operations,
+draw every node of a cluster by NAME: this node's section from its live view,
+every other node's from the snapshot its front process writes to the shared
+store every fifteen seconds (`cluster/node_snapshots.ts`, `cluster/CLAUDE.md`
+*Every node on two pages*), each with its age by the database's clock and
+marked `stale` (past 45 s), `gone` (membership has no live row by the name)
+or `no-snapshot`, never dropped — and the cluster's totals above them:
+Worker Pools sums each pool's current, busy and free workers, forks, crashes
+and failed starts; Node Health sums container memory against the summed
+limits (only when every node has one), CPU against the summed CPUs, and the
+processes and their memory. Totals are over the nodes not gone.
+
+* **The answer's top level is still one node's view**, so everything that read
+  it before reads it now: this node's by default, and with `?node=<name>` that
+  node's, `nodes` holding its one section and `state` its state. An unknown
+  name is 404 with the names there are (`STS-CORE-0126`). `answeredBy` names
+  the node that answered.
+* **`host` is gone from both views**, replaced by `node`; no host name or
+  address is on either page or in either answer (IPv4 literals are scrubbed).
+* **Another node's sections carry its name in their anchors**
+  (`id="node-b-cpu"`), so this node's `id="cpu"` and `id="pool-request"` stay
+  unique and the pages' HTTP jobs still find them.
+* **With no cluster the page is what it was**, with a sentence saying there
+  is no cluster; a snapshot read that fails draws this node alone and says so
+  (`STS-CORE-0127`).
+
+`tests/node_snapshots.js` holds it in process; the two `local: true` jobs hold
+it over HTTP, and in the `cluster` mode wait for both nodes to be live.
+

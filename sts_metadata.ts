@@ -6702,8 +6702,11 @@ const ENDPOINTS: EndpointEntry[] = [
           'maximum and initial size, how many crashed (and never started) ' +
           'against how many were stopped, and its average response time. A ' +
           'pool that is off says so. Always drawn by the front process, ' +
-          'which asks each request worker for its own post-quantum pool; ' +
-          'the figures are this node\'s. A service page: a realm ' +
+          'which asks each request worker for its own post-quantum pool. ' +
+          'In a cluster, a section per node by name (#332) — this one ' +
+          'live, every other from its snapshot in the shared store, marked ' +
+          'stale or gone — and the totals; ?node= narrows it to one. A ' +
+          'service page: a realm ' +
           'administrator is refused it. Add ?format=json, or ' +
           'GET /admin-api/worker-pools.' },
   { path: '/admin/node-health', group: 'Admin',
@@ -6720,8 +6723,11 @@ const ENDPOINTS: EndpointEntry[] = [
           'job is read from /proc and says so) — with the total; the ECS ' +
           'task ' +
           'metadata endpoint as a cross-check where there is one. A source ' +
-          'that is not there says so. Always drawn by the front process; ' +
-          'the figures are this node\'s. A service page: a realm ' +
+          'that is not there says so. Always drawn by the front process. ' +
+          'In a cluster, a section per node by name (#332) — this one ' +
+          'live, every other from its snapshot in the shared store, marked ' +
+          'stale or gone — and the totals; ?node= narrows it to one. A ' +
+          'service page: a realm ' +
           'administrator is refused it. Add ?format=json, or ' +
           'GET /admin-api/node-health.' },
   { path: '/admin/encryption', group: 'Admin',
@@ -7607,7 +7613,8 @@ const ENDPOINTS: EndpointEntry[] = [
           'the request, hosted-surface and post-quantum pools of this node, ' +
           'each with its state, current, busy, free, maximum and initial ' +
           'workers, its crashes, failed starts and stops, and its response ' +
-          'time; the post-quantum pool per process. Mirrors ' +
+          'time; the post-quantum pool per process; in a cluster every ' +
+          'node by name and the totals, ?node= for one (#332). Mirrors ' +
           'GET /admin/worker-pools.' },
   { path: '/admin-api/node-health', group: 'Management API',
     name: 'Node health', specs: [],
@@ -7615,8 +7622,9 @@ const ENDPOINTS: EndpointEntry[] = [
           'the container\'s CPU utilisation and memory from its cgroup, ' +
           'the Node.js memory of every process of this node and their ' +
           'total, the ECS task metadata endpoint\'s figures where there is ' +
-          'one, and the machine\'s own figures labelled as such. Mirrors ' +
-          'GET /admin/node-health.' },
+          'one, and the machine\'s own figures labelled as such; in a ' +
+          'cluster every node by name and the totals, ?node= for one ' +
+          '(#332). Mirrors GET /admin/node-health.' },
   { path: '/admin-api/encryption', group: 'Management API',
     name: 'Encryption at rest', specs: [],
     what: 'NON-SPEC. Everything /admin/encryption draws, as JSON: the mode, ' +

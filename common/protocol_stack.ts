@@ -1200,6 +1200,12 @@ class ProtocolStack {
                'DevicesAdmin');
     this.register(app, require('../admin-ui/devices_admin'),
                   'admin-ui/devices_admin');
+    // THE NODE SNAPSHOTS (#332, 2026-09-28), a library the two pages below
+    // hand their views to: built here, before them, so the instance they
+    // reach is the root's. It registers its scheduler job when the first
+    // page hands over its view, in 18r's register().
+    this.build('cluster/node_snapshots', require('../cluster/node_snapshots'),
+               'NodeSnapshots');
     // 18r. THE WORKER POOLS' PAGE (#327, 2026-09-28). `/admin/worker-pools` —
     // the request, hosted-surface and post-quantum pools of this node. 18a's
     // placement and 18a's reason: the console's shell is here, the two pool
