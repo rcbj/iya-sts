@@ -1616,6 +1616,21 @@ const CODES = [
       'that cell, and the administrator\'s own credential is checked only ' +
       'in theirs.',
     spec: 'RFC 7030 section 4.2' },
+  { code: 'STS-CELL-0120',
+    summary: 'Two cells\' short keyed tags collide, so a SAML artifact whose ' +
+      'handle carries one is served where it arrives rather than relayed ' +
+      'to either.',
+    spec: '' },
+  { code: 'STS-CELL-0121',
+    summary: 'A cell could not be asked whether it holds the session a SAML ' +
+      'attribute or authentication query names; the query is answered ' +
+      'without it.',
+    spec: '' },
+  { code: 'STS-CELL-0122',
+    summary: 'A federation partner\'s sign-out could not reach every cell; ' +
+      'sessions held in a cell not reached last until they end by ' +
+      'themselves, and the partner is told where its protocol allows.',
+    spec: '' },
   // ===== SCHED =============================================================
   { code: 'STS-SCHED-0001',
     summary: 'A scheduled job\'s run threw or rejected; the run is recorded ' +

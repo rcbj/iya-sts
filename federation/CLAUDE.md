@@ -1618,3 +1618,47 @@ found it and validates every document this module emits — the SAML 2.0,
 SAML 1.1 and WS-Federation relationship metadata, the outbound AuthnRequest
 on both bindings and the outbound LogoutRequest — against the published
 OASIS schemas (`tests/CLAUDE.md`, *The published XML Schemas*).
+
+## IN A SERVICE DEPLOYED AS CELLS (#98 D10, 2026-09-28)
+
+**EVERY FLOW HANDLE NAMES ITS CELL.** `putContext()` stamps the handle
+(`'fed-' + cellLocator.stamp(randomId(18))`, 40 characters — inside the
+`^fed-[A-Za-z0-9_-]{1,64}$` pattern the three readers hold and SAML's 80-byte
+RelayState). So `/federation/link/{handle}` is an `artifact` row the edge
+places by its path segment, and the ACS (`consume()`) relays a partner's
+answer whose RelayState, fedctx, wctx or state names another cell, before the
+response is verified or anything in it spent. A browser pinned elsewhere was
+placed at the edge already.
+
+**A PARTNER'S SIGN-OUT REACHES EVERY CELL** (`federation_slo.ts`,
+`endAtPeers()`). The sessions a relationship started are held wherever the
+person signed in, one person may hold several in several cells, and a
+sign-out arrives at one cell naming WHAT to end and not where. The cell it
+arrives at verifies it and spends it — once, in the global used-assertion
+history — ends what it holds, and calls `federation-partner-signout` on every
+peer with the match as data; each side builds the one predicate from it
+(`FederationSlo.matcherOf()`), so a peer ends exactly what this cell would
+have. It applies to the Back-Channel Logout Token, the SAML LogoutRequest and
+the Front-Channel Logout (whose iframe carries no affinity cookie a browser
+blocking third-party cookies would send). A peer ends on the back channel:
+its sessions' Logout Tokens and CAEP events go from their end, and a browser
+fan-out it cannot draw counts as partial.
+
+**What the partner is told when a cell cannot be reached** (`STS-CELL-0122`):
+Back-Channel Logout section 2.8's 400, unless the token named one session by
+`sid` and that session ended; a LogoutResponse's PartialLogout; the
+front-channel page says it signed out nothing it could reach. **The sessions
+in that cell last until they end by themselves** — the durable, retried
+revocation push is the design's section 5, not built yet. WS-Federation's
+confirmed cleanup is bound to the session in THIS browser, which the edge has
+already placed, and needs nothing more.
+
+**NOT HANDLED HERE, for the parent session**: a partner asserting a person
+homed in another cell. The subject decision (`federation_map.ts`,
+`federation_links.ts`) reads this cell's directory, which does not hold that
+person, so the ACS treats them as unknown — provisioning or refusing by the
+relationship's rules — rather than finishing the sign-in at their home. It
+needs the same restart-at-home the sign-in screen has (D9), keyed on the
+decided username, with the context handed over as `adopt-pushed-request`
+hands a pushed request. Held in process by `tests/cell_saml_federation.js`.
+
