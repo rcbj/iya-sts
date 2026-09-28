@@ -73,7 +73,7 @@ resource "aws_db_instance" "primary" {
   allocated_storage = var.db_allocated_storage
   storage_type      = "gp3"
   storage_encrypted = true
-  kms_key_id        = data.aws_kms_key.main.arn
+  kms_key_id        = local.kms_key_arn
 
   availability_zone      = local.azs[0]
   multi_az               = false
@@ -102,7 +102,7 @@ resource "aws_db_instance" "replica" {
 
   storage_type      = "gp3"
   storage_encrypted = true
-  kms_key_id        = data.aws_kms_key.main.arn
+  kms_key_id        = local.kms_key_arn
 
   availability_zone      = local.azs[1]
   multi_az               = false

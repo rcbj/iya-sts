@@ -4,19 +4,33 @@
 locals {
   account_id = data.aws_caller_identity.current.account_id
   partition  = data.aws_partition.current.partition
-  region     = var.aws_region
+  # A CELL'S REGION IS ITS OWN (cells.tf, #98); a single-cell environment's is
+  # `aws_region`, as it always was.
+  region = local.multi ? local.this_cell.region : var.aws_region
 
   # Every name starts `mock-sts-<environment>`; the deployer policy scopes
   # ELB, ECS, RDS and IAM to `mock-sts-*`. Roles take `mock-sts-env-` so the
   # policy can tell an environment's roles from the deployer's own.
-  prefix      = "${var.name}-${var.environment}"
-  role_prefix = "${var.name}-env-${var.environment}"
-  secret_path = "${var.name}/${var.environment}"
+  #
+  # A CELL IS IN EVERY NAME THAT MUST BE UNIQUE (#98): IAM roles are global,
+  # so two cells of one environment would otherwise claim the same role, and
+  # the rest follow for the reader's sake and for the load balancer's, whose
+  # name is limited to 32 characters (hence the 5-character cell id).
+  prefix      = local.multi ? "${var.name}-${var.environment}-${var.cell}" : "${var.name}-${var.environment}"
+  role_prefix = local.multi ? "${var.name}-env-${var.environment}-${var.cell}" : "${var.name}-env-${var.environment}"
+  secret_path = local.multi ? "${var.name}/${var.environment}/${var.cell}" : "${var.name}/${var.environment}"
+
+  # Log streams are `<environment>-<node>/…`, and `<environment>-<cell>-<node>/…`
+  # in a cell — each region has a log group of its own (foundation/regions.tf),
+  # but the cell in the stream is what a reader of one looks for.
+  log_stream_prefix = local.multi ? "${var.environment}-${var.cell}" : var.environment
+
+  vpc_cidr = local.multi ? local.this_cell.vpc_cidr : var.vpc_cidr
 
   azs = slice(sort(data.aws_availability_zones.available.names), 0, 3)
 
-  public_cidrs  = [for i in range(3) : cidrsubnet(var.vpc_cidr, 8, i)]
-  private_cidrs = [for i in range(3) : cidrsubnet(var.vpc_cidr, 8, 10 + i)]
+  public_cidrs  = [for i in range(3) : cidrsubnet(local.vpc_cidr, 8, i)]
+  private_cidrs = [for i in range(3) : cidrsubnet(local.vpc_cidr, 8, 10 + i)]
   # /24 number 20 was the in-VPC suite runner's until 2026-09-21 and is left
   # unused; suite-callbacks/ takes number 21.
 
@@ -137,8 +151,33 @@ data "aws_availability_zones" "available" {
 
 # The foundation stack's resources, found by name. Read-only lookups; this
 # stack never changes them.
+#
+# THE PROJECT KEY EXISTS IN THE HOME REGION ONLY, and a cell seals its own
+# data under its CELL key instead (foundation/modules/region, #98): single-
+# region and replicated nowhere, which is the residency line. The global key
+# is the multi-region one, replicated into every permitted region; a cell
+# decrypts the global secrets replicated here with it.
 data "aws_kms_key" "main" {
+  count  = local.multi ? 0 : 1
   key_id = "alias/${var.name}"
+}
+
+data "aws_kms_key" "cell" {
+  count  = local.multi ? 1 : 0
+  key_id = "alias/${var.name}-cell-${var.cell}"
+}
+
+data "aws_kms_key" "global" {
+  count  = local.multi ? 1 : 0
+  key_id = "alias/${var.name}-global"
+}
+
+locals {
+  # The key this stack's own storage, secrets and volumes are sealed under.
+  kms_key_arn = local.multi ? data.aws_kms_key.cell[0].arn : data.aws_kms_key.main[0].arn
+  # The key the global secrets replicated into this region are sealed under;
+  # none in a single-cell environment.
+  global_kms_key_arn = local.multi ? data.aws_kms_key.global[0].arn : ""
 }
 
 data "aws_ecr_repository" "main" {

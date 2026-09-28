@@ -19,13 +19,28 @@
 # used as it is. MOCK_STS_DEPLOYER_ROLE_ARN forces a role.
 #
 # Config (env vars):
-#   TF_STACK     environment | foundation | spiffe-realm
+#   TF_STACK     environment | global | foundation | spiffe-realm
 #                | suite-callbacks                               (environment)
 #   TF_ENV       the environment's name, 2-12 [a-z0-9]           (dev)
+#   TF_CELL      a MULTI-CELL environment's cell, e.g. `cac1`: one cell's
+#                environment, spiffe-realm or suite-callbacks stack. Unset
+#                for an `environment` apply/destroy/plan/output, which then
+#                does every cell and the global stack IN ORDER (below)
 #   TF_REALM     spiffe-realm only: the realm id, or `default`
 #   TF_ACTION    init | validate | plan | apply | destroy | output
 #                | output-json | ecr-password                                  (plan)
-#   AWS_REGION                                                   (us-west-2)
+#   AWS_REGION   the HOME region: the state bucket, the image repository
+#                images are pushed to, and every AWS CLI call made here. A
+#                cell's region comes from its cells file, never from this
+#                                                                (us-west-2)
+#
+# A MULTI-CELL ENVIRONMENT (issue #98, 2026-09-28) is one with
+# `environment/envs/<env>.cells.tfvars.json`: its cells, their regions and
+# which one holds the global database's writer. Each cell is the
+# `environment` stack with TF_CELL (state `environment/<env>/<cell>.tfstate`),
+# and the environment has one `global` stack besides
+# (`environment/<env>/global.tfstate`). Without that file an environment is
+# single-cell and everything below behaves as it always did.
 #
 #   TF_VAR_image_tag      the service image tag (the commit), for plan/apply
 #   TF_VAR_allowed_cidrs  JSON list, e.g. ["203.0.113.4/32"], for plan/apply
@@ -54,7 +69,7 @@ set -euo pipefail
 : "${AWS_REGION:=us-west-2}"
 export AWS_REGION AWS_DEFAULT_REGION="${AWS_REGION}"
 
-say() { echo "==> [${TF_STACK}${TF_STACK:+/}${TF_ENV}] $*" >&2; }
+say() { echo "==> [${TF_STACK}${TF_STACK:+/}${TF_ENV}${TF_CELL:+/${TF_CELL}}] $*" >&2; }
 die() { echo "ERROR: $*" >&2; exit 1; }
 
 command -v terraform >/dev/null 2>&1 || die "terraform not found in the container."
@@ -101,12 +116,56 @@ then
   exit 0
 fi
 
+# --- A multi-cell environment's cells -----------------------------------------
+# The cells file, when there is one, is the whole description of the
+# environment's cells (deploy/aws/CLAUDE.md, *Cells*). jq reads it here — the
+# reason it is JSON and not HCL — and Terraform reads the same file as a
+# variable file, so the two cannot disagree.
+CELLS_FILE="/workspace/deploy/aws/environment/envs/${TF_ENV}.cells.tfvars.json"
+MULTI_CELL=""
+if [ -f "${CELLS_FILE}" ];
+then
+  MULTI_CELL=1
+  jq -e '.cells | type == "object"' "${CELLS_FILE}" >/dev/null || \
+    die "${CELLS_FILE} has no \`cells\` object."
+  PRIMARY_CELL="$(jq -r '.primary_cell' "${CELLS_FILE}")"
+  # The primary cell FIRST, then the others in the file's order: its nodes
+  # apply the global schema, so every other cell's nodes start against one.
+  mapfile -t CELLS < <(jq -r --arg p "${PRIMARY_CELL}" \
+    '[$p] + ([.cells | keys_unsorted[]] - [$p]) | .[]' "${CELLS_FILE}")
+  if [ -n "${TF_CELL:-}" ];
+  then
+    CELL_REGION="$(jq -r --arg c "${TF_CELL}" '.cells[$c].region // empty' "${CELLS_FILE}")"
+    [ -n "${CELL_REGION}" ] || die "TF_CELL='${TF_CELL}' is not a cell of ${TF_ENV} (${CELLS[*]})."
+  fi
+elif [ -n "${TF_CELL:-}" ];
+then
+  die "TF_CELL='${TF_CELL}' was given, but ${TF_ENV} is single-cell (no envs/${TF_ENV}.cells.tfvars.json)."
+fi
+
 # --- The stack and its state ------------------------------------------------
 bucket="mock-sts-terraform-state-${account}"
 case "${TF_STACK}" in
   environment)
     TF_DIR=/workspace/deploy/aws/environment
     STATE_KEY="environment/${TF_ENV}.tfstate"
+    export TF_VAR_environment="${TF_ENV}"
+    if [ -n "${MULTI_CELL}" ] && [ -n "${TF_CELL:-}" ];
+    then
+      # ONE CELL: its own state, beside the environment's other cells and
+      # its global stack, and the phase entrypoint's own orchestration chose
+      # (full unless told otherwise — see `orchestrate_cells` below).
+      STATE_KEY="environment/${TF_ENV}/${TF_CELL}.tfstate"
+      export TF_VAR_cell="${TF_CELL}" TF_VAR_cell_phase="${TF_CELL_PHASE:-full}"
+    fi
+    ;;
+  global)
+    # THE GLOBAL TIER OF A MULTI-CELL ENVIRONMENT (#98): the global database,
+    # the global secrets, the peering mesh. Only for an environment with cells.
+    [ -n "${MULTI_CELL}" ] || \
+      die "TF_STACK=global is for a multi-cell environment; ${TF_ENV} has no envs/${TF_ENV}.cells.tfvars.json."
+    TF_DIR=/workspace/deploy/aws/global
+    STATE_KEY="environment/${TF_ENV}/global.tfstate"
     export TF_VAR_environment="${TF_ENV}"
     ;;
   foundation)
@@ -131,8 +190,22 @@ case "${TF_STACK}" in
     STATE_KEY="environment/${TF_ENV}/suite-callbacks.tfstate"
     export TF_VAR_environment="${TF_ENV}"
     ;;
-  *) die "unknown TF_STACK='${TF_STACK}' (environment | foundation | spiffe-realm | suite-callbacks)." ;;
+  *) die "unknown TF_STACK='${TF_STACK}' (environment | global | foundation | spiffe-realm | suite-callbacks)." ;;
 esac
+
+# A STACK BUILT ON ONE CELL (#98) is that cell's: its state is under the
+# cell's own prefix, and it is applied in the cell's region.
+if [ -n "${MULTI_CELL}" ];
+then
+  case "${TF_STACK}" in
+    spiffe-realm|suite-callbacks)
+      [ -n "${TF_CELL:-}" ] || \
+        die "${TF_ENV} is multi-cell (${CELLS[*]}): TF_STACK=${TF_STACK} needs TF_CELL, the cell whose load balancer it is for."
+      STATE_KEY="environment/${TF_ENV}/${TF_CELL}/${STATE_KEY#"environment/${TF_ENV}/"}"
+      export TF_VAR_cell="${TF_CELL}" TF_VAR_aws_region="${CELL_REGION}"
+      ;;
+  esac
+fi
 
 # The environment's two variables with no default. plan and apply need the
 # real ones — a guessed allowed_cidrs is a load balancer that refuses whoever
@@ -184,6 +257,209 @@ then
   esac
 fi
 
+# EVERY STACK BUILT ON TOP OF AN ENVIRONMENT COMES DOWN BEFORE IT
+# (2026-09-21). `spiffe-realm/` puts two listeners, two target groups and
+# FOUR SECURITY-GROUP RULES on the environment's own `nlb` and `nodes`
+# groups, which it finds with `data` rather than owning; `suite-callbacks/`
+# puts a subnet and a NAT gateway behind an address the load balancer
+# admits. Terraform removes the rules ITS OWN state records — a rule another
+# state owns is invisible to it, and keeps the group alive, so
+# DeleteSecurityGroup answers DependencyViolation, the provider retries for
+# fifteen minutes per group, and the destroy ends with both groups and the
+# VPC still standing.
+#
+# **THAT IS WHAT HAPPENED TO `testidp` ON 2026-09-20**: the default realm's
+# 8092/8181 rules outlived the environment they were attached to, the
+# workflow spent 33 minutes failing twice over, and re-running it could not
+# help — the second run had the same blind spot as the first. The two groups
+# and the VPC were still there on 2026-09-21 and were removed by hand.
+#
+# The state keys ARE the enumeration, so nothing has to be told which realms
+# an environment was given: one object per dependent stack, under a prefix
+# the deployer role may already list (foundation/iam_deployer.tf,
+# `TerraformStateList`). A dependent whose state is empty destroys nothing
+# and costs one `init`, which is the right price for not having to know.
+#
+# Order matters in the other direction too: `spiffe-realm` reads the
+# environment's remote state and looks its load balancer up by name, so it
+# can only be destroyed WHILE the environment still exists. Here, not after.
+#
+# IN A MULTI-CELL ENVIRONMENT (#98) a dependent stack belongs to ONE cell and
+# its state is under that cell's prefix, `environment/<env>/<cell>/`; the
+# cells' own states and the global stack's sit one level up, beside those
+# prefixes, and are not dependents — they are the orchestration's
+# (`orchestrate_cells`, below).
+destroy_dependent_stacks() {
+  local prefix="${1:-environment/${TF_ENV}/}"
+  local cell="${2:-}"
+  local keys key realm
+  # A failure to list is reported and not fatal: an environment with no
+  # dependents must still come down when the listing is what broke.
+  if ! keys="$(aws s3api list-objects-v2 --bucket "${bucket}" \
+    --prefix "${prefix}" --query 'Contents[].Key' --output text 2>/dev/null)";
+  then
+    say "WARNING: could not list s3://${bucket}/${prefix} — if a stack built"
+    say "         on this environment still holds security-group rules, the"
+    say "         destroy below will fail with DependencyViolation."
+    return 0
+  fi
+  [ "${keys}" = "None" ] && keys=""
+  for key in ${keys}; do
+    case "${key}" in
+      "${prefix}spiffe-realm/"*.tfstate)
+        realm="${key#"${prefix}"spiffe-realm/}"
+        realm="${realm%.tfstate}"
+        say "dependent stack first: spiffe-realm/${realm}"
+        # The credentials of this process, already the deployer role: the
+        # child's own assume step sees an assumed-role ARN, not a user's,
+        # and leaves them alone. The forced-role variable is cleared so it
+        # cannot try to chain a second assume from them.
+        MOCK_STS_DEPLOYER_ROLE_ARN= TF_STACK=spiffe-realm TF_CELL="${cell}" \
+          TF_REALM="${realm}" TF_ACTION=destroy "$0" || \
+          die "the spiffe-realm stack for '${realm}' would not destroy, so '${TF_ENV}' was left alone. Fix that stack and run this again."
+        ;;
+      "${prefix}suite-callbacks.tfstate")
+        say "dependent stack first: suite-callbacks"
+        MOCK_STS_DEPLOYER_ROLE_ARN= TF_STACK=suite-callbacks TF_CELL="${cell}" \
+          TF_ACTION=destroy "$0" || \
+          die "the suite-callbacks stack would not destroy, so '${TF_ENV}' was left alone. Fix that stack and run this again."
+        ;;
+      "${prefix}"*/*|"${prefix}global.tfstate")
+        # A multi-cell environment's cell prefixes, its cells' own states and
+        # its global stack's (#98): not dependents of anything listed here,
+        # and destroyed by the orchestration in its own order.
+        ;;
+      *)
+        # A key under this environment's prefix that is not a stack this
+        # script knows how to destroy. Said out loud rather than skipped
+        # silently, because the next DependencyViolation will be its doing.
+        say "NOTE: state key left alone (no stack here owns it): ${key}"
+        ;;
+    esac
+  done
+}
+
+# ---------------------------------------------------------------------------
+# A MULTI-CELL ENVIRONMENT, IN ORDER (#98, 2026-09-28). `environment` with no
+# TF_CELL on an environment with cells runs this, which runs this same script
+# once per step — each step an ordinary single-stack run with its own state,
+# lock, retry and output — and stops at the first step that fails.
+#
+#   APPLY    1. every cell with NO STATE YET, primary first, phase `base`:
+#               its VPC, load balancer, cell database, and the subnet group,
+#               security group and namespace the global stack needs — with no
+#               node running, since the global database does not exist yet
+#            2. `global`: the global database's writer and replicas IN those
+#               VPCs, the global secrets and their replicas, the peering mesh
+#               and its routes, the inter-cell names shared between VPCs
+#            3. every cell, primary first, phase `full`: the nodes, told where
+#               the global tier is. The primary cell's nodes apply the global
+#               schema; the others start after, against it.
+#            A cell that already has state skips step 1: `base` scales its
+#            nodes to zero, which on a running cell is an outage.
+#
+#   DESTROY  1. every cell's DEPENDENT stacks (spiffe-realm, suite-callbacks),
+#               while the cells they sit on still exist — the lesson of
+#               2026-09-20 (destroy_dependent_stacks)
+#            2. `global`, while the cells it reads still exist: routes,
+#               peerings, zone associations, the replicas and then the writer
+#               (RDS will not delete a writer with replicas), the secrets and
+#               their replicas. Everything it put INTO a cell's VPC goes here,
+#               or that VPC would not delete
+#            3. every cell, phase `base` — its destroy must not read a global
+#               state that is gone.
+#
+#   PLAN     every cell, `full`, and `global` (a plan of a cell that has no
+#            global stack yet fails reading its state, which is the order
+#            above saying so)
+#   OUTPUT   every cell's, then global's, each under a heading. `output-json`
+#            is one document for a script, so it needs TF_CELL (run-suite.sh)
+# ---------------------------------------------------------------------------
+state_exists() {
+  aws s3api head-object --bucket "${bucket}" --key "$1" >/dev/null 2>&1
+}
+
+# A step: this script again, in the background so that an interrupt reaches
+# it (and through it terraform) the way `tf` relays one below. The role is
+# already assumed; the forced-role variable is cleared so the child does not
+# try to chain a second assume from it.
+step() {
+  env MOCK_STS_DEPLOYER_ROLE_ARN= "$@" "$0" &
+  local pid=$! rc=0
+  trap 'kill -INT "${pid}" 2>/dev/null || true' INT TERM
+  while :; do
+    wait "${pid}" && rc=0 || rc=$?
+    kill -0 "${pid}" 2>/dev/null || break
+  done
+  trap - INT TERM
+  return "${rc}"
+}
+
+orchestrate_cells() {
+  local c
+  say "multi-cell environment: cells ${CELLS[*]} (primary ${PRIMARY_CELL})"
+  case "${TF_ACTION}" in
+    apply)
+      for c in "${CELLS[@]}"; do
+        if state_exists "environment/${TF_ENV}/${c}.tfstate";
+        then
+          say "cell ${c}: has state, so no base phase"
+        else
+          say "cell ${c}: base phase (no nodes yet)"
+          step TF_STACK=environment TF_CELL="${c}" TF_CELL_PHASE=base TF_ACTION=apply || \
+            die "cell ${c} did not apply its base phase; nothing after it was applied."
+        fi
+      done
+      say "global"
+      step TF_STACK=global TF_ACTION=apply || \
+        die "the global stack did not apply; no cell's nodes were started or changed."
+      for c in "${CELLS[@]}"; do
+        say "cell ${c}: full"
+        step TF_STACK=environment TF_CELL="${c}" TF_CELL_PHASE=full TF_ACTION=apply || \
+          die "cell ${c} did not apply; the cells after it (in: ${CELLS[*]}) were not applied."
+      done
+      ;;
+    destroy)
+      for c in "${CELLS[@]}"; do
+        say "cell ${c}: its dependent stacks first"
+        destroy_dependent_stacks "environment/${TF_ENV}/${c}/" "${c}"
+      done
+      if state_exists "environment/${TF_ENV}/global.tfstate";
+      then
+        say "global"
+        step TF_STACK=global TF_ACTION=destroy || \
+          die "the global stack would not destroy, so no cell was touched. Fix it and run this again."
+      fi
+      for c in "${CELLS[@]}"; do
+        say "cell ${c}"
+        step TF_STACK=environment TF_CELL="${c}" TF_CELL_PHASE=base TF_ACTION=destroy || \
+          die "cell ${c} would not destroy. Re-run the destroy; the ones before it are gone."
+      done
+      ;;
+    plan|output)
+      for c in "${CELLS[@]}"; do
+        say "cell ${c}"
+        echo "== cell ${c}"
+        step TF_STACK=environment TF_CELL="${c}" TF_ACTION="${TF_ACTION}" || \
+          die "cell ${c}: ${TF_ACTION} failed."
+      done
+      say "global"
+      echo "== global"
+      step TF_STACK=global TF_ACTION="${TF_ACTION}" || die "global: ${TF_ACTION} failed."
+      ;;
+    *)
+      die "${TF_ENV} is multi-cell (${CELLS[*]}): TF_ACTION=${TF_ACTION} needs TF_CELL, or TF_STACK=global."
+      ;;
+  esac
+  say "${TF_ACTION} of every cell and the global stack complete."
+}
+
+if [ -n "${MULTI_CELL}" ] && [ "${TF_STACK}" = "environment" ] && [ -z "${TF_CELL:-}" ];
+then
+  orchestrate_cells
+  exit 0
+fi
+
 cd "${TF_DIR}"
 say "${TF_DIR}"
 
@@ -195,6 +471,12 @@ if [ "${TF_STACK}" = "environment" ] && [ -f "envs/${TF_ENV}.tfvars" ];
 then
   say "variables: envs/${TF_ENV}.tfvars"
   VAR_FILE_ARGS=(-var-file="envs/${TF_ENV}.tfvars")
+fi
+# A cell and the global stack both read the environment's cells file (#98).
+if [ -n "${MULTI_CELL}" ] && { [ "${TF_STACK}" = "global" ] || [ "${TF_STACK}" = "environment" ]; };
+then
+  say "cells: envs/${TF_ENV}.cells.tfvars.json"
+  VAR_FILE_ARGS+=(-var-file="${CELLS_FILE}")
 fi
 say "state: s3://${bucket}/${STATE_KEY}"
 
@@ -229,76 +511,6 @@ else
     -backend-config="bucket=${bucket}" >&2
 fi
 
-# EVERY STACK BUILT ON TOP OF AN ENVIRONMENT COMES DOWN BEFORE IT
-# (2026-09-21). `spiffe-realm/` puts two listeners, two target groups and
-# FOUR SECURITY-GROUP RULES on the environment's own `nlb` and `nodes`
-# groups, which it finds with `data` rather than owning; `suite-callbacks/`
-# puts a subnet and a NAT gateway behind an address the load balancer
-# admits. Terraform removes the rules ITS OWN state records — a rule another
-# state owns is invisible to it, and keeps the group alive, so
-# DeleteSecurityGroup answers DependencyViolation, the provider retries for
-# fifteen minutes per group, and the destroy ends with both groups and the
-# VPC still standing.
-#
-# **THAT IS WHAT HAPPENED TO `testidp` ON 2026-09-20**: the default realm's
-# 8092/8181 rules outlived the environment they were attached to, the
-# workflow spent 33 minutes failing twice over, and re-running it could not
-# help — the second run had the same blind spot as the first. The two groups
-# and the VPC were still there on 2026-09-21 and were removed by hand.
-#
-# The state keys ARE the enumeration, so nothing has to be told which realms
-# an environment was given: one object per dependent stack, under a prefix
-# the deployer role may already list (foundation/iam_deployer.tf,
-# `TerraformStateList`). A dependent whose state is empty destroys nothing
-# and costs one `init`, which is the right price for not having to know.
-#
-# Order matters in the other direction too: `spiffe-realm` reads the
-# environment's remote state and looks its load balancer up by name, so it
-# can only be destroyed WHILE the environment still exists. Here, not after.
-destroy_dependent_stacks() {
-  local prefix="environment/${TF_ENV}/"
-  local keys key realm
-  # A failure to list is reported and not fatal: an environment with no
-  # dependents must still come down when the listing is what broke.
-  if ! keys="$(aws s3api list-objects-v2 --bucket "${bucket}" \
-    --prefix "${prefix}" --query 'Contents[].Key' --output text 2>/dev/null)";
-  then
-    say "WARNING: could not list s3://${bucket}/${prefix} — if a stack built"
-    say "         on this environment still holds security-group rules, the"
-    say "         destroy below will fail with DependencyViolation."
-    return 0
-  fi
-  [ "${keys}" = "None" ] && keys=""
-  for key in ${keys}; do
-    case "${key}" in
-      "${prefix}spiffe-realm/"*.tfstate)
-        realm="${key#"${prefix}"spiffe-realm/}"
-        realm="${realm%.tfstate}"
-        say "dependent stack first: spiffe-realm/${realm}"
-        # The credentials of this process, already the deployer role: the
-        # child's own assume step sees an assumed-role ARN, not a user's,
-        # and leaves them alone. The forced-role variable is cleared so it
-        # cannot try to chain a second assume from them.
-        MOCK_STS_DEPLOYER_ROLE_ARN= TF_STACK=spiffe-realm \
-          TF_REALM="${realm}" TF_ACTION=destroy "$0" || \
-          die "the spiffe-realm stack for '${realm}' would not destroy, so '${TF_ENV}' was left alone. Fix that stack and run this again."
-        ;;
-      "${prefix}suite-callbacks.tfstate")
-        say "dependent stack first: suite-callbacks"
-        MOCK_STS_DEPLOYER_ROLE_ARN= TF_STACK=suite-callbacks \
-          TF_ACTION=destroy "$0" || \
-          die "the suite-callbacks stack would not destroy, so '${TF_ENV}' was left alone. Fix that stack and run this again."
-        ;;
-      *)
-        # A key under this environment's prefix that is not a stack this
-        # script knows how to destroy. Said out loud rather than skipped
-        # silently, because the next DependencyViolation will be its doing.
-        say "NOTE: state key left alone (no stack here owns it): ${key}"
-        ;;
-    esac
-  done
-}
-
 case "${TF_ACTION}" in
   init)     say "init only." ;;
   validate) terraform validate -no-color ;;
@@ -307,7 +519,12 @@ case "${TF_ACTION}" in
   destroy)
     if [ "${TF_STACK}" = "environment" ];
     then
-      destroy_dependent_stacks
+      if [ -n "${MULTI_CELL}" ];
+      then
+        destroy_dependent_stacks "environment/${TF_ENV}/${TF_CELL}/" "${TF_CELL}"
+      else
+        destroy_dependent_stacks
+      fi
     fi
     # A destroy that fails half way leaves resources running and billing; the
     # usual cause is an ENI a stopped task has not released yet. Once more,
