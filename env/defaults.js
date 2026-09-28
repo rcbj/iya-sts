@@ -1256,6 +1256,12 @@ var config = {
     maxConcurrentRuns: 2  // Most runs going at once
   },
 
+  // --- Attribute sources -----------------------------------------------
+  attributeSources: {
+    hostPatterns: "",  // Hosts an attribute source may name
+    refreshBatch: 200  // People per scheduled refresh
+  },
+
   // --- Mail ------------------------------------------------------------
   mail: {
     transport: "default",                // Mail transport

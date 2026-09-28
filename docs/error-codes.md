@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3826** of them, in **40** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3847** of them, in **41** subsystems.
 
 ## Where a code appears
 
@@ -68,10 +68,11 @@ is an ordinary outcome.
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 97
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 21
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 16
-* [Federation (`STS-FED`)](#sts-fed) — 134
+* [Federation (`STS-FED`)](#sts-fed) — 137
 * [OpenID Federation (`STS-OIDFED`)](#sts-oidfed) — 67
 * [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 169
 * [LDAP directory (`STS-LDAP`)](#sts-ldap) — 87
+* [Attribute sources (`STS-ATTR`)](#sts-attr) — 15
 * [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 77
 * [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 144
 * [TLS and client certificates (`STS-TLS`)](#sts-tls) — 37
@@ -83,11 +84,11 @@ is an ordinary outcome.
 * [Device register (`STS-DEVICE`)](#sts-device) — 45
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 83
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 32
-* [Admin console (`STS-ADMIN`)](#sts-admin) — 210
+* [Admin console (`STS-ADMIN`)](#sts-admin) — 211
 * [Management API (`STS-API`)](#sts-api) — 75
 * [User portal (`STS-PORTAL`)](#sts-portal) — 75
 * [Sign-out (`STS-LOGOUT`)](#sts-logout) — 7
-* [Registries (`STS-REG`)](#sts-reg) — 133
+* [Registries (`STS-REG`)](#sts-reg) — 135
 * [Protocol debugger (`STS-DBG`)](#sts-dbg) — 28
 
 ## STS-HTTP
@@ -2253,6 +2254,9 @@ Raised from: federation/.
 | `STS-FED-0148` | A relationship whose OpenID Provider is discovered through an OpenID Federation could not resolve it to its fedTrustAnchor (#134). | HTTP 502 page |
 | `STS-FED-0149` | An OpenID Provider resolved through an OpenID Federation cannot be used: no openid_provider metadata, an issuer that is not its Entity Identifier, no https endpoints, no automatic registration, or no keys (#134). | HTTP 502 page |
 | `STS-FED-0150` | A federation relationship field that takes a closed set of values (fedAuthnMechanism, fedBinding, fedResponseType, or any row with an enum) was set to a value outside it (#86). | HTTP 400 (console and API) |
+| `STS-FED-0151` | A fedAttributeMap value was not a mapping: it is <incoming name>=<LDAP attribute> (#94). | HTTP 400 (console and API) |
+| `STS-FED-0152` | A fedAttributeMap value named a target no partner may write — an attribute this service keeps (sts*, app*, fed*, pwd*) or the entry's identity, structure or authorization (uid, memberOf, userPassword, the operational attributes) (#94). | HTTP 400 (console and API) |
+| `STS-FED-0153` | A partner's attribute was dropped at sign-in because the relationship maps it onto an attribute no partner may write (a mapping written before #94, or by an ldapmodify) (#94). | none (logged; the sign-in proceeds without it) |
 
 ## STS-OIDFED
 
@@ -2603,6 +2607,30 @@ Raised from: ldap/.
 | `STS-LDAP-0111` | An LDAP add or modify named a credential attribute (a security key, an authenticator app, recovery codes, an app password, a signing key pair, a HOBA key, a self-issued subject, the emailed factor, Kerberos keys, a CIBA user code, an enrolment credential or a device secret). Credentials are written only through the doors that check them and send CAEP credential-change (#237), in every mode and for every bind, administrator included; the refusal names the door. | RFC 4511 section 4.1.9 unwillingToPerform (53) |
 | `STS-LDAP-0112` | The node-ldapjs in use does not support the encodeErrorMessage server option, so every LDAP result is sent with an empty diagnosticMessage and a client never sees the text of a refusal (#261). | none — logged at startup |
 | `STS-LDAP-0120` | A person was deleted from the directory (#241) and handing the delete to account_state.ts failed, so what they held may not have been ended at once. authn.sessionOf() still ends a session whose person has no entry the next time it is presented. | none — logged; the delete stands |
+
+## STS-ATTR
+
+**Attribute sources.** The operators' SQL databases a realm reads people's attributes from, onto their entries (#94): a source's definition, its driver, its connection and password, the lookup, and the sign-in or scheduled refresh.
+
+Raised from: attribute-sources/attribute_sources.ts, attribute-sources/attribute_source_drivers.ts, common/secrets.js (readSourceSecret), ldap/ldap_server.js (applySourcedAttributes).
+
+| Code | What failed | Client sees |
+|---|---|---|
+| `STS-ATTR-0001` | An attribute source's driver (or Knex) is not installed: the dialect's package is an optional one, installed into the image with STS_CLOUD_SDKS (#94). | none (a console or API refusal, or a logged refresh failure) |
+| `STS-ATTR-0002` | An attribute source could not be read: the connection, TLS, the password, the CA file or the query failed (#94). | none (logged; per the source, the sign-in proceeds or is refused) |
+| `STS-ATTR-0003` | An attribute source did not answer within its timeout (#94). | none (logged; per the source, the sign-in proceeds or is refused) |
+| `STS-ATTR-0004` | An attribute source has more than one row for a person's key, so it names nobody (#94). | none (logged; per the source, the sign-in proceeds or is refused) |
+| `STS-ATTR-0005` | An attribute source's definition was refused: its id, dialect, host, port, database, user, password provider, table, key or column names, refresh modes, interval, timeout or failure policy (#94). | HTTP 400 (console and API) |
+| `STS-ATTR-0006` | An attribute source's password could not be read from where it names (#94). | none (logged; per the source, the sign-in proceeds or is refused) |
+| `STS-ATTR-0007` | An attribute source's password was read and is empty (#94). | none (logged; per the source, the sign-in proceeds or is refused) |
+| `STS-ATTR-0008` | An attribute source may not write an attribute: one this service keeps, the entry's identity, structure or authorization, or mail (#94). | HTTP 400 (console and API), or logged at the write |
+| `STS-ATTR-0009` | An attribute source named an attribute another source in the realm already writes; an attribute has one source (#94). | HTTP 400 (console and API) |
+| `STS-ATTR-0010` | An attribute source named a host attributeSources.hostPatterns does not allow in its realm (#94). | HTTP 400 (console and API) |
+| `STS-ATTR-0011` | An attribute source action named a source that is not there, or added one that already is, or named a person the realm does not have (#94). | HTTP 400 (console and API) |
+| `STS-ATTR-0012` | A sign-in was refused: an attribute source whose failure policy is refuse could not be read (#94). | the calling protocol's access_denied |
+| `STS-ATTR-0013` | An attribute source's refresh could not be queued on the scheduler (#94). | HTTP 400 (console and API) |
+| `STS-ATTR-0014` | The directory would not store or remove an attribute source (no directory, or it is full) (#94). | HTTP 400 (console and API) |
+| `STS-ATTR-0015` | An attribute source's CA chain was refused: it is not PEM certificates, a block did not parse, a certificate is expired or not yet valid, or it is longer than 64 KiB (#94). | HTTP 400 (console and API) |
 
 ## STS-SCIM
 
@@ -3930,6 +3958,7 @@ Raised from: admin-ui/ (except pki_admin.js), admin-core/.
 | `STS-ADMIN-0829` | create-role named a realm-wide role with the application separator "@" in it; that is how an application's role is named (#310). | none (a console or management API refusal, HTTP 400) |
 | `STS-ADMIN-0830` | create-role named an application that is not in the realm's registry (#310). | none (a console or management API refusal, HTTP 400) |
 | `STS-ADMIN-0831` | add-permission put another application's permission on an application's role, which may authorize only its own application's permissions (#310). | none (a console or management API refusal, HTTP 400) |
+| `STS-ADMIN-0832` | add-attribute-claim named no directory attribute for the claim to carry (#94). | HTTP 400 (console and API) |
 
 ## STS-API
 
@@ -4256,6 +4285,8 @@ Raised from: common/applications.js, common/consent.ts, common/app_permissions.t
 | `STS-REG-0197` | A registration's CIBA metadata was refused: an unknown backchannel_token_delivery_mode, no https notification endpoint for ping or push, a signing algorithm that is not asymmetric, or a user code parameter that is not a boolean (#131). | invalid_client_metadata (HTTP 400) |
 | `STS-REG-0198` | FAPI-CIBA: a registration under a FAPI profile asked for the push delivery mode, which the profile does not allow (#142). | invalid_client_metadata (HTTP 400) |
 | `STS-REG-0199` | A command_endpoint (OpenID Provider Commands, #151) was not an https URL with no fragment, at registration or update (a console or API write is refused under STS-REG-0071). | HTTP 400 {error: invalid_client_metadata} |
+| `STS-REG-0200` | A claim-set attribute claim named an attribute it may not carry: not an attribute name, a secret or binary value (userPassword, jpegPhoto, a certificate), or one this service keeps (sts*, hoba*, app*, pwd*) (#94). | HTTP 400 (console and API) |
+| `STS-REG-0201` | A JWT or UserInfo attribute claim named a type that is not string, number, boolean or json (#94). | HTTP 400 (console and API) |
 
 ## STS-DBG
 

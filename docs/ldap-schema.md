@@ -238,6 +238,14 @@ draws it with a description of every field.
 | Subjects and provisioning | `fedSubjectPolicy`, `fedSubjectPattern`, `fedSubjectDomain`, `fedSubjectGroup`, `fedHomeRealmDomain` (#148, the domains whose `domain_hint` goes to this partner), `fedUsernameSource`, `fedAutocreateUsers`, `fedUpdateUserAttributes`, `fedAttributeMap`, `fedRelease` |
 | Observation | `fedFirstSeen`, `fedLastSeen`, `fedLastUser`, `fedUsers`, `fedAuthentications`, `fedLastError`, `fedLastErrorAt` |
 
+## Attribute sources: `ou=attributesources`
+
+`objectClass: top, stsAttributeSource`, named `cn=<source id>`, with the source's whole definition as
+one JSON value, `stsAttributeSourceData`. It holds the database, the row it reads, the column map, when it reads
+and what a failure does, and never a password (#94). On a **person**, `stsAttributeSourced` names each attribute a
+source wrote (`<source>:<attribute>`), and `stsAttributeSourceSeen` records when each source last read them
+(`<source>=<time>`). See [Attribute sources](attribute-sources.md).
+
 ## Roles: `ou=roles`
 
 `objectClass: top, stsRole`, named `cn=<role>`, with `roleName`, `description`, the three kinds of

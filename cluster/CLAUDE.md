@@ -599,6 +599,7 @@ next beat. It is the one addition this feature made to `cluster.js`.
 | `oauth2.backchannel-logout-sweep` | cluster, service; `oauth2.backchannelLogoutSweepS` | `oauth-oidc/backchannel_logout.ts` (P5) |
 | `oauth2.ephemeral-subjects-purge` | cluster, realm; hourly — removes each ephemeral subject mapping past the longest token or session of its authentication (#149) | `oauth-oidc/pairwise_subjects.ts` |
 | `oauth2.claim-sources-refresh` | cluster, realm; every minute — refreshes each person's Claims Provider token five minutes before it expires and drops link requests older than ten minutes (#147) | `oauth-oidc/claims_providers.ts` |
+| `attribute-sources.refresh` | cluster, realm; every minute — for each attribute source whose scheduled interval is due (or asked for by Read everyone now), reads the next `attributeSources.refreshBatch` people after its cursor onto their entries (#94) | `attribute-sources/attribute_sources.ts` |
 | `oauth2.grant-management-purge` | cluster, realm; hourly — removes each Grant Management grant past its last token's exp, and each token row past its own (#142) | `oauth-oidc/grant_management.ts` |
 | `oauth2.ciba-sweep` | cluster, service; `oauth2.cibaSweepS` | `oauth-oidc/ciba.ts` (#131): CIBA pings and pushes due, requests nobody answered expired |
 | `oauth2.device-code-sweep` | cluster, per realm, every 300 s | `oauth-oidc/device_authorization.ts` (#150): expired and answered RFC 8628 device codes removed |

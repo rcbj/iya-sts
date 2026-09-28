@@ -282,6 +282,15 @@ const SUBSYSTEMS = [
     where: 'ldap/',
     what: 'The embedded directory on 389 and 636 and the console pages that ' +
           'show it.' },
+  { id: 'ATTR', label: 'Attribute sources',
+    where: 'attribute-sources/attribute_sources.ts, ' +
+           'attribute-sources/attribute_source_drivers.ts, ' +
+           'common/secrets.js (readSourceSecret), ldap/ldap_server.js ' +
+           '(applySourcedAttributes)',
+    what: 'The operators\' SQL databases a realm reads people\'s ' +
+          'attributes from, onto their entries (#94): a source\'s ' +
+          'definition, its driver, its connection and password, the lookup, ' +
+          'and the sign-in or scheduled refresh.' },
   { id: 'SCIM', label: 'SCIM 2.0',
     where: 'scim/',
     what: 'Provisioning at /scim/v2 and its six authentication schemes.' },
@@ -9377,6 +9386,21 @@ const CODES = [
       'values (fedAuthnMechanism, fedBinding, fedResponseType, or any row ' +
       'with an enum) was set to a value outside it (#86).',
     spec: 'HTTP 400 (console and API)' },
+  { code: 'STS-FED-0151',
+    summary: 'A fedAttributeMap value was not a mapping: it is ' +
+      '<incoming name>=<LDAP attribute> (#94).',
+    spec: 'HTTP 400 (console and API)' },
+  { code: 'STS-FED-0152',
+    summary: 'A fedAttributeMap value named a target no partner may write — ' +
+      'an attribute this service keeps (sts*, app*, fed*, pwd*) or the ' +
+      'entry\'s identity, structure or authorization (uid, memberOf, ' +
+      'userPassword, the operational attributes) (#94).',
+    spec: 'HTTP 400 (console and API)' },
+  { code: 'STS-FED-0153',
+    summary: 'A partner\'s attribute was dropped at sign-in because the ' +
+      'relationship maps it onto an attribute no partner may write (a ' +
+      'mapping written before #94, or by an ldapmodify) (#94).',
+    spec: 'none (logged; the sign-in proceeds without it)' },
   // ===== OIDFED ============================================================
   { code: 'STS-OIDFED-0001',
     summary: 'A metadata_policy is not the three levels of JSON objects ' +
@@ -10802,6 +10826,71 @@ const CODES = [
       'have been ended at once. authn.sessionOf() still ends a session ' +
       'whose person has no entry the next time it is presented.',
     spec: 'none — logged; the delete stands' },
+  // ===== ATTR ==============================================================
+  { code: 'STS-ATTR-0001',
+    summary: 'An attribute source\'s driver (or Knex) is not installed: the ' +
+      'dialect\'s package is an optional one, installed into the image with ' +
+      'STS_CLOUD_SDKS (#94).',
+    spec: 'none (a console or API refusal, or a logged refresh failure)' },
+  { code: 'STS-ATTR-0002',
+    summary: 'An attribute source could not be read: the connection, TLS, ' +
+      'the password, the CA file or the query failed (#94).',
+    spec: 'none (logged; per the source, the sign-in proceeds or is refused)' },
+  { code: 'STS-ATTR-0003',
+    summary: 'An attribute source did not answer within its timeout (#94).',
+    spec: 'none (logged; per the source, the sign-in proceeds or is refused)' },
+  { code: 'STS-ATTR-0004',
+    summary: 'An attribute source has more than one row for a person\'s key, ' +
+      'so it names nobody (#94).',
+    spec: 'none (logged; per the source, the sign-in proceeds or is refused)' },
+  { code: 'STS-ATTR-0005',
+    summary: 'An attribute source\'s definition was refused: its id, ' +
+      'dialect, host, port, database, user, password provider, table, key ' +
+      'or column names, refresh modes, interval, timeout or failure ' +
+      'policy (#94).',
+    spec: 'HTTP 400 (console and API)' },
+  { code: 'STS-ATTR-0006',
+    summary: 'An attribute source\'s password could not be read from where ' +
+      'it names (#94).',
+    spec: 'none (logged; per the source, the sign-in proceeds or is refused)' },
+  { code: 'STS-ATTR-0007',
+    summary: 'An attribute source\'s password was read and is empty (#94).',
+    spec: 'none (logged; per the source, the sign-in proceeds or is refused)' },
+  { code: 'STS-ATTR-0008',
+    summary: 'An attribute source may not write an attribute: one this ' +
+      'service keeps, the entry\'s identity, structure or authorization, ' +
+      'or mail (#94).',
+    spec: 'HTTP 400 (console and API), or logged at the write' },
+  { code: 'STS-ATTR-0009',
+    summary: 'An attribute source named an attribute another source in the ' +
+      'realm already writes; an attribute has one source (#94).',
+    spec: 'HTTP 400 (console and API)' },
+  { code: 'STS-ATTR-0010',
+    summary: 'An attribute source named a host attributeSources.hostPatterns ' +
+      'does not allow in its realm (#94).',
+    spec: 'HTTP 400 (console and API)' },
+  { code: 'STS-ATTR-0011',
+    summary: 'An attribute source action named a source that is not there, ' +
+      'or added one that already is, or named a person the realm does not ' +
+      'have (#94).',
+    spec: 'HTTP 400 (console and API)' },
+  { code: 'STS-ATTR-0012',
+    summary: 'A sign-in was refused: an attribute source whose failure ' +
+      'policy is refuse could not be read (#94).',
+    spec: 'the calling protocol\'s access_denied' },
+  { code: 'STS-ATTR-0013',
+    summary: 'An attribute source\'s refresh could not be queued on the ' +
+      'scheduler (#94).',
+    spec: 'HTTP 400 (console and API)' },
+  { code: 'STS-ATTR-0014',
+    summary: 'The directory would not store or remove an attribute source ' +
+      '(no directory, or it is full) (#94).',
+    spec: 'HTTP 400 (console and API)' },
+  { code: 'STS-ATTR-0015',
+    summary: 'An attribute source\'s CA chain was refused: it is not PEM ' +
+      'certificates, a block did not parse, a certificate is expired or ' +
+      'not yet valid, or it is longer than 64 KiB (#94).',
+    spec: 'HTTP 400 (console and API)' },
   // ===== SCIM ==============================================================
   { code: 'STS-SCIM-0001',
     summary: 'A SCIM endpoint (or HOBA key registration) was called while ' +
@@ -16345,6 +16434,10 @@ const CODES = [
       'application\'s role, which may authorize only its own ' +
       'application\'s permissions (#310).',
     spec: 'none (a console or management API refusal, HTTP 400)' },
+  { code: 'STS-ADMIN-0832',
+    summary: 'add-attribute-claim named no directory attribute for the ' +
+      'claim to carry (#94).',
+    spec: 'HTTP 400 (console and API)' },
   { code: 'STS-API-0001',
     summary: 'A management API request carried no Bearer access token while ' +
       'adminApi.authRequired is on.',
@@ -17657,6 +17750,16 @@ const CODES = [
       'was not an https URL with no fragment, at registration or update ' +
       '(a console or API write is refused under STS-REG-0071).',
     spec: 'HTTP 400 {error: invalid_client_metadata}' },
+  { code: 'STS-REG-0200',
+    summary: 'A claim-set attribute claim named an attribute it may not ' +
+      'carry: not an attribute name, a secret or binary value ' +
+      '(userPassword, jpegPhoto, a certificate), or one this service keeps ' +
+      '(sts*, hoba*, app*, pwd*) (#94).',
+    spec: 'HTTP 400 (console and API)' },
+  { code: 'STS-REG-0201',
+    summary: 'A JWT or UserInfo attribute claim named a type that is not ' +
+      'string, number, boolean or json (#94).',
+    spec: 'HTTP 400 (console and API)' },
   { code: 'STS-DBG-0001',
     summary: 'The debugger permission was asked for by somebody who may ' +
       'not hold it — not a person, not signed in, not in the ' +

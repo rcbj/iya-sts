@@ -18,7 +18,7 @@
 //      throws is reported and does not stop the others; `eject` must be a
 //      function.
 //   B. THE LIST. Exactly the stores whose entries expire carry an ejector —
-//      thirty-one, the device enrolment challenges (#164) the latest —
+//      thirty-two, the attribute source lookups (#94) the latest —
 //      and the two that do not, on purpose, are named.
 //   C. THE JOB is registered, per-process and quiet.
 //   D. AN EJECTOR DELETES WHAT ITS READER WOULD REFUSE AND NOTHING ELSE:
@@ -121,13 +121,16 @@ function childMain() {
       'scim.digest-nonces', 'scim.hoba-challenges', 'scim.hoba-signatures',
       // The VC-API test adapter's issued credentials (#194-#199): a row
       // expires with the credential's validity or a default window.
-      'vc-api.issued'
+      'vc-api.issued',
+      // The rows an attribute source returned, held for a burst of sign-ins
+      // (#94).
+      'attribute-sources.lookups'
     ].sort();
     const ejecting = registry.ejecting().filter(function (n) {
       return !/^test\./.test(n);
     });
     note(JSON.stringify(ejecting) === JSON.stringify(expected),
-         'B1. exactly the thirty-one stores whose entries expire eject them',
+         'B1. exactly the thirty-two stores whose entries expire eject them',
          JSON.stringify({ missing: expected.filter(function (n) {
            return ejecting.indexOf(n) < 0;
          }), extra: ejecting.filter(function (n) {

@@ -365,6 +365,12 @@ const passwordPolicy = require('../common/password_policy');
 // so the require moves no route and closes no cycle.
 const authnPolicy = require('../common/authn_policy');
 const mode = require('../common/mode');
+// The attributes no outside source may write (#94), asked at the federated
+// write. A leaf.
+const SourcedAttributes = require('../common/sourced_attributes');
+// The attribute sources (#94), whose slot this file fills below. A library
+// that requires nothing of this file.
+const attributeSources = require('../attribute-sources/attribute_sources');
 // THE RATE LIMITER THE SIGN-IN SCREEN AND THE PORTAL ALREADY USE, for failed
 // binds (2026-09-12). A LIBRARY that requires only helpers, config, crypto,
 // realms and error_codes, so the require closes no cycle and moves no route.
@@ -775,6 +781,19 @@ function claimProvidersDn() {
   log.debug("Entering claimProvidersDn().");
   log.debug("Leaving claimProvidersDn().");
   return 'ou=claimproviders,' + baseDn();
+}
+
+// ou=attributesources IS THE REGISTER OF ATTRIBUTE SOURCES (#94,
+// 2026-09-28): the operators' SQL databases this realm reads people's
+// attributes from, onto their entries. One `stsAttributeSource` entry per
+// source, its definition one JSON value (`stsAttributeSourceData`) and never
+// a password — a source names where its password is, read through
+// `common/secrets.js`. `attribute-sources/attribute_sources.ts` owns what an
+// entry means.
+function attributeSourcesDn() {
+  log.debug("Entering attributeSourcesDn().");
+  log.debug("Leaving attributeSourcesDn().");
+  return 'ou=attributesources,' + baseDn();
 }
 
 // ou=policies IS the XACML policy repository — not a copy of one kept
@@ -2256,6 +2275,12 @@ const OWN_NAMES = [
   'stsClaimProvider', 'stsClaimProviderData', 'stsClaimProviderSecret',
   'stsClaimSourceTokens',
 
+  // AN ATTRIBUTE SOURCE (#94): the register entry's class and its one JSON
+  // value; and on a PERSON, which attributes each source wrote
+  // (`<source>:<attribute>`) and when each last read them (`<source>=<time>`).
+  'stsAttributeSource', 'stsAttributeSourceData', 'stsAttributeSourced',
+  'stsAttributeSourceSeen',
+
   // AND A SUBORDINATE'S EVENT HISTORY (#137, 2026-09-24): one JSON event per
   // value of an `events` entry, appended and never rewritten, merged by
   // value when two nodes append at once (persistence/directory_merge.js).
@@ -3222,6 +3247,14 @@ function seed() {
       'one, delivered as aggregated or distributed claims ' +
       '(oauth-oidc/claims_providers.ts). A person\'s own tokens for each ' +
       'provider are on their entry, sealed (stsClaimSourceTokens).'
+  }, { origin: 'seed' });
+  putEntry(attributeSourcesDn(), {
+    objectClass: ['top', 'organizationalUnit'],
+    ou: 'attributesources',
+    description: 'Attribute sources (#94): the SQL databases this realm ' +
+      'reads people\'s attributes from, onto their entries ' +
+      '(attribute-sources/attribute_sources.ts). What a source wrote on a ' +
+      'person is named on that entry (stsAttributeSourced).'
   }, { origin: 'seed' });
   putEntry(policiesDn(), {
     objectClass: ['top', 'organizationalUnit'],
@@ -4983,6 +5016,11 @@ function applyFederatedAttributes(stored, info, how) {
     return false;
   }
   let changed = false;
+  // WHAT THE PERSON LOOKED LIKE BEFORE (#94), for the change this write tells
+  // the observers about. Not for an entry this sign-in created: its creation
+  // is announced by the create.
+  const beforeAll = createdNow ? null : attributeSnapshot(stored);
+  let described = false;
   // What `mail` was, for verifyWrittenMail() (#64).
   const beforeFederated = { mail: (stored.attributes.mail || []).slice(0) };
   // The facts about WHERE they came from. Multi-valued and accumulated,
@@ -5021,13 +5059,18 @@ function applyFederatedAttributes(stored, info, how) {
     // name two different people — and every lookup here that finds somebody by
     // name goes through one or the other. The username mapping is where a
     // partner's own idea of the local name belongs, and it has its own setting.
+    //
+    // AND NEVER AN ATTRIBUTE NO OUTSIDE SOURCE MAY WRITE (#94): credentials,
+    // account state, group membership, links and provenance. The mapping is
+    // refused when it is written and dropped by `federation_map.ts` when it
+    // is applied; this is the third net, at the write itself.
     const lower = name.toLowerCase();
-    if (lower === 'uid' || lower === 'objectclass' ||
-        lower === 'createtimestamp' || lower === 'modifytimestamp' ||
-        lower === 'entrydn' || lower === 'entryuuid' ||
-        lower === ENTRY_UUID_ALIAS) {
-      log.debug('applyFederatedAttributes(): not writing "' + name + '" — it ' +
-                'names the entry rather than describing the person.');
+    const refused = lower === ENTRY_UUID_ALIAS ? 'it names the entry'
+      : SourcedAttributes.refusal(lower);
+    if (refused) {
+      log.warn(errorCodes.tag('STS-FED-0153') + 'applyFederatedAttributes(): ' +
+               'not writing "' + name + '" onto ' + stored.dn + ': ' +
+               refused + '.');
       return;
     }
     const canonical = canonicalName(lower);
@@ -5037,6 +5080,7 @@ function applyFederatedAttributes(stored, info, how) {
     if (!same) {
       stored.attributes[lower] = values;
       changed = true;
+      described = true;
     }
     written.push(canonical);
   });
@@ -5075,6 +5119,16 @@ function applyFederatedAttributes(stored, info, how) {
                'names nothing maps and were NOT ' +
                'written: ' + federated.unmapped.join(', ') + '.'
              : ''));
+  // TOLD (#94): a partner's values that changed a person who already existed
+  // reach the observers as any other write does — CAEP token-claims-change
+  // for what their live tokens carry, RISC for an identifier, the former
+  // address told of a new one. Until #94 this write was the one silent door
+  // onto a person's attributes. Only when a value describing the person
+  // moved: `federationLastSeen` moves on every sign-in and is not news.
+  if (beforeAll && described) {
+    noteAccountChange('updated', stored.dn, beforeAll,
+                      attributeSnapshot(stored));
+  }
   log.debug('Leaving applyFederatedAttributes(). The entry was updated.');
   return true;
 }
@@ -7517,6 +7571,20 @@ if (typeof pkiRevocation.setDirectory === 'function') {
 // answers rows carrying a DN, a cn and how the membership was established,
 // which is what /admin/groups draws; a role only ever compares names, and
 // passing the rows would put the shape of a console page into the resolver.
+// THE ATTRIBUTE SOURCES' SLOT (#94): the register's three store functions,
+// a person's entry, the realm's people, and the one write of a source's
+// values. `attribute_sources.ts` is a library that requires nothing of this
+// file, so this require moves no route and closes no cycle.
+attributeSources.setDirectory({
+  listSources: listAttributeSourceEntries,
+  writeSource: writeAttributeSourceEntry,
+  deleteSource: deleteAttributeSourceEntry,
+  personAttributes: vcAttributesFor,
+  people: attributeSourcePeople,
+  apply: applySourcedAttributes,
+  seen: attributeSourceSeen
+});
+
 if (typeof roles.setDirectory === 'function') {
   roles.setDirectory({
     allRoles: allRoles,
@@ -9283,6 +9351,185 @@ function deleteClaimProviderEntry(cn) {
   touchDirectory();
   log.debug('Leaving deleteClaimProviderEntry().');
   return true;
+}
+
+// ---------------------------------------------------------------------------
+// THE ATTRIBUTE SOURCE REGISTER (#94): every entry under ou=attributesources,
+// whole; one written (created or replaced) by its `cn`; one deleted — the
+// claim-provider register's three, for the same kind of register.
+// ---------------------------------------------------------------------------
+function attributeSourceEntryDn(cn) {
+  log.debug('Entering attributeSourceEntryDn().');
+  log.debug('Leaving attributeSourceEntryDn().');
+  return 'cn=' + escapeDnValue(String(cn)) + ',' + attributeSourcesDn();
+}
+
+function listAttributeSourceEntries() {
+  log.debug('Entering listAttributeSourceEntries().');
+  const out = entriesUnder(attributeSourcesDn()).filter(function (stored) {
+    return normalizeDn(stored.dn) !== normalizeDn(attributeSourcesDn());
+  }).map(function (stored) {
+    const attributes = {};
+    Object.keys(stored.attributes).forEach(function (name) {
+      attributes[name] = stored.attributes[name].slice(0);
+    });
+    return { dn: stored.dn, attributes: attributes };
+  });
+  log.debug('Leaving listAttributeSourceEntries(). ' + out.length + '.');
+  return out;
+}
+
+function writeAttributeSourceEntry(cn, attributes) {
+  log.debug('Entering writeAttributeSourceEntry(). cn=' + cn);
+  const dn = attributeSourceEntryDn(cn);
+  const existing = getEntry(dn);
+  if (!existing && totalEntries() >= maxEntries()) {
+    log.warn(errorCodes.tag('STS-LDAP-0007') +
+             'ldap: not creating ' + dn + '; the directory holds its ' +
+             'maximum of ' + maxEntries() + ' entries.');
+    log.debug('Leaving writeAttributeSourceEntry(). The directory is full.');
+    return false;
+  }
+  const created = existing ? existing.createdAt : generalizedTime();
+  const stored = putEntry(dn, attributes,
+                          { origin: existing ? existing.origin :
+                                                'attributesources' });
+  stored.createdAt = created;
+  stored.attributes.createtimestamp = [created];
+  stored.attributes.modifytimestamp = [generalizedTime()];
+  log.debug('Leaving writeAttributeSourceEntry(). ' +
+            (existing ? 'Replaced.' : 'Created.'));
+  return true;
+}
+
+function deleteAttributeSourceEntry(cn) {
+  log.debug('Entering deleteAttributeSourceEntry(). cn=' + cn);
+  const stored = getEntry(attributeSourceEntryDn(cn));
+  if (!stored) {
+    log.debug('Leaving deleteAttributeSourceEntry(). Not here.');
+    return false;
+  }
+  entries.delete(normalizeDn(stored.dn));
+  touchDirectory();
+  log.debug('Leaving deleteAttributeSourceEntry().');
+  return true;
+}
+
+// The people of the ambient realm, by username, sorted — for the scheduled
+// refresh, which pages through them after a cursor (#94).
+function attributeSourcePeople(after, limit) {
+  log.debug('Entering attributeSourcePeople(). after=' + (after || ''));
+  const names = entriesUnder(usersDn()).filter(function (stored) {
+    return isPersonEntry(stored);
+  }).map(function (stored) {
+    return canonicalUsernameOfDn(stored.dn);
+  }).filter(Boolean).sort();
+  const start = after ? names.filter(function (name) {
+    return name > after;
+  }) : names;
+  log.debug('Leaving attributeSourcePeople().');
+  return start.slice(0, Math.max(1, Number(limit) || 100));
+}
+
+// THE ONE WRITE OF A SOURCE'S VALUES ONTO A PERSON (#94). `changes` is
+// `{ <attribute>: [values] | null }` — values assigned (the source wins,
+// over development's invented persona values too), null removing the
+// attribute. Never an attribute no outside source may write, nor `mail`
+// (its verification and change notice are the mail flow's). Provenance:
+// `stsAttributeSourced` names each `<source>:<attribute>` it wrote, and
+// `stsAttributeSourceSeen` the time this source last read the person —
+// written only when the source had not read them before or a value moved,
+// so a steady sign-in is not a directory write. A change describing the
+// person is told to the account observers once, as the federated write is.
+function applySourcedAttributes(key, sourceId, changes) {
+  log.debug('Entering applySourcedAttributes(). key=' + key + ', source=' +
+            sourceId);
+  const located = locateEntry(String(key || ''));
+  const stored = located.stored;
+  if (!stored || !isPersonEntry(stored)) {
+    log.debug('Leaving applySourcedAttributes(). No such person.');
+    return { found: false, changed: [] };
+  }
+  const before = attributeSnapshot(stored);
+  const changed = [];
+  const written = [];
+  Object.keys(changes || {}).forEach(function (name) {
+    const lower = String(name).toLowerCase();
+    const refused = lower === 'mail' ? 'mail is the mail flow\'s'
+      : SourcedAttributes.refusal(lower);
+    if (refused) {
+      log.warn(errorCodes.tag('STS-ATTR-0008') + 'ldap: attribute source ' +
+               sourceId + ' may not write ' + name + ' onto ' + stored.dn +
+               ': ' + refused + '.');
+      return;
+    }
+    const given = changes[name];
+    if (given === null) {
+      if (stored.attributes[lower]) {
+        delete stored.attributes[lower];
+        changed.push(canonicalName(lower));
+      }
+      return;
+    }
+    const values = [].concat(given).map(String).filter(function (one) {
+      return one !== '';
+    });
+    const existing = stored.attributes[lower] || [];
+    if (existing.length !== values.length ||
+        !existing.every(function (one, at) { return one === values[at]; })) {
+      if (values.length) {
+        stored.attributes[lower] = values;
+      } else {
+        delete stored.attributes[lower];
+      }
+      changed.push(canonicalName(lower));
+    }
+    // Provenance in the SOURCE's spelling: an attribute this directory has
+    // never been told of has no canonical one but its lower-cased self.
+    written.push(String(name));
+  });
+  let touched = changed.length > 0;
+  written.forEach(function (name) {
+    if (addValues(stored, 'stsAttributeSourced', [sourceId + ':' + name])) {
+      touched = true;
+    }
+  });
+  const seen = (stored.attributes.stsattributesourceseen || [])
+    .filter(function (one) {
+      return String(one).indexOf(sourceId + '=') !== 0;
+    });
+  const hadSeen = seen.length !==
+                  (stored.attributes.stsattributesourceseen || []).length;
+  if (!hadSeen || changed.length) {
+    stored.attributes.stsattributesourceseen =
+      seen.concat([sourceId + '=' + new Date().toISOString()]);
+    touched = true;
+  }
+  if (touched) {
+    stored.modifiedAt = generalizedTime();
+    stored.attributes.modifytimestamp = [stored.modifiedAt];
+    touchDirectory(stored.dn);
+  }
+  if (changed.length) {
+    noteAccountChange('updated', stored.dn, before,
+                      attributeSnapshot(stored));
+  }
+  log.debug('Leaving applySourcedAttributes(). ' + changed.length +
+            ' changed.');
+  return { found: true, changed: changed };
+}
+
+// Whether a source has read a person before (#94): its `once` mode reads a
+// person only the first time.
+function attributeSourceSeen(key, sourceId) {
+  log.debug('Entering attributeSourceSeen(). key=' + key);
+  const located = locateEntry(String(key || ''));
+  const values = (located.stored &&
+                  located.stored.attributes.stsattributesourceseen) || [];
+  log.debug('Leaving attributeSourceSeen().');
+  return values.some(function (one) {
+    return String(one).indexOf(String(sourceId) + '=') === 0;
+  });
 }
 
 // A PERSON'S ACCOUNT IDS AT CLIENTS (#148): every `<client_id> <aud_sub>`

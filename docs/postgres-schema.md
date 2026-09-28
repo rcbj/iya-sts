@@ -209,7 +209,7 @@ tests):
 |---|---|
 | Sign-in | `authn.sessions`, `authn.pending`, `authn.pendingMfa`, `authn.pendingPasswordChange`, `authn.webauthnCredentials`, `credentials.pendingBackupCodes`, `credentials.pendingKeys`, `credentials.pendingTotp`, `spnego.pending`, `oidc_rp.flows` |
 | OAuth / OIDC | `oauth2.authzCodes`, `oauth2.redeemedCodes`, `oauth2.pushedRequests`, `oauth2.attestationChallenges`, `oauth2.backchannelDeliveries`, `oauth2.cibaRequests`, `oauth2.cibaDeliveries`, `oauth2_bcp.refreshTokens`, `oauth2_bcp.refreshFamilies`, `oauth2_bcp.grantTokens`, `oauth2_bcp.transactions`, `oauth2.grants`, `oauth2.grantIssued`, `oauth2_monitor.counters`, `consent_screen.pending`, `authorization_details.consented`, `authorization_servers.profiles`, `dpop.issuedNonces`, `dpop.seenJtis` |
-| SAML, WS-* and federation | `saml2_sso.artifacts`, `saml2_sso.pendingRequests`, `saml2_sso.spContexts`, `saml2.mdqRefusals`, `saml11_sso.artifacts`, `saml11_sso.assertionsById`, `saml11_sso.pendingFlows`, `wsfed.rpContexts`, `federation_sp.contexts`, `delegation.acts` |
+| SAML, WS-* and federation | `saml2_sso.artifacts`, `saml2_sso.pendingRequests`, `saml2_sso.spContexts`, `saml2.mdqRefusals`, `saml11_sso.artifacts`, `saml11_sso.assertionsById`, `saml11_sso.pendingFlows`, `wsfed.rpContexts`, `federation_sp.contexts`, `federation.unmapped`, `delegation.acts` |
 | Verifiable credentials | `vc_offers.credentialOffers`, `vc_offers.preAuthorizedCodes`, `vc_offers.issuerStates`, `vc_offers.deferredAccessTokens`, `vc_offers.deferredTransactions`, `vc_issuer.vciNonces`, `vc_issuer.notificationIds`, `vc_issuer.lastCredentialRequest`, `vc_issued.credentials`, `vc_status.entries`, `vc_claims.state`, `vc_verifier.vpRequests`, `vc_verifier.vpTransactions`, `vc_verifier_config.state` |
 | GNAP | `gnap.grants`, `gnap.continuations`, `gnap.interactions`, `gnap.tokens`, `gnap.tokenValues`, `gnap.instances`, `gnap.approvers`, `gnap.resources`, `gnap.manageHandles`, `gnap.manageValues`, `gnap.userCodes`, `gnap.userRefs`, `gnap.replay`, `gnap.movedGrants`, `gnap_monitor.counters` |
 | Kerberos | `krb5.principals`, `krb5.replayCache` |
@@ -218,6 +218,7 @@ tests):
 | SCIM | `scim.digestNonces`, `scim.digestCounts`, `scim.hobaChallenges`, `scim.hobaSeen` |
 | Shared Signals | `ssf_streams.streams`, `ssf_streams.queued`, `ssf_streams.received`, `ssf_streams.deadLetters`, `ssf_receivers.inbox`, `ssf_dead_letter_report.sweeps`, `caep.register`, `risc.register` |
 | Mail | `mail.outbox`, `mail.preferences`, `mail.templates` |
+| Attribute sources | `attribute_sources.status` |
 | Devices | `devices.events` |
 | OpenID Federation | `oidfed.registerGeneration` |
 | Console statistics and audit | `admin_stats.tokens`, `admin_stats.artifacts`, `admin_stats.revokedArtifacts`, `admin_stats.revokedJtis`, `admin_stats.claimSets`, `admin_stats.users`, `admin_stats.calls`, `admin_stats.nums`, `admin_stats.scimCounts`, `claim_attributes.selections`, `xacml_monitor.counters`, `audit.events`, `audit.nums` |

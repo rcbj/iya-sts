@@ -1819,6 +1819,152 @@ class AdminViews {
     return asked.slice(0, 64) || 'alice';
   }
 
+  // ---------------------------------------------------------------------------
+  // ATTRIBUTE CLAIMS' THREE HELPS (#94): the attributes worth offering, what
+  // each row would carry for the previewed person, and which federation
+  // partners' release lists would withhold a claim. One computation each,
+  // for the three claim pages and their three /admin-api replies.
+  // ---------------------------------------------------------------------------
+  /**
+   * The attributes an attribute claim can name that the catalogue cannot:
+   * what this realm's attribute sources and inbound federation mappings
+   * write, each with who writes it.
+   *
+   * @returns `[{ attribute, from: [..] }]`, sorted by attribute
+   */
+  attributeClaimChoices() {
+    const { log, federation } = this.deps;
+    log.debug("Entering AdminViews.attributeClaimChoices().");
+    const by: Record<string, { attribute: string; from: string[] }> = {};
+    const add = function (attribute: unknown, from: string) {
+      const name = String(attribute || '').trim();
+      if (!name) {
+        return;
+      }
+      const key = name.toLowerCase();
+      by[key] = by[key] || { attribute: name, from: [] };
+      if (by[key].from.indexOf(from) < 0) {
+        by[key].from.push(from);
+      }
+    };
+    let sources: any[] = [];
+    try {
+      sources = require('../attribute-sources/attribute_sources').list();
+    } catch (e) {
+      log.debug("Caught in AdminViews.attributeClaimChoices(): " +
+                ((e && e.message) || e));
+      // No attribute sources in this process: the list is federation's.
+      sources = [];
+    }
+    sources.forEach(function (source) {
+      Object.keys(source.columns || {}).forEach(function (column) {
+        add(source.columns[column], 'attribute source ' + source.id);
+      });
+    });
+    (federation.list() || []).forEach(function (record) {
+      [].concat(record.fedAttributeMap || []).forEach(function (value) {
+        const text = String(value);
+        const at = text.indexOf('=');
+        if (at > 0) {
+          add(text.slice(at + 1), 'federation ' + record.fedId);
+        }
+      });
+    });
+    const out = Object.keys(by).sort().map(function (key) {
+      return by[key];
+    });
+    log.debug("Leaving AdminViews.attributeClaimChoices(). " + out.length +
+              ".");
+    return out;
+  }
+
+  /**
+   * What each attribute claim of a set would carry for one person, built by
+   * the issuance path (`jwtClaims()` / `samlAttributes()`).
+   *
+   * @param id - the claim set
+   * @param user - the person
+   * @returns `[{ name, attribute, carried, value }]`; `value` is the JWT
+   *   value or the SAML values
+   */
+  attributeClaimPreview(id, user) {
+    const { log, stats } = this.deps;
+    log.debug("Entering AdminViews.attributeClaimPreview(). " + id);
+    const rows = stats.claimSet(id).filter(function (claim) {
+      return !!claim.attribute;
+    });
+    if (!rows.length) {
+      log.debug("Leaving AdminViews.attributeClaimPreview(). None.");
+      return [];
+    }
+    const saml = id === 'saml2' || id === 'saml11';
+    const issued = saml ? stats.samlAttributes(id, { subject: user })
+                        : stats.jwtClaims(id, { username: user });
+    log.debug("Leaving AdminViews.attributeClaimPreview().");
+    return rows.map(function (claim) {
+      if (saml) {
+        const found = (issued as any[]).filter(function (one) {
+          return one.name === claim.name;
+        })[0];
+        const values = found
+          ? (Array.isArray(found.values) ? found.values : [found.value]) : [];
+        return { name: claim.name, attribute: claim.attribute,
+                 carried: values.length > 0, value: values };
+      }
+      const carried = Object.prototype.hasOwnProperty.call(issued,
+                                                           claim.name);
+      return { name: claim.name, attribute: claim.attribute,
+               carried: carried,
+               value: carried ? (issued as any)[claim.name] : null };
+    });
+  }
+
+  /**
+   * The federation partners with a release list, each with the claim names
+   * it releases: a claim that is not on a partner's list is withheld from
+   * that partner.
+   *
+   * @returns `[{ id, names }]`
+   */
+  releaseWithholding() {
+    const { log, federation } = this.deps;
+    log.debug("Entering AdminViews.releaseWithholding().");
+    const out = (federation.list() || []).filter(function (record) {
+      return [].concat(record.fedRelease || []).length > 0;
+    }).map(function (record) {
+      return { id: String(record.fedId),
+               names: [].concat(record.fedRelease || []).map(String) };
+    });
+    log.debug("Leaving AdminViews.releaseWithholding(). " + out.length +
+              " partner(s) with a list.");
+    return out;
+  }
+
+  /**
+   * For each claim of a set, the partners whose release list withholds it.
+   *
+   * @param claims - the set's claims
+   * @param lists - `releaseWithholding()`
+   * @returns `{ <claim name>: [partner ids] }`, only names withheld somewhere
+   */
+  withheldFor(claims, lists) {
+    const { log } = this.deps;
+    log.debug("Entering AdminViews.withheldFor().");
+    const out: Record<string, string[]> = {};
+    (claims || []).forEach(function (claim) {
+      const from = (lists || []).filter(function (one) {
+        return one.names.indexOf(claim.name) < 0;
+      }).map(function (one) {
+        return one.id;
+      });
+      if (from.length) {
+        out[claim.name] = from;
+      }
+    });
+    log.debug("Leaving AdminViews.withheldFor().");
+    return out;
+  }
+
   // One family of sets and the rules that govern them. The rules are in the
   // reply and not only on the page because the first thing a caller of POST
   // .../claims/add needs is the list of names it will refuse.
@@ -1841,9 +1987,11 @@ class AdminViews {
    */
   claimSetsJson(ids, previewUser) {
     const { log, stats, claimAttributes, groupClaims } = this.deps;
+    const self = this;
     log.debug("Entering AdminViews.claimSetsJson(). " + ids.length +
               " set(s).");
     const user = previewUser || 'alice';
+    const withheld = this.releaseWithholding();
     const json = {
       placeholders: stats.PLACEHOLDERS,
       // The catalogue every set chooses from, so a caller can discover the
@@ -1870,8 +2018,20 @@ class AdminViews {
                  // catalogue would be a preview that can disagree with the
                  // token.
                  attributeClaims: preview.claims,
-                 attributeReport: preview.report };
+                 attributeReport: preview.report,
+                 // THE SET'S OWN ROWS FOR THIS PERSON (#94): what each
+                 // attribute claim would carry, built by the issuance path.
+                 attributeClaimPreview: self.attributeClaimPreview(id, user),
+                 // WHO WOULD NOT GET EACH CLAIM (#94): the federation
+                 // partners whose release list does not name it.
+                 withheldFrom: self.withheldFor(stats.claimSet(id), withheld)
+               };
       }),
+      // THE ATTRIBUTES AN ATTRIBUTE CLAIM CAN NAME THAT THE CATALOGUE CANNOT
+      // (#94): what this realm's attribute sources and federation mappings
+      // write onto people, each with who writes it — the console's pick-list,
+      // and a caller's.
+      attributeChoices: this.attributeClaimChoices(),
       // Whether the directory holds this person at all, and what every
       // attribute in the catalogue would say about them — selected or not, so a
       // caller can see what ticking a box would do before ticking it. Read
@@ -7044,6 +7204,11 @@ class AdminViews {
           })
         : [],
       { name: 'links', noun: 'links' });
+    // WHAT THE PARTNER SENT AND NOTHING WROTE (#94): names no mapping names,
+    // and names mapped onto an attribute no partner may write, newest
+    // first. Service-provider side only, where attributes arrive.
+    const unmapped = row.role === 'service-provider'
+      ? federation.unmappedOf(record.fedId) : [];
 
     log.debug("Leaving AdminViews.federationDetailJson().");
     return {
@@ -7052,6 +7217,7 @@ class AdminViews {
       encryption: encryption,
       signOut: row.role === 'service-provider' ? signOut : {},
       setFields: setFields, multiFields: multiFields, linkPage: linkPage,
+      unmapped: unmapped,
       json: (function () {
       return Object.assign({ found: true }, row, {
           endpoints: Object.assign({
@@ -7080,6 +7246,7 @@ class AdminViews {
             return out;
           })(),
           editable: federation.fieldsForRole(row.role),
+          unmappedAttributes: unmapped,
           encryption: encryption,
           // Who this partner's subjects are linked to (#109): the page, and
           // the paging a caller walks it with.
@@ -8559,6 +8726,10 @@ export = {
   federationListJson: slot.forward('federationListJson'),
   applicationPermissionsState: slot.forward('applicationPermissionsState'),
   applicationRolesState: slot.forward('applicationRolesState'),
+  attributeClaimChoices: slot.forward('attributeClaimChoices'),
+  attributeClaimPreview: slot.forward('attributeClaimPreview'),
+  releaseWithholding: slot.forward('releaseWithholding'),
+  withheldFor: slot.forward('withheldFor'),
   applicationDetailJson: slot.forward('applicationDetailJson'),
   applicationsJson: slot.forward('applicationsJson'),
   applicationsListJson: slot.forward('applicationsListJson'),

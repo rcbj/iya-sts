@@ -490,6 +490,9 @@ interface AdminApiDeps {
   loadOauth2MonitorApi(): typeof import('../oauth-oidc/oauth2_monitor_api');
   loadGrantManagementApi(): typeof import('../oauth-oidc/grant_management_api');
   loadClaimsProvidersApi(): typeof import('../oauth-oidc/claims_providers_api');
+  // The attribute source operations (#94).
+  loadAttributeSourcesApi():
+    typeof import('../attribute-sources/attribute_sources_api');
   loadProviderCommandsApi(): typeof import('../oauth-oidc/provider_commands_api');
   loadSsfTransmittersApi(): typeof import('../ssf/ssf_transmitters_api');
 }
@@ -596,6 +599,9 @@ class AdminApi {
       },
       loadOauth2MonitorApi: function () {
         return require('../oauth-oidc/oauth2_monitor_api');
+      },
+      loadAttributeSourcesApi: function () {
+        return require('../attribute-sources/attribute_sources_api');
       },
       loadClaimsProvidersApi: function () {
         return require('../oauth-oidc/claims_providers_api');
@@ -1371,6 +1377,48 @@ class AdminApi {
           required: ['set', 'name'],
           examples: [{ set: family.example, name: 'dept',
                        value: 'engineering' }],
+          additionalProperties: false
+        },
+        responseDescription: 'The set as it now stands, in `claims`.' },
+
+      { action: 'add-attribute-claim', operationId: family.ids.addAttribute,
+        summary: 'Add one ' + noun + ' carrying a directory attribute',
+        description: 'The ' + noun + '\'s value is `attribute` on the ' +
+                     'entry of the person the ' + family.carrier + ' is ' +
+                     'about (#94) — any attribute, where the directory-' +
+                     'attribute half of a set offers only the fixed ' +
+                     'catalogue, under the name given here. Only the ' +
+                     'directory, never an invented value: a person whose ' +
+                     'entry lacks it gets no such ' + noun + ', and a lower ' +
+                     'layer of the same name still answers. `multi` ' +
+                     'carries every value. A secret, a binary value or an ' +
+                     'attribute this service keeps (sts*, hoba*, app*, ' +
+                     'pwd*) is refused. Removed by `remove`, by name. The ' +
+                     'same reserved names are refused as for `add`, and a ' +
+                     'directory write that moves the attribute sends CAEP ' +
+                     'token-claims-change to holders of live tokens.',
+        requestBodyRequired: true,
+        requestBody: {
+          type: 'object',
+          properties: {
+            set: setField,
+            name: { type: 'string' },
+            attribute: { type: 'string',
+                         description: 'The directory attribute.' },
+            multi: { type: 'boolean',
+                     description: 'Every value rather than the first.' },
+            type: { type: 'string',
+                    enum: ['string', 'number', 'boolean', 'json'],
+                    description: 'The JSON type of each value, in a JWT or ' +
+                                 'UserInfo set. Ignored by the SAML sets.' },
+            nameFormat: { type: 'string',
+                          description: 'The SAML 2.0 set only.' },
+            namespace: { type: 'string',
+                         description: 'The SAML 1.1 set only.' }
+          },
+          required: ['set', 'name', 'attribute'],
+          examples: [{ set: family.example, name: 'cost_center',
+                       attribute: 'costCenter' }],
           additionalProperties: false
         },
         responseDescription: 'The set as it now stands, in `claims`.' },
@@ -2201,6 +2249,7 @@ class AdminApi {
             pkiAdmin, certificateViews, passwordPolicy, loadAcmeApi, loadEstApi,
             loadScepApi, loadOidfedApi, loadOauth2MonitorApi,
             loadGrantManagementApi, loadClaimsProvidersApi,
+            loadAttributeSourcesApi,
             loadProviderCommandsApi, loadSsfTransmittersApi } = this.deps;
     const self = this;
     log.debug("Entering AdminApi.buildRoutes().");
@@ -19211,6 +19260,9 @@ class AdminApi {
       // CLAIMS PROVIDERS (#147): /admin/claim-providers' twin, in the same
       // shape.
       ...loadClaimsProvidersApi().ROUTES,
+      // THE ATTRIBUTE SOURCES (#94): the register and its six acts, the
+      // console's own (`attribute-sources/attribute_sources_api.ts`).
+      ...loadAttributeSourcesApi().ROUTES,
       // PROVIDER COMMANDS AND OUTBOUND DELIVERIES (#151): /admin/commands'
       // and /admin/deliveries' twins, in the same shape.
       ...loadProviderCommandsApi().ROUTES,
@@ -20426,7 +20478,8 @@ const JWT_CLAIM_FAMILY = {
   carrier: 'token',
   example: 'id_token',
   reserved: true,
-  ids: { add: 'addClaim', remove: 'removeClaim', clear: 'clearClaims',
+  ids: { add: 'addClaim', addAttribute: 'addAttributeClaim',
+         remove: 'removeClaim', clear: 'clearClaims',
          replace: 'replaceClaims', attributes: 'setClaimAttributes',
          all: 'selectAllClaimAttributes', none: 'clearClaimAttributes' }
 };
@@ -20450,7 +20503,9 @@ const USERINFO_CLAIM_FAMILY = {
   carrier: 'UserInfo response',
   example: 'userinfo',
   reserved: true,
-  ids: { add: 'addUserInfoClaim', remove: 'removeUserInfoClaim',
+  ids: { add: 'addUserInfoClaim',
+         addAttribute: 'addUserInfoAttributeClaim',
+         remove: 'removeUserInfoClaim',
          clear: 'clearUserInfoClaims', replace: 'replaceUserInfoClaims',
          attributes: 'setUserInfoClaimAttributes',
          all: 'selectAllUserInfoClaimAttributes',
@@ -20463,7 +20518,9 @@ const SAML_CLAIM_FAMILY = {
   carrier: 'assertion',
   example: 'saml11',
   reserved: false,
-  ids: { add: 'addSamlAttribute', remove: 'removeSamlAttribute',
+  ids: { add: 'addSamlAttribute',
+         addAttribute: 'addSamlDirectoryAttributeClaim',
+         remove: 'removeSamlAttribute',
          clear: 'clearSamlAttributes', replace: 'replaceSamlAttributes',
          attributes: 'setSamlDirectoryAttributes',
          all: 'selectAllSamlDirectoryAttributes',

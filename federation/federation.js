@@ -200,6 +200,9 @@ const applications = require('./../common/applications');
 // `any-existing` is refused in product (#109): a relationship may not be SET to
 // it there. A leaf over config.js; it requires nothing here back.
 const mode = require('./../common/mode');
+// The attributes no outside source may write (#94): a map naming one as its
+// target is refused. A leaf, so this require closes no cycle.
+const SourcedAttributes = require('./../common/sourced_attributes');
 
 // ---------------------------------------------------------------------------
 // THE TWO ROLES. Which end of the relationship THIS SERVICE is.
@@ -3284,6 +3287,135 @@ function subjectFieldProblem(field, value) {
   return null;
 }
 
+// A `fedAttributeMap` value (#94): `<incoming name>=<LDAP attribute>`, whose
+// target an outside source may write. Until #94 the target was not looked
+// at, so `groups=memberOf` put a partner's value into a person's group
+// memberships and `x=pwdAccountLockedTime` disabled them. Answers null, or
+// the code, the audit sentence and the message, as subjectFieldProblem().
+function attributeMapProblem(value) {
+  log.debug("Entering attributeMapProblem().");
+  const text = String(value || '');
+  const at = text.indexOf('=');
+  const incoming = at > 0 ? text.slice(0, at).trim() : '';
+  const target = at > 0 ? text.slice(at + 1).trim() : '';
+  if (!incoming || !target) {
+    log.debug("Leaving attributeMapProblem(). Not a mapping.");
+    return { code: 'STS-FED-0151',
+             why: '"' + text + '" is not a mapping',
+             message: '"' + text + '" is not a mapping. A mapping is ' +
+                      '<incoming name>=<LDAP attribute>, split at the ' +
+                      'first equals sign.' };
+  }
+  const refusal = SourcedAttributes.refusal(target);
+  if (refusal) {
+    log.debug("Leaving attributeMapProblem(). A refused target.");
+    return { code: 'STS-FED-0152',
+             why: 'a mapping targets ' + target + ', which a partner may ' +
+                  'not write',
+             message: 'A partner may not write "' + target + '": ' +
+                      refusal + '.' };
+  }
+  log.debug("Leaving attributeMapProblem(). A mapping.");
+  return null;
+}
+
+// ---------------------------------------------------------------------------
+// THE NAMES A PARTNER SENT THAT NOTHING MAPPED (#94).
+//
+// A partner's attribute that no mapping names — or that a mapping sends onto
+// an attribute no partner may write — is dropped at sign-in, and until #94
+// that was said only in a log line and on the signed-in person's own result
+// page. `/admin/federation` now lists them per relationship, which is where
+// somebody deciding what to map looks.
+//
+// A per-realm persisted store keyed by relationship id: each value is
+// `{ names: { <lower-cased name>: { name, refused, first, last } } }`, at
+// most UNMAPPED_CAP names (the oldest `last` goes first). A sign-in writes
+// only when a name is new, its reason changed, or it was last recorded over
+// UNMAPPED_REFRESH_MS ago, so a relationship's steady traffic is not a write
+// per sign-in. In `sts_minted` on postgres, so it ages out with
+// `persistence.mintedRetention` like any observation.
+// ---------------------------------------------------------------------------
+const UNMAPPED_CAP = 50;
+const UNMAPPED_REFRESH_MS = 60 * 60 * 1000;
+const unmappedSeen = realms.map({ persist: 'federation.unmapped',
+                                 retain: 'age' });
+
+/**
+ * Records the names a partner sent that were not written, for the console.
+ *
+ * @param id - the relationship id
+ * @param unmapped - `federation_map`'s `unmapped`: `{ incoming, refused? }`
+ * @returns true when the store was written
+ */
+function recordUnmapped(id, unmapped) {
+  log.debug('Entering recordUnmapped(). id=' + id);
+  const list = Array.isArray(unmapped) ? unmapped : [];
+  if (!id || !list.length) {
+    log.debug('Leaving recordUnmapped(). Nothing to record.');
+    return false;
+  }
+  const now = Date.now();
+  const held = unmappedSeen.get(String(id));
+  const names = Object.assign({}, (held && held.names) || {});
+  let changed = false;
+  list.forEach(function (one) {
+    const name = String((one && one.incoming) || '').trim();
+    if (!name) {
+      return;
+    }
+    const key = name.toLowerCase();
+    const refused = String((one && one.refused) || '');
+    const was = names[key];
+    if (!was || was.refused !== refused ||
+        now - (was.last || 0) >= UNMAPPED_REFRESH_MS) {
+      names[key] = { name: name, refused: refused,
+                     first: was ? was.first : now, last: now };
+      changed = true;
+    }
+  });
+  if (!changed) {
+    log.debug('Leaving recordUnmapped(). Nothing new.');
+    return false;
+  }
+  const kept = Object.keys(names).sort(function (a, b) {
+    return names[b].last - names[a].last;
+  }).slice(0, UNMAPPED_CAP);
+  const out = {};
+  kept.forEach(function (key) {
+    out[key] = names[key];
+  });
+  unmappedSeen.set(String(id), { names: out });
+  log.debug('Leaving recordUnmapped(). ' + kept.length + ' name(s) held.');
+  return true;
+}
+
+/**
+ * The names a relationship's partner sent that were not written, newest
+ * first.
+ *
+ * @param id - the relationship id
+ * @returns `[{ name, refused, first, last }]`, times in ISO 8601
+ */
+function unmappedOf(id) {
+  log.debug('Entering unmappedOf(). id=' + id);
+  const held = unmappedSeen.get(String(id || ''));
+  const names = (held && held.names) || {};
+  const out = Object.keys(names).map(function (key) {
+    const one = names[key];
+    return { name: String(one.name), refused: String(one.refused || ''),
+             first: new Date(one.first).toISOString(),
+             last: new Date(one.last).toISOString(), at: one.last };
+  }).sort(function (a, b) {
+    return b.at - a.at;
+  }).map(function (one) {
+    return { name: one.name, refused: one.refused, first: one.first,
+             last: one.last };
+  });
+  log.debug('Leaving unmappedOf(). ' + out.length + ' name(s).');
+  return out;
+}
+
 /**
  * Changes one attribute of a relationship.
  *
@@ -3356,10 +3488,16 @@ function update(id, change) {
     value = value.trim().replace(/^@+/, '').toLowerCase();
   }
   const refusal = subjectFieldProblem(field, value) ||
-                  encryptionFieldProblem(record, field, value);
+                  encryptionFieldProblem(record, field, value) ||
+                  // Removing a value is never refused: a mapping written
+                  // before #94 must be removable.
+                  (field === 'fedAttributeMap' &&
+                   String(info.mode || 'add') !== 'remove'
+                    ? attributeMapProblem(value) : null);
   if (refusal) {
     log.debug('Leaving update(). ' + refusal.code);
-    // error-code: none — subjectFieldProblem() names the code at each return
+    // error-code: none — subjectFieldProblem() and attributeMapProblem()
+    // name the code at each return
     actionRefused(refusal.code, id, refusal.why);
     log.debug("Leaving update().");
     return { ok: false, errors: [refusal.message] };
@@ -3522,6 +3660,9 @@ function remove(id) {
   }
   forgetReleaseIndexes();
   announceReleaseChange(id, releasePolicyOf(record), null);
+  // Its unmapped names go with it (#94): they describe a partner that is
+  // no longer configured.
+  unmappedSeen.delete(String(record.fedId));
   recordChange('federation.delete', record,
                'the federation relationship ' + id + ' was deleted',
                { dn: record.dn,
@@ -4076,6 +4217,8 @@ module.exports = {
   // the header: it is consulted by admin_stats.js at its two existing funnels
   // and by nothing else.
   releaseFilterFor: releaseFilterFor,
+  recordUnmapped: recordUnmapped,
+  unmappedOf: unmappedOf,
   create: create,
   update: update,
   // ENCRYPTION TO THIS SERVICE (#168): the vocabulary, the policy a record's

@@ -1135,6 +1135,40 @@ ID Token's), not to the SAML sets, where an attribute called `exp` collides with
 nothing; the additive rule still protects SAML, because a WS-Federation relying
 party keys off the claim URIs this service writes.
 
+**A claim can carry any directory attribute** (#94). *Add a
+directory-attribute claim* on each of these pages (`add-attribute-claim` on
+the API) names a claim and the attribute of the person's entry it carries, for
+example `cost_center` from `costCenter`. It works for any attribute, including
+one a federation partner or an attribute source wrote, which the ticked
+catalogue below it cannot reach.
+* **Every value** carries them all (a JSON array, or one `<AttributeValue>`
+  per value); otherwise it carries the first.
+* **as** is the JSON type in a token: `string`, `number`, `boolean` or `json`.
+  A value that isn't one is left out.
+* **Only the directory.** No value is invented, even in development: a person
+  whose entry lacks the attribute gets no such claim, and a lower layer of the
+  same name still answers.
+* **Refused:** a secret (`userPassword`), a binary value (`jpegPhoto`, a
+  certificate) and anything this service keeps (`sts*`, `hoba*`, `app*`,
+  `pwd*`).
+* A directory write that changes the attribute sends CAEP
+  `token-claims-change` to the holders of live tokens. `remove` takes the claim
+  off by name.
+
+Three things on each claim page help with these:
+* **A pick-list.** The attribute field offers what this realm's attribute
+  sources and federation mappings write, each labelled with who writes it. You
+  can still type any other name.
+* **A preview.** Each attribute claim shows what it would carry for the
+  previewed person, or says their entry has no such attribute.
+* **A release warning.** A claim is marked *withheld from* any federation
+  partner whose release list (`fedRelease`) doesn't name it. When partners have
+  release lists, a note under the form says a new claim reaches them only once
+  it is added to those lists.
+
+`GET /admin-api/claims` (and its two siblings) returns the same data:
+`attributeChoices`, and per set `attributeClaimPreview` and `withheldFrom`.
+
 **Values may contain `${username}`-style placeholders**, so a claim can carry
 the signed-in user's identity. **An unknown placeholder is left exactly as
 written**, so a `${dept}` names itself rather than becoming `""`. A JWT claim

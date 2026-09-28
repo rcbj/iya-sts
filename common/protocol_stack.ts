@@ -1223,6 +1223,22 @@ class ProtocolStack {
                'DevicesAdmin');
     this.register(app, require('../admin-ui/devices_admin'),
                   'admin-ui/devices_admin');
+    // 18r. ATTRIBUTE SOURCES (#94): Directory → Attribute sources. The
+    // library first — a register whose wire step puts the
+    // `attribute-sources.refresh` job on the scheduler (built at 18i), and
+    // whose directory slot `ldap/ldap_server.js` fills at 21 into a holder of
+    // its own, so that order cannot matter — then the page, 18a's placement
+    // and 18a's reason. `mgmt-api/admin_api` spreads `attribute_sources_api`'s
+    // routes, built below with the other API modules.
+    this.build('attribute-sources/attribute_sources',
+               require('../attribute-sources/attribute_sources'),
+               'AttributeSources');
+    require('../attribute-sources/attribute_sources_admin');
+    this.build('attribute-sources/attribute_sources_admin',
+               require('../attribute-sources/attribute_sources_admin'),
+               'AttributeSourcesAdmin');
+    this.register(app, require('../attribute-sources/attribute_sources_admin'),
+                  'attribute-sources/attribute_sources_admin');
     // The management API: everything that console shows and everything it can
     // change, at /admin-api, over JSON. It must come AFTER admin.js and the
     // order is a dependency rather than a preference — it requires that module
@@ -1250,6 +1266,9 @@ class ProtocolStack {
     this.build('oauth-oidc/claims_providers_api',
                require('../oauth-oidc/claims_providers_api'),
                'ClaimsProvidersApi');
+    this.build('attribute-sources/attribute_sources_api',
+               require('../attribute-sources/attribute_sources_api'),
+               'AttributeSourcesApi');
     this.build('oauth-oidc/provider_commands_api',
                require('../oauth-oidc/provider_commands_api'),
                'ProviderCommandsApi');

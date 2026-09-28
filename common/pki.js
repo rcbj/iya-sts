@@ -11053,6 +11053,45 @@ function certificateBundle(pemText) {
   return { certificates: certificates, unreadable: unreadable };
 }
 
+// WHAT AN OPERATOR'S TRUST ANCHORS ARE, for a page that shows them (#94): each
+// certificate in a PEM bundle as a person reads it — subject, issuer,
+// validity, whether it is a CA, its SHA-256 fingerprint — and how many blocks
+// did not parse. The bundle is read by certificateBundle() above; this only
+// describes it, so every page that shows an operator's pasted chain shows it
+// the same way.
+/**
+ * Describes each certificate in a PEM bundle for a page: subject, issuer,
+ * validity, CA or not, and SHA-256 fingerprint.
+ *
+ * @param pemText - the PEM text
+ * @param nowMs - the instant `expired` and `notYetValid` are judged at
+ * @returns `{ certificates, unreadable }`
+ */
+function describeCertificateBundle(pemText, nowMs) {
+  log.debug("Entering describeCertificateBundle().");
+  const now = typeof nowMs === 'number' ? nowMs : Date.now();
+  const read = certificateBundle(pemText);
+  const certificates = read.certificates.map(function (one) {
+    const x = one.x509;
+    const from = new Date(x.validFrom).getTime();
+    const to = new Date(x.validTo).getTime();
+    return {
+      subject: String(x.subject || '').replace(/\n/g, ', '),
+      issuer: String(x.issuer || '').replace(/\n/g, ', '),
+      notBefore: new Date(from).toISOString(),
+      notAfter: new Date(to).toISOString(),
+      expired: to < now,
+      notYetValid: from > now,
+      ca: x.ca === true,
+      selfSigned: String(x.subject) === String(x.issuer),
+      sha256: String(x.fingerprint256 || '').toLowerCase()
+    };
+  });
+  log.debug("Leaving describeCertificateBundle(). " + certificates.length +
+            " certificate(s).");
+  return { certificates: certificates, unreadable: read.unreadable };
+}
+
 // A certificate's SubjectPublicKeyInfo, read with pkijs so that a key node
 // cannot read (a post-quantum one) is still there to describe —
 // `stsCrypto.publicKeyFromSpki()` takes it. null when it cannot be read.
@@ -12653,6 +12692,7 @@ module.exports = {
   // --- somebody else's certificates (#40) ---
   certificateFromDer: certificateFromDer,
   certificateBundle: certificateBundle,
+  describeCertificateBundle: describeCertificateBundle,
   rsaKeyBits: rsaKeyBits,
   spkiOf: spkiOf,
   keyUsageOf: keyUsageOf,

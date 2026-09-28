@@ -178,6 +178,8 @@ interface ClaimAttributesDeps {
   vcClaims: {
     subjectClaimsFor(name: unknown, tokenClaims?: any,
                      rows?: CatalogueRow[]): any;
+    // Optional, so a test supplying the rest need not supply it (#94).
+    entryAttributes?(name: unknown): Record<string, unknown[]> | null;
   };
   audit: { audit(row: Record<string, unknown>): unknown };
   errorCodes: { mark<T>(target: T, code: string): T };
@@ -1158,6 +1160,16 @@ class ClaimAttributes {
         log.debug("Entering samlAttributes().");
         log.debug("Leaving samlAttributes().");
         return self.samlAttributesFor(setId, self.subjectOf(context));
+      },
+      // THE ENTRY ITSELF (#94), for the claim sets' attribute claims: every
+      // attribute, lower-cased, of the person the token is about, or null.
+      entryAttributes: function (context) {
+        log.debug("Entering entryAttributes().");
+        const subject = self.subjectOf(context);
+        const reader = self.deps.vcClaims.entryAttributes;
+        log.debug("Leaving entryAttributes().");
+        return subject && typeof reader === 'function'
+          ? reader.call(self.deps.vcClaims, subject) : null;
       }
     });
     log.debug("Leaving ClaimAttributes.installResolver().");
