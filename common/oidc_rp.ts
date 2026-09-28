@@ -1901,9 +1901,16 @@ class OidcRelyingParty {
       method: 'GET', path: realms.currentPrefix() + JWKS_PATH, host: host,
       poolPin: opts.poolPin, from: req
     });
-    const keys = (jwksAnswer.ok && jwksAnswer.json &&
-                  Array.isArray(jwksAnswer.json.keys)) ? jwksAnswer.json.keys
-                                                       : [];
+    // A JWKS THAT WAS NOT FETCHED IS SAID TO BE THAT (2026-09-27). It read
+    // as an empty key list until then, so a back-channel timeout arrived as
+    // "names key X, which this realm's JWKS does not hold" — a sentence about
+    // a key set, when the key was there and the answer had not come.
+    if (!jwksAnswer.ok || jwksAnswer.status !== 200) {
+      return refuse('this realm\'s JWKS could not be fetched: ' +
+                    (jwksAnswer.why || ('it answered ' + jwksAnswer.status)));
+    }
+    const keys = (jwksAnswer.json && Array.isArray(jwksAnswer.json.keys))
+      ? jwksAnswer.json.keys : [];
     const jwk = keys.filter(function (one: any) {
       return one && one.kid === header.kid;
     })[0];
