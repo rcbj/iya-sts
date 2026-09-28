@@ -4744,21 +4744,49 @@ class AdminActions {
     const description = String(body.description || '');
 
     if (action === 'create-role') {
-      const existing = roles.read(name);
+      // AN APPLICATION'S OWN ROLE (#310, rcbj's decisions on #88's
+      // follow-up): `application` names the one application it belongs to,
+      // and the role is registered as `<role>@<application>` — unique per
+      // application, as Entra's app roles are. Without it the role is
+      // realm-wide, and its name may not contain the separator, which is
+      // what keeps the two kinds of name from being mistaken for each other.
+      const forApplication = String(body.application || '').trim();
+      if (!forApplication && name.indexOf(roles.APPLICATION_SEPARATOR) >= 0) {
+        log.debug("Leaving AdminActions.rolesAction(). A separator in a " +
+                  "realm-wide role's name.");
+        return this.refused('STS-ADMIN-0829', { ok: false, errors: ['A ' +
+          'realm-wide role\'s name may not contain "' +
+          roles.APPLICATION_SEPARATOR + '": that is how an application\'s ' +
+          'role is named (<role>' + roles.APPLICATION_SEPARATOR +
+          '<application>). To make a role for one application, give ' +
+          '`application` and the role\'s own name.'] });
+      }
+      if (forApplication && !applications.get(forApplication)) {
+        log.debug("Leaving AdminActions.rolesAction(). No such application.");
+        return this.refused('STS-ADMIN-0830', { ok: false, errors: ['There ' +
+          'is no application "' + forApplication + '" in this realm to ' +
+          'make a role for.'] });
+      }
+      const fullName = forApplication
+        ? name + roles.APPLICATION_SEPARATOR + forApplication : name;
+      const existing = roles.read(fullName);
       if (existing) {
         log.debug("Leaving AdminActions.rolesAction(). create-role refused: " +
                   "it is there.");
         return this.refused('STS-ADMIN-0541', { ok: false, errors: ['There ' +
-            'is already a role called "' + name +
+            'is already a role called "' + fullName +
                                      '". Roles are edited in place — add a ' +
                                      'member to it rather than creating it ' +
                                           'again.'] });
       }
-      const result = roles.write(name, { description: description });
+      const result = roles.write(fullName, { description: description,
+                                             application: forApplication });
       if (result.ok) {
-        auditLog.audit({ action: 'roles.create', actor: actor, target: name,
-                      protocol: 'XACML', channel: 'http',
-                      detail: 'created the role "' + name + '"' });
+        auditLog.audit({ action: 'roles.create', actor: actor,
+                      target: fullName, protocol: 'XACML', channel: 'http',
+                      detail: 'created the role "' + fullName + '"' +
+                              (forApplication ? ' for the application "' +
+                                forApplication + '"' : '') });
       }
       log.debug("Leaving AdminActions.rolesAction(). create-role " +
                 (result.ok ? 'ok.' : 'refused.'));
@@ -4818,7 +4846,8 @@ class AdminActions {
       // this file that would be silent and total.
       const result = roles.write(name, {
         description: description, users: row.users, groups: row.groups,
-        applications: row.applications, permissions: row.permissions
+        applications: row.applications, permissions: row.permissions,
+        application: row.application
       });
       log.debug("Leaving AdminActions.rolesAction(). describe-role " +
                 (result.ok ? 'ok.' : 'refused.'));
@@ -4908,7 +4937,8 @@ class AdminActions {
       }
       const result = roles.write(name, {
         description: row.description, users: held.users, groups: held.groups,
-        applications: held.applications, permissions: row.permissions
+        applications: held.applications, permissions: row.permissions,
+        application: row.application
       });
       if (!result.ok) {
         log.debug("Leaving AdminActions.rolesAction(). The write was refused.");
@@ -4987,6 +5017,16 @@ class AdminActions {
               : '') + '.'] });
         }
         gated = applications.roleGatingFor(permission);
+        if (gated && row.application &&
+            gated.identifier !== row.application) {
+          log.debug("Leaving AdminActions.rolesAction(). Another " +
+                    "application's permission on an application's role.");
+          return this.refused('STS-ADMIN-0831', { ok: false, errors: ['"' +
+            name + '" belongs to the application "' + row.application +
+            '", and may authorize only a permission that application ' +
+            'defines; "' + permission + '" is "' + gated.identifier +
+            '"\'s (#310).'] });
+        }
         if (!gated) {
           log.debug("Leaving AdminActions.rolesAction(). Not a defined " +
                     "permission.");
@@ -5015,7 +5055,8 @@ class AdminActions {
       }
       const result = roles.write(name, {
         description: row.description, users: row.users, groups: row.groups,
-        applications: row.applications, permissions: permissions
+        applications: row.applications, permissions: permissions,
+        application: row.application
       });
       if (!result.ok) {
         log.debug("Leaving AdminActions.rolesAction(). The write was refused.");

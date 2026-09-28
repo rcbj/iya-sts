@@ -22779,6 +22779,11 @@ class AdminConsole {
     return '<tr><td class="who"><code>' + this.esc(one.name) + '</code>' +
       (one.console ? ' <span class="sub">console role</span>'
         : (one.native ? ' <span class="sub">native role</span>' : '')) +
+      // AN APPLICATION'S ROLE (#310): whose it is, and the name its tokens
+      // carry.
+      (one.application ? '<br><span class="sub">role of <code>' +
+        this.esc(one.application) + '</code>, carried as <code>' +
+        this.esc(one.localName) + '</code></span>' : '') +
       (one.description ? '<br><span class="sub">' + this.esc(one.description) +
                          '</span>' : '') +
       '</td>' + members + permissions +
@@ -37524,7 +37529,15 @@ class AdminConsole {
         '<input type="hidden" name="action" value="create-role"><div ' +
         'class="formrow"><label>Name <input type="text" name="role" ' +
         'required></label><label>Description <input type="text" ' +
-        'name="description" size="50"></label><button ' +
+        'name="description" size="50"></label>' +
+        // FOR ONE APPLICATION (#310), or for the realm when left empty.
+        '<label title="' + self.esc('Leave empty for a realm-wide role. ' +
+          'Name an application to make a role that belongs to it alone: ' +
+          'it is registered as <role>@<application>, and only a token for ' +
+          'that application carries it.') + '">For application ' +
+        '<input type="text" name="application" list="role-create-apps" ' +
+        'placeholder="realm-wide"></label><datalist id="role-create-apps">' +
+        applicationOptions + '</datalist><button ' +
         'type="submit">Create</button></div></form>' +
 
         // "SOMEBODY" IS THREE KINDS AND THE HEADING USED TO HIDE TWO OF THEM.

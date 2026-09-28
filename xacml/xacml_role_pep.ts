@@ -861,7 +861,12 @@ class XacmlRolePep {
     // below, for a policy written without that arm.
     const required = asked.rolesWaived ? []
       : applications.requiredRolesOf(asked.application);
-    const held = roles.rolesOf(subject);
+    // THE ROLES HELD FOR THIS APPLICATION (#310): realm-wide roles by name,
+    // and this application's own roles by their name inside it — which is
+    // what its `appRequiredRole` names. Another application's role is not
+    // held here, so it can never satisfy this one's requirement.
+    const held = roles.rolesOf(Object.assign({}, subject,
+      { application: String(asked.application || '') }));
     const fromToken = roles.rolesInClaims(asked.claims);
     const narrowed = applications.requiresNarrowedRoles(asked.application);
 

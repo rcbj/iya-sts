@@ -3093,17 +3093,55 @@ function resolvedGroupClaims(id, context) {
 // the case the role register exists to be able to answer. `authenticated` is
 // true here because a token is being minted: whatever door this came through
 // let them through it.
+// THE APPLICATIONS A TOKEN OR ASSERTION IS FOR (#310): each audience value
+// resolved to the registry entry it names — an identifier, a client_id, an
+// oauthAudience, a permission base URI, or an AppliesTo / SAML entityID. A
+// token for application X carries the roles that belong to X (and every
+// realm-wide role), and never another application's (rcbj's decision 3). An
+// ID Token's audience is its client; an access token's is its resource, and
+// its default audience — this service — is no application at all, so it
+// carries realm-wide roles alone.
+function claimApplicationsOf(ctx) {
+  log.debug("Entering claimApplicationsOf().");
+  const out = [];
+  String(ctx.audience || '').split(/\s+/).filter(Boolean)
+    .forEach(function (value) {
+      let found = null;
+      try {
+        found = (applications.get(value) && { identifier: value }) ||
+                applications.forClientId(value) ||
+                applications.forAudience(value) ||
+                applications.forPermissionBase(value) ||
+                applications.forAppliesTo(value);
+      } catch (e) {
+        // A registry that cannot be read names no application: the token
+        // carries its realm-wide roles, which is what it carried before.
+        log.debug("Caught in claimApplicationsOf(): " +
+                  ((e && e.message) || e));
+        found = null;
+      }
+      if (found && found.identifier &&
+          out.indexOf(found.identifier) < 0) {
+        out.push(String(found.identifier));
+      }
+    });
+  log.debug("Leaving claimApplicationsOf(). " + out.join(' '));
+  return out;
+}
+
 function resolvedRoleClaims(context) {
   log.debug("Entering resolvedRoleClaims().");
   const ctx = context || {};
   const username = String(ctx.username || ctx.subject || '');
   try {
+    const forApplications = claimApplicationsOf(ctx);
     log.debug("Leaving resolvedRoleClaims().");
     return roles.claimFor(
       username
-        ? { kind: 'user', name: username, authenticated: true }
-        : { kind: 'application',
-            name: String(ctx.client_id || ''), authenticated: true }) || {};
+        ? { kind: 'user', name: username, authenticated: true,
+            applications: forApplications }
+        : { kind: 'application', name: String(ctx.client_id || ''),
+            authenticated: true, applications: forApplications }) || {};
   } catch (e) {
     log.error(errorCodes.tag('STS-REG-0044') +
               'the role register threw and was ignored; the token is issued ' +

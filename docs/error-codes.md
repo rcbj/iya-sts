@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3742** of them, in **39** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3746** of them, in **39** subsystems.
 
 ## Where a code appears
 
@@ -80,9 +80,9 @@ is an ordinary outcome.
 * [Mail (`STS-MAIL`)](#sts-mail) — 39
 * [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 282
 * [Device register (`STS-DEVICE`)](#sts-device) — 45
-* [XACML and access policy (`STS-XACML`)](#sts-xacml) — 79
+* [XACML and access policy (`STS-XACML`)](#sts-xacml) — 80
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 32
-* [Admin console (`STS-ADMIN`)](#sts-admin) — 207
+* [Admin console (`STS-ADMIN`)](#sts-admin) — 210
 * [Management API (`STS-API`)](#sts-api) — 75
 * [User portal (`STS-PORTAL`)](#sts-portal) — 75
 * [Sign-out (`STS-LOGOUT`)](#sts-logout) — 7
@@ -3579,6 +3579,7 @@ Raised from: xacml/, common/access_gate.ts, common/issuance_gate.js, common/role
 | `STS-XACML-0077` | A native role (ADMIN_READ, ADMIN_WRITE or DEVICE_COMPLIANCE) could not be seeded in a realm; no machine client can be issued its permission there until it exists (#303, #309). | none — a warning in the log |
 | `STS-XACML-0078` | Neither the issuance policy nor the built-in one it falls back to gave a verdict on a requested scope — a defect; a scope gated by role was dropped and an ungated one kept (#304). | none — a warning in the log |
 | `STS-XACML-0079` | The built-in issuance policy could not be evaluated for the per-scope question in a process with no issuance PEP — a defect; scopes gated by role were dropped and the rest kept (#304, #305). | none — an error in the log |
+| `STS-XACML-0080` | A write named an application's role that is not <role>@<application>, or used a native or built-in role's name for one (#310). | none (a console or management API refusal, HTTP 400) |
 
 ## STS-XPEP
 
@@ -3836,6 +3837,9 @@ Raised from: admin-ui/ (except pki_admin.js), admin-core/.
 | `STS-ADMIN-0826` | add-permission named a permission no application in the realm defines; a permission must be defined before a role can authorize it (#303). | none (a console or management API refusal, HTTP 400) |
 | `STS-ADMIN-0827` | add-permission named a permission the role already authorizes (#303). | none (a console or management API refusal, HTTP 400) |
 | `STS-ADMIN-0828` | remove-permission named a permission the role does not authorize (#303). | none (a console or management API refusal, HTTP 400) |
+| `STS-ADMIN-0829` | create-role named a realm-wide role with the application separator "@" in it; that is how an application's role is named (#310). | none (a console or management API refusal, HTTP 400) |
+| `STS-ADMIN-0830` | create-role named an application that is not in the realm's registry (#310). | none (a console or management API refusal, HTTP 400) |
+| `STS-ADMIN-0831` | add-permission put another application's permission on an application's role, which may authorize only its own application's permissions (#310). | none (a console or management API refusal, HTTP 400) |
 
 ## STS-API
 

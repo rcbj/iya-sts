@@ -289,9 +289,13 @@ class RolePermissions {
     const name = String(who.name || '').trim();
     const kind = who.kind === 'application' ? 'application' : 'user';
     return this.inRealm(realmId, function () {
+      // `ids` (#310): an application's role by its full
+      // `<role>@<application>`, the name its rolePermission is keyed by and
+      // the PIP answers.
       const everything = roles.rolesOf({ kind: kind, name: name,
                                          authenticated: who.authenticated !==
-                                                        false });
+                                                        false,
+                                         ids: true });
       const builtIn = everything.filter(function (one) {
         return roles.isBuiltIn(one);
       });

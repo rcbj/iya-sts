@@ -14896,6 +14896,11 @@ const CODES = [
       'per-scope question in a process with no issuance PEP — a defect; ' +
       'scopes gated by role were dropped and the rest kept (#304, #305).',
     spec: 'none — an error in the log' },
+  { code: 'STS-XACML-0080',
+    summary: 'A write named an application\'s role that is not ' +
+      '<role>@<application>, or used a native or built-in role\'s name for ' +
+      'one (#310).',
+    spec: 'none (a console or management API refusal, HTTP 400)' },
   // ===== XPEP ==============================================================
   { code: 'STS-XPEP-0001',
     summary: 'The error-code registry could not be loaded from ./error_codes ' +
@@ -15922,6 +15927,20 @@ const CODES = [
   { code: 'STS-ADMIN-0828',
     summary: 'remove-permission named a permission the role does not ' +
       'authorize (#303).',
+    spec: 'none (a console or management API refusal, HTTP 400)' },
+  { code: 'STS-ADMIN-0829',
+    summary: 'create-role named a realm-wide role with the application ' +
+      'separator "@" in it; that is how an application\'s role is named ' +
+      '(#310).',
+    spec: 'none (a console or management API refusal, HTTP 400)' },
+  { code: 'STS-ADMIN-0830',
+    summary: 'create-role named an application that is not in the realm\'s ' +
+      'registry (#310).',
+    spec: 'none (a console or management API refusal, HTTP 400)' },
+  { code: 'STS-ADMIN-0831',
+    summary: 'add-permission put another application\'s permission on an ' +
+      'application\'s role, which may authorize only its own ' +
+      'application\'s permissions (#310).',
     spec: 'none (a console or management API refusal, HTTP 400)' },
   { code: 'STS-API-0001',
     summary: 'A management API request carried no Bearer access token while ' +

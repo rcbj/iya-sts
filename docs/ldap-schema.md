@@ -242,7 +242,9 @@ draws it with a description of every field.
 
 `objectClass: top, stsRole`, named `cn=<role>`, with `roleName`, `description`, the three kinds of
 holder (`roleMemberUser`, `roleMemberGroup` and `roleMemberApplication`), and `rolePermission`: the permissions a
-holder may be issued (#303), named as a client asks for them. A role saved by an earlier version was written with
+holder may be issued (#303), named as a client asks for them, and `roleApplication`: the one application a role
+belongs to (#310). Such a role is named `<role>@<application>`, and only a token for that application carries it,
+as `<role>`. A role saved by an earlier version was written with
 no object class and gains one on its next save.
 `common/roles.js` keeps apart who **holds** a role and what **requires** one
 (`appRequiredRole` on an application). Which of an application's permissions need a role at all is

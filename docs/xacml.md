@@ -124,8 +124,9 @@ answered under its bare name and under `urn:sts:xacml:attribute:employeeType`.
 **It also answers the subject's roles** (#303). A designator for
 `urn:sts:xacml:role` returns the configured roles the subject holds in the
 realm: roles held directly, through a group, or as an application, plus
-`ADMIN_READ` and `ADMIN_WRITE` for a person on the console roster. This is the
-same answer the service uses when it issues tokens. That lets a policy decide
+`ADMIN_READ` and `ADMIN_WRITE` for a person on the console roster. A role that
+belongs to one application is answered by its full name, `<role>@<application>`
+(#310). This is the same answer the service uses when it issues tokens. That lets a policy decide
 on roles for a subject that came with no scopes: a person named in a SAML
 assertion, a Kerberos principal, or a client ID. Built-in roles such as
 `ALL_AUTHENTICATED_USERS` are not returned, because they describe the request
@@ -196,6 +197,15 @@ application, with the roles it requires, and the action is the kind of
 issuance. **Nothing else in the service tests roles.** The reason someone was
 refused is always a document that you can read, edit, try out and find in the
 audit log.
+
+**A role can belong to one application** (#310). Create it on `/admin/roles`
+(or `POST /admin-api/roles/create-role`) with `application` set to the
+application's identifier. It is registered as `<role>@<application>`, so two
+applications can each have a `reader`. When the service issues something for
+that application, the role counts under its short name (`reader`): the
+application's `appRequiredRole` can name it, and tokens and assertions for that
+application carry it in the roles claim. Tokens for any other application never
+carry it. Realm-wide roles work as before and appear everywhere.
 
 **The request also carries the RISK of the authentication** the issuance
 rests on, as four environment attributes (`urn:sts:xacml:risk-level`,
