@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3746** of them, in **39** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3756** of them, in **40** subsystems.
 
 ## Where a code appears
 
@@ -55,6 +55,7 @@ is an ordinary outcome.
 * [Worker pools (`STS-WORKER`)](#sts-worker) — 43
 * [Persistence and coordination (`STS-STORE`)](#sts-store) — 63
 * [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 28
+* [Cells and residency (`STS-CELL`)](#sts-cell) — 10
 * [Scheduler (`STS-SCHED`)](#sts-sched) — 16
 * [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 79
 * [Certificate authority (`STS-PKI`)](#sts-pki) — 204
@@ -369,6 +370,25 @@ Raised from: cluster/.
 | `STS-CLUSTER-0026` | Active-active mode was refused because global.publicBaseUrl is empty, so each node would name itself by the address it was reached on. | — |
 | `STS-CLUSTER-0040` | A cluster mode was configured with persistence.minted off, so nodes would not share sessions, pending sign-ins, codes or tokens; the service does not start. | — |
 | `STS-CLUSTER-0041` | Standing down from a lease early failed in the store; the lease expires on its own within one node lifetime, and this node does not renew it. | — |
+
+## STS-CELL
+
+**Cells and residency.** One service deployed as several cells in several jurisdictions: the global and cell tiers of the store, the routing index that says where a person is homed, the inter-cell channel, relaying a request to the cell that owns it, the sealed locators, the transfer decisions and the revocations pushed between cells.
+
+Raised from: common/cells.ts, common/cell_*.ts, persistence/tiers.js, persistence/persistence_tiered.js, admin-ui/cells_admin.ts.
+
+| Code | What failed | Client sees |
+|---|---|---|
+| `STS-CELL-0001` | The cell settings are inconsistent (an id without a jurisdiction, a malformed cells.peers, a peer with this cell's id, or a cell id that is not [a-z0-9]{1,16}); the service does not start. | — |
+| `STS-CELL-0002` | cells.id is set and persistence.globalDatabaseUrl is empty, or the store is not postgres; a cell keeps its global rows in the global database, so the service does not start. | — |
+| `STS-CELL-0003` | A multi-cell deployment in product mode has no cell key-encryption key (keys.cellKekProvider is none), so one cell's rows would open in every other; the service does not start. | — |
+| `STS-CELL-0004` | A service deployed as cells does not persist its signing keys or has no operator key-encryption key, so its cells would sign with different keys and could not open each other's global rows; the service does not start. | — |
+| `STS-CELL-0010` | The global tier database password was read and is empty; the service does not start. | — |
+| `STS-CELL-0011` | The cell key-encryption key has no location of its own, or names the service key's; it has no fallback, so the service does not start. | — |
+| `STS-CELL-0012` | The cell key-encryption key is the same key as the service key-encryption key; the service does not start. | — |
+| `STS-CELL-0020` | A person was written in this cell whose login name or entryUUID the routing index already places in another cell (a creation raced the index check); sign-in routing will not find the copy here. | — |
+| `STS-CELL-0021` | The routing index could not be updated at a directory flush; it is retried at the next write of the same person. | — |
+| `STS-CELL-0022` | Group membership rows in this cell belong to a group the global tier no longer has; they are not restored. | — |
 
 ## STS-SCHED
 
