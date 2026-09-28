@@ -76,6 +76,12 @@ import config = require('./config');
 import mode = require('./mode');
 import applications = require('./applications');
 import audit = require('./audit');
+// THE ISSUANCE POLICY DECIDES (#305, part D of #88): this file gathers the
+// FACTS about each scope and asks the per-scope question through the gate;
+// the rules — protected scopes in both modes, every other scope in product,
+// the default set, device_sso — are the built-in `role-issuance`'s.
+import gate = require('./issuance_gate');
+import scopeVerdicts = require('../xacml/xacml_scope_verdicts');
 
 // OpenID Connect Core 1.0 section 5.4, plus section 11's offline_access. All
 // six, including the two this service issues no claims for — and OpenID
@@ -161,6 +167,9 @@ interface ScopePolicyDeps {
 interface JudgeOptions {
   // Scopes the default set holds beside OIDC's six (OpenID4VCI's).
   defaults?: string[];
+  // Which moment the scope is judged at (#305): `request`, where an endpoint
+  // refuses, or `mint`, the backstop that narrows. `request` by default.
+  stage?: string;
 }
 
 /**
@@ -401,47 +410,67 @@ class ScopePolicy {
     const declared = self.declaredScopes(clientId);
     out.declared = declared;
     const protectedNames = self.protectedScopes();
-    const everyScope = mode.grantsUndeclaredScopes();
-    let defaults: string[] | null = null;
+    // The default set matters only to a client declaring nothing.
+    const defaults = declared ? [] : self.defaultScopes(opts);
+    const nativeSso = asked.indexOf(DEVICE_SSO) >= 0 &&
+      !!self.deps.applications.nativeSsoOf(clientId).enabled;
+    // THE FACTS (#305). Every value, with what this file knows about it and
+    // about the client; the rules are the issuance policy's, and the policy
+    // is what decides. See `xacml/CLAUDE.md`, the per-scope question.
+    const A = scopeVerdicts.ATTRIBUTE;
+    const facts = asked.map(function (one) {
+      return {
+        scope: one,
+        attributes: [
+          scopeVerdicts.resourceFact(A.SCOPE_DEVICE_SSO, one === DEVICE_SSO),
+          scopeVerdicts.resourceFact(A.SCOPE_PROTECTED,
+                                     protectedNames.indexOf(one) >= 0),
+          scopeVerdicts.resourceFact(A.SCOPE_DECLARED,
+                                     !!declared && declared.indexOf(one) >= 0),
+          scopeVerdicts.resourceFact(A.SCOPE_NAMES_PARTY,
+                                     self.namesAnotherParty(one)),
+          scopeVerdicts.resourceFact(A.SCOPE_IN_DEFAULTS,
+                                     defaults.indexOf(one) >= 0),
+          scopeVerdicts.subjectFact(A.CLIENT_HAS_DECLARATION, !!declared),
+          scopeVerdicts.subjectFact(A.CLIENT_NATIVE_SSO, nativeSso)]
+      };
+    });
+    const client = String(clientId == null ? '' : clientId);
+    const answer = gate.checkScopes({
+      subject: { kind: 'application', name: client, authenticated: true },
+      client: client,
+      protocol: 'OAuth 2.0',
+      mode: mode.current(),
+      stage: (opts && opts.stage) || 'request',
+      requested: asked,
+      facts: facts
+    });
+    const verdictOf: Record<string, any> = {};
+    (answer.verdicts || []).forEach(function (one) {
+      verdictOf[one.scope] = one;
+    });
+    // EACH VERDICT FILED WHERE `refusal()` AND `narrow()` READ IT, by the
+    // code the policy gave: the two #110 codes and Native SSO's. A refusal
+    // the policy made with any other code — an operator's rule — is filed as
+    // undeclared, the general case.
     asked.forEach(function (one) {
-      if (one === DEVICE_SSO) {
-        if (self.deps.applications.nativeSsoOf(clientId).enabled) {
-          out.kept.push(one);
-        } else {
-          out.nativeSsoRefused.push(one);
-        }
-        return;
-      }
-      if (protectedNames.indexOf(one) >= 0) {
-        if (declared && declared.indexOf(one) >= 0) {
-          out.kept.push(one);
-        } else {
-          out.protectedRefused.push(one);
-        }
-        return;
-      }
-      if (everyScope || (declared && declared.indexOf(one) >= 0)) {
+      const found = verdictOf[one] || { verdict: 'keep', code: '' };
+      if (found.verdict === 'keep' || found.verdict === 'consent') {
         out.kept.push(one);
-        return;
+      } else if (found.code === NATIVE_SSO_CODE) {
+        out.nativeSsoRefused.push(one);
+      } else if (found.code === PROTECTED_CODE) {
+        out.protectedRefused.push(one);
+      } else {
+        out.undeclaredRefused.push(one);
       }
-      if (self.namesAnotherParty(one)) {
-        out.kept.push(one);
-        return;
-      }
-      if (!declared) {
-        defaults = defaults || self.defaultScopes(opts);
-        if (defaults.indexOf(one) >= 0) {
-          out.kept.push(one);
-          return;
-        }
-      }
-      out.undeclaredRefused.push(one);
     });
     log.debug("Leaving ScopePolicy.judge(). kept=" + out.kept.length +
               ", protected=" + out.protectedRefused.length +
               ", undeclared=" + out.undeclaredRefused.length);
     return out;
   }
+
 
   // ---------------------------------------------------------------------------
   // refusal(scope, clientId, opts) — null, or `{ code, error, description,
@@ -536,7 +565,8 @@ class ScopePolicy {
     const { log, audit } = this.deps;
     log.debug("Entering ScopePolicy.narrow().");
     const ctx = context || {};
-    const judged = this.judge(scope, clientId, { defaults: ctx.defaults });
+    const judged = this.judge(scope, clientId, { defaults: ctx.defaults,
+                                                  stage: 'mint' });
     const removed = judged.protectedRefused.concat(judged.undeclaredRefused,
                                                    judged.nativeSsoRefused);
     if (!removed.length) {

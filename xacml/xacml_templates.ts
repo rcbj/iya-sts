@@ -175,6 +175,36 @@ const ISSUANCE_ATTRIBUTE = {
   // facts and never the verdict.
   SCOPE_GATED: 'urn:sts:xacml:scope-gated',
   AUTHORIZING_ROLE: 'urn:sts:xacml:authorizing-role',
+  // THE FACTS OF #305 (part D of #88), each a boolean on the RESOURCE (the
+  // scope), sent only by the subsystem that knows it — a rule requires its
+  // facts to be PRESENT, so one subsystem's question never trips another's
+  // rule.
+  //   scope policy (#110)      protected, declared, in-defaults,
+  //                            names-party, device-sso; and on the SUBJECT
+  //                            (the client) has-declaration and
+  //                            native-sso-enabled
+  //   delegated permissions    delegated, granted
+  //   consent                  consented, and consent-required in the
+  //                            environment
+  SCOPE_PROTECTED: 'urn:sts:xacml:scope-protected',
+  SCOPE_DECLARED: 'urn:sts:xacml:scope-declared',
+  SCOPE_IN_DEFAULTS: 'urn:sts:xacml:scope-in-defaults',
+  SCOPE_NAMES_PARTY: 'urn:sts:xacml:scope-names-party',
+  SCOPE_DEVICE_SSO: 'urn:sts:xacml:scope-device-sso',
+  CLIENT_HAS_DECLARATION: 'urn:sts:xacml:client-has-declaration',
+  CLIENT_NATIVE_SSO: 'urn:sts:xacml:client-native-sso',
+  SCOPE_DELEGATED: 'urn:sts:xacml:scope-delegated',
+  SCOPE_GRANTED: 'urn:sts:xacml:scope-granted',
+  SCOPE_CONSENTED: 'urn:sts:xacml:scope-consented',
+  CONSENT_REQUIRED: 'urn:sts:xacml:consent-required',
+  // RFC 9396 AUTHORIZATION DETAILS (#305): one question per detail, action-id
+  // `issue-authorization-detail`, the detail's TYPE as the resource-id; on
+  // the resource, whether the client registered types at all and this one,
+  // and whether the authorization server publishes a list and this type.
+  CLIENT_HAS_DETAIL_TYPES: 'urn:sts:xacml:client-has-detail-types',
+  DETAIL_TYPE_REGISTERED: 'urn:sts:xacml:detail-type-registered',
+  SERVER_HAS_DETAIL_TYPES: 'urn:sts:xacml:server-has-detail-types',
+  DETAIL_TYPE_PUBLISHED: 'urn:sts:xacml:detail-type-published',
   // On the SUBJECT: the roles found in a token the caller PRESENTED, read out
   // of the claim `roles.claimName` names. Separate from the above rather than
   // unioned into it, and that separation is the whole reason it is visible in
@@ -241,10 +271,14 @@ const ISSUANCE_ATTRIBUTE = {
 // ---------------------------------------------------------------------------
 const SCOPE_ATTRIBUTE = {
   ACTION: 'issue-scope',
+  // #305: the same verdict, for one RFC 9396 authorization detail.
+  DETAIL_ACTION: 'issue-authorization-detail',
   OBLIGATION: 'urn:sts:xacml:obligation:scope',
   VERDICT: 'urn:sts:xacml:scope-verdict',
   CODE: 'urn:sts:xacml:scope-code',
-  VERDICTS: ['keep', 'drop', 'refuse']
+  // `consent` (#305): not issued until the person agrees — the consent
+  // screen asks.
+  VERDICTS: ['keep', 'drop', 'refuse', 'consent']
 };
 
 const AUTHN_ATTRIBUTE = {
@@ -1123,36 +1157,190 @@ const TEMPLATES: TemplateRow[] = [
         return [{ id: SCOPE_ATTRIBUTE.OBLIGATION, on: on,
                   assignments: assignments }];
       };
-      const scopeRules: any[] = decideScopes ? [{
-        id: options.idBase + ':rule:scope-not-authorized',
-        effect: model.EFFECT.DENY,
-        description: 'Drop a requested scope its resource application gates ' +
-                     'by role (#303) when no role the subject holds ' +
-                     'authorizes it.',
-        target: scopeTarget,
-        condition: B.apply(F1 + 'and', [
-          B.apply(F1 + 'boolean-is-in', [
-            B.value(TYPE.BOOLEAN, 'true'),
-            B.designator(model.CATEGORY.RESOURCE,
-                         ISSUANCE_ATTRIBUTE.SCOPE_GATED, TYPE.BOOLEAN)]),
-          B.apply(F1 + 'not', [B.apply(F3 + 'any-of-any', [
-            { kind: 'function', functionId: F1 + 'string-equal' },
-            B.designator(model.CATEGORY.ACCESS_SUBJECT,
-                         ISSUANCE_ATTRIBUTE.ROLE, TYPE.STRING),
-            B.designator(model.CATEGORY.RESOURCE,
-                         ISSUANCE_ATTRIBUTE.AUTHORIZING_ROLE,
-                         TYPE.STRING)])])]),
-        obligations: verdict(model.EFFECT.DENY, 'drop', 'STS-ADMIN-0821'),
-        advice: []
-      }, {
-        id: options.idBase + ':rule:scope-kept',
-        effect: model.EFFECT.PERMIT,
-        description: 'Keep every other requested scope.',
-        target: scopeTarget,
-        condition: null,
-        obligations: verdict(model.EFFECT.PERMIT, 'keep', ''),
-        advice: []
-      }] : [];
+      // THE FACT TESTS. `fact()` is true only when the fact is PRESENT with
+      // that value — `boolean-is-in` over an empty bag is false — so a rule
+      // never fires on a question that did not carry its facts.
+      const fact = function (category: string, id: string,
+                             value: boolean): any {
+        log.debug("Entering fact().");
+        log.debug("Leaving fact().");
+        return B.apply(F1 + 'boolean-is-in', [
+          B.value(TYPE.BOOLEAN, value ? 'true' : 'false'),
+          B.designator(category, id, TYPE.BOOLEAN)]);
+      };
+      const R = model.CATEGORY.RESOURCE;
+      const stringIs = function (category: string, id: string,
+                                 value: string): any {
+        log.debug("Entering stringIs().");
+        log.debug("Leaving stringIs().");
+        return B.apply(F1 + 'string-is-in', [B.value(TYPE.STRING, value),
+          B.designator(category, id, TYPE.STRING)]);
+      };
+      const inProduct = stringIs(model.CATEGORY.ENVIRONMENT,
+                                 xacmlRequest.VOCABULARY.MODE, 'product');
+      const atStage = function (stage: string): any {
+        log.debug("Entering atStage().");
+        log.debug("Leaving atStage().");
+        return stringIs(model.CATEGORY.ENVIRONMENT,
+                        xacmlRequest.VOCABULARY.SCOPE_STAGE, stage);
+      };
+      const settingOn = function (key: string): any {
+        log.debug("Entering settingOn().");
+        log.debug("Leaving settingOn().");
+        return fact(model.CATEGORY.ENVIRONMENT,
+                    xacmlRequest.VOCABULARY.SETTING_PREFIX + key, true);
+      };
+      const and = function (args: any[]): any {
+        log.debug("Entering and().");
+        log.debug("Leaving and().");
+        return B.apply(F1 + 'and', args);
+      };
+      // ONE RULE PER STAGE for the refusals #110 makes: an endpoint still
+      // talking to the client REFUSES (`request`), and the backstop every
+      // grant mints through DROPS (`mint`) — today's two answers, now each
+      // written as a rule. The same code at both: the narrowing's own audit
+      // code (STS-OAUTH-0579) is the caller's.
+      const staged = function (id: string, description: string,
+                               condition: any, code: string): any[] {
+        log.debug("Entering staged().");
+        log.debug("Leaving staged().");
+        return [
+          { id: options.idBase + ':rule:' + id + '-refused',
+            effect: model.EFFECT.DENY,
+            description: description + ' Refused where the request is ' +
+                         'still being answered.',
+            target: scopeTarget,
+            condition: and([atStage('request'), condition]),
+            obligations: verdict(model.EFFECT.DENY, 'refuse', code),
+            advice: [] },
+          { id: options.idBase + ':rule:' + id + '-dropped',
+            effect: model.EFFECT.DENY,
+            description: description + ' Dropped at the backstop every ' +
+                         'grant mints through.',
+            target: scopeTarget,
+            condition: and([atStage('mint'), condition]),
+            obligations: verdict(model.EFFECT.DENY, 'drop', code),
+            advice: [] }];
+      };
+      const detailTarget = B.targetOf([[
+        B.match(F1 + 'string-equal', B.value(TYPE.STRING,
+                                             SCOPE_ATTRIBUTE.DETAIL_ACTION),
+                B.designator(model.CATEGORY.ACTION,
+                             model.ATTRIBUTE.ACTION_ID, TYPE.STRING))]]);
+      const IA = ISSUANCE_ATTRIBUTE;
+      const scopeRules: any[] = decideScopes ? [].concat(
+        // device_sso (#130): only a client whose Native SSO is enabled.
+        staged('native-sso-not-enabled', 'The device_sso scope, for a ' +
+               'client whose Native SSO is not enabled (#130).',
+               and([fact(R, IA.SCOPE_DEVICE_SSO, true),
+                    fact(model.CATEGORY.ACCESS_SUBJECT, IA.CLIENT_NATIVE_SSO,
+                         false)]), 'STS-OAUTH-0624'),
+        // #110: this service's protected scopes, in BOTH modes.
+        staged('protected-undeclared', 'One of this service\'s protected ' +
+               'scopes the client does not declare (#110), in both modes.',
+               and([fact(R, IA.SCOPE_PROTECTED, true),
+                    fact(R, IA.SCOPE_DECLARED, false)]), 'STS-OAUTH-0577'),
+        // #110: every other scope, in PRODUCT, unless declared, naming
+        // another party, or in the default set of a client declaring none.
+        staged('undeclared', 'Any other scope the client does not declare, ' +
+               'in product mode — unless it names another application or ' +
+               'permission, or the client declares nothing and it is in ' +
+               'the default set (#110).',
+               and([inProduct,
+                    fact(R, IA.SCOPE_PROTECTED, false),
+                    fact(R, IA.SCOPE_DEVICE_SSO, false),
+                    fact(R, IA.SCOPE_NAMES_PARTY, false),
+                    fact(R, IA.SCOPE_DECLARED, false),
+                    B.apply(F1 + 'not', [and([
+                      fact(model.CATEGORY.ACCESS_SUBJECT,
+                           IA.CLIENT_HAS_DECLARATION, false),
+                      fact(R, IA.SCOPE_IN_DEFAULTS, true)])])]),
+               'STS-OAUTH-0578'),
+        // A delegated permission the client was not granted: refused where
+        // enforced — product always, development with the setting (#110).
+        [{ id: options.idBase + ':rule:permission-not-granted',
+           effect: model.EFFECT.DENY,
+           description: 'A delegated permission the client has not been ' +
+                        'granted (oauthDelegatedPermission), in product ' +
+                        'mode or with oauth2.delegatedPermissionsEnforced.',
+           target: scopeTarget,
+           condition: and([atStage('request'),
+             fact(R, IA.SCOPE_DELEGATED, true),
+             fact(R, IA.SCOPE_GRANTED, false),
+             B.apply(F1 + 'or', [inProduct,
+               settingOn('oauth2.delegatedPermissionsEnforced')])]),
+           obligations: verdict(model.EFFECT.DENY, 'refuse',
+                                'STS-OAUTH-0155'),
+           advice: [] }],
+        // #303/#304: a scope its resource gates by role.
+        [{
+          id: options.idBase + ':rule:scope-not-authorized',
+          effect: model.EFFECT.DENY,
+          description: 'Drop a requested scope its resource application ' +
+                       'gates by role (#303) when no role the subject holds ' +
+                       'authorizes it.',
+          target: scopeTarget,
+          condition: and([
+            fact(R, IA.SCOPE_GATED, true),
+            B.apply(F1 + 'not', [B.apply(F3 + 'any-of-any', [
+              { kind: 'function', functionId: F1 + 'string-equal' },
+              B.designator(model.CATEGORY.ACCESS_SUBJECT, IA.ROLE,
+                           TYPE.STRING),
+              B.designator(R, IA.AUTHORIZING_ROLE, TYPE.STRING)])])]),
+          obligations: verdict(model.EFFECT.DENY, 'drop', 'STS-ADMIN-0821'),
+          advice: []
+        }],
+        // Consent (#305): a scope the person has not agreed to, where the
+        // realm requires consent — the screen asks.
+        [{ id: options.idBase + ':rule:consent-outstanding',
+           effect: model.EFFECT.DENY,
+           description: 'A scope the person has not consented to (and no ' +
+                        'global consent covers), while consent is required.',
+           target: scopeTarget,
+           condition: and([atStage('consent'),
+             fact(R, IA.SCOPE_CONSENTED, false),
+             fact(model.CATEGORY.ENVIRONMENT, IA.CONSENT_REQUIRED, true)]),
+           obligations: verdict(model.EFFECT.DENY, 'consent', ''),
+           advice: [] }],
+        [{
+          id: options.idBase + ':rule:scope-kept',
+          effect: model.EFFECT.PERMIT,
+          description: 'Keep every other requested scope.',
+          target: scopeTarget,
+          condition: null,
+          obligations: verdict(model.EFFECT.PERMIT, 'keep', ''),
+          advice: []
+        }],
+        // RFC 9396 (#305): the two authorization questions about a detail's
+        // type — the client registered types and not this one (section 10),
+        // or this authorization server publishes a list without it.
+        [{ id: options.idBase + ':rule:detail-type-not-registered',
+           effect: model.EFFECT.DENY,
+           description: 'An authorization detail of a type the client did ' +
+                        'not register (RFC 9396 section 10).',
+           target: detailTarget,
+           condition: and([fact(R, IA.CLIENT_HAS_DETAIL_TYPES, true),
+                           fact(R, IA.DETAIL_TYPE_REGISTERED, false)]),
+           obligations: verdict(model.EFFECT.DENY, 'refuse',
+                                'STS-OAUTH-0454'),
+           advice: [] },
+         { id: options.idBase + ':rule:detail-type-not-published',
+           effect: model.EFFECT.DENY,
+           description: 'An authorization detail of a type this ' +
+                        'authorization server does not publish.',
+           target: detailTarget,
+           condition: and([fact(R, IA.SERVER_HAS_DETAIL_TYPES, true),
+                           fact(R, IA.DETAIL_TYPE_PUBLISHED, false)]),
+           obligations: verdict(model.EFFECT.DENY, 'refuse',
+                                'STS-OAUTH-0455'),
+           advice: [] },
+         { id: options.idBase + ':rule:detail-kept',
+           effect: model.EFFECT.PERMIT,
+           description: 'Keep every other authorization detail.',
+           target: detailTarget,
+           condition: null,
+           obligations: verdict(model.EFFECT.PERMIT, 'keep', ''),
+           advice: [] }]) : [];
 
       log.debug('Leaving buildRoleIssuance(). ' + arms.length + ' arm(s), ' +
                 riskRules.length + ' risk rule(s), ' + deviceRules.length +
@@ -1205,9 +1393,14 @@ const TEMPLATES: TemplateRow[] = [
                             : '') + '.'
                         : '') +
                      (decideScopes
-                        ? ' AND ON EACH REQUESTED SCOPE (#304): a scope its ' +
-                          'resource application gates by role is dropped ' +
-                          'unless the subject holds a role authorizing it.'
+                        ? ' AND ON EACH REQUESTED SCOPE (#304, #305): the ' +
+                          'client\'s declared scopes (#110) — refused where ' +
+                          'the request is answered, dropped where a grant ' +
+                          'is minted — delegated permissions not granted, a ' +
+                          'scope its resource gates by role that no held ' +
+                          'role authorizes, and the scopes still needing ' +
+                          'consent; and on each RFC 9396 authorization ' +
+                          'detail\'s type.'
                         : ''),
         combiningAlgId: decideRisk || refuseEmail || decideDevices ||
                         decideScopes

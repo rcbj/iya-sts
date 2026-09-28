@@ -3100,6 +3100,16 @@ scope is a key to this service's own API.
 
 ### 3au. `scopeRefusal()` — the scopes a client may be issued (#110, 2026-09-22)
 
+**Since #305 the decisions below are rules of the issuance policy**, and the
+functions here gather facts: `scopeRefusal()` through `scope_policy.judge()`,
+`permissionRefusal()` (a delegated permission not granted —
+`permission-not-granted`, product always, development with
+`oauth2.delegatedPermissionsEnforced`, both as request attributes), and the two
+RFC 9396 type questions in `authorization_details.ts` (`STS-OAUTH-0454` the
+client's registered types, `0455` the server's published ones). RFC 9396
+well-formedness stays in `parse()`. `xacml/CLAUDE.md` has the per-scope
+question.
+
 The policy is `common/scope_policy.ts`'s and `common/CLAUDE.md` argues it (three
 kinds of scope; `oauthAllowedScope` as the declared twin of the sighted
 `oauthScope`). What belongs here is where this server asks it.
