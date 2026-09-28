@@ -369,33 +369,57 @@ then
         { name: "xacml-pep", environment: env({
             XACML_PEP_REALM: process.env.PEP_REALM }) }
       ] }));')"
-    TASK_ARN="$(aws ecs run-task --cluster "${CLUSTER}" --task-definition "${FAMILY}" \
-      --launch-type FARGATE --count 1 \
-      --network-configuration "awsvpcConfiguration={subnets=[${SUBNET}],securityGroups=[${SG}],assignPublicIp=DISABLED}" \
-      --overrides "${OVERRIDES}" \
-      --tags "key=Project,value=STS" "key=Environment,value=${ENVIRONMENT}" "key=SuiteRun,value=${RUN_ID}" \
-      --query 'tasks[0].taskArn' --output text)"
-    [ -n "${TASK_ARN}" ] && [ "${TASK_ARN}" != "None" ] || die "ecs run-task started nothing."
-    TASK_ID="${TASK_ARN##*/}"
-    say "callback task ${TASK_ID}; logs: aws logs tail ${LOG_GROUP} --log-stream-names ${ENVIRONMENT}-callbacks/suite/${TASK_ID} --follow"
-    tdefault=3600
-    if [ "${IN_AWS}" = "1" ];
-    then
-      tdefault=28800
-    fi
-    tdeadline=$(( $(date +%s) + ${STS_SUITE_TASK_TIMEOUT_SECS:-${tdefault}} ))
+    # A TASK THAT CANNOT PULL ITS IMAGE IS STARTED AGAIN (#311). The NAT
+    # gateway this stack just made answers "available" before it forwards,
+    # and the second in-AWS run's task died on an ECR i/o timeout a minute
+    # after the apply finished. Up to three tries, a minute apart, and only
+    # for that failure: a task that ran and stopped is the run's answer.
+    say "giving the new NAT gateway a minute before the task starts"
+    sleep 60
+    attempt=1
     while :;
     do
-      status="$(aws ecs describe-tasks --cluster "${CLUSTER}" --tasks "${TASK_ARN}" \
-        --query 'tasks[0].lastStatus' --output text)"
-      [ "${status}" = "STOPPED" ] && break
-      if [ "$(date +%s)" -ge "${tdeadline}" ];
+      TASK_ARN="$(aws ecs run-task --cluster "${CLUSTER}" --task-definition "${FAMILY}" \
+        --launch-type FARGATE --count 1 \
+        --network-configuration "awsvpcConfiguration={subnets=[${SUBNET}],securityGroups=[${SG}],assignPublicIp=DISABLED}" \
+        --overrides "${OVERRIDES}" \
+        --tags "key=Project,value=STS" "key=Environment,value=${ENVIRONMENT}" "key=SuiteRun,value=${RUN_ID}" \
+        --query 'tasks[0].taskArn' --output text)"
+      [ -n "${TASK_ARN}" ] && [ "${TASK_ARN}" != "None" ] || die "ecs run-task started nothing."
+      TASK_ID="${TASK_ARN##*/}"
+      say "callback task ${TASK_ID}; logs: aws logs tail ${LOG_GROUP} --log-stream-names ${ENVIRONMENT}-callbacks/suite/${TASK_ID} --follow"
+      tdefault=3600
+      if [ "${IN_AWS}" = "1" ];
       then
-        say "the callback task ran past STS_SUITE_TASK_TIMEOUT_SECS; stopping it."
-        aws ecs stop-task --cluster "${CLUSTER}" --task "${TASK_ARN}" \
-          --reason "run-suite timeout" >/dev/null 2>&1 || true
+        tdefault=28800
       fi
-      sleep 20
+      tdeadline=$(( $(date +%s) + ${STS_SUITE_TASK_TIMEOUT_SECS:-${tdefault}} ))
+      while :;
+      do
+        status="$(aws ecs describe-tasks --cluster "${CLUSTER}" --tasks "${TASK_ARN}" \
+          --query 'tasks[0].lastStatus' --output text)"
+        [ "${status}" = "STOPPED" ] && break
+        if [ "$(date +%s)" -ge "${tdeadline}" ];
+        then
+          say "the callback task ran past STS_SUITE_TASK_TIMEOUT_SECS; stopping it."
+          aws ecs stop-task --cluster "${CLUSTER}" --task "${TASK_ARN}" \
+            --reason "run-suite timeout" >/dev/null 2>&1 || true
+        fi
+        sleep 20
+      done
+      stop_code="$(aws ecs describe-tasks --cluster "${CLUSTER}" --tasks "${TASK_ARN}" \
+        --query 'tasks[0].stopCode' --output text)"
+      stop_reason="$(aws ecs describe-tasks --cluster "${CLUSTER}" --tasks "${TASK_ARN}" \
+        --query 'tasks[0].stoppedReason' --output text)"
+      if [ "${stop_code}" = "TaskFailedToStart" ] && [ "${attempt}" -lt 3 ] &&
+         echo "${stop_reason}" | grep -q CannotPullContainerError;
+      then
+        say "the task could not pull its image (${stop_reason}); starting it again in 60 s"
+        attempt=$((attempt + 1))
+        sleep 60
+        continue
+      fi
+      break
     done
     read -r code reason < <(aws ecs describe-tasks --cluster "${CLUSTER}" --tasks "${TASK_ARN}" \
       --query 'tasks[0].[containers[?name==`suite`].exitCode | [0], stoppedReason]' --output text)
