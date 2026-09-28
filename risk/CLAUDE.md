@@ -424,6 +424,15 @@ decisions of 2026-09-26:**
   the service has one list of internal addresses. The allow list is never
   set aside. The model row of the assessment names what was
   (`listsSetAside`). The rescore job reads the same function.
+* **AN ALLOW-LISTED NETWORK IS NOT COUNTED AS HOSTILE (#311, rcbj
+  2026-09-28).** `network-failures` is not asked for an address on the
+  realm's operator allow list: the operator declared that network trusted,
+  and counting its refused passwords against everybody behind it said the
+  opposite. The person's own `account-failures` and `totp-replay` still
+  count — the list vouches for a network, not an account. Found on testidp,
+  where the in-AWS suite (allow-listed by `run-suite.sh`) refuses passwords
+  on purpose, and a job adding one signal of its own went MEDIUM and was
+  refused a step-up. `tests/risk_decisions.js` L1.
 * **A known context caps the ADDRESS evidence at MEDIUM** (`ADDRESS_SIGNALS`:
   the three raising lists and `network-failures` — what everybody behind one
   NAT shares). Known means `risk.minimumHistory` earlier sign-ins from this

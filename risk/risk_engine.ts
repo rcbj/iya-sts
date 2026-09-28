@@ -1328,13 +1328,30 @@ class RiskEngine {
     if (replays.total) {
       add('totp-replay', String(replays.total));
     }
-    if (found.prefix) {
+    // NOT FROM A NETWORK THE OPERATOR ALLOW-LISTED (#311, rcbj
+    // 2026-09-28). `network-failures` says the NETWORK is hostile: refused
+    // passwords from anybody behind it. An operator who put the address on
+    // this realm's allow list has declared that network trusted, so counting
+    // its refusals against every person signing in from it contradicts the
+    // declaration — and it is exactly what happened on testidp, where the
+    // suite (allow-listed) refuses passwords on purpose and every later
+    // first sign-in with one more signal of its own (a TOTP replay the job
+    // made) went MEDIUM and was refused a step-up it could not answer. The
+    // person's OWN failures (`account-failures`) and replays still count:
+    // the allow list vouches for the network, not for an account.
+    const allowListed = lists.some(function (l: Json): boolean {
+      return l.category === 'operator-allow';
+    });
+    if (found.prefix && !allowListed) {
       const theirs = await store.listFailures(realm, { since: since,
         prefix: found.prefix, limit: 1, excludeDoor: TOTP_REPLAY_DOOR },
                                               sealing);
       if (theirs.total >= networkFailureThreshold()) {
         add('network-failures', String(theirs.total));
       }
+    } else if (found.prefix) {
+      log.debug("RiskEngine: network-failures not counted — the address is " +
+                "on the realm's operator allow list.");
     }
 
     // THE SCORE AND ITS LEVEL, with the address evidence capped at MEDIUM
