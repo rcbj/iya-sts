@@ -137,6 +137,8 @@ import templates = require('./xacml_templates');
 import xacmlRequest = require('./xacml_request');
 // THE PER-SCOPE QUESTION, asked one way (#304, #305).
 import scopeVerdicts = require('./xacml_scope_verdicts');
+// THE TRANSFER QUESTIONS (#98 D4), asked the one way the gate asks them too.
+import transferVerdicts = require('./xacml_transfer_verdicts');
 const { AuthorizationRequest } = xacmlRequest;
 
 // The question an issuance site asks, through `common/issuance_gate.js`.
@@ -184,6 +186,11 @@ interface IssuanceQuestion {
   // but one question per requested scope, answered with a verdict each
   // (`decideScopes()`).
   scopeQuestion?: ScopeQuestion | null;
+  // THE TRANSFER QUESTION (#98 D4): present, this is `hold-session`,
+  // `serve-request` or `release-attributes`, asked by
+  // `common/cell_transfer.ts` through `issuance_gate.checkTransfer()`, and
+  // answered with a verdict (`decideTransfer()`).
+  transferQuestion?: Record<string, any> | null;
 }
 
 // One requested scope (or RFC 9396 detail), with the facts the policy
@@ -250,6 +257,9 @@ interface IssuanceAnswer {
   device?: { refusal: string } | null;
   // The per-scope verdicts, for a scope question (#304).
   scopes?: ScopeVerdict[];
+  // The verdict on a transfer question (#98): `hold` / `relay`, `serve` /
+  // `refuse` or `release` / `withhold`, and which document decided.
+  transfer?: { verdict: string; decidedBy: string } | null;
 }
 
 // Which document decides: `policy` when one does, `why` when none can.
@@ -843,6 +853,11 @@ class XacmlRolePep {
       return this.decideScopes(asked);
     }
 
+    if (asked.transferQuestion) {
+      log.debug('Leaving XacmlRolePep.decideNow(). A transfer question.');
+      return this.decideTransfer(asked);
+    }
+
     if (config.value('xacml.enabled') === false) {
       log.debug('Leaving XacmlRolePep.decideNow(). The XACML family is ' +
                 'switched off.');
@@ -1207,6 +1222,43 @@ class XacmlRolePep {
              why: 'One verdict per requested scope.',
              roles: question.held || [], required: [],
              policy: (loaded && loaded.name) || '', scopes: verdicts };
+  }
+
+  // -------------------------------------------------------------------------
+  // THE TRANSFER QUESTION (#98 D4): `hold-session`, `serve-request` or
+  // `release-attributes`, the facts `cell_transfer.ts` gathered, and one
+  // verdict out of the policy's transfer obligation. The scope question's
+  // arrangement exactly: the realm's issuance policy first, with the repository
+  // and the PIP, and the BUILT-IN policy where that gives no verdict —
+  // `xacml.enabled` off, no loadable policy, or an override built without the
+  // transfer rules — so the strict default never silently switches off. Nothing
+  // is audited or counted here: the caller records the relay or the refusal.
+  // -------------------------------------------------------------------------
+  private decideTransfer(asked: IssuanceQuestion): IssuanceAnswer {
+    const { log, config, store, pip } = this.deps;
+    log.debug('Entering XacmlRolePep.decideTransfer().');
+    const question = asked.transferQuestion as Record<string, any>;
+    const loaded = config.value('xacml.enabled') === false
+      ? null : this.issuancePolicy();
+    const found = transferVerdicts.decide(Object.assign({}, question, {
+      policyName: this.issuancePolicyName()
+    }), loaded && loaded.policy ? loaded : null, function (request: any): any {
+      return { repository: store.repository(),
+               resolver: pip.resolverFor(request) };
+    });
+    log.debug('Leaving XacmlRolePep.decideTransfer(). ' + found.verdict);
+    return { allowed: ['hold', 'serve', 'release']
+               .indexOf(found.verdict) >= 0,
+             decision: 'Permit',
+             why: 'The transfer verdict is ' + found.verdict + ', decided by ' +
+                  (found.decidedBy === 'policy'
+                    ? 'the issuance policy "' +
+                      ((loaded && loaded.name) || '') + '"'
+                    : found.decidedBy === 'none'
+                      ? 'the strict default, because no policy answered'
+                      : 'the built-in issuance policy') + '.',
+             roles: [], required: [],
+             policy: (loaded && loaded.name) || '', transfer: found };
   }
 
   private reasonFor(answer: any, held: string[], required: string[],

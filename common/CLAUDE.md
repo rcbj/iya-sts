@@ -28,6 +28,7 @@ more than one family needs it, not because it felt general.
 | `group_claims.ts` | The groups claim, in all five claim sets at once. |
 | `pki_authoring.ts` | **THE CERTIFICATE & KEY CONFIGURATION PANE, AS A MODEL (2026-09-10)** — the parent project's *PKI / X.509* workflow: fourteen profiles, five cryptographic approaches, a subject DN, twenty-two X.509v3 extensions, PKCS#10 and four keystore formats, over the same vendored encoder. A LEAF (rule 3aa): it draws no HTML and holds no store. |
 | `pqc_support.ts` | **DOES THIS KEY PAIR USE A POST-QUANTUM ALGORITHM — ONE ANSWER (2026-09-13).** Behind the icon on `/admin/pki` and `/admin/keys`, the `pqc` member on those pages' JSON, and the mark in the certificate details dialog. It reads every spelling the two pages hold a key in — a JOSE `alg`, a key-material id, a node key type, an OID, a certificate's SubjectPublicKeyInfo — and answers one of FOUR kinds, because "PQC" is four claims: `pq` (ML-DSA, SLH-DSA), `composite` (one key with a post-quantum and a classical half), `kem` (ML-KEM, which signs nothing), and `hybrid` (a CLASSICAL key whose certificate carries an alternative post-quantum key under X.509 (2019) clause 9.8 — the key itself is not post-quantum). **The key decides, never the signature on its certificate**: an ML-DSA key under an RSA CA is marked and an EC key under an ML-DSA CA is not. A classical key is `null`. A LEAF over `pq_jose.js` and the vendored registry. |
+| `cell_transfer.ts` | **MAY A PERSON'S DATA GO WHERE THEY ARE — THE TRANSFER DECISION AS POLICY (#98 D4 and D11, 2026-09-28)** — `holdDecision()`, `serveDecision()` and `releaseDecision()`, three questions a cell puts to the ISSUANCE POLICY (`hold-session`, `serve-request`, `release-attributes`) with the facts as attributes; the built-in rule is the strict default, a realm's own policy may say otherwise, and single-cell mode asks nothing. Rule 3bu, below. |
 | `certificate_details.ts` | **ONE CERTIFICATE, EVERY FIELD, AND THE PATH IT BUILDS (2026-09-13)** — the model behind the certificate details dialog on `/admin/pki` and `/admin/crypto-metadata` and `GET /admin-api/certificates`: the tbsCertificate in RFC 5280 section 4.1's order (both signature algorithms, every RDN with its OID, each validity bound's ASN.1 time type, the key's parameters and bytes, both unique identifiers, every extension decoded) and a trust chain BUILT by matching each issuer's name AND verifying its signature, because a stored chain is a snapshot and a replaced Root has the same subject as the one it replaced. Built on the vendored inspector (`describeCertificate()`, `verifyChain()`); fingerprints are node's, and a post-quantum key is named from the PQC registry because the inspector summarises a composite by its classical half. A LEAF: it reads no caller's PEM and decides nothing about where a certificate came from — `admin-core/certificate_views.ts` does. |
 | `pki_merge.js` | **ONE CERTIFICATE AUTHORITY ROW WRITTEN BY SEVERAL NODES AT ONCE (2026-09-14, #46).** The three-way merge `keystore.js` applies under the row's lock: revocations and issued serials are unions, a CA tier or certificate slot is first writer wins, the register's CRL number adds. Pure JSON in, JSON out; a LEAF over config and bunyan. Its header argues why a merge and not a row per revocation. |
 | `pki.js` | **A CERTIFICATE AUTHORITY, since 2026-09-10 — ONE ROOT FOR THE SERVICE AND AN INTERMEDIATE PER TRUST REALM since 2026-09-11 (3w)** — Root, Intermediate, an Issuing CA per use case, and the leaves it issues (signing key pairs, TLS certificates, enrolled certificates, and since #168 a federation relationship's ENCRYPTION key pair — `issueEncryptionKeyPair()`, the signing door with keyEncipherment or keyAgreement and never digitalSignature, reached through a marker only this module can make). **And since 2026-09-11 the SPIFFE authority every X509-SVID is minted under**, which is the one Issuing CA here with room beneath it and the one door that issues WITHOUT recording (`issueUnder()`). **And since 2026-09-21 (#40) SOMEBODY ELSE'S certificates**: `verifyPathToAnchors()` — a path to a caller's trust anchors, Go's `x509.Certificate.Verify()` as SPIRE's node attestors use it, failing closed on an unhandled critical extension; since #201 a BACKTRACKING builder over the one set of RFC 5280 rules (`pathRuleProblem()`, name constraints EVALUATED — see *3w, CONTINUED: ONE SET OF PATH RULES*) — and OpenSSH certificates (`parseSshPublicKey()`, `parseSshAuthorizedKey()`, `checkSshHostCertificate()`), moved here from `spiffe/` the day they were written at rcbj's direction; their signatures are `crypto.js`'s section 8. **And since 2026-09-23 (#105) a WebAuthn attestation certificate's facts** — `attestationCertificateFacts()` (version, subject, basicConstraints, EKU, the SAN's directoryName types, the extensions' raw values, the key) and `attestationKeyIdentifier()`, the key identifier FIDO MDS lists a fido-u2f model under; a certificate with an EMPTY subject (a TPM AIK) is named by its SAN in `verifyPathToAnchors()`'s sentences, which read `x509.subject` unguarded until then. The AWS and Azure certificates SPIRE embeds for its cloud attestors are here too, GENERATED into `pki_cloud_anchors.json` (`awsIidCertificate()`, `azureImdsRoots()`). A LEAF (rule 3w): it holds no store, registers no route, and requires `config`, `crypto`, `keystore`, `realms`, `error_codes`, `cluster/cluster_capabilities`, `pkijs` and four vendored modules. |
@@ -9781,3 +9782,69 @@ slot**: neither module calls the other, so rule 3e's test is never reached.
 Its three rules (an empty form or query value is absent, case is exact, an
 enum inside an alternative is ajv's) are argued in its header; the design is
 `mgmt-api/CLAUDE.md`'s *Every closed set is held, at every door*.
+
+## 3bu. `cell_transfer.ts`: WHERE A PERSON'S DATA MAY GO IS A RULE OF THE ISSUANCE POLICY (#98 D4 and D11, 2026-09-28)
+
+When the service is deployed as cells (`cells.ts`), a person is homed in one
+jurisdiction and turns up at a cell in another. The design's section 6 —
+*geofencing is policy, not code* — makes each residency question a question
+to the issuance policy, and this module is where every caller asks one. All
+three are synchronous, like `issuance_gate.check()`, because they sit on the
+edge of every request a cell relays.
+
+| Question | Asked by | action-id | A Deny means |
+|---|---|---|---|
+| `holdDecision()` | the handoff of #98 D9: may a session, and the credential-free projection of the entry it stands on, be HELD by the serving cell? | `hold-session` | not a refusal: the session stays at home and every request is relayed there (D4's "strict, with relay") |
+| `serveDecision()` | the edge: may a request about the person be served here at all, even by relaying? | `serve-request` | a REFUSAL, marked `STS-CELL-0183` on the answer for the caller's response — the realm's hard geofence |
+| `releaseDecision()` | the cell that HOLDS the people, before it answers a reader at another cell (#98 D11: another cell's residents on the console, `/admin-api` with `?cell=`) | `release-attributes` | the residents are withheld, `STS-CELL-0184` on the answer |
+
+**NOTHING HERE DECIDES.** rcbj's rule — every authorization decision is a
+rule of the issuance policy, and a subsystem sends facts — is followed the
+way #304/#305 followed it for scopes: the module gathers the home and
+serving jurisdictions (`cells.jurisdictionOf()`), the client's country when a
+caller knows it, whether the realm LISTS the transfer
+(`cells.transferListed()`, the realm's stated loosening in
+`cells.permittedTransfers`), the data category, the realm, a release's
+purpose and `cells.hardGeofence`, and puts them to
+`issuance_gate.checkTransfer()`. The attributes are `xacml_request.js`'s
+vocabulary; the rules are the built-in `role-issuance` document's
+(`xacml/CLAUDE.md`, *The transfer questions*). **The strict default**: a
+session is held away from home, and residents released to another
+jurisdiction's reader, only where the realm lists the transfer; a request is
+refused only under a hard geofence, for an unlisted transfer; everything
+else is relayed. A realm's own issuance policy may state anything else — "`us`
+subjects may hold sessions in `eu`" is one rule — and is honoured in that
+realm only.
+
+**The three are not members of `ISSUANCE`**, for `DELEGATE`'s reason and
+the scope question's: none of them issues anything, and every reader of
+`KINDS` lists issuances (the `/admin/roles` preview, `/admin-api`'s closed set
+`issuanceKinds`, the realm-retiring test). They are `issuance_gate.TRANSFER`,
+action-ids of the same policy.
+
+**The facts are read IN THE SUBJECT'S REALM.** `cells.permittedTransfers` and
+`cells.hardGeofence` are realm settings, and the realm's issuance policy is a
+realm's repository entry, so a question naming a realm other than the ambient
+one is asked with that realm ambient (`realms.run()`). A realm this service
+does not have is refused whole — nothing held, served or released,
+`STS-CELL-0182` — rather than decided under a guess at which realm was meant.
+
+**Two readings of an absent fact, both strict.** A home cell NOT RECORDED
+(`''`) is the serving cell, as `cells.isHere('')` reads it: the person is
+resident where they are and there is no transfer. A home cell the service
+does NOT HAVE has jurisdiction `''`, and no rule reads `''` as anybody's home
+or as listed — `*>us` loosens the default for every KNOWN home only.
+
+**Single-cell mode asks nothing**: with `cells.id` empty all three answer
+allowed (and nothing relayed) without reaching the gate, so the service is
+exactly what it was before cells.
+
+**Where no policy answers, the strict default still holds.** With no decider
+the gate evaluates the built-in document itself (`xacml_transfer_verdicts.js`
+loaded lazily, the #305 arrangement); a decider that throws, answers no
+verdict, or a realm override built without the transfer rules falls back to
+the built-in document; and only if not even that can be evaluated is the
+strict rule read from the facts (`strictReading()` in the library, a copy in
+the gate for the process that cannot load it — `STS-CELL-0180`,
+`STS-CELL-0181`). `tests/cell_transfer.js` holds the document and both copies
+to one truth table, so the three cannot drift apart.
