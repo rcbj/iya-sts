@@ -2701,6 +2701,16 @@ const SECTIONS = [
                'which lease, and what active-active mode still refuses to ' +
                'start without. Every clustered write is fenced by the ' +
                'node\'s membership, and a node that loses it exits.' },
+      // CELLS (#98, 2026-09-28), beside Cluster: one service deployed as
+      // several cells in several jurisdictions. Drawn by
+      // `admin-ui/cells_admin.ts`.
+      { path: '/admin/cells', label: 'Cells',
+        blurb: 'One service deployed as several cells, each a copy of the ' +
+               'whole stack in one legal jurisdiction: which cell this is, ' +
+               'which others there are and whether they answer, the global ' +
+               'tier\'s replica lag, how many people each cell holds, the ' +
+               'sessions held away from home, and another cell\'s residents ' +
+               'where its release policy permits.' },
       // MAIL (#63, 2026-09-22), beside Cluster: how this service SENDS
       // mail — the transport, where a link points, the realm's wording of
       // each message, a test message, and the Mail settings group. Drawn by
@@ -43430,6 +43440,9 @@ const SETTING_HOMES = [
   // `cluster.acceptMissingCapabilities` read anywhere but beside the list of
   // what is missing would be a list of ids with no meaning.
   { group: 'Cluster', pages: ['/admin/cluster'] },
+  // THE CELLS' SETTINGS (#98), on the page that shows the cell map they
+  // configure and the realm's transfer choices they decide about.
+  { group: 'Cells', pages: ['/admin/cells'] },
   // SIGNER ROTATION (2026-09-22, #42/#48), on /admin/keys — the page that
   // shows every unit's current, next and retired keys and carries the
   // Rotate controls (rcbj's D5).

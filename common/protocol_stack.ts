@@ -746,6 +746,18 @@ class ProtocolStack {
     this.build('oidfed/entity_collection',
                require('../oidfed/entity_collection'), 'EntityCollection');
     this.register(app, require('../oidfed/oidfed'), 'oidfed/oidfed');
+    // -------------------------------------------------------------------------
+    // 14c. WHICH CELL ANSWERS A KERBEROS REQUEST OVER MS-KKDCP (#98): a
+    // `POST /KdcProxy` of its own, registered JUST BEFORE the KDC is
+    // required so it runs first — it relays a request whose client is homed
+    // in another cell and calls next() for everything else, after which the
+    // KDC's own handler answers exactly as it did. The KDC is one of the
+    // parent project's locked files and cannot be given the check itself.
+    // It requires only the vendored codec (a leaf set) at load and the
+    // principal database lazily, so nothing moves and no cycle closes.
+    // -------------------------------------------------------------------------
+    require('../kerberos/krb5_home');
+    this.register(app, require('../kerberos/krb5_home'), 'kerberos/krb5_home');
     // The Kerberos KDC. Requiring it registers /KdcProxy and /krb5/principals
     // — it is one of the parent project's locked JavaScript files, which still
     // register at require (rule 1) — but NOT the raw TCP/UDP listeners on port
@@ -1138,6 +1150,17 @@ class ProtocolStack {
                'ModeAdmin');
     this.register(app, require('../admin-ui/mode_admin'),
                   'admin-ui/mode_admin');
+    // 18k-ii. CELLS (#98, 2026-09-28). `/admin/cells` — the cell map, the
+    // store's tiers, the channel, the Cells settings and another cell's
+    // residents. 18a's placement and 18a's reason: the console's shell and
+    // the cell libraries (loaded by `app.js` and persistence far above) are
+    // here, and `mgmt-api/admin_api` requires it in the ordinary direction.
+    // Its registerRoutes() also registers its two inter-cell operations.
+    require('../admin-ui/cells_admin');
+    this.build('admin-ui/cells_admin', require('../admin-ui/cells_admin'),
+               'CellsAdmin');
+    this.register(app, require('../admin-ui/cells_admin'),
+                  'admin-ui/cells_admin');
     // 18l. MAIL (#63, 2026-09-22): Server configuration → Mail and
     // Monitoring → Mail outbox, one module for both. 18a's placement and 18a's
     // reason: the console's shell and the channel (built with the portal,
@@ -1481,6 +1504,17 @@ class ProtocolStack {
     this.build('oauth-oidc/oauth_grant_signals',
                require('../oauth-oidc/oauth_grant_signals'),
                'OAuthGrantSignals');
+    // 23b-vii. A SESSION HELD AWAY FROM ITS PERSON'S HOME (#98): a library,
+    // loaded by `app.js` for its middleware long before this line, whose
+    // install() registers its operations on the inter-cell channel and no
+    // route. After `ssf/ssf` and the grant signals, beside which it belongs
+    // for a reader — everything it reaches (the session store, the directory,
+    // the sign-out) it reaches lazily, and in single-cell mode no operation it
+    // registers is ever called.
+    require('./cell_sessions').install();
+    // And re-homing's receiving half (#98 §8.8): `adopt-person`, the same
+    // arrangement — a library whose install() registers one operation.
+    require('./cell_rehome').install();
     // 23b-ii. SIGNING KEY ROTATION (#42, 2026-09-22): a library that registers
     // its two scheduler jobs when built and no route. After `ssf/ssf`, whose
     // signingKeyRotated() it calls (lazily, so the order is for a reader).

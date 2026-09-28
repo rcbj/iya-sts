@@ -120,29 +120,75 @@ resource "random_password" "krb5_service" {
   special = false
 }
 
+# ---------------------------------------------------------------------------
+# A CELL'S SECRETS ARE ITS OWN, AND FEWER (#98, 2026-09-28).
+#
+# In a cell, what must be THE SAME IN EVERY CELL is not made here but by the
+# global/ stack, once, and replicated into every cell region under the global
+# multi-region key: the key-encryption key every cell shares (`kek`, which is
+# what STS_KEYS_KEK_* keep naming), the seeded management client's secret, and
+# in product mode the bootstrap administrator's and the KDC's passwords — a
+# value generated here per cell would be a different value in each, and the
+# one the cluster seeded first would win in the global tier while the others
+# were refused. What a cell keeps is what is ITS OWN:
+#
+#   db-app-password, db-master-password   the CELL database's two
+#   cell-kek                              the cell's own key-encryption key
+#                                         (STS_CELL_KEK_*), for its resident
+#                                         and local tiers — sealed under the
+#                                         cell's single-region key, and
+#                                         REPLICATED NOWHERE: that is the
+#                                         residency line (issue #98, §3)
+#
+# The random values of the single-cell secrets are still generated in a cell
+# (they are resources without a `count`, and giving them one would move them
+# in every single-cell state); nothing stores or reads them there.
+# ---------------------------------------------------------------------------
+resource "random_bytes" "cell_kek" {
+  count  = local.multi ? 1 : 0
+  length = 32
+}
+
 locals {
   # PRODUCT MODE ONLY — see the header. `dev` and `ci` are development, and a
   # new secret and a new environment variable there would be a new task
   # definition revision in the environments whose job is to be unchanged.
-  bootstrap_secret = var.sts_mode == "product"
+  product = var.sts_mode == "product"
+  # ... and made HERE only in a single-cell environment; a cell's are global.
+  bootstrap_secret = local.product && !local.multi
 
-  secrets = merge({
-    kek                     = random_bytes.kek.base64
-    db-app-password         = random_password.db_app.result
-    db-master-password      = random_password.db_master.result
-    admin-api-client-secret = random_password.admin_api_client_secret.result
-    }, local.bootstrap_secret ? {
-    bootstrap-admin-password = random_password.bootstrap_admin[0].result
-    krb5-krbtgt-password     = random_password.krb5_krbtgt[0].result
-    krb5-service-password    = random_password.krb5_service[0].result
+  secrets = local.multi ? {
+    db-app-password    = random_password.db_app.result
+    db-master-password = random_password.db_master.result
+    cell-kek           = random_bytes.cell_kek[0].base64
+    } : merge({
+      kek                     = random_bytes.kek.base64
+      db-app-password         = random_password.db_app.result
+      db-master-password      = random_password.db_master.result
+      admin-api-client-secret = random_password.admin_api_client_secret.result
+      }, local.bootstrap_secret ? {
+      bootstrap-admin-password = random_password.bootstrap_admin[0].result
+      krb5-krbtgt-password     = random_password.krb5_krbtgt[0].result
+      krb5-service-password    = random_password.krb5_service[0].result
   } : {})
+
+  # THE SECRETS EVERY CELL SHARES, by name: this stack's own in a single-cell
+  # environment, the global/ stack's replica in this region in a cell — empty
+  # strings in a cell's `base` phase, when no node reads them.
+  shared_secret_arns = {
+    for k in [
+      "kek", "admin-api-client-secret", "bootstrap-admin-password",
+      "krb5-krbtgt-password", "krb5-service-password",
+    ] :
+    k => local.multi ? lookup(local.global_secret_arns, k, "") : try(aws_secretsmanager_secret.main[k].arn, "")
+  }
 }
 
 resource "aws_secretsmanager_secret" "main" {
   for_each                = local.secrets
   name                    = "${local.secret_path}/${each.key}"
   description             = "mock-sts ${var.environment}: ${each.key}"
-  kms_key_id              = data.aws_kms_key.main.arn
+  kms_key_id              = local.kms_key_arn
   recovery_window_in_days = 0
 }
 

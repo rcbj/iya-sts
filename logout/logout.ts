@@ -2228,6 +2228,14 @@ class Logout {
     // observer reports the grant a revoked token ends.
     const wanted = (selection || []).map(String).filter(Boolean);
     const global = !wanted.length;
+    // A SIGN-OUT EVERYWHERE REACHES EVERY CELL (#98 D6): a person homed here
+    // whose session was exported to another cell has things held there too,
+    // and home is what says they end. A no-op in single-cell mode, and for an
+    // identity not homed here (a projection is never a subject of this).
+    if (global) {
+      require('../common/cell_sessions').subjectTerminated(
+        require('../common/realms').currentId(), String(key || ''));
+    }
     const wantedSet = {};
     wanted.forEach((id) => { wantedSet[id] = true; });
 

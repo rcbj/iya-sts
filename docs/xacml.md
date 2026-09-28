@@ -189,6 +189,25 @@ built-in policy decides. RFC 9396 authorization details are asked about in the
 same way (action `issue-authorization-detail`) for the client's registered
 types and the types the server publishes.
 
+**Where the service is deployed as cells, the issuance policy also decides
+where a person's data may go** (#98). A cell asks three questions: may a
+visitor's session be held here (`hold-session`), may a request about them be
+served here at all, even by relaying it to their home cell
+(`serve-request`), and may another cell's residents be released to a reader
+here (`release-attributes`). The request carries the person's home
+jurisdiction, the cell's jurisdiction, the client's country when it is known,
+whether the realm lists the transfer in `cells.permittedTransfers`, and
+`cells.hardGeofence`. The answer's obligation
+`urn:sts:xacml:obligation:transfer` says `hold` or `relay`, `serve` or
+`refuse`, `release` or `withhold`. The built-in rule is strict: a session is
+held, and residents released, only within one jurisdiction or where the realm
+lists the transfer; anything else is relayed to the home cell, and refused
+only under a hard geofence. A realm can loosen this in its own issuance
+policy, for example with a rule that lets `us` subjects hold sessions in
+`eu`. **Each loosening is a decision that personal data may be processed in
+another jurisdiction; make it only where the law of both allows it.** A
+document without the transfer rules leaves them to the built-in policy.
+
 The issuance PEP builds a request in which the subject is the party being
 authenticated (in a `client_credentials` grant, that is the client). The
 request carries the roles the subject holds and any roles found in a token it

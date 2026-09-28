@@ -539,6 +539,10 @@ const ACTIONS = [
   { action: 'user.delete', category: 'directory', label: 'A user was deleted' },
   { action: 'user.update', category: 'directory', label: 'A user was updated' },
   { action: 'user.rename', category: 'directory', label: 'A user was renamed' },
+  // A PERSON'S HOME MOVED TO ANOTHER CELL (#98): an administrator's act, one
+  // row at the cell that held them, naming the cell they went to.
+  { action: 'cells.rehome', category: 'directory',
+    label: 'A person was moved to another cell' },
   { action: 'user.query', category: 'directory',
     label: 'A search returned at least one user' },
   { action: 'group.create', category: 'directory',

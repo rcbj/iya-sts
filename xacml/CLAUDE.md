@@ -1289,6 +1289,9 @@ routing an internal decision through a policy engine that is already here.
 | | `urn:sts:xacml:requested-scope` | the scope values asked for (#304) |
 | access-subject | `urn:sts:xacml:client-id` | the client the request came through (#304) |
 | environment | `urn:sts:xacml:grant-type`, `urn:sts:xacml:protocol` | the OAuth grant and the protocol family (#304; the protocol filled from the kind where the caller names none) |
+| access-subject | `urn:sts:xacml:home-jurisdiction` | the jurisdiction the subject is homed in — a transfer question only (#98) |
+| environment | `urn:sts:xacml:serving-jurisdiction`, `urn:sts:xacml:client-country`, `urn:sts:xacml:transfer-listed`, `urn:sts:xacml:realm`, `urn:sts:xacml:purpose`, `urn:sts:xacml:setting:cells.hardGeofence` | the serving cell's jurisdiction, the client's country when known, whether the realm lists the transfer, the realm, a release's purpose, the hard geofence — a transfer question only (#98) |
+| resource | `urn:sts:xacml:data-category` | `session`, `request` or `attributes` — a transfer question only (#98) |
 
 **AND ONE QUESTION PER REQUESTED SCOPE (#304, part C of #88).** Which scopes
 are issued is the policy's decision too, not code's: `issuance_gate`'s
@@ -1320,6 +1323,30 @@ decider the gate evaluates the built-in policy itself** (rcbj's decision on
 #305): `xacml_scope_verdicts.js` is a library — engine, builder and templates,
 no route and no slot — which the issuance PEP and `issuance_gate.js` both ask
 through, so the rules hold in every process.
+
+**AND SINCE #98 (D4, D11) WHERE A PERSON'S DATA MAY GO.** When the service is
+deployed as cells, three questions go to the same policy from
+`common/cell_transfer.ts` through `issuance_gate.checkTransfer()`:
+`hold-session` (may a traveller's session be HELD by the serving cell),
+`serve-request` (may a request about them be served there at all, even by
+relaying) and `release-attributes` (may a cell's residents be released to a
+reader at another). The facts are the attributes above; the answer carries
+`urn:sts:xacml:obligation:transfer` with `urn:sts:xacml:transfer-verdict` —
+`hold`/`relay`, `serve`/`refuse`, `release`/`withhold` — on a Permit as well
+as a Deny. The built-in `role-issuance` has six rules for them, targeted at
+the three action-ids (parameter `decideTransfers`): relay and withhold unless
+the jurisdictions are the same or the realm lists the transfer, refuse to
+serve only under `cells.hardGeofence` for an unlisted one, and keep
+everything else. Every untargeted rule of the document reads a fact a
+transfer question never carries, so none fires on one. **The scope
+question's arrangement exactly**: `xacml_transfer_verdicts.js` is the one
+library both the PEP and the gate ask through; a realm's own policy decides
+where it carries the obligation (an operator's rule "`us` subjects may hold
+sessions in `eu`" is one targeted Permit), and where it does not — an
+override built without the rules, `xacml.enabled` off, no decider — the
+built-in document decides, so the strict default never switches off. A
+verdict that is not one of the two for its question reads as the strict one.
+The three are not members of `ISSUANCE` (`common/CLAUDE.md`, 3bu).
 
 **The subject is the party being authenticated and not always a person.** In a
 browser flow it is whoever signed in; in a `client_credentials` grant there is
@@ -1816,3 +1843,16 @@ Beside it, `xacml.issuance.refused` had never been in `audit.js`'s `ACTIONS`
 table, so every one of them landed in the `protocol` category — findable by name
 and invisible to anybody filtering the audit log for AUTHORIZATION, which is the
 one filter somebody investigating a refusal reaches for. Both are registered now.
+
+## CELLS: `POST /xacml/pip` IS ANSWERED WHERE ITS SUBJECT IS HOMED (#98, 2026-09-28)
+
+What the PIP hands out is a named person's directory attributes, and a person's
+entry exists only in their home cell. So the handler reads the query's
+`subject-id` leniently (`pipSubjectKey()`: a `urn:uuid:` subject by its
+entryUUID, a DN by its RDN value, anything else as a login name) and relays a
+query about somebody homed elsewhere WHOLE — **before** the identity is read,
+the rate limit counted and the access policy asked, so the home cell counts it,
+checks the PEP's certificate (the channel forwards the client certificate and
+shims the socket, `common/cell_channel.ts`) and writes the `xacml.pip.query`
+audit row. A query that does not parse, or names nobody the routing index
+knows, is answered where it arrived, as before. Single-cell mode does not look.

@@ -142,6 +142,13 @@ interface DeliveryKind {
   // Where dead letters are listed, for the summary line.
   deadLetterHint: string;
   prepare(row: Json): Promise<Prepared>;
+  // HOW IT IS SENT, when it is not an HTTP POST to a registered address
+  // through the outbound policy (#98): the inter-cell kind sends over the
+  // mutual-TLS channel between cells, which is not a public address and must
+  // not be held to the internal-address refusal. Answers what
+  // `federation_http` would — `{ ok, status, kind, why }`.
+  send?(row: Json, prepared: Prepared,
+        options: { timeoutMs: number }): Promise<Json>;
   judge?(result: Json, row: Json): Judgement | null;
   onFinish?(row: Json, state: string, code: string, why: string): void;
   // Before an operator's retry: a refusal, or fields to refresh.
@@ -644,11 +651,13 @@ class OutboundDelivery {
                       keepBody: !!kind.keepBody };
     let result: Json = null;
     try {
-      result = kind.body === 'json'
-        ? await fedHttp.deliverJson(record, kind.attribute, prepared.body,
-                                    prepared.headers || {}, options)
-        : await fedHttp.deliverForm(record, kind.attribute, prepared.body,
-                                    options);
+      result = kind.send
+        ? await kind.send(row, prepared, options)
+        : kind.body === 'json'
+          ? await fedHttp.deliverJson(record, kind.attribute, prepared.body,
+                                      prepared.headers || {}, options)
+          : await fedHttp.deliverForm(record, kind.attribute, prepared.body,
+                                      options);
     } catch (e) {
       log.debug("Caught in OutboundDelivery.attempt(): " +
                 ((e && e.message) || e));
@@ -1095,6 +1104,20 @@ const KINDS = [
     },
     retry: function (m: Json, id: string, actor: string): Json {
       return m.retryDelivery(id, actor);
+    } },
+  // #98: what one cell must tell another and may not lose — a revocation
+  // pushed from a person's home, a changed projection. Its rows name a
+  // cell, never an address.
+  { id: 'cell-ops', title: 'Inter-cell deliveries',
+    module: '../common/cell_deliveries', page: '/admin/cells',
+    rows: function (m: Json, o: Json): Json[] {
+      return m.rows(o);
+    },
+    counts: function (m: Json): Json {
+      return m.counts();
+    },
+    retry: function (m: Json, id: string, actor: string): Json {
+      return m.retry(id, actor);
     } },
   { id: 'provider-commands', title: 'OpenID Provider Commands',
     module: './provider_commands', page: '/admin/commands',

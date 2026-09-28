@@ -277,6 +277,34 @@ const USE_CASES = [
           'PROCESS-scoped because those sockets are: one certificate answers ' +
           'every realm, so a realm\'s Intermediate signing it would make one ' +
           'realm vouch for every other realm\'s front door.' },
+  // **THE CHANNEL BETWEEN CELLS (#98, 2026-09-28).** A service deployed as
+  // cells talks to itself across regions — a request relayed to the cell
+  // that owns it, a subject's state asked of its home, a revocation pushed
+  // to every cell — over mutual TLS on `cells.port`. Every node of every cell
+  // presents a leaf from THIS authority, in both roles, and accepts a peer
+  // only when its leaf came from here: "chains to the service Root" is true
+  // of every certificate this service issues, a person's TLS client
+  // certificate included, and is not a statement that the peer is a cell.
+  // PROCESS-scoped for `tls`'s reason — the channel answers for the service,
+  // not a realm — and the process branch is in the global tier, so every
+  // cell holds the same authority. Its leaves are SHORT-LIVED and never
+  // recorded (`issueUnder()`, the SVID arrangement): a node re-mints its own
+  // on a scheduler job, and a lost node's leaf simply expires.
+  //
+  // **BUILT ONLY IN A SERVICE DEPLOYED AS CELLS** (`multiCellOnly`,
+  // `useCasesFor()`): a single-cell service has no channel, and an authority
+  // it never used made every stored process branch incomplete on its next
+  // start — a top-up write nobody asked for (tests/key_residency.js found the
+  // stray `pki:default` row). Turning cells on tops the branch up.
+  { id: 'cell', scope: 'process', label: 'Inter-cell channel',
+    multiCellOnly: true,
+    cn: 'Inter-cell Issuing CA',
+    what: 'The certificates the nodes of a service deployed as cells ' +
+          'present to each other on the inter-cell channel (cells.port), as ' +
+          'server and as client, each naming its cell in a urn:sts:cell: ' +
+          'subjectAltName. Short-lived, re-minted by each node, and never ' +
+          'recorded. A peer is accepted only with a leaf from this ' +
+          'authority. Unused in single-cell mode.' },
   // **THE ONE USE CASE WITH ROOM BENEATH IT (2026-09-11).** Every other
   // Issuing CA here signs LEAVES and nothing else, which is what `pathLen: 0`
   // in the `issuing-ca` profile says. This one signs leaves AND, for
@@ -402,8 +430,18 @@ function useCase(id) {
  */
 function useCasesFor(kind) {
   log.debug("Entering useCasesFor().");
+  let multiCell = false;
+  try {
+    // Lazily: this library is below the cell map in the require order.
+    multiCell = require('./cells').isMulti();
+  } catch (e) {
+    log.debug("Caught in useCasesFor(): " + ((e && e.message) || e));
+    multiCell = false;
+  }
   log.debug("Leaving useCasesFor().");
-  return USE_CASES.filter(function (one) { return one.scope === kind; });
+  return USE_CASES.filter(function (one) {
+    return one.scope === kind && (!one.multiCellOnly || multiCell);
+  });
 }
 
 // ---------------------------------------------------------------------------

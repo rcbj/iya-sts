@@ -51,6 +51,7 @@ Route-free libraries, each require-able from an in-process test:
 | `gnap_grants.ts` | the engine: identifying a caller, creating, continuing, modifying and revoking grants, issuing, rotating and deriving tokens |
 | `gnap_rs.ts` | introspection, registration, and judging a presented token |
 | `gnap_console.ts` | the view and action layer both admin doors render (no route, no `res`, no markup) |
+| `gnap_cells.ts` | which CELL serves each GNAP request (#98), and the three inter-cell operations — see *Cells* below |
 
 Route modules: `gnap.ts` (required from `common/protocol_stack.ts`, **23d**,
 after XACML and before logout), which requires `gnap_interact.ts` (the
@@ -239,6 +240,7 @@ failure patterns.
 | `tests/outbound_tls.js`, `tests/vendored/sts_outbound_tls.js` | the push finish's transport policy beside SSF's, federation's and XACML's (#171) |
 | `tests/vendored/sts_gnap_rs.js` | RFC 9767: each token format verified by the job's OWN code, then each accepted, narrowed, rotated, revoked and expired at the demonstration RS; introspection, registration, derivation, mutual TLS (in a realm set to `gnap.mtlsTrust=pinned`, since its certificate is self-signed) |
 | `tests/vendored/sts_gnap_signals.js` | a GNAP-owned stream, CAEP on revoke/modify, and the scope, against an unscoped control stream |
+| `tests/gnap_cells.js` | #98 in process, the cell map, channel and routing index stubbed: stamped handles, each door's placement, a grant moved and forwarded, a pinned browser pulling a grant, single-cell mode unchanged |
 | `tests/gnap_mtls_trust.js` | #107 in process over real handshakes: both trust models, revocation in both, 0277/0278, every binding refusal (0287–0292), rotation, the override and the product default |
 | `tests/vendored/sts_gnap_mtls.js` | #107 against a running service: the same, with the realm's own certificates from the Credentials door and a foreign authority whose leaf names a CRL the job serves |
 
@@ -361,3 +363,58 @@ answers the current key's refusal when none verifies. `/gnap/keys` adds
 `biscuit.root_public_keys` (non-standard; `root_public_key` is still the
 current one) and the ZCAP controller document lists every generation as a
 verification method.
+
+## Cells: which cell serves a GNAP request (#98, 2026-09-28)
+
+Every GNAP store is CELL-tier (`persistence/tiers.js`) except two: the
+signature replay history (global, because a client chooses its nonces) and
+**`gnap.resources`, moved to the global tier on 2026-09-28** — a resource
+server's registered set is configuration with nothing of anybody's in it, and
+its reference is written into grant requests that may reach any cell.
+`gnap_cells.ts`'s header argues each door; the decisions, in short:
+
+* **Stamped** (`GnapStore.handle()`, `common/cell_locator.ts`): the grant id,
+  the `redirect`/`app` and approval handles, the management handle, every
+  access token's `jti`, instance identifiers. **Not stamped**: a user code
+  (typed by a person), the opaque user reference (deterministic per person),
+  the continuation token, the finish nonces and `interact_ref` (each travels
+  with a stamped URI), a resource set reference (global).
+* **`POST /gnap`**: an instance held elsewhere, then a token to derive from,
+  then a user reference held elsewhere, then the PERSON the `user` member
+  names — read unverified, relayed to their home. Nothing named: served where
+  it arrives. The first rule that names a cell wins.
+* **Tokens hidden by their format.** A `jwt-signed` token's `jti` is read at
+  the edge or in the handler; `jwt-encrypted`, macaroon, biscuit and ZCAP
+  hide theirs, so a token this cell does not hold is ASKED of the other cells
+  by the SHA-256 of its value (`gnap-locate`). Appending a tag to the token
+  value itself was rejected: RFC 9767's formats are verified by resource
+  servers with their own code, and a suffix would break every one of them.
+* **User codes are asked, after the attempt is counted here** — the count is
+  what keeps a guesser from making every cell answer every guess. A traveller
+  typing the right code spends one attempt of two budgets.
+* **A waiting grant MOVES to its resource owner's cell, once.** The grant is
+  made where the client arrived; the approval page's sign-in pins the browser
+  to the person's home (D9), and the pinned cell PULLS the grant
+  (`gnap-surrender-grant`) with its continuation, interaction and user-code
+  rows. The minting cell forgets it, keeps a forwarding row
+  (`gnap.movedGrants`, cell-tier, bounded at insert) and tells every other
+  cell (`gnap-grant-moved`), so the client's next continuation — still naming
+  the old id — is relayed to the new cell in one hop from wherever it lands.
+  `/gnap/continue` is a `handler` row for this reason: the tag alone would
+  send it to the cell it moved from.
+* **Documented exceptions.** (1) A grant that has ISSUED a token does not
+  move — its tokens, handles and the consent they rest on stay where minted —
+  so a browser pinned elsewhere (a `PATCH` continuation asking for a second
+  interaction, by a person homed in another cell) is told the request is not
+  waiting (STS-CELL-0161). (2) A continuation that reaches the old cell BY
+  RELAY from a third cell that has not yet heard of the move cannot be
+  relayed again (one hop): it is answered 503 `too_fast` with `Retry-After`
+  (STS-CELL-0160), and the retry finds the forwarding row. (3) An instance
+  identifier and a person homed in different cells: the instance wins, since
+  its key exists in one cell only; the grant is then held away from the
+  person's home.
+* **A relayed signed request still verifies** because the relay now sends
+  the Host the client addressed (as the sending cell understood it) rather
+  than the peer's private name, and the body's exact bytes
+  (`cell_placement.ts` `serialisedBody()` prefers `req.rawBody`). See
+  `common/cell_channel.ts`'s `relay()`.

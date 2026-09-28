@@ -50,3 +50,23 @@ output "ci_user_name" {
   description = "GitHub Actions' IAM user. Create its key by hand: aws iam create-access-key --user-name <this>"
   value       = aws_iam_user.ci.name
 }
+
+output "permitted_regions" {
+  description = "Every region an environment may deploy to (#98); the deployer's region fence."
+  value       = local.regions
+}
+
+output "global_kms_key_arn" {
+  description = "The global multi-region key's primary (alias/<name>-global): global secrets and the global database (#98)."
+  value       = aws_kms_key.global.arn
+}
+
+output "cell_kms_key_arns" {
+  description = "Each permitted region's single-region CELL key (alias/<name>-cell-<cell>), by region (#98)."
+  value = merge(
+    { for m in module.region_usw2 : "us-west-2" => m.cell_key_arn },
+    { for m in module.region_cac1 : "ca-central-1" => m.cell_key_arn },
+    { for m in module.region_euc1 : "eu-central-1" => m.cell_key_arn },
+    { for m in module.region_apse1 : "ap-southeast-1" => m.cell_key_arn },
+  )
+}

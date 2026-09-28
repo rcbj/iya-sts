@@ -57,6 +57,8 @@ import realms = require('../common/realms');
 // `spendNonceOnce()`. A LIBRARY that reaches `persistence.js` lazily.
 import claims = require('../cluster/cluster_claims');
 import InstanceSlot = require('../common/instance_slot');
+// Which cell minted an identifier (#98 D10). A leaf library.
+import cellLocator = require('../common/cell_locator');
 import cacheRegistry = require('../common/cache_registry');
 
 const accounts = realms.map({ persist: 'acme.accounts' });
@@ -129,6 +131,7 @@ interface AcmeStoreDeps {
   nodeCrypto: typeof nodeCrypto;
   log: typeof log;
   claims: typeof claims;
+  cellLocator: typeof cellLocator;
 }
 
 /**
@@ -162,7 +165,8 @@ class AcmeStore {
     return {
       nodeCrypto: nodeCrypto,
       log: log,
-      claims: claims
+      claims: claims,
+      cellLocator: cellLocator
     };
   }
 
@@ -172,11 +176,22 @@ class AcmeStore {
    * @param bytes - how many random bytes; 15 when absent
    * @returns the identifier
    */
+  //
+  // **STAMPED WITH THE CELL THAT MINTED IT (#98 D10).** Every identifier made
+  // here is the last segment of a URL the client POSTs to later — an
+  // account's `kid`, an order, an authorization and its one challenge, a
+  // certificate — and the rows it names are this cell's (`acme.*` is cell
+  // tier). The placement table's ACME rows read the tag off the path at the
+  // edge, and `Acme.placeRequest()` reads it off a `kid`, so a request that
+  // reaches another cell is relayed here before its JWS is looked at. Twelve
+  // base64url characters more (28 or 32 in all), inside `ID_PATTERN`'s 8 to
+  // 64; nothing in a single-cell service.
   newId(bytes) {
-    const { log, nodeCrypto } = this.deps;
+    const { log, nodeCrypto, cellLocator } = this.deps;
     log.debug("Entering AcmeStore.newId().");
     log.debug("Leaving AcmeStore.newId().");
-    return nodeCrypto.randomBytes(bytes || 15).toString('base64url');
+    return cellLocator.stamp(nodeCrypto.randomBytes(bytes || 15)
+      .toString('base64url'));
   }
 
   /**

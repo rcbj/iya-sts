@@ -60,6 +60,9 @@
 // default at load.
 // ---------------------------------------------------------------------------
 
+// WHICH CELL MINTED AN ARTIFACT (#98 D10): a keyed tag appended to what
+// this module mints and read where it is presented. A leaf library.
+import cellLocator = require('../common/cell_locator');
 import crypto = require('crypto');
 import qrcode = require('qrcode');
 // TRUST REALMS: the stores below are partitioned by realm. It requires
@@ -788,7 +791,9 @@ class VcOffers {
     let txCodeValue = "";
 
     if (mode === 'cross-device' || mode === 'deferred') {
-      preAuthorizedCode = randomId(24);
+      // Stamped with the minting cell (#98 D10): the wallet redeems it at
+      // the cell nearest it, which relays the token request here.
+      preAuthorizedCode = cellLocator.stamp(randomId(24));
       // Numeric digits, which is what the issuer's page displays — see
       // newTxCode() for the length and the generator. The value never travels
       // in the offer — only its shape does — because the whole point is that it
@@ -1098,7 +1103,9 @@ class VcOffers {
       if (String(req.query.by || '') === 'reference') {
         // 128 bits (#65): fetching this URI hands over the offer and its
         // pre-authorized code, so it is a bearer value like the code.
-        const id = randomId(16);
+        // Stamped (#98 D10): a wallet fetches the offer from the cell
+        // nearest it, whose edge relays the fetch here.
+        const id = cellLocator.stamp(randomId(16));
         credentialOffers.set(id,
                              { offer: built.offer, expires: now +
                               this.offerTtlMs() });

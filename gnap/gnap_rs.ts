@@ -366,7 +366,7 @@ class GnapRs {
     }
     if (!caller.instanceId && config.value('gnap.instanceIds') !== false &&
         caller.descriptor.format !== 'reference') {
-      const instanceId = store.mint(18);
+      const instanceId = store.handle(18);
       store.putInstance(instanceId,
                         { identifier: rs.identifier,
                           key: caller.descriptor.value });

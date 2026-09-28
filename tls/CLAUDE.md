@@ -1416,3 +1416,27 @@ through outside active-active, and the requirement belongs to the act rather
 than to the socket it used to arrive on. Catch up with what other nodes
 committed, and hold the answer until this request's writes commit. Not measured
 on a live pair.
+
+## CELLS: `GET /tls/sign-in` STARTS THE SESSION IN THE HOLDER'S HOME CELL (#98, 2026-09-28)
+
+`placeCertificateSignIn()`, before the revocation check, the identity gate and
+the session: a VERIFIED certificate's holder — the `urn:sts:person:` name this
+service's authority wrote, else the common name, else the subject, the same
+reading `startCertificateSessionIn()` makes — homed in another cell is relayed
+there whole, in the realm the certificate names. **The certificate goes with
+it**: the inter-cell channel forwards the client's certificate and its chain the
+way the front process hands one to a request worker (`request_pool.peerOf()`),
+and the home cell shims the socket so `getPeerCertificate()` answers with the
+client's and `authorized` with this handshake's verdict. At home the door runs
+whole: `revocation_status.fromSocket()` reads the forwarded `issuerChain` exactly
+as in a worker, the identity gate and the issuance policy decide, and
+`authn.startSession()` pins the browser there.
+
+**Answered here instead**: an unverified or absent certificate (nothing starts
+a session), an application's certificate (it signs nobody in), and a browser
+that already holds a session in this cell — the one-session-per-browser rule
+beats the move. The placement table honours a pinned browser's cell before the
+handler runs (`common/cell_placement.ts`, row `/tls/sign-in`, `browser: true`).
+One side effect to know: the home cell's `fromSocket()` sees a shim whose
+prototype is the inter-cell socket, so it REMEMBERS the forwarded chain against
+the leaf as it does for a real handshake — harmless, and keyed by the leaf.

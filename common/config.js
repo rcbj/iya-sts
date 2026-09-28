@@ -2827,6 +2827,58 @@ const SETTINGS = [
                  'deployment relies on.' },
 
   // -------------------------------------------------------------------------
+  // THE CELL KEY-ENCRYPTION KEY (#98, 2026-09-28). What a cell stores of its
+  // own — the people homed here and everything it mints — is sealed under a
+  // key that lives only in the cell's region and is never replicated, so a
+  // copy of the cell's rows taken anywhere else opens nothing. The global
+  // tier stays under `keys.kek*`, which every cell holds. Unset, and always
+  // in single-cell mode, the cell tier is sealed under `keys.kek*` too — the
+  // same code path with one key.
+  // -------------------------------------------------------------------------
+  { key: 'keys.cellKekProvider', group: 'Key material',
+    label: 'Where the cell key-encryption key is read from',
+    env: 'STS_CELL_KEK_PROVIDER', type: 'enum',
+    enumValues: ['none', 'file', 'aws', 'gcp', 'azure', 'vault'],
+    dflt: 'none', runtime: false, perProcess: true,
+    restartReason: 'the key is read once, before the store is restored',
+    description: 'The provider of THIS CELL\'s key-encryption key, which ' +
+                 'seals what the cell stores of its own (#98). Five ' +
+                 'providers, as `keys.kekProvider`. `none` seals the cell ' +
+                 'tier under the service key-encryption key, which is ' +
+                 'correct for single-cell mode and for a test; a multi-cell ' +
+                 'deployment in product mode REFUSES to start with it, ' +
+                 'because then a copy of one cell\'s rows would open in ' +
+                 'every other.' },
+
+  { key: 'keys.cellKekRef', group: 'Key material',
+    label: 'The cell key-encryption key\'s location',
+    env: 'STS_CELL_KEK_REF', type: 'string', dflt: '',
+    runtime: false, perProcess: true,
+    restartReason: 'read once at startup',
+    description: 'Where the cell key is, in the provider ' +
+                 '`keys.cellKekProvider` names: a path, an ARN, a resource ' +
+                 'or a Vault read path. It must NOT be the service key\'s ' +
+                 'location; that is refused.' },
+
+  { key: 'keys.cellKekField', group: 'Key material',
+    label: 'The field the cell key is in',
+    env: 'STS_CELL_KEK_FIELD', type: 'string', dflt: '',
+    runtime: false, perProcess: true,
+    restartReason: 'read once at startup',
+    description: 'The member of a JSON secret that holds the cell key. ' +
+                 'Empty takes the value whole, as `keys.kekField` does.' },
+
+  { key: 'keys.cellKekRegion', group: 'Key material',
+    label: 'AWS region of the cell key',
+    env: 'STS_CELL_KEK_REGION', type: 'string', dflt: '',
+    runtime: false, perProcess: true,
+    restartReason: 'read once at startup',
+    description: 'The AWS region the cell key is read from — the cell\'s ' +
+                 'own. Empty uses the SDK\'s own resolution (AWS_REGION ' +
+                 'and the rest), NOT `keys.kekRegion`: the cell key has no ' +
+                 'fallback of any kind.' },
+
+  // -------------------------------------------------------------------------
   // THE MODE. What this service IS, rather than what any one surface requires.
   //
   // **IT IS ONE SETTING BECAUSE "IS AUTHENTICATION REQUIRED HERE" MUST HAVE
@@ -14344,6 +14396,82 @@ const SETTINGS = [
                  'a real database whose certificate chains to something ' +
                  'NODE_EXTRA_CA_CERTS names.' },
 
+  // -------------------------------------------------------------------------
+  // THE GLOBAL TIER'S DATABASE (#98, 2026-09-28). With `cells.id` set, the
+  // store is TWO databases: `persistence.databaseUrl` is this cell's own
+  // (the people homed here, and what this cell mints) and these name the
+  // GLOBAL one — realms, settings, applications, policies, keys and the
+  // routing index — with one writer for the whole service and a read replica
+  // in every cell (#98 D3). `persistence/CLAUDE.md`, *Tiers*, argues it.
+  // Empty with `cells.id` set is refused at startup: a cell that kept its
+  // global rows in its own database would be a second service.
+  // -------------------------------------------------------------------------
+  { key: 'persistence.globalDatabaseUrl', group: 'Persistence',
+    label: 'Global tier database (writer)',
+    env: 'STS_GLOBAL_DATABASE_URL', type: 'string', dflt: '',
+    runtime: false, perProcess: true,
+    restartReason: 'the global tier is opened and restored before the ' +
+                   'listener binds',
+    description: 'The connection string of the GLOBAL tier\'s one writable ' +
+                 'database, used for every global write (a realm, a ' +
+                 'setting, an application, a key) from every cell. Only ' +
+                 'read when `cells.id` is set; single-cell mode keeps all ' +
+                 'three tiers in `persistence.databaseUrl`. Carries ' +
+                 '`sslmode=require` exactly as that one does.' },
+
+  { key: 'persistence.globalDatabaseReadUrl', group: 'Persistence',
+    label: 'Global tier database (this cell\'s replica)',
+    env: 'STS_GLOBAL_DATABASE_READ_URL', type: 'string', dflt: '',
+    runtime: false, perProcess: true,
+    restartReason: 'the global tier is opened and restored before the ' +
+                   'listener binds',
+    description: 'The global database\'s read replica in THIS cell\'s ' +
+                 'region, which every read of the global tier uses — the ' +
+                 'restore at start and every pull of the global change log. ' +
+                 'Empty means the writer. A replica lags its writer, so a ' +
+                 'global change made in another cell reaches this one after ' +
+                 'that lag (shown on /admin/cells).' },
+
+  { key: 'persistence.globalDatabasePasswordProvider', group: 'Persistence',
+    label: 'Where the global database password is read from',
+    env: 'STS_GLOBAL_DATABASE_PASSWORD_PROVIDER', type: 'enum',
+    enumValues: ['none', 'file', 'aws', 'gcp', 'azure', 'vault'],
+    dflt: 'none', runtime: false, perProcess: true,
+    restartReason: 'the connection pool is opened before the listener binds',
+    description: '`persistence.databasePasswordProvider`, for the global ' +
+                 'tier\'s two connection strings. The password is put into ' +
+                 'both. `none` dials them as written.' },
+
+  { key: 'persistence.globalDatabasePasswordRef', group: 'Persistence',
+    label: 'The global database password\'s location',
+    env: 'STS_GLOBAL_DATABASE_PASSWORD_REF', type: 'string', dflt: '',
+    runtime: false, perProcess: true,
+    restartReason: 'read once at startup, before the pool is opened',
+    description: 'Where the global database password is, in whichever ' +
+                 'provider `persistence.globalDatabasePasswordProvider` ' +
+                 'names. Empty means the key-encryption key\'s location, ' +
+                 'with `persistence.globalDatabasePasswordField` telling the ' +
+                 'two apart.' },
+
+  { key: 'persistence.globalDatabasePasswordField', group: 'Persistence',
+    label: 'The field the global database password is in',
+    env: 'STS_GLOBAL_DATABASE_PASSWORD_FIELD', type: 'string',
+    dflt: 'globalDatabasePassword', runtime: false, perProcess: true,
+    restartReason: 'read once at startup, before the pool is opened',
+    description: 'The member of a JSON secret that holds the global ' +
+                 'database password; `password` for the shape AWS Secrets ' +
+                 'Manager writes for a database credential. Empty takes the ' +
+                 'value whole.' },
+
+  { key: 'persistence.globalDatabasePasswordRegion', group: 'Persistence',
+    label: 'AWS region of the global database password',
+    env: 'STS_GLOBAL_DATABASE_PASSWORD_REGION', type: 'string', dflt: '',
+    runtime: false, perProcess: true,
+    restartReason: 'read once at startup',
+    description: 'The AWS region the global database password is read from ' +
+                 '— this cell\'s region, where its Secrets Manager replica ' +
+                 'is. Empty means the key-encryption key\'s region.' },
+
   { key: 'persistence.writeDelay', group: 'Persistence',
     label: 'Write delay (ms)',
     env: 'STS_PERSISTENCE_WRITE_DELAY', type: 'int', dflt: 1500,
@@ -14586,6 +14714,229 @@ const SETTINGS = [
                  'and nothing else; the node starts, and says at every start ' +
                  'which ones it is running without. There is no "accept all": ' +
                  'a list somebody has to write is a list somebody has read.' },
+
+  // -------------------------------------------------------------------------
+  // CELLS (#98, 2026-09-28): one logical service deployed as several CELLS,
+  // each a copy of the whole stack with its own postgres, in one legal
+  // JURISDICTION. `common/cells.ts` and `persistence/CLAUDE.md` (*Tiers*)
+  // argue it. Every process setting here is restart-only and none may be
+  // carried by a realm: a cell is a fact about where a container runs, and
+  // a realm cannot move one. What a REALM decides — where its people may be
+  // homed and which transfers it permits — is the runtime group below.
+  //
+  // **EMPTY `cells.id` IS SINGLE-CELL MODE, WHICH IS EVERY DEPLOYMENT THAT
+  // HAS NOT ASKED FOR THIS**: all three tiers live in the one database, no
+  // locator is added to anything, and nothing below is read.
+  // -------------------------------------------------------------------------
+  { key: 'cells.id', group: 'Cells', label: 'This cell',
+    env: 'STS_CELL_ID', type: 'string', dflt: '',
+    runtime: false, perProcess: true,
+    restartReason: 'which cell a process belongs to decides which database ' +
+                   'it restores from and which people are resident here',
+    description: 'The id of the cell this container belongs to — a short ' +
+                 'lower-case name such as `usw2` (`[a-z0-9]{1,16}`). EMPTY, ' +
+                 'the default, is SINGLE-CELL MODE: the whole service is one ' +
+                 'deployment and every store is in one database, exactly as ' +
+                 'before cells existed. A cell id is never published: no ' +
+                 'token, cookie, certificate or metadata document names one. ' +
+                 'Every node of one cell must carry the same id, and every ' +
+                 'cell of one service a different one.' },
+
+  { key: 'cells.jurisdiction', group: 'Cells',
+    label: 'This cell\'s jurisdiction',
+    env: 'STS_CELL_JURISDICTION', type: 'string', dflt: '',
+    runtime: false, perProcess: true,
+    restartReason: 'the jurisdiction is part of every transfer decision ' +
+                   'this process makes',
+    description: 'The legal boundary this cell sits in: a lower-case code ' +
+                 '(`us`, `ca`, `eu`, `sg`, `id`). Personal data homed here is ' +
+                 'never replicated outside it, and every question of ' +
+                 'whether a session or an attribute may be held somewhere ' +
+                 'else is asked of the issuance policy in terms of it. ' +
+                 'Required when `cells.id` is set.' },
+
+  { key: 'cells.peers', group: 'Cells', label: 'The other cells',
+    env: 'STS_CELL_PEERS', type: 'string', dflt: '',
+    runtime: false, perProcess: true,
+    restartReason: 'the inter-cell channel dials these addresses and trusts ' +
+                   'these ids from the moment the process starts',
+    description: 'Every OTHER cell of this service, as a JSON array of ' +
+                 '`{"id", "jurisdiction", "url"}` — `url` being that cell\'s ' +
+                 'inter-cell address, `https://<internal address>:8446`. It ' +
+                 'is an address on a private network between cells and is ' +
+                 'never published anywhere. Empty with `cells.id` set is a ' +
+                 'service of ONE cell that still runs the tiered stores, ' +
+                 'which is how the tiers are tested alone.' },
+
+  { key: 'cells.port', group: 'Cells', label: 'Inter-cell port',
+    env: 'STS_CELL_PORT', type: 'port', dflt: 8446,
+    runtime: false, perProcess: true,
+    restartReason: 'the inter-cell listener binds once, from listen()',
+    description: 'The port the inter-cell channel listens on — mutual TLS, ' +
+                 'a leaf from the process\'s `cell` Issuing CA, and a peer ' +
+                 'accepted only when its certificate names a cell in ' +
+                 '`cells.peers`. Bound only when `cells.id` is set. It must ' +
+                 'never be reachable from the internet: it is reachable ' +
+                 'from the other cells\' networks and nothing else.' },
+
+  { key: 'cells.hostname', group: 'Cells',
+    label: 'This cell\'s inter-cell host name',
+    env: 'STS_CELL_HOSTNAME', type: 'string', dflt: '',
+    runtime: false, perProcess: true,
+    restartReason: 'the inter-cell certificate is issued with this name ' +
+                   'when the listener binds',
+    description: 'The private DNS name the OTHER cells dial this one at — ' +
+                 'the host of this cell\'s entry in their `cells.peers`. ' +
+                 'Each node\'s inter-cell certificate carries it, so a peer ' +
+                 'that dialled the name can check it. It resolves only on ' +
+                 'the private network between cells, to one address per ' +
+                 'node, and is never published. Empty means the node\'s own ' +
+                 'host name.' },
+
+  { key: 'cells.relayTimeoutMs', group: 'Cells',
+    label: 'Inter-cell request timeout (ms)',
+    env: 'STS_CELL_RELAY_TIMEOUT_MS', type: 'int', dflt: 10000,
+    min: 1000, max: 120000, runtime: true, perProcess: true,
+    description: 'How long a request relayed to another cell, or a call on ' +
+                 'the inter-cell channel, may take before it is answered ' +
+                 'as the other cell being unreachable (and handled as ' +
+                 '`cells.homeUnreachable` says).' },
+
+  // THE DURABLE DELIVERIES BETWEEN CELLS (`common/cell_deliveries.ts`):
+  // the shared outbound queue's numbers, for its inter-cell kind.
+  { key: 'cells.deliveryAttempts', group: 'Cells',
+    label: 'Inter-cell delivery attempts',
+    env: 'STS_CELL_DELIVERY_ATTEMPTS', type: 'int', dflt: 12,
+    min: 1, max: 50, runtime: true, perProcess: true,
+    description: 'How many times a revocation or a changed projection owed ' +
+                 'to another cell is tried before it is dead-lettered (it ' +
+                 'is retried by hand from /admin/deliveries). The backoff ' +
+                 'doubles, so twelve attempts from two seconds cover about ' +
+                 'two hours of another cell being down.' },
+
+  { key: 'cells.deliveryBackoffMs', group: 'Cells',
+    label: 'Inter-cell delivery backoff (ms)',
+    env: 'STS_CELL_DELIVERY_BACKOFF_MS', type: 'int', dflt: 2000,
+    min: 0, max: 600000, runtime: true, perProcess: true,
+    description: 'The wait before the second attempt of an inter-cell ' +
+                 'delivery; it doubles for each attempt after.' },
+
+  { key: 'cells.deliveryRetentionS', group: 'Cells',
+    label: 'Inter-cell delivery retention (s)',
+    env: 'STS_CELL_DELIVERY_RETENTION_S', type: 'int', dflt: 86400,
+    min: 60, max: 2592000, runtime: true, perProcess: true,
+    description: 'How long an inter-cell delivery may stay pending before ' +
+                 'it is dead-lettered whatever its attempt count.' },
+
+  { key: 'cells.deliveryMaxRows', group: 'Cells',
+    label: 'Inter-cell deliveries held',
+    env: 'STS_CELL_DELIVERY_MAX_ROWS', type: 'int', dflt: 100000,
+    min: 100, max: 10000000, runtime: true, perProcess: true,
+    description: 'The most inter-cell deliveries a realm holds; the oldest ' +
+                 'finished ones make room first.' },
+
+  { key: 'cells.deliveryConcurrency', group: 'Cells',
+    label: 'Inter-cell deliveries at once',
+    env: 'STS_CELL_DELIVERY_CONCURRENCY', type: 'int', dflt: 8,
+    min: 1, max: 64, runtime: true, perProcess: true,
+    description: 'How many inter-cell deliveries a sweep attempts at once.' },
+
+  { key: 'cells.deliverySummaryS', group: 'Cells',
+    label: 'Inter-cell delivery summary interval (s)',
+    env: 'STS_CELL_DELIVERY_SUMMARY_S', type: 'int', dflt: 300,
+    min: 10, max: 86400, runtime: true, perProcess: true,
+    description: 'At most one summary line per realm per this many ' +
+                 'seconds, rather than a line per delivery.' },
+
+  { key: 'cells.deliverySweepS', group: 'Cells',
+    label: 'Inter-cell delivery sweep interval (s)',
+    env: 'STS_CELL_DELIVERY_SWEEP_S', type: 'int', dflt: 30,
+    min: 5, max: 3600, runtime: true, perProcess: true,
+    description: 'How often the sweep job attempts every inter-cell ' +
+                 'delivery that is due.' },
+
+  { key: 'cells.homeUnreachable', group: 'Cells',
+    label: 'When a person\'s home cell cannot be reached',
+    env: 'STS_CELL_HOME_UNREACHABLE', type: 'enum',
+    enumValues: ['fail-closed', 'fail-open'], dflt: 'fail-closed',
+    runtime: true,
+    description: '`fail-closed`, the default (#98 D6): a person homed in a ' +
+                 'cell this one cannot reach cannot sign in, refresh a ' +
+                 'token or step up until it answers; a session already held ' +
+                 'here goes on until its next check against home. ' +
+                 '`fail-open` lets a session held here be refreshed without ' +
+                 'home\'s confirmation for up to ' +
+                 '`cells.failOpenGraceS`. **WARNING: in `fail-open` a ' +
+                 'disable, a password change or a revocation made at home ' +
+                 'during the outage is not seen here until home answers ' +
+                 'again, so a person who should have been stopped is not.**' },
+
+  { key: 'cells.failOpenGraceS', group: 'Cells',
+    label: 'Fail-open grace (s)',
+    env: 'STS_CELL_FAIL_OPEN_GRACE_S', type: 'int', dflt: 900,
+    min: 0, max: 86400, runtime: true,
+    description: 'With `cells.homeUnreachable=fail-open`, how long after ' +
+                 'home last confirmed a subject a session held here may ' +
+                 'still be refreshed without it. Ignored in `fail-closed`.' },
+
+  { key: 'cells.subjectCheckS', group: 'Cells',
+    label: 'Subject state check interval (s)',
+    env: 'STS_CELL_SUBJECT_CHECK_S', type: 'int', dflt: 60,
+    min: 0, max: 3600, runtime: true,
+    description: 'A session held away from its subject\'s home asks home ' +
+                 'for the subject\'s state (disabled, password or factor ' +
+                 'changed, revoked) on every refresh, token exchange and ' +
+                 'step-up, and ALSO whenever it is used after this many ' +
+                 'seconds without an answer. Home pushes a revocation to ' +
+                 'every cell holding a session as well, so this is the ' +
+                 'bound when a push is lost. 0 asks on every use.' },
+
+  { key: 'cells.homeCell', group: 'Cells',
+    label: 'Default home cell for new people',
+    env: 'STS_CELL_HOME_CELL', type: 'string', dflt: '',
+    runtime: true,
+    description: 'The cell a person created in this realm is homed in when ' +
+                 'nothing says otherwise (#98 D1: the home is per PERSON, ' +
+                 'and this is the realm\'s default). Empty means the cell ' +
+                 'that creates them. A creation naming a home — the console ' +
+                 'field, the SCIM extension attribute — wins, and must be a ' +
+                 'cell in a jurisdiction `cells.jurisdictions` allows.' },
+
+  { key: 'cells.jurisdictions', group: 'Cells',
+    label: 'Jurisdictions people may be homed in',
+    env: 'STS_CELL_JURISDICTIONS', type: 'csv', dflt: '',
+    runtime: true,
+    description: 'Which jurisdictions this realm may place a person in. ' +
+                 'Empty means any jurisdiction the service has a cell in. ' +
+                 'A realm pinned to one jurisdiction lists one.' },
+
+  { key: 'cells.permittedTransfers', group: 'Cells',
+    label: 'Transfers this realm permits',
+    env: 'STS_CELL_PERMITTED_TRANSFERS', type: 'csv', dflt: '',
+    runtime: true,
+    description: 'The loosenings of the strict default (#98 D4): each ' +
+                 'entry is `<home>><serving>` — `us>ca` means a session of a ' +
+                 'person homed in `us` may be HELD in a `ca` cell, with the ' +
+                 'person\'s attributes (never a credential) projected there ' +
+                 'for as long as it lasts. `*` on either side means any. ' +
+                 'EMPTY, the default, permits nothing: a person served away ' +
+                 'from their home jurisdiction is relayed to their home cell ' +
+                 'for every request, which is slower and keeps every ' +
+                 'personal value at home. **WARNING: each entry is a ' +
+                 'decision that personal data may be processed in the ' +
+                 'serving jurisdiction; make it only where the law of both ' +
+                 'allows it.** These are facts handed to the issuance ' +
+                 'policy, which decides (`hold-session`).' },
+
+  { key: 'cells.hardGeofence', group: 'Cells',
+    label: 'Refuse rather than relay',
+    env: 'STS_CELL_HARD_GEOFENCE', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'Off, the default: a person reaching a cell outside their ' +
+                 'home jurisdiction is served by relaying to home. On: they ' +
+                 'are REFUSED there with a page saying the service cannot ' +
+                 'be used from this location, for a realm whose law forbids ' +
+                 'even carrying the traffic.' },
 
   // -------------------------------------------------------------------------
   // SIGNER ROTATION (2026-09-22, #42/#48). A REALM carries these: each realm's

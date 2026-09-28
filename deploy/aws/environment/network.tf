@@ -20,7 +20,7 @@
 # with a subnet and NAT gateway of its own that is destroyed after the run.
 # ---------------------------------------------------------------------------
 resource "aws_vpc" "main" {
-  cidr_block           = var.vpc_cidr
+  cidr_block           = local.vpc_cidr
   enable_dns_support   = true
   enable_dns_hostnames = true
   tags                 = { Name = "${local.prefix}-vpc" }
@@ -68,3 +68,32 @@ resource "aws_route_table_association" "public" {
 # The private subnets keep the VPC's main route table, which has the local
 # route only: nothing in them can reach, or be reached from, the internet.
 
+
+# ---------------------------------------------------------------------------
+# A CELL'S PRIVATE SUBNETS GET A ROUTE TABLE OF THEIR OWN (#98, 2026-09-28).
+#
+# In a cell the private subnets hold more than this cell's database: the
+# global database's writer (in the primary cell) or its read replica (in each
+# other) is placed in them too (global_db.tf), and the writer answers nodes in
+# OTHER cells, across the peering. Its replies need a route back to those
+# cells' CIDRs, and the global/ stack adds one per peer — to a table it can
+# find by id and that carries the project's tag. The VPC's MAIN route table
+# is neither: AWS makes it untagged, and the deployer may add a route only to
+# a table tagged Project = STS (foundation/iam_deployer.tf). So a cell's
+# private subnets are associated with this table, which has the local route
+# and nothing else until the peering adds the peers — still no route to the
+# internet.
+#
+# A single-cell environment keeps the main table, as it always has.
+# ---------------------------------------------------------------------------
+resource "aws_route_table" "private" {
+  count  = local.multi ? 1 : 0
+  vpc_id = aws_vpc.main.id
+  tags   = { Name = "${local.prefix}-private-rt" }
+}
+
+resource "aws_route_table_association" "private" {
+  count          = local.multi ? 3 : 0
+  subnet_id      = aws_subnet.private[count.index].id
+  route_table_id = aws_route_table.private[0].id
+}

@@ -126,7 +126,9 @@ async function run(t) {
           'tls',
           'and the PROCESS branch carries the one whose key is shared by ' +
           'every realm — a realm\'s Intermediate signing the TLS certificate ' +
-          'would be one realm vouching for every other realm\'s front door');
+          'would be one realm vouching for every other realm\'s front door. ' +
+          '(A service deployed as cells adds a second, `cell`, for the ' +
+          'inter-cell channel (#98); a single-cell service never builds it.)');
   t.check(a.issuing.every(function (one) { return one.built; }) &&
           process.issuing.every(function (one) { return one.built; }),
           'every Issuing CA in every scope is built, because a branch is ' +

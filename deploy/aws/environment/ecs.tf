@@ -58,7 +58,7 @@ locals {
     # The key-encryption key and the database password, from Secrets Manager
     # through common/secrets.js — the path issue #51 exists to exercise.
     STS_KEYS_KEK_PROVIDER          = "aws"
-    STS_KEYS_KEK_REF               = aws_secretsmanager_secret.main["kek"].arn
+    STS_KEYS_KEK_REF               = local.shared_secret_arns["kek"]
     STS_KEYS_KEK_REGION            = local.region
     STS_DATABASE_PASSWORD_PROVIDER = "aws"
     STS_DATABASE_PASSWORD_REF      = aws_secretsmanager_secret.main["db-app-password"].arn
@@ -102,7 +102,20 @@ locals {
       STS_TLS_CERT_FILE = local.tls_cert
       STS_TLS_KEY_FILE  = local.tls_keyfile
     } : {},
+    # A CELL'S CONTRACT WITH THE SERVICE (cells.tf, #98): which cell, its
+    # peers, the global database and the cell's own key-encryption key. Empty
+    # in a single-cell environment.
+    local.cell_environment,
   var.extra_environment)
+
+  # THE GLOBAL SCHEMA IS APPLIED BY THE PRIMARY CELL'S NODES (#98), as the cell
+  # schema is by every node: the same image and the same idempotent file,
+  # against the global database's writer, which is in this cell's VPC. Only
+  # the primary cell runs it — every other cell reads a replica, which takes
+  # the schema (and the `sts_app` role and its password) from the writer by
+  # replication — and `entrypoint.sh` applies the primary cell first, so a
+  # node anywhere starts against a schema that exists.
+  global_schema_init = local.is_primary && local.full
 }
 
 resource "aws_ecs_task_definition" "node" {
@@ -178,7 +191,32 @@ resource "aws_ecs_task_definition" "node" {
         options = {
           awslogs-group         = data.aws_cloudwatch_log_group.containers.name
           awslogs-region        = local.region
-          awslogs-stream-prefix = "${var.environment}-${each.key}"
+          awslogs-stream-prefix = "${local.log_stream_prefix}-${each.key}"
+        }
+      }
+    },
+    ] : [], local.global_schema_init ? [
+    {
+      name      = "global-schema-init"
+      image     = "${local.ecr_repository_url}:${local.schema_image_tag}"
+      essential = false
+      environment = [
+        { name = "PGHOST", value = local.global.primary_address },
+        { name = "PGPORT", value = tostring(local.global.db_port) },
+        { name = "PGDATABASE", value = local.global.db_name },
+        { name = "PGUSER", value = local.db_master_user },
+        { name = "STS_DB_APP_USER", value = local.global.db_app_user },
+      ]
+      secrets = [
+        { name = "PGPASSWORD", valueFrom = local.global.master_secret_arn },
+        { name = "STS_DB_APP_PASSWORD", valueFrom = lookup(local.global_secret_arns, "global-db-app-password", "") },
+      ]
+      logConfiguration = {
+        logDriver = "awslogs"
+        options = {
+          awslogs-group         = data.aws_cloudwatch_log_group.containers.name
+          awslogs-region        = local.region
+          awslogs-stream-prefix = "${local.log_stream_prefix}-${each.key}"
         }
       }
     },
@@ -203,7 +241,7 @@ resource "aws_ecs_task_definition" "node" {
         options = {
           awslogs-group         = data.aws_cloudwatch_log_group.containers.name
           awslogs-region        = local.region
-          awslogs-stream-prefix = "${var.environment}-${each.key}"
+          awslogs-stream-prefix = "${local.log_stream_prefix}-${each.key}"
         }
       }
     },
@@ -218,17 +256,26 @@ resource "aws_ecs_task_definition" "node" {
       dependsOn = concat(
         [{ containerName = "schema-init", condition = "SUCCESS" }],
         local.public_name ? [{ containerName = "cert-init", condition = "SUCCESS" }] : [],
+        local.global_schema_init ? [{ containerName = "global-schema-init", condition = "SUCCESS" }] : [],
       )
-      portMappings = [
+      # And in a cell, the inter-cell listener (intercell.tf), which no load
+      # balancer carries.
+      portMappings = concat([
         for p in values(local.published_ports) :
         { containerPort = p.container, protocol = "tcp" }
-      ]
+        ], local.multi ? [
+        { containerPort = local.intercell_port, protocol = "tcp" },
+      ] : [])
       environment = [
         for k, v in merge(local.node_environment, { STS_CLUSTER_NODE_NAME = each.key }) :
         { name = k, value = v }
       ]
-      secrets = concat(
-        [{ name = "ADMIN_API_CLIENT_SECRET", valueFrom = aws_secretsmanager_secret.main["admin-api-client-secret"].arn }],
+      # A cell's `base` phase has no global secrets yet (cells.tf) and runs no
+      # node; ECS refuses an empty `valueFrom` even in a task definition
+      # nothing starts, so those are left out until `full`. In a single-cell
+      # environment every value is present and the list is the one it was.
+      secrets = [for s in concat(
+        [{ name = "ADMIN_API_CLIENT_SECRET", valueFrom = local.shared_secret_arns["admin-api-client-secret"] }],
         # THE BOOTSTRAP ADMINISTRATOR'S PASSWORD, in product mode. Injected by
         # ECS from Secrets Manager rather than written into the task
         # definition, like the three secrets beside it: a task definition is
@@ -237,14 +284,17 @@ resource "aws_ecs_task_definition" "node" {
         # prints it nowhere (common/credentials.ts, admin.bootstrapPassword),
         # so the value exists only in Secrets Manager and in the scrypt hash
         # on the entry.
-        local.bootstrap_secret ? [
-          { name = "STS_ADMIN_BOOTSTRAP_PASSWORD", valueFrom = aws_secretsmanager_secret.main["bootstrap-admin-password"].arn },
+        #
+        # In a cell (#98) all three are the global/ stack's, replicated into
+        # this region, because every cell must hold the same values.
+        local.product ? [
+          { name = "STS_ADMIN_BOOTSTRAP_PASSWORD", valueFrom = local.shared_secret_arns["bootstrap-admin-password"] },
           # And the KDC's two (secrets.tf, 2026-09-18): without them a product
           # KDC builds no krbtgt and no service account, and issues nothing.
-          { name = "KRB5_KRBTGT_PASSWORD", valueFrom = aws_secretsmanager_secret.main["krb5-krbtgt-password"].arn },
-          { name = "KRB5_SERVICE_PASSWORD", valueFrom = aws_secretsmanager_secret.main["krb5-service-password"].arn },
+          { name = "KRB5_KRBTGT_PASSWORD", valueFrom = local.shared_secret_arns["krb5-krbtgt-password"] },
+          { name = "KRB5_SERVICE_PASSWORD", valueFrom = local.shared_secret_arns["krb5-service-password"] },
         ] : [],
-      )
+      ) : s if s.valueFrom != ""]
       # The main port is HTTPS on a certificate the cluster issues itself, so
       # the probe does not verify it; it asks whether the service answers.
       # Loopback connections are served without the PROXY header.
@@ -272,7 +322,7 @@ resource "aws_ecs_task_definition" "node" {
         options = {
           awslogs-group         = data.aws_cloudwatch_log_group.containers.name
           awslogs-region        = local.region
-          awslogs-stream-prefix = "${var.environment}-${each.key}"
+          awslogs-stream-prefix = "${local.log_stream_prefix}-${each.key}"
         }
       }
     },
@@ -289,8 +339,10 @@ resource "aws_ecs_service" "first" {
   name            = "${local.prefix}-node-a"
   cluster         = aws_ecs_cluster.main.id
   task_definition = aws_ecs_task_definition.node["node-a"].arn
-  desired_count   = 1
-  launch_type     = "FARGATE"
+  # 1; 0 only in a new cell's `base` phase (cells.tf), before the global
+  # database it needs exists.
+  desired_count = local.node_desired_count
+  launch_type   = "FARGATE"
 
   # One task per service: replacing it means stopping it first.
   deployment_minimum_healthy_percent = 0
@@ -316,7 +368,7 @@ resource "aws_ecs_service" "first" {
     managed_ebs_volume {
       role_arn         = aws_iam_role.ecs_infrastructure.arn
       encrypted        = true
-      kms_key_id       = data.aws_kms_key.main.arn
+      kms_key_id       = local.kms_key_arn
       volume_type      = "gp3"
       size_in_gb       = var.risk_upload_volume_gib
       throughput       = var.risk_upload_volume_throughput
@@ -337,6 +389,15 @@ resource "aws_ecs_service" "first" {
       target_group_arn = aws_lb_target_group.nodes[load_balancer.key].arn
       container_name   = "mock-sts"
       container_port   = load_balancer.value.container
+    }
+  }
+
+  # A CELL'S NODES ARE NAMED TO THE OTHER CELLS BY CLOUD MAP (intercell.tf,
+  # #98), which is not a target group and so not held to the five above.
+  dynamic "service_registries" {
+    for_each = local.multi ? [1] : []
+    content {
+      registry_arn = aws_service_discovery_service.nodes[0].arn
     }
   }
 
@@ -370,7 +431,7 @@ resource "aws_ecs_service" "others" {
   name            = "${local.prefix}-${each.key}"
   cluster         = aws_ecs_cluster.main.id
   task_definition = aws_ecs_task_definition.node[each.key].arn
-  desired_count   = 1
+  desired_count   = local.node_desired_count
   launch_type     = "FARGATE"
 
   deployment_minimum_healthy_percent = 0
@@ -396,7 +457,7 @@ resource "aws_ecs_service" "others" {
     managed_ebs_volume {
       role_arn         = aws_iam_role.ecs_infrastructure.arn
       encrypted        = true
-      kms_key_id       = data.aws_kms_key.main.arn
+      kms_key_id       = local.kms_key_arn
       volume_type      = "gp3"
       size_in_gb       = var.risk_upload_volume_gib
       throughput       = var.risk_upload_volume_throughput
@@ -417,6 +478,15 @@ resource "aws_ecs_service" "others" {
       target_group_arn = aws_lb_target_group.nodes[load_balancer.key].arn
       container_name   = "mock-sts"
       container_port   = load_balancer.value.container
+    }
+  }
+
+  # A CELL'S NODES ARE NAMED TO THE OTHER CELLS BY CLOUD MAP (intercell.tf,
+  # #98), which is not a target group and so not held to the five above.
+  dynamic "service_registries" {
+    for_each = local.multi ? [1] : []
+    content {
+      registry_arn = aws_service_discovery_service.nodes[0].arn
     }
   }
 

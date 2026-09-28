@@ -625,6 +625,19 @@ CREATE TABLE IF NOT EXISTS sts_risk_terms_acceptances (
 
 CREATE INDEX IF NOT EXISTS sts_risk_terms_acceptances_provider ON sts_risk_terms_acceptances (provider, accepted_at);
 
+-- WHERE EACH PERSON IS HOMED (#98, schema version 11, 2026-09-28): the
+-- routing index of a service deployed as cells, in the global tier. Keyed
+-- digests of a login name or an entryUUID and the cell that holds the person;
+-- no name and no identifier in the clear. The primary key is what keeps a
+-- login name unique in a realm across cells.
+CREATE TABLE IF NOT EXISTS sts_cell_routing (
+  realm      text   NOT NULL,
+  kind       text   NOT NULL,
+  digest     text   NOT NULL,
+  cell       text   NOT NULL,
+  written_at bigint NOT NULL,
+  PRIMARY KEY (realm, kind, digest));
+
 CREATE TABLE IF NOT EXISTS sts_schema (
   version int PRIMARY KEY,
   applied_at timestamptz NOT NULL DEFAULT now());
@@ -632,7 +645,7 @@ CREATE TABLE IF NOT EXISTS sts_schema (
 -- WHAT VERSION OF THE ABOVE THIS IS. The driver writes the same row on open()
 -- and `tests/postgres_schema.js` checks that this number is its SCHEMA_VERSION,
 -- so the two cannot disagree about which schema is on disk.
-INSERT INTO sts_schema (version) VALUES (10) ON CONFLICT (version) DO NOTHING;
+INSERT INTO sts_schema (version) VALUES (11) ON CONFLICT (version) DO NOTHING;
 
 -- ---------------------------------------------------------------------------
 -- THE APPLICATION ROLE: READ AND WRITE THE ROWS, AND NOTHING ELSE.

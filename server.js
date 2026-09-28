@@ -482,6 +482,22 @@ function announce() {
               'Every http:// CRL and OCSP address in this service\'s ' +
               'certificates will answer nothing.');
   });
+  // THE CHANNEL BETWEEN CELLS (#98, 2026-09-28): mutual TLS on cells.port,
+  // bound only when this service is deployed as cells, in this process only
+  // (a request worker dials and never listens). A relayed request it takes
+  // is served by the same app as the public port. Recorded rather than
+  // thrown, as every socket here is: without it this cell still answers
+  // what it owns, and the other cells fail closed on what they relay here.
+  require('./common/cell_channel').listen(app).whenReady.then(
+    function (ready) {
+      if (ready.port) {
+        log.info('cells: the inter-cell channel is on port ' + ready.port +
+                 ', mutual TLS, for the other cells of this service only.');
+      }
+    }).catch(function (err) {
+    log.error(errorCodes.tag('STS-CELL-0033') + 'cells: the inter-cell ' +
+              'listener could not start: ' + err.message);
+  });
   // THE EMBEDDED PROTOCOL DEBUGGER (2026-09-13): its own listener, then its
   // api child. Recorded rather than thrown like every socket here — and a
   // debugger that is not embedded, or not installed, says why on
@@ -574,6 +590,11 @@ function shutdown(signal) {
   // A run in progress is left to finish or be fenced out; its claim lapses
   // and the next leader takes it over.
   require('./cluster/scheduler').stop();
+  // The inter-cell listener (#98): nothing drains through it that the
+  // request pool below does not already finish.
+  require('./common/cell_channel').close().catch(function (e) {
+    log.debug('Caught in shutdown(): ' + ((e && e.message) || e));
+  });
   debuggerServer.close().catch(function (e) {
     log.debug('Caught in shutdown(): ' + ((e && e.message) || e));
   }).then(function () {

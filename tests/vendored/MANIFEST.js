@@ -1143,6 +1143,53 @@ const JOBS = [
   { file: 'sts_client_attestation.js',   browser: false, local: true },
   { file: 'vc_did.js',                   browser: false },
   // ---------------------------------------------------------------------
+  // TWO CELLS OF ONE SERVICE (#98, 2026-09-28). Each runs only in the
+  // `cells` mode (`./run-tests.sh --modes=cells`), which hands the runner
+  // both cells by name (STS_TEST_CELL_A_URL, STS_TEST_CELL_B_URL), and
+  // declines to run in every other mode, naming the variable. `local`:
+  // they drive this repository's own `/admin-api` and a stack only this
+  // repository's launcher builds. What they share is cells_kit.js.
+  //
+  //   sts_cells_map.js        each cell reports both, the peer reachable
+  //                           over the channel, a tiered store, no address
+  //   sts_cells_routing.js    a login name is unique across cells (409 at
+  //                           the other), and a creation naming another
+  //                           cell as home is made there (D1)
+  //   sts_cells_traveller.js  a flow started at cell A for a person homed
+  //                           at cell B restarts at home, pinned, and is
+  //                           served there through A — code, tokens, one
+  //                           key set (D8, D9) — and a pushed request made
+  //                           at B is found from A (D10)
+  //   sts_cells_transfer.js   a realm that lists `ca>us` holds the session
+  //                           at A with a projection; a disable at home
+  //                           ends it at A (D4, D6)
+  //   sts_cells_release.js    another cell's residents are refused under
+  //                           the strict default and listed once the realm
+  //                           permits it (D11)
+  //   sts_cells_rehome.js     a person moved from B to A: what they held
+  //                           ended, entryUUID and sub kept, signed in at A;
+  //                           a jurisdiction the realm forbids refused (8.8)
+  //   sts_cells_console.js    an administrator signs in to /admin through
+  //                           cell B, and /admin/cells draws both cells
+  //   sts_cells_ldap.js       a bind at cell B's LDAPS for a person homed
+  //                           at A is verified at home (D2)
+  //   sts_cells_unreachable.js  cell B cut off from A (tests/tools/
+  //                           cell_link.js): fail-closed refuses a refresh,
+  //                           a sign-in and a bind; fail-open refreshes a
+  //                           held session (D6). Restores the link. LAST of
+  //                           the cells jobs, so a link it failed to
+  //                           restore costs no other
+  // ---------------------------------------------------------------------
+  { file: 'sts_cells_map.js',            browser: false, local: true },
+  { file: 'sts_cells_routing.js',        browser: false, local: true },
+  { file: 'sts_cells_traveller.js',      browser: false, local: true },
+  { file: 'sts_cells_transfer.js',       browser: false, local: true },
+  { file: 'sts_cells_release.js',        browser: false, local: true },
+  { file: 'sts_cells_rehome.js',         browser: false, local: true },
+  { file: 'sts_cells_console.js',        browser: false, local: true },
+  { file: 'sts_cells_ldap.js',           browser: false, local: true },
+  { file: 'sts_cells_unreachable.js',    browser: false, local: true },
+  // ---------------------------------------------------------------------
   // LAST, ALL THREE OF THEM, AND THE ORDER IS THE WHOLE OF WHY IT IS SAFE
   // (2026-09-06).
   //
@@ -1327,7 +1374,13 @@ const LOCAL_HELPERS = [
   // `tests/risk_upload.js`: one entry, several, a directory and __MACOSX/
   // beside the data, a declared size that lies. Node's zlib; nothing from
   // yauzl, which is the reader under test.
-  'zip_writer.js'
+  'zip_writer.js',
+  // WHAT THE NINE `sts_cells_*.js` JOBS SHARE (#98): each cell's management
+  // API with a token minted at that cell, a cookie jar and a browser that
+  // follows no redirect, a JWT checked against a key set with node's own
+  // crypto, and a bounded wait for the global tier. Nothing from the
+  // service.
+  'cells_kit.js'
 ];
 
 // ---------------------------------------------------------------------------

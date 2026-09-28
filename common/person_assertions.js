@@ -364,7 +364,9 @@ function sealValue(name, value) {
     log.debug("Leaving sealValue().");
     return String(value);
   }
-  const out = keystore.seal(String(value), SEAL_LABEL);
+  // Under the CELL's key where there is one (#98): a person's key pair is
+  // theirs and lives only in their home cell.
+  const out = keystore.seal(String(value), SEAL_LABEL, 'cell');
   if (!out) {
     log.debug("Leaving sealValue().");
     return null;

@@ -395,6 +395,21 @@ realms.reserve(function () {
 // With `workers.dispatch` empty — the default — this calls next() for
 // everything and the service behaves exactly as it did.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// AND JUST ABOVE IT, WHICH CELL SERVES THE REQUEST (#98, 2026-09-28).
+//
+// In a service deployed as cells a request that belongs to another cell — a
+// browser pinned to its home, an artifact another cell minted, a token its
+// minting cell must check — is relayed there WHOLE, before this process reads
+// its body or hands it to a worker, which is why this is the one position
+// that works: below the realm middleware (the placement is per realm) and
+// above the pool and the body parsers (a relay pipes the request untouched).
+// `common/cell_placement.ts` argues the table; single-cell mode calls next()
+// for everything. Required HERE rather than at the top of this file for the
+// reason the pool is: it is a library of the front process's edge.
+// ---------------------------------------------------------------------------
+app.use(require('./cell_placement').middleware());
+
 app.use(requestPool.middleware({ enterRealm: enterRealm }));
 
 // ---------------------------------------------------------------------------
@@ -408,6 +423,15 @@ app.use(requestPool.middleware({ enterRealm: enterRealm }));
 // cluster/cluster_barrier.js argues both of its rules.
 // ---------------------------------------------------------------------------
 app.use(clusterBarrier.middleware());
+
+// ---------------------------------------------------------------------------
+// A SESSION EXPORTED TO THE CELL A TRAVELLER IS REACHING (#98 D4), where the
+// transfer policy permits holding it there. Below the barrier, in the process
+// that serves the request, because it reads the session store; a no-op for
+// everything but a request another cell relayed here.
+// `common/cell_sessions.ts` argues it.
+// ---------------------------------------------------------------------------
+app.use(require('./cell_sessions').middleware());
 
 // ---------------------------------------------------------------------------
 // AND THE REQUEST'S REALM'S KEY SET, MADE OFF THE EVENT LOOP BEFORE A HANDLER
@@ -1049,6 +1073,17 @@ app.use(function (req, res, next) {
 // the CSP and `X-Content-Type-Options` every other response does.
 // ---------------------------------------------------------------------------
 app.use(validation.guard());
+
+// ---------------------------------------------------------------------------
+// A PERSON CREATED IN A SERVICE DEPLOYED AS CELLS (#98 D1): the console's
+// new-user form and `POST /admin-api/users/create` claim the login name in the
+// global routing index before anything is created, and a creation naming a
+// home cell other than this one is relayed there. Here, below the body
+// parsers and above every route, because both doors' handlers are
+// synchronous past this point. SCIM claims in its own ingress. A no-op in
+// single-cell mode. `common/cell_placement.ts` argues it.
+// ---------------------------------------------------------------------------
+app.use(require('./cell_placement').creationClaim());
 
 // ---------------------------------------------------------------------------
 // THE REVOCATION STATUS OF A PRESENTED CLIENT CERTIFICATE (2026-09-12).
