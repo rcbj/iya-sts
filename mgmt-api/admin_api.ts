@@ -148,6 +148,8 @@ import scopePolicy = require('../common/scope_policy');
 // (#302, #303) — what the gate hands the access-control policy. A library
 // (rule 3).
 import rolePermissions = require('../common/role_permissions');
+// The member types a role may be restricted to (#93), for the enum below.
+import roles = require('../common/roles');
 // The password policy's FIELD TABLE, which the request schema of
 // `save-password-policy` is generated from — for `narrowDoorProperties()`'s
 // reason: a hand-written list of what an operation accepts is a second
@@ -17737,13 +17739,32 @@ class AdminApi {
                                             '`<role>`, no other ' +
                                             'application\'s at all. Omit it ' +
                                             'for a realm-wide role, whose ' +
-                                            'name may not contain `@`.' }
+                                            'name may not contain `@`.' },
+                displayName: { type: 'string',
+                               description: 'A name for people to read ' +
+                                            '(#93). The role\'s name is ' +
+                                            'still what a token carries; ' +
+                                            'this is its label. Optional.' },
+                memberTypes: { type: 'array',
+                               items: { type: 'string',
+                                        enum: roles.MEMBER_TYPES },
+                               description: 'Who may hold it (#93): `user` ' +
+                                            '(people, directly or through a ' +
+                                            'group) and `application` (an ' +
+                                            'application as itself). Empty ' +
+                                            'is both. A member of an ' +
+                                            'excluded kind is refused, ' +
+                                            'already held or added later; ' +
+                                            'the two console roles cannot ' +
+                                            'be restricted. Omitted, both.' }
               },
               required: ['role'],
               examples: [{ role: 'staff',
                            description: 'People who work here' },
                          { role: 'reader', application: 'payroll',
-                           description: 'May read payroll' }],
+                           description: 'May read payroll',
+                           displayName: 'Payroll reader',
+                           memberTypes: ['application'] }],
               additionalProperties: false
             },
             responseDescription: 'The role that was made.' },
@@ -17778,9 +17799,11 @@ class AdminApi {
                                  'now require something nobody can hold.' },
 
           { action: 'describe-role', operationId: 'describeRole',
-            summary: 'Change what a role says it is for',
-            description: 'Replaces the `description` and leaves the ' +
-                         'membership exactly as it was. It is an action of ' +
+            summary: 'Change what a role says it is for, and who may hold it',
+            description: 'Replaces the `description` — and, where given, the ' +
+                         '`displayName` and `memberTypes` (#93) — and ' +
+                         'leaves the membership exactly as it was. It is an ' +
+                         'action of ' +
                          'its own rather than a field on ' +
                          '`create-role` because creating an ' +
                          'existing role is refused: roles are edited in place.',
@@ -17791,7 +17814,27 @@ class AdminApi {
                 role: { type: 'string', description: 'The role.' },
                 description: { type: 'string',
                                description: 'The new description. An empty ' +
-                                            'string clears it.' }
+                                            'string clears it.' },
+                displayName: { type: 'string',
+                               description: 'A name for people to read ' +
+                                            '(#93). The role\'s name is ' +
+                                            'still what a token carries; ' +
+                                            'this is its label. Omitted, ' +
+                                            'it is kept; an empty string ' +
+                                            'clears it.' },
+                memberTypes: { type: 'array',
+                               items: { type: 'string',
+                                        enum: roles.MEMBER_TYPES },
+                               description: 'Who may hold it (#93): `user` ' +
+                                            '(people, directly or through a ' +
+                                            'group) and `application` (an ' +
+                                            'application as itself). Empty ' +
+                                            'is both. A member of an ' +
+                                            'excluded kind is refused, ' +
+                                            'already held or added later; ' +
+                                            'the two console roles cannot ' +
+                                            'be restricted. Omitted, they ' +
+                                            'are kept.' }
               },
               required: ['role'],
               examples: [{ role: 'staff',

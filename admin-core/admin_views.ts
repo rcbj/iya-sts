@@ -6196,11 +6196,13 @@ class AdminViews {
                                                              row.identifier);
     const credentialsState = this.applicationCredentialsState(row);
     const softwareStatementState = this.applicationSoftwareStatementState(row);
+    const rolesState = this.applicationRolesState(row.identifier);
     log.debug("Leaving AdminViews.applicationDetailJson().");
     return {
       row: row, attributeRows: attributeRows, paged: paged, paging: paging,
       observedPaged: observedPaged,
       permissionState: permissionState,
+      rolesState: rolesState,
       credentialsState: credentialsState,
       softwareStatementState: softwareStatementState,
       json: (function () {
@@ -6232,6 +6234,12 @@ class AdminViews {
           // the slicing is this page's layout and not a fact about the entry,
           // and `GET /admin-api/permissions` answers with the same register
           // under its own name.
+          // THE ROLES IT HOLDS AS ITSELF (#93), the page's Application
+          // permissions section as data: what a client_credentials token of
+          // its carries, and the roles it could be granted. Granting and
+          // removing are `POST /admin-api/roles/add-member` and
+          // `remove-member` with `kind: application`, the console's own act.
+          applicationRoles: rolesState,
           delegatedPermissions: {
             held: permissionState.held,
             exposes: permissionState.exposes,
@@ -6245,6 +6253,60 @@ class AdminViews {
       });
       }())
     };
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE ROLES AN APPLICATION HOLDS AS ITSELF (#93): application permissions.
+  //
+  // An application is granted a role — a realm-wide one, or another
+  // application's own (#310) — as a member (`roleMemberApplication`), and a
+  // client_credentials token of its carries it: a realm-wide role in every
+  // token, an application's role only in a token for that application, under
+  // its short name. ONE STORE: the role entry. This is that store read from
+  // the application's side, which is the question an administrator asks
+  // here — "what may this client do as itself?" — and granting from here is
+  // the same act as adding the member on /admin/roles, audited the same.
+  //
+  // `offerable` is every role it does not hold that admits applications: a
+  // role restricted to people is not offered, and would be refused.
+  // ---------------------------------------------------------------------------
+  /**
+   * The roles an application holds as itself, and those it could be granted.
+   *
+   * @param identifier - the application
+   * @returns `{ held, offerable }`: `held` rows carry `name`, `id`,
+   *   `displayName`, `application` (whose role it is, or empty for a
+   *   realm-wide one), `carriedAs` and `permissions`; `offerable` is role
+   *   names
+   */
+  applicationRolesState(identifier) {
+    const { log, roles } = this.deps;
+    log.debug("Entering AdminViews.applicationRolesState(). identifier=" +
+              identifier);
+    const key = String(identifier || '').toLowerCase();
+    const all = roles.all();
+    const holds = function (role) {
+      return (role.applications || []).some(function (one) {
+        return String(one).toLowerCase() === key;
+      });
+    };
+    const held = all.filter(holds).map(function (role) {
+      return { name: role.name, id: role.id || '',
+               displayName: role.displayName || '',
+               application: role.application || '',
+               carriedAs: role.localName || role.name,
+               permissions: role.permissions || [] };
+    });
+    const offerable = all.filter(function (role) {
+      return !holds(role) &&
+             (!(role.memberTypes || []).length ||
+              role.memberTypes.indexOf('application') >= 0);
+    }).map(function (role) {
+      return role.name;
+    });
+    log.debug("Leaving AdminViews.applicationRolesState(). " + held.length +
+              " held, " + offerable.length + " offerable.");
+    return { held: held, offerable: offerable };
   }
 
   // ---------------------------------------------------------------------------
@@ -8496,6 +8558,7 @@ export = {
   federationJson: slot.forward('federationJson'),
   federationListJson: slot.forward('federationListJson'),
   applicationPermissionsState: slot.forward('applicationPermissionsState'),
+  applicationRolesState: slot.forward('applicationRolesState'),
   applicationDetailJson: slot.forward('applicationDetailJson'),
   applicationsJson: slot.forward('applicationsJson'),
   applicationsListJson: slot.forward('applicationsListJson'),

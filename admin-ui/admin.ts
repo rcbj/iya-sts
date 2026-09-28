@@ -17997,6 +17997,90 @@ class AdminConsole {
       '</table>';
   }
 
+  // ---------------------------------------------------------------------------
+  // APPLICATION PERMISSIONS (#93): the roles this application holds AS
+  // ITSELF, which its client_credentials tokens carry — beside the delegated
+  // permissions above, which it holds on a PERSON's behalf. One store, the
+  // role entry: the forms post to /admin/roles as add-member and
+  // remove-member with `kind=application`, the same act as on that page and
+  // audited the same (`roles.grant`, `roles.revoke`); granting here is the
+  // administrator's consent, and there is no second step. `from` and `client`
+  // bring the browser back to this section.
+  // ---------------------------------------------------------------------------
+  /**
+   * Draws an application's application permissions: the roles it holds as
+   * itself, each with Remove, and a form to grant another.
+   *
+   * The forms post to `/admin/roles`.
+   *
+   * @param row - the application's registry view
+   * @param state - `adminViews.applicationRolesState()`
+   * @param carryBack - the hidden `back` field every form carries
+   * @returns the section as HTML
+   */
+  applicationRolesSection(row, state, carryBack) {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering AdminConsole.applicationRolesSection(). " +
+              "identifier=" + row.identifier);
+    const identifier = row.identifier;
+    const hidden = function (action, role) {
+      return carryBack +
+        '<input type="hidden" name="action" value="' + action + '">' +
+        '<input type="hidden" name="from" value="/admin/applications">' +
+        '<input type="hidden" name="client" value="' + self.esc(identifier) +
+        '"><input type="hidden" name="kind" value="application">' +
+        '<input type="hidden" name="member" value="' + self.esc(identifier) +
+        '">' + (role === null ? '' : '<input type="hidden" name="role" ' +
+        'value="' + self.esc(role) + '">');
+    };
+    const rows = (state.held || []).map(function (one) {
+      return '<tr><td><a href="/admin/roles#roles"><code>' +
+        self.esc(one.name) + '</code></a>' +
+        (one.displayName ? '<br><span class="sub">' +
+          self.esc(one.displayName) + '</span>' : '') + '</td>' +
+        '<td>' + (one.application
+          ? 'a token for <code>' + self.esc(one.application) + '</code>, as ' +
+            '<code>' + self.esc(one.carriedAs) + '</code>'
+          : 'every token, as <code>' + self.esc(one.carriedAs) + '</code>') +
+        '</td><td>' + (one.permissions.length
+          ? one.permissions.map(function (permission) {
+              return '<div><code>' + self.esc(permission) + '</code></div>';
+            }).join('')
+          : '<span class="state-none">none</span>') + '</td>' +
+        '<td><form method="post" action="/admin/roles">' +
+        hidden('remove-member', one.name) +
+        '<button type="submit" class="danger">Remove</button></form></td>' +
+        '</tr>';
+    }).join('');
+    const options = (state.offerable || []).map(function (name) {
+      return '<option value="' + self.esc(name) + '">' + self.esc(name) +
+             '</option>';
+    }).join('');
+    log.debug("Leaving AdminConsole.applicationRolesSection().");
+    return '<h3 id="app-roles">Application permissions</h3>' +
+      this.note('The roles <code>' + this.esc(identifier) + '</code> holds ' +
+        '<strong>as itself</strong>, which its client_credentials tokens ' +
+        'carry in the roles claim: a realm-wide role in every token, and an ' +
+        'application\'s own role only in a token for that application. ' +
+        'Delegated permissions, above, are what it holds on a person\'s ' +
+        'behalf. Granting a role here is the administrator\'s consent; it ' +
+        'is the same act as adding this application to the role on ' +
+        '<a href="/admin/roles">Roles</a>.') +
+      '<table><thead><tr><th>Role</th><th>Carried in</th><th>Authorizes' +
+      '</th><th></th></tr></thead><tbody>' +
+      (rows || '<tr><td colspan="4"><span class="state-none">It holds no ' +
+               'role.</span></td></tr>') + '</tbody></table>' +
+      (options
+        ? '<form method="post" action="/admin/roles"><div class="formrow">' +
+          hidden('add-member', null) +
+          '<label>Grant <select name="role">' + options + '</select>' +
+          '</label><button type="submit">Grant</button></div></form>'
+        : '<p class="sub">No role admits an application that it does not ' +
+          'already hold. Make one on <a href="/admin/roles#create">Roles' +
+          '</a>.</p>');
+  }
+
   /**
    * Draws an application's delegated permissions: those it holds, with
    * Revoke; a form to grant another; and those it exposes, read-only.
@@ -19274,6 +19358,8 @@ class AdminConsole {
       // will say, whether it has ever been asked for) is something only the
       // register can answer.
       this.applicationPermissionsSection(req, row, carryBack) +
+      // AND WHAT IT MAY DO AS ITSELF (#93): the roles it holds.
+      this.applicationRolesSection(row, view.rolesState, carryBack) +
 
 
       // THE METADATA REFRESH, and the only control on this page that reaches
@@ -22786,8 +22872,16 @@ class AdminConsole {
         this.esc(one.localName) + '</code></span>' : '') +
       (one.description ? '<br><span class="sub">' + this.esc(one.description) +
                          '</span>' : '') +
+      // ITS LABEL, WHO MAY HOLD IT AND ITS STABLE ID (#93).
+      (one.displayName ? '<br><span class="sub">shown as <b>' +
+        this.esc(one.displayName) + '</b></span>' : '') +
+      ((one.memberTypes || []).length ? '<br><span class="sub">held by ' +
+        this.esc(this.roleMemberTypesLabel(one.memberTypes)) + ' only</span>'
+        : '') +
+      (one.id ? '<br><span class="sub">id <code>' + this.esc(one.id) +
+        '</code></span>' : '') +
       '</td>' + members + permissions +
-      '<td class="act">' + (one.native
+      '<td class="act">' + this.roleEditFold(one, listView) + (one.native
         ? '<span class="sub">kept in every realm</span>'
         : '<form method="post" action="/admin/roles">' +
           this.rolesBack(listView) +
@@ -22796,6 +22890,61 @@ class AdminConsole {
           '">' +
           '<button type="submit" class="danger">Delete</button>' +
           '</form>') + '</td></tr>';
+  }
+
+  // Who a role's member types let hold it, in words (#93).
+  /**
+   * Names a role's member types for people: "people", "applications".
+   *
+   * @param types - the role's `memberTypes`
+   * @returns the words
+   */
+  roleMemberTypesLabel(types) {
+    const { log } = this.deps;
+    log.debug("Entering AdminConsole.roleMemberTypesLabel().");
+    log.debug("Leaving AdminConsole.roleMemberTypesLabel().");
+    return (types || []).map(function (one) {
+      return one === 'user' ? 'people' : 'applications';
+    }).join(' and ');
+  }
+
+  // THE EDIT FOLD (#93): describe-role's form — the description, the display
+  // name and, for any role but a console role, who may hold it. Every field
+  // is posted, filled with what the role has, so saving one change keeps the
+  // others. A `<details>`, which needs no script (the policy's rule).
+  /**
+   * Draws a role's Edit fold: its description, display name and member
+   * types, posted as describe-role.
+   *
+   * @param one - the configured role
+   * @param listView - the list view the form carries
+   * @returns the fold as HTML
+   */
+  roleEditFold(one, listView) {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering AdminConsole.roleEditFold().");
+    const current = (one.memberTypes || []).length === 1
+      ? one.memberTypes[0] : '';
+    const typeField = one.console ? ''
+      : '<label>May be held by <select name="memberTypes">' +
+        [['', 'people and applications'], ['user', 'people only'],
+         ['application', 'applications only']].map(function (option) {
+          return '<option value="' + option[0] + '"' +
+                 (option[0] === current ? ' selected' : '') + '>' +
+                 self.esc(option[1]) + '</option>';
+        }).join('') + '</select></label>';
+    log.debug("Leaving AdminConsole.roleEditFold().");
+    return '<details><summary>Edit</summary>' +
+      '<form method="post" action="/admin/roles">' +
+      this.rolesBack(listView) +
+      '<input type="hidden" name="action" value="describe-role">' +
+      '<input type="hidden" name="role" value="' + this.esc(one.name) + '">' +
+      '<label>Display name <input name="displayName" value="' +
+      this.esc(one.displayName || '') + '"></label>' +
+      '<label>Description <input name="description" value="' +
+      this.esc(one.description || '') + '"></label>' + typeField +
+      '<button type="submit">Save</button></form></details>';
   }
 
   // ---------------------------------------------------------------------------
@@ -37537,8 +37686,14 @@ class AdminConsole {
           'that application carries it.') + '">For application ' +
         '<input type="text" name="application" list="role-create-apps" ' +
         'placeholder="realm-wide"></label><datalist id="role-create-apps">' +
-        applicationOptions + '</datalist><button ' +
-        'type="submit">Create</button></div></form>' +
+        applicationOptions + '</datalist>' +
+        // ITS LABEL AND WHO MAY HOLD IT (#93).
+        '<label>Display name <input type="text" name="displayName" ' +
+        'placeholder="optional"></label><label>May be held by <select ' +
+        'name="memberTypes"><option value="">people and applications' +
+        '</option><option value="user">people only</option><option ' +
+        'value="application">applications only</option></select></label>' +
+        '<button type="submit">Create</button></div></form>' +
 
         // "SOMEBODY" IS THREE KINDS AND THE HEADING USED TO HIDE TWO OF THEM.
         //
@@ -37852,6 +38007,22 @@ class AdminConsole {
       const state = gateStateFor(req);
       const result = rolesAction(body, { actor: (state && state.username) || '',
                                          via: 'console' });
+      // FROM AN APPLICATION'S PAGE (#93): its Application permissions section
+      // grants and removes the roles the application holds, and comes back
+      // there. The path is fixed and `client` only a query value, rebuilt by
+      // queryWith() — permissionsReturnTo()'s arrangement — and it must be
+      // the member acted on, so a form cannot land anywhere it did not act.
+      const client = String(body.client || '').trim();
+      if (String(body.from || '') === '/admin/applications' && client &&
+          client === String(body.member || '').trim() &&
+          String(body.kind || '') === 'application') {
+        self.respondToAction(req, res, '/admin/applications' +
+          queryWith(self.listViewFromBack('/admin/applications', body.back),
+                    { application: client }) + '#app-roles', result);
+        log.debug("Leaving the admin roles action endpoint. Back to the " +
+                  "application.");
+        return;
+      }
       const back = '/admin/roles' +
         queryWith(self.listViewFromBack('/admin/roles', body.back), {}) +
         // WHICH HEADING THE READER WAS ON. `from` is a NAME and never a URL,
