@@ -155,6 +155,12 @@
 //   --timeout=<ms>         per-job watchdog (default 300000; 0 disables). A
 //                          job may RAISE it for itself with `timeoutMs` in
 //                          MANIFEST.js and may never lower it; see runJob().
+//   --timeout-scale=<n>    multiplies a job's OWN `timeoutMs` (default 1).
+//                          `./run-coverage.sh` passes 3 (2026-09-27): under
+//                          instrumentation a job that already needed a
+//                          longer leash (acvp_pqc, the distribution points)
+//                          needs it three times over, and the launcher is
+//                          what knows the run is instrumented.
 //                          `./run-coverage.sh` passes one of its own —
 //                          see STS_COVERAGE_JOB_TIMEOUT_MS there — because
 //                          instrumentation is what makes a job slow and
@@ -252,7 +258,8 @@ function parseArgs(argv) {
   const opts = { only: [], list: false, protocol: 'on', parent: '',
                  conformanceOnly: false,
                  reportDir: path.join(TESTS_DIR, 'report'),
-                 timeoutMs: 300000, quiet: false, help: false,
+                 timeoutMs: 300000, timeoutScale: 1, quiet: false,
+                 help: false,
                  browser: true, serial: false,
                  unitConcurrency:
                    Number(process.env.STS_TEST_UNIT_CONCURRENCY) ||
@@ -296,6 +303,8 @@ function parseArgs(argv) {
       opts.reportDir = path.resolve(a.slice('--report-dir='.length));
     } else if (a.indexOf('--timeout=') === 0) {
       opts.timeoutMs = Number(a.slice('--timeout='.length));
+    } else if (a.indexOf('--timeout-scale=') === 0) {
+      opts.timeoutScale = Number(a.slice('--timeout-scale='.length)) || 1;
     } else if (a.indexOf('--only=') === 0) {
       a.slice('--only='.length).split(',').forEach(function (p) {
         if (p.trim()) {
@@ -696,7 +705,8 @@ function runJob(job, opts) {
     // run — is still zero here, because the branch below tests the option and
     // not this number.
     const jobTimeoutMs = opts.timeoutMs > 0
-      ? Math.max(opts.timeoutMs, Number(job.timeoutMs) || 0)
+      ? Math.max(opts.timeoutMs,
+                 (Number(job.timeoutMs) || 0) * opts.timeoutScale)
       : 0;
     if (opts.timeoutMs > 0) {
       timer = setTimeout(function () {
@@ -2018,7 +2028,8 @@ async function main() {
           }
         }
         await refreshAdminApiToken(instance,
-          Math.max(opts.timeoutMs, Number(job.timeoutMs) || 0));
+          Math.max(opts.timeoutMs,
+                   (Number(job.timeoutMs) || 0) * opts.timeoutScale));
         log.debug('Leaving refreshForJob().');
       });
       job.cwd = job.dir;
@@ -2100,6 +2111,16 @@ async function main() {
         STS_LDAP_PORT: process.env.STS_LDAP_PORT ||
           (instance.ports && instance.ports.LDAP_PORT
             ? String(instance.ports.LDAP_PORT)
+            : ''),
+        // AND LDAPS THE SAME WAY (2026-09-27): the service takes
+        // `LDAPS_PORT`, the jobs that dial it (sts_second_factor_doors,
+        // sts_credential_signals, sts_ldap_read_authorization,
+        // sts_global_logout) read `STS_LDAPS_PORT` and fall back to 636 —
+        // where nothing listens on this path, so the coverage run's
+        // second_factor_doors failed with "ldap undefined Error".
+        STS_LDAPS_PORT: process.env.STS_LDAPS_PORT ||
+          (instance.ports && instance.ports.LDAPS_PORT
+            ? String(instance.ports.LDAPS_PORT)
             : '')
       // AND THE REST OF THE BLOCK, under the names they already share. See
       // chosenPorts(): a job that dials a DEFAULT port on the throwaway path
