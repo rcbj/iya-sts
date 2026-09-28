@@ -107,6 +107,8 @@ const SERVICE_PAGES = [
   '/admin/secrets',
   // Every realm's partition of every cache, and the process-wide ones (#74).
   '/admin/caches',
+  // The request, hosted-surface and post-quantum pools of the node (#327).
+  '/admin/worker-pools',
   '/admin/debugger',
   '/admin/tls',
   // `/admin/kerberos` and `/admin/kerberos/principals` LEFT THIS LIST on

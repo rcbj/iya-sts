@@ -6557,3 +6557,50 @@ five-name sentence (`STS-DEVICE-0013`) the parity jobs read.
 Two labels read *Devices* — the Directory page and the Monitoring one — the
 way *Policies* is shared; the sections tell them apart. The fourth view,
 `/admin/ldap/devices`, is `ldap/ldap_server.js`'s (`ldap/CLAUDE.md`).
+
+---
+
+## `/admin/worker-pools`: THE THREE POOLS OF THIS NODE (#327, 2026-09-28)
+
+Monitoring → Worker Pools, drawn by `worker_pools_admin.ts` (18r) from the
+pools' own `stats()` — `common/CLAUDE.md` argues both pools and the counters
+#327 added to them. One section per pool: the request pool
+(`workers.requestCount`), the hosted-surface pool (`workers.surfaceCount`, the
+"admin" pool) and the post-quantum pool (`workers.count`). Each carries the
+seven figures rcbj asked for — current workers, busy, free, maximum (the
+setting), initial (what `start()` forked; for the lazy post-quantum pool, what
+its first fork brought up), restarts and crashes, and the average response
+time — plus a `state` and a sentence.
+
+Five decisions:
+
+* **A POOL THAT IS OFF SAYS SO IN WORDS.** `off`, `not-started`,
+  `not-dispatching` (forked, and `workers.dispatch` names nothing), `given-up`,
+  `running`, and `not-forked` for a post-quantum pool that has had no job. An
+  off pool draws its sentence and no table, so no row of zeros reads as a
+  broken pool.
+* **A CRASH IS NOT A STOP.** Each pool counts an exit nobody asked for apart
+  from one it asked for (`stop()`'s drain; `retire()` on a lowered
+  `workers.count`), and the failed starts among the crashes. A request pool's
+  `replaced` is `request_pool.js`'s own count, beside them.
+* **THE FRONT PROCESS DRAWS IT, ALWAYS.** Both paths are in `request_pool.js`'s
+  `NEVER_DISPATCHED`, the debugger page's arrangement: a worker's copy of that
+  module forked nothing and would report every request pool off. Not the
+  caches page's cluster snapshot — that carries only what a heartbeat can
+  afford, and exists only with a cluster.
+* **THE POST-QUANTUM POOL HAS A ROW PER PROCESS.** Every request worker loads
+  `common/crypto.js` and so forks a post-quantum pool of its own, where most
+  such jobs run once dispatch is on. The front process asks each ready worker
+  over the channel (`askWorkerPoolStatus()`, one `{ poolStatus }` message,
+  answered with that worker's `worker_pool.stats()`, bounded at a second); a
+  worker that does not answer is listed under `unanswered` rather than holding
+  the page. The pool's own figures are the rows' totals; its maximum is per
+  process.
+* **THIS NODE'S, AND A SERVICE PAGE.** The page names the host and pid that
+  drew it and says another node has pools of its own. It is in
+  `SERVICE_PAGES`, so a realm administrator is refused it; it has no control,
+  because every size is a Global setting on `/admin/config`.
+
+`GET /admin-api/worker-pools` answers the same `workerPoolsView()` (rule 7);
+a view that could not be built is `STS-WORKER-0044`. `tests/worker_pools_page.js`
+and `tests/vendored/sts_worker_pools.js` cover it.

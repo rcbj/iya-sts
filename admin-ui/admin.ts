@@ -2543,6 +2543,20 @@ const SECTIONS = [
                'and no control: a cache is emptied by the settings that ' +
                'bound it, not by a button. The figures are the answering ' +
                'process\'s own.' },
+      // THE WORKER POOLS (#327, 2026-09-28), after the caches and before the
+      // scheduler: one more page whose subject is the process itself — what
+      // it has forked to do its work, and how that is going. Drawn by
+      // `admin-ui/worker_pools_admin.ts` out of the two pool modules.
+      { path: '/admin/worker-pools', label: 'Worker pools',
+        blurb: 'The three pools of child processes this node runs &mdash; ' +
+               'the request workers, the console and portal\'s own ' +
+               'workers, and the post-quantum workers every process forks ' +
+               'on its first post-quantum job &mdash; each with its workers ' +
+               'now, busy and free, its maximum and initial size, how many ' +
+               'crashed or never started against how many were stopped, ' +
+               'and its average response time. A pool that is off says ' +
+               'so. <strong>The figures are this node\'s</strong>, drawn ' +
+               'by its front process; no control.' },
       // THE SCHEDULER (2026-09-22, #49), after the caches and before the
       // audit log: the last page whose subject is the process itself, and the
       // one that says whether the background work is being DONE. Drawn by

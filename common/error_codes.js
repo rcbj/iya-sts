@@ -164,7 +164,8 @@ const SUBSYSTEMS = [
           'helpers every protocol shares.' },
   { id: 'WORKER', label: 'Worker pools',
     where: 'common/worker_pool.js, common/worker.js, common/request_pool.js, ' +
-           'common/request_worker.ts, common/service_state.ts',
+           'common/request_worker.ts, common/service_state.ts, ' +
+           'admin-ui/worker_pools_admin.ts',
     what: 'The child processes post-quantum signing runs in, and the request ' +
           'workers the whole protocol stack can be dispatched to.' },
   { id: 'STORE', label: 'Persistence and coordination',
@@ -1064,6 +1065,10 @@ const CODES = [
       'replacement was forked into its pool and slot.',
     spec: 'Nothing directly: requests in flight on the dead worker were ' +
       'answered 502 (STS-WORKER-0030)' },
+  { code: 'STS-WORKER-0044',
+    summary: 'The /admin/worker-pools page or GET /admin-api/worker-pools ' +
+      'could not build its report of the worker pools (#327).',
+    spec: 'HTTP 500 page or JSON' },
   // ===== STORE =============================================================
   { code: 'STS-STORE-0001',
     summary: 'A scheduled persistence flush threw past its own handler.',

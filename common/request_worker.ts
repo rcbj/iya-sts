@@ -1343,6 +1343,10 @@ class RequestWorker {
       }
       if (message && message.operation) {
         this.handleOperation(message);
+        return;
+      }
+      if (message && message.poolStatus) {
+        this.reportPoolStatus(message);
       }
     });
 
@@ -1360,6 +1364,36 @@ class RequestWorker {
                     served: this.served });
     });
     log.debug("Leaving RequestWorker.listen().");
+  }
+
+  // THIS WORKER'S OWN POST-QUANTUM POOL, for Monitoring → Worker Pools
+  // (#327). The front process asks every ready worker at once, because a job
+  // computed while a worker answers a request goes to children THIS process
+  // forks (`common/worker_pool.js` is loaded here with `common/crypto.js`),
+  // and nothing else can see them. Required lazily: by the time a worker is
+  // ready the stack has loaded it, so this is a module-cache lookup; a worker
+  // that cannot reach it answers with the reason rather than not at all.
+  /**
+   * Answers the front process's `{ poolStatus }` question with this
+   * process's `worker_pool.stats()`.
+   *
+   * @param message - the question, carrying the id to answer under
+   */
+  reportPoolStatus(message: any): void {
+    const { log } = this.deps;
+    log.debug("Entering RequestWorker.reportPoolStatus().");
+    let pq: unknown = null;
+    let error = '';
+    try {
+      pq = require('./worker_pool').stats();
+    } catch (e) {
+      log.debug("Caught in RequestWorker.reportPoolStatus(): " +
+                ((e && e.message) || e));
+      error = String((e && e.message) || e);
+    }
+    this.report({ poolStatus: true, id: message.id, pid: process.pid,
+                  pq: pq, error: error || null });
+    log.debug("Leaving RequestWorker.reportPoolStatus().");
   }
 
   // ---------------------------------------------------------------------------

@@ -160,6 +160,41 @@ let givenUpOnChildren = false;
 let stopped = false;
 
 // ---------------------------------------------------------------------------
+// WHAT HAS HAPPENED TO THE POOL SINCE THIS PROCESS STARTED, for Monitoring →
+// Worker Pools (#327). `stats()` above answered what the pool IS — how many
+// workers, what each has in flight — and nothing about its history: a worker
+// that crashed and was re-forked by the next job left no trace but a log line,
+// and `quickExits` is a count IN A ROW that one finished job resets.
+//
+// **Cumulative, and cheap enough to keep on every job**: a handful of integer
+// additions and one `Date.now()` per job, against a job that is a post-quantum
+// signature, a key generation or an scrypt derivation — milliseconds at the
+// very least. Nothing here is a structure that grows.
+//
+// * `forked` — every worker this process has forked; `firstForked` how many
+//   the FIRST fork brought up (the pool is lazy, so that is its initial size)
+//   and `firstForkAt` when.
+// * `crashed` — a worker that exited while nobody had asked it to; `retired`
+//   one that exited because this pool retired it (a lowered `workers.count`)
+//   or drained it (`stop()`). `failedStarts` is the subset of crashes that
+//   never finished a job within QUICK_EXIT_MS of being forked, counted for
+//   good where `quickExits` counts only a run of them.
+// * `jobs`, `failed`, `jobMs`, `maxJobMs` — every answer a worker gave, from
+//   the send to the reply; `failed` the ones it answered with an error.
+//   `timedOut` the ones `workers.jobTimeoutS` failed instead.
+// * `inProcess`, `inProcessMs` — jobs computed HERE because there was no
+//   worker to send them to (`workers.count` 0, given up, or draining).
+// ---------------------------------------------------------------------------
+function freshCounts() {
+  log.debug("Entering freshCounts().");
+  log.debug("Leaving freshCounts().");
+  return { forked: 0, firstForked: 0, firstForkAt: 0, crashed: 0,
+           retired: 0, failedStarts: 0, jobs: 0, failed: 0, timedOut: 0,
+           jobMs: 0, maxJobMs: 0, inProcess: 0, inProcessMs: 0 };
+}
+let counts = freshCounts();
+
+// ---------------------------------------------------------------------------
 // The configured size. `workers.count` is `perProcess`, so a realm cannot carry
 // one — see the flag in config.js's table and checkRealmOverride() in
 // realms.js. A pool is a property of the PROCESS, and a realm that could resize
@@ -261,6 +296,7 @@ function fork() {
     reap(entry, code, signal);
   });
   workers.push(entry);
+  counts.forked++;
   log.info('worker_pool: forked worker ' + child.pid + '. ' + workers.length +
            ' of ' + size() + ' running.');
   log.debug('Leaving fork().');
@@ -279,6 +315,16 @@ function receive(entry, message) {
   }
   entry.inFlight.delete(message.id);
   entry.jobsDone++;
+  // The job's time, send to reply (#327).
+  const took = Date.now() - (pending.sentAt || Date.now());
+  counts.jobs++;
+  counts.jobMs += took;
+  if (took > counts.maxJobMs) {
+    counts.maxJobMs = took;
+  }
+  if (!message.ok) {
+    counts.failed++;
+  }
   // One job that finished is proof that forking works here, whatever happened
   // before it. See the header.
   quickExits = 0;
@@ -312,6 +358,16 @@ function reap(entry, code, signal) {
                      entry.jobsDone === 0;
   if (shortLived && !stopped) {
     quickExits++;
+  }
+  // CRASHED OR RETIRED (#327): `leaving` is set by retire(), and `stopped` by
+  // a drain; any other exit is one nobody asked for.
+  if (stopped || entry.leaving) {
+    counts.retired++;
+  } else {
+    counts.crashed++;
+    if (shortLived) {
+      counts.failedStarts++;
+    }
   }
   lost.forEach(function (pending) {
     pending.reject(new Error('the worker process computing this ' +
@@ -390,8 +446,14 @@ function ensurePool() {
     })[0];
     retire(idlest);
   }
+  const firstFork = counts.forked === 0;
   while (workers.length < wanted) {
     fork();
+  }
+  // THE INITIAL SIZE of a lazy pool is what its first fork brought up (#327).
+  if (firstFork && counts.forked > 0) {
+    counts.firstForked = counts.forked;
+    counts.firstForkAt = Date.now();
   }
   log.debug('Leaving ensurePool(). ' + workers.length + ' worker(s).');
   return workers;
@@ -402,6 +464,9 @@ function ensurePool() {
 // still tracked and still answered.
 function retire(entry) {
   log.debug('Entering retire(). pid=' + entry.pid);
+  // Its exit is one this pool asked for, which reap() counts as retired
+  // rather than crashed (#327).
+  entry.leaving = true;
   workers = workers.filter(function (one) { return one !== entry; });
   affinity.forEach(function (pid, session) {
     if (pid === entry.pid) {
@@ -507,10 +572,15 @@ function run(kind, job, opts) {
     // that changes about the answer is how long the event loop was busy
     // producing it.
     log.debug('Leaving run(). Computing in this process.');
+    const began = Date.now();
+    counts.inProcess++;
     try {
+      const result = worker.runJob(kind, job);
+      counts.inProcessMs += Date.now() - began;
       log.debug("Leaving run().");
-      return Promise.resolve(worker.runJob(kind, job));
+      return Promise.resolve(result);
     } catch (e) {
+      counts.inProcessMs += Date.now() - began;
       log.debug("Leaving run().");
       return Promise.reject(e);
     }
@@ -553,6 +623,7 @@ function run(kind, job, opts) {
         }
         entry.inFlight.delete(id);
         unrefIfIdle(entry);
+        counts.timedOut++;
         log.error(errorCodes.tag('STS-WORKER-0004') +
                   'worker_pool: worker ' + entry.pid + ' has not answered a ' +
                   kind + ' job in ' + limit + 'ms, so the request waiting on ' +
@@ -570,6 +641,8 @@ function run(kind, job, opts) {
     }
     entry.inFlight.set(id, {
       kind: kind,
+      // When it was sent, for the job's time in receive() (#327).
+      sentAt: Date.now(),
       resolve: function (value) {
         log.debug("Entering resolve().");
         if (timer) { clearTimeout(timer); }
@@ -690,21 +763,31 @@ function stop(timeoutMs) {
 /**
  * Reports what the pool is doing: configured size, running workers, whether
  * it computes in process or has given up on children, the affinity count,
- * and each worker's pid, jobs in flight and jobs done.
+ * each worker's pid, jobs in flight and jobs done, how many workers are busy
+ * and free, and `counts` — what has happened to it since this process
+ * started (#327).
  *
  * @returns a copy of the pool's state
  */
 function stats() {
   log.debug('Entering stats().');
+  const busy = workers.filter(function (one) {
+    return one.inFlight.size > 0;
+  }).length;
   const out = {
     configured: size(),
     running: workers.length,
     inProcess: workers.length === 0,
     gaveUp: givenUpOnChildren,
+    stopped: stopped,
     affinities: affinity.size,
+    busy: busy,
+    free: workers.length - busy,
+    counts: Object.assign({}, counts),
+    averageJobMs: counts.jobs ? Math.round(counts.jobMs / counts.jobs) : null,
     workers: workers.map(function (one) {
       return { pid: one.pid, inFlight: one.inFlight.size,
-               jobsDone: one.jobsDone };
+               jobsDone: one.jobsDone, startedAt: one.startedAt };
     })
   };
   log.debug('Leaving stats(). ' + out.running + ' worker(s).');
@@ -724,6 +807,7 @@ function reset() {
   givenUpOnChildren = false;
   quickExits = 0;
   stopped = false;
+  counts = freshCounts();
   log.debug('Leaving reset().');
 }
 

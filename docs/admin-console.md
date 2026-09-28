@@ -156,8 +156,8 @@ The navigation is a grouped list down the left. Its five sections:
 * **Monitoring** — metrics, sessions, tokens, used assertions, delegation,
   the Shared Signals monitors, consent, XACML decisions, GNAP grants, the
   enrollment monitors, OAuth activity, SCIM metrics, sign-out, the database,
-  encryption, the secret store, caches, the scheduler, the mail outbox, risk,
-  the audit log and the error codes.
+  encryption, the secret store, caches, the worker pools, the scheduler, the
+  mail outbox, risk, the audit log and the error codes.
 * **Server configuration** — trust realms, configuration, mode, persistence,
   cluster, mail, admin roles, the protocol debugger, the service metadata, the
   API explorer, key pairs and cryptography.
@@ -982,6 +982,33 @@ every permission it exposes and every grant in it.
 `GET /admin-api/permissions/groups` is the same — every group with its counts,
 or `?application=` for one application's group with its rows and graph. Neither
 picture has a form on it.
+
+### Worker pools — `/admin/worker-pools`
+
+`/admin/worker-pools` shows the three pools of child processes this node runs
+([the worker pools](architecture.md#the-request-dispatcher-and-the-worker-pools)):
+the request pool (`workers.requestCount`), the console and portal's own pool
+(`workers.surfaceCount`) and the post-quantum pool (`workers.count`). For
+each it gives:
+
+* the workers it has now, how many are **busy** and how many **free**;
+* its **maximum** (the setting) and its **initial** size — what it was started
+  with, or for the post-quantum pool, which forks nothing until its first job,
+  what that first fork brought up;
+* **restarts and crashes**: every fork, the workers that exited when nobody
+  asked (and how many of those never started) apart from the ones the pool
+  stopped or retired, and for a request pool how many it replaced;
+* the **average response time** — for a request pool from dispatch to the end
+  of the answer, with a recent average beside the one since start; for the
+  post-quantum pool from sending a job to its reply.
+
+A pool that is off says so in a sentence rather than showing zeros. The
+figures are **this node's**, since each node of a cluster has its own pools,
+and the page is always drawn by the node's front process, which holds them.
+Every request worker also forks a post-quantum pool of its own, so that
+section has a row per process and a total. It is read-only; the sizes are set
+on Configuration. A realm's own administrator is refused it.
+`GET /admin-api/worker-pools` answers the same figures.
 
 ### Audit log — `/admin/audit`
 

@@ -1718,6 +1718,47 @@ minutes. rcbj asked for batch throughput balanced against everything else.
 `tests/request_batch_lane.js` pins it, four mutants caught and one equivalent
 removed.
 
+### WHAT BOTH POOLS COUNT, FOR MONITORING → WORKER POOLS (#327, 2026-09-28)
+
+`stats()` answered what each pool IS; #327's page (`admin-ui/CLAUDE.md`,
+`/admin/worker-pools`) also needs what has HAPPENED to it, and neither pool
+kept that. Each now keeps it beside what it counts, cumulative from the
+process's start and cleared only by the test-only `reset()`:
+
+* **`worker_pool.js`: `stats().counts`** — `forked`; `firstForked` and
+  `firstForkAt`, what the first fork brought up, which is the lazy pool's
+  initial size; `crashed` (an exit nobody asked for) apart from `retired` (a
+  worker `retire()` marked `leaving`, or any exit after `stop()`), and the
+  `failedStarts` among the crashes, counted for good where `quickExits` is a
+  run one job resets; `jobs`, `jobMs`, `maxJobMs` and `failed` from the send
+  to the reply, `timedOut`, and `inProcess` / `inProcessMs` for a job with no
+  worker to go to. Plus `busy`, `free` and `averageJobMs`.
+* **`request_pool.js`: `stats().pools[].history`** — `initial` and
+  `startedAt` (what `start()` forked into the pool), `forked`, `crashed`
+  apart from `stoppedExits` (`stop()` sets `retiring`), `failedStarts`, and
+  `answered`, `answerMs`, `maxAnswerMs` and `recentMs` — a request streamed by
+  `proxy()` or an operation, from dispatch to the end of the answer, and not
+  a 502 for a worker that never answered. `recentMs` is an exponentially
+  weighted average (0.1 for the newest), because a mean since start stops
+  moving within the hour. Plus `running`, `busy`, `free`, `averageMs` and
+  `recentAverageMs` on each pool.
+
+**THE HOT PATH PAYS ONE `Date.now()` AND FOUR ADDITIONS PER DISPATCHED
+REQUEST** (`noteAnswered()`, which carries no Entering/Leaving pair and says
+why) and a handful per post-quantum job, whose own cost is milliseconds at
+the least; nothing is a list, nothing grows.
+
+**AND A REQUEST WORKER'S OWN POST-QUANTUM POOL IS ASKED FOR.** Every worker
+loads `crypto.js` and so has a `worker_pool.js` of its own, invisible to the
+front process. `askWorkerPoolStatus(timeoutMs)` sends each ready worker one
+`{ poolStatus, id }` message; `request_worker.ts`'s `reportPoolStatus()`
+answers `{ poolStatus, id, pq }` with its `worker_pool.stats()`, and what has
+not answered by the bound is simply absent. It is a message and not the
+SIGUSR2 status `request_worker.ts` already answers, because a signal to a
+worker that has not installed its handler ends it and that reply overwrites
+`served` with the worker's own tally. And `/admin/worker-pools` with its API
+are in `NEVER_DISPATCHED`: only the front process has the request pools.
+
 ### A RATE-LIMIT COUNT IS WRITTEN DOWN EVERY TIME IT MOVES (2026-09-14)
 
 `websecurity.ts`'s buckets are a persisted `sharedMap()`, and `attempt()` set a

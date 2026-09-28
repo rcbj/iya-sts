@@ -499,6 +499,12 @@ const JOBS = [
   // and a step-down hands it over. `local: true`: this repository's own
   // /admin and /admin-api.
   { file: 'sts_scheduler.js',            browser: false, local: true },
+  // MONITORING → WORKER POOLS (#327, 2026-09-28): GET /admin-api/worker-pools
+  // answers the request, surface and post-quantum pools with the seven
+  // figures, adding up, drawn by the front process; the page and its
+  // ?format=json agree; a realm's token is refused. `local: true`: this
+  // repository's own /admin and /admin-api.
+  { file: 'sts_worker_pools.js',         browser: false, local: true },
   // RISK DATASETS AND THE FAILURE HISTORY (#62 P1, 2026-09-22): an operator
   // list imported, looked up, refused on a bad SHA-256, replaced and rolled
   // back — through the balancer in `cluster`, so both nodes follow — and a

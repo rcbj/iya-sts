@@ -220,6 +220,7 @@ import cachesAdmin = require('../admin-ui/caches_admin');
 import vcStatusAdmin = require('../admin-ui/vc_status_admin');
 // Server configuration → Mode (#181): its one view, rule 7.
 import modeAdmin = require('../admin-ui/mode_admin');
+import workerPoolsAdmin = require('../admin-ui/worker_pools_admin');
 // The scheduler's page (#49): its view and its two actions, rule 7.
 import schedulerAdmin = require('../admin-ui/scheduler_admin');
 // The mail channel's two pages (#63), mirrored below (rule 7).
@@ -3869,6 +3870,70 @@ class AdminApi {
           log.debug("Entering the management API caches endpoint.");
           self.sendJson(res, 200, cachesAdmin.cachesView(req.query));
           log.debug("Leaving the management API caches endpoint.");
+        } },
+
+      // ---------------------------------------------------------------------
+      // THE WORKER POOLS (#327). `workerPoolsAdmin.workerPoolsView()` — the
+      // function `/admin/worker-pools?format=json` answers — and nothing
+      // else. Pinned to the front process with the page
+      // (`request_pool.js`'s NEVER_DISPATCHED), because only it holds the
+      // pools.
+      // ---------------------------------------------------------------------
+      { method: 'GET', path: BASE + '/worker-pools', tag: 'Service',
+        operationId: 'getWorkerPools',
+        summary: 'The request, hosted-surface and post-quantum worker ' +
+                 'pools of this node',
+        description: 'Always `generatedAt`, `host`, `pid` (the front ' +
+                     'process that answered), `scope` (`node`) and ' +
+                     '`scopeText`; then `pools`, three of them, `id` ' +
+                     '`request`, `surface` and `post-quantum`, each with ' +
+                     '`title`, `module`, `setting`, `state` (`off`, ' +
+                     '`not-started`, `not-dispatching`, `running`, ' +
+                     '`given-up`, or `not-forked` for the post-quantum ' +
+                     'pool) and `stateText` saying it in a sentence, ' +
+                     '`maxWorkers` (the configured count), ' +
+                     '`initialWorkers` (what the pool started with; for ' +
+                     'the lazy post-quantum pool, what its first fork ' +
+                     'brought up), `currentWorkers`, `busyWorkers`, ' +
+                     '`freeWorkers`, `restarts` (`forked`, `crashed` — an ' +
+                     'exit nobody asked for — `failedStarts` among them, ' +
+                     'and `replaced` and `stopped` for a request pool, ' +
+                     '`retired` for the post-quantum one) and ' +
+                     '`responseTime` (a request pool: `answered`, ' +
+                     '`averageMs`, `recentAverageMs`, `maxMs`, dispatch to ' +
+                     'answer; the post-quantum pool: `jobs`, `averageMs`, ' +
+                     '`maxMs`, `failed`, `timedOut`, `inProcessJobs`). A ' +
+                     'request pool lists its `workers` (`pid`, `slot`, ' +
+                     '`ready`, `busy`, `inFlight`, `served`, `upSeconds`); ' +
+                     'the post-quantum pool, which every process has one ' +
+                     'of, lists `processes` — the front process and each ' +
+                     'request worker that answered within a second, each ' +
+                     'with the same figures — and `unanswered`, and its ' +
+                     'pool-level figures are their totals. Every count is ' +
+                     'since the process started. THE FIGURES ARE THIS ' +
+                     'NODE\'S: another node of a cluster has pools of its ' +
+                     'own. A service operation: a realm\'s own ' +
+                     'administrator is refused it.',
+        mirrors: 'GET /admin/worker-pools',
+        responseDescription: 'The three pools.',
+        responseSchema: { type: 'object',
+          description: '`generatedAt`, `host`, `pid`, `scope`, `scopeText` ' +
+                       'and `pools`.' },
+        handler: function (req, res) {
+          log.debug("Entering the management API worker pools endpoint.");
+          workerPoolsAdmin.workerPoolsView().then(function (view) {
+            self.sendJson(res, 200, view);
+          }).catch(function (e) {
+            log.debug("Caught in the management API worker pools " +
+                      "endpoint: " + ((e && e.message) || e));
+            log.error(errorCodes.tag('STS-WORKER-0044') + 'The worker ' +
+                      'pools report could not be built: ' +
+                      ((e && e.message) || e));
+            errorCodes.mark(res, 'STS-WORKER-0044');
+            self.sendJson(res, 500, { ok: false, errors: [
+              'The worker pools report could not be built.'] });
+          });
+          log.debug("Leaving the management API worker pools endpoint.");
         } },
 
       // ---------------------------------------------------------------------
