@@ -336,9 +336,14 @@ async function keysSection(t, kek) {
           'adopted it instead of overwriting A\'s row');
 
   t.log.info('=== 5. a write in flight is not adopted underneath ===');
-  b.remember('inflight', keySet('in-flight'));
+  const inFlight = keySet('in-flight');
+  b.remember('inflight', inFlight);
+  // It waits for the write rather than answering `pending` (section 14 says
+  // why), and what it then finds is the set it wrote: nothing is adopted
+  // underneath this node's own change.
   const deferred = await b.applyStoredChange('inflight');
-  t.check(deferred.pending === true && !deferred.adopted,
+  t.check(!deferred.adopted &&
+          b.storedFor('inflight').certB64 === inFlight.certB64,
           'applying a change while this node\'s own write is queued ' +
           'defers to that write, whose merge decides against the same row',
           deferred);
@@ -926,6 +931,59 @@ async function orphanedSlotSection(t, kek) {
   log.debug("Leaving orphanedSlotSection().");
 }
 
+// AN APPLY THAT MEETS A WRITE OF ITS OWN WAITS FOR IT (2026-09-28). The
+// cluster barrier awaits this applier before a request is served, and it
+// answered `pending` at once while this node's own write of the row was out
+// — so the node served its copy without the other node's change until its
+// write landed. CI's cluster job: an xml key pinned on one node, the other
+// serving `/saml2/metadata` without it (`sts_pinned_signer`, runs
+// 36382542145 and 36394938951). The check is made THE MOMENT the apply
+// resolves, which is when the barrier lets the request through.
+async function applyWaitsSection(t, kek) {
+  log.debug("Entering applyWaitsSection().");
+  t.log.info('=== 14. an apply meeting a write of its own in flight waits ' +
+             'for it ===');
+  const store = sharedStore(60);
+  const seed = {
+    version: 2, scope: 'pinrace',
+    intermediate: { serialHex: '01', certificatePem: 'I1' },
+    issuing: { xml: { serialHex: '02', certificatePem: 'X1' } },
+    revoked: { xml: [] },
+    crlNumbers: { xml: 1 },
+    issuedKeyPairs: []
+  };
+  store.rows.set('pki:pinrace', crypto.encryptWithKek(
+    kek, JSON.stringify(seed), 'pki-hierarchy'));
+  const a = await startNode(store, { adopted: [], published: [] });
+  const b = await startNode(store, { adopted: [], published: [] });
+  // Node A's change commits: the one node B must see.
+  const rowA = JSON.parse(JSON.stringify(a.pkiFor('pinrace')));
+  rowA.revoked.xml.push({ serialHex: 'ee', reason: 'keyCompromise',
+                          revokedAt: '2026-09-28T12:00:00.000Z' });
+  a.attachPki('pinrace', rowA);
+  await a.settleAll();
+  // Node B's own write of the same row goes out and is held by the lock.
+  const future = new Date(Date.now() + 86400000).toISOString();
+  const rowB = JSON.parse(JSON.stringify(b.pkiFor('pinrace')));
+  rowB.issuedKeyPairs.push({ serialHex: 'ff', useCase: 'xml',
+                             notAfter: future });
+  b.attachPki('pinrace', rowB);
+  // A's change row reaches B now, while B's write is out.
+  const answer = await b.applyStoredChange('pki:pinrace');
+  const held = b.pkiFor('pinrace');
+  t.check(held.revoked.xml.some(function (one) {
+    return one.serialHex === 'ee';
+  }), 'WHEN THE APPLY RESOLVES, node B already holds node A\'s change — it ' +
+      'waited for its own write, which merged A\'s row, rather than ' +
+      'answering pending with its own copy', { answer: answer,
+                                              revoked: held.revoked });
+  t.check(held.issuedKeyPairs.some(function (one) {
+    return one.serialHex === 'ff';
+  }), 'and its own change is kept', held.issuedKeyPairs);
+  await b.settleAll();
+  log.debug("Leaving applyWaitsSection().");
+}
+
 async function run(t) {
   log.debug("Entering run().");
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sts-cluster-keys-'));
@@ -955,6 +1013,7 @@ async function run(t) {
     await publishedNotRevokedSection(t, kek);
     await unadoptedMergeSection(t, kek);
     await orphanedSlotSection(t, kek);
+    await applyWaitsSection(t, kek);
     await buildSection(t);
     await crlSection(t);
     await spiffeSection(t);

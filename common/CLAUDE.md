@@ -5343,7 +5343,10 @@ holds.**
   to the store hook `hierarchyAdopted`, which reconciles the listener.
 * **A ROW ANOTHER NODE WROTE IS ADOPTED** — `applyStoredChange()`, called by
   `persistence.js`'s `keys` applier for every change row: it reads the CURRENT
-  row, defers to a write of its own in flight, drops a set whose row is gone
+  row, defers to a write of its own in flight — by WAITING for it to land and
+  looking again, since 2026-09-28, because the cluster barrier awaits this
+  applier and an immediate `pending` let a node answer without the other
+  node's change (`sts_pinned_signer` in CI's cluster job) — drops a set whose row is gone
   (rotation, removal — `deleteKeys()` logs a change row since this), and adopts a
   different set or a richer one. `rotate()` now drops the cached set as well.
 * **A COLD START SETTLES BEFORE ANYTHING IS SERVED** — `service_state.ts`'s
