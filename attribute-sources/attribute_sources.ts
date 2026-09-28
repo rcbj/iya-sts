@@ -54,6 +54,9 @@ import audit = require('../common/audit');
 import errorCodes = require('../common/error_codes');
 import cacheRegistry = require('../common/cache_registry');
 import SourcedAttributes = require('../common/sourced_attributes');
+// Reading and describing a source's own CA chain: X.509 lives in
+// `common/pki.js`, never in a feature (rcbj's rule).
+import pki = require('../common/pki');
 import AttributeSourceDrivers = require('./attribute_source_drivers');
 
 type Json = Record<string, any>;
@@ -74,6 +77,8 @@ const REFRESH_JOB = 'attribute-sources.refresh';
 const SOURCE_ID = /^[a-z0-9][a-z0-9-]{0,62}$/;
 // A directory attribute name.
 const ATTRIBUTE = /^[A-Za-z][A-Za-z0-9-]{0,63}$/;
+// The most PEM a source's own CA chain may hold.
+const MAX_CA_TEXT = 65536;
 
 // THE BURST CACHE: what one lookup found for one person's key, for
 // CACHE_MS, per process. Several sign-ins in a moment are one query.
@@ -307,6 +312,12 @@ class AttributeSources {
       passwordRef: String(pick('passwordRef', '')).trim(),
       passwordField: String(pick('passwordField', '')).trim(),
       caFile: String(pick('caFile', '')).trim(),
+      // THE SOURCE'S OWN TRUST CHAIN, pasted on the console (#94): PEM
+      // certificates, stored with the definition — public, never a secret —
+      // and tidied to one block per certificate. `trustPublicRoots` adds
+      // node's store beside it; off, the chain given is trusted ALONE.
+      caCertificates: this.tidyChain(pick('caCertificates', '')),
+      trustPublicRoots: String(pick('trustPublicRoots', false)) === 'true',
       serverName: String(pick('serverName', '')).trim(),
       table: String(pick('table', '')).trim(),
       keyColumn: String(pick('keyColumn', '')).trim(),
@@ -322,6 +333,51 @@ class AttributeSources {
     };
     log.debug("Leaving AttributeSources.normalise().");
     return out;
+  }
+
+  // A pasted chain as one PEM block per certificate that parsed, in the
+  // order given; '' for nothing. What did not parse is refused by
+  // problemOf(), which reads the text as given.
+  private tidyChain(given: unknown): string {
+    const { log } = this.deps;
+    log.debug("Entering AttributeSources.tidyChain().");
+    const text = String(given == null ? '' : given).trim();
+    if (!text) {
+      log.debug("Leaving AttributeSources.tidyChain(). Empty.");
+      return '';
+    }
+    const read = pki.certificateBundle(text);
+    log.debug("Leaving AttributeSources.tidyChain().");
+    return read.unreadable || !read.certificates.length ? text
+      : read.certificates.map(function (one: any) {
+          return String(one.pem).trim();
+        }).join('\n') + '\n';
+  }
+
+  /**
+   * Describes a source's own CA chain for a page, and whether the public
+   * roots are trusted beside it.
+   *
+   * @param source - the definition
+   * @returns `{ certificates, unreadable, publicRoots, caFile }`
+   */
+  trustOf(source: Json): Json {
+    const { log, now } = this.deps;
+    log.debug("Entering AttributeSources.trustOf(). " + source.id);
+    const described = source.caCertificates
+      ? pki.describeCertificateBundle(source.caCertificates, now())
+      : { certificates: [], unreadable: 0 };
+    log.debug("Leaving AttributeSources.trustOf().");
+    return {
+      certificates: described.certificates,
+      unreadable: described.unreadable,
+      caFile: source.caFile || '',
+      // Node's store is trusted where the source asks for it, and where the
+      // source names no chain of its own — which would otherwise trust
+      // nothing and connect nowhere.
+      publicRoots: !!source.trustPublicRoots ||
+                   (!source.caCertificates && !source.caFile)
+    };
   }
 
   // Whether a host is one `attributeSources.hostPatterns` allows: empty
@@ -382,6 +438,29 @@ class AttributeSources {
     }
     if (!record.database || !record.user) {
       return bad('STS-ATTR-0005', 'Name the database and the user.');
+    }
+    if (record.caCertificates) {
+      if (record.caCertificates.length > MAX_CA_TEXT) {
+        return bad('STS-ATTR-0015', 'The CA chain is at most ' + MAX_CA_TEXT +
+          ' characters of PEM.');
+      }
+      const chain = pki.describeCertificateBundle(record.caCertificates,
+                                                  this.deps.now());
+      if (chain.unreadable || !chain.certificates.length) {
+        return bad('STS-ATTR-0015', 'The CA chain is PEM certificates ' +
+          '(-----BEGIN CERTIFICATE-----); ' +
+          (chain.unreadable ? chain.unreadable + ' block(s) did not parse.'
+                            : 'none was found.'));
+      }
+      const stale = chain.certificates.filter(function (one: Json) {
+        return one.expired || one.notYetValid;
+      })[0];
+      if (stale) {
+        return bad('STS-ATTR-0015', 'The CA certificate ' + stale.subject +
+          ' is ' + (stale.expired ? 'expired (' + stale.notAfter + ')'
+                                  : 'not valid until ' + stale.notBefore) +
+          '; a connection could not be verified against it.');
+      }
     }
     if (PASSWORD_PROVIDERS.indexOf(record.passwordProvider) < 0) {
       return bad('STS-ATTR-0005', 'The password comes from one of: ' +
@@ -766,8 +845,9 @@ class AttributeSources {
   view(): Json {
     const { log, config } = this.deps;
     log.debug("Entering AttributeSources.view().");
-    const sources = this.list().map(function (source) {
-      return Object.assign({}, source, { status: status.get(source.id) || {} });
+    const sources = this.list().map((source) => {
+      return Object.assign({}, source, { status: status.get(source.id) || {},
+                                         trust: this.trustOf(source) });
     });
     log.debug("Leaving AttributeSources.view().");
     return {

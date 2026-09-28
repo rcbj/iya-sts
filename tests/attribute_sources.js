@@ -23,7 +23,11 @@
 //   D. `once` reads a person the first time only;
 //   E. the scheduled refresh pages through the realm's people after a
 //      cursor;
-//   F. refresh-person and test-source, and the sign-in gate in authn.
+//   F. refresh-person and test-source, and the sign-in gate in authn;
+//   G. a source's own CA chain, set on the console: stored, described,
+//      refused when it is not certificates or is expired, and trusted alone
+//      unless the source also asks for the public roots. The certificates
+//      are made here, at test time — no key material is committed.
 // In a throwaway realm.
 // ===========================================================================
 
@@ -36,6 +40,8 @@ const errorCodes = require('../common/error_codes');
 const ldap = require('../ldap/ldap_server');
 const authn = require('../authn/authn');
 const attributeSources = require('../attribute-sources/attribute_sources');
+const stsCrypto = require('../common/crypto');
+const OutboundTls = require('../common/outbound_tls');
 
 const log = require('bunyan').createLogger({ name: 'attribute_sources',
   level: process.env.LOG_LEVEL || 'info' });
@@ -280,6 +286,59 @@ async function acts(t) {
   log.debug('Leaving acts().');
 }
 
+async function trustChain(t) {
+  log.debug('Entering trustChain().');
+  t.log.info('=== G. the CA chain ===');
+  const ca = stsCrypto.selfSignedRsaCertificate({ commonName: 'HR DB CA ' +
+                                                  RUN, years: 1 });
+  const made = await register.act(source('as-tls', {
+    columns: { office: 'physicalDeliveryOfficeName' },
+    caCertificates: ca.certPem }), { actor: 'test' });
+  const row = register.view().sources.filter(function (one) {
+    return one.id === 'as-tls';
+  })[0];
+  t.check(made.ok && row && row.trust.certificates.length === 1 &&
+          /HR DB CA/.test(row.trust.certificates[0].subject) &&
+          /^[0-9a-f:]+$/.test(row.trust.certificates[0].sha256) &&
+          row.trust.publicRoots === false,
+          'G1. a pasted chain is stored and described, and trusted alone',
+          JSON.stringify(row && row.trust));
+  await register.act({ action: 'update-source', id: 'as-tls',
+                       trustPublicRoots: true }, { actor: 'test' });
+  t.check(register.view().sources.filter(function (one) {
+    return one.id === 'as-tls';
+  })[0].trust.publicRoots === true,
+          'G2. the public roots are added only when the source asks');
+  const garbage = await register.act({ action: 'update-source', id: 'as-tls',
+    caCertificates: '-----BEGIN CERTIFICATE-----\nbm90IGEgY2VydA==\n' +
+                    '-----END CERTIFICATE-----' }, { actor: 'test' });
+  t.check(garbage.ok === false &&
+          errorCodes.codeOf(garbage) === 'STS-ATTR-0015',
+          'G3. a block that is not a certificate is refused, STS-ATTR-0015',
+          errorCodes.codeOf(garbage));
+  const later = new attributeSources.AttributeSources(Object.assign(
+    attributeSources.AttributeSources.defaultDeps(), { drivers: drivers,
+      now: function () {
+        return Date.now() + 5 * 365 * 24 * 3600 * 1000;
+      } }));
+  const expired = await later.act(source('as-old', {
+    columns: { room: 'roomNumber' }, caCertificates: ca.certPem }),
+    { actor: 'test' });
+  t.check(expired.ok === false &&
+          errorCodes.codeOf(expired) === 'STS-ATTR-0015' &&
+          /expired/.test((expired.errors || []).join(' ')),
+          'G4. an expired certificate is refused', JSON.stringify(expired));
+  const alone = OutboundTls.verifiedOptions(ca.certPem,
+                                            { systemRoots: false });
+  const beside = OutboundTls.verifiedOptions(ca.certPem);
+  t.check(alone.ca.length === 1 && beside.ca.length > 1,
+          'G5. the TLS options hold the chain alone, or with the public ' +
+          'roots', alone.ca.length + ' / ' + beside.ca.length);
+  await register.act({ action: 'remove-source', id: 'as-tls' },
+                     { actor: 'test' });
+  log.debug('Leaving trustChain().');
+}
+
 async function run(t) {
   log.debug('Entering run().');
   const realm = realms.create({ id: 'as-' + RUN,
@@ -292,6 +351,7 @@ async function run(t) {
       await once(t);
       await scheduled(t);
       await acts(t);
+      await trustChain(t);
     });
   } finally {
     realms.remove(realm.id);

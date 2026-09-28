@@ -54,8 +54,20 @@ const SOURCE_PROPERTIES = {
                    description: 'The field, where the secret is a JSON ' +
                                 'object.' },
   caFile: { type: 'string', maxLength: 1024,
-            description: 'A PEM file of CA certificates, beside node\'s ' +
-                         'store. TLS is always verified.' },
+            description: 'A PEM file of CA certificates on this service\'s ' +
+                         'disk, added to caCertificates. TLS is always ' +
+                         'verified.' },
+  caCertificates: { type: 'string', maxLength: 65536,
+                    description: 'The database\'s trust chain as PEM ' +
+                                 'certificates, stored with the source. ' +
+                                 'Trusted ALONE unless trustPublicRoots; ' +
+                                 'with no chain and no caFile, the public ' +
+                                 'roots are used. An empty string clears ' +
+                                 'it. A block that does not parse, or an ' +
+                                 'expired certificate, is refused.' },
+  trustPublicRoots: { type: 'boolean',
+                      description: 'Trust node\'s public roots beside ' +
+                                   'caCertificates. Off by default.' },
   serverName: { type: 'string', maxLength: 253,
                 description: 'The name the certificate is checked against; ' +
                              'the host when empty.' },

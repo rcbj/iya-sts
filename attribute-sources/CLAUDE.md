@@ -38,7 +38,17 @@ the code is the way it is.
    host**. That setting's description and the guide both warn about it, and
    only a service administrator may write it (`admin_scope.ts`'s
    `SERVICE_SETTING_PREFIXES`).
-7. **The databases:** PostgreSQL and MySQL / MariaDB in this step, SQL Server
+7. **Each source carries its own trust chain, set on the console
+   (2026-09-28).** `caCertificates` holds the PEM, stored with the
+   definition: CA certificates are public, never a secret. It is validated on
+   save (STS-ATTR-0015) and described through `pki.describeCertificateBundle()`
+   (X.509 stays in `common/pki.js`). **Given a chain, the source trusts it
+   ALONE** (`OutboundTls.verifiedOptions(ca, { systemRoots: false })`) unless
+   `trustPublicRoots`. Otherwise any publicly-trusted certificate for the host
+   name would be accepted for a database the operator named a private chain
+   for. With no chain, node's store is all there is. `caFile` adds a file's
+   certificates to the chain.
+8. **The databases:** PostgreSQL and MySQL / MariaDB in this step, SQL Server
    and Oracle in the next. Each driver is an optional peer installed at image
    build (`STS_CLOUD_SDKS="mysql2"`). `pg` is always present.
 

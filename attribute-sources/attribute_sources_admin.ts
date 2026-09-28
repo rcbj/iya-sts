@@ -134,7 +134,13 @@ class AttributeSourcesAdmin {
       text('passwordField', 'field', s.passwordField, 'optional') +
       text('caFile', 'CA file', s.caFile, 'optional PEM path') +
       text('serverName', 'Server name', s.serverName, 'defaults to the host') +
-      '</div><div class="formrow">' +
+      '</div><div class="formrow"><label>Trusted CA certificates (PEM), ' +
+      'the database\'s chain <textarea name="caCertificates" rows="4" ' +
+      'cols="64" placeholder="-----BEGIN CERTIFICATE-----">' +
+      esc(s.caCertificates || '') + '</textarea></label><label><input ' +
+      'type="checkbox" name="trustPublicRoots" value="true"' +
+      (s.trustPublicRoots ? ' checked' : '') + '> also trust the public ' +
+      'roots</label></div><div class="formrow">' +
       text('table', 'Table or view', s.table, 'schema.table') +
       text('keyColumn', 'Key column', s.keyColumn) +
       text('keyAttribute', 'matches the person\'s', s.keyAttribute || 'uid') +
@@ -155,6 +161,31 @@ class AttributeSourcesAdmin {
              s.enabled === false ? 'false' : 'true') + '</div>';
   }
 
+  // What a source's connection trusts (#94): its own chain, each
+  // certificate by subject, expiry and SHA-256, and whether node's store is
+  // trusted beside it.
+  private trustCell(source: Json): string {
+    const { log } = this.deps;
+    log.debug("Entering AttributeSourcesAdmin.trustCell(). " + source.id);
+    const trust = source.trust || { certificates: [] };
+    const chain = (trust.certificates || []).map(function (one: Json) {
+      return '<div><span title="' + esc('issued by ' + one.issuer +
+        ', SHA-256 ' + one.sha256) + '">' + esc(one.subject) + '</span>' +
+        '<br><span class="sub">' + (one.ca ? 'CA' : 'not a CA') +
+        (one.selfSigned ? ', self-signed' : '') + ', until ' +
+        esc(one.notAfter.slice(0, 10)) +
+        (one.expired ? ' <span class="state-revoked">expired</span>' : '') +
+        '</span></div>';
+    }).join('');
+    log.debug("Leaving AttributeSourcesAdmin.trustCell().");
+    return chain + (trust.caFile ? '<div class="sub">and the file <code>' +
+      esc(trust.caFile) + '</code></div>' : '') +
+      '<div class="sub">' + (trust.publicRoots
+        ? (chain || trust.caFile ? 'and the public roots'
+                                 : 'the public roots')
+        : 'these alone, not the public roots') + '</div>';
+  }
+
   // One source's row: where it reads, what it writes, and its status.
   private row(json: Json, source: Json): string {
     const { log } = this.deps;
@@ -173,7 +204,9 @@ class AttributeSourcesAdmin {
       (source.enabled ? '' : ' <span class="sub">disabled</span>') +
       '</td><td>' + esc(source.dialect) + ' <code>' +
       esc(source.host + ':' + source.port + '/' + source.database) +
-      '</code><br><span class="sub">as ' + esc(source.user) + '</span></td>' +
+      '</code><br><span class="sub">as ' + esc(source.user) + '</span>' +
+      '<br><span class="sub">TLS, verified against:</span>' +
+      this.trustCell(source) + '</td>' +
       '<td><code>' + esc(source.table) + '.' + esc(source.keyColumn) +
       '</code> = the person\'s <code>' + esc(source.keyAttribute) +
       '</code></td><td>' + Object.keys(source.columns || {}).map(function (c) {
@@ -285,6 +318,9 @@ class AttributeSourcesAdmin {
         // old modes — the form always shows every box.
         if (body.action === 'add-source' || body.action === 'update-source') {
           body.refresh = admin.listField(req, body, 'refresh');
+          // An unticked box posts nothing: on this form that means off.
+          body.trustPublicRoots = body.trustPublicRoots === 'true';
+          body.caCertificates = String(body.caCertificates || '');
         }
         return sources.act(body, { via: 'console',
                                    actor: self.actorOf(req) });

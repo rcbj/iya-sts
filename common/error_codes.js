@@ -10507,6 +10507,11 @@ const CODES = [
     summary: 'The directory would not store or remove an attribute source ' +
       '(no directory, or it is full) (#94).',
     spec: 'HTTP 400 (console and API)' },
+  { code: 'STS-ATTR-0015',
+    summary: 'An attribute source\'s CA chain was refused: it is not PEM ' +
+      'certificates, a block did not parse, a certificate is expired or ' +
+      'not yet valid, or it is longer than 64 KiB (#94).',
+    spec: 'HTTP 400 (console and API)' },
   // ===== SCIM ==============================================================
   { code: 'STS-SCIM-0001',
     summary: 'A SCIM endpoint (or HOBA key registration) was called while ' +

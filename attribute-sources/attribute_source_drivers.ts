@@ -24,10 +24,14 @@
 //     (`STS_CLOUD_SDKS="mysql2"`, as the cloud SDKs are), and Knex requires
 //     it by name; a missing one is refused by name (STS-ATTR-0001).
 //   * **TLS IS ALWAYS VERIFIED** — `OutboundTls.verifiedOptions()` (#201),
-//     the helper every dialer outside the four families asks, with a source's
-//     own CA file beside node's store and its own server name. There is no
-//     plaintext and no switch to turn verification off: a database holding
-//     people's attributes is exactly what is worth not reading in the clear.
+//     the helper every dialer outside the four families asks, with the
+//     source's OWN TRUST CHAIN — pasted on the console (`caCertificates`)
+//     and a file's where it names one — trusted ALONE unless the source also
+//     asks for node's public roots (`trustPublicRoots`), and its own server
+//     name. A source that names no chain uses node's store, which is then
+//     all there is. There is no plaintext and no switch to turn verification
+//     off: a database holding people's attributes is exactly what is worth
+//     not reading in the clear.
 //   * **THE STATEMENT IS BUILT, NEVER WRITTEN.** Knex builds it from
 //     identifiers `attribute_sources.ts` validated against IDENTIFIER and
 //     TABLE and quotes them; the one value in it, the person's key, is a
@@ -163,6 +167,7 @@ class AttributeSourceDrivers {
     return JSON.stringify([source.dialect, source.host, source.port,
       source.database, source.user, source.passwordProvider,
       source.passwordRef, source.passwordField, source.caFile,
+      source.caCertificates, source.trustPublicRoots,
       source.serverName, source.timeoutMs]);
   }
 
@@ -211,10 +216,14 @@ class AttributeSourceDrivers {
         dialect.driver + '" or run `npm install ' + dialect.driver + '` (' +
         ((e && e.message) || e) + ').');
     }
-    let ca: string | null = null;
+    // THE TRUST CHAIN: the source's own certificates, pasted on the console
+    // (`caCertificates`), and a file's where it names one. Trusted ALONE
+    // unless the source also asks for node's store; with neither, node's
+    // store is all there is.
+    let ca: string = String(source.caCertificates || '');
     if (source.caFile) {
       try {
-        ca = readFile(String(source.caFile));
+        ca += '\n' + readFile(String(source.caFile));
       } catch (e) {
         log.debug("Caught in AttributeSourceDrivers.pool(): " +
                   ((e && e.message) || e));
@@ -226,7 +235,8 @@ class AttributeSourceDrivers {
     const password = await readSecret({ realm: realmId, id: source.id,
       provider: source.passwordProvider, ref: source.passwordRef,
       field: source.passwordField });
-    const tls = Object.assign(OutboundTls.verifiedOptions(ca),
+    const tls = Object.assign(OutboundTls.verifiedOptions(ca.trim() || null,
+      { systemRoots: !!source.trustPublicRoots }),
                               { servername: String(source.serverName ||
                                                    source.host) });
     const connection: Json = {

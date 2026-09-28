@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3771** of them, in **40** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3772** of them, in **40** subsystems.
 
 ## Where a code appears
 
@@ -71,7 +71,7 @@ is an ordinary outcome.
 * [OpenID Federation (`STS-OIDFED`)](#sts-oidfed) — 67
 * [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 169
 * [LDAP directory (`STS-LDAP`)](#sts-ldap) — 87
-* [Attribute sources (`STS-ATTR`)](#sts-attr) — 14
+* [Attribute sources (`STS-ATTR`)](#sts-attr) — 15
 * [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 77
 * [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 144
 * [TLS and client certificates (`STS-TLS`)](#sts-tls) — 37
@@ -2545,6 +2545,7 @@ Raised from: attribute-sources/attribute_sources.ts, attribute-sources/attribute
 | `STS-ATTR-0012` | A sign-in was refused: an attribute source whose failure policy is refuse could not be read (#94). | the calling protocol's access_denied |
 | `STS-ATTR-0013` | An attribute source's refresh could not be queued on the scheduler (#94). | HTTP 400 (console and API) |
 | `STS-ATTR-0014` | The directory would not store or remove an attribute source (no directory, or it is full) (#94). | HTTP 400 (console and API) |
+| `STS-ATTR-0015` | An attribute source's CA chain was refused: it is not PEM certificates, a block did not parse, a certificate is expired or not yet valid, or it is longer than 64 KiB (#94). | HTTP 400 (console and API) |
 
 ## STS-SCIM
 
