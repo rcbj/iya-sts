@@ -153,6 +153,10 @@ import errorCodes = require('../common/error_codes');
 // home of the person it names. Libraries that register no route.
 import cells = require('../common/cells');
 import cellPlacement = require('../common/cell_placement');
+// A DELEGATED SUBJECT'S ATTRIBUTES FROM THEIR HOME (#98 section 5): required
+// at load, not lazily, because loading it is what registers the
+// `fetch-attributes` operation this cell answers as somebody's home.
+import cellAttributes = require('../common/cell_attributes');
 
 const { DOMParser, XMLSerializer } = xmldom;
 
@@ -1825,16 +1829,99 @@ class WsTrust {
     // on, as it always did.
     const home = read.ok && cells.isMulti() && !req.stsCellRelay
       ? this.homeNameOf(read.value) : '';
+    // THE DELEGATED SUBJECT, when it is somebody other than the person the
+    // request is served for: see delegatedHere().
+    const delegated = read.ok && cells.isMulti()
+      ? this.delegatedNameOf(read.value, home) : '';
     if (home) {
       log.debug("Leaving WsTrust.stsEndpoint(). Finding the home cell.");
       return cellPlacement.relayToHome(req, res,
         require('../common/realms').currentId(), 'name', home,
         'a WS-Trust request').then(function (relayed: boolean): unknown {
-          return relayed ? undefined : self.stsEndpointHere(req, res, claimed);
+          return relayed ? undefined
+            : self.stsEndpointHere(req, res, claimed, delegated,
+                                   read.value);
         });
     }
     log.debug("Leaving WsTrust.stsEndpoint().");
-    return this.stsEndpointHere(req, res, claimed);
+    return this.stsEndpointHere(req, res, claimed, delegated,
+                                read.ok ? read.value : null);
+  }
+
+  // The subject of an OnBehalfOf / ActAs, when the request is served for
+  // somebody ELSE — its requester, whose home this is (homeNameOf()). ''
+  // when nothing is delegated, or the delegated subject is the one the
+  // request was placed by.
+  private delegatedNameOf(doc, placedBy: string): string {
+    const { firstByLocal, log } = this.deps;
+    log.debug("Entering WsTrust.delegatedNameOf().");
+    const obo = firstByLocal(doc, 'OnBehalfOf') || firstByLocal(doc, 'ActAs');
+    const named = obo ? firstByLocal(obo, 'NameID') ||
+                        firstByLocal(obo, 'NameIdentifier') : null;
+    const name = named ? String(named.textContent || '').trim() : '';
+    log.debug("Leaving WsTrust.delegatedNameOf().");
+    return name && name.toLowerCase() !== String(placedBy || '').toLowerCase()
+      ? name : '';
+  }
+
+  // ---------------------------------------------------------------------------
+  // A DELEGATED SUBJECT HOMED IN ANOTHER CELL (#98 section 5,
+  // `fetch-attributes`). The request is served at its REQUESTER's home, whose
+  // directory does not hold the person the token is about — so the token's
+  // subject, its configured attributes, the delegation policy's flags on
+  // their entry and the issuance policy's roles would be made from nothing.
+  // Their home is asked for their credential-free attributes
+  // (`common/cell_attributes.ts`), which it releases only where the transfer
+  // policy says, and the exchange runs with them held in this process's
+  // directory for exactly its own synchronous duration.
+  //
+  // FAIL-CLOSED (D6): home refusing to release them, or not reachable, is a
+  // refused issuance — a Fault naming which, never a token about somebody
+  // this cell cannot describe. A person already held here as a projection is
+  // read as they are; one unknown to every cell is served as a name nobody
+  // knows always was.
+  // ---------------------------------------------------------------------------
+  private delegatedHere(req, res, delegated: string, doc): unknown {
+    const { errorCodes, log } = this.deps;
+    log.debug("Entering WsTrust.delegatedHere().");
+    const self = this;
+    const realms = require('../common/realms');
+    const realmId = realms.currentId();
+    if (require('../common/cell_sessions').isProjected(realmId, 'name',
+                                                       delegated)) {
+      log.debug("Leaving WsTrust.delegatedHere(). Held here already.");
+      return this.stsEndpointNow(req, res);
+    }
+    log.debug("Leaving WsTrust.delegatedHere(). Asking where they live.");
+    return require('../common/cell_routing').homeOf(realmId, 'name', delegated)
+      .then(function (home: string): unknown {
+        if (!home || home === cells.id() || !cells.get(home)) {
+          return self.stsEndpointNow(req, res);
+        }
+        return cellAttributes.fetch(realmId, delegated, home)
+          .then(function (got: any): unknown {
+            if (!got.ok) {
+              const version = self.detectSoapVersion(doc,
+                req.headers['content-type'] || '');
+              errorCodes.mark(res, got.code);
+              res.status(got.code === 'STS-CELL-0125' ? 503 : 403)
+                 .type(version === '1.1' ? 'text/xml; charset=utf-8'
+                                         : 'application/soap+xml; ' +
+                                           'charset=utf-8')
+                 .send(self.soapFault(version, 'The subject of this ' +
+                   'request\'s delegation is held in another part of this ' +
+                   'service, which ' + (got.code === 'STS-CELL-0125'
+                     ? 'could not be reached'
+                     : 'did not release what a token about them needs') +
+                   ', so no token is issued about them.'));
+              return undefined;
+            }
+            return cellAttributes.withPerson(realmId, got.projection,
+              function () {
+                return self.stsEndpointNow(req, res);
+              });
+          });
+      });
   }
 
   // ---------------------------------------------------------------------------
@@ -1894,7 +1981,7 @@ class WsTrust {
   }
 
   // The endpoint, once the request is known to be served HERE.
-  private stsEndpointHere(req, res, claimed) {
+  private stsEndpointHere(req, res, claimed, delegated?: string, doc?) {
     const { log, subjectForName } = this.deps;
     log.debug("Entering WsTrust.stsEndpointHere().");
     const self = this;
@@ -1915,12 +2002,14 @@ class WsTrust {
     }
     log.debug("Leaving WsTrust.stsEndpointHere().");
     return preload.then(function (): unknown {
-      return self.stsEndpointNow(req, res);
+      return delegated ? self.delegatedHere(req, res, delegated, doc)
+                       : self.stsEndpointNow(req, res);
     }, function (e: any): unknown {
       log.debug("Caught in WsTrust.stsEndpointHere(): " +
                 ((e && e.message) || e));
       // loadStanding() never rejects; this is its belt and braces.
-      return self.stsEndpointNow(req, res);
+      return delegated ? self.delegatedHere(req, res, delegated, doc)
+                       : self.stsEndpointNow(req, res);
     });
   }
 

@@ -339,6 +339,283 @@ function relayRefusals(t, cells) {
   log.debug("Leaving relayRefusals().");
 }
 
+// 7. A partner asserting a person homed in another cell restarts the flow
+// there (D9): nothing is decided, linked or provisioned here.
+async function inboundFederation(t, cells) {
+  log.debug("Entering inboundFederation().");
+  const fedSp = require('../federation/federation_sp');
+  const routing = require('../common/cell_routing');
+  const channel = require('../common/cell_channel');
+  const kit = require('./tools/saml_signing_kit');
+  const restarts = [];
+  let decided = 0;
+  const homes = { alice: THERE, carol: HERE };
+  const restoreRouting = stub(routing, {
+    homeOf: function (realmId, kind, value) {
+      log.debug("Entering homeOf().");
+      log.debug("Leaving homeOf().");
+      return Promise.resolve(homes[String(value)] || '');
+    }
+  });
+  let linkHolder = '';
+  const restoreChannel = stub(channel, {
+    call: function (cellId, name) {
+      log.debug("Entering call().");
+      log.debug("Leaving call().");
+      return Promise.resolve({ holds: name === 'federation-link-home' &&
+                               cellId === linkHolder });
+    }
+  });
+  const deps = Object.assign({}, fedSp.FederationSp.defaultDeps(), {
+    fedMap: { mapIncoming: function (record, bag, subject) {
+      log.debug("Entering mapIncoming().");
+      log.debug("Leaving mapIncoming().");
+      return { username: String(subject), attributes: {} };
+    } },
+    links: {
+      stableSubjectOf: function () {
+        log.debug("Entering stableSubjectOf().");
+        log.debug("Leaving stableSubjectOf().");
+        return { ok: true, value: 'L1', subject: 's', issuer: 'i' };
+      },
+      namespacedName: function (id, name) {
+        log.debug("Entering namespacedName().");
+        log.debug("Leaving namespacedName().");
+        return id + '~' + name;
+      }
+    },
+    federation: Object.assign({}, fedSp.FederationSp.defaultDeps().federation,
+      {
+        peopleLinkedBy: function () {
+          log.debug("Entering peopleLinkedBy().");
+          log.debug("Leaving peopleLinkedBy().");
+          return [];
+        },
+        subjectPolicyOf: function () {
+          log.debug("Entering subjectPolicyOf().");
+          log.debug("Leaving subjectPolicyOf().");
+          return 'link-at-first-sign-in';
+        }
+      }),
+    authn: Object.assign({}, fedSp.FederationSp.defaultDeps().authn, {
+      restartPendingAtHome: function (req, res, pendingId, fallback, home) {
+        log.debug("Entering restartPendingAtHome().");
+        restarts.push({ pendingId: pendingId, fallback: fallback,
+                        home: home });
+        log.debug("Leaving restartPendingAtHome().");
+        return Promise.resolve();
+      }
+    })
+  });
+  const sp = new fedSp.FederationSp(deps);
+  sp['decideAndFinish'] = function () {
+    log.debug("Entering decideAndFinish().");
+    decided += 1;
+    log.debug("Leaving decideAndFinish().");
+    return undefined;
+  };
+  const record = { fedId: 'partner' };
+  const result = function (subject) {
+    log.debug("Entering result().");
+    log.debug("Leaving result().");
+    return { subject: subject, bag: {}, authnPending: 'pend-1',
+             returnTo: '/oauth2/authorize?client_id=c' };
+  };
+  let restore = cellMap(cells, HERE, true);
+  await sp['completeSignIn'](kit.fakeReq('POST', '/federation/acs/partner'),
+                             kit.fakeRes(), record, result('alice'));
+  t.check(restarts.length === 1 && restarts[0].home === THERE &&
+          restarts[0].pendingId === 'pend-1' &&
+          restarts[0].fallback === '/oauth2/authorize?client_id=c' &&
+          decided === 0,
+          'a person homed elsewhere restarts the flow at home, before any ' +
+          'decision here', JSON.stringify(restarts));
+  await sp['completeSignIn'](kit.fakeReq('POST', '/federation/acs/partner'),
+                             kit.fakeRes(), record, result('carol'));
+  t.check(restarts.length === 1 && decided === 1,
+          'a resident is decided here');
+  linkHolder = THERE;
+  await sp['completeSignIn'](kit.fakeReq('POST', '/federation/acs/partner'),
+                             kit.fakeRes(), record, result('dave'));
+  t.check(restarts.length === 2 && restarts[1].home === THERE,
+          'a link a resident of another cell carries sends the flow there');
+  linkHolder = '';
+  await sp['completeSignIn'](kit.fakeReq('POST', '/federation/acs/partner'),
+                             kit.fakeRes(), record, result('erin'));
+  t.check(restarts.length === 2 && decided === 2,
+          'a subject no cell knows is decided (and provisioned) here');
+  t.equal(fedSp.FederationSp.answerLinkHome({ realm: '',
+                                              link: 'nobody-' + Date.now() })
+            .holds, false, 'a cell holding no such link says so');
+  restore();
+  restore = cellMap(cells, HERE, false);
+  await sp['completeSignIn'](kit.fakeReq('POST', '/federation/acs/partner'),
+                             kit.fakeRes(), record, result('alice'));
+  t.check(restarts.length === 2 && decided === 3,
+          'single-cell mode asks nobody');
+  restore();
+  // The sign-in service's restart, with no pending record: the return
+  // address, pinned home; and never an address off this service.
+  restore = cellMap(cells, HERE, true);
+  const authn = require('../authn/authn');
+  const res1 = kit.fakeRes();
+  await authn.restartPendingAtHome(kit.fakeReq('GET', '/x'), res1, '',
+                                   '/oauth2/authorize?client_id=c', THERE);
+  t.check(res1.statusCode === 303 &&
+          res1.location === '/oauth2/authorize?client_id=c' &&
+          /sts_cell=/.test(String(res1.headers['set-cookie'] || '')),
+          'the browser is pinned home and sent to the start of its flow',
+          res1.location + ' ' + res1.headers['set-cookie']);
+  const res2 = kit.fakeRes();
+  await authn.restartPendingAtHome(kit.fakeReq('GET', '/x'), res2, '',
+                                   '//evil.example/', THERE);
+  t.check(res2.location.indexOf('//evil') < 0,
+          'a return address off this service is not followed', res2.location);
+  restore();
+  restoreChannel();
+  restoreRouting();
+  log.debug("Leaving inboundFederation().");
+}
+
+// 8. `fetch-attributes`, and WS-Trust refusing a delegation it cannot
+// describe (fail-closed).
+async function fetchAttributes(t, cells) {
+  log.debug("Entering fetchAttributes().");
+  const cellAttributes = require('../common/cell_attributes');
+  const cellSessions = require('../common/cell_sessions');
+  const channel = require('../common/cell_channel');
+  let transfer = null;
+  try {
+    transfer = require('../common/cell_transfer');
+  } catch (e) {
+    log.debug("Caught in fetchAttributes(): " + ((e && e.message) || e));
+    transfer = null;
+  }
+  let restore = cellMap(cells, THERE, true);
+  const restoreProjection = stub(cellSessions, {
+    projectionOf: function (name) {
+      log.debug("Entering projectionOf().");
+      log.debug("Leaving projectionOf().");
+      return { dn: 'uid=' + name + ',ou=users,dc=test', name: name,
+               uuid: 'u-1', attributes: { cn: [name] }, home: THERE };
+    }
+  });
+  if (transfer) {
+    let allowed = false;
+    const restoreTransfer = stub(transfer, {
+      releaseDecision: function (q) {
+        log.debug("Entering releaseDecision().");
+        log.debug("Leaving releaseDecision().");
+        return { allowed: allowed && q.purpose === 'attributes' &&
+                          q.homeCell === THERE && q.servingCell === HERE,
+                 why: 'test' };
+      }
+    });
+    t.equal(cellAttributes.answer({ realm: '', name: 'bob' }, HERE).released,
+            false, 'home refuses what the release policy refuses');
+    allowed = true;
+    const got = cellAttributes.answer({ realm: '', name: 'bob' }, HERE);
+    t.check(got.released && got.projection.home === THERE,
+            'and releases the projection where it permits');
+    restoreTransfer();
+  } else {
+    t.equal(cellAttributes.answer({ realm: '', name: 'bob' }, HERE).released,
+            false, 'with no transfer policy, home releases nothing');
+  }
+  restoreProjection();
+  restore();
+  restore = cellMap(cells, HERE, true);
+  let answer = { released: true, projection: {
+    dn: 'uid=bob,ou=users,dc=test', name: 'bob', uuid: 'u-1', home: THERE,
+    attributes: { cn: ['bob'], userPassword: ['{SSHA}x'] } } };
+  let restoreChannel = stub(channel, {
+    call: function () {
+      log.debug("Entering call().");
+      log.debug("Leaving call().");
+      return Promise.resolve(answer);
+    }
+  });
+  const ok = await cellAttributes.fetch('', 'bob', THERE);
+  t.check(ok.ok && ok.projection.attributes.cn &&
+          !ok.projection.attributes.userPassword,
+          'a fetched projection is credential-free on arrival too');
+  answer = { released: true, projection: Object.assign({},
+    answer.projection, { home: 'elsewhere' }) };
+  t.equal((await cellAttributes.fetch('', 'bob', THERE)).code,
+          'STS-CELL-0124', 'a projection naming another home is refused');
+  answer = { released: false, why: 'policy' };
+  t.equal((await cellAttributes.fetch('', 'bob', THERE)).code,
+          'STS-CELL-0124', 'a refusal at home is a refusal here');
+  restoreChannel();
+  restoreChannel = stub(channel, {
+    call: function () {
+      log.debug("Entering call().");
+      log.debug("Leaving call().");
+      return Promise.reject(new Error('unreachable'));
+    }
+  });
+  t.equal((await cellAttributes.fetch('', 'bob', THERE)).code,
+          'STS-CELL-0125', 'home unreachable is its own refusal');
+
+  // The hold is exactly one call, thrown or not.
+  const order = [];
+  const restoreHold = stub(cellSessions.CellSessions, {
+    materialize: function () {
+      log.debug("Entering materialize().");
+      order.push('in');
+      log.debug("Leaving materialize().");
+    },
+    dematerialize: function () {
+      log.debug("Entering dematerialize().");
+      order.push('out');
+      log.debug("Leaving dematerialize().");
+    }
+  });
+  t.equal(cellAttributes.withPerson('', ok.projection, function () {
+    order.push('run');
+    return 7;
+  }), 7, 'the held call answers');
+  try {
+    cellAttributes.withPerson('', ok.projection, function () {
+      throw new Error('boom');
+    });
+  } catch (e) {
+    log.debug("Caught in fetchAttributes(): " + ((e && e.message) || e));
+  }
+  t.equal(order.join(','), 'in,run,out,in,out',
+          'the person is taken out again, even when the call throws');
+  restoreHold();
+
+  // WS-Trust: a delegation whose subject's home cannot be reached is refused.
+  const routing = require('../common/cell_routing');
+  const restoreRouting = stub(routing, {
+    homeOf: function () {
+      log.debug("Entering homeOf().");
+      log.debug("Leaving homeOf().");
+      return Promise.resolve(THERE);
+    }
+  });
+  const wstrust = require('../ws-trust/wstrust');
+  const kit = require('./tools/saml_signing_kit');
+  const xmldom = require('@xmldom/xmldom');
+  const sts = new wstrust.WsTrust(wstrust.WsTrust.defaultDeps());
+  const doc = new xmldom.DOMParser().parseFromString(
+    '<s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope">' +
+    '<s:Body/></s:Envelope>', 'text/xml');
+  const res = kit.fakeRes();
+  await sts['delegatedHere'](kit.fakeReq('POST', '/sts', {}, '', '',
+    { headers: { host: 'idp.test',
+                 'content-type': 'application/soap+xml' } }),
+                             res, 'bob-' + Date.now(), doc);
+  t.check(res.statusCode === 503 && /Fault/.test(res.body),
+          'a delegated subject whose home cannot be reached is refused, ' +
+          'not described from nothing', res.statusCode + ' ' + res.body);
+  restoreRouting();
+  restoreChannel();
+  restore();
+  log.debug("Leaving fetchAttributes().");
+}
+
 async function run(t) {
   log.debug("Entering run().");
   const cells = require('../common/cells');
@@ -363,7 +640,10 @@ async function run(t) {
     await holders(t, cells, samlCells);
     signOut(t);
     relayRefusals(t, cells);
-    ['STS-CELL-0120', 'STS-CELL-0121', 'STS-CELL-0122']
+    await inboundFederation(t, cells);
+    await fetchAttributes(t, cells);
+    ['STS-CELL-0120', 'STS-CELL-0121', 'STS-CELL-0122', 'STS-CELL-0123',
+     'STS-CELL-0124', 'STS-CELL-0125']
       .forEach(function (code) {
         t.check(errorCodes.isKnown(code), code + ' is registered');
       });

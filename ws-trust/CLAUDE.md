@@ -266,12 +266,16 @@ their entry, the issuance policy and risk standing that read it, the issued
 token's attributes, and the browser session the exchange may start. None of
 that exists outside their home.
 
-**DOCUMENTED EXCEPTION — A DELEGATION ACROSS CELLS**: a request whose
-requester and delegated subject are homed in different cells is served at the
-REQUESTER's home, which does not hold the delegated subject's entry; the token
-about them carries only what that cell knows, which is the name. Answering it
-properly needs the design's `fetch-attributes` operation (#98 section 5),
-which is not built. A NameID that is not a login name (an email address, a
-pairwise value) is unknown to the routing index and served where it arrives.
-Held in process by `tests/cell_saml_federation.js`.
+**A DELEGATION ACROSS CELLS** is served at the REQUESTER's home, which does
+not hold the delegated subject's entry when they are homed elsewhere. That
+home is asked for their credential-free attributes (`fetch-attributes`,
+`common/cell_attributes.ts`), released only where the transfer policy says,
+and the exchange runs with them held in this process's directory for its own
+synchronous duration (`delegatedHere()`) — so the token's subject, its
+configured attributes, the delegation policy's flags on their entry and the
+issuance policy's roles are theirs. **Fail-closed (D6)**: home refusing
+(`STS-CELL-0124`, 403) or unreachable (`STS-CELL-0125`, 503) is a Fault and
+no token. A person already held here as a projection is read as they are.
+A NameID that is not a login name (an email address, a pairwise value) is
+unknown to the routing index and served where it arrives. Held in process by `tests/cell_saml_federation.js`.
 

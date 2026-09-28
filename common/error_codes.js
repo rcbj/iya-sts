@@ -1631,6 +1631,20 @@ const CODES = [
       'sessions held in a cell not reached last until they end by ' +
       'themselves, and the partner is told where its protocol allows.',
     spec: '' },
+  { code: 'STS-CELL-0123',
+    summary: 'A cell could not be asked whether a person homed there ' +
+      'carries a federation partner\'s link; the partner\'s subject is ' +
+      'decided without it.',
+    spec: '' },
+  { code: 'STS-CELL-0124',
+    summary: 'A person\'s home cell did not release their attributes to the ' +
+      'cell serving a token about them (the transfer policy refused, or ' +
+      'no policy was available); the token is refused.',
+    spec: '' },
+  { code: 'STS-CELL-0125',
+    summary: 'A person\'s home cell could not be reached for their ' +
+      'attributes; a token about them is refused (fail-closed, D6).',
+    spec: '' },
   // GNAP between cells (#98, group D: 0160-0179).
   { code: 'STS-CELL-0160',
     summary: 'A GNAP continuation for a grant that moved to another cell ' +
