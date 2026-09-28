@@ -202,6 +202,11 @@ import roles = require('./../common/roles');
 // to and the policy it is decrypted under. A static utility class that
 // registers no route and requires nothing here back.
 import fedEncryption = require('./federation_encryption');
+// A FLOW'S HANDLE NAMES THE CELL THAT HOLDS IT (#98 D10): stamped when it is
+// minted (putContext()), read where a partner's answer arrives (consume()).
+// Libraries that register no route.
+import cellLocator = require('./../common/cell_locator');
+import cellPlacement = require('./../common/cell_placement');
 
 const { DOMParser, XMLSerializer } = xmldom;
 
@@ -539,12 +544,18 @@ class FederationSp {
    * oldest context is dropped once `federation.maxContexts` are held.
    *
    * @param record - what the flow needs back when the response arrives
-   * @returns the handle, `fed-` and a random value
+   * @returns the handle, `fed-` and a random value (stamped with this cell
+   *   in a service deployed as cells)
    */
   putContext(record) {
     const { log, randomId } = this.deps;
     log.debug("Entering FederationSp.putContext().");
-    const handle = 'fed-' + randomId(18);
+    // STAMPED WITH THE CELL THAT HOLDS IT (#98 D10): the context store is
+    // the cell's, and a handle comes back — as a RelayState, a wctx, a
+    // state, or `/federation/link/{handle}`'s path segment — at whichever
+    // cell the browser reaches next. Twelve base64url characters: 40 in all,
+    // inside the handle pattern's 64 and SAML's 80-byte RelayState.
+    const handle = 'fed-' + cellLocator.stamp(randomId(18));
     const now = Date.now();
     contexts.forEach((value, key) => {
       if (value.expires < now) contexts.delete(key);
@@ -4267,6 +4278,22 @@ class FederationSp {
             'for.');
     }
     const params = this.paramsOf(req);
+    // THE FLOW'S CELL (#98 D10), before the response is verified or anything
+    // in it spent: a partner's answer names the context this service stored
+    // when the flow began — RelayState, SAML 1.1's fedctx, wctx or state —
+    // and that context is held only by the cell that stamped it. A
+    // browser pinned elsewhere was placed at the edge already; this is the
+    // one that was not. An unsolicited response names nothing and is served
+    // here.
+    const named: any = params;
+    const flowHandle = String(named.RelayState || named.fedctx ||
+                              named.wctx || named.state || '');
+    if (cellPlacement.relayIfElsewhere(req, res, flowHandle,
+                                       'a federation partner\'s response')) {
+      log.debug("Leaving FederationSp.consume(). Relayed to the cell that " +
+                "holds the flow.");
+      return undefined;
+    }
     try {
       if (record.fedProtocol === 'saml2') {
         log.debug("Leaving FederationSp.consume().");
