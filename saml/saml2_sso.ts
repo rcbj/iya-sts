@@ -234,10 +234,19 @@ const NS_DS = 'http://www.w3.org/2000/09/xmldsig#';
 
 const NS_SOAP = 'http://schemas.xmlsoap.org/soap/envelope/';
 
+/**
+ * The SAML 2.0 HTTP-Redirect binding's URI.
+ */
 const BINDING_REDIRECT = 'urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect';
 
+/**
+ * The SAML 2.0 HTTP-POST binding's URI.
+ */
 const BINDING_POST = 'urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST';
 
+/**
+ * The SAML 2.0 HTTP-Artifact binding's URI.
+ */
 const BINDING_ARTIFACT = 'urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Artifact';
 
 // THE HTTP-POST-SimpleSign BINDING (#37 follow-up; OASIS "SAML V2.0 HTTP POST
@@ -246,9 +255,15 @@ const BINDING_ARTIFACT = 'urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Artifact';
 // values instead — the Redirect binding's signature without its length limit.
 // Accepted for AuthnRequest, LogoutRequest and LogoutResponse, answered on
 // when a request or a consumed endpoint asks for it, and published.
+/**
+ * The SAML 2.0 HTTP-POST-SimpleSign binding's URI.
+ */
 const BINDING_SIMPLESIGN =
   'urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST-SimpleSign';
 
+/**
+ * The SAML 2.0 SOAP binding's URI.
+ */
 const BINDING_SOAP = 'urn:oasis:names:tc:SAML:2.0:bindings:SOAP';
 
 const STATUS_SUCCESS = 'urn:oasis:names:tc:SAML:2.0:status:Success';
@@ -282,6 +297,9 @@ const STATUS_UNKNOWN_PRINCIPAL =
 // InvalidNameIDPolicy (#37, `nameIdPolicyProblem()`). The list is what goes in
 // the metadata, and a service provider's configuration UI is usually built
 // from exactly this.
+/**
+ * The NameID formats this identity provider advertises in its metadata.
+ */
 const NAMEID_FORMATS = [
   'urn:oasis:names:tc:SAML:1.1:nameid-format:unspecified',
   'urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress',
@@ -470,7 +488,19 @@ interface Saml2SsoDeps {
   capabilities: typeof capabilities;
 }
 
+/**
+ * The SAML 2.0 identity provider: the Web Browser SSO profile over the
+ * Redirect, POST, SimpleSign and Artifact bindings, Single Logout, artifact
+ * resolution, the attribute authority, the metadata, and a mock service
+ * provider.
+ */
 class Saml2Sso {
+  /**
+   * Builds an instance over the modules it depends on.
+   *
+   * @param deps - the helpers, settings, the assertion builder, the sign-on
+   * session, the registers and the SAML libraries this profile reads
+   */
   constructor(private readonly deps: Saml2SsoDeps) {
     deps.helpers.log.debug("Entering Saml2Sso.constructor().");
     deps.helpers.log.debug("Leaving Saml2Sso.constructor().");
@@ -478,6 +508,11 @@ class Saml2Sso {
 
   // What the composition root passes, from the real modules — what
   // loading this module passed before #50's R2.
+  /**
+   * Answers the real modules the composition root passes to the constructor.
+   *
+   * @returns the dependencies of a default instance
+   */
   static defaultDeps(): Saml2SsoDeps {
     helpers.log.debug("Entering Saml2Sso.defaultDeps().");
     helpers.log.debug("Leaving Saml2Sso.defaultDeps().");
@@ -512,6 +547,11 @@ class Saml2Sso {
   }
 
   // How many artifacts are waiting to be resolved, for the console.
+  /**
+   * Answers how many artifacts are waiting to be resolved, for the console.
+   *
+   * @returns the count
+   */
   artifactCount(): number {
     const { log } = this.deps.helpers;
     log.debug("Entering Saml2Sso.artifactCount().");
@@ -520,6 +560,11 @@ class Saml2Sso {
   }
 
   // How many AuthnRequests are held for a sign-in, for the console.
+  /**
+   * Answers how many AuthnRequests are held for a sign-in, for the console.
+   *
+   * @returns the count
+   */
   pendingRequestCount(): number {
     const { log } = this.deps.helpers;
     log.debug("Entering Saml2Sso.pendingRequestCount().");
@@ -529,6 +574,12 @@ class Saml2Sso {
 
   // Every route this profile answers, in the order the file always registered
   // them. The four handlers mounted twice are bound once.
+  /**
+   * Registers every route this profile answers under `/saml2`, in the order the
+   * file always registered them.
+   *
+   * @param app - the shared express app
+   */
   registerRoutes(app: typeof import('../common/app')): void {
     const { baseUrlOf, iso, log, randomId, xmlEscape } = this.deps.helpers;
     const self = this;
@@ -833,6 +884,13 @@ class Saml2Sso {
     return Number(config.value('saml2.mockSpContextTtlMin')) * 60 * 1000;
   }
 
+  /**
+   * Answers the path segment an application identifier is written as: itself
+   * when it is a safe segment, otherwise `app-` and a short SHA-256 digest.
+   *
+   * @param identifier - the application's identifier
+   * @returns the segment
+   */
   slugOf(identifier) {
     const { crypto } = this.deps;
     const { log } = this.deps.helpers;
@@ -945,6 +1003,17 @@ class Saml2Sso {
   // against, and `urn:sts:idp` is a development placeholder in a product's
   // signed documents. The predicate is `inventsClaimValues()` because that is
   // the question: may a value be invented where the configuration holds none.
+  /**
+   * Answers this identity provider's own entityID for a service provider:
+   * `saml2.entityId`, with the service provider's segment appended when
+   * `saml2.perApplicationEntityId` is on.
+   *
+   * An empty `saml2.entityId` falls back to `urn:sts:idp` in development and
+   * answers '' in product.
+   * @param spEntityId - the service provider's entityID; none for the shared
+   * one
+   * @returns the entityID, or ''
+   */
   idpEntityIdFor(spEntityId) {
     const { config, mode } = this.deps;
     const { log } = this.deps.helpers;
@@ -985,6 +1054,14 @@ class Saml2Sso {
   // failure that produces is a service provider configured from a document,
   // posting to a path nothing serves, and a 404 that looks like the identity
   // provider is down.
+  /**
+   * Answers where a service provider's endpoints live, for the metadata and the
+   * handlers alike.
+   *
+   * @param base - the realm's base URL
+   * @param spEntityId - the service provider's entityID
+   * @returns the `sso`, `slo`, `ars`, `aa` and `metadata` URLs
+   */
   endpointsFor(base, spEntityId) {
     const { log } = this.deps.helpers;
     log.debug("Entering Saml2Sso.endpointsFor().");
@@ -4836,6 +4913,16 @@ class Saml2Sso {
   // url rather than dropped, for the same reason the table below prints
   // "nowhere to send one": that is the interesting row.
   // ---------------------------------------------------------------------------
+  /**
+   * Lists the LogoutRequests one session is owed, each built and signed for the
+   * HTTP-Redirect binding; read by `logout/logout.ts` as well.
+   *
+   * A service provider with no logout return address is reported with an empty
+   * `url` rather than dropped.
+   * @param session - the sign-on session
+   * @returns one row per service provider: entityID, where the address came
+   * from, the destination and the request's URL
+   */
   logoutTargetsFor(session) {
     const { log } = this.deps.helpers;
     const self = this;
@@ -4943,6 +5030,14 @@ class Saml2Sso {
   //
   // It answers for ANY {sp}. See decision 1 — the ask is what registers it.
   // ---------------------------------------------------------------------------
+  /**
+   * Builds this identity provider's metadata for a service provider, signed
+   * with the signature first inside the EntityDescriptor.
+   *
+   * @param base - the realm's base URL
+   * @param spEntityId - the service provider's entityID
+   * @returns the metadata document, unsigned only when signing failed
+   */
   metadataFor(base, spEntityId) {
     const { documentSettings, errorCodes, listenerKeys,
             requestSignature } = this.deps;
@@ -5292,6 +5387,17 @@ class Saml2Sso {
   // its own verdict. One boolean for the whole response would say "it failed"
   // and nothing anybody could act on — the same argument /wsfed/rp and the
   // OID4VP verifier both make.
+  /**
+   * Verifies a SAML Response as a service provider would, each check with its
+   * own verdict; the mock service provider's reading.
+   *
+   * @param xml - the Response
+   * @param spEntityId - the service provider's entityID
+   * @param acsUrl - the assertion consumer service URL it was sent to
+   * @param relayState - the RelayState that came with it
+   * @returns `ok`, every check, and the subject, attributes, session index and
+   * status
+   */
   verifyResponse(xml, spEntityId, acsUrl, relayState): any {
     const { firstByLocal, log, textByLocal } = this.deps.helpers;
     const { DOMParser } = this.deps.xmldom;
@@ -5643,10 +5749,23 @@ capabilities.provide('saml.artifacts-once');
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * SAML 2.0: the Web Browser SSO profile, all its bindings, and Single Logout,
+ * with the functions the console and the global sign-out read.
+ * @namespace
+ */
 export = {
   registerRoutes: slot.forward('registerRoutes'),
   Saml2Sso: Saml2Sso,
+  /**
+   * Installs the instance the composition root built and runs its
+   * wire step; a second install is refused.
+   */
   installInstance: (instance: Saml2Sso): void => slot.install(instance),
+  /**
+   * Says where the instance in use came from: `root`, `default` or
+   * `none`.
+   */
   instanceOrigin: (): string => slot.origin(),
   BINDING_REDIRECT: BINDING_REDIRECT,
   BINDING_POST: BINDING_POST,

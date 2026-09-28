@@ -90,7 +90,17 @@ interface ReturnAddressDeps {
   errorCodes: { mark<T>(target: T, code: string): T };
 }
 
+/**
+ * Decides where a signed assertion is delivered: in development the request's
+ * address or a fallback, in product only an address registered on the
+ * application's own entry.
+ */
 class ReturnAddress {
+  /**
+   * Builds an instance over the modules it depends on.
+   *
+   * @param deps - the logger, the mode and the error-code table
+   */
   constructor(private readonly deps: ReturnAddressDeps) {
     deps.log.debug("Entering ReturnAddress.constructor().");
     deps.log.debug("Leaving ReturnAddress.constructor().");
@@ -98,6 +108,11 @@ class ReturnAddress {
 
   // What the composition root passes, from the real modules — what
   // loading this module passed before #50's R2.
+  /**
+   * Answers the real modules the composition root passes to the constructor.
+   *
+   * @returns the dependencies of a default instance
+   */
   static defaultDeps(): ReturnAddressDeps {
     helpers.log.debug("Entering ReturnAddress.defaultDeps().");
     helpers.log.debug("Leaving ReturnAddress.defaultDeps().");
@@ -152,6 +167,17 @@ class ReturnAddress {
   // exactly the old precedence — the request, then the LAST registered value
   // (which is what both SAML modules always took), then the fallback.
   // -------------------------------------------------------------------------
+  /**
+   * Resolves the address a response is delivered to.
+   *
+   * In development: the request's address, then the last registered one, then
+   * the built-in mock's. In product: only a registered address; a request
+   * naming any other is refused, and there is no fallback.
+   * @param spec - `requested`, `registered`, `unconfirmed`, `fallback`, and the
+   * `attribute`, `parameter` and `application` a refusal names
+   * @returns `{ ok, url, from }`, or `{ ok: false, why }` carrying its error
+   * code
+   */
   resolve(spec: ReturnAddressSpec): ReturnAddressAnswer {
     const { log, mode, errorCodes } = this.deps;
     log.debug("Entering ReturnAddress.resolve(). application=" +
@@ -273,9 +299,23 @@ const slot = new InstanceSlot<ReturnAddress>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * Where a signed assertion is delivered, and who gets to say: the one rule the
+ * SAML 2.0, SAML 1.1 and WS-Federation browser profiles resolve a return
+ * address by.
+ * @namespace
+ */
 export = {
   ReturnAddress: ReturnAddress,
+  /**
+   * Installs the instance the composition root built and runs its
+   * wire step; a second install is refused.
+   */
   installInstance: (instance: ReturnAddress): void => slot.install(instance),
+  /**
+   * Says where the instance in use came from: `root`, `default` or
+   * `none`.
+   */
   instanceOrigin: (): string => slot.origin(),
   resolve: slot.forward('resolve')
 };

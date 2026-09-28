@@ -88,10 +88,19 @@ interface PersonAttributesDeps {
   loadClaimAttributes(): ClaimAttributesReader;
 }
 
+/**
+ * Fills the four persona facts an assertion carries (given name, surname, mail
+ * and display name) from the directory where the mode invents none, and drops
+ * attribute rows that have no value.
+ */
 class PersonAttributes {
   // userFor()'s field -> the LDAP attribute the catalogue files the same fact
   // under. `name` is cn (the full name) and not displayName, which the
   // catalogue maps to OIDC's `nickname`.
+  /**
+   * The session user's field for each fact, mapped to the LDAP attribute the
+   * claim catalogue files it under.
+   */
   static readonly FROM_DIRECTORY: Readonly<Record<string, string>> = {
     given_name: 'givenname',
     family_name: 'sn',
@@ -99,6 +108,11 @@ class PersonAttributes {
     name: 'cn'
   };
 
+  /**
+   * Builds an instance over the modules it depends on.
+   *
+   * @param deps - the logger, the mode and the claim catalogue's loader
+   */
   constructor(private readonly deps: PersonAttributesDeps) {
     deps.log.debug("Entering PersonAttributes.constructor().");
     deps.log.debug("Leaving PersonAttributes.constructor().");
@@ -106,6 +120,11 @@ class PersonAttributes {
 
   // What the composition root passes, from the real modules — what
   // loading this module passed before #50's R2.
+  /**
+   * Answers the real modules the composition root passes to the constructor.
+   *
+   * @returns the dependencies of a default instance
+   */
   static defaultDeps(): PersonAttributesDeps {
     helpers.log.debug("Entering PersonAttributes.defaultDeps().");
     helpers.log.debug("Leaving PersonAttributes.defaultDeps().");
@@ -128,6 +147,15 @@ class PersonAttributes {
   // The person, with the four facts filled from the directory where the mode
   // invents none. Always a NEW object — the session's own user is never
   // written to, because it is shared by every protocol reading the session.
+  /**
+   * Answers the person with the four facts filled from the directory where the
+   * mode invents none.
+   *
+   * Always a new object: the session's own user is never written to.
+   * @param user - the session's user, `helpers.userFor()`'s answer
+   * @returns a copy of the user with the facts filled where the directory has
+   * them
+   */
   personFor<T extends Person>(user?: T | null): T {
     const { log, mode, loadClaimAttributes } = this.deps;
     const FROM_DIRECTORY = PersonAttributes.FROM_DIRECTORY;
@@ -175,6 +203,13 @@ class PersonAttributes {
   // An attribute list with every row whose value is absent REMOVED. The
   // builders write a row per fact whether or not there is one; an
   // <AttributeValue> of "undefined" is a claim this service would be signing.
+  /**
+   * Removes every attribute row whose value is absent, so no assertion carries
+   * an `<AttributeValue>` of `undefined`.
+   *
+   * @param attributes - the builder's attribute rows
+   * @returns the rows that have a value
+   */
   withoutAbsent<T extends AttributeRow>(attributes?: T[] | null): T[] {
     const { log } = this.deps;
     log.debug("Entering PersonAttributes.withoutAbsent().");
@@ -206,9 +241,22 @@ const slot = new InstanceSlot<PersonAttributes>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * The four persona facts a SAML assertion or WS-Federation token carries, and
+ * where they come from in each mode.
+ * @namespace
+ */
 export = {
   PersonAttributes: PersonAttributes,
+  /**
+   * Installs the instance the composition root built and runs its
+   * wire step; a second install is refused.
+   */
   installInstance: (instance: PersonAttributes): void => slot.install(instance),
+  /**
+   * Says where the instance in use came from: `root`, `default` or
+   * `none`.
+   */
   instanceOrigin: (): string => slot.origin(),
   personFor: slot.forward('personFor'),
   withoutAbsent: slot.forward('withoutAbsent')
