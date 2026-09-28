@@ -1904,8 +1904,9 @@ class OAuth2Server {
                          'offline_access',
                          // Native SSO section 5 (#130).
                          'device_sso',
-                         // OpenID Connect Key Binding (#150).
-                         'bound_key'].concat(
+                         // OpenID Connect Key Binding (#150), unless
+                         // `oauth2.keyBinding` is off (#315).
+                        ].concat(self.keyBindingOn() ? ['bound_key'] : []).concat(
         config.value('scim.enabled') !== false
           ? [String(config.value('scim.scopeRead') || 'scim:read'),
              String(config.value('scim.scopeWrite') || 'scim:write')]
@@ -4049,7 +4050,8 @@ class OAuth2Server {
       // because RFC 9449 section 5 leaves a confidential client's refresh
       // token unbound (#176), and a bound ID Token must stay with ONE key.
       kb_jkt: opts.kb_jkt ? String(opts.kb_jkt) :
-        (this.deps.hasScope(opts.scope, 'bound_key') && opts.dpopJwk
+        (this.keyBindingOn() &&
+         this.deps.hasScope(opts.scope, 'bound_key') && opts.dpopJwk
           ? this.deps.stsCrypto.jwkThumbprint(opts.dpopJwk) : undefined)
     };
     if (opts.request) {
@@ -4496,8 +4498,10 @@ class OAuth2Server {
     // OPENID CONNECT KEY BINDING SECTION 4 (#150): with `bound_key` granted
     // and a DPoP key proved, the ID Token names that key in `cnf.jwk`, and
     // its JOSE header says so (`typ: dpop+id_token`, below).
-    const boundKey = String(opts.scope || '').split(/\s+/)
-      .indexOf('bound_key') >= 0 && opts.dpopJwk ? opts.dpopJwk : null;
+    // Not with `oauth2.keyBinding` off (#315).
+    const boundKey = this.keyBindingOn() && String(opts.scope || '')
+      .split(/\s+/).indexOf('bound_key') >= 0 && opts.dpopJwk
+      ? opts.dpopJwk : null;
     if (boundKey) {
       payload.cnf = { jwk: boundKey };
     }
@@ -5575,6 +5579,22 @@ class OAuth2Server {
   // three call sites need it and one of them is the console.
   // OPENID CONNECT KEY BINDING SECTION 2/3 (#150): a grant whose scope
   // holds `bound_key` needs a DPoP proof whose `c_s256` is the base64url
+  // WHETHER OPENID CONNECT KEY BINDING IS PERFORMED in the ambient realm
+  // (#315): `oauth2.keyBinding`, on by default. Every place that advertises,
+  // refuses for, binds to or checks `bound_key` asks this.
+  /**
+   * Whether OpenID Connect Key Binding is performed (`oauth2.keyBinding`).
+   *
+   * @returns true unless the setting is off
+   */
+  keyBindingOn(): boolean {
+    const { log, config } = this.deps;
+    log.debug("Entering OAuth2Server.keyBindingOn().");
+    const on = config.value('oauth2.keyBinding') !== false;
+    log.debug("Leaving OAuth2Server.keyBindingOn(). " + on);
+    return on;
+  }
+
   // SHA-256 of the code it redeems (the authorization code, or the device
   // code). Null when it holds, or when `bound_key` was not granted.
   /**
@@ -5589,7 +5609,8 @@ class OAuth2Server {
   boundKeyProofRefusal(scope: Json, code: string, proof: Json): Json {
     const { log } = this.deps;
     log.debug("Entering OAuth2Server.boundKeyProofRefusal().");
-    if (String(scope || '').split(/\s+/).indexOf('bound_key') < 0) {
+    if (!this.keyBindingOn() ||
+        String(scope || '').split(/\s+/).indexOf('bound_key') < 0) {
       log.debug("Leaving OAuth2Server.boundKeyProofRefusal(). Not bound.");
       return null;
     }
@@ -8945,6 +8966,21 @@ class OAuth2Server {
     // ID Token bound to the client's DPoP key, which the authorization
     // request must name up front (`dpop_jkt`), and which only the code flow
     // can carry — a front-channel ID Token has no proof to bind to.
+    //
+    // WITH `oauth2.keyBinding` OFF (#315) THE SCOPE IS IGNORED, NOT REFUSED.
+    // It was advertised and refused, so an OpenID Connect Core relying party
+    // that asks for every advertised scope (the idptools.com debugger, on
+    // testidp) could not sign in at all. Off, it is neither advertised nor
+    // granted: it is dropped from the request here, before anything is
+    // issued from `q`, as Core treats a scope the OP does not act on.
+    if (!self.keyBindingOn() &&
+        String(q.scope || '').split(/\s+/).indexOf('bound_key') >= 0) {
+      q.scope = String(q.scope).split(/\s+/).filter(function (one) {
+        return one && one !== 'bound_key';
+      }).join(' ');
+      log.debug("OAuth2Server.vetAuthorizationRequest(): bound_key ignored, " +
+                "oauth2.keyBinding is off.");
+    }
     if (String(q.scope || '').split(/\s+/).indexOf('bound_key') >= 0) {
       if (!q.dpop_jkt) {
         log.debug("Leaving OAuth2Server.vetAuthorizationRequest(). bound_key " +
@@ -18853,6 +18889,7 @@ export = {
   ownTokenKind: slot.forward('ownTokenKind'),
   // Key Binding's two checks (#150), for tests/device_key_binding.js.
   boundKeyProofRefusal: slot.forward('boundKeyProofRefusal'),
+  keyBindingOn: slot.forward('keyBindingOn'),
   boundIdTokenRefusal: slot.forward('boundIdTokenRefusal'),
   exchangeTypeProblem: slot.forward('exchangeTypeProblem'),
   requestedClaimNames: slot.forward('requestedClaimNames'),

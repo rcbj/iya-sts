@@ -1789,7 +1789,10 @@ const SPECS: Spec[] = [
   { id: 'oidc-key-binding', name: 'OpenID Connect Key Binding 1.0',
     where: 'OpenID Foundation',
     url: 'https://openid.net/specs/openid-connect-key-binding-1_0.html',
-    coverage: 'full (#150, 2026-09-26), in every mode: the bound_key ' +
+    coverage: 'full (#150, 2026-09-26), in every mode while ' +
+              'oauth2.keyBinding is on (the default; off, #315, the scope ' +
+              'is neither advertised nor granted and a request for it is ' +
+              'not refused): the bound_key ' +
               'scope, honoured with response_type=code and dpop_jkt only; ' +
               'a DPoP proof at the token endpoint whose c_s256 is the ' +
               'hash of the authorization or device code; an ID Token with ' +

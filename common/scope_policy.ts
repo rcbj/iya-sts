@@ -359,7 +359,12 @@ class ScopePolicy {
   defaultScopes(opts?: JudgeOptions): string[] {
     const { log } = this.deps;
     log.debug("Entering ScopePolicy.defaultScopes().");
-    const out = OIDC_SCOPES.slice(0);
+    // `bound_key` only while OpenID Connect Key Binding is performed (#315):
+    // off, a client that declares nothing is not granted it by default.
+    const keyBinding = this.deps.config.value('oauth2.keyBinding') !== false;
+    const out = OIDC_SCOPES.filter(function (one) {
+      return keyBinding || one !== 'bound_key';
+    });
     ((opts && opts.defaults) || []).forEach(function (one) {
       if (one && out.indexOf(String(one)) < 0) {
         out.push(String(one));

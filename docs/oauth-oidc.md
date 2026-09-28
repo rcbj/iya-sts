@@ -840,6 +840,15 @@ DPoP key, in every mode:
 DPoP keys may be ML-DSA-44, ML-DSA-65 or ML-DSA-87 (`kty: AKP`) as well as
 RSA, EC and OKP.
 
+**Turning it off (`oauth2.keyBinding`, #315).** Key Binding is on by
+default. Because `bound_key` is advertised in `scopes_supported`, a relying
+party that asks for every advertised scope and knows nothing of Key Binding
+sends `bound_key` without `dpop_jkt` and is refused. Set `oauth2.keyBinding`
+to off in the realm and the service behaves as OpenID Connect Core alone:
+`bound_key` is not advertised or granted by default, a request carrying it
+is accepted with the scope ignored, and no ID Token is bound. A grant bound
+before the setting was turned off still needs its key on refresh.
+
 ### OpenID Provider Commands
 
 This service can tell a relying party what to do with an account. It sends
