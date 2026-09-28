@@ -79,7 +79,12 @@ const MODULES = [
   'xacml_validate.js',
   'xacml_xml.js',
   'xacml_pdp.js',
-  'xacml_json.js'
+  'xacml_json.js',
+  // THE ONE REQUEST BUILDER (#306): not the engine, but engine-side on
+  // purpose — it requires the model and the helpers shim and nothing else,
+  // so this container builds its requests with the code the service's own
+  // PEPs use, and spells the shared vocabulary from the same table.
+  'xacml_request.js'
 ];
 
 // WHAT IS DELIBERATELY NOT IN THAT LIST, because "why is this not here" is the
@@ -198,5 +203,6 @@ module.exports = {
   validate: loaded.validate,
   xml: loaded.xml,
   pdp: loaded.pdp,
-  json: loaded.json
+  json: loaded.json,
+  request: loaded.request
 };

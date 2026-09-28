@@ -24,6 +24,7 @@ and the nudge.
 | File | What it is |
 |---|---|
 | `xacml_model.js` | The vocabulary: the identifiers the specification fixes, the shape of a policy tree, and the seven decision values. **No I/O.** |
+| `xacml_request.js` | **The one request builder (#306, part E of #88).** #88 section 7's AuthorizationRequest — principal and its type, roles, client, target, audience, requested action and scopes, protocol, grant type, intermediary — spelt from ONE vocabulary and grouped into XACML's categories. Every PEP builds through it: the issuance, access, risk and signal PEPs, the demonstration PEP at `/xacml/protected`, `/admin/xacml/decide`, and the remote PEP, which copies it beside the engine. It decides nothing; the shared identifiers (`ROLE`, `SUBJECT_KIND`) live here because a remote PEP cannot load `xacml_templates.ts`. `tests/xacml_request.js` fails on a module that goes back to building its own. **No I/O.** |
 | `xacml_datatypes.js` | The seventeen datatypes — parse, write, equality, ordering. The table every function is generated over. **No I/O.** |
 | `xacml_functions.js` | The standard function library: 275 identifiers, about thirty implementations. **No I/O.** |
 | `xacml_validate.js` | Static type checking. What a policy is REFUSED for at load, before any request. **No I/O.** |

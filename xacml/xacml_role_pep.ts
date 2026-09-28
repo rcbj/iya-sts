@@ -121,6 +121,9 @@ import monitor = require('./xacml_monitor');
 import pdp = require('./xacml_pdp');
 import pip = require('./xacml_pip');
 import templates = require('./xacml_templates');
+// THE ONE REQUEST BUILDER (#306): every PEP's request is made there.
+import xacmlRequest = require('./xacml_request');
+const { AuthorizationRequest } = xacmlRequest;
 
 // The question an issuance site asks, through `common/issuance_gate.js`.
 interface IssuanceQuestion {
@@ -482,37 +485,14 @@ class XacmlRolePep {
     }
   }
 
-  // -------------------------------------------------------------------------
-  // ONE ATTRIBUTE, MULTI-VALUED.
-  //
-  // A bag rather than a value everywhere, because every one of these genuinely
-  // is one: a party holds several roles and an application requires several.
-  // A single-valued spelling would have made the policy's intersection test
-  // impossible to write and would have been discovered at the first
-  // application that needed two.
-  // -------------------------------------------------------------------------
-  private attribute(attributeId: string, values: unknown[] | null | undefined,
-                    type?: string): any {
-    const { log, model } = this.deps;
-    log.debug("Entering XacmlRolePep.attribute().");
-    log.debug("Leaving XacmlRolePep.attribute().");
-    return {
-      attributeId: attributeId,
-      issuer: null,
-      includeInResult: true,
-      values: (values || []).map(function (one) {
-        return { type: type || model.TYPE.STRING, lexical: String(one) };
-      })
-    };
-  }
-
   /**
    * Builds the XACML request for one issuance question.
    *
-   * The subject's name, held roles, token roles and kind; the application
+   * The subject's name, kind, held roles and token roles; the application
    * as a string resource-id with its required roles; the issuance kind as
    * the action; and the risk, authentication and device facts as
-   * environment attributes, each only when present.
+   * environment attributes, each only when present. Through the one
+   * builder every PEP uses (`xacml_request.js`, #306).
    * @param asked - the issuance question
    * @param held - the roles the subject holds
    * @param fromToken - the roles read from a token the subject presented
@@ -521,48 +501,44 @@ class XacmlRolePep {
    */
   buildRequest(asked: IssuanceQuestion, held: string[], fromToken: string[],
                required: string[]): any {
-    const { log, model } = this.deps;
+    const { log } = this.deps;
     log.debug('Entering XacmlRolePep.buildRequest().');
-    const subjectAttributes = [
-      this.attribute(model.ATTRIBUTE.SUBJECT_ID, [asked.subject.name || '']),
-      this.attribute(ATTRIBUTE.ROLE, held),
-      this.attribute(ATTRIBUTE.TOKEN_ROLE, fromToken),
-      // #303: person or application, so a policy can tell them apart by more
-      // than which built-in role matched.
-      this.attribute(ATTRIBUTE.SUBJECT_KIND,
-                     [asked.subject && asked.subject.kind === 'application'
-                        ? 'application' : 'user'])
-    ];
-    const request = {
-      returnPolicyIdList: true,
-      combinedDecision: false,
-      categories: [
-        { category: model.CATEGORY.ACCESS_SUBJECT, id: null, content: null,
-          attributes: subjectAttributes },
-        { category: model.CATEGORY.RESOURCE, id: null, content: null,
-          attributes: [
-            // THE APPLICATION IS THE RESOURCE-ID and it is a STRING rather
-            // than an anyURI, unlike `/admin/xacml/decide`'s. An application
-            // handle here is a client_id, a wtrealm or a SAML entityID slug,
-            // and only some of those are URIs — typing them all as anyURI
-            // would make the ones that are not fail to parse and take the
-            // decision Indeterminate, which under deny-unless-permit refuses
-            // everybody with a message about a datatype.
-            this.attribute(model.ATTRIBUTE.RESOURCE_ID, [asked.application]),
-            this.attribute(ATTRIBUTE.REQUIRED_ROLE, required)
-          ] },
-        { category: model.CATEGORY.ACTION, id: null, content: null,
-          attributes: [this.attribute(model.ATTRIBUTE.ACTION_ID,
-                                      [asked.kind])] },
-        { category: model.CATEGORY.ENVIRONMENT, id: null, content: null,
-          attributes: this.riskAttributes(asked.risk,
-                                          String(asked.subject.name || ''))
-            .concat(this.authenticationAttributes(asked.authentication))
-            .concat(this.deviceAttributes(asked)) }
-      ]
-    };
+    const request = this.requestFor(asked, held, fromToken, required).build();
     log.debug('Leaving XacmlRolePep.buildRequest().');
     return request;
+  }
+
+  // The request before it is built, so the delegation question can add its
+  // intermediary and its two attributes to the same one.
+  private requestFor(asked: IssuanceQuestion, held: string[],
+                     fromToken: string[], required: string[]): any {
+    const { log, model } = this.deps;
+    log.debug('Entering XacmlRolePep.requestFor().');
+    const subject = asked.subject || {};
+    const req = new AuthorizationRequest({ includeInResult: true })
+      // #303: person or application, so a policy can tell them apart by more
+      // than which built-in role matched.
+      .principal(subject.name || '',
+                 subject.kind === 'application' ? 'application' : 'user')
+      .roles(held)
+      .subject(ATTRIBUTE.TOKEN_ROLE, fromToken)
+      // THE APPLICATION IS THE RESOURCE-ID and it is a STRING rather than an
+      // anyURI, unlike `/admin/xacml/decide`'s. An application handle here is
+      // a client_id, a wtrealm or a SAML entityID slug, and only some of
+      // those are URIs — typing them all as anyURI would make the ones that
+      // are not fail to parse and take the decision Indeterminate, which
+      // under deny-unless-permit refuses everybody with a message about a
+      // datatype.
+      .target(asked.application)
+      .resource(ATTRIBUTE.REQUIRED_ROLE, required)
+      .requestedAction(asked.kind);
+    // THE ENVIRONMENT IS ALWAYS SENT, empty or not, as it always was.
+    req.category(model.CATEGORY.ENVIRONMENT);
+    this.riskAttributes(req, asked.risk, String(subject.name || ''));
+    this.authenticationAttributes(req, asked.authentication);
+    this.deviceAttributes(req, asked);
+    log.debug('Leaving XacmlRolePep.requestFor().');
+    return req;
   }
 
   // -------------------------------------------------------------------------
@@ -571,28 +547,25 @@ class XacmlRolePep {
   // an empty string would be a level nobody wrote a rule for. The score goes
   // only when there is one — a first sign-in is UNSCORED and has none.
   // -------------------------------------------------------------------------
-  private riskAttributes(risk: RiskFacts | null | undefined,
-                         username: string): any[] {
+  private riskAttributes(req: any, risk: RiskFacts | null | undefined,
+                         username: string): void {
     const { log, model, heldFactors } = this.deps;
     log.debug("Entering XacmlRolePep.riskAttributes().");
     if (!risk || !risk.level) {
       log.debug("Leaving XacmlRolePep.riskAttributes(). No facts.");
-      return [];
+      return;
     }
-    const out = [
-      this.attribute(RISK.LEVEL, [risk.level]),
-      this.attribute(RISK.SIGNAL, risk.signals || []),
-      this.attribute(RISK.SATISFIED, risk.satisfied || []),
+    req.environment(RISK.LEVEL, [risk.level])
+      .environment(RISK.SIGNAL, risk.signals || [])
+      .environment(RISK.SATISFIED, risk.satisfied || [])
       // What the person holds (#226) — asked only when there are risk
       // facts, since no risk rule reads it otherwise.
-      this.attribute(RISK.HELD, heldFactors && username
-        ? heldFactors(username) : [])
-    ];
+      .environment(RISK.HELD, heldFactors && username
+        ? heldFactors(username) : []);
     if (typeof risk.score === 'number' && isFinite(risk.score)) {
-      out.push(this.attribute(RISK.SCORE, [risk.score], model.TYPE.DOUBLE));
+      req.environment(RISK.SCORE, [risk.score], model.TYPE.DOUBLE);
     }
     log.debug("Leaving XacmlRolePep.riskAttributes().");
-    return out;
   }
 
   // -------------------------------------------------------------------------
@@ -601,23 +574,20 @@ class XacmlRolePep {
   // them — the session's start — and none otherwise, so a rule about them is
   // inapplicable to every other issuance.
   // -------------------------------------------------------------------------
-  private authenticationAttributes(facts: any): any[] {
+  private authenticationAttributes(req: any, facts: any): void {
     const { log } = this.deps;
     log.debug("Entering XacmlRolePep.authenticationAttributes().");
     if (!facts) {
       log.debug("Leaving XacmlRolePep.authenticationAttributes(). None.");
-      return [];
+      return;
     }
-    const out = [
-      this.attribute(AUTHN.AMR, (facts.amr || []).map(String)),
-      this.attribute(AUTHN.CREDENTIAL_KIND,
-                     (facts.kinds || []).filter(Boolean).map(String))
-    ];
+    req.environment(AUTHN.AMR, (facts.amr || []).map(String))
+      .environment(AUTHN.CREDENTIAL_KIND,
+                   (facts.kinds || []).filter(Boolean).map(String));
     if (facts.acr) {
-      out.push(this.attribute(AUTHN.ACR, [String(facts.acr)]));
+      req.environment(AUTHN.ACR, [String(facts.acr)]);
     }
     log.debug("Leaving XacmlRolePep.authenticationAttributes().");
-    return out;
   }
 
   // -------------------------------------------------------------------------
@@ -630,41 +600,36 @@ class XacmlRolePep {
   // application's for that application (a `client_credentials` grant's
   // subject is the client).
   // -------------------------------------------------------------------------
-  private deviceAttributes(asked: IssuanceQuestion): any[] {
+  private deviceAttributes(req: any, asked: IssuanceQuestion): void {
     const { log, model } = this.deps;
     log.debug("Entering XacmlRolePep.deviceAttributes().");
     if (!Array.isArray(asked.deviceRequirement)) {
       log.debug("Leaving XacmlRolePep.deviceAttributes(). Not asked.");
-      return [];
+      return;
     }
     const fact = asked.device || null;
-    const out = [
-      this.attribute(DEVICE.REQUIREMENT, asked.deviceRequirement),
-      this.attribute(DEVICE.RECOGNIZED, [!!fact], model.TYPE.BOOLEAN)
-    ];
+    req.environment(DEVICE.REQUIREMENT, asked.deviceRequirement)
+      .environment(DEVICE.RECOGNIZED, [!!fact], model.TYPE.BOOLEAN);
     if (fact) {
       const subject = asked.subject || {};
       const ownerKind = subject.kind === 'application' ? 'application'
                                                        : 'person';
       const owned = fact.ownerKind === ownerKind && !!subject.name &&
         String(fact.ownerName || '') === String(subject.name);
-      out.push(
-        this.attribute(DEVICE.ID, [String(fact.id || '')]),
-        this.attribute(DEVICE.VIA, [String(fact.via || '')]),
-        this.attribute(DEVICE.OWNER_MATCHES, [owned], model.TYPE.BOOLEAN),
-        this.attribute(DEVICE.OWNER_KIND, [String(fact.ownerKind || '')]),
-        this.attribute(DEVICE.COMPLIANCE,
-                       [String(fact.compliance || 'unknown')]),
-        this.attribute(DEVICE.ATTESTATION,
-                       [String(fact.attestation || 'self-asserted')]),
-        this.attribute(DEVICE.STATUS, [String(fact.status || 'active')]));
+      req.environment(DEVICE.ID, [String(fact.id || '')])
+        .environment(DEVICE.VIA, [String(fact.via || '')])
+        .environment(DEVICE.OWNER_MATCHES, [owned], model.TYPE.BOOLEAN)
+        .environment(DEVICE.OWNER_KIND, [String(fact.ownerKind || '')])
+        .environment(DEVICE.COMPLIANCE, [String(fact.compliance || 'unknown')])
+        .environment(DEVICE.ATTESTATION,
+                     [String(fact.attestation || 'self-asserted')])
+        .environment(DEVICE.STATUS, [String(fact.status || 'active')]);
       if (fact.riskLevel) {
-        out.push(this.attribute(DEVICE.RISK_LEVEL, [String(fact.riskLevel)]));
+        req.environment(DEVICE.RISK_LEVEL, [String(fact.riskLevel)]);
       }
     }
     log.debug("Leaving XacmlRolePep.deviceAttributes(). " +
               (fact ? String(fact.id) : 'No device.'));
-    return out;
   }
 
   // The device obligation on a Deny, read: which rule refused, or null when
@@ -1075,23 +1040,13 @@ class XacmlRolePep {
                           '), so nothing denies the delegation.', [], []);
     }
     const held: string[] = [];
-    const request = this.buildRequest(asked, held, [], []);
     const facts = asked.delegation || { intermediary: '', subject: '',
                                         target: '', mode: '', protocol: '' };
-    request.categories.push({
-      category: model.CATEGORY.INTERMEDIARY_SUBJECT, id: null, content: null,
-      attributes: [this.attribute(model.ATTRIBUTE.SUBJECT_ID,
-                                  [facts.intermediary])] });
-    request.categories.forEach((one: any) => {
-      if (one.category === model.CATEGORY.ACTION) {
-        one.attributes.push(this.attribute(DELEGATION_ATTRIBUTE.MODE,
-                                           [facts.mode]));
-      }
-      if (one.category === model.CATEGORY.ENVIRONMENT) {
-        one.attributes.push(this.attribute(DELEGATION_ATTRIBUTE.PROTOCOL,
-                                           [facts.protocol]));
-      }
-    });
+    const request = this.requestFor(asked, held, [], [])
+      .action(DELEGATION_ATTRIBUTE.MODE, [facts.mode])
+      .environment(DELEGATION_ATTRIBUTE.PROTOCOL, [facts.protocol])
+      .intermediary(facts.intermediary)
+      .build();
     const answer = pdp.evaluate(loaded.policy, request, {
       repository: store.repository(),
       resolver: pip.resolverFor(request)
