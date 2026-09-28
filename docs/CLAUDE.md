@@ -76,3 +76,20 @@ can report, because a trigger is a fact about the code. The same test decided
 `sessions.md`: the session RECORD's fields are published nowhere, so they are
 written out; the row shape of `/admin-api/sessions` is in the OpenAPI document,
 so it is not.
+
+## The API reference under /api/ is generated, not written here (2026-09-27)
+
+The sidebar's *API reference* is TypeDoc output built from the source's
+`/** */` blocks. `.github/workflows/pages.yml` runs it in a `jsdoc` job and
+copies the pages into the built site after Jekyll, so nothing under `docs/`
+holds them. Locally, `./run-jsdoc.sh` writes the same pages to `./apidocs/`.
+
+- **Tooling:** `tests/tools/jsdoc/` holds the TypeDoc config, a tsconfig, and
+  its own pinned TypeScript 6. The repository's TypeScript 7 has no JavaScript
+  API for TypeDoc to call.
+- **What is covered:** `server.js`, `sts_metadata.ts` and every service
+  directory, never the vendored copies.
+- **Page text:** a function's page shows its JSDoc block and nothing else.
+  The `//` prose above it stays in the source.
+- **Rebuilds:** `pages.yml` no longer filters on `docs/**`, because a source
+  change now changes the site.

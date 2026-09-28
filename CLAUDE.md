@@ -959,6 +959,7 @@ Those are two claims and keeping them apart is the whole of this section.
 ./run-tests.sh --target=aws:testidp     # the protocol half against an AWS environment
 ./run-tests.sh --target=aws-ephemeral   # apply `ci`, run the suite against it from here, destroy it
 ./run-coverage.sh                       # coverage, collected by a run of its own
+./run-jsdoc.sh                          # the API reference (TypeDoc) into ./apidocs
 ```
 
 **`./run-tests.sh` IS THE ONE LAUNCHER FOR THE WHOLE SUITE, WHEREVER THE SERVICE

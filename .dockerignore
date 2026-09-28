@@ -53,6 +53,8 @@
 !.github/image-mirror.txt
 !.github/scripts/push-stack-images.sh
 !.github/workflows/build-container.yml
+# ./run-jsdoc.sh's output, never read by an image.
+apidocs
 CLAUDE.md
 **/CLAUDE.md
 COVERAGE.md

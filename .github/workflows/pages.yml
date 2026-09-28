@@ -71,16 +71,13 @@
 name: Deploy docs to GitHub Pages
 
 on:
-  # Only when the documentation or this workflow changes. The container build
-  # (build-container.yml) runs on every push to main and this does not need to:
-  # a source change cannot alter the site, because nothing here is generated
-  # from the source. If that ever stops being true — a page built from
-  # sts_metadata.js, say — this filter is the first thing to remove.
+  # Every push to main. There was a `paths:` filter (docs/** and this file)
+  # until 2026-09-27, on the argument that a source change cannot alter the
+  # site; the API reference under /api/ is generated from the source's JSDoc
+  # since that day (the `jsdoc` job below), so it can, and the filter went as
+  # its own comment said it should.
   push:
     branches: [main]
-    paths:
-      - 'docs/**'
-      - '.github/workflows/pages.yml'
   workflow_dispatch:
 
 # The three permissions the official flow needs, and no more. `contents: read`
@@ -99,7 +96,35 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # THE API REFERENCE (2026-09-27): ./run-jsdoc.sh, TypeDoc over the JSDoc in
+  # every service directory, on the runner's own node (--no-docker, so no
+  # image and no registry login). Its pages are an artifact the `build` job
+  # copies into the site under /api/, after Jekyll: the generated file names
+  # include underscores, which Jekyll would skip if they went through it.
+  jsdoc:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Generate the API reference
+        run: ./run-jsdoc.sh --no-docker --out=apidocs
+
+      - name: Upload the API reference
+        uses: actions/upload-artifact@v4
+        with:
+          name: api-reference
+          path: apidocs
+          if-no-files-found: error
+          retention-days: 7
+
   build:
+    needs: jsdoc
     runs-on: ubuntu-latest
     steps:
       # No submodules. node-ldapjs is 30 MB of a library this site does not
@@ -134,6 +159,24 @@ jobs:
       # on an empty source directory, and the symptom of that is a deployed site
       # that is simply blank — which reads as a Pages problem rather than a build
       # one. index.html is what docs/index.md must have become.
+      # The jsdoc job's pages, under /api/. `_site` is written by the Jekyll
+      # action's container as root, hence sudo.
+      - name: Download the API reference
+        uses: actions/download-artifact@v4
+        with:
+          name: api-reference
+          path: apidocs
+
+      - name: Add the API reference to the site
+        run: |
+          sudo mkdir -p _site/api
+          sudo cp -r apidocs/. _site/api/
+          if [ ! -f _site/api/index.html ]; then
+            echo "_site/api/index.html is missing." >&2
+            exit 1
+          fi
+          echo "API reference: $(find _site/api -name '*.html' | wc -l) page(s)."
+
       - name: Check the site is not empty
         run: |
           if [ ! -f _site/index.html ]; then

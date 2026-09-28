@@ -33,6 +33,9 @@ data/
 # code it sits beside.
 tests/report/
 coverage/
+# The API reference ./run-jsdoc.sh writes (2026-09-27); the site builds its
+# own in .github/workflows/pages.yml.
+apidocs/
 
 # THE BUILD STAMP. `common/version.js --stamp .` writes version.json at the
 # package root during the image build, and it is what every surface here reports
