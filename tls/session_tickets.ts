@@ -79,8 +79,16 @@ import InstanceSlot = require('../common/instance_slot');
 
 type Json = any;
 
+/**
+ * The cluster job that rotates the shared session-ticket key,
+ * `tls.ticket-key-rotate`.
+ */
 const ROTATE_JOB = 'tls.ticket-key-rotate';
 // What node's setTicketKeys() takes: name, HMAC key and AES key, 16 each.
+/**
+ * The length of a session-ticket key as node's `setTicketKeys()` takes it: a
+ * 16-byte name, HMAC key and AES key.
+ */
 const KEY_BYTES = 48;
 // The one row of the store.
 const ROW = 'current';
@@ -110,8 +118,22 @@ interface Tracked {
   applied: string;
 }
 
+/**
+ * One TLS session-ticket key shared by every node of an active-active cluster,
+ * so a ticket one node issued resumes on another.
+ *
+ * The key is persisted sealed, replicated, applied at every new connection on a
+ * tracked listener, and replaced every `tls.sessionTicketRotationS` by a
+ * cluster job; the key it replaces is deleted.
+ */
 class SessionTickets {
+  /**
+   * The rotation job's id; the module's `ROTATE_JOB`.
+   */
   static readonly ROTATE_JOB = ROTATE_JOB;
+  /**
+   * The key's length; the module's `KEY_BYTES`.
+   */
   static readonly KEY_BYTES = KEY_BYTES;
 
   private readonly tracked = new Map<Json, Tracked>();
@@ -120,11 +142,23 @@ class SessionTickets {
   private applications = 0;
   private failures = 0;
 
+  /**
+   * Builds the key holder from its dependencies.
+   *
+   * @param deps - the modules it reads, from `SessionTickets.defaultDeps()` or
+   * the composition root
+   */
   constructor(private readonly deps: SessionTicketsDeps) {
     deps.log.debug("Entering SessionTickets.constructor().");
     deps.log.debug("Leaving SessionTickets.constructor().");
   }
 
+  /**
+   * Returns the real modules the key holder depends on, as the composition root
+   * passes them.
+   *
+   * @returns the dependencies
+   */
   static defaultDeps(): SessionTicketsDeps {
     helpers.log.debug("Entering SessionTickets.defaultDeps().");
     helpers.log.debug("Leaving SessionTickets.defaultDeps().");
@@ -149,6 +183,11 @@ class SessionTickets {
   }
 
   // The rotation interval in seconds; 0 means no shared key.
+  /**
+   * Returns the rotation interval (`tls.sessionTicketRotationS`).
+   *
+   * @returns the interval in seconds; 0 means no shared key
+   */
   intervalS(): number {
     const { log, config } = this.deps;
     log.debug("Entering SessionTickets.intervalS().");
@@ -158,6 +197,12 @@ class SessionTickets {
   }
 
   // Why no key is shared, or '' when one is.
+  /**
+   * Says why no key is shared: the interval is 0, or the cluster is not
+   * active-active.
+   *
+   * @returns the reason, or an empty string when a key is shared
+   */
   offReason(): string {
     const { log } = this.deps;
     log.debug("Entering SessionTickets.offReason().");
@@ -185,6 +230,12 @@ class SessionTickets {
   // The shared key to apply now, or null. HOT PATH — asked at every new TLS
   // connection on a tracked listener — so no Entering/Leaving pair here: it
   // would write two debug lines per handshake and drown the log.
+  /**
+   * Returns the shared key to apply now.
+   *
+   * @returns the 48-byte key, or null when none is shared or the stored one is
+   * malformed
+   */
   current(): Buffer | null {
     if (this.offReason()) {
       return null;
@@ -241,6 +292,15 @@ class SessionTickets {
   // Makes a TLS listener use the shared key from its next connection on. A
   // `tls.Server` (or `https.Server`); ldapjs's secure server passes its
   // `.server`. Safe to call twice for one listener.
+  /**
+   * Makes a TLS listener use the shared key from its next connection on,
+   * applying it at every new connection before the handshake. Safe to call
+   * twice for one listener.
+   *
+   * @param server - a `tls.Server` or `https.Server`
+   * @param label - the listener's name, for the report
+   * @returns true when the listener is tracked
+   */
   track(server: Json, label: string): boolean {
     const { log } = this.deps;
     log.debug("Entering SessionTickets.track(). " + label);
@@ -271,6 +331,13 @@ class SessionTickets {
 
   // Replaces the shared key with a new random one; the old one is deleted.
   // What the job runs. Nothing about the key is returned or logged.
+  /**
+   * Replaces the shared key with a new random one, deleting the old; the job's
+   * body. Nothing about the key is returned or logged.
+   *
+   * @param reason - why, such as `scheduled` or `requested`
+   * @returns `{ generation, rotatedAt }`
+   */
   rotate(reason: string): Json {
     const { log, store } = this.deps;
     log.debug("Entering SessionTickets.rotate(). " + reason);
@@ -292,6 +359,13 @@ class SessionTickets {
   }
 
   // What the console and the tests read. Never the key.
+  /**
+   * Reports whether a key is shared, why not, the interval, the key's
+   * generation and when it rotated, the tracked listeners, and the counts of
+   * applications and failures. Never the key.
+   *
+   * @returns the report
+   */
   report(): Json {
     const { log, store } = this.deps;
     log.debug("Entering SessionTickets.report().");
@@ -316,6 +390,11 @@ class SessionTickets {
 
   // THE JOB, registered at build in every process (cluster/CLAUDE.md: every
   // process registers the same jobs).
+  /**
+   * Registers the `tls.ticket-key-rotate` scheduler job, once.
+   *
+   * @returns true when it was registered by this call
+   */
   registerJobs(): boolean {
     const { log } = this.deps;
     log.debug("Entering SessionTickets.registerJobs().");
@@ -361,9 +440,23 @@ const slot = new InstanceSlot<SessionTickets>(
 
 slot.buildNowUnlessDeferred();
 
+/**
+ * One TLS session-ticket key for every node of an active-active cluster.
+ *
+ * Exports the `SessionTickets` class, its constants, and facades that forward
+ * to the installed instance.
+ *
+ * @namespace
+ */
 export = {
   SessionTickets: SessionTickets,
+  /**
+   * Installs the instance the facades forward to.
+   */
   installInstance: (instance: SessionTickets): void => slot.install(instance),
+  /**
+   * Says where the current instance came from.
+   */
   instanceOrigin: (): string => slot.origin(),
   ROTATE_JOB: ROTATE_JOB,
   KEY_BYTES: KEY_BYTES,
