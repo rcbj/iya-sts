@@ -112,6 +112,9 @@ import groupClaims = require('../common/group_claims');
 // `config`, loaded by `admin_stats.js` long before this file, so the require
 // closes no cycle and moves no route.
 import roles = require('../common/roles');
+// The claim sets' attribute claims (#94), whose attributes a directory write
+// can move. `claim_attributes` already requires it, so this closes no cycle.
+import stats = require('../common/admin_stats');
 
 // One register row. See `blankRow()`.
 interface CaepRow {
@@ -173,6 +176,9 @@ interface CaepRegisterDeps {
                                                 values: string[] } };
   roles: { claimFor(who: Record<string, unknown>):
              Record<string, string[]> | null };
+  // Optional, so a test supplying the rest need not supply it (#94).
+  stats?: { attributeClaimRows(): Array<{ name: string; attribute: string;
+                                          multi: boolean; type: string }> };
 }
 
 // The acts this service can actually OBSERVE, and their event types — three
@@ -433,6 +439,24 @@ class CaepRegister {
         });
         at[row.claim[row.claim.length - 1]] = now.length === 0 ? null
           : now.length === 1 ? now[0] : now;
+      });
+      // THE CLAIM SETS' ATTRIBUTE CLAIMS (#94): a row naming an attribute
+      // this write moved moves its claim, with the value it now holds (as
+      // text; every value where the row is `multi`), or null when gone.
+      const rows = self.deps.stats &&
+        typeof self.deps.stats.attributeClaimRows === 'function'
+        ? self.deps.stats.attributeClaimRows() : [];
+      rows.forEach(function (row) {
+        const name = String(row.attribute).toLowerCase();
+        const now = valuesAt(after, name).filter(function (one: string) {
+          return one !== '';
+        });
+        if (JSON.stringify(valuesAt(before, name)) ===
+            JSON.stringify(valuesAt(after, name))) {
+          return;
+        }
+        claims[row.name] = now.length === 0 ? null
+          : (row.multi ? now : now[0]);
       });
       // A person's own `memberOf` is read live as their groups, so writing it
       // moves the groups claim exactly as a group's `member` does.
@@ -1433,7 +1457,8 @@ class CaepRegister {
       stepUp: stepUp,
       claimAttributes: claimAttributes,
       groupClaims: groupClaims,
-      roles: roles
+      roles: roles,
+      stats: stats
     };
   }
 }

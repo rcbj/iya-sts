@@ -5290,6 +5290,39 @@ class AdminActions {
         : this.refusedBy('STS-ADMIN-0552', result);
     }
 
+    // AN ATTRIBUTE CLAIM (#94): the claim's value is a directory attribute of
+    // the person the artifact is about. `multi` carries every value; `type`
+    // is the JSON type of each in a JWT set. Removed by `remove`, by name,
+    // like a typed claim — one set, one list of names.
+    if (action === 'add-attribute-claim') {
+      const entry: Record<string, any> = {
+        name: String(body.name || '').trim(),
+        attribute: String(body.attribute || '').trim(),
+        multi: body.multi === true || body.multi === 'true' ||
+               body.multi === 'on',
+        type: String(body.type || 'string').trim() || 'string' };
+      if (!entry.attribute) {
+        log.debug("Leaving AdminActions.claimsAction(). No attribute.");
+        return this.refused('STS-ADMIN-0832', { ok: false, errors: ['Give ' +
+          'the directory attribute the claim carries, as `attribute`.'] });
+      }
+      if (body.nameFormat) entry.nameFormat = String(body.nameFormat).trim();
+      if (body.namespace) entry.namespace = String(body.namespace).trim();
+      const result = stats.setClaimSet(setId,
+                                       stats.claimSet(setId).concat([entry]));
+      log.debug("Leaving AdminActions.claimsAction(). add-attribute-claim " +
+                "-> ok=" + result.ok);
+      return result.ok
+        ? { ok: true, set: setId, claims: result.claims,
+            message: 'Added "' + entry.name + '" to the ' + label + ' claim ' +
+                     'set, carrying the directory attribute ' +
+                     entry.attribute + (entry.multi ? ' (every value)' : '') +
+                     '. Every one of those issued from now on carries it ' +
+                     'for a person whose entry has it; nothing already ' +
+                     'issued changes.' }
+        : this.refusedBy('STS-ADMIN-0552', result);
+    }
+
     if (action === 'remove') {
       const name = String(body.name || '').trim();
       const remaining = stats.claimSet(setId)
@@ -5427,7 +5460,8 @@ class AdminActions {
     log.debug("Leaving AdminActions.claimsAction(). Unknown action.");
     return this.refused('STS-ADMIN-0500',
                    { ok: false, errors: ['Unknown action "' + action + '". ' +
-                                 'The seven are: add, remove, clear, ' +
+                                 'The eight are: add, ' +
+                                      'add-attribute-claim, remove, clear, ' +
                                       'replace, attributes, attributes-all, ' +
                                       'attributes-clear.'] });
   }

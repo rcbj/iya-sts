@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3754** of them, in **39** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3757** of them, in **39** subsystems.
 
 ## Where a code appears
 
@@ -82,11 +82,11 @@ is an ordinary outcome.
 * [Device register (`STS-DEVICE`)](#sts-device) — 45
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 83
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 32
-* [Admin console (`STS-ADMIN`)](#sts-admin) — 210
+* [Admin console (`STS-ADMIN`)](#sts-admin) — 211
 * [Management API (`STS-API`)](#sts-api) — 75
 * [User portal (`STS-PORTAL`)](#sts-portal) — 75
 * [Sign-out (`STS-LOGOUT`)](#sts-logout) — 7
-* [Registries (`STS-REG`)](#sts-reg) — 133
+* [Registries (`STS-REG`)](#sts-reg) — 135
 * [Protocol debugger (`STS-DBG`)](#sts-dbg) — 28
 
 ## STS-HTTP
@@ -3848,6 +3848,7 @@ Raised from: admin-ui/ (except pki_admin.js), admin-core/.
 | `STS-ADMIN-0829` | create-role named a realm-wide role with the application separator "@" in it; that is how an application's role is named (#310). | none (a console or management API refusal, HTTP 400) |
 | `STS-ADMIN-0830` | create-role named an application that is not in the realm's registry (#310). | none (a console or management API refusal, HTTP 400) |
 | `STS-ADMIN-0831` | add-permission put another application's permission on an application's role, which may authorize only its own application's permissions (#310). | none (a console or management API refusal, HTTP 400) |
+| `STS-ADMIN-0832` | add-attribute-claim named no directory attribute for the claim to carry (#94). | HTTP 400 (console and API) |
 
 ## STS-API
 
@@ -4174,6 +4175,8 @@ Raised from: common/applications.js, common/consent.ts, common/app_permissions.t
 | `STS-REG-0197` | A registration's CIBA metadata was refused: an unknown backchannel_token_delivery_mode, no https notification endpoint for ping or push, a signing algorithm that is not asymmetric, or a user code parameter that is not a boolean (#131). | invalid_client_metadata (HTTP 400) |
 | `STS-REG-0198` | FAPI-CIBA: a registration under a FAPI profile asked for the push delivery mode, which the profile does not allow (#142). | invalid_client_metadata (HTTP 400) |
 | `STS-REG-0199` | A command_endpoint (OpenID Provider Commands, #151) was not an https URL with no fragment, at registration or update (a console or API write is refused under STS-REG-0071). | HTTP 400 {error: invalid_client_metadata} |
+| `STS-REG-0200` | A claim-set attribute claim named an attribute it may not carry: not an attribute name, a secret or binary value (userPassword, jpegPhoto, a certificate), or one this service keeps (sts*, hoba*, app*, pwd*) (#94). | HTTP 400 (console and API) |
+| `STS-REG-0201` | A JWT or UserInfo attribute claim named a type that is not string, number, boolean or json (#94). | HTTP 400 (console and API) |
 
 ## STS-DBG
 

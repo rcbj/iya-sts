@@ -3031,6 +3031,29 @@ with `Cannot find module` naming a file the operator never mentioned.
    route and requires `helpers.js`, `admin_stats.js`, `vc_claims.js` and
    `audit.js`, none of which requires it back.
 
+   **ATTRIBUTE CLAIMS (#94, 2026-09-28) ARE THE OTHER WAY TO PUT AN ATTRIBUTE
+   IN A TOKEN, and they go beside the catalogue rather than into it.** The
+   catalogue fixes the claim name for each attribute; an attribute claim is a
+   row in a claim set (`admin_stats.js`'s `setClaimSet()`, `attribute` in place
+   of `value`) naming ANY attribute under a name the administrator chooses. It
+   is how a value a federation partner or an attribute source wrote reaches a
+   token. Rows are validated there against `sourced_attributes.ts`'s
+   `releaseRefusal()`: no secret, no binary value, nothing this service keeps.
+   It shares the typed claims' funnel, audit and CAEP announcement, since names
+   are unique within one set.
+
+   The entry is read through a **third member of the same slot**,
+   `entryAttributes(context)`. This module fills it from `vc_claims.ts`'s
+   `entryAttributes()`, the whole entry lower-cased. It is a member, not a new
+   slot, because rule 3e's test was already passed by this slot, for this
+   direction.
+
+   **An attribute claim reads only the directory**: there is no persona in
+   either mode, and an entry without the attribute adds no claim.
+   `ssf/caep.ts`'s `claimsChangeFor()` reads `attributeClaimRows()`, so a write
+   that moves such an attribute sends token-claims-change as a catalogue
+   attribute does.
+
    **The catalogue is not copied and the three selections are not shared**, and
    both halves of that matter. One catalogue, because two lists of spellings is
    one list that will eventually be wrong about `schacDateOfBirth` while both

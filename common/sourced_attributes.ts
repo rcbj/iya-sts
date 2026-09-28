@@ -31,6 +31,13 @@
 // attribute source (#94 part C) refuses `mail` itself: its verification and
 // its change notice belong to the mail flow.
 //
+// **AND THE ATTRIBUTES NO CLAIM MAY CARRY OUT (#94 part A)**, which is a
+// different question with a different answer: an attribute claim may release
+// `memberOf`, `uid` or the federation provenance, and may never release a
+// secret (`userPassword`), a binary value (`jpegPhoto`, a certificate, a
+// PKCS#12), the account state (`pwd*`) or what this service keeps as
+// credentials (`sts*`, `hoba*`, `app*`). `releaseRefusal()` answers it.
+//
 // A leaf: it requires only the logger, so `federation.js`, `federation_map`
 // and `ldap_server.js` can all ask it without a cycle.
 // ---------------------------------------------------------------------------
@@ -48,6 +55,14 @@ const NAMES = ['uid', 'objectclass', 'memberof', 'ismemberof', 'userpassword',
   'entryuuid', 'entrydn', 'createtimestamp', 'modifytimestamp',
   'creatorsname', 'modifiersname', 'subschemasubentry', 'hassubordinates',
   'structuralobjectclass'];
+
+// The prefixes no claim may release, lower-cased (#94).
+const RELEASE_PREFIXES = ['sts', 'hoba', 'app', 'pwd'];
+
+// Names no claim may release: the secret and the binary attributes
+// `common/inetorgperson.ts` refuses to draw, lower-cased.
+const RELEASE_NAMES = ['userpassword', 'audio', 'jpegphoto', 'photo',
+  'usercertificate', 'userpkcs12', 'usersmimecertificate'];
 
 /**
  * The directory attributes no outside source — a federation partner, an
@@ -85,6 +100,37 @@ export = class SourcedAttributes {
              'and provenance, which no outside source writes';
     }
     log.debug("Leaving SourcedAttributes.refusal(). Writable.");
+    return '';
+  }
+
+  /**
+   * Says why a claim may not carry an attribute out, or '' when it may.
+   *
+   * @param name - the directory attribute
+   * @returns the reason, or '' for an attribute a claim may carry
+   */
+  static releaseRefusal(name: unknown): string {
+    log.debug("Entering SourcedAttributes.releaseRefusal().");
+    const key = String(name == null ? '' : name).trim().toLowerCase();
+    if (!key) {
+      log.debug("Leaving SourcedAttributes.releaseRefusal(). No name.");
+      return 'no attribute is named';
+    }
+    if (RELEASE_NAMES.indexOf(key) >= 0) {
+      log.debug("Leaving SourcedAttributes.releaseRefusal(). Named.");
+      return '"' + String(name) + '" is a secret or a binary value, which ' +
+             'no claim carries';
+    }
+    const prefix = RELEASE_PREFIXES.filter(function (one) {
+      return key.indexOf(one) === 0;
+    })[0];
+    if (prefix) {
+      log.debug("Leaving SourcedAttributes.releaseRefusal(). A prefix.");
+      return '"' + String(name) + '" is one of the attributes this service ' +
+             'keeps (' + prefix + '*) — credentials and account state — ' +
+             'which no claim carries';
+    }
+    log.debug("Leaving SourcedAttributes.releaseRefusal(). Releasable.");
     return '';
   }
 

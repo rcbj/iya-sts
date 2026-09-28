@@ -15981,6 +15981,10 @@ const CODES = [
       'application\'s role, which may authorize only its own ' +
       'application\'s permissions (#310).',
     spec: 'none (a console or management API refusal, HTTP 400)' },
+  { code: 'STS-ADMIN-0832',
+    summary: 'add-attribute-claim named no directory attribute for the ' +
+      'claim to carry (#94).',
+    spec: 'HTTP 400 (console and API)' },
   { code: 'STS-API-0001',
     summary: 'A management API request carried no Bearer access token while ' +
       'adminApi.authRequired is on.',
@@ -17293,6 +17297,16 @@ const CODES = [
       'was not an https URL with no fragment, at registration or update ' +
       '(a console or API write is refused under STS-REG-0071).',
     spec: 'HTTP 400 {error: invalid_client_metadata}' },
+  { code: 'STS-REG-0200',
+    summary: 'A claim-set attribute claim named an attribute it may not ' +
+      'carry: not an attribute name, a secret or binary value ' +
+      '(userPassword, jpegPhoto, a certificate), or one this service keeps ' +
+      '(sts*, hoba*, app*, pwd*) (#94).',
+    spec: 'HTTP 400 (console and API)' },
+  { code: 'STS-REG-0201',
+    summary: 'A JWT or UserInfo attribute claim named a type that is not ' +
+      'string, number, boolean or json (#94).',
+    spec: 'HTTP 400 (console and API)' },
   { code: 'STS-DBG-0001',
     summary: 'The debugger permission was asked for by somebody who may ' +
       'not hold it — not a person, not signed in, not in the ' +

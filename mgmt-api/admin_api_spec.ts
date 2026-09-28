@@ -215,7 +215,23 @@ const CLAIM_ENTRY = {
                    'expands.'
     },
     nameFormat: { type: 'string' },
-    namespace: { type: 'string' }
+    namespace: { type: 'string' },
+    attribute: {
+      type: 'string',
+      description: 'AN ATTRIBUTE CLAIM (#94), in place of `value`: the ' +
+                   'directory attribute of the person the artifact is about ' +
+                   'that the claim carries. Only the directory, never an ' +
+                   'invented value; absent on the entry, the claim is ' +
+                   'absent. A secret, a binary value or an attribute this ' +
+                   'service keeps (sts*, hoba*, app*, pwd*) is refused.'
+    },
+    multi: { type: 'boolean',
+             description: 'An attribute claim: every value (a JSON array; ' +
+                          'several AttributeValues) rather than the first.' },
+    type: { type: 'string', enum: ['string', 'number', 'boolean', 'json'],
+            description: 'An attribute claim in a JWT or UserInfo set: the ' +
+                         'JSON type each value becomes. A value that is not ' +
+                         'one is left out. Ignored by the SAML sets.' }
   },
   required: ['name'],
   additionalProperties: false

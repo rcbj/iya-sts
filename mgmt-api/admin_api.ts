@@ -1373,6 +1373,48 @@ class AdminApi {
         },
         responseDescription: 'The set as it now stands, in `claims`.' },
 
+      { action: 'add-attribute-claim', operationId: family.ids.addAttribute,
+        summary: 'Add one ' + noun + ' carrying a directory attribute',
+        description: 'The ' + noun + '\'s value is `attribute` on the ' +
+                     'entry of the person the ' + family.carrier + ' is ' +
+                     'about (#94) — any attribute, where the directory-' +
+                     'attribute half of a set offers only the fixed ' +
+                     'catalogue, under the name given here. Only the ' +
+                     'directory, never an invented value: a person whose ' +
+                     'entry lacks it gets no such ' + noun + ', and a lower ' +
+                     'layer of the same name still answers. `multi` ' +
+                     'carries every value. A secret, a binary value or an ' +
+                     'attribute this service keeps (sts*, hoba*, app*, ' +
+                     'pwd*) is refused. Removed by `remove`, by name. The ' +
+                     'same reserved names are refused as for `add`, and a ' +
+                     'directory write that moves the attribute sends CAEP ' +
+                     'token-claims-change to holders of live tokens.',
+        requestBodyRequired: true,
+        requestBody: {
+          type: 'object',
+          properties: {
+            set: setField,
+            name: { type: 'string' },
+            attribute: { type: 'string',
+                         description: 'The directory attribute.' },
+            multi: { type: 'boolean',
+                     description: 'Every value rather than the first.' },
+            type: { type: 'string',
+                    enum: ['string', 'number', 'boolean', 'json'],
+                    description: 'The JSON type of each value, in a JWT or ' +
+                                 'UserInfo set. Ignored by the SAML sets.' },
+            nameFormat: { type: 'string',
+                          description: 'The SAML 2.0 set only.' },
+            namespace: { type: 'string',
+                         description: 'The SAML 1.1 set only.' }
+          },
+          required: ['set', 'name', 'attribute'],
+          examples: [{ set: family.example, name: 'cost_center',
+                       attribute: 'costCenter' }],
+          additionalProperties: false
+        },
+        responseDescription: 'The set as it now stands, in `claims`.' },
+
       { action: 'remove', operationId: family.ids.remove,
         summary: 'Remove one ' + noun + ' from one set',
         description: 'By name. A name the set does not carry is refused ' +
@@ -20274,7 +20316,8 @@ const JWT_CLAIM_FAMILY = {
   carrier: 'token',
   example: 'id_token',
   reserved: true,
-  ids: { add: 'addClaim', remove: 'removeClaim', clear: 'clearClaims',
+  ids: { add: 'addClaim', addAttribute: 'addAttributeClaim',
+         remove: 'removeClaim', clear: 'clearClaims',
          replace: 'replaceClaims', attributes: 'setClaimAttributes',
          all: 'selectAllClaimAttributes', none: 'clearClaimAttributes' }
 };
@@ -20298,7 +20341,9 @@ const USERINFO_CLAIM_FAMILY = {
   carrier: 'UserInfo response',
   example: 'userinfo',
   reserved: true,
-  ids: { add: 'addUserInfoClaim', remove: 'removeUserInfoClaim',
+  ids: { add: 'addUserInfoClaim',
+         addAttribute: 'addUserInfoAttributeClaim',
+         remove: 'removeUserInfoClaim',
          clear: 'clearUserInfoClaims', replace: 'replaceUserInfoClaims',
          attributes: 'setUserInfoClaimAttributes',
          all: 'selectAllUserInfoClaimAttributes',
@@ -20311,7 +20356,9 @@ const SAML_CLAIM_FAMILY = {
   carrier: 'assertion',
   example: 'saml11',
   reserved: false,
-  ids: { add: 'addSamlAttribute', remove: 'removeSamlAttribute',
+  ids: { add: 'addSamlAttribute',
+         addAttribute: 'addSamlDirectoryAttributeClaim',
+         remove: 'removeSamlAttribute',
          clear: 'clearSamlAttributes', replace: 'replaceSamlAttributes',
          attributes: 'setSamlDirectoryAttributes',
          all: 'selectAllSamlDirectoryAttributes',

@@ -23536,7 +23536,14 @@ class AdminConsole {
                          '</td>' : '');
       return '<tr><td><code>' + self.esc(claim.name) + '</code></td>' +
              extraCell +
-        '<td><code>' + self.esc(claim.value) + '</code></td>' +
+        // AN ATTRIBUTE CLAIM (#94) shows where its value comes from.
+        '<td>' + (claim.attribute
+          ? '&larr; <code>' + self.esc(claim.attribute) + '</code>' +
+            '<span class="sub"> directory attribute' +
+            (claim.multi ? ', every value' : '') +
+            (claim.type && claim.type !== 'string'
+              ? ', as ' + self.esc(claim.type) : '') + '</span>'
+          : '<code>' + self.esc(claim.value) + '</code>') + '</td>' +
         '<td><form method="post" action="' + self.esc(pageUrl) +
         '" class="inline">' +
         '<input type="hidden" name="action" value="remove">' +
@@ -23587,6 +23594,32 @@ class AdminConsole {
         '<input type="text" id="v-' + setId + '" name="value" size="28">' +
         '<button>Add</button>' +
         '</div></form>' +
+      // AN ATTRIBUTE CLAIM (#94): any directory attribute, under a name of
+      // the administrator's choosing — where the half below offers only the
+      // catalogue, under the names the catalogue fixes.
+      '<form method="post" action="' + this.esc(pageUrl) + '"><div ' +
+        'class="formrow">' +
+        '<input type="hidden" name="action" value="add-attribute-claim">' +
+        '<input type="hidden" name="set" value="' + this.esc(setId) + '">' +
+        '<label for="an-' + setId + '">Name</label>' +
+        '<input type="text" id="an-' + setId + '" name="name" size="20">' +
+        '<label for="aa-' + setId + '">from the attribute</label>' +
+        '<input type="text" id="aa-' + setId + '" name="attribute" ' +
+        'size="20" placeholder="e.g. costCenter">' +
+        '<label><input type="checkbox" name="multi" value="true"> every ' +
+        'value</label>' +
+        (isSaml ? '' : '<label for="at-' + setId + '">as</label><select ' +
+          'id="at-' + setId + '" name="type">' +
+          ['string', 'number', 'boolean', 'json'].map(function (type) {
+            return '<option value="' + type + '">' + type + '</option>';
+          }).join('') + '</select>') +
+        '<button>Add</button></div></form>' +
+      '<p class="sub">A ' + noun + ' from a directory attribute carries ' +
+      'the value on the entry of the person the ' +
+      (isSaml ? 'assertion' : (isUserinfo ? 'response' : 'token')) +
+      ' is about &mdash; any attribute, not only the catalogue below. Only ' +
+      'the directory: a person whose entry lacks it gets none. A secret, a ' +
+      'binary value or an attribute this service keeps is refused.</p>' +
       (claims.length
         ? '<form method="post" action="' + this.esc(pageUrl) +
           '" class="inline">' +
