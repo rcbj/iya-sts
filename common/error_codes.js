@@ -1604,6 +1604,46 @@ const CODES = [
       'confirm the account; refused fail-closed, or allowed within ' +
       'cells.failOpenGraceS when cells.homeUnreachable is fail-open.',
     spec: '' },
+  { code: 'STS-CELL-0060',
+    summary: 'An inter-cell delivery was not sent: the outbound kill switch ' +
+      'is on.',
+    spec: '' },
+  { code: 'STS-CELL-0061',
+    summary: 'An inter-cell delivery names no cell this service has; it is ' +
+      'dead-lettered.',
+    spec: '' },
+  { code: 'STS-CELL-0062',
+    summary: 'An inter-cell delivery could not be prepared; it is ' +
+      'dead-lettered.',
+    spec: '' },
+  { code: 'STS-CELL-0063',
+    summary: 'An inter-cell delivery could not reach the other cell (a ' +
+      'timeout or a connection failure); it is tried again with a doubling ' +
+      'backoff.',
+    spec: '' },
+  { code: 'STS-CELL-0064',
+    summary: 'The other cell refused an inter-cell delivery, or it was given ' +
+      'up after its last attempt; it is dead-lettered and retried by hand ' +
+      'from /admin/deliveries.',
+    spec: '' },
+  { code: 'STS-CELL-0065',
+    summary: 'An inter-cell delivery was deferred to a later attempt.',
+    spec: '' },
+  { code: 'STS-CELL-0066',
+    summary: 'An inter-cell delivery stayed pending past ' +
+      'cells.deliveryRetentionS and was dead-lettered.',
+    spec: '' },
+  { code: 'STS-CELL-0067',
+    summary: 'The periodic summary of inter-cell deliveries in a realm: sent, ' +
+      'retried and dead-lettered since the last line.',
+    spec: '' },
+  { code: 'STS-CELL-0068',
+    summary: 'The inter-cell delivery sweep failed; it runs again at its ' +
+      'next slot.',
+    spec: '' },
+  { code: 'STS-CELL-0069',
+    summary: 'An inter-cell dead letter could not be retried.',
+    spec: '' },
   { code: 'STS-CELL-0100',
     summary: 'An ACME request naming its account only by key (a newAccount ' +
       'with no External Account Binding) or an RFC 9773 renewal-info ' +

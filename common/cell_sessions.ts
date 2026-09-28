@@ -655,15 +655,16 @@ class CellSessions {
     }
     const projection = this.projectionOf(String(held.name || ''));
     Object.keys(held.cells).forEach(function (cellId) {
-      require('./cell_channel').call(cellId, 'refresh-projection',
-                                     { realm: realmId,
-                                       projection: projection })
-        .catch(function (err: any) {
-          log.warn(errorCodes.tag('STS-CELL-0051') + 'cells: cell "' +
-                   cellId + '" could not be sent a changed projection (' +
-                   ((err && err.message) || err) + '); it asks home on its ' +
-                   'next check.');
-        });
+      try {
+        require('./cell_deliveries').deliver(cellId, 'refresh-projection',
+                                             { realm: realmId,
+                                               projection: projection });
+      } catch (err) {
+        log.warn(errorCodes.tag('STS-CELL-0051') + 'cells: a changed ' +
+                 'projection for cell "' + cellId + '" could not be queued (' +
+                 ((err && err.message) || err) + '); it asks home on its ' +
+                 'next check.');
+      }
     });
     log.debug("Leaving CellSessions.personWritten(). Refreshed.");
   }
@@ -683,17 +684,20 @@ class CellSessions {
       log.debug("Leaving CellSessions.revokeExports(). None.");
       return;
     }
+    // DURABLY (`cell_deliveries.ts`): a cell that is down now is told when
+    // it is back, and until then its own check against home
+    // (`cells.subjectCheckS`) is the bound.
     Object.keys(held.cells).forEach(function (cellId) {
-      require('./cell_channel').call(cellId, 'revoke-subject',
-                                     { realm: realmId, uuid: uuid,
-                                       reason: why })
-        .catch(function (err: any) {
-          log.warn(errorCodes.tag('STS-CELL-0055') + 'cells: cell "' +
-                   cellId + '" could not be told to end a person\'s ' +
-                   'sessions (' + ((err && err.message) || err) + '); it ' +
-                   'finds out at its next check against home ' +
-                   '(cells.subjectCheckS).');
-        });
+      try {
+        require('./cell_deliveries').deliver(cellId, 'revoke-subject',
+                                             { realm: realmId, uuid: uuid,
+                                               reason: why });
+      } catch (err) {
+        log.warn(errorCodes.tag('STS-CELL-0055') + 'cells: a revocation for ' +
+                 'cell "' + cellId + '" could not be queued (' +
+                 ((err && err.message) || err) + '); it finds out at its ' +
+                 'next check against home (cells.subjectCheckS).');
+      }
     });
     exports_.realmMap(realmId).delete(String(uuid));
     log.debug("Leaving CellSessions.revokeExports().");

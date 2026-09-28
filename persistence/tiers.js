@@ -322,7 +322,7 @@ const CELL_MINTED = [
   'admin_stats.users', 'audit.events', 'audit.nums', 'authn.pending',
   'authn.pendingMfa', 'authn.pendingPasswordChange', 'authn.sessions',
   'authn.webauthnCredentials', 'authorization_details.consented',
-  'caep.register', 'cells.exports', 'cells.projections',
+  'caep.register', 'cells.deliveries', 'cells.exports', 'cells.projections',
   'claim_attributes.selections', 'consent_screen.pending',
   'credentials.pendingBackupCodes', 'credentials.pendingKeys',
   'credentials.pendingTotp', 'delegation.acts', 'devices.challenges',

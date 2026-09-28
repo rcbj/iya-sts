@@ -14692,6 +14692,59 @@ const SETTINGS = [
                  'as the other cell being unreachable (and handled as ' +
                  '`cells.homeUnreachable` says).' },
 
+  // THE DURABLE DELIVERIES BETWEEN CELLS (`common/cell_deliveries.ts`):
+  // the shared outbound queue's numbers, for its inter-cell kind.
+  { key: 'cells.deliveryAttempts', group: 'Cells',
+    label: 'Inter-cell delivery attempts',
+    env: 'STS_CELL_DELIVERY_ATTEMPTS', type: 'int', dflt: 12,
+    min: 1, max: 50, runtime: true, perProcess: true,
+    description: 'How many times a revocation or a changed projection owed ' +
+                 'to another cell is tried before it is dead-lettered (it ' +
+                 'is retried by hand from /admin/deliveries). The backoff ' +
+                 'doubles, so twelve attempts from two seconds cover about ' +
+                 'two hours of another cell being down.' },
+
+  { key: 'cells.deliveryBackoffMs', group: 'Cells',
+    label: 'Inter-cell delivery backoff (ms)',
+    env: 'STS_CELL_DELIVERY_BACKOFF_MS', type: 'int', dflt: 2000,
+    min: 0, max: 600000, runtime: true, perProcess: true,
+    description: 'The wait before the second attempt of an inter-cell ' +
+                 'delivery; it doubles for each attempt after.' },
+
+  { key: 'cells.deliveryRetentionS', group: 'Cells',
+    label: 'Inter-cell delivery retention (s)',
+    env: 'STS_CELL_DELIVERY_RETENTION_S', type: 'int', dflt: 86400,
+    min: 60, max: 2592000, runtime: true, perProcess: true,
+    description: 'How long an inter-cell delivery may stay pending before ' +
+                 'it is dead-lettered whatever its attempt count.' },
+
+  { key: 'cells.deliveryMaxRows', group: 'Cells',
+    label: 'Inter-cell deliveries held',
+    env: 'STS_CELL_DELIVERY_MAX_ROWS', type: 'int', dflt: 100000,
+    min: 100, max: 10000000, runtime: true, perProcess: true,
+    description: 'The most inter-cell deliveries a realm holds; the oldest ' +
+                 'finished ones make room first.' },
+
+  { key: 'cells.deliveryConcurrency', group: 'Cells',
+    label: 'Inter-cell deliveries at once',
+    env: 'STS_CELL_DELIVERY_CONCURRENCY', type: 'int', dflt: 8,
+    min: 1, max: 64, runtime: true, perProcess: true,
+    description: 'How many inter-cell deliveries a sweep attempts at once.' },
+
+  { key: 'cells.deliverySummaryS', group: 'Cells',
+    label: 'Inter-cell delivery summary interval (s)',
+    env: 'STS_CELL_DELIVERY_SUMMARY_S', type: 'int', dflt: 300,
+    min: 10, max: 86400, runtime: true, perProcess: true,
+    description: 'At most one summary line per realm per this many ' +
+                 'seconds, rather than a line per delivery.' },
+
+  { key: 'cells.deliverySweepS', group: 'Cells',
+    label: 'Inter-cell delivery sweep interval (s)',
+    env: 'STS_CELL_DELIVERY_SWEEP_S', type: 'int', dflt: 30,
+    min: 5, max: 3600, runtime: true, perProcess: true,
+    description: 'How often the sweep job attempts every inter-cell ' +
+                 'delivery that is due.' },
+
   { key: 'cells.homeUnreachable', group: 'Cells',
     label: 'When a person\'s home cell cannot be reached',
     env: 'STS_CELL_HOME_UNREACHABLE', type: 'enum',

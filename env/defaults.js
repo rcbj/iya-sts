@@ -1219,6 +1219,13 @@ var config = {
     port: 8446,                     // Inter-cell port; restart to apply
     hostname: "",                   // This cell's inter-cell host name; restart to apply
     relayTimeoutMs: 10000,          // Inter-cell request timeout (ms)
+    deliveryAttempts: 12,           // Inter-cell delivery attempts
+    deliveryBackoffMs: 2000,        // Inter-cell delivery backoff (ms)
+    deliveryRetentionS: 86400,      // Inter-cell delivery retention (s)
+    deliveryMaxRows: 100000,        // Inter-cell deliveries held
+    deliveryConcurrency: 8,         // Inter-cell deliveries at once
+    deliverySummaryS: 300,          // Inter-cell delivery summary interval (s)
+    deliverySweepS: 30,             // Inter-cell delivery sweep interval (s)
     homeUnreachable: "fail-closed", // When a person's home cell cannot be reached
     failOpenGraceS: 900,            // Fail-open grace (s)
     subjectCheckS: 60,              // Subject state check interval (s)
