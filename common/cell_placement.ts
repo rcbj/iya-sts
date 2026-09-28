@@ -897,6 +897,93 @@ class CellPlacement {
       });
   }
 
+  // -------------------------------------------------------------------------
+  // THE CREATION CLAIM (D1). The two administrative doors that create a
+  // person — the console's form and the management API — name the person
+  // and, optionally, their home (`homeCell`). A home other than this cell is
+  // the other cell's creation, relayed whole; a name the routing index
+  // already places in another cell is refused 409 before anything is made.
+  // -------------------------------------------------------------------------
+  /**
+   * The middleware that claims a new person's login name first.
+   *
+   * @returns an express middleware; next() for everything else
+   */
+  creationClaim(): (req: any, res: any, next: () => void) => void {
+    log.debug("Entering CellPlacement.creationClaim().");
+    const self = this;
+    log.debug("Leaving CellPlacement.creationClaim().");
+    return function cellCreationClaim(req: any, res: any, next: () => void) {
+      // A HOT PATH: the pair is logged only on the two doors it acts on.
+      if (!cells.isMulti() || req.method !== 'POST' || req.stsCellRelay) {
+        next();
+        return;
+      }
+      const path = String(req.path || '');
+      if (path !== '/admin/users/new' && path !== '/admin-api/users/create') {
+        next();
+        return;
+      }
+      log.debug("Entering cellCreationClaim().");
+      let body: any = {};
+      try {
+        body = require('./helpers').parseBody(req) || {};
+      } catch (e) {
+        log.debug("Caught in cellCreationClaim(): " + ((e && e.message) || e));
+        body = {};
+      }
+      if (body.fill || (body.action && String(body.action) !== 'create')) {
+        log.debug("Leaving cellCreationClaim(). Not a creation.");
+        next();
+        return;
+      }
+      const name = String(body.username || body.user || '').trim();
+      const realms = require('./realms');
+      const realmId = realms.currentId();
+      const home = cells.homeFor(String(body.homeCell || ''));
+      if ('error' in home) {
+        errorCodes.mark(res, 'STS-CELL-0043');
+        res.status(400).json({ error: 'invalid_request',
+                               error_description: home.error });
+        log.debug("Leaving cellCreationClaim(). The home was refused.");
+        return;
+      }
+      if (home.cell && home.cell !== cells.id()) {
+        log.debug("Leaving cellCreationClaim(). Created at its home.");
+        self.relayToCell(req, res, home.cell, 'create-person');
+        return;
+      }
+      if (!name) {
+        next();
+        return;
+      }
+      require('./cell_routing').claimName(realmId, name, cells.id())
+        .then(function (answer: { ok: boolean; cell?: string }) {
+          if (!answer.ok) {
+            errorCodes.mark(res, 'STS-CELL-0044');
+            res.status(409).json({
+              error: 'conflict',
+              error_description: 'A person named "' + name + '" is already ' +
+                'homed in another cell of this service; a login name is ' +
+                'unique in a realm across every cell.' });
+            log.debug("Leaving cellCreationClaim(). Homed elsewhere.");
+            return;
+          }
+          log.debug("Leaving cellCreationClaim(). Claimed.");
+          next();
+        }, function (err: any) {
+          log.warn(errorCodes.tag('STS-CELL-0040') + 'cells: the routing ' +
+                   'index could not be asked before a creation (' +
+                   ((err && err.message) || err) + '); the creation is ' +
+                   'refused rather than risk the name twice.');
+          errorCodes.mark(res, 'STS-CELL-0040');
+          res.status(503).json({ error: 'temporarily_unavailable',
+                                 error_description: 'The routing index ' +
+                                   'could not be asked; try again.' });
+        });
+    };
+  }
+
   /**
    * What `/admin/cells` shows about placement in this process.
    *
@@ -926,6 +1013,7 @@ export = {
   canonicalPath: CellPlacement.canonicalPath,
   serialisedBody: CellPlacement.serialisedBody,
   middleware: () => placement.middleware(),
+  creationClaim: () => placement.creationClaim(),
   decide: (req: any, realmId: string) => placement.decide(req, realmId),
   affinityOf: (req: any, realmId: string): string =>
     placement.affinityOf(req, realmId),

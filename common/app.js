@@ -1075,6 +1075,17 @@ app.use(function (req, res, next) {
 app.use(validation.guard());
 
 // ---------------------------------------------------------------------------
+// A PERSON CREATED IN A SERVICE DEPLOYED AS CELLS (#98 D1): the console's
+// new-user form and `POST /admin-api/users/create` claim the login name in the
+// global routing index before anything is created, and a creation naming a
+// home cell other than this one is relayed there. Here, below the body
+// parsers and above every route, because both doors' handlers are
+// synchronous past this point. SCIM claims in its own ingress. A no-op in
+// single-cell mode. `common/cell_placement.ts` argues it.
+// ---------------------------------------------------------------------------
+app.use(require('./cell_placement').creationClaim());
+
+// ---------------------------------------------------------------------------
 // THE REVOCATION STATUS OF A PRESENTED CLIENT CERTIFICATE (2026-09-12).
 //
 // The doors on this port that accept a certificate — `mtls.peerVerified()`,

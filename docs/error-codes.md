@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3808** of them, in **40** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3810** of them, in **40** subsystems.
 
 ## Where a code appears
 
@@ -55,7 +55,7 @@ is an ordinary outcome.
 * [Worker pools (`STS-WORKER`)](#sts-worker) — 43
 * [Persistence and coordination (`STS-STORE`)](#sts-store) — 63
 * [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 28
-* [Cells and residency (`STS-CELL`)](#sts-cell) — 62
+* [Cells and residency (`STS-CELL`)](#sts-cell) — 64
 * [Scheduler (`STS-SCHED`)](#sts-sched) — 16
 * [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 79
 * [Certificate authority (`STS-PKI`)](#sts-pki) — 204
@@ -400,6 +400,8 @@ Raised from: common/cells.ts, common/cell_*.ts, persistence/tiers.js, persistenc
 | `STS-CELL-0040` | The routing index could not be read while finding a person's home cell; the request is served here as if the person were unknown. | — |
 | `STS-CELL-0041` | A pushed authorization request could not be handed to the home cell of a flow restarting there; the flow restarts without it. | — |
 | `STS-CELL-0042` | A request another cell selected this one for (?cell=) was refused: the release policy does not permit this cell's people to be released to a reader in that cell's jurisdiction. | — |
+| `STS-CELL-0043` | A person's creation named a home cell this service does not have, or one in a jurisdiction the realm may not place people in (cells.jurisdictions); refused. | — |
+| `STS-CELL-0044` | A person's creation was refused because the routing index already places that login name in another cell: a login name is unique in a realm across every cell. | — |
 | `STS-CELL-0050` | A change made in this cell to a projected person could not be sent to their home cell; it is held here only until the session ends. | — |
 | `STS-CELL-0051` | The cells holding a projection of a changed person could not be told; each finds out at its next check against home. | — |
 | `STS-CELL-0052` | A session could not be exported to the cell a relayed request came from; it stays at home and the browser stays pinned there. | — |

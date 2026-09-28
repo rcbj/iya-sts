@@ -1573,6 +1573,16 @@ const CODES = [
       'refused: the release policy does not permit this cell\'s people to ' +
       'be released to a reader in that cell\'s jurisdiction.',
     spec: '' },
+  { code: 'STS-CELL-0043',
+    summary: 'A person\'s creation named a home cell this service does not ' +
+      'have, or one in a jurisdiction the realm may not place people in ' +
+      '(cells.jurisdictions); refused.',
+    spec: '' },
+  { code: 'STS-CELL-0044',
+    summary: 'A person\'s creation was refused because the routing index ' +
+      'already places that login name in another cell: a login name is ' +
+      'unique in a realm across every cell.',
+    spec: '' },
   { code: 'STS-CELL-0050',
     summary: 'A change made in this cell to a projected person could not be ' +
       'sent to their home cell; it is held here only until the session ' +
