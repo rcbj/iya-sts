@@ -74,7 +74,19 @@ interface DebuggerAdminDeps {
 
 type RouteApp = typeof app;
 
+/**
+ * The console page `/admin/debugger`: what the embedded debugger did at
+ * startup, and its settings group.
+ *
+ * `GET /admin-api/debugger` answers from the same view.
+ */
 class DebuggerAdmin {
+  /**
+   * Builds the page over the given modules.
+   *
+   * @param deps - the console shell, the logger, the error codes and a loader
+   *   for debugger_server
+   */
   constructor(private readonly deps: DebuggerAdminDeps) {
     deps.log.debug("Entering DebuggerAdmin.constructor().");
     deps.log.debug("Leaving DebuggerAdmin.constructor().");
@@ -82,6 +94,11 @@ class DebuggerAdmin {
 
   // What the composition root passes, from the real modules — what
   // loading this module passed before #50's R2.
+  /**
+   * Returns the dependencies the load-time default instance is built from.
+   *
+   * @returns the real modules, with debugger_server required lazily
+   */
   static defaultDeps(): DebuggerAdminDeps {
     helpers.log.debug("Entering DebuggerAdmin.defaultDeps().");
     helpers.log.debug("Leaving DebuggerAdmin.defaultDeps().");
@@ -96,6 +113,12 @@ class DebuggerAdmin {
   }
 
   // The JSON the page and the operation both answer.
+  /**
+   * Returns the JSON the page and the API operation both answer: the
+   * debugger server's status with the settings group added.
+   *
+   * @returns the view
+   */
   debuggerView() {
     const { log, loadDebuggerServer, admin } = this.deps;
     log.debug("Entering DebuggerAdmin.debuggerView().");
@@ -106,6 +129,13 @@ class DebuggerAdmin {
     return status;
   }
 
+  /**
+   * Draws one row of a key/value table.
+   *
+   * @param label - the heading, escaped here
+   * @param value - the cell, as HTML
+   * @returns the table row
+   */
   row(label, value) {
     const { log, admin } = this.deps;
     log.debug("Entering DebuggerAdmin.row().");
@@ -113,6 +143,12 @@ class DebuggerAdmin {
     return '<tr><th>' + admin.esc(label) + '</th><td>' + value + '</td></tr>';
   }
 
+  /**
+   * Draws a value in a code element, or a muted `none` when it is empty.
+   *
+   * @param text - the value, escaped here
+   * @returns the HTML
+   */
   code(text) {
     const { log, admin } = this.deps;
     log.debug("Entering DebuggerAdmin.code().");
@@ -122,6 +158,13 @@ class DebuggerAdmin {
       : '<code>' + admin.esc(String(text)) + '</code>';
   }
 
+  /**
+   * Draws the page body: tiles, an explanation, any startup problem, the
+   * listener and api-process tables, and the settings forms.
+   *
+   * @param json - the view from debuggerView()
+   * @returns the HTML
+   */
   body(json) {
     const { log, admin } = this.deps;
     log.debug("Entering DebuggerAdmin.body().");
@@ -201,6 +244,12 @@ class DebuggerAdmin {
   // (`common/protocol_stack.ts`) calls this through the export below, at
   // the point where requiring this module used to register them, so the
   // route order is unchanged (rule 1; #50, R1).
+  /**
+   * Registers `GET /admin/debugger` on the app.
+   *
+   * A view that throws is drawn as a warning and marked STS-DBG-0023.
+   * @param app - the shared express app
+   */
   registerRoutes(app: RouteApp): void {
     const { log, errorCodes, admin } = this.deps;
     const self = this;
@@ -253,10 +302,19 @@ const slot = new InstanceSlot<DebuggerAdmin>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * Server configuration > Protocol debugger: the `/admin/debugger` page.
+ *
+ * The functions forward to the DebuggerAdmin instance the composition root
+ * installs; `registerRoutes` is called by `common/protocol_stack.ts`.
+ * @namespace
+ */
 export = {
   registerRoutes: slot.forward('registerRoutes'),
   DebuggerAdmin: DebuggerAdmin,
+  /** Installs the instance the composition root built. */
   installInstance: (instance: DebuggerAdmin): void => slot.install(instance),
+  /** Says where the installed instance came from. */
   instanceOrigin: (): string => slot.origin(),
   // For `mgmt-api/admin_api.ts` — rule 7, one function behind both.
   debuggerView: slot.forward('debuggerView')
