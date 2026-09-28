@@ -492,7 +492,17 @@ interface AdminApiDeps {
 
 type RouteApp = typeof app;
 
+/**
+ * The management API at `/admin-api`: every console control as a JSON
+ * operation, over the same action functions and views the console uses, behind
+ * an OAuth 2.0 access-token gate.
+ */
 class AdminApi {
+  /**
+   * Builds the management API over the given dependencies.
+   *
+   * @param deps - the modules it uses, and loaders for the lazily required ones
+   */
   constructor(private readonly deps: AdminApiDeps) {
     deps.log.debug("Entering AdminApi.constructor().");
     deps.log.debug("Leaving AdminApi.constructor().");
@@ -500,6 +510,12 @@ class AdminApi {
 
   // What the composition root passes, from the real modules, with the lazy
   // requires as loaders.
+  /**
+   * Returns the dependencies the composition root passes, from the real
+   * modules, with the lazy requires as loaders.
+   *
+   * @returns the dependencies
+   */
   static defaultDeps(): AdminApiDeps {
     log.debug("Entering AdminApi.defaultDeps().");
     log.debug("Leaving AdminApi.defaultDeps().");
@@ -595,6 +611,13 @@ class AdminApi {
   // THE LOAD-TIME WORK, run once for the installed instance (#50, R2): the
   // two tables, the request schemas and the startup banner, in the order
   // this module ran them at load.
+  /**
+   * Runs the load-time work once for the installed instance: builds the two
+   * route tables, compiles the request schemas, registers the console's closed
+   * sets and logs the startup banner.
+   *
+   * @param instance - the installed instance
+   */
   static wire(instance: AdminApi): void {
     log.debug("Entering AdminApi.wire().");
     PROTOCOL_SETTINGS_OPERATIONS = instance.buildProtocolSettingsOperations();
@@ -605,6 +628,14 @@ class AdminApi {
     log.debug("Leaving AdminApi.wire().");
   }
 
+  /**
+   * Returns a copy of a JSON Schema with what this API does not enforce at the
+   * door taken out: `required`, an enum the handler refuses in its own words,
+   * and with `""` added to every other enum.
+   *
+   * @param node - the schema, or any node inside it
+   * @returns the copy
+   */
   structureOnly(node) {
     const { log } = this.deps;
     const self = this;
@@ -638,6 +669,13 @@ class AdminApi {
     return out;
   }
 
+  /**
+   * Returns a request schema ready for ajv: `structureOnly()` of it, with the
+   * document's named schemas as `components`.
+   *
+   * @param schema - an operation's request schema
+   * @returns the schema to compile
+   */
   compilable(schema) {
     const { log, spec } = this.deps;
     log.debug("Entering AdminApi.compilable().");
@@ -647,6 +685,13 @@ class AdminApi {
                              spec.SCHEMAS) } });
   }
 
+  /**
+   * Returns the key a compiled request validator is held under.
+   *
+   * @param route - the route pattern or path
+   * @param action - the action name, or empty for a plain route
+   * @returns the key
+   */
   validatorKeyOf(route, action) {
     const { log } = this.deps;
     log.debug("Entering AdminApi.validatorKeyOf().");
@@ -654,6 +699,14 @@ class AdminApi {
     return route + '\u0000' + (action || '');
   }
 
+  /**
+   * Compiles every request schema in the route table into a validator.
+   *
+   * A schema that will not compile is logged under `STS-API-0010` and its
+   * operation goes on unvalidated.
+   *
+   * @returns how many validators were built
+   */
   compileRequestSchemas() {
     const { log, errorCodes } = this.deps;
     const self = this;
@@ -718,6 +771,13 @@ class AdminApi {
   // not matched, and is the handler's to refuse. Returns how many controls
   // hold at least one field.
   // ---------------------------------------------------------------------------
+  /**
+   * Registers the enums each action's request schema declares in
+   * `common/closed_sets.ts` under every console page its route mirrors, so the
+   * console gate holds a form POST to the same sets.
+   *
+   * @returns how many controls hold at least one closed field
+   */
   registerConsoleClosedSets() {
     const { log, spec, closedSets } = this.deps;
     log.debug("Entering AdminApi.registerConsoleClosedSets().");
@@ -771,6 +831,14 @@ class AdminApi {
   // filter spelt wrong answered 200 with every row — the answer to a question
   // nobody asked. Both the route's parameters and its action's are held.
   // ---------------------------------------------------------------------------
+  /**
+   * Checks the request's query parameters against the enums the operation's
+   * route and action declare `in: query`.
+   *
+   * @param entry - the route table entry
+   * @param req - the request
+   * @returns `closedSets.checkQuery()`'s result, `{ ok, ... }`
+   */
   checkQueryEnums(entry, req) {
     const { log, closedSets } = this.deps;
     log.debug("Entering AdminApi.checkQueryEnums().");
@@ -794,6 +862,13 @@ class AdminApi {
   // dropped and the rest is written with dots, because a caller is reading it
   // beside a body they typed rather than resolving a pointer.
   // ---------------------------------------------------------------------------
+  /**
+   * Turns ajv's errors into the refusal sentences this API answers with, paths
+   * written with dots.
+   *
+   * @param errors - ajv's `errors`
+   * @returns one message per error, or one generic message
+   */
   errorsFromAjv(errors) {
     const { log, closedSets } = this.deps;
     log.debug("Entering AdminApi.errorsFromAjv().");
@@ -837,6 +912,15 @@ class AdminApi {
   // exactly as it was before: `withAction()` takes the path parameter and
   // overwrites.
   // ---------------------------------------------------------------------------
+  /**
+   * Validates a request's body against its operation's compiled schema, with
+   * `action` removed first because it is a path segment.
+   *
+   * A handler that owns its body, or an operation with no schema, is accepted.
+   *
+   * @param req - the request
+   * @returns `{ ok: true }`, or `{ ok: false, errors }`
+   */
   checkRequestBody(req) {
     const { log, parseBody } = this.deps;
     log.debug("Entering AdminApi.checkRequestBody().");
@@ -876,6 +960,15 @@ class AdminApi {
   // of those is not decoration: the caller of a mock's admin API is usually a
   // person at a terminal or a test whose failure message is the body, and a 40
   // KB single line is unreadable in both.
+  /**
+   * Sends a JSON reply, pretty-printed and `Cache-Control: no-store`, adding
+   * `protocolEndpoints` to a successful object reply to a GET that mirrors a
+   * Protocols page.
+   *
+   * @param res - the response
+   * @param status - the HTTP status
+   * @param body - the reply
+   */
   sendJson(res, status, body) {
     const { log } = this.deps;
     log.debug("Entering AdminApi.sendJson(). status=" + status);
@@ -906,6 +999,14 @@ class AdminApi {
   // it has no directory to race for (the action refuses on its own).
   // Resolves to `{ ok, settle }` or the refusal; inert where nothing can race.
   // ---------------------------------------------------------------------------
+  /**
+   * Claims a name across cluster nodes before a create, through the directory
+   * module if this process has loaded it.
+   *
+   * @param what - the name to claim
+   * @returns a promise of `{ ok, settle }` or the claim's refusal; an inert
+   *   claim when there is no directory in this process
+   */
   claimForCreate(what) {
     const { log } = this.deps;
     log.debug("Entering AdminApi.claimForCreate().");
@@ -935,6 +1036,19 @@ class AdminApi {
   // this API's shape (409, or 503 when the store could not be asked), and `run`
   // handed the claim to settle with the action's outcome.
   // ---------------------------------------------------------------------------
+  /**
+   * Runs an action, claiming its name first when there is one to claim and a
+   * create can race.
+   *
+   * Without a claim `run` is called synchronously. A refused claim is answered
+   * 409 (or 503 when the store could not be asked); a throw after the claim
+   * settles it as failed and answers 500.
+   *
+   * @param res - the response
+   * @param what - the name to claim, or null
+   * @param run - the action, handed the claim to settle
+   * @returns what `run` returns, or a promise when a claim was awaited
+   */
   runClaimed(res, what, run) {
     const { log, createClaims, errorCodes } = this.deps;
     const self = this;
@@ -967,6 +1081,14 @@ class AdminApi {
     });
   }
 
+  /**
+   * Returns the body with `action` set from the path parameter, over whatever
+   * the body carried.
+   *
+   * @param req - the request
+   * @param body - the parsed body
+   * @returns the new body
+   */
   withAction(req, body) {
     const { log } = this.deps;
     log.debug("Entering AdminApi.withAction().");
@@ -977,6 +1099,16 @@ class AdminApi {
   // The two spellings of a list, joined. A JSON body carries one `attributes`
   // array; a form body copied from the console carries `attribute` repeated.
   // Both are accepted for the same reason the console accepts both.
+  /**
+   * Returns a list field in both its spellings joined: a repeated form field
+   * and a JSON array.
+   *
+   * @param req - the request
+   * @param body - the parsed body
+   * @param one - the singular field name
+   * @param many - the plural field name
+   * @returns the names
+   */
   namesOf(req, body, one, many) {
     const { log, admin } = this.deps;
     log.debug("Entering AdminApi.namesOf(). " + one + "/" + many);
@@ -993,6 +1125,12 @@ class AdminApi {
   // the kind's own FIELDS. The prose of the two kinds this service defines is
   // written out; a kind registered later gets the generic sentences, which
   // are true of every kind because every kind implements the same interface.
+  /**
+   * Returns the policies resource's action rows, two per policy kind in
+   * `admin-core/policy_kinds.ts`, their bodies built from each kind's fields.
+   *
+   * @returns the action rows
+   */
   policyKindActions() {
     const { log } = this.deps;
     log.debug("Entering AdminApi.policyKindActions().");
@@ -1114,6 +1252,11 @@ class AdminApi {
   // The two numbers are `admin_views`' — they moved there from the console,
   // which never exported them, so until #70 this read both off `admin` and
   // the document said "maximum: undefined" and "Defaults to undefined".
+  /**
+   * Returns the `page` and `per` query parameters every paged list takes.
+   *
+   * @returns the two parameter objects
+   */
   pagingParameters() {
     const { log, adminViews } = this.deps;
     log.debug("Entering AdminApi.pagingParameters().");
@@ -1148,6 +1291,13 @@ class AdminApi {
   // object answering it is that name with `Paging` on the end. A caller that
   // can read the reply can therefore write the request without a table mapping
   // one set of names onto the other.
+  /**
+   * Returns a drill-down's page parameters: `<name>Page` for each of its lists,
+   * answered by `<name>Paging`.
+   *
+   * @param lists - the lists, each `{ name, description }`
+   * @returns one parameter object per list
+   */
   detailPagingParameters(lists) {
     const { log } = this.deps;
     log.debug("Entering AdminApi.detailPagingParameters().");
@@ -1161,6 +1311,14 @@ class AdminApi {
     });
   }
 
+  /**
+   * Returns the action rows of one claim-set family (custom claims, SAML
+   * attributes or UserInfo claims), from the family's parameters.
+   *
+   * @param family - `sets`, `noun`, `carrier`, `example`, `reserved` and the
+   *   operationIds in `ids`
+   * @returns the action rows
+   */
   claimSetActions(family) {
     const { log } = this.deps;
     log.debug("Entering AdminApi.claimSetActions(). " + family.sets.length +
@@ -1410,6 +1568,12 @@ class AdminApi {
   // document cannot tell the difference — `admin_api_spec.ts` reads this array
   // and nothing else.
   // ---------------------------------------------------------------------------
+  /**
+   * Returns the read-only GET operations for the protocol pages' settings, one
+   * per page, built from a table.
+   *
+   * @returns the operations
+   */
   buildProtocolSettingsOperations(): any[] {
     const { log, admin } = this.deps;
     const self = this;
@@ -1821,6 +1985,13 @@ class AdminApi {
   //
   // The TYPE comes from config.js's own row for the setting, so a boolean does
   // not arrive in the document as an integer.
+  /**
+   * Returns the request-body properties of a narrow settings door, built from
+   * `config.js`'s row for each key (type, label, and enum set).
+   *
+   * @param keys - the setting keys the door accepts
+   * @returns the properties object
+   */
   narrowDoorProperties(keys) {
     const { log, config } = this.deps;
     log.debug("Entering AdminApi.narrowDoorProperties(). " + keys.length +
@@ -1862,6 +2033,12 @@ class AdminApi {
   // document a caller trusts most. It answers with the empty string when
   // nothing is family-scoped, so removing the last such row removes the
   // paragraph.
+  /**
+   * Returns the paragraph naming the application attributes scoped to a
+   * protocol family, generated from `applications.SCHEMA`.
+   *
+   * @returns the paragraph, or the empty string when none is family-scoped
+   */
   familyScopeNote() {
     const { log, applications } = this.deps;
     log.debug("Entering AdminApi.familyScopeNote().");
@@ -1906,6 +2083,12 @@ class AdminApi {
   // application `kind` filter missing three kinds, `revoke-kind` missing
   // `gnap_access_token`, `add-value` missing two multi-valued fields).
   // ---------------------------------------------------------------------------
+  /**
+   * Returns the closed sets the route table declares that are held in other
+   * modules' tables, read from those tables once per build.
+   *
+   * @returns the sets, keyed by name
+   */
   closedLists() {
     const { log, riskDatasets, mailTemplates, identityAssurance, federation,
             applications, stats, audit, delegation, usedAssertions,
@@ -2000,6 +2183,12 @@ class AdminApi {
     return out;
   }
 
+  /**
+   * Builds the route table: every operation of this API, including the rows the
+   * family modules declare.
+   *
+   * @returns the table
+   */
   buildRoutes(): any[] {
     const { log, baseUrlOf, config, spec, adminViews, errorCodes,
             encryptionAdmin, databaseAdmin, secretsAdmin, debuggerAdmin,
@@ -18822,6 +19011,12 @@ class AdminApi {
   // Every operation, flattened, for the index. The same walk buildSpec() does,
   // and deliberately not a second list: an index that could disagree with the
   // document would be the first thing to go stale.
+  /**
+   * Returns every operation flattened, for the index: method, path,
+   * operationId, summary and the console control it mirrors.
+   *
+   * @returns the operations
+   */
   operationSummaries() {
     const { log } = this.deps;
     log.debug("Entering AdminApi.operationSummaries().");
@@ -18928,6 +19123,13 @@ class AdminApi {
   // thing. `scheme` is returned with the value because the gate below has to
   // refuse a BOUND token presented as Bearer, and that is a different refusal
   // from a token that does not verify.
+  /**
+   * Returns the access token the request presents in `Authorization`, and
+   * whether as `Bearer` or `DPoP`.
+   *
+   * @param req - the request
+   * @returns `{ token, scheme }`, both empty when none is presented
+   */
   presentedTokenOf(req) {
     const { log } = this.deps;
     log.debug("Entering AdminApi.presentedTokenOf().");
@@ -18941,6 +19143,12 @@ class AdminApi {
     return { token: matched[2].trim(), scheme: matched[1].toLowerCase() };
   }
 
+  /**
+   * Returns the access token the request presents, of either scheme.
+   *
+   * @param req - the request
+   * @returns the token, or the empty string
+   */
   bearerOf(req) {
     const { log } = this.deps;
     log.debug("Entering AdminApi.bearerOf().");
@@ -18957,6 +19165,14 @@ class AdminApi {
   // see a request, so taking it as the only answer would refuse every token
   // minted under another name for this same process. An operator who sets a
   // value pins that one value, as before.
+  /**
+   * Returns the audiences a token here may name: the pinned
+   * `adminApi.audience`, or, while that is at its default, the configured base
+   * and `/admin-api` under the host the request arrived on.
+   *
+   * @param req - the request
+   * @returns the accepted audiences
+   */
   wantedAudiences(req) {
     const { log, config, realms, baseUrlOf } = this.deps;
     log.debug("Entering AdminApi.wantedAudiences().");
@@ -18988,6 +19204,13 @@ class AdminApi {
   // The one audience a refusal or a 401 names: the request-relative one where
   // it is accepted, because that is the `resource` the caller reading the
   // message can actually ask for under the name it used.
+  /**
+   * Returns the one audience a refusal names: the request-relative one where it
+   * is accepted.
+   *
+   * @param req - the request
+   * @returns the audience
+   */
   wantedAudience(req) {
     const { log } = this.deps;
     log.debug("Entering AdminApi.wantedAudience().");
@@ -18996,6 +19219,13 @@ class AdminApi {
     return wanted[wanted.length - 1];
   }
 
+  /**
+   * Says whether a token's `aud` names one of the accepted audiences.
+   *
+   * @param claims - the token's claims
+   * @param req - the request
+   * @returns whether it does
+   */
   audienceAccepted(claims, req) {
     const { log } = this.deps;
     log.debug("Entering AdminApi.audienceAccepted().");
@@ -19030,6 +19260,15 @@ class AdminApi {
   // ASKED IN THE DEFAULT REALM, because that realm's key verified the token and
   // a pinned `oauth2.issuer` is read per realm.
   // ---------------------------------------------------------------------------
+  /**
+   * Says whether a token's `iss` is an issuer one of this service's
+   * authorization servers publishes at one of the addresses this API answers
+   * under (RFC 9068 section 4), asked in the default realm.
+   *
+   * @param claims - the token's claims
+   * @param req - the request
+   * @returns whether it is
+   */
   issuerAccepted(claims, req) {
     const { log, realms, baseUrlOf, config, jwtAccessToken } = this.deps;
     const self = this;
@@ -19061,6 +19300,14 @@ class AdminApi {
   // ---------------------------------------------------------------------------
 
   // Its issuer is THIS realm's: a hosted issuer under the realm's own base.
+  /**
+   * Says whether a realm token's `iss` is a hosted issuer under the realm's own
+   * base.
+   *
+   * @param claims - the token's claims
+   * @param req - the request
+   * @returns whether it is
+   */
   realmIssuerAccepted(claims, req) {
     const { log, jwtAccessToken, baseUrlOf } = this.deps;
     log.debug("Entering AdminApi.realmIssuerAccepted().");
@@ -19073,6 +19320,13 @@ class AdminApi {
   // the realm prefix, which is what `resource=<base>/realm/<id>/admin-api` at
   // that realm's token endpoint gives. `adminApi.audience` pins the SERVICE's
   // audience and is not consulted: it names the unprefixed API.
+  /**
+   * Says whether a realm token's `aud` names this realm's management API.
+   *
+   * @param claims - the token's claims
+   * @param req - the request
+   * @returns whether it does
+   */
   realmAudienceAccepted(claims, req) {
     const { log, baseUrlOf } = this.deps;
     log.debug("Entering AdminApi.realmAudienceAccepted().");
@@ -19086,6 +19340,13 @@ class AdminApi {
 
   // Whether this request is the MDM feed (#164 phase 3), `POST
   // /admin-api/device-compliance` — `req.path` is below BASE inside the gate.
+  /**
+   * Says whether the request is the MDM feed, `POST
+   * /admin-api/device-compliance`.
+   *
+   * @param req - the request
+   * @returns whether it is
+   */
   isDeviceComplianceFeed(req) {
     const { log } = this.deps;
     log.debug("Entering AdminApi.isDeviceComplianceFeed().");
@@ -19100,6 +19361,13 @@ class AdminApi {
   // `/admin/pki`, `/admin-api/config/set-many` one of `set-many` to
   // `/admin/config`. An action route is recognised off ROUTES, so a path
   // segment is only ever an action where this API declares one.
+  /**
+   * Returns the console operation a request mirrors: the `/admin` path and the
+   * action it names.
+   *
+   * @param req - the request
+   * @returns `{ path, action }`
+   */
   consoleOperationOf(req) {
     const { log } = this.deps;
     log.debug("Entering AdminApi.consoleOperationOf().");
@@ -19140,6 +19408,16 @@ class AdminApi {
   // already holds. The seeded `sts-management-api` and `sts-admin-console`
   // declare both in every realm.
   // ---------------------------------------------------------------------------
+  /**
+   * Splits a token's scopes into those its client still declares and the
+   * `admin:*` and `device:compliance` scopes it no longer does, asked in the
+   * realm that issued the token.
+   *
+   * @param claims - the token's claims
+   * @param tokenRealm - the id of the realm that issued the token
+   * @param scopes - the token's scopes
+   * @returns `{ kept, undeclared }`
+   */
   declaredAdminScopes(claims, tokenRealm, scopes) {
     const { log, realms, scopePolicy } = this.deps;
     log.debug("Entering AdminApi.declaredAdminScopes().");
@@ -19164,6 +19442,14 @@ class AdminApi {
   // `{ code, detail }`. Which CLIENT it was issued to is
   // declaredAdminScopes()'s question, asked for both realms (#110); this is
   // the realm's confinement.
+  /**
+   * Returns why a realm's own token may not perform this operation, from the
+   * realm administrator's confinement.
+   *
+   * @param claims - the token's claims
+   * @param req - the request
+   * @returns null when allowed, or `{ code, detail }`
+   */
   realmTokenRefusal(claims, req) {
     const { log, parseBody, adminScope, realms } = this.deps;
     log.debug("Entering AdminApi.realmTokenRefusal().");
@@ -19205,6 +19491,13 @@ class AdminApi {
   // asking rather than by remembering. `tests/admin_api_document_security.js`
   // asserts that every call site goes through this function.
   // ---------------------------------------------------------------------------
+  /**
+   * Returns the facts the OpenAPI document is built from: the base URL, the
+   * version and whether the gate is on.
+   *
+   * @param req - the request
+   * @returns `{ baseUrl, version, authRequired }`
+   */
   specOptions(req) {
     const { log, baseUrlOf, config } = this.deps;
     log.debug("Entering AdminApi.specOptions().");
@@ -19226,6 +19519,15 @@ class AdminApi {
   // `registerRoutes(app)` calls this first, and `common/protocol_stack.ts`
   // calls that at the point the gate used to be registered, so the route
   // order is unchanged (rule 1; #50, R1).
+  /**
+   * Registers the access-token gate on the base path, ahead of every operation.
+   *
+   * With `adminApi.authRequired` on it refuses a missing or unverifiable token
+   * with 401 and a token for another audience, issuer or without the needed
+   * permission with 403; the permission is decided by the XACML access policy.
+   *
+   * @param app - the express app
+   */
   registerGate(app: RouteApp): void {
     const { log, config, errorCodes, realms, STS, stsCrypto, jwtAccessToken,
             mtls, dpop, senderConstraints, accessGate, mode, adminViews,
@@ -19719,6 +20021,12 @@ class AdminApi {
   // THE TABLE'S ROUTES, registered by the exported `registerRoutes(app)`
   // straight after the gate, which `common/protocol_stack.ts` calls at 19
   // (#50, R1). `compileRequestSchemas()` has already run, in `wire()`.
+  /**
+   * Registers the route table's operations, one express route per row, with the
+   * request body and query checks in front of each handler.
+   *
+   * @param app - the express app
+   */
   registerRoutes(app: RouteApp): void {
     const { log, errorCodes, protocolEndpoints } = this.deps;
     const self = this;
@@ -19845,6 +20153,9 @@ import version = require('../common/version');
 const APP_VERSION = version.load();
 const VERSION = APP_VERSION.version;
 
+/**
+ * The management API's base path.
+ */
 const BASE = '/admin-api';
 // The device compliance feed's path below BASE (#164 phase 3): the one
 // operation whose token carries device:compliance rather than an admin scope.
@@ -20016,26 +20327,61 @@ const slot = new InstanceSlot<AdminApi>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * The management API: every `/admin` console control as a JSON operation at
+ * `/admin-api`, gated by an OAuth 2.0 access token.
+ *
+ * Every POST calls the console's own action function and every GET its JSON
+ * view; the OpenAPI document is built from the same route table.
+ *
+ * @namespace
+ */
 export = {
+  /**
+   * Registers the gate and then every operation on the given app; called by
+   * `common/protocol_stack.ts`.
+   *
+   * @param target - the express app
+   */
   registerRoutes: (target: any): void => {
     const managementApi = slot.get();
     managementApi.registerGate(target);
     managementApi.registerRoutes(target);
   },
   AdminApi: AdminApi,
+  /**
+   * Installs the instance the composition root built, which the facades below
+   * forward to.
+   *
+   * @param instance - the instance to install
+   */
   installInstance: (instance: AdminApi): void => slot.install(instance),
+  /**
+   * Says whether the installed instance came from the root or the default.
+   *
+   * @returns `root`, `default` or `none`
+   */
   instanceOrigin: (): string => slot.origin(),
   BASE: BASE,
   // The three facts the OpenAPI document is built from, gathered in one place
   // so that this file's document and the console explorer's cannot disagree
   // about what this API requires. See specOptions().
+  /**
+   * Forwards to `AdminApi.specOptions()` on the installed instance.
+   */
   specOptions: slot.forward('specOptions'),
   // The table, so that the parent project's tests can assert what this file
   // covers against what the console offers rather than against a list somebody
   // typed into a test.
+  /**
+   * The route table, built on first use.
+   */
   get ROUTES(): any[] {
     slot.get();
     return ROUTES;
   },
+  /**
+   * Forwards to `AdminApi.operationSummaries()` on the installed instance.
+   */
   operationSummaries: slot.forward('operationSummaries')
 };
