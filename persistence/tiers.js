@@ -302,7 +302,14 @@ const GLOBAL_MINTED = {
   // Client-chosen replay keys — see the block above.
   'dpop.seenJtis': 'DPoP proof ids already seen',
   'krb5.replayCache': 'Kerberos authenticators already seen',
-  'gnap.replay': 'GNAP signed requests already seen'
+  'gnap.replay': 'GNAP signed requests already seen',
+  // A resource server's registered resource set (RFC 9767 section 3.4) is
+  // configuration about a resource server, with nothing of anybody's in it,
+  // and its reference is written into grant requests a client may send to
+  // any cell: held in one cell, a set registered there would be unknown at
+  // every other. Written when an RS registers a set it has not registered
+  // before, which is rare and administrative (#98 section 3).
+  'gnap.resources': 'the resource sets GNAP resource servers registered'
 };
 
 // Cell-tier: minted here, or somebody's. Listed rather than defaulted — see
@@ -321,7 +328,7 @@ const CELL_MINTED = [
   'devices.events', 'dpop.issuedNonces', 'federation_sp.contexts',
   'gnap.approvers', 'gnap.continuations', 'gnap.grants', 'gnap.instances',
   'gnap.interactions', 'gnap.manageHandles', 'gnap.manageValues',
-  'gnap_monitor.counters', 'gnap.resources', 'gnap.tokens',
+  'gnap.movedGrants', 'gnap_monitor.counters', 'gnap.tokens',
   'gnap.tokenValues', 'gnap.userCodes', 'gnap.userRefs', 'krb5.principals',
   'ldap.clusterConnections', 'ldap.clusterSignOuts', 'mail.outbox',
   'mail.preferences', 'oauth2.attestationChallenges', 'oauth2.authzCodes',
