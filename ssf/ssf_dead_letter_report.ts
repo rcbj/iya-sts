@@ -215,9 +215,26 @@ function allSweepNotes(): any {
   return out;
 }
 
+/**
+ * Counts the ambient realm's Shared Signals dead letters for Monitoring →
+ * Shared Signals → Dead letters and `GET /admin-api/ssf/dead-letters`.
+ *
+ * It writes nothing and returns no signed SET. The push gate, the sweep history
+ * and the since-start totals are this process's own.
+ */
 class DeadLetterReport {
+  /**
+   * The causes a dead letter is filed under, each with an id, a label, the
+   * error code that marks it (where one does) and a description.
+   */
   static readonly CAUSES = CAUSES;
 
+  /**
+   * Builds the report from its dependencies.
+   *
+   * @param deps - the modules it reads, from `DeadLetterReport.defaultDeps()`
+   * or the composition root
+   */
   constructor(private readonly deps: DeadLetterReportDeps) {
     deps.log.debug("Entering DeadLetterReport.constructor().");
     deps.log.debug("Leaving DeadLetterReport.constructor().");
@@ -226,11 +243,25 @@ class DeadLetterReport {
   // Called once per letter per report, so no Entering/Leaving pair: a realm
   // holding a few thousand letters would put a few thousand pairs in the log
   // for one page load.
+  /**
+   * Returns the id of the cause a dead letter is filed under, from its error
+   * code; `push-failed` when the code names no other cause.
+   *
+   * @param letter - the dead letter
+   * @returns the cause id
+   */
   causeOf(letter?: Letter | null): string {
     return CAUSE_BY_CODE[String((letter && letter.errorCode) || '')] ||
            'push-failed';
   }
 
+  /**
+   * Returns the timeline's bucket width for a window: the first step that fits
+   * the window in the maximum number of buckets, else the widest step.
+   *
+   * @param windowS - the window, in seconds
+   * @returns the bucket width, in seconds
+   */
   bucketSecondsFor(windowS: number): number {
     const { log } = this.deps;
     log.debug("Entering DeadLetterReport.bucketSecondsFor(). " + windowS);
@@ -339,6 +370,18 @@ class DeadLetterReport {
   // since: in both, ONE more failure declares it dead. `failing` is younger
   // than that. A poll stream is never pushed to and has none of these states.
   // -------------------------------------------------------------------------
+  /**
+   * Returns a stream's delivery state: `poll`, `dead`, `half-open`, `failing`
+   * or `healthy`.
+   *
+   * `half-open` is a push stream that has been failing for at least the dead
+   * stream timeout without being declared dead; `failing` is younger than that.
+   *
+   * @param record - the stream record
+   * @param nowMs - the current time, in milliseconds
+   * @param timeoutMs - `ssf.deadStreamTimeoutS`, in milliseconds
+   * @returns the state
+   */
   deliveryStateOf(record: any, nowMs: number, timeoutMs: number): string {
     const { log, streams } = this.deps;
     log.debug("Entering DeadLetterReport.deliveryStateOf(). " +
@@ -372,6 +415,15 @@ class DeadLetterReport {
     return n > 0 ? new Date(n).toISOString() : '';
   }
 
+  /**
+   * Records one dead-letter sweep in this process's history for the ambient
+   * realm, and adds it to the since-start totals.
+   *
+   * @param summary - what the sweep returned (held, letters, expired,
+   * orphaned, trimmed, byCode)
+   * @param extra - `deadStreams`, `probes` and `nowMs`
+   * @returns the row recorded
+   */
   noteSweep(summary?: any, extra?: any): Record<string, any> {
     const { log, realms } = this.deps;
     log.debug("Entering DeadLetterReport.noteSweep(). " + realms.currentId());
@@ -450,6 +502,18 @@ class DeadLetterReport {
   // caller filters and pages it (`admin-core/admin_views.ts`).
   // `options.nowMs` is for tests.
   // -------------------------------------------------------------------------
+  /**
+   * Builds the dead-letter report for the ambient realm from one scan of its
+   * letters and one list of its streams.
+   *
+   * It carries the totals, a timeline over the retention window, counts by
+   * error code, HTTP status and event type, a row per stream, every held letter
+   * newest first without its token, the settings, and this process's push gate
+   * and sweep history.
+   *
+   * @param options - `nowMs`, the current time, for tests
+   * @returns the report
+   */
   report(options?: { nowMs?: number } | null): any {
     const { log, realms, streams, events, errorCodes, transport } = this.deps;
     log.debug("Entering DeadLetterReport.report(). " + realms.currentId());
@@ -657,6 +721,12 @@ class DeadLetterReport {
 
   // What the composition root passes (#50, R2): the real modules, as the
   // module built its own instance from before.
+  /**
+   * Returns the real modules this report depends on, as the composition root
+   * passes them.
+   *
+   * @returns the dependencies
+   */
   static defaultDeps(): DeadLetterReportDeps {
     helpers.log.debug("Entering DeadLetterReport.defaultDeps().");
     helpers.log.debug("Leaving DeadLetterReport.defaultDeps().");
@@ -689,9 +759,24 @@ const slot = new InstanceSlot<DeadLetterReport>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * The Shared Signals dead-letter report, counted over every stream of the
+ * ambient realm, shared by the console page and the management API.
+ *
+ * Exports the `DeadLetterReport` class and facades that forward to the
+ * installed instance.
+ *
+ * @namespace
+ */
 export = {
   DeadLetterReport: DeadLetterReport,
+  /**
+   * Installs the instance the facades forward to.
+   */
   installInstance: (instance: DeadLetterReport): void => slot.install(instance),
+  /**
+   * Says where the current instance came from.
+   */
   instanceOrigin: (): string => slot.origin(),
   CAUSES: DeadLetterReport.CAUSES,
   causeOf: slot.forward('causeOf'),

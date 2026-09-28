@@ -152,6 +152,11 @@ import errorCodes = require('../common/error_codes');
 //              request, and a page that showed one person another person's
 //              account lockout would be the same failure by a different door.
 // ---------------------------------------------------------------------------
+/**
+ * This service's own two Shared Signals receivers, the admin console and the
+ * user portal: each row's id, label, audience, receive and inbox paths, and
+ * `sees` (`all` for the console, `own` for the portal).
+ */
 const SURFACES = [
   { id: 'admin-console',
     label: 'Admin console',
@@ -253,12 +258,29 @@ interface SsfReceiversDeps {
   errorCodes: typeof errorCodes;
 }
 
+/**
+ * The admin console and the user portal as registered receivers of this
+ * service's own transmitter: a seeded stream each per trust realm, a receive
+ * endpoint's checks, and the inbox each page draws.
+ */
 class SsfReceivers {
+  /**
+   * Builds the receivers from their dependencies.
+   *
+   * @param deps - the modules they read, from `SsfReceivers.defaultDeps()` or
+   * the composition root
+   */
   constructor(private readonly deps: SsfReceiversDeps) {
     deps.log.debug("Entering SsfReceivers.constructor().");
     deps.log.debug("Leaving SsfReceivers.constructor().");
   }
 
+  /**
+   * Returns the `SURFACES` row for an id.
+   *
+   * @param id - `admin-console` or `user-portal`
+   * @returns the row, or null
+   */
   surfaceOf(id?) {
     const { log } = this.deps;
     log.debug("Entering SsfReceivers.surfaceOf(). " + id);
@@ -268,6 +290,12 @@ class SsfReceivers {
     return row;
   }
 
+  /**
+   * Says whether the internal receivers are on: `ssf.enabled` and
+   * `ssf.internalReceivers` both.
+   *
+   * @returns true when they are on
+   */
   enabled() {
     const { log, config } = this.deps;
     log.debug("Entering SsfReceivers.enabled().");
@@ -303,6 +331,13 @@ class SsfReceivers {
   // already there. That would quietly undo a pause, and "an existing stream is
   // left exactly as it is" is this function's whole job. The id is computed
   // from the realm and the surface, so it cannot be lost.
+  /**
+   * Finds a surface's stream in the ambient realm, by its derived id first and
+   * its `internalSurface` marker second.
+   *
+   * @param surfaceId - the surface's id
+   * @returns the stream record, or null
+   */
   streamFor(surfaceId?) {
     const { log, streams } = this.deps;
     log.debug("Entering SsfReceivers.streamFor(). " + surfaceId);
@@ -327,6 +362,13 @@ class SsfReceivers {
   // realm's signals inside it — a push to the unprefixed path would be received
   // in the DEFAULT realm's inbox and read there by somebody who was never shown
   // that realm.
+  /**
+   * Returns where a surface's pushes are sent: this process's own origin, the
+   * ambient realm's prefix and the surface's receive path.
+   *
+   * @param surface - the `SURFACES` row
+   * @returns the URL
+   */
   endpointFor(surface?) {
     const { log, realms, transport } = this.deps;
     log.debug("Entering SsfReceivers.endpointFor(). " + surface.id);
@@ -517,6 +559,13 @@ class SsfReceivers {
     return stale.length;
   }
 
+  /**
+   * Registers the two surfaces as receivers in the ambient realm, creating a
+   * push stream for each that has none, asking for every CAEP, RISC and SSF
+   * event type. An existing stream is left as it is.
+   *
+   * @returns the number of streams created; 0 when the receivers are off
+   */
   seedStreams() {
     const { log, audit, config, events, realms, streams } = this.deps;
     log.debug("Entering SsfReceivers.seedStreams(). realm=" +
@@ -668,6 +717,20 @@ class SsfReceivers {
   // ours that invented a different error shape would be a receiver this
   // service's transmitter could not report properly on.
   // ---------------------------------------------------------------------------
+  /**
+   * Takes delivery of a pushed SET at a surface's receive endpoint: checks the
+   * stream's authorization header, then records the SET in the inbox and checks
+   * that it reads as a SET, its `typ`, issuer and audience, and its signature
+   * (required in product mode or with `ssf.receiveRequireSignature`). Only a
+   * SET that passed every check is acted on, and only as policy allows.
+   *
+   * It sends nothing. A refusal carries RFC 8935 section 2.4's `{ err,
+   * description }`, with 400 for a bad SET.
+   *
+   * @param surfaceId - the surface's id
+   * @param req - the incoming request
+   * @returns `{ status, body, entry }`: 202 with the entry on success
+   */
   accept(surfaceId?, req?): Loose {
     const { log, audit, config, errorCodes, events, iso, randomId, realms,
       transport } = this.deps;
@@ -1092,6 +1155,13 @@ class SsfReceivers {
   // Whether a JOSE header carries SSF's explicit type (section 4.1.1), with
   // or without the `application/` prefix RFC 7515 section 4.1.9 lets a
   // producer drop. Shared with `/ssf/receive`.
+  /**
+   * Says whether a JOSE header carries SSF's explicit type, `secevent+jwt`,
+   * with or without the `application/` prefix.
+   *
+   * @param header - the JOSE header
+   * @returns true when it does
+   */
   static isSetTyp(header?: any): boolean {
     helpers.log.debug("Entering SsfReceivers.isSetTyp().");
     const typ = String((header || {}).typ || '').toLowerCase();
@@ -1101,6 +1171,12 @@ class SsfReceivers {
 
   // `aud` is a string or an array of them — RFC 8417 leaves it as JWT's own
   // member — so both shapes are read rather than one being assumed.
+  /**
+   * Reads an `aud` claim, a string or an array of them, as a list.
+   *
+   * @param value - the claim
+   * @returns the audiences
+   */
   audienceNames(value?) {
     const { log } = this.deps;
     log.debug("Entering SsfReceivers.audienceNames().");
@@ -1179,6 +1255,14 @@ class SsfReceivers {
   // portal passes. See `isAbout()` for what that means and for the one rule
   // that decides every doubtful case.
   // ---------------------------------------------------------------------------
+  /**
+   * Lists what a surface has received in the ambient realm, newest first.
+   *
+   * @param surfaceId - the surface's id
+   * @param options - `person`, which narrows the list to the signals
+   * `isAbout()` finds are about that person
+   * @returns the inbox entries
+   */
   listFor(surfaceId?, options?) {
     const { log } = this.deps;
     log.debug("Entering SsfReceivers.listFor(). " + surfaceId);
@@ -1230,6 +1314,16 @@ class SsfReceivers {
   // silently, which is exactly the failure the setting exists to let somebody
   // find.
   // ---------------------------------------------------------------------------
+  /**
+   * Says whether a received SET is about a person, reading the subject in the
+   * shapes this service composes and an identifier change's new value.
+   *
+   * When in doubt the answer is no.
+   *
+   * @param entry - the inbox entry
+   * @param person - the signed-in person
+   * @returns true when it is about them
+   */
   isAbout(entry?, person?) {
     const { log } = this.deps;
     log.debug("Entering SsfReceivers.isAbout().");
@@ -1379,6 +1473,14 @@ class SsfReceivers {
   // stream takes it" line: "nothing arrived" is the commonest report about any
   // Shared Signals deployment and it is almost never what it looks like.
   // ---------------------------------------------------------------------------
+  /**
+   * Describes a surface's receiver in the ambient realm, so a page can say why
+   * its inbox is empty before it shows a row: the surface, its stream, and the
+   * settings that decide whether anything can arrive.
+   *
+   * @param surfaceId - the surface's id
+   * @returns the status, or null for an unknown surface
+   */
   status(surfaceId?) {
     const { log, config, events, realms, streams } = this.deps;
     log.debug("Entering SsfReceivers.status(). " + surfaceId);
@@ -1482,6 +1584,14 @@ class SsfReceivers {
   // the token itself left off unless it is asked for. The token is the whole
   // document and is 1–4kB of base64url per row; a list of two hundred of them
   // is a page nobody can read and an API response nobody wanted.
+  /**
+   * Opens one inbox entry out as the pages and `/admin-api` draw it, with the
+   * token itself left off unless asked for.
+   *
+   * @param entry - the inbox entry
+   * @param options - `withToken`, to include the SET
+   * @returns the described entry
+   */
   describeEntry(entry?, options?): Loose {
     const { log, events, subjects } = this.deps;
     log.debug("Entering SsfReceivers.describeEntry().");
@@ -1538,6 +1648,15 @@ class SsfReceivers {
 
   // Everything one surface has, as one document: both doors answer with it, so
   // `/admin/signals?format=json` and GET /admin-api/signals cannot disagree.
+  /**
+   * Returns everything a surface has as one document, `{ status, received }`,
+   * which both the page's JSON form and `GET /admin-api/signals` answer with.
+   *
+   * @param surfaceId - the surface's id
+   * @param options - `person` and `withToken`, as `listFor()` and
+   * `describeEntry()` take them
+   * @returns the view
+   */
   view(surfaceId?, options?) {
     const { log } = this.deps;
     log.debug("Entering SsfReceivers.view(). " + surfaceId);
@@ -1558,6 +1677,12 @@ class SsfReceivers {
   // have, and it is deliberately not a delete of the STREAM: clearing what a
   // receiver has been shown and tearing down the agreement to send it more are
   // two different acts, and the second one is `/admin/ssf`'s.
+  /**
+   * Drops a surface's inbox in the ambient realm; the stream is untouched.
+   *
+   * @param surfaceId - the surface's id
+   * @returns the number of entries dropped
+   */
   clearFor(surfaceId?) {
     const { log, realms } = this.deps;
     log.debug("Entering SsfReceivers.clearFor(). " + surfaceId);
@@ -1575,6 +1700,12 @@ class SsfReceivers {
 
   // What the composition root passes (#50, R2): the real modules, as the
   // module built its own instance from before.
+  /**
+   * Returns the real modules the receivers depend on, as the composition root
+   * passes them.
+   *
+   * @returns the dependencies
+   */
   static defaultDeps(): SsfReceiversDeps {
     helpers.log.debug("Entering SsfReceivers.defaultDeps().");
     helpers.log.debug("Leaving SsfReceivers.defaultDeps().");
@@ -1615,12 +1746,32 @@ const slot = new InstanceSlot<SsfReceivers>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * This service's own admin console and user portal as Shared Signals receivers.
+ *
+ * Exports the `SsfReceivers` class, the surface table and ids, and facades that
+ * forward to the installed instance.
+ *
+ * @namespace
+ */
 export = {
   SsfReceivers: SsfReceivers,
+  /**
+   * Installs the instance the facades forward to.
+   */
   installInstance: (instance: SsfReceivers): void => slot.install(instance),
+  /**
+   * Says where the current instance came from.
+   */
   instanceOrigin: (): string => slot.origin(),
   SURFACES: SURFACES,
+  /**
+   * The admin console's surface id.
+   */
   ADMIN: 'admin-console',
+  /**
+   * The user portal's surface id.
+   */
   PORTAL: 'user-portal',
   surfaceOf: slot.forward('surfaceOf'),
   enabled: slot.forward('enabled'),

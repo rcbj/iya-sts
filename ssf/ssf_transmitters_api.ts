@@ -35,12 +35,30 @@ const ID = { type: 'string', pattern: '^[a-z0-9][a-z0-9-]{0,39}$',
 const ONE = { type: 'object', properties: { id: ID }, required: ['id'],
               examples: [{ id: 'partner' }], additionalProperties: false };
 
+/**
+ * The management API's operations for the foreign Shared Signals transmitters,
+ * `/admin-api/ssf/transmitters`: the console page's report and acts, for a
+ * machine. It registers no route; `mgmt-api/admin_api.ts` spreads `ROUTES` into
+ * its table.
+ */
 class SsfTransmittersApi {
+  /**
+   * Builds the API from its dependencies.
+   *
+   * @param deps - the modules it reads, from `SsfTransmittersApi.defaultDeps()`
+   * or the composition root
+   */
   constructor(private readonly deps: TransmittersApiDeps) {
     deps.log.debug("Entering SsfTransmittersApi.constructor().");
     deps.log.debug("Leaving SsfTransmittersApi.constructor().");
   }
 
+  /**
+   * Returns the real modules the API depends on, as the composition root passes
+   * them.
+   *
+   * @returns the dependencies
+   */
   static defaultDeps(): TransmittersApiDeps {
     helpers.log.debug("Entering SsfTransmittersApi.defaultDeps().");
     helpers.log.debug("Leaving SsfTransmittersApi.defaultDeps().");
@@ -53,12 +71,24 @@ class SsfTransmittersApi {
     };
   }
 
+  /**
+   * Builds the installed instance's route table into the module's `ROUTES`.
+   *
+   * @param instance - the installed instance
+   */
   static wire(instance: SsfTransmittersApi): void {
     helpers.log.debug("Entering SsfTransmittersApi.wire().");
     routes = instance.buildRoutes();
     helpers.log.debug("Leaving SsfTransmittersApi.wire().");
   }
 
+  /**
+   * Sends a JSON answer with `Cache-Control: no-store`, without the error code.
+   *
+   * @param res - the response
+   * @param status - the HTTP status
+   * @param body - the body
+   */
   sendJson(res: Res, status: number, body: Json): void {
     const { log } = this.deps;
     log.debug("Entering SsfTransmittersApi.sendJson(). status=" + status);
@@ -70,6 +100,12 @@ class SsfTransmittersApi {
     log.debug("Leaving SsfTransmittersApi.sendJson().");
   }
 
+  /**
+   * Builds the route table: `GET /admin-api/ssf/transmitters` and `POST
+   * /admin-api/ssf/transmitters/:action` with each action's schema.
+   *
+   * @returns the routes
+   */
   buildRoutes(): Json[] {
     const { log, parseBody, errorCodes, loadTransmitters,
             baseUrlOf } = this.deps;
@@ -258,11 +294,26 @@ const slot = new InstanceSlot<SsfTransmittersApi>(
 
 slot.buildNowUnlessDeferred();
 
+/**
+ * `/admin-api/ssf/transmitters`: the foreign Shared Signals transmitters, for a
+ * machine.
+ *
+ * @namespace
+ */
 export = {
   SsfTransmittersApi: SsfTransmittersApi,
+  /**
+   * Installs the instance the facades forward to.
+   */
   installInstance: (instance: SsfTransmittersApi): void =>
     slot.install(instance),
+  /**
+   * Says where the current instance came from.
+   */
   instanceOrigin: (): string => slot.origin(),
+  /**
+   * The route table `mgmt-api/admin_api.ts` spreads into its own.
+   */
   get ROUTES(): Json[] {
     helpers.log.debug("Entering ROUTES().");
     slot.get();

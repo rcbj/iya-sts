@@ -328,12 +328,40 @@ const IDENTIFIER_KINDS = [
 // write outside its realm would not have found the entry to observe.
 const register = realms.map({ persist: 'risc.register' });
 
+/**
+ * The RISC account register: what state RISC holds each account in (its
+ * lifecycle, credential standing and opt-out state), and how many events of
+ * each type have gone out about it, per trust realm.
+ *
+ * It sends nothing: `observe()` and `observeAct()` answer the events that are
+ * due and `ssf/ssf.ts` delivers them.
+ */
 class RiscRegister {
+  /**
+   * The acts this service can observe, each mapped to the short name of the
+   * RISC event type it emits.
+   */
   static readonly AUTO_ACTS = AUTO_ACTS;
+  /**
+   * RISC section 2.8's four opt-out events, each mapped to the opt state it
+   * leaves an account in.
+   */
   static readonly OPT_OUT_EVENTS = OPT_OUT_EVENTS;
+  /**
+   * RISC section 2.8's three opt states, in the order its diagram walks them.
+   */
   static readonly OPT_STATES = OPT_STATES;
+  /**
+   * The three lifecycle states, `active`, `disabled` and the terminal `purged`.
+   */
   static readonly LIFECYCLE_STATES = LIFECYCLE_STATES;
 
+  /**
+   * Builds the register from its dependencies.
+   *
+   * @param deps - the modules it reads, from `RiscRegister.defaultDeps()` or
+   * the composition root
+   */
   constructor(private readonly deps: RiscRegisterDeps) {
     deps.log.debug("Entering RiscRegister.constructor().");
     deps.log.debug("Leaving RiscRegister.constructor().");
@@ -346,6 +374,11 @@ class RiscRegister {
   // `risc.eventsPerAccount` since 2026-09-12 (25, the old constant, is its
   // default); read per event. `risc.historyPerAccount` bounds the credential
   // and identifier-change lists below, which were a literal 10 each.
+  /**
+   * Returns how many events one row remembers (`risc.eventsPerAccount`).
+   *
+   * @returns the ring's length
+   */
   eventsPerAccount(): number {
     const { log, config } = this.deps;
     log.debug("Entering RiscRegister.eventsPerAccount().");
@@ -377,6 +410,11 @@ class RiscRegister {
     log.debug("Leaving RiscRegister.touch().");
   }
 
+  /**
+   * Says whether the RISC profile is on (`risc.enabled`).
+   *
+   * @returns true when it is on
+   */
   enabled(): boolean {
     const { log, config } = this.deps;
     log.debug("Entering RiscRegister.enabled().");
@@ -388,6 +426,11 @@ class RiscRegister {
   // The fourteen URIs, or none at all when the profile is off. `ssf.ts` unions
   // this with SSF's own two and CAEP's eight to decide what a stream may
   // request, so turning RISC off narrows what this transmitter will agree to.
+  /**
+   * Returns RISC's event type URIs, or none when the profile is off.
+   *
+   * @returns the URIs
+   */
   supportedEventUris(): string[] {
     const { log, events } = this.deps;
     log.debug("Entering RiscRegister.supportedEventUris().");
@@ -405,6 +448,14 @@ class RiscRegister {
   // service cannot cause is DROPPED WITH A WARNING rather than honoured: there
   // is no code path that would ever fire it, so honouring it would leave a
   // setting that reads as configured and does nothing.
+  /**
+   * Returns the acts that emit an event on their own, from
+   * `risc.autoEmitTypes`; none when RISC or `risc.autoEmit` is off.
+   *
+   * A configured type no act here can cause is dropped with a warning.
+   *
+   * @returns the act names (keys of `AUTO_ACTS`)
+   */
   autoEmitActs(): string[] {
     const { log, config, events } = this.deps;
     log.debug("Entering RiscRegister.autoEmitActs().");
@@ -473,6 +524,16 @@ class RiscRegister {
   // there would send an `iss_sub` subject on an event whose whole content is an
   // email address.
   // ---------------------------------------------------------------------------
+  /**
+   * Returns the plain subject for an account, in `risc.subjectFormat`'s format;
+   * an identifier event's subject is the old email address or phone number
+   * whatever that setting says.
+   *
+   * @param row - the account's row
+   * @param uri - the event type URI
+   * @returns the subject, or null when an identifier event has no real
+   * address or number and product mode invents none
+   */
   subjectFor(row: Partial<RiscRow>,
              uri?: string): Record<string, any> | null {
     const { log, config, events, subjects } = this.deps;
@@ -556,6 +617,14 @@ class RiscRegister {
   // `mode.valueInForce()`, so a product realm with it still stored sends
   // `format` and says so once (STS-CORE-0106).
   // ---------------------------------------------------------------------------
+  /**
+   * Renames a subject's `format` member to `subject_type`, Google's spelling
+   * that RISC section 3.1 records, while `risc.googleSubjectType` is in force
+   * (development mode only).
+   *
+   * @param subject - the subject
+   * @returns the renamed copy, or the subject unchanged
+   */
   googleSubjectType(subject: any): any {
     const { log, mode } = this.deps;
     log.debug("Entering RiscRegister.googleSubjectType().");
@@ -589,6 +658,13 @@ class RiscRegister {
   // debugger pointed at this transmitter is entitled to name whatever subject
   // it likes, and the caller counts the event against the stream instead.
   // ---------------------------------------------------------------------------
+  /**
+   * Reads the account a subject names, in any format `subjectFor()` can
+   * produce, in Google's spelling, or in a complex subject's `user` member.
+   *
+   * @param subject - the subject
+   * @returns the account id; empty when it names no account here
+   */
   accountIdOf(subject: unknown): string {
     const { log } = this.deps;
     log.debug("Entering RiscRegister.accountIdOf().");
@@ -769,6 +845,14 @@ class RiscRegister {
   // this service never held is legitimate — a debugger pointing at this
   // transmitter is entitled to name whatever subject it likes — so an unknown
   // id gets a row saying where it came from rather than being refused.
+  /**
+   * Returns the row for an account, creating one when there is none; a row
+   * created this way says an event rather than a directory write made it.
+   *
+   * @param accountId - the account id
+   * @param seed - values for a new row
+   * @returns the row, or null for an empty id
+   */
   rowFor(accountId: unknown, seed?: Record<string, any>): RiscRow | null {
     const { log } = this.deps;
     log.debug("Entering RiscRegister.rowFor(). " + accountId);
@@ -789,6 +873,12 @@ class RiscRegister {
     return row;
   }
 
+  /**
+   * Returns the row for an account without creating one.
+   *
+   * @param accountId - the account id
+   * @returns the row, or null
+   */
   get(accountId: unknown): RiscRow | null {
     const { log } = this.deps;
     log.debug("Entering RiscRegister.get().");
@@ -797,6 +887,11 @@ class RiscRegister {
     return row;
   }
 
+  /**
+   * Returns every row of the ambient realm's register.
+   *
+   * @returns the rows
+   */
   list(): RiscRow[] {
     const { log } = this.deps;
     log.debug("Entering RiscRegister.list().");
@@ -824,6 +919,15 @@ class RiscRegister {
   // compromised long before anybody noticed, and a receiver reading it as an
   // occurrence time dates the incident from the wrong end.
   // ---------------------------------------------------------------------------
+  /**
+   * Returns the common claims RISC gives the event types that define them,
+   * which is only `credential-compromise`: `event_timestamp`, `reason_admin`
+   * and `reason_user`. There is no `initiating_entity`.
+   *
+   * @param uri - the event type URI
+   * @param options - `eventTimestamp`, `reasonAdmin` and `reasonUser`
+   * @returns the claims; empty for every other event type
+   */
   commonClaims(uri: string,
                options?: Record<string, any>): Record<string, any> {
     const { log, nowSec, config, events } = this.deps;
@@ -862,6 +966,16 @@ class RiscRegister {
   // A whole payload: the row's own generator, plus whichever of the three above
   // this event type actually defines. ONE function, so the console form, the
   // management API and the automatic emission all produce the SAME shape.
+  /**
+   * Builds a whole RISC event payload: the event type's own members plus the
+   * common claims it defines.
+   *
+   * @param uri - the event type URI
+   * @param values - the event type's own values
+   * @param options - the common claims' options, as `commonClaims()` takes
+   * them
+   * @returns the payload; empty for a URI that is not in the catalogue
+   */
   buildPayload(uri: string, values?: Record<string, any>,
                options?: Record<string, any>): Record<string, any> {
     const { log, events } = this.deps;
@@ -902,6 +1016,15 @@ class RiscRegister {
   // out the moment they take an account over and silencing the very events that
   // would report them.
   // ---------------------------------------------------------------------------
+  /**
+   * Applies the opt-out gate: an account in the `opt-out` state is not sent
+   * events while `risc.honourOptOut` is on, except the four opt-out events,
+   * which are never suppressed.
+   *
+   * @param row - the account's row
+   * @param uri - the event type URI
+   * @returns `{ send, why }`; `why` says why an event was suppressed
+   */
   gate(row: RiscRow, uri: string): { send: boolean; why: string } {
     const { log, config } = this.deps;
     log.debug("Entering RiscRegister.gate(). " + uri);
@@ -976,6 +1099,14 @@ class RiscRegister {
   // have acted on it, and this service would report the refusal to nobody. So
   // the one hard rule is asked here, before anything is built.
   // ---------------------------------------------------------------------------
+  /**
+   * Returns what the register refuses outright for an event, without changing
+   * anything; the one refusal is `account-enabled` on a purged account.
+   *
+   * @param row - the account's row, or null
+   * @param uri - the event type URI
+   * @returns the refusals; empty when the event may be sent
+   */
   refusals(row: RiscRow | null, uri: string): string[] {
     const { log } = this.deps;
     log.debug("Entering RiscRegister.refusals(). " + uri);
@@ -996,6 +1127,17 @@ class RiscRegister {
 
   // `subject` (#146) is the event's own, which says which identifier an
   // identifier event is about: an email address or a phone number.
+  /**
+   * Applies a RISC event to an account's row, and collects what is wrong with
+   * it. Unexpected opt-out moves are warnings, not refusals.
+   *
+   * @param row - the account's row
+   * @param uri - the event type URI
+   * @param payload - the event's payload
+   * @param subject - the event's subject, which says whether an identifier
+   * event is about an email address or a phone number
+   * @returns `{ ok, errors, warnings, ... }`
+   */
   applyToState(row: RiscRow, uri: string,
                payload?: any, subject?: any): Record<string, any> {
     const { log, iso } = this.deps;
@@ -1180,6 +1322,15 @@ class RiscRegister {
   // **THE COUNT IS NOT THE LIST.** `counts` never forgets and `events` is a
   // ring of the last few.
   // ---------------------------------------------------------------------------
+  /**
+   * Counts a RISC SET that was minted against the account its `sub_id` names,
+   * after `ssf.ts`'s `transmit()` built it.
+   *
+   * @param record - the stream it went out on
+   * @param claims - the SET's claims
+   * @returns the row counted against, or null for a SET about no account here
+   * or while RISC is off
+   */
   noteTransmitted(record: any, claims: any): RiscRow | null {
     const { log, iso, events } = this.deps;
     log.debug("Entering RiscRegister.noteTransmitted().");
@@ -1240,6 +1391,18 @@ class RiscRegister {
   // specification, so both go out. A version that returned the first would drop
   // the second with nothing anywhere saying so.
   // ---------------------------------------------------------------------------
+  /**
+   * Reads a directory write, updates the register, and answers every RISC event
+   * that is due; `ssf.ts` installs it as the directory's account observer and
+   * sends what it returns.
+   *
+   * One write can be several events, and the register is updated even when
+   * nothing will be sent.
+   *
+   * @param notice - the observer notice: `kind` (`deleted:<name>` for a
+   * deletion), `username`, and the attributes `before` and `after`
+   * @returns the due events, each `{ uri, payload, subject, row, act }`
+   */
   observe(notice?: Record<string, any> | null): DueEvent[] {
     const { log, iso } = this.deps;
     log.debug("Entering RiscRegister.observe().");
@@ -1450,6 +1613,15 @@ class RiscRegister {
   // reasonUser }`, `act` one of AUTO_ACTS' keys that a directory diff cannot
   // produce.
   // ---------------------------------------------------------------------------
+  /**
+   * Answers the RISC events due for an act that carries its own meaning, such
+   * as a password reset or an opt-out move, through the same gate and register
+   * as `observe()`.
+   *
+   * @param notice - `{ username, act, issuer, dn, realm, email, phone,
+   * reasonAdmin, reasonUser }`, `act` a key of `AUTO_ACTS`
+   * @returns the due events; empty when RISC is off or `act` is unknown
+   */
   observeAct(notice?: Record<string, any> | null): DueEvent[] {
     const { log, iso } = this.deps;
     log.debug("Entering RiscRegister.observeAct().");
@@ -1504,6 +1676,13 @@ class RiscRegister {
   // `applyDue()` is the same thing addressed by the descriptor `observe()`
   // returned, so `ssf.ts` can call it without knowing what an act is.
   // ---------------------------------------------------------------------------
+  /**
+   * Applies a due event's act to its row when no token was built for it
+   * (emission off, the opt-out gate, or no stream covering the subject), so the
+   * register still follows the act.
+   *
+   * @param due - a descriptor `observe()` or `observeAct()` returned
+   */
   applyDue(due?: Partial<DueEvent> | null): void {
     const { log } = this.deps;
     log.debug("Entering RiscRegister.applyDue().");
@@ -1589,6 +1768,15 @@ class RiscRegister {
   // `ssf_events.js`'s header spends a paragraph warning about, and the third
   // vocabulary would have had to undo it.
   // ---------------------------------------------------------------------------
+  /**
+   * Reads what a directory write means in RISC's words: an account disabled,
+   * enabled or purged, an identifier changed or recycled.
+   *
+   * @param before - the entry's attributes before the write
+   * @param after - the entry's attributes after it
+   * @param notice - the observer notice; its `reason` is the administrator's
+   * @returns the acts
+   */
   actsFor(before?: Record<string, any>,
           after?: Record<string, any>,
           notice?: Record<string, any>): RiscAct[] {
@@ -2033,6 +2221,13 @@ class RiscRegister {
   // for that job — CLAIMED as they are returned, so each is made effective
   // once.
   // ---------------------------------------------------------------------------
+  /**
+   * Returns an account holder's opt state, when an opt-out began, and the moves
+   * RISC section 2.8 allows from it, for `/portal/signals`.
+   *
+   * @param accountId - the account id
+   * @returns `{ state, since, moves }`
+   */
   optOutOf(accountId: unknown): { state: string; since: string;
                                    moves: string[] } {
     const { log } = this.deps;
@@ -2049,6 +2244,13 @@ class RiscRegister {
   }
 
   // Whether `act` is a move the account holder may make now.
+  /**
+   * Says whether an opt-out move is one the account holder may make now.
+   *
+   * @param accountId - the account id
+   * @param act - the move
+   * @returns true when it is allowed
+   */
   optOutMoveAllowed(accountId: unknown, act: string): boolean {
     const { log } = this.deps;
     log.debug("Entering RiscRegister.optOutMoveAllowed(). " + act);
@@ -2057,6 +2259,12 @@ class RiscRegister {
     return allowed;
   }
 
+  /**
+   * Returns the accounts whose opt-out has waited `risc.optOutDelayHours`,
+   * claiming each as it is returned so that it is made effective once.
+   *
+   * @returns the account ids
+   */
   optOutsDue(): string[] {
     const { log, config } = this.deps;
     log.debug("Entering RiscRegister.optOutsDue().");
@@ -2095,6 +2303,13 @@ class RiscRegister {
   // not give anybody. So `optOut` and `optOutInitiatedAt` are kept as they
   // are, and the `risc.opt-out-effective` job still finds a pending opt-out
   // when its delay has passed.
+  /**
+   * Puts a row back to the state a fresh account starts in, keeping the row and
+   * the holder's opt state, and audits it.
+   *
+   * @param accountId - the account id
+   * @returns the row, or null when there is none
+   */
   reset(accountId: unknown): RiscRow | null {
     const { log, iso, audit } = this.deps;
     log.debug("Entering RiscRegister.reset(). " + accountId);
@@ -2135,6 +2350,12 @@ class RiscRegister {
   // A dropped opted-out row would read as `opt-in` on its next event, and a
   // dropped pending opt-out would never become effective. The count answered
   // is of rows dropped outright; the kept ones are said in the audit row.
+  /**
+   * Drops every row of the ambient realm's register, re-creating blank each one
+   * whose holder chose anything but `opt-in`, and audits it.
+   *
+   * @returns the number of rows dropped outright
+   */
   clear(): number {
     const { log, audit } = this.deps;
     log.debug("Entering RiscRegister.clear().");
@@ -2180,6 +2401,12 @@ class RiscRegister {
   // disagree about what this transmitter has said — which is rule 7's whole
   // subject.
   // ---------------------------------------------------------------------------
+  /**
+   * Builds the report `/admin/risc-accounts` draws and `GET /admin-api/risc`
+   * answers: the settings, the event types, the totals, and every account row.
+   *
+   * @returns the report
+   */
   report(): Record<string, any> {
     const { log, config, events, subjects } = this.deps;
     log.debug("Entering RiscRegister.report().");
@@ -2251,6 +2478,12 @@ class RiscRegister {
 
   // What the composition root passes (#50, R2): the real modules, as the
   // module built its own instance from before.
+  /**
+   * Returns the real modules this register depends on, as the composition root
+   * passes them.
+   *
+   * @returns the dependencies
+   */
   static defaultDeps(): RiscRegisterDeps {
     helpers.log.debug("Entering RiscRegister.defaultDeps().");
     helpers.log.debug("Leaving RiscRegister.defaultDeps().");
@@ -2286,9 +2519,23 @@ const slot = new InstanceSlot<RiscRegister>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * The RISC account register.
+ *
+ * Exports the `RiscRegister` class, its constants, and facades that forward to
+ * the installed instance.
+ *
+ * @namespace
+ */
 export = {
   RiscRegister: RiscRegister,
+  /**
+   * Installs the instance the facades forward to.
+   */
   installInstance: (instance: RiscRegister): void => slot.install(instance),
+  /**
+   * Says where the current instance came from.
+   */
   instanceOrigin: (): string => slot.origin(),
   AUTO_ACTS: RiscRegister.AUTO_ACTS,
   OPT_OUT_EVENTS: RiscRegister.OPT_OUT_EVENTS,
@@ -2296,6 +2543,9 @@ export = {
   LIFECYCLE_STATES: RiscRegister.LIFECYCLE_STATES,
   // A GETTER: `tests/risc_register.js` reads this to know how long the ring
   // is, and the answer is the setting now rather than a constant.
+  /**
+   * How many events one row remembers, read from the setting.
+   */
   get EVENTS_PER_ACCOUNT(): number {
     helpers.log.debug("Entering EVENTS_PER_ACCOUNT().");
     helpers.log.debug("Leaving EVENTS_PER_ACCOUNT().");

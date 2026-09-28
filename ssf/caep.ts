@@ -246,9 +246,27 @@ const ACR_NAMESPACE = 'urn:sts:acr';
 // read in a realm means.
 const register = realms.map({ persist: 'caep.register' });
 
+/**
+ * The CAEP session register: what state CAEP holds each session in, and how
+ * many events of each type have gone out about it, per trust realm.
+ *
+ * It sends nothing: `observe()` answers the event that ought to go out and
+ * `ssf/ssf.ts` delivers it. A row outlives its session, capped by
+ * `caep.maxSessionsTracked`.
+ */
 class CaepRegister {
+  /**
+   * The acts this service can observe, each mapped to the short name of the
+   * CAEP event type it emits.
+   */
   static readonly AUTO_ACTS = AUTO_ACTS;
 
+  /**
+   * Builds the register from its dependencies.
+   *
+   * @param deps - the modules it reads, from `CaepRegister.defaultDeps()` or
+   * the composition root
+   */
   constructor(private readonly deps: CaepRegisterDeps) {
     deps.helpers.log.debug("Entering CaepRegister.constructor().");
     deps.helpers.log.debug("Leaving CaepRegister.constructor().");
@@ -300,6 +318,11 @@ class CaepRegister {
     log.debug("Leaving CaepRegister.touch().");
   }
 
+  /**
+   * Says whether the CAEP profile is on (`caep.enabled`).
+   *
+   * @returns true when it is on
+   */
   enabled(): boolean {
     const { helpers: { log }, config } = this.deps;
     log.debug("Entering CaepRegister.enabled().");
@@ -313,6 +336,11 @@ class CaepRegister {
   // CAEP off narrows what this transmitter will agree to, which is what makes
   // a receiver's "you would not deliver the type I asked for" path reachable
   // without anybody editing ssf.eventsSupported by hand.
+  /**
+   * Returns CAEP's event type URIs, or none when the profile is off.
+   *
+   * @returns the URIs
+   */
   supportedEventUris(): string[] {
     const { helpers: { log }, events } = this.deps;
     log.debug("Entering CaepRegister.supportedEventUris().");
@@ -341,6 +369,16 @@ class CaepRegister {
   // and the groups claim is whatever `group_claims.ts` names it, with the
   // person's groups as they are now.
   // -------------------------------------------------------------------------
+  /**
+   * Works out the claims a directory write moved, in CAEP token-claims-change's
+   * shape: each changed claim with its new value, and null for one that is
+   * gone.
+   *
+   * @param notice - the directory's account observer notice: `username` and
+   * `kind` (`updated`, with the attribute maps before and after, or
+   * `membership`), or a notice that already names the moved `claims`
+   * @returns `{ claims }`, or null when nothing a token carries moved
+   */
   claimsChangeFor(notice?: Record<string, any> | null):
       { claims: Record<string, any> } | null {
     const { helpers: { log }, claimAttributes, groupClaims } = this.deps;
@@ -467,6 +505,14 @@ class CaepRegister {
     log.debug("Leaving CaepRegister.addRolesClaim().");
   }
 
+  /**
+   * Returns the acts that emit an event on their own, from
+   * `caep.autoEmitTypes`; none when CAEP or `caep.autoEmit` is off.
+   *
+   * A configured type no act here can cause is dropped with a warning.
+   *
+   * @returns the act names (keys of `AUTO_ACTS`)
+   */
   autoEmitActs(): string[] {
     const { helpers: { log }, config, events } = this.deps;
     log.debug("Entering CaepRegister.autoEmitActs().");
@@ -535,6 +581,14 @@ class CaepRegister {
   // debugger whose job is to let both cases be seen. Set it to `session` to
   // find out whether a receiver under test honours it.
   // -------------------------------------------------------------------------
+  /**
+   * Returns the complex subject for a session: the person as an `iss_sub`, the
+   * session as `opaque`, and the registered device where one authenticated it.
+   *
+   * @param row - the register row (or the part of one that names the person,
+   * session and device)
+   * @returns the complex subject
+   */
   subjectFor(row: Partial<CaepRow>): Record<string, any> {
     const { helpers: { log }, subjects } = this.deps;
     log.debug("Entering CaepRegister.subjectFor().");
@@ -564,6 +618,13 @@ class CaepRegister {
   // and this register is about sessions, so a plain one legitimately matches
   // nothing and the caller counts the event against the stream rather than
   // against a row.
+  /**
+   * Reads the session id out of a complex subject's `session` member.
+   *
+   * @param subject - the subject
+   * @returns the session id; empty for a plain subject or one naming no
+   * session
+   */
   sessionIdOf(subject: unknown): string {
     const { helpers: { log } } = this.deps;
     log.debug("Entering CaepRegister.sessionIdOf().");
@@ -645,6 +706,14 @@ class CaepRegister {
   // this service never held is legitimate — a debugger pointing at this
   // transmitter is entitled to name whatever subject it likes — so an unknown
   // id gets a row saying where it came from rather than being refused.
+  /**
+   * Returns the row for a session, creating one when there is none; a row
+   * created this way says an event rather than a sign-in made it.
+   *
+   * @param sessionId - the session id
+   * @param seed - values for a new row
+   * @returns the row, or null for an empty id
+   */
   rowFor(sessionId: unknown, seed?: Record<string, any>): CaepRow | null {
     const { helpers: { log } } = this.deps;
     log.debug("Entering CaepRegister.rowFor(). " + sessionId);
@@ -665,6 +734,12 @@ class CaepRegister {
     return row;
   }
 
+  /**
+   * Returns the row for a session without creating one.
+   *
+   * @param sessionId - the session id
+   * @returns the row, or null
+   */
   get(sessionId: unknown): CaepRow | null {
     const { helpers: { log } } = this.deps;
     log.debug("Entering CaepRegister.get().");
@@ -673,6 +748,11 @@ class CaepRegister {
     return row;
   }
 
+  /**
+   * Returns every row of the ambient realm's register.
+   *
+   * @returns the rows
+   */
   list(): CaepRow[] {
     const { helpers: { log } } = this.deps;
     log.debug("Entering CaepRegister.list().");
@@ -695,6 +775,15 @@ class CaepRegister {
   // receiver indexing by language reads nothing from a string and reports no
   // error. This service always sends the object shape.
   // -------------------------------------------------------------------------
+  /**
+   * Returns CAEP's four common claims for an event: `event_timestamp` (unless
+   * `caep.omitEventTimestamp`), `initiating_entity`, and `reason_admin` and
+   * `reason_user` as objects keyed by language tag.
+   *
+   * @param options - `eventTimestamp`, `initiatingEntity`, `reasonAdmin` and
+   * `reasonUser`
+   * @returns the claims
+   */
   commonClaims(options?: Record<string, any>): Record<string, any> {
     const { helpers: { log, nowSec }, config } = this.deps;
     log.debug("Entering CaepRegister.commonClaims().");
@@ -728,6 +817,17 @@ class CaepRegister {
   // function so that the console form, the management API and the automatic
   // emission all produce the SAME shape — three builders would be three
   // chances for one of them to forget `event_timestamp`.
+  /**
+   * Builds a whole CAEP event payload: the event type's own members plus the
+   * common claims, the one shape the console, the API and automatic emission
+   * all send.
+   *
+   * @param uri - the event type URI
+   * @param values - the event type's own values
+   * @param options - the common claims' options, as `commonClaims()` takes
+   * them
+   * @returns the payload; empty for a URI that is not in the catalogue
+   */
   buildPayload(uri: string, values?: Record<string, any>,
                options?: Record<string, any>): Record<string, any> {
     const { helpers: { log }, events } = this.deps;
@@ -766,6 +866,19 @@ class CaepRegister {
   // event whose `previous_status` is "not-compliant" has missed one, and that
   // gap is invisible from either event on its own.
   // -------------------------------------------------------------------------
+  /**
+   * Applies a CAEP event to a session's row, and collects what is wrong with
+   * it.
+   *
+   * The one refusal is `session-presented` on a revoked session; everything
+   * else odd is a warning. A previous value that does not match the register is
+   * reported.
+   *
+   * @param row - the session's row
+   * @param uri - the event type URI
+   * @param payload - the event's payload
+   * @returns `{ ok, errors, warnings, state }`
+   */
   applyToState(row: CaepRow, uri: string, payload?: any): Verdict {
     const { helpers: { log, iso }, events } = this.deps;
     log.debug("Entering CaepRegister.applyToState(). " + uri);
@@ -893,6 +1006,15 @@ class CaepRegister {
   // questions and a page that answered the first from the second would say
   // three where there were nine.
   // -------------------------------------------------------------------------
+  /**
+   * Counts a CAEP SET that was minted against the session its `sub_id` names,
+   * after `ssf.ts`'s `transmit()` built it.
+   *
+   * @param record - the stream it went out on
+   * @param claims - the SET's claims
+   * @returns the row counted against, or null for a SET about no session or
+   * while CAEP is off
+   */
   noteTransmitted(record: any, claims: any): CaepRow | null {
     const { helpers: { log, iso }, events } = this.deps;
     log.debug("Entering CaepRegister.noteTransmitted().");
@@ -948,6 +1070,19 @@ class CaepRegister {
   // how somebody finds out that the reason no event arrived is that nobody
   // asked for one.
   // -------------------------------------------------------------------------
+  /**
+   * Records a session change in the register and answers the event that ought
+   * to go out, if any; `ssf.ts` installs it as the session observer and sends
+   * what it returns.
+   *
+   * The register is updated even when nothing will be sent.
+   *
+   * @param notice - `kind` (`established`, `presented`, `revoked` or
+   * `reauthenticated`), `session`, and what the act knows (the request,
+   * `byAdmin`, `expired`, the reason)
+   * @returns `{ uri, payload, subject, row }`, or null when nothing is to be
+   * sent
+   */
   observe(notice?: Record<string, any> | null): {
     uri: string; payload: Record<string, any>;
     subject: Record<string, any>; row: CaepRow;
@@ -1157,6 +1292,13 @@ class CaepRegister {
   // are still true — what is being thrown away is what CAEP has said about it
   // — and a delete would take the row off the page, which reads as the
   // session having gone.
+  /**
+   * Puts a row back to the state a fresh session starts in, keeping the row,
+   * and audits it.
+   *
+   * @param sessionId - the session id
+   * @returns the row, or null when there is none
+   */
   reset(sessionId: unknown): CaepRow | null {
     const { helpers: { log, iso }, audit } = this.deps;
     log.debug("Entering CaepRegister.reset(). " + sessionId);
@@ -1185,6 +1327,11 @@ class CaepRegister {
     return row;
   }
 
+  /**
+   * Drops every row of the ambient realm's register, and audits it.
+   *
+   * @returns the number of rows dropped
+   */
   clear(): number {
     const { helpers: { log }, audit } = this.deps;
     log.debug("Entering CaepRegister.clear().");
@@ -1203,6 +1350,12 @@ class CaepRegister {
   // disagree about what this transmitter has said — which is rule 7's whole
   // subject.
   // -------------------------------------------------------------------------
+  /**
+   * Builds the report `/admin/caep-sessions` draws and `GET /admin-api/caep`
+   * answers: the settings, the event types, the totals, and every session row.
+   *
+   * @returns the report
+   */
   report(): Record<string, any> {
     const { helpers: { log }, config, events, subjects } = this.deps;
     log.debug("Entering CaepRegister.report().");
@@ -1262,6 +1415,12 @@ class CaepRegister {
 
   // What the composition root passes (#50, R2): the real modules, as the
   // module built its own instance from before.
+  /**
+   * Returns the real modules this register depends on, as the composition root
+   * passes them.
+   *
+   * @returns the dependencies
+   */
   static defaultDeps(): CaepRegisterDeps {
     helpers.log.debug("Entering CaepRegister.defaultDeps().");
     helpers.log.debug("Leaving CaepRegister.defaultDeps().");
@@ -1296,9 +1455,23 @@ const slot = new InstanceSlot<CaepRegister>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * The CAEP session register.
+ *
+ * Exports the `CaepRegister` class, its `AUTO_ACTS`, and facades that forward
+ * to the installed instance.
+ *
+ * @namespace
+ */
 export = {
   CaepRegister: CaepRegister,
+  /**
+   * Installs the instance the facades forward to.
+   */
   installInstance: (instance: CaepRegister): void => slot.install(instance),
+  /**
+   * Says where the current instance came from.
+   */
   instanceOrigin: (): string => slot.origin(),
   AUTO_ACTS: CaepRegister.AUTO_ACTS,
   enabled: slot.forward('enabled'),

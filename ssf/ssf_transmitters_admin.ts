@@ -33,6 +33,9 @@ import transmitters = require('./ssf_transmitters');
 type Json = any;
 
 const esc = admin.esc;
+/**
+ * The console page's path, `/admin/ssf/transmitters`.
+ */
 const PAGE = '/admin/ssf/transmitters';
 
 interface TransmittersAdminDeps {
@@ -45,14 +48,35 @@ interface TransmittersAdminDeps {
   adminViews: () => Json;
 }
 
+/**
+ * The console page for the foreign Shared Signals transmitters this realm
+ * receives from: each transmitter and its stream's acts, what arrived and what
+ * it led to. It draws `ssf_transmitters.ts`'s report and performs its acts, and
+ * never shows a secret.
+ */
 class SsfTransmittersAdmin {
+  /**
+   * The page's path; the module's `PAGE`.
+   */
   static readonly PAGE = PAGE;
 
+  /**
+   * Builds the page from its dependencies.
+   *
+   * @param deps - the modules it reads, from
+   * `SsfTransmittersAdmin.defaultDeps()` or the composition root
+   */
   constructor(private readonly deps: TransmittersAdminDeps) {
     deps.log.debug("Entering SsfTransmittersAdmin.constructor().");
     deps.log.debug("Leaving SsfTransmittersAdmin.constructor().");
   }
 
+  /**
+   * Returns the real modules the page depends on, as the composition root
+   * passes them.
+   *
+   * @returns the dependencies
+   */
   static defaultDeps(): TransmittersAdminDeps {
     helpers.log.debug("Entering SsfTransmittersAdmin.defaultDeps().");
     helpers.log.debug("Leaving SsfTransmittersAdmin.defaultDeps().");
@@ -66,6 +90,12 @@ class SsfTransmittersAdmin {
     };
   }
 
+  /**
+   * Returns the signed-in console user's name, for the audit row.
+   *
+   * @param req - the request
+   * @returns the username; empty when there is none
+   */
   actorOf(req: Json): string {
     const { log, adminViews } = this.deps;
     log.debug("Entering SsfTransmittersAdmin.actorOf().");
@@ -81,6 +111,15 @@ class SsfTransmittersAdmin {
     return (state && state.username) || '';
   }
 
+  /**
+   * Draws a one-button form that posts an action to the page.
+   *
+   * @param action - the action's name
+   * @param fields - hidden fields, by name
+   * @param label - the button's label
+   * @param danger - whether the button is drawn as a destructive one
+   * @returns the HTML
+   */
   static form(action: string, fields: Json, label: string,
               danger?: boolean): string {
     helpers.log.debug("Entering SsfTransmittersAdmin.form(). " + action);
@@ -95,6 +134,13 @@ class SsfTransmittersAdmin {
       '</button></form>';
   }
 
+  /**
+   * Draws the page's body from the transmitters report: a card per transmitter
+   * with its acts, the registration form, and the table of what arrived.
+   *
+   * @param json - `ssf_transmitters.ts`'s report
+   * @returns the HTML
+   */
   body(json: Json): string {
     const { log, admin } = this.deps;
     log.debug("Entering SsfTransmittersAdmin.body().");
@@ -198,6 +244,11 @@ class SsfTransmittersAdmin {
       '<code>GET /admin-api/ssf/transmitters</code></p>';
   }
 
+  /**
+   * Registers `GET` and `POST /admin/ssf/transmitters` on the app.
+   *
+   * @param app - the express app
+   */
   registerRoutes(app: Json): void {
     const { log, parseBody, admin, transmitters, errorCodes,
             baseUrlOf } = this.deps;
@@ -238,11 +289,23 @@ const slot = new InstanceSlot<SsfTransmittersAdmin>(
 
 slot.buildNowUnlessDeferred();
 
+/**
+ * The console page for foreign Shared Signals transmitters,
+ * `/admin/ssf/transmitters`.
+ *
+ * @namespace
+ */
 export = {
   registerRoutes: slot.forward('registerRoutes'),
   SsfTransmittersAdmin: SsfTransmittersAdmin,
+  /**
+   * Installs the instance the facades forward to.
+   */
   installInstance: (instance: SsfTransmittersAdmin): void =>
     slot.install(instance),
+  /**
+   * Says where the current instance came from.
+   */
   instanceOrigin: (): string => slot.origin(),
   PAGE: PAGE
 };

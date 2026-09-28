@@ -85,6 +85,11 @@ const realms = require('../common/realms');
 // by the page and by the test as a fixture. None of the three is read by the
 // validator.
 // ---------------------------------------------------------------------------
+/**
+ * The Subject Identifier formats of RFC 9493 and SSF 1.0 section 3.5, each with
+ * its closed member set, the members it requires, the section that defines it,
+ * a description and an example.
+ */
 const FORMATS = [
   { format: 'account',
     members: ['uri'], required: ['uri'],
@@ -172,6 +177,9 @@ FORMATS.forEach(function (row) {
   FORMAT_BY_NAME[row.format] = row;
 });
 
+/**
+ * The names of the formats in `FORMATS`, in order.
+ */
 const FORMAT_NAMES = FORMATS.map(function (row) {
   return row.format;
 });
@@ -200,8 +208,15 @@ const FORMAT_NAMES = FORMATS.map(function (row) {
 // a receiver MUST understand is a different list and is configuration rather
 // than grammar: `critical_subject_members`, from `ssf.criticalSubjectMembers`.
 // ---------------------------------------------------------------------------
+/**
+ * The `format` value of a complex subject (SSF 1.0 section 3.3).
+ */
 const COMPLEX_FORMAT = 'complex';
 
+/**
+ * The seven complex-subject member names SSF 1.0 defines, each with a
+ * description. Other names are allowed.
+ */
 const COMPLEX_MEMBERS = [
   { name: 'user', what: 'The person.' },
   { name: 'device', what: 'The device they are on.' },
@@ -212,6 +227,9 @@ const COMPLEX_MEMBERS = [
   { name: 'group', what: 'The group membership the event is about.' }
 ];
 
+/**
+ * The names in `COMPLEX_MEMBERS`, in order.
+ */
 const COMPLEX_MEMBER_NAMES = COMPLEX_MEMBERS.map(function (row) {
   return row.name;
 });
@@ -220,8 +238,19 @@ const COMPLEX_MEMBER_NAMES = COMPLEX_MEMBERS.map(function (row) {
 // is the shape a JSON member name has to have to be one a receiver can refer
 // to in `critical_subject_members` and a person can type, and it keeps out the
 // empty string and `format`, which is the discriminator and not a member.
+/**
+ * The shape an additional complex-subject member name must have: a letter
+ * followed by up to 63 letters, digits, `_`, `.` or `-`.
+ */
 const MEMBER_NAME = /^[A-Za-z][A-Za-z0-9_.-]{0,63}$/;
 
+/**
+ * Says whether a value is a complex subject, that is an object whose `format`
+ * is `complex`.
+ *
+ * @param subject - the value
+ * @returns true for a complex subject
+ */
 function isComplex(subject) {
   log.debug('Entering isComplex().');
   log.debug('Leaving isComplex().');
@@ -379,6 +408,17 @@ function checkMemberValue(format, member, value) {
 // "sub_id.user", "sub_id.identifiers[1]"), so the message names the member the
 // caller can actually find.
 // ---------------------------------------------------------------------------
+/**
+ * Validates one simple Subject Identifier against its format's closed member
+ * set, its required members and each member's value, collecting every problem
+ * rather than stopping at the first.
+ *
+ * @param subject - the Subject Identifier
+ * @param path - where it sits in the document, for the messages (default
+ * `sub_id`)
+ * @param options - passed on to nested identifiers
+ * @returns `{ ok, format, errors }`
+ */
 function validateSubject(subject, path, options) {
   log.debug('Entering validateSubject(). ' + (path || 'sub_id'));
   const where = path || 'sub_id';
@@ -500,6 +540,18 @@ function validateAliases(subject, where, errors, options) {
 // because a transmitter that publishes a critical member and then omits it is
 // producing events nothing will act on.
 // ---------------------------------------------------------------------------
+/**
+ * Validates a `sub_id`, which is a complex subject when its `format` is
+ * `complex` and a simple Subject Identifier otherwise.
+ *
+ * A complex subject lacking one of `options.criticalMembers` is refused here,
+ * at the transmitter.
+ *
+ * @param subject - the `sub_id`
+ * @param options - `path` (default `sub_id`) and `criticalMembers`, the
+ * transmitter's `critical_subject_members`
+ * @returns `{ ok, complex, format, errors }`
+ */
 function validateSubjectId(subject, options) {
   log.debug('Entering validateSubjectId().');
   const settings = options || {};
@@ -577,6 +629,13 @@ function validateSubjectId(subject, options) {
 // A complex subject from its members, with the format member the final text
 // requires. Every place this service BUILDS one goes through here, so none of
 // them can forget it the way all four did until 2026-09-22.
+/**
+ * Builds a complex subject from its members, with the `format` member the final
+ * text requires; empty members are left out.
+ *
+ * @param members - the members by name, each a Subject Identifier
+ * @returns the complex subject
+ */
 function complexSubject(members) {
   log.debug('Entering complexSubject().');
   const out = { format: COMPLEX_FORMAT };
@@ -591,6 +650,12 @@ function complexSubject(members) {
 }
 
 // The members of a complex subject, without its format — what a matcher walks.
+/**
+ * Returns the member names of a complex subject, without `format`.
+ *
+ * @param subject - the subject
+ * @returns the names; empty for a subject that is not complex
+ */
 function complexMembers(subject) {
   log.debug('Entering complexMembers().');
   const names = isComplex(subject) ? Object.keys(subject).filter(
@@ -611,6 +676,16 @@ function complexMembers(subject) {
 // identifier keys on its SORTED members, so the same two identifiers in the
 // other order are one subject — which is what the format means.
 // ---------------------------------------------------------------------------
+/**
+ * Returns a stable string for a subject, so that whether two subjects are the
+ * same is a Map lookup.
+ *
+ * It is not a canonical serialization. An `aliases` identifier keys on its
+ * sorted members.
+ *
+ * @param subject - the subject
+ * @returns the key; empty for a value that is not an object
+ */
 function subjectKey(subject) {
   log.debug('Entering subjectKey().');
   if (!subject || typeof subject !== 'object') {
@@ -643,6 +718,13 @@ function subjectKey(subject) {
 
 // A one-line rendering for a page, a log line or an audit entry. It is for
 // PEOPLE and nothing reads it back.
+/**
+ * Renders a subject on one line for a page, a log line or an audit entry.
+ * Nothing reads it back.
+ *
+ * @param subject - the subject
+ * @returns the rendering
+ */
 function describeSubject(subject) {
   log.debug('Entering describeSubject().');
   if (!subject || typeof subject !== 'object') {
@@ -697,6 +779,10 @@ function describeSubject(subject) {
 // ---------------------------------------------------------------------------
 // The formats a PERSON can be named in — every one but SSF 1.0 section 3.5's
 // three, which are about a token, an assertion and an address.
+/**
+ * The formats a person can be named in: every format but `jwt_id`,
+ * `saml_assertion_id` and `ip-addresses`.
+ */
 const PERSON_FORMATS = ['account', 'email', 'iss_sub', 'opaque',
                         'phone_number', 'did', 'uri', 'aliases'];
 
@@ -715,6 +801,21 @@ function realOrInventedMail(name, facts) {
   return mode.inventsClaimValues() ? realms.inventedMailOf(name) : '';
 }
 
+/**
+ * Returns the Subject Identifier for a person, in the format a stream asked
+ * for.
+ *
+ * Real facts win. Where a format needs a value the caller does not hold,
+ * development mode invents one and product mode falls back to `iss_sub`, whose
+ * `sub` is the person's `urn:uuid:<entryUUID>`. A format that is not a person's
+ * gets `iss_sub` too.
+ *
+ * @param userid - the person's username
+ * @param format - the stream's subject format
+ * @param issuer - this service's issuer
+ * @param facts - `{ mail, phone, did, subject }`, each optional
+ * @returns the Subject Identifier
+ */
 function subjectForUser(userid, format, issuer, facts) {
   log.debug('Entering subjectForUser(). ' + format);
   const name = String(userid || '');
@@ -797,6 +898,13 @@ function subjectForUser(userid, format, issuer, facts) {
   return fallback;
 }
 
+/**
+ * Subject Identifiers for Security Event Tokens (RFC 9493) and SSF's complex
+ * subject: the formats, a validator that refuses by name, and the subject this
+ * service uses for a person.
+ *
+ * @namespace
+ */
 module.exports = {
   FORMATS: FORMATS,
   FORMAT_NAMES: FORMAT_NAMES,
