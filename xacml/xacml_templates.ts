@@ -281,6 +281,63 @@ const SCOPE_ATTRIBUTE = {
   VERDICTS: ['keep', 'drop', 'refuse', 'consent']
 };
 
+// ---------------------------------------------------------------------------
+// THE TRANSFER QUESTIONS (#98 D4, the design's section 6: "geofencing is
+// policy, not code"). When the service is deployed as CELLS — each in one
+// legal jurisdiction, each person homed in one — three questions go to the
+// issuance policy, asked by `common/cell_transfer.ts` through
+// `issuance_gate.checkTransfer()`:
+//
+//   * `hold-session` — may a session of a subject homed in one
+//     jurisdiction, with the credential-free projection of their entry it
+//     stands on, be HELD by a cell in another (#98 D9)? A Deny is not a
+//     refusal: the session stays at home and the visiting cell relays.
+//   * `serve-request` — may a request about that subject be served from
+//     this cell AT ALL, even by relaying it home? A Deny is a refusal, the
+//     hard geofence a realm asks for when its law forbids even carrying
+//     the traffic.
+//   * `release-attributes` — may personal data of people homed in one
+//     jurisdiction be RELEASED to a reader at a cell in another (#98 D11):
+//     an administrator listing another cell's residents, a management-API
+//     call relayed with ?cell=? Asked by the cell that HOLDS the people,
+//     before it answers; a Deny withholds them.
+//
+// The facts are `xacml_request.js`'s (home and serving jurisdiction, client
+// country, whether the realm LISTS the transfer, the data category, the
+// realm, the purpose of a release) and `cells.hardGeofence` as a setting
+// fact. The answer carries `OBLIGATION` with one of `VERDICTS` on a Permit
+// as well as a Deny, for the
+// scope question's reason: a document that answers WITHOUT it — an
+// operator's override built from a template older than these rules — has
+// not decided the transfer, and the BUILT-IN rule is asked instead, so the
+// strict default never silently switches off (the same decision rcbj made
+// on #304).
+// ---------------------------------------------------------------------------
+/**
+ * The action-ids, attribute identifiers and obligation of the two transfer
+ * questions a cell asks the issuance policy (#98 D4).
+ */
+const TRANSFER_ATTRIBUTE = {
+  HOLD_ACTION: 'hold-session',
+  SERVE_ACTION: 'serve-request',
+  RELEASE_ACTION: 'release-attributes',
+  HOME_JURISDICTION: xacmlRequest.VOCABULARY.HOME_JURISDICTION,
+  SERVING_JURISDICTION: xacmlRequest.VOCABULARY.SERVING_JURISDICTION,
+  CLIENT_COUNTRY: xacmlRequest.VOCABULARY.CLIENT_COUNTRY,
+  TRANSFER_LISTED: xacmlRequest.VOCABULARY.TRANSFER_LISTED,
+  DATA_CATEGORY: xacmlRequest.VOCABULARY.DATA_CATEGORY,
+  REALM: xacmlRequest.VOCABULARY.REALM,
+  PURPOSE: xacmlRequest.VOCABULARY.PURPOSE,
+  // The realm's `cells.hardGeofence`, as a setting fact.
+  HARD_GEOFENCE: xacmlRequest.VOCABULARY.SETTING_PREFIX + 'cells.hardGeofence',
+  OBLIGATION: 'urn:sts:xacml:obligation:transfer',
+  VERDICT: 'urn:sts:xacml:transfer-verdict',
+  // `hold` / `relay` answer `hold-session`; `serve` / `refuse` answer
+  // `serve-request`; `release` / `withhold` answer `release-attributes`. A
+  // verdict outside these is read as the strict one.
+  VERDICTS: ['hold', 'relay', 'serve', 'refuse', 'release', 'withhold']
+};
+
 const AUTHN_ATTRIBUTE = {
   // A BAG: RFC 8176 `amr` values of every factor the session was started
   // with — `pwd`, `otp`, `hwk`, `pop`...
@@ -702,6 +759,23 @@ const TEMPLATES: TemplateRow[] = [
               'scope is kept. No leaves the rules out — and the PEP then ' +
               'asks the BUILT-IN policy about scopes instead, so role ' +
               'gating is never switched off by rebuilding this document.' },
+      { name: 'decideTransfers',
+        label: 'Decide where a traveller\'s session may be held (#98)',
+        dflt: 'yes', type: 'string',
+        help: 'yes or no. When yes, the policy answers the two questions a ' +
+              'cell asks when the service is deployed as cells: ' +
+              'hold-session (a session of a person homed in another ' +
+              'jurisdiction is HELD here only when it is the same ' +
+              'jurisdiction or the realm lists the transfer in ' +
+              'cells.permittedTransfers — otherwise every request is ' +
+              'relayed to their home cell) and serve-request (refused only ' +
+              'while cells.hardGeofence is on, for a transfer the realm ' +
+              'does not list), and release-attributes (another cell\'s ' +
+              'residents are released to a reader here only on the same ' +
+              'terms as hold-session). No leaves the rules out — and ' +
+              'the cell then asks the BUILT-IN policy instead, so the ' +
+              'strict default is never switched off by rebuilding this ' +
+              'document.' },
       { name: 'allowTokenRoles',
         label: 'Also accept roles found in a presented token',
         dflt: 'yes', type: 'string',
@@ -794,6 +868,7 @@ const TEMPLATES: TemplateRow[] = [
       const refuseEmail = B.yes(given.refuseEmailFactor, false);
       const decideDevices = B.yes(given.decideDevices, true);
       const decideScopes = B.yes(given.decideScopes, true);
+      const decideTransfers = B.yes(given.decideTransfers, true);
       const deviceExempt = B.listOf(given.deviceExempt === undefined
         ? 'sts-admin-console, sts-user-portal' : given.deviceExempt)
         .filter(function (one: string): boolean {
@@ -1342,6 +1417,100 @@ const TEMPLATES: TemplateRow[] = [
            obligations: verdict(model.EFFECT.PERMIT, 'keep', ''),
            advice: [] }]) : [];
 
+      // -------------------------------------------------------------------
+      // THE TRANSFER RULES (#98 D4). Targeted at the two action-ids, so no
+      // issuance question reaches them and they reach no other question —
+      // and every rule above that has no target reads a fact a transfer
+      // question never carries (a device requirement, a risk level, a
+      // credential kind), so none of them fires on one. THE STRICT DEFAULT:
+      // a session is held away from home only in the same jurisdiction or
+      // where the realm LISTS the transfer; a request is refused only under
+      // a hard geofence, for a transfer the realm does not list. "The same
+      // jurisdiction" is the two bags sharing a member, which is false when
+      // either fact is absent — an unknown jurisdiction is never home.
+      // -------------------------------------------------------------------
+      const TA = TRANSFER_ATTRIBUTE;
+      const actionIs = function (action: string): any {
+        log.debug("Entering actionIs().");
+        log.debug("Leaving actionIs().");
+        return B.targetOf([[
+          B.match(F1 + 'string-equal', B.value(TYPE.STRING, action),
+                  B.designator(model.CATEGORY.ACTION,
+                               model.ATTRIBUTE.ACTION_ID, TYPE.STRING))]]);
+      };
+      const transferVerdict = function (on: string, value: string): any[] {
+        log.debug("Entering transferVerdict().");
+        log.debug("Leaving transferVerdict().");
+        return [{ id: TA.OBLIGATION, on: on,
+                  assignments: [{ attributeId: TA.VERDICT, category: null,
+                                  issuer: null,
+                                  expression: B.value(TYPE.STRING, value) }] }];
+      };
+      const sameJurisdiction = B.apply(F3 + 'any-of-any', [
+        { kind: 'function', functionId: F1 + 'string-equal' },
+        B.designator(model.CATEGORY.ACCESS_SUBJECT, TA.HOME_JURISDICTION,
+                     TYPE.STRING),
+        B.designator(env, TA.SERVING_JURISDICTION, TYPE.STRING)]);
+      const unlistedTransfer = and([
+        not(sameJurisdiction),
+        not(fact(env, TA.TRANSFER_LISTED, true))]);
+      const transferRules: any[] = decideTransfers ? [
+        { id: options.idBase + ':rule:transfer-hold-relayed',
+          effect: model.EFFECT.DENY,
+          description: 'Do not hold a session away from its subject\'s ' +
+                       'home jurisdiction unless the realm lists the ' +
+                       'transfer (cells.permittedTransfers): the visiting ' +
+                       'cell relays every request home instead (#98 D4).',
+          target: actionIs(TA.HOLD_ACTION),
+          condition: unlistedTransfer,
+          obligations: transferVerdict(model.EFFECT.DENY, 'relay'),
+          advice: [] },
+        { id: options.idBase + ':rule:transfer-hold-kept',
+          effect: model.EFFECT.PERMIT,
+          description: 'Hold the session here: the same jurisdiction, or a ' +
+                       'transfer the realm lists.',
+          target: actionIs(TA.HOLD_ACTION),
+          condition: null,
+          obligations: transferVerdict(model.EFFECT.PERMIT, 'hold'),
+          advice: [] },
+        { id: options.idBase + ':rule:transfer-serve-geofenced',
+          effect: model.EFFECT.DENY,
+          description: 'Under a hard geofence (cells.hardGeofence), refuse ' +
+                       'to serve — even by relaying — a request about a ' +
+                       'subject homed in another jurisdiction, unless the ' +
+                       'realm lists the transfer.',
+          target: actionIs(TA.SERVE_ACTION),
+          condition: and([fact(env, TA.HARD_GEOFENCE, true),
+                          unlistedTransfer]),
+          obligations: transferVerdict(model.EFFECT.DENY, 'refuse'),
+          advice: [] },
+        { id: options.idBase + ':rule:transfer-serve-kept',
+          effect: model.EFFECT.PERMIT,
+          description: 'Serve every other request, relaying it home where ' +
+                       'the subject is homed elsewhere.',
+          target: actionIs(TA.SERVE_ACTION),
+          condition: null,
+          obligations: transferVerdict(model.EFFECT.PERMIT, 'serve'),
+          advice: [] },
+        { id: options.idBase + ':rule:transfer-release-withheld',
+          effect: model.EFFECT.DENY,
+          description: 'Do not release personal data of people homed in ' +
+                       'one jurisdiction to a reader at a cell in another ' +
+                       'unless the realm lists the transfer — the same list ' +
+                       'a held session is decided on (#98 D11).',
+          target: actionIs(TA.RELEASE_ACTION),
+          condition: unlistedTransfer,
+          obligations: transferVerdict(model.EFFECT.DENY, 'withhold'),
+          advice: [] },
+        { id: options.idBase + ':rule:transfer-release-kept',
+          effect: model.EFFECT.PERMIT,
+          description: 'Release them: the same jurisdiction, or a transfer ' +
+                       'the realm lists.',
+          target: actionIs(TA.RELEASE_ACTION),
+          condition: null,
+          obligations: transferVerdict(model.EFFECT.PERMIT, 'release'),
+          advice: [] }] : [];
+
       log.debug('Leaving buildRoleIssuance(). ' + arms.length + ' arm(s), ' +
                 riskRules.length + ' risk rule(s), ' + deviceRules.length +
                 ' device rule(s).');
@@ -1401,9 +1570,19 @@ const TEMPLATES: TemplateRow[] = [
                           'role authorizes, and the scopes still needing ' +
                           'consent; and on each RFC 9396 authorization ' +
                           'detail\'s type.'
+                        : '') +
+                     (decideTransfers
+                        ? ' AND, WHERE THE SERVICE IS DEPLOYED AS CELLS ' +
+                          '(#98), WHERE A PERSON\'S DATA MAY GO: a session ' +
+                          'is held away from its subject\'s home ' +
+                          'jurisdiction only where the realm lists the ' +
+                          'transfer, and is otherwise relayed home; a ' +
+                          'request is refused only under a hard geofence; ' +
+                          'and another cell\'s residents are released to a ' +
+                          'reader here only on the same terms.'
                         : ''),
         combiningAlgId: decideRisk || refuseEmail || decideDevices ||
-                        decideScopes
+                        decideScopes || decideTransfers
           ? model.RULE_ALG.ORDERED_DENY_OVERRIDES
           : model.RULE_ALG.DENY_UNLESS_PERMIT,
         // NO TARGET, and that is deliberate rather than an omission: this
@@ -1415,6 +1594,7 @@ const TEMPLATES: TemplateRow[] = [
         target: null,
         variables: {},
         rules: deviceRules.concat(riskRules).concat(scopeRules)
+          .concat(transferRules)
           .concat(decideRisk &&
                                                      protectedApp ? [{
           // THE ALARM (#226): a protected application, an elevated risk, and
@@ -2380,6 +2560,10 @@ class XacmlTemplates {
    */
   static readonly DEVICE_ATTRIBUTE = DEVICE_ATTRIBUTE;
   /**
+   * The transfer questions' action-ids and attribute identifiers (#98).
+   */
+  static readonly TRANSFER_ATTRIBUTE = TRANSFER_ATTRIBUTE;
+  /**
    * The risk-response action-ids.
    */
   static readonly RISK_RESPONSE = RISK_RESPONSE;
@@ -2551,6 +2735,7 @@ export = {
   RISK_ATTRIBUTE: XacmlTemplates.RISK_ATTRIBUTE,
   AUTHN_ATTRIBUTE: XacmlTemplates.AUTHN_ATTRIBUTE,
   DEVICE_ATTRIBUTE: XacmlTemplates.DEVICE_ATTRIBUTE,
+  TRANSFER_ATTRIBUTE: XacmlTemplates.TRANSFER_ATTRIBUTE,
   RISK_RESPONSE: XacmlTemplates.RISK_RESPONSE,
   SIGNAL_ATTRIBUTE: XacmlTemplates.SIGNAL_ATTRIBUTE,
   SIGNAL_RESPONSE: XacmlTemplates.SIGNAL_RESPONSE,

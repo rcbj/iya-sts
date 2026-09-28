@@ -190,6 +190,9 @@ function childMain() {
          'undeclared-refused,undeclared-dropped,permission-not-granted,' +
          'scope-not-authorized,consent-outstanding,scope-kept,' +
          'detail-type-not-registered,detail-type-not-published,detail-kept,' +
+         'transfer-hold-relayed,transfer-hold-kept,' +
+         'transfer-serve-geofenced,transfer-serve-kept,' +
+         'transfer-release-withheld,transfer-release-kept,' +
          'risk-protected-alarm,holds-a-required-role' &&
          /ordered-deny-overrides$/.test(built.policy.combiningAlgId),
          'A1. the built-in issuance policy carries the two device rules ' +
@@ -197,12 +200,13 @@ function childMain() {
          'its alarm ahead of the role rule, under ordered-deny-overrides',
          ruleIds.join(',') + ' ' + (built.policy || {}).combiningAlgId);
     const rolesOnly = templates.build('role-issuance',
-      { decideRisk: 'no', decideDevices: 'no', decideScopes: 'no' },
+      { decideRisk: 'no', decideDevices: 'no', decideScopes: 'no',
+        decideTransfers: 'no' },
       { name: 'role-issuance' });
     note(rolesOnly.ok && rolesOnly.policy.rules.length === 1 &&
          /deny-unless-permit$/.test(rolesOnly.policy.combiningAlgId),
-         'A2. decideRisk: no (and decideDevices and decideScopes: no, #164 ' +
-         'and #304) builds the ' +
+         'A2. decideRisk: no (and decideDevices, decideScopes and ' +
+         'decideTransfers: no, #164, #304 and #98) builds the ' +
          'roles-only document it was');
     const request = rolePep.buildRequest({
       application: CLIENT, kind: 'start-session',
@@ -504,8 +508,9 @@ function childMain() {
     const plain = pdp.evaluate(unprotectedPolicy.policy, consoleRequest, {});
     note(unprotectedPolicy.ok && plain.decision === 'Deny' &&
          // The three risk rules, the role rule, #164's two device rules,
-         // and the thirteen scope and detail rules of #304 and #305.
-         unprotectedPolicy.policy.rules.length === 19,
+         // the thirteen scope and detail rules of #304 and #305, and the
+         // six transfer rules of #98.
+         unprotectedPolicy.policy.rules.length === 25,
          'I5. neverLockOut none puts the console under the three rules, ' +
          'and HIGH refuses it', plain.decision);
 

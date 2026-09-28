@@ -1704,6 +1704,35 @@ const CODES = [
       'an unknown kind, or a grant handed to no other cell; the calling ' +
       'cell is answered with a failure.',
     spec: '' },
+  { code: 'STS-CELL-0180',
+    summary: 'Neither the issuance policy nor the built-in one it falls back ' +
+      'to gave a verdict on a transfer question (hold-session or ' +
+      'serve-request) — a defect; the strict default was read from the ' +
+      'facts instead: a session is held only in the same jurisdiction or a ' +
+      'listed transfer, a request refused only under a hard geofence (#98).',
+    spec: 'none — a warning in the log' },
+  { code: 'STS-CELL-0181',
+    summary: 'The built-in issuance policy could not be evaluated for a ' +
+      'transfer question in a process with no issuance PEP — a defect; the ' +
+      'strict default was read from the facts instead (#98).',
+    spec: 'none — an error in the log' },
+  { code: 'STS-CELL-0182',
+    summary: 'A transfer question named a realm this service does not have; ' +
+      'the session is not held away from home, the request is not served ' +
+      'and nothing is released (#98).',
+    spec: '' },
+  { code: 'STS-CELL-0183',
+    summary: 'A request about a person homed in another jurisdiction was ' +
+      'refused under the realm\'s hard geofence (cells.hardGeofence): the ' +
+      'issuance policy answered serve-request with refuse, so it is neither ' +
+      'served nor relayed (#98).',
+    spec: '' },
+  { code: 'STS-CELL-0184',
+    summary: 'Personal data of the people homed in this cell was withheld ' +
+      'from a reader at a cell in another jurisdiction (a directory listing ' +
+      'or a management-API call relayed with ?cell=): the issuance policy ' +
+      'answered release-attributes with withhold (#98 D11).',
+    spec: '' },
   // ===== SCHED =============================================================
   { code: 'STS-SCHED-0001',
     summary: 'A scheduled job\'s run threw or rejected; the run is recorded ' +

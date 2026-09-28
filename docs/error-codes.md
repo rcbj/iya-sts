@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3795** of them, in **40** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3800** of them, in **40** subsystems.
 
 ## Where a code appears
 
@@ -55,7 +55,7 @@ is an ordinary outcome.
 * [Worker pools (`STS-WORKER`)](#sts-worker) — 43
 * [Persistence and coordination (`STS-STORE`)](#sts-store) — 63
 * [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 28
-* [Cells and residency (`STS-CELL`)](#sts-cell) — 49
+* [Cells and residency (`STS-CELL`)](#sts-cell) — 54
 * [Scheduler (`STS-SCHED`)](#sts-sched) — 16
 * [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 79
 * [Certificate authority (`STS-PKI`)](#sts-pki) — 204
@@ -428,6 +428,11 @@ Raised from: common/cells.ts, common/cell_*.ts, persistence/tiers.js, persistenc
 | `STS-CELL-0163` | Another cell could not be asked whether it holds a GNAP access token, user code or user reference; the request is served here as if no cell did. | — |
 | `STS-CELL-0164` | Another cell could not be told that a GNAP grant moved; a continuation it receives goes to the minting cell by the grant's tag and is forwarded from there. | — |
 | `STS-CELL-0165` | A GNAP inter-cell operation was malformed: an unknown realm, an unknown kind, or a grant handed to no other cell; the calling cell is answered with a failure. | — |
+| `STS-CELL-0180` | Neither the issuance policy nor the built-in one it falls back to gave a verdict on a transfer question (hold-session or serve-request) — a defect; the strict default was read from the facts instead: a session is held only in the same jurisdiction or a listed transfer, a request refused only under a hard geofence (#98). | none — a warning in the log |
+| `STS-CELL-0181` | The built-in issuance policy could not be evaluated for a transfer question in a process with no issuance PEP — a defect; the strict default was read from the facts instead (#98). | none — an error in the log |
+| `STS-CELL-0182` | A transfer question named a realm this service does not have; the session is not held away from home, the request is not served and nothing is released (#98). | — |
+| `STS-CELL-0183` | A request about a person homed in another jurisdiction was refused under the realm's hard geofence (cells.hardGeofence): the issuance policy answered serve-request with refuse, so it is neither served nor relayed (#98). | — |
+| `STS-CELL-0184` | Personal data of the people homed in this cell was withheld from a reader at a cell in another jurisdiction (a directory listing or a management-API call relayed with ?cell=): the issuance policy answered release-attributes with withhold (#98 D11). | — |
 
 ## STS-SCHED
 

@@ -84,7 +84,34 @@ const VOCABULARY = Object.freeze({
   // environment: which moment a scope is judged at (#305): `request` (an
   // endpoint still talking to the client, which refuses), `mint` (the
   // backstop every grant mints through, which narrows) or `consent`.
-  SCOPE_STAGE: 'urn:sts:xacml:scope-stage'
+  SCOPE_STAGE: 'urn:sts:xacml:scope-stage',
+  // THE FACTS OF A TRANSFER QUESTION (#98 D4, the design's section 6 —
+  // "geofencing is policy, not code"), asked by `common/cell_transfer.ts`
+  // when the service is deployed as cells. access-subject: the jurisdiction
+  // the subject is HOMED in, where their personal data lives.
+  HOME_JURISDICTION: 'urn:sts:xacml:home-jurisdiction',
+  // environment: the jurisdiction of the cell being asked to hold the
+  // session or serve the request.
+  SERVING_JURISDICTION: 'urn:sts:xacml:serving-jurisdiction',
+  // environment: the country the CLIENT is in, where the GeoIP data `risk/`
+  // imports could say (ISO 3166-1 alpha-2, lower-case); absent when unknown,
+  // and an absent country is not a country — no rule may read it as one.
+  CLIENT_COUNTRY: 'urn:sts:xacml:client-country',
+  // environment, a boolean: the realm's `cells.permittedTransfers` names
+  // this home>serving pair (staying in one jurisdiction always is). The
+  // realm's STATED loosening, as a fact; what it means is the policy's.
+  TRANSFER_LISTED: 'urn:sts:xacml:transfer-listed',
+  // resource: what would leave home — `session` (a session and the
+  // credential-free projection of the entry it stands on), `request` (one
+  // request, relayed) or `attributes` (residents' entries released to a
+  // reader at another cell, #98 D11). The design's "data category".
+  DATA_CATEGORY: 'urn:sts:xacml:data-category',
+  // environment: WHY attributes are released (#98 D11) —
+  // `directory-list` (an administrator listing another cell's residents)
+  // or `api` (a management-API call relayed with ?cell=).
+  PURPOSE: 'urn:sts:xacml:purpose',
+  // environment: the trust realm the question is asked in.
+  REALM: 'urn:sts:xacml:realm'
 });
 
 // The principal types a request may name. Anything else is a person, which
@@ -288,6 +315,32 @@ class AuthorizationRequest {
     log.debug("Leaving AuthorizationRequest.intermediary().");
     return this.attribute(model.CATEGORY.INTERMEDIARY_SUBJECT,
                           model.ATTRIBUTE.SUBJECT_ID, [name]);
+  }
+
+  // THE FACTS OF A TRANSFER QUESTION (#98), each only when known: an empty
+  // home or serving jurisdiction and an unknown client country are left out
+  // rather than sent as '', because the built-in rule reads "the same
+  // jurisdiction" as the two bags sharing a member and an absent fact must
+  // never make two cells look alike. `listed` is always sent — it is the
+  // realm's own list, and false is a fact.
+  transfer(facts) {
+    log.debug("Entering AuthorizationRequest.transfer().");
+    const given = facts || {};
+    const one = function (value) {
+      log.debug("Entering one().");
+      log.debug("Leaving one().");
+      return value ? [String(value)] : [];
+    };
+    this.subject(VOCABULARY.HOME_JURISDICTION, one(given.home));
+    this.environment(VOCABULARY.SERVING_JURISDICTION, one(given.serving));
+    this.environment(VOCABULARY.CLIENT_COUNTRY, one(given.clientCountry));
+    this.environment(VOCABULARY.TRANSFER_LISTED, [!!given.listed],
+                     model.TYPE.BOOLEAN);
+    this.resource(VOCABULARY.DATA_CATEGORY, one(given.category));
+    this.environment(VOCABULARY.REALM, one(given.realm));
+    this.environment(VOCABULARY.PURPOSE, one(given.purpose));
+    log.debug("Leaving AuthorizationRequest.transfer().");
+    return this;
   }
 
   // The request, in the engine's shape (`xacml_model.js`).
