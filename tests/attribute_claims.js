@@ -20,7 +20,11 @@
 //   D. only the directory: an entry without it adds no claim;
 //   E. CAEP's claimsChangeFor() reports the claim when a write moves the
 //      attribute;
-//   F. `remove` takes it off by name.
+//   F. `remove` takes it off by name;
+//   G. the claim pages' three helps: a pick-list of what attribute sources
+//      and federation mappings write, a preview of what each attribute claim
+//      carries for a person, and which partners' release lists withhold a
+//      claim — each in the model the page and /admin-api both answer.
 // In process, in a throwaway realm; the attribute is written onto the entry
 // through a federated sign-in, the door #94 part B keeps open for a person's
 // own attributes.
@@ -35,6 +39,9 @@ require('../common/claim_attributes');
 const stats = require('../common/admin_stats');
 const adminActions = require('../admin-core/admin_actions');
 const caep = require('../ssf/caep');
+const adminViews = require('../admin-core/admin_views');
+const federation = require('../federation/federation');
+const attributeSources = require('../attribute-sources/attribute_sources');
 
 const log = require('bunyan').createLogger({ name: 'attribute_claims',
   level: process.env.LOG_LEVEL || 'info' });
@@ -151,6 +158,76 @@ function theRemoval(t) {
   log.debug('Leaving theRemoval().');
 }
 
+async function theHelps(t) {
+  log.debug('Entering theHelps().');
+  t.log.info('=== G. pick-list, preview, release warning ===');
+  const source = await attributeSources.act({ action: 'add-source',
+    id: 'ac-hr', dialect: 'postgres', host: 'db.example.com', database: 'hr',
+    user: 'reader', table: 'people', keyColumn: 'login',
+    columns: { grade: 'employeeGrade' } }, { actor: 'test' });
+  const inbound = federation.create({ fedId: 'ac-in-' + RUN,
+    fedRole: 'service-provider', fedProtocol: 'oidc' });
+  const mapped = federation.update('ac-in-' + RUN, {
+    field: 'fedAttributeMap', value: 'clearance=securityClearance',
+    mode: 'add' });
+  const choices = adminViews.attributeClaimChoices();
+  const named = function (attribute) {
+    return choices.filter(function (one) {
+      return one.attribute === attribute;
+    })[0];
+  };
+  t.check(source.ok && inbound.ok !== false && mapped.ok !== false &&
+          !!named('employeeGrade') &&
+          /attribute source ac-hr/.test(named('employeeGrade').from.join()) &&
+          !!named('securityClearance') &&
+          /federation ac-in-/.test(named('securityClearance').from.join()),
+          'G1. the pick-list offers what a source and a federation mapping ' +
+          'write, saying who', JSON.stringify(choices));
+  act({ action: 'add-attribute-claim', set: 'id_token', name: 'cc',
+        attribute: 'costCenter' }, stats.JWT_CLAIM_SET_IDS);
+  const preview = adminViews.attributeClaimPreview('id_token', PERSON);
+  const bare = adminViews.attributeClaimPreview('id_token', BARE);
+  const ccOf = function (rows) {
+    return rows.filter(function (one) { return one.name === 'cc'; })[0];
+  };
+  t.check(ccOf(preview) && ccOf(preview).carried &&
+          ccOf(preview).value === 'CC-7' && ccOf(bare) &&
+          ccOf(bare).carried === false,
+          'G2. the preview says what the claim carries for a person, and ' +
+          'that an entry without it carries nothing',
+          JSON.stringify([ccOf(preview), ccOf(bare)]));
+  const outbound = federation.create({ fedId: 'ac-out-' + RUN,
+    fedRole: 'identity-provider', fedProtocol: 'saml2' });
+  federation.update('ac-out-' + RUN, { field: 'fedRelease', value: 'email',
+                                       mode: 'add' });
+  const json = adminViews.claimSetsJson(['id_token'], PERSON);
+  const set = json.sets[0];
+  t.check(outbound.ok !== false &&
+          (set.withheldFrom.cc || []).indexOf('ac-out-' + RUN) >= 0 &&
+          Array.isArray(set.attributeClaimPreview) &&
+          Array.isArray(json.attributeChoices),
+          'G3. a partner whose release list does not name the claim is ' +
+          'reported as withholding it, in the JSON the API answers',
+          JSON.stringify({ withheld: set.withheldFrom }));
+  // AND THE PAGE DRAWS ALL THREE: the section the three claim pages share.
+  const admin = require('../admin-ui/admin');
+  const html = admin.claimSetSection('id_token', PERSON,
+    require('../common/claim_attributes').catalogueValuesFor(PERSON),
+    '/admin/claims');
+  t.check(html.indexOf('<datalist id="ac-id_token">') >= 0 &&
+          html.indexOf('value="employeeGrade"') >= 0 &&
+          html.indexOf('&quot;CC-7&quot;') >= 0 &&
+          html.indexOf('withheld from') >= 0 &&
+          html.indexOf('have a release list') >= 0,
+          'G4. the claim page draws the pick-list, the preview and the ' +
+          'release warning');
+  federation.remove('ac-out-' + RUN);
+  federation.remove('ac-in-' + RUN);
+  await attributeSources.act({ action: 'remove-source', id: 'ac-hr' },
+                             { actor: 'test' });
+  log.debug('Leaving theHelps().');
+}
+
 async function run(t) {
   log.debug('Entering run().');
   const realm = realms.create({ id: 'ac-' + RUN,
@@ -161,6 +238,7 @@ async function run(t) {
       theTokens(t);
       theSignal(t);
       theRemoval(t);
+      await theHelps(t);
     });
   } finally {
     realms.remove(realm.id);

@@ -23536,6 +23536,15 @@ class AdminConsole {
                     (isUserinfo ? 'UserInfo responses' : 'tokens');
     const extraHeader = isSaml2 ? '<th>NameFormat</th>' :
                         (isSaml11 ? '<th>AttributeNamespace</th>' : '');
+    // ATTRIBUTE CLAIMS' THREE HELPS (#94), from the model the /admin-api
+    // replies carry too: what each attribute row would carry for the
+    // previewed person, which partners' release lists withhold a claim, and
+    // the attributes worth offering in the form's pick-list.
+    const who = previewUser || 'alice';
+    const previewRows = adminViews.attributeClaimPreview(setId, who);
+    const lists = adminViews.releaseWithholding();
+    const withheld = adminViews.withheldFor(claims, lists);
+    const choices = adminViews.attributeClaimChoices();
 
     const rows = claims.map(function (claim) {
       const extraCell = isSaml2 ? '<td>' + self.esc(claim.nameFormat || '—') +
@@ -23552,7 +23561,26 @@ class AdminConsole {
             (claim.multi ? ', every value' : '') +
             (claim.type && claim.type !== 'string'
               ? ', as ' + self.esc(claim.type) : '') + '</span>'
-          : '<code>' + self.esc(claim.value) + '</code>') + '</td>' +
+          : '<code>' + self.esc(claim.value) + '</code>') +
+        // WHAT IT WOULD CARRY FOR THE PREVIEWED PERSON (#94).
+        (claim.attribute ? (function () {
+          const seen = previewRows.filter(function (one) {
+            return one.name === claim.name;
+          })[0];
+          return '<br><span class="sub">for <code>' + self.esc(who) +
+            '</code>: ' + (seen && seen.carried
+              ? '<code>' + self.esc(JSON.stringify(seen.value)) + '</code>'
+              : 'nothing &mdash; their entry has no ' +
+                self.esc(claim.attribute)) + '</span>';
+        })() : '') +
+        // WHO WOULD NOT GET IT (#94): a partner whose release list does not
+        // name it.
+        (withheld[claim.name] ? '<br><span class="state-revoked">withheld ' +
+          'from ' + withheld[claim.name].map(function (id) {
+            return '<a href="/admin/federation?relationship=' +
+                   encodeURIComponent(id) + '">' + self.esc(id) + '</a>';
+          }).join(', ') + '</span><span class="sub"> &mdash; not on ' +
+          'their release list</span>' : '') + '</td>' +
         '<td><form method="post" action="' + self.esc(pageUrl) +
         '" class="inline">' +
         '<input type="hidden" name="action" value="remove">' +
@@ -23614,7 +23642,15 @@ class AdminConsole {
         '<input type="text" id="an-' + setId + '" name="name" size="20">' +
         '<label for="aa-' + setId + '">from the attribute</label>' +
         '<input type="text" id="aa-' + setId + '" name="attribute" ' +
-        'size="20" placeholder="e.g. costCenter">' +
+        'size="20" placeholder="e.g. costCenter" list="ac-' + setId + '">' +
+        // THE PICK-LIST (#94): what this realm's attribute sources and
+        // federation mappings write, so a name is chosen rather than
+        // guessed; any other name may still be typed.
+        '<datalist id="ac-' + setId + '">' + choices.map(function (one) {
+          return '<option value="' + self.esc(one.attribute) + '" label="' +
+                 self.esc(one.attribute + ' (' + one.from.join(', ') + ')') +
+                 '">';
+        }).join('') + '</datalist>' +
         '<label><input type="checkbox" name="multi" value="true"> every ' +
         'value</label>' +
         (isSaml ? '' : '<label for="at-' + setId + '">as</label><select ' +
@@ -23628,7 +23664,20 @@ class AdminConsole {
       (isSaml ? 'assertion' : (isUserinfo ? 'response' : 'token')) +
       ' is about &mdash; any attribute, not only the catalogue below. Only ' +
       'the directory: a person whose entry lacks it gets none. A secret, a ' +
-      'binary value or an attribute this service keeps is refused.</p>' +
+      'binary value or an attribute this service keeps is refused.' +
+      (choices.length ? ' The attribute field offers the ' + choices.length +
+        ' this realm\'s attribute sources and federation mappings write.'
+                      : '') + '</p>' +
+      // THE RELEASE WARNING (#94), where it applies: a claim added here does
+      // not reach a partner whose release list does not name it.
+      (lists.length ? this.warn('<strong>' + lists.length + ' federation ' +
+        'partner(s) have a release list</strong> (' +
+        lists.map(function (one) {
+          return '<a href="/admin/federation?relationship=' +
+                 encodeURIComponent(one.id) + '">' + self.esc(one.id) +
+                 '</a>';
+        }).join(', ') + '): a ' + noun + ' added here reaches them only ' +
+        'once its name is added to their <code>fedRelease</code>.') : '') +
       (claims.length
         ? '<form method="post" action="' + this.esc(pageUrl) +
           '" class="inline">' +
@@ -46420,6 +46469,8 @@ const consoleExports = {
   // second way is the one that goes stale.
   // ---------------------------------------------------------------------
   respondToAction: slot.forward('respondToAction'),
+  // A claim set's section, for tests/attribute_claims.js (#94).
+  claimSetSection: slot.forward('claimSetSection'),
   // For `admin-ui/pki_admin.ts`, whose key-pair controls are drawn on an
   // application's page too — see applicationReturnTo().
   applicationReturnTo: slot.forward('applicationReturnTo'),

@@ -1155,6 +1155,20 @@ catalogue below it cannot reach.
   `token-claims-change` to the holders of live tokens. `remove` takes the claim
   off by name.
 
+Three things on each claim page help with these:
+* **A pick-list.** The attribute field offers what this realm's attribute
+  sources and federation mappings write, each labelled with who writes it. You
+  can still type any other name.
+* **A preview.** Each attribute claim shows what it would carry for the
+  previewed person, or says their entry has no such attribute.
+* **A release warning.** A claim is marked *withheld from* any federation
+  partner whose release list (`fedRelease`) doesn't name it. When partners have
+  release lists, a note under the form says a new claim reaches them only once
+  it is added to those lists.
+
+`GET /admin-api/claims` (and its two siblings) returns the same data:
+`attributeChoices`, and per set `attributeClaimPreview` and `withheldFrom`.
+
 **Values may contain `${username}`-style placeholders**, so a claim can carry
 the signed-in user's identity. **An unknown placeholder is left exactly as
 written**, so a `${dept}` names itself rather than becoming `""`. A JWT claim
