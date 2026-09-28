@@ -1583,6 +1583,24 @@ const CODES = [
       'already places that login name in another cell: a login name is ' +
       'unique in a realm across every cell.',
     spec: '' },
+  { code: 'STS-CELL-0045',
+    summary: 'A re-homing was refused: the target is not a cell of this ' +
+      'service, is this one, is in a jurisdiction the realm may not place ' +
+      'people in, or the person is not homed here.',
+    spec: '' },
+  { code: 'STS-CELL-0046',
+    summary: 'A re-homing was refused: a value sealed on the person\'s entry ' +
+      'or device will not open in this cell, so it cannot be moved.',
+    spec: '' },
+  { code: 'STS-CELL-0047',
+    summary: 'A re-homing failed part way: the target did not take the ' +
+      'person, the routing index could not be moved, or what was left here ' +
+      'could not be removed. The log line says which, and what is left.',
+    spec: '' },
+  { code: 'STS-CELL-0048',
+    summary: 'A re-homed person could not be put back in one of their ' +
+      'groups at the receiving cell.',
+    spec: '' },
   { code: 'STS-CELL-0050',
     summary: 'A change made in this cell to a projected person could not be ' +
       'sent to their home cell; it is held here only until the session ' +

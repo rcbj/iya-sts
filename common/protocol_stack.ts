@@ -1499,6 +1499,9 @@ class ProtocolStack {
     // the sign-out) it reaches lazily, and in single-cell mode no operation it
     // registers is ever called.
     require('./cell_sessions').install();
+    // And re-homing's receiving half (#98 §8.8): `adopt-person`, the same
+    // arrangement — a library whose install() registers one operation.
+    require('./cell_rehome').install();
     // 23b-ii. SIGNING KEY ROTATION (#42, 2026-09-22): a library that registers
     // its two scheduler jobs when built and no route. After `ssf/ssf`, whose
     // signingKeyRotated() it calls (lazily, so the order is for a reader).

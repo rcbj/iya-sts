@@ -62,8 +62,12 @@ const log = bunyan.createLogger({ name: 'sts-persistence-tiers' });
 const RESIDENT_CONTAINERS = ['ou=users'];
 const DEVICE_CONTAINER = 'ou=devices';
 const GROUP_CONTAINER = 'ou=groups';
-// The membership attributes a group's members are split out of.
-const MEMBER_ATTRIBUTES = ['member', 'uniquemember'];
+// The membership attributes a group's members are split out of. `memberUid`
+// (RFC 2307's posixGroup) holds LOGIN NAMES rather than DNs, so every value
+// of it is a person's and goes to the cell half: a name is exactly what the
+// global tier must never hold.
+const MEMBER_ATTRIBUTES = ['member', 'uniquemember', 'memberuid'];
+const NAME_MEMBER_ATTRIBUTES = ['memberuid'];
 
 // The RDNs of a normalised DN key, lower-cased. A DN key is already
 // normalised by the directory; this only splits it, and does not attempt an
@@ -201,11 +205,12 @@ function splitGroup(attrs) {
       globalHalf[name] = attrs[name];
       return;
     }
+    const byName = NAME_MEMBER_ATTRIBUTES.indexOf(lower) >= 0;
     const people = values.filter(function (one) {
-      return isPersonDn(String(one));
+      return byName || isPersonDn(String(one));
     });
     const others = values.filter(function (one) {
-      return !isPersonDn(String(one));
+      return !byName && !isPersonDn(String(one));
     });
     // An EMPTY member attribute stays on the global half: `groupOfNames`
     // requires one, and the directory's own convention for an empty group

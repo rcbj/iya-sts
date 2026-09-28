@@ -2504,6 +2504,44 @@ class AdminApi {
             });
         } },
 
+      { method: 'POST', path: BASE + '/cells/rehome', tag: 'Service',
+        operationId: 'rehomePerson',
+        summary: 'Move a person homed in this cell to another cell',
+        description: 'Re-homing (#98): everything the person holds is ended ' +
+                     'first — here and in every cell holding an export of ' +
+                     'their session — then their entry, devices and group ' +
+                     'memberships are sent to `target` with their entryUUID ' +
+                     'kept and their credentials sealed again under that ' +
+                     'cell\'s key, the routing index is moved, and they are ' +
+                     'taken out of this cell. Call it at the cell that ' +
+                     'holds them (name it with `?cell=` from anywhere). ' +
+                     '`target` must be in a jurisdiction the realm may ' +
+                     'place people in.',
+        mirrors: 'POST /admin/cells (action=rehome)',
+        requestBody: {
+          type: 'object',
+          properties: {
+            username: { type: 'string', minLength: 1, maxLength: 256 },
+            target: { type: 'string', minLength: 1, maxLength: 16 }
+          },
+          required: ['username', 'target'],
+          examples: [{ username: 'alice', target: 'cac1' }],
+          additionalProperties: false
+        },
+        responseDescription: '`{ ok: true, target }`, or a refusal naming ' +
+                             'why.',
+        handler: function (req, res) {
+          log.debug("Entering the management API rehome endpoint.");
+          const body = parseBody(req);
+          cellsAdmin.rehomeAction(String((body && body.username) || ''),
+                                  String((body && body.target) || ''),
+                                  'the management API')
+            .then(function (result) {
+              self.sendJson(res, result.ok ? 200 : 400, result);
+              log.debug("Leaving the management API rehome endpoint.");
+            });
+        } },
+
       // ---------------------------------------------------------------------
       // THE MODE (#181). `modeAdmin.modeView()` — `common/mode.js`'s
       // `report()` for the realm the call is in, the function `/admin/mode`

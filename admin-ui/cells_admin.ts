@@ -256,6 +256,28 @@ class CellsAdmin {
              next: page.length > limit ? out[out.length - 1].name : '' };
   }
 
+  /**
+   * Moves a person homed in this cell to another, for the page and
+   * `POST /admin-api/cells/rehome`.
+   *
+   * @param username - the person
+   * @param target - the cell to move them to
+   * @param actor - who did it
+   * @returns a promise of `{ ok, message }` or `{ ok: false, errors }`
+   */
+  async rehomeAction(username: string, target: string,
+                     actor: string): Promise<Json> {
+    const { log } = this.deps;
+    log.debug("Entering CellsAdmin.rehomeAction().");
+    const answer = await require('../common/cell_rehome').rehome(
+      realms.currentId(), username.trim(), target.trim(), actor);
+    log.debug("Leaving CellsAdmin.rehomeAction(). " + answer.ok);
+    return answer.ok
+      ? { ok: true, message: '"' + username + '" is homed in cell "' +
+                             answer.target + '" now.', target: answer.target }
+      : { ok: false, errors: [answer.why], code: answer.code };
+  }
+
   // -------------------------------------------------------------------------
   // THE PAGE.
   // -------------------------------------------------------------------------
@@ -352,8 +374,23 @@ class CellsAdmin {
                          encodeURIComponent(people.next) + '">Next ' +
                          'page</a></p>' : '');
     }
+    // RE-HOMING (§8.8): an administrator's act, drawn only where there is
+    // somewhere to move a person to.
+    const rehome = json.multi && json.peers.length
+      ? '<h2>Move a person\'s home</h2><p>Moves a person homed in THIS ' +
+        'cell to another: everything they hold is ended first, their entry, ' +
+        'devices and group memberships go to the other cell with their ' +
+        'entryUUID kept, their credentials are sealed again under that ' +
+        'cell\'s key, and they are taken out of this one. The other cell ' +
+        'must be in a jurisdiction this realm may place people in.</p>' +
+        '<form method="post" action="' + PAGE + '">' +
+        '<input type="hidden" name="action" value="rehome">' +
+        '<label>Login name <input name="username" required></label> ' +
+        '<label>To <select name="target">' + options + '</select></label> ' +
+        '<button type="submit">Move</button></form>'
+      : '';
     log.debug("Leaving CellsAdmin.html().");
-    return tiles + about + single + map + store + ask + listed +
+    return tiles + about + single + map + store + ask + listed + rehome +
       admin.configFormsFor(PAGE);
   }
 
@@ -363,7 +400,7 @@ class CellsAdmin {
    *
    * @param app - the shared express app
    */
-  registerRoutes(app: { get: Function }): void {
+  registerRoutes(app: { get: Function; post: Function }): void {
     const { log, admin } = this.deps;
     const self = this;
     log.debug("Entering CellsAdmin.registerRoutes().");
@@ -386,6 +423,32 @@ class CellsAdmin {
         res.status(500).type('text/plain').send('The cell map could not ' +
                                                 'be read.\n');
       });
+    });
+    app.post(PAGE, function (req: Req, res: Res): void {
+      log.debug('Entering POST ' + PAGE + '.');
+      if (!admin.mayWrite(req)) {
+        admin.respondToAction(req, res, PAGE, { ok: false, errors: [
+          'This console session may read but not write.'] });
+        log.debug('Leaving POST ' + PAGE + '. Read-only.');
+        return;
+      }
+      const body = helpers.parseBody(req) || {};
+      if (String(body.action || '') !== 'rehome') {
+        admin.respondToAction(req, res, PAGE, { ok: false, errors: [
+          'Unknown action.'] });
+        log.debug('Leaving POST ' + PAGE + '. Unknown action.');
+        return;
+      }
+      // The console's signed-in administrator, as every other console act
+      // names its actor (`admin-core/admin_views.ts`' gateStateFor()).
+      const state = require('../admin-core/admin_views').gateStateFor(req);
+      self.rehomeAction(String(body.username || ''),
+                        String(body.target || ''),
+                        String((state && state.username) || 'administrator'))
+        .then(function (result: Json) {
+          admin.respondToAction(req, res, PAGE, result);
+          log.debug('Leaving POST ' + PAGE + '.');
+        });
     });
     const channel = require('../common/cell_channel');
     channel.registerOp('cell-ping', function () {
@@ -430,5 +493,6 @@ export = {
   PAGE: PAGE,
   // For `mgmt-api/admin_api.ts` (rule 7).
   cellsView: slot.forward('cellsView'),
-  peopleOf: slot.forward('peopleOf')
+  peopleOf: slot.forward('peopleOf'),
+  rehomeAction: slot.forward('rehomeAction')
 };

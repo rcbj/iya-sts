@@ -135,6 +135,11 @@ function directory(t) {
   const joined = tiers.joinGroup(halves.global, halves.cell);
   t.check(joined.member.length === 3 && joined.cn[0] === 'admins',
           'joining the halves gives the group back');
+  const posix = tiers.splitGroup({ cn: ['posix'], memberUid: ['alice',
+                                                               'bob'] });
+  t.check(!posix.global.memberUid && posix.cell.memberUid.length === 2,
+          'a posixGroup\'s memberUid values are login names, all of them ' +
+          'cell-tier');
   const onlyPeople = tiers.splitGroup({ cn: ['p'], member: [
     'uid=carol,ou=users,' + base] });
   t.check(!onlyPeople.global.member && onlyPeople.cell.member.length === 1,

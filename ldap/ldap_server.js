@@ -3749,7 +3749,10 @@ realms.onRemove(function (id) {
 // two spellings are one entry and a stored key from an older version of it must
 // not be believed over the current one.
 // ---------------------------------------------------------------------------
-persistence.setDirectory({
+// The hooks are NAMED (#98) so that re-homing a person can put their entry
+// here exactly as a replicated one is put — its entryUUID carried, the
+// indexes kept — and have it written down, which a replicated one is not.
+const directoryHooks = {
   // -------------------------------------------------------------------------
   // ONE ENTRY ANOTHER PROCESS WROTE (2026-09-06). The cross-process
   // coordination layer hands this a row it read out of `sts_ldap_entries` and
@@ -4041,7 +4044,8 @@ persistence.setDirectory({
     });
     log.debug('Leaving replaceRealm(). ' + store.size + ' entry/entries.');
   }
-});
+};
+persistence.setDirectory(directoryHooks);
 
 // ---------------------------------------------------------------------------
 // THE SUBJECT RESOLVER (2026-09-14): `helpers.userFor()` asks it for a
@@ -11966,6 +11970,58 @@ function membershipsNaming(dn) {
   return count;
 }
 
+// ---------------------------------------------------------------------------
+// A PERSON TAKEN OUT OF EVERY GROUP THAT NAMES THEM (#98, re-homing): the
+// three membership attributes `membershipsNaming()` counts, each value that
+// names this DN (or, for `memberUid`, its login name) removed, and each group
+// rewritten through `putEntry()` so the indexes and the store see it. The
+// sending cell of a re-homing calls it, so that no membership of a person who
+// now lives in another cell is left in this one.
+// ---------------------------------------------------------------------------
+/**
+ * Removes a person from every group in the ambient realm that names them.
+ *
+ * @param dn - the person's DN
+ * @returns how many groups were rewritten
+ */
+function dropMemberships(dn) {
+  log.debug('Entering dropMemberships(). dn=' + dn);
+  const key = normalizeDn(dn);
+  const uid = (splitRdns(dn)[0] || '').toLowerCase().indexOf('uid=') === 0
+    ? unescapeDnValue(rdnPairs(splitRdns(dn)[0])[0].value).toLowerCase() : '';
+  const rewrites = [];
+  eachEntryInRealm(function (entry) {
+    let changed = false;
+    const next = {};
+    Object.keys(entry.attributes).forEach(function (name) {
+      next[name] = entry.attributes[name].slice(0);
+    });
+    MEMBER_ATTRIBUTES.forEach(function (attribute) {
+      const values = next[attribute.name];
+      if (!values) {
+        return;
+      }
+      const kept = values.filter(function (value) {
+        return attribute.holds === 'uid'
+          ? !(uid && String(value).toLowerCase() === uid)
+          : normalizeDn(value) !== key;
+      });
+      if (kept.length !== values.length) {
+        next[attribute.name] = kept;
+        changed = true;
+      }
+    });
+    if (changed) {
+      rewrites.push({ dn: entry.dn, attributes: next });
+    }
+  });
+  rewrites.forEach(function (one) {
+    putEntry(one.dn, one.attributes, {});
+  });
+  log.debug('Leaving dropMemberships(). ' + rewrites.length + ' group(s).');
+  return rewrites.length;
+}
+
 function auditLdap(req, fields) {
   log.debug("Entering auditLdap().");
   const boundDn = boundDnOf(req);
@@ -19735,9 +19791,46 @@ describeDirectoryCaches();
  *
  * @namespace
  */
+// ---------------------------------------------------------------------------
+// RE-HOMING A PERSON (#98, `common/cell_rehome.ts`). The receiving cell puts
+// the entry here the way a replicated entry is put — the entryUUID the person
+// has always had CARRIED, since it is their `sub` everywhere; `putEntry()`
+// would give them a new one — and, unlike a replicated entry, has it written
+// down: this is outside the store's own apply, so the write is journalled and
+// flushed like any other. The sending cell takes the entry out with an
+// ordinary delete.
+// ---------------------------------------------------------------------------
+/**
+ * Puts a re-homed entry into the ambient realm's directory, keeping its
+ * entryUUID, and has it written down.
+ *
+ * @param dn - the entry's DN
+ * @param attributes - its attributes (lower-case names, array values)
+ * @param origin - its origin marker
+ * @returns the entry as stored
+ */
+function adoptEntry(dn, attributes, origin) {
+  log.debug("Entering adoptEntry(). dn=" + dn);
+  const key = normalizeDn(dn);
+  directoryHooks.applyEntry(realms.currentId(), key, {
+    dn: String(dn), attributes: attributes || {},
+    origin: origin || 'rehomed', createdAt: generalizedTime(),
+    modifiedAt: generalizedTime()
+  });
+  // `applyEntry()` records the change for the store as a replicated one
+  // would not be; say so explicitly, whatever the store's own state.
+  touchDirectory(String(dn));
+  log.debug("Leaving adoptEntry().");
+  return entries.get(key) || null;
+}
+
 module.exports = {
   listen: listen,
   close: close,
+  // Re-homing a person (#98): the entry put here with its entryUUID kept,
+  // and the group membership put back at the receiving cell.
+  adoptEntry: adoptEntry,
+  dropMemberships: dropMemberships,
   // WHAT A CREATE TAKES, CLAIMED ACROSS NODES (#46 section 3), for the SCIM
   // and management-API doors. See `directory_create_claims.js`.
   claimCreate: claimCreate,
