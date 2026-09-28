@@ -25,6 +25,10 @@
 //      body, and nothing is left in flight.
 //   3. A REQUEST WHOSE BODY HAS ARRIVED is closed the ordinary way:
 //      `arm()` does not touch its socket.
+//   4. A SMALL BODY'S LAST WRITE RACING AN EARLY ANSWER (2026-09-27): the
+//      `write EPIPE` 502s of CI run 36369109378, where the front process's
+//      write met a worker socket already closed after its answer. Armed, no
+//      answer of 1500 is lost; and `request_worker.ts` arms every request.
 //
 // Whether a reset beats the answer to the client's kernel is a race, and on
 // loopback the answer usually wins; what a reset does DETERMINISTICALLY is
@@ -329,11 +333,127 @@ async function checkACompleteRequestIsUntouched(t) {
   log.debug("Leaving checkACompleteRequestIsUntouched().");
 }
 
+// ---------------------------------------------------------------------------
+// 4. A SMALL BODY'S LAST WRITE RACING AN EARLY ANSWER (2026-09-27).
+//
+// The worker answers at once and reads nothing, with `Connection: close` as
+// the front process asks of every request (#77); the client's body goes out
+// a moment later, in the gap node's own scheduling leaves. Unarmed, node
+// closes the socket when the answer is flushed and a body write that lands
+// after it fails as `write EPIPE` BEFORE the answer is parsed — the answer is
+// lost, and in the request pool that is a 502 for a request the worker
+// answered. Measured 17 of 2000 on a workstation; how many on a given host
+// is its scheduler's business, so the unarmed count is REPORTED and only
+// the armed one is held to nought.
+// ---------------------------------------------------------------------------
+const RACES = 1500;
+
+function raceOnce(socketPath, size, delay) {
+  log.debug("Entering raceOnce().");
+  log.debug("Leaving raceOnce().");
+  return new Promise(function (resolve) {
+    const req = http.request({ socketPath: socketPath,
+                               method: 'POST', path: '/', agent: false,
+                               headers: { Connection: 'close',
+                                          'Content-Length': size } },
+      function (res) {
+        res.resume();
+        res.on('end', function () {
+          resolve(String(res.statusCode));
+        });
+      });
+    req.on('error', function (e) {
+      log.debug("Caught in raceOnce(): " + ((e && e.message) || e));
+      resolve('error ' + (e.code || e.message));
+    });
+    req.flushHeaders();
+    const send = function () {
+      req.write(Buffer.alloc(size), function () {});
+      req.end();
+    };
+    if (delay) {
+      setTimeout(send, delay);
+    } else {
+      setImmediate(send);
+    }
+  });
+}
+
+async function checkTheRace(t) {
+  log.debug("Entering checkTheRace().");
+  t.log.info('=== a small body\'s last write racing an early answer ===');
+  const answerAtOnce = function (armed) {
+    return function (req, res) {
+      if (armed) {
+        lingeringClose.arm(req, res);
+      } else {
+        res.setHeader('Connection', 'close');
+      }
+      res.statusCode = 400;
+      res.end('refused');
+    };
+  };
+  // OVER UNIX SOCKETS, as the front process reaches its workers: on TCP
+  // loopback the same race lost nothing in 1500, so a TCP control would show
+  // nothing about the connection that failed.
+  const where = function (kind) {
+    return path.join(os.tmpdir(), 'sts-race-' + kind + '-' + process.pid +
+                     '-' + Date.now() + '.sock');
+  };
+  const armedPath = where('armed');
+  const plainPath = where('plain');
+  const armed = await listen(http.createServer(answerAtOnce(true)),
+                             armedPath);
+  const plain = await listen(http.createServer(answerAtOnce(false)),
+                             plainPath);
+  const lost = { armed: [], plain: [] };
+  for (let i = 0; i < RACES; i++) {
+    const size = [200, 4000, 70000][i % 3];
+    const delay = i % 4;
+    const a = await raceOnce(armedPath, size, delay);
+    if (a !== '400') {
+      lost.armed.push(a);
+    }
+    const p = await raceOnce(plainPath, size, delay);
+    if (p !== '400') {
+      lost.plain.push(p);
+    }
+  }
+  t.log.info('  unarmed, ' + lost.plain.length + ' of ' + RACES +
+             ' answers were lost (' + (lost.plain[0] || 'none') + ')');
+  t.equal(lost.armed.length, 0, 'armed, every one of ' + RACES +
+          ' early answers reaches a client whose last write came after it',
+          JSON.stringify(lost.armed.slice(0, 5)));
+  await close(armed);
+  await close(plain);
+  [armedPath, plainPath].forEach(function (one) {
+    try {
+      fs.unlinkSync(one);
+    } catch (e) {
+      log.debug("Caught in checkTheRace(): " + ((e && e.message) || e));
+    }
+  });
+  // AND THE WORKER ARMS EVERY REQUEST. Read as a statement, not a line
+  // (the root CLAUDE.md's rule for a source-inspection test): the first
+  // statement of the handler given to its http.createServer.
+  const source = fs.readFileSync(path.join(__dirname, '..', 'common',
+                                           'request_worker.ts'), 'utf8');
+  const at = source.indexOf('http.createServer(function (req, res) {');
+  const body = at < 0 ? '' : source.slice(at, at + 4000)
+    .replace(/\/\/[^\n]*\n/g, '');
+  const first = body.slice(body.indexOf('{') + 1).trim().split(';')[0];
+  t.check(/^lingeringClose\.arm\(\s*req\s*,\s*res\s*\)$/.test(first),
+          'and request_worker.ts arms it first thing in its server\'s handler',
+          first.slice(0, 120));
+  log.debug("Leaving checkTheRace().");
+}
+
 async function run(t) {
   log.debug("Entering run().");
   await checkDirect(t);
   await checkThroughThePool(t);
   await checkACompleteRequestIsUntouched(t);
+  await checkTheRace(t);
   pool.reset();
   log.debug("Leaving run().");
 }
