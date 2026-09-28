@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3740** of them, in **39** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3742** of them, in **39** subsystems.
 
 ## Where a code appears
 
@@ -80,7 +80,7 @@ is an ordinary outcome.
 * [Mail (`STS-MAIL`)](#sts-mail) — 39
 * [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 282
 * [Device register (`STS-DEVICE`)](#sts-device) — 45
-* [XACML and access policy (`STS-XACML`)](#sts-xacml) — 77
+* [XACML and access policy (`STS-XACML`)](#sts-xacml) — 79
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 32
 * [Admin console (`STS-ADMIN`)](#sts-admin) — 207
 * [Management API (`STS-API`)](#sts-api) — 75
@@ -3577,6 +3577,8 @@ Raised from: xacml/, common/access_gate.ts, common/issuance_gate.js, common/role
 | `STS-XACML-0075` | A write put a person or a group on ADMIN_READ or ADMIN_WRITE; their people are the console roster's, granted on /admin/rbac, and only an application is added on the role (#303). | none (a console or management API refusal, HTTP 400) |
 | `STS-XACML-0076` | A delete named ADMIN_READ or ADMIN_WRITE, which every realm keeps (#303). | none (a console or management API refusal, HTTP 400) |
 | `STS-XACML-0077` | ADMIN_READ or ADMIN_WRITE could not be seeded in a realm; no machine client can be issued that admin scope there until it exists (#303). | none — a warning in the log |
+| `STS-XACML-0078` | Neither the issuance policy nor the built-in one it falls back to gave a verdict on a requested scope — a defect; a scope gated by role was dropped and an ungated one kept (#304). | none — a warning in the log |
+| `STS-XACML-0079` | No XACML family is loaded in the process, so no policy could decide the requested scopes gated by role; they were dropped (#304). | none — a warning in the log |
 
 ## STS-XPEP
 

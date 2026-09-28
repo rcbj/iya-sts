@@ -103,6 +103,21 @@ const KINDS = Object.keys(ISSUANCE).map(function (key) {
   return ISSUANCE[key];
 });
 
+// THE PROTOCOL OF AN ISSUANCE, where the caller did not name one (#304): the
+// issuance request carries it as an environment attribute, and every kind but
+// a session belongs to one family. A session is protocol-independent — the
+// authenticated identity is `authn/`'s — so it carries none unless named.
+const PROTOCOL_OF_KIND = {
+  'issue-access-token': 'OAuth 2.0',
+  'issue-id-token': 'OpenID Connect',
+  'issue-refresh-token': 'OAuth 2.0',
+  'issue-authorization-code': 'OAuth 2.0',
+  'issue-saml-assertion': 'SAML',
+  'issue-wsfed-token': 'WS-Federation',
+  'issue-wstrust-token': 'WS-Trust',
+  'issue-kerberos-ticket': 'Kerberos'
+};
+
 let decider = null;
 
 /**
@@ -292,6 +307,7 @@ function check(request) {
                  'to check.');
   }
   const question = Object.assign({}, asked, {
+    protocol: asked.protocol || PROTOCOL_OF_KIND[String(asked.kind)] || '',
     risk: risk,
     device: device,
     deviceRequirement: deviceRequirement,
@@ -413,6 +429,76 @@ function checkDelegation(delegation) {
   log.debug('Leaving checkDelegation(). ' + (result.allowed ? 'Allowed.'
     : 'DENIED: ' + result.why));
   return result;
+}
+
+// ---------------------------------------------------------------------------
+// THE PER-SCOPE QUESTION (#304, part C of #88): which of the requested scopes
+// are issued. `request` is `{ subject, application, client, grantType,
+// protocol, held, scopes: [{ scope, gated, authorizingRoles }] }` — the
+// FACTS, gathered by `role_permissions.ts`; the issuance policy decides each
+// one and answers `{ verdicts: [{ scope, verdict, code, decidedBy }] }`,
+// verdict `keep`, `drop` or `refuse`.
+//
+// **NO DECIDER IS NOT PERMISSION HERE**, where it is for an issuance (rcbj's
+// decision on #304). A process with no XACML family loaded cannot ask any
+// document, so a GATED scope is dropped and an ungated one kept — the
+// narrowed-application rule `xacml_role_pep.ts` argues: a configured
+// restriction must not silently stop happening. A decider that THROWS is the
+// same: a defect, and a gated scope is not issued on one.
+// ---------------------------------------------------------------------------
+function checkScopes(request) {
+  log.debug('Entering checkScopes().');
+  const asked = request || {};
+  const scopes = Array.isArray(asked.scopes) ? asked.scopes : [];
+  const closed = function (why) {
+    return { verdicts: scopes.map(function (one) {
+      return { scope: one.scope, verdict: one.gated ? 'drop' : 'keep',
+               code: one.gated ? 'STS-ADMIN-0821' : '', decidedBy: 'none' };
+    }), why: why };
+  };
+  if (!scopes.length) {
+    log.debug('Leaving checkScopes(). Nothing asked.');
+    return { verdicts: [], why: '' };
+  }
+  if (!decider) {
+    if (scopes.some(function (one) { return one.gated; })) {
+      log.warn(errorCodes.tag('STS-XACML-0079') + 'issuance_gate: no XACML ' +
+               'family is loaded, so no policy can decide the scopes ' +
+               'gated by role; they are dropped.');
+    }
+    log.debug('Leaving checkScopes(). No decider: gated scopes dropped.');
+    return closed('No XACML family is loaded in this process.');
+  }
+  let answer;
+  try {
+    answer = decider({
+      kind: 'issue-scope',
+      application: String(asked.application || ''),
+      subject: asked.subject || {},
+      client: asked.client || '',
+      grantType: asked.grantType || '',
+      protocol: asked.protocol || '',
+      claims: null,
+      risk: null,
+      rolesWaived: true,
+      scopeQuestion: { held: asked.held || [], scopes: scopes }
+    });
+  } catch (error) {
+    log.error(errorCodes.tag('STS-XACML-0052') +
+              'issuance_gate: the decider threw on the scope question; the ' +
+              'scopes gated by role are dropped. This is a defect in the ' +
+              'embedded PEP rather than a decision. ' + error.message);
+    log.debug('Leaving checkScopes(). The decider threw.');
+    return closed('The embedded PEP threw: ' + error.message);
+  }
+  const verdicts = answer && Array.isArray(answer.scopes) ? answer.scopes
+    : null;
+  if (!verdicts) {
+    log.debug('Leaving checkScopes(). The PEP answered no verdicts.');
+    return closed('The embedded PEP answered no verdicts.');
+  }
+  log.debug('Leaving checkScopes(). ' + verdicts.length + ' verdict(s).');
+  return { verdicts: verdicts, why: '', policy: answer.policy || '' };
 }
 
 function riskFactsOf(asked) {
@@ -563,6 +649,8 @@ module.exports = {
   setDecider: setDecider,
   deciderInstalled: deciderInstalled,
   check: check,
+  checkScopes: checkScopes,
+  PROTOCOL_OF_KIND: PROTOCOL_OF_KIND,
   deviceFactsOf: deviceFactsOf,
   deviceRequirementOf: deviceRequirementOf,
   DELEGATE: DELEGATE,

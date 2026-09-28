@@ -86,6 +86,9 @@ import roles = require('./roles');
 import applications = require('./applications');
 import audit = require('./audit');
 import adminRbac = require('../admin-ui/admin_rbac');
+// THE ISSUANCE GATE (#304): the per-scope question goes to the issuance
+// policy through it. A leaf library, as this file's other imports are.
+import gate = require('./issuance_gate');
 
 /**
  * The error code audited when a gated permission is taken off a grant.
@@ -420,21 +423,59 @@ class RolePermissions {
       return unchanged;
     }
     const who = subject || {};
+    const ctx = context || {};
     const held = this.heldRoles(who);
     const authorizes = this.permissionsByRole();
-    const removed = gated.filter(function (permission) {
-      return !held.configured.some(function (role) {
-        return (authorizes[role] || []).indexOf(permission) >= 0;
-      });
+    // THE FACTS, AND THE POLICY DECIDES (#304, part C of #88). Every value
+    // of the scope goes to the issuance policy with whether its resource
+    // gates it and which configured roles authorize it; the subject's held
+    // roles go with them. The policy answers keep, drop or refuse for each
+    // — `issuance_gate.checkScopes()`, then `xacml_role_pep.ts`, which falls
+    // back to the built-in policy where the configured one gives no verdict.
+    const facts = values.map(function (value) {
+      return {
+        scope: value,
+        gated: gated.indexOf(value) >= 0,
+        authorizingRoles: Object.keys(authorizes).filter(function (role) {
+          return authorizes[role].indexOf(value) >= 0;
+        })
+      };
+    });
+    const answer = gate.checkScopes({
+      subject: { kind: who.kind === 'application' ? 'application' : 'user',
+                 name: String(who.name || ''),
+                 authenticated: who.authenticated !== false },
+      application: String(ctx.clientId || ''),
+      client: String(ctx.clientId || ''),
+      grantType: String(ctx.grant || ''),
+      protocol: 'OAuth 2.0',
+      held: held.configured,
+      scopes: facts
+    });
+    const verdictOf: Record<string, any> = {};
+    (answer.verdicts || []).forEach(function (one) {
+      verdictOf[one.scope] = one;
+    });
+    // A value the answer did not mention is a gated one dropped and an
+    // ungated one kept — checkScopes()'s own fail-closed reading.
+    const decided = function (value: string): any {
+      return verdictOf[value] ||
+        { verdict: gated.indexOf(value) >= 0 ? 'drop' : 'keep',
+          code: gated.indexOf(value) >= 0 ? 'STS-ADMIN-0821' : '' };
+    };
+    const refused = values.filter(function (one) {
+      return decided(one).verdict === 'refuse';
+    });
+    const removed = values.filter(function (one) {
+      return decided(one).verdict !== 'keep';
     });
     if (!removed.length) {
-      log.debug("Leaving RolePermissions.narrowScope(). Authorized.");
+      log.debug("Leaving RolePermissions.narrowScope(). All kept.");
       return unchanged;
     }
     const kept = values.filter(function (one) {
       return removed.indexOf(one) < 0;
     });
-    const ctx = context || {};
     const name = String(who.name || '');
     const reason = held.why ||
       (name || 'an unnamed subject') + ' holds no role authorizing ' +
@@ -442,7 +483,9 @@ class RolePermissions {
         ? ' (holds ' + held.configured.join(', ') + ')' : '');
     // ONE line in the log, and it is the audit row's: `audit.js` writes a row
     // carrying an errorCode to the log itself.
-    audit.failure('STS-ADMIN-0821', {
+    // STS-ADMIN-0821 unless the policy named another code for the first
+    // scope it took off.
+    audit.failure(decided(removed[0]).code || 'STS-ADMIN-0821', {
       actor: name,
       protocol: 'OAuth 2.0 / OIDC',
       channel: 'http',
@@ -460,8 +503,10 @@ class RolePermissions {
     });
     log.debug("Leaving RolePermissions.narrowScope(). " + removed.length +
               " taken off.");
+    // A REFUSE verdict refuses the whole request (#304): the caller answers
+    // it as it answers a request left with nothing, `invalid_scope`.
     return { scope: kept.join(' '), removed: removed,
-             emptied: kept.length === 0,
+             emptied: kept.length === 0 || refused.length > 0,
              why: 'the permission(s) ' + removed.join(', ') + ' cannot be ' +
                   'issued: ' + reason };
   }

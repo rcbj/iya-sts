@@ -184,18 +184,20 @@ function childMain() {
     note(built.ok && ruleIds.join(',') === 'device-compromised,' +
          'device-required,risk-high,risk-medium-key,' +
          'risk-medium-second-factor,risk-protected-key,' +
-         'risk-protected-second-factor,risk-protected-alarm,' +
-         'holds-a-required-role' &&
+         'risk-protected-second-factor,scope-not-authorized,scope-kept,' +
+         'risk-protected-alarm,holds-a-required-role' &&
          /ordered-deny-overrides$/.test(built.policy.combiningAlgId),
          'A1. the built-in issuance policy carries the two device rules ' +
          '(#164), the three risk rules, the console\'s two step-ups and ' +
          'its alarm ahead of the role rule, under ordered-deny-overrides',
          ruleIds.join(',') + ' ' + (built.policy || {}).combiningAlgId);
     const rolesOnly = templates.build('role-issuance',
-      { decideRisk: 'no', decideDevices: 'no' }, { name: 'role-issuance' });
+      { decideRisk: 'no', decideDevices: 'no', decideScopes: 'no' },
+      { name: 'role-issuance' });
     note(rolesOnly.ok && rolesOnly.policy.rules.length === 1 &&
          /deny-unless-permit$/.test(rolesOnly.policy.combiningAlgId),
-         'A2. decideRisk: no (and decideDevices: no, #164) builds the ' +
+         'A2. decideRisk: no (and decideDevices and decideScopes: no, #164 ' +
+         'and #304) builds the ' +
          'roles-only document it was');
     const request = rolePep.buildRequest({
       application: CLIENT, kind: 'start-session',
@@ -496,9 +498,9 @@ function childMain() {
               enforced: true } }, ['EVERYBODY'], [], ['EVERYBODY']);
     const plain = pdp.evaluate(unprotectedPolicy.policy, consoleRequest, {});
     note(unprotectedPolicy.ok && plain.decision === 'Deny' &&
-         // The three risk rules, the role rule, and #164's two device
-         // rules.
-         unprotectedPolicy.policy.rules.length === 6,
+         // The three risk rules, the role rule, #164's two device rules,
+         // and #304's two scope rules.
+         unprotectedPolicy.policy.rules.length === 8,
          'I5. neverLockOut none puts the console under the three rules, ' +
          'and HIGH refuses it', plain.decision);
 

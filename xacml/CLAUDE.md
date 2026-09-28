@@ -1286,6 +1286,25 @@ routing an internal decision through a policy engine that is already here.
 | resource | `resource-id` | the application |
 | | `urn:sts:xacml:required-role` | what it demands |
 | action | `action-id` | `issue-access-token`, `start-session`, and the rest of `issuance_gate`'s `ISSUANCE` |
+| | `urn:sts:xacml:requested-scope` | the scope values asked for (#304) |
+| access-subject | `urn:sts:xacml:client-id` | the client the request came through (#304) |
+| environment | `urn:sts:xacml:grant-type`, `urn:sts:xacml:protocol` | the OAuth grant and the protocol family (#304; the protocol filled from the kind where the caller names none) |
+
+**AND ONE QUESTION PER REQUESTED SCOPE (#304, part C of #88).** Which scopes
+are issued is the policy's decision too, not code's: `issuance_gate`'s
+`checkScopes()` asks, action-id `issue-scope` with the scope as the
+resource-id, `urn:sts:xacml:scope-gated` (does its resource gate it by role,
+#303) and `urn:sts:xacml:authorizing-role` (which roles' `rolePermission`
+names it) on the resource, and the subject's ROLE bag. The answer carries
+`urn:sts:xacml:obligation:scope` — `keep`, `drop` or `refuse`, and a code —
+on a Permit as well as a Deny. The built-in `role-issuance` has two rules for
+it (`scope-not-authorized`, `scope-kept`, parameter `decideScopes`), and an
+operator's rule may drop any scope with its own code. **No verdict is not a
+verdict (rcbj's decision on #304)**: `xacml.enabled` off, no loadable policy,
+or an override built without the scope rules — the PEP asks the BUILT-IN
+policy instead, so role gating never switches off; a process with no XACML
+family drops a gated scope (`STS-XACML-0079`). The code that gathers the
+facts is `common/role_permissions.ts`; nothing in it decides.
 
 **The subject is the party being authenticated and not always a person.** In a
 browser flow it is whoever signed in; in a `client_credentials` grant there is

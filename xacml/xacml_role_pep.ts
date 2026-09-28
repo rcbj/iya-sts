@@ -37,6 +37,18 @@
 //   action           action-id                     issue-access-token,
 //                                                  start-session, and the rest
 //                                                  of issuance_gate's ISSUANCE
+//                    urn:sts:xacml:requested-scope the scope values asked for
+//   access-subject   urn:sts:xacml:client-id       the client, where named
+//   environment      urn:sts:xacml:grant-type      the OAuth grant, where any
+//                    urn:sts:xacml:protocol        the protocol family
+//                                                  (#304: these four since C)
+//
+// **AND A SECOND QUESTION, ONE PER REQUESTED SCOPE (#304, part C of #88).**
+// action-id `issue-scope`, the scope as the resource-id, whether its resource
+// gates it (`urn:sts:xacml:scope-gated`) and which roles authorize it
+// (`urn:sts:xacml:authorizing-role`) on the resource, the subject's roles on
+// the subject. The answer's scope obligation says keep, drop or refuse, with
+// a code; no verdict falls back to the BUILT-IN policy — `decideScopes()`.
 //
 // **THE SUBJECT IS THE PARTY BEING AUTHENTICATED AND NOT ALWAYS A PERSON.** In
 // a browser flow it is whoever signed in; in a `client_credentials` grant
@@ -159,6 +171,42 @@ interface IssuanceQuestion {
   // carries no device attribute, and every device rule is inapplicable.
   device?: any;
   deviceRequirement?: string[];
+  // WHAT THE REQUEST CARRIES (#304, part C of #88): the scope values asked
+  // for, the client it came through, the grant type and the protocol — sent
+  // to the policy on every issuance question where the caller names them.
+  scopes?: string[];
+  client?: string;
+  grantType?: string;
+  protocol?: string;
+  // THE PER-SCOPE QUESTION (#304): present, this is not an issuance question
+  // but one question per requested scope, answered with a verdict each
+  // (`decideScopes()`).
+  scopeQuestion?: ScopeQuestion | null;
+}
+
+// One requested scope, with the facts the policy decides it on (#304).
+interface ScopeFact {
+  scope: string;
+  // Whether its resource application gates it by role (#303).
+  gated: boolean;
+  // The configured roles whose rolePermission names it.
+  authorizingRoles: string[];
+}
+
+// The per-scope question: the subject's configured roles and each scope.
+interface ScopeQuestion {
+  held: string[];
+  scopes: ScopeFact[];
+}
+
+// One scope's verdict.
+interface ScopeVerdict {
+  scope: string;
+  verdict: string;
+  code: string;
+  // Which document decided: the issuance policy, or the built-in one it
+  // fell back to (#304's decision) — `none` when neither could.
+  decidedBy: string;
 }
 
 // The risk facts, as the gate hands them on.
@@ -186,6 +234,8 @@ interface IssuanceAnswer {
   // The device rule that denied (#164 phase 6): `compromised` or
   // `not-compliant`.
   device?: { refusal: string } | null;
+  // The per-scope verdicts, for a scope question (#304).
+  scopes?: ScopeVerdict[];
 }
 
 // Which document decides: `policy` when one does, `why` when none can.
@@ -238,6 +288,8 @@ const RISK = templates.RISK_ATTRIBUTE;
 const DEVICE = templates.DEVICE_ATTRIBUTE;
 // #64: the authentication a session stands on.
 const AUTHN = templates.AUTHN_ATTRIBUTE;
+// #304: the per-scope verdict.
+const SCOPE = templates.SCOPE_ATTRIBUTE;
 
 // Said once per process rather than once per issuance. A service running
 // without its issuance policy would otherwise write a line per token, which
@@ -532,8 +584,22 @@ class XacmlRolePep {
       .target(asked.application)
       .resource(ATTRIBUTE.REQUIRED_ROLE, required)
       .requestedAction(asked.kind);
+    // WHAT THE REQUEST CARRIES (#304), where the caller named it: the scope
+    // values asked for, the client, the grant type and the protocol.
+    if (Array.isArray(asked.scopes)) {
+      req.requestedScopes(asked.scopes);
+    }
+    if (asked.client) {
+      req.client(asked.client);
+    }
     // THE ENVIRONMENT IS ALWAYS SENT, empty or not, as it always was.
     req.category(model.CATEGORY.ENVIRONMENT);
+    if (asked.grantType) {
+      req.grantType(asked.grantType);
+    }
+    if (asked.protocol) {
+      req.protocol(asked.protocol);
+    }
     this.riskAttributes(req, asked.risk, String(subject.name || ''));
     this.authenticationAttributes(req, asked.authentication);
     this.deviceAttributes(req, asked);
@@ -759,6 +825,11 @@ class XacmlRolePep {
     log.debug('Entering XacmlRolePep.decideNow(). application=' +
               asked.application + ' kind=' + asked.kind +
               (dryRun ? ' (a dry run: nothing is audited or counted)' : ''));
+
+    if (asked.scopeQuestion) {
+      log.debug('Leaving XacmlRolePep.decideNow(). A scope question.');
+      return this.decideScopes(asked);
+    }
 
     if (config.value('xacml.enabled') === false) {
       log.debug('Leaving XacmlRolePep.decideNow(). The XACML family is ' +
@@ -1072,6 +1143,138 @@ class XacmlRolePep {
              'DENIED ') + why);
     log.debug('Leaving XacmlRolePep.decideDenyOnly(). Deny.');
     return this.refused(why, answer.decision, held, [], answer);
+  }
+
+  // -------------------------------------------------------------------------
+  // THE PER-SCOPE QUESTION (#304, part C of #88).
+  //
+  // One request per requested scope — action-id `issue-scope`, the scope as
+  // the resource-id, whether its resource gates it and which roles
+  // authorize it on the resource, the roles the subject holds on the
+  // subject — and one verdict each out of the policy's scope obligation:
+  // keep, drop or refuse, with a code. Code supplies the facts; the policy
+  // decides (rcbj's rule, 2026-09-22).
+  //
+  // **NO VERDICT IS NOT A VERDICT (rcbj's decision on #304).** With
+  // `xacml.enabled` off, no issuance policy loadable, or a document that
+  // answers without the obligation — an operator's override built from a
+  // template older than these rules — the BUILT-IN policy is asked instead,
+  // with the same engine: the rule lives in one document and role gating
+  // never silently switches off. Only if the built-in one cannot answer
+  // either (a defect) is a gated scope dropped and an ungated one kept.
+  // Nothing is audited here: the caller records what it took off, once.
+  // -------------------------------------------------------------------------
+  private decideScopes(asked: IssuanceQuestion): IssuanceAnswer {
+    const { log, config, model, store, pdp, pip, errorCodes } = this.deps;
+    const self = this;
+    log.debug('Entering XacmlRolePep.decideScopes().');
+    const question = asked.scopeQuestion as ScopeQuestion;
+    const subject = asked.subject || {};
+    let builtIn: LoadedPolicy | null = null;
+    const theBuiltIn = function (): LoadedPolicy {
+      log.debug("Entering theBuiltIn().");
+      if (!builtIn) {
+        builtIn = self.builtInPolicy();
+      }
+      log.debug("Leaving theBuiltIn().");
+      return builtIn;
+    };
+    let loaded = config.value('xacml.enabled') === false ? theBuiltIn()
+                                                         : this.issuancePolicy();
+    if (!loaded.policy) {
+      loaded = theBuiltIn();
+    }
+    const requested = question.scopes.map(function (one) {
+      return one.scope;
+    });
+    const ask = function (policy: any, fact: ScopeFact): any {
+      log.debug("Entering ask().");
+      const req = new AuthorizationRequest({ includeInResult: true })
+        .principal(subject.name || '',
+                   subject.kind === 'application' ? 'application' : 'user')
+        .roles(question.held)
+        .target(fact.scope)
+        .resource(ATTRIBUTE.SCOPE_GATED, [fact.gated ? 'true' : 'false'],
+                  model.TYPE.BOOLEAN)
+        .resource(ATTRIBUTE.AUTHORIZING_ROLE, fact.authorizingRoles)
+        .requestedAction(SCOPE.ACTION)
+        .requestedScopes(requested);
+      if (asked.client) {
+        req.client(asked.client);
+      }
+      req.category(model.CATEGORY.ENVIRONMENT);
+      if (asked.grantType) {
+        req.grantType(asked.grantType);
+      }
+      if (asked.protocol) {
+        req.protocol(asked.protocol);
+      }
+      const request = req.build();
+      log.debug("Leaving ask().");
+      return pdp.evaluate(policy, request, {
+        repository: store.repository(),
+        resolver: pip.resolverFor(request)
+      });
+    };
+    const verdicts = question.scopes.map(function (fact): ScopeVerdict {
+      let answer = loaded.policy ? ask(loaded.policy, fact) : null;
+      let found = self.scopeVerdictOf(answer);
+      let decidedBy = loaded.builtIn ? 'built-in' : 'policy';
+      if (!found && !loaded.builtIn) {
+        const fallback = theBuiltIn();
+        answer = fallback.policy ? ask(fallback.policy, fact) : null;
+        found = self.scopeVerdictOf(answer);
+        decidedBy = 'built-in';
+      }
+      if (!found) {
+        log.warn(errorCodes.tag('STS-XACML-0078') + 'xacml: no issuance ' +
+                 'policy, not even the built-in one, gave a verdict on the ' +
+                 'scope "' + fact.scope + '"; it is ' +
+                 (fact.gated ? 'DROPPED, because its resource gates it'
+                             : 'kept, because nothing gates it') + '.');
+        return { scope: fact.scope, verdict: fact.gated ? 'drop' : 'keep',
+                 code: fact.gated ? 'STS-ADMIN-0821' : '', decidedBy: 'none' };
+      }
+      return { scope: fact.scope, verdict: found.verdict, code: found.code,
+               decidedBy: decidedBy };
+    });
+    log.debug('Leaving XacmlRolePep.decideScopes(). ' +
+              verdicts.map(function (one) {
+                return one.scope + '=' + one.verdict;
+              }).join(' '));
+    return { allowed: true, decision: 'Permit',
+             why: 'One verdict per requested scope.', roles: question.held,
+             required: [], policy: loaded.name || '', scopes: verdicts };
+  }
+
+  // The scope obligation of an answer, read: `{ verdict, code }`, or null
+  // when the document said nothing about the scope. A verdict outside the
+  // three is read as `drop`: a policy asking for something this PEP does not
+  // know how to do must not have it read as `keep`.
+  private scopeVerdictOf(answer: any): { verdict: string;
+                                         code: string } | null {
+    const { log } = this.deps;
+    log.debug("Entering XacmlRolePep.scopeVerdictOf().");
+    const found = (answer && answer.obligations || []).filter(function (o) {
+      return o && o.id === SCOPE.OBLIGATION;
+    })[0];
+    if (!found) {
+      log.debug("Leaving XacmlRolePep.scopeVerdictOf(). None.");
+      return null;
+    }
+    const valueOf = function (id: string): string {
+      log.debug("Entering valueOf().");
+      const hit = (found.assignments || []).filter(function (a) {
+        return a.attributeId === id;
+      })[0];
+      log.debug("Leaving valueOf().");
+      return hit ? String(hit.lexical !== undefined ? hit.lexical
+                                                     : hit.value) : '';
+    };
+    const said = valueOf(SCOPE.VERDICT);
+    const verdict = SCOPE.VERDICTS.indexOf(said) >= 0 ? said : 'drop';
+    log.debug("Leaving XacmlRolePep.scopeVerdictOf(). " + verdict);
+    return { verdict: verdict, code: valueOf(SCOPE.CODE) };
   }
 
   private reasonFor(answer: any, held: string[], required: string[],
