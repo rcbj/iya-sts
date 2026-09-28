@@ -1071,6 +1071,13 @@ services:
       # ONE REPORT TREE PER MODE, so three runs do not overwrite each other. The
       # mode matrix sets it; unset, run-report.js's own default applies.
       - STS_TEST_REPORT_DIR=${STS_TEST_REPORT_DIR:-}
+      # THE BULK LOADS' SIZES, which tests/tools/modes.sh sets for every mode
+      # of ./run-tests.sh (2026-09-27). The defaults here are the library's
+      # own (tests/vendored/bulk_load.js), so a run that names no mode — the
+      # coverage run, which shares this file and not modes.sh — is unchanged.
+      - BULK_USERS=${STS_TEST_BULK_USERS:-5000}
+      - BULK_GROUPS=${STS_TEST_BULK_GROUPS:-50}
+      - BULK_MEMBERS_PER_GROUP=${STS_TEST_BULK_MEMBERS_PER_GROUP:-100}
       # The suite's own bunyan level (the jobs', not the service's). Bare, for
       # the same reason STS_LOG_LEVEL is bare on the service above.
       - LOG_LEVEL

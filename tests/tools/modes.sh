@@ -120,6 +120,9 @@ STS_PROXY_PROTOCOL=off
 STS_TEST_FRESH_CONNECTIONS=0
 STS_TEST_CLUSTER_NODES=1
 STS_TEST_BULK_LAST=0
+STS_TEST_BULK_USERS=1000
+STS_TEST_BULK_GROUPS=10
+STS_TEST_BULK_MEMBERS_PER_GROUP=100
 EOF
       ;;
     single-node)
@@ -160,6 +163,9 @@ STS_PROXY_PROTOCOL=off
 STS_TEST_FRESH_CONNECTIONS=0
 STS_TEST_CLUSTER_NODES=1
 STS_TEST_BULK_LAST=0
+STS_TEST_BULK_USERS=1000
+STS_TEST_BULK_GROUPS=10
+STS_TEST_BULK_MEMBERS_PER_GROUP=100
 EOF
       ;;
     cluster)
@@ -203,6 +209,16 @@ EOF
       # store long enough that three sign-ins' back-channel fetch of the
       # realm's own JWKS missed its 10 s, and the load itself was killed at
       # its watchdog. The bound was right and stays; the overlap goes.
+      #
+      # THE BULK SIZES ARE THE SAME IN EVERY MODE (2026-09-27, rcbj's
+      # decision after the same run): 1000 people, 10 groups of 100, about a
+      # fifth of the library's 5000 / 50 / 100. On the single-node mode the
+      # three loads took 38 minutes beside the protocol jobs, and all four of
+      # that mode's failures fell inside them; a fifth of the writes is still
+      # a thousand of each kind, which is what the loads measure — a cost per
+      # write that stays flat — and one size in every mode keeps their
+      # numbers comparable between modes as well as between doors. The
+      # coverage run reads no mode and keeps the library's sizes.
       cat <<'EOF'
 STS_MODE=product
 STS_PERSISTENCE_MODE=postgres
@@ -217,6 +233,9 @@ STS_PROXY_PROTOCOL=v2
 STS_TEST_FRESH_CONNECTIONS=1
 STS_TEST_CLUSTER_NODES=2
 STS_TEST_BULK_LAST=1
+STS_TEST_BULK_USERS=1000
+STS_TEST_BULK_GROUPS=10
+STS_TEST_BULK_MEMBERS_PER_GROUP=100
 EOF
       ;;
     *)
