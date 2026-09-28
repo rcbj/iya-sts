@@ -99,6 +99,8 @@
     - { title: Encryption at rest, url: /encryption-at-rest.html }
     - { title: Caches, url: /caches.html }
     - { title: A cluster in AWS, url: /aws-cluster.html }
+    - { title: Several regions (cells), url: /cells.html }
+    - { title: How cells work, url: /cells-concepts.html }
 
 - section: For contributors
   items:

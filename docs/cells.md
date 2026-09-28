@@ -24,9 +24,10 @@ lives:
 Without `cells.id` the service runs in **single-cell mode**. It keeps
 everything in one database and behaves exactly as it always has.
 
-The design is issue #98, with its decisions D1–D11. [How cells
-work](cells-concepts.md) explains each idea with a diagram. [A cluster in
-AWS](aws-cluster.md) describes the Terraform that builds cells in AWS.
+The design is issue #98, with its decisions D1–D11.
+[How cells work](cells-concepts.md) explains each idea with a diagram.
+[A cluster in AWS](aws-cluster.md) describes the Terraform that builds cells
+in AWS.
 
 ## What a person sees
 
