@@ -15410,6 +15410,13 @@ function deletePolicy(name) {
 // application's requirement list names, and what a XACML policy matches on, so
 // a role with a handle and a separate display name would be three places for
 // one string to disagree with itself.
+//
+// **IT STILL IS, AND SINCE #93 A ROLE ALSO HAS A LABEL AND AN ID.** The name
+// stays the one thing a token, a requirement and a policy use. `displayName`
+// is only what the console and the API show people. It is never matched on,
+// so it cannot disagree with anything. The id is the entry's own `entryUUID`,
+// which `putEntry()` already keeps across a rewrite. It is not a second key
+// here: it lets a caller tell this role from a namesake made after a delete.
 // ---------------------------------------------------------------------------
 function roleDn(name) {
   log.debug("Entering roleDn().");
