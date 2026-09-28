@@ -12,10 +12,9 @@
 // only roles an unedited service had when this file was written, and until
 // 2026-09-05 three of them could not be held or failed by anything arriving at
 // an endpoint. The built-in roles added since — REMOTE_PEPS and XACML_USER,
-// held through a group, and DEVICE_COMPLIANCE, held through an access
-// token's scope — are not driven here (`common/roles.js` argues each).
-// ADMIN_READ and ADMIN_WRITE were built-ins read off a scope too, until #303
-// made them configured roles.
+// held through a group — are not driven here (`common/roles.js` argues
+// each). ADMIN_READ, ADMIN_WRITE (until #303) and DEVICE_COMPLIANCE (until
+// #309) were built-ins read off a scope, and are configured roles now.
 //
 // ---------------------------------------------------------------------------
 // WHY THIS IS A SECOND FILE AND NOT SIX MORE SECTIONS IN THE FIRST.

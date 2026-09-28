@@ -219,7 +219,9 @@ class RolePermissions {
   isGated(value: string): boolean {
     const { log, roles, applications } = this.deps;
     log.debug("Entering RolePermissions.isGated().");
-    const native = roles.CONSOLE_ROLES.some(function (row) {
+    // THE NATIVE PERMISSIONS (#303, #309): admin:read, admin:write and
+    // device:compliance, each authorized by its native role.
+    const native = roles.NATIVE_ROLES.some(function (row) {
       return row.permission === value;
     });
     if (native) {
@@ -380,10 +382,11 @@ class RolePermissions {
     roles.all().forEach(function (row) {
       out[row.name] = row.permissions.slice(0);
     });
-    // A console role authorizes its permission even in a realm whose entry
-    // was deleted by hand: for a person it is held through the roster, and
-    // the roster's answer must not depend on the entry being there.
-    roles.CONSOLE_ROLES.forEach(function (row) {
+    // A native role authorizes its permission even in a realm whose entry
+    // was deleted by hand: for a person a console role is held through the
+    // roster, and the roster's answer must not depend on the entry being
+    // there.
+    roles.NATIVE_ROLES.forEach(function (row) {
       out[row.name] = [row.permission];
     });
     log.debug("Leaving RolePermissions.permissionsByRole().");

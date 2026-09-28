@@ -254,6 +254,12 @@ function noDecider(t) {
 
 async function run(t) {
   log.debug("Entering run().");
+  // THE ISSUANCE PEP IS THE DECIDER FOR THIS FILE, installed here rather
+  // than left to the require: a module another file loaded first comes out
+  // of the cache without re-arming the gate, and a file before this one may
+  // have put back "no decider" — which order the files run in must not
+  // decide what this one tests. `deciderBefore` is restored at the end.
+  gate.setDecider(rolePep.decide);
   const realm = realms.create({ id: 'srp-' + RUN,
                                 name: 'scope rules policy ' + RUN }).realm;
   try {

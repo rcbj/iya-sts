@@ -3617,10 +3617,11 @@ realms.onCreate(function (id) {
     // directory slot, which resolves the container from the ambient realm —
     // the same reason `seed()` is in here.
     applications.seedInternalApplications({ scope: 'every' });
-    // THE TWO CONSOLE ROLES (#303) — ADMIN_READ and ADMIN_WRITE, configured
-    // roles in every realm, each held by the realm's own management API
-    // client. After the applications, whose client they name.
-    roles.seedConsoleRoles();
+    // THE NATIVE ROLES (#303, #309) — ADMIN_READ and ADMIN_WRITE, each held
+    // by the realm's own management API client, and DEVICE_COMPLIANCE, held
+    // by nobody until an operator adds the MDM feed. After the applications,
+    // whose client they name.
+    roles.seedNativeRoles();
   });
   log.info('ldap: built the "' + id + '" realm\'s subtree at ' +
            realmBaseDn(id) + '.');
@@ -16078,8 +16079,8 @@ federation.setDirectory({
 // line above this one. `applications.seedInternal` decides whether it happens
 // at all, and is read over there.
 applications.seedInternalApplications();
-// And the two console roles (#303), for the realm-builder's reason above.
-roles.seedConsoleRoles();
+// And the native roles (#303, #309), for the realm-builder's reason above.
+roles.seedNativeRoles();
 
 // ---------------------------------------------------------------------------
 // THE SPIFFE CONTAINERS AS A STORE.

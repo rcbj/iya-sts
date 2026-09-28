@@ -4954,13 +4954,13 @@ class AdminActions {
               'context of each decision and authorizes nothing by itself.'
             : 'There is no role called "' + name + '". Create it first.'] });
       }
-      if (row.console) {
-        log.debug("Leaving AdminActions.rolesAction(). A console role.");
+      if (row.native) {
+        log.debug("Leaving AdminActions.rolesAction(). A native role.");
         return this.refused('STS-ADMIN-0823', { ok: false, errors: ['"' +
-          name + '" is one of the two console roles, and what it authorizes ' +
-          'is fixed: ' + row.permissions.join(', ') + '. A role authorizing ' +
-          'anything else would make the management API\'s roles mean ' +
-          'something the console\'s do not.'] });
+          name + '" authorizes a permission of this service itself, and ' +
+          'what it authorizes is fixed: ' + row.permissions.join(', ') +
+          '. A native role authorizing anything else would make the ' +
+          'service\'s own permissions mean something they do not.'] });
       }
       if (!permission) {
         log.debug("Leaving AdminActions.rolesAction(). No permission named.");
@@ -4973,16 +4973,18 @@ class AdminActions {
       const at = row.permissions.indexOf(permission);
       let gated = null;
       if (action === 'add-permission') {
-        if (roles.isConsoleRole(name) || roles.CONSOLE_ROLES.some(
-          function (one) { return one.permission === permission; })) {
+        const nativeRow = roles.NATIVE_ROLES.filter(function (one) {
+          return one.permission === permission;
+        })[0];
+        if (nativeRow) {
           log.debug("Leaving AdminActions.rolesAction(). A native " +
                     "permission.");
           return this.refused('STS-ADMIN-0825', { ok: false, errors: ['"' +
             permission + '" is a native permission of this service and is ' +
-            'authorized by ' + roles.CONSOLE_ROLES.map(function (one) {
-              return one.name;
-            }).join(' and ') + ' alone. Put the application in one of those ' +
-            'roles, or grant the person the console role on /admin/rbac.'] });
+            'authorized by ' + nativeRow.name + ' alone. Add the member to ' +
+            nativeRow.name + (nativeRow.consoleRole
+              ? ' — for a person, grant the console role on /admin/rbac'
+              : '') + '.'] });
         }
         gated = applications.roleGatingFor(permission);
         if (!gated) {

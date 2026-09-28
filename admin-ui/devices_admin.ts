@@ -1337,7 +1337,8 @@ class DevicesAdmin {
           'POST ' + TEST_CONTROL + ' is a test control and this realm is ' +
           'in product mode, where test controls are closed. Report ' +
           'compliance through POST /admin-api/device-compliance with an ' +
-          'access token carrying device:compliance, or set it on the ' +
+          'access token carrying device:compliance (its client in the ' +
+          'DEVICE_COMPLIANCE role), or set it on the ' +
           'device\'s page under /admin/devices.'] });
         log.debug('Leaving POST ' + TEST_CONTROL + '. Product.');
         return;
