@@ -238,11 +238,29 @@ const stats: ConnectionStats = { published: 0, instructed: 0,
 // the node's next publish — after it has closed them — is the authority.
 const forgottenAt: Map<string, number> = new Map();
 
+/**
+ * LDAP connections across the nodes of a cluster: a sign-out instruction, keyed
+ * by identity, that the node holding the socket acts on, and a table of each
+ * node's bound connections that every process lists.
+ *
+ * A sign-out on another node is reported as instructed, never as closed.
+ */
 class LdapClusterConnections {
+  /**
+   * How long a sign-out instruction is acted on after it was written: two
+   * minutes.
+   */
   static readonly INSTRUCTION_TTL_MS = INSTRUCTION_TTL_MS;
   // The two stores, for a test that plays "another node's row arrived" with
   // the accessor calls `persistence_minted.js`'s applier makes.
+  /**
+   * The persisted store of each node's bound connections,
+   * `ldap.clusterConnections`.
+   */
   static readonly CONNECTIONS_HANDLE = 'ldap.clusterConnections';
+  /**
+   * The persisted store of sign-out instructions, `ldap.clusterSignOuts`.
+   */
   static readonly SIGNOUTS_HANDLE = 'ldap.clusterSignOuts';
 
   // What `ldap_server.js` installs: `{ holdsSockets(), localRows(),
@@ -264,6 +282,12 @@ class LdapClusterConnections {
   // never corrected.
   private publishAgain = false;
 
+  /**
+   * Builds the mirror from its dependencies.
+   *
+   * @param deps - the modules and loaders it reads, from
+   * `LdapClusterConnections.defaultDeps()` or the composition root
+   */
   constructor(private readonly deps: LdapClusterConnectionsDeps) {
     deps.log.debug("Entering LdapClusterConnections.constructor().");
     this.now = function () {
@@ -276,6 +300,12 @@ class LdapClusterConnections {
 
   // What the composition root passes: the modules the load-time instance
   // was built from before R2.
+  /**
+   * Returns the real modules and loaders the mirror depends on, as the
+   * composition root passes them.
+   *
+   * @returns the dependencies
+   */
   static defaultDeps(): LdapClusterConnectionsDeps {
     log.debug("Entering LdapClusterConnections.defaultDeps().");
     log.debug("Leaving LdapClusterConnections.defaultDeps().");
@@ -295,6 +325,12 @@ class LdapClusterConnections {
   //
   // It also hands the instance the socket hooks `install()` was given before
   // there was one — see `installHooks()` below.
+  /**
+   * Makes the installed instance the one the sign-out store's restore hook
+   * reaches, and hands it any socket hooks installed before it existed.
+   *
+   * @param instance - the installed instance
+   */
   static wire(instance: LdapClusterConnections): void {
     log.debug("Entering LdapClusterConnections.wire().");
     connections = instance;
@@ -306,6 +342,11 @@ class LdapClusterConnections {
   }
 
   // The default `loadCluster`, passed by `defaultDeps()`.
+  /**
+   * Returns the cluster module; the default `loadCluster`.
+   *
+   * @returns the cluster module
+   */
   static clusterFromRequire(): ClusterView {
     log.debug("Entering LdapClusterConnections.clusterFromRequire().");
     log.debug("Leaving LdapClusterConnections.clusterFromRequire().");
@@ -313,6 +354,11 @@ class LdapClusterConnections {
   }
 
   // The default `loadPersistence`, passed by `defaultDeps()`.
+  /**
+   * Returns the persistence module; the default `loadPersistence`.
+   *
+   * @returns the persistence module
+   */
   static persistenceFromRequire(): { flushMinted(): unknown } {
     log.debug("Entering LdapClusterConnections.persistenceFromRequire().");
     log.debug("Leaving LdapClusterConnections.persistenceFromRequire().");
@@ -362,6 +408,12 @@ class LdapClusterConnections {
     return id;
   }
 
+  /**
+   * Installs the socket hooks `ldap_server.js` provides: `holdsSockets()`,
+   * `localRows()` and `closeLocal(key)`.
+   *
+   * @param theHooks - the hooks, or null
+   */
   install(theHooks?: SocketHooks | null): void {
     const { log } = this.deps;
     log.debug("Entering LdapClusterConnections.install().");
@@ -391,6 +443,11 @@ class LdapClusterConnections {
   // Something about this process's own connections changed. Called beside
   // the in-container publish, from the three places that change the set. See
   // `publishAgain` above.
+  /**
+   * Notes that this process's own connections changed, publishing its row after
+   * a short debounce; a change noted while a publish is pending publishes again
+   * after it.
+   */
   noteLocalChange(): void {
     const self = this;
     const { log } = this.deps;
@@ -425,6 +482,12 @@ class LdapClusterConnections {
   // Writes this node's row: what it holds, without the sockets. A node
   // holding nothing has no row rather than an empty one, so the table is the
   // nodes with something to list.
+  /**
+   * Writes this node's row of bound connections now, without the sockets; a
+   * node holding nothing has no row.
+   *
+   * @returns true when a row was written or removed
+   */
   publishNow(): boolean {
     const { log, errorCodes } = this.deps;
     log.debug("Entering LdapClusterConnections.publishNow().");
@@ -568,6 +631,12 @@ class LdapClusterConnections {
   // Every connection OTHER nodes have published, as `boundConnections()`
   // rows without a socket. The id carries the node, because connection ids
   // are per-listener and two nodes can both hold a `127.0.0.1:40000`.
+  /**
+   * Lists every connection other live nodes have published, as rows without a
+   * socket, each naming its node.
+   *
+   * @returns the rows; empty outside an active-active cluster
+   */
   remoteRows(): RemoteRow[] {
     const { log } = this.deps;
     log.debug("Entering LdapClusterConnections.remoteRows().");
@@ -600,6 +669,12 @@ class LdapClusterConnections {
     return out;
   }
 
+  /**
+   * Stops listing another node's connections bound as an identity until that
+   * node publishes again, after a sign-out of it.
+   *
+   * @param key - the identity key
+   */
   forgetRemote(key: unknown): void {
     const { log } = this.deps;
     log.debug("Entering LdapClusterConnections.forgetRemote().");
@@ -631,6 +706,14 @@ class LdapClusterConnections {
   // A sign-out of `key`. Answers `{ instructed: true, at, node }`, or null
   // when there is no cluster to instruct. The nonce makes every instruction a
   // new value, so two sign-outs in one millisecond are still two change rows.
+  /**
+   * Writes a sign-out instruction for an identity, which every node holding a
+   * connection bound as it acts on.
+   *
+   * @param key - the identity key
+   * @returns `{ instructed: true, at, node }`, or null when there is no
+   * cluster to instruct
+   */
   instructSignOut(key: unknown):
       { instructed: boolean; at: number; node: string } | null {
     const { log, randomBytes } = this.deps;
@@ -661,6 +744,16 @@ class LdapClusterConnections {
   // a restore at startup. Held as it arrived; acted on by a process that
   // holds sockets, a tick later so the applier is not running somebody else's
   // close.
+  /**
+   * Takes an instruction that arrived from another process by replication or
+   * restore, and, in a process that holds sockets, closes every connection
+   * bound as its identity a tick later.
+   *
+   * @param key - the identity key
+   * @param incoming - the instruction that arrived
+   * @param held - the value held before it
+   * @returns the value to hold
+   */
   instructionArrived(key: unknown, incoming: any, held: any): any {
     const self = this;
     const { log } = this.deps;
@@ -762,6 +855,12 @@ class LdapClusterConnections {
     log.debug("Leaving LdapClusterConnections.armMaintenance().");
   }
 
+  /**
+   * Deletes the rows of nodes that are no longer members and the instructions
+   * past `INSTRUCTION_TTL_MS`; the maintenance job's body.
+   *
+   * @returns a promise of `{ swept, expired }`
+   */
   maintain(): Promise<{ swept: number; expired: number }> {
     const self = this;
     const { log } = this.deps;
@@ -806,6 +905,12 @@ class LdapClusterConnections {
     });
   }
 
+  /**
+   * Reports whether the mirror is active, how many nodes are listed, how many
+   * instructions are held, and this process's counters.
+   *
+   * @returns the report
+   */
   report(): object {
     const { log } = this.deps;
     log.debug("Entering LdapClusterConnections.report().");
@@ -816,6 +921,12 @@ class LdapClusterConnections {
   }
 
   // For tests.
+  /**
+   * Clears every store and counter, for tests, optionally replacing the cluster
+   * module and the clock.
+   *
+   * @param options - `cluster` and `now`
+   */
   reset(options?: { cluster?: ClusterView; now?: () => number }): void {
     const { log } = this.deps;
     log.debug("Entering LdapClusterConnections.reset().");
@@ -875,6 +986,12 @@ capabilities.provide('ldap.connections-cluster');
 // ---------------------------------------------------------------------------
 let pendingHooks: { hooks: SocketHooks | null } | null = null;
 
+/**
+ * Installs the socket hooks on the installed instance, or holds them until one
+ * is installed.
+ *
+ * @param theHooks - the hooks, or null
+ */
 function installHooks(theHooks?: SocketHooks | null): void {
   log.debug("Entering installHooks().");
   if (slot.origin() === 'none') {
@@ -889,10 +1006,25 @@ function installHooks(theHooks?: SocketHooks | null): void {
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * LDAP connections across the nodes of a cluster: sign-out instructions and the
+ * table of bound connections.
+ *
+ * Exports the `LdapClusterConnections` class, its constants, `install`, and
+ * facades that forward to the installed instance.
+ *
+ * @namespace
+ */
 export = {
   LdapClusterConnections: LdapClusterConnections,
+  /**
+   * Installs the instance the facades forward to.
+   */
   installInstance: (instance: LdapClusterConnections): void =>
     slot.install(instance),
+  /**
+   * Says where the current instance came from.
+   */
   instanceOrigin: (): string => slot.origin(),
   INSTRUCTION_TTL_MS: LdapClusterConnections.INSTRUCTION_TTL_MS,
   install: installHooks,
