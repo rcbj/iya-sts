@@ -70,7 +70,8 @@ configuration recipes, in the console and through the API, for each
 [Encryption at rest](encryption-at-rest.md) ·
 [Caches](caches.md) ·
 [A cluster in AWS](aws-cluster.md) ·
-[Several regions (cells)](cells.md)
+[Several regions (cells)](cells.md) ·
+[How cells work](cells-concepts.md)
 
 **For contributors** —
 [Repository layout](layout.md) ·
