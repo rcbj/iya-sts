@@ -700,6 +700,14 @@ is shown and `login_required` is the answer, and **a refusal coming back from th
 sign-in screen**, where the person is present and has just decided. A success is
 never affected, because it implies a session.
 
+**A timed continue is available, and off (#317).** `oauth2.errorPageAutoRedirectS`
+above `0` makes the page follow its own link after that many seconds (a meta
+refresh, still no script) and say so. It is off by default because it gives back
+part of what the page is for: a browser that has not authenticated here is sent
+on without anyone choosing. The address is still one the client registered.
+Turn it on for a development or test realm where the pause is only in the way.
+A `form_post` error keeps its button whatever the setting.
+
 A request with **no `client_id`** is a 400 and never redirected: RFC 6749
 section 4.1.2.1 forbids redirecting for an invalid `client_id` and
 `redirect_uri` combination, and no client means the URI belongs to nobody.
