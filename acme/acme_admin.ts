@@ -91,7 +91,21 @@ interface AcmeAdminDeps {
 
 type RouteApp = typeof app;
 
+/**
+ * The two ACME console pages, Protocols -> ACME (`/admin/acme`) and Monitoring
+ * -> ACME enrollments (`/admin/acme/monitor`), drawn from `acme_console.ts` in
+ * the console's shell.
+ *
+ * `create-eab` answers an uncached page holding the HMAC key once; every other
+ * action answers through `respondToAction()`.
+ */
 class AcmeAdmin {
+  /**
+   * Creates the pages.
+   *
+   * @param deps - the modules they use: the console shell, the view model,
+   * validation and the rest
+   */
   constructor(private readonly deps: AcmeAdminDeps) {
     deps.log.debug("Entering AcmeAdmin.constructor().");
     deps.log.debug("Leaving AcmeAdmin.constructor().");
@@ -99,6 +113,11 @@ class AcmeAdmin {
 
   // What the composition root passes: the modules the load-time instance
   // was built from before R2.
+  /**
+   * Returns the dependencies the default instance is built from.
+   *
+   * @returns the dependencies
+   */
   static defaultDeps(): AcmeAdminDeps {
     helpers.log.debug("Entering AcmeAdmin.defaultDeps().");
     helpers.log.debug("Leaving AcmeAdmin.defaultDeps().");
@@ -113,6 +132,14 @@ class AcmeAdmin {
     };
   }
 
+  /**
+   * Checks a page's query and, when it is not acceptable, answers 400
+   * (STS-ACME-0097).
+   *
+   * @param req - the request
+   * @param res - its response
+   * @returns true when the request was refused and answered
+   */
   queryRefused(req, res) {
     const { log, validation, errorCodes } = this.deps;
     log.debug("Entering AcmeAdmin.queryRefused().");
@@ -130,6 +157,12 @@ class AcmeAdmin {
     return false;
   }
 
+  /**
+   * Draws a value as code, or a dash for none.
+   *
+   * @param value - the value
+   * @returns the markup
+   */
   code(value) {
     const { log, esc } = this.deps;
     log.debug("Entering AcmeAdmin.code().");
@@ -138,6 +171,14 @@ class AcmeAdmin {
                  : '<span class="sub">—</span>';
   }
 
+  /**
+   * Draws the pager pair for one paged list on `/admin/acme`.
+   *
+   * @param req - the request, for its query
+   * @param list - the paged list from the view model
+   * @param param - the list's page parameter
+   * @returns the pager markup
+   */
   nav(req, list, param) {
     const { log, admin } = this.deps;
     log.debug("Entering AcmeAdmin.nav(). param=" + param);
@@ -147,6 +188,13 @@ class AcmeAdmin {
                                            { param: param, noun: 'rows' }));
   }
 
+  /**
+   * Draws a hidden form field.
+   *
+   * @param name - the field's name
+   * @param value - its value
+   * @returns the markup
+   */
   hidden(name, value) {
     const { log, esc } = this.deps;
     log.debug("Entering AcmeAdmin.hidden().");
@@ -155,6 +203,11 @@ class AcmeAdmin {
            esc(value) + '">';
   }
 
+  /**
+   * Draws the person-or-application selector.
+   *
+   * @returns the markup
+   */
   kindSelect() {
     const { log } = this.deps;
     log.debug("Entering AcmeAdmin.kindSelect().");
@@ -166,6 +219,12 @@ class AcmeAdmin {
   // ---------------------------------------------------------------------------
   // THE SECTIONS OF /admin/acme.
   // ---------------------------------------------------------------------------
+  /**
+   * Draws the realm's ACME endpoints.
+   *
+   * @param json - the view model's answer
+   * @returns the markup
+   */
   endpointsHtml(json) {
     const { log, esc } = this.deps;
     log.debug("Entering AcmeAdmin.endpointsHtml().");
@@ -177,6 +236,12 @@ class AcmeAdmin {
       }).join('') + '</table>';
   }
 
+  /**
+   * Draws the ACME Issuing CA.
+   *
+   * @param json - the view model's answer
+   * @returns the markup
+   */
   authorityHtml(json) {
     const { log, admin, esc } = this.deps;
     log.debug("Entering AcmeAdmin.authorityHtml().");
@@ -200,6 +265,12 @@ class AcmeAdmin {
       '<code>/pki/crl/{realm}/acme</code>.</p>';
   }
 
+  /**
+   * Draws the certificate profiles and the refused ones.
+   *
+   * @param json - the view model's answer
+   * @returns the markup
+   */
   profilesHtml(json) {
     const { log, esc } = this.deps;
     log.debug("Entering AcmeAdmin.profilesHtml().");
@@ -229,6 +300,14 @@ class AcmeAdmin {
            'allowed here, and the default above otherwise.</p>';
   }
 
+  /**
+   * Draws the EAB keys, paged, with their delete controls and the form that
+   * creates one.
+   *
+   * @param req - the request
+   * @param json - the view model's answer
+   * @returns the markup
+   */
   eabHtml(req, json) {
     const { log, esc } = this.deps;
     const self = this;
@@ -263,6 +342,13 @@ class AcmeAdmin {
       pager.foot;
   }
 
+  /**
+   * Draws the ACME accounts, paged, with their deactivate controls.
+   *
+   * @param req - the request
+   * @param json - the view model's answer
+   * @returns the markup
+   */
   accountsHtml(req, json) {
     const { log, esc } = this.deps;
     const self = this;
@@ -290,6 +376,14 @@ class AcmeAdmin {
       '</tbody></table>' + pager.foot;
   }
 
+  /**
+   * Draws the certificates issued through ACME, paged, with their revoke
+   * controls.
+   *
+   * @param req - the request
+   * @param json - the view model's answer
+   * @returns the markup
+   */
   certificatesHtml(req, json) {
     const { log, esc } = this.deps;
     const self = this;
@@ -323,6 +417,14 @@ class AcmeAdmin {
       '</tbody></table>' + pager.foot;
   }
 
+  /**
+   * Draws the host names registered on entries, paged, with the add and remove
+   * controls.
+   *
+   * @param req - the request
+   * @param json - the view model's answer
+   * @returns the markup
+   */
   hostNamesHtml(req, json) {
     const { log, esc } = this.deps;
     const self = this;
@@ -358,6 +460,14 @@ class AcmeAdmin {
   }
 
   // The page that answers `create-eab`: the key, once.
+  /**
+   * Answers `create-eab` with an uncached page showing the new key and its
+   * certbot line, once.
+   *
+   * @param req - the request
+   * @param res - its response
+   * @param result - the action's answer
+   */
   createdEabPage(req, res, result) {
     const { log, admin, esc } = this.deps;
     log.debug("Entering AcmeAdmin.createdEabPage().");
@@ -380,6 +490,13 @@ class AcmeAdmin {
   // ---------------------------------------------------------------------------
   // GET /admin/acme/monitor
   // ---------------------------------------------------------------------------
+  /**
+   * Draws one table of counts on the monitoring page.
+   *
+   * @param title - the table's heading
+   * @param rows - `{ name, count }` rows
+   * @returns the markup
+   */
   countsTable(title, rows) {
     const { log, esc } = this.deps;
     log.debug("Entering AcmeAdmin.countsTable().");
@@ -396,6 +513,13 @@ class AcmeAdmin {
   // this, and `common/protocol_stack.ts` calls it (#50, R1) at the point
   // where requiring the module used to register them, so the route order
   // is unchanged (rule 1). Nothing calls it at load.
+  /**
+   * Registers `GET /admin/acme`, `POST /admin/acme` and `GET
+   * /admin/acme/monitor`; called by the composition root at this module's place
+   * in the route order.
+   *
+   * @param app - the express app
+   */
   registerRoutes(app: RouteApp): void {
     const { log, consoleModel, admin, esc, parseBody, validation,
             errorCodes } = this.deps;
@@ -568,6 +692,14 @@ const slot = new InstanceSlot<AcmeAdmin>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * The ACME console pages.
+ *
+ * Exports `registerRoutes`, the class and the instance hooks of the composition
+ * root.
+ *
+ * @namespace
+ */
 export = {
   registerRoutes: slot.forward('registerRoutes'),
   AcmeAdmin: AcmeAdmin,

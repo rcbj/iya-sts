@@ -84,21 +84,39 @@ import store = require('./acme_store');
 import claims = require('../cluster/cluster_claims');
 import InstanceSlot = require('../common/instance_slot');
 
+/**
+ * The enrollment family's name: `acme`.
+ */
 const FAMILY = 'acme';
+/**
+ * Where the ACME server answers: `/enroll/acme`.
+ */
 const PREFIX = '/enroll/acme';
 
 // The one challenge type an authorization here carries. Its name says what it
 // is: the identifier was bound to the entry by the directory, not proven by a
 // fetch. See the header.
+/**
+ * The one challenge type an authorization here carries, already valid: the
+ * identifier was bound to the entry by the directory, not proven by a fetch.
+ */
 const CHALLENGE_TYPE = 'sts-entry-binding-01';
 
 // The identifier types a newOrder may name: RFC 8555's `dns`, RFC 8738's `ip`,
 // RFC 8823's `email`, and draft-ietf-acme-device-attest's
 // `permanent-identifier`, which here names the entry itself.
+/**
+ * The identifier types a newOrder may name: `dns`, `ip`, `email` and
+ * `permanent-identifier`.
+ */
 const IDENTIFIER_TYPES = ['dns', 'ip', 'email', 'permanent-identifier'];
 
 // What each issued profile is, for the directory's `meta.profiles`
 // (draft-ietf-acme-profiles section 3) and the console's profile table.
+/**
+ * What each issued certificate profile is, for the directory's `meta.profiles`
+ * and the console.
+ */
 const PROFILE_DESCRIPTIONS = {
   'tls-server': 'A TLS server certificate (serverAuth) for host names ' +
                 'registered on the account\'s entry.',
@@ -149,7 +167,21 @@ interface AcmeDeps {
 
 type RouteApp = typeof app;
 
+/**
+ * The ACME server (RFC 8555), per trust realm, at `/enroll/acme`.
+ *
+ * An account is bound for life to a directory entry by a required External
+ * Account Binding; no challenge dials out, since identifiers are authorized by
+ * the entry; and everything about the certificate is
+ * `common/cert_enrollment.ts`'s.
+ */
 class Acme {
+  /**
+   * Creates the ACME server.
+   *
+   * @param deps - the modules it uses: the enrollment core, the envelope
+   * reader, the store, the claims and the rest
+   */
   constructor(private readonly deps: AcmeDeps) {
     deps.log.debug("Entering Acme.constructor().");
     deps.log.debug("Leaving Acme.constructor().");
@@ -157,6 +189,11 @@ class Acme {
 
   // What the composition root passes: the modules the load-time instance
   // was built from before R2.
+  /**
+   * Returns the dependencies the default instance is built from.
+   *
+   * @returns the dependencies
+   */
   static defaultDeps(): AcmeDeps {
     log.debug("Entering Acme.defaultDeps().");
     log.debug("Leaving Acme.defaultDeps().");
@@ -181,6 +218,13 @@ class Acme {
   // ---------------------------------------------------------------------------
   // URLS. Every one absolute, from `baseUrlOf(req)`, so it carries the realm.
   // ---------------------------------------------------------------------------
+  /**
+   * Builds every ACME URL for a request, absolute and carrying the realm.
+   *
+   * @param req - the request
+   * @returns the fixed URLs, and functions building each resource's URL from
+   * its id
+   */
   urlsFor(req) {
     const { log, helpers } = this.deps;
     log.debug("Entering Acme.urlsFor().");
@@ -211,6 +255,12 @@ class Acme {
   // single-use credential and section 7.2 says a response carrying one must not
   // be cached.
   // ---------------------------------------------------------------------------
+  /**
+   * Sets the headers every ACME response carries: a fresh Replay-Nonce, the
+   * `index` link and `Cache-Control: no-store`.
+   *
+   * @param ctx - the request context
+   */
   commonHeaders(ctx) {
     const { log, config, jws, realms } = this.deps;
     log.debug("Entering Acme.commonHeaders().");
@@ -221,6 +271,14 @@ class Acme {
     log.debug("Leaving Acme.commonHeaders().");
   }
 
+  /**
+   * Sends an ACME JSON response with the common headers.
+   *
+   * @param ctx - the request context
+   * @param status - the HTTP status
+   * @param body - the resource
+   * @param location - the `Location` header, where there is one
+   */
   sendJson(ctx, status, body, location?) {
     const { log } = this.deps;
     log.debug("Entering Acme.sendJson(). status=" + status);
@@ -233,6 +291,12 @@ class Acme {
     log.debug("Leaving Acme.sendJson().");
   }
 
+  /**
+   * Records one request on the enrollment monitor.
+   *
+   * @param ctx - the request context
+   * @param detail - what happened
+   */
   record(ctx, detail) {
     const { log, monitor } = this.deps;
     log.debug("Entering Acme.record().");
@@ -250,6 +314,22 @@ class Acme {
   // ordinary course of a conforming client (a stale nonce) or is the throttle
   // itself.
   // ---------------------------------------------------------------------------
+  /**
+   * Sends an RFC 7807 problem document (section 6.7), the one error response,
+   * with the error code marked and never written into it.
+   *
+   * A refusal counts against the caller's throttle unless it is `badNonce`,
+   * `rateLimited` or a 405; where the throttle is shared, a count that crosses
+   * the limit is answered `rateLimited` instead.
+   *
+   * @param ctx - the request context
+   * @param status - the HTTP status
+   * @param type - the ACME error type, without its prefix
+   * @param code - the error code
+   * @param detail - the problem's detail
+   * @param extra - further members, such as `subproblems`
+   * @returns null
+   */
   // error-code: none — the definition of the helper; every call names its code
   acmeProblem(ctx, status, type, code, detail, extra?) {
     const { log, jws, core } = this.deps;
@@ -293,6 +373,15 @@ class Acme {
 
   // The bytes of a problem document, with the headers every ACME answer
   // carries.
+  /**
+   * Writes a problem document with the common headers, recording the refusal,
+   * unless an answer was already sent.
+   *
+   * @param ctx - the request context
+   * @param status - the HTTP status
+   * @param code - the error code
+   * @param body - the problem document
+   */
   sendProblem(ctx, status, code, body) {
     const { log, errorCodes } = this.deps;
     log.debug("Entering Acme.sendProblem(). status=" + status);
@@ -312,6 +401,15 @@ class Acme {
   }
 
   // A refusal object from acme_jws.ts or the enrollment core, sent.
+  /**
+   * Sends a refusal from `acme_jws.ts` or the enrollment core as a problem
+   * document.
+   *
+   * @param ctx - the request context
+   * @param refusal - the refusal
+   * @param fallbackCode - the code when the refusal carries none
+   * @returns null
+   */
   sendRefusal(ctx, refusal, fallbackCode) {
     const { log, errorCodes } = this.deps;
     log.debug("Entering Acme.sendRefusal().");
@@ -333,6 +431,15 @@ class Acme {
 
   // An enrollment-core refusal, in ACME's vocabulary. The core's status is the
   // guide and its code is kept, so the audit row names the core's condition.
+  /**
+   * Sends an enrollment core refusal in ACME's vocabulary, keeping the core's
+   * code.
+   *
+   * @param ctx - the request context
+   * @param refusal - the core's refusal
+   * @param fallbackCode - the code when the refusal carries none
+   * @returns null
+   */
   coreRefusal(ctx, refusal, fallbackCode) {
     const { log, errorCodes, core } = this.deps;
     log.debug("Entering Acme.coreRefusal().");
@@ -374,6 +481,15 @@ class Acme {
   // ---------------------------------------------------------------------------
   // THE CONTEXT, AND THE THREE CHECKS EVERY ACME REQUEST MAKES BEFORE ANYTHING.
   // ---------------------------------------------------------------------------
+  /**
+   * Builds a request's context: the request, the response, the operation and
+   * its URLs.
+   *
+   * @param req - the request
+   * @param res - its response
+   * @param operation - the operation's name
+   * @returns the context
+   */
   contextOf(req, res, operation) {
     const { log } = this.deps;
     log.debug("Entering Acme.contextOf().");
@@ -384,6 +500,13 @@ class Acme {
 
   // Turned off, over plain HTTP in product mode, or throttled. Answers true
   // when a problem was sent.
+  /**
+   * Refuses a request when ACME is turned off, the transport is refused (plain
+   * HTTP in product mode), or the caller is throttled.
+   *
+   * @param ctx - the request context
+   * @returns true, or a promise of true, when a problem was sent
+   */
   gateRefused(ctx) {
     const { log, config, core } = this.deps;
     const self = this;
@@ -415,6 +538,14 @@ class Acme {
 
   // An exception a handler did not expect is a 500 problem, never a stack
   // trace.
+  /**
+   * Wraps a route handler in the gate, and turns an exception it did not expect
+   * into a 500 problem (STS-ACME-0095).
+   *
+   * @param operation - the operation's name
+   * @param handler - the handler, given the context
+   * @returns the express handler
+   */
   guarded(operation, handler) {
     const { log, errorCodes } = this.deps;
     const self = this;
@@ -440,6 +571,14 @@ class Acme {
     };
   }
 
+  /**
+   * Answers a method an ACME resource does not answer with 405, `Allow` and a
+   * problem document; passes on a path that is no ACME resource.
+   *
+   * @param req - the request
+   * @param res - its response
+   * @param next - the next middleware
+   */
   methodNotAllowed(req, res, next) {
     const { log } = this.deps;
     log.debug("Entering Acme.methodNotAllowed(). " + req.method + " " +
@@ -470,6 +609,18 @@ class Acme {
   // only after the signature verifies — so a forged request cannot burn a nonce
   // a client is holding, and two copies of one signed request cannot both pass.
   // ---------------------------------------------------------------------------
+  /**
+   * Reads and authenticates a signed request (section 6.2): media type, JWS
+   * shape, header, key, the nonce's MAC and expiry, the signature, then the
+   * nonce spent once.
+   *
+   * Sends the problem and answers null on any refusal; the nonce is spent only
+   * after the signature verifies.
+   *
+   * @param ctx - the request context
+   * @param spec - `key`: `jwk`, `kid` or `either`
+   * @returns `{ header, parts, payload, account, accountKey }`, or null
+   */
   async authenticate(ctx, spec) {
     const { log, jws, config, realms, helpers, store, core,
             errorCodes } = this.deps;
@@ -627,6 +778,15 @@ class Acme {
   }
 
   // The account a `kid` request came from must be the one the URL names.
+  /**
+   * Checks the account that signed a request owns the resource; sends 403
+   * otherwise.
+   *
+   * @param ctx - the request context
+   * @param signed - what `authenticate()` answered
+   * @param accountId - the resource's account
+   * @returns true when it does
+   */
   sameAccount(ctx, signed, accountId) {
     const { log } = this.deps;
     log.debug("Entering Acme.sameAccount().");
@@ -641,6 +801,14 @@ class Acme {
     return true;
   }
 
+  /**
+   * Checks a request is POST-as-GET, an empty payload; sends a problem
+   * otherwise.
+   *
+   * @param ctx - the request context
+   * @param signed - what `authenticate()` answered
+   * @returns true when it is
+   */
   requirePostAsGet(ctx, signed) {
     const { log } = this.deps;
     log.debug("Entering Acme.requirePostAsGet().");
@@ -655,6 +823,13 @@ class Acme {
     return true;
   }
 
+  /**
+   * Sends 404 for a resource not on this server in this realm.
+   *
+   * @param ctx - the request context
+   * @param what - the kind of resource
+   * @returns null
+   */
   missingResource(ctx, what) {
     const { log } = this.deps;
     log.debug("Entering Acme.missingResource().");
@@ -667,6 +842,13 @@ class Acme {
   // ---------------------------------------------------------------------------
   // THE SHAPES OF THE RESOURCES (section 7.1).
   // ---------------------------------------------------------------------------
+  /**
+   * Draws an account resource (section 7.1.2).
+   *
+   * @param ctx - the request context
+   * @param account - the stored account
+   * @returns the resource
+   */
   accountJson(ctx, account) {
     const { log } = this.deps;
     log.debug("Entering Acme.accountJson().");
@@ -680,6 +862,12 @@ class Acme {
     };
   }
 
+  /**
+   * Tells whether a time has passed.
+   *
+   * @param when - the time
+   * @returns true when it is set and past
+   */
   isExpired(when) {
     const { log } = this.deps;
     log.debug("Entering Acme.isExpired().");
@@ -687,6 +875,12 @@ class Acme {
     return !!when && new Date(when).getTime() <= Date.now();
   }
 
+  /**
+   * Derives an authorization's status: `expired` or `valid`.
+   *
+   * @param authz - the authorization
+   * @returns the status
+   */
   authzStatus(authz) {
     const { log } = this.deps;
     log.debug("Entering Acme.authzStatus().");
@@ -704,6 +898,13 @@ class Acme {
 
   // An order's status is DERIVED on read, for the store's reason: nothing moves
   // it on a timer.
+  /**
+   * Derives an order's status on read: `valid` and `processing` as stored,
+   * otherwise `invalid` when it or an authorization expired, else `ready`.
+   *
+   * @param order - the order
+   * @returns the status
+   */
   orderStatus(order) {
     const { log, store } = this.deps;
     const self = this;
@@ -723,6 +924,13 @@ class Acme {
     return broken ? 'invalid' : 'ready';
   }
 
+  /**
+   * Draws an order resource (section 7.1.3).
+   *
+   * @param ctx - the request context
+   * @param order - the stored order
+   * @returns the resource
+   */
   orderJson(ctx, order) {
     const { log } = this.deps;
     log.debug("Entering Acme.orderJson().");
@@ -747,6 +955,13 @@ class Acme {
     return out;
   }
 
+  /**
+   * Draws the one challenge of an authorization, sharing its id.
+   *
+   * @param ctx - the request context
+   * @param authz - the authorization
+   * @returns the challenge
+   */
   challengeJson(ctx, authz) {
     const { log } = this.deps;
     log.debug("Entering Acme.challengeJson().");
@@ -761,6 +976,13 @@ class Acme {
     };
   }
 
+  /**
+   * Draws an authorization resource (section 7.1.4).
+   *
+   * @param ctx - the request context
+   * @param authz - the stored authorization
+   * @returns the resource
+   */
   authzJson(ctx, authz) {
     const { log } = this.deps;
     log.debug("Entering Acme.authzJson().");
@@ -780,6 +1002,13 @@ class Acme {
   // ---------------------------------------------------------------------------
   // GET /enroll/acme/directory (section 7.1.1).
   // ---------------------------------------------------------------------------
+  /**
+   * Draws the directory (section 7.1.1), with `meta.profiles` and the External
+   * Account Binding requirement.
+   *
+   * @param ctx - the request context
+   * @returns the directory
+   */
   directoryJson(ctx) {
     const { log, core, helpers } = this.deps;
     log.debug("Entering Acme.directoryJson().");
@@ -807,6 +1036,14 @@ class Acme {
   // POST /enroll/acme/new-order (section 7.4, draft-ietf-acme-profiles, RFC
   // 9773 section 5).
   // ---------------------------------------------------------------------------
+  /**
+   * Tells whether an order identifier belongs to the account's entry, by a dry
+   * run of the enrollment core's naming rule.
+   *
+   * @param resolved - the account's resolved entry
+   * @param identifier - the identifier asked for
+   * @returns null when it belongs, otherwise a sentence
+   */
   ownershipProblem(resolved, identifier) {
     const { log, core } = this.deps;
     log.debug("Entering Acme.ownershipProblem(). type=" + identifier.type);
@@ -838,6 +1075,14 @@ class Acme {
   // ---------------------------------------------------------------------------
   // POST /enroll/acme/order/:id — an order, POST-as-GET.
   // ---------------------------------------------------------------------------
+  /**
+   * Finds the order a URL names and checks the signer owns it; sends the
+   * problem otherwise.
+   *
+   * @param ctx - the request context
+   * @param signed - what `authenticate()` answered
+   * @returns the order, or null
+   */
   ownedOrder(ctx, signed) {
     const { log, store } = this.deps;
     log.debug("Entering Acme.ownedOrder().");
@@ -867,6 +1112,15 @@ class Acme {
   // smartcard-logon order, which is not an ACME identifier type and which the
   // enrollment core holds to the entry's own userPrincipalName or mail.
   // ---------------------------------------------------------------------------
+  /**
+   * Checks a CSR names exactly the order's identifiers, as a set: nothing left
+   * over on either side, and no name of a kind the order cannot contain.
+   *
+   * @param csr - the parsed CSR
+   * @param order - the order
+   * @param entry - the account's entry
+   * @returns null when it does, otherwise a sentence
+   */
   csrNamesProblem(csr, order, entry) {
     const { log, jws, core } = this.deps;
     log.debug("Entering Acme.csrNamesProblem().");
@@ -958,6 +1212,14 @@ class Acme {
   // POST /enroll/acme/challenge/:id (section 7.5.1). One challenge per
   // authorization, sharing its id.
   // ---------------------------------------------------------------------------
+  /**
+   * Finds the authorization a URL names and checks the signer owns it; sends
+   * the problem otherwise.
+   *
+   * @param ctx - the request context
+   * @param signed - what `authenticate()` answered
+   * @returns the authorization, or null
+   */
   ownedAuthz(ctx, signed) {
     const { log, store } = this.deps;
     log.debug("Entering Acme.ownedAuthz().");
@@ -982,6 +1244,13 @@ class Acme {
   // chain, as RFC 5246 section 7.4.2 and every ACME client expect: a relying
   // party that trusts it already holds it.
   // ---------------------------------------------------------------------------
+  /**
+   * Tells whether a certificate is self-signed.
+   *
+   * @param pem - the certificate
+   * @returns true when its subject is its issuer and it verifies under its own
+   * key
+   */
   isSelfSigned(pem) {
     const { log, nodeCrypto } = this.deps;
     log.debug("Entering Acme.isSelfSigned().");
@@ -1001,6 +1270,12 @@ class Acme {
   // this, and `common/protocol_stack.ts` calls it (#50, R1) at the point
   // where requiring the module used to register them, so the route order
   // is unchanged (rule 1). Nothing calls it at load.
+  /**
+   * Registers every `/enroll/acme` route and the 405 middleware after them;
+   * called by the composition root at this module's place in the route order.
+   *
+   * @param app - the express app
+   */
   registerRoutes(app: RouteApp): void {
     const { log, jws, store, core, errorCodes, audit, validation, config,
             nodeCrypto, claims, realms, stsCrypto } = this.deps;
@@ -2029,6 +2304,14 @@ require('./acme_admin');
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * The ACME server (RFC 8555) of each trust realm, at `/enroll/acme`.
+ *
+ * Exports `registerRoutes`, the class, the family's constants and facades
+ * forwarding to the instance the composition root built.
+ *
+ * @namespace
+ */
 export = {
   registerRoutes: slot.forward('registerRoutes'),
   Acme: Acme,
