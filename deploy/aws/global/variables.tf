@@ -24,10 +24,11 @@ variable "cells" {
     cell's state by its id.
   EOT
   type = map(object({
-    region                = string
-    jurisdiction          = string
-    vpc_cidr              = string
-    geolocation_countries = optional(list(string), [])
+    region                 = string
+    jurisdiction           = string
+    vpc_cidr               = string
+    geolocation_countries  = optional(list(string), [])
+    db_snapshot_identifier = optional(string, "") # the cell's; unread here
   }))
   validation {
     condition     = length(var.cells) >= 2
@@ -55,6 +56,21 @@ variable "primary_cell" {
     condition     = contains(keys(var.cells), var.primary_cell)
     error_message = "primary_cell must be a key of cells."
   }
+}
+
+variable "carryover_secret" {
+  description = <<-EOT
+    The name of a CARRY-OVER secret in the primary cell's region — e.g.
+    `mock-sts/carryover/testidp`, written by deploy/aws/convert-to-cells.sh —
+    whose values replace the generated ones for the secrets a converted
+    single-region environment's database was written under (secrets.tf, *A
+    converted environment's secrets*). EMPTY — the default, and every
+    environment that was not converted — generates every value. Read once,
+    when the global secrets are first made; entrypoint.sh passes it only with
+    TF_CONVERT=1 (envs/<env>.conversion.tfvars.json).
+  EOT
+  type        = string
+  default     = ""
 }
 
 variable "state_region" {

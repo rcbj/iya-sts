@@ -87,14 +87,110 @@ data "aws_kms_key" "global" {
   key_id = "alias/${var.name}-global"
 }
 
+# ---------------------------------------------------------------------------
+# A CONVERTED ENVIRONMENT'S SECRETS (#98, 2026-09-28): WHERE A VALUE MUST BE
+# THE OLD ENVIRONMENT'S, NOT A NEW ONE.
+#
+# A cell restored from a single-region environment's snapshot
+# (../environment/conversion.tf) holds rows that were written under that
+# environment's secrets, and those secrets are DELETED with it
+# (`recovery_window_in_days = 0`). So before it is destroyed,
+# deploy/aws/convert-to-cells.sh copies the four whose values the restored
+# rows depend on into one JSON secret, `mock-sts/carryover/<old env>`, and
+# `carryover_secret` names it here. Each, and the code that makes it matter:
+#
+#   kek                       EVERY SEALED ROW — the signing keys and their
+#                             generations, the CA's private keys, the krbtgt
+#                             key (below), whatever else is sealed at rest —
+#                             opens only under the key-encryption key it was
+#                             sealed with, and a product node whose keys will
+#                             not open does not start (common/keystore.js,
+#                             common/secrets.js)
+#   admin-api-client-secret   the seeded `sts-management-api` entry is
+#                             written ONCE and never over an existing one
+#                             (common/applications.js, the seed and
+#                             regenerateClientSecret's STS-REG-0061), so the
+#                             restored entry keeps the old secret; a new
+#                             setting would be a value the token endpoint
+#                             refuses and /admin-api unreachable
+#   bootstrap-admin-password  read only where nobody in the realm holds a
+#                             credential (config.js, admin.bootstrapPassword)
+#                             — never, on a restored database — so it changes
+#                             nothing in the service; it is carried so that
+#                             the secret an operator reads still names the
+#                             password the stored administrator has, rather
+#                             than one nothing accepts
+#   krb5-service-password     the acceptor's account keys are DERIVED from it
+#                             at every start and a stored row may not
+#                             override them (kerberos/krb5_principals.js,
+#                             *A restored row does not get to override the
+#                             settings*): a new value is a new key, and every
+#                             service ticket and exported keytab for the SPN
+#                             stops working
+#
+# NOT CARRIED, AND WHY:
+#   krb5-krbtgt-password      product mode does not read it at all since #169
+#                             (common/mode.js, derivesKrbtgtFromPassword): the
+#                             krbtgt key is random and kept SEALED ON THE
+#                             DIRECTORY ENTRY, so it travels in the snapshot
+#                             under the carried KEK
+#   the database passwords    new ones: schema-init ALTERs the restored
+#                             `sts_app` role to the new cell's password, and
+#                             the provider sets the new master password on
+#                             the restored instance
+#
+# READ ONCE AND KEPT. The values are taken into `terraform_data.carryover`
+# when the global stack is first applied and never re-read (`ignore_changes`),
+# so a later apply without TF_CONVERT — or after the carry-over secret has
+# been deleted — keeps them, instead of putting random values back in place
+# of the KEK every row is sealed under. For the same reason a carry-over
+# named on an environment whose secrets were ALREADY generated is REFUSED at
+# plan rather than ignored: its rows were sealed under the generated KEK, and
+# replacing that would lose them.
+# ---------------------------------------------------------------------------
+data "aws_secretsmanager_secret_version" "carryover" {
+  count     = var.carryover_secret != "" ? 1 : 0
+  secret_id = var.carryover_secret
+}
+
 locals {
+  carried_keys = [
+    "kek", "admin-api-client-secret", "bootstrap-admin-password",
+    "krb5-service-password",
+  ]
+  carried_now = var.carryover_secret != "" ? {
+    for k, v in jsondecode(data.aws_secretsmanager_secret_version.carryover[0].secret_string) :
+    k => tostring(v) if contains(local.carried_keys, k)
+  } : {}
+}
+
+resource "terraform_data" "carryover" {
+  input = local.carried_now
+
+  lifecycle {
+    ignore_changes = [input]
+    # The two without which the converted database cannot be used; the
+    # other two are product mode's, and absent from a development one.
+    precondition {
+      condition = var.carryover_secret == "" || alltrue([
+        for k in ["kek", "admin-api-client-secret"] :
+        contains(nonsensitive(keys(local.carried_now)), k)
+      ])
+      error_message = "carryover_secret names a secret without `kek` and `admin-api-client-secret`; run deploy/aws/convert-to-cells.sh <from> <to> --carry-secrets again."
+    }
+  }
+}
+
+locals {
+  carried = terraform_data.carryover.output
+
   replicated_secrets = {
-    kek                      = random_bytes.kek.base64
+    kek                      = lookup(local.carried, "kek", random_bytes.kek.base64)
     global-db-app-password   = random_password.db_app.result
-    admin-api-client-secret  = random_password.admin_api_client_secret.result
-    bootstrap-admin-password = random_password.bootstrap_admin.result
+    admin-api-client-secret  = lookup(local.carried, "admin-api-client-secret", random_password.admin_api_client_secret.result)
+    bootstrap-admin-password = lookup(local.carried, "bootstrap-admin-password", random_password.bootstrap_admin.result)
     krb5-krbtgt-password     = random_password.krb5_krbtgt.result
-    krb5-service-password    = random_password.krb5_service.result
+    krb5-service-password    = lookup(local.carried, "krb5-service-password", random_password.krb5_service.result)
   }
 }
 
@@ -119,6 +215,15 @@ resource "aws_secretsmanager_secret_version" "global" {
   for_each      = local.replicated_secrets
   secret_id     = aws_secretsmanager_secret.global[each.key].id
   secret_string = each.value
+
+  lifecycle {
+    # A carry-over named on an environment that already has its own KEK (the
+    # header, *Read once and kept*).
+    precondition {
+      condition     = var.carryover_secret == "" || length(nonsensitive(keys(local.carried))) > 0
+      error_message = "carryover_secret is set, but this environment's global secrets were already generated without it; carrying values in now would replace the KEK its rows are sealed under. Destroy the environment first, or apply without TF_CONVERT."
+    }
+  }
 }
 
 resource "aws_secretsmanager_secret" "db_master" {

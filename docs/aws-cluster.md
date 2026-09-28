@@ -187,6 +187,62 @@ public name. Destroy one before you apply the other.
 **Cost**: each cell costs about as much as `testidp`, roughly $0.50 an hour.
 Add a global replica per extra cell and data sent between regions.
 
+### Converting testidp into testidpna without losing its data
+
+`testidp`'s database becomes the database of cell `usw2`, so its people,
+applications, keys and risk datasets and history carry over. Destroying
+`testidp` deletes its database with no final snapshot and deletes its secrets
+straight away, so two things have to exist before you destroy it:
+
+- a **snapshot** of its database, copied so that it is encrypted with the
+  `usw2` cell's key (a restored database keeps its snapshot's key);
+- a **carry-over secret**, `mock-sts/carryover/testidp`, that holds the
+  values the database was written with: the key-encryption key, the
+  management API client's secret, the bootstrap administrator's password
+  and the Kerberos service password.
+
+`deploy/aws/convert-to-cells.sh` checks both and makes them. Run it with no
+flags first. It only reads, and it prints what is missing and the whole
+sequence:
+
+```bash
+deploy/aws/convert-to-cells.sh testidp testidpna
+```
+
+Then:
+
+1. An administrator re-applies `foundation/` with both regions in
+   `permitted_regions`. This also lets the deployer copy and restore
+   snapshots.
+2. `deploy/aws/convert-to-cells.sh testidp testidpna --carry-secrets`
+3. `deploy/aws/convert-to-cells.sh testidp testidpna --copy-snapshot`, then
+   the check again, until nothing is missing.
+4. Destroy `testidp`. The service is down from here until step 5 finishes.
+   Anything written after the snapshot was taken is lost; the check prints
+   how to stop writes and take a new snapshot first.
+   ```bash
+   deploy/aws/terraform-local.sh testidp destroy
+   ```
+5. Apply `testidpna` with the conversion:
+   ```bash
+   TF_CONVERT=1 IMAGE_TAG=<tag> deploy/aws/terraform-local.sh testidpna apply
+   ```
+   The `usw2` database is restored from the snapshot. Its nodes are held
+   at zero while a one-off task converts the data. If the conversion fails,
+   the apply stops with the nodes still at zero and nothing lost; fix the
+   cause and run the same command again.
+6. Sign in with the same bootstrap password as before
+   (`mock-sts/testidpna/bootstrap-admin-password`) and check Monitoring →
+   Risk.
+
+After that, apply `testidpna` **without** `TF_CONVERT`. When you are sure
+the cell is good, delete the carry-over secret and the two snapshots.
+
+The snapshot and the secret's name are in
+`deploy/aws/environment/envs/testidpna.conversion.tfvars.json`, which is
+used only when `TF_CONVERT=1` is set. A new `testidpna` built without it
+starts empty.
+
 ### Trying two cells on one machine
 
 The test suite can run two cells locally, with no AWS account:

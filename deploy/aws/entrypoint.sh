@@ -26,6 +26,11 @@
 #                environment, spiffe-realm or suite-callbacks stack. Unset
 #                for an `environment` apply/destroy/plan/output, which then
 #                does every cell and the global stack IN ORDER (below)
+#   TF_CONVERT   1: a multi-cell environment's CONVERSION from a single-region
+#                one — envs/<env>.conversion.tfvars.json laid over the cells
+#                file, a restored cell's database converted before its nodes
+#                start (#98, `convert_cell` below)
+#   TF_CONVERT_TIMEOUT  seconds to wait for a conversion task       (7200)
 #   TF_REALM     spiffe-realm only: the realm id, or `default`
 #   TF_ACTION    init | validate | plan | apply | destroy | output
 #                | output-json | ecr-password                                  (plan)
@@ -143,6 +148,48 @@ then
   die "TF_CELL='${TF_CELL}' was given, but ${TF_ENV} is single-cell (no envs/${TF_ENV}.cells.tfvars.json)."
 fi
 
+# --- A conversion from a single-region environment (#98, 2026-09-28) --------
+# TF_CONVERT=1 lays `envs/<env>.conversion.tfvars.json` OVER the cells file:
+# its `cells.<id>.db_snapshot_identifier` are merged into the cells (jq's
+# deep merge, restricted to that one field, so it can add a snapshot to a
+# cell and never a cell or anything else), and its `carryover_secret` is
+# given to the global stack. The cells file stays the environment's
+# description, so a fresh apply of the same environment by anybody else —
+# without TF_CONVERT — builds empty databases and generates its secrets, and
+# never depends on a snapshot or a carry-over secret that may since have been
+# deleted (deploy/aws/CLAUDE.md, *Converting a single-region environment into
+# cells*). The file's other fields (`source_environment`, `source_snapshots`)
+# are the runbook's, deploy/aws/convert-to-cells.sh, and reach no Terraform.
+CONVERSION_FILE="/workspace/deploy/aws/environment/envs/${TF_ENV}.conversion.tfvars.json"
+if [ -n "${TF_CONVERT:-}" ] && [ "${TF_CONVERT}" != "0" ];
+then
+  [ -n "${MULTI_CELL}" ] || \
+    die "TF_CONVERT is for a multi-cell environment; ${TF_ENV} has no envs/${TF_ENV}.cells.tfvars.json."
+  [ -f "${CONVERSION_FILE}" ] || \
+    die "TF_CONVERT is set, but there is no envs/${TF_ENV}.conversion.tfvars.json to convert with."
+  unknown="$(jq -r --slurpfile c "${CELLS_FILE}" \
+    '[(.cells // {}) | keys[] | select(. as $k | $c[0].cells | has($k) | not)] | join(" ")' \
+    "${CONVERSION_FILE}")"
+  [ -z "${unknown}" ] || \
+    die "envs/${TF_ENV}.conversion.tfvars.json names cells that are not in the cells file: ${unknown}."
+  MERGED_CELLS_FILE="$(mktemp /tmp/cells.XXXXXX.tfvars.json)"
+  jq -s '.[0] * { cells: ((.[1].cells // {}) | map_values({ db_snapshot_identifier })) }' \
+    "${CELLS_FILE}" "${CONVERSION_FILE}" > "${MERGED_CELLS_FILE}"
+  CELLS_FILE="${MERGED_CELLS_FILE}"
+  CARRYOVER_SECRET="$(jq -r '.carryover_secret // empty' "${CONVERSION_FILE}")"
+  if [ "${TF_STACK}" = "global" ] && [ -n "${CARRYOVER_SECRET}" ];
+  then
+    export TF_VAR_carryover_secret="${CARRYOVER_SECRET}"
+  fi
+fi
+
+# A cell's snapshot, from the (possibly merged) cells file; empty for a cell
+# made empty.
+cell_snapshot() {
+  [ -n "${MULTI_CELL}" ] || return 0
+  jq -r --arg c "$1" '.cells[$c].db_snapshot_identifier // empty' "${CELLS_FILE}"
+}
+
 # --- The stack and its state ------------------------------------------------
 bucket="mock-sts-terraform-state-${account}"
 case "${TF_STACK}" in
@@ -157,6 +204,13 @@ case "${TF_STACK}" in
       # (full unless told otherwise — see `orchestrate_cells` below).
       STATE_KEY="environment/${TF_ENV}/${TF_CELL}.tfstate"
       export TF_VAR_cell="${TF_CELL}" TF_VAR_cell_phase="${TF_CELL_PHASE:-full}"
+      # A RESTORED CELL'S ONE HELD APPLY (environment/conversion.tf): `full`
+      # with no node running, before its conversion. Set by
+      # `orchestrate_cells` only.
+      if [ -n "${TF_CELL_HOLD:-}" ];
+      then
+        export TF_VAR_cell_hold_nodes=true
+      fi
     fi
     ;;
   global)
@@ -395,6 +449,127 @@ step() {
   return "${rc}"
 }
 
+# ---------------------------------------------------------------------------
+# A CELL CONVERTED FROM A SINGLE-REGION ENVIRONMENT (#98, 2026-09-28;
+# environment/conversion.tf, deploy/aws/CLAUDE.md *Converting a single-region
+# environment into cells*). Within the apply above, for a cell whose database
+# is restored from a snapshot:
+#
+#   base    as any new cell — and the restore happens here, because the cell
+#           database is a `base` resource. The cell is marked PENDING first.
+#   global  as always (with TF_CONVERT, the carry-over secret's values)
+#   full    TWICE, with the conversion between:
+#             1. `full` with TF_CELL_HOLD: task definitions, the global
+#                tier's addresses, the conversion task definition — and
+#                every node service at a desired count of 0;
+#             2. the conversion task, once (`convert_cell`): the two schema
+#                inits, then `node persistence/cell_convert.js`, in the
+#                cell's cluster and network, waited for; a non-zero exit
+#                STOPS THE APPLY with the cell's nodes still at 0, the
+#                marker still pending, and the cells after it not applied;
+#             3. the marker set DONE, and `full` as usual: the nodes start.
+#
+# THE MARKER is one object beside the cell's state,
+# `environment/<env>/<cell>.conversion.json` — under the prefix the deployer
+# already writes state under, outside the cell's own prefix (so
+# destroy_dependent_stacks never mistakes it for a stack), and deleted with
+# the cell. PENDING is what makes a re-apply safe after a failure: the held
+# apply and the conversion run again (the tool is idempotent), and an apply
+# without TF_CONVERT refuses rather than starting nodes on unconverted rows.
+# DONE is what makes every later apply skip it, without re-reading the
+# snapshot or running the tool for nothing. A snapshot named for a cell that
+# already existed restored nothing — rds.tf ignores it — and is said so.
+# ---------------------------------------------------------------------------
+conversion_marker_key() {
+  echo "environment/${TF_ENV}/$1.conversion.json"
+}
+
+# pending | done | (empty: never restored)
+conversion_state() {
+  local body
+  body="$(mktemp)"
+  if aws s3api get-object --bucket "${bucket}" \
+    --key "$(conversion_marker_key "$1")" "${body}" >/dev/null 2>&1;
+  then
+    jq -r '.state // empty' "${body}" 2>/dev/null || true
+  fi
+  rm -f "${body}"
+}
+
+write_conversion_marker() {
+  local body
+  body="$(mktemp)"
+  jq -n --arg state "$2" --arg snapshot "$(cell_snapshot "$1")" \
+    --arg at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+    '{ state: $state, snapshot: $snapshot, at: $at }' > "${body}"
+  aws s3api put-object --bucket "${bucket}" --key "$(conversion_marker_key "$1")" \
+    --body "${body}" --content-type application/json >/dev/null || \
+    die "could not write s3://${bucket}/$(conversion_marker_key "$1") (${2}); nothing after it was applied."
+  rm -f "${body}"
+  say "cell $1: conversion ${2}"
+}
+
+# The conversion task, once, and waited for. The cell's own outputs say what
+# to run and where (environment/outputs.tf). A conversion task ALREADY
+# RUNNING in the cell's cluster — an earlier apply interrupted while it
+# waited — is waited for instead of a second one started beside it.
+convert_cell() {
+  local c="$1" out region cluster td network task status rc reason
+  local deadline=$(( $(date +%s) + ${TF_CONVERT_TIMEOUT:-7200} ))
+  out="$(step TF_STACK=environment TF_CELL="${c}" TF_ACTION=output-json)" || \
+    die "cell ${c}: could not read its outputs to run the conversion; its nodes stay at 0."
+  region="$(jq -r '.aws_region.value' <<<"${out}")"
+  cluster="$(jq -r '.ecs_cluster.value' <<<"${out}")"
+  td="$(jq -r '.conversion_task_definition.value // empty' <<<"${out}")"
+  [ -n "${td}" ] || \
+    die "cell ${c}: no conversion task definition in its outputs (was TF_CONVERT=1 given?); its nodes stay at 0."
+  network="$(jq -c '.conversion_network.value | { awsvpcConfiguration: {
+      subnets: .subnets, securityGroups: .security_groups,
+      assignPublicIp: .assign_public_ip } }' <<<"${out}")"
+
+  task="$(aws ecs list-tasks --region "${region}" --cluster "${cluster}" \
+    --started-by mock-sts-cell-convert --desired-status RUNNING \
+    --query 'taskArns[0]' --output text 2>/dev/null || true)"
+  if [ -n "${task}" ] && [ "${task}" != "None" ];
+  then
+    say "cell ${c}: a conversion task is already running (${task}); waiting for it"
+  else
+    say "cell ${c}: running the conversion (${td##*/})"
+    task="$(aws ecs run-task --region "${region}" --cluster "${cluster}" \
+      --task-definition "${td}" --launch-type FARGATE --count 1 \
+      --started-by mock-sts-cell-convert \
+      --network-configuration "${network}" \
+      --query 'tasks[0].taskArn' --output text)" || \
+      die "cell ${c}: the conversion task could not be started; its nodes stay at 0."
+    { [ -n "${task}" ] && [ "${task}" != "None" ]; } || \
+      die "cell ${c}: ECS started no conversion task (see RunTask's failures); its nodes stay at 0."
+  fi
+
+  while :; do
+    status="$(aws ecs describe-tasks --region "${region}" --cluster "${cluster}" \
+      --tasks "${task}" --query 'tasks[0].lastStatus' --output text 2>/dev/null || echo UNKNOWN)"
+    [ "${status}" = "STOPPED" ] && break
+    if [ "$(date +%s)" -ge "${deadline}" ];
+    then
+      die "cell ${c}: the conversion task ${task} has not finished in ${TF_CONVERT_TIMEOUT:-7200} s and is STILL RUNNING. Its nodes stay at 0 and the cell is still pending: wait for it (the next apply waits for a running one rather than starting another), or raise TF_CONVERT_TIMEOUT."
+    fi
+    sleep 15
+  done
+
+  rc="$(aws ecs describe-tasks --region "${region}" --cluster "${cluster}" \
+    --tasks "${task}" \
+    --query "tasks[0].containers[?name=='cell-convert'].exitCode | [0]" --output text)"
+  if [ "${rc}" != "0" ];
+  then
+    reason="$(aws ecs describe-tasks --region "${region}" --cluster "${cluster}" \
+      --tasks "${task}" --output json \
+      | jq -r '.tasks[0] | "stopped: \(.stoppedReason // "?"); " +
+          ([.containers[] | "\(.name) exit \(.exitCode // "none")\(if .reason then " (" + .reason + ")" else "" end)"] | join(", "))')"
+    die "cell ${c}: THE CONVERSION FAILED (${reason}). The tool leaves its sources in place; the cell's nodes stay at 0 and it is still pending. Its log: group /mock-sts/containers in ${region}, streams ${TF_ENV}-${c}-convert/*/${task##*/}. Fix the cause and apply again with TF_CONVERT=1."
+  fi
+  say "cell ${c}: converted (${task##*/})"
+}
+
 orchestrate_cells() {
   local c
   say "multi-cell environment: cells ${CELLS[*]} (primary ${PRIMARY_CELL})"
@@ -405,6 +580,13 @@ orchestrate_cells() {
         then
           say "cell ${c}: has state, so no base phase"
         else
+          # A RESTORED CELL IS MARKED PENDING BEFORE ITS DATABASE EXISTS, so
+          # that no later apply can start its nodes on the restored rows
+          # before the conversion has run, however this one ends.
+          if [ -n "$(cell_snapshot "${c}")" ];
+          then
+            write_conversion_marker "${c}" pending
+          fi
           say "cell ${c}: base phase (no nodes yet)"
           step TF_STACK=environment TF_CELL="${c}" TF_CELL_PHASE=base TF_ACTION=apply || \
             die "cell ${c} did not apply its base phase; nothing after it was applied."
@@ -414,6 +596,29 @@ orchestrate_cells() {
       step TF_STACK=global TF_ACTION=apply || \
         die "the global stack did not apply; no cell's nodes were started or changed."
       for c in "${CELLS[@]}"; do
+        case "$(conversion_state "${c}")" in
+          pending)
+            [ -n "$(cell_snapshot "${c}")" ] || \
+              die "cell ${c}'s database was restored from a snapshot and has NOT been converted yet (s3://${bucket}/$(conversion_marker_key "${c}") says pending), and this apply has no conversion to run: re-run it with TF_CONVERT=1. Its nodes were not started."
+            say "cell ${c}: full, nodes HELD at 0 until its conversion has run"
+            step TF_STACK=environment TF_CELL="${c}" TF_CELL_PHASE=full TF_CELL_HOLD=1 TF_ACTION=apply || \
+              die "cell ${c} did not apply its held phase; its conversion did not run and the cells after it (in: ${CELLS[*]}) were not applied."
+            convert_cell "${c}"
+            write_conversion_marker "${c}" "done"
+            ;;
+          "done")
+            say "cell ${c}: converted already (s3://${bucket}/$(conversion_marker_key "${c}")); not converting again"
+            ;;
+          *)
+            if [ -n "$(cell_snapshot "${c}")" ];
+            then
+              say "NOTE: cell ${c} names a snapshot, but it existed before this"
+              say "      apply and was not restored from it, so there is nothing"
+              say "      to convert. The snapshot is ignored (rds.tf,"
+              say "      ignore_changes)."
+            fi
+            ;;
+        esac
         say "cell ${c}: full"
         step TF_STACK=environment TF_CELL="${c}" TF_CELL_PHASE=full TF_ACTION=apply || \
           die "cell ${c} did not apply; the cells after it (in: ${CELLS[*]}) were not applied."
@@ -434,6 +639,10 @@ orchestrate_cells() {
         say "cell ${c}"
         step TF_STACK=environment TF_CELL="${c}" TF_CELL_PHASE=base TF_ACTION=destroy || \
           die "cell ${c} would not destroy. Re-run the destroy; the ones before it are gone."
+        # Its conversion marker goes with it: a cell made again under the
+        # same name is a new database, restored or empty.
+        aws s3api delete-object --bucket "${bucket}" \
+          --key "$(conversion_marker_key "${c}")" >/dev/null 2>&1 || true
       done
       ;;
     plan|output)

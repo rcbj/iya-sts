@@ -27,6 +27,11 @@
 # and reads through the primary endpoint only — the replica is a copy and a
 # manually promotable standby, not an automatic failover target (that would be
 # Multi-AZ, which is a different product with no readable standby here).
+#
+# A CELL CONVERTED FROM A SINGLE-REGION ENVIRONMENT (#98, 2026-09-28) has its
+# primary RESTORED from an RDS snapshot rather than created empty —
+# `db_snapshot_identifier` on the cell, argued in conversion.tf. The replica is
+# made from the restored primary exactly as from a new one.
 # ---------------------------------------------------------------------------
 resource "aws_db_subnet_group" "main" {
   name        = local.prefix
@@ -60,7 +65,18 @@ resource "aws_db_parameter_group" "main" {
 }
 
 resource "aws_db_instance" "primary" {
-  identifier     = "${local.prefix}-primary"
+  identifier = "${local.prefix}-primary"
+
+  # RESTORED, IN A CONVERTED CELL (conversion.tf); null — a new, empty
+  # database, the only thing this resource made until #98's conversion — in
+  # every other environment and cell. On a restore RDS takes the database
+  # name, the master user name, the engine and the data from the snapshot;
+  # the provider then sets what differs (the master password, the parameter
+  # group, the backup settings) with one ModifyDBInstance. The KEY is the
+  # snapshot's and cannot be changed by the restore, which is why the
+  # snapshot named here must already be a copy under the cell key.
+  snapshot_identifier = local.db_snapshot_identifier != "" ? local.db_snapshot_identifier : null
+
   engine         = "postgres"
   engine_version = var.db_engine_version
   instance_class = var.db_instance_class
@@ -93,6 +109,17 @@ resource "aws_db_instance" "primary" {
 
   auto_minor_version_upgrade = true
   apply_immediately          = true
+
+  # A SNAPSHOT IS READ ONCE, WHEN THE DATABASE IS MADE, AND NEVER AGAIN.
+  # `snapshot_identifier` forces a new instance when it changes, so without
+  # this the apply after a conversion — which no longer names the snapshot —
+  # would DESTROY the converted database and make an empty one, and so would
+  # deleting the snapshot once the conversion is done. Ignored here in every
+  # environment: for one that never named a snapshot, null stays null and
+  # nothing is different.
+  lifecycle {
+    ignore_changes = [snapshot_identifier]
+  }
 }
 
 resource "aws_db_instance" "replica" {

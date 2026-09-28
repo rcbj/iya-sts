@@ -31,6 +31,10 @@
 #   TF_CELL=cac1 deploy/aws/terraform-local.sh testidpna output      # one cell
 #   TF_STACK=global deploy/aws/terraform-local.sh testidpna output   # global
 #   TF_CELL=cac1 TF_STACK=spiffe-realm REALM=default … testidpna apply
+#   TF_CONVERT=1 IMAGE_TAG=<tag> deploy/aws/terraform-local.sh testidpna apply
+#     (the one apply that CONVERTS a single-region environment into its cells:
+#     envs/testidpna.conversion.tfvars.json laid over the cells file —
+#     deploy/aws/convert-to-cells.sh prints the whole sequence)
 #     (a stack built on a cell names the cell)
 #     (deploy/aws/CLAUDE.md, *A realm's SPIFFE ports*; `destroy` needs REALM
 #     only)
@@ -217,6 +221,8 @@ trap relay INT TERM
   -e TF_ACTION="${TF_ACTION}" \
   -e TF_CELL="${TF_CELL:-}" \
   -e TF_CELL_PHASE="${TF_CELL_PHASE:-}" \
+  -e TF_CONVERT="${TF_CONVERT:-}" \
+  -e TF_CONVERT_TIMEOUT="${TF_CONVERT_TIMEOUT:-}" \
   -e TF_IMPORT_ADDRESS="${TF_IMPORT_ADDRESS:-}" \
   -e TF_IMPORT_ID="${TF_IMPORT_ID:-}" \
   "${TF_VARS[@]}" \
