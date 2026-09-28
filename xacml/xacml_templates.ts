@@ -167,6 +167,14 @@ const ISSUANCE_ATTRIBUTE = {
   // resolves ROLE for a request that did not carry it (a remote PEP's); a
   // request without it is about a person.
   SUBJECT_KIND: xacmlRequest.VOCABULARY.SUBJECT_KIND,
+  // THE SCOPE QUESTION (#304, part C of #88). On the RESOURCE, whose
+  // resource-id is the one scope value being judged: whether its resource
+  // application GATES it by role (#303, a boolean), and which configured
+  // roles AUTHORIZE it (`rolePermission`). The subject's ROLE bag is what it
+  // holds; the policy decides by intersecting the two — code supplies the
+  // facts and never the verdict.
+  SCOPE_GATED: 'urn:sts:xacml:scope-gated',
+  AUTHORIZING_ROLE: 'urn:sts:xacml:authorizing-role',
   // On the SUBJECT: the roles found in a token the caller PRESENTED, read out
   // of the claim `roles.claimName` names. Separate from the above rather than
   // unioned into it, and that separation is the whole reason it is visible in
@@ -220,6 +228,25 @@ const ISSUANCE_ATTRIBUTE = {
  * The attribute identifiers describing the authentication a session stands
  * on (#64), sent as environment attributes at the session's start.
  */
+// ---------------------------------------------------------------------------
+// THE PER-SCOPE VERDICT (#304, part C of #88; rcbj's decision 1 on #88's
+// C/D/E). The issuance PEP asks one question per requested scope, action-id
+// `issue-scope` and the scope as the resource-id, and the answer carries this
+// obligation: KEEP it, DROP it (narrow, RFC 6749 section 3.3) or REFUSE the
+// request, with the error code the PEP records. On a Permit as well as a
+// Deny, so the PEP can tell a document that decided the scope from one that
+// has no scope rules at all — an operator's override built from an older
+// template — and ask the BUILT-IN policy instead (rcbj's decision on #304):
+// gating never silently switches off.
+// ---------------------------------------------------------------------------
+const SCOPE_ATTRIBUTE = {
+  ACTION: 'issue-scope',
+  OBLIGATION: 'urn:sts:xacml:obligation:scope',
+  VERDICT: 'urn:sts:xacml:scope-verdict',
+  CODE: 'urn:sts:xacml:scope-code',
+  VERDICTS: ['keep', 'drop', 'refuse']
+};
+
 const AUTHN_ATTRIBUTE = {
   // A BAG: RFC 8176 `amr` values of every factor the session was started
   // with — `pwd`, `otp`, `hwk`, `pop`...
@@ -631,6 +658,16 @@ const TEMPLATES: TemplateRow[] = [
           'narrowing an application is editing its entry rather than editing ' +
           'a policy.',
     parameters: [
+      { name: 'decideScopes',
+        label: 'Decide which requested scopes are issued (#304)',
+        dflt: 'yes', type: 'string',
+        help: 'yes or no. When yes, the policy answers the embedded PEP\'s ' +
+              'per-scope question (action-id issue-scope): a scope its ' +
+              'resource application gates by role is DROPPED unless the ' +
+              'subject holds a role that authorizes it, and every other ' +
+              'scope is kept. No leaves the rules out — and the PEP then ' +
+              'asks the BUILT-IN policy about scopes instead, so role ' +
+              'gating is never switched off by rebuilding this document.' },
       { name: 'allowTokenRoles',
         label: 'Also accept roles found in a presented token',
         dflt: 'yes', type: 'string',
@@ -722,6 +759,7 @@ const TEMPLATES: TemplateRow[] = [
       const decideRisk = B.yes(given.decideRisk, true);
       const refuseEmail = B.yes(given.refuseEmailFactor, false);
       const decideDevices = B.yes(given.decideDevices, true);
+      const decideScopes = B.yes(given.decideScopes, true);
       const deviceExempt = B.listOf(given.deviceExempt === undefined
         ? 'sts-admin-console, sts-user-portal' : given.deviceExempt)
         .filter(function (one: string): boolean {
@@ -1055,6 +1093,67 @@ const TEMPLATES: TemplateRow[] = [
         });
       }
 
+      // -------------------------------------------------------------------
+      // THE SCOPE RULES (#304). Targeted at action-id `issue-scope`, so no
+      // other question reaches them and they reach no other question. A
+      // Deny DROPS a scope its resource gates when none of the roles the
+      // subject holds is one that authorizes it; a Permit KEEPS everything
+      // else. Both carry the verdict obligation (see SCOPE_ATTRIBUTE). The
+      // role rule below has no target and would also Permit a scope
+      // question that names no required role — which is why this document
+      // is ordered-deny-overrides whenever these rules are in it.
+      // -------------------------------------------------------------------
+      const scopeTarget = B.targetOf([[
+        B.match(F1 + 'string-equal', B.value(TYPE.STRING,
+                                             SCOPE_ATTRIBUTE.ACTION),
+                B.designator(model.CATEGORY.ACTION,
+                             model.ATTRIBUTE.ACTION_ID, TYPE.STRING))]]);
+      const verdict = function (on: string, value: string,
+                                code: string): any[] {
+        log.debug("Entering verdict().");
+        const assignments = [{ attributeId: SCOPE_ATTRIBUTE.VERDICT,
+          category: null, issuer: null,
+          expression: B.value(TYPE.STRING, value) }];
+        if (code) {
+          assignments.push({ attributeId: SCOPE_ATTRIBUTE.CODE,
+            category: null, issuer: null,
+            expression: B.value(TYPE.STRING, code) });
+        }
+        log.debug("Leaving verdict().");
+        return [{ id: SCOPE_ATTRIBUTE.OBLIGATION, on: on,
+                  assignments: assignments }];
+      };
+      const scopeRules: any[] = decideScopes ? [{
+        id: options.idBase + ':rule:scope-not-authorized',
+        effect: model.EFFECT.DENY,
+        description: 'Drop a requested scope its resource application gates ' +
+                     'by role (#303) when no role the subject holds ' +
+                     'authorizes it.',
+        target: scopeTarget,
+        condition: B.apply(F1 + 'and', [
+          B.apply(F1 + 'boolean-is-in', [
+            B.value(TYPE.BOOLEAN, 'true'),
+            B.designator(model.CATEGORY.RESOURCE,
+                         ISSUANCE_ATTRIBUTE.SCOPE_GATED, TYPE.BOOLEAN)]),
+          B.apply(F1 + 'not', [B.apply(F3 + 'any-of-any', [
+            { kind: 'function', functionId: F1 + 'string-equal' },
+            B.designator(model.CATEGORY.ACCESS_SUBJECT,
+                         ISSUANCE_ATTRIBUTE.ROLE, TYPE.STRING),
+            B.designator(model.CATEGORY.RESOURCE,
+                         ISSUANCE_ATTRIBUTE.AUTHORIZING_ROLE,
+                         TYPE.STRING)])])]),
+        obligations: verdict(model.EFFECT.DENY, 'drop', 'STS-ADMIN-0821'),
+        advice: []
+      }, {
+        id: options.idBase + ':rule:scope-kept',
+        effect: model.EFFECT.PERMIT,
+        description: 'Keep every other requested scope.',
+        target: scopeTarget,
+        condition: null,
+        obligations: verdict(model.EFFECT.PERMIT, 'keep', ''),
+        advice: []
+      }] : [];
+
       log.debug('Leaving buildRoleIssuance(). ' + arms.length + ' arm(s), ' +
                 riskRules.length + ' risk rule(s), ' + deviceRules.length +
                 ' device rule(s).');
@@ -1104,8 +1203,14 @@ const TEMPLATES: TemplateRow[] = [
                           'device' + (deviceExempt.length
                             ? ' (never for ' + deviceExempt.join(', ') + ')'
                             : '') + '.'
+                        : '') +
+                     (decideScopes
+                        ? ' AND ON EACH REQUESTED SCOPE (#304): a scope its ' +
+                          'resource application gates by role is dropped ' +
+                          'unless the subject holds a role authorizing it.'
                         : ''),
-        combiningAlgId: decideRisk || refuseEmail || decideDevices
+        combiningAlgId: decideRisk || refuseEmail || decideDevices ||
+                        decideScopes
           ? model.RULE_ALG.ORDERED_DENY_OVERRIDES
           : model.RULE_ALG.DENY_UNLESS_PERMIT,
         // NO TARGET, and that is deliberate rather than an omission: this
@@ -1116,7 +1221,8 @@ const TEMPLATES: TemplateRow[] = [
         // explain.
         target: null,
         variables: {},
-        rules: deviceRules.concat(riskRules).concat(decideRisk &&
+        rules: deviceRules.concat(riskRules).concat(scopeRules)
+          .concat(decideRisk &&
                                                      protectedApp ? [{
           // THE ALARM (#226): a protected application, an elevated risk, and
           // no factor to ask for. The role rule still decides — this rule
@@ -2067,6 +2173,7 @@ class XacmlTemplates {
    * The issuance attribute identifiers.
    */
   static readonly ISSUANCE_ATTRIBUTE = ISSUANCE_ATTRIBUTE;
+  static readonly SCOPE_ATTRIBUTE = SCOPE_ATTRIBUTE;
   /**
    * The risk attribute identifiers.
    */
@@ -2247,6 +2354,7 @@ export = {
   instanceOrigin: (): string => slot.origin(),
   PolicyBuilders: PolicyBuilders,
   ISSUANCE_ATTRIBUTE: XacmlTemplates.ISSUANCE_ATTRIBUTE,
+  SCOPE_ATTRIBUTE: XacmlTemplates.SCOPE_ATTRIBUTE,
   RISK_ATTRIBUTE: XacmlTemplates.RISK_ATTRIBUTE,
   AUTHN_ATTRIBUTE: XacmlTemplates.AUTHN_ATTRIBUTE,
   DEVICE_ATTRIBUTE: XacmlTemplates.DEVICE_ATTRIBUTE,

@@ -14886,6 +14886,15 @@ const CODES = [
       'no machine client can be issued that admin scope there until it ' +
       'exists (#303).',
     spec: 'none — a warning in the log' },
+  { code: 'STS-XACML-0078',
+    summary: 'Neither the issuance policy nor the built-in one it falls back ' +
+      'to gave a verdict on a requested scope — a defect; a scope gated by ' +
+      'role was dropped and an ungated one kept (#304).',
+    spec: 'none — a warning in the log' },
+  { code: 'STS-XACML-0079',
+    summary: 'No XACML family is loaded in the process, so no policy could ' +
+      'decide the requested scopes gated by role; they were dropped (#304).',
+    spec: 'none — a warning in the log' },
   // ===== XPEP ==============================================================
   { code: 'STS-XPEP-0001',
     summary: 'The error-code registry could not be loaded from ./error_codes ' +

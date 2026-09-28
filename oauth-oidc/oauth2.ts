@@ -4751,6 +4751,12 @@ class OAuth2Server {
         application: String(opts.client_id || ''),
         kind: kinds[i],
         subject: subject,
+        // WHAT THE REQUEST CARRIES (#304, part C of #88): the scope values,
+        // the client and the grant type go to the policy with every
+        // issuance question, so a rule may read them.
+        scopes: String(opts.scope || '').split(/\s+/).filter(Boolean),
+        client: String(opts.client_id || ''),
+        grantType: String(opts.grant || ''),
         // The claims of a token the caller PRESENTED, where this grant is built
         // on one. A refresh and a token exchange both are, and the roles claim
         // in either is what the issuance policy's second arm reads.
@@ -7372,6 +7378,10 @@ class OAuth2Server {
     const roleAnswer = gate.check({
       application: String(query.client_id || ''),
       kind: gate.ISSUANCE.AUTHORIZATION_CODE,
+      // WHAT THE REQUEST CARRIES (#304).
+      scopes: String(query.scope || '').split(/\s+/).filter(Boolean),
+      client: String(query.client_id || ''),
+      grantType: 'authorization_code',
       // READ OFF THE SESSION SINCE 2026-09-05, where it was the constant
       // `true`. `issueAuthorizationResponse()` is handed the session's user,
       // and until unauthenticated sessions existed there was no session whose

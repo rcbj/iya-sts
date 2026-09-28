@@ -39,6 +39,13 @@
 //      configured roles, told apart by the subject-kind attribute, and the
 //      bootstrap administrator before its claim holds no console role
 //      (stubbed roster).
+//   G. THE POLICY DECIDES (#304, part C of #88). The issuance request carries
+//      the requested scopes, the client, the grant type and the protocol; a
+//      scope's verdict comes out of the issuance policy's obligation — an
+//      operator's own rule can drop an ungated scope with its own code — and
+//      where no verdict comes (an override built without the scope rules,
+//      xacml.enabled off) the BUILT-IN policy decides, so gating never
+//      switches off. With no decider at all, a gated scope is dropped.
 //
 // IN A THROWAWAY REALM, for the reason #302's test was: `run.js` runs every
 // file in one process, and a grant on the default realm's roster would
@@ -61,6 +68,16 @@ const rolePermissions = require('../common/role_permissions');
 const pip = require('../xacml/xacml_pip');
 const model = require('../xacml/xacml_model');
 const datatypes = require('../xacml/xacml_datatypes');
+const gate = require('../common/issuance_gate');
+const config = require('../common/config');
+const xacmlStore = require('../xacml/xacml_store');
+const xml = require('../xacml/xacml_xml');
+const templates = require('../xacml/xacml_templates');
+// THE ISSUANCE PEP, which the per-scope question is answered by since #304.
+// Requiring it installs it as the gate's decider; `run()` puts back whatever
+// was there, because every file in `run.js`'s one process shares the gate.
+const deciderBefore = gate.deciderInstalled();
+const rolePep = require('../xacml/xacml_role_pep');
 
 const log = require('bunyan').createLogger({ name: 'role_permissions',
   level: process.env.LOG_LEVEL || 'info' });
@@ -384,6 +401,120 @@ function pipRoles(t, names) {
   log.debug("Leaving pipRoles().");
 }
 
+// THE ISSUANCE POLICY OVERRIDE in this realm, written and removed.
+function writeIssuancePolicy(policy) {
+  log.debug("Entering writeIssuancePolicy().");
+  const name = rolePep.issuancePolicyName();
+  const written = xacmlStore.write(name, xml.writePolicy(policy),
+                                   { enabled: true });
+  log.debug("Leaving writeIssuancePolicy().");
+  return written;
+}
+
+async function thePolicyDecides(t, names) {
+  log.debug("Entering thePolicyDecides().");
+  t.log.info('=== G. the policy decides (#304) ===');
+  const B = templates.PolicyBuilders;
+  const F1 = 'urn:oasis:names:tc:xacml:1.0:function:';
+  const request = rolePep.buildRequest({
+    application: CLIENT, kind: 'issue-access-token',
+    subject: { kind: 'user', name: names.writer, authenticated: true },
+    scopes: ['openid', 'admin:read'], client: CLIENT,
+    grantType: 'refresh_token', protocol: 'OAuth 2.0' }, [], [], []);
+  const valuesOf = function (category, id) {
+    const found = request.categories.filter(function (one) {
+      return one.category === category;
+    })[0];
+    const attr = found && found.attributes.filter(function (one) {
+      return one.attributeId === id;
+    })[0];
+    return attr ? attr.values.map(function (v) { return v.lexical; })
+                        .join(' ') : '';
+  };
+  const V = require('../xacml/xacml_request').VOCABULARY;
+  t.check(valuesOf(model.CATEGORY.ACTION, V.REQUESTED_SCOPE) ===
+            'openid admin:read' &&
+          valuesOf(model.CATEGORY.ACCESS_SUBJECT, V.CLIENT_ID) === CLIENT &&
+          valuesOf(model.CATEGORY.ENVIRONMENT, V.GRANT_TYPE) ===
+            'refresh_token' &&
+          valuesOf(model.CATEGORY.ENVIRONMENT, V.PROTOCOL) === 'OAuth 2.0',
+          'G1. the issuance request carries the requested scopes, the ' +
+          'client, the grant type and the protocol', JSON.stringify(request));
+
+  // AN OPERATOR'S OWN RULE: the built-in document with one more Deny,
+  // dropping `profile` (which nothing gates) with a code of the operator's.
+  const built = templates.build('role-issuance', {},
+                                { name: rolePep.issuancePolicyName() });
+  const S = templates.SCOPE_ATTRIBUTE;
+  built.policy.rules.unshift({
+    id: built.policy.id + ':rule:operator-drops-profile',
+    effect: model.EFFECT.DENY,
+    description: 'An operator\'s rule: never issue profile here.',
+    target: B.targetOf([[
+      B.match(F1 + 'string-equal', B.value(model.TYPE.STRING, S.ACTION),
+              B.designator(model.CATEGORY.ACTION, model.ATTRIBUTE.ACTION_ID,
+                           model.TYPE.STRING))],
+      [B.match(F1 + 'string-equal', B.value(model.TYPE.STRING, 'profile'),
+               B.designator(model.CATEGORY.RESOURCE,
+                            model.ATTRIBUTE.RESOURCE_ID,
+                            model.TYPE.STRING))]]),
+    condition: null,
+    obligations: [{ id: S.OBLIGATION, on: model.EFFECT.DENY,
+      assignments: [
+        { attributeId: S.VERDICT, category: null, issuer: null,
+          expression: B.value(model.TYPE.STRING, 'drop') },
+        { attributeId: S.CODE, category: null, issuer: null,
+          expression: B.value(model.TYPE.STRING, 'STS-ADMIN-0821') }] }],
+    advice: []
+  });
+  t.check(writeIssuancePolicy(built.policy).ok,
+          'precondition: the operator\'s policy was written');
+  const operated = rolePermissions.narrowScope('openid profile admin:read',
+    { kind: 'user', name: names.writer, authenticated: true },
+    { clientId: CLIENT, grant: 'refresh_token' });
+  t.equal(operated.scope, 'openid admin:read',
+          'G2. an operator\'s rule drops an ungated scope: the policy, not ' +
+          'code, decided it');
+
+  // AN OVERRIDE WITH NO SCOPE RULES: the built-in one decides instead.
+  const bare = templates.build('role-issuance', { decideScopes: 'no' },
+                               { name: rolePep.issuancePolicyName() });
+  t.check(writeIssuancePolicy(bare.policy).ok,
+          'precondition: an override without the scope rules was written');
+  const fellBack = rolePermissions.narrowScope('openid admin:read',
+    { kind: 'user', name: names.nobody, authenticated: true },
+    { clientId: CLIENT, grant: 'refresh_token' });
+  t.equal(fellBack.scope, 'openid',
+          'G3. an override with no scope rules does not switch gating off: ' +
+          'the built-in policy dropped the gated scope');
+  xacmlStore.remove(rolePep.issuancePolicyName());
+
+  config.setOverride('xacml.enabled', false);
+  try {
+    const off = rolePermissions.narrowScope('openid admin:read',
+      { kind: 'user', name: names.nobody, authenticated: true },
+      { clientId: CLIENT, grant: 'refresh_token' });
+    t.equal(off.scope, 'openid',
+            'G4. with xacml.enabled off the built-in policy still decides');
+  } finally {
+    config.clearOverride('xacml.enabled');
+  }
+
+  const installed = gate.deciderInstalled();
+  gate.setDecider(null);
+  try {
+    const none = rolePermissions.narrowScope('openid admin:read',
+      { kind: 'user', name: names.writer, authenticated: true },
+      { clientId: CLIENT, grant: 'refresh_token' });
+    t.equal(none.scope, 'openid',
+            'G5. with no decider at all, even a holder\'s gated scope is ' +
+            'dropped (fail closed)');
+  } finally {
+    gate.setDecider(installed);
+  }
+  log.debug("Leaving thePolicyDecides().");
+}
+
 async function run(t) {
   log.debug("Entering run().");
   const realm = realms.create({ id: 'rp-' + RUN,
@@ -401,6 +532,11 @@ async function run(t) {
     await gatedPermission(t, names);
     heldAndCarried(t, realm, names);
     pipRoles(t, names);
+    try {
+      await thePolicyDecides(t, names);
+    } finally {
+      gate.setDecider(deciderBefore);
+    }
   });
   log.debug("Leaving run().");
 }
