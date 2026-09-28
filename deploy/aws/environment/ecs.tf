@@ -118,6 +118,97 @@ locals {
   global_schema_init = local.is_primary && local.full
 }
 
+# ---------------------------------------------------------------------------
+# THE CONTAINERS MORE THAN ONE TASK DEFINITION RUNS, SPELT ONCE (#98's
+# conversion, 2026-09-28). The node task definitions below run them, and so
+# does a restored cell's one-off conversion task (conversion.tf) — the same
+# two schema inits against the same two databases, logged under the same
+# stream prefix with the task's own name at the end — so each is a map keyed
+# by the task it is in: `node-a`, `node-b`, `node-c`, and `convert`. Written
+# in place until then; moving it here changed no rendered task definition,
+# because `jsonencode` renders the same object wherever it was built.
+# ---------------------------------------------------------------------------
+locals {
+  container_tasks = concat(keys(local.nodes), ["convert"])
+
+  container_log = {
+    for t in local.container_tasks : t => {
+      logDriver = "awslogs"
+      options = {
+        awslogs-group         = data.aws_cloudwatch_log_group.containers.name
+        awslogs-region        = local.region
+        awslogs-stream-prefix = "${local.log_stream_prefix}-${t}"
+      }
+    }
+  }
+
+  global_schema_init_container = {
+    for t in local.container_tasks : t => {
+      name      = "global-schema-init"
+      image     = "${local.ecr_repository_url}:${local.schema_image_tag}"
+      essential = false
+      environment = [
+        { name = "PGHOST", value = local.global.primary_address },
+        { name = "PGPORT", value = tostring(local.global.db_port) },
+        { name = "PGDATABASE", value = local.global.db_name },
+        { name = "PGUSER", value = local.db_master_user },
+        { name = "STS_DB_APP_USER", value = local.global.db_app_user },
+      ]
+      secrets = [
+        { name = "PGPASSWORD", valueFrom = local.global.master_secret_arn },
+        { name = "STS_DB_APP_PASSWORD", valueFrom = lookup(local.global_secret_arns, "global-db-app-password", "") },
+      ]
+      logConfiguration = local.container_log[t]
+    }
+  }
+
+  schema_init_container = {
+    for t in local.container_tasks : t => {
+      name      = "schema-init"
+      image     = "${local.ecr_repository_url}:${local.schema_image_tag}"
+      essential = false
+      environment = [
+        { name = "PGHOST", value = aws_db_instance.primary.address },
+        { name = "PGPORT", value = tostring(local.db_port) },
+        { name = "PGDATABASE", value = local.db_name },
+        { name = "PGUSER", value = local.db_master_user },
+        { name = "STS_DB_APP_USER", value = local.db_app_user },
+      ]
+      secrets = [
+        { name = "PGPASSWORD", valueFrom = aws_secretsmanager_secret.main["db-master-password"].arn },
+        { name = "STS_DB_APP_PASSWORD", valueFrom = aws_secretsmanager_secret.main["db-app-password"].arn },
+      ]
+      logConfiguration = local.container_log[t]
+    }
+  }
+
+  # A cell's `base` phase has no global secrets yet (cells.tf) and runs no
+  # node; ECS refuses an empty `valueFrom` even in a task definition
+  # nothing starts, so those are left out until `full`. In a single-cell
+  # environment every value is present and the list is the one it was.
+  node_secrets = [for s in concat(
+    [{ name = "ADMIN_API_CLIENT_SECRET", valueFrom = local.shared_secret_arns["admin-api-client-secret"] }],
+    # THE BOOTSTRAP ADMINISTRATOR'S PASSWORD, in product mode. Injected by
+    # ECS from Secrets Manager rather than written into the task
+    # definition, like the three secrets beside it: a task definition is
+    # readable by anybody with `ecs:DescribeTaskDefinition`, and this one
+    # is the way in. The service takes it instead of generating one and
+    # prints it nowhere (common/credentials.ts, admin.bootstrapPassword),
+    # so the value exists only in Secrets Manager and in the scrypt hash
+    # on the entry.
+    #
+    # In a cell (#98) all three are the global/ stack's, replicated into
+    # this region, because every cell must hold the same values.
+    local.product ? [
+      { name = "STS_ADMIN_BOOTSTRAP_PASSWORD", valueFrom = local.shared_secret_arns["bootstrap-admin-password"] },
+      # And the KDC's two (secrets.tf, 2026-09-18): without them a product
+      # KDC builds no krbtgt and no service account, and issues nothing.
+      { name = "KRB5_KRBTGT_PASSWORD", valueFrom = local.shared_secret_arns["krb5-krbtgt-password"] },
+      { name = "KRB5_SERVICE_PASSWORD", valueFrom = local.shared_secret_arns["krb5-service-password"] },
+    ] : [],
+  ) : s if s.valueFrom != ""]
+}
+
 resource "aws_ecs_task_definition" "node" {
   for_each = local.nodes
 
@@ -186,146 +277,68 @@ resource "aws_ecs_task_definition" "node" {
       mountPoints = [
         { sourceVolume = local.tls_volume, containerPath = local.tls_dir, readOnly = false },
       ]
-      logConfiguration = {
-        logDriver = "awslogs"
-        options = {
-          awslogs-group         = data.aws_cloudwatch_log_group.containers.name
-          awslogs-region        = local.region
-          awslogs-stream-prefix = "${local.log_stream_prefix}-${each.key}"
-        }
-      }
+      logConfiguration = local.container_log[each.key]
     },
-    ] : [], local.global_schema_init ? [
-    {
-      name      = "global-schema-init"
-      image     = "${local.ecr_repository_url}:${local.schema_image_tag}"
-      essential = false
-      environment = [
-        { name = "PGHOST", value = local.global.primary_address },
-        { name = "PGPORT", value = tostring(local.global.db_port) },
-        { name = "PGDATABASE", value = local.global.db_name },
-        { name = "PGUSER", value = local.db_master_user },
-        { name = "STS_DB_APP_USER", value = local.global.db_app_user },
-      ]
-      secrets = [
-        { name = "PGPASSWORD", valueFrom = local.global.master_secret_arn },
-        { name = "STS_DB_APP_PASSWORD", valueFrom = lookup(local.global_secret_arns, "global-db-app-password", "") },
-      ]
-      logConfiguration = {
-        logDriver = "awslogs"
-        options = {
-          awslogs-group         = data.aws_cloudwatch_log_group.containers.name
-          awslogs-region        = local.region
-          awslogs-stream-prefix = "${local.log_stream_prefix}-${each.key}"
+    ] : [],
+    local.global_schema_init ? [local.global_schema_init_container[each.key]] : [],
+    [
+      local.schema_init_container[each.key],
+      {
+        name      = "mock-sts"
+        image     = "${local.ecr_repository_url}:${var.image_tag}"
+        essential = true
+        # BOTH INIT CONTAINERS MUST HAVE SUCCEEDED. A node that could not get
+        # the public certificate must not start: it would serve a self-signed
+        # one under a public name, which is the single error this deployment
+        # exists to avoid, and it would do it looking healthy.
+        dependsOn = concat(
+          [{ containerName = "schema-init", condition = "SUCCESS" }],
+          local.public_name ? [{ containerName = "cert-init", condition = "SUCCESS" }] : [],
+          local.global_schema_init ? [{ containerName = "global-schema-init", condition = "SUCCESS" }] : [],
+        )
+        # And in a cell, the inter-cell listener (intercell.tf), which no load
+        # balancer carries.
+        portMappings = concat([
+          for p in values(local.published_ports) :
+          { containerPort = p.container, protocol = "tcp" }
+          ], local.multi ? [
+          { containerPort = local.intercell_port, protocol = "tcp" },
+        ] : [])
+        environment = [
+          for k, v in merge(local.node_environment, { STS_CLUSTER_NODE_NAME = each.key }) :
+          { name = k, value = v }
+        ]
+        # A cell's `base` phase has no global secrets yet (cells.tf) and runs no
+        # node; ECS refuses an empty `valueFrom` even in a task definition
+        # nothing starts, so those are left out until `full`. In a single-cell
+        # environment every value is present and the list is the one it was.
+        # The secrets, from `local.node_secrets` below (the conversion task
+        # takes the same list, conversion.tf).
+        secrets = local.node_secrets
+        # The main port is HTTPS on a certificate the cluster issues itself, so
+        # the probe does not verify it; it asks whether the service answers.
+        # Loopback connections are served without the PROXY header.
+        healthCheck = {
+          command     = ["CMD", "node", "-e", "require('https').get({host:'127.0.0.1',port:8081,path:'/healthcheck',rejectUnauthorized:false},r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
+          interval    = 15
+          timeout     = 5
+          retries     = 4
+          startPeriod = 180
         }
-      }
-    },
-    ] : [], [
-    {
-      name      = "schema-init"
-      image     = "${local.ecr_repository_url}:${local.schema_image_tag}"
-      essential = false
-      environment = [
-        { name = "PGHOST", value = aws_db_instance.primary.address },
-        { name = "PGPORT", value = tostring(local.db_port) },
-        { name = "PGDATABASE", value = local.db_name },
-        { name = "PGUSER", value = local.db_master_user },
-        { name = "STS_DB_APP_USER", value = local.db_app_user },
-      ]
-      secrets = [
-        { name = "PGPASSWORD", valueFrom = aws_secretsmanager_secret.main["db-master-password"].arn },
-        { name = "STS_DB_APP_PASSWORD", valueFrom = aws_secretsmanager_secret.main["db-app-password"].arn },
-      ]
-      logConfiguration = {
-        logDriver = "awslogs"
-        options = {
-          awslogs-group         = data.aws_cloudwatch_log_group.containers.name
-          awslogs-region        = local.region
-          awslogs-stream-prefix = "${local.log_stream_prefix}-${each.key}"
-        }
-      }
-    },
-    {
-      name      = "mock-sts"
-      image     = "${local.ecr_repository_url}:${var.image_tag}"
-      essential = true
-      # BOTH INIT CONTAINERS MUST HAVE SUCCEEDED. A node that could not get
-      # the public certificate must not start: it would serve a self-signed
-      # one under a public name, which is the single error this deployment
-      # exists to avoid, and it would do it looking healthy.
-      dependsOn = concat(
-        [{ containerName = "schema-init", condition = "SUCCESS" }],
-        local.public_name ? [{ containerName = "cert-init", condition = "SUCCESS" }] : [],
-        local.global_schema_init ? [{ containerName = "global-schema-init", condition = "SUCCESS" }] : [],
-      )
-      # And in a cell, the inter-cell listener (intercell.tf), which no load
-      # balancer carries.
-      portMappings = concat([
-        for p in values(local.published_ports) :
-        { containerPort = p.container, protocol = "tcp" }
-        ], local.multi ? [
-        { containerPort = local.intercell_port, protocol = "tcp" },
-      ] : [])
-      environment = [
-        for k, v in merge(local.node_environment, { STS_CLUSTER_NODE_NAME = each.key }) :
-        { name = k, value = v }
-      ]
-      # A cell's `base` phase has no global secrets yet (cells.tf) and runs no
-      # node; ECS refuses an empty `valueFrom` even in a task definition
-      # nothing starts, so those are left out until `full`. In a single-cell
-      # environment every value is present and the list is the one it was.
-      secrets = [for s in concat(
-        [{ name = "ADMIN_API_CLIENT_SECRET", valueFrom = local.shared_secret_arns["admin-api-client-secret"] }],
-        # THE BOOTSTRAP ADMINISTRATOR'S PASSWORD, in product mode. Injected by
-        # ECS from Secrets Manager rather than written into the task
-        # definition, like the three secrets beside it: a task definition is
-        # readable by anybody with `ecs:DescribeTaskDefinition`, and this one
-        # is the way in. The service takes it instead of generating one and
-        # prints it nowhere (common/credentials.ts, admin.bootstrapPassword),
-        # so the value exists only in Secrets Manager and in the scrypt hash
-        # on the entry.
-        #
-        # In a cell (#98) all three are the global/ stack's, replicated into
-        # this region, because every cell must hold the same values.
-        local.product ? [
-          { name = "STS_ADMIN_BOOTSTRAP_PASSWORD", valueFrom = local.shared_secret_arns["bootstrap-admin-password"] },
-          # And the KDC's two (secrets.tf, 2026-09-18): without them a product
-          # KDC builds no krbtgt and no service account, and issues nothing.
-          { name = "KRB5_KRBTGT_PASSWORD", valueFrom = local.shared_secret_arns["krb5-krbtgt-password"] },
-          { name = "KRB5_SERVICE_PASSWORD", valueFrom = local.shared_secret_arns["krb5-service-password"] },
-        ] : [],
-      ) : s if s.valueFrom != ""]
-      # The main port is HTTPS on a certificate the cluster issues itself, so
-      # the probe does not verify it; it asks whether the service answers.
-      # Loopback connections are served without the PROXY header.
-      healthCheck = {
-        command     = ["CMD", "node", "-e", "require('https').get({host:'127.0.0.1',port:8081,path:'/healthcheck',rejectUnauthorized:false},r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
-        interval    = 15
-        timeout     = 5
-        retries     = 4
-        startPeriod = 180
-      }
-      ulimits = [{ name = "nofile", softLimit = 65536, hardLimit = 65536 }]
-      # THE UPLOAD VOLUME, READ-WRITE: the node writes, hashes, reads back
-      # and deletes each uploaded file here (#214). AND THE CERTIFICATE,
-      # READ-ONLY, where there is one — the node reads it and must never be
-      # able to change it. `mountPoints` was merged in only with a public name
-      # until the upload volume made it unconditional.
-      mountPoints = concat(
-        [{ sourceVolume = local.risk_upload_volume, containerPath = local.risk_upload_dir, readOnly = false }],
-        local.public_name ? [
-          { sourceVolume = local.tls_volume, containerPath = local.tls_dir, readOnly = true },
-        ] : [],
-      )
-      logConfiguration = {
-        logDriver = "awslogs"
-        options = {
-          awslogs-group         = data.aws_cloudwatch_log_group.containers.name
-          awslogs-region        = local.region
-          awslogs-stream-prefix = "${local.log_stream_prefix}-${each.key}"
-        }
-      }
-    },
+        ulimits = [{ name = "nofile", softLimit = 65536, hardLimit = 65536 }]
+        # THE UPLOAD VOLUME, READ-WRITE: the node writes, hashes, reads back
+        # and deletes each uploaded file here (#214). AND THE CERTIFICATE,
+        # READ-ONLY, where there is one — the node reads it and must never be
+        # able to change it. `mountPoints` was merged in only with a public name
+        # until the upload volume made it unconditional.
+        mountPoints = concat(
+          [{ sourceVolume = local.risk_upload_volume, containerPath = local.risk_upload_dir, readOnly = false }],
+          local.public_name ? [
+            { sourceVolume = local.tls_volume, containerPath = local.tls_dir, readOnly = true },
+          ] : [],
+        )
+        logConfiguration = local.container_log[each.key]
+      },
   ]))
 }
 

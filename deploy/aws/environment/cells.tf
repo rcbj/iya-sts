@@ -71,13 +71,17 @@ variable "cells" {
     must not overlap another cell's; `geolocation_countries` are the ISO 3166
     country codes whose clients Route 53 PINS to this cell because the law
     requires it (dns_cells.tf) — empty for a cell that is reached only through
-    the latency set.
+    the latency set; `db_snapshot_identifier`, empty but for a cell CONVERTED
+    from a single-region environment, is the RDS snapshot the cell database
+    is restored from (conversion.tf) — in the cell's region and under the
+    cell's own key, and read once, when the database is created.
   EOT
   type = map(object({
-    region                = string
-    jurisdiction          = string
-    vpc_cidr              = string
-    geolocation_countries = optional(list(string), [])
+    region                 = string
+    jurisdiction           = string
+    vpc_cidr               = string
+    geolocation_countries  = optional(list(string), [])
+    db_snapshot_identifier = optional(string, "")
   }))
   default = {}
   validation {
@@ -121,6 +125,18 @@ variable "cell_phase" {
   }
 }
 
+variable "cell_hold_nodes" {
+  description = <<-EOT
+    TRUE ONLY WHILE A RESTORED CELL IS BEING CONVERTED (conversion.tf):
+    `full` with every node service at a desired count of 0, so that the
+    one-off conversion task runs against the two databases with no node
+    serving from them. entrypoint.sh sets it (TF_CELL_HOLD) for the one apply
+    before the conversion and never otherwise.
+  EOT
+  type        = bool
+  default     = false
+}
+
 variable "state_region" {
   description = <<-EOT
     The region of the Terraform state BUCKET, which is the home region and
@@ -141,8 +157,10 @@ locals {
   is_primary = local.multi && var.cell == var.primary_cell
   full       = var.cell_phase == "full"
 
-  # A single-cell stack is always `full`. A cell in `base` runs no node.
-  node_desired_count = local.full ? 1 : 0
+  # A single-cell stack is always `full`. A cell in `base` runs no node, and
+  # neither does a restored cell while its conversion is pending
+  # (conversion.tf).
+  node_desired_count = local.full && !var.cell_hold_nodes ? 1 : 0
 
   # Where the NODES of every cell are, for the rules that admit them: the
   # whole VPC CIDR of each, because a Fargate task takes whatever address its

@@ -542,6 +542,31 @@ data "aws_iam_policy_document" "deploy_data" {
     ])
   }
 
+  # A CELL CONVERTED FROM A SINGLE-REGION ENVIRONMENT (#98, 2026-09-28):
+  # its database is RESTORED from a snapshot of the old one's, and that
+  # snapshot is first COPIED under the cell's key, because a restore keeps
+  # the snapshot's key (environment/conversion.tf,
+  # deploy/aws/convert-to-cells.sh). Only project-named snapshots and
+  # instances. **NO DeleteDBSnapshot**: the snapshot is the record of the
+  # database that was destroyed to make the cell, and removing it is an
+  # administrator's decision, taken after the cell is known to be good.
+  statement {
+    sid = "RdsRestoreAndCopyProjectSnapshots"
+    actions = [
+      "rds:RestoreDBInstanceFromDBSnapshot", "rds:CopyDBSnapshot",
+      "rds:AddTagsToResource",
+    ]
+    resources = flatten([
+      for p in local.rarn.rds : [
+        "${p}:snapshot:${var.name}-*",
+        "${p}:db:${var.name}-*",
+        "${p}:subgrp:${var.name}-*",
+        "${p}:pg:${var.name}-*",
+        "${p}:og:default:postgres-18",
+      ]
+    ])
+  }
+
   statement {
     sid = "SecretsOnlyProjectNamed"
     actions = [
