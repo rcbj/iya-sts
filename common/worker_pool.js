@@ -308,6 +308,13 @@ function fork() {
 // answered on its way out) is dropped rather than resolving a settled promise.
 function receive(entry, message) {
   log.debug('Entering receive(). id=' + (message ? message.id : '(none)'));
+  // A memory status (#329) is not a job's answer: it has no entry in
+  // `inFlight`, is not counted, and proves nothing about forking.
+  if (message && message.memoryStatus) {
+    receiveMemoryStatus(entry, message);
+    log.debug('Leaving receive(). A memory status.');
+    return;
+  }
   const pending = entry.inFlight.get(message.id);
   if (!pending) {
     log.debug('Leaving receive(). Nothing is waiting for that id.');
@@ -760,6 +767,116 @@ function stop(timeoutMs) {
 
 // What the pool is doing, for the tests and for anything that wants to report
 // it. A copy, so a reader cannot reach into the live entries.
+// ---------------------------------------------------------------------------
+// EACH WORKER'S OWN MEMORY, ASKED FOR (#329).
+//
+// Monitoring → Node Health lists every process of the node with its
+// `process.memoryUsage()`, which only the process can read. `worker.js`
+// answers `{ memoryStatus: true, id }` BEFORE its job table — a control
+// message that computes nothing, is not a job and is not counted as one, so
+// the pool stays what it is: a place post-quantum work is computed. It is not
+// queued behind anything here either: it goes straight down the channel.
+// What it cannot do is interrupt a job the worker is COMPUTING — a job is
+// synchronous — so the wait is bounded, and a worker that has not answered by
+// then is simply absent from the answer; the page says it was busy.
+// ---------------------------------------------------------------------------
+let nextMemoryStatusId = 1;
+const memoryStatusWaiters = new Map();
+
+function receiveMemoryStatus(entry, message) {
+  log.debug('Entering receiveMemoryStatus(). pid=' + entry.pid);
+  const waiter = memoryStatusWaiters.get(message.id);
+  if (!waiter || waiter.answers[entry.pid]) {
+    log.debug('Leaving receiveMemoryStatus(). Nobody is waiting.');
+    return;
+  }
+  waiter.answers[entry.pid] = { memory: message.memory || null,
+                                cpu: message.cpu || null,
+                                uptimeS: message.uptimeS === undefined
+                                  ? null : message.uptimeS };
+  waiter.left--;
+  if (waiter.left <= 0) {
+    waiter.finish();
+  }
+  log.debug('Leaving receiveMemoryStatus().');
+}
+
+/**
+ * Asks every worker of this process's pool for its own memory (#329).
+ *
+ * @param timeoutMs - how long to wait for the answers; 500 when omitted
+ * @returns a promise of `{ [pid]: { memory, cpu, uptimeS } }`; a worker that
+ *   did not answer in time — one computing a job, most likely — is absent
+ */
+function askMemoryStatus(timeoutMs) {
+  log.debug('Entering askMemoryStatus().');
+  const asked = workers.filter(function (one) {
+    return one.child && one.child.connected;
+  });
+  if (!asked.length) {
+    log.debug('Leaving askMemoryStatus(). No worker to ask.');
+    return Promise.resolve({});
+  }
+  const id = nextMemoryStatusId++;
+  const limit = timeoutMs === undefined ? 500 : timeoutMs;
+  log.debug('Leaving askMemoryStatus(). Asked ' + asked.length + '.');
+  return new Promise(function (resolve) {
+    const waiter = { answers: {}, left: asked.length,
+                     finish: function () {} };
+    // Unreferenced: a page nobody is waiting on may not hold the process.
+    const timer = setTimeout(function () {
+      waiter.finish();
+    }, limit);
+    if (timer.unref) {
+      timer.unref();
+    }
+    waiter.finish = function () {
+      log.debug('Entering finish().');
+      clearTimeout(timer);
+      memoryStatusWaiters.delete(id);
+      asked.forEach(function (one) {
+        unrefIfIdle(one);
+      });
+      resolve(waiter.answers);
+      log.debug('Leaving finish().');
+    };
+    memoryStatusWaiters.set(id, waiter);
+    asked.forEach(function (one) {
+      // HELD WHILE THE QUESTION IS OUT, for `refWhileWorking()`'s reason: an
+      // idle worker's channel is unreferenced, and a process with nothing
+      // else to do — a test, a script — drained its loop before the answer
+      // arrived and never settled the promise. Released in finish(), which
+      // the bound guarantees.
+      refWhileWorking(one);
+      const gone = function () {
+        log.debug('Entering gone(). pid=' + one.pid);
+        // A channel that closed between the filter and the send: that
+        // worker is going, and is not waited for.
+        if (memoryStatusWaiters.get(id) === waiter &&
+            !waiter.answers[one.pid]) {
+          waiter.left--;
+          if (waiter.left <= 0) {
+            waiter.finish();
+          }
+        }
+        log.debug('Leaving gone().');
+      };
+      try {
+        one.child.send({ memoryStatus: true, id: id }, function (err) {
+          if (err) {
+            log.debug('Caught in askMemoryStatus(): ' +
+                      ((err && err.message) || err));
+            gone();
+          }
+        });
+      } catch (e) {
+        log.debug('Caught in askMemoryStatus(): ' + ((e && e.message) || e));
+        gone();
+      }
+    });
+  });
+}
+
 /**
  * Reports what the pool is doing: configured size, running workers, whether
  * it computes in process or has given up on children, the affinity count,
@@ -824,6 +941,8 @@ module.exports = {
   run: run,
   stop: stop,
   stats: stats,
+  // Monitoring → Node Health (#329): each worker's own memory.
+  askMemoryStatus: askMemoryStatus,
   reset: reset
 };
 

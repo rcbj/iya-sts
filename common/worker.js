@@ -252,14 +252,61 @@ function runJob(kind, job) {
 //   in    { id, kind, job }
 //   out   { id, ok: true, result }  |  { id, ok: false, error, errorName }
 //
+//   and, since #329, one question that is not a job (below):
+//   in    { memoryStatus: true, id }
+//   out   { memoryStatus: true, id, pid, memory, cpu, uptimeS }
+//
 // A FAILED JOB IS A MESSAGE AND NOT A CRASH. A signature this service cannot
 // make is an answer the caller has to turn into a 400 with a sentence in it,
 // and a worker that exited instead would turn every one of those into a
 // restart plus a request that never got a reply.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// AND ONE QUESTION THAT IS NOT A JOB: WHAT THIS PROCESS'S MEMORY IS (#329).
+//
+// Monitoring → Node Health lists every process of the node with its
+// `process.memoryUsage()`, and only the process itself can read its heap —
+// `/proc` has the resident size and nothing else. So the pool may ask
+// `{ memoryStatus: true, id }` and this answers
+// `{ memoryStatus: true, id, pid, memory, cpu, uptimeS }`.
+//
+// **IT IS A CONTROL MESSAGE AND NOT A ROW OF `JOBS`**, and the pool being
+// crypto-only is why: a job kind would be something the pool could be asked
+// to COMPUTE, would run in process when `workers.count` is 0 (where it would
+// describe the front process, not a worker), and would be counted among the
+// jobs and their times on Monitoring → Worker Pools. This computes nothing:
+// three reads of the process's own counters. It is answered before any job
+// is looked at, and it does not jump a job that is RUNNING — a job is
+// synchronous, so a worker in the middle of a post-quantum signature reads
+// no message until it returns. The asker bounds its wait for that reason,
+// and lists a busy worker as not having answered.
+// ---------------------------------------------------------------------------
+function answerMemoryStatus(message) {
+  log.debug('Entering answerMemoryStatus(). id=' + message.id);
+  let memory = null;
+  let cpu = null;
+  try {
+    memory = process.memoryUsage();
+    cpu = process.cpuUsage();
+  } catch (e) {
+    log.debug('Caught in answerMemoryStatus(): ' + ((e && e.message) || e));
+    // `memoryUsage()` reads /proc and can fail for want of a descriptor; the
+    // answer goes back with whatever was read, and the asker says so.
+  }
+  answer({ memoryStatus: true, id: message.id, pid: process.pid,
+           memory: memory, cpu: cpu,
+           uptimeS: Math.round(process.uptime()) });
+  log.debug('Leaving answerMemoryStatus().');
+}
+
 function handleMessage(message) {
   log.debug('Entering handleMessage(). kind=' +
             (message && message.kind ? message.kind : '(none)'));
+  if (message && message.memoryStatus) {
+    answerMemoryStatus(message);
+    log.debug('Leaving handleMessage(). A memory status, not a job.');
+    return;
+  }
   const id = message ? message.id : null;
   let result = null;
   try {

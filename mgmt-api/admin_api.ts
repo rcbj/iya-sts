@@ -3972,8 +3972,10 @@ class AdminApi {
                      '`rssBytes`, `heapUsedBytes`, `heapTotalBytes`, ' +
                      '`externalBytes`, `arrayBuffersBytes`, and CPU time), ' +
                      'and each post-quantum child and the debugger\'s api ' +
-                     'child (`rssBytes` and `peakRssBytes` from ' +
-                     '`/proc/<pid>/status`, the heap figures null) — ' +
+                     'child, the same figures when it answered within half ' +
+                     'a second, and otherwise `rssBytes` and ' +
+                     '`peakRssBytes` from `/proc/<pid>/status`, the heap ' +
+                     'figures null and `notReported` saying why — ' +
                      '`unanswered`, and `totals`. `ecs`: the ECS task ' +
                      'metadata endpoint\'s `taskLimits` and `stats` where ' +
                      '`ECS_CONTAINER_METADATA_URI_V4` is set, and ' +

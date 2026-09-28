@@ -1177,6 +1177,24 @@ use. `helpers.js`'s block below `warmPqKeys()` carries the measurement.
 `tests/worker_pool.js` has the four contracts and the measurement that shows the
 loop is free.
 
+**ONE QUESTION A WORKER ANSWERS THAT IS NOT A JOB: ITS OWN MEMORY (#329).**
+Monitoring → Node Health lists every process with its
+`process.memoryUsage()`, which only the process can read.
+`worker_pool.askMemoryStatus(timeoutMs)` sends each worker
+`{ memoryStatus: true, id }`, and `worker.js` answers it BEFORE its job table
+with `{ memoryStatus, id, pid, memory, cpu, uptimeS }`. **The pool is still
+crypto-only**: this computes nothing (three reads of the process's own
+counters), is not a row of `JOBS` — so it is never run in process when
+`workers.count` is 0, where it would describe the wrong process — has no
+entry in `inFlight`, and is not counted among the jobs Worker Pools reports.
+It is not queued behind anything in the pool, but it cannot interrupt a job
+the worker is COMPUTING, since a job is synchronous: the wait is bounded and
+a busy worker is simply absent from the answer, which the page draws as a
+`/proc` row saying so. The channel is held (`refWhileWorking()`) while a
+question is out and released at the bound, because an idle worker's channel
+is unreferenced and a process with nothing else to do drained its loop before
+the answer arrived — `tests/node_health_page.js` found it.
+
 
 ## `protocol_stack.ts`: THE REQUIRE ORDER MOVED OUT OF `server.js` (2026-09-07), AND BECAME THE COMPOSITION ROOT (2026-09-16)
 
@@ -1764,8 +1782,11 @@ Node Health asks it too, and the answer grew rather than a second message:
 `{ poolStatus, id, pq, memory, cpu, uptimeS }` — the worker's
 `process.memoryUsage()`, `process.cpuUsage()` and uptime, which nothing
 outside the process can read (the heap is in no `/proc` file) — and
-`askWorkerPoolStatus()` hands them back beside `pq`. Node Health's paths are
-in `NEVER_DISPATCHED` for the same reason as Worker Pools'.
+`askWorkerPoolStatus()` hands them back beside `pq`. Asked with
+`{ childMemory: ms }`, each worker also asks its OWN post-quantum children
+(`worker_pool.askMemoryStatus(ms)`, above) and answers with `pqMemory`; Worker
+Pools does not ask, and so never waits on it. Node Health's paths are in
+`NEVER_DISPATCHED` for the same reason as Worker Pools'.
 
 ### A RATE-LIMIT COUNT IS WRITTEN DOWN EVERY TIME IT MOVES (2026-09-14)
 

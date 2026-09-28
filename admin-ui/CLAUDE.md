@@ -6624,13 +6624,21 @@ what shows WHICH process grows. Four sections and the machine's own figures:
 * **Processes** — the front process's own `process.memoryUsage()` and
   `cpuUsage()`; each request and hosted-surface worker's, asked over #327's
   `{ poolStatus }` exchange (`common/CLAUDE.md`), bounded at a second, a
-  silent one under `unanswered`; and the resident size (`VmRSS`, `VmHWM`) of
-  every post-quantum child — the front process's and each worker's — and of
-  the debugger's api child, from `/proc/<pid>/status`. Those children answer
-  only jobs, and asking them their heap would have been a job kind in
-  `worker.js`'s table for a page, so their heap figures are null and the page
-  says why. The totals sum the rows and say that shared pages are counted once
-  per process.
+  silent one under `unanswered`; and the same figures from every child —
+  each post-quantum child of the front process
+  (`worker_pool.askMemoryStatus()`, a control message `worker.js` answers
+  before its job table and never a job, `common/CLAUDE.md`), of each request
+  worker (which asks its own when the question carries `childMemory`, and
+  answers with `pqMemory`), and the debugger's api child
+  (`debugger_api_process.askMemory()`, answered by the preload
+  `debugger_api_status.ts`, `debugger/CLAUDE.md`), each bounded at half a
+  second so a worker's answer fits inside the front process's second. **A
+  child that does not answer** — a post-quantum worker computing a job reads
+  no message until it returns, and a worker that did not ask its children —
+  keeps a row with its resident size (`VmRSS`, `VmHWM`) from
+  `/proc/<pid>/status`, the heap figures null, and `notReported` saying why.
+  The totals sum the rows and say that shared pages are counted once per
+  process.
 * **ECS** — where `ECS_CONTAINER_METADATA_URI_V4` is set, the container
   document, `/task` (limits) and `/task/stats` (this container's entry, by its
   `DockerId`), each with a one-second bound, as a cross-check. No IAM. Dialled
@@ -6663,7 +6671,9 @@ Five decisions:
 
 The locations (`cgroupRoot`, `procRoot`), the clock, `sleep`, the pools and
 `fetchJson` are constructor dependencies, which is how
-`tests/node_health_page.js` hands it a cgroup of its own.
+`tests/node_health_page.js` hands it a cgroup of its own; its section 8 holds
+a real post-quantum child to its answer, and `tests/debugger_api_process.js`
+section F the preload.
 `GET /admin-api/node-health` answers the same `nodeHealthView()` (rule 7); a
 view that could not be built is `STS-CORE-0124`.
 `tests/vendored/sts_node_health.js` is the HTTP half.

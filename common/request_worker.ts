@@ -1411,10 +1411,35 @@ class RequestWorker {
       // file descriptor; the pool's figures still go back, and whichever of
       // these two was read before the throw.
     }
-    this.report({ poolStatus: true, id: message.id, pid: process.pid,
-                  pq: pq, error: error || null, memory: memory, cpu: cpu,
-                  uptimeS: Math.round(process.uptime()) });
-    log.debug("Leaving RequestWorker.reportPoolStatus().");
+    const answer = { poolStatus: true, id: message.id, pid: process.pid,
+                     pq: pq, error: error || null, memory: memory, cpu: cpu,
+                     uptimeS: Math.round(process.uptime()),
+                     pqMemory: null as unknown };
+    // THIS WORKER'S OWN POST-QUANTUM CHILDREN'S MEMORY, only when Node
+    // Health asks (`childMemory`, #329): they answer this process and no
+    // other, so it asks them — `worker_pool.askMemoryStatus()`, bounded by
+    // `childMemoryMs`, which the front process keeps under its own bound —
+    // and answers with what came back. Worker Pools does not ask, and so
+    // does not wait on it.
+    if (!message.childMemory || !pq) {
+      this.report(answer);
+      log.debug("Leaving RequestWorker.reportPoolStatus().");
+      return;
+    }
+    const self = this;
+    require('./worker_pool').askMemoryStatus(Number(message.childMemoryMs) ||
+                                             500)
+      .then(function (children: unknown): void {
+        answer.pqMemory = children;
+        self.report(answer);
+      }, function (e: any): void {
+        log.debug("Caught in RequestWorker.reportPoolStatus(): " +
+                  ((e && e.message) || e));
+        // The children's memory is a courtesy; the rest still goes back.
+        self.report(answer);
+      });
+    log.debug("Leaving RequestWorker.reportPoolStatus(). Asking the " +
+              "children.");
   }
 
   // ---------------------------------------------------------------------------

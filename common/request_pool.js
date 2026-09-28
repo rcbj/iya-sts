@@ -5472,7 +5472,9 @@ function receivePoolStatus(entry, message) {
                                 memory: message.memory || null,
                                 cpu: message.cpu || null,
                                 uptimeS: message.uptimeS === undefined
-                                  ? null : message.uptimeS };
+                                  ? null : message.uptimeS,
+                                // Its post-quantum children's, when asked.
+                                pqMemory: message.pqMemory || null };
   waiter.left--;
   if (waiter.left <= 0) {
     waiter.finish();
@@ -5484,11 +5486,15 @@ function receivePoolStatus(entry, message) {
  * Asks every ready request worker for its own post-quantum pool's stats.
  *
  * @param timeoutMs - how long to wait for the answers; 1000 when omitted
- * @returns a promise of `{ [pid]: { pq, error, memory, cpu, uptimeS } }`
- *   (the last three for Monitoring → Node Health, #329); a worker that did
- *   not answer in time is absent
+ * @param options - `{ childMemory: ms }` asks each worker to ask its own
+ *   post-quantum children for their memory within `ms` too (#329); the
+ *   answers then carry `pqMemory`
+ * @returns a promise of
+ *   `{ [pid]: { pq, error, memory, cpu, uptimeS, pqMemory } }` (the last
+ *   four for Monitoring → Node Health, #329); a worker that did not answer
+ *   in time is absent
  */
-function askWorkerPoolStatus(timeoutMs) {
+function askWorkerPoolStatus(timeoutMs, options) {
   log.debug("Entering askWorkerPoolStatus().");
   const asked = workers.filter(function (one) {
     return one.ready && one.child && one.child.connected;
@@ -5521,7 +5527,10 @@ function askWorkerPoolStatus(timeoutMs) {
     poolStatusWaiters.set(id, waiter);
     asked.forEach(function (one) {
       try {
-        one.child.send({ poolStatus: true, id: id });
+        one.child.send({ poolStatus: true, id: id,
+                         childMemory: !!(options && options.childMemory),
+                         childMemoryMs: (options && options.childMemory) ||
+                           0 });
       } catch (e) {
         log.debug("Caught in askWorkerPoolStatus(): " +
                   ((e && e.message) || e));

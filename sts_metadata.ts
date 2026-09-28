@@ -6716,7 +6716,9 @@ const ENDPOINTS: EndpointEntry[] = [
           'every process of the node — the front process and each request ' +
           'and hosted-surface worker (process.memoryUsage(), asked over the ' +
           'channel), each post-quantum child and the debugger\'s api ' +
-          '(resident size from /proc) — with the total; the ECS task ' +
+          '(the same, each asked over its own channel; a child busy with a ' +
+          'job is read from /proc and says so) — with the total; the ECS ' +
+          'task ' +
           'metadata endpoint as a cross-check where there is one. A source ' +
           'that is not there says so. Always drawn by the front process; ' +
           'the figures are this node\'s. A service page: a realm ' +
