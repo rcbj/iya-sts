@@ -1232,6 +1232,55 @@ const METRIC_PROBES = [
 // The claim scope a stable origin is held under (`adoptOrigin()`).
 const ORIGIN_SCOPE = 'persistence.origin';
 
+// ---------------------------------------------------------------------------
+// HOW A CONNECTION STRING BECOMES WHAT `pg` IS GIVEN — the one place, shared
+// by this driver's writer pool, its LISTEN client, its read pool and, since
+// #98's conversion tool (`persistence/cell_convert.js`), a process that is
+// not the service and dials the same databases. `create()` argues the two
+// decisions it holds: TLS is wanted when the string's `sslmode` asks for it,
+// and the parameter is then STRIPPED so that `pg`'s own reading of it cannot
+// disagree with the `ssl` option built here. A libpq keyword/value string,
+// which cannot be edited safely, is passed through untouched.
+//
+// A PURE FUNCTION with no log line, for `poolMax()`'s reason: this module's
+// logger arrives with create(). `notUrl` carries why a string that asked for
+// TLS could not be edited, so the caller can say so on its own logger.
+// ---------------------------------------------------------------------------
+/**
+ * Returns what `pg` is given to dial a connection string the way this driver
+ * does.
+ *
+ * @param url - the connection string
+ * @param verifyTls - whether the server's certificate is verified
+ * @returns `{ connectionString, ssl, wantsTls, notUrl }`; `notUrl` is '' or
+ * the reason the string could not be edited
+ */
+function dialOptions(url, verifyTls) {
+  const raw = String(url || '');
+  const wantsTls = /[?&]sslmode=(require|verify-ca|verify-full|prefer)/i
+    .test(raw);
+  let connectionString = raw;
+  let notUrl = '';
+  if (wantsTls) {
+    try {
+      const parsed = new URL(raw);
+      parsed.searchParams.delete('sslmode');
+      connectionString = parsed.toString();
+    } catch (e) {
+      // Not a URL: see the header. Carried on the answer rather than
+      // logged, because there is no logger here.
+      notUrl = String((e && e.message) || e) || 'not a URL';
+      connectionString = raw;
+    }
+  }
+  return {
+    connectionString: connectionString,
+    ssl: wantsTls ? { rejectUnauthorized: !!verifyTls } : undefined,
+    wantsTls: wantsTls,
+    notUrl: notUrl
+  };
+}
+
 /**
  * Creates the postgres persistence driver.
  *
@@ -1398,8 +1447,10 @@ function create(options) {
   // make `sslmode=disable` mean its opposite — a connection string saying one
   // thing and the client doing another, which is the shape of bug this whole
   // change exists to remove.
-  const wantsTls = /[?&]sslmode=(require|verify-ca|verify-full|prefer)/i
-    .test(url);
+  // `dialOptions()`, above create(), is the one reading of it (#98): this
+  // driver's pools and an out-of-process tool dial the same way.
+  const dial = dialOptions(url, options.verifyTls);
+  const wantsTls = dial.wantsTls;
   const verify = !!options.verifyTls;
   if (wantsTls) {
     log.info('persistence: the database connection is TLS (sslmode in the ' +
@@ -1431,24 +1482,16 @@ function create(options) {
   // string SAYS — it is read above to decide whether TLS is wanted at all, and
   // it is what an operator writes — but there is exactly one place that turns
   // it into a socket option, which is what stops the two disagreeing again.
-  const dialled = (function () {
-    if (!wantsTls) {
-      return url;
-    }
-    try {
-      const parsed = new URL(url);
-      parsed.searchParams.delete('sslmode');
-      return parsed.toString();
-    } catch (e) {
-      log.debug("Caught in a callback in create(): " + ((e && e.message) || e));
-      // A libpq keyword/value string rather than a URL. `pg` accepts those and
-      // this cannot edit one safely, so it is passed through untouched and
-      // whatever it says about ssl is what happens.
-      log.debug('persistence: the connection string is not a URL, so its ' +
-                'sslmode was left as it is.');
-      return url;
-    }
-  })();
+  // That place is `dialOptions()` since #98, so a process that is not the
+  // service dials the same way.
+  const dialled = dial.connectionString;
+  if (dial.notUrl) {
+    // A libpq keyword/value string rather than a URL. `pg` accepts those and
+    // this cannot edit one safely, so it is passed through untouched and
+    // whatever it says about ssl is what happens.
+    log.debug('persistence: the connection string is not a URL, so its ' +
+              'sslmode was left as it is.');
+  }
 
   // ONE PLACE THE CONNECTION IS DESCRIBED, because the pool and the change
   // listener have to dial the same database the same way — and a listener that
@@ -1503,23 +1546,10 @@ function create(options) {
     if (!readUrl || readUrl === url) {
       return pool;
     }
-    const readTls = /[?&]sslmode=(require|verify-ca|verify-full|prefer)/i
-      .test(readUrl);
-    let readDialled = readUrl;
-    if (readTls) {
-      try {
-        const parsed = new URL(readUrl);
-        parsed.searchParams.delete('sslmode');
-        readDialled = parsed.toString();
-      } catch (e) {
-        log.debug("Caught in a callback in create(): " +
-                  ((e && e.message) || e));
-        readDialled = readUrl;
-      }
-    }
+    const readDial = dialOptions(readUrl, verify);
     const made = new Pool({
-      connectionString: readDialled,
-      ssl: readTls ? { rejectUnauthorized: verify } : undefined,
+      connectionString: readDial.connectionString,
+      ssl: readDial.ssl,
       max: Number(options.poolMax) > 0 ? Number(options.poolMax)
         : POOL_FLOOR,
       connectionTimeoutMillis: 5000,
@@ -5516,5 +5546,9 @@ module.exports = {
   SCHEMA_OBJECTS: SCHEMA_OBJECTS,
   SCHEMA_COLUMNS: SCHEMA_COLUMNS,
   SCHEMA_VERSION: SCHEMA_VERSION,
-  poolMax: poolMax
+  poolMax: poolMax,
+  // What `pg` is given for a connection string (#98): for
+  // `persistence/cell_convert.js`, which dials the service's databases
+  // without being the service.
+  dialOptions: dialOptions
 };

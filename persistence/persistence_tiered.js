@@ -833,5 +833,10 @@ module.exports = {
   create: create,
   GLOBAL_METHODS: GLOBAL_METHODS,
   BOTH_METHODS: BOTH_METHODS,
-  loginNameOf: loginNameOf
+  // How the flush names a person in the routing index, for the one-time
+  // conversion of a single-cell store (`cell_convert.js`), whose backfill
+  // must write exactly the rows `indexPeople()` would have.
+  loginNameOf: loginNameOf,
+  uuidOf: uuidOf,
+  normDn: normDn
 };

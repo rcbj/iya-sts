@@ -1519,3 +1519,47 @@ cell key in product mode (0003), keys that are not persisted or no operator
 key-encryption key (0004 — every cell must sign with the same realm keys, #98
 D8), and no `global.publicBaseUrl` (0005 — a relayed request reaches the
 owning cell under a private name).
+
+### Converting a single-cell store (#98, 2026-09-28)
+
+**`cell_convert.js` turns a single-cell deployment's database into a cell,
+ONCE** — `node persistence/cell_convert.js [--dry-run]`, run in the image and
+configured exactly as the cell it becomes (`cells.id`, the cell's
+`databaseUrl` pointing at the old database, the global database built empty,
+the service KEK). It dials both through `databaseConnection()`,
+`globalDatabaseConnection()` and the driver's `dialOptions()`, and holds the
+KEK through `keystore.start()`, which also proves that key opens the stored
+key sets — a routing digest under the wrong key would route nobody.
+
+**IT WRITES WHAT THE TIERED DRIVER WOULD HAVE.** Every row of the tables
+whose methods are in `GLOBAL_METHODS` moves (realms, appconfig, keys, used
+assertions, cluster secrets), the directory is split by
+`tiers.directoryTierOf()`, a group into its `splitGroup()` halves (a cell half
+that is empty is DELETED, as `splitChange()` deletes it), a minted row moves
+when `mintedTierOf()` says global (an unclassified handle stays, as
+`byHandleTier()` keeps it), and a `scheduler.run.global` claim moves. The
+routing index is backfilled through `persistence.routingDigest()` — the one
+digest, now also the one the tiered driver is built with — from
+`persistence_tiered.loginNameOf()` and `uuidOf()`, so a backfilled row is the
+row `indexPeople()` writes. Rows are copied verbatim, jsonb as parsed values
+and timestamps as UTC text; nothing is re-sealed (`keystore.open()` falls back
+to the service key). `sts_risk_*` is only ever counted.
+
+**COPY, VERIFY, THEN DELETE**, one transaction each on the global and then
+the cell database, so the only states a failure leaves are *not started*
+(global empty), *copied* (global holds exactly the cell's realms and keys: a
+re-run copies again and finishes) and *converted* (the cell holds no realm and
+no key: nothing moves, a missing index row is claimed, exit 0). A global
+database whose realms or keys differ, or whose index names another cell, is a
+second source and is refused (STS-CELL-0203); STS-CELL-0200 to 0209 are its
+codes.
+
+**THE CHANGE LOGS ARE NOT COPIED.** Nothing runs across a conversion, and a
+process that starts restores the tables and follows each log from its end —
+so the global database's `sts_changes` and `sts_change_readers` start empty,
+and the old deployment's readers and nodes in the cell database are dropped
+by the next trim and the dead-node purge like any dead node's.
+
+`tests/cell_convert.js` holds the rules over two in-memory databases;
+`tests/tools/rehearse-cell-conversion.sh` rehearses it against real
+PostgreSQL (`tests/CLAUDE.md`).
