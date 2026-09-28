@@ -3704,12 +3704,20 @@ class OAuth2Server {
   // is presented back to this server and to nothing else, so a claim in one
   // reaches no relying party and would only make the two halves of a grant
   // disagree.
-  private customClaimContext(base: Json, payload: Json, user: Json): Json {
+  //
+  // A client_credentials token is about the CLIENT (#93): no username, so
+  // `admin_stats.js`'s claim layers resolve the client as an APPLICATION —
+  // its roles through `roleMemberApplication` — rather than looking up a
+  // person named after its client_id, which found nobody's roles.
+  private customClaimContext(base: Json, payload: Json, user: Json,
+                             grant?: string): Json {
     const { log } = this.deps;
     log.debug("Entering OAuth2Server.customClaimContext().");
+    const aboutClient = grant === 'client_credentials';
     log.debug("Leaving OAuth2Server.customClaimContext().");
     return {
-      username: (user && user.username) || payload.username || '',
+      username: aboutClient ? ''
+        : ((user && user.username) || payload.username || ''),
       sub: payload.sub || '',
       email: (user && user.email) || '',
       name: (user && user.name) || '',
@@ -3800,9 +3808,18 @@ class OAuth2Server {
       aud: opts.audience || jwtAccessToken.defaultAudienceFor(base),
       client_id: opts.client_id, typ: 'Bearer',
       jti: randomId(16), iat: iat, nbf: iat,
-      exp: iat + self.accessTokenTtl(opts.client_id),
-      username: user.username
+      exp: iat + self.accessTokenTtl(opts.client_id)
     };
+    // `username` names the PERSON the token is about, and a
+    // client_credentials token is about no person (#93, 2026-09-28): it
+    // carried the client_id here, so every reader that took `username` for a
+    // person's name — the claim context below among them, which built the
+    // roles claim for a person named after the client — was misled. The
+    // client is `sub` (the client_id, or `urn:sts:client:<id>` in RFC 9700
+    // mode) and `client_id`; the token registry files it under the client.
+    if (opts.grant !== 'client_credentials') {
+      payload.username = user.username;
+    }
     // Section 2.2.3: the scope claim describes what was granted, so a token
     // granted nothing carries no claim — not `scope: ""`, a member every reader
     // had to learn meant the same as its absence.
@@ -3812,8 +3829,8 @@ class OAuth2Server {
     // Section 2.2.2: an identity attribute goes under its REGISTERED name where
     // one exists, and `preferred_username` is OpenID Connect's for exactly what
     // `username` holds. `username` stays — the token registry, SCIM's principal
-    // and the audit log read it. Not on a client_credentials token, where
-    // `username` is the client_id and there is no end user to have a name.
+    // and the audit log read it. Neither is on a client_credentials token,
+    // where there is no end user to have a name.
     if (opts.grant !== 'client_credentials' && user.preferred_username) {
       payload.preferred_username = user.preferred_username;
     }
@@ -3920,7 +3937,8 @@ class OAuth2Server {
     // ---------------------------------------------------------------------
     const payloadWithCustom = Object.assign(
       stats.jwtClaims('access_token',
-                      self.customClaimContext(base, payload, user)),
+                      self.customClaimContext(base, payload, user,
+                                              opts.grant)),
       opts.assertionClaims || {}, payload);
     // A token granted no scope carries no scope claim, and the merge above is
     // the one way a layer beneath the protocol's could supply one: the protocol
