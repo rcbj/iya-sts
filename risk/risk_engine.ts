@@ -81,6 +81,10 @@ type Json = any;
 // assessment's signals, so what they should be is something to read off the
 // record before P3 lets anything be decided by them.
 // ---------------------------------------------------------------------------
+/**
+ * The evaluators' signals, each with the factor that multiplies the score
+ * when it is present; a factor below 1 is evidence for the sign-in.
+ */
 const SIGNALS: Record<string, Json> = {
   'tor-exit': { factor: 5, what: 'the address is a Tor exit' },
   'reputation': { factor: 5,
@@ -404,14 +408,36 @@ function percentile(sorted: number[], p: number): number {
                          Math.floor(p * sorted.length))];
 }
 
+/**
+ * Assesses one sign-in: enriched from the datasets, the device read from
+ * its User-Agent, scored by the Freeman et al. port and the evaluators,
+ * given a level, and recorded.
+ *
+ * Also the facts the issuance policy decides on, the reactions to a change
+ * of standing, live-session re-checks, feedback and the monitoring
+ * figures. A failure here is never a failed sign-in.
+ */
 class RiskEngine {
+  /** The evaluators' signals and their factors. */
   static readonly SIGNALS = SIGNALS;
 
+  /**
+   * Builds the engine over the given dependencies.
+   *
+   * @param deps - the logger, settings, the risk store and datasets, a
+   *   clock, the keystore, an id generator, the mode, the scheduler and a
+   *   lazy module reader
+   */
   constructor(private readonly deps: RiskEngineDeps) {
     deps.log.debug("Entering RiskEngine.constructor().");
     deps.log.debug("Leaving RiskEngine.constructor().");
   }
 
+  /**
+   * Returns the dependencies the composition root passes.
+   *
+   * @returns the default dependencies
+   */
   static defaultDeps(): RiskEngineDeps {
     log.debug("Entering RiskEngine.defaultDeps().");
     log.debug("Leaving RiskEngine.defaultDeps().");
@@ -461,6 +487,15 @@ class RiskEngine {
   // doubted — the password, most often, which is the credential a mailbox
   // is so often opened with. `kinds` are the credential kinds the
   // authentication used; a key still meets the key step-up beside one.
+  /**
+   * Returns the step-ups an authentication already meets, from its `amr` and
+   * `acr`. An emailed code or link meets none.
+   *
+   * @param amr - the authentication methods
+   * @param acr - the authentication context class
+   * @param kinds - the credential kinds the authentication used
+   * @returns the step-ups met, such as `second-factor` and `security-key`
+   */
   static satisfiedBy(amr: unknown, acr: unknown, kinds?: unknown): string[] {
     log.debug("Entering RiskEngine.satisfiedBy().");
     const list = Array.isArray(amr) ? amr.map(String) : [];
@@ -480,6 +515,12 @@ class RiskEngine {
 
   // Whether a risk Deny is KEPT: product, or development with
   // `risk.enforceInDevelopment` (`mode.observesRiskOnly()`).
+  /**
+   * Says whether a risk Deny is kept: in product mode, or in development with
+   * `risk.enforceInDevelopment`.
+   *
+   * @returns true when risk decisions are enforced
+   */
   enforced(): boolean {
     const { log, config, mode } = this.deps;
     log.debug("Entering RiskEngine.enforced().");
@@ -504,6 +545,13 @@ class RiskEngine {
   // decided on the risk its authentication established — and what P4's
   // re-scoring will replace. Never the address, never a dataset's answer.
   // -------------------------------------------------------------------------
+  /**
+   * Reduces an assessment to what a session carries for the issuance policy:
+   * never the address, never a dataset's answer.
+   *
+   * @param assessment - the assessment
+   * @returns the session's risk record, or null when it has no level
+   */
   static riskOf(assessment: Json): Json | null {
     log.debug("Entering RiskEngine.riskOf().");
     if (!assessment || !assessment.level) {
@@ -547,6 +595,13 @@ class RiskEngine {
 
   // Whether `fact` (a recognition, or null) is `username`'s OWN device: a
   // person's, by name — `ownerMatches` where recognition computed it.
+  /**
+   * Says whether a recognised device is the person's own.
+   *
+   * @param fact - a device recognition, or null
+   * @param username - the person
+   * @returns true when the device is theirs
+   */
   static ownDevice(fact: Json, username: string): boolean {
     log.debug("Entering RiskEngine.ownDevice().");
     const own = !!fact && !!username && (fact.ownerMatches === true ||
@@ -557,6 +612,13 @@ class RiskEngine {
   }
 
   // What an assessment records of the registered device, or null.
+  /**
+   * Returns what an assessment records of the registered device.
+   *
+   * @param fact - a device recognition, or null
+   * @param own - whether it is the person's own
+   * @returns the record, or null
+   */
   static deviceOnAssessment(fact: Json, own: boolean): Json {
     log.debug("Entering RiskEngine.deviceOnAssessment().");
     if (!fact) {
@@ -658,6 +720,12 @@ class RiskEngine {
 
   // A device's browser and OS without their versions: `Chrome 140` is
   // `Chrome`, `Windows 10` is `Windows`, `macOS Sequoia` is `macOS`.
+  /**
+   * Returns a device's browser and OS without their versions.
+   *
+   * @param device - the device read from a User-Agent
+   * @returns the device with the versions dropped
+   */
   static familyOf(device: Json): Json {
     log.debug("Entering RiskEngine.familyOf().");
     const d = device || {};
@@ -672,6 +740,17 @@ class RiskEngine {
   // is enforced. Null — no risk attribute in the request — when there is
   // nothing assessed, or when `risk.assessSignIns` is off.
   // -------------------------------------------------------------------------
+  /**
+   * Returns the facts the issuance gate hands the policy: the session's risk,
+   * the step-ups the authentication meets, and whether a Deny is enforced.
+   *
+   * @param risk - a `riskOf()` record
+   * @param amr - the authentication methods
+   * @param acr - the authentication context class
+   * @param kinds - the credential kinds the authentication used
+   * @returns the facts, or null when nothing is assessed or
+   *   `risk.assessSignIns` is off
+   */
   factsOf(risk: Json, amr: unknown, acr: unknown,
           kinds?: unknown): Json | null {
     const { log, config } = this.deps;
@@ -701,6 +780,14 @@ class RiskEngine {
   // session; a standing meets no step-up, because nothing says what the
   // next authentication will carry.
   // -------------------------------------------------------------------------
+  /**
+   * Returns the facts for an issuance whose caller named no risk: the
+   * session's, or the person's standing held in this process.
+   *
+   * @param asked - `session`, where the caller has one, and `subject` (the
+   *   issuance gate's `{ kind, name }`)
+   * @returns the facts, or null
+   */
   factsForIssuance(asked: Json): Json | null {
     const { log } = this.deps;
     log.debug("Entering RiskEngine.factsForIssuance().");
@@ -734,6 +821,14 @@ class RiskEngine {
   // A hot path — asked at every sessionless issuance — so no Entering or
   // Leaving pair would add anything but volume, as the code style allows
   // when it says so.
+  /**
+   * Returns a person's standing held in this process, while it still
+   * answers.
+   *
+   * @param realm - the realm
+   * @param username - the person
+   * @returns the standing, or null
+   */
   standingOf(realm: string, username: string): Json | null {
     const { config, now } = this.deps;
     const row = standings.get(realm + '\u0000' + username);
@@ -769,6 +864,15 @@ class RiskEngine {
   // before asking the gate (WS-Trust). `subject` is the person's `sub`;
   // `username` is what the gate is asked about. Never rejects.
   // -------------------------------------------------------------------------
+  /**
+   * Reads a person's standing from the store for a door that can wait for it
+   * before asking the gate. Never rejects.
+   *
+   * @param realm - the realm
+   * @param username - the name the gate is asked about
+   * @param subject - the person's `sub`
+   * @returns the standing, or null
+   */
   async loadStanding(realm: string, username: string,
                      subject: string): Promise<Json | null> {
     const { log, store } = this.deps;
@@ -805,6 +909,15 @@ class RiskEngine {
   // the code of a refusal, and the session it became. Not awaited by the
   // sign-in; never rejects.
   // -------------------------------------------------------------------------
+  /**
+   * Writes onto an assessment what was decided: permit, step-up, refuse or
+   * observed, the policy, a refusal's code and the session. Not awaited;
+   * never rejects.
+   *
+   * @param realm - the realm
+   * @param assessmentId - the assessment
+   * @param outcome - what was decided
+   */
   settle(realm: string, assessmentId: string, outcome: Json): void {
     const { log, store } = this.deps;
     log.debug("Entering RiskEngine.settle(). " + assessmentId);
@@ -839,6 +952,13 @@ class RiskEngine {
   // throws on an empty string, which a request with no header is, so an
   // empty one is answered without it.
   // ---------------------------------------------------------------------------
+  /**
+   * Reads the device from a User-Agent, which is not kept: browser and major
+   * version, operating system, device type, and whether it is automated.
+   *
+   * @param userAgent - the header's value
+   * @returns the device
+   */
   static deviceOf(userAgent: string): Json {
     log.debug("Entering RiskEngine.deviceOf().");
     const ua = String(userAgent || '');
@@ -1040,6 +1160,15 @@ class RiskEngine {
   // recognised device, #164 phase 5, or null) }. Answers the assessment, or
   // null when it could not be made; never rejects.
   // -------------------------------------------------------------------------
+  /**
+   * Assesses one sign-in and records it. Not awaited by the door and never
+   * rejects; a failure is logged under `STS-RISK-0013`.
+   *
+   * @param input - `realm`, `subject`, `sessionId`, `door`, `clientId`,
+   *   `context` (the authentication event's), `userAgent` (read and dropped)
+   *   and `registeredDevice`
+   * @returns the assessment, or null when it could not be made
+   */
   async assess(input: Json): Promise<Json | null> {
     const { log, config } = this.deps;
     log.debug("Entering RiskEngine.assess().");
@@ -1449,6 +1578,16 @@ class RiskEngine {
   // `risk.enforceInDevelopment`), and recorded as observed otherwise. One
   // audit row says what was decided and what was done. Never rejects.
   // -------------------------------------------------------------------------
+  /**
+   * Takes the reactions the `risk-response` policy names for a change of
+   * standing, each claimed once per assessment.
+   *
+   * CAEP is announced in every mode; ending sessions, RISC and disabling
+   * happen only where risk decisions are enforced. Never rejects.
+   * @param change - the person, the new and previous level, the score and
+   *   the signals
+   * @returns what was decided and done
+   */
   async respond(change: Json): Promise<Json> {
     const { log, store, lazy } = this.deps;
     log.debug("Entering RiskEngine.respond(). " + change.username);
@@ -1632,6 +1771,14 @@ class RiskEngine {
   // trust it more than its sign-in did. Answers the session's new risk, or
   // null when nothing new was found.
   // -------------------------------------------------------------------------
+  /**
+   * Re-checks a live session against what the datasets and failure history
+   * say now; only upward.
+   *
+   * @param realm - the realm
+   * @param session - the session
+   * @returns the session's new risk, or null when nothing new was found
+   */
   async rescoreSession(realm: string, session: Json): Promise<Json | null> {
     const { log, store, datasets, now, keystore, randomId } = this.deps;
     log.debug("Entering RiskEngine.rescoreSession().");
@@ -1759,6 +1906,11 @@ class RiskEngine {
   // every token on it is decided on it. A cluster job — the sessions are a
   // shared store — run once on the leader.
   // -------------------------------------------------------------------------
+  /**
+   * Re-checks every live session, for the `risk.rescore` job.
+   *
+   * @returns what was re-checked and changed
+   */
   async rescoreLiveSessions(): Promise<Json> {
     const { log, lazy } = this.deps;
     log.debug("Entering RiskEngine.rescoreLiveSessions().");
@@ -1786,6 +1938,11 @@ class RiskEngine {
     return out;
   }
 
+  /**
+   * Registers the engine's scheduler jobs.
+   *
+   * @returns true when they were registered
+   */
   registerJobs(): boolean {
     const { log, scheduler, config } = this.deps;
     log.debug("Entering RiskEngine.registerJobs().");
@@ -1847,6 +2004,18 @@ class RiskEngine {
   // otherwise talk its way back to LOW. Said from the flagged session, it is
   // recorded, for calibration, and moves nothing.
   // -------------------------------------------------------------------------
+  /**
+   * Records what a person said about one of their own sign-ins, once per
+   * assessment.
+   *
+   * "This wasn't me" sets their standing to HIGH; "this was me" lowers it to
+   * LOW only when said from a different session that is itself LOW or
+   * unscored.
+   * @param input - `realm`, `subject`, `username`, `assessmentId`, `verdict`
+   *   (`confirmed` or `denied`) and the session it was said from with its
+   *   level
+   * @returns what was recorded and done
+   */
   async feedback(input: Json): Promise<Json> {
     const { log, store, now } = this.deps;
     log.debug("Entering RiskEngine.feedback(). " + input.verdict);
@@ -1940,6 +2109,13 @@ class RiskEngine {
   // credential-compromise where enforced). `input`: realm, subject,
   // username, evidence. Never rejects.
   // -------------------------------------------------------------------------
+  /**
+   * Sets a person's standing to HIGH, `authenticator-compromised`, when a
+   * security key's signature counter went backwards. Never rejects.
+   *
+   * @param input - `realm`, `subject`, `username` and `evidence`
+   * @returns what was done
+   */
   async noteAuthenticatorCompromise(input: Json): Promise<Json> {
     const { log, store, now, config } = this.deps;
     log.debug("Entering RiskEngine.noteAuthenticatorCompromise().");
@@ -1991,6 +2167,12 @@ class RiskEngine {
   // EVERY SIGNAL'S FACTOR, as scored now: SIGNALS' own, with the realm's
   // `risk.signalFactors` over them. `invalid` names the entries ignored.
   // -------------------------------------------------------------------------
+  /**
+   * Returns every signal's factor as scored now: the defaults with the
+   * realm's `risk.signalFactors` over them.
+   *
+   * @returns the factors, and `invalid` naming the entries ignored
+   */
   factors(): Json {
     const { log, config } = this.deps;
     log.debug("Entering RiskEngine.factors().");
@@ -2051,6 +2233,17 @@ class RiskEngine {
   //     flagged sign-in is likelier to be asked about — which is why this is
   //     advice and the page says so.
   // -------------------------------------------------------------------------
+  /**
+   * Builds the calibration report: suggested thresholds from the window's
+   * quantiles and suggested factors from people's answers. Advice, never
+   * applied by itself.
+   *
+   * @param counted - the window's metrics
+   * @param thresholds - the current thresholds
+   * @param targets - the target shares for MEDIUM and HIGH
+   * @param factors - the current factors
+   * @returns the report
+   */
   static calibrate(counted: Json, thresholds: Json, targets: Json,
                    factors: Json): Json {
     log.debug("Entering RiskEngine.calibrate().");
@@ -2125,6 +2318,14 @@ class RiskEngine {
   // "who is signed in" stays `authn`'s. `continents` is the page's
   // code-to-continent table. `database` says which store counted.
   // -------------------------------------------------------------------------
+  /**
+   * Counts where a realm's people are, for Monitoring → Geolocation: over a
+   * window, or over live sessions at their latest assessment.
+   *
+   * @param realm - the realm
+   * @param opts - `windowMs`, `live` and `continents`
+   * @returns the counts, and which store counted
+   */
   async geography(realm: string, opts: Json): Promise<Json> {
     const { log, store, now, lazy } = this.deps;
     log.debug("Entering RiskEngine.geography().");
@@ -2160,6 +2361,15 @@ class RiskEngine {
   // signal's factor beside how often it fired, which is what calibrating a
   // factor starts from.
   // -------------------------------------------------------------------------
+  /**
+   * Measures the scoring system for Monitoring → Risk Scoring: the store's
+   * assessments and standings over the window, and this process's own
+   * figures since it started.
+   *
+   * @param realm - the realm
+   * @param windowMs - the window
+   * @returns the metrics
+   */
   async metrics(realm: string, windowMs: number): Promise<Json> {
     const { log, store, config, now, lazy } = this.deps;
     log.debug("Entering RiskEngine.metrics().");
@@ -2232,6 +2442,13 @@ class RiskEngine {
   // user page draws large and `/admin-api/users?user=` returns. Null for a
   // person never assessed. Never rejects.
   // -------------------------------------------------------------------------
+  /**
+   * Returns one person's current standing from the store. Never rejects.
+   *
+   * @param realm - the realm
+   * @param subject - the person's `sub`
+   * @returns the standing, or null for a person never assessed
+   */
   async standingFor(realm: string, subject: string): Promise<Json | null> {
     const { log, store } = this.deps;
     log.debug("Entering RiskEngine.standingFor().");
@@ -2257,6 +2474,13 @@ class RiskEngine {
   }
 
   // A page of assessments and the people by standing, for the page.
+  /**
+   * Returns a page of assessments and the people by standing, for the page.
+   *
+   * @param realm - the realm
+   * @param opts - the page and filters
+   * @returns `{ assessments, subjects, … }`
+   */
   async view(realm: string, opts: Json): Promise<Json> {
     const { log, store, now } = this.deps;
     log.debug("Entering RiskEngine.view().");
@@ -2283,6 +2507,11 @@ class RiskEngine {
   }
 
   // History past its retention, for the retention job.
+  /**
+   * Deletes history past its retention, for the retention job.
+   *
+   * @returns what was deleted
+   */
   async purge(): Promise<Json> {
     const { log, config, store, now } = this.deps;
     log.debug("Entering RiskEngine.purge().");
@@ -2321,9 +2550,26 @@ const slot = new InstanceSlot<RiskEngine>(
 
 slot.buildNowUnlessDeferred();
 
+/**
+ * Assessing one sign-in, and what follows from the assessment.
+ *
+ * The functions forward to the instance the composition root installs.
+ * @namespace
+ */
 export = {
   RiskEngine: RiskEngine,
+  /**
+   * Installs the instance the facades forward to, and runs its wiring.
+   *
+   * Installing twice, or after a default was built, is refused.
+   * @param instance - the instance the composition root built
+   */
   installInstance: (instance: RiskEngine): void => slot.install(instance),
+  /**
+   * Says where the instance the facades use came from.
+   *
+   * @returns `root`, `default` or `none`
+   */
   instanceOrigin: (): string => slot.origin(),
   SIGNALS: RiskEngine.SIGNALS,
   deviceOf: RiskEngine.deviceOf,

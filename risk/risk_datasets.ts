@@ -68,6 +68,10 @@ type Json = any;
 // setting that ages it (`never` for an operator's own list). An operator
 // list is per realm; every other dataset is the whole service's.
 // ---------------------------------------------------------------------------
+/**
+ * The datasets this service knows, and what each is: its kind, the setting
+ * that ages it, and whether it is per realm.
+ */
 const CATALOGUE: Record<string, Json> = {
   'geo.city': { kind: 'geo', title: 'Geolocation (city)', stale: 'geo',
     formats: ['dbip-city-csv'],
@@ -120,6 +124,7 @@ const CATALOGUE: Record<string, Json> = {
 // provider table, the licence links a result is credited with, and the
 // recorded acceptance without which no provider's data is imported (the two
 // licence reviews on #62).
+/** The dataset providers and their terms, from `risk_terms.ts`. */
 const PROVIDERS = riskTerms.PROVIDERS;
 
 // ---------------------------------------------------------------------------
@@ -128,6 +133,7 @@ const PROVIDERS = riskTerms.PROVIDERS;
 // the Tor Project's, a reputation list FireHOL's) and the importer may say
 // otherwise.
 // ---------------------------------------------------------------------------
+/** The formats a dataset file may be in, and whose data each carries. */
 const FORMATS: Record<string, Json> = {
   'dbip-city-csv': { provider: 'dbip-lite',
     what: 'DB-IP Lite "IP to City": start, end, continent, country, region, ' +
@@ -156,17 +162,21 @@ const DELETE_BATCH = 20000;
 // version is activated anywhere.
 const MAX_CACHED_LOOKUPS = 10000;
 // The two scheduler jobs.
+/** The id of the dataset-directory import job. */
 const DIRECTORY_JOB = 'risk.dataset-directory';
+/** The id of the version retention job. */
 const RETENTION_JOB = 'risk.retention';
 // The FIDO MDS3 download (#105): `risk.mdsUrl`, fetched through the outbound
 // rules and imported by `importMds()`. Hourly once the active BLOB is past
 // its own nextUpdate.
+/** The id of the FIDO MDS3 download job. */
 const MDS_JOB = 'risk.mds-refresh';
 const MDS_OVERDUE_EVERY_MS = 60 * 60 * 1000;
 const RETENTION_EVERY_MS = 60 * 60 * 1000;
 // A VERSION LEFT `loading` BY A PROCESS THAT STOPPED (#215): marked refused
 // by this cluster job once it has made no progress for
 // `risk.importStallMinutes`. See `abandonStalled()`.
+/** The id of the job that refuses imports a stopped process left loading. */
 const STALLED_JOB = 'risk.stalled-imports';
 
 interface RiskDatasetsDeps {
@@ -185,13 +195,28 @@ interface RiskDatasetsDeps {
   federationHttp(): Json;
 }
 
+/**
+ * The external datasets a risk score reads: geolocation, ASN, Tor exits, IP
+ * reputation, operator lists and the FIDO metadata.
+ *
+ * The service fetches none of them itself except the operator's FIDO MDS3
+ * address; a version is verified before it is active, one version is
+ * active and the last one kept, and a stale dataset says nothing.
+ */
 class RiskDatasets {
+  /** The datasets this service knows. */
   static readonly CATALOGUE = CATALOGUE;
+  /** The formats a dataset file may be in. */
   static readonly FORMATS = FORMATS;
+  /** The dataset providers and their terms. */
   static readonly PROVIDERS = PROVIDERS;
+  /** The id of the dataset-directory import job. */
   static readonly DIRECTORY_JOB = DIRECTORY_JOB;
+  /** The id of the version retention job. */
   static readonly RETENTION_JOB = RETENTION_JOB;
+  /** The id of the FIDO MDS3 download job. */
   static readonly MDS_JOB = MDS_JOB;
+  /** The id of the stalled-import job. */
   static readonly STALLED_JOB = STALLED_JOB;
   // When the active BLOB says the next one is due, as the last run of the
   // download job saw it; 0 before one has run. What `everyMs()` reads, since
@@ -203,6 +228,12 @@ class RiskDatasets {
   private readonly lookups = new Map<string, Json>();
   private readonly counter: Json;
 
+  /**
+   * Builds the dataset service over the given dependencies.
+   *
+   * @param deps - the logger, settings, the risk store, a clock, and lazy
+   *   readers of the audit log, scheduler, realms and outbound requester
+   */
   constructor(private readonly deps: RiskDatasetsDeps) {
     deps.log.debug("Entering RiskDatasets.constructor().");
     const self = this;
@@ -237,6 +268,11 @@ class RiskDatasets {
     deps.log.debug("Leaving RiskDatasets.constructor().");
   }
 
+  /**
+   * Returns the dependencies the composition root passes.
+   *
+   * @returns the default dependencies
+   */
   static defaultDeps(): RiskDatasetsDeps {
     log.debug("Entering RiskDatasets.defaultDeps().");
     log.debug("Leaving RiskDatasets.defaultDeps().");
@@ -264,6 +300,10 @@ class RiskDatasets {
 
   // The store's activation, here or on another node through the change log,
   // drops what this process cached. Wired once per instance.
+  /**
+   * Subscribes to the store's activations, here or on another node, so this
+   * process drops what it cached.
+   */
   listen(): void {
     const { log, store } = this.deps;
     const self = this;
@@ -274,6 +314,9 @@ class RiskDatasets {
     log.debug("Leaving RiskDatasets.listen().");
   }
 
+  /**
+   * Drops the active versions and lookups this process cached.
+   */
   forget(): void {
     const { log } = this.deps;
     log.debug("Entering RiskDatasets.forget().");
@@ -287,6 +330,12 @@ class RiskDatasets {
   // One CSV line into its fields, with RFC 4180 quoting (a city name may hold
   // a comma). A hot path — one call per line of a file of millions — so no
   // Entering/Leaving pair.
+  /**
+   * Splits one CSV line into its fields, with RFC 4180 quoting.
+   *
+   * @param line - the line
+   * @returns the fields
+   */
   static csvFields(line: string): string[] {
     const out = [];
     let field = '';
@@ -327,6 +376,17 @@ class RiskDatasets {
   // same hot path as csvFields(). `header` is the IPinfo file's column index,
   // filled from its first line.
   // ---------------------------------------------------------------------------
+  /**
+   * Reads one line of a file as a row of a dataset.
+   *
+   * @param format - the file's format
+   * @param kind - the dataset's kind
+   * @param category - the list's category, for an IP list
+   * @param line - the line
+   * @param header - the IPinfo file's column index, filled from its first line
+   * @returns the row, or null for a line that is not one (counted, never
+   *   fatal)
+   */
   static rowOf(format: string, kind: string, category: string, line: string,
                header: Json): Json | null {
     const text = String(line || '').replace(/\r$/, '');
@@ -538,6 +598,14 @@ class RiskDatasets {
   // The question above, asked ahead of an upload (#215): null when the
   // import may begin, the refusal otherwise. Records nothing but the
   // refusal's audit row.
+  /**
+   * Asks, ahead of an upload, whether an import may begin: the dataset,
+   * format, realm, provider and accepted terms.
+   *
+   * Records nothing but a refusal's audit row.
+   * @param o - the import's fields, as for `importVersion()`
+   * @returns null when the import may begin, the refusal otherwise
+   */
   async precheck(o: Json): Promise<Json | null> {
     const { log } = this.deps;
     log.debug("Entering RiskDatasets.precheck().");
@@ -558,6 +626,18 @@ class RiskDatasets {
   // reason and a code, and a refusal after rows were written deletes them
   // and records the version as refused — rule 2 of the header.
   // ---------------------------------------------------------------------------
+  /**
+   * Imports one version of one dataset, verifying it before it can be
+   * active.
+   *
+   * A refusal after rows were written deletes them and records the version
+   * as refused, and the active version stays.
+   * @param o - `dataset`, `format`, `realm`, `content` or `path`, `version`,
+   *   `publishedAt`, `provider`, `licence`, `attribution`, `sha256`,
+   *   `source`, `sourceUri`, `activate` and `actor`
+   * @returns `{ ok, dataset, version, state, rows, skipped, activated, … }`,
+   *   or a refusal `{ ok: false, errors }` with its code
+   */
   async importVersion(o: Json): Promise<Json> {
     const { log, store, now } = this.deps;
     log.debug("Entering RiskDatasets.importVersion(). dataset=" + o.dataset +
@@ -787,6 +867,12 @@ class RiskDatasets {
   // old. The store's update is conditional on the state, so two nodes
   // asking at once refuse each version once.
   // -------------------------------------------------------------------------
+  /**
+   * Refuses (`STS-RISK-0035`) every version a stopped process left
+   * `loading`, dropping the rows it had written.
+   *
+   * @returns what was refused
+   */
   async abandonStalled(): Promise<Json> {
     const { log, config, store, now } = this.deps;
     log.debug("Entering RiskDatasets.abandonStalled().");
@@ -1019,6 +1105,10 @@ class RiskDatasets {
 
   // The statuses MDS3 section 3.1.4 uses to say an authenticator model can
   // no longer be trusted to protect a key.
+  /**
+   * The MDS3 statuses that say an authenticator model can no longer be
+   * trusted to protect a key.
+   */
   static readonly MDS_COMPROMISED = ['REVOKED', 'USER_VERIFICATION_BYPASS',
     'ATTESTATION_KEY_COMPROMISE', 'USER_KEY_REMOTE_COMPROMISE',
     'USER_KEY_PHYSICAL_COMPROMISE'];
@@ -1031,6 +1121,14 @@ class RiskDatasets {
   // certification level is the latest FIDO_CERTIFIED* report's. The metadata
   // statement is kept for the page without its icon, which is an image.
   // -------------------------------------------------------------------------
+  /**
+   * Turns one MDS3 entry into rows, one per key the model is listed under,
+   * with its latest status and whether any report ever said it was
+   * compromised.
+   *
+   * @param entry - the BLOB's entry
+   * @returns the rows
+   */
   static mdsRowsOf(entry: Json): Json[] {
     log.debug("Entering RiskDatasets.mdsRowsOf().");
     const e = entry || {};
@@ -1086,6 +1184,14 @@ class RiskDatasets {
   // all-zero AAGUID of an authenticator that attests nothing, or a model the
   // BLOB does not list. Null decides nothing: unknown never denies.
   // -------------------------------------------------------------------------
+  /**
+   * Returns what the FIDO metadata says about an authenticator model, by
+   * AAGUID. Null decides nothing.
+   *
+   * @param aaguid - the AAGUID
+   * @returns `{ model, version }`, or null for no fresh BLOB, the all-zero
+   *   AAGUID, or an unlisted model
+   */
   async lookupAuthenticator(aaguid: string): Promise<Json | null> {
     const { log, store, now } = this.deps;
     log.debug("Entering RiskDatasets.lookupAuthenticator().");
@@ -1114,6 +1220,14 @@ class RiskDatasets {
   // certificates (kept in the row's metadata statement) and its status
   // reports; like the lookup above, null decides nothing.
   // -------------------------------------------------------------------------
+  /**
+   * Returns what the FIDO metadata says about an authenticator model, by any
+   * key it is listed under. Null decides nothing.
+   *
+   * @param keyKind - `aaguid`, `aaid` or `acki`
+   * @param key - the key
+   * @returns `{ model, version }`, or null
+   */
   async lookupAuthenticatorBy(keyKind: string,
                               key: string): Promise<Json | null> {
     const { log, store, now } = this.deps;
@@ -1143,6 +1257,12 @@ class RiskDatasets {
   // What the FIDO metadata is, for `/admin/webauthn` and its API (#105): the
   // active BLOB's serial, version, nextUpdate and whether it is stale, and
   // where the next one comes from.
+  /**
+   * Says what the FIDO metadata is: the active BLOB's serial, version,
+   * nextUpdate, whether it is stale, and where the next comes from.
+   *
+   * @returns the state
+   */
   async mdsState(): Promise<Json> {
     const { log } = this.deps;
     log.debug("Entering RiskDatasets.mdsState().");
@@ -1155,6 +1275,12 @@ class RiskDatasets {
   // status block is drawn synchronously. Where nothing is held yet (the
   // first draw after a start or an activation) it says so and starts the
   // read, so the next draw has it.
+  /**
+   * Says what `mdsState()` says, synchronously, from what this process
+   * holds; where nothing is held yet it says so and starts the read.
+   *
+   * @returns the state
+   */
   mdsSnapshot(): Json {
     const { log, config, now } = this.deps;
     log.debug("Entering RiskDatasets.mdsSnapshot().");
@@ -1204,6 +1330,14 @@ class RiskDatasets {
   // server can say exactly that. The serial is read, unverified, only to
   // decide that NOTHING is done.
   // -------------------------------------------------------------------------
+  /**
+   * Downloads the FIDO MDS3 BLOB from `risk.mdsUrl` and imports it when its
+   * serial is above the active one's.
+   *
+   * The import still needs an accepted `fido-mds3` terms and verifies the
+   * BLOB as any upload is.
+   * @returns what was done
+   */
   async refreshMds(): Promise<Json> {
     const { log, config, store } = this.deps;
     log.debug("Entering RiskDatasets.refreshMds().");
@@ -1334,6 +1468,15 @@ class RiskDatasets {
 
   // ===== ACTIVATION, ROLLBACK, DELETION ====================================
 
+  /**
+   * Makes a version the dataset's active one.
+   *
+   * @param realm - the realm
+   * @param dataset - the dataset
+   * @param version - the version
+   * @param actor - who did it
+   * @returns `{ ok: true, dataset, version, … }`, or a refusal
+   */
   async activateVersion(realm: string, dataset: string, version: string,
                         actor: string): Promise<Json> {
     const { log, store, now } = this.deps;
@@ -1370,6 +1513,15 @@ class RiskDatasets {
                       (answer.unchanged ? ' already.' : '.') };
   }
 
+  /**
+   * Activates the version the active one replaced.
+   *
+   * @param realm - the realm
+   * @param dataset - the dataset
+   * @param actor - who did it
+   * @returns what `activateVersion()` answers, or a refusal when there is
+   *   nothing to roll back to
+   */
   async rollback(realm: string, dataset: string, actor: string): Promise<Json> {
     const { log, store } = this.deps;
     log.debug("Entering RiskDatasets.rollback(). " + dataset);
@@ -1387,6 +1539,15 @@ class RiskDatasets {
     return this.activateVersion(realm, dataset, row.previousVersion, actor);
   }
 
+  /**
+   * Deletes a version's rows; never the active or a loading one.
+   *
+   * @param realm - the realm
+   * @param dataset - the dataset
+   * @param version - the version
+   * @param actor - who did it
+   * @returns `{ ok: true, dataset, version, rows, … }`, or a refusal
+   */
   async deleteVersion(realm: string, dataset: string, version: string,
                       actor: string): Promise<Json> {
     const { log, store, now } = this.deps;
@@ -1496,6 +1657,14 @@ class RiskDatasets {
   // version that did answer, which is what an assessment will record beside
   // the values.
   // ---------------------------------------------------------------------------
+  /**
+   * Returns what the active datasets say about one address, for a realm. A
+   * stale dataset is named in `stale` and says nothing.
+   *
+   * @param address - the address
+   * @param realmId - the realm
+   * @returns `{ address, prefix, geo, asn, lists, datasets, stale }`
+   */
   async lookup(address: string, realmId: string): Promise<Json> {
     const { log, store, now } = this.deps;
     log.debug("Entering RiskDatasets.lookup().");
@@ -1599,6 +1768,14 @@ class RiskDatasets {
   // for the realm asked about — with its active version, whether it is
   // fresh, and every version recorded.
   // ---------------------------------------------------------------------------
+  /**
+   * Returns every dataset in the catalogue with its active version, whether
+   * it is fresh, and every version recorded, for Monitoring → Risk and
+   * `GET /admin-api/risk`.
+   *
+   * @param realmId - the realm asked about, for per-realm lists
+   * @returns the registry
+   */
   async registry(realmId: string): Promise<Json> {
     const { log, store, now } = this.deps;
     log.debug("Entering RiskDatasets.registry().");
@@ -1665,6 +1842,12 @@ class RiskDatasets {
   // again (the store refuses the second `begin`), so this is idempotent and
   // safe on every node — though as a cluster job it runs on one.
   // ---------------------------------------------------------------------------
+  /**
+   * Imports what an operator put in `risk.datasetsDirectory`: each `*.json`
+   * there is a manifest naming a file beside it. Idempotent.
+   *
+   * @returns what was imported
+   */
   async importDirectory(): Promise<Json> {
     const { log, config } = this.deps;
     log.debug("Entering RiskDatasets.importDirectory().");
@@ -1728,6 +1911,12 @@ class RiskDatasets {
 
   // Superseded versions past `risk.supersededRetentionDays` lose their rows
   // (their record stays); refused ones lose whatever rows a failure left.
+  /**
+   * Deletes the rows of superseded versions past
+   * `risk.supersededRetentionDays`, and whatever rows a refused one left.
+   *
+   * @returns what was deleted
+   */
   async retainVersions(): Promise<Json> {
     const { log, config, store, now } = this.deps;
     log.debug("Entering RiskDatasets.retainVersions().");
@@ -1768,6 +1957,12 @@ class RiskDatasets {
   // The two jobs, registered in every process when the instance is wired.
   // Both are cluster jobs: the rows are the whole cluster's, so one node
   // imports and one node deletes.
+  /**
+   * Registers the dataset cluster jobs with the scheduler.
+   *
+   * @returns true when they were registered, false when there was nothing
+   *   to do
+   */
   registerJobs(): boolean {
     const { log, scheduler } = this.deps;
     log.debug("Entering RiskDatasets.registerJobs().");
@@ -1888,9 +2083,26 @@ const slot = new InstanceSlot<RiskDatasets>(
 
 slot.buildNowUnlessDeferred();
 
+/**
+ * The external datasets a risk score reads, imported by version.
+ *
+ * The functions forward to the instance the composition root installs.
+ * @namespace
+ */
 export = {
   RiskDatasets: RiskDatasets,
+  /**
+   * Installs the instance the facades forward to, and runs its wiring.
+   *
+   * Installing twice, or after a default was built, is refused.
+   * @param instance - the instance the composition root built
+   */
   installInstance: (instance: RiskDatasets): void => slot.install(instance),
+  /**
+   * Says where the instance the facades use came from.
+   *
+   * @returns `root`, `default` or `none`
+   */
   instanceOrigin: (): string => slot.origin(),
   CATALOGUE: RiskDatasets.CATALOGUE,
   FORMATS: RiskDatasets.FORMATS,

@@ -94,11 +94,24 @@ interface Opened {
   close(): void;
 }
 
+/**
+ * A dataset file, expanded by what it is rather than what it is called:
+ * gzip, a single-entry zip, or plain text.
+ *
+ * The one place a dataset file is expanded. The expansion is streamed,
+ * never written, and a decompression bomb is refused while still small.
+ */
 class RiskExpand {
+  /** Below this many expanded bytes the ratio is not asked. */
   static readonly RATIO_FLOOR_BYTES = RATIO_FLOOR_BYTES;
 
   // The limits as the settings say now, for the callers that have no
   // reason to choose their own.
+  /**
+   * Returns the expansion limits as the settings say now.
+   *
+   * @returns the limits
+   */
   static limits(): ExpandLimits {
     log.debug("Entering RiskExpand.limits().");
     log.debug("Leaving RiskExpand.limits().");
@@ -109,6 +122,12 @@ class RiskExpand {
   }
 
   // Rule 1: what the first bytes say the file is.
+  /**
+   * Says what a file's first bytes say it is.
+   *
+   * @param head - the file's first bytes
+   * @returns `gzip`, `zip` or `plain`
+   */
   static sniff(head: Buffer): 'gzip' | 'zip' | 'plain' {
     log.debug("Entering RiskExpand.sniff().");
     const b = head || Buffer.alloc(0);
@@ -125,6 +144,12 @@ class RiskExpand {
   }
 
   // The first bytes of a file, for sniff().
+  /**
+   * Reads the first bytes of a file, for `sniff()`.
+   *
+   * @param file - the file's path
+   * @returns the bytes
+   */
   static headOf(file: string): Buffer {
     log.debug("Entering RiskExpand.headOf().");
     const fd = fs.openSync(file, 'r');
@@ -139,6 +164,14 @@ class RiskExpand {
   }
 
   // Rule 4's allowance for a file of `stored` bytes.
+  /**
+   * Returns how many expanded bytes a file of `stored` bytes may become: the
+   * ratio times its size, at least the floor, at most the cap.
+   *
+   * @param stored - the file's size
+   * @param limits - the limits
+   * @returns the allowance in bytes
+   */
   static allowance(stored: number, limits: ExpandLimits): number {
     log.debug("Entering RiskExpand.allowance().");
     const byRatio = Math.max(RATIO_FLOOR_BYTES,
@@ -204,6 +237,16 @@ class RiskExpand {
   // with a coded error on a bomb or a corrupt file; `close()` releases the
   // file (and the archive) however reading ended, and is safe to call twice.
   // -------------------------------------------------------------------------
+  /**
+   * Opens a file for reading, expanded if it is compressed.
+   *
+   * The stream fails with a coded error on a bomb (`STS-RISK-0032`), an
+   * ambiguous archive (`STS-RISK-0033`) or a corrupt file (`STS-RISK-0034`).
+   * @param file - the file's path
+   * @param given - the limits; the settings' when omitted
+   * @returns `{ kind, entry, stream, close }`, where `close()` releases the
+   *   file however reading ended and is safe to call twice
+   */
   static async open(file: string, given?: ExpandLimits): Promise<Opened> {
     log.debug("Entering RiskExpand.open().");
     const limits = given || RiskExpand.limits();
@@ -361,6 +404,15 @@ class RiskExpand {
   // document rather than lines. `maxChars` bounds what is held (the BLOB's
   // own cap, `risk.mdsMaxBytes`); past it the read is refused.
   // -------------------------------------------------------------------------
+  /**
+   * Reads a whole file as text, expanded: the FIDO MDS3 BLOB, which is one
+   * signed document rather than lines.
+   *
+   * @param file - the file's path
+   * @param maxChars - the most characters held; past it the read is refused
+   * @param given - the limits; the settings' when omitted
+   * @returns the text
+   */
   static async readText(file: string, maxChars: number,
                         given?: ExpandLimits): Promise<string> {
     log.debug("Entering RiskExpand.readText().");

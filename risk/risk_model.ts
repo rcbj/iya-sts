@@ -90,6 +90,10 @@ type Json = any;
 // `risk_score_weightings` is 1 for both in the notebook, so its power is not
 // carried.
 // ---------------------------------------------------------------------------
+/**
+ * The features and their weightings: each feature's name and its levels,
+ * each with a weight, coarsest last.
+ */
 const FEATURES: Array<{ name: string; levels: Array<[string, number]> }> = [
   { name: 'ip', levels: [['ip', 0.6], ['asn', 0.3], ['country', 0.1]] },
   { name: 'ua', levels: [['ua', 0.5386653840551359],
@@ -120,12 +124,30 @@ interface History {
   distinctWithin(first: string, value: string, level: string): number;
 }
 
+/**
+ * The risk score of one sign-in: Freeman et al. (2016), ported from
+ * `das-group/rba-algorithm`'s notebook.
+ *
+ * Reads counts (`History`) rather than rows. A first sign-in is not scored.
+ */
 class RiskModel {
+  /** The features and their weightings. */
   static readonly FEATURES = FEATURES;
 
   // The notebook's get_unseen_values(): the distinct values of every level
   // BELOW `level` in its hierarchy, plus one. `within` narrows the history to
   // the sign-ins whose first level had a value (a subset of rows).
+  /**
+   * Counts the distinct values of every level below `level` in its
+   * hierarchy, plus one: the notebook's get_unseen_values().
+   *
+   * @param history - the history asked
+   * @param feature - the feature, with its levels
+   * @param level - the level
+   * @param within - narrows the history to the sign-ins whose first level had
+   *   a value
+   * @returns the unseen count
+   */
   static unseen(history: History, feature: Json, level: string,
                 within?: { first: string; value: string }): number {
     log.debug("Entering RiskModel.unseen(). " + level);
@@ -143,6 +165,15 @@ class RiskModel {
   }
 
   // The notebook's get_likelihood() for one level of a history.
+  /**
+   * The notebook's get_likelihood() for one level of a history.
+   *
+   * @param appearance - how often the value was seen
+   * @param n - the sign-ins in the history
+   * @param unseen - the unseen count
+   * @param smoothing - whether this side is smoothed
+   * @returns the likelihood
+   */
   static likelihood(appearance: number, n: number, unseen: number,
                     smoothing: boolean): number {
     log.debug("Entering RiskModel.likelihood().");
@@ -163,6 +194,18 @@ class RiskModel {
   // is not smoothed; the smoothed share otherwise) times its likelihood in
   // the whole history.
   // -------------------------------------------------------------------------
+  /**
+   * The notebook's get_sub_likelihood() for one level: the value's likelihood
+   * within the sign-ins that share it, times its likelihood in the whole
+   * history.
+   *
+   * @param history - the history asked
+   * @param feature - the feature, with its levels
+   * @param level - the level
+   * @param value - this sign-in's value at that level
+   * @param smoothing - whether this side is smoothed
+   * @returns the likelihood
+   */
   static subLikelihood(history: History, feature: Json, level: string,
                        value: string, smoothing: boolean): number {
     log.debug("Entering RiskModel.subLikelihood(). " + level);
@@ -191,6 +234,16 @@ class RiskModel {
   // One feature's weighted likelihood in one history: the notebook's loop
   // over `feature_weightings[feature]`, smoothing the first level only where
   // `smoothFirst` (the population) and none where not (the person).
+  /**
+   * Returns one feature's weighted likelihood in one history.
+   *
+   * @param history - the history asked
+   * @param feature - the feature, with its levels
+   * @param attempt - this sign-in's value per level
+   * @param smoothFirst - smooth the first level (the population) or not (the
+   *   person)
+   * @returns the weighted likelihood
+   */
   static featureLikelihood(history: History, feature: Json, attempt: Json,
                            smoothFirst: boolean): number {
     log.debug("Entering RiskModel.featureLikelihood(). " + feature.name);
@@ -213,6 +266,15 @@ class RiskModel {
   // assessment's record — or { score: null, why } for a sign-in that cannot
   // be scored.
   // -------------------------------------------------------------------------
+  /**
+   * Scores one sign-in: the notebook's freeman_rba_score().
+   *
+   * @param attempt - this sign-in's value per level name
+   * @param user - the person's history
+   * @param population - everybody's history
+   * @returns `{ score, factors }`, each factor a feature's population/person
+   *   ratio, or `{ score: null, why }` for a sign-in that cannot be scored
+   */
   static score(attempt: Json, user: History, population: History): Json {
     log.debug("Entering RiskModel.score().");
     if (!user.n) {
@@ -250,6 +312,14 @@ class RiskModel {
   // row maps level names to values. The same questions `History` asks of
   // `sts_risk_feature_counts`, answered by counting.
   // -------------------------------------------------------------------------
+  /**
+   * Builds a history by counting rows, for the tests and for a process with
+   * no store.
+   *
+   * @param rows - each maps level names to values
+   * @param userOf - says whose row it is, for the number of users
+   * @returns the history
+   */
   static historyOf(rows: Json[], userOf?: (row: Json) => string): History {
     log.debug("Entering RiskModel.historyOf(). " + rows.length + " row(s).");
     const users = new Set<string>();
@@ -284,6 +354,12 @@ class RiskModel {
   }
 }
 
+/**
+ * The risk score of one sign-in: Freeman et al. (2016), ported.
+ *
+ * Pure functions over counts; nothing here decides.
+ * @namespace
+ */
 export = {
   RiskModel: RiskModel,
   FEATURES: RiskModel.FEATURES,
