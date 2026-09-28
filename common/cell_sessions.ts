@@ -351,6 +351,9 @@ class CellSessions {
     const already = exports_.realmMap(realmId).get(projection.uuid);
     if (already && already.cells && already.cells[to] &&
         already.cells[to].sid === String(session.id)) {
+      // Adopted there already; the pin still moves only when a flow ends
+      // (flipWhenFlowEnds()).
+      CellSessions.flipWhenFlowEnds(req, res, realmId, to);
       log.debug("Leaving CellSessions.maybeExport(). Already there.");
       return;
     }
@@ -393,12 +396,56 @@ class CellSessions {
     // A COPY, NOT A MOVE: home keeps its session, which is what serves a
     // portal request the other cell relays here, and what a revocation made
     // here ends along with the export. The browser is pinned to the other
-    // cell, so this copy answers only what that cell sends home.
-    require('./cell_placement').setAffinity(req, res, realmId, to);
+    // cell once the flow in progress ends, so this copy then answers only
+    // what that cell sends home.
+    CellSessions.flipWhenFlowEnds(req, res, realmId, to);
     log.info('cells: a session of a person homed here was exported to cell "' +
              to + '", which the transfer policy permits (' + decision.why +
-             '); the browser is pinned there.');
+             '); the browser is pinned there when its flow ends.');
     log.debug("Leaving CellSessions.maybeExport(). Exported.");
+  }
+
+  // THE PIN MOVES WHEN A FLOW ENDS, NOT WHEN THE SESSION IS COPIED. The
+  // export happens on the first request relayed home that carries the
+  // session — mid-flow, typically the authorization request resumed after
+  // the sign-in — and the answer to that request may hand the browser a
+  // step only home holds: a consent screen, a second factor. Pinned to the
+  // other cell on that answer, the browser took the step there and was told
+  // nothing was waiting (STS-OAUTH consent, the `cells` mode's first run,
+  // 2026-09-28, tests/vendored/sts_cells_transfer.js). So the pin moves on
+  // an answer that takes the browser OUT of this service — a redirect to
+  // another origin, which is a flow handing its result to the client — and
+  // every answer before it keeps the browser here. A flow that ends in a
+  // page instead (a form_post response) moves it at the next such answer.
+  private static flipWhenFlowEnds(req: any, res: any, realmId: string,
+                                  to: string): void {
+    log.debug("Entering CellSessions.flipWhenFlowEnds().");
+    const own = String(config.value('global.publicBaseUrl') || '');
+    let ownOrigin = '';
+    try {
+      ownOrigin = own ? new URL(own).origin : '';
+    } catch (e) {
+      log.debug("Caught in CellSessions.flipWhenFlowEnds(): " +
+                ((e && e.message) || e));
+      ownOrigin = '';
+    }
+    require('./cell_placement').setAffinityOnAnswer(req, res, realmId, to,
+      function (status: number, location: string): boolean {
+        if (status < 300 || status >= 400 || !/^https?:\/\//i.test(location)) {
+          return false;
+        }
+        let there = '';
+        try {
+          there = new URL(location).origin;
+        } catch (e) {
+          log.debug("Caught in a callback in " +
+                    "CellSessions.flipWhenFlowEnds(): " +
+                    ((e && e.message) || e));
+          there = '';
+        }
+        return !!there && there !== ownOrigin;
+      });
+    log.debug("Leaving CellSessions.flipWhenFlowEnds().");
   }
 
   private static pwdChangedTimeOf(username: string): string {

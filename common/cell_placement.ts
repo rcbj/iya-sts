@@ -534,6 +534,48 @@ class CellPlacement {
     log.debug("Leaving CellPlacement.setAffinity().");
   }
 
+  /**
+   * Pins a browser to a cell when its answer's head is written, and only if
+   * `when` (given the answer's status and Location) says so.
+   *
+   * WHEN THE HEAD IS WRITTEN, NOT NOW, because a handler that runs after the
+   * caller may set its own cookie with `res.set('Set-Cookie', …)`
+   * (authn.ts's `setCookieHeader()`), which REPLACES every Set-Cookie before
+   * it — an affinity appended by a middleware above that handler never
+   * reached the browser (the `cells` mode's first run, 2026-09-28). Appended
+   * at `writeHead`, it goes out beside whatever the handler set.
+   *
+   * @param req - the request
+   * @param res - the response
+   * @param realmId - the realm
+   * @param cellId - the cell to pin to
+   * @param when - decides from `(status, location)`; always, when omitted
+   */
+  setAffinityOnAnswer(req: any, res: any, realmId: string, cellId: string,
+                      when?: (status: number, location: string) => boolean):
+    void {
+    log.debug("Entering CellPlacement.setAffinityOnAnswer().");
+    if (!cells.isMulti() || !res || typeof res.writeHead !== 'function') {
+      log.debug("Leaving CellPlacement.setAffinityOnAnswer(). Nothing to do.");
+      return;
+    }
+    const self = this;
+    const original = res.writeHead;
+    res.writeHead = function pinnedWriteHead(this: any, ...args: any[]) {
+      log.debug("Entering pinnedWriteHead().");
+      res.writeHead = original;
+      const status = Number(args[0]) || Number(res.statusCode) || 200;
+      const location = String((typeof res.getHeader === 'function' &&
+                               res.getHeader('Location')) || '');
+      if (!when || when(status, location)) {
+        self.setAffinity(req, res, realmId, cellId);
+      }
+      log.debug("Leaving pinnedWriteHead().");
+      return original.apply(this, args);
+    };
+    log.debug("Leaving CellPlacement.setAffinityOnAnswer().");
+  }
+
   // -------------------------------------------------------------------------
   // THE EDGE. In the front process, above the request pool, before any body
   // is read — so a relay pipes the request untouched.
@@ -677,6 +719,22 @@ class CellPlacement {
             .send('The release policy does not permit this cell\'s ' +
                   'people to be listed from where the request was made.\n');
           return;
+        }
+        // A BROWSER RELAYED HERE BY AN ARTIFACT THIS CELL MINTED (D10) — an
+        // authorization request naming a `request_uri` pushed here — starts
+        // a flow HERE: the sign-in it is sent to is pending in this cell.
+        // So the browser is pinned here on this answer, as D9's restart
+        // pins it home, or its next request reaches the cell it came
+        // through, which holds no such sign-in (STS-AUTHN-0003). Found by
+        // the `cells` mode's first run (2026-09-28,
+        // tests/vendored/sts_cells_traveller.js).
+        if (req.stsCellRelay.reason === 'artifact') {
+          const row = CellPlacement.rowFor(String(req.path || '/'));
+          if (row && row.browser) {
+            self.setAffinityOnAnswer(req, res,
+                                     require('./realms').currentId(),
+                                     cells.id());
+          }
         }
         next();
         return;
@@ -1019,6 +1077,9 @@ export = {
     placement.affinityOf(req, realmId),
   setAffinity: (req: any, res: any, realmId: string, cellId: string): void =>
     placement.setAffinity(req, res, realmId, cellId),
+  setAffinityOnAnswer: (req: any, res: any, realmId: string, cellId: string,
+                        when?: (status: number, location: string) => boolean):
+    void => placement.setAffinityOnAnswer(req, res, realmId, cellId, when),
   relayIfElsewhere: (req: any, res: any, value: string,
                      reason: string): boolean =>
     placement.relayIfElsewhere(req, res, value, reason),

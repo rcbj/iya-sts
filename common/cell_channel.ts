@@ -191,7 +191,12 @@ class CellChannel {
     const now = Date.now();
     const issued = await pki.issueUnder(pki.PROCESS_SCOPE, 'cell', {
       publicKeyPem: publicKeyPem,
-      subject: [{ name: 'commonName', value: 'cell ' + id + ' ' + host }],
+      // `CN`, the encoder's own name for the attribute (common/vendored/
+      // x509.js, DN_ATTRS). It read `commonName` until the `cells` mode's
+      // first run (2026-09-28), which the encoder refuses — "Unknown DN
+      // attribute" — so no cell ever held a leaf and every peer answered
+      // unreachable (STS-CELL-0031); tests/vendored/sts_cells_map.js.
+      subject: [{ name: 'CN', value: 'cell ' + id + ' ' + host }],
       profile: 'tls-server',
       notBefore: now - 60 * 1000,
       notAfter: now + LEAF_LIFETIME_MS,

@@ -979,7 +979,9 @@ three** — the baseline, a single-node production deployment (product mode,
 postgres, request workers) and two such nodes behind a balancer, kept apart
 because single-node and multi-node differ in too much to read one failure;
 `tests/tools/modes.sh` argues it and what replaced what. CI runs
-`--modes=memory,single-node` and `--modes=cluster` as two jobs. Every local
+`--modes=memory,single-node` and `--modes=cluster` as two jobs. A fourth, `cells`
+(#98, two cells of one service), runs only when named (`--modes=cells`,
+`tests/CLAUDE.md`). Every local
 mode runs every job, both halves; an AWS target runs the protocol half only,
 because the in-process files cannot be pointed at a URL.
 

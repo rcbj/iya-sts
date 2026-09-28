@@ -1,0 +1,170 @@
+# SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+# SPDX-License-Identifier: MIT
+#
+# ===========================================================================
+# THE `cells` MODE'S LAYER (#98, 2026-09-28): TWO CELLS OF ONE SERVICE.
+#
+# Layered over docker-compose-run-tests.yml by ./run-tests.sh when the mode is
+# `cells` (tests/tools/modes.sh, which defines the mode and argues why it is
+# asked for by name only). Read in no other mode, so every other stack starts
+# exactly as it would without this file.
+#
+#   cell A   `sts`, cell `cella` in jurisdiction `us`, on the `postgres` it
+#            always had — which is now cell A's OWN database.
+#   cell B   `sts2`, cell `cellb` in jurisdiction `ca`, which `extends` cell
+#            A's definition (one definition, so nothing this file does not
+#            name can differ between the two), on `postgres-cellb`. Started
+#            only once cell A is HEALTHY: cell A builds the global tier's
+#            first key set and certificate authorities, and a second cold
+#            start racing it for them is not what this mode is testing.
+#   global   `postgres-global`: the GLOBAL tier both cells read and write —
+#            realms, settings, applications, keys, the certificate
+#            authority, the routing index (persistence/CLAUDE.md, *Tiers*).
+#            In AWS each cell reads a cross-region replica of it; there is no
+#            replica here, so the read URL is the writer.
+#   the keys `sts-cell-kek`, a one-shot that writes a fresh random cell
+#            key-encryption key into each cell's own volume, which only that
+#            cell mounts. Product mode refuses a cell with none
+#            (STS-CELL-0003), and a key committed to this repository would
+#            be key material in git. The SERVICE key (the global KEK) and
+#            both database passwords still come out of the one OpenBao, as
+#            in every other mode.
+#
+# ONE PUBLIC NAME: both cells issue under `https://sts:8081` (the launcher's
+# STS_PUBLIC_BASE_URL for a product mode) — a relayed request reaches the
+# owning cell under a private name, and the addresses it builds must be the
+# service's (STS-CELL-0005). Both carry `sts` and `sts2` in tls.hostnames, so
+# a job can also address cell B directly, which is a TEST-ONLY resolver
+# override (#98 section 9) and never a published address. Both chain to the
+# ONE service Root the global tier holds, so the anchor the runner fetches
+# from cell A verifies cell B's listener too.
+#
+# THE INTER-CELL CHANNEL is port 8446 on each (`cells.port`), dialled by the
+# container name the other cell's `cells.hostname` gives it. Nothing
+# publishes it.
+# ===========================================================================
+services:
+  # A fresh cell key-encryption key per cell and per run. Kept when present,
+  # so a `--keep-stack` restart of a cell reads the key its rows were sealed
+  # under; the stack's `down -v` removes both volumes with the databases they
+  # sealed.
+  sts-cell-kek:
+    container_name: ${STS_CELL_KEK_CONTAINER_NAME:-sts-docker-tests-cell-kek}
+    image: ${STS_IMAGE:-${IMAGE_REGISTRY:-ghcr.io/rcbj/iya-sts}/sts:${IMAGE_TAG:-latest}}
+    restart: "no"
+    entrypoint: ["sh", "-c"]
+    command:
+      - >
+        umask 077;
+        for c in a b; do
+        if [ ! -s /kek/$$c/kek ]; then
+        head -c 32 /dev/urandom | base64 > /kek/$$c/kek;
+        echo "sts-cell-kek: a key was written for cell $$c."; fi;
+        done
+    volumes:
+      - sts-cell-kek-a:/kek/a
+      - sts-cell-kek-b:/kek/b
+
+  # The global tier's database. The same image, scripts and application role
+  # as `postgres`: the schema is one schema, and which rows a tier holds is
+  # the service's decision (persistence/tiers.js), not the database's.
+  postgres-global:
+    extends:
+      file: docker-compose-run-tests.yml
+      service: postgres
+    container_name: ${STS_POSTGRES_GLOBAL_CONTAINER_NAME:-sts-docker-tests-postgres-global}
+    hostname: postgres-global
+    environment:
+      - POSTGRES_TLS_CN=postgres-global
+
+  # Cell B's own database.
+  postgres-cellb:
+    extends:
+      file: docker-compose-run-tests.yml
+      service: postgres
+    container_name: ${STS_POSTGRES_CELLB_CONTAINER_NAME:-sts-docker-tests-postgres-cellb}
+    hostname: postgres-cellb
+    environment:
+      - POSTGRES_TLS_CN=postgres-cellb
+
+  sts:
+    environment:
+      - STS_CELL_ID=cella
+      - STS_CELL_JURISDICTION=us
+      - STS_CELL_HOSTNAME=sts
+      - STS_CELL_PORT=8446
+      - 'STS_CELL_PEERS=[{"id":"cellb","jurisdiction":"ca","url":"https://sts2:8446"}]'
+      - STS_GLOBAL_DATABASE_URL=postgres://sts_app@postgres-global:5432/sts?sslmode=require
+      - STS_GLOBAL_DATABASE_READ_URL=postgres://sts_app@postgres-global:5432/sts?sslmode=require
+      # The same secret as the cell's own database password: one OpenBao
+      # secret, one application role password in every database here.
+      - STS_GLOBAL_DATABASE_PASSWORD_PROVIDER=vault
+      - STS_GLOBAL_DATABASE_PASSWORD_FIELD=databasePassword
+      - STS_CELL_KEK_PROVIDER=file
+      - STS_CELL_KEK_REF=/run/secrets/cell-kek/kek
+      - STS_TLS_HOSTNAMES=${STS_TLS_HOSTNAMES:-localhost,sts,sts2,sts-mock,sts.example.com}
+    volumes:
+      - sts-cell-kek-a:/run/secrets/cell-kek:ro
+    depends_on:
+      postgres-global:
+        condition: service_healthy
+      sts-cell-kek:
+        condition: service_completed_successfully
+
+  sts2:
+    extends:
+      file: docker-compose-run-tests.yml
+      service: sts
+    container_name: ${STS2_CONTAINER_NAME:-sts-docker-tests-node-b}
+    hostname: sts2
+    networks:
+      default:
+        ipv4_address: ${STS2_ADDRESS:-172.30.0.20}
+    depends_on:
+      sts:
+        condition: service_healthy
+      postgres-cellb:
+        condition: service_healthy
+      postgres-global:
+        condition: service_healthy
+      sts-cell-kek:
+        condition: service_completed_successfully
+    environment:
+      - STS_CELL_ID=cellb
+      - STS_CELL_JURISDICTION=ca
+      - STS_CELL_HOSTNAME=sts2
+      - STS_CELL_PORT=8446
+      - 'STS_CELL_PEERS=[{"id":"cella","jurisdiction":"us","url":"https://sts:8446"}]'
+      - STS_DATABASE_URL=postgres://sts_app@postgres-cellb:5432/sts?sslmode=require
+      - STS_GLOBAL_DATABASE_URL=postgres://sts_app@postgres-global:5432/sts?sslmode=require
+      - STS_GLOBAL_DATABASE_READ_URL=postgres://sts_app@postgres-global:5432/sts?sslmode=require
+      - STS_GLOBAL_DATABASE_PASSWORD_PROVIDER=vault
+      - STS_GLOBAL_DATABASE_PASSWORD_FIELD=databasePassword
+      - STS_CELL_KEK_PROVIDER=file
+      - STS_CELL_KEK_REF=/run/secrets/cell-kek/kek
+      - STS_TLS_HOSTNAMES=${STS_TLS_HOSTNAMES:-localhost,sts,sts2,sts-mock,sts.example.com}
+      # Cell B binds no realm SPIFFE listener: the extra addresses are cell
+      # A's (`cluster`'s arrangement for node B).
+      - STS_SPIFFE_GRPC_HOST=${STS2_ADDRESS:-172.30.0.20}
+      - STS_EXTRA_IPS=
+      # PKI distribution points name the service the way the runner does,
+      # which is cell A: the CRLs and OCSP are the global tier's.
+    volumes:
+      - sts-risk-uploads-b:/usr/src/sts/data/risk-uploads
+      - sts-cell-kek-b:/run/secrets/cell-kek:ro
+
+  tests:
+    environment:
+      # Each cell by name, for the `sts_cells_*.js` jobs; every other job
+      # talks to cell A through STS_TEST_SERVICE_URL, as in every mode.
+      - STS_TEST_CELL_A_URL=https://sts:8081
+      - STS_TEST_CELL_B_URL=https://sts2:8081
+      - STS_TEST_CELLS=cella:us,cellb:ca
+    depends_on:
+      sts2:
+        condition: service_healthy
+
+volumes:
+  sts-risk-uploads-b:
+  sts-cell-kek-a:
+  sts-cell-kek-b:

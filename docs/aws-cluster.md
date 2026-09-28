@@ -187,6 +187,31 @@ public name. Destroy one before you apply the other.
 **Cost**: each cell costs about as much as `testidp`, roughly $0.50 an hour.
 Add a global replica per extra cell and data sent between regions.
 
+### Trying two cells on one machine
+
+The test suite can run two cells locally, with no AWS account:
+
+```bash
+./run-tests.sh --modes=cells --only=sts_cells --protocol=only --no-browser
+```
+
+This starts cell `cella` (jurisdiction `us`) and cell `cellb` (jurisdiction
+`ca`), each with its own database, and a third database for the global tier.
+Both cells answer as `https://sts:8081`. The `cells` mode runs only when you
+name it; a plain `./run-tests.sh` does not start it.
+
+The five `sts_cells_*` jobs check, over HTTP:
+
+- each cell sees the other and never reports where it is;
+- a login name is unique across cells, and a person can be created in the
+  other cell;
+- a person homed in `cellb` who starts signing in at `cella` is sent back to
+  the start of the flow, finishes it in `cellb`, and gets tokens that verify
+  against the one key set of the realm;
+- where a realm permits it (`cells.permittedTransfers` set to `ca>us`), the
+  session moves to `cella`, and disabling the person in `cellb` ends it there;
+- `cellb`'s people can be listed from `cella` only where the realm permits it.
+
 ## Reading the logs
 
 ```bash
