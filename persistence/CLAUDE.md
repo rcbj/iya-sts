@@ -1429,3 +1429,83 @@ entry through the real directory and reading it back from a second process.
 **AND THE DIRECTORY NOW CARRIES THE CLIENT TRUSTSTORE'S RUNTIME ANCHORS**, in
 `ou=trustAnchors` in the default realm — so "the embedded directory persists"
 includes them. `tls/CLAUDE.md` argues it.
+
+## TIERS: A CELL'S STORE IS TWO DATABASES (#98, 2026-09-28)
+
+**A service deployed as cells** (`common/cells.ts`, `cells.id` set) keeps its
+store in two places per cell, and this directory is where the split lives.
+The design and its decisions are issue #98's body; this section is the part a
+maintainer of this directory has to know.
+
+| Tier | Where | What |
+|---|---|---|
+| GLOBAL | one writer for the service (`persistence.globalDatabaseUrl`), read from this cell's replica (`…ReadUrl`) | realms, settings, signing keys and the certificate authorities, the shared cluster secrets, the used-assertion history, the routing index, applications, policies and the other configuration entries, and the minted stores `tiers.js` lists as global |
+| CELL | this cell's own database (`persistence.databaseUrl`) | the people homed here and their devices, group membership of those people, and everything this cell mints — sessions, codes, tokens, deliveries, the audit log, risk history, the cluster's membership and leases |
+
+**`tiers.js` IS THE ONE PLACE A STORE'S TIER IS DECIDED, AND EVERY STORE IS
+IN IT.** A directory entry's tier comes from where it sits (below `ou=users`
+is a person, cell tier; a device by its owner's kind; a group is SPLIT — its
+definition global, its person members in their cell — `splitGroup()` and
+`joinGroup()`); a minted store's from its handle, listed global or cell by
+name. `tests/cell_tiers.js` reads every `persist:` in the tree and fails on
+one in neither list: a default tier would be a default answer to a residency
+question, and the wrong default is a person's data in another country with
+nothing failing. A GLOBAL minted store is the exception that is argued beside
+its name — configuration, a revocation every cell must see, or a replay set a
+CLIENT chooses the keys of (a DPoP `jti`, a Kerberos authenticator), which a
+per-cell set would accept once per cell.
+
+**`persistence_tiered.js` IS THE DRIVER THE SERVICE SEES**, with the postgres
+driver's whole interface: the cell driver's methods bound by default (the
+cluster is the cell's), the global ones over them, and the directory and the
+minted rows split row by row. Three things it does beyond routing:
+
+* **The routing index** (`sts_cell_routing`, schema version 11) is kept at the
+  flush, the one place every person passes: a person written for the first
+  time claims their login name and entryUUID as keyed digests
+  (`common/cell_routing.ts` makes them), a delete releases both, and a claim
+  answered with another cell is counted (STS-CELL-0020) rather than failing
+  the flush — creation paths claim first, and this is the race that check
+  cannot close.
+* **A projected entry is never written here** (origin `projection:<home>`,
+  `common/cell_sessions.ts`); a change to one is handed to the sessions module,
+  which sends it home. `persistence.materializeEntry()` is how a projection
+  enters the directory without becoming a row: `restoring` set and the shadow
+  advanced, exactly as a replicated entry is applied.
+* **What is not atomic across the two databases** is said in its header: a
+  flush touching both tiers is two transactions, global first, and a failure
+  between them is written by the next flush because the shadow only advances
+  on success. A global write is not fenced by the cell's membership.
+
+**TWO CHANGE LOGS, TWO FOLLOWERS.** `persistence_replication.js` is a factory
+since #98: the module's own exports are the instance for the process's main
+log (the cell's, or the only one), and `persistence.js`'s `coordinate()`
+builds `createReplication('global')` on the global driver itself, so its own
+rows are skipped by the origin the global driver stamps. Its pull and trim
+jobs carry `global` in their ids. The two may pull at once; the one thing they
+share, `persistence_minted.js`'s page prefetch, never answers across them
+because a handle is in exactly one tier. **The read barrier waits on the
+cell's log only**: a global change made in another cell arrives after the
+replica's lag, which `/admin/cells` shows — a barrier on it would put a
+cross-region round trip on every request, which #98 D3 declined.
+
+**THE READ POOL.** `persistence_postgres.js` takes a `readUrl`: every
+statement that only reads (the restore, the change log, the row a change
+points at, the routing lookups) goes to it, and everything that writes, locks
+or claims stays on the writer. A change row and its data row are read from the
+same replica, which replays the writer's commits whole and in order, so a
+pointer is never read ahead of what it points at.
+
+**SEALING BY TIER.** A cell-tier minted row is sealed under the cell's own
+key-encryption key (`keys.cellKek*`, `keystore.seal(…, 'cell')`), which lives
+only in the cell's region and has no fallback; `keystore.open()` tries the
+cell key and then the service key, since AES-GCM's tag makes the wrong one
+fail rather than answer. Single-cell mode seals everything under the service
+key, as it always did.
+
+**WHAT A CELL REFUSES AT START** (`checkCells()`): inconsistent cell settings
+(STS-CELL-0001), a store that is not postgres or no global database (0002), no
+cell key in product mode (0003), keys that are not persisted or no operator
+key-encryption key (0004 — every cell must sign with the same realm keys, #98
+D8), and no `global.publicBaseUrl` (0005 — a relayed request reaches the
+owning cell under a private name).

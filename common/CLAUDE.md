@@ -9781,3 +9781,48 @@ slot**: neither module calls the other, so rule 3e's test is never reached.
 Its three rules (an empty form or query value is absent, case is exact, an
 enum inside an alternative is ajv's) are argued in its header; the design is
 `mgmt-api/CLAUDE.md`'s *Every closed set is held, at every door*.
+
+## 3bx. Cells: `cells.ts`, `cell_channel.ts`, `cell_locator.ts`, `cell_routing.ts`, `cell_placement.ts`, `cell_sessions.ts` (#98, 2026-09-28)
+
+**One logical service can be deployed as CELLS** — a copy of the whole stack
+per cloud region, each with its own postgres, each in one legal JURISDICTION.
+A person is HOMED in one cell and their entry exists only there; realms,
+settings, applications, policies, keys and the routing index are the GLOBAL
+tier every cell reads (`persistence/CLAUDE.md`, *Tiers*). Issue #98's body is
+the design, with its decisions D1–D11; these six libraries are the code.
+**Empty `cells.id` is single-cell mode**: every one of them answers "here",
+stamps nothing and dials nothing, and the service behaves exactly as before.
+
+**A CELL IS NEVER PUBLISHED.** Every name, issuer, certificate and document
+names the service; no token, cookie, page or error names a cell. Where a cell
+has to travel with something a client holds, it is a KEYED TAG
+(`cell_locator.ts`) that only a cell can read.
+
+| Module | What it is |
+|---|---|
+| `cells.ts` | The map: this cell, its jurisdiction, the peers (`cells.peers`, JSON), where a new person is homed (`homeFor()`, D1), what a realm lists as permitted transfers, and the startup check (STS-CELL-0001). A leaf: config, error codes, a logger. |
+| `cell_channel.ts` | Mutual TLS 1.3 on `cells.port`, in the front process; both sides present a short-lived leaf from the process branch's `cell` Issuing CA (`pki.js`), and a peer is a cell only when its chain verifies to the Root AND its issuer is that CA AND its `urn:sts:cell:` name is a peer. JSON operations modules register (`registerOp()` / `call()`), and the relay of a whole request (`relay()`). A relayed request is served by the public app as the client's own: the client's address, TLS fingerprint and certificate travel in `x-sts-cell-*` headers the sender strips from the client and the receiver reads only from a peer, and the socket is shimmed as a request worker's is — the peer cell's leaf is never read as the caller's certificate. One hop. A cell that cannot be reached is answered 503 (D6, fail-closed). |
+| `cell_locator.ts` | Twelve base64url characters appended to an artifact — 72 bits of an HMAC of the minting cell under the service key — and read back by trying each cell's tag (D10). No separator, so no validation pattern changes; nothing readable names a cell. |
+| `cell_routing.ts` | Where a person is homed: resident here (and not a projection), or the global routing index by keyed digest. `claimName()` is the creation's first step. |
+| `cell_placement.ts` | The placement table `ROWS` — a row per route prefix, `local`, `affinity`, `selector`, `artifact`, `bearer` or `handler`, each with its reason — the `sts_cell` affinity cookie that pins a browser (per realm, keyed tags), the edge middleware `app.js` runs above the request pool before any body is read, and the helpers a handler calls with the parsed body (`relayIfElsewhere()`, `relayToHome()`). On a browser row the pin wins over an artifact's tag. `tests/cell_placement.js` holds every route to a row and every handler row to a module that asks. |
+| `cell_sessions.ts` | A session held away from home (D4, D6): exported (copied) from home to the cell a relayed request came from when the transfer policy's `holdDecision()` permits, with a credential-free PROJECTION of the person (`memberOf` from home's groups) held sealed under the visiting cell's key and materialized into every process's directory without becoming a row; a write to it sent home (`projection-write`, credentials refused); home pushing `revoke-subject` / `refresh-projection` and the visiting cell asking `subject-state` before a refresh or exchange and after `cells.subjectCheckS`. A projection never counts as a resident. |
+
+**D9, THE TRAVELLER'S SIGN-IN, IS `authn.ts`'s** (`restartAtHome()`): the
+login form asks the routing index for the typed name before anything is
+verified, and a person homed elsewhere is pinned to home and sent back to
+where the flow started — the request as it arrived, a POST re-posted from a
+page with a button, or the hosted surface's root — with a pushed
+authorization request handed home first. Nothing personal crosses; the typed
+password is never read at the visiting cell.
+
+**THE TRANSFER, SERVE AND RELEASE DECISIONS ARE POLICY**, asked of the
+issuance policy through `cell_transfer.ts` — the facts are attributes and the
+built-in rules are the strict default (D4): nothing personal leaves its
+jurisdiction unless the realm lists the transfer. See that module's own rule.
+
+**ORDER.** All six are libraries. `app.js` requires `cell_placement` and
+`cell_sessions` for their middlewares at #2 (they require only leaves at
+load); `persistence.js` requires `cells` at 4a; `common/protocol_stack.ts`
+calls `cell_sessions.install()` at 23b-vii to register its operations, and
+`admin-ui/cells_admin.ts` (18k-ii) registers `cell-ping` and
+`directory-people`. `server.js` binds the channel from `listen()`.
