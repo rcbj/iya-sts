@@ -7977,6 +7977,16 @@ class Authn {
                              home: string): Promise<void> {
     const { log } = this.deps;
     log.debug("Entering Authn.restartPendingAtHome(). home=" + home);
+    // A hard geofence refuses rather than sending the browser home (D4),
+    // exactly as the sign-in screen's own restart does.
+    if (!cellPlacement.CellPlacement.servePermitted(realms.currentId(), home,
+                                                    res)) {
+      if (pendingId) {
+        pending.delete(String(pendingId));
+      }
+      log.debug("Leaving Authn.restartPendingAtHome(). Geofenced.");
+      return;
+    }
     const held = pendingId ? pending.get(String(pendingId)) : null;
     const record = held && held.expires >= Date.now() ? held : null;
     if (held && !record) {
