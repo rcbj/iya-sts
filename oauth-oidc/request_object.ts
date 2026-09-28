@@ -682,8 +682,13 @@ class RequestObject {
     }
     const alg = String(header.alg || '');
     const enc = String(header.enc || '');
+    // HPKE INTEGRATED ENCRYPTION CARRIES NO `enc` (#82, jose-hpke-encrypt-22
+    // section 5), so for one of those algs the `enc` comparisons below have
+    // nothing to compare and `decryptJweCompact()` refuses an `enc` that is
+    // there.
+    const integrated = stsCrypto.isIntegratedJweAlg(alg);
     const registeredAlg = String(client.request_object_encryption_alg || '');
-    const registeredEnc = registeredAlg
+    const registeredEnc = registeredAlg && !integrated
       ? String(client.request_object_encryption_enc || '') ||
         applications.REQUEST_OBJECT_DEFAULT_ENC
       : '';
@@ -696,11 +701,14 @@ class RequestObject {
         'client registered request_object_encryption_alg "' + registeredAlg +
         '" with enc "' + registeredEnc + '".');
     }
-    const offeredAlgs = (profile && profile.encryptionAlgs) ||
-                        applications.REQUEST_OBJECT_ENCRYPTION_ALGS;
+    // The ML-KEM and HPKE algs only where the realm holds a key (#82).
+    const offeredAlgs = helpers.decryptableJweAlgs(
+      (profile && profile.encryptionAlgs) ||
+      applications.REQUEST_OBJECT_ENCRYPTION_ALGS);
     const offeredEncs = (profile && profile.encryptionEncs) ||
                         applications.REQUEST_OBJECT_ENCRYPTION_ENCS;
-    if (offeredAlgs.indexOf(alg) < 0 || offeredEncs.indexOf(enc) < 0) {
+    if (offeredAlgs.indexOf(alg) < 0 ||
+        (!integrated && offeredEncs.indexOf(enc) < 0)) {
       log.debug("Leaving RequestObject.decrypt(). Not offered.");
       return self.refusal('STS-OAUTH-0351', 'invalid_request_object',
         'the request object is encrypted "' + alg + '"/"' + enc + '", and ' +
@@ -711,7 +719,22 @@ class RequestObject {
         'request_object_encryption_enc_values_supported).');
     }
     const options: Json = { allowedAlg: [alg], allowedEnc: [enc] };
-    if (stsCrypto.JWE_SYMMETRIC_ALGS.indexOf(alg) >= 0) {
+    const kemKey = stsCrypto.describeJweKemAlg(alg)
+      ? helpers.kemDecryptionKeyFor(alg, keySet) : null;
+    if (kemKey) {
+      // THE REALM'S KEY FOR THIS ONE ALG (#82). Named by its kid as the
+      // RSA and EC keys are below, for their reason.
+      if (header.kid && String(header.kid) !== String(kemKey.publicJwk.kid)) {
+        log.debug("Leaving RequestObject.decrypt(). Encrypted to another " +
+                  "KEM key.");
+        return self.refusal('STS-OAUTH-0352', 'invalid_request_object',
+          'the request object is encrypted to the key "' + header.kid +
+          '", and this authorization server\'s request object encryption ' +
+          'key for ' + alg + ' is "' + kemKey.publicJwk.kid + '" — the key ' +
+          'marked use "enc" with that alg at /oauth2/jwks.');
+      }
+      options.privateJwk = kemKey.privateJwk;
+    } else if (stsCrypto.JWE_SYMMETRIC_ALGS.indexOf(alg) >= 0) {
       if (!client.client_secret) {
         log.debug("Leaving RequestObject.decrypt(). No secret to decrypt " +
                   "with.");

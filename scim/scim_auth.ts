@@ -1367,10 +1367,18 @@ class ScimAuth {
     // — so the client_id is the principal and `isClient` says why the name
     // looks like an application. `username` is what every user-bearing grant
     // here carries alongside `sub`, and it is the form the audit log and
-    // /admin/users file people under.
-    const isClient = !claims.username && !claims.sub;
-    const principal = String(claims.username || claims.sub ||
-                             claims.client_id || '').trim();
+    // /admin/users file people under. A client's token is told by its `sub`,
+    // which names the client — the client_id, or `urn:sts:client:<id>` in
+    // RFC 9700 mode — the rule `role_permissions.ts`'s isClientToken() and
+    // `ssf_auth.ts`'s principalOfClaims() state; it carries no `username`
+    // since #93, so its principal is the client_id in both modes.
+    const clientId = String(claims.client_id || '');
+    const sub = String(claims.sub || '');
+    const isClient = !claims.username &&
+      (!sub || (!!clientId &&
+                (sub === clientId || sub === 'urn:sts:client:' + clientId)));
+    const principal = String((isClient ? clientId : '') || claims.username ||
+                             sub || clientId).trim();
 
     log.debug("Leaving ScimAuth.attemptBearer(). " + row + " for " +
               (principal || '(unnamed)') + ".");

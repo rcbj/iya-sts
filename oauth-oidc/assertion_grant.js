@@ -426,6 +426,16 @@ function unwrapAssertion(presented, opts) {
       }
       candidates.push({ privateKey: one.privateKey });
     });
+  } else if (stsCrypto.describeJweKemAlg(alg)) {
+    // ML-KEM OR HPKE (#82): the realm's one key for exactly this alg, and
+    // only where an administrator opted the realm in to it
+    // (`keys.encryptionKemAlgs`) — which is also the only case discovery
+    // advertises the alg in, so no candidate is the refusal below.
+    const held = require('../common/helpers').kemDecryptionKeyFor(alg);
+    if (held && (!header.kid ||
+                 String(header.kid) === String(held.publicJwk.kid))) {
+      candidates.push({ privateJwk: held.privateJwk });
+    }
   } else {
     // Every RSA key of this realm, JOSE first — each live generation (#42).
     require('../common/helpers').ownRsaDecryptionKeys('jose')

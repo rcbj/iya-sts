@@ -131,7 +131,11 @@ Claims worth knowing:
   read it to tell an access token from an ID Token or a refresh token, all
   three being signed by one key.
 * `auth_time`, `amr` and `acr` are copied from the session. A
-  `client_credentials` token has none of them, and its `sub` is the client.
+  `client_credentials` token has none of them, and no `username` or
+  `preferred_username` either: it is about no person. Its `sub` is the client
+  application (the `client_id`, or `urn:sts:client:<client_id>` in RFC 9700
+  mode), and its `roles` are the roles the application holds as itself
+  (`roleMemberApplication`), with the roles of the application it is for.
 * `groups` comes from the person's directory groups.
 
 ## OpenID Connect ID Token

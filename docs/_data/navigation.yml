@@ -28,6 +28,7 @@
   items:
     - { title: OAuth 2.0 and OpenID Connect, url: /oauth-oidc.html }
     - { title: "Security profiles: RFC 9700, OAuth 2.1, DPoP, mTLS", url: /oauth-security.html }
+    - { title: Post-quantum key establishment, url: /post-quantum-encryption.html }
     - { title: JWT assertions (RFC 7523), url: /jwt-assertions.html }
     - { title: SAML assertions (RFC 7522), url: /saml-assertions.html }
     - { title: GNAP, url: /gnap.html }

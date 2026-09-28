@@ -1936,7 +1936,8 @@ class OAuth2Server {
       // JARM section 4: what a JWT-secured authorization response may be
       // signed and encrypted with.
       authorization_signing_alg_values_supported: jarm.SIGNING_ALGS,
-      authorization_encryption_alg_values_supported: jarm.ENCRYPTION_ALGS,
+      authorization_encryption_alg_values_supported:
+        helpers.offeredJweAlgs(jarm.ENCRYPTION_ALGS),
       authorization_encryption_enc_values_supported: jarm.ENCRYPTION_ENCS,
       // Only what the token endpoint below actually implements — the metadata
       // should not promise a grant this server would refuse. The device_code
@@ -1993,7 +1994,10 @@ class OAuth2Server {
       // described is a document arriving HERE, and the symmetric families are
       // usable because a client_secret is a shared key. See
       // `oauth-oidc/assertion_grant.js`'s `unwrapAssertion()`.
-      assertion_encryption_alg_values_supported: stsCrypto.JWE_DECRYPT_ALGS,
+      // The ML-KEM and HPKE algs only where the realm holds a key for them
+      // (#82): a client cannot encrypt to a key this realm does not have.
+      assertion_encryption_alg_values_supported:
+        helpers.decryptableJweAlgs(stsCrypto.JWE_DECRYPT_ALGS),
       assertion_encryption_enc_values_supported:
         Object.keys(stsCrypto.JWE_ENCS),
       // RFC 9396. OID4VCI's openid_credential — its other way of saying which
@@ -2060,7 +2064,7 @@ class OAuth2Server {
       introspection_signing_alg_values_supported:
         introspectionJwt.SIGNING_ALGS,
       introspection_encryption_alg_values_supported:
-        introspectionJwt.ENCRYPTION_ALGS,
+        helpers.offeredJweAlgs(introspectionJwt.ENCRYPTION_ALGS),
       introspection_encryption_enc_values_supported:
         introspectionJwt.ENCRYPTION_ENCS,
       // RFC 9101 AND OPENID CONNECT DISCOVERY (2026-09-13). A request object by
@@ -2081,7 +2085,7 @@ class OAuth2Server {
           mode.acceptsUnsignedRequestObjects() &&
           !config.value('oauth2.requireSignedRequestObject') ? ['none'] : []),
       request_object_encryption_alg_values_supported:
-        applications.REQUEST_OBJECT_ENCRYPTION_ALGS,
+        helpers.decryptableJweAlgs(applications.REQUEST_OBJECT_ENCRYPTION_ALGS),
       request_object_encryption_enc_values_supported:
         applications.REQUEST_OBJECT_ENCRYPTION_ENCS,
       // RFC 9126 SECTION 5 (2026-09-13). The endpoint, and the global policy.
@@ -2947,7 +2951,9 @@ class OAuth2Server {
       // response to the key the CLIENT registered — so a client could otherwise
       // register `userinfo_encrypted_response_alg="dir"` off this list and be
       // answered by a key derived from the JSON of its own public key.
-      userinfo_encryption_alg_values_supported: stsCrypto.JWE_ASYMMETRIC_ALGS,
+      // The ML-KEM and HPKE algorithms only where `keys.offerKemEncryption`
+      // is on (helpers.offeredJweAlgs(), 2026-09-28), for all four lists.
+      userinfo_encryption_alg_values_supported: helpers.offeredJweAlgs(),
       userinfo_encryption_enc_values_supported: Object.keys(stsCrypto.JWE_ENCS),
       //
       // `public`: the `sub` userFor() gives — the person's urn:uuid:<entryUUID>
@@ -2961,7 +2967,8 @@ class OAuth2Server {
       // the client registered `id_token_encrypted_response_alg`. The lists
       // are the UserInfo response's, for its reason; `id_token_encryption.ts`
       // argues the rest. A Logout Token follows the same registration.
-      id_token_encryption_alg_values_supported: idTokenEncryption.ALGS,
+      id_token_encryption_alg_values_supported:
+        helpers.offeredJweAlgs(idTokenEncryption.ALGS),
       id_token_encryption_enc_values_supported: idTokenEncryption.ENCS,
       // OIDC Core section 3.1.3.7: a client may register
       // `id_token_signed_response_alg`. This service holds a key for every
@@ -3357,6 +3364,15 @@ class OAuth2Server {
             const encKeys = requestObjectKeysFor();
             return [encKeys.rsa.publicJwk, encKeys.ec.publicJwk];
           })())
+        // AND THE REALM'S ML-KEM / HPKE DECRYPTION KEYS (#82), after those,
+        // each with `use: "enc"` and the one `alg` it serves — only where
+        // an administrator named the alg in `keys.encryptionKemAlgs`, which
+        // is empty by default: an AKP key is a key type many clients'
+        // libraries do not parse, and a JWKS they cannot read is worse than
+        // one without the key.
+          .concat(helpers.kemEncryptionKeysFor().map(function (one) {
+            return stsCrypto.publicJweKemJwk(one.publicJwk);
+          }))
       }, null, 2));
       log.debug("Leaving OAuth2Server.sendJwks().");
     } catch (e) {
@@ -3688,12 +3704,20 @@ class OAuth2Server {
   // is presented back to this server and to nothing else, so a claim in one
   // reaches no relying party and would only make the two halves of a grant
   // disagree.
-  private customClaimContext(base: Json, payload: Json, user: Json): Json {
+  //
+  // A client_credentials token is about the CLIENT (#93): no username, so
+  // `admin_stats.js`'s claim layers resolve the client as an APPLICATION —
+  // its roles through `roleMemberApplication` — rather than looking up a
+  // person named after its client_id, which found nobody's roles.
+  private customClaimContext(base: Json, payload: Json, user: Json,
+                             grant?: string): Json {
     const { log } = this.deps;
     log.debug("Entering OAuth2Server.customClaimContext().");
+    const aboutClient = grant === 'client_credentials';
     log.debug("Leaving OAuth2Server.customClaimContext().");
     return {
-      username: (user && user.username) || payload.username || '',
+      username: aboutClient ? ''
+        : ((user && user.username) || payload.username || ''),
       sub: payload.sub || '',
       email: (user && user.email) || '',
       name: (user && user.name) || '',
@@ -3784,9 +3808,18 @@ class OAuth2Server {
       aud: opts.audience || jwtAccessToken.defaultAudienceFor(base),
       client_id: opts.client_id, typ: 'Bearer',
       jti: randomId(16), iat: iat, nbf: iat,
-      exp: iat + self.accessTokenTtl(opts.client_id),
-      username: user.username
+      exp: iat + self.accessTokenTtl(opts.client_id)
     };
+    // `username` names the PERSON the token is about, and a
+    // client_credentials token is about no person (#93, 2026-09-28): it
+    // carried the client_id here, so every reader that took `username` for a
+    // person's name — the claim context below among them, which built the
+    // roles claim for a person named after the client — was misled. The
+    // client is `sub` (the client_id, or `urn:sts:client:<id>` in RFC 9700
+    // mode) and `client_id`; the token registry files it under the client.
+    if (opts.grant !== 'client_credentials') {
+      payload.username = user.username;
+    }
     // Section 2.2.3: the scope claim describes what was granted, so a token
     // granted nothing carries no claim — not `scope: ""`, a member every reader
     // had to learn meant the same as its absence.
@@ -3796,8 +3829,8 @@ class OAuth2Server {
     // Section 2.2.2: an identity attribute goes under its REGISTERED name where
     // one exists, and `preferred_username` is OpenID Connect's for exactly what
     // `username` holds. `username` stays — the token registry, SCIM's principal
-    // and the audit log read it. Not on a client_credentials token, where
-    // `username` is the client_id and there is no end user to have a name.
+    // and the audit log read it. Neither is on a client_credentials token,
+    // where there is no end user to have a name.
     if (opts.grant !== 'client_credentials' && user.preferred_username) {
       payload.preferred_username = user.preferred_username;
     }
@@ -3904,7 +3937,8 @@ class OAuth2Server {
     // ---------------------------------------------------------------------
     const payloadWithCustom = Object.assign(
       stats.jwtClaims('access_token',
-                      self.customClaimContext(base, payload, user)),
+                      self.customClaimContext(base, payload, user,
+                                              opts.grant)),
       opts.assertionClaims || {}, payload);
     // A token granted no scope carries no scope claim, and the merge above is
     // the one way a layer beneath the protocol's could supply one: the protocol
@@ -10657,13 +10691,13 @@ class OAuth2Server {
         USERINFO_SIGNING_ALGS.join(', ') + ' (see ' +
         'userinfo_signing_alg_values_supported).');
     }
-    if (encAlg && stsCrypto.JWE_ASYMMETRIC_ALGS.indexOf(encAlg) === -1) {
+    if (encAlg && helpers.offeredJweAlgs().indexOf(encAlg) === -1) {
       log.debug("Leaving OAuth2Server.protectUserinfo(). Unsupported " +
                 "encryption alg.");
       throw new Error('This client registered ' +
         'userinfo_encrypted_response_alg="' +
         encAlg + '" and this service encrypts a UserInfo response with ' +
-        stsCrypto.JWE_ASYMMETRIC_ALGS.join(', ') + ' (see ' +
+        helpers.offeredJweAlgs().join(', ') + ' (see ' +
         'userinfo_encryption_alg_values_supported). The symmetric algorithms ' +
         'in this service\'s JWE table are for a document encrypted TO it, ' +
         'where both ends hold the key; there is no shared key here, only the ' +

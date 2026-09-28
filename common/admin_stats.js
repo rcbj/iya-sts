@@ -405,7 +405,13 @@ function recordJwt(payload, signed, context) {
     // Token: the two carry the same person under different names because that
     // is what their respective specifications call the claim, and a console
     // column that read only one of them would show a dash for every ID Token.
-    username: payload.username || payload.preferred_username || '',
+    // A client_credentials access token carries no `username` since #93 (it
+    // is about no person), and is filed under its CLIENT, as it was when the
+    // claim carried the client_id: /admin/users lists the client flagged as
+    // one, and a disabled or deleted application's tokens are found by name.
+    username: payload.username || payload.preferred_username ||
+              (issuedUnder.grant === 'client_credentials'
+                ? String(payload.client_id || '') : ''),
     client_id: payload.client_id || payload.azp || payload.aud || '',
     // WHAT THIS TOKEN IS ADDRESSED TO, as its own fact. `client_id` above falls
     // back to the `aud` when nothing better names the client, which is right

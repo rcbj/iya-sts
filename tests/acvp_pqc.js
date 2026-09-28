@@ -30,10 +30,14 @@
 //                     deterministic, pure, empty context, the private key
 //                     being sk itself; XML and raw proofs verify all twelve
 //                     parameter sets.
-//   ML-KEM-512/768/1024  KEY GENERATION only (EST /serverkeygen, through the
-//                     vendored engine from a 64-octet d || z seed). Nothing
-//                     here encapsulates or decapsulates: no protocol this
-//                     service speaks has an ML-KEM method.
+//   ML-KEM-512/768/1024  key generation (EST /serverkeygen, through the
+//                     vendored engine from a 64-octet d || z seed) and, since
+//                     #82, ENCAPSULATION AND DECAPSULATION through
+//                     common/crypto.js's JWE key establishment (section 4a):
+//                     the ML-KEM JWE algs and HPKE's ML-KEM and hybrid KEMs.
+//                     Its keys are the d || z seed only, so an EXPANDED
+//                     decapsulation key has no door; the encapsulation key
+//                     check (FIPS 203 section 7.2) is crypto.js's own.
 //
 // SO: no door takes a context string, the pre-hash (HashML-DSA,
 // HashSLH-DSA) variants, the internal interface or an external mu; ML-DSA
@@ -364,22 +368,55 @@ async function mlKemKeyGen(t) {
   log.debug('Leaving mlKemKeyGen().');
 }
 
+// THE HPKE ML-KEM KEM IDS (draft-ietf-hpke-pq-05 Table 2), the door
+// common/crypto.js encapsulates and decapsulates through.
+const MLKEM_KEM_ID = { 'ML-KEM-512': 0x0040, 'ML-KEM-768': 0x0041,
+                       'ML-KEM-1024': 0x0042 };
+
+// Encapsulation (FIPS 203 Encaps_internal with the vector's m), decapsulation
+// from the seed, and the encapsulation key check — through crypto.js since
+// #82. Decapsulation from an EXPANDED key, and the decapsulation key check
+// (which is of an expanded key), have no door: this service holds an ML-KEM
+// key as its 64-octet seed only (draft-ietf-jose-pqc-kem-06 section 8,
+// draft-ietf-hpke-pq section 3), so those groups are counted and named.
 function mlKemEncapDecap(t, set) {
   log.debug('Entering mlKemEncapDecap(). ' + set);
+  const tl = tally();
   const json = load(set);
-  let cases = 0;
-  const functions = {};
   json.testGroups.forEach(function (g) {
-    cases += g.tests.length;
-    functions[g.function] = true;
+    const alg = g.parameterSet;
+    const kemId = MLKEM_KEM_ID[alg];
+    if (g.function === 'encapsulation') {
+      g.tests.forEach(function (v) {
+        const out = crypto.hpke.encap(kemId, hex(v.ek), hex(v.m));
+        record(tl, out.enc.equals(hex(v.c)) && out.ss.equals(hex(v.k)),
+               alg + ' tc' + v.tcId + ' encapsulation');
+      });
+    } else if (g.function === 'encapsulationKeyCheck') {
+      g.tests.forEach(function (v) {
+        let passed = true;
+        try {
+          crypto.hpke.mlkemCheckEncapsulationKey(alg, hex(v.ek));
+        } catch (e) {
+          log.debug('Caught in mlKemEncapDecap(): ' + ((e && e.message) || e));
+          passed = false;
+        }
+        record(tl, passed === v.testPassed,
+               alg + ' tc' + v.tcId + ' encapsulationKeyCheck');
+      });
+    } else if (g.function === 'decapsulation' && g.keyFormat === 'seed') {
+      g.tests.forEach(function (v) {
+        const seed = Buffer.concat([hex(v.d), hex(v.z)]);
+        record(tl, crypto.hpke.decap(kemId, hex(v.c), seed).equals(hex(v.k)),
+               alg + ' tc' + v.tcId + ' decapsulation (seed)');
+      });
+    } else {
+      notApplicable(tl, g.function + (g.keyFormat ? ' (' + g.keyFormat +
+        ' key)' : ' (expanded key)') + ' — keys here are the d || z seed ' +
+        'only', g.tests.length);
+    }
   });
-  // Read, counted and named: this is the honest answer rather than a
-  // silent omission.
-  t.check(cases > 0, set + ': ' + cases + ' cases (' +
-    Object.keys(functions).join(', ') + ') not applicable — nothing in this ' +
-    'service encapsulates or decapsulates, and no key it accepts from ' +
-    'outside is an ML-KEM encapsulation key (a CSR carrying one is refused, ' +
-    'STS-ENROLL-0032)', cases ? '' : 'the vector set is empty');
+  report(t, set, tl);
   log.debug('Leaving mlKemEncapDecap().');
 }
 

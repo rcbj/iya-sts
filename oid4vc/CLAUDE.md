@@ -318,10 +318,19 @@ transaction — one nonce, one DCQL query, answered once:
   MUST carry (A.2) — refuse the request if a page on another origin hands it
   over. That is the relay, refused at the victim's phone.
 * **`response_mode` `dc_api.jwt`** by default: the answer travels through the
-  page's script, so it is encrypted (section 8.3) to an ephemeral P-256
-  ECDH-ES key made for this transaction and published in `client_metadata`.
-  The private half lives on the transaction, SEALED under the key-encryption
-  key where there is one, and dies with it.
+  page's script, so it is encrypted (section 8.3) to an ephemeral key made
+  for this transaction and published in `client_metadata`.
+  * **Since #82 (2026-09-27) there is a key per alg in
+    `oid4vp.responseEncryptionKeyAlgs`.** The default puts the X-Wing hybrid
+    (HPKE-10-KE) first and the P-256 ECDH-ES key HAIP requires second. That
+    order is rcbj's decision, and `direct_post.jwt` does the same.
+  * The ECDH-ES key keeps the transaction's kid. Every other key's kid is
+    that kid plus `.<alg>`, which `transactionKidBase()` strips.
+  * `openResponse()` opens a response only with the key its kid names, and
+    only by that key's own alg.
+  * Each private half lives on the transaction, SEALED under the
+    key-encryption key where there is one, and dies with it. The
+    cryptography is `common/CLAUDE.md`'s *crypto.js section 4a*.
   `oid4vp.signInDcApiResponseMode` asks for `dc_api` instead, for a wallet
   that cannot encrypt.
 * **No `response_uri`, `redirect_uri` or `state`**, which A.2 does not define

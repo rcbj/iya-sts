@@ -962,6 +962,12 @@ function plainKeySet(realmId, stored) {
   if (stored.browserDeviceKeys) {
     set.browserDeviceKeys = stored.browserDeviceKeys;
   }
+  // AND THE KEM DECRYPTION KEYS (#82): dropped here, this process would
+  // publish keys of its own for an opted-in alg and fail to open what a
+  // client encrypted to the JWKS a sibling served.
+  if (stored.kemEncKeys) {
+    set.kemEncKeys = stored.kemEncKeys;
+  }
   // AND THE XML SIGNING KEY AND THE KEY GENERATIONS (2026-09-22, #42), for
   // the same reason: dropped here, this process would sign XML with a key of
   // its own, or publish a JWKS without the `next` key its siblings publish.
@@ -1718,6 +1724,56 @@ function lazyKeySet(realmId, stored) {
     set: function (made) {
       log.debug("Entering set().");
       roGenerated = made || null;
+      log.debug("Leaving set().");
+    }
+  });
+  // ---------------------------------------------------------------------
+  // **THE KEM DECRYPTION KEYS (#82)**, the request object keys' arrangement
+  // for a LIST: each public JWK resident, each private JWK a getter over the
+  // keystore's timed decryption, found by kid. `/oauth2/jwks` reads the
+  // public halves on every fetch, and publishing must not decrypt anything.
+  // ---------------------------------------------------------------------
+  const kemStored = Array.isArray(stored.kemEncKeys) ? stored.kemEncKeys
+    : null;
+  let kemGenerated = null;
+  Object.defineProperty(set, 'kemEncKeys', {
+    enumerable: true, configurable: true,
+    get: function () {
+      log.debug("Entering get().");
+      if (kemGenerated) {
+        log.debug("Leaving get().");
+        return kemGenerated;
+      }
+      if (!kemStored || !kemStored.length) {
+        log.debug("Leaving get().");
+        return undefined;
+      }
+      const views = kemStored.map(function (one) {
+        const view = { alg: one.alg, publicJwk: one.publicJwk };
+        Object.defineProperty(view, 'privateJwk', {
+          enumerable: true, configurable: true,
+          get: function () {
+            log.debug("Entering get().");
+            const held = keystore.privateMaterialFor(realmId);
+            const jwk = held && held.kem &&
+                        held.kem.get(one.publicJwk && one.publicJwk.kid);
+            if (!jwk) {
+              throw new Error('the "' + realmId + '" realm\'s ' + one.alg +
+                ' decryption key is held encrypted and could not be ' +
+                'decrypted; see the keystore errors above.');
+            }
+            log.debug("Leaving get().");
+            return jwk;
+          }
+        });
+        return view;
+      });
+      log.debug("Leaving get().");
+      return views;
+    },
+    set: function (made) {
+      log.debug("Entering set().");
+      kemGenerated = made || null;
       log.debug("Leaving set().");
     }
   });
@@ -2571,6 +2627,180 @@ function refreshTokenKeysFor(keySet) {
   keystore.publishShared(realmId, keys);
   log.debug("Leaving refreshTokenKeysFor(). Backfilled.");
   return keys.refreshTokenEncKeys || made;
+}
+
+// ---------------------------------------------------------------------------
+// THE REALM'S KEM DECRYPTION KEYS (#82, 2026-09-27): one key pair for each
+// ML-KEM or HPKE JWE alg the ambient realm's `keys.encryptionKemAlgs` names,
+// in that order, as `[{ alg, publicJwk, privateJwk }]`. An EMPTY LIST BY
+// DEFAULT, and that is rcbj's decision rather than an unfinished feature: a
+// post-quantum or hybrid key in a realm's JWKS is a key type many clients'
+// JOSE libraries do not parse yet, so publishing one is an administrator's
+// choice, made per realm.
+//
+// Made the way `requestObjectKeysFor()` backfills: a key some process
+// already made (stored, then shared) is adopted before one is generated, and
+// a generated one is remembered and shared at once so every sibling
+// publishes and opens with the SAME key. A key for an alg the setting no
+// longer names is kept on the set but neither listed here nor published —
+// naming the alg again brings the same key back.
+// ---------------------------------------------------------------------------
+/**
+ * The ML-KEM and HPKE algs the ambient realm's `keys.encryptionKemAlgs`
+ * names (#82), valid and de-duplicated.
+ *
+ * @returns the algs, empty by default
+ */
+function kemAlgsConfigured() {
+  log.debug("Entering kemAlgsConfigured().");
+  const raw = config.value('keys.encryptionKemAlgs');
+  const listed = (Array.isArray(raw) ? raw : String(raw || '').split(','))
+    .map(function (one) {
+      return String(one).trim();
+    })
+    .filter(function (one, i, all) {
+      return one && all.indexOf(one) === i &&
+             stsCrypto.JWE_ASYMMETRIC_ALGS.indexOf(one) >= 0 &&
+             !!stsCrypto.describeJweKemAlg(one);
+    });
+  log.debug("Leaving kemAlgsConfigured(). " + listed.join(','));
+  return listed;
+}
+
+/**
+ * The realm's KEM decryption keys, one per configured alg, adopting or
+ * making any that are missing (#82).
+ *
+ * @param keySet - the key set; the ambient realm's when absent
+ * @returns `[{ alg, publicJwk, privateJwk }]`
+ */
+function kemEncryptionKeysFor(keySet) {
+  log.debug("Entering kemEncryptionKeysFor().");
+  const wanted = kemAlgsConfigured();
+  if (!wanted.length) {
+    log.debug("Leaving kemEncryptionKeysFor(). None configured.");
+    return [];
+  }
+  const keys = keySet || stsKeysFor();
+  const realmId = String(keys.realm || realms.currentId());
+  let have = keys.kemEncKeys || [];
+  const missing = function () {
+    log.debug("Entering missing().");
+    const algs = have.map(function (one) {
+      return one.alg;
+    });
+    log.debug("Leaving missing().");
+    return wanted.filter(function (alg) {
+      return algs.indexOf(alg) === -1;
+    });
+  };
+  if (missing().length) {
+    const held = keystore.kemEncKeysHeldFor(realmId) || [];
+    const heldAlgs = held.map(function (one) {
+      return one.alg;
+    });
+    const fromHeld = missing().filter(function (alg) {
+      return heldAlgs.indexOf(alg) >= 0;
+    });
+    const made = [];
+    missing().forEach(function (alg) {
+      const found = held.filter(function (one) {
+        return one.alg === alg;
+      })[0];
+      if (found) {
+        made.push(found);
+        return;
+      }
+      const pair = stsCrypto.generateJweKemKeyPair(alg);
+      const kid = 'sts-kem-' + alg.toLowerCase().replace(/[^a-z0-9]+/g, '') +
+                  '-' + stsCrypto.jwkThumbprint(
+                    stsCrypto.publicJweKemJwk(pair.publicJwk),
+                    { truncate: 16 });
+      pair.publicJwk.kid = kid;
+      pair.privateJwk.kid = kid;
+      made.push({ alg: alg, publicJwk: pair.publicJwk,
+                  privateJwk: pair.privateJwk });
+    });
+    have = have.concat(made);
+    keys.kemEncKeys = have;
+    if (made.length > fromHeld.length) {
+      log.info('KEM decryption keys were added to the "' + realmId + '" ' +
+               'realm\'s key set for ' + made.map(function (one) {
+                 return one.alg;
+               }).join(', ') + ' (keys.encryptionKemAlgs).');
+    }
+    keystore.remember(realmId, keys);
+    keystore.publishShared(realmId, keys);
+  }
+  const out = wanted.map(function (alg) {
+    return have.filter(function (one) {
+      return one.alg === alg;
+    })[0];
+  }).filter(Boolean);
+  log.debug("Leaving kemEncryptionKeysFor(). " + out.length + " key(s).");
+  return out;
+}
+
+// The realm's KEM decryption key for one alg, or null when the realm has not
+// opted in to it — what a decrypt site asks before it tries.
+/**
+ * The realm's KEM decryption key for one alg.
+ *
+ * @param alg - an ML-KEM or HPKE `alg`
+ * @param keySet - the key set; the ambient realm's when absent
+ * @returns `{ alg, publicJwk, privateJwk }`, or null when not held
+ */
+function kemDecryptionKeyFor(alg, keySet) {
+  log.debug("Entering kemDecryptionKeyFor(). " + alg);
+  const found = kemEncryptionKeysFor(keySet).filter(function (one) {
+    return one.alg === alg;
+  })[0] || null;
+  log.debug("Leaving kemDecryptionKeyFor(). " + (found ? 'held' : 'none'));
+  return found;
+}
+
+// The JWE algs this realm can DECRYPT, for a discovery list that describes
+// decryption: every classical alg in `base`, and of section 4a's only those
+// the realm holds a key for. `base` defaults to `JWE_DECRYPT_ALGS`.
+/**
+ * The JWE algs this realm can decrypt: every classical one in `base`,
+ * and of the ML-KEM and HPKE ones only those it holds a key for (#82).
+ *
+ * @param base - the list to narrow; `JWE_DECRYPT_ALGS` by default
+ * @returns the narrowed list
+ */
+function decryptableJweAlgs(base) {
+  log.debug("Entering decryptableJweAlgs().");
+  const held = kemAlgsConfigured();
+  const out = (base || stsCrypto.JWE_DECRYPT_ALGS).filter(function (alg) {
+    return !stsCrypto.describeJweKemAlg(alg) || held.indexOf(alg) >= 0;
+  });
+  log.debug("Leaving decryptableJweAlgs(). " + out.length);
+  return out;
+}
+
+// The JWE algs this realm OFFERS where it encrypts TO a key a client or a
+// wallet holds (2026-09-28, rcbj): every classical alg in `base`, and the
+// ML-KEM and HPKE ones only while `keys.offerKemEncryption` is on in the
+// ambient realm. The twin of `decryptableJweAlgs()` above for the other
+// direction; used for every outbound discovery list and every registration
+// check, so what is advertised and what is accepted cannot disagree.
+/**
+ * The JWE algs this realm offers for encryption to a client's or a wallet's
+ * key: the classical ones in `base`, and the ML-KEM and HPKE ones only while
+ * `keys.offerKemEncryption` is on.
+ *
+ * @param base - the list to narrow; `JWE_ASYMMETRIC_ALGS` by default
+ * @returns the narrowed list
+ */
+function offeredJweAlgs(base) {
+  log.debug("Entering offeredJweAlgs().");
+  const offered = config.value('keys.offerKemEncryption') === true;
+  const out = (base || stsCrypto.JWE_ASYMMETRIC_ALGS).filter(function (alg) {
+    return offered || !stsCrypto.describeJweKemAlg(alg);
+  });
+  log.debug("Leaving offeredJweAlgs(). " + out.length);
+  return out;
 }
 
 // ---------------------------------------------------------------------------
@@ -4468,6 +4698,10 @@ function plainCopyOf(keys, overrides) {
     refreshTokenEncKeys: keys.refreshTokenEncKeys,
     requestObjectEncKeys: keys.requestObjectEncKeys,
     browserDeviceKeys: keys.browserDeviceKeys,
+    // The KEM decryption keys (#82) carry over a rotation unchanged: they are
+    // not signing keys, and a client holding the published key must still
+    // be able to encrypt to it after the realm's signer moves on.
+    kemEncKeys: keys.kemEncKeys,
     xmlKey: keys.xmlKey ? {
       privateKeyPem: keys.xmlKey.privateKeyPem,
       selfSignedCertPem: keys.xmlKey.selfSignedCertPem,
@@ -7390,6 +7624,11 @@ module.exports = {
   rotateRefreshTokenKeys: rotateRefreshTokenKeys,
   retiredRefreshTokenKeysFor: retiredRefreshTokenKeysFor,
   requestObjectKeysFor: requestObjectKeysFor,
+  kemEncryptionKeysFor: kemEncryptionKeysFor,
+  kemDecryptionKeyFor: kemDecryptionKeyFor,
+  kemAlgsConfigured: kemAlgsConfigured,
+  decryptableJweAlgs: decryptableJweAlgs,
+  offeredJweAlgs: offeredJweAlgs,
   browserDeviceKeysFor: browserDeviceKeysFor,
   browserDeviceSigner: browserDeviceSigner,
   browserDeviceVerifiers: browserDeviceVerifiers,

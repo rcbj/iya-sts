@@ -1103,6 +1103,27 @@ async function groupsAndApplicationsHoldRoles() {
       "this grant has a subject; it answered " + afterRole.status + " " +
       String(afterRole.text).slice(0, 300));
   });
+  // WHAT THE TOKEN SAYS (#93): it is about the application — `sub` names it
+  // and there is no `username`, which carried the client_id and sent the
+  // roles claim looking for a PERSON of that name — and its roles claim is
+  // the roles the application holds as itself.
+  const robotClaims = afterRole.status === 200
+    ? claimsOf(afterRole.body.access_token) : {};
+  check("the client's token has no username, and its sub names the client",
+    function () {
+      assert.ok(!("username" in robotClaims) &&
+                (robotClaims.sub === ROBOT ||
+                 robotClaims.sub === "urn:sts:client:" + ROBOT),
+        "a client_credentials token is about no person; it carried " +
+        JSON.stringify({ sub: robotClaims.sub,
+                         username: robotClaims.username }));
+    });
+  check("and its roles claim carries the role the CLIENT holds", function () {
+    assert.ok(Array.isArray(robotClaims.roles) &&
+              robotClaims.roles.indexOf("robots") >= 0,
+      "roleMemberApplication is what this token's roles claim is made of; " +
+      "it carried " + JSON.stringify(robotClaims.roles));
+  });
 
   // AND THE SAME NAME AS A PERSON HOLDS NOTHING. The three membership lists
   // are three relations, not one list with a label on it — a bug that merged
@@ -1124,6 +1145,60 @@ async function groupsAndApplicationsHoldRoles() {
       String(asPerson.text).slice(0, 300));
   });
   log.debug("Leaving groupsAndApplicationsHoldRoles().");
+}
+
+// ---------------------------------------------------------------------------
+// 6b. APPLICATION PERMISSIONS (#93): who may hold a role, its display name and
+// stable id, and the roles an application holds, read from its own side.
+// ---------------------------------------------------------------------------
+async function applicationPermissions() {
+  log.debug("Entering applicationPermissions().");
+  log.info("=== Application permissions: member types, label, id (#93) ===");
+  const MACHINES = "machines";
+  await act("roles", "create-role",
+            { role: MACHINES, displayName: "Batch machines",
+              memberTypes: ["application"] },
+            "made an applications-only role with a display name");
+  const person = await postJson(api("/roles/add-member"),
+    { role: MACHINES, kind: "user", member: HOLDER });
+  check("a person is refused on an applications-only role", function () {
+    assert.strictEqual(person.status, 400,
+      "the role says who may hold it; it answered " + person.status + " " +
+      String(person.text).slice(0, 300));
+  });
+  const badType = await postJson(api("/roles/create-role"),
+    { role: "oddities", memberTypes: ["robot"] });
+  check("and a member type that is not user or application is refused",
+    function () {
+      assert.strictEqual(badType.status, 400,
+        "memberTypes is a closed set; it answered " + badType.status);
+    });
+  await act("roles", "add-member",
+            { role: MACHINES, kind: "application", member: ROBOT },
+            "given the client the applications-only role");
+  const listed = await get(api("/roles"));
+  const row = ((listed.body && listed.body.roles) || [])
+    .filter(function (one) {
+      return one.name === MACHINES;
+    })[0] || null;
+  check("the register shows its display name, member types and an id",
+    function () {
+      assert.ok(row && row.displayName === "Batch machines" &&
+                (row.memberTypes || []).join() === "application" &&
+                /^[0-9a-f-]{36}$/.test(String(row.id || "")),
+        "GET /admin-api/roles answered " + JSON.stringify(row));
+    });
+  const app = await get(api("/applications?application=" + ROBOT));
+  const held = ((app.body && app.body.applicationRoles &&
+                 app.body.applicationRoles.held) || []).map(function (one) {
+    return one.name;
+  });
+  check("and the client's own page lists the roles it holds", function () {
+    assert.ok(held.indexOf(MACHINES) >= 0 && held.indexOf("robots") >= 0,
+      "GET /admin-api/applications?application= carried " +
+      JSON.stringify(app.body && app.body.applicationRoles));
+  });
+  log.debug("Leaving applicationPermissions().");
 }
 
 // ---------------------------------------------------------------------------
@@ -1354,6 +1429,7 @@ async function test() {
     await theTokenEndpointRefuses();
     await theAuthorizationEndpointRefuses();
     await groupsAndApplicationsHoldRoles();
+    await applicationPermissions();
     await wsTrustWithNoAppliesTo();
     await turningItOff();
     await theRegisterRefuses();

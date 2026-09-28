@@ -1478,20 +1478,15 @@ class VcVerifier {
     }
     let encKey: any = null;
     if (responseMode === 'direct_post.jwt') {
-      const pair = crypto.generateKeyPairSync('ec', { namedCurve: 'P-256' });
       // The kid NAMES the transaction: the encrypted response carries no
       // readable `state`, and its JWE header's `kid` is how the Response URI
-      // finds whose key opens it.
-      const kid = DIRECT_POST_JWT_KID + state;
-      const publicJwk = Object.assign(pair.publicKey.export({ format: 'jwk' }),
-        { use: 'enc', alg: 'ECDH-ES', kid: kid });
-      const privatePem = String(pair.privateKey.export(
-        { type: 'pkcs8', format: 'pem' }));
-      const sealed = this.deps.keystore.seal(privatePem,
-                                             'oid4vp direct_post.jwt key');
-      encKey = { kid: kid, sealed: sealed || '',
-                 plain: sealed ? '' : privatePem };
-      request.client_metadata.jwks = { keys: [publicJwk] };
+      // finds whose key opens it. One key per alg in
+      // `oid4vp.responseEncryptionKeyAlgs` (#82), each kid that name plus
+      // the alg's suffix — see responseKeys().
+      const made = this.responseKeys(DIRECT_POST_JWT_KID + state,
+                                     'oid4vp direct_post.jwt key');
+      encKey = made.encKey;
+      request.client_metadata.jwks = { keys: made.publicJwks };
       request.client_metadata.encrypted_response_enc_values_supported =
         DC_API_ENC_VALUES;
     }
@@ -1672,16 +1667,10 @@ class VcVerifier {
     };
     let encKey: any = null;
     if (responseMode === 'dc_api.jwt') {
-      const pair = crypto.generateKeyPairSync('ec', { namedCurve: 'P-256' });
-      const kid = 'dcapi-' + randomId(8);
-      const publicJwk = Object.assign(pair.publicKey.export({ format: 'jwk' }),
-        { use: 'enc', alg: 'ECDH-ES', kid: kid });
-      const privatePem = String(pair.privateKey.export(
-        { type: 'pkcs8', format: 'pem' }));
-      const sealed = keystore.seal(privatePem, 'oid4vp dc_api response key');
-      encKey = { kid: kid, sealed: sealed || '',
-                 plain: sealed ? '' : privatePem };
-      clientMetadata.jwks = { keys: [publicJwk] };
+      const made = this.responseKeys('dcapi-' + randomId(8),
+                                     'oid4vp dc_api response key');
+      encKey = made.encKey;
+      clientMetadata.jwks = { keys: made.publicJwks };
       clientMetadata.encrypted_response_enc_values_supported =
         DC_API_ENC_VALUES;
     }
@@ -1713,6 +1702,107 @@ class VcVerifier {
     return { origin: origin, protocol: DC_API_PROTOCOL,
              responseMode: responseMode, request: requestObject,
              encKey: encKey };
+  }
+
+  // -------------------------------------------------------------------------
+  // THE KEYS AN ENCRYPTED RESPONSE MAY BE ENCRYPTED TO (#82): one ephemeral
+  // key pair per alg in `oid4vp.responseEncryptionKeyAlgs`, in its order —
+  // by default the X-Wing hybrid (HPKE-10-KE) first and the P-256 ECDH-ES
+  // key HAIP requires second, rcbj's decision on #82 — each published in
+  // `client_metadata.jwks` with `use: enc`, its `alg` and a kid, and each
+  // private half SEALED on the transaction under the key-encryption key
+  // where one exists, exactly as the one ECDH-ES key always was.
+  //
+  // `kidBase` is the transaction's name. The ECDH-ES key keeps it as its
+  // kid unchanged; every other key is that name plus `.` and the alg in
+  // lower case, which `transactionKidBase()` strips to find the transaction.
+  // Returns `{ publicJwks, encKey }`, `encKey.keys` the sealed private
+  // halves by kid.
+  // -------------------------------------------------------------------------
+  private responseKeys(kidBase: string, label: string): any {
+    const { log, config, keystore, stsCrypto } = this.deps;
+    log.debug("Entering VcVerifier.responseKeys(). " + label);
+    const listed = [].concat(config.value('oid4vp.responseEncryptionKeyAlgs') ||
+                             [])
+      .map(function (one) {
+        return String(one).trim();
+      })
+      .filter(function (one, i, all) {
+        return one && all.indexOf(one) === i &&
+               (one === 'ECDH-ES' ||
+                (!!stsCrypto.describeJweKemAlg(one) &&
+                 !stsCrypto.isIntegratedJweAlg(one)));
+      });
+    const algs = listed.length ? listed : ['ECDH-ES'];
+    const publicJwks = [];
+    const keys = [];
+    algs.forEach(function (alg) {
+      const kid = alg === 'ECDH-ES' ? kidBase
+        : kidBase + '.' + alg.toLowerCase().replace(/[^a-z0-9]+/g, '');
+      let publicJwk;
+      let secret;
+      let kind;
+      if (alg === 'ECDH-ES') {
+        const pair = crypto.generateKeyPairSync('ec',
+                                                { namedCurve: 'P-256' });
+        publicJwk = Object.assign(pair.publicKey.export({ format: 'jwk' }),
+                                  { use: 'enc', alg: 'ECDH-ES', kid: kid });
+        secret = String(pair.privateKey.export(
+          { type: 'pkcs8', format: 'pem' }));
+        kind = 'pem';
+      } else {
+        const pair = stsCrypto.generateJweKemKeyPair(alg, kid);
+        publicJwk = pair.publicJwk;
+        secret = JSON.stringify(pair.privateJwk);
+        kind = 'jwk';
+      }
+      const sealed = keystore.seal(secret, label);
+      publicJwks.push(publicJwk);
+      keys.push({ kid: kid, alg: alg, kind: kind, sealed: sealed || '',
+                  plain: sealed ? '' : secret });
+    });
+    const primary = keys.filter(function (one) {
+      return one.alg === 'ECDH-ES';
+    })[0] || keys[0];
+    log.debug("Leaving VcVerifier.responseKeys(). " + algs.join(', '));
+    return { publicJwks: publicJwks,
+             encKey: { kid: primary.kid, keys: keys, label: label } };
+  }
+
+  // The transaction name inside a response key's kid: the kid itself for the
+  // ECDH-ES key, the kid less its `.alg` suffix for any other.
+  private transactionKidBase(kid: string): string {
+    const { log } = this.deps;
+    log.debug("Entering VcVerifier.transactionKidBase().");
+    log.debug("Leaving VcVerifier.transactionKidBase().");
+    return String(kid || '').replace(/\.[a-z0-9]+$/, '');
+  }
+
+  // Open an encrypted response with the transaction's key the JWE's kid
+  // names — only that key, only by its own alg, only with the `enc` values
+  // the request offered.
+  private openResponse(encKey: any, compact: string, kid: string): any {
+    const { log, keystore, stsCrypto } = this.deps;
+    log.debug("Entering VcVerifier.openResponse(). kid=" + kid);
+    const entry = (encKey && encKey.keys || []).filter(function (one) {
+      return one.kid === kid;
+    })[0];
+    if (!entry) {
+      log.debug("Leaving VcVerifier.openResponse(). No such key.");
+      throw new Error('the JWE kid "' + (kid || '(absent)') + '" names none ' +
+                      'of the keys this request offered');
+    }
+    const secret = entry.sealed ? keystore.open(entry.sealed, encKey.label)
+      : entry.plain;
+    const out = stsCrypto.decryptJweCompact(compact, Object.assign({
+      allowedAlg: [entry.alg],
+      allowedEnc: DC_API_ENC_VALUES,
+      expectedKid: entry.kid
+    }, entry.kind === 'jwk'
+      ? { privateJwk: JSON.parse(String(secret || '{}')) }
+      : { privateKey: crypto.createPrivateKey(String(secret || '')) }));
+    log.debug("Leaving VcVerifier.openResponse(). " + entry.alg + ".");
+    return out;
   }
 
   // A Request Object under an x509 Client Identifier (#230): signed with the
@@ -3407,15 +3497,19 @@ class VcVerifier {
                       'carries no `response`');
       }
       try {
-        const pem = dc.encKey.sealed ?
-          keystore.open(dc.encKey.sealed, 'oid4vp dc_api response key') :
-          dc.encKey.plain;
-        const opened = stsCrypto.decryptJweCompact(data.response, {
-          privateKey: crypto.createPrivateKey(String(pem || '')),
-          allowedAlg: ['ECDH-ES'],
-          allowedEnc: DC_API_ENC_VALUES,
-          expectedKid: dc.encKey.kid
-        });
+        let kid = '';
+        try {
+          kid = String(JSON.parse(Buffer.from(String(data.response)
+            .split('.')[0], 'base64url').toString('utf8')).kid || '');
+        } catch (e) {
+          log.debug("Caught in VcVerifier.answerDcApi(): " +
+                    ((e && e.message) || e));
+          kid = '';
+        }
+        // One of the request's keys, by the JWE's kid (#82); a JWE with no
+        // kid is tried against the ECDH-ES key it has always been sent to.
+        const opened = this.openResponse(dc.encKey, data.response,
+                                         kid || dc.encKey.kid);
         data = JSON.parse(opened.plaintext);
       } catch (e) {
         log.debug("Caught in VcVerifier.answerDcApi(): " +
@@ -3472,24 +3566,21 @@ class VcVerifier {
                 ((e && e.message) || e));
       kid = '';
     }
-    const record = kid.indexOf(DIRECT_POST_JWT_KID) === 0
-      ? vpTransactions.get(kid.slice(DIRECT_POST_JWT_KID.length)) : null;
-    if (!record || !record.encKey || record.encKey.kid !== kid) {
+    const base = this.transactionKidBase(kid);
+    const record = base.indexOf(DIRECT_POST_JWT_KID) === 0
+      ? vpTransactions.get(base.slice(DIRECT_POST_JWT_KID.length)) : null;
+    if (!record || !record.encKey || !(record.encKey.keys || []).some(
+      function (one) {
+        return one.kid === kid;
+      })) {
       log.debug("Leaving VcVerifier.openEncryptedResponse(). No key.");
       return { ok: false, why: 'the encrypted response names no key of an ' +
                'Authorization Request outstanding here (its JWE kid is "' +
                kid + '").' };
     }
     try {
-      const pem = record.encKey.sealed
-        ? keystore.open(record.encKey.sealed, 'oid4vp direct_post.jwt key')
-        : record.encKey.plain;
-      const plain = stsCrypto.decryptJweCompact(String(form.response), {
-        privateKey: crypto.createPrivateKey(String(pem || '')),
-        allowedAlg: ['ECDH-ES'],
-        allowedEnc: DC_API_ENC_VALUES,
-        expectedKid: kid
-      });
+      const plain = this.openResponse(record.encKey, String(form.response),
+                                      kid);
       const body = JSON.parse(plain.plaintext);
       log.debug("Leaving VcVerifier.openEncryptedResponse(). Opened.");
       return { ok: true, encrypted: true,

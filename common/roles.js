@@ -180,6 +180,20 @@ const SCHEMA = {
             'or assertion for that application carries it as `<role>`, and ' +
             'no other application\'s token carries it at all. The ' +
             'application\'s `appRequiredRole` may name it by `<role>`.' },
+    { name: 'roleAllowedMemberType',
+      what: 'WHO MAY HOLD this role (#93): `user` (people, directly or ' +
+            'through a group) and `application` (an application as ' +
+            'itself). Multi-valued; absent, both may — every role written ' +
+            'before it. A member of a kind the role does not allow is ' +
+            'refused when the role is written. The two console roles ' +
+            'cannot be restricted: the roster grants their people and the ' +
+            'seed their application.' },
+    { name: 'displayName',
+      what: 'An optional name for people to read (#93). The role\'s NAME ' +
+            'is still what a token carries, what a requirement names and ' +
+            'what the register is keyed on; this is only its label on the ' +
+            'console and the API. Its stable id is the entry\'s ' +
+            '`entryUUID`, kept across every edit.' },
     { name: 'description',
       what: 'What the role is for, for the next person.' }
   ]
@@ -393,6 +407,14 @@ function xacmlUserGroupName() {
  */
 // THE SEPARATOR IN AN APPLICATION ROLE'S NAME (#310): `reader@payroll`.
 const APPLICATION_SEPARATOR = '@';
+
+// THE KINDS OF MEMBER A ROLE MAY RESTRICT ITSELF TO (#93),
+// `roleAllowedMemberType`'s values: `user` is a person, held directly or
+// through a group of people; `application` an application as itself.
+/**
+ * The member types a role may be restricted to (`roleAllowedMemberType`).
+ */
+const MEMBER_TYPES = ['user', 'application'];
 
 const BUILT_IN_NAMES = BUILT_IN.map(function (one) {
   return one.name;
@@ -669,7 +691,8 @@ function allValues(attributes, name) {
  *
  * A console role's groups and permission come from the settings and the
  * table, not the entry.
- * @returns one row per role: `name`, `dn`, `description`, `users`, `groups`,
+ * @returns one row per role: `name`, `dn`, `id` (its entryUUID),
+ *   `displayName`, `memberTypes`, `description`, `users`, `groups`,
  *   `applications`, `permissions`, `console` and `builtIn: false`; empty
  *   with no directory
  */
@@ -696,6 +719,13 @@ function all() {
                                       application.length - 1)
         : entry.name,
       dn: entry.dn,
+      // ITS STABLE ID (#93): the entry's entryUUID, which the directory keeps
+      // across every rewrite of the entry and a delete and re-create does
+      // not, so a caller holding it can tell the role from a namesake.
+      id: firstValue(at, 'entryUUID').toLowerCase(),
+      displayName: firstValue(at, 'displayName'),
+      // WHO MAY HOLD IT (#93); empty is both kinds.
+      memberTypes: allValues(at, 'roleAllowedMemberType'),
       description: firstValue(at, 'description'),
       // A console role's people and groups are the roster's, never stored:
       // see THE TWO CONSOLE ROLES.
@@ -798,7 +828,8 @@ function checkName(name) {
  * A person or a foreign group on a console role is refused: its people are
  * the console roster's. A console role's permission is fixed.
  * @param name - the role name
- * @param record - `{ description, users, groups, applications, permissions }`
+ * @param record - `{ description, displayName, memberTypes, users, groups,
+ *   applications, permissions, application }`
  * @returns `{ ok: true, name }`, or `{ ok: false, why }` carrying an error
  *   code
  */
@@ -860,6 +891,54 @@ function write(name, record) {
                   'granting one role would be two answers. An application ' +
                   'is added here.' }, 'STS-XACML-0075');
   }
+  // WHO MAY HOLD IT (#93): `user`, `application`, both, or — none named —
+  // both. Checked against the members being written, so a restriction and a
+  // member it excludes cannot both be stored, in either order.
+  const memberTypes = [];
+  const unknownType = (Array.isArray(given.memberTypes) ? given.memberTypes
+    : String(given.memberTypes || '').split(/[\s,]+/))
+    .map(function (one) {
+      return String(one).trim().toLowerCase();
+    }).filter(Boolean).filter(function (one) {
+      if (MEMBER_TYPES.indexOf(one) < 0) {
+        return true;
+      }
+      if (memberTypes.indexOf(one) < 0) {
+        memberTypes.push(one);
+      }
+      return false;
+    });
+  if (unknownType.length) {
+    log.debug('Leaving write(). An unknown member type.');
+    return errorCodes.mark({ ok: false,
+             why: 'A role\'s member types are ' + MEMBER_TYPES.join(' and ') +
+                  '; "' + unknownType.join('", "') + '" is not one.' },
+             'STS-XACML-0081');
+  }
+  if (consoleRow && memberTypes.length) {
+    log.debug('Leaving write(). A console role cannot be restricted.');
+    return errorCodes.mark({ ok: false,
+             why: '"' + name + '" is one of the two console roles: the ' +
+                  'console roster grants it to people and the seed to the ' +
+                  'management API\'s application, so it holds both kinds and ' +
+                  'cannot be restricted to one.' }, 'STS-XACML-0083');
+  }
+  const excluded = memberTypes.length ? [
+    memberTypes.indexOf('user') < 0 &&
+      ((given.users || []).length || (given.groups || []).length)
+      ? 'people or groups' : '',
+    memberTypes.indexOf('application') < 0 &&
+      (given.applications || []).length ? 'applications' : ''
+  ].filter(Boolean) : [];
+  if (excluded.length) {
+    log.debug('Leaving write(). A member of a kind the role excludes.');
+    return errorCodes.mark({ ok: false,
+             why: '"' + name + '" may be held by ' +
+                  (memberTypes.indexOf('user') >= 0 ? 'people' :
+                                                      'applications') +
+                  ' only, and ' + excluded.join(' and ') + ' cannot be ' +
+                  'its members.' }, 'STS-XACML-0082');
+  }
   // THE CLASS THE SCHEMA ABOVE DECLARES, written on the entry (2026-09-23).
   // Until then a role was the one registry entry carrying no objectClass at
   // all — `cn` and the role attributes only — so `(objectClass=stsRole)`
@@ -878,6 +957,9 @@ function write(name, record) {
     roleMemberGroup: (given.groups || []).map(String),
     roleMemberApplication: (given.applications || []).map(String),
     roleApplication: application ? [application] : [],
+    roleAllowedMemberType: memberTypes,
+    displayName: String(given.displayName || '').trim()
+      ? [String(given.displayName).trim()] : [],
     // A native role's permission is fixed (see THE NATIVE ROLES) and
     // written as such, so an ldapsearch shows what the role authorizes.
     rolePermission: nativeRoleFor(name) ? [nativeRoleFor(name).permission]
@@ -1281,6 +1363,7 @@ module.exports = {
   CONSOLE_ROLES: CONSOLE_ROLES,
   CONSOLE_ROLE_APPLICATION: CONSOLE_ROLE_APPLICATION,
   APPLICATION_SEPARATOR: APPLICATION_SEPARATOR,
+  MEMBER_TYPES: MEMBER_TYPES,
   consoleRoleFor: consoleRoleFor,
   isConsoleRole: isConsoleRole,
   NATIVE_ROLES: NATIVE_ROLES,

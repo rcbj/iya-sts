@@ -648,7 +648,14 @@ class Saml2Sso {
                'service provider calls it directly, which is the whole point ' +
                'of the artifact profile.</td></tr><tr><td><a ' +
                'href="' + SLO_PATH + '">' + SLO_PATH + '</a></td><td>Single ' +
-               'Logout, both directions.</td></tr><tr><td><a ' +
+               'Logout, both directions.</td></tr><tr><td><code>' +
+               UNSOLICITED_PATH + '</code></td><td>Identity-provider-' +
+               'initiated sign-in: an unsolicited Response to the service ' +
+               'provider <code>providerId</code> names ' +
+               '(<code>saml2.unsolicitedSso</code>).</td></tr><tr><td><code>' +
+               AA_PATH + '</code></td><td>The attribute authority: a SOAP ' +
+               '<code>&lt;samlp:AttributeQuery&gt;</code>, the Assertion ' +
+               'Query and Request profile.</td></tr><tr><td><a ' +
                'href="' + METADATA_PATH + '">' + METADATA_PATH +
                  '</a></td><td>The ' +
                'signed identity provider metadata. ' +
@@ -1060,7 +1067,8 @@ class Saml2Sso {
    *
    * @param base - the realm's base URL
    * @param spEntityId - the service provider's entityID
-   * @returns the `sso`, `slo`, `ars`, `aa` and `metadata` URLs
+   * @returns the `sso`, `slo`, `ars`, `aa`, `unsolicited` and `metadata`
+   *   URLs
    */
   endpointsFor(base, spEntityId) {
     const { log } = this.deps.helpers;
@@ -1073,6 +1081,7 @@ class Saml2Sso {
       slo: base + SLO_PATH + suffix,
       ars: base + ARS_PATH + suffix,
       aa: base + AA_PATH + suffix,
+      unsolicited: base + UNSOLICITED_PATH + suffix,
       metadata: base + METADATA_PATH + suffix
     };
   }
@@ -5259,9 +5268,15 @@ class Saml2Sso {
       '<code>&lt;samlp:AuthnRequest&gt;</code>, on the HTTP Redirect binding ' +
       '(a GET) or the HTTP POST binding (a form POST), and answers with a ' +
       '<code>&lt;samlp:Response&gt;</code> on whichever binding the ' +
-      'request\'s <code>ProtocolBinding</code> asked for. It authenticates ' +
-      'nobody: the username typed at the sign-in screen becomes the subject ' +
-      'of the assertion.</p><h2>Try it</h2><ul><li><a ' +
+      'request\'s <code>ProtocolBinding</code> asked for. ' +
+      (mode.verifiesCredentials()
+        ? 'This realm is in PRODUCT mode, so the person signs in with the ' +
+          'password on their directory entry, and a second factor where ' +
+          'the realm\'s authentication policy asks for one.'
+        : 'This realm is in development mode, so it checks no password: ' +
+          'the username typed at the sign-in screen becomes the subject of ' +
+          'the assertion.') +
+      '</p><h2>Try it</h2><ul><li><a ' +
       'href="' + SP_PATH + '">' + SP_PATH + '</a> — a mock service ' +
       'provider here that sends a complete AuthnRequest over each of the ' +
       'three bindings and then verifies the response check by ' +
@@ -5332,18 +5347,43 @@ class Saml2Sso {
        ['Subject/NameID', 'Read as a hint to pre-fill the sign-in screen, ' +
                           'exactly as OIDC\'s login_hint is, and never as a ' +
                           'claim about who is at the browser.'],
-       ['Destination, IssueInstant', 'Recorded in the log. Neither is ' +
-                                     'enforced: there is no clock skew ' +
-                                     'setting for this profile to reject a ' +
-                                     'request under.']
+       ['Destination', 'Where present, it must be the URL the request ' +
+                       'arrived at, and a SIGNED request must carry one ' +
+                       '(saml-core-2.0-os section 3.2.1, ' +
+                       'saml-bindings-2.0-os sections 3.4.5.2 and ' +
+                       '3.5.5.2); otherwise the request ' +
+                       'is refused (STS-SAML-0085).'],
+       ['IssueInstant', 'Required, and refused when it is more than a ' +
+                        'minute in the future or older than ' +
+                        'saml2.requestTtlMin — ' +
+                        Math.round(this.requestWindowMs() / 60000) +
+                        ' minute(s) in this realm — plus a minute of clock ' +
+                        'disagreement (STS-SAML-0086).'],
+       ['Version', 'Must be 2.0 (saml-core-2.0-os section 3.2.2.1); ' +
+                   'anything else is refused (STS-SAML-0087).'],
+       ['ID', 'Answered ONCE: the same issuer and ID arriving again inside ' +
+              'the freshness window is refused as a replay (STS-SAML-0088), ' +
+              'and so is every request while the store that records them ' +
+              'cannot be asked (STS-SAML-0089).']
       ].map(function (r) {
         return '<tr><td><code>' + r[0] + '</code></td><td>' + r[1] +
                '</td></tr>';
-      }).join('') + '</tbody></table><div class="meta"><div>Not implemented, ' +
-      'and stated rather than left to be discovered: the ECP profile and its ' +
-      'PAOS binding, identity-provider-initiated SSO with an unsolicited ' +
-      'Response, Name Identifier Management, and the Assertion Query and ' +
-      'Request profile.</div></div>';
+      }).join('') + '</tbody></table><h2>Beside it</h2><ul><li><code>' +
+      xmlEscape(where.unsolicited) + '?providerId=&lt;entityID&gt;</code> ' +
+      '— identity-provider-initiated sign-in: an unsolicited Response ' +
+      '(saml-profiles-2.0-os section 4.1.5) to the service provider it ' +
+      'names. ' +
+      (config.value('saml2.unsolicitedSso')
+        ? 'Answered in this realm.'
+        : 'Turned OFF in this realm (saml2.unsolicitedSso).') +
+      '</li><li><code>' + xmlEscape(where.aa) + '</code> — the attribute ' +
+      'authority: a SOAP <code>&lt;samlp:AttributeQuery&gt;</code> (the ' +
+      'Assertion Query and Request profile, section 6), answered for a ' +
+      'service provider about a person it is signed in for.</li></ul>' +
+      '<div class="meta"><div>Not implemented, and stated rather than left ' +
+      'to be discovered: the ECP profile and its PAOS binding (refused by ' +
+      'name), Name Identifier Management, and the Assertion Query and ' +
+      'Request profile\'s AuthnQuery and AuthzDecisionQuery.</div></div>';
   }
 
   // ===========================================================================

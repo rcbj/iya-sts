@@ -1339,6 +1339,25 @@ Logout Token from another realm's OpenID Provider among it);
 
 ## A PARTNER'S ENCRYPTED ASSERTION (#168, 2026-09-23)
 
+**AND A POST-QUANTUM KEY FOR AN OpenID Connect RELATIONSHIP (#82,
+2026-09-27).**
+* **The key types.** `fedEncryptionKeyType` may be `x-wing` (HPKE-10-KE,
+  ML-KEM-768 + X25519) or `ml-kem-768` (ML-KEM-768), each doing exactly the
+  one management algorithm its AKP key names.
+* **JOSE only.** A SAML 2.0 or WS-Federation relationship is refused them
+  (`STS-FED-0143`), because XML Encryption defines no post-quantum key
+  transport.
+* **Certificate-less rows.** Such a key has NO certificate: no X.509 profile
+  exists for X-Wing, and pki.js issues none. So its row carries `kem` (the
+  alg) and the AKP JWK, with its private half sealed as JSON where a
+  classical row seals a PEM. A partner reads the key from the relationship's
+  JWKS.
+* **Everything else is unchanged.** `rotate()` makes the key with
+  `crypto.generateJweKemKeyPair()` and hands it to the SAME `store()` a
+  classical key goes through: sealing, current and previous, the grace
+  period, retirement. The cryptography is `common/CLAUDE.md`'s
+  *crypto.js section 4a*.
+
 Until #168 an `<EncryptedAssertion>` was refused as "no assertion", a JWE ID
 Token was read as a JWS and failed on the key, and no key was published — so
 the only way to federate was for the partner to send the person's NameID, mail
