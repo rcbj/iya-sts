@@ -164,14 +164,21 @@ data "aws_iam_policy_document" "workload_boundary" {
     actions   = ["acm:ExportCertificate"]
     resources = [local.arn.acm]
   }
-  # MAIL THROUGH SES (#311): send as an identity under a public name an
+  # MAIL THROUGH SES (#311): send FROM an address at a public name an
   # environment may use (environment/mail.tf), and nothing else in SES — no
-  # identity management, no account settings. The environment's task role
-  # names its one identity; this is the ceiling over every environment.
+  # identity management, no account settings. Any identity, because the SES
+  # sandbox authorizes against the RECIPIENT's verified identity too; the
+  # `ses:FromAddress` condition is the scope. The environment's task role
+  # names its one From address; this is the ceiling over every environment.
   statement {
-    sid       = "SendMailAsAnEnvironmentIdentity"
+    sid       = "SendMailFromAnEnvironmentAddress"
     actions   = ["ses:SendEmail", "ses:SendRawEmail"]
-    resources = local.ses_identity_arns
+    resources = ["arn:${local.partition}:ses:${local.region}:${local.account_id}:identity/*"]
+    condition {
+      test     = "StringLike"
+      variable = "ses:FromAddress"
+      values   = local.ses_from_patterns
+    }
   }
 }
 

@@ -86,16 +86,26 @@ data "aws_iam_policy_document" "task" {
     }
   }
 
-  # The mail channel's SES transport (#311, mail.tf), and only as the one
-  # identity this environment verified. SES v2's SendEmail authorizes against
-  # the identity of the From address (and a configuration set, which this
-  # environment does not use).
+  # The mail channel's SES transport (#311, mail.tf), and only FROM this
+  # environment's own address. SCOPED BY `ses:FromAddress`, NOT BY THE
+  # IDENTITY'S ARN: while the account is in the SES sandbox, SES authorizes a
+  # send against EVERY identity it involves — the recipient's verified
+  # identity as well as the sender's — so a policy naming only
+  # `identity/<domain>` was refused on `identity/tester1@iyasec.io` (the first
+  # testidp send, 2026-09-28, STS-MAIL-0008). The condition is what keeps it
+  # narrow: any identity, only this From address. The transport always sets
+  # `FromEmailAddress` (common/mail_transports.ts), which is what the key reads.
   dynamic "statement" {
     for_each = local.mail_ses ? [1] : []
     content {
-      sid       = "SendMailAsTheEnvironmentsOwnIdentity"
+      sid       = "SendMailFromTheEnvironmentsOwnAddress"
       actions   = ["ses:SendEmail", "ses:SendRawEmail"]
-      resources = [aws_sesv2_email_identity.mail[0].arn]
+      resources = ["arn:${local.partition}:ses:${local.region}:${local.account_id}:identity/*"]
+      condition {
+        test     = "StringEquals"
+        variable = "ses:FromAddress"
+        values   = [local.mail_from]
+      }
     }
   }
 }

@@ -337,7 +337,10 @@ pointed at.
 **`mail_ses_domain` turns it on, and only `testidp` sets it** (to its public
 name). `environment/mail.tf` creates the SES v2 domain identity with Easy
 DKIM and writes its three `._domainkey` CNAMEs; the task role may
-`ses:SendEmail` as that one identity; the nodes get `STS_MAIL_TRANSPORT=ses`,
+`ses:SendEmail` from that one address — scoped by `ses:FromAddress` over
+`identity/*`, because the SANDBOX also authorizes against the recipient's
+identity and a policy naming only the domain's ARN was refused (the first
+send, 2026-09-28); the nodes get `STS_MAIL_TRANSPORT=ses`,
 `STS_MAIL_FROM` (`no-reply@<domain>` unless `mail_from` says otherwise) and
 the region. Credentials are the task role's — `mail.sesRegion`'s description
 says the transport never reads one from a setting. `dev` and `ci` set nothing
@@ -348,9 +351,10 @@ and plan no change.
   and the zone's own mail records are out of reach. DMARC aligns on the DKIM
   `d=`, so SES's own envelope sender does not matter.
 * **The foundation owes two statements**, so an administrator re-applies it
-  first: `ses:SendEmail`/`SendRawEmail` in the WORKLOAD BOUNDARY, and the
-  identity actions for the deployer — both scoped to identities named in
-  `public_dns` (`local.ses_identity_arns`), never a wildcard.
+  first: `ses:SendEmail`/`SendRawEmail` in the WORKLOAD BOUNDARY from an
+  address at a `public_dns` name (`local.ses_from_patterns`), and the identity
+  actions for the deployer on identities named there
+  (`local.ses_identity_arns`).
 * **The image needs `@aws-sdk/client-sesv2` in `STS_CLOUD_SDKS`**, or a
   product node refuses to start (`STS-MAIL-0002`). `testidp-deploy.yml` and
   *Running it by hand* build it that way.

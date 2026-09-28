@@ -39,4 +39,8 @@ locals {
     "arn:${local.partition}:ses:${local.region}:${local.account_id}:identity/${n}"
     if !startswith(n, "*")
   ]
+  ses_from_patterns = [
+    for n in distinct(flatten(values(var.public_dns))) : "*@${n}"
+    if !startswith(n, "*")
+  ]
 }
