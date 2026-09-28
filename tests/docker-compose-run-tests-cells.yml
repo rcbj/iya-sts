@@ -42,6 +42,16 @@
 # THE INTER-CELL CHANNEL is port 8446 on each (`cells.port`), dialled by the
 # container name the other cell's `cells.hostname` gives it. Nothing
 # publishes it.
+#
+# CELL A DIALS CELL B THROUGH A LINK (`sts-cell-link`, tests/tools/cell_
+# link.js): cell A's /etc/hosts names the link as `sts2`, and the link passes
+# each TCP connection through unread to cell B's channel port — the TLS is
+# end to end and the name the certificate is checked against is still
+# `sts2`. It is there so that a job can make cell B UNREACHABLE from cell A
+# (#98 D6) with a POST to the link's control port, which the runner can reach
+# and a docker socket it does not have would otherwise be needed for; it
+# restores it the same way. Cell B dials cell A directly. Everything else
+# cell A addresses by name is unaffected: nothing else it dials is `sts2`.
 # ===========================================================================
 services:
   # A fresh cell key-encryption key per cell and per run. Kept when present,
@@ -87,7 +97,26 @@ services:
     environment:
       - POSTGRES_TLS_CN=postgres-cellb
 
+  # The link cell A reaches cell B's channel through; see the header. The
+  # tests image, because it is built for the run and carries node, bunyan
+  # and the script.
+  sts-cell-link:
+    container_name: ${STS_CELL_LINK_CONTAINER_NAME:-sts-docker-tests-cell-link}
+    image: ${STS_TESTS_IMAGE:-${IMAGE_REGISTRY:-ghcr.io/rcbj/iya-sts}/mock-sts-tests:${IMAGE_TAG:-latest}}
+    restart: "no"
+    command: ["node", "tests/tools/cell_link.js"]
+    environment:
+      - CELL_LINK_LISTEN_PORT=8446
+      - CELL_LINK_CONTROL_PORT=8447
+      - CELL_LINK_TARGET=sts2:8446
+    networks:
+      default:
+        ipv4_address: ${STS_CELL_LINK_ADDRESS:-172.30.0.21}
+
   sts:
+    # `sts2` is the link here, and only here (the header).
+    extra_hosts:
+      - "sts2:${STS_CELL_LINK_ADDRESS:-172.30.0.21}"
     environment:
       - STS_CELL_ID=cella
       - STS_CELL_JURISDICTION=us
@@ -106,6 +135,8 @@ services:
     volumes:
       - sts-cell-kek-a:/run/secrets/cell-kek:ro
     depends_on:
+      sts-cell-link:
+        condition: service_started
       postgres-global:
         condition: service_healthy
       sts-cell-kek:
@@ -160,6 +191,9 @@ services:
       - STS_TEST_CELL_A_URL=https://sts:8081
       - STS_TEST_CELL_B_URL=https://sts2:8081
       - STS_TEST_CELLS=cella:us,cellb:ca
+      # The switch on the link cell A dials cell B through
+      # (sts_cells_unreachable.js).
+      - STS_TEST_CELL_LINK_URL=http://sts-cell-link:8447
     depends_on:
       sts2:
         condition: service_healthy

@@ -1343,6 +1343,10 @@ and carrying them twice is what made this table's own arithmetic wrong.
 | `tests/vendored/sts_cells_traveller.js` **(ours)** | **THE TRAVELLER** (#98 D8, D9, D10): every request to cell A for a person homed at cell B. The login POST restarts at home — 303 to the original request, an `sts_cell` pin naming no cell in the clear, no session at A; with the pin the flow is relayed to B (the same sign-in URL without the pin is not one A holds); the password signs in at B; the code, redeemed at A, is relayed by its locator (A's relay counter moves); the ID Token and access token verify against A's key set and B publishes the same keys; a PAR pushed at B and started at A with no pin reaches B, pins the browser there, and ends in a code. Found the back-channel placement, the realm-key arbitration and the unpinned artifact relay. Floor of twenty-two checks |
 | `tests/vendored/sts_cells_transfer.js` **(ours)** | **A SESSION HELD AWAY FROM HOME, AND HOME'S AUTHORITY** (#98 D4, D6): in a realm listing `ca>us`, the traveller signs in at home through A and the pin moves to A when the flow ends; A reports a projection and B an export; a second authorization request at A is answered with a code and no sign-in with nothing relayed; then the person is DISABLED at B, and within 90 s A drops the projection, refuses a refresh (`invalid_grant`) and issues no code. Found the mid-flow pin move. Floor of fourteen checks |
 | `tests/vendored/sts_cells_release.js` **(ours)** | **ANOTHER CELL'S RESIDENTS** (#98 D11): `GET /admin-api/cells/people?cell=cellb` at A is refused under the strict default and names nobody; once the realm lists `ca>us` it is answered with B's residents — the person as `name`, `uuid`, `displayName` and nothing else — and A's directory still does not hold them. Found B refusing a relayed listing as "not another cell". Floor of five checks |
+| `tests/vendored/sts_cells_rehome.js` **(ours)** | **RE-HOMING** (#98 section 8.8): a person homed at B, signed in there and holding a refresh token, is moved with `POST /admin-api/cells/rehome` at B to A. The refresh token is refused `invalid_grant` at B and at A; A's directory holds them and B's does not, with the entryUUID they had; the routing index read at either cell counts one more in A and one fewer in B, and A counts no index conflict taking them in; a sign-in at A is served there — nothing relayed — and the ID Token names the same `sub`. A move asked of B (which no longer holds them) is refused, and with the realm's `cells.jurisdictions` pinned to A's a move to B is 400 naming the jurisdiction and they stay. Found the spurious STS-CELL-0020 conflict. Floor of sixteen checks |
+| `tests/vendored/sts_cells_console.js` **(ours)** | **THE CONSOLE AT CELL B**: an administrator homed at B, given Admin Read there, signs in to `/admin` with every hop answered at B (the public name rewritten to `sts2`, the test-only resolver override) — the authorization request, the sign-in, the offered second factor ignored, and the callback, whose back-channel token request goes to the public name (cell A) and is relayed home by the code's locator; `/admin/cells` drawn at B names `cellb` as this cell and `cella` in `us`, reachable. Found a group's first resident member dropped on its flush. Floor of seven checks |
+| `tests/vendored/sts_cells_ldap.js` **(ours)** | **A BIND AT CELL B FOR A PERSON HOMED AT A** (#98 D2): over LDAPS at `sts2:636`, B's directory not holding them, the right password binds (verified at home) and a wrong one is `invalidCredentials` (49), not `unavailable`. Floor of four checks |
+| `tests/vendored/sts_cells_unreachable.js` **(ours)** | **HOME UNREACHABLE** (#98 D6): in a realm listing `ca>us`, a person homed at B holds a session at A (a refresh token minted at A); with the link up a refresh at A is confirmed at home and a bind at A's LDAPS is verified at home. The link cut (`tests/tools/cell_link.js`): under `fail-closed` the refresh is `invalid_grant` (STS-CELL-0056), a new sign-in at A restarts at home and is 503 with Retry-After (STS-CELL-0030), a bind at A is `unavailable` (52, STS-CELL-0147); under `fail-open` the same refresh token (not spent by the refusal) is answered on home's last confirmation and a new sign-in is still 503. The setting is reset and the link restored in a `finally`, and a refresh is confirmed at home again. Last of the cells jobs. Found the projection shadowing the home-cell bind. Floor of thirteen checks |
 | `tests/vendored/sts_outbound_tls.js` **(ours)** | **NOTHING GOES OUT OVER TLS IT DID NOT VERIFY, IN PRODUCT, OVER HTTP** (#171, 2026-09-23), in a development realm and a product realm it creates and leaves standing, so both halves are asserted whatever mode the service runs in. A realm create naming product mode and a skip in one body refused and nothing created (`STS-CORE-0103`); every `…SkipTlsVerification` and `spiffe.k8sSkipKubeletVerification` refused `true` in the product realm through `config/set`, `realms/set` and an all-or-nothing `config/set-many` that writes nothing, accepted `false`, and accepted `true` in development; a removed `…AllowInsecure` refused naming its replacements. **SSF push to this job's own listeners**: a self-signed listener reached in development with the skip, NOT reached once the realm is switched to product with the skip still stored (and dead-lettered with the certificate failure), a listener certified by a CA the job makes at run time reached in product through `ssf.pushCaFile` (skipped with no shared directory), and a plain-http endpoint refused in product whatever `ssf.pushAllowHttp` says. The RFC 9728 import under federation's policy (a self-signed document loaded only with the skip, in development; plain http refused in product), and `GET /admin-api/xacml/peps` reporting a stored nudge skip as not in force. Floor of twenty-five checks; the listeners are on `OUTBOUND_TEST_HOST` or `GNAP_PUSH_HOST` |
 | `tests/vendored/sts_spiffe_broker.js` **(ours)** | **THE SPIFFE BROKER API OVER MUTUAL TLS** (#170, 2026-09-23), in a development realm and a product realm it creates and leaves standing with SPIFFE off. A CA of the job's own for a trust domain of its own, federated into each realm, and X509-SVIDs under it for a broker, a pod-only broker and a stranger; the brokers through `/admin-api/spiffe/brokers/set` (a non-SPIFFE ID and an empty type list refused). No `broker.spiffe.io` header INVALID_ARGUMENT, no client certificate UNAUTHENTICATED, a stranger PERMISSION_DENIED; no reference INVALID_ARGUMENT with a `google.rpc.ErrorInfo` (WORKLOAD_REFERENCE_INVALID); a type not allowed PERMISSION_DENIED; a missing pid NOT_FOUND (WORKLOAD_NOT_FOUND); pid 1 attested by the unix attestor and answered (FetchJWTSVID, SubscribeToX509SVID; `STS_SPIFFE_BROKER_PID_UID`, 0); a pod by UID over a fake kubelet on `OUTBOUND_TEST_HOST`/`GNAP_PUSH_HOST` — skip-verified in development, through `spiffe.k8sKubeletCaFile` in product (skipped with no shared directory) — and a pod with no entry WORKLOAD_NOT_ENTITLED; a removed broker refused. Ports `STS_SPIFFE_BROKER_PORT_DEV`/`_PROD` (8193, 8194); an endpoint this runner cannot reach is a skip. Thirty-two checks |
 | `tests/vendored/sts_development_only_settings.js` **(ours)** | **THE DEVELOPMENT-ONLY SETTINGS, OVER HTTP** (#104, 2026-09-23), in a development realm and a product realm it creates and leaves standing. A realm create naming product mode and `oauth2.breakIdTokenNonce` in one body refused and nothing created; every marked value refused in the product realm through `config/set` and `realms/set`, an all-or-nothing `config/set-many` writing nothing, and the default accepted; every value accepted in development. Then, in the development realm with the defects on: an authorization code flow's ID Token carrying a spoiled nonce, a poll stream's verification SET failing to verify against the realm's published keys, and `GET /spiffe` reporting both loosening switches; the realm switched to product with every value STILL STORED (and `risk.assessSignIns` off in it, so #62's product-mode risk policy does not ask this job's automated client for a security key): the next ID Token carrying the nonce asked for, `GET /oauth2/rfc9700` reporting the defect not in force, the next SET verifying, `GET /spiffe` reporting attestation on, and a new defect refused. Floor of twenty-five checks |
@@ -3498,7 +3502,7 @@ uses), `logs/00-mock-sts-service-node-b.log` and `logs/00-load-balancer.log`.
 **A FOURTH MODE, RUN ONLY WHEN NAMED**: `./run-tests.sh --modes=cells`. It is
 not in `STS_ALL_MODES`, so a bare run and both CI jobs start exactly the
 stacks they did; `tests/tools/modes.sh` defines it and argues it. It exists
-for the five `sts_cells_*.js` jobs, which prove #98 end to end over HTTP, and
+for the nine `sts_cells_*.js` jobs, which prove #98 end to end over HTTP, and
 every other job run in it asserts what it always did against cell A:
 
 ```bash
@@ -3516,6 +3520,7 @@ every other job run in it asserts what it always did against cell A:
 | the keys | the SERVICE key and every database password from the one OpenBao, as in every mode; a CELL key per cell, written fresh per run by the one-shot `sts-cell-kek` into a volume only that cell mounts (`keys.cellKekProvider=file`) — product mode refuses a cell without one (STS-CELL-0003) and a key in git is key material in git |
 | the names | ONE public name, `https://sts:8081` (the launcher's `STS_PUBLIC_BASE_URL` for a product mode, required by STS-CELL-0005); `sts` and `sts2` in both cells' `tls.hostnames`; the channel on 8446, dialled at `cells.hostname`; nothing published |
 | the runner | `STS_TEST_SERVICE_URL` is cell A, as `sts` is in every mode; `STS_TEST_CELL_A_URL`, `STS_TEST_CELL_B_URL` and `STS_TEST_CELLS` name both cells — a TEST-ONLY resolver override (#98 section 9) |
+| the link | `sts-cell-link` (`tests/tools/cell_link.js`, run from the tests image at `.21`): cell A's `/etc/hosts` names it as `sts2`, and it passes each connection to cell B's channel port through unread — TLS end to end, the name checked still `sts2`. Its control port (`STS_TEST_CELL_LINK_URL`, `POST /down`, `POST /up`, `GET /state`) is how `sts_cells_unreachable.js` makes cell B UNREACHABLE from cell A without a docker socket and without stopping cell B. One direction only: cell B dials cell A directly |
 
 **PRODUCT MODE, ONE PROCESS PER CELL, CLUSTER OFF.** What is under test is
 BETWEEN cells; request workers are `single-node`'s axis and two cells of five
@@ -3561,6 +3566,24 @@ IN THE MODE**, each fixed with a note where it was:
 * `GET /admin-api/cells/people?cell=<B>` is relayed to B by the edge, and B
   refused it as "not another cell" (`admin-ui/cells_admin.ts`).
 
+**AND THE FOUR JOBS ADDED THAT EVENING FOUND THREE MORE**, each fixed with a
+note where it was:
+
+* a group's FIRST resident member in a cell was dropped on the flush that
+  should have written it: the cell half had never been stored, and it was
+  sent with the base's empty half as its base, which the driver's merge read
+  as "stored, and deleted since" — so a console role granted at cell B never
+  held (`persistence/persistence_tiered.js`, `splitChange()`;
+  `tests/cell_tiers.js` holds it in process);
+* a bind at a cell holding a PROJECTION of the person (a session exported
+  there) was verified against the credential-free projection — the right
+  password refused `invalidCredentials`, and an unreachable home read as a
+  wrong password rather than STS-CELL-0147 (`ldap/ldap_server.js`,
+  `finishBind()`);
+* a re-homed person's first flush at the receiving cell raced the sender's
+  index move and was logged and counted as an STS-CELL-0020 conflict
+  (`persistence/persistence_tiered.js`, `indexPeople()`).
+
 **THREE THINGS THE JOBS HAD TO WAIT FOR, AND WHY EACH IS A BOUND NOT A
 SLEEP**: a realm, an application or a setting written at one cell reaches the
 other through the global change log's pull; a person's routing-index rows are
@@ -3569,10 +3592,11 @@ answers (a sign-in elsewhere before then finds nobody to send home); and a
 revocation home pushes is a durable delivery. Each is `until()` with its
 bound in the failure.
 
-**What this mode does not cover yet**: a cell that is DOWN (home
-unreachable, D6's fail-closed), re-homing, the raw Kerberos and LDAP sockets
-at cell B, the console at cell B, and the full suite at cell B — every other
-job talks to cell A. The service log of cell B is
+**What this mode does not cover yet**: raw Kerberos on port 88 at cell B
+(the KDC's socket code is not placed yet — rcbj/id-proto-debugger#317), the
+full suite at cell B — every other job talks to cell A — and a cell that is
+DOWN as a process rather than cut off by the link (what a caller sees is the
+same refused connection). The service log of cell B is
 `logs/00-mock-sts-service-cell-b.log`.
 
 ## APPLICATION CREDENTIALS: THE PAIR, AND THE SPLIT (2026-09-13)

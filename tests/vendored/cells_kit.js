@@ -667,6 +667,187 @@ async function jwksAt(realmBase) {
   return r.json();
 }
 
+// ---------------------------------------------------------------------------
+// AN OAUTH CLIENT'S HALF: the authorization request, the sign-in screen and
+// the token endpoint (added for sts_cells_rehome.js and
+// sts_cells_unreachable.js, 2026-09-28).
+// ---------------------------------------------------------------------------
+/**
+ * An authorization request for a public PKCE client.
+ *
+ * @param realmBase - the cell's URL, realm prefix included
+ * @param clientId - the client
+ * @param redirectUri - its redirect URI
+ * @param pair - `pkce()`
+ * @param state - the state
+ * @returns the URL
+ */
+function authorizeUrl(realmBase, clientId, redirectUri, pair, state) {
+  log.debug("Entering authorizeUrl().");
+  log.debug("Leaving authorizeUrl().");
+  return realmBase + "/oauth2/authorize?" + new URLSearchParams({
+    response_type: "code", client_id: clientId, redirect_uri: redirectUri,
+    scope: "openid profile", state: state, code_challenge: pair.challenge,
+    code_challenge_method: "S256" }).toString();
+}
+
+/**
+ * Starts an authorization request and answers its sign-in screen with a
+ * password: the request, the redirect to the screen, the screen, the POST.
+ *
+ * @param jar - the browser's cookies
+ * @param start - the authorization request's URL
+ * @param username - the login name
+ * @param password - the password
+ * @returns a promise of `{ first, screen, posted }`, each `browse()`'s
+ *   answer — `posted` is the login POST's, whose `location` is where the
+ *   flow goes on (or, for a traveller, where it restarts)
+ */
+async function signInScreen(jar, start, username, password) {
+  log.debug("Entering signInScreen().");
+  const first = await browse(jar, start);
+  assert.ok(first.status >= 300 && first.status < 400 && first.location,
+    "the authorization request did not send the browser to a sign-in " +
+    "screen: " + first.status + " " + said(first.text));
+  const screen = await browse(jar, first.location);
+  const fields = signInFields(screen.text);
+  assert.ok(fields.authnId, "no sign-in screen at " + first.location + ": " +
+    screen.status + " " + said(screen.text));
+  const at = new URL(first.location);
+  const posted = await browse(jar, at.origin + at.pathname,
+    { form: { authn_id: fields.authnId, username: username,
+              password: password, action: "login",
+              csrf_token: fields.csrf } });
+  log.debug("Leaving signInScreen(). " + posted.status);
+  return { first: first, screen: screen, posted: posted };
+}
+
+/**
+ * A POST to a cell's token endpoint.
+ *
+ * @param realmBase - the cell's URL, realm prefix included
+ * @param form - the form
+ * @returns a promise of `{ status, body, raw }`
+ */
+async function tokenCall(realmBase, form) {
+  log.debug("Entering tokenCall().");
+  const r = await fetch(realmBase + "/oauth2/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded",
+               Accept: "application/json" },
+    body: new URLSearchParams(form).toString()
+  });
+  const raw = await r.text();
+  let body = null;
+  try {
+    body = JSON.parse(raw);
+  } catch (e) {
+    // Asserted on with the raw text: a relay that could not reach the
+    // owning cell answers text (STS-CELL-0030).
+    log.debug("Caught in tokenCall(): " + ((e && e.message) || e));
+    body = null;
+  }
+  log.debug("Leaving tokenCall(). " + r.status);
+  return { status: r.status, body: body, raw: raw };
+}
+
+/**
+ * A JWT's payload, unverified — for reading a claim of a token another
+ * assertion has already verified.
+ *
+ * @param jwt - the compact JWS
+ * @returns the payload
+ */
+function claimsOf(jwt) {
+  log.debug("Entering claimsOf().");
+  const part = String(jwt || "").split(".")[1] || "";
+  log.debug("Leaving claimsOf().");
+  return JSON.parse(Buffer.from(part, "base64url").toString("utf8"));
+}
+
+/**
+ * The entryUUID anywhere in a management API answer (the one-person view
+ * carries the entry's attributes under whatever case the directory keeps).
+ *
+ * @param body - the parsed answer
+ * @returns the entryUUID, lower-cased, or ''
+ */
+function entryUuidIn(body) {
+  log.debug("Entering entryUuidIn().");
+  const found = /"entryuuid"\s*:\s*\[?\s*"([0-9a-f-]{36})"/i.exec(
+    JSON.stringify(body || {}));
+  log.debug("Leaving entryUuidIn().");
+  return found ? found[1].toLowerCase() : "";
+}
+
+// ---------------------------------------------------------------------------
+// THE LINK CELL A DIALS CELL B THROUGH (tests/tools/cell_link.js), which a
+// job cuts to make cell B unreachable from cell A (#98 D6).
+// ---------------------------------------------------------------------------
+/**
+ * One call to the link's control port.
+ *
+ * @param method - GET or POST
+ * @param what - `state`, `down` or `up`
+ * @returns a promise of `{ up, connections, accepted }`
+ */
+async function link(method, what) {
+  log.debug("Entering link(). " + method + " " + what);
+  const base = String(process.env.STS_TEST_CELL_LINK_URL || "")
+    .replace(/\/+$/, "");
+  assert.ok(base, "STS_TEST_CELL_LINK_URL is not set: the `cells` mode's " +
+    "layer names the link cell A dials cell B through " +
+    "(tests/docker-compose-run-tests-cells.yml).");
+  const r = await fetch(base + "/" + what, { method: method });
+  const raw = await r.text();
+  assert.strictEqual(r.status, 200, "the link's " + what + " answered " +
+    r.status + ": " + raw.slice(0, 200));
+  log.debug("Leaving link().");
+  return JSON.parse(raw);
+}
+
+// ---------------------------------------------------------------------------
+// A DIRECTORY SOCKET.
+// ---------------------------------------------------------------------------
+/**
+ * One simple bind over LDAPS at a cell's directory, verified against the
+ * trust the runner has for the service (NODE_EXTRA_CA_CERTS), as
+ * sts_ldaps.js does.
+ *
+ * @param cellUrl - the cell's URL; its host is the directory's
+ * @param dn - the DN to bind as
+ * @param password - the password
+ * @returns a promise of `{ code, message }`, code 0 for a success
+ */
+async function ldapBind(cellUrl, dn, password) {
+  log.debug("Entering ldapBind(). " + dn);
+  const ldapjs = require("ldapjs");
+  const host = new URL(cellUrl).hostname;
+  const client = ldapjs.createClient({
+    url: "ldaps://" + host + ":" + (process.env.STS_LDAPS_PORT || 636),
+    reconnect: false, timeout: 30000, connectTimeout: 15000,
+    tlsOptions: { rejectUnauthorized: true, servername: host }
+  });
+  client.on("error", function (e) {
+    // ldapjs emits on the client as well as calling back; the bind in
+    // flight reports it.
+    log.debug("The LDAP client emitted an error: " + e.message);
+  });
+  const out = await new Promise(function (resolve) {
+    client.bind(dn, password, function (e) {
+      resolve({ code: e ? e.code : 0, message: e ? e.message : "" });
+    });
+  });
+  await new Promise(function (resolve) {
+    client.unbind(function () {
+      resolve();
+    });
+  });
+  client.destroy();
+  log.debug("Leaving ldapBind(). " + out.code);
+  return out;
+}
+
 module.exports = {
   cellsFromEnv: cellsFromEnv,
   tokenAt: tokenAt,
@@ -686,5 +867,12 @@ module.exports = {
   setSetting: setSetting,
   settingAt: settingAt,
   verifyJwt: verifyJwt,
-  jwksAt: jwksAt
+  jwksAt: jwksAt,
+  authorizeUrl: authorizeUrl,
+  signInScreen: signInScreen,
+  tokenCall: tokenCall,
+  claimsOf: claimsOf,
+  entryUuidIn: entryUuidIn,
+  link: link,
+  ldapBind: ldapBind
 };

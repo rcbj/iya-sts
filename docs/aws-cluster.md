@@ -200,7 +200,7 @@ This starts cell `cella` (jurisdiction `us`) and cell `cellb` (jurisdiction
 Both cells answer as `https://sts:8081`. The `cells` mode runs only when you
 name it; a plain `./run-tests.sh` does not start it.
 
-The five `sts_cells_*` jobs check, over HTTP:
+The nine `sts_cells_*` jobs check, over HTTP:
 
 - each cell sees the other and never reports where it is;
 - a login name is unique across cells, and a person can be created in the
@@ -211,6 +211,14 @@ The five `sts_cells_*` jobs check, over HTTP:
 - where a realm permits it (`cells.permittedTransfers` set to `ca>us`), the
   session moves to `cella`, and disabling the person in `cellb` ends it there;
 - `cellb`'s people can be listed from `cella` only where the realm permits it.
+- a person moved from `cellb` to `cella` loses what they held, keeps their
+  `sub`, and signs in at `cella`; a move the realm's jurisdictions forbid is
+  refused;
+- an administrator can sign in to the console through `cellb`, and a
+  directory bind at `cellb` is checked in the person's home cell;
+- when `cella` cannot reach `cellb`, a sign-in, a refresh and a directory
+  bind are refused, and `fail-open` lets a session held at `cella` be
+  refreshed.
 
 ## Reading the logs
 

@@ -1166,12 +1166,29 @@ const JOBS = [
   //   sts_cells_release.js    another cell's residents are refused under
   //                           the strict default and listed once the realm
   //                           permits it (D11)
+  //   sts_cells_rehome.js     a person moved from B to A: what they held
+  //                           ended, entryUUID and sub kept, signed in at A;
+  //                           a jurisdiction the realm forbids refused (8.8)
+  //   sts_cells_console.js    an administrator signs in to /admin through
+  //                           cell B, and /admin/cells draws both cells
+  //   sts_cells_ldap.js       a bind at cell B's LDAPS for a person homed
+  //                           at A is verified at home (D2)
+  //   sts_cells_unreachable.js  cell B cut off from A (tests/tools/
+  //                           cell_link.js): fail-closed refuses a refresh,
+  //                           a sign-in and a bind; fail-open refreshes a
+  //                           held session (D6). Restores the link. LAST of
+  //                           the cells jobs, so a link it failed to
+  //                           restore costs no other
   // ---------------------------------------------------------------------
   { file: 'sts_cells_map.js',            browser: false, local: true },
   { file: 'sts_cells_routing.js',        browser: false, local: true },
   { file: 'sts_cells_traveller.js',      browser: false, local: true },
   { file: 'sts_cells_transfer.js',       browser: false, local: true },
   { file: 'sts_cells_release.js',        browser: false, local: true },
+  { file: 'sts_cells_rehome.js',         browser: false, local: true },
+  { file: 'sts_cells_console.js',        browser: false, local: true },
+  { file: 'sts_cells_ldap.js',           browser: false, local: true },
+  { file: 'sts_cells_unreachable.js',    browser: false, local: true },
   // ---------------------------------------------------------------------
   // LAST, ALL THREE OF THEM, AND THE ORDER IS THE WHOLE OF WHY IT IS SAFE
   // (2026-09-06).
@@ -1358,7 +1375,7 @@ const LOCAL_HELPERS = [
   // beside the data, a declared size that lies. Node's zlib; nothing from
   // yauzl, which is the reader under test.
   'zip_writer.js',
-  // WHAT THE FIVE `sts_cells_*.js` JOBS SHARE (#98): each cell's management
+  // WHAT THE NINE `sts_cells_*.js` JOBS SHARE (#98): each cell's management
   // API with a token minted at that cell, a cookie jar and a browser that
   // follows no redirect, a JWT checked against a key set with node's own
   // crypto, and a bounded wait for the global tier. Nothing from the
