@@ -1087,6 +1087,19 @@ class ProtocolStack {
                require('../admin-ui/scheduler_admin'), 'SchedulerAdmin');
     this.register(app, require('../admin-ui/scheduler_admin'),
                   'admin-ui/scheduler_admin');
+    // AND THE TWO CLUSTER JOBS THAT WERE REGISTERED ONLY ON FIRST USE
+    // (2026-09-28): the tracked-token purge (`common/admin_stats.js`) and the
+    // tombstone sweep (`persistence/persistence_minted.js`). Both owners
+    // load before the scheduler and register lazily; here, with the
+    // scheduler in hand, every process — the front and each worker, which
+    // both build this stack — registers them at start-up, so every node can
+    // run them and every door lists them. `cluster/scheduler.ts` does the
+    // same for its three sweeps at its own load; these two are called from
+    // here because requiring them from there could close a load cycle.
+    const jobScheduler = require('../cluster/scheduler');
+    require('./admin_stats').ensureTokenPurgeJob(jobScheduler);
+    require('../persistence/persistence_minted')
+      .ensureTombstoneJob(jobScheduler);
     // 18j. RISK SCORING (#62 P1, 2026-09-22): the store, the datasets and
     // the failure history are LIBRARIES (rule 3) that register no route, and
     // then Monitoring → Risk, for 18a's reason — the console's shell and the

@@ -3466,6 +3466,16 @@ const CODES = [
       'password could not be proved unspent because the cluster store ' +
       'could not be asked, so it was refused.',
     spec: 'ACME unauthorized / SCEP CertRep FAILURE badRequest' },
+  { code: 'STS-ENROLL-0092',
+    summary: 'A renewal named a certificate that is not recorded as issued ' +
+      'to the entry in this realm, so it could not be superseded and ' +
+      'nothing was issued.',
+    spec: 'EST 400 / SCEP CertRep FAILURE badRequest' },
+  { code: 'STS-ENROLL-0093',
+    summary: 'A renewal was issued but the certificate it renews could not ' +
+      'be revoked as superseded, so the renewal was revoked and the ' +
+      'request refused.',
+    spec: 'EST 503 / SCEP CertRep FAILURE badRequest' },
   // ===== ACME ==============================================================
   { code: 'STS-ACME-0001',
     summary: 'ACME is turned off in this realm (acme.enabled is false).',
@@ -15279,6 +15289,20 @@ const CODES = [
     summary: 'A write named an application\'s role that is not ' +
       '<role>@<application>, or used a native or built-in role\'s name for ' +
       'one (#310).',
+    spec: 'none (a console or management API refusal, HTTP 400)' },
+  { code: 'STS-XACML-0081',
+    summary: 'A role write named a member type that is not user or ' +
+      'application (#93).',
+    spec: 'none (a console or management API refusal, HTTP 400)' },
+  { code: 'STS-XACML-0082',
+    summary: 'A role write gave the role a member of a kind its member ' +
+      'types exclude: a person or group on an applications-only role, or ' +
+      'an application on a people-only one (#93).',
+    spec: 'none (a console or management API refusal, HTTP 400)' },
+  { code: 'STS-XACML-0083',
+    summary: 'A role write tried to restrict a console role (ADMIN_READ, ' +
+      'ADMIN_WRITE) to one member type; it holds people and applications ' +
+      'both (#93).',
     spec: 'none (a console or management API refusal, HTTP 400)' },
   // ===== XPEP ==============================================================
   { code: 'STS-XPEP-0001',

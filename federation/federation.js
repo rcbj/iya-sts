@@ -810,10 +810,24 @@ function familyOf(protocolId) {
  * key.
  */
 const ENCRYPTING_PROTOCOLS = ['saml2', 'wsfed', 'oidc'];
+// AND TWO POST-QUANTUM KEY TYPES FOR AN OpenID Connect RELATIONSHIP (#82):
+// `x-wing` (HPKE-10-KE, the ML-KEM-768 + X25519 hybrid) and `ml-kem-768`
+// (ML-KEM-768 direct key agreement) — `common/crypto.js` section 4a. JOSE
+// only: XML Encryption defines no post-quantum key transport, so a SAML 2.0
+// or WS-Federation relationship is refused them. An AKP key names ONE alg,
+// so each type does exactly one management algorithm. Such a key has no
+// X.509 certificate (none is defined for X-Wing), so its row carries the
+// AKP JWK instead; a partner reads it from the relationship's JWKS.
+/**
+ * The post-quantum key types, for an OpenID Connect relationship only
+ * (#82).
+ */
+const JOSE_ONLY_KEY_TYPES = ['x-wing', 'ml-kem-768'];
 /**
  * The encryption key types a relationship may hold.
  */
-const ENCRYPTION_KEY_TYPES = ['rsa-3072', 'ec-p256'];
+const ENCRYPTION_KEY_TYPES = ['rsa-3072', 'ec-p256'].concat(
+  JOSE_ONLY_KEY_TYPES);
 /**
  * The XML Encryption key-management algorithms a relationship may accept.
  */
@@ -822,7 +836,8 @@ const XML_KEY_MANAGEMENT = ['rsa-oaep', 'ecdh-es'];
  * The JWE key-management algorithms a relationship may accept.
  */
 const JOSE_KEY_MANAGEMENT = ['RSA-OAEP-256', 'RSA-OAEP', 'ECDH-ES',
-                             'ECDH-ES+A128KW', 'ECDH-ES+A256KW'];
+                             'ECDH-ES+A128KW', 'ECDH-ES+A256KW',
+                             'HPKE-10-KE', 'ML-KEM-768'];
 /**
  * The XML Encryption content-encryption algorithms a relationship may accept.
  */
@@ -839,9 +854,14 @@ const REFUSED_ALGORITHMS = ['aes128-cbc', 'aes192-cbc', 'aes256-cbc',
                             'rsa-1_5', 'RSA1_5', 'A128CBC-HS256',
                             'A192CBC-HS384', 'A256CBC-HS512'];
 // Which management algorithms a key of each type can do.
+/**
+ * The key management algorithms each key type can do.
+ */
 const MANAGEMENT_FOR_KEY = {
   'rsa-3072': ['rsa-oaep', 'RSA-OAEP-256', 'RSA-OAEP'],
-  'ec-p256': ['ecdh-es', 'ECDH-ES', 'ECDH-ES+A128KW', 'ECDH-ES+A256KW']
+  'ec-p256': ['ecdh-es', 'ECDH-ES', 'ECDH-ES+A128KW', 'ECDH-ES+A256KW'],
+  'x-wing': ['HPKE-10-KE'],
+  'ml-kem-768': ['ML-KEM-768']
 };
 
 /**
@@ -1183,7 +1203,12 @@ const SCHEMA = {
       from: 'this register', enum: ENCRYPTION_KEY_TYPES,
       what: 'THE KIND OF KEY A PARTNER ENCRYPTS TO: rsa-3072 (the default ' +
             'for SAML 2.0 and WS-Federation) or ec-p256 (the default for ' +
-            'OpenID Connect). Changing it issues a new key of that kind at ' +
+            'OpenID Connect) — or, for OpenID Connect only, a post-quantum ' +
+            'one (#82): x-wing (HPKE-10-KE, ML-KEM-768 + X25519) or ' +
+            'ml-kem-768 (ML-KEM-768), an AKP key published in the ' +
+            'relationship\'s JWKS with no certificate, from Internet-Drafts ' +
+            'few partners implement yet. Changing it issues a new key of ' +
+            'that kind at ' +
             'once and keeps the old one for federation.encryptionKeyGraceS, ' +
             'as a rotation does.' },
     { name: 'fedKeyManagementAlgorithm', kind: 'single',
@@ -2058,6 +2083,11 @@ function defaultKeyTypeFor(protocol) {
 
 function defaultManagementFor(family, keyType) {
   log.debug("Entering defaultManagementFor().");
+  if (MANAGEMENT_FOR_KEY[keyType] &&
+      JOSE_ONLY_KEY_TYPES.indexOf(keyType) >= 0) {
+    log.debug("Leaving defaultManagementFor(). A post-quantum key.");
+    return MANAGEMENT_FOR_KEY[keyType][0];
+  }
   const ec = keyType === 'ec-p256';
   log.debug("Leaving defaultManagementFor().");
   return family === 'jose' ? (ec ? 'ECDH-ES' : 'RSA-OAEP-256')
@@ -2079,8 +2109,12 @@ function encryptionPolicyOf(record) {
   log.debug("Entering encryptionPolicyOf().");
   const family = encryptionFamilyOf(record);
   const typed = String((record && record.fedEncryptionKeyType) || '').trim();
-  const keyType = ENCRYPTION_KEY_TYPES.indexOf(typed) >= 0 ? typed
-    : defaultKeyTypeFor(record && record.fedProtocol);
+  // A post-quantum key type on an XML relationship reads as the default:
+  // the write is refused (encryptionFieldProblem()), and only an ldapmodify
+  // could put one there.
+  const keyType = ENCRYPTION_KEY_TYPES.indexOf(typed) >= 0 &&
+      !(family === 'xml' && JOSE_ONLY_KEY_TYPES.indexOf(typed) >= 0)
+    ? typed : defaultKeyTypeFor(record && record.fedProtocol);
   const managed = String((record && record.fedKeyManagementAlgorithm) || '')
     .trim();
   const managementList = family === 'jose' ? JOSE_KEY_MANAGEMENT
@@ -2116,7 +2150,10 @@ function encryptionKeysOf(record) {
   ((record && record.fedEncryptionKey) || []).forEach(function (value) {
     try {
       const row = JSON.parse(String(value));
-      if (row && row.kid && row.certificate) {
+      // A classical key's row carries its certificate; a post-quantum one
+      // (#82) its AKP JWK and the alg it serves, and no certificate.
+      if (row && row.kid && (row.certificate ||
+                             (row.kem && row.publicJwk))) {
         rows.push(row);
       }
     } catch (e) {
@@ -2226,6 +2263,17 @@ function encryptionFieldProblem(record, field, value) {
                           '6.1.2, RFC 8017)') + '.' };
   }
   const family = encryptionFamilyOf(record);
+  if (field === 'fedEncryptionKeyType' && family === 'xml' &&
+      JOSE_ONLY_KEY_TYPES.indexOf(value) >= 0) {
+    log.debug("Leaving encryptionFieldProblem(). A JOSE-only key type.");
+    return { code: 'STS-FED-0143',
+             why: value + ' is a JOSE key type and this relationship is XML',
+             message: value + ' is a post-quantum key for an OpenID ' +
+                      'Connect ID Token (JWE). A SAML 2.0 or WS-Federation ' +
+                      'assertion is XML Encryption, which defines no ' +
+                      'post-quantum key transport; use rsa-3072 or ' +
+                      'ec-p256.' };
+  }
   const allowed = field === 'fedEncryptionKeyType' ? ENCRYPTION_KEY_TYPES
     : field === 'fedKeyManagementAlgorithm'
       ? (family === 'jose' ? JOSE_KEY_MANAGEMENT : XML_KEY_MANAGEMENT)
@@ -4036,6 +4084,8 @@ module.exports = {
   ENCRYPTION_KEY_TYPES: ENCRYPTION_KEY_TYPES,
   XML_KEY_MANAGEMENT: XML_KEY_MANAGEMENT,
   JOSE_KEY_MANAGEMENT: JOSE_KEY_MANAGEMENT,
+  MANAGEMENT_FOR_KEY: MANAGEMENT_FOR_KEY,
+  JOSE_ONLY_KEY_TYPES: JOSE_ONLY_KEY_TYPES,
   XML_CONTENT_ENCRYPTION: XML_CONTENT_ENCRYPTION,
   JOSE_CONTENT_ENCRYPTION: JOSE_CONTENT_ENCRYPTION,
   REFUSED_ALGORITHMS: REFUSED_ALGORITHMS,

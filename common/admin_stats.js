@@ -405,7 +405,13 @@ function recordJwt(payload, signed, context) {
     // Token: the two carry the same person under different names because that
     // is what their respective specifications call the claim, and a console
     // column that read only one of them would show a dash for every ID Token.
-    username: payload.username || payload.preferred_username || '',
+    // A client_credentials access token carries no `username` since #93 (it
+    // is about no person), and is filed under its CLIENT, as it was when the
+    // claim carried the client_id: /admin/users lists the client flagged as
+    // one, and a disabled or deleted application's tokens are found by name.
+    username: payload.username || payload.preferred_username ||
+              (issuedUnder.grant === 'client_credentials'
+                ? String(payload.client_id || '') : ''),
     client_id: payload.client_id || payload.azp || payload.aud || '',
     // WHAT THIS TOKEN IS ADDRESSED TO, as its own fact. `client_id` above falls
     // back to the `aud` when nothing better names the client, which is right
@@ -566,23 +572,45 @@ function purgeExpiredTokens(nowMs) {
   return out;
 }
 
-function ensureTokenPurgeJob() {
+function ensureTokenPurgeJob(schedulerInstance) {
   log.debug("Entering ensureTokenPurgeJob().");
   if (tokenPurgeRegistered) {
     log.debug("Leaving ensureTokenPurgeJob(). Registered.");
     return;
   }
-  tokenPurgeRegistered = true;
-  let scheduler = null;
-  try {
-    scheduler = require('../cluster/scheduler');
-  } catch (e) {
-    // A process without the scheduler — the parent project's in-process
-    // Kerberos tests load this file alone — keeps the size cap only.
-    log.debug("Caught in ensureTokenPurgeJob(): " + ((e && e.message) || e));
-    log.debug("Leaving ensureTokenPurgeJob(). No scheduler.");
+  // **REGISTERED AT START-UP IN EVERY PROCESS TOO (2026-09-28)**, by
+  // `common/protocol_stack.ts` with the scheduler it hands in — the fix
+  // `cluster/scheduler.ts` made for the three shared-table sweeps on
+  // 2026-09-22, which this CLUSTER job missed. Registered only at a process's
+  // first recorded JWT, it was a job of whichever processes had signed
+  // something: with every path dispatched, the leader's FRONT process often
+  // had not, so the hourly purge ran only where the leader happened to sign
+  // a token, a node taking the lease over need not know the job at all, and
+  // `/admin/scheduler` and `GET /admin-api/scheduler` — answered by
+  // different workers on different nodes — listed different jobs
+  // (`sts_scheduler`, cluster mode, CI run 36380417724). The call at the
+  // first recording stays, for a process that loaded this file alone.
+  let scheduler = schedulerInstance || null;
+  if (!scheduler) {
+    try {
+      scheduler = require('../cluster/scheduler');
+    } catch (e) {
+      // A process without the scheduler — the parent project's in-process
+      // Kerberos tests load this file alone — keeps the size cap only.
+      log.debug("Caught in ensureTokenPurgeJob(): " +
+                ((e && e.message) || e));
+      log.debug("Leaving ensureTokenPurgeJob(). No scheduler.");
+      return;
+    }
+  }
+  // NOT LATCHED BEFORE THE REGISTRATION HAPPENS: a half-built scheduler
+  // reached through the require above would otherwise mark the job
+  // registered while registering nothing (`used_assertions.js`'s guard).
+  if (!scheduler || typeof scheduler.register !== 'function') {
+    log.debug("Leaving ensureTokenPurgeJob(). No scheduler yet.");
     return;
   }
+  tokenPurgeRegistered = true;
   if (scheduler.job(TOKEN_PURGE_JOB)) {
     log.debug("Leaving ensureTokenPurgeJob(). Registered elsewhere.");
     return;
@@ -5328,6 +5356,7 @@ module.exports = {
   setRevocationObserver: setRevocationObserver,
   restore: restore,
   purgeExpiredTokens: purgeExpiredTokens,
+  ensureTokenPurgeJob: ensureTokenPurgeJob,
   revokeWhere: revokeWhere,
   revokeArtifact: revokeArtifact,
   restoreArtifact: restoreArtifact,

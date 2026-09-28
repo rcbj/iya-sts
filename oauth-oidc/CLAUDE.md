@@ -2018,6 +2018,14 @@ so must `admin-ui/admin.ts`.
 
 ## EVERY REFRESH TOKEN IS ENCRYPTED TO ITS OWN REALM (2026-09-12)
 
+**AND ANY ML-KEM OR HPKE ALG MAY SEAL IT (#82, 2026-09-27)**: `kindOf()`
+answers `kem`, and `kemKeyFor()` DERIVES that alg's key pair from the realm's
+refresh-token secret, so nothing new is stored, published or rotated
+separately. The kid is the secret's kid with the alg appended. The argument
+is `common/CLAUDE.md`'s *crypto.js section 4a*, which is also where the
+outward encryptions' post-quantum algs are argued: `recipientKey()` here asks
+`crypto.jweRecipientKeyFits()`.
+
 `refresh_token_crypto.ts` is a library (rule 3) and `refreshToken()` is the one
 place it seals. A refresh token is a **nested JWT**: the JWS this file always
 minted, encrypted as a compact JWE with `cty: "JWT"` to the realm's own keys.

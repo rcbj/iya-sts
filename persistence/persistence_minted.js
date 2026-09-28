@@ -1487,15 +1487,25 @@ let tombstoneJobRegistered = false;
 // THE SWEEP IS A SCHEDULER JOB (#49 P5): `persistence.tombstone-purge`, a
 // CLUSTER job every TOMBSTONE_SWEEP_MS — the tombstones are rows every
 // process shares. It was piggy-backed on the next flush in every process.
-// Registered at the first flush, lazily: the scheduler loads after this.
-function ensureTombstoneJob() {
+// Registered at the first flush, lazily: the scheduler loads after this —
+// **AND AT START-UP IN EVERY PROCESS (2026-09-28)**, by
+// `common/protocol_stack.ts` with the scheduler it hands in, for
+// `common/admin_stats.js`'s ensureTokenPurgeJob() reason: a cluster job known
+// only to the processes that had flushed is not a job every node can run, nor
+// one both of the console's doors list.
+function ensureTombstoneJob(schedulerInstance) {
   log.debug("Entering ensureTombstoneJob().");
   if (tombstoneJobRegistered) {
     log.debug("Leaving ensureTombstoneJob(). Registered.");
     return;
   }
+  const scheduler = schedulerInstance || require('../cluster/scheduler');
+  // Not latched before a registration can happen: see ensureTokenPurgeJob().
+  if (!scheduler || typeof scheduler.register !== 'function') {
+    log.debug("Leaving ensureTombstoneJob(). No scheduler yet.");
+    return;
+  }
   tombstoneJobRegistered = true;
-  const scheduler = require('../cluster/scheduler');
   if (scheduler.job(TOMBSTONE_JOB)) {
     log.debug("Leaving ensureTombstoneJob(). Registered elsewhere.");
     return;
@@ -1888,6 +1898,7 @@ function reset() {
  * @namespace
  */
 module.exports = {
+  ensureTombstoneJob: ensureTombstoneJob,
   setDriver: setDriver,
   setScheduler: setScheduler,
   applyChange: applyChange,

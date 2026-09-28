@@ -575,7 +575,9 @@ Connect Core section 12.2). An ID Token issued on a browser session carries
 * **Encryption** (OpenID Connect Core section 10.2): a client that registers
   `id_token_encrypted_response_alg` gets a signed-then-encrypted token,
   encrypted to a key in its `jwks` or registered `jwks_uri`. Only asymmetric key management
-  is offered. A registration with no key to encrypt to is refused, and so is
+  is offered — RSA-OAEP, ECDH-ES, and the post-quantum and hybrid ML-KEM and
+  HPKE algorithms ([Post-quantum key establishment](post-quantum-encryption.md)).
+  A registration with no key to encrypt to is refused, and so is
   an issuance that cannot be encrypted. It is never sent in the clear.
 * **Subject**: `sub` is `urn:uuid:<entryUUID>` of the person's directory entry,
   the same for every `public` client. A renamed person keeps their `sub`. A
@@ -979,7 +981,9 @@ the client registered (RFC 7591, OpenID Connect Core section 5.3.2):
   table is offered: the fourteen of the JWS registry (RS, PS and ES at 256, 384
   and 512, ES256K, EdDSA, and HS256/384/512 keyed by the client's own secret)
   and the eleven post-quantum ones.
-* `userinfo_encrypted_response_alg` gives a JWE: RSA-OAEP, RSA-OAEP-256,
+* `userinfo_encrypted_response_alg` gives a JWE (ML-KEM and the HPKE
+  suites too, X-Wing among them — see
+  [Post-quantum key establishment](post-quantum-encryption.md)): RSA-OAEP, RSA-OAEP-256,
   ECDH-ES and its three key-wrapping variants, over any of the three AES-GCM
   and three AES-CBC-HMAC content encryptions. **`enc` defaults to
   `A128CBC-HS256`** when only an `alg` is registered, as the registration

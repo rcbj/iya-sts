@@ -565,6 +565,33 @@ function deserialiseRequestObjectKeys(blob, nodeCryptoModule) {
 }
 
 // ---------------------------------------------------------------------------
+// THE REALM'S KEM DECRYPTION KEYS (#82, 2026-09-27): one key pair per ML-KEM
+// or HPKE JWE alg the realm's `keys.encryptionKemAlgs` names, each a JWK
+// (AKP with the seed as `priv`, or EC / OKP for the classical HPKE suites)
+// because that is the only form an AKP key has. A LIST member, like the
+// post-quantum signing keys: made lazily as the setting names algs, so a set
+// gains members after it is shared. Empty rather than null for none.
+// ---------------------------------------------------------------------------
+function serialiseKemEncKeys(held) {
+  log.debug("Entering serialiseKemEncKeys().");
+  const out = (Array.isArray(held) ? held : []).filter(function (one) {
+    return one && one.alg && one.privateJwk && one.publicJwk;
+  }).map(function (one) {
+    return { alg: one.alg, privateJwk: one.privateJwk,
+             publicJwk: one.publicJwk };
+  });
+  log.debug("Leaving serialiseKemEncKeys(). " + out.length + " key(s).");
+  return out;
+}
+
+function deserialiseKemEncKeys(blob) {
+  log.debug("Entering deserialiseKemEncKeys().");
+  const out = serialiseKemEncKeys(blob);
+  log.debug("Leaving deserialiseKemEncKeys().");
+  return out.length ? out : null;
+}
+
+// ---------------------------------------------------------------------------
 // THE BROWSER DEVICE KEYS (2026-09-26, #265): the realm's key pair that signs
 // a remembered browser's device token and the key pair it is encrypted to —
 // used for nothing else, so a token can never be minted with a key that signs
@@ -977,6 +1004,11 @@ function serialise(keys) {
     requestObjectEncKeys: serialiseRequestObjectKeys(keys.requestObjectEncKeys),
     // THE BROWSER DEVICE KEYS (#265) — see serialiseBrowserDeviceKeys().
     browserDeviceKeys: serialiseBrowserDeviceKeys(keys.browserDeviceKeys),
+    // THE KEM DECRYPTION KEYS (#82) — see serialiseKemEncKeys(). Written down
+    // and shared for the request object keys' reason: their public halves
+    // are PUBLISHED, and a sibling that cannot open what a client encrypted
+    // to the JWKS this process served is a refusal nobody can explain.
+    kemEncKeys: serialiseKemEncKeys(keys.kemEncKeys),
     // THE XML SIGNING KEY AND THE KEY GENERATIONS (2026-09-22, #42) — see
     // serialiseXmlKey() and serialiseGenerations() above.
     xmlKey: serialiseXmlKey(keys.xmlKey),
@@ -1040,6 +1072,7 @@ function deserialise(blob, nodeCrypto) {
         blob.requestObjectEncKeys, nodeCrypto),
     browserDeviceKeys: deserialiseBrowserDeviceKeys(blob.browserDeviceKeys,
                                                     nodeCrypto),
+    kemEncKeys: deserialiseKemEncKeys(blob.kemEncKeys),
     xmlKey: deserialiseXmlKey(blob.xmlKey, nodeCrypto),
     bbsKey: deserialiseBbsKey(blob.bbsKey),
     signerGroups: deserialiseSignerGroups(blob.signerGroups, nodeCrypto),
@@ -1567,16 +1600,19 @@ function enriches(candidate, held) {
   // And the browser device keys, the EIGHTH (2026-09-26, #265).
   const bdHere = candidate.browserDeviceKeys ? 1 : 0;
   const bdThere = held.browserDeviceKeys ? 1 : 0;
+  // And the KEM decryption keys, the NINTH (#82) — a list, made lazily.
+  const kemHere = (candidate.kemEncKeys || []).length;
+  const kemThere = (held.kemEncKeys || []).length;
   if (pqHere < pqThere || vciHere < vciThere || rtHere < rtThere ||
       roHere < roThere || xmlHere < xmlThere || bbsHere < bbsThere ||
-      grpHere < grpThere || bdHere < bdThere) {
+      grpHere < grpThere || bdHere < bdThere || kemHere < kemThere) {
     log.debug("Leaving enriches().");
     return false;
   }
   log.debug("Leaving enriches().");
   return pqHere > pqThere || vciHere > vciThere || rtHere > rtThere ||
          roHere > roThere || xmlHere > xmlThere || bbsHere > bbsThere ||
-         grpHere > grpThere || bdHere > bdThere;
+         grpHere > grpThere || bdHere > bdThere || kemHere > kemThere;
 }
 
 // ---------------------------------------------------------------------------
@@ -1661,6 +1697,27 @@ function requestObjectKeysHeldFor(realmId) {
   log.debug("Leaving requestObjectKeysHeldFor().");
   return deserialiseRequestObjectKeys(blob && blob.requestObjectEncKeys,
                                       nodeCrypto);
+}
+
+// The KEM decryption keys some process of this service already made for this
+// realm (#82), or null — `requestObjectKeysHeldFor()`'s question, for
+// `helpers.js`'s kemEncryptionKeysFor(). It READS and never makes.
+/**
+ * The KEM decryption keys some process already made for a realm (#82);
+ * it reads and never makes.
+ *
+ * @param realmId - the realm
+ * @returns `[{ alg, privateJwk, publicJwk }]`, or null
+ */
+function kemEncKeysHeldFor(realmId) {
+  log.debug("Entering kemEncKeysHeldFor().");
+  const id = String(realmId || '');
+  const fromStore = storedFor(id);
+  const blob = (fromStore && (fromStore.kemEncKeys || []).length)
+    ? fromStore
+    : shared.get(id);
+  log.debug("Leaving kemEncKeysHeldFor().");
+  return deserialiseKemEncKeys(blob && blob.kemEncKeys);
 }
 
 // The browser device keys some process of this service already made for this
@@ -2013,6 +2070,11 @@ function privateMaterialFor(realmId) {
     ro: deserialiseRequestObjectKeys(blob.requestObjectEncKeys, nodeCrypto),
     // THE BROWSER DEVICE KEYS (#265), both private halves, on this timer too.
     bd: deserialiseBrowserDeviceKeys(blob.browserDeviceKeys, nodeCrypto),
+    // THE KEM DECRYPTION KEYS (#82), private JWKs by kid, on this timer too.
+    kem: new Map((deserialiseKemEncKeys(blob.kemEncKeys) || []).map(
+      function (one) {
+        return [one.publicJwk.kid, one.privateJwk];
+      })),
     // THE XML SIGNING KEY AND EVERY STANDBY KEY (2026-09-22, #42), parsed and
     // purged on this record's timer like the rest. A standby key is keyed by
     // its kid: a `next` key signs nothing until it is promoted, and a retired
@@ -2900,6 +2962,25 @@ function adoptPki(realmId, chain) {
       log.debug("Leaving adoptPki(). Refused a stale copy.");
       return false;
     }
+    // WHERE THE STORE MERGES THIS ROW, A BROADCAST IS A NUDGE AND NOT A COPY
+    // (2026-09-28). A process publishes its row when it saves it, built from
+    // what it held before; another process may by then hold a NEWER row the
+    // store merged (another save's change in it), and replacing that with the
+    // publisher's copy lost the change here until the next save — the xml
+    // pin in `sts_pinned_signer` (single-node and CI's cluster job): pinned
+    // and merged into the stored row by one worker, then wiped from every
+    // process by a post-quantum certification another worker published a
+    // moment later. The stored row is the merge of both, so it is read
+    // instead; the change row and the read barrier bring the publisher's own
+    // save once it commits. Nothing held yet (a worker's fork-time seed)
+    // still takes the copy.
+    if (pkiHeld.has(id) && mergesPkiRows()) {
+      applyStoredChange(PKI_ROW_PREFIX + id).then(null, function (e) {
+        log.debug("Caught in adoptPki(): " + ((e && e.message) || e));
+      });
+      log.debug("Leaving adoptPki(). Read the stored row instead.");
+      return true;
+    }
     pkiHeld.set(id, chain);
   } else {
     pkiHeld.delete(id);
@@ -3060,6 +3141,9 @@ function holdAndWritePki(id, chain) {
 // is then the `saveKeys()` upsert it always was.
 // ===========================================================================
 const writes = new Map();        // row key -> { tail, queued, pending }
+// How many times `applyStoredChange()` waits for a write of its own to land
+// before it answers `pending` (see its header).
+const APPLY_WAIT_ROUNDS = 3;
 const lastOutcome = new Map();   // row key -> what its last write decided
 const pkiBase = new Map();       // scope id -> ciphertext last read or written
 const pkiLocalGen = new Map();   // scope id -> attachPki() calls so far
@@ -3103,6 +3187,39 @@ function arbitrates() {
   }
   log.debug("Leaving arbitrates(). " + clustered);
   return clustered;
+}
+
+// ---------------------------------------------------------------------------
+// **A CERTIFICATE AUTHORITY ROW IS MERGED WHEREVER THE STORE CAN MERGE, IN
+// ONE CONTAINER AS WELL AS A CLUSTER (2026-09-28).** `arbitrates()`' argument
+// for keeping the upsert with `cluster.mode=off` — one container already
+// agrees over the request pool's channels — is true of a KEY SET, which those
+// channels arbitrate first-generator-wins, and false of this row: the channel
+// hands a hierarchy over WHOLE and `adoptPki()` REPLACES what is held, so two
+// processes writing at once lost whichever record the other had not seen.
+// Measured in single-node (`sts_scep_sscep`): a worker recorded an enrolled
+// certificate, the front process certified the realm's post-quantum keys from
+// a copy made just before, the worker adopted that copy, and the renewal
+// found nothing to supersede — the old certificate never reached the CRL.
+// Every process in a container is a writer of the row exactly as every node
+// is, so the row takes the cluster's three-way merge (`pki_merge.js`: issued
+// serials and revocations are unions) wherever the store holds it. Key sets
+// keep `arbitrates()`.
+// ---------------------------------------------------------------------------
+/**
+ * Tells whether a certificate authority row is merged under the row's lock
+ * rather than upserted: persisting, a merging store and a key-encryption key,
+ * whatever `cluster.mode` says.
+ *
+ * @returns true when a hierarchy write is a merge
+ */
+function mergesPkiRows() {
+  log.debug("Entering mergesPkiRows().");
+  const answer = persists() && !!store && !!kek &&
+                 typeof store.mergeKeys === 'function' &&
+                 typeof store.loadKey === 'function';
+  log.debug("Leaving mergesPkiRows(). " + answer);
+  return answer;
 }
 
 // ---------------------------------------------------------------------------
@@ -3218,10 +3335,11 @@ function pkiSettled(scopeId) {
 // ---------------------------------------------------------------------------
 const KEY_SET_MEMBERS = ['pqKeys', 'vciRequestEncKey', 'refreshTokenEncKeys',
                          'requestObjectEncKeys', 'xmlKey', 'bbsKey',
-                         'signerGroups', 'browserDeviceKeys'];
+                         'signerGroups', 'browserDeviceKeys', 'kemEncKeys'];
 
-// The two ARRAY members, where an empty list is "none" (#68 added the second).
-const LIST_MEMBERS = ['pqKeys', 'signerGroups'];
+// The ARRAY members, where an empty list is "none" (#68 added the second,
+// #82 the third).
+const LIST_MEMBERS = ['pqKeys', 'signerGroups', 'kemEncKeys'];
 
 function hasMember(blob, member) {
   log.debug("Entering hasMember().");
@@ -3279,6 +3397,23 @@ function decideKeys(stored, offered) {
       added += 1;
     }
   });
+  // THE KEM DECRYPTION KEYS GROW ONE ALG AT A TIME (#82): an administrator
+  // adds an alg to `keys.encryptionKemAlgs` after the set was written, so a
+  // row that already holds some of them must still take a new one. A union
+  // BY ALG, the stored key winning where both hold one — the published key
+  // a client may already have encrypted to is never replaced by a race.
+  if (hasMember(stored, 'kemEncKeys') && hasMember(offered, 'kemEncKeys')) {
+    const have = stored.kemEncKeys.map(function (one) {
+      return one.alg;
+    });
+    const fresh = offered.kemEncKeys.filter(function (one) {
+      return have.indexOf(one.alg) === -1;
+    });
+    if (fresh.length) {
+      joined.kemEncKeys = stored.kemEncKeys.concat(fresh);
+      added += 1;
+    }
+  }
   log.debug("Leaving decideKeys(). " + added + " member(s) added.");
   return { outcome: added ? 'joined' : 'kept', blob: added ? joined : stored,
            write: added > 0 };
@@ -3452,7 +3587,7 @@ function writePki(rowKey, payload) {
   }
   const text = JSON.stringify(chain);
   const cipher = crypto.encryptWithKek(kek, text, 'pki-hierarchy');
-  if (!arbitrates()) {
+  if (!mergesPkiRows()) {
     log.debug("Leaving writePki(). An upsert.");
     return Promise.resolve().then(function () {
       return store.saveKeys(rowKey, cipher);
@@ -3591,6 +3726,18 @@ function notifyHierarchyAdopted(id) {
 // WRITE OF ITS OWN IN FLIGHT**, whose merge is about to decide against the
 // same row and will adopt the answer — adopting underneath it would replace
 // this process's unwritten change with a copy that lacks it.
+//
+// **DEFERS BY WAITING, NOT BY RETURNING (2026-09-28).** It answered `pending`
+// at once, and the cluster barrier — which awaits this applier before a
+// request is served — took that as caught up. So a node whose own write of a
+// realm's certificate-authority row was out answered from its copy WITHOUT
+// the other node's change, until its write landed a moment later:
+// `sts_pinned_signer` in CI's cluster job (runs 36382542145, 36394938951), an
+// xml key pinned on one node and the other serving `/saml2/metadata` with the
+// generated encryption certificate. It now waits for its own write to land —
+// which merged the other node's row under the lock — and looks again. Three
+// rounds at most, so writes that keep coming cannot hold a request; after
+// that it answers `pending` as it did.
 // ---------------------------------------------------------------------------
 /**
  * Adopts a key or hierarchy row another process wrote, reading the current row;
@@ -3599,9 +3746,10 @@ function notifyHierarchyAdopted(id) {
  * @param rowKey - the row: a realm id, or `pki:` and a scope
  * @returns a promise of `{ kind, realm, adopted }`
  */
-function applyStoredChange(rowKey) {
+function applyStoredChange(rowKey, round) {
   log.debug("Entering applyStoredChange(). row=" + rowKey);
   const key = String(rowKey || '');
+  const turn = Number(round) || 0;
   const isPki = key.indexOf(PKI_ROW_PREFIX) === 0;
   const id = isPki ? key.slice(PKI_ROW_PREFIX.length) : key;
   const kind = isPki ? 'pki' : 'keys';
@@ -3610,21 +3758,35 @@ function applyStoredChange(rowKey) {
   // two processes each adopting the other's set in the same moment and ending
   // as split as they started — which is the argument `applyKeysChange()` used
   // to make for doing nothing, and it still holds there.
-  if (!arbitrates()) {
+  // A CERTIFICATE AUTHORITY ROW IS ADOPTED WHEREVER IT IS MERGED
+  // (mergesPkiRows()): a merged row is the store's answer, and a process
+  // that holds less than it must take it.
+  if (isPki ? !mergesPkiRows() : !arbitrates()) {
     log.debug("Leaving applyStoredChange(). The store does not arbitrate.");
     return Promise.resolve({ kind: kind, realm: id, adopted: false });
   }
+  // A write of ours in flight: wait for it to land, then look again.
+  const afterOurWrite = function () {
+    if (turn >= APPLY_WAIT_ROUNDS) {
+      log.debug('applyStoredChange(): ' + key + ' is still being written ' +
+                'here after ' + turn + ' round(s); its merge decides.');
+      return Promise.resolve({ kind: kind, realm: id, adopted: false,
+                               pending: true });
+    }
+    return settle(key).then(function () {
+      return applyStoredChange(key, turn + 1);
+    });
+  };
   if (writes.has(key)) {
     log.debug("Leaving applyStoredChange(). A write of ours is in flight.");
-    return Promise.resolve({ kind: kind, realm: id, adopted: false,
-                             pending: true });
+    return afterOurWrite();
   }
   log.debug("Leaving applyStoredChange(). Reading the row.");
   return Promise.resolve().then(function () {
     return store.loadKey(key);
   }).then(function (cipher) {
     if (writes.has(key)) {
-      return { kind: kind, realm: id, adopted: false, pending: true };
+      return afterOurWrite();
     }
     try {
       return isPki ? adoptPkiRow(id, cipher) : adoptKeyRow(id, cipher);
@@ -3800,6 +3962,7 @@ module.exports = {
   requestEncryptionKeyHeldFor: requestEncryptionKeyHeldFor,
   refreshTokenKeysHeldFor: refreshTokenKeysHeldFor,
   requestObjectKeysHeldFor: requestObjectKeysHeldFor,
+  kemEncKeysHeldFor: kemEncKeysHeldFor,
   browserDeviceKeysHeldFor: browserDeviceKeysHeldFor,
   xmlKeyHeldFor: xmlKeyHeldFor,
   bbsKeyHeldFor: bbsKeyHeldFor,
@@ -3838,6 +4001,7 @@ module.exports = {
   // THE STORE AS THE ARBITER BETWEEN NODES (#46). See the block above
   // `arbitrates()`.
   arbitrates: arbitrates,
+  mergesPkiRows: mergesPkiRows,
   applyStoredChange: applyStoredChange,
   refreshPki: refreshPki,
   pendingWrites: pendingWrites,

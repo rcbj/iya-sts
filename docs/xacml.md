@@ -226,6 +226,16 @@ application's `appRequiredRole` can name it, and tokens and assertions for that
 application carry it in the roles claim. Tokens for any other application never
 carry it. Realm-wide roles work as before and appear everywhere.
 
+**An application can hold a role as itself** (#93): add it as a member, on
+`/admin/roles` or in the *Application permissions* section of its own page on
+`/admin/applications` (`POST /admin-api/roles/add-member` with
+`kind: application`). Its `client_credentials` access tokens then carry the
+role in the roles claim: a realm-wide role in every token, another
+application's role only in a token for that application, under its short
+name. Such a token has no `username`; its `sub` names the application. A role
+can be limited to people or to applications (`memberTypes`), and it can have a
+display name. Its stable id is the entry's `entryUUID`.
+
 **The request also carries the RISK of the authentication** the issuance
 rests on, as four environment attributes (`urn:sts:xacml:risk-level`,
 `-score`, `-signal` and `-satisfied`), and the built-in `role-issuance`

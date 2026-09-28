@@ -236,6 +236,8 @@ var config = {
     plaintextRetention: "timed",     // How long a decrypted private key is kept
     plaintextTtlS: 300,              // Decrypted key idle timeout (seconds)
     signerModel: "per-algorithm",    // Signer model
+    encryptionKemAlgs: "",           // Post-quantum / hybrid decryption keys
+    offerKemEncryption: false,       // Offer post-quantum / hybrid encryption to clients
     kidFormat: "internal",           // Signed token kid format
     kekProvider: "file",             // Key-encryption key provider; restart to apply
     kekFile: "/run/secrets/sts-kek", // Key-encryption key file; restart to apply
@@ -758,6 +760,7 @@ var config = {
     signInCrossDevice: false,                          // Wallet sign-in QR code (cross-device, relayable)
     signInFormats: "dc+sd-jwt,jwt_vc_json,ldp_vc",     // Wallet sign-in credential formats
     signInDcApiResponseMode: "dc_api.jwt",             // Digital Credentials API response mode
+    responseEncryptionKeyAlgs: "HPKE-10-KE,ECDH-ES",   // Encrypted response: key algorithms offered
     statusListMaxCacheS: 3600,                         // Longest a fetched status list is kept (s)
     requireStatusReference: "all",                     // Require a status reference on every presented credential
     statusOptionalIssuers: ""                          // Trusted issuers exempt from the status reference

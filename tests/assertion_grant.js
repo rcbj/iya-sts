@@ -79,6 +79,16 @@ function run(t) {
             stsCrypto.JWE_DECRYPT_ALGS.indexOf(alg) >= 0,
             alg + ' is in BOTH the encrypt and the decrypt table');
   });
+  // And the ML-KEM and HPKE families (#82), in both tables too — what this
+  // realm ADVERTISES for decryption is narrower (the keys it holds), which
+  // tests/jwe_pq_kem.js and the admin_api job check.
+  stsCrypto.JWE_MLKEM_ALGS.concat(stsCrypto.JWE_HPKE_ALGS).forEach(
+    function (alg) {
+      t.check(stsCrypto.JWE_ALGS.indexOf(alg) >= 0 &&
+              stsCrypto.JWE_DECRYPT_ALGS.indexOf(alg) >= 0 &&
+              stsCrypto.JWE_ASYMMETRIC_ALGS.indexOf(alg) >= 0,
+              alg + ' is in both tables, and asymmetric');
+    });
   t.check(stsCrypto.JWE_ALGS.indexOf('RSA1_5') < 0,
           'RSA1_5 IS NOT, and that is a decision rather than a gap: RFC 8017 ' +
           'deprecated PKCS#1 v1.5 encryption, and implementing it safely ' +
@@ -112,6 +122,13 @@ function run(t) {
       } else if (stsCrypto.JWE_ECDH_ALGS.indexOf(alg) >= 0) {
         encOpts = { jwk: ec.publicKey.export({ format: 'jwk' }) };
         decOpts = { privateKey: ec.privateKey };
+      } else if (stsCrypto.describeJweKemAlg(alg)) {
+        // ML-KEM and HPKE (#82): a key pair of that alg's own, since an AKP
+        // key names exactly one alg. tests/jwe_pq_kem.js holds them to the
+        // drafts' vectors; here they are rows of the table like any other.
+        const pair = stsCrypto.generateJweKemKeyPair(alg);
+        encOpts = { jwk: pair.publicJwk };
+        decOpts = { privateJwk: pair.privateJwk };
       } else if (alg === 'dir') {
         // The shared key IS the content encryption key, so its length is
         // decided by `enc` — 32 bytes for A128CBC-HS256, because a CBC-HMAC

@@ -2198,6 +2198,28 @@ class CertEnrollment {
     const counted = live.filter(function (one) {
       return self.normalSerial(one.serialHex) !== replacing;
     });
+    // **A RENEWAL MUST BE ABLE TO SUPERSEDE WHAT IT RENEWS, OR IT IS REFUSED
+    // (2026-09-28).** The certificate it replaces is revoked `superseded`
+    // once the new one is issued, and that revocation used to be awaited and
+    // ignored — so when the issued register had lost the old serial (a
+    // single-node lost update of the certificate authority row,
+    // `sts_scep_sscep`), the renewal succeeded and the old certificate stayed
+    // valid and off the CRL, with nothing said. A renewal that leaves the old
+    // certificate standing is the one outcome a renewal must not have, so the
+    // old certificate is looked for BEFORE anything is issued, and must be
+    // this entry's.
+    if (replacing) {
+      const old = self.findEnrolled(replacing, undefined);
+      if (!old || !self.sameEntry(resolved.entry, old.entry)) {
+        log.debug("Leaving CertEnrollment.issue(). The certificate it " +
+                  "replaces cannot be superseded.");
+        return auditRefusal(self.refuse('STS-ENROLL-0092', 409, 'The ' +
+          'certificate this request renews (serial ' + replacing + ') is ' +
+          'not recorded as issued to the ' + self.entryLabel(resolved.entry) +
+          ' in this realm, so it could not be superseded; no certificate ' +
+          'was issued.'));
+      }
+    }
     if (counted.length >= cap) {
       log.debug("Leaving CertEnrollment.issue(). The entry is full.");
       return auditRefusal(self.refuse('STS-ENROLL-0040', 409, 'The ' +
@@ -2344,10 +2366,28 @@ class CertEnrollment {
         reasonUser: 'A certificate was issued to you.' });
     }
     if (replacing) {
-      await self.revokeEnrolled(replacing, 'superseded',
-                                asked.principal ? String(asked.principal.id)
-                                                : '',
-                                { quiet: true });
+      const by = asked.principal ? String(asked.principal.id) : '';
+      const superseded = await self.revokeEnrolled(replacing, 'superseded',
+                                                   by, { quiet: true });
+      if (!superseded || superseded.ok === false) {
+        // THE CHECK ABOVE PASSED AND THE REVOCATION STILL FAILED — the
+        // register moved between the two, or the authority refused. The new
+        // certificate is taken back rather than left beside an old one that
+        // is still valid, and the request is refused.
+        const undone = await self.revokeEnrolled(record.serialHex,
+          'cessationOfOperation', by, { quiet: true });
+        log.error(errorCodes.tag('STS-ENROLL-0093') + 'cert_enrollment: ' +
+                  'the certificate serial ' + replacing + ' could not be ' +
+                  'superseded by its renewal ' + record.serialHex + ' (' +
+                  String((superseded && superseded.why) || 'no answer') +
+                  '); the renewal ' + (undone && undone.ok ? 'was revoked'
+                    : 'could NOT be revoked either') + ' and the request ' +
+                  'refused.');
+        log.debug("Leaving CertEnrollment.issue(). The supersede failed.");
+        return auditRefusal(self.refuse('STS-ENROLL-0093', 503, 'The ' +
+          'certificate this request renews could not be revoked, so the ' +
+          'renewal was taken back; try again.'));
+      }
     }
     log.debug("Leaving CertEnrollment.issue(). serial=" + record.serialHex);
     return { ok: true, record: self.publicRecord(record),
