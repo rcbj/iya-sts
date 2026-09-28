@@ -64,6 +64,11 @@ import InstanceSlot = require('../common/instance_slot');
 const vz = validation.z;
 const vt = validation.types;
 
+/**
+ * The six things an operator does by hand on the SCEP page: create or delete a
+ * challenge, reissue the RA certificate, revoke a certificate, add or remove a
+ * host name.
+ */
 const SCEP_ACTIONS = ['create-challenge', 'delete-challenge', 'reissue-ra',
                       'revoke-certificate', 'add-host-name',
                       'remove-host-name'];
@@ -74,6 +79,9 @@ const KINDS = ['person', 'application'];
 // 5280's list without the CA and attribute-authority ones, which describe an
 // authority rather than a leaf, and without certificateHold, which the core's
 // record has no way to lift again.
+/**
+ * The RFC 5280 revocation reasons an operator may give an enrolled certificate.
+ */
 const REVOKE_REASONS = ['unspecified', 'keyCompromise', 'affiliationChanged',
                         'superseded', 'cessationOfOperation',
                         'privilegeWithdrawn'];
@@ -86,6 +94,9 @@ const ENTRY_FIELDS = {
   identifier: vt.name
 };
 
+/**
+ * The body schema of each SCEP action.
+ */
 const ACTION_SCHEMAS = {
   'create-challenge': vz.object(Object.assign({}, ENTRY_FIELDS, {
     profile: vt.opt(PROFILE_TEXT),
@@ -124,6 +135,10 @@ const VIEW_QUERY = vz.object({
 
 // What SCEP does not do, drawn on the page and in the JSON. scep/CLAUDE.md
 // carries the argument for each.
+/**
+ * What SCEP here does not do, each with its reason, drawn on the page and in
+ * the JSON.
+ */
 const EXCEPTIONS = [
   { what: 'An ECDSA, EdDSA or post-quantum requester key',
     why: 'A CertRep is encrypted to the requester with RSA key transport ' +
@@ -173,7 +188,19 @@ interface ScepConsoleDeps {
   plainBase(): string;
 }
 
+/**
+ * What the two SCEP console pages and their management API operations read and
+ * do: one model, two doors (rule 7).
+ *
+ * No route, no response and no markup: a view reads only the request's query
+ * and base URL, and an action is a function of its body and context.
+ */
 class ScepConsole {
+  /**
+   * Builds the view model.
+   *
+   * @param deps - the modules it reads
+   */
   constructor(private readonly deps: ScepConsoleDeps) {
     deps.log.debug("Entering ScepConsole.constructor().");
     deps.log.debug("Leaving ScepConsole.constructor().");
@@ -181,6 +208,11 @@ class ScepConsole {
 
   // What the composition root passes: the modules the load-time instance
   // was built from before R2.
+  /**
+   * Returns the dependencies the default instance is built from.
+   *
+   * @returns the modules the load-time instance is built from
+   */
   static defaultDeps(): ScepConsoleDeps {
     helpers.log.debug("Entering ScepConsole.defaultDeps().");
     helpers.log.debug("Leaving ScepConsole.defaultDeps().");
@@ -209,6 +241,13 @@ class ScepConsole {
     };
   }
 
+  /**
+   * Builds a refusal marked with an error code.
+   *
+   * @param code - the STS error code
+   * @param errors - the sentences
+   * @returns `ok: false` and the errors
+   */
   refused(code, errors) {
     const { log, errorCodes } = this.deps;
     log.debug("Entering ScepConsole.refused(). code=" + code);
@@ -216,6 +255,11 @@ class ScepConsole {
     return errorCodes.mark({ ok: false, errors: errors }, code);
   }
 
+  /**
+   * Returns the SCEP settings group.
+   *
+   * @returns the settings
+   */
   settingsJson() {
     const { log, config } = this.deps;
     log.debug("Entering ScepConsole.settingsJson().");
@@ -226,6 +270,12 @@ class ScepConsole {
     return group ? group.settings : [];
   }
 
+  /**
+   * Validates the query string the two views accept.
+   *
+   * @param req - the request
+   * @returns the validation's answer
+   */
   queryOf(req) {
     const { log, validation } = this.deps;
     log.debug("Entering ScepConsole.queryOf().");
@@ -236,6 +286,12 @@ class ScepConsole {
 
   // Who a console session is, for `createdBy` and `by`. The management API has
   // no session and passes its own actor.
+  /**
+   * Returns the username of the console session making a request.
+   *
+   * @param req - the request
+   * @returns the username, or ''
+   */
   actorOf(req) {
     const { log, adminViews } = this.deps;
     log.debug("Entering ScepConsole.actorOf().");
@@ -252,6 +308,13 @@ class ScepConsole {
 
   // The SCEP URL for a profile on the plain-HTTP listener, which is where a
   // client with no TLS — sscep, most device firmware — reaches it (#210).
+  /**
+   * Returns the SCEP URL for a profile on the plain-HTTP listener, where a
+   * client with no TLS reaches it.
+   *
+   * @param profile - the profile; the bare endpoint when omitted
+   * @returns the URL
+   */
   plainUrlOf(profile) {
     const { log, plainBase } = this.deps;
     log.debug("Entering ScepConsole.plainUrlOf().");
@@ -259,6 +322,12 @@ class ScepConsole {
     return plainBase() + '/enroll/scep' + (profile ? '/' + profile : '');
   }
 
+  /**
+   * Returns the realm's SCEP endpoint URLs.
+   *
+   * @param req - the request, for its base URL
+   * @returns the SCEP, CGI, GetCACaps, GetCACert and PKIOperation URLs
+   */
   endpointsOf(req) {
     const { log, baseUrlOf } = this.deps;
     log.debug("Entering ScepConsole.endpointsOf().");
@@ -273,6 +342,13 @@ class ScepConsole {
     };
   }
 
+  /**
+   * Lists every profile with whether SCEP may issue it here, what it needs and
+   * its URL.
+   *
+   * @param req - the request, for its base URL
+   * @returns the rows
+   */
   profileRows(req) {
     const { log, baseUrlOf, core } = this.deps;
     log.debug("Entering ScepConsole.profileRows().");
@@ -291,6 +367,12 @@ class ScepConsole {
     });
   }
 
+  /**
+   * Returns an enrolled certificate as the page and the API list it.
+   *
+   * @param one - the enrolled record
+   * @returns the row
+   */
   certificateRow(one) {
     const { log } = this.deps;
     log.debug("Entering ScepConsole.certificateRow().");
@@ -305,6 +387,12 @@ class ScepConsole {
     };
   }
 
+  /**
+   * Returns the mode and what it requires of certificate enrollment, with
+   * SCEP's note on plain HTTP.
+   *
+   * @returns the note
+   */
   modeNote() {
     const { log, mode } = this.deps;
     log.debug("Entering ScepConsole.modeNote().");
@@ -325,6 +413,14 @@ class ScepConsole {
   // ---------------------------------------------------------------------------
   // GET /admin/scep
   // ---------------------------------------------------------------------------
+  /**
+   * Builds everything `/admin/scep` draws and `GET /admin-api/scep` answers:
+   * endpoints, Issuing CA, RA certificate, profiles, challenges, host names,
+   * certificates and settings.
+   *
+   * @param req - the request
+   * @returns the view
+   */
   scepView(req) {
     const { log, core, adminViews, baseUrlOf, realms, config, loadScep, cms,
             ra } = this.deps;
@@ -403,6 +499,13 @@ class ScepConsole {
   // ---------------------------------------------------------------------------
   // GET /admin/scep/monitor
   // ---------------------------------------------------------------------------
+  /**
+   * Builds everything `/admin/scep/monitor` draws and `GET
+   * /admin-api/scep/monitor` answers.
+   *
+   * @param req - the request
+   * @returns the view
+   */
   scepMonitorView(req) {
     const { log, monitor, adminViews, realms, core } = this.deps;
     log.debug("Entering ScepConsole.scepMonitorView().");
@@ -439,6 +542,12 @@ class ScepConsole {
   // POST /admin/scep — the six things an operator does by hand. Asynchronous,
   // because re-issuing the RA certificate generates a key and revoking signs.
   // ---------------------------------------------------------------------------
+  /**
+   * Turns a posted `kind` and `identifier` into an entry.
+   *
+   * @param value - the posted fields
+   * @returns the entry's `kind` and `id`
+   */
   entryOf(value) {
     const { log } = this.deps;
     log.debug("Entering ScepConsole.entryOf().");
@@ -450,6 +559,14 @@ class ScepConsole {
   // https one until then, which sscep refuses outright ("illegal URL") — it
   // has no TLS — so the one client the hint was written for could not run
   // it. `url` here is the plain listener's (`plainUrlOf()`).
+  /**
+   * Returns the `sscep` commands that use a created challenge password.
+   *
+   * @param url - the plain-HTTP SCEP URL
+   * @param challenge - the challenge password
+   * @param entry - the entry the challenge is for
+   * @returns the commands
+   */
   sscepHint(url, challenge, entry) {
     const { log, core } = this.deps;
     log.debug("Entering ScepConsole.sscepHint().");
@@ -478,6 +595,14 @@ class ScepConsole {
     ].join('\n');
   }
 
+  /**
+   * Performs one SCEP action from a console form or `POST
+   * /admin-api/scep/:action`.
+   *
+   * @param body - the action and its fields
+   * @param context - `actor`, `via` and `req` (the request, for its base URL)
+   * @returns a promise of `ok` and what the action did, or a refusal
+   */
   async scepAction(body, context) {
     const { log, validation, core, errorCodes, baseUrlOf, monitor, ra,
             realms } = this.deps;
@@ -608,9 +733,23 @@ const slot = new InstanceSlot<ScepConsole>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * The SCEP view model the console pages and the management API both answer
+ * from.
+ *
+ * The exports forward to the instance the composition root installs.
+ *
+ * @namespace
+ */
 export = {
   ScepConsole: ScepConsole,
+  /**
+   * Installs the instance the module-level functions forward to.
+   */
   installInstance: (instance: ScepConsole): void => slot.install(instance),
+  /**
+   * Says where the installed instance came from.
+   */
   instanceOrigin: (): string => slot.origin(),
   SCEP_ACTIONS: SCEP_ACTIONS,
   ACTION_SCHEMAS: ACTION_SCHEMAS,
