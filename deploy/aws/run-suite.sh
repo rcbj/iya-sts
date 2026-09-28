@@ -186,6 +186,18 @@ then
   fi
 fi
 
+# The job files MANIFEST.js lists, less a comma-separated exclusion list.
+# Read INSIDE the tests image, which has the suite's packages: MANIFEST.js
+# requires bunyan, and this machine's checkout — a clean worktree above all —
+# need not have run `npm install` (#311, the first in-AWS run died on it).
+manifestJobs() {
+  docker run --rm -e EXCLUDE="$1" "${TESTS_IMAGE}" node -e '
+    const skip = new Set(process.env.EXCLUDE.split(",").filter(Boolean));
+    process.stdout.write(require("./tests/vendored/MANIFEST.js").JOBS
+      .map(function (j) { return j.file; })
+      .filter(function (f) { return !skip.has(f); }).join(","));'
+}
+
 # --- 3. the callback stack, applied while the local half runs -----------------
 APPLY_PID=""
 APPLIED=0
@@ -254,13 +266,7 @@ CLIENT_SECRET="$(aws secretsmanager get-secret-value --secret-id "${SECRET_ARN}"
   --query SecretString --output text)"
 
 EXCLUDE="${CALLBACK_JOBS}${STS_SUITE_EXCLUDE:+,${STS_SUITE_EXCLUDE}}"
-ONLY="$(EXCLUDE="${EXCLUDE}" node -e '
-  const skip = new Set(process.env.EXCLUDE.split(",").filter(Boolean));
-  const jobs = require("./tests/vendored/MANIFEST.js").JOBS
-    .map(function (j) { return j.file; })
-    .filter(function (f) { return !skip.has(f); });
-  process.stdout.write(jobs.join(","));
-')"
+ONLY="$(manifestJobs "${EXCLUDE}")"
 if [ -n "${STS_SUITE_ONLY:-}" ];
 then
   ONLY="${STS_SUITE_ONLY}"
@@ -273,11 +279,7 @@ if [ "${IN_AWS}" = "1" ];
 then
   # Every job in the task, and the task resets the previous run's realms,
   # because nothing ran here first.
-  TASK_JOBS="$(EXCLUDE="${STS_SUITE_EXCLUDE:-}" node -e '
-    const skip = new Set(process.env.EXCLUDE.split(",").filter(Boolean));
-    process.stdout.write(require("./tests/vendored/MANIFEST.js").JOBS
-      .map(function (j) { return j.file; })
-      .filter(function (f) { return !skip.has(f); }).join(","));')"
+  TASK_JOBS="$(manifestJobs "${STS_SUITE_EXCLUDE:-}")"
   if [ -n "${STS_SUITE_ONLY:-}" ];
   then
     TASK_JOBS="${STS_SUITE_ONLY}"
