@@ -48,17 +48,42 @@ interface UnixDeps {
   groupPath: string;
 }
 
+/**
+ * The `unix` workload attestor: who the caller's process runs as and, with
+ * `spiffe.unixDiscoverWorkloadPath`, what it runs.
+ *
+ * A peer in another pid namespace gets its kernel credentials from SO_PEERCRED
+ * and nothing that needs the process.
+ */
 class UnixWorkloadAttestor {
+  /**
+   * The workload attestor's name, as `spiffe.workloadAttestors` lists it.
+   */
   readonly type = 'unix';
+  /**
+   * One sentence for `GET /spiffe` and the console: what this attestor
+   * verifies.
+   */
   readonly verifies = 'The uid, gid and supplementary groups the kernel ' +
     'reports for the caller\'s process, and its executable\'s path and ' +
     'SHA-256.';
 
+  /**
+   * Builds the attestor over its dependencies.
+   *
+   * @param deps - the logger, file system, crypto, configuration and the proc,
+   *   passwd and group paths
+   */
   constructor(private readonly deps: UnixDeps) {
     deps.log.debug("Entering UnixWorkloadAttestor.constructor().");
     deps.log.debug("Leaving UnixWorkloadAttestor.constructor().");
   }
 
+  /**
+   * Returns the dependencies the service runs the attestor with.
+   *
+   * @returns the production dependency set
+   */
   static defaultDeps(): UnixDeps {
     helpers.log.debug("Entering UnixWorkloadAttestor.defaultDeps().");
     helpers.log.debug("Leaving UnixWorkloadAttestor.defaultDeps().");
@@ -67,6 +92,13 @@ class UnixWorkloadAttestor {
   }
 
   // One name from a passwd- or group-style file, by id, or ''.
+  /**
+   * Looks up one name by id in a passwd- or group-style file.
+   *
+   * @param file - the file's path
+   * @param id - the numeric id
+   * @returns the name, or ''
+   */
   nameOf(file: string, id: string): string {
     const { log, fs } = this.deps;
     log.debug("Entering UnixWorkloadAttestor.nameOf(). " + id);
@@ -88,6 +120,13 @@ class UnixWorkloadAttestor {
   }
 
   // The status file's Uid, Gid and Groups.
+  /**
+   * Reads the effective Uid, Gid and the Groups of a process's status file.
+   *
+   * @param procRoot - the proc file system's root
+   * @param pid - the process id
+   * @returns the uid, the gid and the supplementary gids
+   */
   status(procRoot: string, pid: number): { uid: string; gid: string;
                                           groups: string[] } {
     const { log, fs } = this.deps;
@@ -114,6 +153,12 @@ class UnixWorkloadAttestor {
   }
 
   // `uid:` and `user:`.
+  /**
+   * Returns the `uid:` and, where the passwd file has one, `user:` selectors.
+   *
+   * @param uid - the numeric uid
+   * @returns the selector values
+   */
   userSelectors(uid: string): string[] {
     const { log, passwdPath } = this.deps;
     log.debug("Entering UnixWorkloadAttestor.userSelectors().");
@@ -123,6 +168,13 @@ class UnixWorkloadAttestor {
   }
 
   // `gid:` and `group:`, or their `supplementary_` forms.
+  /**
+   * Returns the `gid:` and `group:` selectors, or their `supplementary_` forms.
+   *
+   * @param prefix - '' or `supplementary_`
+   * @param gid - the numeric gid
+   * @returns the selector values
+   */
   groupSelectors(prefix: string, gid: string): string[] {
     const { log, groupPath } = this.deps;
     log.debug("Entering UnixWorkloadAttestor.groupSelectors().");
@@ -132,6 +184,14 @@ class UnixWorkloadAttestor {
                                                : []);
   }
 
+  /**
+   * Attests the caller's process: its uid, gid, supplementary groups and, when
+   * configured, its executable's path and SHA-256.
+   *
+   * @param facts - the caller's peer facts from `spiffe_peer.ts`, taken at
+   *   accept
+   * @returns the `unix` selector values
+   */
   async attest(facts: any): Promise<string[]> {
     const { log, fs, config, stsCrypto } = this.deps;
     const self = this;
@@ -162,6 +222,10 @@ class UnixWorkloadAttestor {
   }
 }
 
+/**
+ * The `unix` workload attestor (#40), after SPIRE's plugin.
+ * @namespace
+ */
 export = {
   UnixWorkloadAttestor: UnixWorkloadAttestor
 };

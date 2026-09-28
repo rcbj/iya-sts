@@ -87,18 +87,43 @@ interface X509popDeps {
   agentPath: typeof agentPath;
 }
 
+/**
+ * The `x509pop` node attestor: an X.509 certificate chaining to the realm's
+ * anchors, and a signature over a fresh challenge with its key.
+ *
+ * It follows SPIRE's `x509pop` step for step, and goes beyond it by challenging
+ * an ML-DSA, SLH-DSA or composite key through a `pqc_signature` member.
+ */
 class X509popAttestor {
+  /**
+   * The attestation type an agent names in `params.data.type`.
+   */
   readonly type = 'x509pop';
+  /**
+   * One sentence for `GET /spiffe` and the console: what this attestor
+   * verifies.
+   */
   readonly verifies = 'An X.509 certificate chaining to the realm\'s ' +
     'x509pop anchors (or its own SPIFFE bundle, in spiffe mode), and a ' +
     'signature over a fresh challenge with its key — RSA, ECDSA or a ' +
     'post-quantum key.';
 
+  /**
+   * Builds the attestor over its dependencies.
+   *
+   * @param deps - the logger, crypto, configuration, error codes, SPIFFE, gRPC,
+   *   CA and PKI helpers and the agent path template
+   */
   constructor(private readonly deps: X509popDeps) {
     deps.log.debug("Entering X509popAttestor.constructor().");
     deps.log.debug("Leaving X509popAttestor.constructor().");
   }
 
+  /**
+   * Returns the dependencies the service runs the attestor with.
+   *
+   * @returns the production dependency set
+   */
   static defaultDeps(): X509popDeps {
     helpers.log.debug("Entering X509popAttestor.defaultDeps().");
     helpers.log.debug("Leaving X509popAttestor.defaultDeps().");
@@ -110,6 +135,12 @@ class X509popAttestor {
   }
 
   // A JSON document from bytes, or null.
+  /**
+   * Parses bytes as a JSON object.
+   *
+   * @param bytes - the bytes to parse
+   * @returns the object, or null when the bytes are not a JSON object
+   */
   json(bytes: Buffer): any {
     const { log } = this.deps;
     log.debug("Entering X509popAttestor.json().");
@@ -126,6 +157,12 @@ class X509popAttestor {
   }
 
   // A Go `[]byte` as JSON carries it: standard base64.
+  /**
+   * Decodes a Go `[]byte` as JSON carries it: standard base64.
+   *
+   * @param value - the JSON value
+   * @returns the bytes, or null when the value is not a string
+   */
   bytesOf(value: any): Buffer | null {
     const { log } = this.deps;
     log.debug("Entering X509popAttestor.bytesOf().");
@@ -138,6 +175,12 @@ class X509popAttestor {
   }
 
   // The address the agent connected from, without its port, or ''.
+  /**
+   * Returns the address the agent connected from, without its port.
+   *
+   * @param context - the attestation context
+   * @returns the address, or ''
+   */
   clientIp(context: NodeAttestationContext): string {
     const { log } = this.deps;
     log.debug("Entering X509popAttestor.clientIp().");
@@ -146,6 +189,12 @@ class X509popAttestor {
   }
 
   // A pkix.Name as Go's template sees it, from node's "K=V\n" subject.
+  /**
+   * Builds a pkix.Name as Go's template sees it, from node's "K=V\n" subject.
+   *
+   * @param text - the subject as node renders it
+   * @returns the name's fields
+   */
   pkixName(text: string): Record<string, any> {
     const { log } = this.deps;
     log.debug("Entering X509popAttestor.pkixName().");
@@ -175,6 +224,13 @@ class X509popAttestor {
   }
 
   // The subjectAltName entries of one kind, from node's rendering.
+  /**
+   * Returns the subjectAltName entries of one kind, from node's rendering.
+   *
+   * @param x509 - the certificate
+   * @param kind - `DNS`, `URI`, `IP Address` or `email`
+   * @returns the entries' values
+   */
   sans(x509: nodeCrypto.X509Certificate, kind: string): string[] {
     const { log } = this.deps;
     log.debug("Entering X509popAttestor.sans(). kind=" + kind);
@@ -192,6 +248,13 @@ class X509popAttestor {
   }
 
   // SPIRE's SerialNumberHex: lowercase, an even number of digits.
+  /**
+   * SPIRE's SerialNumberHex: the serial number in lowercase hex, an even number
+   * of digits.
+   *
+   * @param x509 - the certificate
+   * @returns the serial number
+   */
   serialHex(x509: nodeCrypto.X509Certificate): string {
     const { log } = this.deps;
     log.debug("Entering X509popAttestor.serialHex().");
@@ -206,6 +269,14 @@ class X509popAttestor {
   // `pki.spkiOf()` reads — so a post-quantum key node cannot read is still
   // described. `kind` is 'rsa', 'ec', 'pq', or something this attestor does
   // not challenge.
+  /**
+   * Describes the leaf's public key from its SPKI, so that a post-quantum key
+   * node cannot read is still described.
+   *
+   * @param leaf - the leaf certificate
+   * @returns the key description, whose `kind` is 'rsa', 'ec', 'pq' or a kind
+   *   this attestor does not challenge
+   */
   keyOf(leaf: any): any {
     const { log, pki, stsCrypto } = this.deps;
     log.debug("Entering X509popAttestor.keyOf().");
@@ -217,6 +288,13 @@ class X509popAttestor {
 
   // The digest both nonces are signed as, or null when a nonce is not 32
   // bytes (SPIRE's `combineNonces()`).
+  /**
+   * SPIRE's `combineNonces()`: the SHA-256 digest both nonces are signed as.
+   *
+   * @param challenge - the server's nonce
+   * @param response - the agent's nonce
+   * @returns the digest, or null when either nonce is not 32 bytes
+   */
   combined(challenge: Buffer, response: Buffer): Buffer | null {
     const { log, crypto } = this.deps;
     log.debug("Entering X509popAttestor.combined().");
@@ -236,6 +314,15 @@ class X509popAttestor {
   // AS a digest (`rsa.SignPSS`, `ecdsa.Sign`), which node's hashed verify
   // over the two nonces reproduces; the post-quantum member signs the
   // digest itself.
+  /**
+   * Checks whether the agent's answer is a valid signature over both nonces
+   * with the leaf's key, in the member for its key kind.
+   *
+   * @param key - the leaf's key description from `keyOf()`
+   * @param nonce - the server's challenge nonce
+   * @param response - the agent's parsed challenge response
+   * @returns whether the signature verifies
+   */
   async verifyResponse(key: any, nonce: Buffer, response: any):
       Promise<boolean> {
     const { log, stsCrypto } = this.deps;
@@ -272,6 +359,17 @@ class X509popAttestor {
     return ok;
   }
 
+  /**
+   * Checks the certificate chain, challenges the agent and verifies its proof
+   * of possession, and derives the agent's ID and selectors.
+   *
+   * @param context - the attestation context; the payload carries the
+   *   certificates, leaf first
+   * @returns the agent's ID from `spiffe.x509popAgentPathTemplate` with the
+   *   subject, CA fingerprint, serial number, SAN and group selectors;
+   *   re-attestable
+   * @throws a gRPC status error when the chain or the proof is refused
+   */
   async attest(context: NodeAttestationContext):
       Promise<NodeAttestationResult> {
     const { log, crypto, config, errorCodes, spiffeId, rpc, ca, pki,
@@ -562,6 +660,11 @@ class X509popAttestor {
   }
 }
 
+/**
+ * The `x509pop` node attestor (#40): X.509 proof of possession, SPIRE's plugin
+ * step for step, with a post-quantum challenge beyond it.
+ * @namespace
+ */
 export = {
   X509popAttestor: X509popAttestor
 };

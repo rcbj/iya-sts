@@ -50,6 +50,9 @@ const { log } = helpers;
 import errorCodes = require('../common/error_codes');
 
 // The npm package that speaks D-Bus. Named once: it is in the refusal.
+/**
+ * The optional npm package the attestor speaks D-Bus through.
+ */
 const DBUS_PACKAGE = 'dbus-next';
 
 // SPIRE's constants (`systemd_posix.go`).
@@ -69,8 +72,22 @@ interface SystemdDeps {
   stillValid(facts: any): string;
 }
 
+/**
+ * The `systemd` workload attestor: the unit that holds the caller's process, as
+ * systemd reports it over D-Bus.
+ *
+ * The pid is checked again against the facts taken at accept after systemd
+ * answers, and a peer this service cannot see gets no selectors.
+ */
 class SystemdWorkloadAttestor {
+  /**
+   * The workload attestor's name, as `spiffe.workloadAttestors` lists it.
+   */
   readonly type = 'systemd';
+  /**
+   * One sentence for `GET /spiffe` and the console: what this attestor
+   * verifies.
+   */
   readonly verifies = 'The systemd unit that holds the caller\'s process, ' +
     'as systemd reports it over D-Bus: its id and its unit file.';
 
@@ -81,11 +98,24 @@ class SystemdWorkloadAttestor {
   // Whether STS-SPIFFE-0124 has been logged in this process.
   private missingLogged = false;
 
+  /**
+   * Builds the attestor over its dependencies.
+   *
+   * @param deps - the logger, error codes, a package loader and the peer-facts
+   *   check
+   */
   constructor(private readonly deps: SystemdDeps) {
     deps.log.debug("Entering SystemdWorkloadAttestor.constructor().");
     deps.log.debug("Leaving SystemdWorkloadAttestor.constructor().");
   }
 
+  /**
+   * Returns the dependencies the service runs the attestor with.
+   *
+   * @param stillValid - asks whether the process is still the one that
+   *   connected
+   * @returns the production dependency set
+   */
   static defaultDeps(stillValid: SystemdDeps['stillValid']): SystemdDeps {
     helpers.log.debug("Entering SystemdWorkloadAttestor.defaultDeps().");
     helpers.log.debug("Leaving SystemdWorkloadAttestor.defaultDeps().");
@@ -99,6 +129,12 @@ class SystemdWorkloadAttestor {
 
   // The D-Bus package, or a sentence naming it. Asked on every attestation
   // rather than once, so installing it needs no restart.
+  /**
+   * Loads the D-Bus package, on every attestation so that installing it needs
+   * no restart.
+   *
+   * @returns the package, and `missing`: '' or a sentence naming it
+   */
   client(): { dbus: any; missing: string } {
     const { log, load, errorCodes } = this.deps;
     log.debug("Entering SystemdWorkloadAttestor.client().");
@@ -124,6 +160,12 @@ class SystemdWorkloadAttestor {
   }
 
   // The system bus, opened once.
+  /**
+   * Returns the system bus, opened on first use and kept.
+   *
+   * @param dbus - the D-Bus package
+   * @returns the bus
+   */
   systemBus(dbus: any): any {
     const { log } = this.deps;
     log.debug("Entering SystemdWorkloadAttestor.systemBus().");
@@ -135,6 +177,10 @@ class SystemdWorkloadAttestor {
   }
 
   // Forget the bus after a failure; its socket may be the reason.
+  /**
+   * Forgets the bus after a failure, disconnecting it; its socket may be the
+   * reason.
+   */
   dropBus(): void {
     const { log } = this.deps;
     log.debug("Entering SystemdWorkloadAttestor.dropBus().");
@@ -153,6 +199,14 @@ class SystemdWorkloadAttestor {
   }
 
   // One string property of a unit (SPIRE's getStringProperty()).
+  /**
+   * SPIRE's getStringProperty(): one string property of a unit.
+   *
+   * @param bus - the system bus
+   * @param unitPath - the unit's object path
+   * @param name - the property's name
+   * @returns the property's value
+   */
   async stringProperty(bus: any, unitPath: string, name: string):
       Promise<string> {
     const { log } = this.deps;
@@ -173,6 +227,13 @@ class SystemdWorkloadAttestor {
   }
 
   // SPIRE's getSystemdUnitInfo(): the unit's Id and FragmentPath.
+  /**
+   * SPIRE's getSystemdUnitInfo(): the Id and FragmentPath of the unit holding a
+   * process.
+   *
+   * @param pid - the process id
+   * @returns the unit's id and fragment path
+   */
   async unitOf(pid: number): Promise<{ id: string; fragmentPath: string }> {
     const { log } = this.deps;
     log.debug("Entering SystemdWorkloadAttestor.unitOf(). pid=" + pid);
@@ -204,6 +265,15 @@ class SystemdWorkloadAttestor {
     }
   }
 
+  /**
+   * Attests the caller's systemd unit, then checks the process is still the one
+   * that connected.
+   *
+   * @param facts - the caller's peer facts from `spiffe_peer.ts`, taken at
+   *   accept
+   * @returns the `id:` and `fragment_path:` selector values, empty when the
+   *   peer is not visible
+   */
   async attest(facts: any): Promise<string[]> {
     const { log, stillValid, errorCodes } = this.deps;
     log.debug("Entering SystemdWorkloadAttestor.attest(). " + facts.tag);
@@ -242,6 +312,11 @@ class SystemdWorkloadAttestor {
   }
 }
 
+/**
+ * The `systemd` workload attestor (#170), after SPIRE's plugin, with a pidfd
+ * check SPIRE's lacks.
+ * @namespace
+ */
 export = {
   SystemdWorkloadAttestor: SystemdWorkloadAttestor,
   DBUS_PACKAGE: DBUS_PACKAGE

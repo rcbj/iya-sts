@@ -63,11 +63,31 @@ interface JoinTokenAttestorDeps {
   keyOf(token: string): string;
 }
 
+/**
+ * The `join_token` node attestor: verifies a token this server minted with
+ * CreateJoinToken, in every mode.
+ *
+ * The token must be known, unexpired and unspent, and is claimed across the
+ * cluster so that it is spent once.
+ */
 class JoinTokenAttestor {
+  /**
+   * The attestation type an agent names in `params.data.type`.
+   */
   readonly type = 'join_token';
+  /**
+   * One sentence for `GET /spiffe` and the console: what this attestor
+   * verifies.
+   */
   readonly verifies = 'A token this server minted with CreateJoinToken: ' +
     'unexpired, unspent, and spent once across every node.';
 
+  /**
+   * Builds the attestor over its dependencies.
+   *
+   * @param deps - the logger, clock, crypto, error codes, SPIFFE ID and gRPC
+   *   helpers, cluster claims and the realm's join-token store
+   */
   constructor(private readonly deps: JoinTokenAttestorDeps) {
     deps.log.debug("Entering JoinTokenAttestor.constructor().");
     deps.log.debug("Leaving JoinTokenAttestor.constructor().");
@@ -75,6 +95,16 @@ class JoinTokenAttestor {
 
   // The agent a token attests, from the token. See the header for why it is
   // a digest.
+  /**
+   * Returns the agent SPIFFE ID a join token attests,
+   * `/spire/agent/join_token/<digest>`.
+   *
+   * The path carries a SHA-256 digest of the token rather than the token, so
+   * the credential never reaches the directory, the audit log or a certificate.
+   * @param trustDomain - the trust domain the agent belongs to
+   * @param token - the join token as presented
+   * @returns the agent's SPIFFE ID
+   */
   agentIdFor(trustDomain: string, token: string): string {
     const { log, crypto, spiffeId } = this.deps;
     log.debug("Entering JoinTokenAttestor.agentIdFor().");
@@ -85,6 +115,16 @@ class JoinTokenAttestor {
     return spiffeId.agentId(trustDomain, 'join_token', suffix);
   }
 
+  /**
+   * Verifies a presented join token and claims it for this attestation.
+   *
+   * Refuses an empty token, an unknown or already spent one, and an expired one
+   * with three different errors.
+   * @param context - the attestation context; the payload is the token
+   * @returns the agent's ID and selectors, with `commit()` to delete the token
+   *   once the SVID exists and `release()` to give the claim back
+   * @throws a gRPC status error when the token is refused
+   */
   async attest(context: NodeAttestationContext):
       Promise<NodeAttestationResult> {
     const { log, nowSec, crypto, errorCodes, rpc, claims, tokens,
@@ -188,6 +228,11 @@ class JoinTokenAttestor {
   }
 }
 
+/**
+ * The `join_token` node attestor (#40): the one attestation evidence this
+ * server issued and can verify with nothing outside itself.
+ * @namespace
+ */
 export = {
   JoinTokenAttestor: JoinTokenAttestor
 };

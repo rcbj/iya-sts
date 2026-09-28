@@ -182,6 +182,10 @@ import peer = require('./spiffe_peer');
 // `/admin/spiffe` draw it, and two copies of an explanation is one that will
 // eventually be wrong on one page.
 // ---------------------------------------------------------------------------
+/**
+ * The kinds of caller SPIRE's authorization policy speaks of — local, agent,
+ * admin, downstream — each with the prose the pages draw.
+ */
 const ENTITIES = [
   { id: 'local', label: 'Local',
     what: 'The call arrived on the Unix domain socket. A real SPIRE server ' +
@@ -233,6 +237,10 @@ const ENTITIES = [
 // a row is refused for everybody the first time it is called, where a default
 // of "allow" would leave it unauthorized forever with nothing to notice.
 // ---------------------------------------------------------------------------
+/**
+ * SPIRE's per-method authorization table for the SPIRE Server API: which
+ * entities may call each method. A method with no row is refused.
+ */
 const POLICY = {
   // Entry
   'Entry.CountEntries':        { admin: true, local: true },
@@ -320,13 +328,34 @@ interface SpiffeAuthDeps {
   processUid(): number;
 }
 
+/**
+ * Who is calling the two gRPC surfaces, and whether the SPIRE Server API may
+ * answer them.
+ *
+ * A library: it decides and `spiffe_grpc.ts` answers, so every refusal is a
+ * plain `{ status, message }` descriptor. The Workload API authenticates
+ * nobody, as its specification requires; the SPIRE Server API requires an
+ * X509-SVID over mutual TLS.
+ */
 class SpiffeAuth {
+  /**
+   * Builds the decider over its dependencies.
+   *
+   * @param deps - crypto, the logger, clock, configuration, mode, error codes,
+   *   statistics, the SPIFFE ID, CA, registry, TLS, revocation, PKI and peer
+   *   modules, and the process's uid
+   */
   constructor(private readonly deps: SpiffeAuthDeps) {
     deps.log.debug("Entering SpiffeAuth.constructor().");
     deps.log.debug("Leaving SpiffeAuth.constructor().");
   }
 
   // What the composition root passes, from the real modules.
+  /**
+   * Returns the dependencies the composition root passes.
+   *
+   * @returns the production dependency set
+   */
   static defaultDeps(): SpiffeAuthDeps {
     helpers.log.debug("Entering SpiffeAuth.defaultDeps().");
     helpers.log.debug("Leaving SpiffeAuth.defaultDeps().");
@@ -363,6 +392,12 @@ class SpiffeAuth {
   // has no root of trust until that call gives it one. What this gates is the
   // SPIRE Server API, whose output is a credential another service will
   // believe.
+  /**
+   * Asks whether the SPIRE Server API's authorization is enforced, which is the
+   * mode's answer.
+   *
+   * @returns whether it is
+   */
   authRequired() {
     const { log, mode } = this.deps;
     log.debug("Entering SpiffeAuth.authRequired().");
@@ -370,6 +405,12 @@ class SpiffeAuth {
     return mode.gatesSpireServerApi();
   }
 
+  /**
+   * Returns `spiffe.trustLocalSocket`: whether a caller on the private Unix
+   * socket is trusted as `local`.
+   *
+   * @returns the setting
+   */
   trustLocalSocket() {
     const { log, config } = this.deps;
     log.debug("Entering SpiffeAuth.trustLocalSocket().");
@@ -380,6 +421,12 @@ class SpiffeAuth {
   // AS IT IS IN FORCE (#104): OFF is honoured in development only
   // (`mode.servesUnattestedEntries()`); a product realm reads the default,
   // ON, whatever is stored, and says so once.
+  /**
+   * Returns `spiffe.attestWorkloads` as it is in force; off is honoured in
+   * development only.
+   *
+   * @returns whether workloads are attested
+   */
   attestWorkloads() {
     const { log, mode } = this.deps;
     log.debug("Entering SpiffeAuth.attestWorkloads().");
@@ -393,6 +440,12 @@ class SpiffeAuth {
   // row's `onlyWhile` marker names `mode.believesAssertedSelectors()`, so
   // `valueInForce()` asks it, says once that a stored value is ignored, and
   // the write is refused in product too (#104).
+  /**
+   * Returns `spiffe.acceptAssertedSelectors` as it is in force; a selector the
+   * caller wrote is believed only outside product mode.
+   *
+   * @returns whether asserted selectors are accepted
+   */
   acceptAssertedSelectors() {
     const { log, mode } = this.deps;
     log.debug("Entering SpiffeAuth.acceptAssertedSelectors().");
@@ -424,6 +477,13 @@ class SpiffeAuth {
   // whatever else it is — on the socket, which carries no TLS, that is
   // anonymous, and the remedy is an administrator's X509-SVID on the TCP port.
   // ---------------------------------------------------------------------------
+  /**
+   * Decides whether a call on the Unix socket is trusted as `local`, asked per
+   * call in the socket's realm.
+   *
+   * @param call - the gRPC call
+   * @returns whether it is local, and why not with an error code when it is not
+   */
   localTrust(call): { local: boolean; why: string; errorCode: string } {
     const { log, mode, peer } = this.deps;
     log.debug('Entering SpiffeAuth.localTrust().');
@@ -506,6 +566,14 @@ class SpiffeAuth {
   // `workloadAttestationState()`. Read in the AMBIENT realm, which is the
   // listener's in all three.
   // ---------------------------------------------------------------------------
+  /**
+   * Decides whether the Workload API's TCP port may be served in the ambient
+   * realm (#166): product serves it only on a network declared to authenticate
+   * source addresses.
+   *
+   * @returns the port and host, whether it is served and declared, an error
+   *   code, and the state and reason the pages draw
+   */
   workloadTcpPosture(): { port: number; host: string; served: boolean;
                           declared: boolean; errorCode: string;
                           state: string; why: string } {
@@ -564,6 +632,12 @@ class SpiffeAuth {
   // The admin ids, as a list. A string in configuration because it is a list of
   // URIs and every other list-shaped setting here is one; parsed on every read
   // so that adding one on /admin/config takes effect on the next call.
+  /**
+   * Returns the SPIFFE IDs `spiffe.adminIds` names as administrators, parsed on
+   * every read.
+   *
+   * @returns the ids
+   */
   adminIds() {
     const { log, config } = this.deps;
     log.debug("Entering SpiffeAuth.adminIds().");
@@ -590,6 +664,13 @@ class SpiffeAuth {
   // /admin/spiffe/brokers takes effect on the broker's next call. An entry
   // that does not parse is REPORTED with its problem and authorizes nothing.
   // ---------------------------------------------------------------------------
+  /**
+   * Parses a `spiffe.brokers` value: each broker's SPIFFE ID and the reference
+   * types it may use, with any entry that does not parse reported.
+   *
+   * @param raw - the setting's value
+   * @returns one row per entry, with its id, types, problem and text as typed
+   */
   parseBrokers(raw: string): Array<{ id: string; types: string[];
                                      problem: string; raw: string }> {
     const { log, spiffeId } = this.deps;
@@ -623,6 +704,13 @@ class SpiffeAuth {
   // The list as a setting's value. An entry that did not parse is written
   // back as it was typed (`raw`), so an edit elsewhere does not rewrite an
   // operator's typo into a different one.
+  /**
+   * Writes a broker list back as a setting's value, keeping an unparsed entry
+   * as it was typed.
+   *
+   * @param list - the brokers
+   * @returns the value
+   */
   serializeBrokers(list: Array<{ id: string; types: string[];
                                  problem?: string; raw?: string }>): string {
     const { log } = this.deps;
@@ -634,6 +722,11 @@ class SpiffeAuth {
     }).join(' ');
   }
 
+  /**
+   * Returns the brokers `spiffe.brokers` names, parsed on every call.
+   *
+   * @returns one row per entry
+   */
   brokers(): Array<{ id: string; types: string[]; problem: string;
                      raw: string }> {
     const { log, config } = this.deps;
@@ -644,6 +737,13 @@ class SpiffeAuth {
 
   // The broker an AUTHENTICATED caller is, or a refusal descriptor
   // (STS-SPIFFE-0133 unauthenticated, STS-SPIFFE-0134 not a broker).
+  /**
+   * Returns the broker an authenticated caller is.
+   *
+   * @param caller - the caller
+   * @returns the broker, or a refusal descriptor (STS-SPIFFE-0133
+   *   unauthenticated, STS-SPIFFE-0134 not a broker)
+   */
   brokerOf(caller): { broker?: { id: string; types: string[] };
                       status?: string; message?: string;
                       errorCode?: string } {
@@ -689,6 +789,13 @@ class SpiffeAuth {
   // `local` — would hand every method to anybody who could reach the port, so
   // the fallback below defaults to TCP for anything it does not recognise.
   // ---------------------------------------------------------------------------
+  /**
+   * Tells which transport a call arrived on, defaulting to TCP for anything it
+   * does not recognise.
+   *
+   * @param call - the gRPC call
+   * @returns `uds` or `tcp`
+   */
   transportOf(call) {
     const { log } = this.deps;
     log.debug('Entering SpiffeAuth.transportOf().');
@@ -725,6 +832,12 @@ class SpiffeAuth {
     return 'tcp';
   }
 
+  /**
+   * Returns the call's peer as grpc-js names it.
+   *
+   * @param call - the gRPC call
+   * @returns the peer, or ''
+   */
   peerOf(call) {
     const { log } = this.deps;
     log.debug("Entering SpiffeAuth.peerOf().");
@@ -746,6 +859,12 @@ class SpiffeAuth {
   // absent rather than empty when none was sent — grpc-js only sets it when the
   // DER is there — which is what distinguishes "no certificate" from "a
   // certificate that did not verify", and those are two different refusals.
+  /**
+   * Returns the certificate the client presented.
+   *
+   * @param call - the gRPC call
+   * @returns the certificate, or null when none was sent
+   */
   peerCertificateOf(call) {
     const { log } = this.deps;
     log.debug("Entering SpiffeAuth.peerCertificateOf().");
@@ -781,6 +900,13 @@ class SpiffeAuth {
   // the first taken: the SVID specification permits one, and picking one of two
   // would be choosing which identity a caller has on their behalf.
   // ---------------------------------------------------------------------------
+  /**
+   * Reads the SPIFFE ID from a certificate's one URI subjectAltName; several
+   * URI SANs are refused.
+   *
+   * @param certificate - the peer certificate as node describes it
+   * @returns `{ ok: true, id }`, or `{ ok: false, reason }`
+   */
   spiffeIdFromCertificate(certificate) {
     const { log, spiffeId } = this.deps;
     log.debug('Entering SpiffeAuth.spiffeIdFromCertificate().');
@@ -860,6 +986,12 @@ class SpiffeAuth {
   // want the anchor instead — the bundle, and the gRPC listener's client
   // truststore — say `trustAnchors` and say why.
   // ---------------------------------------------------------------------------
+  /**
+   * Returns the X.509 authorities that sign SVIDs — this service's and the
+   * federated trust domains' — for the direct issuer check.
+   *
+   * @returns the authorities, each with its trust domain
+   */
   authorityCertificates() {
     const { log, ca, crypto, errorCodes } = this.deps;
     log.debug('Entering SpiffeAuth.authorityCertificates().');
@@ -916,6 +1048,13 @@ class SpiffeAuth {
   // false, keyUsage names digitalSignature and neither keyCertSign nor
   // cRLSign. `entry` is `pki.certificateFromDer()`'s shape, its facts read by
   // `pki.pathRuleProblem()` already. '' when it holds.
+  /**
+   * Checks what X509-SVID section 4.3 asks of a leaf beyond RFC 5280: cA false,
+   * digitalSignature, and neither keyCertSign nor cRLSign.
+   *
+   * @param entry - the certificate as `pki.certificateFromDer()` shapes it
+   * @returns '' when it holds, otherwise why not
+   */
   leafSvidProblem(entry) {
     const { log, pki } = this.deps;
     log.debug('Entering SpiffeAuth.leafSvidProblem().');
@@ -935,6 +1074,16 @@ class SpiffeAuth {
     return problem;
   }
 
+  /**
+   * Verifies a presented X509-SVID: its validity window, an authority this
+   * service holds that issued and signed it, its trust domain matching that
+   * authority's, and its revocation status.
+   *
+   * @param certificate - the peer certificate
+   * @param id - the SPIFFE ID it claims
+   * @returns `{ ok: true, trustDomain, revocation }`, or `{ ok: false, reason,
+   *   errorCode }`
+   */
   verifyPresentedCertificate(certificate, id) {
     const { log, crypto, config, nowSec, spiffeId, revocationStatus, errorCodes,
             ca } = this.deps;
@@ -1089,6 +1238,13 @@ class SpiffeAuth {
   // caller may do on the NEXT call, and a cache added for speed would quietly
   // undo it.
   // ---------------------------------------------------------------------------
+  /**
+   * Classifies a SPIFFE ID as the policy's entities: agent, admin, downstream,
+   * read from the registry on every call.
+   *
+   * @param id - the caller's SPIFFE ID
+   * @returns the entities it is, and notes on why
+   */
   classify(id) {
     const { log, registry, spiffeId } = this.deps;
     log.debug('Entering SpiffeAuth.classify(). id=' + id);
@@ -1146,6 +1302,14 @@ class SpiffeAuth {
   // Workload API needs the transport and the endpoint to derive its selectors
   // and because `/admin/spiffe` reports the same shape for both.
   // ---------------------------------------------------------------------------
+  /**
+   * Builds the caller object for a call on either surface: its transport, peer,
+   * certificate, SPIFFE ID and entities.
+   *
+   * @param call - the gRPC call
+   * @param surface - the surface the call arrived on
+   * @returns the caller
+   */
   callerOf(call, surface): Record<string, any> {
     const { log, tls } = this.deps;
     log.debug('Entering SpiffeAuth.callerOf(). surface=' + surface);
@@ -1250,6 +1414,12 @@ class SpiffeAuth {
   // A one-line description, used in refusals, in the audit row and on the
   // pages. One function so that three surfaces cannot describe the same caller
   // three ways.
+  /**
+   * Describes a caller in one line, for refusals, the audit row and the pages.
+   *
+   * @param caller - the caller
+   * @returns the description
+   */
   describeCaller(caller) {
     const { log } = this.deps;
     log.debug("Entering SpiffeAuth.describeCaller().");
@@ -1275,6 +1445,14 @@ class SpiffeAuth {
   // grpc-js status and `spiffe_grpc.ts` maps it, so this module needs no
   // require into the transport and cannot join a cycle with it.
   // ---------------------------------------------------------------------------
+  /**
+   * Decides whether a caller may call a SPIRE Server API method, against
+   * `POLICY`.
+   *
+   * @param caller - the caller
+   * @param method - `Service.Method`
+   * @returns null to allow, or a refusal descriptor naming a grpc-js status
+   */
   authorize(caller, method) {
     const { log, errorCodes } = this.deps;
     log.debug('Entering SpiffeAuth.authorize(). method=' + method);
@@ -1368,6 +1546,11 @@ class SpiffeAuth {
   // much every other realm's register remembers. The floor is 1: a cap of 0
   // would record every connection as new on every call, which is the per-call
   // counting this map exists to undo.
+  /**
+   * Returns `spiffe.maxRecordedConnections`, the cap on remembered connections.
+   *
+   * @returns the cap
+   */
   maxRecordedConnections() {
     const { log, config } = this.deps;
     log.debug("Entering SpiffeAuth.maxRecordedConnections().");
@@ -1375,6 +1558,12 @@ class SpiffeAuth {
     return config.value('spiffe.maxRecordedConnections');
   }
 
+  /**
+   * Asks whether a connection has already been recorded, recording it when not.
+   *
+   * @param key - the connection's key
+   * @returns whether it had been
+   */
   alreadyRecorded(key) {
     const { log, nowSec } = this.deps;
     log.debug("Entering SpiffeAuth.alreadyRecorded().");
@@ -1403,6 +1592,14 @@ class SpiffeAuth {
   // `detail.method` is what was accepted — "X509-SVID (mTLS)", "join token" —
   // and it is what shows on /admin/users, so it is written the way a person
   // would read it rather than as a code.
+  /**
+   * Records an accepted SPIFFE credential for `/admin/users` and the
+   * statistics; the one recording function every accepted credential goes
+   * through.
+   *
+   * @param detail - the SPIFFE ID, the method accepted, what was presented and
+   *   the transport
+   */
   recordIdentity(detail) {
     const { log, stats, errorCodes } = this.deps;
     log.debug('Entering SpiffeAuth.recordIdentity(). presented=' +
@@ -1440,6 +1637,11 @@ class SpiffeAuth {
   // been built. Only an ACCEPTED credential is recorded: a certificate that did
   // not verify is a refusal and belongs in the audit log rather than on
   // /admin/users, which answers "who has authenticated here".
+  /**
+   * Records the SPIRE Server API's authenticated caller, once per connection.
+   *
+   * @param caller - the caller
+   */
   recordCaller(caller) {
     const { log } = this.deps;
     log.debug("Entering SpiffeAuth.recordCaller().");
@@ -1467,6 +1669,13 @@ class SpiffeAuth {
   // `endpoint:` and `peer:` rather than `unix:` and `k8s:`, and why an asserted
   // selector is passed through verbatim while an observed one is not.
   // ---------------------------------------------------------------------------
+  /**
+   * Returns the selectors a caller asserted in `x-sts-workload-selector`
+   * metadata, when asserted selectors are accepted.
+   *
+   * @param call - the gRPC call
+   * @returns the selectors
+   */
   assertedSelectorsOf(call) {
     const { log, registry } = this.deps;
     log.debug('Entering SpiffeAuth.assertedSelectorsOf().');
@@ -1510,6 +1719,13 @@ class SpiffeAuth {
   // per realm — read here in the ambient realm the listener entered — so the
   // transport settles which of the two it was. Deriving it beats reading it:
   // there is nothing to read.
+  /**
+   * Returns the address the caller reached, derived from configuration.
+   *
+   * @param surface - the surface
+   * @param transport - `uds` or `tcp`
+   * @returns the endpoint
+   */
   endpointFor(surface, transport) {
     const { log, config } = this.deps;
     log.debug("Entering SpiffeAuth.endpointFor().");
@@ -1533,6 +1749,13 @@ class SpiffeAuth {
   // a registration entry that matches twice. The address alone is the stable,
   // matchable fact; the whole peer stays on the caller object, in the log and
   // in the audit row, where a reader wants the connection and not the rule.
+  /**
+   * Returns the peer as a selector value: the address without its ephemeral
+   * port.
+   *
+   * @param peer - the peer
+   * @returns the address
+   */
   peerSelectorValue(peer) {
     const { log } = this.deps;
     log.debug("Entering SpiffeAuth.peerSelectorValue().");
@@ -1540,6 +1763,15 @@ class SpiffeAuth {
     return String(peer || '').replace(/:\d+$/, '');
   }
 
+  /**
+   * Returns the Workload API caller's selectors: transport, endpoint, peer, the
+   * attested selectors and any accepted asserted ones.
+   *
+   * @param call - the gRPC call
+   * @param caller - the caller
+   * @param endpoint - the endpoint, when already known
+   * @returns the selectors
+   */
   workloadSelectors(call, caller, endpoint?) {
     const { log, registry } = this.deps;
     log.debug('Entering SpiffeAuth.workloadSelectors().');
@@ -1579,6 +1811,12 @@ class SpiffeAuth {
   // and by the management API, so that three surfaces cannot disagree about
   // what is enforced.
   // ---------------------------------------------------------------------------
+  /**
+   * Describes what is enforced, for `GET /spiffe`, `/admin/spiffe` and the
+   * management API.
+   *
+   * @returns the enforcement state
+   */
   state() {
     const { log } = this.deps;
     log.debug("Entering SpiffeAuth.state().");
@@ -1672,6 +1910,10 @@ const slot = new InstanceSlot<SpiffeAuth>(
 // specification names, and deliberately ugly: a client author who copies it
 // into production code should be able to see from the spelling alone that it is
 // this service's own affordance and not part of the Workload API.
+/**
+ * The gRPC metadata key an asserted selector arrives under: this service's own
+ * affordance, not part of the Workload API.
+ */
 const ASSERTED_SELECTOR_KEY = 'x-sts-workload-selector';
 // -------------------------------------------------------------------------
 // PER TRUST REALM SINCE 2026-09-12, AND IT WAS `sharedMap()` WITH
@@ -1706,6 +1948,11 @@ const recordedConnections =
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+/**
+ * Who is calling the two gRPC surfaces: the SPIFFE counterpart of
+ * `scim_auth.js`, a library that decides and never answers.
+ * @namespace
+ */
 export = {
   SpiffeAuth: SpiffeAuth,
   installInstance: (instance: SpiffeAuth): void => slot.install(instance),

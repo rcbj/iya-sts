@@ -129,8 +129,23 @@ interface SigstoreDeps {
   nowMs(): number;
 }
 
+/**
+ * Cosign image signature verification for the `docker` workload attestor, after
+ * SPIRE's `pkg/agent/common/sigstore` and cosign's `verify.go`.
+ *
+ * Every signature and certificate check is `common/crypto.js`'s or
+ * `common/pki.js`'s; this class holds the flow, the registry client and the
+ * selectors.
+ */
 class SigstoreVerifier {
   // A failure carrying the code it is recorded under (`verify()` tags it).
+  /**
+   * Builds an Error carrying the error code it is recorded under.
+   *
+   * @param code - the `STS-SPIFFE-…` error code
+   * @param message - the message
+   * @returns the error, with the code on `stsCode`
+   */
   static failure(code: string, message: string): Error {
     helpers.log.debug("Entering SigstoreVerifier.failure(). " + code);
     const err: any = new Error(message);
@@ -140,12 +155,25 @@ class SigstoreVerifier {
     return err;
   }
 
+  /**
+   * Builds the verifier over its dependencies.
+   *
+   * @param deps - the logger, file system, configuration, error codes, crypto,
+   *   PKI, a URL fetcher, the trust root TUF last verified and a clock
+   */
   constructor(private readonly deps: SigstoreDeps) {
     deps.log.debug("Entering SigstoreVerifier.constructor().");
     deps.log.debug("Leaving SigstoreVerifier.constructor().");
   }
 
   // `failure()`, as the methods below throw it.
+  /**
+   * Builds a coded failure, as the methods below throw it.
+   *
+   * @param code - the `STS-SPIFFE-…` error code
+   * @param message - the message
+   * @returns the error
+   */
   fail(code: string, message: string): Error {
     const { log } = this.deps;
     log.debug("Entering SigstoreVerifier.fail(). " + code);
@@ -154,6 +182,11 @@ class SigstoreVerifier {
     return SigstoreVerifier.failure(code, message);
   }
 
+  /**
+   * Returns the dependencies the service builds the verifier with.
+   *
+   * @returns the production dependency set
+   */
   static defaultDeps(): SigstoreDeps {
     helpers.log.debug("Entering SigstoreVerifier.defaultDeps().");
     helpers.log.debug("Leaving SigstoreVerifier.defaultDeps().");
@@ -173,6 +206,12 @@ class SigstoreVerifier {
   }
 
   // A csv setting's elements.
+  /**
+   * Reads a list setting, given as an array or a comma-separated string.
+   *
+   * @param key - the setting's name
+   * @returns the trimmed, non-empty values
+   */
   list(key: string): string[] {
     const { log, config } = this.deps;
     log.debug("Entering SigstoreVerifier.list(). " + key);
@@ -186,6 +225,12 @@ class SigstoreVerifier {
 
   // One validity window of a trusted root entry, as milliseconds; 0 for an
   // open end.
+  /**
+   * Reads one validity window of a trusted root entry.
+   *
+   * @param validFor - the entry's `validFor`
+   * @returns the start and end in milliseconds, 0 for an open end
+   */
   windowOf(validFor: any): { startMs: number; endMs: number } {
     const { log } = this.deps;
     log.debug("Entering SigstoreVerifier.windowOf().");
@@ -198,6 +243,14 @@ class SigstoreVerifier {
 
   // A sigstore trusted_root.json (protobuf-specs' TrustedRoot, JSON form)
   // as the verifier's lists. Throws on a document that is not one.
+  /**
+   * Reads a sigstore `trusted_root.json` (protobuf-specs' TrustedRoot, JSON
+   * form) as the verifier's lists.
+   *
+   * @param doc - the parsed document
+   * @returns the Fulcio CAs, Rekor logs and CT logs
+   * @throws an Error for a document that is not a trusted root
+   */
   parseTrustedRoot(doc: any): { fulcio: TrustCa[]; rekor: TrustLog[];
                                 ct: TrustLog[] } {
     const { log, pki } = this.deps;
@@ -243,6 +296,13 @@ class SigstoreVerifier {
   }
 
   // THE TRUST MATERIAL (step 2); throws STS-SPIFFE-0126.
+  /**
+   * Assembles the trust material (step 2): the cosign public key files and the
+   * sigstore trust root, from TUF or the pinned file.
+   *
+   * @returns the trust material
+   * @throws a coded failure (STS-SPIFFE-0126) when there is none
+   */
   trustMaterial(): TrustMaterial {
     const { log, fs, config, stsCrypto, tufTrustedRoot } = this.deps;
     log.debug("Entering SigstoreVerifier.trustMaterial().");
@@ -321,6 +381,14 @@ class SigstoreVerifier {
   // `repo@sha256:hex` as go-containerregistry reads it: the registry (Docker
   // Hub is `index.docker.io`, and a one-component name there is under
   // `library/`), the repository and the digest. Throws.
+  /**
+   * Parses `repo@sha256:hex` as go-containerregistry reads it, Docker Hub's
+   * defaults included.
+   *
+   * @param repoDigest - the repository digest
+   * @returns the registry, repository and digest
+   * @throws a coded failure for a malformed reference
+   */
   parseReference(repoDigest: string): { registry: string; repository: string;
                                         digest: string } {
     const { log } = this.deps;
@@ -358,6 +426,12 @@ class SigstoreVerifier {
 
   // Whether this service may dial `host` (`host` or `host:port`) for
   // signatures (step 3).
+  /**
+   * Asks whether this service may dial a registry for signatures (step 3).
+   *
+   * @param host - `host` or `host:port`
+   * @returns whether `spiffe.dockerSigstoreAllowedRegistries` names it
+   */
   registryAllowed(host: string): boolean {
     const { log } = this.deps;
     log.debug("Entering SigstoreVerifier.registryAllowed(). " + host);
@@ -370,6 +444,12 @@ class SigstoreVerifier {
   }
 
   // The Basic credentials a Docker config.json names for `registry`, or ''.
+  /**
+   * Returns the Basic credentials a Docker `config.json` names for a registry.
+   *
+   * @param registry - the registry host
+   * @returns the credentials, or ''
+   */
   registryBasic(registry: string): string {
     const { log, fs, config } = this.deps;
     log.debug("Entering SigstoreVerifier.registryBasic().");
@@ -406,6 +486,16 @@ class SigstoreVerifier {
   // A registry's Bearer challenge answered: a token for pulling
   // `repository`, from the realm the challenge names — which must itself be
   // an allowed https host. Throws.
+  /**
+   * Answers a registry's Bearer challenge with a pull token for a repository,
+   * from the realm the challenge names, which must be an allowed https host.
+   *
+   * @param challenge - the `WWW-Authenticate` header
+   * @param registry - the registry host
+   * @param repository - the repository
+   * @returns the token
+   * @throws a coded failure when the token cannot be had
+   */
   async bearerToken(challenge: string, registry: string,
                     repository: string): Promise<string> {
     const { log, fetch } = this.deps;
@@ -456,6 +546,17 @@ class SigstoreVerifier {
 
   // One registry GET under `/v2/<repository>/`, answering a Bearer
   // challenge once. Resolves the body, or null on 404. Throws.
+  /**
+   * Makes one registry GET under `/v2/<repository>/`, answering a Bearer
+   * challenge once.
+   *
+   * @param ref - the parsed reference
+   * @param path - the path under the repository
+   * @param accept - the Accept header
+   * @param auth - holds the Bearer token between calls
+   * @returns the body, or null on 404
+   * @throws a coded failure when the request fails
+   */
   async registryGet(ref: any, path: string, accept: string,
                     auth: { token: string }): Promise<Buffer | null> {
     const { log, fetch } = this.deps;
@@ -506,6 +607,15 @@ class SigstoreVerifier {
   // ONE redirect of a blob GET, to an allowed https host, with no
   // credential — the bytes are checked against their digest afterwards, so
   // nothing unverified comes back from it. Throws.
+  /**
+   * Follows one redirect of a blob GET to an allowed https host, with no
+   * credential; the bytes are checked against their digest afterwards.
+   *
+   * @param location - the redirect's target
+   * @param from - the URL redirected from
+   * @returns the body
+   * @throws a coded failure when the target is not allowed or the fetch fails
+   */
   async redirected(location: string, from: string): Promise<Buffer> {
     const { log, fetch } = this.deps;
     log.debug("Entering SigstoreVerifier.redirected().");
@@ -535,6 +645,17 @@ class SigstoreVerifier {
 
   // The layers of a cosign signature or attestation image, each with its
   // blob, or null when the tag does not exist. Throws.
+  /**
+   * Reads the layers of a cosign signature or attestation image, each with its
+   * blob.
+   *
+   * @param ref - the parsed reference
+   * @param tag - the signature or attestation tag
+   * @param auth - holds the Bearer token between calls
+   * @returns the layers' payloads, annotations and media types, or null when
+   *   the tag does not exist
+   * @throws a coded failure when the image cannot be read
+   */
   async layers(ref: any, tag: string, auth: { token: string }):
       Promise<Array<{ payload: Buffer; annotations: any;
                       mediaType: string }> | null> {
@@ -581,6 +702,12 @@ class SigstoreVerifier {
   }
 
   // The PEM certificates of an annotation, as DER.
+  /**
+   * Reads the PEM certificates of an annotation as DER.
+   *
+   * @param text - the annotation's text
+   * @returns the certificates
+   */
   pemDers(text: string): Buffer[] {
     const { log, pki } = this.deps;
     log.debug("Entering SigstoreVerifier.pemDers().");
@@ -596,6 +723,15 @@ class SigstoreVerifier {
   // a regular expression where the text holds one of SPIRE's regex
   // characters (`containsRegexChars()`), matched as cosign matches it —
   // UNANCHORED, so a pattern that must match the whole value says ^…$.
+  /**
+   * Asks whether a certificate's issuer and subject match an identity pair of
+   * `spiffe.dockerSigstoreAllowedIdentities`, exactly or as an unanchored
+   * regular expression as cosign matches it.
+   *
+   * @param issuer - the certificate's OIDC issuer
+   * @param subject - the certificate's subject
+   * @returns whether any pair allows it
+   */
   identityAllowed(issuer: string, subject: string): boolean {
     const { log } = this.deps;
     log.debug("Entering SigstoreVerifier.identityAllowed().");
@@ -627,6 +763,15 @@ class SigstoreVerifier {
   // hashAlg, hashValue }`, from a hashedrekord, rekord, intoto (v0.0.2) or
   // dsse entry — cosign's `bundleSig()`, `bundleKey()` and `bundleHash()`.
   // Throws.
+  /**
+   * Reads the Rekor entry in a bundle's body — cosign's `bundleSig()`,
+   * `bundleKey()` and `bundleHash()` — from a hashedrekord, rekord, intoto or
+   * dsse entry.
+   *
+   * @param body - the entry's base64 body
+   * @returns the entry's kind, signature, public key and hash
+   * @throws an Error for an entry that cannot be read
+   */
   rekorEntry(body: string): any {
     const { log } = this.deps;
     log.debug("Entering SigstoreVerifier.rekorEntry().");
@@ -680,6 +825,19 @@ class SigstoreVerifier {
   // what the entry must name: the attached certificate's DER, or one of the
   // candidate keys' SPKIs. Resolves the integrated time in milliseconds, the
   // bundle's payload and the key the entry named. Throws.
+  /**
+   * Verifies a Rekor bundle offline (step 4a, cosign's VerifyBundle()).
+   *
+   * @param bundleText - the bundle annotation
+   * @param payload - the signed payload
+   * @param signatureB64 - the signature, base64
+   * @param expect - what the entry must name: the attached certificate's DER,
+   *   or one of the candidate keys' SPKIs
+   * @param material - the trust material
+   * @returns the integrated time in milliseconds, the bundle's payload and the
+   *   key the entry named
+   * @throws a coded failure when the bundle does not verify
+   */
   async verifyBundle(bundleText: string, payload: Buffer, signatureB64: string,
                      expect: { certDer: Buffer | null; keys: Buffer[] },
                      material: TrustMaterial): Promise<any> {
@@ -752,6 +910,17 @@ class SigstoreVerifier {
   // Step 4b, keyless: the certificate chains to a Fulcio root, is for code
   // signing, carries a verifying SCT and names an allowed identity. Resolves
   // `{ facts, chain }`. Throws.
+  /**
+   * Verifies a keyless signer's certificate (step 4b): it chains to a Fulcio
+   * root, is for code signing, carries a verifying SCT and names an allowed
+   * identity.
+   *
+   * @param leafDer - the signing certificate
+   * @param chainDers - the certificates the signature carried with it
+   * @param material - the trust material
+   * @returns the certificate's facts and its chain
+   * @throws a coded failure when the certificate is refused
+   */
   async verifyCertificate(leafDer: Buffer, chainDers: Buffer[],
                           material: TrustMaterial): Promise<any> {
     const { log, pki, config } = this.deps;
@@ -817,6 +986,14 @@ class SigstoreVerifier {
   }
 
   // Step 4d: the certificate and its chain valid at `atMs` (CheckExpiry()).
+  /**
+   * Checks that a certificate and its chain were valid at a time (step 4d,
+   * CheckExpiry()).
+   *
+   * @param chain - the chain, leaf first
+   * @param atMs - the time, in milliseconds
+   * @returns '' when they were, otherwise why not
+   */
   checkExpiry(chain: any[], atMs: number): string {
     const { log } = this.deps;
     log.debug("Entering SigstoreVerifier.checkExpiry().");
@@ -835,6 +1012,15 @@ class SigstoreVerifier {
 
   // Step 4e and 5's subject check: the signed content is about THIS
   // manifest digest.
+  /**
+   * Checks that the signed content is about this manifest digest (step 4e, and
+   * step 5's subject check).
+   *
+   * @param kind - `signature` or `attestation`
+   * @param payload - the signed payload
+   * @param digest - the manifest digest
+   * @returns '' when it is, otherwise why not
+   */
   claimProblem(kind: string, payload: Buffer, digest: string): string {
     const { log } = this.deps;
     log.debug("Entering SigstoreVerifier.claimProblem(). " + kind);
@@ -865,6 +1051,17 @@ class SigstoreVerifier {
 
   // ONE SIGNATURE OR ATTESTATION LAYER (step 4, or 5 for `attestation`).
   // Resolves SPIRE's signatureDetails. Throws.
+  /**
+   * Verifies one signature or attestation layer (step 4, or 5 for an
+   * attestation).
+   *
+   * @param kind - `signature` or `attestation`
+   * @param layer - the layer, with its payload and annotations
+   * @param digest - the manifest digest
+   * @param material - the trust material
+   * @returns SPIRE's signatureDetails for the layer
+   * @throws a coded failure when the layer does not verify
+   */
   async verifyLayer(kind: string, layer: any, digest: string,
                     material: TrustMaterial): Promise<any> {
     const { log, stsCrypto, config, nowMs } = this.deps;
@@ -994,6 +1191,18 @@ class SigstoreVerifier {
 
   // Every layer of `tag`; resolves the details of those that verified and
   // the reasons the others did not. Throws when the tag cannot be read.
+  /**
+   * Verifies every layer of a tag.
+   *
+   * @param kind - `signature` or `attestation`
+   * @param ref - the parsed reference
+   * @param tag - the tag
+   * @param material - the trust material
+   * @param auth - holds the Bearer token between calls
+   * @returns the details of the layers that verified, the reasons the others
+   *   did not, and whether the tag was found
+   * @throws a coded failure when the tag cannot be read
+   */
   async verifyAll(kind: string, ref: any, tag: string, material: TrustMaterial,
                   auth: { token: string }):
       Promise<{ verified: any[]; problems: string[]; found: boolean }> {
@@ -1018,6 +1227,13 @@ class SigstoreVerifier {
   }
 
   // SPIRE's detailsToSelectors().
+  /**
+   * SPIRE's detailsToSelectors(): the `image-signature…` selectors for one
+   * verified signature.
+   *
+   * @param details - the signature's details
+   * @returns the selector values
+   */
   selectorsOf(details: any): string[] {
     const { log } = this.deps;
     log.debug("Entering SigstoreVerifier.selectorsOf().");
@@ -1040,6 +1256,14 @@ class SigstoreVerifier {
   // THE ENTRY POINT: SPIRE's ImageVerifier.Verify() for one repository
   // digest. Resolves the selectors; throws with the failure's code tagged on
   // a log line.
+  /**
+   * SPIRE's ImageVerifier.Verify() for one repository digest: the entry point.
+   *
+   * @param repoDigest - `repo@sha256:…`, from the Engine's RepoDigests
+   * @returns the selector values; none for an image in
+   *   `spiffe.dockerSigstoreSkippedImages`
+   * @throws a coded failure, tagged on a log line, when no signature verifies
+   */
   async verify(repoDigest: string): Promise<string[]> {
     const { log, config, errorCodes } = this.deps;
     const self = this;
@@ -1100,8 +1324,15 @@ class SigstoreVerifier {
   }
 }
 
+/**
+ * The one verifier the service uses; `verify()` forwards to it.
+ */
 const shared = new SigstoreVerifier(SigstoreVerifier.defaultDeps());
 
+/**
+ * Cosign image signatures for the `docker` workload attestor (#170).
+ * @namespace
+ */
 export = {
   SigstoreVerifier: SigstoreVerifier,
   shared: shared,

@@ -60,20 +60,44 @@ interface WorkloadAttestationDeps {
 const CONTAINER_ID = /\b([0-9a-fA-F]{64})\b/;
 const POD_UID = /\bpod([0-9a-fA-F]{8}[-_][0-9a-fA-F]{4}[-_][0-9a-fA-F]{4}[-_][0-9a-fA-F]{4}[-_][0-9a-fA-F]{12})\b/;
 
+/**
+ * The table of workload attestors, run once per Workload API connection at
+ * accept to turn the caller's process into selectors.
+ *
+ * `spiffe.workloadAttestors` names the ones that run; an attestor that fails
+ * fails the connection. The Broker API attests a referenced process through the
+ * same table.
+ */
 class WorkloadAttestation {
   private readonly attestors = new Map<string, WorkloadAttestor>();
 
+  /**
+   * Builds an empty table.
+   *
+   * @param deps - the logger, file system and configuration
+   */
   constructor(private readonly deps: WorkloadAttestationDeps) {
     deps.log.debug("Entering WorkloadAttestation.constructor().");
     deps.log.debug("Leaving WorkloadAttestation.constructor().");
   }
 
+  /**
+   * Returns the dependencies the service builds the table with.
+   *
+   * @returns the production dependency set
+   */
   static defaultDeps(): WorkloadAttestationDeps {
     helpers.log.debug("Entering WorkloadAttestation.defaultDeps().");
     helpers.log.debug("Leaving WorkloadAttestation.defaultDeps().");
     return { log: log, fs: fs, config: config };
   }
 
+  /**
+   * Registers a workload attestor under its type.
+   *
+   * @param attestor - the attestor
+   * @throws an Error when a second attestor registers the same type
+   */
   register(attestor: WorkloadAttestor): void {
     const { log } = this.deps;
     log.debug("Entering WorkloadAttestation.register(). " + attestor.type);
@@ -89,6 +113,13 @@ class WorkloadAttestation {
 
   // One registered attestor by type, or null — the Broker API asks the
   // `k8s` one about a pod reference (#170).
+  /**
+   * Returns one registered attestor by type; the Broker API asks the `k8s` one
+   * about a pod reference.
+   *
+   * @param type - the attestor's type
+   * @returns the attestor, or null
+   */
   attestor(type: string): any {
     const { log } = this.deps;
     log.debug("Entering WorkloadAttestation.attestor(). " + type);
@@ -96,6 +127,12 @@ class WorkloadAttestation {
     return this.attestors.get(type) || null;
   }
 
+  /**
+   * Returns the attestor names `spiffe.workloadAttestors` lists in the ambient
+   * realm, as written.
+   *
+   * @returns the configured names
+   */
   configured(): string[] {
     const { log, config } = this.deps;
     log.debug("Entering WorkloadAttestation.configured().");
@@ -107,6 +144,11 @@ class WorkloadAttestation {
       }).filter(Boolean);
   }
 
+  /**
+   * Returns the configured attestors this build has, in configured order.
+   *
+   * @returns the enabled types
+   */
   enabled(): string[] {
     const { log } = this.deps;
     const self = this;
@@ -119,6 +161,13 @@ class WorkloadAttestation {
 
   // Every enabled attestor over `facts`, in order; the selectors, or a
   // thrown sentence naming the attestor that failed.
+  /**
+   * Runs every enabled attestor over a process's facts, in order.
+   *
+   * @param facts - the caller's peer facts from `spiffe_peer.ts`
+   * @returns the selectors, each typed by its attestor
+   * @throws an Error carrying a sentence naming the attestor that failed
+   */
   async attest(facts: any): Promise<Selector[]> {
     const { log } = this.deps;
     log.debug("Entering WorkloadAttestation.attest(). " + facts.tag);
@@ -150,6 +199,15 @@ class WorkloadAttestation {
   // SPIRE's containerinfo extractor over `/proc/<pid>/cgroup`: the pod UID
   // (with `withPod`) and the container ID, '' each when there is none.
   // Throws on two different answers.
+  /**
+   * SPIRE's containerinfo extractor over `/proc/<pid>/cgroup`.
+   *
+   * @param procRoot - the proc file system's root
+   * @param pid - the process id
+   * @param withPod - whether to extract the pod UID as well
+   * @returns the pod UID and the container ID, '' each when there is none
+   * @throws an Error when the process's cgroups give two different answers
+   */
   containerInfo(procRoot: string, pid: number, withPod: boolean):
       { podUid: string; containerId: string } {
     const { log, fs } = this.deps;
@@ -197,6 +255,14 @@ class WorkloadAttestation {
   // Every cgroup path of a process (the third field of each line of
   // `/proc/<pid>/cgroup`), or [] when the file cannot be read. The docker
   // attestor reads them for SPIRE's Podman detection (#170).
+  /**
+   * Returns every cgroup path of a process, the third field of each line of
+   * `/proc/<pid>/cgroup`.
+   *
+   * @param procRoot - the proc file system's root
+   * @param pid - the process id
+   * @returns the paths, or [] when the file cannot be read
+   */
   cgroupPaths(procRoot: string, pid: number): string[] {
     const { log, fs } = this.deps;
     log.debug("Entering WorkloadAttestation.cgroupPaths(). pid=" + pid);
@@ -216,6 +282,13 @@ class WorkloadAttestation {
   }
 
   // One cgroup path: its container ID, and before it the pod UID.
+  /**
+   * Extracts the container ID, and the pod UID before it, from one cgroup path.
+   *
+   * @param cgroupPath - the cgroup path
+   * @param withPod - whether to extract the pod UID as well
+   * @returns the pod UID and the container ID, '' each when there is none
+   */
   extractOne(cgroupPath: string, withPod: boolean):
       { podUid: string; containerId: string } {
     const { log } = this.deps;
@@ -248,6 +321,13 @@ class WorkloadAttestation {
     return { podUid: '', containerId: containerId };
   }
 
+  /**
+   * Describes the table for the pages: every attestor, whether the realm turned
+   * it on, and the configured names nothing implements.
+   *
+   * @returns the attestors with `type`, `enabled` and `verifies`, and
+   *   `unknownConfigured`
+   */
   state() {
     const { log } = this.deps;
     const self = this;
@@ -266,6 +346,11 @@ class WorkloadAttestation {
   }
 }
 
+/**
+ * The workload attestors as a table (#40, #170): this service is the SPIRE
+ * agent for its own Workload API.
+ * @namespace
+ */
 export = {
   WorkloadAttestation: WorkloadAttestation
 };
