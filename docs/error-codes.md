@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3763** of them, in **40** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3765** of them, in **40** subsystems.
 
 ## Where a code appears
 
@@ -55,7 +55,7 @@ is an ordinary outcome.
 * [Worker pools (`STS-WORKER`)](#sts-worker) — 43
 * [Persistence and coordination (`STS-STORE`)](#sts-store) — 63
 * [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 28
-* [Cells and residency (`STS-CELL`)](#sts-cell) — 17
+* [Cells and residency (`STS-CELL`)](#sts-cell) — 19
 * [Scheduler (`STS-SCHED`)](#sts-sched) — 16
 * [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 79
 * [Certificate authority (`STS-PKI`)](#sts-pki) — 204
@@ -396,6 +396,8 @@ Raised from: common/cells.ts, common/cell_*.ts, persistence/tiers.js, persistenc
 | `STS-CELL-0034` | A relayed request did not carry its sending cell and exactly one hop, or a relayed request would have been relayed again; refused. | — |
 | `STS-CELL-0035` | An inter-cell operation call was refused: no such operation, not a POST, a body that is not JSON, or a body over the size limit. | — |
 | `STS-CELL-0036` | An inter-cell operation failed, at this cell for another's call or at another cell for this one's. | — |
+| `STS-CELL-0040` | The routing index could not be read while finding a person's home cell; the request is served here as if the person were unknown. | — |
+| `STS-CELL-0041` | A pushed authorization request could not be handed to the home cell of a flow restarting there; the flow restarts without it. | — |
 
 ## STS-SCHED
 

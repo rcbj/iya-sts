@@ -214,6 +214,12 @@ import errorCodes = require('../common/error_codes');
 // signs somebody in — and by sessionOf(), so a session that was live when the
 // account was disabled is not honoured again.
 import accountState = require('../common/account_state');
+// A SERVICE DEPLOYED AS CELLS (#98): which cell this is, where a person is
+// homed, and the browser's pin — all LIBRARIES with no route, so a require
+// here moves nothing. The sign-in screen is where D9's restart happens.
+import cells = require('../common/cells');
+import cellRouting = require('../common/cell_routing');
+import cellPlacement = require('../common/cell_placement');
 
 // The path a caller sends the browser to. Exported, because the two callers
 // build a URL out of it and a string spelled twice is a string that drifts.
@@ -4305,10 +4311,28 @@ class Authn {
    * @returns the session, or null when refused
    */
   startSession(res, username, amr, acr, via, detail) {
+    const { log } = this.deps;
+    log.debug("Entering Authn.startSession().");
+    const session = this.startSessionHere(res, username, amr, acr, via,
+                                          detail);
+    // THE BROWSER IS PINNED TO THE CELL THAT HOLDS ITS SESSION (#98 D9), so
+    // it keeps reaching this cell whichever cell DNS answers it with next —
+    // a traveller moving between regions, or a balancer's health check
+    // moving it. A no-op in single-cell mode.
+    if (session && cells.isMulti()) {
+      cellPlacement.setAffinity((detail && detail.request) || {}, res,
+                                realms.currentId(), cells.id());
+    }
+    log.debug("Leaving Authn.startSession().");
+    return session;
+  }
+
+  // What startSession() did before cells: every path that makes a session.
+  private startSessionHere(res, username, amr, acr, via, detail) {
     const { log, randomId, userFor, helpers, stats, gate, audit,
       errorCodes } = this.deps;
     const self = this;
-    log.debug("Entering Authn.startSession(). username=" + username + ", acr=" +
+    log.debug("Entering Authn.startSessionHere(). username=" + username + ", acr=" +
               acr);
     const extra = detail || {};
     // -------------------------------------------------------------------------
@@ -4335,7 +4359,7 @@ class Authn {
       });
       extra.refusedWith = 'STS-CORE-0121';
       extra.refusedWhy = retiring.why;
-      log.debug("Leaving Authn.startSession(). The realm is being removed.");
+      log.debug("Leaving Authn.startSessionHere(). The realm is being removed.");
       return null;
     }
     // -------------------------------------------------------------------------
@@ -4364,7 +4388,7 @@ class Authn {
                   application: String(extra.application || '') }
       });
       extra.refusedWith = 'STS-AUTHN-0201';
-      log.debug("Leaving Authn.startSession(). The account is disabled.");
+      log.debug("Leaving Authn.startSessionHere(). The account is disabled.");
       return null;
     }
     // -------------------------------------------------------------------------
@@ -4399,7 +4423,7 @@ class Authn {
                   application: String(extra.application || '') }
       });
       extra.refusedWith = policyCode;
-      log.debug("Leaving Authn.startSession(). The policy refused.");
+      log.debug("Leaving Authn.startSessionHere(). The policy refused.");
       return null;
     }
     // -------------------------------------------------------------------------
@@ -4595,7 +4619,7 @@ class Authn {
                                 policy: sessionAnswer.policy });
         extra.refusedWith = code;
         extra.riskStepUp = sessionAnswer.risk.factor || '';
-        log.debug("Leaving Authn.startSession(). Refused on risk.");
+        log.debug("Leaving Authn.startSessionHere(). Refused on risk.");
         return null;
       }
       if (!sessionAnswer.allowed) {
@@ -4617,7 +4641,7 @@ class Authn {
             ? 'STS-DEVICE-0038' : 'STS-DEVICE-0037')
           : 'STS-AUTHN-0010';
         extra.refusedWhy = sessionAnswer.why;
-        log.debug("Leaving Authn.startSession(). The issuance policy refused " +
+        log.debug("Leaving Authn.startSessionHere(). The issuance policy refused " +
                   "it.");
         return null;
       }
@@ -4628,7 +4652,7 @@ class Authn {
       // device — so it leaves the device out (`deviceDeferred`), and the
       // question is asked here, of the credential the session actually
       // stands on, about the device alone.
-      log.debug("Leaving Authn.startSession(). Refused on the device.");
+      log.debug("Leaving Authn.startSessionHere(). Refused on the device.");
       return null;
     }
 
@@ -4689,7 +4713,7 @@ class Authn {
         // deliberately does not move.
         this.notifySession('presented', found, { via: via || found.via,
                                                  req: null });
-        log.debug("Leaving Authn.startSession(). The credential was " +
+        log.debug("Leaving Authn.startSessionHere(). The credential was " +
                   "presented " +
                   "again; session " + found.id +
                   " was touched rather than replaced.");
@@ -4708,7 +4732,7 @@ class Authn {
       this.settleRisk(risk, { decision: riskDecision, sessionId: again.id,
                               context: extra.risk &&
                                        extra.risk.sessionContext });
-      log.debug("Leaving Authn.startSession(). " + username +
+      log.debug("Leaving Authn.startSessionHere(). " + username +
                 " re-authenticated on " +
                 "session " + again.id + ".");
       return again;
@@ -4818,7 +4842,7 @@ class Authn {
                     ? String(extra.federation.autocreate !== false) : '' }
       });
       extra.refusedWith = 'STS-AUTHN-0180';
-      log.debug("Leaving Authn.startSession(). There is no entry to be the " +
+      log.debug("Leaving Authn.startSessionHere(). There is no entry to be the " +
                 "subject of.");
       return null;
     }
@@ -4999,7 +5023,7 @@ class Authn {
                             context: extra.risk &&
                                      extra.risk.sessionContext });
     this.assessRisk(session, firstEvent, via, extra);
-    log.debug("Leaving Authn.startSession(). " + username +
+    log.debug("Leaving Authn.startSessionHere(). " + username +
               " is signed in (amr " +
               (amr || []).join(',') + ").");
     return session;
@@ -6303,6 +6327,9 @@ class Authn {
     const lockedUsername = String(opts.lockedUsername || '').trim();
     const record = {
       id: randomId(18),
+      // WHERE THIS FLOW STARTED, for a restart at the person's home cell
+      // (#98 D9). Null in single-cell mode.
+      restart: this.restartOrigin(),
       returnTo: returnTo,
       details: Array.isArray(opts.details) ? opts.details : [],
       hint: lockedUsername || String(opts.hint || ''),
@@ -7796,6 +7823,141 @@ class Authn {
       '</body></html>\n';
     log.debug("Leaving Authn.loginPage().");
     return page;
+  }
+
+  // ===========================================================================
+  // A PERSON HOMED IN ANOTHER CELL RESTARTS THEIR FLOW THERE (#98 D9).
+  //
+  // The sign-in screen is the first place a request says WHO it is about, and
+  // what a flow has made so far — the protocol's pending request, this
+  // record, the consent screen's — is held by the cell that made it. So a
+  // person homed elsewhere is not signed in here: the browser is PINNED to
+  // their home cell (`cell_placement.ts`'s affinity cookie) and sent back to
+  // the request that started the flow, which that cell then serves from the
+  // beginning — its own records, its own sign-in screen, its own second
+  // factor, all against the entry only it holds. Nothing personal crosses:
+  // not the typed password (never read here), not the entry.
+  //
+  // `restartOrigin()` records the starting request when the flow begins:
+  //
+  //   * the request as it arrived — a GET's URL, or a POST's URL and form
+  //     (a SAML HTTP-POST binding, an authorization request by POST), which
+  //     is re-posted from a page with a real button and no script;
+  //   * EXCEPT for this service's own hosted surfaces (`common/oidc_rp.ts`),
+  //     whose authorization request is itself step two of a flow the surface
+  //     started: the restart is the surface's root, which starts its own
+  //     flow at home rather than resuming one whose state is here.
+  //
+  // A pushed authorization request (RFC 9126) the start names is HANDED to
+  // the home cell first (`adopt-pushed-request`, `oauth-oidc/par.ts`), since
+  // its reference names this cell and the pinned browser reaches home.
+  // ===========================================================================
+  /**
+   * Records the request a sign-in flow started from, for a restart at the
+   * person's home cell.
+   *
+   * @returns `{ method, url, form }`, or null in single-cell mode or outside
+   *   a request
+   */
+  private restartOrigin(): { method: string; url: string;
+                             form: Record<string, string> | null } | null {
+    const { log } = this.deps;
+    log.debug("Entering Authn.restartOrigin().");
+    if (!cells.isMulti()) {
+      log.debug("Leaving Authn.restartOrigin(). Single-cell.");
+      return null;
+    }
+    const req = require('../common/jose_certificate_header').currentRequest();
+    if (!req) {
+      log.debug("Leaving Authn.restartOrigin(). No request.");
+      return null;
+    }
+    const method = String(req.method || 'GET').toUpperCase();
+    let form: Record<string, string> | null = null;
+    if (method === 'POST') {
+      const parsed = this.deps.parseBody(req) || {};
+      form = {};
+      Object.keys(parsed).slice(0, 64).forEach(function (k) {
+        form[k] = String(parsed[k] === undefined ? '' : parsed[k])
+          .slice(0, 65536);
+      });
+    }
+    const url = String(req.originalUrl || req.url || '/');
+    const clientId = String((req.query && req.query.client_id) ||
+                            (form && form.client_id) || '');
+    const surface = ({ 'sts-admin-console': '/admin',
+                       'sts-user-portal': '/portal' } as Record<string,
+                                                                 string>)[
+      clientId];
+    log.debug("Leaving Authn.restartOrigin().");
+    if (surface) {
+      return { method: 'GET', url: realms.currentPrefix() + surface,
+               form: null };
+    }
+    return { method: method, url: url, form: form };
+  }
+
+  /**
+   * Sends a browser whose person is homed in another cell back to the start
+   * of its flow, pinned to that cell.
+   *
+   * @param req - the sign-in POST
+   * @param res - the response
+   * @param record - the pending sign-in
+   * @param home - the person's home cell
+   * @returns a promise settled when the answer is sent
+   */
+  private async restartAtHome(req, res, record, home: string): Promise<void> {
+    const { log } = this.deps;
+    log.debug("Entering Authn.restartAtHome(). home=" + home);
+    const origin = record.restart;
+    pending.delete(record.id);
+    const realmId = realms.currentId();
+    // A pushed request the start names goes home first.
+    const named = String(origin && origin.url && /request_uri=([^&]+)/
+      .exec(origin.url) ? decodeURIComponent(/request_uri=([^&]+)/
+        .exec(origin.url)[1]) : (origin && origin.form &&
+                                 origin.form.request_uri) || '');
+    if (named) {
+      try {
+        await require('../oauth-oidc/par').handOver(realmId, named, home);
+      } catch (e) {
+        log.warn(errorCodes.tag('STS-CELL-0041') + 'authn: the pushed ' +
+                 'authorization request of a flow restarting at cell "' +
+                 home + '" could not be handed over (' +
+                 ((e && e.message) || e) + '); the flow restarts without it ' +
+                 'and the client will be told the request_uri is unknown.');
+      }
+    }
+    cellPlacement.setAffinity(req, res, realmId, home);
+    log.info('authn: the person signing in is homed in cell "' + home +
+             '"; the browser is pinned there and sent back to the start of ' +
+             'its flow (#98 D9).');
+    res.set('Cache-Control', 'no-store');
+    if (!origin || origin.method !== 'POST' || !origin.form) {
+      log.debug("Leaving Authn.restartAtHome(). A redirect.");
+      res.redirect(303, origin ? origin.url : realms.currentPrefix() + '/');
+      return;
+    }
+    // A POST START IS RE-POSTED FROM A PAGE WITH A REAL BUTTON, the way a
+    // federation partner's HTTP-POST binding is sent: no script (the service's
+    // policy is script-src 'none'), the fields as hidden inputs.
+    const esc = function (v: string) {
+      return String(v).replace(/&/g, '&amp;').replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    };
+    const fields = Object.keys(origin.form).map(function (k) {
+      return '<input type="hidden" name="' + esc(k) + '" value="' +
+        esc(origin.form[k]) + '">';
+    }).join('');
+    log.debug("Leaving Authn.restartAtHome(). A re-post.");
+    res.status(200).type('html').send(
+      '<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">' +
+      '<title>Continue signing in</title></head><body>' +
+      '<p>Your account is held in another region of this service. Continue ' +
+      'to sign in there.</p>' +
+      '<form method="post" action="' + esc(origin.url) + '">' + fields +
+      '<button type="submit">Continue</button></form></body></html>');
   }
 
   private sendLoginPage(res, html) {
@@ -10204,6 +10366,19 @@ class Authn {
         return this.sendLoginPage(res, this.loginPage(base, record,
           'Enter a username. It does not have to exist — it is the identity ' +
           'the issued tokens will describe.'));
+      }
+      // A PERSON HOMED IN ANOTHER CELL (#98 D9), before anything is verified,
+      // counted or spent here: see restartAtHome(). A name nobody knows is
+      // served here, as a name nobody knows always was.
+      if (cells.isMulti() && !req.stsCellRelay) {
+        const home = await cellRouting.homeOf(realms.currentId(), 'name',
+                                              username);
+        if (home && home !== cells.id() && cells.get(home)) {
+          await this.restartAtHome(req, res, record, home);
+          log.debug("Leaving the authentication endpoint. Restarted at " +
+                    "home.");
+          return undefined;
+        }
       }
       // ---------------------------------------------------------------------
       // AN EMAILED FIRST FACTOR (#64): the username alone, and the code or the

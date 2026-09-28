@@ -557,6 +557,18 @@ class CellPlacement {
       log.debug("Leaving CellPlacement.decide(). Local.");
       return null;
     }
+    // A PINNED BROWSER IS SERVED WHERE IT IS PINNED, before anything else a
+    // browser route carries is read — a request_uri or a handle minted in
+    // another cell included. A flow that restarted at home (D9) was handed
+    // what it needs there, and following the artifact's tag instead would
+    // send the browser straight back to the cell that sent it home.
+    if (row.browser) {
+      const pinned = this.affinityOf(req, realmId);
+      if (pinned) {
+        log.debug("Leaving CellPlacement.decide(). Pinned.");
+        return other(pinned, 'affinity');
+      }
+    }
     if (row.strategy === 'selector') {
       const raw = req.query ? req.query.cell : undefined;
       const named = String(Array.isArray(raw) ? raw[0] || '' : raw || '');
@@ -577,7 +589,7 @@ class CellPlacement {
       log.debug("Leaving CellPlacement.decide(). A bearer token.");
       return other(minted, 'bearer');
     }
-    if (row.browser || row.strategy === 'affinity') {
+    if (row.strategy === 'affinity' && !row.browser) {
       const pinned = this.affinityOf(req, realmId);
       log.debug("Leaving CellPlacement.decide(). Affinity.");
       return other(pinned, 'affinity');

@@ -1554,6 +1554,15 @@ const CODES = [
     summary: 'An inter-cell operation failed, at this cell for another\'s ' +
       'call or at another cell for this one\'s.',
     spec: '' },
+  { code: 'STS-CELL-0040',
+    summary: 'The routing index could not be read while finding a person\'s ' +
+      'home cell; the request is served here as if the person were ' +
+      'unknown.',
+    spec: '' },
+  { code: 'STS-CELL-0041',
+    summary: 'A pushed authorization request could not be handed to the home ' +
+      'cell of a flow restarting there; the flow restarts without it.',
+    spec: '' },
   // ===== SCHED =============================================================
   { code: 'STS-SCHED-0001',
     summary: 'A scheduled job\'s run threw or rejected; the run is recorded ' +
