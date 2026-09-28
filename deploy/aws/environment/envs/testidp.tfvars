@@ -57,6 +57,11 @@ extra_environment = {
   KRB5_REALM              = "IYASEC.IO"
   KRB5_SERVICE_PRINCIPAL  = "HTTP/test-idp.iyasec.io"
   STS_SPIFFE_TRUST_DOMAIN = "iyasec.io"
+  # Room for a request worker to start (#311): every start re-certifies the
+  # default realm's signing keys and writes its certificate authority, and on
+  # this cluster that passed the 60 s default after a day of suite runs — the
+  # pools gave up and every node ran on its front process alone.
+  STS_WORKERS_START_TIMEOUT_MS = "300000"
 }
 
 sts_mode                = "product"

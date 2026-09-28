@@ -232,7 +232,17 @@ if (logLevelProblem) {
 // backstop against a worker that will never come up rather than a tuned value,
 // and the front process waits for the message rather than for the clock.
 // ---------------------------------------------------------------------------
-const START_TIMEOUT_MS = 60000;
+//
+// **A SETTING SINCE 2026-09-28 (#311), `workers.startTimeoutMs`, default the
+// same sixty seconds.** On the 3-node testidp cluster every request worker of
+// every node took longer than that — each re-certifies the realm's signing
+// keys and writes the certificate authority at start, and the key set had
+// grown with every suite run's rotations — and after three in a row the pool
+// gave up for good, leaving each node on its front process alone. The root
+// cause (a start should not re-certify unchanged keys) is its own issue; this
+// is the room to start in, which a deployment can widen.
+const START_TIMEOUT_MS = Math.max(5000,
+  Number(config.value('workers.startTimeoutMs')));
 
 // ---------------------------------------------------------------------------
 // THE RESPONSE THIS WORKER IS CURRENTLY WRITING (2026-09-09), AND THE ONE

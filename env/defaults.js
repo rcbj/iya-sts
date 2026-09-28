@@ -258,6 +258,7 @@ var config = {
   workers: {
     count: 5,                                                      // Worker processes
     jobTimeoutS: 120,                                              // Worker job timeout (seconds)
+    startTimeoutMs: 60000,                                         // Request worker start limit (ms); restart to apply
     requestCount: 0,                                               // Request worker processes; restart to apply
     dispatch: "",                                                  // Handled in a request worker; restart to apply
     fanout: "/scim,/xacml,/admin-api",                             // Dispatched paths with no session affinity; restart to apply

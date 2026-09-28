@@ -3030,6 +3030,19 @@ const SETTINGS = [
   // said `runtime: true` and meant "on restart" is the lie this file refuses
   // to tell about a bound port.
   // ---------------------------------------------------------------------
+  { key: 'workers.startTimeoutMs', group: 'Global',
+    label: 'Request worker start limit (ms)',
+    env: 'STS_WORKERS_START_TIMEOUT_MS', type: 'int', dflt: 60000,
+    min: 5000, max: 900000, runtime: false, perProcess: true,
+    restartReason: 'a worker reads it once, when it starts',
+    description: 'How long a request or surface worker may take to bring its ' +
+                 'state up (the store, the keys, the minted rows and ' +
+                 'coordination) before it reports that it could not start. ' +
+                 'Three failures in a row and the pool stops forking and ' +
+                 'answers everything in the process that holds the sockets. ' +
+                 'Raise it where a worker\'s start is slow — a large realm ' +
+                 'key set that every start re-certifies, a cold database ' +
+                 '(#311).' },
   { key: 'workers.requestCount', group: 'Global',
     label: 'Request worker processes',
     env: 'STS_WORKERS_REQUEST_COUNT', type: 'int', dflt: 0, min: 0, max: 32,
